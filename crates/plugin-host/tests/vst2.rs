@@ -387,3 +387,31 @@ fn the_mock_s_embedded_editor_opens_and_takes_its_placement() {
     assert!(plugin.fit_editor(EDITOR_SIZE.0, EDITOR_SIZE.1).unwrap_or_else(|e| panic!("{e}")), "the fit went out");
     plugin.close_editor().unwrap_or_else(|e| panic!("{e}"));
 }
+
+/// An `.fxp` file of `kind` for plug-in 7: the header, the name, then `rest`.
+fn fxp(kind: &[u8; 4], count: u32, rest: &[u8]) -> Vec<u8> {
+    let mut out = b"CcnK".to_vec();
+    out.extend_from_slice(&u32::try_from(4 * 5 + 28 + rest.len()).unwrap().to_be_bytes());
+    out.extend_from_slice(kind);
+    for value in [1, 7, 1, count] {
+        out.extend_from_slice(&u32::to_be_bytes(value));
+    }
+    out.extend_from_slice(&[0; 28]);
+    out.extend_from_slice(rest);
+    out
+}
+
+/// A single program, as an `.fxp` file holds it, loads: a program chunk (`FPCh`) through
+/// `effSetChunk`, a program of values (`FxCk`) as parameters; one cut short is refused (#1167).
+#[test]
+fn a_single_program_loads_as_a_chunk_or_as_values() {
+    let (mut plugin, _audio) = start();
+    let chunk = fxp(b"FPCh", 1, &[&4u32.to_be_bytes()[..], &0.375f32.to_le_bytes()].concat());
+    plugin.load_state(chunk.clone()).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(plugin.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.375);
+    let values = fxp(b"FxCk", 1, &0.625f32.to_be_bytes());
+    plugin.load_state(values).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(plugin.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.625);
+    assert!(plugin.load_state(chunk[..chunk.len() - 2].to_vec()).is_err(), "cut short");
+    assert_eq!(plugin.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.625);
+}

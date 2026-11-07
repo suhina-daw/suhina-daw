@@ -216,8 +216,13 @@ impl Doorbell {
                 let backstop = millis_rounded_up(left).saturating_add(1);
                 // SAFETY: `handles` holds two valid handles and outlives the call; it returns
                 // when either is signalled (the event: rung; the timer: the nap is over).
-                unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, backstop) };
-                return;
+                let answer = unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, backstop) };
+                // A failed wait returns at once and would turn every wait into a spin (#1256):
+                // the event's own timeout below waits instead.
+                if answer != windows_sys::Win32::Foundation::WAIT_FAILED {
+                    return;
+                }
+                note_failed_wait();
             }
         }
         match left.checked_sub(TICK) {
@@ -228,6 +233,117 @@ impl Doorbell {
             }
             None => std::thread::yield_now(),
         }
+    }
+}
+
+/// Whether a wait on the operating system has failed since the process started, so it waited
+/// on a coarser timeout instead (#1256): for a trace to say so once.
+static WAIT_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn note_failed_wait() {
+    WAIT_FAILED.store(true, Ordering::Relaxed);
+}
+
+/// Whether a wait on the operating system has failed in this process (it then waited on the
+/// event's own, coarser timeout). Real-time safe.
+pub fn a_wait_failed() -> bool {
+    WAIT_FAILED.load(Ordering::Relaxed)
+}
+
+/// What one link waits for: its answer word reaching a value, and the doorbell rung when it
+/// changes. Taken from a link ([`crate::Link::watch`]) to wait for several at once
+/// ([`wait_any`]).
+#[derive(Clone, Copy)]
+pub struct Watch<'a> {
+    word: &'a AtomicU32,
+    value: u32,
+    bell: &'a Doorbell,
+}
+
+impl<'a> Watch<'a> {
+    pub(crate) fn new(word: &'a AtomicU32, value: u32, bell: &'a Doorbell) -> Self {
+        Self { word, value, bell }
+    }
+
+    fn answered(&self) -> bool {
+        self.word.load(Ordering::Acquire) == self.value
+    }
+}
+
+/// The most links one Windows wait takes, besides the timer (`MAXIMUM_WAIT_OBJECTS` less one).
+#[cfg_attr(not(windows), allow(dead_code))]
+const MAX_WAITED: usize = 63;
+
+/// Waits until any of `watches` is answered or `until` passes (#1256): the first answered one's
+/// index, or `None` at `until`. It spins briefly first, as [`Doorbell::wait`] does, then sleeps
+/// in the operating system: on Windows on the links' events together (the first
+/// [`MAX_WAITED`]; the others are looked at each time it wakes), with the first one's
+/// high-resolution timer, and yielding in the last [`FINE_TAIL`]; elsewhere on the first link
+/// not answered, as long as [`Doorbell::wait`] would. `None` entries are passed over. Never
+/// allocates; never waits past `until`.
+pub fn wait_any(watches: &[Option<Watch>], until: Instant) -> Option<usize> {
+    let answered = || watches.iter().position(|w| w.is_some_and(|w| w.answered()));
+    for _ in 0..SPINS {
+        if let Some(i) = answered() {
+            return Some(i);
+        }
+        std::hint::spin_loop();
+    }
+    loop {
+        if let Some(i) = answered() {
+            return Some(i);
+        }
+        let now = Instant::now();
+        if now >= until {
+            return None;
+        }
+        let first = watches.iter().flatten().next()?;
+        #[cfg(windows)]
+        sleep_any_windows(watches, first, until - now);
+        #[cfg(not(windows))]
+        first.bell.sleep(first.word, first.word.load(Ordering::Acquire), until - now);
+    }
+}
+
+/// [`wait_any`]'s sleep on Windows: the links' events and `first`'s timer together, as
+/// [`Doorbell::sleep_windows`] waits on one.
+#[cfg(windows)]
+fn sleep_any_windows(watches: &[Option<Watch>], first: &Watch, left: Duration) {
+    use windows_sys::Win32::Foundation::{HANDLE, WAIT_FAILED};
+    use windows_sys::Win32::System::Threading::{SetWaitableTimer, WaitForMultipleObjects};
+    let (Some(timer), Some(nap)) = (first.bell.timer, left.checked_sub(FINE_TAIL)) else {
+        // No timer, or the last stretch: as a single link's wait does it.
+        first.bell.sleep_windows(left);
+        return;
+    };
+    let mut handles: [HANDLE; MAX_WAITED + 1] = [std::ptr::null_mut(); MAX_WAITED + 1];
+    let mut count = 0;
+    for watch in watches.iter().flatten().take(MAX_WAITED) {
+        if let Some(slot) = handles.get_mut(count) {
+            *slot = watch.bell.event;
+            count += 1;
+        }
+    }
+    if let Some(slot) = handles.get_mut(count) {
+        *slot = timer;
+        count += 1;
+    }
+    let due = -i64::try_from((nap.as_nanos() / 100).max(1)).unwrap_or(i64::MAX);
+    // SAFETY: `timer` is a valid waitable timer handle while its doorbell lives, which the watch
+    // borrows; `due` is a live `i64`; no completion routine.
+    let armed = unsafe { SetWaitableTimer(timer, &raw const due, 0, None, std::ptr::null(), 0) };
+    if armed == 0 {
+        first.bell.sleep_windows(left);
+        return;
+    }
+    let backstop = millis_rounded_up(left).saturating_add(1);
+    // SAFETY: the first `count` handles are valid (the watched links' events and the timer) and
+    // outlive the call; it returns when any is signalled.
+    let answer = unsafe { WaitForMultipleObjects(count as u32, handles.as_ptr(), 0, backstop) };
+    if answer == WAIT_FAILED {
+        note_failed_wait();
+        first.bell.sleep_windows(left);
     }
 }
 

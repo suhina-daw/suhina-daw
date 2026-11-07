@@ -204,15 +204,28 @@ plug-ins *at the same time*: every chain hands its block to its first plug-in
 whose blocks are out in turn (`Link::wait_answered`, `PluginProcessor::poll`), takes each
 answer as it comes (`Link::wait`, `PluginProcessor::wait`) and runs that chain on to its
 next plug-in at once, while the others are still out, until every chain is done (#151); a
-bus runs after the chains that play into it. The budget is then set by the slowest chain,
+bus or a return runs as soon as the chains that play into it (through their output or a send)
+are done, in the same loop, its plug-ins' blocks out with the others', and Main last, once
+every other chain is (#1261): a late track holds up only the buses it plays into. What a done
+chain adds to its bus, its returns, the output and the cue bus is staged first and added in
+chain order, so which plug-in answered first never changes a sum and offline renders stay bit
+for bit as before. A chain with buses with plug-ins after it has its plug-ins waited for a
+quarter of the block's time (from its start to the deadline) sooner per bus level, at most
+three, so those buses have the rest when one of its plug-ins is late; without bus plug-ins
+the deadline is as before. The quarter is a first value, to be set by measurement. The budget is then set by the slowest chain,
 not the sum: the same project went from 30 to 50 % of blocks late to none, the longest
 wait 6 ms. (Until #151 the chains went a stage at a time, every chain waiting for every
 chain's answer before any went on, so a chain waited once per plug-in for the slowest
 plug-in of that stage elsewhere: measured with three chains of three plug-ins whose heavy
 one, 3 ms a block, is at another place in each, see *Measurements*.) While no answer is in,
-the render thread sleeps on the first chain still out for at most 50 µs at a time
-(`ANSWER_SLICE`): that plug-in's answer wakes it at once, another's is seen at most that
-late. A chain whose plug-in has not answered by the deadline misses that block, as before;
+the render thread sleeps until any of the plug-ins it waits for answers, or the earliest of
+their deadlines (`suhina_ipc::wait_any`, #1256): on Windows on their links' events together
+(63 at a time) and a high-resolution timer, yielding only in the last millisecond, so a late
+plug-in no longer keeps the render thread spinning for the whole wait; on Linux and macOS on
+the first link still out, as a single link waits. A plug-in the engine cannot watch (a
+stand-in in tests) is waited on for at most 50 µs at a time (`ANSWER_SLICE`), and the others
+looked at again. A wait that Windows refuses (`WAIT_FAILED`) falls back to the event's own,
+coarser timeout instead of returning at once, and `suhina_ipc::a_wait_failed` says it happened. A chain whose plug-in has not answered by the deadline misses that block, as before;
 the others are not held up by it. An offline render gives each block out `OFFLINE_TIMEOUT`
 from when it went. `longest_us` is each plug-in's longest round trip, timed from the block's
 hand-over, since the engine may look at other chains before it takes an answer. A plug-in still at a block it was late with (one whose answer
@@ -351,6 +364,10 @@ parameters, value `i` to parameter id `i`, the numbering a VST3 version keeps fr
 one, but only when the plug-in has every id from 0 to the last value's: on the controller
 (`setParamNormalized`) and on the processor through the next block's parameter changes
 (`crates/plugin-host/src/vst3/params.rs`). With that the third plays with the project's settings.
+A single program of values (`FxCk`, an `.fxp` file, from the CLI's `--state`) is set as
+parameters the same way; a program chunk (`FPCh`) is refused, since the plug-in may answer
+`setState` without reading it, and the caller is told (#1167;
+[the VST2 interface](plugin-vst2.md) › State: chunks and banks).
 A newer version of an EQ refuses its predecessor's state and runs with its defaults. An
 instrument found by the id convention plays a project's notes with its saved settings. A
 synth's second version refuses the first version's state in every form tried: the bank, a

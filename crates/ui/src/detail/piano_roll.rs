@@ -422,6 +422,11 @@ pub fn show(
             }
         }
     }
+    // Every press says which modifiers its drag is chosen by, and one outside the grid none, so
+    // a drag never takes an earlier press's (#1048).
+    if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary)) {
+        state.pressed_with = widgets::pointer_over(ui, grid_rect).map(|_| ui.input(|i| i.modifiers));
+    }
     // The audition starts on the press: a note pressed, or the note a press is about to draw, sounds
     // for as long as the button is held (› Playing the keys).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
@@ -443,6 +448,14 @@ pub fn show(
     }
     if response.drag_started_by(PointerButton::Primary) {
         let from = ui.input(|i| i.pointer.press_origin()).or(pointer).unwrap_or(grid_rect.center());
+        // Alt, Ctrl and Shift count as they were when the button went down (› Moving): Alt
+        // pressed between the press and the drag frees the move, it does not change velocity.
+        let inputs = state.pressed_with.take().map_or(inputs, |held| Inputs {
+            shift: held.shift,
+            alt: held.alt,
+            command: held.command,
+            ..inputs
+        });
         state.stroke.clear();
         state.erasing.clear();
         state.muting.clear();

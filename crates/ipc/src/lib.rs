@@ -47,6 +47,7 @@ mod shm;
 mod source;
 mod sweep;
 
+pub use doorbell::{Watch, a_wait_failed, wait_any};
 pub use events::{Event, EventKind, MAX_EVENTS};
 pub use keyboard::{keys_to_engine, pointer_on_screen, set_keys_to_engine, take_keyboard_back};
 pub use source::{AudioSource, MAX_SOURCE_FRAMES};
@@ -221,6 +222,24 @@ impl Link {
         let sequence = self.sequence;
         self.region.response() == sequence
             || self.to_engine.wait(self.region.response_word(), |v| v == sequence, deadline)
+    }
+
+    /// The block out, not answered yet, to wait for together with other links' ([`wait_any`]);
+    /// `None` when no block is out or it is answered. Real-time safe.
+    pub fn watch(&self) -> Option<Watch<'_>> {
+        self.in_flight?;
+        let watch = Watch::new(self.region.response_word(), self.sequence, &self.to_engine);
+        (self.region.response() != self.sequence).then_some(watch)
+    }
+
+    /// The last block, given up on and not answered yet ([`Link::wait_ready`]'s), to wait for
+    /// together with other links'; `None` when the link is free or a block is out. Real-time
+    /// safe.
+    pub fn watch_ready(&self) -> Option<Watch<'_>> {
+        if self.in_flight.is_some() || self.region.response() == self.sequence {
+            return None;
+        }
+        Some(Watch::new(self.region.response_word(), self.sequence, &self.to_engine))
     }
 
     /// Whether the block out has been answered, waiting for it at most until `until` (one

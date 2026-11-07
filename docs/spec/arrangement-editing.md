@@ -300,9 +300,12 @@ With a time selection:
 | Ctrl+V | `clip.paste {start}` | A copy from several tracks goes back to its own tracks, from the play start marker. |
 | Ctrl+E | `range.split` | Splits the clips at both edges: the span becomes clips of its own. |
 | Ctrl+D | `range.duplicate` | Puts a copy right after the span on the same tracks; the selection moves onto the copy. |
-| Ctrl+J | `clip.consolidate` | Consolidates the span on each of its tracks; a span painted in one row of a stack, that row's clips only. |
+| Ctrl+J | `clip.consolidate` | Consolidates the span on each of its tracks. |
 
-Each takes `{tracks, start, end}` and is one undo step. Closing the gap (deleting the time
+Each takes `{tracks, start, end}` and is one undo step. A span painted in one row of a stack lights
+that row only, and every key above acts on that row's clips alone, the other rows left as they are
+(#701): the window names them in `clips` (clip ids), which each `range.*` command and
+`clip.consolidate` take. Closing the gap (deleting the time
 itself) is not built yet.
 
 ## Duplicating and deleting
