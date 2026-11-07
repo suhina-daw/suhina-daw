@@ -609,8 +609,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   and end up selected. Dropped where they started, nothing is copied. Ctrl only counts at the start;
   pressing it later changes nothing.
 - **Built:** **Alt** pressed once a move has started frees it from the grid for as long as it is
-  held (it is read every frame). Alt held when the drag starts on a note changes its velocity
-  instead (› Velocity).
+  held (it is read every frame). Alt held when the button goes down on a note changes its velocity
+  instead (› Velocity); Alt pressed after that, even before the pointer has moved far enough to
+  start the drag, frees the move (#1048). Ctrl and Shift too count as they were at the press.
 - **Later:** whether moving notes past the clip's end extends the clip is **(to decide)**.
 
 ## Resizing
@@ -720,7 +721,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   1 to 127. The lane shows the values while dragging; letting go is one `note.setVelocity`, one
   undo step.
 - **Built ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** **Alt+drag** up or down
-  on a note (Option on macOS; Alt held when the drag starts, on the note's body, with the Select or
+  on a note (Option on macOS; Alt held when the button goes down on the note's body, with the Select or
   Draw tool) changes its velocity, one step per point, up louder; with several notes selected and
   the dragged one among them, every selected note changes by the same amount, the dragged one kept
   within 1 to 127. While dragging, the note's new velocity is shown over it ("Velocity 112"), the
@@ -1001,7 +1002,7 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Drag a note's right edge | Changes the selection's length |
 | Drag a note's left edge | Moves the selection's starts, keeping their ends |
 | Ctrl+drag a note (Cmd on macOS) | Copies the selection to where it is let go |
-| Alt+drag a note up, down | Changes the selection's velocity (Alt held at the start) |
+| Alt+drag a note up, down | Changes the selection's velocity (Alt held at the press) |
 | Alt while drawing, or pressed during a drag | No snapping |
 | Ctrl+1, Ctrl+2 | Makes the grid finer, coarser (Narrow grid, Widen grid; after a click in the piano roll) |
 | Ctrl+3 | Turns the triplet grid on or off (after a click in the piano roll) |

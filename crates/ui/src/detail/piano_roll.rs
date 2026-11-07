@@ -427,6 +427,7 @@ pub fn show(
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
         && let Some(pos) = widgets::pointer_over(ui, grid_rect)
     {
+        state.pressed_with = Some(ui.input(|i| i.modifiers));
         let sounded = match (note_at(&layout, &clip.notes, pos), state.tool) {
             (_, Tool::Erase | Tool::Mute | Tool::Slice) => None,
             (Some((index, _)), _) => clip.notes.get(index).map(|n| n.key),
@@ -443,6 +444,14 @@ pub fn show(
     }
     if response.drag_started_by(PointerButton::Primary) {
         let from = ui.input(|i| i.pointer.press_origin()).or(pointer).unwrap_or(grid_rect.center());
+        // Alt, Ctrl and Shift count as they were when the button went down (› Moving): Alt
+        // pressed between the press and the drag frees the move, it does not change velocity.
+        let inputs = state.pressed_with.take().map_or(inputs, |held| Inputs {
+            shift: held.shift,
+            alt: held.alt,
+            command: held.command,
+            ..inputs
+        });
         state.stroke.clear();
         state.erasing.clear();
         state.muting.clear();
