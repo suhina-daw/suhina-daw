@@ -715,6 +715,27 @@ fn a_chord_plays_until_it_is_let_go() {
     assert_eq!(session.project(), &before);
 }
 
+/// Keys added with `add` join the held chord: letting go of the added key leaves the first one
+/// sounding, and without `add` a new key replaces what is held.
+#[test]
+fn added_keys_join_the_held_ones() {
+    let (mut session, mut renderer) = playing();
+    run(&mut session, "device.add", json!({ "track": "Drums", "id": "fm-synth" })).unwrap();
+    advance(&mut renderer, 2);
+    run(&mut session, "preview.noteOn", json!({ "track": "Drums", "key": 60 })).unwrap();
+    let held = beat_peaks(&mut renderer, 2)[1];
+    assert!(held > 0.01, "the first key plays: {held}");
+    run(&mut session, "preview.noteOn", json!({ "track": "Drums", "keys": [67], "add": true })).unwrap();
+    beat_peaks(&mut renderer, 1);
+    run(&mut session, "preview.noteOff", json!({ "track": "Drums", "key": 67 })).unwrap();
+    let still = beat_peaks(&mut renderer, 2)[1];
+    assert!(still > held * 0.2, "the first key still sounds: {still} of {held}");
+    run(&mut session, "preview.noteOff", json!({ "track": "Drums", "key": 60 })).unwrap();
+    let tail = beat_peaks(&mut renderer, 2)[1];
+    assert!(tail < held * 0.05, "released: {tail} of {held}");
+    assert!(run(&mut session, "preview.noteOn", json!({ "track": "Drums", "key": 60, "add": "yes" })).is_err());
+}
+
 #[test]
 fn bad_key_column_notes_are_refused_and_change_nothing() {
     let (mut session, mut renderer) = playing();

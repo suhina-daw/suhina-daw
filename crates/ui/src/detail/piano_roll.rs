@@ -592,6 +592,7 @@ pub fn show(
         match preview {
             Some(Effect::Move(_, keys)) => state.audition_moved(&chosen, keys),
             Some(Effect::Draw(Some(note))) => state.audition_keys([note.key]),
+            Some(Effect::Select(rect)) => state.audition_swept(&layout, clip, rect),
             _ => {}
         }
     }

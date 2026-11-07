@@ -43,6 +43,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("key", ParamType::Integer, "the key to play, 0 to 127 (60 is C3)"),
             optional("keys", ParamType::Integers, "instead: several keys to play together, 1 to 128 of them"),
             optional("velocity", ParamType::Number, "how hard, 1 to 127 (default 100)"),
+            optional(
+                "add",
+                ParamType::Bool,
+                "true: the keys join the notes already held on the track, which go on sounding; false (default) stops them first",
+            ),
         ],
         kind: CommandKind::TRANSPORT,
         run: crate::preview::note_on,

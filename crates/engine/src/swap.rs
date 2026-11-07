@@ -984,7 +984,15 @@ impl Controller {
     /// Replaces any preview. Fails if the queue is full.
     pub fn preview_note_on(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), crate::ControlError> {
         let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
-        self.preview.send(crate::preview::PreviewCommand::Hold { notes: Box::new(notes), gain })
+        self.preview.send(crate::preview::PreviewCommand::Hold { notes: Box::new(notes), gain, add: false })
+    }
+
+    /// Holds `notes` as [`Self::preview_note_on`] does, but alongside the notes already held on
+    /// the same track, which go on sounding; with nothing held there it is the same as
+    /// [`Self::preview_note_on`]. Fails if the queue is full.
+    pub fn preview_note_add(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), crate::ControlError> {
+        let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
+        self.preview.send(crate::preview::PreviewCommand::Hold { notes: Box::new(notes), gain, add: true })
     }
 
     /// Releases the held note of `key`, or every held note when `key` is `None`. Fails if the

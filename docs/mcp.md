@@ -324,8 +324,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `preview.setGain {gain}` changes the level of the one playing (in dB, gliding there without a
   click); `preview.stop` stops it; `launcher.state` reports `preview`. With no project open they still
   work, through an output of their own that closes before a project opens one (ADR 0011).
-  `preview.noteOn {track, key | keys, velocity?}` plays one key (or the keys of `keys` together,
-  as the piano roll's audition does) through the track's instrument and holds it, as the piano
+  `preview.noteOn {track, key | keys, velocity?, add?}` plays one key (or the keys of `keys` together,
+  as the piano roll's audition does) through the track's instrument and holds it (with `add: true`
+  alongside the keys already held there, which go on sounding, as the selecting rectangle does), as the piano
   roll's key column does, until `preview.noteOff {track, key?}` lets that
   key go, or every held preview note when `key` is left out. Both are transport commands: the
   project, its undo history and the transport are untouched.
