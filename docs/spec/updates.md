@@ -60,7 +60,7 @@ A local build (`cargo run`) is never told it is behind: it has no channel, and r
 
 ## The start panel
 
-While a newer build is available, a line between the actions and the list says *New version
+While a newer build is available, a line between the actions and the list says *New nightly
 available: Suhina 0.0.1-nightly.20261018+c176a33* with **Download update now** and a link to the
 release page. The button:
 
@@ -75,6 +75,18 @@ release page. The button:
 
 A failure (no space, a folder Suhina may not write to, a checksum that does not match) is shown on
 the same line with the reason, and the running build is left as it was.
+
+A test build is offered as *New test build available: the test build of #663 (…)*.
+
+Nothing is downloaded or installed until the user presses the button: the check only tells.
+
+## With a project open
+
+The same line shows as a bar across the top of the workspace, under the toolbar, where the
+missing-files bar shows (which goes first while both have something to say). It is part of the
+window, not a dialog, and does not take the keyboard. Besides **Download update now** and
+**What's new** it has **Later**, which hides the offer of that build until a newer one is out or
+Suhina starts again; the download's progress, *Restart now* and a failure still show in the bar.
 
 ## Installing in place
 

@@ -88,3 +88,61 @@ fn the_dialogs_update_buttons_work_over_the_start_panels_line() {
         assert_eq!(harness.state(), &(None, Some(expected)), "{label}");
     }
 }
+
+/// The bar over an open project for `phase`, and what was chosen in it.
+fn bar(phase: Phase) -> Harness<'static, Option<BarChoice>> {
+    Harness::builder().allow_missing_glyphs().with_size(Vec2::new(1000.0, ROW + 12.0)).build_ui_state(
+        move |ui, chosen: &mut Option<BarChoice>| {
+            if let Some(choice) = bar_line(ui, ui.max_rect(), phase.clone()) {
+                *chosen = Some(choice);
+            }
+        },
+        None,
+    )
+}
+
+/// A newer nightly is named as one in the bar over an open project, with its button, its page and
+/// *Later*.
+#[test]
+fn a_newer_nightly_is_offered_in_the_bar_over_a_project() {
+    let offer = Phase::Checked { newer: Some(build()), builds: vec![build()] };
+    let text = notice_of(offer.clone()).map(|n| n.text).unwrap_or_default();
+    assert_eq!(text, "New nightly available: Suhina 0.0.1-nightly.20261106+abcdef1");
+    let mut harness = bar(offer);
+    harness.run();
+    harness.get_by_label("Download update now").click();
+    harness.run();
+    assert_eq!(harness.state(), &Some(BarChoice::Button));
+    harness.get_by_label("What's new in the new version").click();
+    harness.run();
+    assert_eq!(harness.state(), &Some(BarChoice::Page(build().page)));
+    harness.get_by_label("Hide the update offer").click();
+    harness.run();
+    assert_eq!(harness.state(), &Some(BarChoice::Later(build().version)));
+}
+
+/// A test build is not called a nightly.
+#[test]
+fn a_newer_test_build_is_named_as_one() {
+    let test_build = Build { pr: Some(663), ..build() };
+    let notice = notice_of(Phase::Checked { newer: Some(test_build.clone()), builds: vec![test_build] });
+    let text = notice.map(|n| n.text).unwrap_or_default();
+    assert!(text.starts_with("New test build available: the test build of #663"), "{text}");
+}
+
+/// *Later* hides the offer of that build only; a download or a failure shows again, and the bar has
+/// nothing to show while nothing is newer.
+#[test]
+fn later_hides_only_the_offer_it_was_pressed_on() {
+    let mut updates = Updates::default();
+    let offer = Phase::Checked { newer: Some(build()), builds: vec![build()] };
+    assert!(updates.bar_shows_for(&offer));
+    updates.hidden = Some(build().version);
+    assert!(!updates.bar_shows_for(&offer));
+    let newer = Build { version: "0.0.1-nightly.20261107+1234567".into(), ..build() };
+    assert!(updates.bar_shows_for(&Phase::Checked { newer: Some(newer.clone()), builds: vec![newer] }));
+    assert!(updates.bar_shows_for(&Phase::InstallFailed { build: build(), reason: "no space".into() }));
+    assert!(updates.bar_shows_for(&Phase::Installed(build())));
+    assert!(!updates.bar_shows_for(&Phase::Checked { newer: None, builds: vec![build()] }));
+    assert!(!updates.bar_shows_for(&Phase::Idle));
+}

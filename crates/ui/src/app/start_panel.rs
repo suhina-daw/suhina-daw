@@ -193,7 +193,7 @@ pub fn show(
 }
 
 /// The update line: its text, a progress bar while downloading, and its buttons on the right.
-fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: &Notice) -> Option<StartChoice> {
+pub(crate) fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: &Notice) -> Option<StartChoice> {
     let mut choice = None;
     painter.fill_background(line, 0.0, theme::panel_background());
     let edge = if notice.error { theme::recording() } else { theme::accent() };
@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn a_newer_build_is_offered_under_the_actions() {
         let notice = Notice {
-            text: "New version available: Suhina 0.0.1-nightly.20261018+c176a33".into(),
+            text: "New nightly available: Suhina 0.0.1-nightly.20261018+c176a33".into(),
             button: Some("Download update now"),
             progress: None,
             error: false,

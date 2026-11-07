@@ -1,8 +1,8 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Updates in the window (`docs/spec/updates.md`): the check once per start, the start panel's
-//! *New version available* line, and Help › Check for updates…, which checks now, lists test
+//! Updates in the window (`docs/spec/updates.md`): the check once per start, the *New nightly
+//! available* line on the start panel and in the bar over an open project, and Help › Check for updates…, which checks now, lists test
 //! builds in developer mode and connects to the GitHub CLI only when asked to.
 
 use crate::kit::surface::Backgrounds as _;
@@ -12,7 +12,7 @@ use egui::{Align2, Id, Key, Pos2, Rect, Ui, Vec2};
 use suhina_update::{Build, BuildKind, Channel, Phase, Updater};
 
 use crate::app::project_dialog::{self, BUTTON, LINE, VERSION};
-use crate::app::start_panel::Notice;
+use crate::app::start_panel::{self, Notice, StartChoice};
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, button};
 use crate::settings::update_settings::UpdateSettings;
@@ -65,6 +65,8 @@ pub struct Updates {
     note: Option<String>,
     /// The channel the last check asked.
     channel: Channel,
+    /// The build whose offer the bar over a project was told to hide (*Later*).
+    hidden: Option<String>,
 }
 
 impl Updates {
@@ -109,6 +111,32 @@ impl Updates {
     /// The start panel's line: a newer build, its download, or what became of it.
     pub fn notice(&self) -> Option<Notice> {
         notice_of(self.updater.phase())
+    }
+
+    /// Whether the bar over an open project shows: there is a line to show, and its offer was
+    /// not hidden with *Later*.
+    pub fn bar_shows(&self) -> bool {
+        self.bar_shows_for(&self.updater.phase())
+    }
+
+    fn bar_shows_for(&self, phase: &Phase) -> bool {
+        match phase {
+            Phase::Checked { newer: Some(build), .. } => self.hidden.as_deref() != Some(build.version.as_str()),
+            phase => notice_of(phase.clone()).is_some(),
+        }
+    }
+
+    /// The bar over an open project, in `rect`: the start panel's line with *Later* at its end,
+    /// which hides the offer until a newer build is out or the next start.
+    pub fn bar(&mut self, ui: &mut Ui, rect: Rect) -> Option<Wanted> {
+        match bar_line(ui, rect, self.updater.phase())? {
+            BarChoice::Later(version) => {
+                self.hidden = Some(version);
+                None
+            }
+            BarChoice::Page(url) => Some(Wanted::Open(url)),
+            BarChoice::Button => self.notice_pressed(ui.ctx()),
+        }
     }
 
     /// The start panel line's button was pressed.
@@ -196,7 +224,7 @@ impl Updates {
             Phase::Checking => ("Checking…".into(), None),
             Phase::CheckFailed(reason) => (format!("The check failed: {reason}"), None),
             Phase::Checked { newer: Some(build), .. } => (
-                format!("New version available: {}", build.version),
+                format!("{}: {}", available(&build), build.version),
                 Some(("Download update now", Choice::Install(build.clone()))),
             ),
             Phase::Checked { newer: None, builds } => match (builds.first(), self.channel) {
@@ -320,7 +348,49 @@ impl Updates {
     }
 }
 
-/// The start panel's line for `phase`.
+/// What was chosen in the bar over an open project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BarChoice {
+    /// *Later*, on the offer of this version.
+    Later(String),
+    /// *What's new*.
+    Page(String),
+    /// The line's own button: *Download update now*, *Restart now* or *Try again*.
+    Button,
+}
+
+/// Draws the bar over an open project for `phase` in `rect`.
+fn bar_line(ui: &Ui, rect: Rect, phase: Phase) -> Option<BarChoice> {
+    let offered = match &phase {
+        Phase::Checked { newer: Some(build), .. } => Some(build.version.clone()),
+        _ => None,
+    };
+    let notice = notice_of(phase)?;
+    let painter = ui.painter_at(rect);
+    painter.fill_background(rect, 0.0, theme::panel_background());
+    let inner = rect.shrink2(Vec2::new(PAD, 6.0));
+    let later = Rect::from_min_size(Pos2::new(inner.right() - BUTTON.x, inner.center().y - BUTTON.y / 2.0), BUTTON);
+    let line = match &offered {
+        Some(_) => Rect::from_min_max(inner.min, Pos2::new(later.left() - PAD, inner.bottom())),
+        None => inner,
+    };
+    if let Some(version) = offered
+        && button(ui, &painter, later, "Later", "Hide the update offer")
+    {
+        return Some(BarChoice::Later(version));
+    }
+    match start_panel::notice_line(ui, &painter, line, &notice)? {
+        StartChoice::UpdatePage(url) => Some(BarChoice::Page(url)),
+        _ => Some(BarChoice::Button),
+    }
+}
+
+/// What a newer `build` is called in the line that offers it.
+fn available(build: &Build) -> &'static str {
+    if build.pr.is_some() { "New test build available" } else { "New nightly available" }
+}
+
+/// The start panel's line (and the bar over an open project) for `phase`.
 fn notice_of(phase: Phase) -> Option<Notice> {
     let name = |b: &Build| match b.pr {
         Some(pr) => format!("the test build of #{pr} ({})", b.version),
@@ -328,7 +398,7 @@ fn notice_of(phase: Phase) -> Option<Notice> {
     };
     Some(match phase {
         Phase::Checked { newer: Some(build), .. } => Notice {
-            text: format!("New version available: {}", name(&build)),
+            text: format!("{}: {}", available(&build), name(&build)),
             button: Some("Download update now"),
             progress: None,
             error: false,
