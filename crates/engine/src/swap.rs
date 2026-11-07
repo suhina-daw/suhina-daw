@@ -505,7 +505,8 @@ impl Renderer {
         }
         // The unchanged clips' rings go on in the new graph (#743); the others start afresh,
         // moved to where the playhead was expected.
-        self.graph.ahead.adopt_from(&mut old.ahead);
+        let shift = i64::try_from(time).unwrap_or(i64::MAX).saturating_sub(i64::try_from(old_time).unwrap_or(i64::MAX));
+        self.graph.ahead.adopt_from(&mut old.ahead, shift);
         self.underruns_before += old.ahead.underruns();
         if self.transport.running {
             // A swap a few frames off where it was expected keeps the voices rendered for it: the

@@ -574,7 +574,11 @@ impl AheadReader {
     /// A voice of a clip that changed how it plays (its tempo, its transpose) cannot be handed
     /// over: its new voice plays from another place of the clip. It fades in over the old one's
     /// ring instead, which plays on alone until the new voice's frames arrive.
-    pub(crate) fn adopt_from(&mut self, before: &mut AheadReader) {
+    ///
+    /// `shift` is how far the new graph's arrangement frames are from the old one's at the swap
+    /// (the new playhead frame less the old): a tempo change moves every frame after the beat
+    /// that plays, and a fade from an old voice reads its ring at the old frames moved by it.
+    pub(crate) fn adopt_from(&mut self, before: &mut AheadReader, shift: i64) {
         let mut fresh = false;
         for (index, (reader, slot)) in self.readers.iter_mut().zip(&self.shared.adopted).enumerate() {
             let ring = match slot.compare_exchange(0, CLOSED, Ordering::AcqRel, Ordering::Acquire) {
@@ -617,7 +621,7 @@ impl AheadReader {
             }
         }
         if fresh {
-            self.fade_from(before);
+            self.fade_from(before, shift);
         }
         // A clip that played from its twin goes on there only when that ring came along too.
         for index in 0..self.readers.len() {
@@ -638,7 +642,9 @@ impl AheadReader {
 
     /// Starts the fades of [`AheadReader::adopt_from`]: each voice that starts afresh takes the
     /// ring of the old voice of its clip, when that one was playing where it should be.
-    fn fade_from(&mut self, before: &mut AheadReader) {
+    fn fade_from(&mut self, before: &mut AheadReader, shift: i64) {
+        // An old frame as the new graph counts it.
+        let moved = |frame: u64| frame.saturating_add_signed(shift);
         let settled = before.shared.drained.load(Ordering::Acquire) == before.shared.requested.load(Ordering::Acquire);
         if !settled {
             return;
@@ -657,10 +663,13 @@ impl AheadReader {
             // A voice still waiting for its own frames: the sound heard is the one it fades from.
             if old.fade_left > 0 && !old.fade_started {
                 std::mem::swap(&mut reader.fade, &mut old.fade);
-                reader.fade_next = old.fade_next;
+                reader.fade_next = moved(old.fade_next);
             } else {
                 std::mem::swap(&mut reader.fade, &mut old.consumer);
-                reader.fade_next = old.start.saturating_add(old.next);
+                // Its ring holds the frames from here on, counted from the old graph's frames: a
+                // tempo change (120 to 90 BPM moves a beat's frame a third later) made the fade
+                // skip frames of the old sound at the swap, a click.
+                reader.fade_next = moved(old.start.saturating_add(old.next));
             }
             reader.fade_left = self.fade_frames;
             reader.fade_started = false;
@@ -1108,7 +1117,7 @@ mod handover_tests {
             old.shared.jumps[0].requested.store(1, Ordering::Release);
             old.readers[0].jumping = Some(1);
         }
-        new.adopt_from(&mut old);
+        new.adopt_from(&mut old, 0);
         new
     }
 
@@ -1142,7 +1151,7 @@ mod handover_tests {
         old.readers[0].jumping = Some(1);
         new_worker.adopt_from(&mut old_worker);
         assert_ne!(new.shared.adopted[0].load(Ordering::Acquire), 0, "handed over");
-        new.adopt_from(&mut old);
+        new.adopt_from(&mut old, 0);
         assert_eq!(new.readers[0].jumping, Some(1), "the jump is asked for again");
         assert_eq!(new.shared.jumps[0].to.load(Ordering::Acquire), 30_000);
     }

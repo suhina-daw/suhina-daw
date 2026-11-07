@@ -1757,6 +1757,29 @@ fn a_stretched_clip_changes_its_tempo_while_playing_without_a_click() {
     }
 }
 
+/// The project's tempo changed from 100 to 90 BPM while a stretched clip plays: its voice for the
+/// new tempo takes over without a click.
+#[test]
+fn a_project_tempo_change_under_a_stretched_clip_does_not_click() {
+    for mode in [StretchMode::Smooth, StretchMode::HighQuality] {
+        // The clip's audio is at 120 BPM: stretched at 100 and at 90 alike.
+        let (project, pool) = stretched_project(440.0, 4.0, 8.0, 100.0, mode);
+        let mut slower = project.clone();
+        slower.transport.tempo_bpm = 90.0;
+        let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+        let mut controller = renderer.controller();
+        let mut worker = renderer.take_stretch_worker().unwrap();
+        renderer.handle(LaunchCommand::Play);
+        let mut fill = |_| worker.fill();
+        let mut out = blocks(&mut renderer, 50, 480, &mut fill);
+        let clean = largest_bend(&out, 12_000, 24_000);
+        controller.update(&slower).unwrap();
+        out.extend(blocks(&mut renderer, 60, 480, &mut fill));
+        let step = largest_bend(&out, 24_000, out.len() / 2);
+        assert!(step <= clean * 3.0, "{mode:?}: a bend of {step}, before {clean}");
+    }
+}
+
 /// A clip dragged from the project's tempo (read from the file directly) to another (stretched),
 /// and back, while it plays: the sound fades from one way of playing to the other, no click.
 #[test]
