@@ -1396,12 +1396,14 @@ pub(super) fn paint_clip(
     );
     // A looping clip's passes are marked by the notches and lines at their starts (below), not by
     // shades: the body is one colour all along.
-    // The grid shows through the body, faintly, the bars a little stronger.
+    // The grid shows through the body, under the waveform, the bars stronger: at 3.5 % and 7 % of
+    // the clip's ink it was lost on a full clip, and placing an envelope point or an edit by eye
+    // against the lanes' grid was guesswork.
     let lines = &look.grid;
     if !lines.is_empty() {
         let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
         let span = egui::Rangef::new(below, rect.bottom());
-        let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.035), motion::mix(body, ink, 0.07));
+        let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.1), motion::mix(body, ink, 0.2));
         for &(x, on_bar) in lines.iter().filter(|(x, _)| *x > rect.left() + 1.0 && *x < rect.right() - 1.0) {
             painter.vline(x, span, theme::hairline(if on_bar { bar_ink } else { beat_ink }));
         }

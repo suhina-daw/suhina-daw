@@ -198,8 +198,9 @@ play start where it was clicked, on the grid (Alt: free), as a click on an empty
 does; a thin line (the insert marker) shows it in that lane while the play start is there, also
 while the transport plays and the playhead moves on. A clip picked this way is not lit but
 outlined, so the clip the detail area shows and Delete takes is plain to see; a clip picked whole
-is lit. The grid's lines show through a clip's body, faintly in its own colour,
-the bars a little stronger (Settings › Arrangement › *Grid in clips*, `clip_grid = on | off`,
+is lit. The grid's lines show through a clip's body in its own colour, under the waveform: a
+tenth of the way from the body to its ink between beats, a fifth on the bars, enough to place an
+edit or an envelope point by eye against the lanes' grid (Settings › Arrangement › *Grid in clips*, `clip_grid = on | off`,
 on by default). With *Ctrl+drag selects time
 over clips* on, a plain drag moves clips and Ctrl paints time.
 Ctrl (Cmd) held as the drag begins copies the clips instead (Shift when Ctrl selects time):
