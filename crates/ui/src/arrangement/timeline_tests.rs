@@ -18,7 +18,29 @@ fn the_ruler_marks_tempo_and_time_signature_changes() {
     // Bar 5 (counted from 1) starts on beat 16, where the tempo changes too.
     assert_eq!(marks, [(16.0, "140 bpm  7/8"), (32.0, "→ 97.5 bpm")]);
     assert_eq!(timeline.meter.bar_start(5), 19.5);
+    // The shared mark is the signature change's, so a drag of it moves the change.
+    let bars: Vec<Option<u32>> = timeline.marks.iter().map(|m| m.signature_bar).collect();
+    assert_eq!(bars, [Some(4), None]);
     assert!(Timeline::build(&demo_project(), None).marks.is_empty());
+}
+
+/// The ruler's menu and a dragged signature change go to the nearest bar line (#1259, #1264).
+#[test]
+fn the_nearest_bar_line_counts_through_the_signature_changes() {
+    use suhina_engine::model::{TimeSignature, TimeSignatureChange};
+    let three = TimeSignature { numerator: 3, denominator: 4 };
+    let four = TimeSignature { numerator: 4, denominator: 4 };
+    // Two bars of 4/4, then 3/4 from bar 2 (counted from 0), beat 8.
+    let meter = Meter::new(four, &[TimeSignatureChange { bar: 2, time_signature: three }]);
+    assert_eq!(bar_line_near(&meter, 0.0), (0, four, false));
+    assert_eq!(bar_line_near(&meter, 1.9), (0, four, false));
+    assert_eq!(bar_line_near(&meter, 2.1), (1, four, false));
+    assert_eq!(bar_line_near(&meter, 7.0), (2, three, true));
+    // A 3/4 bar is 3 beats: beat 9.4 is nearer bar 2's line (beat 8), 9.6 nearer bar 3's (11).
+    assert_eq!(bar_line_near(&meter, 9.4), (2, three, true));
+    assert_eq!(bar_line_near(&meter, 9.6), (3, three, false));
+    assert_eq!(bar_line_near(&meter, -5.0), (0, four, false));
+    assert_eq!(bar_line_near(&meter, f64::NAN), (0, four, false));
 }
 
 #[test]

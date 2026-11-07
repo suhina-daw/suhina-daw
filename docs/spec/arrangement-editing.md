@@ -690,7 +690,9 @@ that marker to the next one and turns looping on (`transport.setLoop {start, end
 so a section loops with one click; the last marker only jumps. Dragging it moves it (`marker.move` when let go) on the same grid a
 ruler click uses (Alt held: free). A right-click on a marker opens its menu: a field with its name
 and **Rename** (or Enter), **Jump to marker**, **Delete marker**. A right-click on the ruler or on
-an empty part of the marker row offers **Add marker here**, on that grid. The key **M** (the action
+an empty part of the marker row offers **Add marker here**, on that grid, and **Time signature
+from bar N** for the bar line nearest the click ([tempo map](tempo-map.md#editing-in-the-window)).
+The key **M** (the action
 `marker.addAtPlayhead`, in the keymap) adds a marker where the playhead is while playing, and at the
 play start marker while stopped.
 

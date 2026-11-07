@@ -336,17 +336,7 @@ impl App {
                 ui.ctx().data_mut(|d| d.insert_temp(Id::unique("sampler-tempo"), grid.tempo_bpm));
                 self.tempo_field(ui, &painter, rect, grid.tempo_bpm, false, actions);
             }
-            "signature" => {
-                let ts = grid.time_signature();
-                widgets::text_in(
-                    &painter,
-                    rect,
-                    Align2::CENTER_CENTER,
-                    &format!("{} / {}", ts.numerator, ts.denominator),
-                    theme::mono_font(theme::TEXT),
-                    theme::text_secondary(),
-                );
-            }
+            "signature" => super::control_bar::signature_field(ui, &painter, rect, grid, false, actions),
             "grid" => {
                 let (caption, rect) = captioned(rect, 26.0);
                 widgets::text_in(

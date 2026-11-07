@@ -105,6 +105,35 @@ fn time_signature_changes_are_added_moved_and_deleted() {
     assert_eq!(listed["tempo"]["points"], json!([]));
 }
 
+/// The song's first signature (#1259, #1264): set as one undo step, saved with the project, and
+/// the changes keep their bars, so their beats follow the new bar length.
+#[test]
+fn the_start_signature_is_set_and_undone() {
+    let mut session = Session::new(Project::default());
+    run(&mut session, "timeSignature.add", json!({ "bar": 3, "numerator": 4, "denominator": 4 })).unwrap();
+    let listed = run(&mut session, "transport.setTimeSignature", json!({ "numerator": 6, "denominator": 8 })).unwrap();
+    assert_eq!(listed, json!({ "start": "6/8", "changes": [{ "bar": 3, "time_signature": "4/4" }] }));
+    let t = &session.project().transport;
+    assert_eq!(t.time_signature, TimeSignature { numerator: 6, denominator: 8 });
+    // Two bars of 6/8 are 6 beats, so the change at bar 3 starts on beat 6.
+    assert_eq!(t.meter().bar_start(2), 6.0);
+    for (numerator, denominator) in [(15, 16), (3, 4), (99, 1)] {
+        let params = json!({ "numerator": numerator, "denominator": denominator });
+        run(&mut session, "transport.setTimeSignature", params).unwrap();
+        assert_eq!(session.project().transport.time_signature, TimeSignature { numerator, denominator });
+    }
+    let text = suhina_project_file::to_json(session.project());
+    let read = suhina_project_file::from_json(&text).unwrap();
+    assert_eq!(read.transport.time_signature, TimeSignature { numerator: 99, denominator: 1 });
+    for _ in 0..4 {
+        run(&mut session, "edit.undo", json!({})).unwrap();
+    }
+    assert_eq!(session.project().transport.time_signature, TimeSignature { numerator: 4, denominator: 4 });
+    assert_eq!(bars(&session), [(2, 4, 4)]);
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert_eq!(session.project().transport.time_signature, TimeSignature { numerator: 6, denominator: 8 });
+}
+
 #[test]
 fn malformed_params_are_errors_that_change_nothing() {
     let mut start = Project::default();
@@ -147,6 +176,17 @@ fn malformed_params_are_errors_that_change_nothing() {
         ("timeSignature.move", json!({ "bar": 5, "denominator": 32 })),
         ("timeSignature.delete", json!({ "bar": 6 })),
         ("timeSignature.delete", json!({ "bar": "five" })),
+        ("transport.setTimeSignature", json!({ "numerator": 0, "denominator": 4 })),
+        ("transport.setTimeSignature", json!({ "numerator": 100, "denominator": 4 })),
+        ("transport.setTimeSignature", json!({ "numerator": 3, "denominator": 3 })),
+        ("transport.setTimeSignature", json!({ "numerator": 3, "denominator": 32 })),
+        ("transport.setTimeSignature", json!({ "numerator": 3, "denominator": 300 })),
+        ("transport.setTimeSignature", json!({ "numerator": -3, "denominator": 4 })),
+        ("transport.setTimeSignature", json!({ "numerator": 3.5, "denominator": 4 })),
+        ("transport.setTimeSignature", json!({ "numerator": "6", "denominator": 8 })),
+        ("transport.setTimeSignature", json!({ "numerator": 6 })),
+        ("transport.setTimeSignature", json!({ "denominator": 8 })),
+        ("transport.setTimeSignature", json!({})),
     ];
     for (id, params) in bad {
         let mut session = Session::new(start.clone());

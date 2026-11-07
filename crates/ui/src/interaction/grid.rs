@@ -470,6 +470,23 @@ impl TrackGrid {
         }
     }
 
+    /// The bar (counted from 1) the project's signature at the playhead starts from: 1 for the
+    /// start signature, the bar of the last change before the playhead otherwise. The control
+    /// bar's signature field edits the signature from there.
+    pub fn signature_bar(&self) -> u32 {
+        self.project_meter
+            .changes()
+            .take_while(|(_, beat, _)| *beat <= self.beat)
+            .last()
+            .map_or(1, |(bar, _, _)| bar.saturating_add(1))
+    }
+
+    /// The project's signature from [`Self::signature_bar`], what the field edits; it differs
+    /// from [`Self::time_signature`] while a launched scene's signature plays.
+    pub fn project_time_signature(&self) -> TimeSignature {
+        self.project_meter.position(self.beat).time_signature
+    }
+
     /// The keys and notes mapped to `target`, as the mapping mode shows them.
     pub fn mapped_to(&self, target: MappingTarget) -> Option<&str> {
         self.mapped.iter().find(|(t, _)| *t == target).map(|(_, label)| label.as_str())
@@ -565,5 +582,10 @@ mod tests {
         let changing = TrackGrid { beat: 8.5, project_meter: meter, ..TrackGrid::default() };
         assert_eq!(changing.position(), "3.2.3");
         assert_eq!(changing.time_signature(), TimeSignature { numerator: 3, denominator: 4 });
+        // The 3/4 starts at bar 2 (beat 4); before it the start signature, from bar 1.
+        assert_eq!(changing.signature_bar(), 2);
+        let before = TrackGrid { beat: 3.5, ..changing.clone() };
+        assert_eq!(before.signature_bar(), 1);
+        assert_eq!(before.project_time_signature(), TimeSignature { numerator: 4, denominator: 4 });
     }
 }

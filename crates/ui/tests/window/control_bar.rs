@@ -278,3 +278,57 @@ fn ctrl_k_turns_the_computer_keyboard_on_and_x_raises_its_octave() {
     harness.run();
     assert!(harness.query_by_label("Computer keyboard").is_some(), "a click turns it off");
 }
+
+/// The project's start signature, as numerator and denominator.
+fn start_signature(harness: &Harness<'static, App>) -> Option<(u8, u8)> {
+    harness.state().session().map(|s| {
+        let ts = s.project().transport.time_signature;
+        (ts.numerator, ts.denominator)
+    })
+}
+
+/// A click on the control bar's time signature opens its menu: a picked signature and a typed
+/// one set the song's, each one undo step (#1259, #1264).
+#[test]
+fn the_control_bar_sets_the_time_signature() {
+    let mut harness = window(demo_app());
+    assert_eq!(start_signature(&harness), Some((4, 4)));
+    harness.get_by_label("Time signature").click();
+    harness.run();
+    harness.get_by_label("6/8").click();
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((6, 8)));
+    assert!(harness.query_by_label("Type a time signature").is_none(), "a pick closes the menu");
+
+    // A right-click opens the same menu; any signature is typed, applied with Enter.
+    harness.get_by_label("Time signature").click_secondary();
+    harness.run();
+    harness.get_by_label("Type a time signature").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.get_by_label("Type a time signature").type_text("15/16");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((15, 16)));
+
+    // Not a signature: the command refuses it and nothing changes.
+    harness.get_by_label("Time signature").click();
+    harness.run();
+    harness.get_by_label("Type a time signature").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.get_by_label("Type a time signature").type_text("7/5");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((15, 16)));
+    assert!(matches!(harness.state().status(), Status::Error(_)), "{:?}", harness.state().status());
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((6, 8)));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((4, 4)));
+}

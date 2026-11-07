@@ -93,21 +93,12 @@ impl App {
         let tempo_rect = native_styles.place(ui, "tempo", tempo_rect);
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("sampler-tempo"), grid.tempo_bpm));
         self.tempo_field(ui, &painter, tempo_rect, grid.tempo_bpm, true, actions);
-        // The time signature playing, like the tempo: a launched scene may have changed it.
-        let ts = grid.time_signature();
-        let signature =
-            if self.session().is_some() { format!("{} / {}", ts.numerator, ts.denominator) } else { String::new() };
         let ts_rect = row(x, 40.0);
         x = ts_rect.right() + PAD;
         let ts_rect = native_styles.place(ui, "signature", ts_rect);
-        widgets::text_in(
-            &painter,
-            ts_rect,
-            Align2::CENTER_CENTER,
-            &signature,
-            theme::mono_font(theme::TEXT),
-            theme::text_secondary(),
-        );
+        if self.session().is_some() {
+            signature_field(ui, &painter, ts_rect, grid, true, actions);
+        }
         // The computer keyboard: lit while its keys play notes, with the octave of A (#944).
         let keys_rect = row(x, 44.0);
         let label = if self.typing.on {
@@ -620,6 +611,54 @@ impl App {
             Drag::None => {}
         }
     }
+}
+
+/// The time signature in the control bar: the one playing, like the tempo (a launched scene may
+/// have changed it). A click or a right-click opens
+/// [`crate::interaction::menus::time_signature_menu`] for the project's signature at the playhead,
+/// from the bar it starts at (`docs/spec/tempo-map.md` ›
+/// Editing in the window, #1259, #1264).
+pub(super) fn signature_field(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    grid: &TrackGrid,
+    native: bool,
+    actions: &mut Vec<Action>,
+) {
+    let ts = grid.time_signature();
+    let bar = grid.signature_bar();
+    let response =
+        widgets::button_area(ui, rect, Id::unique("time-signature"), "Time signature").on_hover_text(if bar <= 1 {
+            "Time signature: click to change the song's".to_string()
+        } else {
+            format!("Time signature from bar {bar}: click to change it")
+        });
+    if native {
+        crate::kit::native_css::surface(
+            painter,
+            rect,
+            0.0,
+            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+        );
+    }
+    widgets::text_in(
+        painter,
+        rect,
+        Align2::CENTER_CENTER,
+        &format!("{} / {}", ts.numerator, ts.denominator),
+        theme::mono_font(theme::TEXT),
+        if native { theme::text_primary() } else { theme::text_secondary() },
+    );
+    let current = grid.project_time_signature();
+    egui::Popup::menu(&response)
+        .id(response.id.with("menu"))
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| crate::interaction::menus::time_signature_menu(ui, bar, current, actions));
+    egui::Popup::context_menu(&response)
+        .id(response.id.with("context"))
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| crate::interaction::menus::time_signature_menu(ui, bar, current, actions));
 }
 
 #[cfg(test)]

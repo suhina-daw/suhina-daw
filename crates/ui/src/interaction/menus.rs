@@ -589,14 +589,81 @@ pub fn scene_field_action(field: &str, scene: usize, text: &str) -> Option<Actio
         }
         "signature" if text.is_empty() => Some(Action::new("scene.setTimeSignature", json!({ "scene": scene }))),
         "signature" => {
-            let (numerator, denominator) = text.split_once('/').unwrap_or((text, ""));
-            let part = |p: &str| p.trim().parse::<u64>().map_or_else(|_| json!(p.trim()), |n| json!(n));
+            let (numerator, denominator) = signature_parts(text);
             Some(Action::new(
                 "scene.setTimeSignature",
-                json!({ "scene": scene, "numerator": part(numerator), "denominator": part(denominator) }),
+                json!({ "scene": scene, "numerator": numerator, "denominator": denominator }),
             ))
         }
         _ => None,
+    }
+}
+
+/// The signatures a time-signature menu offers to pick (`docs/spec/tempo-map.md` › Editing in
+/// the window); any other is typed.
+pub const TIME_SIGNATURES: [(u8, u8); 9] = [(2, 4), (3, 4), (4, 4), (5, 4), (6, 8), (7, 8), (9, 8), (12, 8), (15, 16)];
+
+/// Text such as `6/8` as the numerator and denominator a command takes. A part that is not a
+/// whole number is sent as the text it is, so the command says what is wrong with it.
+fn signature_parts(text: &str) -> (serde_json::Value, serde_json::Value) {
+    let (numerator, denominator) = text.trim().split_once('/').unwrap_or((text.trim(), ""));
+    let part = |p: &str| p.trim().parse::<u64>().map_or_else(|_| json!(p.trim()), |n| json!(n));
+    (part(numerator), part(denominator))
+}
+
+/// The command that sets the time signature from `bar` (counted from 1, as shown): the song's
+/// start signature at bar 1, a change at any later bar (one already there is replaced).
+pub fn time_signature_action(bar: u32, numerator: serde_json::Value, denominator: serde_json::Value) -> Action {
+    if bar <= 1 {
+        Action::new("transport.setTimeSignature", json!({ "numerator": numerator, "denominator": denominator }))
+    } else {
+        Action::new("timeSignature.add", json!({ "bar": bar, "numerator": numerator, "denominator": denominator }))
+    }
+}
+
+/// [`time_signature_action`] from typed text such as `15/16`; `None` for empty text.
+pub fn typed_time_signature_action(bar: u32, text: &str) -> Option<Action> {
+    if text.trim().is_empty() {
+        return None;
+    }
+    let (numerator, denominator) = signature_parts(text);
+    Some(time_signature_action(bar, numerator, denominator))
+}
+
+/// A time-signature menu for the signature from `bar` (counted from 1): a field that takes any
+/// signature (Enter applies it) and the common ones, `current` ticked. Each choice is one
+/// command and one undo step.
+pub fn time_signature_menu(ui: &mut Ui, bar: u32, current: TimeSignature, actions: &mut Vec<Action>) {
+    ui.set_min_width(160.0);
+    // Keyed by the signature too, so text left in a menu closed without Enter is not shown
+    // once the signature has changed.
+    let id = Id::unique(("time-signature-field", bar, current.numerator, current.denominator));
+    let shown = format!("{}/{}", current.numerator, current.denominator);
+    let mut text = ui.data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| shown.clone());
+    let response = crate::kit::widgets::text_input(
+        ui,
+        egui::TextEdit::singleline(&mut text).hint_text("Such as 6/8").desired_width(f32::INFINITY),
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Type a time signature"));
+    if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+        if text.trim() != shown {
+            actions.extend(typed_time_signature_action(bar, &text));
+        }
+        ui.data_mut(|d| d.remove::<String>(id));
+        ui.close();
+        return;
+    }
+    ui.data_mut(|d| d.insert_temp(id, text));
+    ui.separator();
+    for (numerator, denominator) in TIME_SIGNATURES {
+        let on = current.numerator == numerator && current.denominator == denominator;
+        if ui.selectable_label(on, format!("{numerator}/{denominator}")).clicked() {
+            if !on {
+                actions.push(time_signature_action(bar, json!(numerator), json!(denominator)));
+            }
+            ui.data_mut(|d| d.remove::<String>(id));
+            ui.close();
+        }
     }
 }
 
@@ -750,5 +817,30 @@ mod tests {
         // Not a number: sent as text, so the command's error says what is wrong.
         assert_eq!(action("tempo", "fast"), Some(("scene.setTempo", json!({ "scene": 2, "bpm": "fast" }))));
         assert_eq!(action("colour", "red"), None);
+    }
+
+    /// A time signature from a menu: the start signature at bar 1, a change at a later bar
+    /// (#1259, #1264); typed text that is not a signature goes to the command as it is.
+    #[test]
+    fn a_time_signature_becomes_the_command_for_its_bar() {
+        let typed = |bar, text| typed_time_signature_action(bar, text).map(|a| (a.id, a.params));
+        assert_eq!(
+            typed(1, " 6/8 "),
+            Some(("transport.setTimeSignature", json!({ "numerator": 6, "denominator": 8 })))
+        );
+        assert_eq!(
+            typed(5, "15 / 16"),
+            Some(("timeSignature.add", json!({ "bar": 5, "numerator": 15, "denominator": 16 })))
+        );
+        assert_eq!(
+            typed(1, "waltz"),
+            Some(("transport.setTimeSignature", json!({ "numerator": "waltz", "denominator": "" })))
+        );
+        assert_eq!(typed(3, "  "), None);
+        let picked = time_signature_action(0, json!(3), json!(4));
+        assert_eq!(
+            (picked.id, picked.params),
+            ("transport.setTimeSignature", json!({ "numerator": 3, "denominator": 4 }))
+        );
     }
 }
