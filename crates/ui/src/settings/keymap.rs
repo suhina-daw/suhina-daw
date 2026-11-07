@@ -110,7 +110,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 87] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 89] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -118,6 +118,8 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 87] = [
     ("file.saveTemplate", "Save the project as a template", "File"),
     ("transport.toggle", "Play or stop", "Transport"),
     ("view.computerKeyboard", "Play notes from the computer keyboard, or stop", "Transport"),
+    ("transport.toggleRecord", "Record into the arrangement, or stop recording", "Transport"),
+    ("selection.arm", "Arm the selected tracks for recording, or disarm them", "Tracks"),
     ("view.toggle", "Switch between Launcher and Arrangement", "View"),
     ("view.session", "Show the Launcher view", "View"),
     ("view.arrangement", "Show the Arrangement view", "View"),
@@ -454,7 +456,7 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 88] = [
+const DEFAULTS: [(&str, &[&str]); 89] = [
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
@@ -465,6 +467,7 @@ const DEFAULTS: [(&str, &[&str]); 88] = [
     ("file.saveAs", &["Ctrl+Shift+S"]),
     ("transport.toggle", &["Space"]),
     ("view.computerKeyboard", &["Ctrl+K"]),
+    ("transport.toggleRecord", &["F9"]),
     ("view.toggle", &["Tab"]),
     ("view.detail", &["Shift+Tab"]),
     ("view.editor", &["Ctrl+Shift+E"]),

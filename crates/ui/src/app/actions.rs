@@ -795,6 +795,13 @@ impl App {
                 self.view.selected_tracks.clear();
             }
             "view.computerKeyboard" => self.toggle_typing_keys(),
+            // As the control bar's record button: start recording every armed track into the
+            // arrangement, or end every take.
+            "transport.toggleRecord" => {
+                let recording = self.session().is_some_and(Session::records_arrangement);
+                actions.push(Action::new("transport.record", json!({ "on": !recording })));
+            }
+            "selection.arm" => self.arm_selected(actions),
             // The Arrangement's tool keys, while its toolbar shows (#991).
             id if let Some(grid) = crate::arrangement::arrangement_view::grid_key(id, self.arrangement.grid) => {
                 self.arrangement.grid = grid;
@@ -1057,12 +1064,7 @@ impl App {
             // Not seen yet: once the take ends, the track selected then is armed.
             return;
         }
-        let p = session.project();
-        let takes_input = p.track(track).is_some_and(|t| {
-            let role = p.channels.iter().find(|c| Some(c.id) == t.channel).map(|c| c.role);
-            (t.content.notes || t.content.audio)
-                && matches!(role, None | Some(suhina_engine::model::ChannelRole::Regular))
-        });
+        let takes_input = takes_input(session.project(), track);
         let already = session.is_armed(track);
         self.auto_arm.seen = seen;
         if !takes_input {
@@ -1221,6 +1223,43 @@ impl App {
         self.view.reveal = Some(first);
     }
 
+    /// The arm key (`selection.arm`): arms the selected tracks that record notes or audio, or
+    /// disarms them when every one is armed. Arming disarms the other tracks, as a click on an
+    /// arm button does, so the selection is what records; select a MIDI and an audio track to
+    /// record both. With no track selected, the track of the selected clip.
+    fn arm_selected(&mut self, actions: &mut Vec<Action>) {
+        let mut selected: Vec<TrackId> = match self.shown {
+            View::Session => self.view.header_tracks(),
+            View::Arrangement => self.arrangement.selected_tracks.clone(),
+        };
+        if selected.is_empty() {
+            let clip = match self.shown {
+                View::Session => self.view.selected_slot.map(|(track, _)| track),
+                View::Arrangement => self.arrangement.selected_clip().map(|(track, _)| track),
+            };
+            selected.extend(clip);
+        }
+        let Some(session) = self.session() else { return };
+        let project = session.project();
+        let tracks: Vec<TrackId> = project
+            .tracks
+            .iter()
+            .map(|t| t.id)
+            .filter(|id| selected.contains(id) && takes_input(project, *id))
+            .collect();
+        let arm = !tracks.iter().all(|track| session.is_armed(*track));
+        if tracks.is_empty() {
+            self.status = Status::Hint("Select a MIDI or audio track to arm".into());
+            return;
+        }
+        for (i, track) in tracks.iter().enumerate() {
+            actions.push(Action::new(
+                "track.setArm",
+                json!({ "track": track.0, "armed": arm, "exclusive": arm && i == 0 }),
+            ));
+        }
+    }
+
     /// The track selected in the view shown.
     pub(super) fn selected_track(&self) -> Option<TrackId> {
         match self.shown {
@@ -1325,6 +1364,15 @@ pub(super) fn describe(action: &Action) -> Option<String> {
 /// The track to select once `removed` are deleted: the first track after the last of them that
 /// stays, or the last one before them when nothing stays after; returns and Main are left out
 /// (#918).
+/// Whether `track` records what it hears: it plays notes or audio and is a regular track, not a
+/// return, the main track or a group.
+fn takes_input(project: &suhina_engine::model::Project, track: TrackId) -> bool {
+    project.track(track).is_some_and(|t| {
+        let role = project.channels.iter().find(|c| Some(c.id) == t.channel).map(|c| c.role);
+        (t.content.notes || t.content.audio) && matches!(role, None | Some(suhina_engine::model::ChannelRole::Regular))
+    })
+}
+
 pub(super) fn track_after_removing(project: &suhina_engine::model::Project, removed: &[TrackId]) -> Option<TrackId> {
     let numbered: Vec<TrackId> =
         project.tracks.iter().map(|t| t.id).filter(|id| project.track_number(*id).is_some()).collect();
