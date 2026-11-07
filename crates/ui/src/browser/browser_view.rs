@@ -1820,12 +1820,21 @@ fn tags_section(
     // takes it in at the end, a row takes it before itself, no row is the top level's end
     // ([#1254] › Tag folders). A release over the results' rows is the item drop instead:
     // the app's own `tag_drag` carries it there (drops.rs), so the sidebar stands down.
-    if ui.input(|i| i.pointer.primary_released()) && state.drag_tag_id.is_some() && state.drop_item.is_none() {
+    // The landing reads the pointer's upness, not the one released frame: a frame that
+    // skipped the event still ends the drag ([#1254] review). Either way — the carry ends
+    // on the frame the pointer comes up; nothing fires twice.
+    let up = !ui.input(|i| i.pointer.primary_down());
+    if up && state.drag_tag_id.is_some() && state.drop_item.is_none() {
         if let Some(carried) = state.drag_tag_id {
+            let carried_name = state.drag_tag.take().unwrap_or_default();
             let target: Option<u32> = state.drop_tag_row.filter(|id| *id != carried);
             // The picked ones move with the carried tag, in the pick's order — into a
-            // folder, or up to the top ([#1254] review). A drop before a row repositions
-            // only the carried one; the pick lifts itself here, never mid-position.
+            // folder, or up to the top ([#1254] review). A drop before a row
+            // repositions only the carried one; the pick lifts itself here, never
+            // mid-position.
+            let folder_of = |target: u32| -> Option<String> {
+                rows.iter().find(|r| r.entry.id() == target).map(|r| r.entry.name().to_string())
+            };
             let filing = target.is_none() || matches!(target, Some(target) if folder_row_is_folder(&rows, target));
             let carrying = if filing {
                 let mut all = state.tag_selection.clone();
@@ -1836,11 +1845,14 @@ fn tags_section(
             } else {
                 vec![carried]
             };
+            let mut landed = 0;
+            let mut landing = String::new();
             for entry_id in carrying {
                 let mut params = json!({ "id": format!("#{entry_id}") });
-                match target {
+                let did = match target {
                     Some(target) if folder_row_is_folder(&rows, target) => {
                         params["folder"] = json!(format!("#{target}"));
+                        format!("Moved {} into {}", carried_name, folder_of(target).unwrap_or_default())
                     }
                     Some(target) if !filing => {
                         let others = projects.file_library_mut().tags();
@@ -1850,19 +1862,28 @@ fn tags_section(
                             }
                             params["position"] = json!(t_at);
                         }
+                        format!("Moved {} before {}", carried_name, folder_of(target).unwrap_or_default())
                     }
-                    _ => {}
-                }
-                if !run(projects, "library.moveTag", params, out) {
+                    _ => format!("Moved {} to the top of the tags", carried_name),
+                };
+                if run(projects, "library.moveTag", params, out) {
+                    landed += 1;
+                    landing = did;
+                } else {
                     break;
                 }
             }
+            match landed {
+                0 => {}
+                1 => out.status = Some(Status::Done(landing)),
+                n => out.status = Some(Status::Done(format!("Moved {n} tags together"))),
+            }
             state.tag_selection.clear();
-            state.drag_tag = None;
-            state.drag_tag_id = None;
             state.relist();
         }
         state.drag_tag_id = None;
+        // Else (drop_item is Some): the results' item drop is the app pass's `tag_drag` —
+        // it takes the carry state and ends it itself (drops.rs).
     }
     // No row is under the carried one: the drop goes to the section's top ([#1254] › Tag
     // folders), and the pill says it.
