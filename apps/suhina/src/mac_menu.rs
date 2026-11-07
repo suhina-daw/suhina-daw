@@ -11,6 +11,9 @@
 use std::sync::{Arc, Mutex};
 
 use muda::{IsMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+use objc2::MainThreadMarker;
+use objc2_app_kit::{NSAppearance, NSApplication};
+use objc2_foundation::NSString;
 use suhina_ui::app::menus::{self, Entry};
 
 /// The installed menu bar, and which system item runs which of the window's items.
@@ -24,6 +27,8 @@ pub struct MacMenu {
     items: Vec<(MenuId, String)>,
     /// The items picked and not taken yet: the menu's handler fills it from AppKit's thread.
     picked: Arc<Mutex<Vec<MenuId>>>,
+    /// The appearance last given to the application: whether it is light.
+    light: Option<bool>,
 }
 
 enum Line {
@@ -69,7 +74,7 @@ fn build(menus: &[menus::Menu], picked: Arc<Mutex<Vec<MenuId>>>) -> Option<MacMe
         menu.append(&submenu).ok()?;
     }
     menu.init_for_nsapp();
-    Some(MacMenu { _menu: menu, built: menus.to_vec(), lines, items, picked })
+    Some(MacMenu { _menu: menu, built: menus.to_vec(), lines, items, picked, light: None })
 }
 
 fn append(parent: &Submenu, entries: &[Entry], lines: &mut Vec<Line>, items: &mut Vec<(MenuId, String)>) -> Option<()> {
@@ -138,6 +143,19 @@ fn states(menus: &[menus::Menu]) -> Vec<(String, bool)> {
 }
 
 impl MacMenu {
+    /// Gives the application the light or dark appearance of the theme in use. The system's menus
+    /// follow it, not the window's own appearance. The bar across the top of the screen is the
+    /// system's and follows the desktop.
+    pub fn follow_theme(&mut self, light: bool) {
+        if self.light == Some(light) {
+            return;
+        }
+        let Some(thread) = MainThreadMarker::new() else { return };
+        let name = NSString::from_str(if light { "NSAppearanceNameAqua" } else { "NSAppearanceNameDarkAqua" });
+        NSApplication::sharedApplication(thread).setAppearance(NSAppearance::appearanceNamed(&name).as_deref());
+        self.light = Some(light);
+    }
+
     /// Brings the bar in step with `menus`, the window's menus this frame.
     pub fn sync(&mut self, menus: &[menus::Menu]) {
         if self.built == menus {

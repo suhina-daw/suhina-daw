@@ -509,16 +509,16 @@ pub const READOUT_IDS: [&str; 35] = [
 ];
 
 /// Colours a theme sets by name: a drawing in one of these RGB values (its alpha kept) takes the
-/// CSS custom property's colour, or the default when the theme sets none. Displays (a spectrum's
-/// dark ground), a device's series of bands, a highlight (a gain line) and a spectrum follow the
+/// CSS custom property's colour, or the default when the theme sets none. A display's dark ground
+/// and a device's series of colours (its bands, its operators, a gain line, a spectrum) follow the
 /// theme so.
 pub const THEME_TOKENS: [([u8; 3], &str, [u8; 3]); 6] = [
     ([3, 0, 1], "--device-display", [10, 17, 23]),
     ([3, 0, 2], "--device-series-1", [242, 166, 90]),
     ([3, 0, 3], "--device-series-2", [95, 211, 192]),
     ([3, 0, 4], "--device-series-3", [159, 180, 255]),
-    ([3, 0, 5], "--device-highlight", [255, 207, 122]),
-    ([3, 0, 6], "--device-spectrum", [63, 196, 228]),
+    ([3, 0, 5], "--device-series-4", [255, 207, 122]),
+    ([3, 0, 6], "--device-series-5", [63, 196, 228]),
 ];
 
 /// The theme's palette by token, for drawings of controls without a widget (which the SDK does not

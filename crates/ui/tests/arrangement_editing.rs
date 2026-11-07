@@ -123,6 +123,16 @@ fn ctrl_j_consolidates_the_selected_clip_and_undo_brings_it_back() {
 }
 
 #[test]
+fn a_clips_label_counts_bars_through_the_time_signature_changes() {
+    // 3/4 from bar 9 (beat 32): Fill at beat 112 starts in bar 35, not bar 29 as 4/4 throughout.
+    let mut session = Session::new(demo_project());
+    session.execute("timeSignature.add", &serde_json::json!({ "bar": 9, "numerator": 3, "denominator": 4 })).unwrap();
+    let harness = arrangement(session);
+    assert!(harness.query_by_label("Clip Fill on Drums at bar 35").is_some());
+    assert!(harness.query_by_label("Clip Fill on Drums at bar 29").is_none());
+}
+
+#[test]
 fn track_type_is_on_the_name_row_and_does_not_change_the_project() {
     let mut project = demo_project();
     project.tracks[0].content.notes = true;

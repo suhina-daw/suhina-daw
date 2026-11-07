@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-06
+last_verified: 2026-11-07
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -219,6 +219,11 @@ double it), scroll over it a step at a time (×1.25), double-click it for ×1; C
 Ctrl+Alt+Down step it too. It is kept as a setting (Settings › Arrangement › *Waveform zoom*,
 `waveform_zoom`, the factor).
 
+**Swing.** On the same lower line of the corner, opposite the waveform zoom, a **Swing** slider
+sets the project's swing, 0 to 100 %, which every MIDI clip without a swing of its own plays with
+([swing spec](swing.md); `transport.setSwing`). It is left out when the corner is too narrow for it
+beside the zoom.
+
 The **Hide returns** button in the header column's top corner, by the ruler, takes the return
 tracks' rows out of the view and **Show returns** brings them back; it is kept as a setting
 (Settings › Arrangement › Return tracks, `arrangement_returns`). Main's row stays. Whether a new
@@ -342,9 +347,10 @@ audio clip so far plays silence until a sample is dropped on its slot or lane. A
 is refused. It goes either in clip slot `scene` (from 0, an existing scene; the slot must be
 empty), where it loops over its length, or at beat `start` in the arrangement (0 up to the
 engine's last beat), where it replaces what it covers unless stacked, as a pasted clip does.
-`length` is in beats, one bar of the project's time signature by default (four beats in 4/4, three
-in 3/4), more than 0. It is one undo step and returns the track and the scene, or the start and
-the clip's index as `project.clips` counts it.
+`length` is in beats, one bar by default (four beats in 4/4, three in 3/4): in the arrangement the
+bar of the time signature at `start`, so after a time-signature change it is that bar's length; in
+a slot the bar of the start signature. It is more than 0. It is one undo step and returns the
+track and the scene, or the start and the clip's index as `project.clips` counts it.
 
 In the Arrangement view a double-click on an empty spot of a lane that holds clips makes one a bar
 long, starting at the grid line before the pointer (with Alt, exactly at the pointer), and selects
@@ -774,7 +780,7 @@ to keep those controls usable, including at the 160 px minimum header width.
 | `track.ungroup {track}` | The group goes; its tracks stay where they were and play where the group played. |
 | `track.setGroup {track, group, index?}` | Moves a track, a group with everything inside it, into the group track `group` (an id or a name), or out of every group with `"none"`, and its channel plays into that group (the main output for `"none"`). It lands at `index` among the tracks directly in that group (or at the top level), from 0; at the end without `index`, or with one past the end. Refused for a return track, a target that is not a group, a group into itself or a group inside it, and a move that would nest deeper than the cap. |
 | `track.move {track, to}` | Moves a track, a group with everything inside it, to position `to` in the track order. |
-| `track.rename`, `track.setColor`, `track.delete` | Name (not empty), colour (`#rrggbb` or `none`), and deleting a track with its clips and slots; deleting a group ungroups it. |
+| `track.rename`, `track.setColor`, `track.delete` | Name (not empty), colour (`#rrggbb` or `none`), and deleting a track with its clips and slots; deleting a group ungroups it. `track.delete` takes one `track` or a `tracks` list, which goes as one undo step: Delete with several tracks selected and **Delete track** on a selected track's menu delete the selection so (#1188). |
 | `track.copy {tracks}`, `track.cut {tracks}` | Copy whole tracks for `track.paste`: each with its channel (volume, pan, mute, sends, output, inputs, monitoring; solo is not copied), devices with their parameters and plug-in states, automation, arrangement clips, take lanes and slots, and the clip contents they play; a group with every track in it. Cut deletes them after copying, as one undo step. Return tracks and Main are not copied. The copy reaches every open project, so it pastes in another tab too (#919). |
 | `track.paste {after?}` | Adds the copied tracks after `after` (in its group) or after the last regular track, with new ids and clip contents of their own (editing one copy's notes leaves the other alone), a number added to a name a track already has ("Bass 2"), slots fitted to the project's scenes, and sends only to returns the project has. A copied group's tracks play into the new group; the rest play into the group they land in, or Main. |
 | `track.duplicate {tracks}` | Copies the named tracks as a copy and paste do. Tracks next to each other in one group (or at the top), a group counted with its tracks, are copied as one block after the last of them, so two adjacent tracks give "A", "B", "A 2", "B 2"; a track apart from the others is copied right after itself (after a group's tracks, for a group). Returns the copies; the window selects them, so the next Ctrl+D copies them on. |

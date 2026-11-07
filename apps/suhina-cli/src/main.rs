@@ -68,7 +68,9 @@ commands:
   theme     theme pack: pack a theme's folder (its theme.css and files) into a theme package
             with a manifest of each file's SHA-256 sum, after checking it as an import does;
             the package is <folder name>.theme.suhina beside the folder unless -o names it;
-            theme validate: check a package or a folder and list what the checks found
+            theme validate: check a package or a folder and list what the checks found;
+            theme render: draw a theme folder (or a built-in theme) in a fixed set of scenes as PNGs, through
+            suhina-theme-render beside this program (suhina-theme-render --help)
   plugin    plugin run: put an audio file through a plug-in (a name or id from plugins list)
             in its own process, offline, and write a 32-bit float stereo WAV; --tail adds
             that many seconds of silence for reverbs and delays to ring out (default 2);

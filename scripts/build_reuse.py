@@ -115,8 +115,14 @@ def find_reuse(api, repo, pr, head, candidates, maintainers, trusted, now=None):
                     or run.get("head_repository", {}).get("full_name") != pr["head"]["repo"]["full_name"]):
                 continue
             actor = run.get("actor", {}).get("login", "").lower()
-            allowed = actor in maintainers or (actor == "suhina-bot[bot]" and any(
-                sha == source and at <= timestamp(run.get("created_at")) for sha, at in proofs))
+            # A fork's run builds the fork's workflow files, so who started it says nothing about
+            # its code: it needs a /test-build request for its commit, a maintainer's run too.
+            from_fork = run.get("head_repository", {}).get("full_name") != repo
+            proven = any(sha == source and at <= timestamp(run.get("created_at")) for sha, at in proofs)
+            if from_fork:
+                allowed = (actor in maintainers or actor == "suhina-bot[bot]") and proven
+            else:
+                allowed = actor in maintainers or (actor == "suhina-bot[bot]" and proven)
             if not allowed:
                 continue
             run_id = int(run["id"])

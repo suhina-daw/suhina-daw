@@ -357,8 +357,9 @@ pub fn toggle_colors(ui: &Ui, response: &Response, on: bool) -> (Color32, Color3
     let off_fill = motion::mix(theme::control_background(), theme::control_hover(), hover);
     let off_text = motion::mix(theme::text_hint(), theme::text_secondary(), hover);
     let on_fill = motion::mix(theme::control_selected(), Color32::WHITE, 0.2 * hover);
-    // The inverse ink, unless a variant's lit fill leaves it unreadable (white on a light fill).
-    let on_text = if theme::contrast(on_fill, theme::text_inverse()) < 3.0 {
+    // The inverse ink, unless a variant's lit fill leaves it unreadable (white on a light fill,
+    // or ink so translucent it fades into the fill).
+    let on_text = if theme::text_contrast(theme::text_inverse(), on_fill) < 3.0 {
         theme::text_on(on_fill)
     } else {
         theme::text_inverse()
@@ -669,6 +670,18 @@ const WHEEL_TICK: f64 = 50.0;
 
 /// How far the wheel turned this frame, in points, read from the events themselves rather than
 /// from egui's smoothed scroll, so one tick of a wheel is one step and not a run of them.
+/// `value` moved by `step` within `range`. A value off the scale (a volume at -inf) moves from the
+/// scale's end for a step up, as a drag does, and stays where it is for a step down.
+fn stepped(value: f64, range: (f64, f64), step: f64) -> f64 {
+    if value.is_finite() {
+        (value + step).clamp(range.0, range.1)
+    } else if step > 0.0 {
+        (range.0 + step).clamp(range.0, range.1)
+    } else {
+        value
+    }
+}
+
 fn wheel_points(ui: &Ui) -> f32 {
     ui.input(|i| {
         i.raw
@@ -872,10 +885,9 @@ pub fn drag_value_axis(
         return Drag::Set(typed_value(number, range));
     }
     if steps != 0 {
-        let from = if value.is_finite() { value } else { range.0 };
         let step = f64::from(steps) * per_tick * if fine { 0.1 } else { 1.0 };
         *preview = None;
-        return Drag::Done((from + step).clamp(range.0, range.1));
+        return Drag::Done(stepped(value, range, step));
     }
     // Ctrl/Cmd and the wheel over the control move it, as a drag would; the caller commits what it is
     // given. The wheel alone scrolls the view, so scrolling past a field never changes it.
@@ -887,7 +899,7 @@ pub fn drag_value_axis(
             // A positive delta moves the content down: the wheel turned up, which raises it.
             let step = f64::from(points) / WHEEL_TICK * per_tick * fine;
             *preview = None;
-            return Drag::Done((value + step).clamp(range.0, range.1));
+            return Drag::Done(stepped(value, range, step));
         }
     }
     if response.double_clicked() {
@@ -1104,6 +1116,68 @@ pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, l
     let small = theme::ui_font(theme::TEXT_SMALL);
     text_in(painter, rect, Align2::CENTER_CENTER, text, small, theme::text_primary());
     response.clicked()
+}
+
+/// A horizontal slider of a percentage, 0 to 100 (swing, #1221): a click puts the handle there, a
+/// drag moves it and the value follows while it moves (every value of a drag says so, for the
+/// caller to send them as one gesture, one undo step), and a double-click puts it at 0. Named
+/// "`label`: N %" for a reader and a test. `lit` draws the filled part in the accent, otherwise in
+/// a quieter ink. Returns the value to set, and whether it comes from a drag.
+#[allow(clippy::too_many_arguments)]
+pub fn percent_slider(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    id: Id,
+    label: &str,
+    value: f64,
+    lit: bool,
+) -> Option<(f64, bool)> {
+    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+    let shown = if value.is_finite() { value.clamp(0.0, 100.0).round() } else { 0.0 };
+    let named = format!("{label}: {shown} %");
+    response.widget_info(|| {
+        let mut info = WidgetInfo::labeled(Role::Slider, true, &named);
+        info.value = Some(shown);
+        info
+    });
+    let hovered = hover(ui, &response);
+    let track = rect.shrink2(Vec2::new(4.0, 0.0));
+    let mid = rect.center().y;
+    let handle_x = track.left() + track.width() * (shown / 100.0) as f32;
+    painter.line_segment(
+        [Pos2::new(track.left(), mid), Pos2::new(track.right(), mid)],
+        Stroke::new(3.0, theme::control_background()),
+    );
+    let fill = if lit { theme::accent() } else { motion::mix(theme::text_hint(), theme::text_secondary(), hovered) };
+    painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(handle_x, mid)], Stroke::new(3.0, fill));
+    let cap = Rect::from_center_size(Pos2::new(handle_x, mid), Vec2::new(8.0, 12.0));
+    painter.rect_filled(cap, 2.0, motion::mix(theme::text_secondary(), theme::text_value(), hovered));
+    let sent = id.with("sent");
+    if response.double_clicked() {
+        ui.data_mut(|d| d.remove::<bool>(sent));
+        return (shown != 0.0).then_some((0.0, false));
+    }
+    let mut out = None;
+    if (response.clicked() || response.dragged())
+        && let Some(pointer) = response.interact_pointer_pos()
+        && track.width() > 0.0
+    {
+        let at = (f64::from((pointer.x - track.left()) / track.width()).clamp(0.0, 1.0) * 100.0).round();
+        if (at - shown).abs() >= 0.5 {
+            // Anything but a plain click is part of a drag, its frame included where the drag
+            // is let go or has not passed egui's threshold yet.
+            let dragged = !response.clicked();
+            if dragged {
+                ui.data_mut(|d| d.insert_temp(sent, true));
+            }
+            out = Some((at, dragged));
+        }
+    }
+    if response.drag_stopped() || !response.dragged() {
+        ui.data_mut(|d| d.remove::<bool>(sent));
+    }
+    out
 }
 
 #[cfg(test)]

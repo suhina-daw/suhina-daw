@@ -1832,13 +1832,17 @@ fn heard_with_solo(project: &Project, channel: &suhina_model::Channel, chain: &[
 }
 
 /// Adds the notes of one content lane, as placed by `clip`, to `events`. Notes outside the clip's
-/// window are skipped; with a loop range the loop repeats until the clip ends.
+/// window are skipped; with a loop range the loop repeats until the clip ends. With `swing`, from
+/// 0 to 1, each note starts where [`suhina_model::swung`] puts its start in the content's beats and
+/// keeps its length, so every pass of a loop swings the same (#1221).
+#[allow(clippy::too_many_arguments)]
 fn collect_notes(
     clip: &Clip,
     lane: &ContentLane,
     map: &TempoMap,
     (track, gain_left, gain_right, column, bus, meter): (TrackId, f32, f32, u32, u32, u32),
     scale: Option<MusicalScale>,
+    swing: f64,
     events: &mut Vec<ArrangedNote>,
 ) {
     let LaneData::Notes(notes) = &lane.data else { return };
@@ -1858,12 +1862,14 @@ fn collect_notes(
             if !(note.time.is_finite() && note.duration.is_finite()) || note.time < from || note.time >= to {
                 continue;
             }
-            let start = clip.start + at + (note.time - from);
+            let time = suhina_model::swung(note.time, swing);
+            let length = note.duration.max(0.0);
+            let start = clip.start + at + (time - from);
             let clip_end = clip.start + clip.length;
             if start >= clip_end {
                 continue;
             }
-            let end = (start + note.duration.max(0.0)).min(clip_end);
+            let end = (start + length).min(clip_end);
             events.push(ArrangedNote {
                 start: to_frame(start),
                 end: to_frame(end),

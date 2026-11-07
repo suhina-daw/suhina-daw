@@ -29,7 +29,6 @@ fn project() -> Project {
             scale: None,
         }],
         launcher: Launcher {
-            mappings: Vec::new(),
             scenes: vec![Scene::default()],
             columns: vec![LauncherColumn {
                 track: TrackId(1),

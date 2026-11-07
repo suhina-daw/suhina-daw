@@ -1,0 +1,13 @@
+{
+  "name": "Darkest",
+  "values": {
+    "--ground": "#000000",
+    "--surface": "#0C0C0C",
+    "--ink": "#D4D4D4",
+    "--tint": "#0078D4",
+    "--highlight": "#D29922",
+    "--recording": "#F85149",
+    "--meter-normal": "#2EA043",
+    "--meter-hot": "#D29922"
+  }
+}

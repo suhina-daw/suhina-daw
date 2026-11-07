@@ -853,6 +853,19 @@ fn parse_window_rect(text: &str) -> Option<[i32; 4]> {
 pub const WINDOW_SIZES: (i32, i32) = (200, 10_000);
 const WINDOW_POSITION: i32 = 30_000;
 
+/// What a saved built-in theme that has since gone or changed its id is called now.
+fn renamed_theme(id: &str) -> Option<String> {
+    Some(match id {
+        // Editor Dark's colours are Suhina Studio's Darker variant.
+        "editor-dark" => "suhina-studio@darker".into(),
+        "suhina-dark" | "suhina-studio-dark" | "dracula" | "solarized-dark" | "suhina-forest-amber" => {
+            crate::kit::theme::BUILT_IN.into()
+        }
+        "suhina-studio-light" => "suhina-studio@light".into(),
+        _ => format!("suhina-studio@{}", id.strip_prefix("suhina-dark@")?),
+    })
+}
+
 /// Whether `id` can name a theme file: not empty and not a path.
 pub fn is_theme_id(id: &str) -> bool {
     !id.is_empty() && !id.contains(['/', '\\', ':']) && id != "." && id != ".."

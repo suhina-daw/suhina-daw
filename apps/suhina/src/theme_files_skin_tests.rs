@@ -93,7 +93,7 @@ fn measure_theme_slider_saves() {
     let mut files = ThemeFiles::new(Some(root.join("themes")));
     for (id, theme) in theme::built_in_themes()
         .into_iter()
-        .filter(|(id, _)| ["suhina-dark", "suhina-sheet", "suhina-blocks", "suhina-meadow"].contains(id))
+        .filter(|(id, _)| ["suhina-studio", "suhina-sheet", "suhina-blocks", "suhina-meadow"].contains(id))
     {
         let copy = format!("{id}-copy");
         files.write(&copy, &theme).unwrap();
@@ -154,96 +154,20 @@ fn portable_animation_assets_leave_room_for_inherited_base_roles() {
         }
     }
     let files = portable_package_files("frames", &theme).unwrap();
-    let text = |name: &str| {
-        files
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, data)| String::from_utf8(data.clone()).unwrap())
-            .unwrap_or_default()
-    };
-    let (restored, warnings) = resolve_css(&text("frames/theme.css"), &text("frames/layout.css"), |relative, _| {
-        files
-            .iter()
-            .find(|(name, _)| name == &format!("frames/{relative}"))
-            .map(|(_, data)| data.clone())
-            .ok_or_else(|| format!("missing {relative}"))
-    })
-    .unwrap();
+    let own = files.iter().filter_map(|(name, data)| Some((name.strip_prefix("frames/")?.to_owned(), data.clone())));
+    let (restored, warnings) = resolve_files(&own.collect()).unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(restored.skin.assets.len(), suhina_ui::kit::skin::MAX_PACKAGE_ASSETS);
 }
 
 #[test]
-fn deleted_default_library_and_backup_are_recreated_from_embedded_svg() {
-    let root = folder("default-delete");
+fn no_default_artwork_library_is_made() {
+    let root = folder("no-defaults");
     let mut files = ThemeFiles::new(Some(root.join("themes")));
     assert_eq!(files.read_all(), (Vec::new(), Vec::new()));
-    let library = root.join("themes/_defaults");
-    assert!(library.join("assets/fader.cap.svg").is_file());
-    let backup = read_zip(&library.join("suhina-default.zip")).unwrap();
-    assert_eq!(backup.len(), 1);
-    assert_eq!(backup[0].theme.skin.assets, skin::default_assets());
-    std::fs::remove_dir_all(&library).unwrap();
-    assert_eq!(files.read_all(), (Vec::new(), Vec::new()));
-    assert!(library.join("suhina-default.zip").is_file());
-    assert_eq!(std::fs::read_to_string(library.join("assets/play.svg")).unwrap(), skin::default_assets()["play"]);
-    std::fs::write(library.join("suhina-default.zip"), "damaged backup").unwrap();
-    let (_, warnings) = files.read_all();
-    assert!(warnings.iter().any(|w| w.contains("pristine backup restored")));
-    assert_eq!(std::fs::read(library.join("suhina-default-backup-recovery-1.zip")).unwrap(), b"damaged backup");
-    assert_eq!(read_zip(&library.join("suhina-default.zip")).unwrap()[0].theme.skin.assets, skin::default_assets());
-    // A pristine backup is left as it is.
-    let (_, warnings) = files.read_all();
-    assert!(warnings.is_empty(), "{warnings:?}");
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn default_edits_fork_numbered_themes_before_restoring_original_artwork() {
-    let root = folder("default-fork");
-    let mut files = ThemeFiles::new(Some(root.join("themes")));
-    files.read_all();
-    let play = root.join("themes/_defaults/assets/play.svg");
-    let svg = |color| {
-        format!(
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"{color}\"/></svg>"
-        )
-    };
-    for (number, color) in [(1, "#123456"), (2, "#abcdef")] {
-        std::fs::write(&play, svg(color)).unwrap();
-        files.checked = None;
-        let (entries, warnings) = files.changed();
-        assert_eq!(entries.len(), 1, "{warnings:?}");
-        assert_eq!(entries[0].id, format!("suhina-default-modified-{number}"));
-        assert_eq!(entries[0].theme.name, format!("Suhina Default (modified {number})"));
-        assert_eq!(entries[0].theme.skin.assets["play"], svg(color));
-        assert_eq!(std::fs::read_to_string(&play).unwrap(), skin::default_assets()["play"]);
-        assert!(warnings.iter().any(|w| w.contains("original defaults restored")));
-    }
-    files.checked = None;
-    assert!(files.changed().0.is_empty(), "restoration must not create reload loops");
-    assert_eq!(files.read_all().0.len(), 2);
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn invalid_default_svg_is_backed_up_before_restoring_the_embedded_source() {
-    let root = folder("default-invalid");
-    let mut files = ThemeFiles::new(Some(root.join("themes")));
-    files.read_all();
-    let play = root.join("themes/_defaults/assets/play.svg");
-    std::fs::write(&play, "unfinished SVG artwork").unwrap();
-    files.checked = None;
-    let (entries, warnings) = files.changed();
-    assert!(entries.is_empty());
-    assert!(warnings.iter().any(|w| w.contains("preserved in")));
-    let mut archive =
-        zip::ZipArchive::new(std::fs::File::open(root.join("exports/suhina-default-recovery-1.zip")).unwrap()).unwrap();
-    let mut saved = String::new();
-    archive.by_name("assets/play.svg").unwrap().read_to_string(&mut saved).unwrap();
-    assert_eq!(saved, "unfinished SVG artwork");
-    assert_eq!(std::fs::read_to_string(play).unwrap(), skin::default_assets()["play"]);
-    std::fs::remove_dir_all(root).unwrap();
+    // The default artwork is built into the app; there is no `_defaults` folder to keep in step.
+    assert!(!root.join("themes/_defaults").exists());
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -272,7 +196,8 @@ fn portable_packages_include_the_shared_ai_author_guide_and_effective_svg() {
     assert!(theme.skin.assets.is_empty(), "export must not modify sparse local overrides");
     let css = files.iter().find(|(name, _)| name == "plain/theme.css").unwrap();
     assert!(std::str::from_utf8(&css.1).unwrap().contains("play { image: url(\"assets/play.svg\"); }"));
-    assert!(!files.iter().any(|(name, _)| name.ends_with(".json")), "packages are CSS");
+    assert!(files.iter().all(|(name, _)| !name.ends_with(".json") || name == "plain/theme.json"), "packages are CSS");
+    assert!(!files.iter().any(|(name, _)| name.ends_with("layout.css")));
 }
 
 #[test]
@@ -283,16 +208,13 @@ fn an_authors_sheet_is_read_verbatim_and_survives_backups() {
     let source = "/* Keep my comment */\n\
                   @property --glow { syntax: \"<number>\"; initial-value: 0.5; label: \"Glow\"; range: 0 1; }\n\
                   :root { --accent: #12AB34; --meter-segments: 32; }\n\
-                  theme { name: \"Ink\"; }\n\
                   @layer custom { .browser { color: var(--accent); opacity: var(--glow); } }\n\
                   @media (width < 800px) { #performance { display: none; } }\n";
     std::fs::write(themes.join("ink/theme.css"), source).unwrap();
+    std::fs::write(themes.join("ink/theme.json"), theme::ThemeMeta::new("Ink", "var(--accent)").to_json()).unwrap();
     std::fs::create_dir_all(themes.join("ink/variants")).unwrap();
-    std::fs::write(
-        themes.join("ink/variants/dim.json"),
-        r#"{ "name": "Dim", "appearance": "dark", "values": { "--glow": "0.1" } }"#,
-    )
-    .unwrap();
+    std::fs::write(themes.join("ink/variants/dim.json"), r#"{ "name": "Dim", "values": { "--glow": "0.1" } }"#)
+        .unwrap();
     let mut files = ThemeFiles::new(Some(themes.clone()));
     let (entries, warnings) = files.read_all();
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -438,7 +360,11 @@ fn a_theme_css_of_the_earlier_form_migrates_with_its_advanced_sheet() {
     assert!(!css.contains("@import") && !css.contains("meter { style"), "{css}");
     assert_eq!(std::fs::read_to_string(themes.join("earlier/legacy/theme.css")).unwrap(), previous);
     assert!(themes.join("earlier/legacy/advanced.css").is_file() && !themes.join("earlier/advanced.css").exists());
-    assert!(std::fs::read_to_string(themes.join("earlier/layout.css")).unwrap().contains("offset-transport: 80px"));
+    // The toolbar's arrangement moves into theme.json; there is no layout.css.
+    let meta = std::fs::read(themes.join("earlier/theme.json")).unwrap();
+    let toolbar = theme::ThemeMeta::parse(&meta).unwrap().0.toolbar.unwrap();
+    assert_eq!(toolbar["offsets"]["transport"], 80, "{toolbar}");
+    assert!(!themes.join("earlier/layout.css").exists());
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -588,5 +514,55 @@ fn live_svg_edit_is_loaded_and_missing_svg_does_not_overwrite_the_theme() {
     assert!(changed.is_empty());
     assert!(!warnings.is_empty());
     assert_eq!(std::fs::read(&css).unwrap(), saved);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_editor_change_is_edited_into_the_authors_sheet_and_a_rename_into_theme_json() {
+    let root = folder("editor-into-sheet");
+    let themes = root.join("themes");
+    let source = "/* Mine: keep me */\n:root { --accent: #12AB34; }\n\
+                  @media (width < 800px) { .browser { display: none; } }\n\
+                  .control-mixer-pan { left: 4px; top: 0px; }\n";
+    super::tests::hand_written(&themes.join("ink"), "Ink", source);
+    let mut files = ThemeFiles::new(Some(themes.clone()));
+    let (entries, warnings) = files.read_all();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut ink = entry(&entries, "ink").clone();
+    assert_eq!(ink.skin.controls["mixer-pan"].offset().x, 4.0);
+    // A control moved in the app changes only its own declaration in the author's sheet.
+    ink.skin.controls.get_mut("mixer-pan").unwrap().set_offset(eframe::egui::vec2(12.0, 0.0));
+    ink.name = "Ink Two".into();
+    files.write("ink", &ink).unwrap();
+    let css = std::fs::read_to_string(themes.join("ink/theme.css")).unwrap();
+    assert!(css.starts_with("/* Mine: keep me */\n") && css.contains("@media (width < 800px)"), "{css}");
+    assert!(css.contains("left: 12px") && !css.contains("left: 4px"), "{css}");
+    assert!(!css.contains("Ink Two") && !themes.join("ink/layout.css").exists(), "{css}");
+    // The name is theme.json's; the rest of it stays as it was.
+    let (meta, _) = theme::ThemeMeta::parse(&std::fs::read(themes.join("ink/theme.json")).unwrap()).unwrap();
+    assert_eq!((meta.name.as_str(), meta.swatch.as_str()), ("Ink Two", "#102030"));
+    let (entries, warnings) = files.read_all();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(same_look(&entry(&entries, "ink").clone(), &ink));
+    // Saving again with nothing changed writes nothing.
+    let before = std::fs::read_to_string(themes.join("ink/theme.css")).unwrap();
+    files.write("ink", entry(&entries, "ink")).unwrap();
+    assert_eq!(std::fs::read_to_string(themes.join("ink/theme.css")).unwrap(), before);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_style_sheet_dropped_alone_comes_in_with_a_theme_json_named_after_it() {
+    let root = folder("lone-sheet");
+    std::fs::create_dir_all(&root).unwrap();
+    let sheet = root.join("Dusk.theme.css");
+    std::fs::write(&sheet, ":root { --accent: #FF8800; }\n").unwrap();
+    let mut files = ThemeFiles::new(Some(root.join("themes")));
+    let (ids, warnings) = files.import(&sheet).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(ids, ["dusk"]);
+    assert!(root.join("themes/dusk/theme.json").is_file());
+    let (entries, _) = files.read_all();
+    assert_eq!(entry(&entries, "dusk").name, "Dusk");
     std::fs::remove_dir_all(root).unwrap();
 }

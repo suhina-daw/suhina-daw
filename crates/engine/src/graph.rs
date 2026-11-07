@@ -158,6 +158,7 @@ impl Graph {
                             &tempo,
                             (track, gain_left, gain_right, column, bus, meter),
                             musical_scale(content.scale),
+                            clip.swing.effective(project.transport.swing),
                             &mut events,
                         ),
                         LaneData::Audio(region) => {

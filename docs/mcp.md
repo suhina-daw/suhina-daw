@@ -206,6 +206,11 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   changes whenever a clip before it moves, and it is accepted only until the project format's
   next version. The examples below show the positional form where it is still the only way to
   name a slot (`scene`).
+- **Scenes by id.** Every `scene` and `toScene` parameter takes the scene's number, from 0, or
+  `{"id": n}` with its id, which names the scene wherever it has moved since. `project.launcher`
+  lists each scene's `scene_id`, and every result that reports a scene (`scene.insert`,
+  `scene.launch`, `clip.create` in a slot, `launcher.state` and the rest) gives `scene_id` beside
+  `scene` ([clip launching](spec/clip-launching.md) › Editing scenes).
 
 - **Clips.** `project.clips` lists each arrangement clip with its id, start, length and fades
   (lengths, shapes and curves); `clip.move`, `clip.duplicate`, `clip.delete`, `clip.copy`,
@@ -260,6 +265,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `"1/8T"`, `"1 bar"`, as `launcher.setQuantization` takes it) by `amount` percent (default 100,
   onto the line); with `ends: true` the ends move too. One undo step; a bad grid, an amount
   outside 0 to 100 or a note that does not exist fails and changes nothing.
+- **Swing.** `transport.setSwing {amount}` sets the project's swing in percent (0 straight, 100 the second sixteenth of each eighth half a sixteenth late, about 67 the triplet), which every MIDI clip without its own plays with; `clip.setSwing {amount?, global?}` gives a MIDI clip its own swing (`amount`) or makes it follow the project's again (`global: true`, keeping its own for later). The notes never move; the swing is applied as the clip plays ([swing spec](spec/swing.md)).
 - **MIDI tools.** The note tools of a MIDI clip's panel (its Notes and Transform tabs) run the
   same commands an agent can: `note.humanize {notes?, ms?, time?, velocity?, chords?, seed?}` moves
   each start and velocity a little, like a person playing: a normally distributed draw within
@@ -331,13 +337,13 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `clip.release` its release, which stops a gate clip and ends a repeat clip's repeats; in a
   `project_render` script the two can be steps at different times
   ([spec](spec/clip-launching.md#launch-settings)).
-- **Launch keys and notes.** `launcher.addMapping {source, target, track?, scene?}` maps a key
-  (`key:Q`) or a MIDI note (`note:1:36`) to a slot, a scene or a track's stop button;
-  `launcher.removeMapping` and `launcher.mappings` remove and list them. Agents launch with
-  `clip.launch` and friends as before; the mappings are for the window and controllers
-  ([spec](spec/clip-launching.md#launching-from-keys-and-notes)). These three commands are
-  replaced by `mapping.*` when controller mappings are built
-  ([spec](spec/midi-mapping.md#launch-keys)).
+- **Launch keys and notes.** `mapping.add {source, target}` maps a key (`key:Q`) or a MIDI note
+  (`note:1:36`) to a target command: `{ "command": "clip.launch", "track": 2, "scene": 0 }`,
+  `{ "command": "scene.launch", "scene": 1 }` or `{ "command": "track.stop", "track": 2 }`;
+  `mapping.remove` (by `index`, `source` or `target`) and `mapping.list` remove and list them.
+  Agents launch with `clip.launch` and friends as before; the mappings are for the window and
+  controllers ([spec](spec/midi-mapping.md#launch-keys)). They replaced `launcher.addMapping`,
+  `launcher.removeMapping` and `launcher.mappings` (#1162).
 - **CPU load.** `launcher.state` reports `cpu`: the audio engine's share of wall time spent
   rendering, in percent, measured over windows of 0.2 s and smoothed so it settles within about
   a second (`0.0` before anything is measured, `null` without an audio output). The control bar shows the same number.

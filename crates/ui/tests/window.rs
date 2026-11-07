@@ -230,6 +230,7 @@ pub(super) fn project_with_audio() -> (suhina_engine::model::Project, suhina_ui:
         color: None,
         ara: false,
         audio: region_audio,
+        swing: Default::default(),
         extensions: Extensions::default(),
     };
     project.arrangement.lanes.push(ArrangementLane {

@@ -214,9 +214,11 @@ impl Reader {
             channels,
             contents: std::mem::take(&mut self.contents),
             arrangement: Arrangement { lanes, markers: self.markers(live_set), takes: Vec::new() },
-            launcher: Launcher { scenes, columns, mappings: Vec::new() },
+            launcher: Launcher { scenes, columns },
             extensions: Extensions::default(),
             default_scale: None,
+            // A Live Set brings no mappings with it (`docs/spec/midi-mapping.md`).
+            controller_mappings: Vec::new(),
             next_id: 0,
         };
         self.untangle_groups(&mut project);
@@ -868,6 +870,7 @@ impl Reader {
             color: None,
             ara: false,
             audio,
+            swing: Default::default(),
             extensions: Extensions::default(),
         })
     }

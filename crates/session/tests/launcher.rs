@@ -86,6 +86,7 @@ fn project_built() -> Project {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
     };
     let slot = |clip: Option<Clip>, has_stop: bool| Slot { clip, has_stop };
@@ -94,7 +95,6 @@ fn project_built() -> Project {
         channels: vec![channel(1), channel(2), channel(3)],
         contents: vec![content(1, "Beat", 36), content(2, "Line", 40), content(3, "Off", 50)],
         launcher: Launcher {
-            mappings: Vec::new(),
             scenes: vec![
                 Scene { name: "Intro".into(), ..Scene::default() },
                 Scene { id: Default::default(), name: "Drop".into(), tempo_bpm: Some(128.0), time_signature: None },
@@ -380,6 +380,7 @@ fn a_drag_that_the_engine_cannot_build_is_an_error() {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     };
@@ -584,6 +585,7 @@ fn playing_with_clips() -> (Session, Renderer) {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     };

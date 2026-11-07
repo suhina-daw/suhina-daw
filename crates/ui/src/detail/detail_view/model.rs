@@ -36,6 +36,8 @@ pub struct DeviceBox {
     pub index: usize,
     /// Where it is on the track, as the device commands take it.
     pub at: DeviceAt,
+    /// Which device it is, wherever it moves (`DeviceId::NONE` before the project gives ids).
+    pub id: suhina_engine::model::DeviceId,
     /// For a device group: its settings and branches.
     pub group: Option<GroupBox>,
     pub name: String,
@@ -352,6 +354,9 @@ pub struct AudioPanel {
     pub length_beats: f64,
     /// Its scale (an audio clip's key), when one was given (`clip.setScale`).
     pub scale: Option<suhina_engine::model::Scale>,
+    /// A MIDI clip's swing (its own, or following the project's), and the project's (#1221).
+    pub swing: suhina_engine::model::ClipSwing,
+    pub global_swing: f64,
 }
 
 /// What the detail area shows for a clip that has an editor: the editor, or its track's devices.
@@ -431,6 +436,17 @@ impl SelectionInfo {
 pub fn bar_beats(project: &Project) -> f64 {
     let ts = project.transport.time_signature;
     if ts.denominator == 0 { 4.0 } else { f64::from(ts.numerator.max(1)) * 4.0 / f64::from(ts.denominator) }
+}
+
+/// A song position as the column writes it, `bar.beat` counted from one, with the bars of the
+/// project's meter, so it reads the bar the ruler shows after a time-signature change.
+pub fn song_position(beat: f64, meter: &Meter) -> String {
+    if !beat.is_finite() {
+        return "-".into();
+    }
+    let beat = beat.max(0.0);
+    let here = meter.position(beat);
+    format!("{}.{}", u64::from(here.bar) + 1, (beat - here.bar_start).max(0.0).floor() as u64 + 1)
 }
 
 /// A position as the column writes it: `bar.beat`, counted from one for a position and from zero
@@ -615,6 +631,7 @@ pub fn build_with(
     nam: crate::detail::device_widgets::Lists,
 ) -> Detail {
     let bar = bar_beats(project);
+    let meter = project.transport.meter();
     let track_name = |id: TrackId| project.shown_track_name(id);
     let found = clip.and_then(|clip| match clip {
         ClipRef::Arrangement(id, clip) => project
@@ -654,7 +671,7 @@ pub fn build_with(
             Box::new(ClipInfo {
                 name: content.map(|c| c.name.clone()).unwrap_or_default(),
                 track: track_name(id),
-                start: scene.map_or_else(|| bars_beats(placed.start, bar, 1), |s| (s + 1).to_string()),
+                start: scene.map_or_else(|| song_position(placed.start, &meter), |s| (s + 1).to_string()),
                 scene: scene.is_some(),
                 length: bars_beats(placed.length, bar, 0),
                 looping: placed.loop_range.is_some(),
@@ -687,6 +704,8 @@ pub fn build_with(
                     bar_beats: bar,
                     length_beats: placed.length,
                     scale: content.and_then(|c| c.scale),
+                    swing: placed.swing,
+                    global_swing: project.transport.swing,
                 }),
             }),
             chain(project, id, plugins, nam.clone()),
@@ -734,6 +753,7 @@ pub(super) fn device_box(
     DeviceBox {
         index: path.last().copied().unwrap_or(0),
         at: DeviceAt(path.to_vec()),
+        id: d.id,
         group: d.as_group().map(|g| group_box(g, d, path, id, plugins)),
         name: device_display_name(d),
         theme_id: match &d.kind {

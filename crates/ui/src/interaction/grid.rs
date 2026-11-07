@@ -403,7 +403,7 @@ impl TrackGrid {
             LauncherMonitor::meter,
         );
         let mut mapped: Vec<(MappingTarget, String)> = Vec::new();
-        for m in project.launcher.mappings.iter().filter(|m| suhina_session::target_exists(project, &m.target)) {
+        for m in project.controller_mappings.iter().filter(|m| suhina_session::target_exists(project, &m.target)) {
             match mapped.iter_mut().find(|(t, _)| *t == m.target) {
                 Some((_, label)) => *label = format!("{label} {}", m.source.label()),
                 None => mapped.push((m.target, m.source.label())),

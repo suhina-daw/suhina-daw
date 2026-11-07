@@ -1079,10 +1079,12 @@ fn plan_clip(
         let meter = crate::meters::meter_slot(project, lane_track);
         match &lane.data {
             LaneData::Notes(lane_notes) => {
+                // The clip's swing, its own or the project's, in its content's beats (#1221).
+                let swing = clip.swing.effective(project.transport.swing);
                 for note in lane_notes.iter().filter(|n| !n.muted && n.time.is_finite() && n.duration.is_finite()) {
                     let velocity = note_velocity(note.velocity);
                     notes.push(PlanNote {
-                        time: note.time,
+                        time: suhina_model::swung(note.time, swing),
                         duration: note.duration.max(0.0),
                         frequency: 440.0 * 2f64.powf((f64::from(note.key) - 69.0) / 12.0),
                         key: note.key.min(127),

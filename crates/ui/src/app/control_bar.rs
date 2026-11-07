@@ -362,7 +362,7 @@ impl App {
             native_styles.enter("mapping");
             let on = self.view.launch_keys.mode.on;
             let color = if on { theme::accent() } else { theme::text_secondary() };
-            let galley = widgets::fitted(&painter, "Map keys", theme::ui_font(theme::TEXT), color, 80.0);
+            let galley = widgets::fitted(&painter, "Map", theme::ui_font(theme::TEXT), color, 80.0);
             let size = galley.size();
             if fits(right, size.x) {
                 let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));

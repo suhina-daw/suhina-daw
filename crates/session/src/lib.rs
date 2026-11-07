@@ -75,6 +75,7 @@ mod relink;
 mod scales;
 mod sends;
 mod soundmap;
+mod swing;
 mod take_carry;
 mod tempo;
 mod track_copy;

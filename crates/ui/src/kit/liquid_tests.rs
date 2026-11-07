@@ -226,8 +226,8 @@ fn coloured_body_retains_a_gradient_between_the_rims() {
         assert!(mesh.is_valid());
         assert_eq!(mesh.calc_bounds(), rect);
         assert!(mesh.vertices.iter().any(|vertex| vertex.pos.y > rect.top() && vertex.pos.y < rect.bottom()));
-        assert!(mesh.vertices.iter().any(|vertex| vertex.color.r() > base.r()));
-        assert!(mesh.vertices.iter().any(|vertex| vertex.color.r() < base.r()));
+        assert!(mesh.vertices.iter().any(|vertex| vertex.color.to_array()[0] > base.to_array()[0]));
+        assert!(mesh.vertices.iter().any(|vertex| vertex.color.to_array()[0] < base.to_array()[0]));
         assert!(mesh.vertices.iter().all(|vertex| vertex.color.is_opaque()));
     }
     assert!(body_mesh(rect, Color32::GRAY, 0.0).is_empty());
@@ -245,9 +245,9 @@ fn optical_rim_is_bounded_and_leaves_the_centre_clear() {
         for vertex in &mesh.vertices {
             assert!(rect.expand(0.001).contains(vertex.pos));
             assert!(vertex.pos.distance(rect.center()) > size.min_elem() * 0.2);
-            assert!(vertex.color.r() <= vertex.color.a());
-            assert!(vertex.color.g() <= vertex.color.a());
-            assert!(vertex.color.b() <= vertex.color.a());
+            assert!(vertex.color.to_array()[0] <= vertex.color.a());
+            assert!(vertex.color.to_array()[1] <= vertex.color.a());
+            assert!(vertex.color.to_array()[2] <= vertex.color.a());
         }
     }
 }

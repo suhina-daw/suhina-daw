@@ -1,0 +1,10 @@
+{
+  "name": "Macchiato",
+  "values": {
+    "--ground": "#181926",
+    "--surface": "#1E2030",
+    "--ink": "#CAD3F5",
+    "--tint": "#C6A0F6",
+    "--highlight": "#EED49F"
+  }
+}

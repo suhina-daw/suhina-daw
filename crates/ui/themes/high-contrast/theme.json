@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "name": "High Contrast",
+  "author": "The Suhina contributors",
+  "description": "Black and white with strong lines and a yellow accent.",
+  "swatch": "var(--window-background)",
+  "default-variant": "Dark"
+}

@@ -145,6 +145,8 @@ fn grid_color(major: bool) -> Color32 {
 const CLIP_NAME_BAR: f32 = 22.0;
 /// The waveform zoom slider's track width, in the header column's corner.
 const WAVEFORM_ZOOM_WIDTH: f32 = 72.0;
+/// The width of the project's swing slider beside it.
+const SWING_WIDTH: f32 = 60.0;
 /// The grid's lines this frame, as (x, on a bar), for the clips' bodies.
 /// The waveform zoom this frame, for `paint_clip`.
 /// The waveform zoom's range.
@@ -935,6 +937,36 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             theme::text_hint(),
         );
     }
+    // The project's swing, on the corner's lower line opposite the waveform zoom: every MIDI clip
+    // without a swing of its own plays with it (#1221, `docs/spec/swing.md`).
+    {
+        let font = theme::ui_font(theme::TEXT_TINY);
+        let mono = theme::mono_font(theme::TEXT_TINY);
+        let name_width = widgets::text_width(ui, "Swing", font.clone());
+        let width = name_width + 4.0 + SWING_WIDTH + 4.0 + 30.0;
+        let x = if state.headers_left { corner.right() - 6.0 - width } else { corner.left() + 6.0 };
+        let row = Rect::from_min_size(Pos2::new(x, corner.bottom() - 18.0), Vec2::new(width, 14.0));
+        if corner.contains_rect(row) && !row.intersects(zoom_row) {
+            let name = Rect::from_min_size(row.min, Vec2::new(name_width, row.height()));
+            let slider =
+                Rect::from_min_size(Pos2::new(name.right() + 4.0, row.top()), Vec2::new(SWING_WIDTH, row.height()));
+            let value = Rect::from_min_max(Pos2::new(slider.right() + 4.0, row.top()), row.max);
+            widgets::text_in(&painter, name, Align2::LEFT_CENTER, "Swing", font, theme::text_secondary());
+            let percent = (timeline.swing * 100.0).round();
+            let id = Id::unique("arrangement-swing");
+            if let Some((amount, dragged)) =
+                widgets::percent_slider(ui, &painter, slider, id, "Global swing", percent, true)
+            {
+                // The frames of one drag are one gesture, one undo step.
+                let mut params = serde_json::json!({ "amount": amount });
+                if dragged {
+                    params["gesture"] = crate::interaction::commands::gesture("arrangement-swing");
+                }
+                actions.push(Action::new("transport.setSwing", params));
+            }
+            widgets::text_in(&painter, value, Align2::RIGHT_CENTER, &format!("{percent} %"), mono, theme::text_value());
+        }
+    }
     // The return tracks' rows along the bottom go and come back with a button here.
     if has_returns && focus.is_none() {
         let label = if state.returns_hidden { "Show returns" } else { "Hide returns" };
@@ -1536,6 +1568,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         // The main volume as a track's: a bar that a drag sets (heard while dragging, one undo
         // step), a double-click back to 0 dB.
         let field = Rect::from_min_max(Pos2::new(inner.left() + inner.width() * 0.45, inner.top()), inner.max);
+        // An element of its own, `#main-volume`, as the tracks' are `#arrangement-volume`: without
+        // it the field paints `.arrangement`'s style as its own (#1237).
+        let volume_style = crate::kit::style_class::enter_named("value", "main-volume");
         let response = widgets::value_area(
             ui,
             field.intersect(fixed),
@@ -1563,6 +1598,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             Drag::None => {}
         }
         volume_field(&fixed_painter, field, state.main_drag.unwrap_or(db), widgets::hover(ui, &response));
+        drop(volume_style);
         let at = lying_meter(field.left() - PAD, inner.center().y);
         let level = state.meters.main;
         meter::show(ui, &fixed_painter, at, "Main", meter::Source::Main, &level, actions);

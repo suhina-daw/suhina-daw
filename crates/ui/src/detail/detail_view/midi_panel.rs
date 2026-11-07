@@ -33,9 +33,9 @@ const INFO_ROW: f32 = 14.0;
 const RANGE_BAR: f32 = 10.0;
 /// The space between the buttons of the Notes tab's grid.
 const BUTTON_GAP: f32 = 4.0;
-/// How tall the tools part is under its tab row: its taller tab, Transform (the list, the hint,
-/// two fields, a switch and Apply).
-const TOOLS_BODY: f32 = FIELD + GAP + 12.0 + GAP + NAME + FIELD + GAP + TOGGLE + GAP + TOGGLE;
+/// How tall the tools part is under its tab row: its taller tab, Notes (Transpose, the buttons and
+/// the Swing row; Transform's list, hint, fields, switch and Apply are a little shorter).
+const TOOLS_BODY: f32 = NAME + FIELD + GAP + FIELD * 3.0 + BUTTON_GAP * 2.0 + GAP + NAME + FIELD;
 /// How tall the figures are at most: the chip, Pitch, From, To, Muted, Velocity and its bar.
 const FIGURES: f32 = CHIP + GAP + INFO_ROW * 4.0 + 4.0 + INFO_ROW + RANGE_BAR;
 /// The room between the Clip part and the figures under it.
@@ -106,6 +106,65 @@ pub(super) fn midi_panel(
     tools_part(ui, painter, part, panel, midi, actions);
 }
 
+/// The Swing row at the foot of the Notes tab (#1221, `docs/spec/swing.md`): its name says whose swing the
+/// clip plays, the **Global** switch makes it follow the project's swing or play its own again, and
+/// the slider sets the swing it plays: the project's while it follows it (so every clip that
+/// follows changes with it), else its own. Left out whole when it does not fit. Returns where it
+/// ends.
+fn swing_row(
+    ui: &Ui,
+    painter: &egui::Painter,
+    part: Rect,
+    top: f32,
+    address: &serde_json::Value,
+    panel: &AudioPanel,
+    actions: &mut Vec<Action>,
+) {
+    if top + NAME + FIELD > part.bottom() + 0.5 {
+        return;
+    }
+    let on_clip = |more: serde_json::Value| {
+        let mut params = address.clone();
+        if let (Some(map), serde_json::Value::Object(more)) = (params.as_object_mut(), more) {
+            map.extend(more);
+        }
+        params
+    };
+    let global = !panel.swing.own;
+    let percent = (panel.swing.effective(panel.global_swing) * 100.0).round();
+    let name = Rect::from_min_size(Pos2::new(part.left(), top), Vec2::new(part.width(), NAME));
+    name_over(painter, name, if global { "Swing (global)" } else { "Swing (this clip)" }, Align2::LEFT_BOTTOM);
+    widgets::text_in(
+        painter,
+        name.shrink2(Vec2::new(0.0, 2.0)),
+        Align2::RIGHT_BOTTOM,
+        &format!("{percent} %"),
+        theme::mono_font(theme::TEXT_TINY),
+        theme::text_value(),
+    );
+    let switch = Rect::from_min_size(Pos2::new(part.left(), top + NAME), Vec2::new(52.0, FIELD));
+    if toggle(ui, painter, switch, "Use global swing", "Global", global) {
+        actions.push(Action::new("clip.setSwing", on_clip(json!({ "global": !global }))));
+    }
+    let slider =
+        Rect::from_min_max(Pos2::new(switch.right() + 4.0, switch.top()), Pos2::new(part.right(), switch.bottom()));
+    let label = if global { "Swing (global)" } else { "Swing (this clip)" };
+    let id = Id::unique(("clip-panel-swing", panel.clip.0));
+    if let Some((amount, dragged)) = widgets::percent_slider(ui, painter, slider, id, label, percent, !global) {
+        // The frames of one drag are one gesture, one undo step.
+        let mut params = json!({ "amount": amount });
+        if dragged {
+            params["gesture"] = crate::interaction::commands::gesture("clip-panel-swing");
+        }
+        let action = if global {
+            Action::new("transport.setSwing", params)
+        } else {
+            Action::new("clip.setSwing", on_clip(params))
+        };
+        actions.push(action);
+    }
+}
+
 /// The tools part: its tab row, and the tab shown.
 fn tools_part(
     ui: &mut Ui,
@@ -127,12 +186,20 @@ fn tools_part(
     let body = Rect::from_min_max(Pos2::new(part.left(), tab_row.bottom() + GAP), part.max);
     // A time selection with no note in it gives the tools nothing to act on.
     let before = actions.len();
-    match state.tools_tab {
-        ToolsTab::Notes => notes_tab(ui, painter, body, panel, tools, state, actions),
-        ToolsTab::Transform => transform_tab(ui, painter, body, tools, state, actions),
-    }
+    let notes_end = match state.tools_tab {
+        ToolsTab::Notes => Some(notes_tab(ui, painter, body, panel, tools, state, actions)),
+        ToolsTab::Transform => {
+            transform_tab(ui, painter, body, tools, state, actions);
+            None
+        }
+    };
     if tools.nothing {
         actions.truncate(before);
+    }
+    // The clip's swing, under the Notes tab's tools: the clip's own, so it works whatever the
+    // tools act on.
+    if let Some(end) = notes_end {
+        swing_row(ui, painter, body, end + GAP, tools.address, panel, actions);
     }
     // Escape leaves Quantise for the Notes tab, as it closed the quantise block before (Escape also
     // clears the note selection in the piano roll; both happen, as both are what the key means).
@@ -234,7 +301,7 @@ fn notes_tab(
     tools: &Tools<'_>,
     state: &mut PianoRollState,
     actions: &mut Vec<Action>,
-) {
+) -> f32 {
     let left = body;
     let enabled = tools.count() > 0;
     let mut y = left.top();
@@ -302,6 +369,7 @@ fn notes_tab(
         }
         y += FIELD + BUTTON_GAP;
     }
+    y - BUTTON_GAP
 }
 
 /// Fit to scale for a clip with no scale: a list of the scales, each with its roots; picking one

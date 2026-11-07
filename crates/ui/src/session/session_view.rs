@@ -923,7 +923,7 @@ fn column_body(
         }
         let number = scene + 1;
         let _slot_style = crate::kit::style_class::enter_named("slot", &format!("slot-{}-{number}", column.track.0));
-        let _clip_style = (!matches!(slot.state, SlotState::Empty | SlotState::EmptyStop))
+        let clip_style = (!matches!(slot.state, SlotState::Empty | SlotState::EmptyStop))
             .then(|| crate::kit::style_class::enter("clip"));
         let target = MappingTarget::Slot { track: column.track, scene };
         if mapping {
@@ -937,7 +937,7 @@ fn column_body(
             if response.clicked() {
                 state.launch_keys.pick(target);
             }
-            slot_cell(painter, rect, column, slot, 0.0, 1.0, progress, false);
+            slot_cell(painter, rect, column, slot, (0.0, None), 1.0, progress, false);
             crate::session::launch_keys::overlay(
                 painter,
                 rect,
@@ -1004,6 +1004,13 @@ fn column_body(
             state.select_slot(column.track, scene);
         }
         let hover = [&launch, &select].into_iter().flatten().map(|r| widgets::hover(ui, r)).fold(0.0, f32::max);
+        // The clip's element is entered before its responses exist: it takes their hover now, so
+        // `.clip:hover` matches it (#1241).
+        let hover_fill = clip_style.as_ref().and_then(|_| {
+            let hovered = [&launch, &select].into_iter().flatten().any(egui::Response::hovered);
+            crate::kit::native_css::mark_pointer(hovered, false, false);
+            hover_fill(ui, id.with(("hover-fill", scene)), hovered, hover)
+        });
         let pulse = if slot.state == SlotState::Queued { motion::pulse(ui.ctx()) } else { 1.0 };
         // The launch button launches as the pointer goes down, and releases a gate or repeat
         // clip as it goes up. A playing trigger clip's press stops it instead.
@@ -1113,7 +1120,7 @@ fn column_body(
                 },
             );
         });
-        slot_cell(painter, rect, column, slot, hover, pulse, progress, selectable && selected);
+        slot_cell(painter, rect, column, slot, (hover, hover_fill), pulse, progress, selectable && selected);
         if column.armed && !has_clip && column.kind == ColumnKind::Track {
             let recording = column.recording == Some(scene);
             let (track, name) = (column.track.0, column.name.as_str());
@@ -1178,13 +1185,51 @@ fn column_body(
     }
 }
 
+/// What a clip's hover keeps while it lasts: the clip's background as the pointer came, and the
+/// theme's background for the hovered clip, if it gives one.
+#[derive(Clone, Copy, PartialEq)]
+struct HoverFill {
+    rest: Color32,
+    fill: Option<Color32>,
+}
+
+/// The background a theme gives a hovered clip (`.clip:hover { background-color }`), kept while
+/// the clip's hover fades out after the pointer leaves; `None` leaves the lighter mix. Only a
+/// background that differs from the clip's own counts: a `.clip { background-color }` alone is
+/// not a hover's, and the clip's own fill is its colour.
+fn hover_fill(ui: &Ui, key: egui::Id, hovered: bool, hover: f32) -> Option<Color32> {
+    // Read, not written, in the frames nothing changes: this runs for every clip in every frame.
+    let stored = ui.data(|d| d.get_temp::<HoverFill>(key));
+    if !hovered {
+        if hover > 0.0 {
+            return stored.and_then(|s| s.fill);
+        }
+        if stored.is_some() {
+            ui.data_mut(|d| d.remove::<HoverFill>(key));
+        }
+        return None;
+    }
+    let style = crate::kit::style_class::computed()?;
+    // In the frame the pointer comes the clip's style is still the one resolved without it (the
+    // pointer's state takes effect as the frame's styles resolve): its background is the rest's.
+    let rest = stored.map_or(style.background, |s| s.rest);
+    let fill = (style.authored.background && style.background != rest).then_some(style.background);
+    let now = HoverFill { rest, fill };
+    if stored != Some(now) {
+        ui.data_mut(|d| d.insert_temp(key, now));
+    }
+    fill
+}
+
+/// `hover` is how far the pointer's hover has come (0 to 1), with the theme's hovered background
+/// if it gives one.
 #[allow(clippy::too_many_arguments)]
 fn slot_cell(
     painter: &egui::Painter,
     rect: Rect,
     column: &Column,
     slot: &crate::interaction::grid::Slot,
-    hover: f32,
+    (hover, hover_fill): (f32, Option<Color32>),
     pulse: f32,
     progress: Option<f32>,
     selected: bool,
@@ -1207,6 +1252,11 @@ fn slot_cell(
         Pos2::new(rect.right() - PAD, rect.bottom()),
     );
     let font = theme::ui_font(theme::TEXT);
+    // A clip under the pointer: `base` toward the theme's hovered background, or lighter.
+    let lit = |base: Color32, light: f32| match hover_fill {
+        Some(fill) => motion::mix(motion::mix(base, Color32::WHITE, light), fill, hover),
+        None => motion::mix(base, Color32::WHITE, light + 0.14 * hover),
+    };
     match slot.state {
         SlotState::Empty => {
             if !textured {
@@ -1226,7 +1276,7 @@ fn slot_cell(
         SlotState::Stopped | SlotState::Queued => {
             // The clip in its colour, lighter under the pointer; a deactivated clip is grey.
             let base = if slot.enabled { clip_color } else { theme::control_background() };
-            let fill = motion::mix(base, Color32::WHITE, 0.14 * hover);
+            let fill = lit(base, 0.0);
             let fill = if column.mute { motion::mix(theme::control_background(), fill, 0.45) } else { fill };
             painter.fill_background(rect, 0.0, fill);
             crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Clip);
@@ -1258,7 +1308,7 @@ fn slot_cell(
         }
         SlotState::Playing => {
             // A playing clip keeps its colour, brighter, so the column still reads as its track.
-            let fill = motion::mix(clip_color, Color32::WHITE, 0.10 + 0.14 * hover);
+            let fill = lit(clip_color, 0.10);
             let fill = if column.mute { motion::mix(theme::control_background(), fill, 0.45) } else { fill };
             painter.fill_background(rect, 0.0, fill);
             crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Clip);
