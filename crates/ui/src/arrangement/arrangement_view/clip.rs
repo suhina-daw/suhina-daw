@@ -1102,7 +1102,7 @@ pub(super) fn clip_box<'a>(
     // The gain sits on top of the clip.
     if let Some((field, db, hover)) = gain_paint {
         let gain_painter = painter.with_clip_rect(row.clip);
-        // `.clip-gain`: its background, border, radius and text.
+        // `clip-gain`: its background, border, radius and text.
         let _style = crate::kit::style_class::enter("clip-gain");
         let fill = motion::mix(theme::control_background(), theme::control_hover(), hover);
         crate::kit::native_css::surface(&gain_painter, field, 0.0, fill);
@@ -1146,7 +1146,7 @@ pub(super) fn clip_box<'a>(
     result
 }
 
-/// Draws a fade handle. `.clip-fade-handle` gives its fill (`background-color`), border and radius,
+/// Draws a fade handle. `clip-fade-handle` gives its fill (`background-color`), border and radius,
 /// or the `clip.fade-handle` artwork does.
 fn paint_fade_handle(painter: &egui::Painter, handle: Rect, hover: f32) {
     let _style = crate::kit::style_class::enter("clip-fade-handle");
@@ -1260,7 +1260,7 @@ pub(super) fn paint_clip(
     crate::kit::native_css::set_variable("--clip-colour", crate::kit::native_css::hex(rgb(clip.color)));
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, off);
-    // `:playing` while the play position is inside it, `:recording` while a take records over it.
+    // `[playing]` while the play position is inside it, `[recording]` while a take records over it.
     let end = clip.start + clip.length;
     let playing = timeline.running && !off && (clip.start..end).contains(&timeline.beat);
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Playing, playing);
@@ -1346,7 +1346,7 @@ pub(super) fn paint_clip(
     // them so both read (ADR 0033, #720): dimmed to 40 % it read as an empty clip on a light body.
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
     let appearance = look.waveform_appearance;
-    // Theme: the sheet's `.clip-waveform` and `.clip-notes` colours, else Dark.
+    // Theme: the sheet's `clip-waveform` and `clip-notes` colours, else Dark.
     let themed = |class: &str| {
         let _part = crate::kit::style_class::enter(class);
         crate::kit::style_class::foreground(appearance.ink(ink))

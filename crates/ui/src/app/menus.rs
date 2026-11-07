@@ -120,7 +120,7 @@ fn entries(ui: &mut Ui, entries: &[Entry], picked: &mut Option<String>) {
 /// A menu of the bar that opens when the pointer moves onto it while another is open.
 fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
     let shown = ui.menu_button(title, |ui| {
-        // `.menu` styles the open menu: its background, text colour, corner radius and font size.
+        // `menu` styles the open menu: its background, text colour, corner radius and font size.
         let _menu = crate::kit::style_class::enter("menu");
         // The menu opens over the window, not the bar: text it inherits from the bar (Suhina
         // Sheet's white on green) must still read on the menu's own background.
@@ -167,7 +167,7 @@ mod tests {
     fn an_open_menu_s_background_covers_the_menu_not_the_window() {
         let ctx = egui::Context::default();
         let skin = crate::kit::skin::Skin {
-            css: Some(std::sync::Arc::from(".menu { background-color: #FF0000; }")),
+            css: Some(std::sync::Arc::from("menu { background-color: #FF0000; }")),
             ..Default::default()
         };
         crate::kit::skin::configure(&skin);

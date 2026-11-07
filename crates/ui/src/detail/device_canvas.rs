@@ -1545,7 +1545,7 @@ fn plot_inside(points: &[(f32, f32)], top: f32, bottom: f32) -> Vec<Vec<(f32, f3
 /// Kept unmultiplied, so a translucent token keeps its exact RGB until a drawing's alpha is applied.
 struct Tokens([[u8; 4]; suhina_device_sdk::ui::THEME_TOKENS.len()]);
 impl Tokens {
-    /// The tokens of the style scope open now: a rule on `:root`, `.device-panel` or
+    /// The tokens of the style scope open now: a rule on `:root`, `device-panel` or
     /// `#device-<id>` reaches them.
     fn resolve() -> Self {
         let style = crate::kit::style_class::computed();
@@ -2566,8 +2566,8 @@ pub(crate) fn show(
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
                 let mut picked = None;
-                // The standard popup frame, as every other dropdown's; `.popup` styles its rows and
-                // `.button:checked` the chosen one (#1239).
+                // The standard popup frame, as every other dropdown's; `popup` styles its rows and
+                // `button[checked]` the chosen one (#1239).
                 popup.show(|ui| {
                     let _popup = crate::kit::style_class::enter("popup");
                     let mut styled_ui = crate::kit::style_class::ui(ui);

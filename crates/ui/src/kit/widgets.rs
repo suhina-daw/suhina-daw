@@ -239,8 +239,8 @@ pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bo
     super::native_css::surface(painter, rect, radius, fill);
 }
 
-/// A track's number, `.track-number`: its own `color`, `font-size` and `display: none`, and
-/// `:muted` while the track is off.
+/// A track's number, `track-number`: its own `color`, `font-size` and `display: none`, and
+/// `[muted]` while the track is off.
 pub fn track_number_text(painter: &Painter, rect: Rect, number: &str, ink: Color32, muted: bool) {
     let _style = super::style_class::enter("track-number");
     super::native_css::mark(super::native_css::HostState::Muted, muted);
@@ -976,7 +976,7 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
 
 /// A dial as an `.sd` control's dial draws it, the built-in canvases' wheels (the reverb's and
 /// the delay's): the rim arc, the ring's disc, the inner disc, the pointer line to 72 % of the
-/// radius, 270° with the gap under. The colours are the tokens the `.knob` scope gives — the
+/// radius, 270° with the gap under. The colours are the tokens the `knob` scope gives — the
 /// same scope the canvases' dials take theirs from, so a theme's own colouring applies — and
 /// no artwork stands for the face, as a canvas has none.
 pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response: Option<&Response>) {

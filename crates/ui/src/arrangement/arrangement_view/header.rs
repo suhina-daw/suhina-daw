@@ -295,7 +295,7 @@ pub(super) fn track_header(
         painter.fill_background(rect, 0.0, header_fill);
     }
     crate::kit::liquid::paint(painter, rect, header_fill, crate::kit::liquid::Surface::Track);
-    // The sheet's own background for the header (`.arrangement .track-header`) over the native one.
+    // The sheet's own background for the header (`arrangement track-header`) over the native one.
     crate::kit::native_css::surface(painter, rect.intersect(clip), 0.0, egui::Color32::TRANSPARENT);
     // The name and the controls' ink read on whichever background is shown.
     let header_fill = crate::kit::style_class::background(header_fill);
@@ -383,7 +383,7 @@ pub(super) fn track_header(
             format!("Collapse {}", lane.name)
         };
         let response = widgets::button_area(ui, fold.intersect(clip), id.with("fold"), label);
-        // `.fold`, `:checked` while folded, and `fold` artwork (`.on` while folded).
+        // `fold`, `[checked]` while folded, and `fold` artwork (`.on` while folded).
         let _style = crate::kit::style_class::enter_named_response("fold", "fold", &response);
         crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, folded);
         let color = motion::mix(header_fill, theme::text_on(header_fill), 0.75 + 0.25 * widgets::hover(ui, &response));
@@ -587,7 +587,7 @@ pub(super) fn track_header(
             header_fill,
             rgb(lane.color),
         );
-        // The sheet's own background for the name (`.arrangement .track-name`).
+        // The sheet's own background for the name (`arrangement track-name`).
         crate::kit::native_css::surface(painter, name.intersect(clip), 0.0, egui::Color32::TRANSPARENT);
     }
     // Ink that reads on the fill, unless the sheet gives the name a colour.
@@ -659,7 +659,7 @@ pub(super) fn track_header(
         let toggle = crate::kit::control_layout::place("arrangement-enable", toggle, clip);
         let label = if lane.mute { format!("Turn {} on", lane.name) } else { format!("Turn {} off", lane.name) };
         let response = widgets::button_area(ui, toggle.intersect(clip), id.with("on"), label);
-        // `#control-track-on`, as in the mixer: `:checked` while the track is on, `:muted` while
+        // `#control-track-on`, as in the mixer: `[checked]` while the track is on, `[muted]` while
         // it is off, and `track-on` artwork (`.on`).
         let _style = crate::kit::style_class::enter_named_response("button", "track-on", &response);
         crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, lane.mute);
@@ -674,7 +674,7 @@ pub(super) fn track_header(
             widgets::track_number_text(painter, toggle, &number, text, lane.mute);
         }
     } else if !crate::kit::control_layout::placement("arrangement-number").hidden {
-        // With the toggle hidden, the number can stay as a label of its own (`.track-number`,
+        // With the toggle hidden, the number can stay as a label of its own (`track-number`,
         // placed as `arrangement-number`), which turns nothing off.
         let at = crate::kit::control_layout::place("arrangement-number", toggle, clip);
         if at.intersects(clip) {
@@ -696,7 +696,7 @@ pub(super) fn track_header(
         )
         .on_hover_text("Choose when you hear the MIDI input");
         let active = mode == suhina_engine::model::Monitor::In;
-        // `#control-monitor`, `:checked` while monitoring is In, and `monitor` artwork.
+        // `#control-monitor`, `[checked]` while monitoring is In, and `monitor` artwork.
         let _style = crate::kit::style_class::enter_named_response("button", "monitor", &response);
         let (fill, ink) = widgets::toggle_colors(ui, &response, active);
         widgets::button_surface(painter, at, &response, active, fill, 0.0);

@@ -263,7 +263,7 @@ pub(super) fn toolbar(
     let icon = (TOOL_ICON * scale).min(row.height());
     let gap = TOOL_GAP * scale;
     let side = row.height().min(icon);
-    // `.piano-tool { width; height }` sizes the buttons, so stretched artwork has room.
+    // `piano-tool { width; height }` sizes the buttons, so stretched artwork has room.
     let size = {
         let _style = crate::kit::style_class::enter("piano-tool");
         let own = crate::kit::style_class::computed();
@@ -618,7 +618,7 @@ impl ButtonPaint<'_> {
         let hint = icon_hint(button, self.keymap);
         let response = response.on_hover_text(hint.clone());
         response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, active, chosen, hint.clone()));
-        // `.piano-tool` styles them all, `#piano-draw` and the others one; `:checked` is the
+        // `piano-tool` styles them all, `#piano-draw` and the others one; `[checked]` is the
         // chosen tool or an open column. `piano.draw` (`.on`, `.hover`) replaces its shape.
         let _style = crate::kit::style_class::enter_named_response("piano-tool", button.id(), &response);
         crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, chosen);

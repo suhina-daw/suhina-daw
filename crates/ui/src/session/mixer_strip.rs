@@ -66,7 +66,7 @@ const SEND_HEIGHT: f32 = 22.0;
 pub const METER_WIDTH: f32 = 14.0;
 const CAP: Vec2 = Vec2::new(20.0, 26.0);
 
-/// The fader cap's size: `.fader-cap { width; height }` in the theme, else [`CAP`].
+/// The fader cap's size: `fader-cap { width; height }` in the theme, else [`CAP`].
 pub(crate) fn cap_size() -> Vec2 {
     let _style = crate::kit::style_class::enter("fader-cap");
     let computed = crate::kit::style_class::computed();
@@ -76,7 +76,7 @@ pub(crate) fn cap_size() -> Vec2 {
     )
 }
 
-/// The fader rail's thickness: `.fader-rail { width }` in the theme, else 5 points.
+/// The fader rail's thickness: `fader-rail { width }` in the theme, else 5 points.
 pub(crate) fn rail_width() -> f32 {
     let _style = crate::kit::style_class::enter("fader-rail");
     crate::kit::style_class::computed().and_then(|c| c.width).filter(|w| *w >= 1.0).unwrap_or(5.0).min(32.0)
@@ -1370,7 +1370,7 @@ fn send_knobs(
     let painter = painter.with_clip_rect(clip);
     state.scroll_areas.push(row);
     let count = column.sends.len();
-    // `.send { width; height }` sizes every send, within the row.
+    // `send { width; height }` sizes every send, within the row.
     let sheet = {
         let _send = crate::kit::style_class::enter("send");
         crate::kit::style_class::computed()
@@ -1466,7 +1466,7 @@ fn send_knobs(
         };
         let (low, high) = widgets::SEND_RANGE;
         let position = ((shown - low) / (high - low)) as f32;
-        // `.send` styles every send, `#mixer-send-N` one of them; `--suhina-appearance: knob`
+        // `send` styles every send, `#mixer-send-N` one of them; `--suhina-appearance: knob`
         // draws it as a knob.
         let _style = crate::kit::style_class::enter_named_response("send", &name, &response);
         let pointer = crate::kit::style_class::foreground(motion::mix(

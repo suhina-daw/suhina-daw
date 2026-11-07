@@ -30,7 +30,7 @@ fn native_gradients_publish_every_layer_and_their_end_colours() {
         ),
         ("repeating-conic-gradient(red 0 10%, blue 10% 20%)", 1, Color32::RED, Color32::BLUE),
     ] {
-        let css = format!(".button {{color:#34789a; background-image:{image};}}");
+        let css = format!("button {{color:#34789a; background-image:{image};}}");
         prepare(&css, 800.0);
         let style = scoped(&["button".into()]).unwrap();
         assert_eq!(style.gradients.len(), layers, "{image}");
@@ -52,7 +52,7 @@ fn native_gradients_publish_every_layer_and_their_end_colours() {
 fn native_paint_values_resolve_variables_currentcolor_em_and_media() {
     let rgba = Color32::from_rgba_unmultiplied;
     prepare(
-        ".button { color:#123456; background-color:#abcdef80; border-color:currentColor; border-radius:4px; opacity:.7; }",
+        "button { color:#123456; background-color:#abcdef80; border-color:currentColor; border-radius:4px; opacity:.7; }",
         800.0,
     );
     let style = scoped(&["toolbar".into(), "button".into()]).unwrap();
@@ -74,7 +74,7 @@ fn native_paint_values_resolve_variables_currentcolor_em_and_media() {
         }
     );
     prepare(
-        ":root { --ink:#2468ac; } .toolbar { color:var(--ink); font-size:12px; } .button { font-size:1.5em; border-radius:.25em; box-shadow:inset 0 1px 2px -1px #fff4, 1px 2px 3px currentColor; text-shadow:0 1px 1px #000a; }",
+        ":root { --ink:#2468ac; } toolbar { color:var(--ink); font-size:12px; } button { font-size:1.5em; border-radius:.25em; box-shadow:inset 0 1px 2px -1px #fff4, 1px 2px 3px currentColor; text-shadow:0 1px 1px #000a; }",
         800.0,
     );
     let style = scoped(&["toolbar".into(), "button".into()]).unwrap();
@@ -88,7 +88,7 @@ fn native_paint_values_resolve_variables_currentcolor_em_and_media() {
         [(800.0, Color32::from_rgb(0x0c, 0x22, 0x38)), (600.0, Color32::from_rgb(0x65, 0x43, 0x21))]
     {
         prepare(
-            ".toolbar { font-size:12px; color:rgba(12, 34, 56, .5); } @media (max-width:700px) { .button { color:#654321; } }",
+            "toolbar { font-size:12px; color:rgba(12, 34, 56, .5); } @media (max-width:700px) { button { color:#654321; } }",
             width,
         );
         let style = scoped(&["toolbar".into(), "button".into()]).unwrap();
@@ -100,8 +100,8 @@ fn native_paint_values_resolve_variables_currentcolor_em_and_media() {
 #[test]
 fn unsupported_declarations_are_skipped_and_the_rest_of_the_sheet_applies() {
     for css in [
-        ".button { color:red; background-image:radial-gradient(in oklch, blue, green); }",
-        ".button { color:red; filter:blur(2px); }",
+        "button { color:red; background-image:radial-gradient(in oklch, blue, green); }",
+        "button { color:red; filter:blur(2px); }",
     ] {
         prepare(css, 800.0);
         let actual = scoped(&["button".into()]).unwrap();
@@ -112,12 +112,12 @@ fn unsupported_declarations_are_skipped_and_the_rest_of_the_sheet_applies() {
     }
     // A variable that does not make a valid colour makes the property unset, as in CSS:
     // the colour is inherited, not the earlier declaration's.
-    prepare(":root { --ink:color-mix(in lab, red, blue); } .button { color:red; color:var(--ink); }", 800.0);
+    prepare(":root { --ink:color-mix(in lab, red, blue); } button { color:red; color:var(--ink); }", 800.0);
     assert_ne!(scoped(&["button".into()]).unwrap().color, Color32::RED);
     // A sheet that cannot be parsed at all keeps the last working styles.
-    prepare(".button { color:blue; }", 800.0);
+    prepare("button { color:blue; }", 800.0);
     let _ = scoped(&["button".into()]);
-    let deep = format!(".button {{ color:red; }} {}", "@media (min-width:1px) {".repeat(20));
+    let deep = format!("button {{ color:red; }} {}", "@media (min-width:1px) {".repeat(20));
     prepare(&deep, 800.0);
     ENGINE.with(|engine| assert!(engine.borrow().native.is_some(), "the previous sheet stays"));
     skin::configure(&skin::Skin::default());
@@ -145,7 +145,7 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
             sheet: 0,
         },
     ];
-    prepare(".toolbar { color:#112233; } .toolbar:hover { color:#445566; } #control-play { box-shadow:0 1px; }", 800.0);
+    prepare("toolbar { color:#112233; } toolbar:hover { color:#445566; } #control-play { box-shadow:0 1px; }", 800.0);
     ENGINE.with(|engine| engine.borrow_mut().nodes = nodes.clone());
     assert_eq!(finish_tree(0.0), (true, false));
     ENGINE.with(|engine| assert_eq!(engine.borrow().values[&2].color, Color32::from_rgb(0x11, 0x22, 0x33)));
@@ -157,9 +157,9 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
         assert_eq!(engine.values[&2].color, Color32::from_rgb(0x44, 0x55, 0x66));
     });
     for source in [
-        ".button { color:#abcdef; }",
-        ".button { color:#abcdef; background-image:radial-gradient(in oklch, red, blue); }",
-        ".button { color:#abcdef; }",
+        "button { color:#abcdef; }",
+        "button { color:#abcdef; background-image:radial-gradient(in oklch, red, blue); }",
+        "button { color:#abcdef; }",
     ] {
         prepare(source, 800.0);
         ENGINE.with(|engine| engine.borrow_mut().nodes = nodes.clone());
@@ -210,8 +210,8 @@ fn device_controls(theme: &str, device: &str, user: Option<&str>) -> (Computed, 
 #[test]
 fn a_device_sheet_styles_its_own_panel_by_control_id_and_never_leaks() {
     let (styled, other, browser) = device_controls(
-        ".device-control { color: #102030; }",
-        "#cutoff { color: #ff0000; accent-color: #0000ff; } .browser { color: #00ff00; }",
+        "device-control { color: #102030; }",
+        "#cutoff { color: #ff0000; accent-color: #0000ff; } browser { color: #00ff00; }",
         None,
     );
     assert_eq!(styled.color, Color32::from_rgb(255, 0, 0), "the device sheet wins over the theme");
@@ -225,7 +225,7 @@ fn a_device_sheet_styles_its_own_panel_by_control_id_and_never_leaks() {
 #[test]
 fn the_user_sheet_wins_over_device_and_theme_and_runs_without_a_theme_sheet() {
     let (styled, other, _) = device_controls(
-        ".device-control { color: #102030; }",
+        "device-control { color: #102030; }",
         "#cutoff { color: #ff0000 !important; }",
         Some("#cutoff { color: #abcdef; }"),
     );
@@ -330,7 +330,7 @@ fn responsive_workspace_and_toolbar_survive_resize() {
 fn palette_and_resize_restyle_retained_tree_and_preserve_author_colours() {
     let saved = theme::palette();
     prepare(
-        ".button { background-color:currentColor; } .browser { color:#123456; } @media (max-width:600px) { .browser { color:#654321; } }",
+        "button { background-color:currentColor; } browser { color:#123456; } @media (max-width:600px) { browser { color:#654321; } }",
         800.0,
     );
     let ctx = egui::Context::default();
@@ -414,18 +414,18 @@ fn measure_primary_colour_edits() {
 #[test]
 fn unreferenced_palette_edits_keep_computed_contexts_but_variables_invalidate() {
     let saved = theme::palette();
-    prepare(".browser { color: var(--accent); background-color: white; }", 800.0);
+    prepare("browser { color: var(--accent); background-color: white; }", 800.0);
     let stack = ["browser".into()];
     let original = scoped(&stack).unwrap();
     let mut palette = saved;
     palette.grid_major = Color32::from_rgba_unmultiplied(120, 120, 120, 90);
     theme::local_palette(palette);
-    prepare(".browser { color: var(--accent); background-color: white; }", 800.0);
+    prepare("browser { color: var(--accent); background-color: white; }", 800.0);
     ENGINE.with(|engine| assert_eq!(engine.borrow().contexts.len(), 1, "unrelated opacity cleared style cache"));
     assert_eq!(scoped(&stack).unwrap().color, original.color);
     palette.accent = Color32::from_rgb(10, 30, 70);
     theme::local_palette(palette);
-    prepare(".browser { color: var(--accent); background-color: white; }", 800.0);
+    prepare("browser { color: var(--accent); background-color: white; }", 800.0);
     assert_eq!(scoped(&stack).unwrap().color, palette.accent);
     theme::local_palette(saved);
     skin::configure(&skin::Skin::default());
@@ -447,7 +447,7 @@ fn prepare(css: &str, width: f32) {
 #[test]
 fn a_variant_s_values_paint_over_the_theme_s_own_and_registered_defaults_apply() {
     let css = "@property --ink { syntax: \"<color>\"; initial-value: #010203; }\n\
-               :root { --edge: #445566; } .browser { color: var(--ink); border-color: var(--edge); }";
+               :root { --edge: #445566; } browser { color: var(--ink); border-color: var(--edge); }";
     let ctx = egui::Context::default();
     let run = |variant: Option<&str>| {
         skin::configure(&skin::Skin {
@@ -470,20 +470,20 @@ fn a_variant_s_values_paint_over_the_theme_s_own_and_registered_defaults_apply()
 #[test]
 fn native_engine_resolves_variables_layers_calc_and_media() {
     prepare(
-        "@layer base,custom; @layer base { .browser { color:red; }} @layer custom { :root { --ink:rgb(10 20 30); } .browser { color:var(--ink); font-size:calc(10px + 2px); }} @media (max-width:500px) { .browser { color:rgb(30 40 50); }}",
+        "@layer base,custom; @layer base { browser { color:red; }} @layer custom { :root { --ink:rgb(10 20 30); } browser { color:var(--ink); font-size:calc(10px + 2px); }} @media (max-width:500px) { browser { color:rgb(30 40 50); }}",
         800.0,
     );
     let values = scoped(&["window".into(), "browser".into()]).unwrap();
     assert_eq!(values.color, Color32::from_rgb(10, 20, 30));
     assert!((values.font_size - 12.0).abs() < 0.1);
-    prepare("@media (max-width:500px) { .browser { color:rgb(30 40 50); }}", 400.0);
+    prepare("@media (max-width:500px) { browser { color:rgb(30 40 50); }}", 400.0);
     assert_eq!(scoped(&["browser".into()]).unwrap().color, Color32::from_rgb(30, 40, 50));
     skin::configure(&skin::Skin::default());
 }
 #[test]
 fn taffy_grid_changes_real_module_rectangles_and_hidden_modules() {
     prepare(
-        ".toolbar { display:grid; grid-template-columns:80px 120px; gap:10px; } #tempo { width:auto; } #transport { width:auto; } #mapping { display:none; }",
+        "toolbar { display:grid; grid-template-columns:80px 120px; gap:10px; } #tempo { width:auto; } #transport { width:auto; } #mapping { display:none; }",
         800.0,
     );
     let modules = toolbar(
@@ -499,7 +499,7 @@ fn taffy_grid_changes_real_module_rectangles_and_hidden_modules() {
 #[test]
 fn retained_scopes_match_siblings_and_keep_named_track_identity() {
     prepare(
-        ".mixer[data-object=track-2] { color:rgb(10 20 30); } .mixer + .mixer { background-color:rgb(40 50 60); }",
+        "mixer[data-object=track-2] { color:rgb(10 20 30); } mixer + mixer { background-color:rgb(40 50 60); }",
         800.0,
     );
     let ctx = egui::Context::default();
@@ -526,7 +526,7 @@ fn retained_scopes_match_siblings_and_keep_named_track_identity() {
 }
 #[test]
 fn disabled_state_uses_the_native_response_without_changing_its_id() {
-    prepare(".button:disabled { background-color:rgb(50 60 70); }", 800.0);
+    prepare("button:disabled { background-color:rgb(50 60 70); }", 800.0);
     let ctx = egui::Context::default();
     let mut previous_id = None;
     for pass in 0..2 {
@@ -551,7 +551,7 @@ fn disabled_state_uses_the_native_response_without_changing_its_id() {
 }
 #[test]
 fn computed_linear_gradients_publish_their_real_rgba_pixels_and_reuse_textures() {
-    prepare(".browser { background-image:linear-gradient(90deg in srgb, rgb(255 0 0 / 0), blue); }", 800.0);
+    prepare("browser { background-image:linear-gradient(90deg in srgb, rgb(255 0 0 / 0), blue); }", 800.0);
     let style = scoped(&["browser".into()]).unwrap();
     ENGINE.with(|engine| assert!(engine.borrow().native.is_some()));
     assert_eq!(style.gradients.len(), 1);
@@ -582,17 +582,17 @@ fn computed_linear_gradients_publish_their_real_rgba_pixels_and_reuse_textures()
 fn radial_and_conic_gradients_publish_spatial_pixels_at_the_authored_origin() {
     for (css, red, blue) in [
         (
-            ".browser { background-image:radial-gradient(circle 20px at 25% 75%, red 0 99%, blue 100%); }",
+            "browser { background-image:radial-gradient(circle 20px at 25% 75%, red 0 99%, blue 100%); }",
             (64, 191),
             (255, 0),
         ),
         (
-            ".browser { background-image:conic-gradient(from 90deg at 50% 50%, red 0deg 90deg, blue 90deg 360deg); }",
+            "browser { background-image:conic-gradient(from 90deg at 50% 50%, red 0deg 90deg, blue 90deg 360deg); }",
             (224, 160),
             (128, 0),
         ),
         (
-            ".browser { background-image:repeating-radial-gradient(circle 20px at 50% 50%, red 0 50%, blue 50% 100%); }",
+            "browser { background-image:repeating-radial-gradient(circle 20px at 50% 50%, red 0 50%, blue 50% 100%); }",
             (128, 128),
             (147, 128),
         ),
@@ -623,7 +623,7 @@ fn radial_and_conic_gradients_publish_spatial_pixels_at_the_authored_origin() {
 }
 #[test]
 fn keyframes_advance_with_the_clock_and_the_motion_setting_suppresses_them() {
-    let css = ".browser { color:red; animation:ink 1s linear forwards; } @keyframes ink { from {color:red;} to {color:blue;} }";
+    let css = "browser { color:red; animation:ink 1s linear forwards; } @keyframes ink { from {color:red;} to {color:blue;} }";
     for motion in [true, false] {
         prepare(css, 800.0);
         let ctx = egui::Context::default();
@@ -661,7 +661,7 @@ fn keyframes_advance_with_the_clock_and_the_motion_setting_suppresses_them() {
 #[test]
 fn native_state_change_starts_a_transition() {
     prepare(
-        ".button { background-color:red; transition:background-color 1s linear; } .button:disabled { background-color:blue; }",
+        "button { background-color:red; transition:background-color 1s linear; } button:disabled { background-color:blue; }",
         800.0,
     );
     let ctx = egui::Context::default();
@@ -694,7 +694,7 @@ fn native_state_change_starts_a_transition() {
 }
 #[test]
 fn computed_inset_shadow_uses_current_color_and_reuses_its_texture() {
-    prepare(".browser { color:rgb(120 30 180); box-shadow:inset 8px 0 0 0 currentColor; }", 800.0);
+    prepare("browser { color:rgb(120 30 180); box-shadow:inset 8px 0 0 0 currentColor; }", 800.0);
     let style = scoped(&["browser".into()]).unwrap();
     assert_eq!(style.shadows.len(), 1);
     let ctx = egui::Context::default();
@@ -722,7 +722,7 @@ fn computed_inset_shadow_uses_current_color_and_reuses_its_texture() {
 #[test]
 fn keyframe_only_properties_are_applied_without_a_static_declaration() {
     prepare(
-        ".browser { animation:ink 1s linear forwards; } @keyframes ink { from {color:red;} to {color:blue;} }",
+        "browser { animation:ink 1s linear forwards; } @keyframes ink { from {color:red;} to {color:blue;} }",
         800.0,
     );
     let ctx = egui::Context::default();
@@ -762,7 +762,7 @@ fn workspace_grid_resolves_real_panels_and_respects_native_visibility() {
     assert!(!layout.browser_follows && !layout.detail_follows, "the sheet sizes both: no splitters");
     let closed = workspace(Vec2::new(800.0, 600.0), None, None).unwrap();
     assert!(closed.browser.is_none() && closed.detail.is_none());
-    prepare(".browser {color:red;}", 800.0);
+    prepare("browser {color:red;}", 800.0);
     assert!(workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, 120.0))).is_none());
     skin::configure(&skin::Skin::default());
 }
@@ -822,7 +822,7 @@ fn dragging_a_splitter_lays_the_workspace_out_once_a_frame() {
 }
 #[test]
 fn unrelated_css_preserves_native_colours_font_sizes_and_corner_defaults() {
-    prepare(".browser { color:rgb(10 20 30); }", 800.0);
+    prepare("browser { color:rgb(10 20 30); }", 800.0);
     let original = theme::palette();
     {
         let _mixer = super::super::style_class::enter("mixer");
@@ -892,7 +892,7 @@ fn a_level_bar_takes_its_shape_and_thickness_from_the_sheet() {
     assert!(native.iter().any(|r| r.rect == field && r.corner_radius.nw == 10), "{native:?}");
     let css = "#arrangement-volume { height: 4px; border-radius: 0; background-color: #202020; \
                border-width: 1px; border-color: #FFFFFF; } \
-               #arrangement-volume .value-fill { background-color: #FF0000; height: 4px; }";
+               #arrangement-volume value-fill { background-color: #FF0000; height: 4px; }";
     let shaped = rects(&painted(css, draw));
     let track = Rect::from_center_size(field.center(), Vec2::new(200.0, 4.0));
     assert!(
@@ -923,7 +923,7 @@ fn a_transparent_control_background_paints_nothing() {
 fn a_view_background_leaves_the_controls_on_it_their_own_fill() {
     let control = theme::control_background();
     let mut seen = None;
-    painted(".arrangement { background-color: #102030; }", |_| {
+    painted("arrangement { background-color: #102030; }", |_| {
         let _view = super::super::style_class::enter("arrangement");
         seen = Some((theme::window_background(), theme::control_background()));
     });
@@ -959,8 +959,8 @@ fn a_level_bar_or_surface_squeezed_below_a_point_draws_nothing_and_never_panics(
 
 #[test]
 fn checked_and_selected_states_reach_the_sheet() {
-    let css = "#control-solo:checked { background-color: #FF8800; } \
-               .track-header:selected { background-color: #102030; }";
+    let css = "#control-solo[checked] { background-color: #FF8800; } \
+               track-header[selected] { background-color: #102030; }";
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(20.0, 16.0));
     for on in [false, true] {
         let mut header = None;
@@ -995,7 +995,7 @@ fn checked_and_selected_states_reach_the_sheet() {
 #[test]
 fn a_menu_opened_from_a_light_text_bar_reads_on_its_own_background() {
     let mut seen = None;
-    painted(".menu-bar { background-color: #217346; color: #ffffff; }", |_| {
+    painted("menu-bar { background-color: #217346; color: #ffffff; }", |_| {
         let _bar = super::super::style_class::enter("menu-bar");
         let _menu = super::super::style_class::enter("menu");
         let ink = super::super::style_class::readable_on(egui::Color32::WHITE);
@@ -1009,7 +1009,7 @@ fn a_menu_opened_from_a_light_text_bar_reads_on_its_own_background() {
 #[test]
 fn a_selected_header_s_background_never_fills_its_buttons() {
     let mut seen = None;
-    painted(".track-header:selected { background-color: #304050; }", |_| {
+    painted("track-header[selected] { background-color: #304050; }", |_| {
         let _header = super::super::style_class::enter_named("track-header", "track-1");
         mark(HostState::Selected, true);
         let shown = super::super::style_class::background(egui::Color32::BLACK);
@@ -1024,7 +1024,7 @@ fn a_selected_header_s_background_never_fills_its_buttons() {
 #[test]
 fn a_track_gives_its_colour_to_the_sheet_and_each_view_is_known() {
     let mut seen = None;
-    painted(".mixer .track-name { background-color: var(--track-colour); }", |_| {
+    painted("mixer track-name { background-color: var(--track-colour); }", |_| {
         let _session = super::super::style_class::enter("session");
         let _strip = super::super::style_class::enter_named("mixer", "track-1");
         set_variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)));
@@ -1082,16 +1082,16 @@ fn a_knob_s_value_goes_where_the_sheet_puts_it() {
     };
     let beside = text_top("").unwrap();
     assert!(beside > field.top() + 10.0, "beside the knob, in the middle of the field");
-    let above = text_top(".pan { --suhina-value-position: top; }").unwrap();
+    let above = text_top("pan { --suhina-value-position: top; }").unwrap();
     assert!(above < field.top() + 4.0, "over the knob: {above}");
-    assert_eq!(text_top(".pan { --suhina-value-position: none; }"), None);
+    assert_eq!(text_top("pan { --suhina-value-position: none; }"), None);
     skin::configure(&skin::Skin::default());
 }
 
 #[test]
 fn a_level_bar_s_value_may_sit_left_and_its_lit_part_take_its_own_ink() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(200.0, 20.0));
-    let css = "#arrangement-volume { text-align: left; } #arrangement-volume .value-fill { color: #00FF00; }";
+    let css = "#arrangement-volume { text-align: left; } #arrangement-volume value-fill { color: #00FF00; }";
     let shapes = painted(css, |ui| {
         let _value = super::super::style_class::enter_named("value", "arrangement-volume");
         crate::kit::mixer_controls::level_bar(
@@ -1119,7 +1119,7 @@ fn a_level_bar_s_value_may_sit_left_and_its_lit_part_take_its_own_ink() {
 #[test]
 fn a_sheet_s_border_is_the_ordinary_widgets_outline() {
     let mut strokes = Vec::new();
-    for css in [".dropdown { border-width: 0px; }", ".dropdown { border-width: 2px; border-color: #FF0000; }"] {
+    for css in ["dropdown { border-width: 0px; }", "dropdown { border-width: 2px; border-color: #FF0000; }"] {
         let mut seen = None;
         painted(css, |ui| {
             let _menu = super::super::style_class::enter("dropdown");
@@ -1138,7 +1138,7 @@ fn the_fader_cap_and_rail_take_their_size_from_the_sheet() {
     let mut sizes = (Vec2::ZERO, 0.0);
     painted("", |_| sizes = (crate::session::mixer_strip::cap_size(), crate::session::mixer_strip::rail_width()));
     assert_eq!(sizes, (Vec2::new(20.0, 26.0), 5.0));
-    painted(".fader-cap { width: 30px; height: 12px; } .fader-rail { width: 2px; }", |_| {
+    painted("fader-cap { width: 30px; height: 12px; } fader-rail { width: 2px; }", |_| {
         sizes = (crate::session::mixer_strip::cap_size(), crate::session::mixer_strip::rail_width());
     });
     assert_eq!(sizes, (Vec2::new(30.0, 12.0), 2.0));
@@ -1146,7 +1146,7 @@ fn the_fader_cap_and_rail_take_their_size_from_the_sheet() {
 
 #[test]
 fn the_add_track_buttons_take_their_class_and_ids() {
-    let css = ".add-track { background-color: #00FF00; } #add-return-track { background-color: #FF0000; }";
+    let css = "add-track { background-color: #00FF00; } #add-return-track { background-color: #FF0000; }";
     let fills: Vec<_> = rects(&painted(css, |ui| {
         let area = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(300.0, 300.0));
         crate::interaction::empty_space::empty_space(ui, &ui.painter().clone(), area, &mut Vec::new());
@@ -1164,10 +1164,10 @@ fn the_ruler_loop_region_and_playhead_take_their_classes() {
     let mut timeline = timeline::Timeline::build(&crate::demo::demo_project(), None);
     timeline.loop_brace = Some(timeline::LoopBrace { start: 0.0, end: 8.0, enabled: true });
     timeline.beat = 2.0;
-    let css = ".ruler { background-color: #FF0000; } \
-               .loop-region { background-color: #000080; } \
-               .loop-region:checked { background-color: #00FF00; height: 6px; } \
-               .playhead { color: #0000FF; width: 3px; }";
+    let css = "ruler { background-color: #FF0000; } \
+               loop-region { background-color: #000080; } \
+               loop-region[checked] { background-color: #00FF00; height: 6px; } \
+               playhead { color: #0000FF; width: 3px; }";
     let mut state = arrangement_view::ArrangementViewState::default();
     let shapes = painted(css, |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new()));
     let fills: Vec<_> = rects(&shapes);
@@ -1186,7 +1186,7 @@ fn a_clip_under_the_play_position_is_playing() {
     let mut timeline = timeline::Timeline::build(&crate::demo::demo_project(), None);
     let first = timeline.lanes.iter().flat_map(|l| &l.clips).next().expect("the demo has clips");
     timeline.beat = first.start + first.length / 2.0;
-    let css = ".clip:playing { background-color: #FF0000; }";
+    let css = "clip[playing] { background-color: #FF0000; }";
     let mut state = arrangement_view::ArrangementViewState::default();
     let stopped = rects(&painted(css, |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new())));
     assert!(!stopped.iter().any(|r| r.fill == egui::Color32::RED), "stopped, nothing plays");
@@ -1211,7 +1211,7 @@ fn a_level_bar_draws_a_handle_where_its_fill_ends() {
         );
     };
     assert!(!rects(&painted("", draw)).iter().any(|r| r.fill == egui::Color32::RED));
-    let shaped = rects(&painted("#arrangement-volume .value-handle { width: 6px; background-color: #FF0000; }", draw));
+    let shaped = rects(&painted("#arrangement-volume value-handle { width: 6px; background-color: #FF0000; }", draw));
     let handle = shaped.iter().find(|r| r.fill == egui::Color32::RED).expect("the handle");
     assert_eq!(handle.rect.center().x, 110.0);
     assert_eq!(handle.rect.width(), 6.0);
@@ -1221,9 +1221,9 @@ fn a_level_bar_draws_a_handle_where_its_fill_ends() {
 fn piano_roll_notes_take_the_clip_colour_and_their_states() {
     use crate::detail::piano_roll::part_style;
     use crate::kit::native_css::HostState;
-    let css = ".piano-note { background-color: var(--clip-colour); } \
-               .piano-note:selected { border-color: #FFFFFF; } \
-               .piano-key-black { background-color: #000000; }";
+    let css = "piano-note { background-color: var(--clip-colour); } \
+               piano-note[selected] { border-color: #FFFFFF; } \
+               piano-key-black { background-color: #000000; }";
     let mut seen = None;
     painted(css, |_| {
         let _roll = super::super::style_class::enter("piano-roll");
@@ -1243,11 +1243,11 @@ fn piano_roll_notes_take_the_clip_colour_and_their_states() {
 
 #[test]
 fn egui_widgets_in_a_scope_take_the_generic_button_and_input_rules() {
-    let css = ".settings .button { background-color: #101010; border-width: 0px; } \
-               .settings .button:hover { background-color: #202020; } \
-               .settings .button:active { background-color: #303030; } \
-               .settings .button:checked { background-color: #404040; } \
-               .settings .text-input { background-color: #050505; }";
+    let css = "settings button { background-color: #101010; border-width: 0px; } \
+               settings button:hover { background-color: #202020; } \
+               settings button:active { background-color: #303030; } \
+               settings button[checked] { background-color: #404040; } \
+               settings text-input { background-color: #050505; }";
     let mut seen = None;
     painted(css, |ui| {
         let _settings = super::super::style_class::enter("settings");
@@ -1266,8 +1266,8 @@ fn egui_widgets_in_a_scope_take_the_generic_button_and_input_rules() {
 
 #[test]
 fn a_built_in_device_s_panel_is_selected_by_its_id() {
-    let css = ".device { background-color: #00FF00; } #device-compressor { background-color: #FF0000; } \
-               #device-compressor .device-header { background-color: #0000FF; }";
+    let css = "device { background-color: #00FF00; } #device-compressor { background-color: #FF0000; } \
+               #device-compressor device-header { background-color: #0000FF; }";
     let mut seen = Vec::new();
     painted(css, |_| {
         seen.clear();
@@ -1290,7 +1290,7 @@ fn a_clip_s_radius_reaches_its_name_bar() {
     use crate::arrangement::{arrangement_view, timeline};
     let timeline = timeline::Timeline::build(&crate::demo::demo_project(), None);
     let mut state = arrangement_view::ArrangementViewState::default();
-    let css = ".clip { border-radius: 10px; } .clip-name { background-color: #FF0000; }";
+    let css = "clip { border-radius: 10px; } clip-name { background-color: #FF0000; }";
     let shapes = rects(&painted(css, |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new())));
     let bars: Vec<_> = shapes.iter().filter(|r| r.fill == egui::Color32::RED).collect();
     assert!(!bars.is_empty(), "the name bars");
@@ -1301,7 +1301,7 @@ fn a_clip_s_radius_reaches_its_name_bar() {
 fn the_midi_tools_column_takes_its_width_from_the_sheet() {
     let mut widths = (0.0, 0.0);
     painted("", |_| widths.0 = crate::detail::midi_tools::tools_width());
-    painted(".midi-tools { width: 220px; }", |_| widths.1 = crate::detail::midi_tools::tools_width());
+    painted("midi-tools { width: 220px; }", |_| widths.1 = crate::detail::midi_tools::tools_width());
     assert_eq!(widths, (crate::detail::midi_tools::TOOLS_WIDTH, 220.0));
 }
 
@@ -1311,10 +1311,10 @@ fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_colour_spares_
     let mut seen = (true, true);
     painted("", |_| seen = (themed_slider(), slider_as_knob()));
     assert_eq!(seen, (false, false));
-    painted(".slider-handle { background-color: #FF0000; }", |_| seen = (themed_slider(), slider_as_knob()));
+    painted("slider-handle { background-color: #FF0000; }", |_| seen = (themed_slider(), slider_as_knob()));
     assert_eq!(seen, (true, false));
     // The appearance is a host rule, read from the theme's sheet as the app reads it.
-    let (theme, _) = super::super::theme::from_css(".slider { --suhina-appearance: knob; }");
+    let (theme, _) = super::super::theme::from_css("slider { --suhina-appearance: knob; }");
     skin::configure(&theme.skin);
     assert!(slider_as_knob());
     skin::configure(&skin::Skin::default());
@@ -1341,7 +1341,7 @@ fn a_round_button_s_shadow_is_round() {
 
 #[test]
 fn a_theme_sets_how_strongly_the_track_colour_tints_its_header() {
-    let (theme, _) = super::super::theme::from_css(".arrangement { --suhina-header-tint: 0; }");
+    let (theme, _) = super::super::theme::from_css("arrangement { --suhina-header-tint: 0; }");
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_header_tint(), Some(0));
     skin::configure(&skin::Skin::default());
@@ -1352,7 +1352,7 @@ fn a_theme_sets_how_strongly_the_track_colour_tints_its_header() {
 fn the_native_toolbar_paints_its_gradient() {
     let bar = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(400.0, 40.0));
     let mut painted_any = false;
-    let shapes = painted(".toolbar { background-image: linear-gradient(90deg, #ff0000, #0000ff); }", |ui| {
+    let shapes = painted("toolbar { background-image: linear-gradient(90deg, #ff0000, #0000ff); }", |ui| {
         let _toolbar = super::super::style_class::enter("toolbar");
         painted_any = background(ui.painter(), bar);
     });
@@ -1361,10 +1361,10 @@ fn the_native_toolbar_paints_its_gradient() {
 
 #[test]
 fn a_theme_gives_tracks_without_a_height_its_own() {
-    let (theme, _) = super::super::theme::from_css(".arrangement { --suhina-track-height: 96px; }");
+    let (theme, _) = super::super::theme::from_css("arrangement { --suhina-track-height: 96px; }");
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_track_height(), Some(96.0));
-    let (theme, _) = super::super::theme::from_css(".arrangement { --suhina-track-height: 4px; }");
+    let (theme, _) = super::super::theme::from_css("arrangement { --suhina-track-height: 4px; }");
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_track_height(), None, "out of range is left out");
     skin::configure(&skin::Skin::default());
@@ -1373,7 +1373,7 @@ fn a_theme_gives_tracks_without_a_height_its_own() {
 #[test]
 fn a_value_s_number_and_unit_follow_the_sheet() {
     let (theme, warnings) =
-        super::super::theme::from_css(".pan { --suhina-value-decimals: 0; --suhina-value-unit: \" dB\"; }");
+        super::super::theme::from_css("pan { --suhina-value-decimals: 0; --suhina-value-unit: \" dB\"; }");
     let mut seen = Vec::new();
     painted("", |_| {
         skin::configure(&theme.skin);
@@ -1386,7 +1386,7 @@ fn a_value_s_number_and_unit_follow_the_sheet() {
 #[test]
 fn a_family_class_reaches_every_part_of_its_kind() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(24.0, 24.0));
-    let css = ".value-control { background-color: #FF0000; } .track-button { background-color: #00FF00; }";
+    let css = ":is(value, pan, fader, send, knob, slider, device-control, clip-gain) { background-color: #FF0000; } button:is(#control-solo, #control-cue, #control-arm, #control-track-on, #control-monitor, #control-automation) { background-color: #00FF00; }";
     let mut pan = None;
     let shapes = painted(css, |ui| {
         {
@@ -1397,13 +1397,19 @@ fn a_family_class_reaches_every_part_of_its_kind() {
         let _solo = super::super::style_class::enter_named_response("button", "solo", &response);
         surface(ui.painter(), field, 0.0, egui::Color32::BLACK);
     });
-    assert_eq!(pan, Some(egui::Color32::from_rgb(0xFF, 0, 0)), ".value-control reaches .pan");
+    assert_eq!(
+        pan,
+        Some(egui::Color32::from_rgb(0xFF, 0, 0)),
+        ":is(value, pan, fader, send, knob, slider, device-control, clip-gain) reaches pan"
+    );
     assert!(
         rects(&shapes).iter().any(|r| r.fill == egui::Color32::from_rgb(0, 0xFF, 0)),
-        ".track-button reaches #control-solo"
+        "button:is(#control-solo, #control-cue, #control-arm, #control-track-on, #control-monitor, #control-automation) reaches #control-solo"
     );
     // Host rules read the family too.
-    let (theme, _) = super::super::theme::from_css(".value-control { --suhina-appearance: knob; }");
+    let (theme, _) = super::super::theme::from_css(
+        ":is(value, pan, fader, send, knob, slider, device-control, clip-gain) { --suhina-appearance: knob; }",
+    );
     skin::configure(&theme.skin);
     let _send = super::super::style_class::enter("send");
     assert!(super::super::style_class::knob_preference(false));
@@ -1414,7 +1420,7 @@ fn a_family_class_reaches_every_part_of_its_kind() {
 #[test]
 fn a_level_bar_s_fill_can_take_the_track_s_colour() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(200.0, 20.0));
-    let css = ".value-fill { background-color: var(--track-colour); }";
+    let css = "value-fill { background-color: var(--track-colour); }";
     let shapes = painted(css, |ui| {
         let _header = super::super::style_class::enter_named("track-header", "track-1");
         set_variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)));
@@ -1437,7 +1443,7 @@ fn a_level_bar_s_fill_can_take_the_track_s_colour() {
 fn a_low_track_keeps_its_native_layout() {
     use crate::kit::control_layout::{native_only, placement};
     let (theme, _) = super::super::theme::from_css(
-        ".arrangement { --suhina-compact-below: 48px; }\n.control-arrangement-enable { left: -30px; }",
+        "arrangement { --suhina-compact-below: 48px; }\n.control-arrangement-enable { left: -30px; }",
     );
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_compact_below(), Some(48.0));

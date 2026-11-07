@@ -229,7 +229,7 @@ pub(super) fn graph_controls(
         egui::ScrollArea::both().auto_shrink([false, false]).id_salt(scroll).show(ui, |ui| {
             let hidden = graph.canvas.as_ref().map_or(&[][..], |c| c.hidden_parameters.as_slice());
             // A list keeps a compact panel's width unless the theme sizes the panel
-            // (`.device { width }`): then it follows the panel, its scroll bar aside.
+            // (`device { width }`): then it follows the panel, its scroll bar aside.
             let themed = crate::kit::style_class::computed().is_some_and(|c| c.width.is_some());
             let width = if graph.canvas.is_none() && themed { (body.width() - 8.0).max(120.0) } else { COMPACT_WIDTH };
             let mut cells = list_cells(graph, width, list_height);

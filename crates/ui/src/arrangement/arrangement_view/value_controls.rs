@@ -74,7 +74,7 @@ pub(super) fn send_knob(
     };
     let (low, high) = widgets::SEND_RANGE;
     let position = ((shown - low) / (high - low)) as f32;
-    // `.send` styles it here as in the mixer.
+    // `send` styles it here as in the mixer.
     let _style = crate::kit::style_class::enter_response("send", &response);
     let amount = widgets::hover(ui, &response);
     let surface = motion::mix(background, theme::control_hover(), amount);
@@ -85,7 +85,7 @@ pub(super) fn send_knob(
         widgets::track_button_face(ui, painter, rect, &response, fill);
     }
     let letter = send.name.chars().next().map(String::from).unwrap_or_default();
-    // `.send { --suhina-appearance: knob }` draws it as a knob, as in the mixer (`send.knob.*`
+    // `send { --suhina-appearance: knob }` draws it as a knob, as in the mixer (`send.knob.*`
     // artwork when the theme has it), its value beside it unless `--suhina-value-position` says
     // otherwise.
     if crate::kit::style_class::knob_preference(false) {
@@ -298,7 +298,7 @@ pub(super) fn value_action(control: Control, tracks: &[TrackId], from: f64, to: 
 }
 
 /// A volume field: fill from the left up to the level, the value on the right. Its track and fill
-/// take their shape from the sheet (`#arrangement-volume` and its `.value-fill`: background,
+/// take their shape from the sheet (`#arrangement-volume` and its `value-fill`: background,
 /// border, radius, `height` for the thickness) or from `volume.track` and `volume.fill` artwork;
 /// without either it is the native capsule.
 pub(super) fn volume_field(painter: &egui::Painter, rect: Rect, db: f64, hover: f32) {

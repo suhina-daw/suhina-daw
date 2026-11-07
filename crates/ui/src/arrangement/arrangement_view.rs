@@ -122,7 +122,7 @@ const MARKER_TAG_MAX: f32 = 120.0;
 /// the pointer grabs that end.
 const LOOP_ROW: f32 = 14.0;
 
-/// The loop row's height: room for `.loop-region { height }` when the theme makes the bar
+/// The loop row's height: room for `loop-region { height }` when the theme makes the bar
 /// thicker than the native row allows (up to 40 points).
 fn loop_row_height() -> f32 {
     let _style = crate::kit::style_class::enter("loop-region");
@@ -532,7 +532,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let last_beat = f64::from((state.scroll.x + time.width()) / state.beat_width);
 
     // Ruler: bar numbers through the time-signature changes, a line at each labelled bar.
-    // `.ruler` styles it: its background, `color` for the bar numbers, `border-color` for
+    // `ruler` styles it: its background, `color` for the bar numbers, `border-color` for
     // their lines; `ruler` is its artwork (nine-sliced when the SVG says so).
     let ruler_style = crate::kit::style_class::enter("ruler");
     if !crate::kit::skin::paint(&painter, ruler, "ruler", crate::kit::skin::State::Normal, theme::text_secondary(), 0.0)
@@ -542,8 +542,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let ruler_ink = crate::kit::style_class::foreground(theme::text_secondary());
     let ruler_line =
         crate::kit::style_class::computed().filter(|c| c.authored.border).map_or_else(theme::border, |c| c.border);
-    // `.ruler-number` (its `color`, `font-size`, `display: none`) and `.ruler-tick` (its `color`
-    // and `width`, `width: 0` hides it) inside `.ruler`.
+    // `ruler-number` (its `color`, `font-size`, `display: none`) and `ruler-tick` (its `color`
+    // and `width`, `width: 0` hides it) inside `ruler`.
     let (number_ink, number_size, number_shown) = {
         let _number = crate::kit::style_class::enter("ruler-number");
         let style = crate::kit::style_class::computed();
@@ -1534,7 +1534,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         // step), a double-click back to 0 dB.
         let field = Rect::from_min_max(Pos2::new(inner.left() + inner.width() * 0.45, inner.top()), inner.max);
         // An element of its own, `#main-volume`, as the tracks' are `#arrangement-volume`: without
-        // it the field paints `.arrangement`'s style as its own (#1237).
+        // it the field paints `arrangement`'s style as its own (#1237).
         let volume_style = crate::kit::style_class::enter_named("value", "main-volume");
         let response = widgets::value_area(
             ui,
@@ -1626,7 +1626,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
 
     // The loop region, while looping is on: a line at its start and its end down every lane, the
     // returns and Main too, so the region reads in the lanes, not only in the brace over them. It
-    // follows the brace while it is dragged. `.loop-line` gives its `color` and `width`.
+    // follows the brace while it is dragged. `loop-line` gives its `color` and `width`.
     {
         let free = ui.input(|i| i.modifiers.alt);
         let shown = state
@@ -1772,7 +1772,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     if timeline.running || timeline.beat > 0.0 {
         let x = x_of(timeline.beat).round() + 0.5;
         if x >= time.left() && x <= time.right() {
-            // `.playhead { color; width }`: its colour and thickness.
+            // `playhead { color; width }`: its colour and thickness.
             let _style = crate::kit::style_class::enter("playhead");
             let color = crate::kit::style_class::foreground(theme::accent());
             match crate::kit::style_class::computed().and_then(|c| c.width) {

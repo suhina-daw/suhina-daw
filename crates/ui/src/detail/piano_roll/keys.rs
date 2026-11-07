@@ -161,8 +161,8 @@ fn has_gradient(class: &str) -> bool {
     crate::kit::style_class::computed().is_some_and(|c| c.has_gradient())
 }
 
-/// A state's colour from the sheet, when it differs from the base rule's: a rule for `.piano-key`
-/// alone also answers for `.piano-key:selected`, and must not hide the state.
+/// A state's colour from the sheet, when it differs from the base rule's: a rule for `piano-key`
+/// alone also answers for `piano-key[selected]`, and must not hide the state.
 fn state_colour(class: &str, state: HostState, base: Option<Color32>) -> Option<Color32> {
     part_style(class, &[state]).background.filter(|c| Some(*c) != base)
 }

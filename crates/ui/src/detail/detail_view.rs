@@ -106,7 +106,7 @@ pub fn show_row(
 
 /// A chain's devices side by side in `area`; one with an embedded editor is as wide as it. The
 /// panels are as tall as the tallest of them shows, at least a compact panel's height and at most
-/// the area's, their contents at the top (#1238); one the theme gives a height (`.device { height }`)
+/// the area's, their contents at the top (#1238); one the theme gives a height (`device { height }`)
 /// keeps it, and one with an embedded editor takes the area's height. A chain wider than the area
 /// scrolls sideways with the wheel's sideways turn (Shift and the wheel) or the bar along its bottom.
 fn chain_row(
@@ -149,7 +149,7 @@ fn chain_row(
                 )
             });
             let width = editor.map_or(authored_width, |e| authored_width.max(e.x + PAD * 2.0));
-            // `.device { width }` or `#device-<id> { width }` widens the panel (up to 1600 points).
+            // `device { width }` or `#device-<id> { width }` widens the panel (up to 1600 points).
             let (width, themed_height) = {
                 let _style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
                 let computed = crate::kit::style_class::computed();
@@ -160,7 +160,7 @@ fn chain_row(
                 (width, computed.and_then(|c| c.height))
             };
             let height = sdk_viewport(device).map_or_else(|| panel_height(device, editor), |v| ROW + PAD * 2.0 + v[1]);
-            // `.device { height }` or `#device-<id> { height }` sets the panel's height (60 to 1200
+            // `device { height }` or `#device-<id> { height }` sets the panel's height (60 to 1200
             // points); what does not fit scrolls. An embedded editor keeps its own room.
             match (themed_height, editor) {
                 (Some(themed), None) => (width, themed.clamp(60.0, 1200.0), true),
@@ -418,7 +418,7 @@ fn list_right(device: &DeviceBox, graph: &GraphBox) -> f32 {
 
 /// How tall a device's stock-control list may grow before it continues in a new column: the
 /// compact panel's body less a plug-in's rows above the list and the graph's node rows, or a
-/// taller canvas beside it. A list in a panel the theme sizes (`.device { width }`) keeps one
+/// taller canvas beside it. A list in a panel the theme sizes (`device { width }`) keeps one
 /// column that follows that width and scrolls.
 fn list_height(device: &DeviceBox, graph: &GraphBox) -> f32 {
     if graph.canvas.is_none() {
@@ -814,8 +814,8 @@ fn device_panel(
             painter.rect_stroke(rect, 1.0, theme::hairline(theme::selection()), egui::StrokeKind::Inside);
         }
     };
-    // `.device` styles every device's panel and `#device-compressor` (a built-in device's id)
-    // one kind of them; `.device-header` its header row. Everything inside (`.device-control`,
+    // `device` styles every device's panel and `#device-compressor` (a built-in device's id)
+    // one kind of them; `device-header` its header row. Everything inside (`device-control`,
     // the generated parameter list's widgets) is in that scope.
     let _device_style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);

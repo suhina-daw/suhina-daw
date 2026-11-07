@@ -95,7 +95,7 @@ pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions:
             break;
         }
         let response = widgets::button_area(ui, rect, Id::unique(("add-track", kind, area.min.x as i32)), label);
-        // `.add-track` styles the three, `#add-midi-track`, `#add-audio-track` and
+        // `add-track` styles the three, `#add-midi-track`, `#add-audio-track` and
         // `#add-return-track` one of them; `button.add-track` is their artwork.
         let name = format!("add-{kind}-track");
         let _style = crate::kit::style_class::enter_named_response("add-track", &name, &response);

@@ -1184,7 +1184,7 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
         }
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), Some(page) == shown, motion::VALUE);
         let hover = widgets::hover(ui, &response);
-        // `.settings-nav`, one row per page: `:hover`, and `:checked` for the page shown.
+        // `settings-nav`, one row per page: `:hover`, and `[checked]` for the page shown.
         let _nav = crate::kit::style_class::enter_response("settings-nav", &response);
         crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, Some(page) == shown);
         let own = crate::kit::style_class::computed().filter(|c| c.authored.background);
@@ -2998,7 +2998,7 @@ fn segmented<T: Copy + PartialEq>(
         if response.clicked() && *value != current {
             picked = Some(*value);
         }
-        // A part is a `.button` (`:checked` when chosen), as the sheet's generic rules say.
+        // A part is a `button` (`[checked]` when chosen), as the sheet's generic rules say.
         let _style = crate::kit::style_class::enter_response("button", &response);
         crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, *value == current);
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), *value == current, motion::VALUE);

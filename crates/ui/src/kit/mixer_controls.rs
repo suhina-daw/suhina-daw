@@ -14,7 +14,7 @@ pub fn pan_field(painter: &egui::Painter, rect: Rect, pan: f64, hover: f32) {
         return;
     }
     // The native look: a flat field with centre ticks and a thin bar along its bottom.
-    // `.pan` and `#mixer-pan` colour it as well: the theme's background, border and text.
+    // `pan` and `#mixer-pan` colour it as well: the theme's background, border and text.
     crate::kit::native_css::surface(
         painter,
         rect,
@@ -47,7 +47,7 @@ fn authored_shape() -> bool {
 
 /// A level as a bar in `rect`: a track, and over it a fill from `span.0` to `span.1` (fractions of
 /// the width), with `text` on top. `kind` names its artwork (`volume.track`, `volume.fill`). The
-/// shape comes from the sheet: the element in scope is the track and `.value-fill` the fill
+/// shape comes from the sheet: the element in scope is the track and `value-fill` the fill
 /// (background, border, radius, `height` for the thickness); the native look is a capsule as tall
 /// as the field. Artwork of the theme's own replaces either.
 pub fn level_bar(
@@ -96,7 +96,7 @@ pub fn level_bar(
         }
         fill
     };
-    // A handle where the fill ends, when the sheet gives `.value-handle` a width (or artwork
+    // A handle where the fill ends, when the sheet gives `value-handle` a width (or artwork
     // `{kind}.handle`): its background, border and radius, as tall as the field.
     {
         let _handle = crate::kit::style_class::enter("value-handle");
@@ -138,7 +138,7 @@ pub fn level_bar(
         return;
     }
     // The sheet may move the value (`text-align`) and give the lit part's text its own colour
-    // (`.value-fill { color }`).
+    // (`value-fill { color }`).
     let align = match crate::kit::style_class::computed().and_then(|style| style.text_align) {
         Some(-1) => Align2::LEFT_CENTER,
         Some(0) => Align2::CENTER_CENTER,

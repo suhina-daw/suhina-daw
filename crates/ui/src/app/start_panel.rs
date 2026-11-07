@@ -97,7 +97,7 @@ pub fn show(
     notice: Option<&Notice>,
     now: SystemTime,
 ) -> Option<StartChoice> {
-    // `.start-page` styles it; its buttons and fields take the sheet's `.button` and `.text-input`.
+    // `start-page` styles it; its buttons and fields take the sheet's `button` and `text-input`.
     let _style = crate::kit::style_class::enter("start-page");
     let mut styled_ui = crate::kit::style_class::ui(ui);
     let ui = &mut *styled_ui;

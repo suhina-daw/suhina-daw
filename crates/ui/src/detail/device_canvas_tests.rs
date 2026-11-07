@@ -150,7 +150,7 @@ fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
     let skin = crate::kit::skin::Skin {
         assets: [("knob.body".into(), svg("#12AB34")), ("button".into(), svg("#AB1234"))].into(),
         css: Some(Arc::from(
-            ".device-panel .knob { color:rgb(120 40 180); font-size:17px; } .device-panel .button {background:linear-gradient(90deg,red,blue);border-radius:6px;}",
+            "device-panel knob { color:rgb(120 40 180); font-size:17px; } device-panel button {background:linear-gradient(90deg,red,blue);border-radius:6px;}",
         )),
         ..Default::default()
     };
@@ -1068,7 +1068,7 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     let actions = click(&canvas, &time_parameters, Pos2::new(35., 59.));
     assert!(actions.iter().any(|a| a.params["param"] == "sync_left" && a.params["value"] == 1.0));
 }
-/// A canvas dropdown has the standard popup frame, as every other dropdown, and `.popup` styles
+/// A canvas dropdown has the standard popup frame, as every other dropdown, and `popup` styles
 /// its rows (#1239).
 #[test]
 fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
@@ -1076,7 +1076,7 @@ fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
     let graph = super::delay_example::build().unwrap();
     let parameters: Vec<_> = graph.parameters.iter().map(|p| GraphParameter::new(p, p.default)).collect();
     let canvas = Arc::new(graph.ui.unwrap());
-    let skin = crate::kit::skin::Skin { css: Some(Arc::from(".popup { color: #00ff00; }")), ..Default::default() };
+    let skin = crate::kit::skin::Skin { css: Some(Arc::from("popup { color: #00ff00; }")), ..Default::default() };
     crate::kit::skin::configure(&skin);
     let mut harness =
         egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 300.)).build_ui(move |ui| {
@@ -1125,7 +1125,7 @@ fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
         }
         _ => None,
     });
-    assert_eq!(ink, Some(Color32::from_rgb(0, 0xFF, 0)), ".popup's colour reaches a row");
+    assert_eq!(ink, Some(Color32::from_rgb(0, 0xFF, 0)), "popup's colour reaches a row");
 }
 #[test]
 fn delay_menus_open_choose_and_cancel_without_spurious_edits() {

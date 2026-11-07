@@ -828,7 +828,7 @@ fn column_header(
         painter.fill_background(rect, 0.0, fill);
     }
     crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Track);
-    // The sheet's own background for the header (`.track-header:selected`) over the native one;
+    // The sheet's own background for the header (`track-header[selected]`) over the native one;
     // the name's ink reads on whichever is shown.
     let shown = crate::kit::style_class::background(fill);
     crate::kit::native_css::surface(painter, rect, 0.0, egui::Color32::TRANSPARENT);
@@ -1005,7 +1005,7 @@ fn column_body(
         }
         let hover = [&launch, &select].into_iter().flatten().map(|r| widgets::hover(ui, r)).fold(0.0, f32::max);
         // The clip's element is entered before its responses exist: it takes their hover now, so
-        // `.clip:hover` matches it (#1241).
+        // `clip:hover` matches it (#1241).
         let hover_fill = clip_style.as_ref().and_then(|_| {
             let hovered = [&launch, &select].into_iter().flatten().any(egui::Response::hovered);
             crate::kit::native_css::mark_pointer(hovered, false, false);
@@ -1193,9 +1193,9 @@ struct HoverFill {
     fill: Option<Color32>,
 }
 
-/// The background a theme gives a hovered clip (`.clip:hover { background-color }`), kept while
+/// The background a theme gives a hovered clip (`clip:hover { background-color }`), kept while
 /// the clip's hover fades out after the pointer leaves; `None` leaves the lighter mix. Only a
-/// background that differs from the clip's own counts: a `.clip { background-color }` alone is
+/// background that differs from the clip's own counts: a `clip { background-color }` alone is
 /// not a hover's, and the clip's own fill is its colour.
 fn hover_fill(ui: &Ui, key: egui::Id, hovered: bool, hover: f32) -> Option<Color32> {
     // Read, not written, in the frames nothing changes: this runs for every clip in every frame.
@@ -1239,7 +1239,7 @@ fn slot_cell(
     let clip_color = slot.color.map_or(track_color, rgb);
     let textured = crate::kit::style_class::property("--suhina-track-artwork").as_deref() == Some("on");
     // An empty slot is tinted with its track's colour, unless the sheet gives it a background
-    // (`.slot { background-color }`).
+    // (`slot { background-color }`).
     let empty = crate::kit::style_class::background(motion::mix(
         theme::window_background(),
         track_color,

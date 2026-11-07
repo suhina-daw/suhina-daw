@@ -253,7 +253,7 @@ pub(super) fn loop_brace(
     let Some((start, end)) = shown else { return };
     let enabled = timeline.loop_brace.is_none_or(|b| b.enabled) || state.loop_drag.is_some();
     let (left, right) = (x_of(start).round(), x_of(end).round());
-    // `.loop-region` styles the bar, `:checked` while looping is on; `height` is its thickness
+    // `loop-region` styles the bar, `[checked]` while looping is on; `height` is its thickness
     // and `loop-region` (`.on` while on) its artwork, nine-sliced when the SVG says so.
     let _style = crate::kit::style_class::enter("loop-region");
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, enabled);

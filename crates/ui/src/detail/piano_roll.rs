@@ -220,7 +220,7 @@ pub fn show(
     }
     // The toolbar along the top; the editor under it. The toolbar's height follows Settings ›
     // Clip editor › Piano roll › Toolbar size, and never takes more than the room the editor has.
-    // A theme's taller tool buttons (`.piano-tool { height }`) grow the band to hold them.
+    // A theme's taller tool buttons (`piano-tool { height }`) grow the band to hold them.
     let tool_height = {
         let _style = crate::kit::style_class::enter("piano-tool");
         crate::kit::style_class::computed().and_then(|c| c.height).map_or(0.0, |h| h.clamp(8.0, 96.0) + 6.0)

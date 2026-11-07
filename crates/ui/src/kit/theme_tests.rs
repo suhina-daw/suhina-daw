@@ -285,7 +285,7 @@ fn suhina_sheet_takes_its_colours_from_its_two_accent_shades() {
     // Nothing in its rules or its artwork is a fixed colour of its own, the green panel included.
     let css = include_str!("../../themes/suhina-sheet/theme.css");
     let rules = &css[css.find("@layer").unwrap()..];
-    let browser = rules.lines().skip_while(|line| !line.contains(".browser")).take(3).collect::<String>();
+    let browser = rules.lines().skip_while(|line| !line.contains("browser")).take(3).collect::<String>();
     assert!(browser.contains("var(--tint-light)") && !browser.contains('#'), "{browser}");
     for (path, bytes) in built_in_files("suhina-sheet").unwrap() {
         if path.starts_with("assets/") {

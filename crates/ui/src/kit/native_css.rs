@@ -405,7 +405,7 @@ pub fn enter(class: &str, name: Option<&str>, response: Option<&egui::Response>)
     })
 }
 
-/// A state of a control or a track that only the host knows, for selectors such as `:checked`.
+/// A state of a control or a track that only the host knows, for selectors such as `[checked]`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostState {
     /// A toggle that is on: a switched-on button, a soloed or armed track's button.
@@ -468,8 +468,8 @@ pub fn hex(color: Color32) -> String {
     if a == 255 { format!("#{r:02x}{g:02x}{b:02x}") } else { format!("#{r:02x}{g:02x}{b:02x}{a:02x}") }
 }
 
-/// Marks the element now in scope with `state` when `on`, so the sheet's `:checked`,
-/// `:selected` and the others match it from the next frame.
+/// Marks the element now in scope with `state` when `on`, so the sheet's `[checked]`,
+/// `[selected]` and the others match it from the next frame.
 pub fn mark(state: HostState, on: bool) {
     if !on {
         return;
@@ -864,7 +864,7 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2) -> Option<Vec<Module>> {
             return Some(modules.clone());
         }
         let mut defaults = format!(
-            ".toolbar {{ display:flex; width:{}px; height:{}px; gap:4px; align-items:center; }} .toolbar-module {{ flex-shrink:0; height:{}px; }}",
+            "toolbar {{ display:flex; width:{}px; height:{}px; gap:4px; align-items:center; }} toolbar-module {{ flex-shrink:0; height:{}px; }}",
             size.x.clamp(1.0, 16384.0),
             size.y.clamp(1.0, 16384.0),
             size.y.clamp(24.0, 16384.0)
@@ -874,9 +874,7 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2) -> Option<Vec<Module>> {
         }
         let mut elements = vec![native::element("toolbar", Some("toolbar"), None, Some(1))];
         for (id, _) in order {
-            let mut module = native::element("toolbar-module", Some(id), None, Some(2));
-            module.classes.push(id.clone());
-            elements.push(module);
+            elements.push(native::element("toolbar-module", Some(id), None, Some(2)));
         }
         let laid = native::layout(&engine, elements, &defaults, [size.x, size.y])?;
         engine.toolbar_layout = laid.requested;

@@ -60,7 +60,7 @@ pub(super) fn parameter_cell(
     }
     let value_height =
         if style.show_value && style.label_position == LabelPosition::Top { style.font_size + 4.0 } else { 0.0 };
-    // `.device .value { width }` sets the value's column; it never takes more than half the row.
+    // `device value { width }` sets the value's column; it never takes more than half the row.
     let sheet_value = {
         let _value = crate::kit::style_class::enter("value");
         crate::kit::style_class::computed().and_then(|c| c.width)
@@ -218,7 +218,7 @@ pub(super) fn parameter_widget(
                 .max_decimals(style.decimals),
         ),
         ParameterControl::Knob | ParameterControl::LogKnob => knob(ui, parameter, rect, accent, value),
-        // `.slider { --suhina-appearance: knob }` draws a slider as a knob.
+        // `slider { --suhina-appearance: knob }` draws a slider as a knob.
         ParameterControl::Slider | ParameterControl::LogSlider | ParameterControl::Integer if slider_as_knob() => {
             knob(ui, parameter, rect, accent, value)
         }
@@ -263,7 +263,7 @@ pub(super) fn parameter_widget(
     }
 }
 
-/// Whether the theme draws parameter sliders as knobs (`.slider { --suhina-appearance: knob }`).
+/// Whether the theme draws parameter sliders as knobs (`slider { --suhina-appearance: knob }`).
 pub(crate) fn slider_as_knob() -> bool {
     let _style = crate::kit::style_class::enter("slider");
     crate::kit::style_class::knob_preference(false)
@@ -327,8 +327,8 @@ fn slider_gesture(
     changed
 }
 
-/// Whether the theme gives sliders parts of their own: `.slider-rail`, `.slider-fill` or
-/// `.slider-handle` with a background, or `slider.rail` / `slider.fill` / `slider.handle` artwork.
+/// Whether the theme gives sliders parts of their own: `slider-rail`, `slider-fill` or
+/// `slider-handle` with a background, or `slider.rail` / `slider.fill` / `slider.handle` artwork.
 pub(crate) fn themed_slider() -> bool {
     let _style = crate::kit::style_class::enter("slider");
     ["slider-rail", "slider-fill", "slider-handle"].into_iter().any(|class| {
@@ -337,8 +337,8 @@ pub(crate) fn themed_slider() -> bool {
     }) || ["slider.rail", "slider.fill", "slider.handle"].into_iter().any(crate::kit::skin::has_own)
 }
 
-/// A parameter slider drawn from the theme's parts: the rail (`.slider-rail`, `height` its
-/// thickness), the fill up to the value (`.slider-fill`) and the handle (`.slider-handle`,
+/// A parameter slider drawn from the theme's parts: the rail (`slider-rail`, `height` its
+/// thickness), the fill up to the value (`slider-fill`) and the handle (`slider-handle`,
 /// `width`), each also as artwork. Dragged sideways, back to its default on a double click.
 fn themed_slider_widget(
     ui: &mut Ui,
@@ -411,7 +411,7 @@ pub(super) fn knob(
     let style = &parameter.ui;
     let (min, max) = (parameter.min, parameter.max);
     let logarithmic = parameter.control == ParameterControl::LogKnob;
-    // `.device .knob { width }` (or height) sets the knob's size, within its cell; with
+    // `device knob { width }` (or height) sets the knob's size, within its cell; with
     // `--suhina-param-row` taller rows give it room. Its `accent-color` colours its ring and
     // pointer, unless the device gives an accent of its own.
     let (themed, sheet_accent) = {
@@ -480,7 +480,7 @@ pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Show
         if response.clicked() && value != showing {
             picked = Some(value);
         }
-        // `.editor-tab` (`:checked` for the one shown), `#tab-clip` and `#tab-devices`.
+        // `editor-tab` (`[checked]` for the one shown), `#tab-clip` and `#tab-devices`.
         let _style = crate::kit::style_class::enter_named_response(
             "editor-tab",
             &format!("tab-{}", text.to_ascii_lowercase()),
