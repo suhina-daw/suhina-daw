@@ -1987,12 +1987,22 @@ fn a_tag_drags_into_a_closed_folder() {
     // inside ([#1254] review › dragging into a closed folder).
     let at = harness.get_by_label("Place Tag Red").rect().center();
     let to = harness.get_by_label("Folder Drums (0 tags)").rect().center();
+    eprintln!("DBG shelf folderRect={:?} at={at:?} to={to:?}", harness.get_by_label("Folder Drums (0 tags)").rect());
     harness.hover_at(at);
     harness.step();
     harness.drag_at(at);
     harness.step();
     harness.hover_at(to);
     harness.step();
+    eprintln!(
+        "DBG pill={:?} row={:?} tag_id={:?} folderRect={:?} orangeRect={:?} greyRect={:?}",
+        harness.state().browser.drop_pill,
+        harness.state().browser.drop_tag_row,
+        harness.state().browser.drag_tag_id,
+        harness.get_by_label("Folder Drums (0 tags)").rect(),
+        harness.get_by_label("Place Tag Orange").rect(),
+        harness.get_by_label("Place Tag Grey").rect()
+    );
     // The hint says where the drop goes — into the closed folder ([#1254] review).
     assert!(
         matches!(harness.state().status(), Status::Hint(text) if text.contains("Move Red into Drums")),
@@ -2193,6 +2203,30 @@ fn a_tag_drags_with_hints_into_a_subfolder() {
             false
         }
     }),);
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn the_tags_section_leads_with_its_folders() {
+    let (settings, folder) = (temp("folder-first-settings"), temp("folder-first"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    // A folder made last still draws over the tags: each level's folders lead
+    // ([#1254] review).
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Present" })).unwrap();
+    harness.run();
+    let folders = harness.get_by_label("Folder Present (0 tags)").rect();
+    let red = harness.get_by_label("Place Tag Red").rect();
+    let grey = harness.get_by_label("Place Tag Grey").rect();
+    assert!(folders.top() < red.top(), "the section's own folder rows come first ({:?} vs {:?})", folders, red);
+    assert!(red.bottom() < grey.top(), "the tags keep their order below the folders");
+    // A folder's own children: folders of the level lead, then the level's tags.
+    harness.state_mut().projects_mut().execute("library.moveTag", &json!({ "id": "#1", "folder": "#8" })).unwrap();
+    harness.run();
+    let child = harness.get_by_label("Place Tag Red").rect();
+    let folder_now = harness.get_by_label("Folder Present (0 tags)").rect();
+    assert!(folder_now.bottom() <= child.top(), "a level's tags sit under its folders");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

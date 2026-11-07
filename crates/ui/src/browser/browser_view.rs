@@ -41,16 +41,24 @@ struct TagRow {
 }
 
 fn tag_rows_of(entries: &[suhina_library::TagEntry], depth: usize, out: &mut Vec<TagRow>) {
+    // A level shows its folders on top and tags under them, each in the forest's own
+    // order ([#1254] review: folders lead, tags follow).
     for entry in entries {
-        match entry {
-            suhina_library::TagEntry::Folder { folder, tags } if folder.open => {
+        if let suhina_library::TagEntry::Folder { folder, tags } = entry {
+            if folder.open {
                 out.push(TagRow {
                     entry: suhina_library::TagEntry::Folder { folder: folder.clone(), tags: Vec::new() },
                     depth,
                 });
                 tag_rows_of(tags, depth + 1, out);
+            } else {
+                out.push(TagRow { entry: entry.clone(), depth });
             }
-            other => out.push(TagRow { entry: other.clone(), depth }),
+        }
+    }
+    for entry in entries {
+        if let suhina_library::TagEntry::Tag(_) = entry {
+            out.push(TagRow { entry: entry.clone(), depth });
         }
     }
 }
@@ -1416,11 +1424,14 @@ fn tags_section(
     let tag_list = projects.file_library_mut().tags();
     let counts = state.tag_counts(projects.file_library_mut());
     let mut rows = Vec::new();
+    // A level's own rows as the frame drew them: id, name, whether a folder, the drawn
+    // rect. A press arms its carry mid-loop (its own row's drag_started), so where the
+    // pointer lands derives from this list after the loop ([#1254] review).
+    let mut row_rects: Vec<(u32, String, bool, bool, Rect)> = Vec::new();
     tag_rows_of(&tag_list, 0, &mut rows);
     for row in &rows {
         let id = row.entry.id();
         let name = row.entry.name().to_string();
-        let carried = state.drag_tag_id == Some(id);
         let is_folder = matches!(row.entry, suhina_library::TagEntry::Folder { .. });
         let count = match &row.entry {
             suhina_library::TagEntry::Tag(tag) => counts.get(&tag.id).copied().unwrap_or(0),
@@ -1432,6 +1443,7 @@ fn tags_section(
         };
         let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW));
         y += ROW;
+        row_rects.push((id, name.clone(), is_folder, open, rect.intersect(area)));
         // A press carries the tag to an item of the results (and a folder's carries the
         // folder, to move it among its cortège); a click selects the tag's place and a
         // folder's row opens or closes it.
@@ -1474,31 +1486,9 @@ fn tags_section(
         // A carried tag or folder lights its drop targets: a folder takes it in (closed
         // ones too — the drop lands inside and the hint says so), a tag's row takes it
         // before itself ([#1254] › Tag folders).
-        let move_here = state.drag_tag_id.is_some()
-            && !carried
-            && rect.intersects(area)
-            && pointer.is_some_and(|p| rect.intersect(area).contains(p));
-        if move_here && is_folder && !open {
-            out.status = Some(Status::Hint(format!("Drop to put it in {}", name)));
-        }
-        if move_here {
-            state.drop_tag_row = Some(id);
-        }
-        // The pill a carried tag speaks: what the drop does, from where the pointer is
-        // ([#1254] review: drag with hints, into folders and subfolders). The carried row
-        // itself says only what is carried — dropping on itself is no move.
-        if let (Some(carried_id), Some(carried_name)) = (state.drag_tag_id, state.drag_tag.as_deref()) {
-            let pointer_here = pointer.is_some_and(|p| rect.intersect(area).contains(p));
-            if id == carried_id && pointer_here {
-                state.drop_pill = Some(carried_name.to_string());
-            } else if move_here {
-                state.drop_pill = Some(if is_folder {
-                    format!("Move {carried_name} into {name}")
-                } else {
-                    format!("Put {carried_name} before {name}")
-                });
-            }
-        }
+        // Where a carried tag is: derived once after the loop from the drawn rows
+        // ([#1254] review), with the fill reading the frame's earlier state.
+        let move_here = state.drop_tag_row == Some(id);
         let chosen = matches!(&state.place, Some(Place::Tag(tags)) if tags.contains(&id));
         let alone = state.place.as_ref() == Some(&Place::Tag(vec![id]));
         let picked = state.tag_selection.contains(&id);
@@ -1818,14 +1808,40 @@ fn tags_section(
             }
         });
     }
+    // Where a carried tag's drop goes, from the frame's own drawn rows: a press arms its
+    // carry mid-loop (its row's drag_started), so the rows' own pass may read the carry
+    // before it arms — the rects settle it after the loop ([#1254] review).
+    let pointer = ui.input(|i| i.pointer.latest_pos());
+    if state.drag_tag_id.is_some() {
+        state.drop_tag_row = None;
+        state.drop_pill = None;
+        for (rid, name, is_folder, open, rect) in &row_rects {
+            if !pointer.is_some_and(|p| rect.contains(p)) {
+                continue;
+            }
+            if *rid == state.drag_tag_id.unwrap_or(0) {
+                state.drop_pill = state.drag_tag.clone();
+            } else {
+                state.drop_tag_row = Some(*rid);
+                state.drop_pill = Some(if *is_folder {
+                    format!("Move {} into {name}", state.drag_tag.clone().unwrap_or_default())
+                } else {
+                    format!("Put {} before {name}", state.drag_tag.clone().unwrap_or_default())
+                });
+                if *is_folder && !*open {
+                    out.status = Some(Status::Hint(format!("Drop to put it in {name}")));
+                }
+            }
+            break;
+        }
+    }
     // A carried tag or folder landing: where the pointer let go of it decides — a folder
     // takes it in at the end, a row takes it before itself, no row is the top level's end
     // ([#1254] › Tag folders). A release over the results' rows is the item drop instead:
     // the app's own `tag_drag` carries it there (drops.rs), so the sidebar stands down.
-    // The landing reads the pointer's upness, not the one released frame: a frame that
-    // skipped the event still ends the drag ([#1254] review). Either way — the carry ends
-    // on the frame the pointer comes up; nothing fires twice.
-    let up = !ui.input(|i| i.pointer.primary_down());
+    // The landing keys on the released frame — a pointer's up state flickers under the
+    // hover events of a carried drag ([#1254] review).
+    let up = ui.input(|i| i.pointer.primary_released());
     if state.drag_tag_id.is_some() {
         suhina_plugins::trace::state(
             "tag carry",

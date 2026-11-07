@@ -109,7 +109,8 @@ reopens.
   double-click). Previewing does not count. Recent's kinds (Projects, Samples, MIDI,
   Instruments, Effects, Plug-ins, Presets) are entries indented under it, or with Settings ›
   Browser › Recent's kinds set to Chips, chips over the list while Recent is chosen.
-- **Tags:** one row per tag (#1196), in the order the tags' forest holds
+- **Tags:** one row per tag (#1196), the forest's rows with each level's folders on top and
+  tags under them, each in the forest's own order
   ([Colour tags](#colour-tags)): the tag's colour dot, its name and, at the right, how many
   items carry it. A tag that no item carries still shows, dimmed, so a new tag can be found
   before it is used; its row's right-click menu (and the footer dots for the same tags) are
