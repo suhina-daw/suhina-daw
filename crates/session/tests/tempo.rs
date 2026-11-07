@@ -221,3 +221,26 @@ fn a_tempo_drag_is_one_undo_step() {
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().transport.tempo_bpm, before);
 }
+
+/// A drag on the control bar's time signature sends each value with one `gesture`, the start
+/// signature or a change alike, and the drag undoes in one step (#1259).
+#[test]
+fn a_time_signature_drag_is_one_undo_step() {
+    let mut session = Session::new(Project::default());
+    for numerator in [5, 6, 7] {
+        let params = json!({ "numerator": numerator, "denominator": 4, "gesture": "time-signature" });
+        run(&mut session, "transport.setTimeSignature", params).unwrap();
+    }
+    assert_eq!(session.project().transport.time_signature, TimeSignature { numerator: 7, denominator: 4 });
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project().transport.time_signature, TimeSignature { numerator: 4, denominator: 4 });
+
+    run(&mut session, "timeSignature.add", json!({ "bar": 3, "numerator": 3, "denominator": 4 })).unwrap();
+    for denominator in [8, 16] {
+        let params = json!({ "bar": 3, "numerator": 3, "denominator": denominator, "gesture": "time-signature" });
+        run(&mut session, "timeSignature.add", params).unwrap();
+    }
+    assert_eq!(bars(&session), [(2, 3, 16)]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(bars(&session), [(2, 3, 4)]);
+}

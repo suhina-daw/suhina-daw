@@ -48,6 +48,22 @@ fn captioned(rect: Rect, width: f32) -> (Rect, Rect) {
     (caption, Rect::from_min_max(egui::pos2(caption.right(), rect.top()), rect.max))
 }
 
+/// The width a field module (the tempo, the time signature) measured for itself, in its own style,
+/// the last time it was drawn.
+fn field_width(ui: &Ui, module: &str) -> Option<f32> {
+    ui.ctx().data(|d| d.get_temp::<f32>(Id::unique(("toolbar-field-width", module))))
+}
+
+/// Keeps the width a field module needs, measured while its style is entered, for the next layout;
+/// a width that changed (a theme with another font) lays the bar out again at once. Measuring here
+/// adds no style node of its own, as entering the module's style to measure it would.
+fn measure_field(ui: &Ui, module: &str, width: f32) {
+    if field_width(ui, module).is_none_or(|kept| (kept - width).abs() > 0.5) {
+        ui.ctx().data_mut(|d| d.insert_temp(Id::unique(("toolbar-field-width", module)), width));
+        ui.ctx().request_repaint();
+    }
+}
+
 /// A module's offset is relative to its existing responsive anchor, never a new layout.
 pub(super) fn place(ui: &Ui, module: &str, base: Rect) -> Rect {
     let draft = ui.ctx().data(|d| d.get_temp::<EditDraft>(edit_id()));
@@ -280,13 +296,13 @@ impl App {
     }
 
     fn toolbar_module_width(&self, ui: &Ui, module: &str) -> f32 {
-        // The tempo and the time signature fit their widest value in the module's font, which a
-        // theme may make larger than the bar's.
-        let _module_style = crate::kit::style_class::enter_named("toolbar-module", module);
         match module {
             "browser" | "metronome" => 28.0,
-            "tempo" => super::control_bar::tempo_width(ui).max(62.0),
-            "signature" => super::control_bar::signature_width(ui).max(45.0),
+            // The tempo and the time signature fit their widest value in the module's font,
+            // which a theme may make larger than the bar's: measured where the module is drawn,
+            // in its style ([`field_width`]), the bar's font until then.
+            "tempo" => field_width(ui, module).unwrap_or_else(|| super::control_bar::tempo_width(ui)).max(62.0),
+            "signature" => field_width(ui, module).unwrap_or_else(|| super::control_bar::signature_width(ui)).max(45.0),
             // A caption, as in the native toolbar, and the menu.
             "grid" => 26.0 + 70.0,
             "count-in" => 50.0 + 70.0,
@@ -336,10 +352,14 @@ impl App {
         match module {
             "browser" => self.browser_toggle(ui, &painter, rect),
             "tempo" => {
+                measure_field(ui, module, super::control_bar::tempo_width(ui));
                 ui.ctx().data_mut(|d| d.insert_temp(Id::unique("sampler-tempo"), grid.tempo_bpm));
                 self.tempo_field(ui, &painter, rect, grid.tempo_bpm, false, actions);
             }
-            "signature" => super::control_bar::signature_field(ui, &painter, rect, grid, false, actions),
+            "signature" => {
+                measure_field(ui, module, super::control_bar::signature_width(ui));
+                super::control_bar::signature_field(ui, &painter, rect, grid, false, actions);
+            }
             "grid" => {
                 let (caption, rect) = captioned(rect, 26.0);
                 widgets::text_in(

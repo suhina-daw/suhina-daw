@@ -89,11 +89,14 @@ impl App {
         x = browser_rect.right() + 4.0;
         let browser_rect = native_styles.place(ui, "browser", browser_rect);
         self.browser_toggle(ui, &painter, browser_rect);
+        // Each field is measured in its module's style, which a theme may give a larger font.
+        native_styles.enter("tempo");
         let tempo_rect = row(x, tempo_width(ui));
         x = tempo_rect.right() + PAD;
         let tempo_rect = native_styles.place(ui, "tempo", tempo_rect);
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("sampler-tempo"), grid.tempo_bpm));
         self.tempo_field(ui, &painter, tempo_rect, grid.tempo_bpm, true, actions);
+        native_styles.enter("signature");
         let ts_rect = row(x, signature_width(ui));
         x = ts_rect.right() + PAD;
         let ts_rect = native_styles.place(ui, "signature", ts_rect);
@@ -117,7 +120,8 @@ impl App {
         widgets::text_in(&painter, keys_rect, Align2::CENTER_CENTER, &text, theme::ui_font(theme::TEXT_SMALL), ink);
         x = keys_rect.right() + PAD;
         // At narrow widths the captions go, then the count-in and the metronome (the main strip
-        // has one too), so nothing runs under the transport in the middle.
+        // has one too), then the launch quantisation, so nothing runs under the transport in the
+        // middle.
         let transport_left = bar.center().x - (28.0 * 3.0 + 2.0 + PAD + 64.0) / 2.0 - PAD;
         let captions = x + 26.0 + 64.0 + PAD + 50.0 + 64.0 + PAD + 28.0 <= transport_left;
         let grid_caption = row(x, if captions { 26.0 } else { 0.0 });
@@ -139,7 +143,11 @@ impl App {
         // When launched clips start; the Arrangement has a grid of its own (its toolbar, Ctrl+1 to 4).
         let current = self.session().map_or(DEFAULT_QUANTIZATION, |s| quantization_label(s.quantization()));
         let mut chosen = current;
+        let quantization_fits = quant_base.right() <= transport_left;
         ui.scope_builder(egui::UiBuilder::new().max_rect(quant_rect), |ui| {
+            if !quantization_fits {
+                return;
+            }
             let response = crate::kit::widgets::combo_box(
                 ui,
                 egui::ComboBox::from_id_salt("quantization")
@@ -632,34 +640,68 @@ pub(super) fn signature_width(ui: &Ui) -> f32 {
     widgets::text_width(ui, "99 / 16", theme::mono_font(theme::TEXT)) + 2.0 * PAD + SIGNATURE_CHEVRON
 }
 
-/// The part of the time signature that typed text with one number in it sets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SignaturePart {
-    Numerator,
-    Denominator,
+/// What is being typed into the time signature: the numerator's and the denominator's digits,
+/// and which of the two the next digit goes to.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SignatureTyping {
+    pub(crate) in_denominator: bool,
+    pub(crate) numerator: String,
+    pub(crate) denominator: String,
 }
 
-/// What is typed into the time signature as the numerator and denominator a command takes:
-/// `3/4` and `3-4` set both, a lone number the part typed into (`part`) and keeps the other as
-/// `current` has it. A part that is not a whole number goes as the text it is, so the command
-/// says what is wrong with it. `None` for empty text.
-pub(crate) fn typed_signature(
-    text: &str,
-    part: SignaturePart,
-    current: TimeSignature,
-) -> Option<(serde_json::Value, serde_json::Value)> {
-    let text = text.trim();
-    if text.is_empty() {
-        return None;
+/// A key typed into the time signature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SignatureKey {
+    Digit(char),
+    /// `/`, `-` or Space: on to the denominator.
+    Separator,
+    Backspace,
+}
+
+impl SignatureTyping {
+    /// Typing that starts in the numerator, or in the denominator when that was clicked.
+    pub(crate) fn from(in_denominator: bool) -> Self {
+        Self { in_denominator, ..Self::default() }
     }
-    let value = |p: &str| p.trim().parse::<u64>().map_or_else(|_| json!(p.trim()), |n| json!(n));
-    Some(match text.split_once(['/', '-']) {
-        Some((numerator, denominator)) => (value(numerator), value(denominator)),
-        None => match part {
-            SignaturePart::Numerator => (value(text), json!(current.denominator)),
-            SignaturePart::Denominator => (json!(current.numerator), value(text)),
-        },
-    })
+
+    /// Takes one key: a digit goes to the number typed into (two at most), a separator after
+    /// the numerator's digits goes on to the denominator, and Backspace in an empty denominator
+    /// goes back to the numerator.
+    pub(crate) fn key(&mut self, key: SignatureKey) {
+        match key {
+            SignatureKey::Digit(digit) => {
+                let part = if self.in_denominator { &mut self.denominator } else { &mut self.numerator };
+                if digit.is_ascii_digit() && part.len() < 2 {
+                    part.push(digit);
+                }
+            }
+            SignatureKey::Separator => {
+                if !self.in_denominator && !self.numerator.is_empty() {
+                    self.in_denominator = true;
+                }
+            }
+            SignatureKey::Backspace => {
+                if self.in_denominator {
+                    if self.denominator.pop().is_none() {
+                        self.in_denominator = false;
+                    }
+                } else {
+                    self.numerator.pop();
+                }
+            }
+        }
+    }
+
+    /// The numerator and denominator Enter sets: what was typed, the other as `current` has it.
+    /// A number the command does not take still goes, so its error is shown. `None` when nothing
+    /// was typed.
+    pub(crate) fn signature(&self, current: TimeSignature) -> Option<(serde_json::Value, serde_json::Value)> {
+        if self.numerator.is_empty() && self.denominator.is_empty() {
+            return None;
+        }
+        let part = |typed: &str, now: u8| typed.parse::<u64>().map_or_else(|_| json!(now), |n| json!(n));
+        Some((part(&self.numerator, current.numerator), part(&self.denominator, current.denominator)))
+    }
 }
 
 /// The place of `denominator` in [`DENOMINATORS`]; one not in the list counts as 4.
@@ -674,12 +716,47 @@ pub(crate) fn denominator_at(place: f64) -> u8 {
     DENOMINATORS.get(at).copied().unwrap_or(4)
 }
 
+/// The keys the time signature takes this frame while it holds them: arrow steps (up is +1),
+/// Enter, Escape, and the digits, separators and Backspace, which go into `typing`.
+fn signature_keys(ui: &Ui, typing: &mut SignatureTyping) -> (i32, bool, bool) {
+    let (mut steps, mut enter, mut escape) = (0, false, false);
+    ui.ctx().input_mut(|i| {
+        i.events.retain(|event| match event {
+            egui::Event::Key { key, pressed, modifiers, .. } if !modifiers.command => match key {
+                Key::ArrowUp | Key::ArrowDown | Key::Enter | Key::Escape | Key::Backspace if *pressed => {
+                    match key {
+                        Key::ArrowUp => steps += 1,
+                        Key::ArrowDown => steps -= 1,
+                        Key::Enter => enter = true,
+                        Key::Escape => escape = true,
+                        _ => typing.key(SignatureKey::Backspace),
+                    }
+                    false
+                }
+                // Space comes as text too, read below; its key must not start playback.
+                Key::Space => false,
+                _ => true,
+            },
+            egui::Event::Text(text) if text.chars().all(|c| c.is_ascii_digit() || matches!(c, '/' | '-' | ' ')) => {
+                for c in text.chars() {
+                    typing.key(if c.is_ascii_digit() { SignatureKey::Digit(c) } else { SignatureKey::Separator });
+                }
+                false
+            }
+            _ => true,
+        });
+    });
+    (steps, enter, escape)
+}
+
 /// The time signature in the control bar: the one playing, like the tempo (a launched scene may
 /// have changed it), as two numbers that work like the tempo field. Dragging the numerator up or
-/// down changes it from 1 to 99, dragging the denominator steps it through 1, 2, 4, 8 and 16;
-/// clicked, the arrow keys step that number, and a signature typed as `3/4` or `3-4` (or one
-/// number for the one clicked) and Enter set it. Only the chevron opens the common signatures
-/// ([`crate::interaction::menus::time_signature_list`]). Each change is one command on the
+/// down changes it from 1 to 99, dragging the denominator steps it through 1, 2, 4, 8 and 16, and
+/// the project follows the drag in one undo step, so the grids change while it moves. Clicked,
+/// a number takes the keys: the arrow keys step it, digits are typed into it, `/`, `-` or Space
+/// goes on to the denominator, Backspace in an empty denominator back to the numerator, and
+/// Enter sets what was typed. Only the chevron opens the common signatures
+/// ([`crate::interaction::menus::time_signature_list`]). Each change is a command on the
 /// project's signature at the playhead, from the bar it starts at (`docs/spec/tempo-map.md` ›
 /// Editing in the window, #1259, #1264).
 pub(super) fn signature_field(
@@ -690,9 +767,13 @@ pub(super) fn signature_field(
     native: bool,
     actions: &mut Vec<Action>,
 ) {
+    use crate::interaction::menus::{SameSignature, signature_choice};
     let shown = grid.time_signature();
     let current = grid.project_time_signature();
     let bar = grid.signature_bar();
+    // The project's signature picked while a launched scene's drives the clock puts the clock
+    // back on the tempo map (`docs/spec/tempo-map.md` › Editing in the window).
+    let same = if grid.meter.follows_map { SameSignature::Nothing } else { SameSignature::FollowMap };
     let chevron_rect = Rect::from_min_max(Pos2::new(rect.right() - SIGNATURE_CHEVRON, rect.top()), rect.max);
     let numbers = Rect::from_min_max(rect.min, Pos2::new(chevron_rect.left(), rect.bottom()));
     let middle = numbers.center().x;
@@ -725,13 +806,58 @@ pub(super) fn signature_field(
         );
     }
 
-    // A drag moves a preview; its release, an arrow key, the wheel or Enter sends one command.
-    let mut changes = Vec::new();
-    let preview = |id: Id| ui.data(|d| d.get_temp::<Option<f64>>(id.with("preview"))).flatten();
+    // Typing: a click on a number gives the field the keys, from that number.
+    let ctx = ui.ctx().clone();
+    let typing_id = Id::unique("time-signature-typing");
+    for (response, in_denominator) in [(&numerator, false), (&denominator, true)] {
+        if response.clicked() {
+            ctx.data_mut(|d| d.insert_temp(typing_id, SignatureTyping::from(in_denominator)));
+            widgets::hold_value_keys(&ctx, typing_id, true);
+        }
+    }
+    let mut typing = ctx.data(|d| d.get_temp::<SignatureTyping>(typing_id));
+    // Another value control clicked, a press anywhere else or a drag lets the keys go.
+    let pressed_elsewhere = ui.input(|i| i.pointer.any_pressed()) && !numerator.hovered() && !denominator.hovered();
+    let drag_started = [&numerator, &denominator].into_iter().any(|r| r.drag_started());
+    if typing.is_some() && (!widgets::holds_value_keys(&ctx, typing_id) || pressed_elsewhere || drag_started) {
+        typing = None;
+    }
+    let mut changes: Vec<(serde_json::Value, serde_json::Value, bool)> = Vec::new();
+    if let Some(typed) = typing.as_mut() {
+        widgets::hold_value_keys(&ctx, typing_id, true);
+        let (steps, enter, escape) = signature_keys(ui, typed);
+        if steps != 0 {
+            let to = if typed.in_denominator {
+                let place = denominator_place(current.denominator) as f64 + f64::from(steps);
+                (json!(current.numerator), json!(denominator_at(place)))
+            } else {
+                let n = (i64::from(current.numerator) + i64::from(steps)).clamp(1, 99);
+                (json!(n), json!(current.denominator))
+            };
+            changes.push((to.0, to.1, false));
+        }
+        if enter && let Some((n, d)) = typed.signature(current) {
+            changes.push((n, d, false));
+        }
+        if enter || escape {
+            typing = None;
+        }
+    }
+    match &typing {
+        Some(typed) => ctx.data_mut(|d| d.insert_temp(typing_id, typed.clone())),
+        None => {
+            ctx.data_mut(|d| d.remove::<SignatureTyping>(typing_id));
+            widgets::release_value_keys(&ctx, typing_id);
+        }
+    }
+
+    // A drag moves the number, and the project follows it in one undo step (a gesture), so the
+    // grids change while it moves; the wheel (Ctrl) steps it.
+    let preview = |id: Id| ctx.data(|d| d.get_temp::<Option<f64>>(id.with("preview"))).flatten();
     let (mut numerator_preview, mut denominator_preview) = (preview(numerator_id), preview(denominator_id));
-    let mut typed = None;
-    // Six points of drag a beat; an arrow key or a wheel tick one.
-    match widgets::drag_value_text(
+    let numerator_dragged = numerator_preview.is_some();
+    // Six points of drag a beat; a wheel tick one.
+    match widgets::drag_value_without_keys(
         ui,
         &numerator,
         &mut numerator_preview,
@@ -740,16 +866,16 @@ pub(super) fn signature_field(
         1.0,
         (1.0, 99.0),
         4.0,
-        &mut typed,
     ) {
-        Drag::Done(n) | Drag::Set(n) => changes.push((json!(n.round() as u64), json!(current.denominator))),
-        Drag::Moving(_) | Drag::None => {}
-    }
-    if let Some(text) = typed.take() {
-        changes.extend(typed_signature(&text, SignaturePart::Numerator, current));
+        Drag::Moving(n) => changes.push((json!(n.round() as u64), json!(current.denominator), true)),
+        Drag::Done(n) | Drag::Set(n) => {
+            changes.push((json!(n.round() as u64), json!(current.denominator), numerator_dragged));
+        }
+        Drag::None => {}
     }
     // The denominator by its place in the list: sixteen points of drag a step.
-    match widgets::drag_value_text(
+    let denominator_dragged = denominator_preview.is_some();
+    match widgets::drag_value_without_keys(
         ui,
         &denominator,
         &mut denominator_preview,
@@ -758,44 +884,69 @@ pub(super) fn signature_field(
         1.0,
         (0.0, (DENOMINATORS.len() - 1) as f64),
         2.0,
-        &mut typed,
     ) {
+        Drag::Moving(place) => changes.push((json!(current.numerator), json!(denominator_at(place)), true)),
         Drag::Done(place) | Drag::Set(place) => {
-            changes.push((json!(current.numerator), json!(denominator_at(place))));
+            changes.push((json!(current.numerator), json!(denominator_at(place)), denominator_dragged));
         }
-        Drag::Moving(_) | Drag::None => {}
+        Drag::None => {}
     }
-    if let Some(text) = typed.take() {
-        changes.extend(typed_signature(&text, SignaturePart::Denominator, current));
-    }
-    ui.data_mut(|d| {
+    ctx.data_mut(|d| {
         d.insert_temp(numerator_id.with("preview"), numerator_preview);
         d.insert_temp(denominator_id.with("preview"), denominator_preview);
     });
-    for (n, d) in changes {
-        if n != json!(current.numerator) || d != json!(current.denominator) {
-            actions.push(crate::interaction::menus::time_signature_action(bar, n, d));
+    for (n, d, dragged) in changes {
+        // A drag's own value is already the project's while it moves: nothing to put back.
+        let same = if dragged { SameSignature::Nothing } else { same };
+        if let Some(mut action) = signature_choice(bar, current, same, n, d) {
+            if dragged {
+                action.params["gesture"] = crate::interaction::commands::gesture("time-signature");
+            }
+            actions.push(action);
         }
     }
 
-    // While a number is dragged it shows where it will land.
-    let numerator_text = numerator_preview.map_or(shown.numerator, |n| n.round().clamp(1.0, 99.0) as u8).to_string();
-    let denominator_text = denominator_preview.map_or(shown.denominator, denominator_at).to_string();
+    // The numbers: while one is typed into, what was typed (the other dimmed until typed).
     let mono = theme::mono_font(theme::TEXT);
     let ink = if native { theme::text_primary() } else { theme::text_secondary() };
     let half_slash = widgets::text_width(ui, " / ", mono.clone()) / 2.0;
     let left = Rect::from_min_max(numbers.min, Pos2::new(middle - half_slash, numbers.bottom()));
     let right = Rect::from_min_max(Pos2::new(middle + half_slash, numbers.top()), numbers.max);
-    widgets::text_in(painter, left, Align2::RIGHT_CENTER, &numerator_text, mono.clone(), ink);
+    let numerator_now = numerator_preview.map_or(shown.numerator, |n| n.round().clamp(1.0, 99.0) as u8).to_string();
+    let denominator_now = denominator_preview.map_or(shown.denominator, denominator_at).to_string();
+    let part = |typed: Option<&String>, active: bool, now: String| match typed {
+        Some(t) if !t.is_empty() => (t.clone(), theme::text_value()),
+        Some(_) if active => (String::new(), ink),
+        Some(_) => (now, theme::text_hint()),
+        None => (now, ink),
+    };
+    let (numerator_text, numerator_ink) =
+        part(typing.as_ref().map(|t| &t.numerator), typing.as_ref().is_some_and(|t| !t.in_denominator), numerator_now);
+    let (denominator_text, denominator_ink) = part(
+        typing.as_ref().map(|t| &t.denominator),
+        typing.as_ref().is_some_and(|t| t.in_denominator),
+        denominator_now,
+    );
+    widgets::text_in(painter, left, Align2::RIGHT_CENTER, &numerator_text, mono.clone(), numerator_ink);
     widgets::text_in(painter, numbers, Align2::CENTER_CENTER, "/", mono.clone(), ink);
-    widgets::text_in(painter, right, Align2::LEFT_CENTER, &denominator_text, mono.clone(), ink);
+    widgets::text_in(painter, right, Align2::LEFT_CENTER, &denominator_text, mono.clone(), denominator_ink);
+    // The number typed into is outlined.
+    if let Some(typed) = &typing {
+        let half = if typed.in_denominator { denominator_rect } else { numerator_rect };
+        painter.rect_stroke(
+            half.shrink2(Vec2::new(1.0, 2.0)),
+            3.0,
+            egui::Stroke::new(1.0, theme::text_secondary()),
+            egui::StrokeKind::Inside,
+        );
+    }
     // The number under the pointer, or the one dragged, is underlined, as the tempo's place is.
     let char_width = widgets::text_width(ui, "0", mono);
     for (response, dragged, text, area, at_right) in [
         (&numerator, numerator_preview.is_some(), &numerator_text, left, true),
         (&denominator, denominator_preview.is_some(), &denominator_text, right, false),
     ] {
-        if dragged || response.hovered() {
+        if (dragged || response.hovered()) && typing.is_none() {
             let width = text.chars().count() as f32 * char_width;
             let span = if at_right {
                 egui::Rangef::new(area.right() - width, area.right())
@@ -815,7 +966,7 @@ pub(super) fn signature_field(
     egui::Popup::menu(&chevron)
         .id(menu_id)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|ui| crate::interaction::menus::time_signature_list(ui, bar, current, actions));
+        .show(|ui| crate::interaction::menus::time_signature_list(ui, bar, current, same, actions));
 }
 
 #[cfg(test)]
@@ -851,21 +1002,45 @@ mod tempo_tests {
 
 #[cfg(test)]
 mod signature_tests {
-    use super::{SignaturePart, TimeSignature, denominator_at, typed_signature};
+    use super::{SignatureKey, SignatureTyping, TimeSignature, denominator_at};
     use serde_json::json;
 
+    /// `typing` after the keys of `text`: digits, `/`, `-` or a space, and `<` for Backspace.
+    fn typed(mut typing: SignatureTyping, text: &str) -> SignatureTyping {
+        for c in text.chars() {
+            typing.key(match c {
+                '<' => SignatureKey::Backspace,
+                '0'..='9' => SignatureKey::Digit(c),
+                _ => SignatureKey::Separator,
+            });
+        }
+        typing
+    }
+
     #[test]
-    fn a_typed_signature_sets_both_parts_or_the_one_typed_into() {
+    fn a_separator_goes_on_to_the_denominator_and_backspace_comes_back() {
         let current = TimeSignature { numerator: 6, denominator: 8 };
-        let typed = |text: &str, part| typed_signature(text, part, current);
-        assert_eq!(typed("3/4", SignaturePart::Numerator), Some((json!(3), json!(4))));
-        assert_eq!(typed(" 15-16 ", SignaturePart::Denominator), Some((json!(15), json!(16))));
-        assert_eq!(typed("5", SignaturePart::Numerator), Some((json!(5), json!(8))));
-        assert_eq!(typed("16", SignaturePart::Denominator), Some((json!(6), json!(16))));
-        // What is not a whole number goes as typed, for the command to refuse.
-        assert_eq!(typed("3/", SignaturePart::Numerator), Some((json!(3), json!(""))));
-        assert_eq!(typed("1.5", SignaturePart::Numerator), Some((json!("1.5"), json!(8))));
-        assert_eq!(typed("  ", SignaturePart::Numerator), None);
+        let from_numerator = SignatureTyping::from(false);
+        for text in ["1/16", "1-16", "1 16"] {
+            let typing = typed(from_numerator.clone(), text);
+            assert!(typing.in_denominator, "{text}");
+            assert_eq!(typing.signature(current), Some((json!(1), json!(16))), "{text}");
+        }
+        // Backspace through the denominator, then back into the numerator.
+        let typing = typed(from_numerator.clone(), "12/16<<<");
+        assert!(!typing.in_denominator);
+        assert_eq!((typing.numerator.as_str(), typing.denominator.as_str()), ("12", ""));
+        let typing = typed(typing, "<3/4");
+        assert_eq!(typing.signature(current), Some((json!(13), json!(4))));
+        // A separator before any digit stays in the numerator; two digits a number at most.
+        let typing = typed(from_numerator.clone(), "/123");
+        assert_eq!((typing.in_denominator, typing.numerator.as_str()), (false, "12"));
+        // One number keeps the other as it is; nothing typed sets nothing.
+        assert_eq!(typed(from_numerator.clone(), "5").signature(current), Some((json!(5), json!(8))));
+        assert_eq!(typed(SignatureTyping::from(true), "16").signature(current), Some((json!(6), json!(16))));
+        assert_eq!(from_numerator.signature(current), None);
+        // A number the command does not take still goes, for its error to be shown.
+        assert_eq!(typed(from_numerator, "7/5").signature(current), Some((json!(7), json!(5))));
     }
 
     #[test]

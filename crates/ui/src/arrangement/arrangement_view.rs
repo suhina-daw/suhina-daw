@@ -759,6 +759,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         {
             let free = ui.input(|i| i.modifiers.alt);
             state.marker_menu_beat = beat_at(pointer.x, free, state);
+            state.signature_menu_beat = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
         }
         response.context_menu(|ui| {
             if ui.button("Add marker here").clicked() {
@@ -768,10 +769,12 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             // The time signature from the bar line nearest the click (#1259, #1264): the song's
             // at bar 1, a change after it.
             let (bar, current, changed) =
-                crate::arrangement::timeline::bar_line_near(&timeline.meter, state.marker_menu_beat);
+                crate::arrangement::timeline::bar_line_near(&timeline.meter, state.signature_menu_beat);
             let shown = bar.saturating_add(1);
+            // At a bar that only inherits its signature, picking that one starts a change there.
+            let same = if changed || shown <= 1 { menus::SameSignature::Nothing } else { menus::SameSignature::Set };
             ui.menu_button(format!("Time signature from bar {shown}"), |ui| {
-                menus::time_signature_menu(ui, shown, current, actions);
+                menus::time_signature_menu(ui, shown, current, same, actions);
             });
             if changed && ui.button(format!("Remove the time-signature change at bar {shown}")).clicked() {
                 actions.push(Action::new("timeSignature.delete", json!({ "bar": shown })));
@@ -801,14 +804,17 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Time-signature change at bar {shown}"))
         });
-        let Some(pointer) = ui.ctx().pointer_latest_pos().filter(|_| response.dragged() || response.drag_stopped())
+        // Only the primary button: a middle-button pan that reaches the ruler moves nothing.
+        let primary = egui::PointerButton::Primary;
+        let Some(pointer) =
+            ui.ctx().pointer_latest_pos().filter(|_| response.dragged_by(primary) || response.drag_stopped_by(primary))
         else {
             continue;
         };
         let beat = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
         let (to, _, _) = crate::arrangement::timeline::bar_line_near(&timeline.meter, beat);
         let to = to.max(1);
-        if response.drag_stopped() {
+        if response.drag_stopped_by(primary) {
             if to != from {
                 actions.push(Action::new("timeSignature.move", json!({ "bar": shown, "to": u64::from(to) + 1 })));
             }

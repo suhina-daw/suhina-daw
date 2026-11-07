@@ -622,19 +622,62 @@ pub fn time_signature_action(bar: u32, numerator: serde_json::Value, denominator
     }
 }
 
-/// [`time_signature_action`] from typed text such as `15/16`; `None` for empty text.
-pub fn typed_time_signature_action(bar: u32, text: &str) -> Option<Action> {
+/// What picking or typing the signature already in effect does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SameSignature {
+    /// Nothing: it is already there.
+    Nothing,
+    /// Sets it all the same: at a bar the signature is only inherited by, a change of its own
+    /// starts there, so a later edit before it no longer moves it.
+    Set,
+    /// Puts the clock back on the tempo map: a launched scene's signature drives it, and the
+    /// project's is picked (`transport.followTempoMap`).
+    FollowMap,
+}
+
+/// The command for a signature picked or typed for `bar` (counted from 1), `current` being the
+/// one in effect there: [`time_signature_action`], or what `same` says for `current` itself.
+pub fn signature_choice(
+    bar: u32,
+    current: TimeSignature,
+    same: SameSignature,
+    numerator: serde_json::Value,
+    denominator: serde_json::Value,
+) -> Option<Action> {
+    if numerator != json!(current.numerator) || denominator != json!(current.denominator) {
+        return Some(time_signature_action(bar, numerator, denominator));
+    }
+    match same {
+        SameSignature::Nothing => None,
+        SameSignature::Set => Some(time_signature_action(bar, numerator, denominator)),
+        SameSignature::FollowMap => Some(Action::new("transport.followTempoMap", json!({}))),
+    }
+}
+
+/// [`signature_choice`] from typed text such as `15/16`; `None` for empty text.
+pub fn typed_time_signature_action(
+    bar: u32,
+    current: TimeSignature,
+    same: SameSignature,
+    text: &str,
+) -> Option<Action> {
     if text.trim().is_empty() {
         return None;
     }
     let (numerator, denominator) = signature_parts(text);
-    Some(time_signature_action(bar, numerator, denominator))
+    signature_choice(bar, current, same, numerator, denominator)
 }
 
 /// A time-signature menu for the signature from `bar` (counted from 1): a field that takes any
 /// signature (Enter applies it) and the common ones, `current` ticked. Each choice is one
-/// command and one undo step.
-pub fn time_signature_menu(ui: &mut Ui, bar: u32, current: TimeSignature, actions: &mut Vec<Action>) {
+/// command and one undo step; `same` says what choosing `current` does.
+pub fn time_signature_menu(
+    ui: &mut Ui,
+    bar: u32,
+    current: TimeSignature,
+    same: SameSignature,
+    actions: &mut Vec<Action>,
+) {
     ui.set_min_width(160.0);
     // Keyed by the signature too, so text left in a menu closed without Enter is not shown
     // once the signature has changed.
@@ -647,30 +690,33 @@ pub fn time_signature_menu(ui: &mut Ui, bar: u32, current: TimeSignature, action
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Type a time signature"));
     if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-        if text.trim() != shown {
-            actions.extend(typed_time_signature_action(bar, &text));
-        }
+        actions.extend(typed_time_signature_action(bar, current, same, &text));
         ui.data_mut(|d| d.remove::<String>(id));
         ui.close();
         return;
     }
     ui.data_mut(|d| d.insert_temp(id, text));
     ui.separator();
-    if time_signature_list(ui, bar, current, actions) {
+    if time_signature_list(ui, bar, current, same, actions) {
         ui.data_mut(|d| d.remove::<String>(id));
     }
 }
 
 /// The common time signatures for the signature from `bar` (counted from 1), `current` ticked:
-/// a pick is one command and closes the menu. True when one was picked.
-pub fn time_signature_list(ui: &mut Ui, bar: u32, current: TimeSignature, actions: &mut Vec<Action>) -> bool {
+/// a pick is one command and closes the menu, `same` saying what picking `current` does. True
+/// when one was picked.
+pub fn time_signature_list(
+    ui: &mut Ui,
+    bar: u32,
+    current: TimeSignature,
+    same: SameSignature,
+    actions: &mut Vec<Action>,
+) -> bool {
     ui.set_min_width(72.0);
     for (numerator, denominator) in TIME_SIGNATURES {
         let on = current.numerator == numerator && current.denominator == denominator;
         if ui.selectable_label(on, format!("{numerator}/{denominator}")).clicked() {
-            if !on {
-                actions.push(time_signature_action(bar, json!(numerator), json!(denominator)));
-            }
+            actions.extend(signature_choice(bar, current, same, json!(numerator), json!(denominator)));
             ui.close();
             return true;
         }
@@ -834,7 +880,9 @@ mod tests {
     /// (#1259, #1264); typed text that is not a signature goes to the command as it is.
     #[test]
     fn a_time_signature_becomes_the_command_for_its_bar() {
-        let typed = |bar, text| typed_time_signature_action(bar, text).map(|a| (a.id, a.params));
+        let four = TimeSignature { numerator: 4, denominator: 4 };
+        let typed =
+            |bar, text| typed_time_signature_action(bar, four, SameSignature::Nothing, text).map(|a| (a.id, a.params));
         assert_eq!(
             typed(1, " 6/8 "),
             Some(("transport.setTimeSignature", json!({ "numerator": 6, "denominator": 8 })))
@@ -852,6 +900,29 @@ mod tests {
         assert_eq!(
             (picked.id, picked.params),
             ("transport.setTimeSignature", json!({ "numerator": 3, "denominator": 4 }))
+        );
+    }
+
+    /// The signature already in effect: nothing where it is set, a change of its own at a bar
+    /// that only inherits it, and the tempo map again while a launched scene's drives the clock.
+    #[test]
+    fn the_signature_in_effect_does_what_its_place_needs() {
+        let four = TimeSignature { numerator: 4, denominator: 4 };
+        let choose = |bar, same| signature_choice(bar, four, same, json!(4), json!(4)).map(|a| (a.id, a.params));
+        assert_eq!(choose(1, SameSignature::Nothing), None);
+        assert_eq!(
+            choose(9, SameSignature::Set),
+            Some(("timeSignature.add", json!({ "bar": 9, "numerator": 4, "denominator": 4 })))
+        );
+        assert_eq!(choose(1, SameSignature::FollowMap), Some(("transport.followTempoMap", json!({}))));
+        assert_eq!(
+            typed_time_signature_action(9, four, SameSignature::Set, "4/4").map(|a| a.id),
+            Some("timeSignature.add".into())
+        );
+        // Another signature is set whatever `same` says.
+        assert_eq!(
+            signature_choice(1, four, SameSignature::FollowMap, json!(3), json!(4)).map(|a| a.id),
+            Some("transport.setTimeSignature".into())
         );
     }
 }

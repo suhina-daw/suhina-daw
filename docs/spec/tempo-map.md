@@ -202,10 +202,14 @@ Every edit here is one of the commands above and one undo step.
 - **The control bar** shows the time signature playing, as it shows the tempo (a launched
   scene's while it drives the clock), as two numbers that work like the tempo field. Dragging
   the numerator up or down changes it from 1 to 99; dragging the denominator steps it through
-  1, 2, 4, 8 and 16. A drag sets the signature when it is released, as one undo step, and shows
-  where it will land while it moves. Clicked, a number takes the keys: the arrow keys step it,
-  and a signature typed as `3/4` or `3-4` (or one number for the number clicked) and Enter set
-  it. A double-click puts the number clicked back to 4. The chevron at its right, and only the
+  1, 2, 4, 8 and 16. The project follows the drag while it moves, so the grids of the
+  Arrangement and the piano roll change with it, and the whole drag is one undo step. Clicked, a
+  number takes the keys: the arrow keys step it, and digits are typed into it. `/`, `-` or Space
+  after the numerator's digits goes on to the denominator, Backspace in an empty denominator
+  goes back to the numerator, and Enter sets what was typed (one number typed sets that number
+  alone). Escape or a click elsewhere drops it. A double-click puts the number clicked back to 4.
+  Picking or typing the project's signature while a launched scene's drives the clock puts the
+  clock back on the map (`transport.followTempoMap`). The chevron at its right, and only the
   chevron, opens the common signatures to pick (2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 9/8, 12/8, 15/16),
   the current one ticked. Its width fits the widest signature, 99 / 16, in the font it is drawn
   with, as the tempo field's fits 999.999, also when a theme makes the font larger. It sets the project's signature in effect at the playhead: the start signature
@@ -216,11 +220,13 @@ Every edit here is one of the commands above and one undo step.
   then shows the signature it set.
 - **The ruler's right-click menu** (the bar ruler or the marker row, beside *Add marker here*)
   has *Time signature from bar N*, with a field for any signature typed as `6/8` (Enter applies
-  it) and the common ones, for the bar line nearest the
-  click: at bar 1 it sets the start signature, after it a change at that bar. When a change
+  it) and the common ones, for the bar line nearest the click as it was, not snapped to the
+  grid: at bar 1 it sets the start signature, after it a change at that bar. At a bar that only
+  inherits its signature, picking that signature starts a change there all the same, so a later
+  edit before it no longer moves it. When a change
   starts on that bar, *Remove the time-signature change at bar N* deletes it
   (`timeSignature.delete`).
-- **A signature change's line on the ruler** drags sideways; it lands on the bar line nearest
+- **A signature change's line on the ruler** drags sideways with the primary button; it lands on the bar line nearest
   the pointer when released (`timeSignature.move`), never on bar 1, and a line in the accent
   colour shows where while it moves. Released on its own bar, nothing changes.
 - A typed signature outside the ranges is sent to the command as typed, and its error is shown;
