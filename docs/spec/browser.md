@@ -89,7 +89,7 @@ place does not, so Space, Tab and the other shortcuts keep working (`app.rs::key
 
 ## Sidebar
 
-Three sections, each title in small hint text:
+Four sections, each title in small hint text:
 
 - **Pinned:** the entries **Pinned** (the pinned items) and **Recent**: every kind's recent
   items together, each kind the last 50 newest first. A project counts when it is opened or
@@ -97,6 +97,13 @@ Three sections, each title in small hint text:
   double-click). Previewing does not count. Recent's kinds (Projects, Samples, MIDI,
   Instruments, Effects, Plug-ins, Presets) are entries indented under it, or with Settings ›
   Browser › Recent's kinds set to Chips, chips over the list while Recent is chosen.
+- **Tags:** one row per tag (#1196), in the order they were made: the tag's colour dot, its
+  name and, at the right, how many items carry it. A tag that no item carries still shows,
+  dimmed, so a new tag can be found before it is used; its row's right-click menu (and the
+  footer dots for the same tags) are the other ways to its actions
+  ([Colour tags](#colour-tags)).
+  The wheel scrolls the sidebar when its entries are more than its room, and the rows past
+  its top come back; nothing else moves.
 - **Library:** All, Samples, MIDI, Instruments, Effects, Presets, Plug-ins: each shows the whole
   of its kind, never only the recent ones (Plug-ins lists every plug-in).
 - **Folders:** the added folders by name, each with a mark when it is not plain (`…` while
@@ -117,8 +124,8 @@ folders hold any kind.
   MIDI effects, such as [the pitch effect](pitch.md)), *Plug-ins* (installed plug-ins in a folder
   per vendor, *Unknown vendor* last), then each added folder.
 
-With a place selected the tree is that place: the folder's contents, the pinned items or the
-recent group's items (a flat list).
+With a place selected the tree is that place: the folder's contents, the pinned items, the
+recent group's items or a tag's items (a flat list, [Colour tags](#colour-tags)).
 
 **The category filter** narrows what the tree shows: Samples, MIDI and Presets show files of
 that kind and the folders that hold any (by the index; a folder not indexed yet is shown);
@@ -466,28 +473,49 @@ where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no tr
 Tags have a name and a colour. There are seven at first: Red, Orange, Yellow, Green, Blue,
 Purple and Grey; a right-click on a tag's dot in the footer renames it (a field, Enter; clicks
 inside that menu do not close it),
-recolours it (the swatches of the track colour palette, [components](../design/components.md#colour-palette), or a colour button for any colour) or removes it; new ones are added from a row's Tag menu, up to 64
+recolours it (the swatches of the track colour palette, [components](../design/components.md#colour-palette), or Select colour…, which opens the theme editor's picker in the menu itself) or removes it; new ones are added from a row's Tag menu, up to 64
 (Settings › Browser › Tag limit raises it, at most 1024). Any item can carry any
 number of tags; a tag is a 6 px dot after the name. Hovering a dot — the footer's or an item
 row's — says the tag's name: as a tooltip, and in the status bar (the footer's dot adds how
 many items carry it). Clicking a tag's dot in the footer shows
 only items with that tag (several: items with any of them); clicking it again stops.
 
-The **tag editor** is all of that in one place: the footer's **Edit tags** button opens a
-popup right above itself (its bottom at the footer's top, its right edge at the button's),
-floating over the preview strip and the list's bottom. One row per tag: its
-checkbox — with items selected, ticking it tags the selection and unticking takes the tag
-off every selected item (ticked while every one of them carries it); with nothing selected,
-it filters the results by the tag —, its colour button, its name (typed in
-the field, Enter renames it), how many items carry it (hidden when the popup is narrow), and
-**Remove** (the first click arms it —
-the button asks "Remove Red?" with a **Keep** beside it; the second click removes the tag from
-the list and from every item carrying it). The last row adds a tag: a name and Enter, with the
-next default colour. With
-the editor open the footer's dots make way for it — its rows are the tag list; a click
-anywhere outside the popup (the list, the sidebar) closes it, as does the Edit tags button.
-The
-editor's open state is the window's own and is not kept between runs.
+The **sidebar's Tags section** ([Sidebar](#sidebar)) reaches a tag's items as a place, the way
+Pinned does (#1196): a click on the tag's row shows every item that carries it, of any kind
+(samples, MIDI files, presets and presets' voices, projects, device graphs, built-in effects
+and instruments, plug-ins), named first no matter the kind, as a `library.search` place of
+`tag:<name>`. Ctrl-click adds the tag to the place's tags or takes it off: items with any of
+the row's tags show. A place of several tags is built like the coloured dots' filter, so its
+list is ranked as a search's list is, and a preset bank's tagged voice is not among it.
+A ctrl-click on the place's last tag shows the tree again.
+As
+any chosen place, the row shows a **×** that lets the place go. While items are dragged, a tag
+row lights up under the pointer and the drop tags every dragged item with the tag (folders and
+headings left out); the drag stops the preview as any drop does not. The other way round, a
+tag row dragged out of the section carries the tag to the results, the item row it is over
+lights up, and a drop tags that item — or every selected item when the row is one of them, as
+a row's Tag menu applies to one and the section's drops apply to every dragged one; a drop
+elsewhere changes nothing. While either is carried, a
+pill beside the pointer says what a drop does, and the status bar says so: *Tag 3 items with
+Blue*, *Drop to tag Kick.wav with Blue*. The row's right-click
+menu renames live as the name is typed (the section, the footer dots and a tag's place read
+the field per key; the field erased changes nothing, and a name another tag has is refused
+where it stands),
+recolours —
+the palette's swatches, or **Select colour…**, which opens the theme editor's picker in the
+menu itself, where a picker of its own would end the menu as a click outside it does —, and
+removes the tag — the first click on Remove asks, saying how many items carry it, and **Keep**
+stands it down; a second click removes the tag from the list and from every item carrying it.
+The menu adds a tag for the section too: a typed **New tag…** name, added with Enter or the
+**Add tag** button beside it, with the colour
+this menu shows outlined — the tag it was added from shows it —, shown dimmed until
+something carries it; the menu closes when the add lands, and stays for a refused name (the
+status bar says why). The row's menu can rename, recolour or remove every tag there is. The
+footer's dots stay as they are (#1196): where the section reaches a tag's items as a
+place, the dots are still the quick filter of whatever list is shown, a search's or a place's
+items included. The section is the one place the tags are kept, so the former tag editor and
+its Edit tags button are gone: adding, renaming, recolouring and removing have their row
+here, and items are tagged from the rows' Tag menu, by the drags, and over the same commands.
 
 ## Where it is kept
 
@@ -513,7 +541,7 @@ the CLI can do the same.
 | `library.removeFolder` | `folder` | removes it and its part of the index |
 | `library.refresh` | `folder?` | reads a folder (or every folder) again |
 | `library.list` | `folder` | what is directly in a folder: sub-folders and files of the kinds above, with kind and size |
-| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
+| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); `place` takes a tag's place (`tag:<name>`), which lists the items carrying that tag of any kind no matter the folders; a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
 | `library.info` | `item` | a file's kind, size, duration, sample rate, channels, tempo (and where it came from) and key; a Stems file's stems and mastering; a MIDI file's tracks with their notes; a preset's voices; a built-in device's or plug-in's role (and a plug-in's vendor, format and version); the item's tags |
 | `library.pinned` | | the pinned items |
 | `library.pin`, `library.unpin` | `item` | pins or unpins an item |

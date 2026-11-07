@@ -58,7 +58,8 @@ Both play a sample as soon as the pointer is over it.
 - **Map:** the plane with one **point** per item. An item is a sample file from the library or
   an NKS preset with a preview (see *NKS presets*).
 - **Scope:** the items a map holds: those of the place selected in the browser (a folder, Pinned,
-  a Recent group or every recent item), or of every folder when no place is selected.
+  a Recent group, a tag's place (`tag:<name>`), or every recent item), or of every folder when
+  no place is selected.
 - **Features:** numbers computed from an item's audio that describe its sound
   ([ADR 0013](../decisions/0013-sample-map-analysis.md) lists them). Two items are **similar**
   when their features are close.

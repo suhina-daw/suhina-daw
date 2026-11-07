@@ -254,6 +254,9 @@ pub struct Library {
     folders: Vec<Folder>,
     running: Option<Running>,
     revision: u64,
+    /// Bumped when the tags change (added, removed, renamed, set on items), so what shows the
+    /// tags can count them once instead of at every frame.
+    tag_revision: u64,
 }
 
 impl Default for Library {
@@ -292,6 +295,7 @@ impl Library {
             folders: Vec::new(),
             running: None,
             revision: 0,
+            tag_revision: 0,
         }
     }
 
@@ -408,6 +412,12 @@ impl Library {
     /// Bumped whenever any folder's index or state changes.
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Bumped when the tags change, so counts of tagged items are read once, not at every frame.
+    pub fn tag_revision(&mut self) -> u64 {
+        self.load();
+        self.tag_revision
     }
 
     pub fn folders(&mut self) -> Vec<FolderStatus> {
@@ -687,7 +697,11 @@ impl Library {
     /// the folders that held it and hold it now are read again, so the index follows.
     pub fn relocate(&mut self, from: &Path, to: &Path) -> Result<(), String> {
         self.load();
-        if self.store.relocate(&Item::File(from.to_path_buf()).key(), &Item::File(to.to_path_buf()).key()) {
+        let moved = self.store.relocate(&Item::File(from.to_path_buf()).key(), &Item::File(to.to_path_buf()).key());
+        if moved {
+            // The tag records moved with the file: the rows' caches read the same
+            // revision the tag commands do ([#1196]).
+            self.tag_revision = self.tag_revision.wrapping_add(1);
             self.save()?;
         }
         let roots: Vec<PathBuf> = self
@@ -733,18 +747,21 @@ impl Library {
     pub fn set_tag(&mut self, name: &str, color: Option<&str>, rename: Option<&str>) -> Result<(), String> {
         self.load();
         self.store.set_tag(name, color, rename)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
         self.save()
     }
 
     pub fn remove_tag(&mut self, name: &str) -> Result<(), String> {
         self.load();
         self.store.remove_tag(name)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
         self.save()
     }
 
     pub fn tag(&mut self, item: &str, tag: &str, on: bool) -> Result<(), String> {
         self.load();
         self.store.tag(item, tag, on)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
         self.save()
     }
 
@@ -752,6 +769,13 @@ impl Library {
     pub fn item_tags(&mut self, item: &str) -> Vec<String> {
         self.load();
         self.store.tagged.get(item).cloned().unwrap_or_default()
+    }
+
+    /// The items that carry the tag `name`, as `Item`s keys, in the store's order. A tag place
+    /// lists them no matter which folder they are in or whether they still exist.
+    pub fn items_tagged(&mut self, tag: &str) -> Vec<String> {
+        self.load();
+        self.store.tagged.iter().filter(|(_, names)| names.iter().any(|n| n == tag)).map(|(k, _)| k.clone()).collect()
     }
 
     /// How the browser shows the installed plug-ins.

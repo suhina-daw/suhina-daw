@@ -8,7 +8,6 @@
 //! which knows the selected track.
 
 use crate::kit::surface::Backgrounds as _;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use egui::{Align2, Color32, CursorIcon, Id, Key, Modifiers, Pos2, Rect, Sense, Stroke, Ui, Vec2};
@@ -53,9 +52,6 @@ const MODE_SWITCH: f32 = 22.0;
 const NAME_LEAST: f32 = 96.0;
 /// The name of the button that shows the sample map, after the categories.
 const SAMPLE_MAP: &str = "Sample map";
-/// A row of the tag editor.
-const EDITOR_ROW: f32 = 26.0;
-
 /// The center of a row's tag dot `index`, `5` pt right of the item's name. Two dots are
 /// [`DOT_HIT`] apart, the width of their hit area, so the areas never overlap.
 fn tag_dot_center(name_end: f32, index: usize, y: f32) -> Pos2 {
@@ -287,28 +283,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     let strip = Rect::from_min_max(Pos2::new(area.left(), bottom), Pos2::new(area.right(), bottom + PREVIEW));
     preview_strip(ui, strip, state, projects, settings, selected_track, &mut out);
     let footer = Rect::from_min_max(Pos2::new(area.left(), strip.bottom()), area.max);
-    let edit_rect = footer_view(ui, footer, state, projects, &mut out);
-    // The tag editor's popup right above the Edit tags button, drawn last so the strip and
-    // the footer it floats over do not paint over it. A click outside the popup, on the
-    // list or anywhere else in the window, closes it.
-    let editor_popup = state.tag_editor.then(|| {
-        let rows = projects.file_library_mut().tags().len() + 1; // + the row that adds one
-        let width = 260.0_f32.min((results.width() - 8.0).max(150.0));
-        let height = (rows as f32 * (EDITOR_ROW + 2.0) + PAD).min(results.height() - 4.0);
-        Rect::from_min_max(
-            Pos2::new(edit_rect.right() - width, footer.top() - height),
-            Pos2::new(edit_rect.right(), footer.top()),
-        )
-    });
-    if let Some(popup) = editor_popup {
-        tag_editor(ui, popup, state, projects, &mut out);
-        if ui.input(|i| i.pointer.any_click())
-            && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| !popup.contains(p) && !edit_rect.contains(p))
-        {
-            state.tag_editor = false;
-            state.tag_editor_confirm = None;
-        }
-    }
+    footer_view(ui, footer, state, projects, &mut out);
 
     // A selection that changed previews with auto-play.
     if std::mem::take(&mut state.selection_changed) {
@@ -518,6 +493,116 @@ enum Target {
     Category(Category),
 }
 
+/// One row of the sidebar's Pinned, Library and Folders sections: selected when its place is
+/// the one shown, a `×` while the place is chosen, and a click that shows it. The row is
+/// `Row` tall and consumes that of `y`.
+#[allow(clippy::too_many_arguments)]
+fn entry_row(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    area: Rect,
+    y: &mut f32,
+    state: &mut BrowserState,
+    target: Target,
+    label: &str,
+    note: Option<&str>,
+) -> egui::Response {
+    let rect = Rect::from_min_size(Pos2::new(area.left(), *y), Vec2::new(area.width(), ROW));
+    *y += ROW;
+    let key = match &target {
+        Target::Place(place) => place.param(),
+        Target::Category(category) => format!("library:{}", category.title()),
+    };
+    let response = ui.interact(rect.intersect(area), Id::unique(("browser-place", key.as_str())), Sense::click());
+    // Screen readers and tests: "Show Samples" for the library's kinds, "Place Recent MIDI"
+    // for a recent kind, "Place Pinned" and the like for the rest.
+    let name = match &target {
+        Target::Category(category) => format!("Show {}", category.title()),
+        Target::Place(Place::Recent(Some(group))) => format!("Place Recent {}", group.title()),
+        Target::Place(_) => format!("Place {}", label.trim()),
+    };
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+    // A kind of the library is chosen while no place is: the whole of it shows.
+    let chosen = match &target {
+        Target::Place(place) => state.place.as_ref() == Some(place),
+        Target::Category(category) => state.place.is_none() && state.category == *category,
+    };
+    let place = match target {
+        Target::Place(place) => place,
+        Target::Category(category) => {
+            if response.clicked() && !chosen {
+                state.place = None;
+                state.category = category;
+                state.scroll = 0.0;
+            }
+            if rect.intersects(area) {
+                let _style = place_style(&response, chosen);
+                let fill = if chosen {
+                    theme::control_active()
+                } else {
+                    motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
+                };
+                paint_row(painter, rect.intersect(area), fill);
+                let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
+                let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
+                let color = crate::kit::style_class::foreground(color);
+                widgets::text_in(painter, text, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), color);
+            }
+            return response;
+        }
+    };
+    let fill = if chosen {
+        theme::control_active()
+    } else {
+        motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
+    };
+    let _style = place_style(&response, chosen);
+    if rect.intersects(area) {
+        paint_row(painter, rect.intersect(area), fill);
+        let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
+        let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
+        let color = crate::kit::style_class::foreground(color);
+        widgets::text_in(painter, text, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), color);
+        if let Some(note) = note.filter(|_| !chosen) {
+            widgets::text_in(
+                painter,
+                text,
+                Align2::RIGHT_CENTER,
+                note,
+                theme::mono_font(theme::TEXT_TINY),
+                theme::browser_text_hint(),
+            );
+        }
+    }
+    // The place chosen shows a × that clears it; a second click on the place keeps it.
+    if chosen && rect.intersects(area) {
+        let clear = Rect::from_min_size(Pos2::new(rect.right() - ROW, rect.top()), Vec2::splat(ROW));
+        let cleared = widgets::button_area(
+            ui,
+            clear.intersect(area),
+            Id::unique(("browser-place-clear", place.param())),
+            "Show everything",
+        );
+        let color =
+            motion::mix(theme::browser_text_hint(), theme::browser_text_primary(), widgets::hover(ui, &cleared));
+        widgets::text_in(painter, clear, Align2::CENTER_CENTER, "×", theme::ui_font(theme::TEXT_SMALL), color);
+        if cleared.clicked() {
+            state.place = None;
+            state.category = Category::All;
+            state.scroll = 0.0;
+            return response;
+        }
+    }
+    if response.clicked() && !chosen {
+        // A place lists any kind, or a recent group's own: the category follows it, so
+        // nothing the place lists is hidden (#711).
+        state.category = place.category().unwrap_or(Category::All);
+        state.place = Some(place);
+        state.scroll = 0.0;
+    }
+    response
+}
+
 fn sidebar_view(
     ui: &mut Ui,
     area: Rect,
@@ -529,59 +614,70 @@ fn sidebar_view(
     let painter = ui.painter_at(area);
     let title_font = theme::ui_font(theme::TEXT_SMALL);
     let item_font = theme::ui_font(theme::TEXT_SMALL);
-    let mut y = area.top();
+    // The rows drawn past the bottom are clipped; the wheel scrolls the whole sidebar when
+    // its entries are more than its room, as the results list does.
+    let mut y = area.top() - state.sidebar_scroll;
     let title = |y: &mut f32, text: &str| {
         *y += 8.0;
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, *y), Vec2::new(area.width() - PAD, 12.0));
         widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, title_font.clone(), theme::browser_text_hint());
-        *y += 12.0;
+        // The rows that follow paint over the title's room: three points of clearance so a
+        // descender ("g" in Tags, "y" in Library) is not clipped by the first one.
+        *y += 15.0;
     };
-    let mut entry = |ui: &mut Ui, y: &mut f32, target: Target, label: &str, note: Option<&str>| -> egui::Response {
-        let rect = Rect::from_min_size(Pos2::new(area.left(), *y), Vec2::new(area.width(), ROW));
-        *y += ROW;
-        let key = match &target {
-            Target::Place(place) => place.param(),
-            Target::Category(category) => format!("library:{}", category.title()),
-        };
-        let response = ui.interact(rect.intersect(area), Id::unique(("browser-place", key.as_str())), Sense::click());
-        // Screen readers and tests: "Show Samples" for the library's kinds, "Place Recent MIDI"
-        // for a recent kind, "Place Pinned" and the like for the rest.
-        let name = match &target {
-            Target::Category(category) => format!("Show {}", category.title()),
-            Target::Place(Place::Recent(Some(group))) => format!("Place Recent {}", group.title()),
-            Target::Place(_) => format!("Place {}", label.trim()),
-        };
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
-        // A kind of the library is chosen while no place is: the whole of it shows.
-        let chosen = match &target {
-            Target::Place(place) => state.place.as_ref() == Some(place),
-            Target::Category(category) => state.place.is_none() && state.category == *category,
-        };
-        let place = match target {
-            Target::Place(place) => place,
-            Target::Category(category) => {
-                if response.clicked() && !chosen {
-                    state.place = None;
-                    state.category = category;
-                    state.scroll = 0.0;
-                }
-                if rect.intersects(area) {
-                    let _style = place_style(&response, chosen);
-                    let fill = if chosen {
-                        theme::control_active()
-                    } else {
-                        motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
-                    };
-                    paint_row(&painter, rect.intersect(area), fill);
-                    let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
-                    let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
-                    let color = crate::kit::style_class::foreground(color);
-                    widgets::text_in(&painter, text, Align2::LEFT_CENTER, label, item_font.clone(), color);
-                }
-                return response;
-            }
-        };
-        let fill = if chosen {
+    title(&mut y, "Pinned");
+    entry_row(ui, &painter, area, &mut y, state, Target::Place(Place::Pinned), "Pinned", None);
+    entry_row(ui, &painter, area, &mut y, state, Target::Place(Place::Recent(None)), "Recent", None);
+    if !recent_chips {
+        for group in Group::ALL {
+            entry_row(
+                ui,
+                &painter,
+                area,
+                &mut y,
+                state,
+                Target::Place(Place::Recent(Some(group))),
+                &format!("    {}", group.title()),
+                None,
+            );
+        }
+    }
+    // The tags as places (#1196): every item that carries one, of any kind. An unused tag
+    // shows dimmed, so a new tag can be found before it is used.
+    title(&mut y, "Tags");
+    state.drop_tag = None;
+    let tag_list = projects.file_library_mut().tags();
+    let counts = state.tag_counts(projects.file_library_mut());
+    // The rows' ids ride the tag's position in the list, not its name: a name typed follows
+    // the field through the store per key, and a widget keyed by the changing name would
+    // lose its caret, menu and popups mid-typing.
+    for (tag_index, tag) in tag_list.into_iter().enumerate() {
+        let count = counts.get(&tag.name).copied().unwrap_or(0);
+        let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW));
+        y += ROW;
+        // A press carries the tag to an item of the results as well (#1196): click selects
+        // the place, a drag takes it there.
+        let response =
+            ui.interact(rect.intersect(area), Id::unique(("browser-tag-place", tag_index)), Sense::click_and_drag());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Place Tag {}", tag.name)));
+        // Dragging items here tags them when dropped (#1196), and a drag of the row itself
+        // takes the tag to an item of the results to tag it there (#1196). A drag owns the
+        // pointer, so a row under a live drag is found by position, as the results rows find
+        // their folder drops.
+        let pointer = ui.input(|i| i.pointer.latest_pos());
+        let drag_here =
+            state.drag.is_some() && rect.intersects(area) && pointer.is_some_and(|p| rect.intersect(area).contains(p));
+        if drag_here {
+            state.drop_tag = Some(tag.name.clone());
+        }
+        if response.drag_started() && rect.intersects(area) {
+            state.drag_tag = Some(tag.name.clone());
+        }
+        let chosen = matches!(&state.place, Some(Place::Tag(tags)) if tags.contains(&tag.name));
+        let alone = state.place.as_ref() == Some(&Place::Tag(vec![tag.name.clone()]));
+        let fill = if drag_here {
+            theme::control_hover()
+        } else if chosen {
             theme::control_active()
         } else {
             motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
@@ -589,28 +685,61 @@ fn sidebar_view(
         let _style = place_style(&response, chosen);
         if rect.intersects(area) {
             paint_row(&painter, rect.intersect(area), fill);
-            let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
-            let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
-            let color = crate::kit::style_class::foreground(color);
-            widgets::text_in(&painter, text, Align2::LEFT_CENTER, label, item_font.clone(), color);
-            if let Some(note) = note.filter(|_| !chosen) {
+            let dim = count == 0;
+            let center = Pos2::new(area.left() + PAD + 2.0 + DOT / 2.0, rect.center().y);
+            let mut color = tag_color(&tag.color);
+            if dim {
+                color = color.gamma_multiply(0.5);
+            }
+            painter.circle_filled(center, DOT / 2.0, color);
+            if chosen {
+                painter.circle_stroke(center, DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
+            }
+            let text = Rect::from_min_max(
+                Pos2::new(center.x + DOT / 2.0 + 3.0, rect.top()),
+                Pos2::new(rect.right() - PAD, rect.bottom()),
+            );
+            let tinted = if dim {
+                theme::browser_text_hint()
+            } else if chosen || response.hovered() {
+                theme::browser_text_primary()
+            } else {
+                theme::browser_text_secondary()
+            };
+            widgets::text_in(
+                &painter,
+                text,
+                Align2::LEFT_CENTER,
+                &tag.name,
+                item_font.clone(),
+                crate::kit::style_class::foreground(tinted),
+            );
+            if response.hovered() {
+                out.status = Some(Status::Hint(format!(
+                    "Tag {} — {} item{}",
+                    tag.name,
+                    count,
+                    if count == 1 { "" } else { "s" }
+                )));
+            }
+            if !chosen {
                 widgets::text_in(
                     &painter,
                     text,
                     Align2::RIGHT_CENTER,
-                    note,
+                    &count.to_string(),
                     theme::mono_font(theme::TEXT_TINY),
-                    theme::browser_text_hint(),
+                    if dim { theme::browser_text_hint().gamma_multiply(0.5) } else { theme::browser_text_hint() },
                 );
             }
         }
-        // The place chosen shows a × that clears it; a second click on the place keeps it.
         if chosen && rect.intersects(area) {
+            // As any chosen place: a × lets go of it.
             let clear = Rect::from_min_size(Pos2::new(rect.right() - ROW, rect.top()), Vec2::splat(ROW));
             let cleared = widgets::button_area(
                 ui,
                 clear.intersect(area),
-                Id::unique(("browser-place-clear", place.param())),
+                Id::unique(("browser-tag-clear", tag_index)),
                 "Show everything",
             );
             let color =
@@ -620,29 +749,186 @@ fn sidebar_view(
                 state.place = None;
                 state.category = Category::All;
                 state.scroll = 0.0;
-                return response;
             }
         }
-        if response.clicked() && !chosen {
-            // A place lists any kind, or a recent group's own: the category follows it, so
-            // nothing the place lists is hidden (#711).
-            state.category = place.category().unwrap_or(Category::All);
-            state.place = Some(place);
-            state.scroll = 0.0;
+        if response.clicked() {
+            let ctrl = ui.input(|i| i.modifiers).command;
+            if chosen {
+                // A click on the one tag the place holds lets it go; a click on a tag of a
+                // combined place replaces it with that tag alone ([#1196] › the tags' own
+                // places); a Ctrl-click takes the tag off the combined place again.
+                state.place = if alone {
+                    None
+                } else if ctrl {
+                    if let Some(Place::Tag(tags)) = &mut state.place {
+                        tags.retain(|t| *t != tag.name);
+                    }
+                    match &state.place {
+                        Some(Place::Tag(tags)) if tags.is_empty() => None,
+                        Some(place) => Some(place.clone()),
+                        None => None,
+                    }
+                } else {
+                    state.place.clone().map(|_| Place::Tag(vec![tag.name.clone()]))
+                };
+                if state.place.is_none() {
+                    state.category = Category::All;
+                    state.scroll = 0.0;
+                }
+            } else {
+                if ctrl
+                    && let Some(Place::Tag(tags)) = &mut state.place
+                    && !tags.contains(&tag.name)
+                {
+                    // Ctrl-click adds the tag to the combined place: items with any of them.
+                    tags.push(tag.name.clone());
+                } else {
+                    state.place = Some(Place::Tag(vec![tag.name.clone()]));
+                }
+                state.category = Category::All;
+                state.scroll = 0.0;
+            }
         }
-        response
-    };
-    title(&mut y, "Pinned");
-    entry(ui, &mut y, Target::Place(Place::Pinned), "Pinned", None);
-    entry(ui, &mut y, Target::Place(Place::Recent(None)), "Recent", None);
-    if !recent_chips {
-        for group in Group::ALL {
-            entry(ui, &mut y, Target::Place(Place::Recent(Some(group))), &format!("    {}", group.title()), None);
+        // Right-click: rename (a click off the menu applies the typed name, as Enter does),
+        // recolour, remove — asking first while items carry it. The drafts key on the tag's
+        // name, not the row's slot: tags that deleted ones leave behind inherit nothing
+        // ([#1196] › keep the name with its tag).
+        let was_open =
+            ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-menu-open", tag_index)))).unwrap_or(false);
+        let popup = egui::Popup::context_menu(&response)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                let id = Id::unique(("browser-rename-tag", (&tag.name, "menu")));
+                let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
+                let field = crate::kit::widgets::text_input(
+                    ui,
+                    egui::TextEdit::singleline(&mut name).id(id).desired_width(120.0),
+                );
+                field.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", tag.name))
+                });
+                ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
+                // The name follows the field while it is typed into: every key renames, where
+                // the section, the footer dots and a tag's place read the live name. Erasing
+                // the field changes nothing in the store, and a name another tag has is
+                // refused where it stands (the status bar says why). A refusal resets the
+                // field, so a dead draft does not run again by itself ([#1196]).
+                if !name.trim().is_empty() && name.trim() != tag.name {
+                    let renamed =
+                        run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out);
+                    if renamed {
+                        for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
+                            *filter = name.trim().to_string();
+                        }
+                        // The tags the place is made of go with the live name, so the place
+                        // holds.
+                        if let Some(Place::Tag(tags)) = &mut state.place {
+                            for t in tags.iter_mut().filter(|t| **t == tag.name) {
+                                *t = name.trim().to_string();
+                            }
+                        }
+                        ui.ctx().data_mut(|d| d.insert_temp(id, name.trim().to_string()));
+                    } else {
+                        // A refusal resets the field, so a dead draft does not run again by
+                        // itself every frame ([#1196]).
+                        ui.ctx().data_mut(|d| d.insert_temp(id, tag.name.clone()));
+                    }
+                }
+                let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
+                // Select colour: the palette's swatches and the theme editor's picker, opened
+                // in the menu (a picker of its own would end the menu as a click outside it
+                // does), the colour one command a pick.
+                if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
+                    ui,
+                    Id::unique(("browser-tag-colour", (&tag.name, "menu"))),
+                    current,
+                    "Select colour",
+                ) {
+                    let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
+                    run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
+                }
+                ui.separator();
+                // A new tag from here: a typed name, added with Enter or the Add tag button,
+                // in the colour this menu shows outlined, shown dimmed until something
+                // carries it (#1196).
+                let new_id = Id::unique(("browser-section-new-tag", (&tag.name, "menu")));
+                let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
+                let field = crate::kit::widgets::text_input(
+                    ui,
+                    egui::TextEdit::singleline(&mut new_name).id(new_id).hint_text("New tag…").desired_width(120.0),
+                );
+                field
+                    .widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
+                ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
+                let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                let with_button = ui.button("Add tag").clicked();
+                if (with_enter || with_button) && !new_name.trim().is_empty() {
+                    let taken = projects.file_library_mut().tags();
+                    if taken.iter().any(|t| t.name == new_name.trim()) {
+                        out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
+                    } else {
+                        // The colour this menu shows outlined: a new tag comes out of the
+                        // colour the tag it was added from shows, not the next default one
+                        // (#1196).
+                        let color = taken
+                            .iter()
+                            .find(|t| t.name == tag.name)
+                            .map_or("#8C8A85".to_string(), |t| t.color.clone());
+                        if run(projects, "library.setTag", json!({ "name": new_name.trim(), "color": color }), out) {
+                            out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
+                            ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+                            state.relist();
+                            // Done is done: the add closes the menu, as a rename or a remove
+                            // do; a refused name keeps it, so the name can be corrected.
+                            ui.close();
+                        }
+                    }
+                }
+                // The ask names the tag that is removed, not what the rename field holds
+                // ([#1196]: the draft and the button are separate).
+                let armed = state.tag_remove_confirm.as_deref() == Some(tag.name.as_str());
+                let label = if armed {
+                    format!("Remove {}? ({count} items)", tag.name)
+                } else {
+                    format!("Remove tag {}", tag.name)
+                };
+                if ui.button(label).clicked() {
+                    if !armed && count > 0 {
+                        state.tag_remove_confirm = Some(tag.name.clone());
+                    } else {
+                        if run(projects, "library.removeTag", json!({ "name": tag.name }), out) {
+                            state.tag_filter.retain(|t| *t != tag.name);
+                            if let Some(Place::Tag(tags)) = &mut state.place {
+                                tags.retain(|t| *t != tag.name);
+                                if tags.is_empty() {
+                                    state.place = None;
+                                }
+                            }
+                        }
+                        state.tag_remove_confirm = None;
+                        state.relist();
+                        ui.close();
+                    }
+                }
+                if armed && ui.button("Keep").clicked() {
+                    state.tag_remove_confirm = None;
+                }
+            });
+        // The menu is closed: its drafts go with it, so a stale name does not run a command
+        // by itself when it opens again ([#1196]).
+        let open = popup.is_some();
+        let open_key = Id::unique(("browser-menu-open", tag_index));
+        if was_open && !open {
+            ui.ctx().data_mut(|d| {
+                d.remove::<String>(Id::unique(("browser-rename-tag", (&tag.name, "menu"))));
+                d.remove::<String>(Id::unique(("browser-section-new-tag", (&tag.name, "menu"))));
+            });
         }
+        ui.ctx().data_mut(|d| d.insert_temp(open_key, open));
     }
     title(&mut y, "Library");
     for category in Category::ALL {
-        entry(ui, &mut y, Target::Category(category), category.title(), None);
+        entry_row(ui, &painter, area, &mut y, state, Target::Category(category), category.title(), None);
     }
     title(&mut y, "Folders");
     let mut menus = Vec::new();
@@ -657,7 +943,16 @@ fn sidebar_view(
             FolderState::Missing => Some("gone"),
             _ => None,
         };
-        let response = entry(ui, &mut y, Target::Place(Place::Folder(folder.path.clone())), &name, note);
+        let response = entry_row(
+            ui,
+            &painter,
+            area,
+            &mut y,
+            state,
+            Target::Place(Place::Folder(folder.path.clone())),
+            &name,
+            note,
+        );
         menus.push((response, folder.path));
     }
     for (response, folder) in menus {
@@ -685,6 +980,7 @@ fn sidebar_view(
     }
     // Adding a folder: a field for its path.
     let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW + 2.0));
+    y += rect.height();
     match state.new_folder.as_mut() {
         None => {
             let response =
@@ -739,6 +1035,15 @@ fn sidebar_view(
             }
         }
     }
+    // The wheel scrolls the sidebar while some of it lies past the bottom (tags, folders), so
+    // the first enters and the last stay reachable: rows above carry the scroll into y, so
+    // the content height takes it back out ([#1196]).
+    let content = (y - area.top() + state.sidebar_scroll).max(0.0);
+    let max_scroll = (content - area.height()).max(0.0);
+    if ui.rect_contains_pointer(area) {
+        state.sidebar_scroll -= ui.input(|i| i.smooth_scroll_delta.y);
+    }
+    state.sidebar_scroll = state.sidebar_scroll.clamp(0.0, max_scroll);
 }
 
 fn results_view(
@@ -774,8 +1079,18 @@ fn results_view(
     let painter = ui.painter_at(area);
     let rows: Vec<Row> = state.rows().to_vec();
     if rows.is_empty() {
-        let text = if state.search.trim().is_empty() && projects.file_library_mut().folders().is_empty() {
+        let folders = projects.file_library_mut().folders().len();
+        let tags = matches!(&state.place, Some(Place::Tag(_)));
+        // A place's own empty answer needs the search text or a filter out of the way first:
+        // the tags are assigned, the list is what excludes them ([#1196] › the filtered
+        // empty answer).
+        let filtered = !state.search.trim().is_empty() || !state.tag_filter.is_empty();
+        let text = if state.search.trim().is_empty() && folders == 0 && !tags {
             "Add a folder to find samples"
+        } else if tags && filtered {
+            "Nothing found here with these filters"
+        } else if tags {
+            "No item carries these tags"
         } else {
             "Nothing found"
         };
@@ -811,6 +1126,7 @@ fn results_view(
     let dragging_samples = state.drag.as_ref().is_some_and(|items| items.iter().any(|i| i.kind == ItemKind::Sample));
     let pointer = ui.input(|i| i.pointer.latest_pos());
     state.drop_folder = None;
+    state.drop_item = None;
     for index in first..(first + visible).min(rows.len()) {
         let Some(row) = rows.get(index) else { continue };
         let top = area.top() + index as f32 * ROW - state.scroll;
@@ -833,7 +1149,18 @@ fn results_view(
         if drop_here {
             state.drop_folder = row.item.path();
         }
-        let fill = if drop_here {
+        // A tag carried from the Tags section highlights the item it is dropped on to tag it:
+        // anything but a heading or a folder, as a row's Tag menu does (#1196). A drag owns
+        // the pointer, so the row is found by position, the folder drops below in the same
+        // way.
+        let tag_here = state.drag_tag.is_some()
+            && row.item.kind != ItemKind::Heading
+            && row.item.kind != ItemKind::Folder
+            && pointer.is_some_and(|p| shown.contains(p));
+        if tag_here {
+            state.drop_item = Some(row.item.clone());
+        }
+        let fill = if drop_here || tag_here {
             theme::control_hover()
         } else if selected {
             theme::control_active()
@@ -1628,283 +1955,27 @@ fn preview_strip(
     }
 }
 
-/// The browser's tag editor, the popup right above the footer's Edit tags button: every tag
-/// in a list — its colour, its name (typed to rename), how many items carry it and Remove,
-/// with a confirm; the last row adds one. Its checkbox filters by the tag, as the footer's
-/// dots do, or with items selected applies the tag to them, as a row's Tag menu does
-/// ([browser](browser.md) › Colour tags).
-fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut Projects, out: &mut BrowserOut) {
-    let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
-    painter.rect_stroke(area, 1.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
-    // How many items carry each tag, counted when the editor opened and after every change
-    // made in it.
-    if state.tag_counts.is_none() {
-        let mut counts = HashMap::new();
-        for (_, names) in projects.file_library_mut().tagged() {
-            for name in names {
-                *counts.entry(name).or_default() += 1;
-            }
-        }
-        state.tag_counts = Some(counts);
-    }
-    let counts = state.tag_counts.clone().unwrap_or_default();
-    let tags = projects.file_library_mut().tags();
-    let mut y = area.top() + 2.0;
-    for tag in &tags {
-        let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), EDITOR_ROW));
-        if rect.bottom() > area.bottom() - 2.0 {
-            break; // more tags than the popup's room; the footer's dots hold the rest
-        }
-        y = rect.bottom() + 2.0;
-        let row = ui.interact(rect, Id::unique(("tag-editor-row", &tag.name)), Sense::hover());
-        row.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::Role::Button,
-                true,
-                format!("Tag row {} ({} items)", tag.name, counts.get(&tag.name).copied().unwrap_or(0)),
-            )
-        });
-        let on = state.tag_filter.contains(&tag.name);
-        let fill = if on {
-            theme::control_active()
-        } else {
-            motion::mix(theme::window_background(), theme::panel_hover(), widgets::hover(ui, &row))
-        };
-        painter.fill_background(rect, 0.0, fill);
-        // Its checkbox: with items selected, it tags them (ticked while every selected item
-        // carries the tag); with none, it filters the results by the tag, as the footer's
-        // dots do.
-        let selection: Vec<String> = state
-            .selected
-            .iter()
-            .filter(|s| s.kind != ItemKind::Heading && s.kind != ItemKind::Folder)
-            .map(|s| s.key.clone())
-            .collect();
-        let on = if selection.is_empty() {
-            state.tag_filter.contains(&tag.name)
-        } else {
-            selection.iter().all(|key| projects.file_library_mut().item_tags(key).contains(&tag.name))
-        };
-        let box_rect = Rect::from_min_size(Pos2::new(rect.left() + 4.0, rect.center().y - 7.0), Vec2::splat(14.0));
-        let check = ui.interact(box_rect, Id::unique(("tag-editor-filter", &tag.name)), Sense::click());
-        check.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::Role::CheckBox,
-                true,
-                if selection.is_empty() {
-                    format!("Filter tag {}", tag.name)
-                } else {
-                    format!("Apply tag {}", tag.name)
-                },
-            )
-        });
-        painter.fill_background(
-            box_rect,
-            3.0,
-            if on { theme::control_selected() } else { theme::control_background() },
-        );
-        if on {
-            painter.rect_filled(box_rect.shrink(4.0), 0.0, theme::text_inverse());
-        }
-        if check.clicked() {
-            if selection.is_empty() {
-                if on {
-                    state.tag_filter.retain(|t| *t != tag.name);
-                } else {
-                    state.tag_filter.push(tag.name.clone());
-                }
-            } else {
-                for key in &selection {
-                    if let Err(e) = projects.file_library_mut().tag(key, &tag.name, !on) {
-                        out.status = Some(Status::Error(e));
-                    }
-                }
-                state.tag_counts = None;
-                state.relist();
-            }
-        }
-        // Its colour.
-        let mut color = tag_color(&tag.color);
-        let pick_rect =
-            Rect::from_min_size(Pos2::new(box_rect.right() + 4.0, rect.center().y - FILTER / 2.0), Vec2::splat(FILTER));
-        let picked = ui
-            .scope_builder(egui::UiBuilder::new().max_rect(pick_rect).id_salt(("tag-editor-color", &tag.name)), |ui| {
-                egui::color_picker::color_edit_button_srgba(ui, &mut color, egui::color_picker::Alpha::Opaque)
-            })
-            .inner;
-        if picked.changed() {
-            let [r, g, b, _] = color.to_srgba_unmultiplied();
-            let hex = format!("#{r:02X}{g:02X}{b:02X}");
-            run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
-            state.tag_counts = None;
-        }
-        // Its name, typed to rename: the field takes the room between the colour and the
-        // fixed right side, at least enough to type in.
-        let armed = state.tag_editor_confirm.as_deref() == Some(tag.name.as_str());
-        let remove_width = 58.0;
-        let keep_width = if armed { 44.0 } else { 0.0 };
-        let count_width = if area.width() >= 240.0 { 46.0 } else { 0.0 };
-        let field_left = pick_rect.right() + 4.0;
-        let field_right = (rect.right() - remove_width - keep_width - count_width - 10.0).max(field_left + 48.0);
-        let field_rect = Rect::from_min_max(Pos2::new(field_left, rect.top()), Pos2::new(field_right, rect.bottom()));
-        let id = Id::unique(("tag-editor-name", &tag.name));
-        let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
-        let field = crate::kit::widgets::text_input_at(
-            ui,
-            field_rect,
-            egui::TextEdit::singleline(&mut name)
-                .id(id)
-                .desired_width(field_rect.width())
-                .font(theme::ui_font(theme::TEXT_SMALL)),
-        );
-        ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Tag name {}", tag.name)));
-        if field.lost_focus()
-            && ui.input(|i| i.key_pressed(Key::Enter))
-            && !name.trim().is_empty()
-            && name.trim() != tag.name
-            && run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out)
-        {
-            for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
-                *filter = name.trim().to_string();
-            }
-            if state.tag_editor_confirm.as_deref() == Some(tag.name.as_str()) {
-                state.tag_editor_confirm = None;
-            }
-            state.tag_counts = None;
-            state.relist();
-            ui.ctx().data_mut(|d| d.remove::<String>(id));
-        }
-        // How many items carry it.
-        if count_width > 0.0 {
-            let count_rect = Rect::from_min_max(
-                Pos2::new(field_rect.right() + 5.0, rect.top()),
-                Pos2::new(field_rect.right() + 5.0 + count_width, rect.bottom()),
-            );
-            widgets::text_in(
-                &painter,
-                count_rect,
-                Align2::RIGHT_CENTER,
-                &format!("{} items", counts.get(&tag.name).copied().unwrap_or(0)),
-                theme::mono_font(theme::TEXT_TINY),
-                theme::browser_text_hint(),
-            );
-        }
-        // Remove, armed by the first click and done by the second; Keep stands it down.
-        let remove_rect = Rect::from_min_size(
-            Pos2::new(field_rect.right() + 5.0 + count_width, rect.center().y - FILTER / 2.0),
-            Vec2::new(remove_width, FILTER),
-        );
-        let remove_label = if armed { format!("Remove {}?", tag.name) } else { "Remove".to_string() };
-        let remove = widgets::button_area(
-            ui,
-            remove_rect,
-            Id::unique(("tag-editor-remove", &tag.name)),
-            format!("Remove tag {}", tag.name),
-        );
-        widgets::text_in(
-            &painter,
-            remove_rect,
-            Align2::CENTER_CENTER,
-            &remove_label,
-            theme::ui_font(theme::TEXT_SMALL),
-            if armed { theme::recording() } else { theme::browser_text_secondary() },
-        );
-        if remove.clicked() {
-            if armed {
-                if run(projects, "library.removeTag", json!({ "name": tag.name }), out) {
-                    state.tag_filter.retain(|t| *t != tag.name);
-                }
-                state.tag_editor_confirm = None;
-                state.tag_counts = None;
-                state.relist();
-            } else {
-                state.tag_editor_confirm = Some(tag.name.clone());
-            }
-        }
-        if armed {
-            let keep_rect = Rect::from_min_size(
-                Pos2::new(remove_rect.right() + 4.0, rect.center().y - FILTER / 2.0),
-                Vec2::new(keep_width, FILTER),
-            );
-            let keep = widgets::button_area(ui, keep_rect, Id::unique(("tag-editor-keep", &tag.name)), "Keep");
-            widgets::text_in(
-                &painter,
-                keep_rect,
-                Align2::CENTER_CENTER,
-                "Keep",
-                theme::ui_font(theme::TEXT_SMALL),
-                theme::browser_text_secondary(),
-            );
-            if keep.clicked() {
-                state.tag_editor_confirm = None;
-            }
-        }
-    }
-    // The last row adds a tag: a name and the next default colour, the field the popup wide.
-    if y + EDITOR_ROW <= area.bottom() - 2.0 {
-        let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), EDITOR_ROW));
-        let id = Id::unique("tag-editor-new");
-        let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
-        let field_rect =
-            Rect::from_min_max(Pos2::new(area.left() + PAD, rect.top()), Pos2::new(area.right() - PAD, rect.bottom()));
-        let field = crate::kit::widgets::text_input_at(
-            ui,
-            field_rect,
-            egui::TextEdit::singleline(&mut name)
-                .id(id)
-                .hint_text("New tag…")
-                .desired_width(field_rect.width())
-                .font(theme::ui_font(theme::TEXT_SMALL)),
-        );
-        ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
-        if field.lost_focus()
-            && ui.input(|i| i.key_pressed(Key::Enter))
-            && !name.trim().is_empty()
-            && tags.iter().all(|t| t.name != name.trim())
-            && {
-                let palette = suhina_library::store::default_tags();
-                let color =
-                    palette.get(tags.len() % palette.len().max(1)).map_or("#8C8A85".to_string(), |t| t.color.clone());
-                run(projects, "library.setTag", json!({ "name": name.trim(), "color": color }), out)
-            }
-        {
-            ui.ctx().data_mut(|d| d.remove::<String>(id));
-            state.tag_counts = None;
-            state.relist();
-        }
-    }
-}
-fn footer_view(
-    ui: &mut Ui,
-    area: Rect,
-    state: &mut BrowserState,
-    projects: &mut Projects,
-    out: &mut BrowserOut,
-) -> Rect {
+fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut Projects, out: &mut BrowserOut) {
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::panel_background());
     painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(theme::border()));
-    // The Edit tags button's room, so the dots stop before it.
-    let edit_width = widgets::text_width(ui, "Edit tags", theme::ui_font(theme::TEXT_SMALL)) + FILTER_PAD * 2.0;
     let mut x = area.left() + PAD;
-    // With the editor open, its rows are the tag list: the dots would say it twice.
-    let tags = if !state.tag_editor { projects.file_library_mut().tags() } else { Vec::new() };
-    for tag in tags {
+    let tags = projects.file_library_mut().tags();
+    // As the section's rows: the dots' ids ride the position, so a live rename keeps the
+    // menu and its field.
+    for (tag_index, tag) in tags.into_iter().enumerate() {
         let rect = Rect::from_center_size(Pos2::new(x + DOT / 2.0 + 2.0, area.center().y), Vec2::splat(DOT + 4.0));
         x = rect.right() + 2.0;
-        if x > area.right() - 90.0 - edit_width - 8.0 {
+        // The dots stop before the count at the right end.
+        if x > area.right() - 110.0 {
             break;
         }
         let response =
-            widgets::button_area(ui, rect, Id::unique(("browser-tag", &tag.name)), format!("Tag {}", tag.name))
+            widgets::button_area(ui, rect, Id::unique(("browser-tag", tag_index)), format!("Tag {}", tag.name))
                 .on_hover_text(&tag.name);
         if response.hovered() {
-            // The tag's name and how many items carry it, in the status bar. The count is read
-            // where the tags are kept, not from the editor's `tag_counts`: that is absent until
-            // the editor opens and stale after an item row's Tag menu changes a tag.
+            // The tag's name and how many items carry it, in the status bar. The count is
+            // read where the tags are kept, so it costs no copy of a list.
             let items = projects.file_library_mut().tagged_count(&tag.name);
             out.status =
                 Some(Status::Hint(format!("Tag {} — {} item{}", tag.name, items, if items == 1 { "" } else { "s" })));
@@ -1917,44 +1988,126 @@ fn footer_view(
                 state.tag_filter.push(tag.name.clone());
             }
         }
-        // Right-click: rename, recolour or remove the tag. Clicks inside do not close it: a
-        // tag's new name is typed here (egui's default closes a menu on a click inside it).
-        egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-            let id = Id::unique(("browser-rename-tag", &tag.name));
-            let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
-            let field = crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut name).desired_width(120.0));
-            ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-            if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && name.trim() != tag.name {
-                if run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out) {
+        // Right-click: rename (typed in, with Enter or the button), recolour or remove the
+        // tag. Clicks inside do not close it: a tag's new name is typed here (egui's default
+        // closes a menu on a click inside it). The drafts key on the tag's name, not the
+        // dot's slot: a deleted tag's neighbour inherits nothing ([#1196]).
+        let was_open =
+            ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-footer-menu-open", tag_index)))).unwrap_or(false);
+        let popup = egui::Popup::context_menu(&response)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                let id = Id::unique(("browser-rename-tag", (&tag.name, "footer")));
+                let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
+                let field = crate::kit::widgets::text_input(
+                    ui,
+                    egui::TextEdit::singleline(&mut name).id(id).desired_width(120.0),
+                );
+                field.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", tag.name))
+                });
+                ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
+                // As the section's menu: Enter commits, and so does a click outside the
+                // menu. A change that is refused keeps the menu and the field (the status
+                // bar says why).
+                let committed = (field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
+                    || ui.input(|i| {
+                        i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !ui.max_rect().contains(p))
+                    });
+                if committed
+                    && name.trim() != tag.name
+                    && run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out)
+                {
                     for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
                         *filter = name.trim().to_string();
                     }
+                    // The place one tag wide follows the name; a combined place cleared
+                    // ([#1196] › update the active place after the footer's changes).
+                    if let Some(Place::Tag(tags)) = &mut state.place {
+                        for t in tags.iter_mut().filter(|t| **t == tag.name) {
+                            *t = name.trim().to_string();
+                        }
+                    }
+                    ui.ctx().data_mut(|d| d.remove::<String>(id));
+                    state.relist();
                 }
-                ui.ctx().data_mut(|d| d.remove::<String>(id));
-                state.relist();
-                ui.close();
-            }
-            // The palette track colours take, then any colour.
-            let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
-            if let Some(picked) = crate::interaction::colour_picker::swatch_row(ui, current) {
-                let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
-                run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
-            }
-            let mut color = tag_color(&tag.color);
-            if egui::color_picker::color_edit_button_srgba(ui, &mut color, egui::color_picker::Alpha::Opaque).changed()
-            {
-                let [r, g, b, _] = color.to_srgba_unmultiplied();
-                let hex = format!("#{r:02X}{g:02X}{b:02X}");
-                run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
-            }
-            if ui.button("Remove tag").clicked() {
-                if run(projects, "library.removeTag", json!({ "name": tag.name }), out) {
-                    state.tag_filter.retain(|t| *t != tag.name);
+                // The palette track colours take, then any colour.
+                let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
+                // Select colour: the palette's swatches and the theme editor's picker,
+                // opened in the menu (a picker of its own would end the menu as a click
+                // outside it does), the colour one command a pick.
+                if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
+                    ui,
+                    Id::unique(("browser-tag-colour", (&tag.name, "footer"))),
+                    current,
+                    "Select colour",
+                ) {
+                    let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
+                    run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
                 }
-                state.relist();
-                ui.close();
-            }
-        });
+                ui.separator();
+                // A new tag from here: a typed name, added with Enter or the Add tag button,
+                // in the colour this menu shows outlined, shown dimmed until something
+                // carries it (#1196).
+                let new_id = Id::unique(("browser-section-new-tag", (&tag.name, "footer")));
+                let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
+                let field = crate::kit::widgets::text_input(
+                    ui,
+                    egui::TextEdit::singleline(&mut new_name).id(new_id).hint_text("New tag…").desired_width(120.0),
+                );
+                field
+                    .widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
+                ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
+                let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                let with_button = ui.button("Add tag").clicked();
+                if (with_enter || with_button) && !new_name.trim().is_empty() {
+                    let taken = projects.file_library_mut().tags();
+                    if taken.iter().any(|t| t.name == new_name.trim()) {
+                        out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
+                    } else {
+                        // The colour this menu shows outlined: a new tag comes out of the
+                        // colour the tag it was added from shows, not the next default one
+                        // (#1196).
+                        let color = taken
+                            .iter()
+                            .find(|t| t.name == tag.name)
+                            .map_or("#8C8A85".to_string(), |t| t.color.clone());
+                        if run(projects, "library.setTag", json!({ "name": new_name.trim(), "color": color }), out) {
+                            out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
+                            ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+                            state.relist();
+                            // Done is done: the add closes the menu, as a rename or a remove
+                            // do; a refused name keeps it, so the name can be corrected.
+                            ui.close();
+                        }
+                    }
+                }
+
+                if ui.button("Remove tag").clicked() {
+                    if run(projects, "library.removeTag", json!({ "name": tag.name }), out) {
+                        state.tag_filter.retain(|t| *t != tag.name);
+                        // The place went with the tag ([#1196] › update the active place).
+                        if let Some(Place::Tag(tags)) = &mut state.place {
+                            tags.retain(|t| *t != tag.name);
+                            if tags.is_empty() {
+                                state.place = None;
+                            }
+                        }
+                    }
+                    state.relist();
+                    ui.close();
+                }
+            });
+        // Closed: the drafts go with it ([#1196] › keep the name with its tag).
+        let open = popup.is_some();
+        let open_key = Id::unique(("browser-footer-menu-open", tag_index));
+        if was_open && !open {
+            ui.ctx().data_mut(|d| {
+                d.remove::<String>(Id::unique(("browser-rename-tag", (&tag.name, "footer"))));
+                d.remove::<String>(Id::unique(("browser-section-new-tag", (&tag.name, "footer"))));
+            });
+        }
+        ui.ctx().data_mut(|d| d.insert_temp(open_key, open));
         painter.circle_filled(rect.center(), DOT / 2.0, tag_color(&tag.color));
         if on {
             painter.circle_stroke(rect.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
@@ -1964,38 +2117,6 @@ fn footer_view(
         0 | 1 => format!("{} items", state.rows().iter().filter(|r| r.item.kind != ItemKind::Heading).count()),
         n => format!("{n} selected"),
     };
-    // Left of the count: the button that opens and closes the tag editor; the popup anchors
-    // to this rect, and a click outside the two closes the editor.
-    let edit_rect = Rect::from_min_size(
-        Pos2::new(area.right() - 96.0 - edit_width - 6.0, area.center().y - FILTER / 2.0),
-        Vec2::new(edit_width, FILTER),
-    );
-    {
-        let rect = edit_rect;
-        let response = widgets::button_area(ui, rect, Id::unique("browser-edit-tags"), "Edit tags");
-        let _style = crate::kit::style_class::enter_response("button", &response);
-        if response.clicked() {
-            state.tag_editor = !state.tag_editor;
-            state.tag_counts = None;
-            state.tag_editor_confirm = None;
-        }
-        let lit = motion::toward(ui.ctx(), response.id.with("on"), state.tag_editor, motion::VALUE);
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        widgets::button_surface(
-            &painter,
-            rect,
-            &response,
-            state.tag_editor,
-            motion::mix(idle, theme::control_selected(), lit),
-            0.0,
-        );
-        let text = crate::kit::style_class::foreground(motion::mix(
-            theme::browser_text_secondary(),
-            theme::text_inverse(),
-            lit,
-        ));
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, "Edit tags", theme::ui_font(theme::TEXT_SMALL), text);
-    }
     widgets::text_in(
         &painter,
         area.shrink2(Vec2::new(PAD, 0.0)),
@@ -2004,7 +2125,6 @@ fn footer_view(
         theme::mono_font(theme::TEXT_TINY),
         theme::browser_text_hint(),
     );
-    edit_rect
 }
 
 /// The browser's resize handle at its inner edge: dragged, the width it is dragged to;

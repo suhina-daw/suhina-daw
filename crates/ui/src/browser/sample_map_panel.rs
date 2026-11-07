@@ -128,12 +128,15 @@ fn files_in_use(projects: &Projects) -> HashSet<PathBuf> {
 }
 
 impl Panel {
-    /// The browser's place as the `soundmap.*` commands take it.
+    /// The browser's place as the `soundmap.*` commands take it. A tag's place is not one the
+    /// commands take; the panel is not drawn with it, reached only while the samples are the
+    /// place (#862).
     fn place(state: &BrowserState) -> Option<String> {
         match &state.place {
             None => None,
             Some(Place::Pinned) => Some("pinned".into()),
             Some(place @ Place::Recent(_)) => Some(place.param()),
+            Some(Place::Tag(_)) => None,
             Some(Place::Folder(path)) => Some(path.display().to_string()),
         }
     }
@@ -246,13 +249,16 @@ impl Panel {
         let selected: HashSet<&str> = state.selected().iter().map(|i| i.key.as_str()).collect();
         let pinned: HashSet<String> = projects.file_library_mut().pinned().into_iter().collect();
         let key = format!(
-            "{}\u{1}{:?}\u{1}{:?}\u{1}{}\u{1}{}\u{1}{}",
+            "{}\u{1}{:?}\u{1}{:?}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
             state.search,
             state.tag_filter,
             selected.iter().collect::<std::collections::BTreeSet<_>>(),
             pinned.len(),
             revision,
             projects.file_library_mut().revision(),
+            // A tag drop re-lights (or dims) the matching point even when nothing else in the
+            // library moved (#1196).
+            projects.file_library_mut().tag_revision(),
         );
         if self.flags_key.as_deref() == Some(key.as_str()) && self.points.len() == map.points.len() {
             return;
