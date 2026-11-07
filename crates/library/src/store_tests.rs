@@ -115,7 +115,6 @@ fn a_moved_files_pin_recent_place_and_tags_go_with_it() {
     assert!(!store.relocate("/a/kick.wav", "/c/kick.wav"), "nothing left to move");
 }
 
-
 /// The id of the tag `name`, after `set_tag` ran ([#1254] items refer to the tag by its
 /// id). The store's own ids are handed out in order, so the tests find the tag by its
 /// name where the helper does.
@@ -237,7 +236,8 @@ fn the_sections_are_orderable_and_collapsible() {
     let mut store = Store::default();
     assert_eq!(
         store.sections.iter().map(|s| s.kind).collect::<Vec<_>>(),
-        [SectionKind::Tags, SectionKind::Pinned, SectionKind::Library]
+        [SectionKind::Pinned, SectionKind::Tags, SectionKind::Library],
+        "the sidebar's own starting order"
     );
     store.set_sections(Some(&[
         Section { kind: SectionKind::Pinned, open: true },
