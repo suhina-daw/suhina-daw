@@ -277,10 +277,12 @@ fn a_moved_files_tag_records_move_with_it_and_the_revision_advances() {
     let settings = temp("relocate-tags");
     let mut library = Library::new(Some(settings.clone()));
     library.set_tag("Vocals", Some("#AA00AA"), None).unwrap();
-    library.tag("/a/loop.wav", "Vocals", true).unwrap();
+    // The store's own tags carry ids; the first one drawn is Vocals here.
+    let vocals = store::tags_iter(&library.tags().clone()).find(|t| t.name == "Vocals").map(|t| t.id).unwrap_or(1);
+    library.tag("/a/loop.wav", vocals, true).unwrap();
     let before = library.tag_revision();
     library.relocate(Path::new("/a/loop.wav"), Path::new("/b/loop.wav")).unwrap();
-    assert_eq!(library.item_tags("/b/loop.wav"), ["Vocals"]);
+    assert_eq!(library.item_tags("/b/loop.wav"), [vocals]);
     assert!(library.item_tags("/a/loop.wav").is_empty());
     assert_ne!(
         library.tag_revision(),
@@ -288,7 +290,7 @@ fn a_moved_files_tag_records_move_with_it_and_the_revision_advances() {
         "the sidebar's caches read the move as a change (a now-unused tag must dim again)"
     );
     // The counts go with the move: the file the tag carries is the moved one.
-    assert_eq!(library.tagged_count("Vocals"), 1);
+    assert_eq!(library.tagged_count(vocals), 1);
     assert!(library.take_warnings().is_empty());
     let _ = std::fs::remove_dir_all(&settings);
 }

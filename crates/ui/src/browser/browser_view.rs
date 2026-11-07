@@ -726,17 +726,6 @@ fn sidebar_view(
                             );
                         }
                     }
-                    match &state.place {
-                        Some(Place::Tag(tags)) if tags.is_empty() => None,
-                        Some(place) => Some(place.clone()),
-                        None => None,
-                    }
-                } else {
-                    state.place.clone().map(|_| Place::Tag(vec![tag.name.clone()]))
-                };
-                if state.place.is_none() {
-                    state.category = Category::All;
-                    state.scroll = 0.0;
                 }
                 SectionKind::Tags => tags_section(ui, &painter, area, &mut y, state, projects, out),
                 SectionKind::Library => {
@@ -2634,90 +2623,108 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
         }
         // Right-click: rename (typed in, with Enter or the button), recolour or remove the
         // tag. Clicks inside do not close it: a tag's new name is typed here (egui's default
-        // closes a menu on a click inside it).
-        egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-            let id = Id::unique(("browser-rename-tag", tag.id));
-            let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
-            let field =
-                crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut name).id(id).desired_width(120.0));
-            field.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", tag.name))
-            });
-            ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-            // As the section's menu: Enter commits, and so does a click outside the menu. A
-            // change that is refused keeps the menu and the field (the status bar says why).
-            let committed = (field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
-                || ui.input(|i| {
-                    i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !ui.max_rect().contains(p))
+        // closes a menu on a click inside it). The drafts key on the tag's id; when the menu
+        // closes they go with it, and a refused rename resets the field, so a dead draft
+        // does not run again by itself ([#1254] › Tag model; [#1196]).
+        let was_open =
+            ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-footer-menu-open", tag.id)))).unwrap_or(false);
+        let popup = egui::Popup::context_menu(&response)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                let id = Id::unique(("browser-rename-tag", tag.id));
+                let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
+                let field = crate::kit::widgets::text_input(
+                    ui,
+                    egui::TextEdit::singleline(&mut name).id(id).desired_width(120.0),
+                );
+                field.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", tag.name))
                 });
-            if committed
-                && name.trim() != tag.name
-                && run(projects, "library.setTag", json!({ "id": format!("#{}", tag.id), "rename": name.trim() }), out)
-            {
-                ui.ctx().data_mut(|d| d.remove::<String>(id));
-                state.relist();
-            }
-            // The palette track colours take, then any colour.
-            let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
-            // Select colour: the palette's swatches and the theme editor's picker, opened in
-            // the menu (a picker of its own would end the menu as a click outside it does),
-            // the colour one command a pick.
-            if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
-                ui,
-                Id::unique(("browser-tag-colour", tag.id)),
-                current,
-                "Select colour",
-            ) {
-                let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
-                run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
-            }
-            ui.separator();
-            // A new tag from here: a typed name, added with Enter or the Add tag button, in
-            // the colour this menu shows outlined, shown dimmed until something carries it
-            // (#1196).
-            let new_id = Id::unique(("browser-section-new-tag", tag.id));
-            let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
-            let field = crate::kit::widgets::text_input(
-                ui,
-                egui::TextEdit::singleline(&mut new_name).id(new_id).hint_text("New tag…").desired_width(120.0),
-            );
-            field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
-            ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
-            let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-            let with_button = ui.button("Add tag").clicked();
-            if (with_enter || with_button) && !new_name.trim().is_empty() {
-                let taken = projects.file_library_mut().tag_flat();
-                if taken.iter().any(|t| t.name == new_name.trim()) {
-                    out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
-                } else {
-                    // The colour this menu shows outlined: a new tag comes out of the colour
-                    // the tag it was added from shows, not the next default one (#1196).
-                    let color = tag.color.clone();
-                    if run(projects, "library.setTag", json!({ "name": new_name.trim(), "color": color }), out) {
-                        out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
-                        ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+                ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
+                // Enter commits, and so does a click outside the menu. A change that is
+                // refused keeps the menu (the status bar says why) and the field resets.
+                let committed = (field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
+                    || ui.input(|i| {
+                        i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !ui.max_rect().contains(p))
+                    });
+                if committed && name.trim() != tag.name {
+                    if run(
+                        projects,
+                        "library.setTag",
+                        json!({ "id": format!("#{0}", tag.id), "rename": name.trim() }),
+                        out,
+                    ) {
+                        // The ids carry the name: the place and the filter need nothing
+                        // rewritten ([#1254] › Tag model).
+                        ui.ctx().data_mut(|d| d.remove::<String>(id));
                         state.relist();
-                        // Done is done: the add closes the menu, as a rename or a remove
-                        // do; a refused name keeps it, so the name can be corrected.
-                        ui.close();
+                    } else {
+                        ui.ctx().data_mut(|d| d.insert_temp(id, tag.name.clone()));
+                    }
+                }
+                // The palette track colours take, then any colour.
+                let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
+                if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
+                    ui,
+                    Id::unique(("browser-tag-colour", tag.id)),
+                    current,
+                    "Select colour",
+                ) {
+                    let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
+                    run(projects, "library.setTag", json!({ "id": format!("#{0}", tag.id), "color": hex }), out);
+                }
+                ui.separator();
+                let new_id = Id::unique(("browser-section-new-tag", tag.id));
+                let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
+                let field = crate::kit::widgets::text_input(
+                    ui,
+                    egui::TextEdit::singleline(&mut new_name).id(new_id).hint_text("New tag…").desired_width(120.0),
+                );
+                field
+                    .widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
+                ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
+                let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                let with_button = ui.button("Add tag").clicked();
+                if (with_enter || with_button) && !new_name.trim().is_empty() {
+                    let taken = projects.file_library_mut().tag_flat();
+                    if taken.iter().any(|t| t.name == new_name.trim()) {
+                        out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
+                    } else {
+                        let color = tag.color.clone();
+                        if run(projects, "library.setTag", json!({ "name": new_name.trim(), "color": color }), out) {
+                            out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
+                            ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+                            state.relist();
+                            ui.close();
+                        }
                     }
                 }
 
-            if ui.button("Remove tag").clicked() {
-                if run(projects, "library.removeTag", json!({ "name": tag.name }), out) {
-                    state.tag_filter.retain(|t| *t != tag.id);
+                if ui.button("Remove tag").clicked() {
+                    if run(projects, "library.removeTag", json!({ "id": format!("#{0}", tag.id) }), out) {
+                        state.tag_filter.retain(|t| *t != tag.id);
+                        if let Some(Place::Tag(tags)) = &mut state.place {
+                            tags.retain(|t| *t != tag.id);
+                            if tags.is_empty() {
+                                state.place = None;
+                            }
+                        }
+                    }
+                    state.relist();
+                    ui.close();
                 }
             });
         // Closed: the drafts go with it ([#1196] › keep the name with its tag).
         let open = popup.is_some();
-        let open_key = Id::unique(("browser-footer-menu-open", tag_index));
+        let open_key = Id::unique(("browser-footer-menu-open", tag.id));
         if was_open && !open {
             ui.ctx().data_mut(|d| {
-                d.remove::<String>(Id::unique(("browser-rename-tag", (&tag.name, "footer"))));
-                d.remove::<String>(Id::unique(("browser-section-new-tag", (&tag.name, "footer"))));
+                d.remove::<String>(Id::unique(("browser-rename-tag", tag.id)));
+                d.remove::<String>(Id::unique(("browser-section-new-tag", tag.id)));
             });
         }
         ui.ctx().data_mut(|d| d.insert_temp(open_key, open));
+
         painter.circle_filled(rect.center(), DOT / 2.0, tag_color(&tag.color));
         if on {
             painter.circle_stroke(rect.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
