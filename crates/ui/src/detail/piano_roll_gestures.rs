@@ -26,10 +26,9 @@ use crate::kit::widgets::{self, Action};
 const VELOCITY_PER_POINT: f64 = 1.0;
 /// How long an auditioned note sounds before the window lets it go, in seconds.
 pub(super) const AUDITION_SECONDS: f64 = 0.3;
-/// The shortest and longest a note the selecting rectangle reaches sounds, in beats, as
-/// `preview.noteOn` takes them.
-const SWEEP_SHORTEST: f64 = 1.0 / 64.0;
-const SWEEP_LONGEST: f64 = 64.0;
+/// How long a note the selecting rectangle reaches sounds, in beats: a sixteenth, so a quick sweep
+/// over a chord sounds as one short chord.
+const SWEEP_BEATS: f64 = 0.25;
 /// The most keys one audition sounds together.
 const MAX_AUDITION_KEYS: usize = 16;
 /// How far either side of the velocity lane's top edge the pointer grabs it, in points.
@@ -249,9 +248,9 @@ impl PianoRollState {
     }
 
     /// The selecting rectangle's sound, once a frame: a note sounds as the rectangle reaches it,
-    /// for its own length at the project's tempo, joining the notes already sounding
-    /// (`preview.noteOn` with `length` and `add`). Neither the rectangle moving off it nor letting
-    /// go of the rectangle cuts it short, so a chord swept over sounds as one, as it would play.
+    /// a sixteenth long at the project's tempo, joining the notes already sounding
+    /// (`preview.noteOn` with `length` and `add`) and cutting none of them short. So a chord swept
+    /// over sounds as one short chord, not as a run of notes each stopping the last.
     fn sweep_frame(&mut self, track: Option<u64>) -> Vec<Action> {
         let mut actions = Vec::new();
         let sweeping = matches!(self.gesture, Some(super::Gesture::Select { .. }));
@@ -263,22 +262,20 @@ impl PianoRollState {
                     self.audition_off = None;
                     self.audition_sounding.clear();
                 }
-                let clamp = |length: f64| length.clamp(SWEEP_SHORTEST, SWEEP_LONGEST);
-                let new: Vec<(u8, f64)> =
-                    wanted.iter().filter(|(k, _)| !self.swept.contains(k)).map(|(k, l)| (*k, clamp(*l))).collect();
-                // One `preview.noteOn` for each length the new notes have.
-                let mut lengths: Vec<f64> = new.iter().map(|(_, l)| *l).collect();
-                lengths.sort_by(f64::total_cmp);
-                lengths.dedup();
-                for (i, length) in lengths.into_iter().enumerate() {
-                    let keys: Vec<u8> = new.iter().filter(|(_, l)| *l == length).map(|(k, _)| *k).collect();
-                    let add = self.swept_track.is_some() || i > 0;
+                let new: Vec<u8> = wanted.iter().filter(|k| !self.swept.contains(k)).copied().collect();
+                if !new.is_empty() {
                     actions.push(Action::new(
                         "preview.noteOn",
-                        json!({ "track": track, "keys": keys, "velocity": self.last_velocity, "length": length, "add": add }),
+                        json!({
+                            "track": track,
+                            "keys": new,
+                            "velocity": self.last_velocity,
+                            "length": SWEEP_BEATS,
+                            "add": self.swept_track.is_some(),
+                        }),
                     ));
                 }
-                self.swept = wanted.into_iter().map(|(k, _)| k).collect();
+                self.swept = wanted;
                 self.swept_track = Some(track);
             }
             (None, _) if sweeping => {}
@@ -419,40 +416,34 @@ mod tests {
         assert!(frame(&ctx, 9.0, &mut state).is_empty());
     }
 
-    /// The selecting rectangle sounds a note as it reaches it, for the note's own length, joining
-    /// those sounding (`add`); one it moves off, and letting go of it, cut nothing short.
+    /// The selecting rectangle sounds a note as it reaches it, a sixteenth long, joining those
+    /// sounding (`add`); one it moves off, and letting go of it, cut nothing short.
     #[test]
-    fn the_selecting_rectangle_sounds_each_note_it_reaches_for_its_length() {
+    fn the_selecting_rectangle_sounds_each_note_it_reaches_a_sixteenth_long() {
         let ctx = egui::Context::default();
         let mut state = PianoRollState { audition: true, ..PianoRollState::default() };
         state.set_preview_velocity(90);
         state.gesture = Some(super::super::Gesture::Select { from: Pos2::ZERO, add: false });
-        let sweep = |state: &mut PianoRollState, keys: &[(u8, f64)], time: f64| {
+        let sweep = |state: &mut PianoRollState, keys: &[u8], time: f64| {
             state.sweep_wanted = Some(keys.to_vec());
             frame(&ctx, time, state)
         };
-        let on = |keys: serde_json::Value, length: f64, add: bool| {
+        let on = |keys: serde_json::Value, add: bool| {
             (
                 "preview.noteOn".to_string(),
-                json!({ "track": 3, "keys": keys, "velocity": 90, "length": length, "add": add }),
+                json!({ "track": 3, "keys": keys, "velocity": 90, "length": 0.25, "add": add }),
             )
         };
-        assert_eq!(sweep(&mut state, &[(65, 1.0)], 1.0), [on(json!([65]), 1.0, false)]);
-        // Two reached together, of two lengths: one call for each, both joining.
-        let more = sweep(&mut state, &[(49, 2.0), (56, 1.0), (65, 1.0)], 1.1);
-        assert_eq!(more, [on(json!([56]), 1.0, true), on(json!([49]), 2.0, true)]);
-        assert!(sweep(&mut state, &[(49, 2.0), (56, 1.0), (65, 1.0)], 1.2).is_empty(), "once while covered");
+        assert_eq!(sweep(&mut state, &[65], 1.0), [on(json!([65]), false)]);
+        assert_eq!(sweep(&mut state, &[49, 56, 65], 1.1), [on(json!([49, 56]), true)]);
+        assert!(sweep(&mut state, &[49, 56, 65], 1.2).is_empty(), "once while covered");
         assert_eq!(state.auditioning(), [49, 56, 65]);
         // Moving off a note cuts nothing; reaching it again sounds it again.
-        assert!(sweep(&mut state, &[(49, 2.0)], 1.3).is_empty());
-        assert_eq!(sweep(&mut state, &[(49, 2.0), (56, 1.0)], 1.4), [on(json!([56]), 1.0, true)]);
+        assert!(sweep(&mut state, &[49], 1.3).is_empty());
+        assert_eq!(sweep(&mut state, &[49, 56], 1.4), [on(json!([56]), true)]);
         // Letting go cuts nothing either.
         state.gesture = None;
         assert!(frame(&ctx, 1.5, &mut state).is_empty());
         assert!(state.auditioning().is_empty());
-        // A note too short or too long sounds within 1/64 to 64 beats.
-        state.gesture = Some(super::super::Gesture::Select { from: Pos2::ZERO, add: false });
-        let edges = sweep(&mut state, &[(60, 0.0), (62, 500.0)], 2.0);
-        assert_eq!(edges, [on(json!([60]), 1.0 / 64.0, false), on(json!([62]), 64.0, true)]);
     }
 }
