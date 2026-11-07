@@ -1185,25 +1185,40 @@ fn column_body(
     }
 }
 
+/// What a clip's hover keeps while it lasts: the clip's background as the pointer came, and the
+/// theme's background for the hovered clip, if it gives one.
+#[derive(Clone, Copy, PartialEq)]
+struct HoverFill {
+    rest: Color32,
+    fill: Option<Color32>,
+}
+
 /// The background a theme gives a hovered clip (`.clip:hover { background-color }`), kept while
-/// the clip's hover fades out after the pointer leaves; `None` leaves the lighter mix.
+/// the clip's hover fades out after the pointer leaves; `None` leaves the lighter mix. Only a
+/// background that differs from the clip's own counts: a `.clip { background-color }` alone is
+/// not a hover's, and the clip's own fill is its colour.
 fn hover_fill(ui: &Ui, key: egui::Id, hovered: bool, hover: f32) -> Option<Color32> {
-    let authored = hovered
-        .then(crate::kit::style_class::computed)
-        .flatten()
-        .filter(|style| style.authored.background)
-        .map(|style| style.background);
-    match authored {
-        Some(fill) => {
-            ui.data_mut(|d| d.insert_temp(key, fill));
-            Some(fill)
+    // Read, not written, in the frames nothing changes: this runs for every clip in every frame.
+    let stored = ui.data(|d| d.get_temp::<HoverFill>(key));
+    if !hovered {
+        if hover > 0.0 {
+            return stored.and_then(|s| s.fill);
         }
-        None if hover > 0.0 => ui.data(|d| d.get_temp(key)),
-        None => {
-            ui.data_mut(|d| d.remove::<Color32>(key));
-            None
+        if stored.is_some() {
+            ui.data_mut(|d| d.remove::<HoverFill>(key));
         }
+        return None;
     }
+    let style = crate::kit::style_class::computed()?;
+    // In the frame the pointer comes the clip's style is still the one resolved without it (the
+    // pointer's state takes effect as the frame's styles resolve): its background is the rest's.
+    let rest = stored.map_or(style.background, |s| s.rest);
+    let fill = (style.authored.background && style.background != rest).then_some(style.background);
+    let now = HoverFill { rest, fill };
+    if stored != Some(now) {
+        ui.data_mut(|d| d.insert_temp(key, now));
+    }
+    fill
 }
 
 /// `hover` is how far the pointer's hover has come (0 to 1), with the theme's hovered background

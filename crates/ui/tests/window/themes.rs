@@ -947,6 +947,40 @@ fn a_hovered_clip_takes_the_themes_hover_background() {
     assert!(!left.contains(&green), "and gives it back once the pointer has gone");
 }
 
+/// A clip's own background rule is not a hover's: `.clip { background-color }` alone leaves a
+/// hovered clip its lighter mix, as its colour fills it at rest (#1252).
+#[test]
+fn a_clips_background_rule_alone_does_not_fill_it_when_hovered() {
+    fn fills(shape: &egui::Shape, around: egui::Rect, out: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| fills(s, around, out)),
+            egui::Shape::Rect(rect) if rect.rect.contains_rect(around) => out.push(rect.fill),
+            _ => {}
+        }
+    }
+    let mut app = App::new();
+    app.set_session(Session::new(demo_project()), &[]);
+    suhina_ui::kit::native_css::set_user_sheet(Some(".clip { background-color: #222222; }".into()));
+    let mut h = window(app);
+    h.get_by_label("Launcher view").click();
+    h.run();
+    let launch = h.get_by_label("Launch Walk on Bass (scene 2)").rect();
+    let painted = |h: &mut Harness<'static, App>| {
+        let mut seen = Vec::new();
+        h.output().shapes.iter().for_each(|s| fills(&s.shape, launch, &mut seen));
+        seen
+    };
+    let rest = painted(&mut h);
+    h.hover_at(launch.center());
+    h.run();
+    let hovered = painted(&mut h);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let dark = egui::Color32::from_rgb(0x22, 0x22, 0x22);
+    assert!(!rest.contains(&dark), "the clip's colour fills it at rest: {rest:?}");
+    assert!(!hovered.contains(&dark), "and the lighter mix when it is hovered: {hovered:?}");
+    assert_ne!(rest, hovered, "the hover shows");
+}
+
 fn press(h: &mut Harness<'static, App>, pos: egui::Pos2, pressed: bool) {
     let (button, modifiers) = (egui::PointerButton::Primary, egui::Modifiers::NONE);
     h.input_mut().events.push(egui::Event::PointerButton { pos, button, pressed, modifiers });
