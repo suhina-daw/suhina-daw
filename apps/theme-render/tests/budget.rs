@@ -30,13 +30,13 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 541,
-            contexts: 82,
+            nodes: 542,
+            contexts: 83,
             approximations: 0,
             context_misses: 0,
             paint_callbacks: 163,
             theme_change_frames: 3,
-            theme_change_approximations: 2157,
+            theme_change_approximations: 2160,
             hover_frames: 4,
             hover_approximations: 0,
         },
@@ -64,13 +64,13 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 549,
-            contexts: 85,
+            nodes: 550,
+            contexts: 86,
             approximations: 0,
             context_misses: 0,
             paint_callbacks: 164,
             theme_change_frames: 3,
-            theme_change_approximations: 2214,
+            theme_change_approximations: 2217,
             hover_frames: 4,
             hover_approximations: 0,
         },
