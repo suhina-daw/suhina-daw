@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use suhina_engine::{LaunchCommand, RecordedJump, RecordedNote};
 use suhina_model::{
     AudioRegion, Clip, ClipContent, ContentId, ContentLane, InputChannels, LaneData, LoopRange, Note, Project,
-    StretchMode, TakeLane, TrackId,
+    TakeLane, TrackId,
 };
 
 use crate::files::TrackKind;
@@ -583,11 +583,6 @@ impl Session {
                     sample_rate: Some(rate),
                     channels: Some(channels),
                     duration_seconds: Some(seconds),
-                    warped: false,
-                    stretch: StretchMode::default(),
-                    warp_markers: Default::default(),
-                    gain: 1.0,
-                    transpose: 0.0,
                     stream: None,
                 };
                 (LaneData::Audio(region), length)
@@ -599,7 +594,7 @@ impl Session {
         let mut placed_slot = None;
         let result = (|| -> Result<(), CommandError> {
             let p = &mut self.project;
-            let source = crate::files::Source { kind, name, length, lane, loops: true };
+            let source = crate::files::Source { kind, name, length, lane, audio: Default::default(), loops: true };
             match take.target {
                 Target::Slot { scene } => {
                     let column = p
@@ -797,11 +792,6 @@ impl Session {
                     sample_rate: Some(rate),
                     channels: Some(channels),
                     duration_seconds: Some(seconds),
-                    warped: false,
-                    stretch: StretchMode::default(),
-                    warp_markers: Default::default(),
-                    gain: 1.0,
-                    transpose: 0.0,
                     stream: None,
                 };
                 Some((region, frames, f64::from(rate)))
@@ -932,6 +922,7 @@ fn put_clip(
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Default::default(),
     };
     let lane = match p.arrangement.lanes.iter().position(|l| l.track == Some(track)) {

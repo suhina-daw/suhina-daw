@@ -117,6 +117,19 @@ impl App {
             "view.editor" => {}
             "view.devices" => self.toggle_devices(),
             "view.araEditor" => self.open_ara_editor(),
+            "view.gainEnvelope" => match self.shown_clip() {
+                Some(ClipRef::Arrangement(track, clip))
+                    if self.piano_clip(Some(ClipRef::Arrangement(track, clip))).is_none() =>
+                {
+                    self.arrangement.toggle_envelope = Some(clip);
+                }
+                // Editing every clip's envelope is a mode: Alt+E turns it on or off without a clip
+                // picked (the clip given is not used then).
+                _ if self.settings.view.envelope_all => {
+                    self.arrangement.toggle_envelope = Some(suhina_engine::model::ClipId(0));
+                }
+                _ => self.status = Status::Hint("Select an audio clip in the Arrangement first".into()),
+            },
             "view.plugin" => self.toggle_plugin_editor(),
             "view.mappingMode" => self.toggle_mapping_mode(),
             "view.quickAdd" if self.quick_add_open() => {}

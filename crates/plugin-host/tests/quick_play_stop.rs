@@ -121,6 +121,7 @@ fn project(tracks: u32) -> Project {
                 launch: Default::default(),
                 color: None,
                 ara: false,
+                audio: Default::default(),
                 extensions: Extensions::default(),
             }],
         });

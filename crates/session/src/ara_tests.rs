@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use suhina_engine::AudioData;
-use suhina_model::{ArrangementLane, ClipContent, ClipId, ContentId, ContentLane, Track, WarpMarker};
+use suhina_model::{ArrangementLane, AudioRegion, ClipContent, ClipId, ContentId, ContentLane, Track, WarpMarker};
 
 use super::*;
 
@@ -15,11 +15,6 @@ fn region(file: &str) -> AudioRegion {
         sample_rate: Some(48_000),
         channels: Some(2),
         duration_seconds: None,
-        warped: false,
-        stretch: Default::default(),
-        warp_markers: Default::default(),
-        gain: 1.0,
-        transpose: 0.0,
         stream: None,
     }
 }
@@ -48,19 +43,18 @@ fn project() -> (Project, AudioPool) {
     let mut track = Track::new(TrackId(1), "Vocals");
     track.content.audio = true;
     project.tracks.push(track);
-    let mut warped = region("audio/vocal.wav");
-    warped.warped = true;
-    warped.warp_markers = vec![WarpMarker { time: 0.0, audio_time: 0.5 }, WarpMarker { time: 4.0, audio_time: 2.5 }];
-    project.contents =
-        vec![content(10, region("audio/vocal.wav")), content(11, warped), content(12, region("gone.wav"))];
+    project.contents = vec![
+        content(10, region("audio/vocal.wav")),
+        content(11, region("audio/vocal.wav")),
+        content(12, region("gone.wav")),
+    ];
+    let mut warped = clip(3, 11, 4.0, 4.0, 2.0);
+    warped.audio.warped = true;
+    warped.audio.warp_markers =
+        vec![WarpMarker { time: 0.0, audio_time: 0.5 }, WarpMarker { time: 4.0, audio_time: 2.5 }];
     project.arrangement.lanes.push(ArrangementLane {
         track: Some(TrackId(1)),
-        clips: vec![
-            clip(1, 10, 0.0, 4.0, 1.0),
-            clip(2, 10, 8.0, 2.0, 0.0),
-            clip(3, 11, 4.0, 4.0, 2.0),
-            clip(4, 12, 0.0, 1.0, 0.0),
-        ],
+        clips: vec![clip(1, 10, 0.0, 4.0, 1.0), clip(2, 10, 8.0, 2.0, 0.0), warped, clip(4, 12, 0.0, 1.0, 0.0)],
         ..ArrangementLane::default()
     });
     // A clip of another track is not in the document.

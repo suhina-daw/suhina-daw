@@ -136,6 +136,7 @@ fn project(chains: &[usize]) -> Project {
                 launch: Default::default(),
                 color: None,
                 ara: false,
+                audio: Default::default(),
                 extensions: Extensions::default(),
             }],
         });

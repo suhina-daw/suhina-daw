@@ -356,6 +356,15 @@ pub struct LauncherMonitor {
     /// Renderer frames played so far, and the arrangement frame playing (ADR 0005).
     pub(crate) position: AtomicU64,
     pub(crate) arrangement: AtomicU64,
+    /// The loop's start and end in arrangement frames while the playhead follows it (both 0
+    /// otherwise): a swap expected past the loop end lands after the wrap.
+    pub(crate) loop_start: AtomicU64,
+    pub(crate) loop_end: AtomicU64,
+    /// Counts the audio thread's publications of the playhead: odd while one is being written,
+    /// so an update reads `position`, `arrangement`, the loop and `frames_per_beat` of one block
+    /// ([`LauncherMonitor::playhead`]). Read apart, they could be a block apart, and the swap
+    /// landed off where its stretched clips were rendered for and restarted them (a click).
+    pub(crate) published: AtomicU64,
     pub(crate) stretch_underruns: AtomicU64,
     /// Graph swaps while playing that had to move the stretch voices (they landed too far from
     /// where they were rendered for): each silences the stretched clips until they catch up.
@@ -393,6 +402,30 @@ pub struct LauncherMonitor {
 }
 
 impl LauncherMonitor {
+    /// The playhead as the audio thread last published it, all from one block: renderer frames
+    /// played, the arrangement frame, the loop it follows (`None` without one) and the
+    /// arrangement frames per beat. Never blocks for long: it reads again while a publication is
+    /// being written, and after a few tries takes what it read.
+    pub(crate) fn playhead(&self) -> (u64, u64, Option<(u64, u64)>, f64) {
+        let mut read = (0, 0, None, 0.0);
+        for _ in 0..64 {
+            let before = self.published.load(Ordering::Acquire);
+            let start = self.loop_start.load(Ordering::Acquire);
+            let end = self.loop_end.load(Ordering::Acquire);
+            read = (
+                self.position.load(Ordering::Acquire),
+                self.arrangement.load(Ordering::Acquire),
+                (end > start).then_some((start, end)),
+                f64::from_bits(self.frames_per_beat.load(Ordering::Acquire)),
+            );
+            if before.is_multiple_of(2) && self.published.load(Ordering::Acquire) == before {
+                break;
+            }
+            std::hint::spin_loop();
+        }
+        read
+    }
+
     fn new(columns: usize, tempo: f64, signature: TimeSignature) -> Self {
         let room = columns.max(MONITOR_COLUMNS);
         Self {
@@ -406,6 +439,9 @@ impl LauncherMonitor {
             elapsed: (0..room).map(|_| AtomicU64::new(0f64.to_bits())).collect(),
             position: AtomicU64::new(0),
             arrangement: AtomicU64::new(0),
+            loop_start: AtomicU64::new(0),
+            loop_end: AtomicU64::new(0),
+            published: AtomicU64::new(0),
             stretch_underruns: AtomicU64::new(0),
             stretch_moves: AtomicU64::new(0),
             plugin_misses: AtomicU64::new(0),
@@ -1082,29 +1118,35 @@ fn plan_clip(
                     clock: crate::tempo::TempoClock::Constant { bpm: tempo, per_beat: frames_per_beat },
                     sample_rate,
                 };
-                let Some(event) = AudioEvent::new(&placed, region, data.clone(), timing, gains) else { continue };
+                let Some(event) = AudioEvent::new(&placed, data.clone(), timing, gains) else { continue };
                 // Warped clips are time-stretched like arrangement clips; the stretch voice gets
                 // the region gain, the direct reader has it already.
                 let stretch_beats = if loop_range.is_some() { STRETCH_LOOP_BEATS } else { clip.length };
-                let stretch = (region.warped && region.stretch != suhina_model::StretchMode::Repitch)
+                let stretch = (clip.audio.warped && clip.audio.stretch != suhina_model::StretchMode::Repitch)
                     .then(|| {
                         let stretched = suhina_model::Clip { length: stretch_beats, ..placed.clone() };
-                        StretchVoice::new(&stretched, region, data.clone(), tempo, sample_rate)
+                        StretchVoice::new(&stretched, data.clone(), tempo, sample_rate)
                     })
                     // Prepared later, off the audio thread (`prepare`).
                     .flatten();
-                let region_gain = if region.gain.is_finite() { region.gain.max(0.0) as f32 } else { 0.0 };
+                let region_gain = if clip.audio.gain.is_finite() { clip.audio.gain.max(0.0) as f32 } else { 0.0 };
                 let fingerprint = {
                     use std::hash::{Hash, Hasher};
                     let mut hasher = std::hash::DefaultHasher::new();
-                    format!("{region:?}|{placed:?}|{stretch_beats}|{tempo}|{sample_rate}").hash(&mut hasher);
+                    // Only what the stretch voice reads: a gain or envelope edit keeps the voice
+                    // prepared, as `ahead::voice_key` does for arrangement clips.
+                    let mut heard = placed.clone();
+                    heard.audio.gain = 1.0;
+                    heard.audio.gain_envelope.clear();
+                    heard.audio.tempo_source = None;
+                    format!("{region:?}|{heard:?}|{stretch_beats}|{tempo}|{sample_rate}").hash(&mut hasher);
                     // The decoded audio itself: new samples under the same file are another voice.
                     (Arc::as_ptr(data) as usize).hash(&mut hasher);
                     hasher.finish()
                 };
                 audio_plans.push(PlanAudio {
                     event,
-                    follows_tempo: region.warped,
+                    follows_tempo: clip.audio.warped,
                     stretch,
                     voice: None,
                     stretch_beats,

@@ -21,11 +21,6 @@ fn project() -> Project {
         sample_rate: Some(48_000),
         channels: Some(1),
         duration_seconds: Some(4.0),
-        warped: false,
-        stretch: StretchMode::default(),
-        warp_markers: Default::default(),
-        gain: 1.0,
-        transpose: 0.0,
         stream: None,
     };
     ProjectBuilder::from(blank_project())
@@ -34,6 +29,11 @@ fn project() -> Project {
         .clip(3, Clip::new(ContentId(1), 4.0, 8.0))
         .clip(1, Clip::new(ContentId(2), 0.0, 4.0))
         .build_without_ids()
+}
+
+/// The clips on `track`'s lane.
+fn clips(session: &Session, track: u32) -> Vec<Clip> {
+    session.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(track))).unwrap().clips.clone()
 }
 
 fn first(session: &Session, track: u32) -> Clip {
@@ -106,9 +106,9 @@ fn stretching_an_audio_clip_scales_its_audio_to_the_new_length() {
     assert_eq!(clip.length, 16.0);
     let content = session.project().content(clip.content).unwrap();
     assert_eq!(content.length, 16.0);
-    let LaneData::Audio(region) = &content.lanes[0].data else { panic!("audio") };
-    assert!(region.warped, "stretching warps it");
-    assert_eq!(region.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((16.0, 4.0)), "4 s now over 16 beats");
+    assert!(clip.audio.warped, "stretching warps it");
+    let end = clip.audio.warp_markers.last().map(|m| (m.time, m.audio_time));
+    assert_eq!(end, Some((16.0, 4.0)), "4 s now over 16 beats");
     assert!(
         run(&mut session, "clip.stretch", json!({ "track": 1, "index": 0, "end": 8.0 })).is_err(),
         "MIDI does not stretch"
@@ -139,19 +139,17 @@ fn warp_turned_on_marks_the_audio_s_end_at_the_song_s_tempo_now() {
     let mut session = Session::new(p);
     let clip = first(&session, 3).id.0;
     run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": true })).unwrap();
-    let markers = match &session.project().content(ContentId(1)).unwrap().lanes[0].data {
-        LaneData::Audio(region) => region.warp_markers.clone(),
-        LaneData::Notes(_) => panic!("not audio"),
-    };
+    let markers = first(&session, 3).audio.warp_markers;
     let end = markers.last().unwrap();
     assert!((end.time - 6.0).abs() < 1e-9, "{markers:?}");
     assert_eq!(end.audio_time, 4.0);
 }
 
 /// Two clips play one content where the tempo differs (120 BPM, then 90 from beat 20): warp
-/// turned on for one gives it its own copy, so the other's speed does not change (#874).
+/// turned on for one changes that clip only, each marked at the tempo where it plays, and the
+/// content is not copied (#742; before, a copy kept the other's speed, #874).
 #[test]
-fn warp_turned_on_for_a_clip_whose_content_plays_at_another_tempo_elsewhere_gets_its_own_copy() {
+fn warp_turned_on_for_one_of_two_clips_of_a_content_changes_that_clip_only() {
     let mut p = project();
     p.transport.tempo_bpm = 120.0;
     p.transport.tempo_changes = vec![TempoPoint { beat: 20.0, bpm: 90.0, ramp: false }].into();
@@ -160,80 +158,49 @@ fn warp_turned_on_for_a_clip_whose_content_plays_at_another_tempo_elsewhere_gets
         24.0,
         8.0,
     ));
-    let before = p.clone();
     let mut session = Session::new(p);
-    let region =
-        |session: &Session, content: ContentId| match &session.project().content(content).unwrap().lanes[0].data {
-            LaneData::Audio(region) => region.clone(),
-            LaneData::Notes(_) => panic!("not audio"),
-        };
-    let clips = |session: &Session| {
-        session.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(3))).unwrap().clips.clone()
-    };
+    let before = session.project().clone();
     let clip = first(&session, 3).id.0;
     run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": true })).unwrap();
-    let [warped, other] = clips(&session).try_into().unwrap();
-    assert_ne!(warped.content, other.content, "the warped clip plays a copy");
-    assert_eq!(other.content, ContentId(1));
-    let shared = region(&session, ContentId(1));
-    assert!(!shared.warped && shared.warp_markers.is_empty(), "the other clip plays as it did");
-    let end = *region(&session, warped.content).warp_markers.last().unwrap();
+    let [warped, other] = clips(&session, 3).try_into().unwrap();
+    assert_eq!((warped.content, other.content), (ContentId(1), ContentId(1)), "no copy");
+    assert_eq!(session.project().contents, before.contents);
+    assert!(!other.audio.warped && other.audio.warp_markers.is_empty(), "the other clip plays as it did");
+    let end = *warped.audio.warp_markers.last().unwrap();
     assert!((end.time - 8.0).abs() < 1e-9 && end.audio_time == 4.0, "{end:?}: 4 s at 120 BPM");
-    // The other now plays its content alone: warp on marks its end at 90 BPM, without a copy.
-    let count = session.project().contents.len();
+    // The other, warped too, is marked at the 90 BPM where it plays.
     run(&mut session, "clip.setAudio", json!({ "clip": other.id.0, "warp": true })).unwrap();
-    assert_eq!(session.project().contents.len(), count);
-    let end = *region(&session, ContentId(1)).warp_markers.last().unwrap();
+    let end = *clips(&session, 3)[1].audio.warp_markers.last().unwrap();
     assert!((end.time - 6.0).abs() < 1e-9, "{end:?}: 4 s at 90 BPM");
+    assert!((clips(&session, 3)[0].audio.warp_markers.last().unwrap().time - 8.0).abs() < 1e-9, "the first kept");
     run(&mut session, "edit.undo", json!({})).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project().contents, before.contents, "undone, the shared content is as it was");
-    assert!(clips(&session).iter().all(|c| c.content == ContentId(1)), "both play the shared content again");
+    assert_eq!(session.project().arrangement, before.arrangement, "undone, both are as they were");
 }
 
-/// Warp turned off keeps the markers; when the two clips of that content then play where the
-/// tempo differs, warp turned on again for one still gives it its own copy, so the other keeps
-/// playing unwarped; one undo step puts both back on the shared content (#874).
+/// Warp turned off keeps a clip's markers; turned on again it warps with them, and the other clip
+/// of the same content stays unwarped.
 #[test]
-fn warp_turned_on_again_for_marked_audio_another_clip_plays_at_another_tempo_gets_its_own_copy() {
+fn warp_turned_on_again_keeps_the_clip_s_markers_and_leaves_the_other_clip() {
     let mut p = project();
     p.transport.tempo_bpm = 120.0;
     p.transport.tempo_changes = vec![TempoPoint { beat: 20.0, bpm: 90.0, ramp: false }].into();
     let markers = vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 8.0, audio_time: 4.0 }];
-    if let LaneData::Audio(region) = &mut p.contents[0].lanes[0].data {
-        region.warp_markers = markers.clone();
-    }
-    p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(3))).unwrap().clips.push(Clip::new(
-        ContentId(1),
-        24.0,
-        8.0,
-    ));
-    let before = p.clone();
+    let lane = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(3))).unwrap();
+    lane.clips[0].audio.warp_markers = markers.clone();
+    lane.clips.push(Clip::new(ContentId(1), 24.0, 8.0));
     let mut session = Session::new(p);
-    let region =
-        |session: &Session, content: ContentId| match &session.project().content(content).unwrap().lanes[0].data {
-            LaneData::Audio(region) => region.clone(),
-            LaneData::Notes(_) => panic!("not audio"),
-        };
-    let clips = |session: &Session| {
-        session.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(3))).unwrap().clips.clone()
-    };
     let clip = first(&session, 3).id.0;
     run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": true })).unwrap();
-    let [warped, other] = clips(&session).try_into().unwrap();
-    assert_ne!(warped.content, other.content, "the warped clip plays a copy");
-    assert_eq!(other.content, ContentId(1));
-    let shared = region(&session, ContentId(1));
-    assert!(!shared.warped, "the other clip plays as it did");
-    let copy = region(&session, warped.content);
-    assert!(copy.warped && copy.warp_markers == markers, "the copy warps with the markers kept");
+    let [warped, other] = clips(&session, 3).try_into().unwrap();
+    assert!(warped.audio.warped && warped.audio.warp_markers == markers, "it warps with the markers kept");
+    assert!(!other.audio.warped && other.audio.warp_markers.is_empty());
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project().contents, before.contents, "undone, the shared content is as it was");
-    assert!(clips(&session).iter().all(|c| c.content == ContentId(1)), "both play the shared content again");
+    assert!(!first(&session, 3).audio.warped, "undone");
 }
 
 #[test]
-fn warp_turned_on_for_duplicates_at_the_same_tempo_keeps_their_content_shared() {
+fn warp_turned_on_for_one_duplicate_leaves_the_other_and_their_content_shared() {
     let mut p = project();
     p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(3))).unwrap().clips.push(Clip::new(
         ContentId(1),
@@ -243,8 +210,9 @@ fn warp_turned_on_for_duplicates_at_the_same_tempo_keeps_their_content_shared() 
     let mut session = Session::new(p);
     let clip = first(&session, 3).id.0;
     run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": true })).unwrap();
-    let lane = session.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(3))).unwrap();
-    assert_eq!(lane.clips[0].content, lane.clips[1].content, "both follow, as with the gain");
+    let lane = clips(&session, 3);
+    assert_eq!(lane[0].content, lane[1].content, "the content is shared still");
+    assert!(lane[0].audio.warped && !lane[1].audio.warped, "only the one clip warps (#742)");
 }
 
 #[test]
@@ -261,17 +229,13 @@ fn warp_turned_on_in_a_slot_marks_the_audio_s_end_at_the_song_s_tempo_not_the_ar
     }];
     let mut session = Session::new(p);
     run(&mut session, "clip.setAudio", json!({ "track": 3, "scene": 0, "warp": true })).unwrap();
-    // The arrangement's clip of the same content plays at 120 then 60, so the slot's clip got its
-    // own copy (#874).
-    let slot = session.project().launcher.columns[0].slots[0].clip.as_ref().unwrap().content;
-    assert_ne!(slot, ContentId(1));
-    let markers = match &session.project().content(slot).unwrap().lanes[0].data {
-        LaneData::Audio(region) => region.warp_markers.clone(),
-        LaneData::Notes(_) => panic!("not audio"),
-    };
+    let slot = session.project().launcher.columns[0].slots[0].clip.clone().unwrap();
+    assert_eq!(slot.content, ContentId(1), "no copy: the warp is the slot clip's own");
+    let markers = slot.audio.warp_markers;
     let end = markers.last().unwrap();
     assert!((end.time - 8.0).abs() < 1e-9, "{markers:?}");
     assert_eq!(end.audio_time, 4.0);
+    assert!(!first(&session, 3).audio.warped, "the arrangement's clip of the same audio is as it was");
 }
 
 /// The clip properties' audio controls (#699): warp on gives the audio two warp markers and
@@ -280,13 +244,7 @@ fn warp_turned_on_in_a_slot_marks_the_audio_s_end_at_the_song_s_tempo_not_the_ar
 fn an_audio_clips_warp_mode_and_transpose_are_set() {
     let mut session = Session::new(project());
     let clip = first(&session, 3).id.0;
-    let region = |session: &Session| {
-        let p = session.project();
-        match &p.content(ContentId(1)).unwrap().lanes[0].data {
-            LaneData::Audio(region) => region.clone(),
-            LaneData::Notes(_) => panic!("not audio"),
-        }
-    };
+    let region = |session: &Session| first(session, 3).audio;
     let out = run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": true })).unwrap();
     assert_eq!((out["warp"].as_bool(), out["mode"].as_str()), (Some(true), Some("smooth")));
     let warped = region(&session);
