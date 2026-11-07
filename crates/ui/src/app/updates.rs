@@ -108,51 +108,7 @@ impl Updates {
 
     /// The start panel's line: a newer build, its download, or what became of it.
     pub fn notice(&self) -> Option<Notice> {
-        let name = |b: &Build| match b.pr {
-            Some(pr) => format!("the test build of #{pr} ({})", b.version),
-            None => format!("Suhina {}", b.version),
-        };
-        Some(match self.updater.phase() {
-            Phase::Checked { newer: Some(build), .. } => Notice {
-                text: format!("New version available: {}", name(&build)),
-                button: Some("Download update now"),
-                progress: None,
-                error: false,
-                page: Some(build.page),
-            },
-            Phase::Downloading { build, done } => {
-                let part = if build.size > 0 { (done as f32 / build.size as f32).clamp(0.0, 1.0) } else { 0.0 };
-                Notice {
-                    text: format!("Downloading {}: {:.0} %", name(&build), part * 100.0),
-                    button: None,
-                    progress: Some(part),
-                    error: false,
-                    page: None,
-                }
-            }
-            Phase::Installing(build) => Notice {
-                text: format!("Installing {}…", name(&build)),
-                button: None,
-                progress: Some(1.0),
-                error: false,
-                page: None,
-            },
-            Phase::Installed(build) => Notice {
-                text: format!("{} is installed: restart Suhina to use it", name(&build)),
-                button: Some("Restart now"),
-                progress: None,
-                error: false,
-                page: None,
-            },
-            Phase::InstallFailed { reason, .. } => Notice {
-                text: format!("The update was not installed: {reason}"),
-                button: Some("Try again"),
-                progress: None,
-                error: true,
-                page: None,
-            },
-            _ => return None,
-        })
+        notice_of(self.updater.phase())
     }
 
     /// The start panel line's button was pressed.
@@ -169,15 +125,7 @@ impl Updates {
 
     /// Draws Help › Check for updates… over `area`.
     pub fn show(&mut self, ui: &Ui, area: Rect, settings: &UpdateSettings) -> Option<Wanted> {
-        let channel = settings.channel();
-        let choice = egui::Area::new(Id::unique("updates-dialog"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(area.min)
-            .show(ui.ctx(), |ui| {
-                ui.set_min_size(area.size());
-                self.draw(ui, area, channel)
-            })
-            .inner;
+        let choice = self.dialog(ui.ctx(), area, settings.channel(), self.updater.phase());
         match choice? {
             Choice::Close => self.open = false,
             Choice::Check => self.check(ui.ctx(), settings),
@@ -197,9 +145,20 @@ impl Updates {
         None
     }
 
-    fn draw(&self, ui: &mut Ui, area: Rect, channel: Channel) -> Option<Choice> {
+    /// The dialog in a layer of its own over the window, the updater in `phase`.
+    fn dialog(&self, ctx: &egui::Context, area: Rect, channel: Channel, phase: Phase) -> Option<Choice> {
+        egui::Area::new(Id::unique("updates-dialog"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(area.min)
+            .show(ctx, |ui| {
+                ui.set_min_size(area.size());
+                self.draw(ui, area, channel, phase)
+            })
+            .inner
+    }
+
+    fn draw(&self, ui: &mut Ui, area: Rect, channel: Channel, phase: Phase) -> Option<Choice> {
         let mut chosen: Option<Choice> = None;
-        let phase = self.updater.phase();
         let test_builds = match (&phase, channel) {
             (Phase::Checked { builds, .. }, Channel::TestBuilds) if self.channel == Channel::TestBuilds => {
                 builds.iter().take(LISTED).cloned().collect()
@@ -360,3 +319,56 @@ impl Updates {
         chosen
     }
 }
+
+/// The start panel's line for `phase`.
+fn notice_of(phase: Phase) -> Option<Notice> {
+    let name = |b: &Build| match b.pr {
+        Some(pr) => format!("the test build of #{pr} ({})", b.version),
+        None => format!("Suhina {}", b.version),
+    };
+    Some(match phase {
+        Phase::Checked { newer: Some(build), .. } => Notice {
+            text: format!("New version available: {}", name(&build)),
+            button: Some("Download update now"),
+            progress: None,
+            error: false,
+            page: Some(build.page),
+        },
+        Phase::Downloading { build, done } => {
+            let part = if build.size > 0 { (done as f32 / build.size as f32).clamp(0.0, 1.0) } else { 0.0 };
+            Notice {
+                text: format!("Downloading {}: {:.0} %", name(&build), part * 100.0),
+                button: None,
+                progress: Some(part),
+                error: false,
+                page: None,
+            }
+        }
+        Phase::Installing(build) => Notice {
+            text: format!("Installing {}…", name(&build)),
+            button: None,
+            progress: Some(1.0),
+            error: false,
+            page: None,
+        },
+        Phase::Installed(build) => Notice {
+            text: format!("{} is installed: restart Suhina to use it", name(&build)),
+            button: Some("Restart now"),
+            progress: None,
+            error: false,
+            page: None,
+        },
+        Phase::InstallFailed { reason, .. } => Notice {
+            text: format!("The update was not installed: {reason}"),
+            button: Some("Try again"),
+            progress: None,
+            error: true,
+            page: None,
+        },
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+#[path = "updates_tests.rs"]
+mod tests;

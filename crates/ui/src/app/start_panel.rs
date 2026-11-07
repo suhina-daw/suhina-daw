@@ -306,8 +306,8 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
                             |saved| ago(now, saved),
                         );
                         let label = format!("Open {}", stem(path));
-                        let response =
-                            row(ui, &painter, r, &stem(path), &note, &label).on_hover_text(path.display().to_string());
+                        let response = row(ui, &painter, r, path, &stem(path), &note, &label)
+                            .on_hover_text(path.display().to_string());
                         if response.clicked() {
                             choice = Some(StartChoice::Open(path.clone()));
                         }
@@ -344,7 +344,7 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
                         let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), LINE), Sense::hover());
                         let painter = ui.painter().clone();
                         let label = format!("Start from {}", stem(path));
-                        if row(ui, &painter, r, &stem(path), &kind(path), &label).clicked() {
+                        if row(ui, &painter, r, path, &stem(path), &kind(path), &label).clicked() {
                             choice = Some(StartChoice::NewFromTemplate(path.clone()));
                         }
                     }
@@ -460,6 +460,39 @@ mod tests {
         harness.get_by_label("Recent projects").click();
         harness.run();
         assert_eq!(harness.state().0.tab, Tab::Recent);
+    }
+
+    /// Two recent projects of the same name in different folders, and two templates of the same
+    /// name: each row opens its own (#1229).
+    #[test]
+    fn rows_of_the_same_name_open_their_own_project() {
+        let lists = Lists {
+            recent: vec![PathBuf::from("a/Song.suhina"), PathBuf::from("b/Song.suhina")],
+            saved: vec![None, None],
+            templates: vec![PathBuf::from("templates/Song.suhina"), PathBuf::from("templates/Song.als")],
+            templates_folder: "templates".into(),
+            new_returns: true,
+        };
+        let mut harness = panel(lists, Vec2::new(900.0, 600.0));
+        harness.run();
+        for (at, path) in [(0, "a/Song.suhina"), (1, "b/Song.suhina")] {
+            let mut rows: Vec<_> = harness.query_all_by_label("Open Song").collect();
+            assert_eq!(rows.len(), 2);
+            rows.sort_by(|a, b| a.rect().top().total_cmp(&b.rect().top()));
+            rows[at].click();
+            harness.run();
+            assert_eq!(harness.state().1, Some(StartChoice::Open(path.into())));
+        }
+        harness.get_by_label("Templates projects").click();
+        harness.run();
+        for (at, path) in [(0, "templates/Song.suhina"), (1, "templates/Song.als")] {
+            let mut rows: Vec<_> = harness.query_all_by_label("Start from Song").collect();
+            assert_eq!(rows.len(), 2);
+            rows.sort_by(|a, b| a.rect().top().total_cmp(&b.rect().top()));
+            rows[at].click();
+            harness.run();
+            assert_eq!(harness.state().1, Some(StartChoice::NewFromTemplate(path.into())));
+        }
     }
 
     #[test]
