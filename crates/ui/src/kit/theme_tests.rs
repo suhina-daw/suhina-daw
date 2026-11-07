@@ -67,9 +67,9 @@ fn old_clip_defaults_migrate_and_explicit_defaults_and_materials_round_trip() {
 fn example_themes_embed_their_paint_and_all_editable_artwork() {
     for (id, width) in [("suhina-sheet", 88), ("suhina-meadow", 92), ("suhina-blocks", 92)] {
         let (_, sheet) = built_in_themes().into_iter().find(|(key, _)| *key == id).unwrap();
-        assert!(sheet.skin.assets.len() >= super::super::skin::ROLES.len());
-        for role in super::super::skin::ROLES {
-            let svg = &sheet.skin.assets[*role];
+        assert!(sheet.skin.assets.len() >= super::super::skin::roles().count());
+        for role in super::super::skin::roles() {
+            let svg = &sheet.skin.assets[role];
             assert!(super::super::skin::validate_artwork(svg).is_ok(), "{role}");
         }
         for (role, svg) in &sheet.skin.assets {

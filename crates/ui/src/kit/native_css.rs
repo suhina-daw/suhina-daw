@@ -364,7 +364,7 @@ pub fn enter(class: &str, name: Option<&str>, response: Option<&egui::Response>)
         if !engine.collecting || engine.nodes.len() >= MAX_NODES || engine.parents.len() >= MAX_DEPTH {
             return false;
         }
-        if !super::style_class::CLASSES.contains(&class) {
+        if !suhina_theme_package::elements::is_element(class) {
             return false;
         }
         let name = name.filter(|name| {
@@ -507,95 +507,11 @@ pub fn mark_pointer(hovered: bool, pressed: bool, disabled: bool) {
     });
 }
 
-/// Buttons a theme selects by id, as `#control-NAME`: the toolbar's and a track's.
-pub const CONTROL_IDS: &[&str] = &[
-    "play",
-    "stop",
-    "record",
-    "browser-toggle",
-    "metronome-toggle",
-    "solo",
-    "cue",
-    "arm",
-    "track-on",
-    "automation",
-    "monitor",
-];
-
-/// Level fields a theme selects by id (`#arrangement-volume`).
-pub const LEVEL_FIELDS: &[&str] =
-    &["arrangement-volume", "arrangement-pan", "main-volume", "mixer-volume", "mixer-pan"];
-
-/// The element id a theme selects a scope by: documented controls and panels keep their
-/// literal ids; others get one derived from their key.
+/// The id a theme selects a scope by: the registry's ids keep the name the app gave
+/// (`#control-play`, `#device-compressor`); others get one derived from their key.
 fn element_id(node: &StyleNode) -> String {
-    if node.class == "button"
-        && let Some(name) = node.name.as_deref().filter(|name| CONTROL_IDS.contains(name))
-    {
-        return format!("control-{name}");
-    }
-    if (node.class == "workspace" && node.name.as_deref() == Some("workspace"))
-        || (node.class == "workspace-panel"
-            && node.name.as_deref().is_some_and(|name| ["panel-browser", "panel-main", "panel-detail"].contains(&name)))
-    {
-        return node.name.clone().unwrap_or_default();
-    }
-    // A device panel's control is selected by its id (`#cutoff`), as the panel sheet names it.
-    if node.class == "device-control"
-        && let Some(name) = &node.name
-    {
-        return name.clone();
-    }
-    // A strip's divider and the workspace's splitters (#1252).
-    if node.class == "divider"
-        && let Some(name) =
-            node.name.as_deref().filter(|name| ["mixer-divider", "detail-splitter", "browser-splitter"].contains(name))
-    {
-        return name.to_owned();
-    }
-    // A device's panel by what it is: `#device-compressor`, `#device-plugin`.
-    if node.class == "device"
-        && let Some(name) = node.name.as_deref().filter(|name| name.starts_with("device-"))
-    {
-        return name.to_owned();
-    }
-    if node.class == "editor-tab"
-        && let Some(name) = node.name.as_deref().filter(|name| name.starts_with("tab-"))
-    {
-        return name.to_owned();
-    }
-    if node.class == "piano-tool"
-        && let Some(name) = node.name.as_deref().filter(|name| name.starts_with("piano-"))
-    {
-        return name.to_owned();
-    }
-    if node.class == "add-track"
-        && let Some(name) = node.name.as_deref().filter(|name| name.starts_with("add-"))
-    {
-        return name.to_owned();
-    }
-    // A mixer send by its place: `#mixer-send-1` is the first.
-    if node.class == "send"
-        && let Some(name) = node.name.as_deref().filter(|name| name.starts_with("mixer-send-"))
-    {
-        return name.to_owned();
-    }
-    if node.class == "popup"
-        && let Some(name) = node.name.as_deref().filter(|name| *name == "metronome-level")
-    {
-        return name.to_owned();
-    }
-    // The level fields of the track headers and the mixer, by their placement names.
-    if matches!(node.class.as_str(), "value" | "pan" | "fader")
-        && let Some(name) = node.name.as_deref().filter(|name| LEVEL_FIELDS.contains(name))
-    {
-        return name.to_owned();
-    }
-    if node.class == "toolbar-module" && node.name.as_deref().is_some_and(|name| skin::MODULES.contains(&name)) {
-        node.name.clone().unwrap_or_default()
-    } else {
-        format!("node-{}", node.key)
-    }
+    suhina_theme_package::elements::element_id(&node.class, node.name.as_deref())
+        .unwrap_or_else(|| format!("node-{}", node.key))
 }
 
 /// Applies running transitions and keyframe animations to `target` at time `now`; returns
@@ -860,7 +776,7 @@ fn same_source(engine: Option<&Arc<str>>) -> bool {
 pub fn scoped(stack: &[String]) -> Option<Computed> {
     if stack.is_empty()
         || stack.len() > MAX_DEPTH
-        || stack.iter().any(|s| !super::style_class::CLASSES.contains(&s.as_str()))
+        || stack.iter().any(|s| !suhina_theme_package::elements::is_element(s))
     {
         return None;
     }

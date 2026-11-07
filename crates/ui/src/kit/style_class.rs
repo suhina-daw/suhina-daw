@@ -5,122 +5,6 @@
 use super::{skin, theme};
 use std::cell::RefCell;
 
-pub const CLASSES: &[&str] = &[
-    "window",
-    "workspace",
-    "workspace-panel",
-    "application-bar",
-    "menu-bar",
-    "project-tabs",
-    "toolbar",
-    "toolbar-module",
-    "status-bar",
-    "browser",
-    "session",
-    "meter-vertical",
-    "meter-horizontal",
-    "arrangement",
-    "mixer",
-    "track-header",
-    "track-name",
-    "clip",
-    "clip-name",
-    "clip-waveform",
-    "clip-notes",
-    "scene",
-    "scene-column",
-    "track-column",
-    "slot",
-    "detail",
-    "clip-editor",
-    "piano-roll",
-    "device-panel",
-    "device",
-    "device-header",
-    "slider",
-    "slider-rail",
-    "slider-fill",
-    "slider-handle",
-    "device-control",
-    "device-section",
-    "envelope",
-    "waveform",
-    "xy-control",
-    "label",
-    "separator",
-    "settings",
-    "dialog",
-    "sample-map",
-    "button",
-    "fader",
-    "fader-scale",
-    "pan",
-    "send",
-    "add-track",
-    "ruler",
-    "loop-region",
-    "playhead",
-    "divider",
-    "clip-gain",
-    "clip-fade-handle",
-    "piano-roll",
-    "piano-grid",
-    "piano-row",
-    "piano-row-black",
-    "piano-key",
-    "piano-key-black",
-    "piano-key-c",
-    "piano-key-hover",
-    "piano-key-black-hover",
-    "piano-key-line",
-    "piano-scale-mark",
-    "piano-scale-strip",
-    "piano-range",
-    "piano-clip-strip",
-    "piano-time-selection",
-    "piano-insert-mark",
-    "piano-note",
-    "velocity",
-    "piano-tool",
-    "midi-tools",
-    "editor-tab",
-    "start-page",
-    "plugin-manager",
-    "export",
-    "clip-info",
-    "fader-cap",
-    "fader-rail",
-    "knob",
-    "meter",
-    "meter-level",
-    "value",
-    "value-fill",
-    "value-handle",
-    "menu",
-    "popup",
-    "dropdown",
-    "text-input",
-    "browser-place",
-    "browser-row",
-    "browser-play",
-    "browser-tag-dot",
-    "browser-preview-wave",
-    "track-number",
-    "fold",
-    "loop-line",
-    "ruler-number",
-    "ruler-tick",
-    "settings-nav",
-    "progress",
-    "progress-fill",
-    // Families: one class a group of parts shares, for a rule over all of them (`families`).
-    "value-control",
-    "track-button",
-    "transport-button",
-    "list-row",
-    "timeline-part",
-];
-
 /// The families an element of `class` (named `name`) belongs to besides its own class, so one
 /// rule reaches every part of a kind: `.value-control` every value a user drags (levels, pans,
 /// faders, sends, knobs, sliders, a device's parameters), `.track-button` a track's own buttons,
@@ -138,13 +22,18 @@ pub fn families(class: &str, name: Option<&str>) -> &'static [&'static str] {
         _ => &[],
     }
 }
+/// Whether a legacy style rule may name `class`: an element, or one of the families.
+fn is_class(class: &str) -> bool {
+    suhina_theme_package::elements::is_element(class)
+        || matches!(class, "value-control" | "track-button" | "transport-button" | "list-row" | "timeline-part")
+}
 thread_local! {static STACK: RefCell<Vec<String>> = const {RefCell::new(Vec::new())};}
 
 pub fn valid_selector(selector: &str) -> bool {
     let parts: Vec<_> = selector.split_whitespace().collect();
     !parts.is_empty()
         && parts.len() <= 4
-        && parts.iter().all(|part| part.strip_prefix('.').is_some_and(|c| CLASSES.contains(&c)))
+        && parts.iter().all(|part| part.strip_prefix('.').is_some_and(|c| is_class(c)))
 }
 pub fn valid_property(key: &str, value: &str) -> bool {
     match key {
@@ -288,41 +177,13 @@ fn enter_inner(class: &str, name: Option<&str>, response: Option<&egui::Response
     theme::local_palette(palette);
     Scope { palette: saved, revision: theme::palette_revision(), native }
 }
-/// Views and bars: their background is the surface behind their controls, not the controls' own.
-const SURFACES: &[&str] = &[
-    "window",
-    "workspace",
-    "workspace-panel",
-    "application-bar",
-    "menu-bar",
-    "project-tabs",
-    "toolbar",
-    "status-bar",
-    "browser",
-    "session",
-    "arrangement",
-    "mixer",
-    "detail",
-    "clip-editor",
-    "piano-roll",
-    "settings",
-    "dialog",
-    "sample-map",
-    // Containers of controls: a selected header's background never fills its buttons.
-    "track-header",
-    "track-column",
-    "mixer-strip",
-    "device",
-    "device-panel",
-    "midi-tools",
-];
 
 /// A background for `class`: a view's sets the surfaces inside it, and a control's its own fill
 /// too. So a view's background never repaints the buttons drawn on it.
 fn set_background(palette: &mut theme::Palette, color: egui::Color32, class: &str) {
     palette.window_background = color;
     palette.panel_background = color;
-    if !SURFACES.contains(&class) {
+    if !suhina_theme_package::elements::is_surface(class) {
         palette.control_background = color;
     }
 }
@@ -564,32 +425,9 @@ pub fn ui(ui: &mut egui::Ui) -> UiStyle<'_> {
         .map(|style| egui::Stroke::new(style.border_width, style.border));
     // A panel's or view's background is the surface behind its widgets, not their fill: a
     // device panel's colour would otherwise hide its sliders' rails.
-    let container = STACK.with(|stack| {
-        stack.borrow().last().is_some_and(|class| {
-            matches!(
-                class.as_str(),
-                "device"
-                    | "device-panel"
-                    | "settings"
-                    | "dialog"
-                    | "browser"
-                    | "sample-map"
-                    | "start-page"
-                    | "plugin-manager"
-                    | "popup"
-                    | "piano-roll"
-                    | "detail"
-                    | "clip-editor"
-                    | "midi-tools"
-                    | "clip-info"
-                    | "arrangement"
-                    | "session"
-                    | "mixer"
-                    | "window"
-                    | "workspace"
-            )
-        })
-    });
+    let container = STACK
+        .with(|stack| stack.borrow().last().is_some_and(|class| suhina_theme_package::elements::is_surface(class)));
+
     let fill = values.as_ref().filter(|style| style.authored.background && !container).map(|style| style.background);
     // egui's own widgets in the scope (Settings, dialogs, the start page, the browser) take the
     // sheet's generic control rules: `.button`, `.button:hover`, `.button:active`,
