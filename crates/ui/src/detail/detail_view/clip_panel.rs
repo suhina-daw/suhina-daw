@@ -206,8 +206,8 @@ struct Text<'a> {
 }
 
 /// A number field in `rect`: dragged up and down (the value follows while it moves, in one undo
-/// step), stepped with the arrows, typed after a click and Enter, and on a double-click a text
-/// field (Enter sets it, Escape or a click elsewhere leaves it). Named "`name`: `shown`".
+/// step), and on a click a text field with the number selected (Enter sets it, Escape or a click
+/// elsewhere leaves it; the arrows step it while it is open). Named "`name`: `shown`".
 #[allow(clippy::too_many_arguments)]
 fn number_field(
     ui: &mut Ui,
@@ -221,6 +221,25 @@ fn number_field(
 ) -> Option<Change> {
     let edit_id = id.with("typing");
     if let Some(mut typed) = ui.data(|d| d.get_temp::<String>(edit_id)) {
+        // The arrows step the value while the text field is open, as they step every value
+        // control (#707): taken before the field moves its cursor with them.
+        let steps = ui.input_mut(|i| {
+            let up = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)
+                || i.consume_key(egui::Modifiers::SHIFT, egui::Key::ArrowUp);
+            let down = i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)
+                || i.consume_key(egui::Modifiers::SHIFT, egui::Key::ArrowDown);
+            i32::from(up) - i32::from(down)
+        });
+        if steps != 0 {
+            let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
+            let from = (text.parse)(&typed).unwrap_or(value);
+            let next =
+                (field.snap)(from + f64::from(steps) * field.per_tick * fine).clamp(field.range.0, field.range.1);
+            let shown =
+                (text.shown)(next).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
+            ui.data_mut(|d| d.insert_temp(edit_id, shown));
+            return Some(Change { value: next, more: false });
+        }
         let edit = egui::TextEdit::singleline(&mut typed)
             .id(id.with("text"))
             .font(theme::mono_font(theme::TEXT_SMALL))
@@ -278,7 +297,9 @@ fn number_field(
     let mono = theme::mono_font(theme::TEXT_SMALL);
     let ink = if field.dim { theme::text_hint() } else { theme::text_value() };
     widgets::text_in(painter, text_area, field.align, &shown, mono.clone(), ink);
-    if response.double_clicked() {
+    // One click opens the text field (a drag moves the value instead): a double-click was
+    // needed before, and a click that only took the keys was easy to miss.
+    if response.clicked() {
         let start =
             (text.shown)(value).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
         ui.data_mut(|d| {
@@ -850,6 +871,9 @@ fn audio_part(
     );
     let mut set: Option<(f64, TempoSource, bool)> = None;
     let open = egui::Popup::menu(&response).show(|ui| {
+        // Wide enough for "File name: 120.00" on one line: the menu took the button's narrow
+        // width and broke every entry over two lines.
+        ui.set_min_width(140.0);
         let names = [
             (TempoSource::Metadata, "Metadata"),
             (TempoSource::Name, "File name"),
@@ -862,7 +886,8 @@ fn audio_part(
             Some(found) => {
                 for ((source, text), bpm) in names.into_iter().zip(found.iter()) {
                     let shown = bpm.map_or_else(|| format!("{text}: none"), |b| format!("{text}: {b:.2}"));
-                    if ui.add_enabled(bpm.is_some(), egui::Button::new(shown)).clicked() {
+                    let button = egui::Button::new(egui::RichText::new(shown)).wrap_mode(egui::TextWrapMode::Extend);
+                    if ui.add_enabled(bpm.is_some(), button).clicked() {
                         set = bpm.map(|b| (b, source, false));
                         ui.close();
                     }

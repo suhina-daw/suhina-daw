@@ -66,10 +66,11 @@ Every number in the column is a field that:
 - a tempo, marker or loop field is dragged by the place under the pointer where it was pressed:
   the tempo's integer part steps 1 BPM and each decimal a tenth of the one before (#829); a
   marker's bar, beat or sixteenth steps a bar, a beat or a quarter beat. The place is underlined;
-- steps with the arrow keys after a click, and takes a number typed after a click with Enter, as
-  every value control does ([#707](https://github.com/suhina-daw/suhina-daw/issues/707));
-- opens a text field on a **double-click**: the number is selected in it, Enter sets it, Escape or a
-  click elsewhere leaves it as it was. A text that is not a number is ignored.
+- opens a text field on a **click** (a drag moves the value instead): the number is selected in
+  it, Enter sets it, Escape or a click elsewhere leaves it as it was, and the arrow keys step it
+  while it is open, as they step every value control
+  ([#707](https://github.com/suhina-daw/suhina-daw/issues/707)). A text that is not a number is
+  ignored. A double-click was needed before, and a click that only took the keys showed nothing.
 
 The fader and the knob follow a drag as the fields do, and take keys the same way: clicked, a
 number typed and Enter set them and the arrows step them (the fader 1 dB, Shift 0.1; the knob a
