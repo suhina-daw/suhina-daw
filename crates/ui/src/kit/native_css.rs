@@ -546,8 +546,12 @@ fn element_id(node: &StyleNode) -> String {
     {
         return name.clone();
     }
-    if node.class == "divider" && node.name.as_deref() == Some("mixer-divider") {
-        return "mixer-divider".to_owned();
+    // A strip's divider and the workspace's splitters (#1252).
+    if node.class == "divider"
+        && let Some(name) =
+            node.name.as_deref().filter(|name| ["mixer-divider", "detail-splitter", "browser-splitter"].contains(name))
+    {
+        return name.to_owned();
     }
     // A device's panel by what it is: `#device-compressor`, `#device-plugin`.
     if node.class == "device"

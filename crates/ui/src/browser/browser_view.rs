@@ -2011,11 +2011,13 @@ pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32
     if response.double_clicked() {
         return (Some(default), true);
     }
-    ui.painter().rect_filled(
-        handle,
-        0.0,
-        if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() },
-    );
+    {
+        // `#browser-splitter` (a `.divider`, with `:hover` and `:active`) takes the element's
+        // `background-color`; without one, the border colour, stronger under the pointer.
+        let _style = crate::kit::style_class::enter_named_response("divider", "browser-splitter", &response);
+        let native = if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() };
+        ui.painter().rect_filled(handle, 0.0, crate::kit::style_class::background(native));
+    }
     // The width follows the pointer from where the drag began, so it never falls behind it
     // (adding each frame's movement to the width rounded to whole points would).
     let start_id = Id::unique("browser-resize-start");

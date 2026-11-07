@@ -424,7 +424,9 @@ Portable exports include inherited artwork so another machine receives the same 
 Workspace layout respects native panel visibility. A panel whose size the sheet sets (a `width`
 on `#panel-browser`, a `height` on `#panel-detail`, a fixed grid track) has no splitter; one whose
 size it leaves alone keeps its splitter, in the gap beside it, so `#workspace { gap: 8px; }`
-alone keeps both. Removing the layout rules restores saved native sizes. A panel the grid
+alone keeps both. The splitters are elements of their own, `#detail-splitter` and
+`#browser-splitter`, so a gap can stay clear: `#detail-splitter { background-color: transparent; }`.
+Removing the layout rules restores saved native sizes. A panel the grid
 places in the same cells as `#panel-main` is drawn over the view and takes the pointer there,
 for example a browser floating over the left of the view:
 
@@ -510,7 +512,7 @@ Classes, each the native element it styles:
 | `.send` | a send, in a mixer strip and in a track header |
 | `.add-track` | the **+ MIDI track**, **+ Audio track** and **+ Return track** buttons after the last track |
 | `.ruler`, `.loop-region`, `.playhead` | the Arrangement view's ruler, its loop bar and the play position line |
-| `.divider` | the line between a strip's device list and its controls (`#mixer-divider`) |
+| `.divider` | the line between a strip's device list and its controls (`#mixer-divider`), and the workspace's splitters (`#detail-splitter`, `#browser-splitter`) |
 | `.clip-name`, `.clip-waveform`, `.clip-notes`, `.clip-gain`, `.clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles |
 | `.value-handle`, `.fader-rail` | the handle where a level bar's fill ends; a fader's rail |
 | `.piano-grid`, `.piano-row`, `.piano-row-black`, `.piano-key`, `.piano-key-black`, `.piano-note`, `.velocity` | the piano roll's grid, its rows, its keys (with `:selected` and `:playing`), the notes and their velocity stems |
@@ -535,6 +537,7 @@ Ids:
 | `#mixer-send-1`, `#mixer-send-2`, … | a mixer strip's sends, from the left |
 | `#add-midi-track`, `#add-audio-track`, `#add-return-track` | the three add-track buttons |
 | `#mixer-divider` | a strip's divider |
+| `#detail-splitter`, `#browser-splitter` | the splitters beside the detail area and the browser: `background-color` for the strip, `color` for the detail splitter's grip, with `:hover` and `:active` |
 | `#piano-select`, `#piano-draw`, `#piano-paint`, `#piano-erase`, `#piano-slice`, `#piano-mute`, `#piano-cut`, `#piano-copy`, `#piano-paste`, `#piano-duplicate`, `#piano-quantise`, `#piano-midi-tools`, `#piano-audition`, `#piano-hide` | the piano roll's tool buttons |
 | `#tab-clip`, `#tab-devices` | the clip editor's two tabs |
 | `#device-sampler`, `#device-fm-synth`, `#device-utility`, `#device-auto-pan`, `#device-dj-eq`, `#device-vinyl-distortion`, `#device-overdrive`, `#device-compressor`, `#device-limiter`, `#device-nam-amp-modeler`, `#device-nam-cab-loader`, `#device-delay`, `#device-reverb`, `#device-pitch` | one built-in device's panel; `#device-plugin` a plug-in's, `#device-sd` a device file's |

@@ -1088,3 +1088,60 @@ fn a_layout_with_only_gaps_keeps_the_splitters_and_a_fixed_width_takes_the_brows
     assert!(fixed, "the sheet's width owns the browser's size");
     assert!(detail, "the detail area's height is still the splitter's");
 }
+
+/// The fills of plain rectangles painted inside `inside`, nested shapes too.
+fn fills_inside(h: &Harness<'static, App>, inside: egui::Rect) -> Vec<egui::Color32> {
+    fn fills(shape: &egui::Shape, inside: egui::Rect, out: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| fills(s, inside, out)),
+            egui::Shape::Rect(rect) if inside.contains_rect(rect.rect) => out.push(rect.fill),
+            _ => {}
+        }
+    }
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| fills(&s.shape, inside.expand(0.5), &mut seen));
+    seen
+}
+
+/// The workspace's splitters are elements a theme styles: `#detail-splitter` (its strip's
+/// `background-color`, its grip's `color`, with `:hover`) and `#browser-splitter`, in a layout
+/// with only gaps as in the native one; a sheet without them leaves the native colours (#1252).
+#[test]
+fn a_theme_styles_the_workspace_splitters() {
+    let (magenta, cyan, green, blue) = (
+        egui::Color32::from_rgb(0xFF, 0, 0xFF),
+        egui::Color32::from_rgb(0, 0xFF, 0xFF),
+        egui::Color32::from_rgb(0, 0xFF, 0),
+        egui::Color32::from_rgb(0, 0, 0xFF),
+    );
+    let rules = "#detail-splitter { background-color: #ff00ff; color: #00ffff; } \
+                 #detail-splitter:hover { background-color: #00ff00; } \
+                 #browser-splitter { background-color: #0000ff; }";
+    for layout in ["", "#workspace { gap: 8px; } "] {
+        let mut h = open_with_clip(&format!("{layout}{rules}"), false);
+        let detail = h.get_by_label("Detail area splitter").rect();
+        let browser = h.get_by_label("Browser splitter").rect();
+        let rest = fills_inside(&h, detail);
+        let browser_fills = fills_inside(&h, browser);
+        h.hover_at(detail.center());
+        h.run();
+        let hovered = fills_inside(&h, detail);
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        assert!(rest.contains(&magenta) && rest.contains(&cyan), "{layout}strip and grip take the rules: {rest:?}");
+        assert!(hovered.contains(&green) && !hovered.contains(&magenta), "{layout}and :hover: {hovered:?}");
+        assert!(browser_fills.contains(&blue), "{layout}the browser's splitter takes its rule: {browser_fills:?}");
+    }
+
+    // A transparent strip leaves the gap to what is under it; without a rule the strip keeps the
+    // native fill.
+    let h = open_with_clip("#workspace { gap: 8px; }", false);
+    let detail = h.get_by_label("Detail area splitter").rect();
+    let native = fills_inside(&h, detail);
+    drop(h);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let h = open_with_clip("#workspace { gap: 8px; } #detail-splitter { background-color: transparent; }", false);
+    let clear = fills_inside(&h, h.get_by_label("Detail area splitter").rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(native.contains(&theme::control_background()), "the native strip: {native:?}");
+    assert!(!clear.contains(&theme::control_background()), "a transparent strip paints no fill: {clear:?}");
+}

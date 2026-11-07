@@ -425,10 +425,7 @@ impl App {
                     self.detail_height = detail_height_in(self.detail_height, room.height(), editor_needs, least);
                 }
             }
-            let painter = ui.painter_at(splitter);
-            painter.fill_background(splitter, 0.0, theme::control_background());
-            let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
-            painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, theme::text_hint());
+            paint_splitter(ui, splitter, &response, stacked);
         }
 
         if let Some(shown_track) = clip.map(ClipRef::track).or(track) {
@@ -768,9 +765,7 @@ impl App {
         } else {
             self.detail_drag = None;
         }
-        let painter = ui.painter_at(splitter);
-        painter.fill_background(splitter, 0.0, theme::control_background());
-        painter.rect_filled(Rect::from_center_size(splitter.center(), Vec2::new(32.0, 2.0)), 0.0, theme::text_hint());
+        paint_splitter(ui, splitter, &response, false);
         Rect::from_min_max(area.min, Pos2::new(area.right(), splitter.top()))
     }
 
@@ -948,4 +943,19 @@ fn detail_width_in(width: f32, room: f32) -> f32 {
 fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
     let most = (room - MIN_VIEW).max(needs.min(room - SPLITTER)).max(least);
     height.clamp(least, most)
+}
+
+/// The detail area's splitter: a strip with a grip across its middle, `#detail-splitter` (a
+/// `.divider`, with `:hover` and `:active`). The strip takes the element's `background-color` and
+/// the grip its `color`; without them, the control background and the hint colour.
+fn paint_splitter(ui: &Ui, splitter: Rect, response: &egui::Response, stacked: bool) {
+    let _style = crate::kit::style_class::enter_named_response("divider", "detail-splitter", response);
+    let painter = ui.painter_at(splitter);
+    painter.fill_background(splitter, 0.0, crate::kit::style_class::background(theme::control_background()));
+    let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
+    painter.rect_filled(
+        Rect::from_center_size(splitter.center(), grip),
+        0.0,
+        crate::kit::style_class::foreground(theme::text_hint()),
+    );
 }

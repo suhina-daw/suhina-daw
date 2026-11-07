@@ -673,8 +673,12 @@ In CSS layout mode, placement comes from the stylesheet. A panel whose size the 
 splitter; one whose size it leaves to the native grid (a layout with only gaps or margins) keeps
 its splitter in the gap beside it, and dragging it still sets the saved size. Which panels follow
 is found by laying the grid out again with their preferred sizes a point larger, not by a list of
-properties (#1240). Drawing, input clipping and drag/drop targets
-must use the same resolved rectangles. Removing those layout declarations restores the
+properties (#1240). The splitters are `.divider` elements, `#detail-splitter` and
+`#browser-splitter`, with `:hover` and `:active`, in the native layout too, so a theme that owns
+the layout owns the strips in its gaps (#1252). The strip takes `background-color` and the detail
+splitter's grip `color`; without them the detail splitter keeps the control background and a
+hint-coloured grip, and the browser's the border colour, stronger under the pointer. Drawing,
+input clipping and drag/drop targets must use the same resolved rectangles. Removing those layout declarations restores the
 native arrangement and its saved sizes. Bars and floating windows remain host-managed.
 
 ### Authoring opaque backgrounds and readable values
