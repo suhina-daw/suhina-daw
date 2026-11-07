@@ -215,6 +215,13 @@ override. For fork PRs, maintainers also use `/test-build`: a label is refused t
 binds no commit the maintainer read, and the build may not receive repository variables anyway. Automatic builds
 of maintainer PRs continue for branches in this repository.
 
+Suhina's updater cannot tell from an artifact's name who made it, since a fork's run names its
+artifacts as it likes. So when `test-build-links.yml` links a fork's build, it links only the
+artifacts named for that pull request (`suhina-pr<number>-<platform>`) and uploads a marker from its
+own run, an artifact named `suhina-linked-pr<number>-run<run id>` kept for 7 days like the build.
+The updater lists a fork's build only when the artifacts list holds that marker from a run of this
+repository ([updates.md › Channels](spec/updates.md#channels)).
+
 Trusted contributors use `/test-build` on an open PR, as described in
 [Trusted bot requests](claim-bot.md#trusted-bot-requests). The bot attributes the request, records
 the head SHA and applies `test-build` using its App token. No extra GitHub label permissions are

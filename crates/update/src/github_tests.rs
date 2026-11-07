@@ -52,9 +52,10 @@ fn list(artifacts: &[String]) -> String {
     format!(r#"{{"artifacts": [{}]}}"#, artifacts.join(","))
 }
 
-/// What a pull request's test-build comment links, for builds that need none.
-fn nothing_linked(pr: u32) -> Vec<(u64, u64)> {
-    panic!("pull request {pr} was asked for its links, but none of its builds is from a fork")
+/// The marker test-build-links.yml uploads for pull request `pr`'s build in run `linked`, from its
+/// own run `id` (of this repository unless `fork`).
+fn marker(id: u64, pr: u32, linked: u64, fork: bool) -> String {
+    artifact(id, &format!("suhina-linked-pr{pr}-run{linked}"), "2026-10-18T19:00:00Z", &run(900 + id, "0000000", fork))
 }
 
 #[test]
@@ -88,8 +89,7 @@ fn test_builds_are_the_newest_of_each_pull_request_for_this_platform() {
             "archive_download_url": "https://api.example.invalid/7/zip", "workflow_run": {"id": 15, "head_sha": "ccccccc"}}"#
             .to_string(),
     );
-    let builds = test_builds(list(&artifacts).as_bytes(), "windows-x86_64", "0.0.1", nothing_linked)
-        .unwrap_or_else(|e| panic!("{e}"));
+    let builds = test_builds(list(&artifacts).as_bytes(), "windows-x86_64", "0.0.1").unwrap_or_else(|e| panic!("{e}"));
     let listed: Vec<(Option<u32>, &str)> = builds.iter().map(|b| (b.pr, b.version.as_str())).collect();
     assert_eq!(listed, [(Some(672), "0.0.1-pr.672+f35ecdd"), (Some(663), "0.0.1-pr.663+10d7891")]);
     assert_eq!(builds[1].url, "https://api.example.invalid/2/zip");
@@ -99,63 +99,45 @@ fn test_builds_are_the_newest_of_each_pull_request_for_this_platform() {
 }
 
 #[test]
-fn a_build_from_a_fork_is_listed_only_when_its_pull_requests_comment_links_it() {
-    // A fork's run names its artifact after pull request 663, newer than 663's real build: it is
-    // not linked from 663, so the real build stays the one listed and offered.
+fn a_build_from_a_fork_is_listed_only_when_a_run_of_this_repository_marks_it() {
     let artifacts = [
+        // A fork's run names its artifact after pull request 663, newer than 663's real build: no
+        // marker names it, so the real build stays the one listed and offered.
         artifact(1, "suhina-pr663-windows-x86_64", "2026-10-18T16:00:00Z", &run(10, "1111111", false)),
         artifact(2, "suhina-pr663-windows-x86_64", "2026-10-18T18:00:00Z", &run(20, "6666666", true)),
-        // A fork's own pull request: its newest build is linked, an older one is not.
+        // A fork's own pull request: both builds are marked, the newer one is listed.
         artifact(3, "suhina-pr700-windows-x86_64", "2026-10-18T16:00:00Z", &run(30, "3333333", true)),
         artifact(4, "suhina-pr700-windows-x86_64", "2026-10-18T17:00:00Z", &run(31, "4444444", true)),
-        // Linked under another artifact's id: the run alone does not do.
-        artifact(5, "suhina-pr701-windows-x86_64", "2026-10-18T17:00:00Z", &run(40, "5555555", true)),
+        marker(5, 700, 30, false),
+        marker(6, 700, 31, false),
+        // Marked for another pull request, and for another run of its own: neither does.
+        artifact(7, "suhina-pr701-windows-x86_64", "2026-10-18T17:00:00Z", &run(40, "5555555", true)),
+        marker(8, 702, 40, false),
+        marker(9, 701, 41, false),
+        // Marked from a fork's run, which can upload any name: not listed.
+        artifact(10, "suhina-pr702-windows-x86_64", "2026-10-18T17:00:00Z", &run(50, "7777777", true)),
+        marker(11, 702, 50, true),
     ];
-    let mut asked = Vec::new();
-    let builds = test_builds(list(&artifacts).as_bytes(), "windows-x86_64", "0.0.1", |pr| {
-        asked.push(pr);
-        match pr {
-            700 => vec![(30, 99), (31, 4)],
-            701 => vec![(40, 6)],
-            _ => Vec::new(),
-        }
-    })
-    .unwrap_or_else(|e| panic!("{e}"));
+    let builds = test_builds(list(&artifacts).as_bytes(), "windows-x86_64", "0.0.1").unwrap_or_else(|e| panic!("{e}"));
     let listed: Vec<(Option<u32>, &str)> = builds.iter().map(|b| (b.pr, b.commit.as_str())).collect();
     assert_eq!(listed, [(Some(700), "4444444"), (Some(663), "1111111")]);
-    // Each pull request with a build from a fork is asked once.
-    assert_eq!(asked, [663, 700, 701]);
 }
 
 #[test]
-fn only_the_test_build_workflows_comment_links_a_build() {
-    let body = |marker: &str| {
-        format!(
-            "{marker}\n### Test build\n\n| Windows x86-64 | [suhina-pr700-windows-x86_64](https://github.com/suhina-daw/suhina-daw/actions/runs/31/artifacts/4) (34 MB) |\n| Linux | [suhina-pr700-linux-x86_64](https://github.com/suhina-daw/suhina-daw/actions/runs/31/artifacts/5) (41 MB) |\n[The run](https://github.com/suhina-daw/suhina-daw/actions/runs/31)."
-        )
-    };
-    let comment =
-        |login: &str, kind: &str, body: &str| serde_json::json!({"user": {"login": login, "type": kind}, "body": body});
-    let comments = serde_json::json!([
-        comment("github-actions[bot]", "Bot", &body("<!-- suhina-test-build -->")),
-        // Someone copying the comment, or another bot, or the workflow's account without the marker.
-        comment("someone", "User", &body("<!-- suhina-test-build -->").replace("/31/artifacts/4", "/77/artifacts/7")),
-        comment(
-            "other-app[bot]",
-            "Bot",
-            &body("<!-- suhina-test-build -->").replace("/31/artifacts/4", "/78/artifacts/8")
-        ),
-        comment(
-            "github-actions[bot]",
-            "Bot",
-            &format!("Quoted:\n{}", body("<!-- suhina-test-build -->")).replace("/31/artifacts/4", "/79/artifacts/9")
-        ),
-    ]);
-    let linked = linked_artifacts(comments.to_string().as_bytes()).unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(linked, [(31, 4), (31, 5)]);
-    assert!(linked_artifacts(b"<html>").is_err());
-    assert_eq!(
-        comments_url(700),
-        "https://api.github.com/repos/suhina-daw/suhina-daw/issues/700/comments?per_page=100"
-    );
+fn a_markers_name_is_read_whole() {
+    assert_eq!(linked_marker("suhina-linked-pr700-run31"), Some((700, 31)));
+    for name in [
+        "suhina-linked-pr-run31",
+        "suhina-linked-pr700-run",
+        "suhina-linked-pr700-run31x",
+        "suhina-linked-pr+700-run31",
+        "suhina-linked-pr700-run+31",
+        "suhina-linked-pr700-run31-run5",
+        "suhina-linked-pr99999999999-run31",
+        "suhina-linked-pr700-run99999999999999999999999",
+        "suhina-linked-pr700",
+        "suhina-pr700-windows-x86_64",
+    ] {
+        assert_eq!(linked_marker(name), None, "{name}");
+    }
 }

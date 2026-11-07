@@ -4,10 +4,12 @@ name: Test build
 # it: the same binaries as the nightly's, uploaded as workflow artifacts kept for 7 days. test-build-links.yml then
 # links it from the pull request. See docs/releasing.md › Test builds.
 #
-# Who gets one: a pull request opened and pushed by a maintainer is built on every push. Any other
-# pull request is built when a maintainer adds `test-build`, or the bot adds it for an authorized
-# trusted contributor's /test-build request after reading the diff,
-# and the build is of the commit the label was added on; a later push takes the label off
+# Who gets one: a pull request opened and pushed by a maintainer is built on every push. Another
+# pull request from a branch in this repository is built when a maintainer adds `test-build`, or
+# the bot adds it for an authorized /test-build request. One from a fork is built only through
+# /test-build: the bot adds the label for a maintainer's or trusted contributor's request for that
+# commit, and a maintainer's label alone is refused, since a fork's run builds the workflow files as
+# the fork has them. The build is of the commit the label was added on; a later push takes the label off
 # (test-build-links.yml), so new code is never built unreviewed. Running the workflow by hand with
 # a list of pull request numbers merges them onto main and builds the result.
 #

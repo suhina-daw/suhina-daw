@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,16 +44,19 @@ process.env.MAINTAINERS = input.maintainers ?? 'Maintainer';
 process.env.TRUSTED_CONTRIBUTORS = input.trusted ?? 'other, @TRUSTED';
 process.env.REQUEST = JSON.stringify(input.request || {command:'close',actor:'Trusted',comment:12,number:4});
 process.env.BUILD_REUSE = JSON.stringify(input.reuse || {});
+if (input.temp) process.env.RUNNER_TEMP = input.temp;
 const comments = (input.comments || []).map(c => ({user:bot, ...c}));
 const record = name => async args => { calls.push({name,args}); return {data:{number:99}}; };
 const github = {rest:{issues:{
   getComment: async () => {if(input.deleted) throw {status:404}; return {data: input.current || comment};},
   getLabel: async () => ({data:{}}),
   listComments: 'comments', listForRepo:'issues',
-  createComment: record('comment'), create: record('create'), update: record('update'),
+  createComment: record('comment'), updateComment: record('updateComment'), create: record('create'), update: record('update'),
   removeLabel: record('removeLabel'), addLabels: record('addLabels'),
-}, pulls:{get:async () => ({data:{state:'open',head:{sha:input.head || sha}, ...input.pr}})}},
-  paginate: async name => name === 'comments' ? comments : (input.issues || []).map(i=>({user:bot,...i}))};
+}, pulls:{get:async () => ({data:{state:'open',head:{sha:input.head || sha}, ...input.pr}}), list:async () => ({data:input.pulls || []})},
+  actions:{listJobsForWorkflowRun:async () => ({data:{jobs:input.jobs || []}}), listWorkflowRunArtifacts:'artifacts'}},
+  paginate: async name => name === 'comments' ? comments : name === 'artifacts' ? (input.artifacts || [])
+    : (input.issues || []).map(i=>({user:bot,...i}))};
 (async () => {
   let error = null, result = null;
   try {result = await new (Object.getPrototypeOf(async()=>{}).constructor)('github','context','core',input.script)(github,context,core);}
@@ -266,6 +270,43 @@ class TrustedRequests(unittest.TestCase):
         self.assertIsNotNone(self.run_script(source, actor='Maintainer', headRepo=2)['error'])
         self.assertIsNone(self.run_script(source, actor='Maintainer', headRepo=2,
                                           comment={'body':'/test-build'}, comments=[proof])['error'])
+
+    def test_linker_marks_only_a_forks_linked_build_for_the_updater(self):
+        # Suhina's updater lists a fork's build only with the marker artifact the output names.
+        source = script('test-build-links.yml', 'id: link')
+        proof = {'body':'<!-- trusted-build '+'a'*40+' Trusted 12 -->','created_at':'2026-10-22T10:01:00Z'}
+        artifact = lambda id, name: {'id': id, 'name': name, 'size_in_bytes': 1048576, 'expires_at': '2026-10-29T10:00:00Z'}
+
+        def link(actor, head_repo, comments, temp):
+            run = {'id': 31, 'actor': {'login': actor}, 'pull_requests': [], 'head_sha': 'a'*40, 'head_branch': 'feature',
+                   'created_at': '2026-10-22T10:02:00Z', 'html_url': 'https://github.com/owner/repo/actions/runs/31',
+                   'repository': {'id': 1},
+                   'head_repository': {'id': head_repo, 'full_name': 'contributor/repo', 'owner': {'login': 'contributor'}}}
+            return self.run_script(source, run=run, comment={'body':'/test-build'}, comments=comments, temp=temp,
+                                   pulls=[{'number': 4}], pr={'user': {'login': 'Contributor'}, 'title': 'A change'},
+                                   jobs=[{'name': 'test build (windows-x86_64)', 'conclusion': 'success', 'html_url': 'j'}],
+                                   artifacts=[artifact(8, 'suhina-pr663-windows-x86_64'), artifact(9, 'suhina-pr4-windows-x86_64')])
+
+        with tempfile.TemporaryDirectory() as temp:
+            result = link('suhina-bot[bot]', 2, [proof], temp)
+            self.assertIsNone(result['error'])
+            self.assertEqual(result['outputs']['marker'], 'suhina-linked-pr4-run31')
+            self.assertTrue(Path(result['outputs']['marker_file']).is_file())
+            body = next(call['args']['body'] for call in result['calls'] if call['name'] == 'comment')
+            # Only this pull request's own name is linked, not another's the fork's run uploaded.
+            self.assertIn('/actions/runs/31/artifacts/9', body)
+            self.assertNotIn('/artifacts/8', body)
+            self.assertIn('later pushes are built only after a new `/test-build` request', body)
+            # A branch of this repository is listed without a marker.
+            own = link('Maintainer', 1, [], temp)
+            self.assertIsNone(own['error'])
+            self.assertIn('build', own['outputs'])
+            self.assertNotIn('marker', own['outputs'])
+            # A fork's run without a request for its commit gets neither a link nor a marker.
+            unasked = link('Maintainer', 2, [], temp)
+            self.assertIsNone(unasked['error'])
+            self.assertEqual(unasked['outputs'], {})
+            self.assertEqual(unasked['calls'], [])
 
     def test_linker_does_not_borrow_rerunner_authority(self):
         source = script('test-build-links.yml', 'id: link')

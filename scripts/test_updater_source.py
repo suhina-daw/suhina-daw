@@ -37,8 +37,8 @@ class Pins(unittest.TestCase):
 
     def test_each_pinned_line_changed_fails(self):
         for pin in updater_source.PINNED:
-            other = pin.replace('"', '"other-', 1) if '"' in pin else pin.replace("(", "(!", 1)
-            changed = {**project(), updater_source.SOURCE: source().replace(pin, other)}
+            # Commented out: a changed line is no longer the pinned one, whatever it holds.
+            changed = {**project(), updater_source.SOURCE: source().replace(pin, f"// {pin}")}
             found = updater_source.problems(changed)
             self.assertTrue(any(pin in problem for problem in found), pin)
 
@@ -103,11 +103,6 @@ class Urls(unittest.TestCase):
             # Not a test host after all.
             "https://example.invalid.example.com/w.zip",
             "https://example.invalid@example.com/w.zip",
-            # The test-build comment's addresses with a part changed.
-            "https://api.github.com/repos/suhina-daw/suhina-daw/issues/663/comments?per_page=100&x=1",
-            "https://api.github.com/repos/someone-else/suhina-daw/issues/663/comments?per_page=100",
-            "https://github.com/suhina-daw/suhina-daw/actions/runs/31/artifacts/4/zip",
-            "https://github.com/someone-else/suhina-daw/actions/runs/31/artifacts/4",
         ]:
             self.assertFalse(updater_source.url_allowed(url), url)
 
@@ -118,9 +113,6 @@ class Urls(unittest.TestCase):
             "https://github.com/{REPOSITORY}/pull/{pr}",
             "https://example.invalid/w.zip",
             "https://api.example.invalid/1/zip",
-            "https://api.github.com/repos/{REPOSITORY}/issues/{pr}/comments?per_page=100",
-            "https://github.com/{REPOSITORY}/actions/runs/",
-            "https://github.com/suhina-daw/suhina-daw/actions/runs/31/artifacts/4",
         ]:
             self.assertTrue(updater_source.url_allowed(url), url)
 

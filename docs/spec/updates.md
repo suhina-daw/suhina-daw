@@ -31,9 +31,9 @@ The check only reads. When Settings › Agents and updates › Updates › *Chec
 Suhina asks GitHub once per start, in the background, which build is the newest in its channel:
 
 - **Nightly:** `GET https://api.github.com/repos/suhina-daw/suhina-daw/releases/tags/nightly`
-- **Test builds:** `GET https://api.github.com/repos/suhina-daw/suhina-daw/actions/artifacts`
-  and, for each pull request with a build from a fork, `GET https://api.github.com/repos/suhina-daw/suhina-daw/issues/<number>/comments`
-  (see *Channels*)
+- **Test builds:** `GET https://api.github.com/repos/suhina-daw/suhina-daw/actions/artifacts`,
+  one request whatever the number of pull requests: what makes a build trusted is in the same
+  list (see *Channels*). GitHub allows a computer 60 such requests an hour without a sign-in.
 
 Nothing about the user, the projects or the machine is in the request; it carries a
 `User-Agent: Suhina/<version>` header, as GitHub asks every client to. As with any web request,
@@ -143,13 +143,14 @@ Settings › Agents and updates › Updates › *Channel*:
   Only trusted builds are listed. An artifact's name says nothing about who made it: a pull request
   from a fork runs the workflow files as the fork has them, so it can upload a build under any
   pull request's name. A build is listed when its run is of a branch in this repository, which only
-  people who can write to it can push, or when the pull request's *Test build* comment links that
-  run and artifact. That comment counts only from `github-actions[bot]` and starting with
-  `<!-- suhina-test-build -->`: `test-build-links.yml` writes it from `main`, and links a fork's
-  build only after a `/test-build` request for its commit ([releasing.md › Test
-  builds](../releasing.md#test-builds)). An artifact without its run's repository ids, or a
-  comment page that cannot be read, lists nothing, and an untrusted build never replaces a trusted
-  one as the newest.
+  people who can write to it can push, or when the same list holds its marker: an artifact named
+  `suhina-linked-pr<number>-run<run id>`, for that pull request and the build's run, uploaded by a
+  run of this repository. `test-build-links.yml` uploads it from `main` when it links a fork's
+  build, which it does only after a `/test-build` request for its commit ([releasing.md › Test
+  builds](../releasing.md#test-builds)); no fork can upload into a run of this repository. A
+  marker from a fork's run, or for another pull request or run, marks nothing. An artifact without
+  its run's repository ids is not used, and an untrusted build never replaces a trusted one as the
+  newest.
 
 ### Connecting to the GitHub CLI
 

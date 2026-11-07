@@ -4,7 +4,7 @@
 //! What GitHub's API says about the nightly release and the test builds, read into [`Build`]s
 //! (`docs/spec/updates.md` › What is sent).
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use serde_json::Value;
 
@@ -87,57 +87,22 @@ pub fn nightly(json: &[u8], platform: &str) -> Result<Build, String> {
     })
 }
 
-/// A pull request's comments, where test-build-links.yml links its test build
-/// ([`linked_artifacts`]); the first page only, which holds the link from the first build on.
-pub fn comments_url(pr: u32) -> String {
-    format!("https://api.github.com/repos/{REPOSITORY}/issues/{pr}/comments?per_page=100")
-}
-
-/// The marker test-build-links.yml starts its comment with.
-const LINK_MARKER: &str = "<!-- suhina-test-build -->";
-/// The account test-build-links.yml comments as: the workflow's own token.
-const LINK_AUTHOR: &str = "github-actions[bot]";
-
-/// The builds a pull request's test-build comment links, as `(run, artifact)` ids, from the
-/// comments' JSON. Only the comment test-build-links.yml writes counts: it runs from main and links
-/// a fork's build only when a maintainer or trusted contributor asked for that commit to be built
-/// (`docs/releasing.md` › Test builds). A comment anyone else wrote links nothing.
-pub fn linked_artifacts(json: &[u8]) -> Result<Vec<(u64, u64)>, String> {
-    let comments: Value = serde_json::from_slice(json).map_err(|e| format!("GitHub's answer is not JSON: {e}"))?;
-    let prefix = format!("https://github.com/{REPOSITORY}/actions/runs/");
-    let mut linked = Vec::new();
-    for comment in comments.as_array().into_iter().flatten() {
-        let user = &comment["user"];
-        let body = comment["body"].as_str().unwrap_or_default();
-        if user["login"].as_str() != Some(LINK_AUTHOR) || user["type"].as_str() != Some("Bot") {
-            continue;
-        }
-        if !body.starts_with(LINK_MARKER) {
-            continue;
-        }
-        for (at, _) in body.match_indices(&prefix) {
-            let rest = body.get(at + prefix.len()..).unwrap_or_default();
-            let digits = |s: &str| s.bytes().take_while(u8::is_ascii_digit).count();
-            let run_len = digits(rest);
-            let Some(after_run) = rest.get(run_len..).and_then(|r| r.strip_prefix("/artifacts/")) else {
-                continue;
-            };
-            let id_len = digits(after_run);
-            let run = rest.get(..run_len).and_then(|r| r.parse::<u64>().ok());
-            let id = after_run.get(..id_len).and_then(|r| r.parse::<u64>().ok());
-            if let (Some(run), Some(id)) = (run, id) {
-                linked.push((run, id));
-            }
-        }
+/// The pull request and run a marker names, from its artifact's name
+/// (`suhina-linked-pr<number>-run<run id>`): test-build-links.yml uploads one for each build from a
+/// fork it links ([`test_builds`]).
+fn linked_marker(name: &str) -> Option<(u32, u64)> {
+    let (pr, run) = name.strip_prefix("suhina-linked-pr")?.split_once("-run")?;
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if !digits(pr) || !digits(run) {
+        return None;
     }
-    Ok(linked)
+    Some((pr.parse().ok()?, run.parse().ok()?))
 }
 
 /// One test build in the artifacts' list, before it is trusted.
 struct Listed {
     build: Build,
     run: u64,
-    artifact: u64,
     from_fork: bool,
 }
 
@@ -148,38 +113,41 @@ struct Listed {
 /// An artifact's name says nothing about who made it: a pull request from a fork runs the workflow
 /// files as the fork has them, so it can upload any name, another pull request's too. So a build is
 /// listed only when its run is of a branch in this repository, which only people who can write to
-/// it can push, or when `linked(pr)`, the builds that pull request's test-build comment links
-/// ([`linked_artifacts`]), names its run and artifact. `linked` is asked once per pull request with
-/// a build from a fork; an answer that cannot be read links nothing.
-pub fn test_builds(
-    json: &[u8],
-    platform: &str,
-    core: &str,
-    mut linked: impl FnMut(u32) -> Vec<(u64, u64)>,
-) -> Result<Vec<Build>, String> {
+/// it can push, or when the same list holds the marker test-build-links.yml uploads for it
+/// ([`linked_marker`]) from a run of this repository: that workflow runs from main and marks a
+/// fork's build only after a `/test-build` request for its commit (`docs/releasing.md` › Test
+/// builds), and no fork can upload into a run of this repository. A marker from a fork's run, or
+/// for another pull request or run, marks nothing.
+pub fn test_builds(json: &[u8], platform: &str, core: &str) -> Result<Vec<Build>, String> {
     let list: Value = serde_json::from_slice(json).map_err(|e| format!("GitHub's answer is not JSON: {e}"))?;
     let suffix = format!("-{platform}");
     let mut listed: Vec<Listed> = Vec::new();
+    // The builds from forks test-build-links.yml marked, as (pull request, run).
+    let mut linked: HashSet<(u32, u64)> = HashSet::new();
     for artifact in list["artifacts"].as_array().into_iter().flatten() {
         if artifact["expired"].as_bool() != Some(false) {
             continue;
         }
         let name = artifact["name"].as_str().unwrap_or_default();
+        let run = &artifact["workflow_run"];
+        // Without the ids, where the artifact came from is unknown: not used.
+        let (Some(run_id), Some(repository), Some(head_repository)) =
+            (run["id"].as_u64(), run["repository_id"].as_u64(), run["head_repository_id"].as_u64())
+        else {
+            continue;
+        };
+        let from_fork = head_repository != repository;
+        if let Some(marker) = linked_marker(name) {
+            if !from_fork {
+                linked.insert(marker);
+            }
+            continue;
+        }
         let Some(pr) = name
             .strip_prefix("suhina-pr")
             .and_then(|rest| rest.strip_suffix(&suffix))
             .and_then(|n| n.parse::<u32>().ok())
         else {
-            continue;
-        };
-        let run = &artifact["workflow_run"];
-        // Without the ids, where the build came from is unknown: not listed.
-        let (Some(id), Some(run_id), Some(repository), Some(head_repository)) = (
-            artifact["id"].as_u64(),
-            run["id"].as_u64(),
-            run["repository_id"].as_u64(),
-            run["head_repository_id"].as_u64(),
-        ) else {
             continue;
         };
         let commit = run["head_sha"].as_str().unwrap_or_default().to_string();
@@ -196,16 +164,14 @@ pub fn test_builds(
             created,
             page: format!("https://github.com/{REPOSITORY}/pull/{pr}"),
         };
-        listed.push(Listed { build, run: run_id, artifact: id, from_fork: head_repository != repository });
+        listed.push(Listed { build, run: run_id, from_fork });
     }
-    let mut asked: HashMap<u32, Vec<(u64, u64)>> = HashMap::new();
     let mut builds: Vec<Build> = Vec::new();
-    for item in listed {
-        let Some(pr) = item.build.pr else { continue };
-        if item.from_fork && !asked.entry(pr).or_insert_with(|| linked(pr)).contains(&(item.run, item.artifact)) {
+    for Listed { build, run, from_fork } in listed {
+        let Some(pr) = build.pr else { continue };
+        if from_fork && !linked.contains(&(pr, run)) {
             continue;
         }
-        let build = item.build;
         match builds.iter_mut().find(|b| b.pr == Some(pr)) {
             // The times are all UTC in one format, so they sort as text.
             Some(older) if older.created < build.created => *older = build,
