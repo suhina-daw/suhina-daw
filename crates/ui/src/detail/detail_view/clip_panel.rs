@@ -980,7 +980,7 @@ fn audio_part(
     // Edit gain envelope: opens the envelope on the clip's waveform in the Arrangement for
     // editing, as Alt+E and the button by the clip's name do.
     if matches!(at, ClipRef::Arrangement(..)) {
-        let on = crate::arrangement::envelope::editing(ui.ctx()) == Some(panel.clip);
+        let on = crate::arrangement::envelope::is_editing(ui.ctx(), panel.clip);
         if toggle(ui, painter, row(y, TOGGLE), "Envelope", "Edit gain envelope", on) {
             crate::arrangement::envelope::toggle_editing(ui.ctx(), panel.clip);
         }

@@ -59,11 +59,14 @@ pub struct EnvelopeSettings {
     pub step: f64,
     /// Points move freely, not on the grid, until Free move is switched.
     pub free: bool,
+    /// Edit gain envelope opens every audio clip's envelope at once (a mode, Alt+E on and off);
+    /// otherwise one clip's at a time, and opening another closes it.
+    pub all: bool,
 }
 
 impl Default for EnvelopeSettings {
     fn default() -> Self {
-        Self { show: true, ceiling: 6.0, step: 1.0, free: false }
+        Self { show: true, ceiling: 6.0, step: 1.0, free: false, all: true }
     }
 }
 
@@ -95,30 +98,55 @@ pub fn set_free_move(ctx: &egui::Context, free: bool) {
     ctx.data_mut(|d| d.insert_temp(free_key(), free));
 }
 
-/// The window-wide key of the clip whose envelope is being edited.
+/// The window-wide key of what is being edited.
 fn editing_key() -> Id {
     Id::unique("clip-envelope-editing")
 }
 
-/// The arrangement clip whose gain envelope is being edited, if one is.
-pub fn editing(ctx: &egui::Context) -> Option<ClipId> {
-    ctx.data(|d| d.get_temp::<ClipId>(editing_key()))
+/// Whose gain envelopes are open for editing: every audio clip's (the mode, Settings › Gain
+/// envelope › Envelope editing: all clips) or one clip's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Editing {
+    All,
+    Clip(ClipId),
 }
 
-/// Opens `clip`'s envelope for editing, or closes it.
+fn editing_state(ctx: &egui::Context) -> Option<Editing> {
+    ctx.data(|d| d.get_temp::<Editing>(editing_key()))
+}
+
+/// Whether `clip`'s gain envelope is open for editing.
+pub fn is_editing(ctx: &egui::Context, clip: ClipId) -> bool {
+    match editing_state(ctx) {
+        Some(Editing::All) => true,
+        Some(Editing::Clip(open)) => open == clip,
+        None => false,
+    }
+}
+
+/// Whether any clip's gain envelope is open for editing.
+pub fn any_editing(ctx: &egui::Context) -> bool {
+    editing_state(ctx).is_some()
+}
+
+/// Opens `clip`'s envelope for editing (or every clip's, with the setting so), or closes them.
 pub fn set_editing(ctx: &egui::Context, clip: Option<ClipId>) {
-    ctx.data_mut(|d| {
-        if let Some(clip) = clip {
-            d.insert_temp(editing_key(), clip);
-        } else {
-            d.remove::<ClipId>(editing_key());
+    let all = settings(ctx).all;
+    ctx.data_mut(|d| match clip {
+        Some(_) if all => {
+            d.insert_temp(editing_key(), Editing::All);
         }
+        Some(clip) => {
+            d.insert_temp(editing_key(), Editing::Clip(clip));
+        }
+        None => d.remove::<Editing>(editing_key()),
     });
 }
 
-/// Edit gain envelope on `clip`, or off when it is on.
+/// Edit gain envelope on `clip`, or off when it is on. With the setting on every clip, it is a
+/// mode: on for every audio clip, and off again from any of them.
 pub fn toggle_editing(ctx: &egui::Context, clip: ClipId) {
-    let on = editing(ctx) == Some(clip);
+    let on = if settings(ctx).all { any_editing(ctx) } else { is_editing(ctx, clip) };
     set_editing(ctx, (!on).then_some(clip));
 }
 

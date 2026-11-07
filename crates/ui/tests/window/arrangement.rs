@@ -2601,6 +2601,34 @@ fn a_clip_carried_to_another_track_leaves_no_envelope_behind() {
     assert!(harness.query_by_label("Edit gain envelope of Loop").is_some(), "back with the clip once it lands");
 }
 
+/// Edit gain envelope opens every audio clip's envelope at once by default (a mode Alt+E turns off
+/// again); with Settings › Gain envelope › Envelope editing on one clip at a time, only the
+/// clip's own (`docs/spec/clip-panel.md` › Gain envelope).
+#[test]
+fn edit_gain_envelope_opens_every_clip_or_one_by_the_setting() {
+    let mut harness = window_with_step(audio_app(), 1.0 / 60.0);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    click_name_bar(&mut harness, "Clip Loop on Loop at bar 1");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::D);
+    harness.run();
+    let open = |h: &Harness<'static, App>| h.query_all_by_label("Gain envelope of Loop").count();
+    harness.get_all_by_label("Edit gain envelope of Loop").next().expect("a button").click();
+    harness.run();
+    assert_eq!(open(&harness), 2, "both clips' envelopes open");
+    harness.key_press_modifiers(Modifiers::ALT, Key::E);
+    harness.run();
+    assert_eq!(open(&harness), 0, "Alt+E leaves the mode");
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.envelope_all = false;
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    harness.get_all_by_label("Edit gain envelope of Loop").next().expect("a button").click();
+    harness.run();
+    assert_eq!(open(&harness), 1, "one clip at a time");
+}
+
 /// Two envelope points never sit on top of each other on screen, Free move or not: a click on
 /// the line within a dot's width of a point adds none, and a point let go next to another is
 /// one with it.

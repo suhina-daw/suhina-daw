@@ -45,7 +45,7 @@ beside it, and controls are 6 points apart, so no two touch.
 | **Audio** (112 points) | **Warp**: a switch the width of the part | `clip.setAudio` (`warp`) |
 | | **Mode**: a list of Re-pitch, Rhythmic, Tonal, Texture, Smooth, High quality | `clip.setAudio` (`mode`) |
 | | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
-| | **Edit gain envelope**: a switch that opens the clip's gain envelope on its waveform for editing, as Alt+E and the button by the clip's name do | `clip.setEnvelope` |
+| | **Edit gain envelope**: a switch that opens the gain envelope on the waveform for editing (every audio clip's, or the clip's own, by Settings › *Envelope editing*), as Alt+E and the button by the clip's name do | `clip.setEnvelope` |
 | **Gain and Pitch** (128 points) | **Gain**: a vertical fader, its scale at its left (24, 0 half-way, −inf at the bottom), the dB readout under it | `clip.setGain` |
 | | **Pitch**: a knob in semitones; under it the semitones and the cents side by side, `st` and `ct` under them | `clip.setAudio` (`transpose`) |
 
@@ -154,9 +154,18 @@ go.
 **Seeing it.** With **Show gain envelope** on (Settings › Arrangement, on by default), every audio
 clip with points shows its line, thin, while it is not being edited.
 
-**Editing it.** **Edit gain envelope** opens one clip's envelope for editing: Alt+E (`view.gainEnvelope`)
-with the clip selected, the small envelope button left of the clip's name, or the clip panel's
-switch; the same again closes it. While it is open:
+**Editing it.** **Edit gain envelope** opens envelopes for editing: Alt+E (`view.gainEnvelope`),
+the small envelope button left of a clip's name, or the clip panel's switch; the same again closes
+them. Settings › Arrangement › Gain envelope › *Envelope editing* (`gain_envelope_editing = all |
+one`) says which open:
+
+- **All audio clips** (the default): it is a mode. Every audio clip's envelope opens and closes
+  together, from any clip's button or the panel, and Alt+E turns it on or off with or without a
+  clip selected, so the envelopes of several clips (doubled vocal takes) are set side by side;
+- **One clip at a time**: only that clip's envelope opens (Alt+E with the clip selected), and
+  opening another clip's closes it.
+
+While an envelope is open:
 
 - only the line and the points take the pointer: a click or a drag anywhere else on the clip
   selects and moves it as ever. The pointer within 5 points of the line is a pointing hand; over a

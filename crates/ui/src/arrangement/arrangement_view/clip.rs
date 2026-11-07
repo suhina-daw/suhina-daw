@@ -356,7 +356,7 @@ pub(super) fn clip_box<'a>(
     }
     // With its gain envelope being edited, the body adds and moves points, not the clip
     // (`docs/spec/clip-panel.md` › Gain envelope).
-    let envelope_edited = clip.audio_view.is_some() && crate::arrangement::envelope::editing(ui.ctx()) == Some(clip.id);
+    let envelope_edited = clip.audio_view.is_some() && crate::arrangement::envelope::is_editing(ui.ctx(), clip.id);
     if response.double_clicked() && !envelope_edited {
         state.clip_opened = true;
     }
