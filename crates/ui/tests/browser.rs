@@ -2208,6 +2208,64 @@ fn a_tag_drags_with_hints_into_a_subfolder() {
 }
 
 #[test]
+fn a_tag_drops_into_the_deepest_child_folder() {
+    let (settings, folder) = (temp("deepest-drop-settings"), temp("deepest-drop"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    // The tree's folders by name: the chain's ids come from the store, not guesses.
+    let id_of = |harness: &mut Harness<'static, App>, name: &str| -> u32 {
+        let forest = harness.state_mut().projects_mut().file_library_mut().tags();
+        suhina_library::store::folders_iter(&forest).find(|f| f.name == name).map(|f| f.id).unwrap_or(0)
+    };
+    // Four levels of folders, each under the one above ([#1254] › Tag folders).
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "One" })).unwrap();
+    harness.run();
+    let one = id_of(&mut harness, "One");
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.addTagFolder", &json!({ "name": "Two", "parent": format!("#{one}") }))
+        .unwrap();
+    harness.run();
+    let two = id_of(&mut harness, "Two");
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.addTagFolder", &json!({ "name": "Three", "parent": format!("#{two}") }))
+        .unwrap();
+    harness.run();
+    let three = id_of(&mut harness, "Three");
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.addTagFolder", &json!({ "name": "Four", "parent": format!("#{three}") }))
+        .unwrap();
+    harness.run();
+    // Red carried onto the deepest folder's row lands in it: the cap counts folder levels,
+    // a tag adds none ([#1254] review: the lowest folder took no tag before).
+    let at = harness.get_by_label("Place Tag Red").rect().center();
+    let to = harness.get_by_label_contains("Folder Four").rect().center();
+    harness.hover_at(at);
+    harness.step();
+    harness.drag_at(at);
+    harness.step();
+    for share in [0.4, 0.8, 1.0] {
+        harness.hover_at(at + (to - at) * share);
+        harness.step();
+    }
+    harness.drop_at(to);
+    harness.run();
+    let forest = harness.state_mut().projects_mut().file_library_mut().tags();
+    assert_eq!(
+        suhina_library::store::entry_depth(&forest, 1),
+        5,
+        "Red put in the fourth level's folder, its row under it"
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn the_tags_section_leads_with_its_folders() {
     let (settings, folder) = (temp("folder-first-settings"), temp("folder-first"));
     pack(&folder);

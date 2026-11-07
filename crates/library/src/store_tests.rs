@@ -251,3 +251,77 @@ fn the_sections_are_orderable_and_collapsible() {
     store.set_section_open(SectionKind::Tags, true);
     assert!(store.sections.iter().find(|s| s.kind == SectionKind::Tags).is_some_and(|s| s.open));
 }
+
+// A tag reaches the deepest child folder, and the cap counts folder levels, not rows
+// ([#1254] review: the lowest folder took no tag — the move counted the tag's own row
+// against the folder cap).
+#[test]
+fn a_tag_reaches_the_deepest_folder_and_the_cap_counts_folder_levels() {
+    let mut store = Store::default();
+    let mut parent = None;
+    for depth in 1..=MAX_TAG_DEPTH {
+        parent = Some(store.add_tag_folder(Some(&format!("Level {depth}")), parent).unwrap());
+    }
+    let lowest = parent.unwrap();
+    // The defaults: Red..Grey with ids 1..7. A carried tag dropped in the deepest folder
+    // lands: a tag is a leaf, it adds no folder level to count.
+    store.move_tag_node(2, Some(lowest), 0).unwrap();
+    assert_eq!(entry_depth(&store.tags, 2), MAX_TAG_DEPTH + 1, "the tag sits inside the fourth level's folder");
+    // ... and moves back out to the top.
+    store.move_tag_node(2, None, 0).unwrap();
+    assert_eq!(entry_depth(&store.tags, 2), 1);
+
+    // A folder with only tags inside reaches one folder level: under the third level it
+    // nests to the cap, its tag riding below it (a row count would have said no).
+    let holder = store.add_tag_folder(None, None).unwrap();
+    store.move_tag_node(3, Some(holder), 0).unwrap();
+    let three = folders_iter(&store.tags).find(|f| f.name == "Level 3").map_or(0, |f| f.id);
+    store.move_tag_node(holder, Some(three), 0).unwrap();
+    assert_eq!(entry_depth(&store.tags, holder), MAX_TAG_DEPTH, "the holder nests at the cap");
+    assert_eq!(entry_depth(&store.tags, 3), MAX_TAG_DEPTH + 1, "its tag rides under it");
+    // Yet a folder itself under the lowest folder would nest a fifth level: refused.
+    assert!(store.move_tag_node(holder, Some(lowest), 0).is_err(), "the fifth level's folder is refused");
+}
+
+// The deepest folder's tags survive a save and a load; a fifth level's folder in the file
+// is past the cap and comes in with the refusers' warning ([#1254]).
+#[test]
+fn the_deepest_folders_tags_round_trip_and_a_fifth_level_is_left_out() {
+    let dir = temp("tag-depth");
+    let file = dir.join("browser.json");
+    let text = json!({
+        "tagged": {},
+        "tags": [
+            { "folder": { "name": "One" }, "tags": [
+                { "folder": { "name": "Two" }, "tags": [
+                    { "folder": { "name": "Three" }, "tags": [
+                        { "folder": { "name": "Four" }, "tags": [
+                            { "tag": { "name": "Deep", "color": "#FF7F50" } },
+                            { "folder": { "name": "Five" }, "tags": [
+                                { "tag": { "name": "Beyond", "color": "#112233" } },
+                            ] },
+                        ] },
+                    ] },
+                ] },
+            ] },
+        ],
+    })
+    .to_string();
+    std::fs::write(&file, text).unwrap();
+    let (mut store, warnings) = Store::load(&file);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("nest more than 4 deep"), "the fifth level's folder warns: {warnings:?}");
+    assert!(!tags_iter(&store.tags).any(|t| t.name == "Beyond"), "the fifth level's cortège left out");
+    let deep = tags_iter(&store.tags).find(|t| t.name == "Deep").map_or(0, |t| t.id);
+    assert!(deep >= FIRST_TAG_ID, "the tag inside the deepest folder read in");
+    let four = folders_iter(&store.tags).find(|f| f.name == "Four").map_or(0, |f| f.id);
+    assert_eq!(entry_depth(&store.tags, four), MAX_TAG_DEPTH, "the fourth level's folder is where it nests");
+    store.save(&file).unwrap();
+    let (again, warnings) = Store::load(&file);
+    assert_eq!(warnings.len(), 0, "{warnings:?}");
+    assert_eq!(again, store, "the deepest folder's tags round-trip");
+    // And the deep one still moves out of there.
+    store.move_tag_node(deep, None, 0).unwrap();
+    assert_eq!(entry_depth(&store.tags, deep), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}

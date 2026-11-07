@@ -369,9 +369,9 @@ pub fn entry_depth(entries: &[TagEntry], id: u32) -> usize {
     0
 }
 
-/// How many levels the entry with `id` reaches down from its own row: a tag is 1, a folder
-/// of tags 2 ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)). 0 when there
-/// is none.
+/// How many folder levels the entry with `id` reaches down from its own row ([#1254]).
+/// Tags are leaves and reach none: a tag's own folders are only the ones it sits within.
+/// 0 when there is none.
 pub fn entry_height(entries: &[TagEntry], id: u32) -> usize {
     for entry in entries {
         match entry {
@@ -388,12 +388,22 @@ pub fn entry_height(entries: &[TagEntry], id: u32) -> usize {
     0
 }
 
-/// The height of one entry of the forest: a tag is 1, a folder is 1 over its deepest
-/// child's ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+/// The folder levels one entry of the forest reaches: a tag is a leaf (0), a folder is 1
+/// over its deepest child folder's ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+/// The depth cap counts folder levels, so a tag carried into the deepest folder adds none.
 fn height_of_entry(entry: &TagEntry) -> usize {
     match entry {
-        TagEntry::Tag(_) => 1,
-        TagEntry::Folder { tags, .. } => 1 + tags.iter().map(height_of_entry).max().unwrap_or(0),
+        TagEntry::Tag(_) => 0,
+        TagEntry::Folder { tags, .. } => {
+            1 + tags
+                .iter()
+                .filter_map(|child| match child {
+                    TagEntry::Folder { .. } => Some(height_of_entry(child)),
+                    TagEntry::Tag(_) => None,
+                })
+                .max()
+                .unwrap_or(0)
+        }
     }
 }
 
@@ -428,8 +438,9 @@ fn folder_mut_in(entries: &mut Vec<TagEntry>, id: u32) -> Option<&mut TagFolder>
 }
 
 /// Reads one level of the file's tag forest into `entries` under `parent` (None for the
-/// top); `depth` is how deep the level is, against [`MAX_TAG_DEPTH`], and `next` hands ids
-/// out to entries without one, first served in file order ([#1254]).
+/// top); `depth` is how deep the level is, against [`MAX_TAG_DEPTH`] — the cap counts
+/// folder levels, so tags sit in the deepest folder fine and a folder past it is left out
+/// — and `next` hands ids out to entries without one, first served in file order ([#1254]).
 fn read_tag_entries(
     list: &[Value],
     parent: Option<u32>,
@@ -438,10 +449,6 @@ fn read_tag_entries(
     depth: usize,
     warnings: &mut Vec<String>,
 ) {
-    if depth > MAX_TAG_DEPTH {
-        warnings.push(format!("browser.json: tag folders nest more than {MAX_TAG_DEPTH} deep; the rest are left out"));
-        return;
-    }
     for entry in list {
         if let Some(tag) = entry.get("tag") {
             // {"tag": {"id", "name", "color"}}.
@@ -474,6 +481,14 @@ fn read_tag_entries(
             }
         } else if let Some(folder) = entry.get("folder") {
             // {"folder": {"id", "name", "open"}, "tags": [...]}.
+            // A folder nests at most four deep: one past the cap is left out, its
+            // cortège with it ([#1254]).
+            if depth > MAX_TAG_DEPTH {
+                warnings.push(format!(
+                    "browser.json: tag folders nest more than {MAX_TAG_DEPTH} deep; the rest are left out"
+                ));
+                break;
+            }
             let id = folder
                 .get("id")
                 .and_then(Value::as_u64)
@@ -1262,8 +1277,9 @@ impl Store {
             return Err(format!("there is no tag or tag folder {id}"));
         };
         // The parent has to exist once the entry is out of the way (it did not sit inside
-        // the moved folder), and the depth stays within the cap: the parent's depth plus
-        // the entry's own height ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+        // the moved folder), and the nesting stays within the cap: the parent's folder
+        // level plus the entry's own reach ([#1254]). A tag reaches none — a tag lives in
+        // the deepest folder fine ([#1254]): it is the folders that nest.
         let valid = match parent {
             None => true,
             Some(p) => {
