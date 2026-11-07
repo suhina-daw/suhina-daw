@@ -145,17 +145,27 @@ impl App {
     }
 
     /// Lays out the detail area beside or under the view in `area`, draws it with its splitter,
-    /// and returns what is left for the view.
+    /// and returns what is left for the view. With `geometry` the theme's layout places it: the
+    /// view's rectangle, its own, and whether its size follows the splitter
+    /// (`Workspace::detail_follows`).
     pub(super) fn detail_area(
         &mut self,
         ui: &mut Ui,
         area: Rect,
         actions: &mut Vec<Action>,
-        geometry: Option<(Rect, Rect)>,
+        geometry: Option<(Rect, Rect, bool)>,
     ) -> Rect {
         let _panel_style = crate::kit::style_class::enter_named("workspace-panel", "panel-detail");
         let styled_ui = crate::kit::style_class::ui(ui);
-        let mut styled_ui = if let Some((_, detail)) = geometry { styled_ui.clipped_to(detail) } else { styled_ui };
+        // The splitter a theme's layout keeps lies in the gap beside the area: drawn and taking the
+        // pointer there too (#1240).
+        let css_splitter = geometry.map(|(view, detail, follows)| {
+            if follows { crate::kit::native_css::splitter_between(detail, view, SPLITTER) } else { Rect::NOTHING }
+        });
+        let mut styled_ui = match (geometry, css_splitter) {
+            (Some((_, detail, _)), Some(splitter)) => styled_ui.clipped_to(detail.union(splitter)),
+            _ => styled_ui,
+        };
         let ui = &mut *styled_ui;
         let stacked = self.settings.device_layout == DeviceLayout::Stack;
         // The piano roll's Focus switch keeps the focus on the clip picked first.
@@ -330,10 +340,10 @@ impl App {
                 self.detail_showing,
             ),
         );
-        let (view, splitter, detail) = if let Some((view, detail)) = geometry {
-            (view, Rect::NOTHING, detail)
+        let (view, splitter, detail) = if let Some((view, detail, _)) = geometry {
+            (view, css_splitter.unwrap_or(Rect::NOTHING), detail)
         } else if stacked {
-            self.detail_width = self.detail_width.clamp(180.0, (area.width() - 240.0).max(180.0));
+            self.detail_width = detail_width_in(self.detail_width, area.width());
             let x = area.right() - self.detail_width;
             (
                 Rect::from_min_max(area.min, Pos2::new(x - SPLITTER, area.bottom())),
@@ -344,8 +354,7 @@ impl App {
             // Only the chain shown: no taller than its panels, but never held under the area's
             // default height. A chain of short panels (a plug-in whose editor is not embedded,
             // or no devices at all) would otherwise keep the area too short to drag up.
-            let most = (area.height() - MIN_VIEW).max(editor_needs.min(area.height() - SPLITTER)).max(least);
-            self.detail_height = self.detail_height.clamp(least, most);
+            self.detail_height = detail_height_in(self.detail_height, area.height(), editor_needs, least);
             // A track's devices, reached by clicking the track, are open at one height or closed; the
             // height the user drags is the clip's, its editor's and the devices reached from it.
             let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
@@ -371,7 +380,7 @@ impl App {
         // The splitter: dragged to make the detail area bigger or smaller; under the
         // Arrangement view, past the view's least height the piano roll goes to the top, and a
         // double-click takes it there and back.
-        if geometry.is_none() {
+        if splitter.is_positive() {
             let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
             let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
             let sense = Sense::click_and_drag();
@@ -404,10 +413,19 @@ impl App {
             } else {
                 self.detail_drag = None;
             }
-            let painter = ui.painter_at(splitter);
-            painter.fill_background(splitter, 0.0, theme::control_background());
-            let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
-            painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, theme::text_hint());
+            // A theme's layout that follows the splitter holds the dragged size to the bounds the
+            // native layout keeps, in the room the view and the detail area share: a drag neither
+            // takes the area, and with it its splitter, away nor closes the view. Held here, after
+            // the drag, as a size the layout gives no room hides the area until it is opened again.
+            if let Some((view, detail, true)) = geometry {
+                let room = view.union(detail);
+                if stacked {
+                    self.detail_width = detail_width_in(self.detail_width, room.width());
+                } else {
+                    self.detail_height = detail_height_in(self.detail_height, room.height(), editor_needs, least);
+                }
+            }
+            paint_splitter(ui, splitter, &response, stacked);
         }
 
         if let Some(shown_track) = clip.map(ClipRef::track).or(track) {
@@ -747,9 +765,7 @@ impl App {
         } else {
             self.detail_drag = None;
         }
-        let painter = ui.painter_at(splitter);
-        painter.fill_background(splitter, 0.0, theme::control_background());
-        painter.rect_filled(Rect::from_center_size(splitter.center(), Vec2::new(32.0, 2.0)), 0.0, theme::text_hint());
+        paint_splitter(ui, splitter, &response, false);
         Rect::from_min_max(area.min, Pos2::new(area.right(), splitter.top()))
     }
 
@@ -912,4 +928,34 @@ impl App {
     pub fn piano_roll_mut(&mut self) -> &mut PianoRollState {
         &mut self.piano_roll
     }
+}
+
+/// The width of a detail area stacked beside the view, in a `room` this wide shared with it: at
+/// least 180 px, and leaving the view 240 px.
+fn detail_width_in(width: f32, room: f32) -> f32 {
+    width.clamp(180.0, (room - 240.0).max(180.0))
+}
+
+/// The height of a detail area in a row under the view, in a `room` this tall shared with it: at
+/// least `least`, and no taller than leaves the view its least height, unless an embedded editor
+/// `needs` more. A chain of short panels (a plug-in whose editor is not embedded, or no devices at
+/// all) would otherwise keep the area too short to drag up.
+fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
+    let most = (room - MIN_VIEW).max(needs.min(room - SPLITTER)).max(least);
+    height.clamp(least, most)
+}
+
+/// The detail area's splitter: a strip with a grip across its middle, `#detail-splitter` (a
+/// `.divider`, with `:hover` and `:active`). The strip takes the element's `background-color` and
+/// the grip its `color`; without them, the control background and the hint colour.
+fn paint_splitter(ui: &Ui, splitter: Rect, response: &egui::Response, stacked: bool) {
+    let _style = crate::kit::style_class::enter_named_response("divider", "detail-splitter", response);
+    let painter = ui.painter_at(splitter);
+    painter.fill_background(splitter, 0.0, crate::kit::style_class::background(theme::control_background()));
+    let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
+    painter.rect_filled(
+        Rect::from_center_size(splitter.center(), grip),
+        0.0,
+        crate::kit::style_class::foreground(theme::text_hint()),
+    );
 }

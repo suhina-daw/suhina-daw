@@ -357,8 +357,9 @@ pub fn toggle_colors(ui: &Ui, response: &Response, on: bool) -> (Color32, Color3
     let off_fill = motion::mix(theme::control_background(), theme::control_hover(), hover);
     let off_text = motion::mix(theme::text_hint(), theme::text_secondary(), hover);
     let on_fill = motion::mix(theme::control_selected(), Color32::WHITE, 0.2 * hover);
-    // The inverse ink, unless a variant's lit fill leaves it unreadable (white on a light fill).
-    let on_text = if theme::contrast(on_fill, theme::text_inverse()) < 3.0 {
+    // The inverse ink, unless a variant's lit fill leaves it unreadable (white on a light fill,
+    // or ink so translucent it fades into the fill).
+    let on_text = if theme::text_contrast(theme::text_inverse(), on_fill) < 3.0 {
         theme::text_on(on_fill)
     } else {
         theme::text_inverse()

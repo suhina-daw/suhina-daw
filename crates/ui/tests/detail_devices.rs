@@ -662,3 +662,87 @@ fn a_dial_in_the_expanded_panel_drags_though_the_compact_panel_has_one_of_the_sa
         project_now(&harness).channels[0].devices[0].params.iter().find(|p| p.id == "op1.level").map(|p| p.value);
     assert!(value.is_some_and(|v| v < 99.0), "dragging Level down lowers it, got {value:?}");
 }
+
+/// Every colour a shape paints, inside groups too.
+fn colours(shape: &egui::Shape, out: &mut Vec<egui::Color32>) {
+    match shape {
+        egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| colours(s, out)),
+        egui::Shape::Rect(rect) => out.extend([rect.fill, rect.stroke.color]),
+        egui::Shape::Circle(circle) => out.extend([circle.fill, circle.stroke.color]),
+        egui::Shape::LineSegment { stroke, .. } => out.push(stroke.color),
+        egui::Shape::Path(path) => {
+            out.push(path.fill);
+            if let egui::epaint::ColorMode::Solid(colour) = path.stroke.color {
+                out.push(colour);
+            }
+        }
+        egui::Shape::Mesh(mesh) => out.extend(mesh.vertices.iter().map(|v| v.color)),
+        _ => {}
+    }
+}
+
+/// A theme's `--device-*` tokens reach the panels' drawings: one on `:root` every device's, one on
+/// `#device-multiband` only Multiband's (#1236).
+#[test]
+fn the_device_tokens_reach_the_panels_from_the_root_and_from_one_device() {
+    let mut project = demo_project();
+    for (name, id) in [("Multiband", "multiband"), ("FM Synth", "fm-synth")] {
+        let params = suhina_device_registry::info(id)
+            .map(|info| info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect())
+            .unwrap_or_default();
+        let device = Device { name: name.into(), kind: DeviceKind::Builtin(id.into()), params, ..device(name) };
+        project.channels[0].devices.push(device);
+    }
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size((2400.0, 900.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Launcher view").click();
+    let name = harness.get_by_label("Track Drums").rect().center();
+    double_click_at(&mut harness, name);
+    assert!(shows_device(&harness, "Multiband") && shows_device(&harness, "FM Synth"));
+    let painted = |harness: &mut Harness<'static, App>, css: &str| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+        harness.run();
+        let mut out = Vec::new();
+        harness.output().shapes.iter().for_each(|s| colours(&s.shape, &mut out));
+        out
+    };
+    let (green, magenta) = (egui::Color32::from_rgb(0, 0xFF, 0), egui::Color32::from_rgb(0xFF, 0, 0xFF));
+    // `--device-series-1`'s default.
+    let default = egui::Color32::from_rgb(0xF2, 0xA6, 0x5A);
+    let root = painted(&mut harness, ":root { --device-series-1: #00ff00; }");
+    let one = painted(&mut harness, "#device-multiband { --device-series-1: #ff00ff; }");
+    // Any CSS colour, its alpha too.
+    let translucent = painted(&mut harness, ":root { --device-series-1: rgb(0 255 0 / 50%); }");
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(
+        translucent.iter().any(|c| {
+            let [r, g, b, a] = c.to_srgba_unmultiplied();
+            r <= 2 && g >= 240 && b <= 2 && (1..=128).contains(&a)
+        }),
+        "an rgb() token with an alpha reaches the drawings translucent"
+    );
+    assert!(root.contains(&green), "a rule on :root reaches the drawings");
+    assert!(!root.contains(&default), "on both devices");
+    assert!(one.contains(&magenta), "a rule on #device-multiband reaches Multiband's drawings");
+    assert!(one.contains(&default), "and leaves the FM Synth's as they were");
+    // The expanded panel is in the device's scope too: opening it adds drawings in the device's
+    // own `--device-display`, not in the default.
+    let count = |colours: &[egui::Color32], colour| colours.iter().filter(|c| **c == colour).count();
+    let display = egui::Color32::from_rgb(10, 17, 23);
+    let css = "#device-fm-synth { --device-display: #ff00ff; }";
+    let compact = painted(&mut harness, css);
+    harness.get_by_label("Expand FM Synth").click();
+    let expanded = painted(&mut harness, css);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(harness.query_by_label("Close expanded panel").is_some());
+    assert!(count(&expanded, magenta) > count(&compact, magenta), "the expanded canvas takes #device-fm-synth's");
+    assert_eq!(count(&expanded, display), count(&compact, display), "and none of the default");
+}
