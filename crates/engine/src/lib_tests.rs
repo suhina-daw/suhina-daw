@@ -1498,8 +1498,12 @@ fn a_stretched_clip_under_the_whole_loop_plays_each_pass_without_a_gap() {
     let beat = SR as usize / 2;
     for mode in [StretchMode::Smooth, StretchMode::HighQuality] {
         // Two seconds of 220 Hz squeezed onto three beats from beat 1; the loop is the clip.
-        let (mut project, pool) = stretched_project(220.0, 2.0, 3.0, 120.0, mode);
-        project.arrangement.lanes[0].clips[0].start = 1.0;
+        let (mut project, pool) = stretched_project(220.0, 2.0, 4.0, 120.0, mode);
+        // A part cut from the middle of the clip: it starts a beat into its audio.
+        let clip = &mut project.arrangement.lanes[0].clips[0];
+        clip.start = 1.0;
+        clip.offset = 1.0;
+        clip.length = 3.0;
         project.transport.loop_range = Some(LoopRange { start: 1.0, end: 4.0 });
         project.transport.loop_enabled = true;
         let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
@@ -1509,8 +1513,11 @@ fn a_stretched_clip_under_the_whole_loop_plays_each_pass_without_a_gap() {
         let out = blocks(&mut renderer, (10 * beat) / 2048 + 1, 2048, |_| worker.fill());
         let pass = |k: usize| (k * 3 + 1) * beat;
         let first = &out[pass(0) * 2..(pass(0) + beat) * 2];
+        let clean = largest_step(&out, pass(0) + 512, pass(1) - 512);
         for k in 1..3 {
             let at = pass(k);
+            let step = largest_step(&out, at - 512, at + 512);
+            assert!(step <= clean * 1.5 + 1e-3, "{mode:?} pass {k}: a step of {step} at the wrap, {clean} inside");
             assert!(rms(&out, at, at + 2_048) > 0.1, "{mode:?} pass {k}: sound from the wrap on");
             let worst = max_diff(&out[at * 2..(at + beat) * 2], first);
             assert!(worst < 0.05, "{mode:?} pass {k}: differs from the first by {worst}");
