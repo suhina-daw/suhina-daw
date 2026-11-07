@@ -26,9 +26,9 @@ use crate::kit::widgets::{self, Action};
 const VELOCITY_PER_POINT: f64 = 1.0;
 /// How long an auditioned note sounds before the window lets it go, in seconds.
 pub(super) const AUDITION_SECONDS: f64 = 0.3;
-/// How long a note the selecting rectangle reaches sounds, in beats: a sixteenth, so a quick sweep
+/// How long a note the selecting rectangle reaches sounds, in beats: an eighth, so a quick sweep
 /// over a chord sounds as one short chord.
-const SWEEP_BEATS: f64 = 0.25;
+const SWEEP_BEATS: f64 = 0.5;
 /// The most keys one audition sounds together.
 const MAX_AUDITION_KEYS: usize = 16;
 /// How far either side of the velocity lane's top edge the pointer grabs it, in points.
@@ -248,7 +248,7 @@ impl PianoRollState {
     }
 
     /// The selecting rectangle's sound, once a frame: a note sounds as the rectangle reaches it,
-    /// a sixteenth long at the project's tempo, joining the notes already sounding
+    /// an eighth long at the project's tempo, joining the notes already sounding
     /// (`preview.noteOn` with `length` and `add`) and cutting none of them short. So a chord swept
     /// over sounds as one short chord, not as a run of notes each stopping the last.
     fn sweep_frame(&mut self, track: Option<u64>) -> Vec<Action> {
@@ -416,10 +416,10 @@ mod tests {
         assert!(frame(&ctx, 9.0, &mut state).is_empty());
     }
 
-    /// The selecting rectangle sounds a note as it reaches it, a sixteenth long, joining those
+    /// The selecting rectangle sounds a note as it reaches it, an eighth long, joining those
     /// sounding (`add`); one it moves off, and letting go of it, cut nothing short.
     #[test]
-    fn the_selecting_rectangle_sounds_each_note_it_reaches_a_sixteenth_long() {
+    fn the_selecting_rectangle_sounds_each_note_it_reaches_an_eighth_long() {
         let ctx = egui::Context::default();
         let mut state = PianoRollState { audition: true, ..PianoRollState::default() };
         state.set_preview_velocity(90);
@@ -431,7 +431,7 @@ mod tests {
         let on = |keys: serde_json::Value, add: bool| {
             (
                 "preview.noteOn".to_string(),
-                json!({ "track": 3, "keys": keys, "velocity": 90, "length": 0.25, "add": add }),
+                json!({ "track": 3, "keys": keys, "velocity": 90, "length": 0.5, "add": add }),
             )
         };
         assert_eq!(sweep(&mut state, &[65], 1.0), [on(json!([65]), false)]);
