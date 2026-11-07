@@ -169,10 +169,12 @@ number of points in view:
   screen pixels. Each point is spread over the cells around it with a small Gaussian kernel (about
   6 pixels each way), and the raster is drawn with linear filtering, so a cluster reads as a soft
   cloud rather than blocks. Each cell is coloured by the mix of the kinds of the points near it
-  (each kind's colour weighted by its count). Its opacity grows with the logarithm of the count,
-  fading out towards a cluster's edge and full in the densest cell in view. Clusters then show as coloured
+  (each kind's colour weighted by its count and its alpha). Its opacity grows with the logarithm
+  of the count, fading out towards a cluster's edge and full in the densest cell in view, times
+  the points' colours' average alpha, so a theme's translucent kind colour stays translucent. Clusters then show as coloured
   regions, and where kinds meet, their colours blend. Dimmed points (search, tags, legend,
-  Show similar) count only as a faint grey under the others. Points that need to be seen one
+  Show similar) count only as a faint grey under the others (the theme's hint text colour, its
+  alpha kept). Points that need to be seen one
   by one are drawn on top as dots: the selected ones, the ones in use, the similar ones, and
   the one under the pointer or last previewed. Pointing, clicking, dragging and the tooltip work
   on the points as before.
