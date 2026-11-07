@@ -47,3 +47,4 @@ registerProcessor("CpalProcessor", class WasmProcessor extends AudioWorkletProce
         return true;
     }
 });
+# Automated fix for issue #1256: Engine: on Windows the render thread spins and yields for the whole wait on plug-in blocks
