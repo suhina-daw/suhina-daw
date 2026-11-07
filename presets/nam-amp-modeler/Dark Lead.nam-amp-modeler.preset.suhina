@@ -1,0 +1,24 @@
+{
+"format": "suhina-preset",
+"version": 1,
+"device": "nam-amp-modeler",
+"role": "effect",
+"name": "Dark Lead",
+"author": "suhina",
+"tags": [
+"lead",
+"dark",
+"smooth"
+],
+"params": {
+"inputGain": -1.0,
+"eqBass": 0.0,
+"eqMid": 1.0,
+"eqTreble": -3.0,
+"eqMidFreq": 500.0,
+"eqOn": 1.0,
+"delay": 0.004,
+"hq": 1.0,
+"outputVolume": 0.0
+}
+}

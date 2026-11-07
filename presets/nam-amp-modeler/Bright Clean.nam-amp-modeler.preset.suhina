@@ -1,0 +1,24 @@
+{
+"format": "suhina-preset",
+"version": 1,
+"device": "nam-amp-modeler",
+"role": "effect",
+"name": "Bright Clean",
+"author": "suhina",
+"tags": [
+"clean",
+"bright",
+"guitar"
+],
+"params": {
+"inputGain": -1.0,
+"eqBass": 0.0,
+"eqMid": 1.5,
+"eqTreble": 3.0,
+"eqMidFreq": 800.0,
+"eqOn": 1.0,
+"delay": 0.0,
+"hq": 1.0,
+"outputVolume": 0.0
+}
+}

@@ -92,6 +92,7 @@ fn every_stock_preset_reads_and_gives_every_parameter_of_its_device() {
         for (param, (id, value)) in device.params.iter().zip(&stock.preset.params) {
             assert_eq!(param.id, *id);
             assert_eq!(values[*id].as_f64(), Some(*value), "{key}: {id}");
+            assert!((param.min..=param.max).contains(value), "{key}: {id} is outside its range");
         }
         assert!(!stock.tags.is_empty(), "{key}");
     }

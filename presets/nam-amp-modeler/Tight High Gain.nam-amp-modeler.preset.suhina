@@ -1,0 +1,24 @@
+{
+"format": "suhina-preset",
+"version": 1,
+"device": "nam-amp-modeler",
+"role": "effect",
+"name": "Tight High Gain",
+"author": "suhina",
+"tags": [
+"high-gain",
+"tight",
+"rhythm"
+],
+"params": {
+"inputGain": -2.0,
+"eqBass": -3.0,
+"eqMid": 1.0,
+"eqTreble": 0.5,
+"eqMidFreq": 700.0,
+"eqOn": 1.0,
+"delay": 0.0,
+"hq": 1.0,
+"outputVolume": 0.0
+}
+}
