@@ -128,12 +128,15 @@ fn files_in_use(projects: &Projects) -> HashSet<PathBuf> {
 }
 
 impl Panel {
-    /// The browser's place as the `soundmap.*` commands take it.
+    /// The browser's place as the `soundmap.*` commands take it. A tag's place is not one the
+    /// commands take; the panel is not drawn with it, reached only while the samples are the
+    /// place (#862).
     fn place(state: &BrowserState) -> Option<String> {
         match &state.place {
             None => None,
             Some(Place::Pinned) => Some("pinned".into()),
             Some(place @ Place::Recent(_)) => Some(place.param()),
+            Some(Place::Tag(_)) => None,
             Some(Place::Folder(path)) => Some(path.display().to_string()),
         }
     }
@@ -246,13 +249,16 @@ impl Panel {
         let selected: HashSet<&str> = state.selected().iter().map(|i| i.key.as_str()).collect();
         let pinned: HashSet<String> = projects.file_library_mut().pinned().into_iter().collect();
         let key = format!(
-            "{}\u{1}{:?}\u{1}{:?}\u{1}{}\u{1}{}\u{1}{}",
+            "{}\u{1}{:?}\u{1}{:?}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
             state.search,
             state.tag_filter,
             selected.iter().collect::<std::collections::BTreeSet<_>>(),
             pinned.len(),
             revision,
             projects.file_library_mut().revision(),
+            // A tag drop re-lights (or dims) the matching point even when nothing else in the
+            // library moved (#1196).
+            projects.file_library_mut().tag_revision(),
         );
         if self.flags_key.as_deref() == Some(key.as_str()) && self.points.len() == map.points.len() {
             return;
@@ -260,15 +266,18 @@ impl Panel {
         let words = suhina_library::words(&state.search);
         let in_use = files_in_use(projects);
         let library = projects.file_library_mut();
+        let flat_tags = library.tag_flat();
         self.points = map
             .points
             .iter()
             .map(|p| {
                 let path_key = p.path.display().to_string();
                 let name = p.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                let tags = library.item_tags(&path_key);
+                let carried = library.item_tags(&path_key);
                 let text_matches = words.is_empty() || suhina_library::rank(&words, &name, &path_key).is_some();
-                let tag_matches = state.tag_filter.is_empty() || tags.iter().any(|t| state.tag_filter.contains(t));
+                let tag_matches = state.tag_filter.is_empty() || carried.iter().any(|id| state.tag_filter.contains(id));
+                let tags =
+                    flat_tags.iter().filter(|tag| carried.contains(&tag.id)).map(|tag| tag.name.clone()).collect();
                 let folder = p.path.parent().map(|f| f.display().to_string()).unwrap_or_default();
                 MapPoint {
                     detail: folder,
@@ -423,7 +432,7 @@ impl Panel {
         self.view.dot_size = settings.map_dot_size as f32 / 100.0;
         self.view.label_size = settings.map_label_size as f32 / 100.0;
         self.view.volume = settings.preview_volume;
-        let tags: Vec<String> = projects.file_library_mut().tags().into_iter().map(|t| t.name).collect();
+        let tags: Vec<String> = projects.file_library_mut().tag_flat().into_iter().map(|t| t.name).collect();
         let status = self.status();
         let details = self.status_details(settings.map_max_seconds);
         let busy = self.busy(ui.input(|i| i.time));

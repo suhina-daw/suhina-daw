@@ -32,16 +32,24 @@ pub enum Place {
     Pinned,
     /// The recent items: of one group, or of every group (`None`, #711).
     Recent(Option<Group>),
+    /// A tag's place, as one row of the sidebar's Tags section (#1196): every item that
+    /// carries the tags, of any kind. Ctrl-click on a tag row adds one to the list, so a
+    /// place of several shows the items that carry any of them.
+    Tag(Vec<u32>),
     Folder(PathBuf),
 }
 
 impl Place {
-    /// As `library.search` takes it.
+    /// As `library.search` takes it. A place of one tag is `tag:<name>`; a place of several
+    /// tags goes to the search through the `tags` param instead (a tag name may hold any
+    /// characters, so two names cannot join into one param unambiguously). Nothing sends
+    /// [`Place::Tag`] through here with more than one.
     pub fn param(&self) -> String {
         match self {
             Self::Pinned => "pinned".into(),
             Self::Recent(Some(group)) => format!("recent:{}", group.name()),
             Self::Recent(None) => "recent:all".into(),
+            Self::Tag(tags) => format!("tag:#{}", tags.first().copied().unwrap_or(0)),
             Self::Folder(path) => path.display().to_string(),
         }
     }
@@ -50,7 +58,7 @@ impl Place {
 impl Place {
     /// The category a recent group's place belongs to: choosing the place chooses it, so the
     /// category never hides everything the place lists. `None` for the places that hold any
-    /// kind (the pins, a folder, the recent projects).
+    /// kind (the pins, a folder, the recent projects, a tag).
     pub fn category(&self) -> Option<Category> {
         match self {
             Self::Recent(Some(Group::Samples)) => Some(Category::Samples),
@@ -59,7 +67,7 @@ impl Place {
             Self::Recent(Some(Group::Effects)) => Some(Category::Effects),
             Self::Recent(Some(Group::Plugins)) => Some(Category::Plugins),
             Self::Recent(Some(Group::Presets)) => Some(Category::Presets),
-            Self::Recent(Some(Group::Projects) | None) | Self::Pinned | Self::Folder(_) => None,
+            Self::Recent(Some(Group::Projects) | None) | Self::Pinned | Self::Tag(_) | Self::Folder(_) => None,
         }
     }
 
@@ -313,14 +321,14 @@ pub struct BrowserState {
     pub selected: Vec<BrowserItem>,
     /// The row last clicked, for Shift+click.
     pub anchor: Option<usize>,
-    /// Only items carrying any of these tags.
-    pub tag_filter: Vec<String>,
-    /// The tag editor is open (the browser footer's Edit tags button toggles it).
-    pub tag_editor: bool,
-    /// The tag whose Remove is armed in the editor: the second click removes it.
-    pub(crate) tag_editor_confirm: Option<String>,
-    /// How many items carry each tag, as last counted (the editor opened, or a tag changed).
-    pub(crate) tag_counts: Option<HashMap<String, usize>>,
+    /// Only items carrying any of these tags' ids ([#1254]: items and filters carry ids).
+    pub tag_filter: Vec<u32>,
+    /// The tag whose Remove is armed in the tag's right-click menus: the second click removes
+    /// it.
+    pub(crate) tag_remove_confirm: Option<String>,
+    /// How many items carry each tag, counted when the library's tags last changed (the
+    /// sidebar's rows share the cache).
+    pub(crate) tag_counts: Option<(u64, HashMap<u32, usize>)>,
     /// The Plug-ins category's list sorts by this column (0 name, 1 format), `true`
     /// descending. The window's own, not kept between runs.
     pub plugin_sort: (u8, bool),
@@ -337,6 +345,37 @@ pub struct BrowserState {
     pub stop_preview: bool,
     /// The sidebar's field for a folder to add, while it shows.
     pub new_folder: Option<String>,
+    /// The tag row under the pointer while items are dragged, which a drop tags (#1196); set
+    /// as the sidebar's rows are drawn.
+    pub drop_tag: Option<String>,
+    /// The tag a tag row's press carries, from the drag that took it to an item row to be
+    /// dropped there: the same tagging the other way round (#1196). `None` while nothing
+    /// carries it.
+    pub drag_tag: Option<String>,
+    /// The id of the tag `drag_tag` carries ([#1254]: moves and lays-outs go by id).
+    pub drag_tag_id: Option<u32>,
+    /// The row a carried tag or tag folder is over: the id of the tag or folder of the
+    /// sidebar's row under the pointer, set as the rows are drawn ([#1254]). Where a drop
+    /// moves the carried entry to.
+    pub drop_tag_row: Option<u32>,
+    /// The tags picked for one carry (Shift-click; a plain click or a place's build clears
+    /// the set, [#1254] review): a drag of any of them lands them all in the folder of the
+    /// drop, in the pick's order.
+    pub tag_selection: Vec<u32>,
+    /// What a carried tag's drop does, worded by the sidebar's rows as they draw: the pill
+    /// by the pointer and the status bar say it while the drag lasts ([#1254] review).
+    pub drop_pill: Option<String>,
+    /// The section title a drag carries ([#1254] review: a section moves by dragging it
+    /// among the others; Folders is never carried).
+    pub drag_section: Option<suhina_library::SectionKind>,
+    /// The results row a tag is carried over, which a drop tags; set as the rows are drawn.
+    pub drop_item: Option<BrowserItem>,
+    /// The section a carried section title is over, for reordering the sidebar's sections
+    /// ([#1254] › Sidebar sections). The Folders section cannot move and is never carried.
+    pub drop_section: Option<suhina_library::SectionKind>,
+    /// The sidebar's scroll when its entries are more than its room: rows above its top have
+    /// gone past, as the results list scrolls.
+    pub sidebar_scroll: f32,
     /// Items being dragged into the project.
     pub drag: Option<Vec<BrowserItem>>,
     /// The folder row under the pointer while samples are dragged, which a drop moves or
@@ -384,8 +423,7 @@ impl Default for BrowserState {
             selected: Vec::new(),
             anchor: None,
             tag_filter: Vec::new(),
-            tag_editor: false,
-            tag_editor_confirm: None,
+            tag_remove_confirm: None,
             tag_counts: None,
             plugin_sort: (0, false),
             focus_search: false,
@@ -394,6 +432,16 @@ impl Default for BrowserState {
             list_focused: false,
             stop_preview: false,
             new_folder: None,
+            drop_tag: None,
+            drag_tag: None,
+            drag_tag_id: None,
+            drop_tag_row: None,
+            tag_selection: Vec::new(),
+            drop_pill: None,
+            drag_section: None,
+            drop_section: None,
+            drop_item: None,
+            sidebar_scroll: 0.0,
             drag: None,
             drop_folder: None,
             previewing: None,
@@ -420,7 +468,7 @@ impl Default for BrowserState {
 
 fn item_kind(found: &Found) -> ItemKind {
     match found.kind {
-        "sample" => ItemKind::Sample,
+        "sample" | "stems" => ItemKind::Sample,
         "midi" => ItemKind::Midi,
         "preset" => ItemKind::Preset,
         "project" => ItemKind::Project,
@@ -452,10 +500,13 @@ impl BrowserState {
         &self.rows
     }
 
-    /// Forgets what was listed, so folders are read again (after a refresh or a change).
+    /// Forgets what was listed, so folders are read again (after a refresh or a change): the
+    /// tags' counts too, whose cache keys only on a revision that a replaced library may
+    /// carry again (or a moved file's records, [#1196]).
     pub fn relist(&mut self) {
         self.listings.clear();
         self.voices.clear();
+        self.tag_counts = None;
         self.generation = self.generation.wrapping_add(1);
         self.rows_key = None;
     }
@@ -475,6 +526,24 @@ impl BrowserState {
         self.selection_changed = true;
     }
 
+    /// How many items carry each tag: counted once, when the library's tags changed since the
+    /// last count (a frame over a large library costs nothing more). The sidebar's Tags rows
+    /// and the tag editor share the cache.
+    pub fn tag_counts(&mut self, library: &mut suhina_library::Library) -> HashMap<u32, usize> {
+        let revision = library.tag_revision();
+        let stale = self.tag_counts.as_ref().is_none_or(|(r, _)| *r != revision);
+        if stale {
+            let mut counts = HashMap::new();
+            for (_, ids) in library.tagged() {
+                for id in ids {
+                    counts.entry(id).and_modify(|c| *c += 1).or_insert(1);
+                }
+            }
+            self.tag_counts = Some((revision, counts));
+        }
+        self.tag_counts.as_ref().map_or_else(HashMap::new, |(_, counts)| counts.clone())
+    }
+
     /// The selected items.
     pub fn selected(&self) -> &[BrowserItem] {
         &self.selected
@@ -490,9 +559,12 @@ impl BrowserState {
     /// Builds the rows when what they come from changed.
     pub fn refresh_rows(&mut self, projects: &mut Projects) -> Result<(), String> {
         let revision = projects.file_library_mut().revision();
+        // The tags filter or place the rows through, so a tag change (even one made
+        // elsewhere, as the sample map's, [#1196]) rebuilds them with the revision.
+        let tag_revision = projects.file_library_mut().tag_revision();
         let plugins_view = projects.file_library_mut().plugins_view();
         let key = format!(
-            "{}\u{1}{:?}\u{1}{:?}\u{1}{:?}\u{1}{revision}\u{1}{}\u{1}{}\u{1}{:?}",
+            "{}\u{1}{:?}\u{1}{:?}\u{1}{:?}\u{1}{revision}\u{1}{tag_revision}\u{1}{}\u{1}{}\u{1}{:?}",
             self.search,
             self.category,
             self.place,
@@ -509,20 +581,24 @@ impl BrowserState {
         if let Some(stale) = self.search_job.take() {
             stale.cancel.store(true, Ordering::Relaxed);
         }
+        // A tag's place is a list of the items carrying its tags: a place of one tag goes as
+        // `library.search` takes the place (`tag:<name>`), so the footer's dots filter that
+        // list; a place of several goes through the tags param, the dots' own way, since two
+        // names cannot join into one param unambiguously.
+        let (place, place_tags) = match &self.place {
+            Some(Place::Tag(tags)) if tags.len() == 1 => (Some(format!("tag:#{}", tags[0])), Vec::new()),
+            Some(Place::Tag(tags)) => (None, tags.clone()),
+            other => (other.as_ref().map(Place::param), Vec::new()),
+        };
+        let mut query_tags = self.tag_filter.clone();
+        query_tags.extend(place_tags);
         let flat = !self.search.trim().is_empty()
-            || !self.tag_filter.is_empty()
-            || matches!(self.place, Some(Place::Pinned | Place::Recent(_)));
+            || !query_tags.is_empty()
+            || matches!(self.place, Some(Place::Pinned | Place::Recent(_) | Place::Tag(_)));
         let rows = if flat {
-            let place = self.place.as_ref().map(Place::param);
-            let search = suhina_session::prepare_search(
-                projects,
-                &self.search,
-                self.category,
-                place.as_deref(),
-                &self.tag_filter,
-                0,
-            )
-            .map_err(String::from)?;
+            let search =
+                suhina_session::prepare_search(projects, &self.search, self.category, place.as_deref(), &query_tags, 0)
+                    .map_err(String::from)?;
             if search.files() > self.search_inline_files {
                 let started = self.start_search(search);
                 if started.is_err() {

@@ -162,13 +162,66 @@ fn pins_and_tags_are_kept_between_runs() {
     assert_eq!(run(&mut again, "library.pinned", json!({})).unwrap()["items"], json!(["device:utility"]));
     let tagged = run(&mut again, "library.search", json!({ "tags": ["Mixing"] })).unwrap();
     assert_eq!(names(&tagged), ["Utility"]);
-    assert_eq!(tagged["items"][0]["tags"], json!(["Mixing"]));
+    assert_eq!(tagged["items"][0]["tags"][0]["name"], json!("Mixing"));
     let pinned = run(&mut again, "library.search", json!({ "place": "pinned" })).unwrap();
     assert_eq!(names(&pinned), ["Utility"]);
     run(&mut again, "library.removeTag", json!({ "name": "Mixing" })).unwrap();
     run(&mut again, "library.unpin", json!({ "item": "device:utility" })).unwrap();
     assert_eq!(run(&mut again, "library.tags", json!({})).unwrap()["tagged"], json!({}));
     let _ = std::fs::remove_dir_all(&settings);
+}
+
+#[test]
+fn a_tag_place_lists_every_item_that_carries_the_tag_of_any_kind() -> Result<(), Box<dyn std::error::Error>> {
+    let settings = temp("tag-place-settings");
+    let samples = temp("tag-place");
+    wav(&samples.join("Drums").join("Kick Hard.wav"));
+    wav(&samples.join("Drums").join("Snare.wav"));
+    let mut p = projects(&settings);
+    run(&mut p, "library.addFolder", json!({ "folder": samples.display().to_string() })).unwrap();
+    let snare = samples.join("Drums").join("Snare.wav").display().to_string();
+    run(&mut p, "library.tag", json!({ "item": snare, "tag": "Red", "on": true })).unwrap();
+    // Anything tagged anywhere shows: a built-in device and a preset bank's voice.
+    run(&mut p, "library.tag", json!({ "item": "device:utility", "tag": "Red", "on": true })).unwrap();
+    let voice = format!("{}#2", samples.join("Voices.preset.suhina").display());
+    std::fs::write(samples.join("Voices.preset.suhina"), b"").unwrap();
+    run(&mut p, "library.tag", json!({ "item": voice, "tag": "Red", "on": true })).unwrap();
+
+    // Natural order by name, whatever the kind: the sample, the device, the voice.
+    let place = run(&mut p, "library.search", json!({ "place": "tag:Red" })).unwrap();
+    assert_eq!(names(&place), ["Snare.wav", "Utility", "Voices.preset.suhina #2"]);
+    assert_eq!(place["items"][0]["tags"][0]["name"], json!("Red"));
+    // The words still narrow the list, as the browser's search field does over a place.
+    let named = run(&mut p, "library.search", json!({ "text": "utility", "place": "tag:Red" })).unwrap();
+    assert_eq!(names(&named), ["Utility"]);
+    // A category keeps its kinds only.
+    let effects = run(&mut p, "library.search", json!({ "place": "tag:Red", "category": "effects" })).unwrap();
+    assert_eq!(names(&effects), ["Utility"]);
+    let snares = run(&mut p, "library.search", json!({ "place": "tag:Red", "category": "samples" })).unwrap();
+    assert_eq!(names(&snares), ["Snare.wav"]);
+    // The tags filter combines: the UI's Places of several tags send this instead (#1196).
+    run(&mut p, "library.setTag", json!({ "name": "Hot", "color": "#336699" })).unwrap();
+    let files = run(&mut p, "library.search", json!({ "tags": ["Red", "Hot"] })).unwrap();
+    assert_eq!(names(&files), ["Utility", "Snare.wav"]);
+    // A place of a tag that no longer is one is an error, not an empty list.
+    assert!(run(&mut p, "library.search", json!({ "place": "tag:Nope" })).is_err());
+    assert!(run(&mut p, "library.search", json!({ "place": "tag:" })).is_err());
+    // A tag place sorts by name before the limit cuts: the keys' order would rank
+    // `/a/Zebra` over `/z/Apple` otherwise (#1196).
+    let deep = temp("tag-place-order");
+    std::fs::create_dir_all(deep.join("a"))?;
+    std::fs::create_dir_all(deep.join("z"))?;
+    wav(&deep.join("a").join("Zebra.wav"));
+    wav(&deep.join("z").join("Apple.wav"));
+    run(&mut p, "library.addFolder", json!({ "folder": deep.display().to_string() })).unwrap();
+    for (letter, name) in [("a", "Zebra.wav"), ("z", "Apple.wav")] {
+        let item = deep.join(letter).join(name).display().to_string();
+        run(&mut p, "library.tag", json!({ "item": item, "tag": "Hot", "on": true })).unwrap();
+    }
+    let limited = run(&mut p, "library.search", json!({ "place": "tag:Hot", "limit": 1 })).unwrap();
+    assert_eq!(names(&limited), ["Apple.wav"], "the sort leads, the limit cuts after it");
+    let _ = std::fs::remove_dir_all(&settings);
+    Ok(())
 }
 
 /// A plug-in catalog as a scan leaves one, in the settings' plug-in library.
@@ -205,7 +258,7 @@ fn a_plugins_view_is_kept_and_plug_ins_are_pinned_and_tagged_like_files() {
     let mut again = projects(&settings);
     let pinned = run(&mut again, "library.search", json!({ "place": "pinned" })).unwrap();
     assert_eq!(names(&pinned), ["Alpha Verb"]);
-    assert_eq!(pinned["items"][0]["tags"], json!(["Go-to"]));
+    assert_eq!(pinned["items"][0]["tags"][0]["name"], json!("Go-to"));
     let tagged = run(&mut again, "library.search", json!({ "tags": ["Go-to"] })).unwrap();
     assert_eq!(names(&tagged), ["Alpha Verb"]);
     // The view survives a restart (it is kept in browser.json), and the flat search lists the
@@ -261,7 +314,10 @@ fn move_to_moves_files_numbering_taken_names_and_carries_their_tags_and_pins() {
     let moved = out.join("Kick 2.wav").display().to_string();
     let library = p.file_library_mut();
     assert_eq!(library.pinned(), std::slice::from_ref(&moved));
-    assert_eq!(library.item_tags(&moved), ["Red"]);
+    assert_eq!(
+        library.item_tags(&moved).iter().map(|id| library.tag_name_of(*id)).collect::<Vec<_>>(),
+        [Some("Red".to_string())]
+    );
     assert!(library.item_tags(&kick).is_empty());
     // A file already in the folder stays.
     let again = json!({ "items": [moved], "folder": out.display().to_string() });

@@ -586,7 +586,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   about a minute, and closing or quitting asks whether to save it.
 - The **browser** (Ctrl+B shows and hides it, left or right of the view): search (Ctrl+F),
   category filters (All, Samples, MIDI, Instruments, Effects, Presets, Plug-ins), a sidebar of
-  Pinned, Recent (by kind) and the folders the user added (a path, or a folder dropped on the
+  Pinned, Recent (by kind), the Tags and the folders the user added (a path, or a folder dropped on the
   window), a tree with type icons, lengths and colour tags, a preview strip with the waveform,
   length, tempo and key, and a footer with the tags as filters. Samples and MIDI files preview
   through the engine (auto-play, or the play button; MIDI through the selected track's

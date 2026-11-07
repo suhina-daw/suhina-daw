@@ -14,7 +14,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
 use suhina_engine::model::{ChannelId, LaneData};
-use suhina_library::Library;
+use suhina_library::{Library, SectionKind};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::{App, Status, kit::theme};
@@ -77,9 +77,21 @@ fn pack(root: &Path) {
 /// The window with the demo project and a browser whose library is kept in `settings` and
 /// holds `folder`.
 fn window(settings: &Path, folder: &Path) -> Harness<'static, App> {
+    window_at(settings, folder, true)
+}
+
+/// A window on a library that may already hold `folder` (a browser.json left by a first
+/// window), so the tests can reopen one on the same settings.
+fn window_reopened(settings: &Path, folder: &Path) -> Harness<'static, App> {
+    window_at(settings, folder, false)
+}
+
+fn window_at(settings: &Path, folder: &Path, adding: bool) -> Harness<'static, App> {
     let mut app = App::new();
     let mut library = Library::new(Some(settings.to_path_buf()));
-    library.add_folder(folder).unwrap();
+    if adding {
+        library.add_folder(folder).unwrap();
+    }
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
@@ -1027,7 +1039,17 @@ fn render_the_browser() {
     let mut app = App::new();
     let mut library = Library::new(Some(settings.clone()));
     library.add_folder(&folder).unwrap();
-    library.tag(&folder.join("Drums").join("Kick Hard.wav").display().to_string(), "Red", true).unwrap();
+    library
+        .tag(
+            &folder.join("Drums").join("Kick Hard.wav").display().to_string(),
+            suhina_library::store::named_colours()
+                .iter()
+                .position(|(name, _)| *name == "Red")
+                .map(|at| suhina_library::store::FIRST_TAG_ID + at as u32)
+                .unwrap_or(1),
+            true,
+        )
+        .unwrap();
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
@@ -1057,17 +1079,6 @@ fn render_the_browser() {
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
     std::fs::create_dir_all(&out).unwrap_or_else(|e| panic!("{e}"));
     image.save(out.join("browser.png")).unwrap_or_else(|e| panic!("{e}"));
-    // With the tag editor open, for the design review.
-    harness.get_by_label("Edit tags").click();
-    for _ in 0..10 {
-        harness.step();
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    harness.run();
-    let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
-    image.save(out.join("browser-tag-editor.png")).unwrap_or_else(|e| panic!("{e}"));
-    let _ = std::fs::remove_dir_all(&settings);
-    let _ = std::fs::remove_dir_all(&folder);
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -1294,95 +1305,6 @@ fn a_plugin_drags_to_a_track_from_every_view() {
 }
 
 #[test]
-fn the_tag_editor_lists_renames_adds_and_removes_tags() {
-    let (settings, folder) = (temp("editor-settings"), temp("editor"));
-    pack(&folder);
-    let mut harness = window(&settings, &folder);
-    // Open it from the footer's Edit tags button.
-    harness.get_by_label("Edit tags").click();
-    harness.run();
-    // Every tag in a list, each with its name field, its item count and Remove; the last
-    // row adds one.
-    assert!(harness.query_by_label_contains("Tag row Red").is_some());
-    assert!(harness.query_by_label_contains("Tag row Purple").is_some());
-    assert!(harness.query_by_label("New tag name").is_some());
-    // The row's checkbox filters by it, as the footer's dots do.
-    harness.get_by_label("Filter tag Red").click();
-    harness.run();
-    assert_eq!(harness.state().browser.tag_filter, ["Red"]);
-    // A tag's name typed into its field renames it, and the footer's dot with it.
-    harness.get_by_label("Tag name Red").click();
-    harness.run();
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
-    harness.run();
-    harness.get_by_label("Tag name Red").type_text("Hot");
-    harness.run();
-    harness.key_press(Key::Enter);
-    harness.run();
-    assert!(harness.query_by_label_contains("Tag row Hot").is_some(), "the row carries the new name");
-    assert!(harness.query_by_label_contains("Tag row Red").is_none());
-    // The last row adds a tag: a name and Enter, the next default colour with it.
-    harness.get_by_label("New tag name").click();
-    harness.run();
-    harness.get_by_label("New tag name").type_text("Punchy");
-    harness.run();
-    harness.key_press(Key::Enter);
-    harness.run();
-    assert!(harness.query_by_label_contains("Tag row Punchy").is_some(), "the editor lists it");
-    // Remove: the first click arms it (the row asks), the second removes.
-    harness.get_by_label("Remove tag Punchy").click();
-    harness.run();
-    assert!(harness.query_by_label_contains("Tag row Punchy").is_some(), "the first click only arms the remove");
-    assert!(harness.query_by_label("Keep").is_some(), "the row asks with a Keep beside it");
-    harness.get_by_label("Remove tag Punchy").click();
-    harness.run();
-    assert!(harness.query_by_label_contains("Tag row Punchy").is_none(), "the second click removes it");
-    assert!(harness.query_by_label_contains("Tag row Punchy").is_none());
-    // Keep stands the remove down instead.
-    harness.get_by_label("Remove tag Hot").click();
-    harness.run();
-    assert!(harness.query_by_label("Keep").is_some());
-    harness.get_by_label("Keep").click();
-    harness.run();
-    assert!(harness.query_by_label_contains("Tag row Hot").is_some(), "the tag is still there");
-    // With an item selected, the checkbox tags the selection: Red's count says one carries
-    // it, and unticking takes it off again.
-    harness.get_by_label("Edit tags").click();
-    harness.run();
-    // The filter from the checkbox part is still on; the tree needs it off.
-    harness.state_mut().browser.tag_filter.clear();
-    harness.run();
-    let name = folder.file_name().unwrap().to_string_lossy().to_string();
-    double_click(&mut harness, &row(&name));
-    double_click(&mut harness, &row("Drums"));
-    harness.run();
-    harness.get_by_label(&row("Kick Hard.wav")).click();
-    harness.run();
-    harness.get_by_label("Edit tags").click();
-    harness.run();
-    harness.get_by_label("Apply tag Hot").click();
-    harness.run();
-    assert!(harness.query_by_label_contains("Tag row Hot (1 items)").is_some(), "the sample carries Hot now");
-    harness.get_by_label("Apply tag Hot").click();
-    harness.run();
-    assert!(harness.query_by_label_contains("Tag row Hot (0 items)").is_some(), "unticked takes it off");
-    // Closing the editor puts the footer's dots back, the renamed one among them — and a
-    // click anywhere outside the popup closes it too.
-    harness.get_by_label("Edit tags").click();
-    harness.run();
-    assert!(harness.query_by_label_contains("Tag row").is_none());
-    assert!(harness.query_by_label("Tag Hot").is_some(), "the footer's dot carries the new name");
-    harness.get_by_label("Edit tags").click();
-    harness.run();
-    assert!(harness.query_by_label_contains("Tag row Hot").is_some(), "the editor is open again");
-    harness.get_by_label("Place Pinned").click();
-    harness.run();
-    assert!(harness.query_by_label_contains("Tag row").is_none(), "a click outside closed the popup");
-    let _ = std::fs::remove_dir_all(&settings);
-    let _ = std::fs::remove_dir_all(&folder);
-}
-
-#[test]
 fn hovering_the_footers_tag_dot_says_the_tags_name_and_count_in_the_status_bar() {
     let (settings, folder) = (temp("dot-footer-settings"), temp("dot-footer"));
     pack(&folder);
@@ -1474,8 +1396,14 @@ fn an_items_tag_menu_ticks_its_tags_with_painted_boxes_and_toggles_them() {
     assert!(harness.query_by_label_contains("✓").is_none());
     harness.get_by_label("Orange").click();
     harness.run();
-    let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
-    assert!(tags.contains(&"Orange".to_string()) && tags.contains(&"Red".to_string()), "{tags:?}");
+    let library = harness.state_mut().projects_mut().file_library_mut();
+    let flat = library.tag_flat();
+    let tags: Vec<&str> = library
+        .item_tags(&item)
+        .iter()
+        .filter_map(|id| flat.iter().find(|t| t.id == *id).map(|t| t.name.as_str()))
+        .collect();
+    assert!(tags.contains(&"Orange") && tags.contains(&"Red"), "{tags:?}");
     // A click on a ticked entry takes its tag off.
     harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
     harness.run();
@@ -1484,8 +1412,402 @@ fn an_items_tag_menu_ticks_its_tags_with_painted_boxes_and_toggles_them() {
     harness.run();
     harness.get_by_label("Red").click();
     harness.run();
+    let library = harness.state_mut().projects_mut().file_library_mut();
+    let flat = library.tag_flat();
+    let tags: Vec<&str> = library
+        .item_tags(&item)
+        .iter()
+        .filter_map(|id| flat.iter().find(|t| t.id == *id).map(|t| t.name.as_str()))
+        .collect();
+    assert!(!tags.contains(&"Red") && tags.contains(&"Orange"), "{tags:?}");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A tagged item is found again through the sidebar's Tags section (#1196): the tag listed
+/// with its colour and count, clicked as a place lists every kind's items carrying it, and
+/// the × lets it go again.
+#[test]
+fn a_tagged_item_is_found_again_through_the_tags_section() {
+    let (settings, folder) = (temp("tags-side-settings"), temp("tags-side"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    double_click(&mut harness, &row(&name));
+    harness.run();
+    // The sample tagged from its row's Tag menu.
+    harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
+    harness.run();
+    let at = harness.get_by_label("Tag").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.get_by_label("Red").click();
+    harness.run();
+    // The Tags section lists the tag; its count is said to the status bar.
+    harness.hover_at(harness.get_by_label("Place Tag Red").rect().center());
+    harness.run();
+    assert!(
+        matches!(harness.state().status(), Status::Hint(text) if text.contains("Red") && text.contains("1 item")),
+        "{:?}",
+        harness.state().status()
+    );
+    // Clicking the tag shows the items carrying it, of any kind: a flat list, not the tree.
+    harness.get_by_label("Place Tag Red").click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Loop 120bpm.wav")).is_some(), "the tagged sample is listed");
+    assert!(harness.query_by_label(&row("Instruments")).is_none(), "a tag's place is a flat list");
+    let Some(suhina_ui::browser::Place::Tag(tags)) = harness.state().browser.place.clone() else {
+        panic!("the tag is the place, got {:?}", harness.state().browser.place);
+    };
+    assert_eq!(
+        tags.iter()
+            .map(|id| harness.state_mut().projects_mut().file_library_mut().tag_name_of(*id))
+            .collect::<Vec<_>>(),
+        [Some("Red".to_string())],
+        "the earlier click left it"
+    );
+    // A row of the list is selected as any row is.
+    harness.get_by_label(&row("Loop 120bpm.wav")).click();
+    harness.run();
+    let selected = harness.state().browser.selected().first().map(|s| s.name.clone());
+    assert_eq!(selected.as_deref(), Some("Loop 120bpm.wav"));
+    // The × at the right of the chosen tag lets the place go: the tree shows again.
+    harness.get_by_label("Show everything").click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Instruments")).is_some());
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A tag renamed through its row's menu carries the new name in the section; removing asks
+/// first while items carry it, and a second click does it (#1196).
+#[test]
+fn the_tags_section_renames_and_removes_a_tag_asking_first() {
+    let (settings, folder) = (temp("tags-menu-settings"), temp("tags-menu"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let item = folder.join("Loop 120bpm.wav").display().to_string();
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.tag", &json!({ "item": item, "tag": "Red", "on": true }))
+        .unwrap();
+    harness.run();
+    // Typed into the menu's field, Enter renames the tag.
+    harness.get_by_label("Place Tag Red").click_secondary();
+    harness.run();
+    harness.get_by_label("Rename tag Red").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.get_by_label("Rename tag Red").type_text("Hot");
+    harness.run();
+    // The name follows the field as it is typed: no Enter, no click off.
+    assert!(harness.query_by_label("Place Tag Hot").is_some(), "the name follows the field");
+    assert!(harness.query_by_label("Place Tag Red").is_none(), "the old name is gone");
+    // The menu is still open; a click off closes it.
+    let at = Pos2::new(SIZE.0 - 20.0, SIZE.1 - 10.0);
+    click_at(&mut harness, at);
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Hot").is_some(), "the section lists the new name");
+    // The menu went with the click off.
+    assert!(harness.query_by_label("New tag name").is_none(), "the menu went with the rename");
+    // The place still holds: the renamed tag's items.
+    harness.get_by_label("Place Tag Hot").click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Loop 120bpm.wav")).is_some());
+    // Remove: while an item carries it the first click arms the asking, the second removes.
+    harness.get_by_label("Place Tag Hot").click_secondary();
+    harness.run();
+    harness.get_by_label("Remove tag Hot").click();
+    harness.run();
+    assert!(harness.query_by_label_contains("Remove Hot?").is_some(), "the menu asks first");
+    harness.get_by_label("Keep").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Hot").is_some(), "Keep stands the remove down");
+    harness.get_by_label("Remove tag Hot").click();
+    harness.run();
+    harness.get_by_label_contains("Remove Hot?").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Hot").is_none(), "the tag is gone from the section");
+    assert_eq!(harness.state().browser.place, None, "the place went with the tag");
+    assert!(harness.state_mut().projects_mut().file_library_mut().item_tags(&item).is_empty());
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A tag's right-click menu also adds one: a typed name with the next default colour shows
+/// the section, dimmed while nothing carries it; a name one already has is an error, and
+/// nothing is added twice (#1196).
+#[test]
+fn the_tags_right_menu_adds_a_tag() {
+    let (settings, folder) = (temp("tags-add-settings"), temp("tags-add"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    // From a row of the section's right-click: a field that adds one, with a button beside it
+    // or with Enter.
+    harness.get_by_label("Place Tag Red").click_secondary();
+    harness.run();
+    assert!(harness.query_by_label("New tag name").is_some(), "the menu offers adding a tag");
+    assert!(harness.query_by_label("Add tag").is_some(), "the button beside the field");
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Punchy");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Punchy").is_some(), "the section lists the new tag");
+    // The add closes the menu.
+    assert!(harness.query_by_label("New tag name").is_none(), "the menu went with the add");
+    let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    let added = tags.iter().find(|t| t.name == "Punchy");
+    assert_eq!(
+        added.map(|t| t.color.as_str()),
+        Some(suhina_library::store::named_colours()[0].1),
+        "the colour the menu's own tag shows"
+    );
+    // Nothing carries it: the row is dimmed and the hover says so.
+    harness.hover_at(harness.get_by_label("Place Tag Punchy").rect().center());
+    harness.run();
+    assert!(
+        matches!(harness.state().status(), Status::Hint(text) if text.contains("Punchy") && text.contains("0 item")),
+        "{:?}",
+        harness.state().status()
+    );
+    // A name one already has is an error, and adds nothing a second time.
+    harness.get_by_label("Place Tag Punchy").click_secondary();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Punchy");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!(
+        matches!(harness.state().status(), Status::Error(text) if text.contains("Punchy")),
+        "{:?}",
+        harness.state().status()
+    );
+    let count = harness.state_mut().projects_mut().file_library_mut().tags().len();
+    assert_eq!(count, 8, "seven defaults and the one added");
+    // From another tag's menu the colour is that one's own: Punchy's menu is not the next
+    // one in the default cycle's order.
+    harness.get_by_label("Place Tag Punchy").click_secondary();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    // The failed duplicate left "Punchy" in the field; Ctrl+A selects it, typing replaces it.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Warm");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    let punchy_color = tags.iter().find(|t| t.name == "Punchy").map(|t| t.color.clone()).unwrap_or_default();
+    assert_ne!(Some(punchy_color.as_str()), Some(suhina_library::store::named_colours()[2].1));
+    assert_eq!(
+        tags.iter().find(|t| t.name == "Warm").map(|t| t.color.as_str()),
+        Some(punchy_color.as_str()),
+        "the menu's own tag's colour"
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The tag's right-click menu recolours it like the tag editor does: a palette swatch, or the
+/// theme editor's picker opened in the menu by Select colour, where a picker of its own would
+/// end the menu as a click outside it does (#1196).
+#[test]
+fn the_tags_right_menu_selects_a_colour() {
+    let (settings, folder) = (temp("tags-colour-settings"), temp("tags-colour"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let item = folder.join("Loop 120bpm.wav").display().to_string();
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.tag", &json!({ "item": item.clone(), "tag": "Red", "on": true }))
+        .unwrap();
+    harness.run();
+    // The menu lists the palette's swatches and Select colour; the picker comes when pressed.
+    harness.get_by_label("Place Tag Red").click_secondary();
+    harness.run();
+    assert!(harness.query_by_label("Select colour").is_some(), "the menu offers it");
+    harness.get_by_label("Select colour").click();
+    harness.run();
+    assert!(harness.query_by_label("Select colour…").is_some(), "the picker opened in the menu");
+    // A palette swatch recolours the tag, in one command, and the menu stays open.
+    let colour = suhina_ui::interaction::colour_picker::swatches()[3];
+    harness.get_by_label(&format!("Colour {}", suhina_ui::interaction::colour_picker::hex(colour))).click();
+    harness.run();
+    let first = harness.state_mut().projects_mut().file_library_mut().tag_flat().swap_remove(0);
+    assert_eq!(
+        (first.name, first.color),
+        ("Red".to_string(), theme::hex(suhina_ui::interaction::colour_picker::color32(colour)))
+    );
+    assert!(harness.query_by_label("Select colour…").is_some(), "the picker stays for a second look");
+    // A second press closes it again.
+    harness.get_by_label("Select colour…").click();
+    harness.run();
+    assert!(harness.query_by_label("Select colour…").is_none());
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// Ctrl-click on a tag adds it to the place's tags and takes it off again: the list shows
+/// the items carrying any of them (#1196).
+#[test]
+fn ctrl_click_combines_tags_in_the_tags_section() {
+    let (settings, folder) = (temp("tags-ctrl-settings"), temp("tags-ctrl"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let loop_file = folder.join("Loop 120bpm.wav").display().to_string();
+    let groove = folder.join("Groove.mid").display().to_string();
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.tag", &json!({ "item": loop_file, "tag": "Red", "on": true }))
+        .unwrap();
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.tag", &json!({ "item": groove, "tag": "Blue", "on": true }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label("Place Tag Red").click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Loop 120bpm.wav")).is_some());
+    assert!(harness.query_by_label(&row("Groove.mid")).is_none(), "only the red one yet");
+    // Ctrl-click adds the second tag: the items with either of them.
+    harness.get_by_label("Place Tag Blue").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    let Some(suhina_ui::browser::Place::Tag(tags)) = harness.state().browser.place.clone() else {
+        panic!("the place is two tags, got {:?}", harness.state().browser.place);
+    };
+    let tag_names = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    let names: Vec<String> =
+        tags.iter().filter_map(|id| tag_names.iter().find(|t| t.id == *id).map(|t| t.name.clone())).collect();
+    assert!(names == ["Red", "Blue"]);
+    assert!(harness.query_by_label(&row("Loop 120bpm.wav")).is_some());
+    assert!(harness.query_by_label(&row("Groove.mid")).is_some());
+    assert!(harness.query_by_label(&row("Instruments")).is_none());
+    // Ctrl-click takes the tag off again, and the place with the last one.
+    harness.get_by_label("Place Tag Blue").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.get_by_label("Place Tag Red").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    assert_eq!(harness.state().browser.place, None, "no tags left, no place");
+    assert!(harness.query_by_label(&row("Instruments")).is_some());
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// Items dragged from the results onto a tag row carry the tag when dropped, the row lit
+/// while they hover, as a drop on a folder row moves them (#1196).
+#[test]
+fn items_dropped_on_a_tag_carry_it() {
+    let (settings, folder) = (temp("tags-drop-settings"), temp("tags-drop"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    double_click(&mut harness, &row(&name));
+    harness.run();
+    let item = folder.join("Loop 120bpm.wav").display().to_string();
+    // The loop swept onto the sidebar's tag row is tagged there. Mid-drag the pointer says
+    // what a drop does, status bar included.
+    let from = harness.get_by_label(&row("Loop 120bpm.wav")).rect().center();
+    let to = harness.get_by_label("Place Tag Red").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    for share in [0.1, 0.3, 0.6, 1.0] {
+        harness.hover_at(from + (to - from) * share);
+        harness.step();
+    }
+    assert!(
+        matches!(harness.state().status(), Status::Hint(text) if text.contains("Red") && text.contains("tag")),
+        "{:?}",
+        harness.state().status()
+    );
+    harness.drop_at(to);
+    harness.step();
+    harness.run();
     let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
-    assert!(!tags.contains(&"Red".to_string()) && tags.contains(&"Orange".to_string()), "{tags:?}");
+    assert_eq!(
+        tags.iter()
+            .map(|id| harness.state_mut().projects_mut().file_library_mut().tag_name_of(*id))
+            .collect::<Vec<_>>(),
+        [Some("Red".to_string())],
+        "the drop tagged it"
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The tagging the other way round: a tag row dragged onto an item of the results carries the
+/// tag there, the row lit under it, and a drop on one of a selection tags them all (#1196).
+#[test]
+fn a_tag_dragged_onto_an_item_tags_it() {
+    let (settings, folder) = (temp("tag-drag-settings"), temp("tag-drag"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    double_click(&mut harness, &row(&name));
+    harness.run();
+    let loop_item = folder.join("Loop 120bpm.wav").display().to_string();
+    let kick = folder.join("Drums").join("Kick Hard.wav").display().to_string();
+    let groove = folder.join("Groove.mid").display().to_string();
+    // The tag swept from its sidebar row onto the loop carries Red there. Mid-drag the
+    // pointer says what a drop does, status bar included.
+    let from = harness.get_by_label("Place Tag Red").rect().center();
+    let to = harness.get_by_label(&row("Loop 120bpm.wav")).rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    for share in [0.1, 0.3, 0.6, 1.0] {
+        harness.hover_at(from + (to - from) * share);
+        harness.step();
+    }
+    assert!(
+        matches!(
+            harness.state().status(),
+            Status::Hint(text) if text.contains("Loop 120bpm.wav") && text.contains("Red")
+        ),
+        "{:?}",
+        harness.state().status()
+    );
+    harness.drop_at(to);
+    harness.step();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&loop_item);
+    assert_eq!(
+        tags.iter()
+            .map(|id| harness.state_mut().projects_mut().file_library_mut().tag_name_of(*id))
+            .collect::<Vec<_>>(),
+        [Some("Red".to_string())],
+        "the drop tagged the loop"
+    );
+    // Both of the two rows selected: the drop on one of them tags the whole selection.
+    harness.get_by_label(&row("Groove.mid")).click();
+    harness.run();
+    harness.get_by_label(&row("Loop 120bpm.wav")).click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    let from = harness.get_by_label("Place Tag Blue").rect().center();
+    let to = harness.get_by_label(&row("Loop 120bpm.wav")).rect().center();
+    drag(&mut harness, from, to);
+    harness.run();
+    let library = harness.state_mut().projects_mut().file_library_mut();
+    let flat = library.tag_flat();
+    let has_blue = |library: &mut suhina_library::Library, key: &str| {
+        library.item_tags(key).iter().any(|id| flat.iter().any(|t| t.id == *id))
+    };
+    let has_loop_blue = has_blue(library, &loop_item);
+    let kick_carries = library.item_tags(kick.as_str());
+    let has_groove_blue = has_blue(library, &groove);
+    assert!(has_loop_blue && kick_carries.is_empty() && has_groove_blue, "the selection the row belongs to carries it");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -1520,6 +1842,522 @@ fn the_arrow_keys_move_through_the_list_after_a_click_on_a_row() {
     harness.key_press(Key::ArrowRight);
     harness.run();
     assert!(harness.query_by_label(&row("FM Synth")).is_some(), "the heading opened");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn the_sidebar_titles_collapse_reorder_and_keep_their_order() {
+    let (settings, folder) = (temp("sections-settings"), temp("sections"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    // The section kinds in the store, in their order ([#1254] › Sidebar sections).
+    fn order(harness: &mut Harness<'static, App>) -> Vec<SectionKind> {
+        harness.state_mut().projects_mut().file_library_mut().sections().iter().map(|s| s.kind).collect()
+    }
+    assert_eq!(order(&mut harness), [SectionKind::Pinned, SectionKind::Tags, SectionKind::Library]);
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "the open section shows its tags");
+    // Clicking the title closes the section; its rows go with the click.
+    harness.get_by_label("Tags section").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Red").is_none(), "closed hides the tags");
+    assert!(harness.query_by_label("Place Tag Orange").is_none(), "every tag row goes with the section");
+    // The title's menu opens the section again.
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("Open Tags").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "open again, the tags show");
+    // Move up from the menu takes Tags above Pinned.
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("Move up").click();
+    harness.run();
+    assert_eq!(
+        order(&mut harness),
+        [SectionKind::Tags, SectionKind::Pinned, SectionKind::Library],
+        "the menu's move reorders the sections"
+    );
+    // The order and the open state are the library's own: a reopened window keeps them.
+    drop(harness);
+    let mut harness = window_reopened(&settings, &folder);
+    harness.run();
+    assert_eq!(
+        order(&mut harness),
+        [SectionKind::Tags, SectionKind::Pinned, SectionKind::Library],
+        "the order survives the restart"
+    );
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "the reopen kept Tags open where it was left");
+    // Library last: its Move down is refused — the dimmed move does nothing — and the
+    // first section's (Tags, from the move above) Move up is dimmed too.
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("Move up").click();
+    harness.run();
+    assert_eq!(
+        order(&mut harness),
+        [SectionKind::Tags, SectionKind::Pinned, SectionKind::Library],
+        "the first section's move up does nothing"
+    );
+    harness.get_by_label("Library section").click_secondary();
+    harness.run();
+    harness.get_by_label("Move down").click();
+    harness.run();
+    assert_eq!(
+        order(&mut harness),
+        [SectionKind::Tags, SectionKind::Pinned, SectionKind::Library],
+        "the last section's move down does nothing"
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn the_tags_titles_menu_adds_a_folder_and_the_drag_files_the_tag() {
+    let (settings, folder) = (temp("section-menu-settings"), temp("section-menu"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    // The title's menu keeps only what nothing else offers: New folder ([#1254]), for the
+    // library that has none yet. Adding a tag is the rows' own menus' work.
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    assert!(harness.query_by_label("New folder").is_some(), "the title's menu offers the first folder");
+    assert!(
+        harness.query_by_label("New tag name").is_none() && harness.query_by_label("Add tag").is_none(),
+        "adding a tag is the rows' menus' work, not the title's"
+    );
+    // New folder puts a folder at the top level, named by its kind when left out.
+    harness.get_by_label("New folder").click();
+    harness.run();
+    assert!(harness.query_by_label_contains("Folder Folder").is_some(), "the menu's folder lands in the section");
+    let forest = harness.state_mut().projects_mut().file_library_mut().tags();
+    let folders = forest
+        .iter()
+        .filter_map(|e| match e {
+            suhina_library::TagEntry::Folder { folder, .. } => Some((folder.name.clone(), folder.id)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0].0, "Folder", "the folder is named by its own kind when left out");
+    // A default tag carried onto the folder's row files it inside ([#1254] › Tag folders).
+    let at = harness.get_by_label("Place Tag Purple").rect().center();
+    let to = harness.get_by_label_contains("Folder Folder").rect().center();
+    harness.hover_at(at);
+    harness.step();
+    harness.drag_at(at);
+    harness.step();
+    for share in [0.3, 0.7, 1.0] {
+        harness.hover_at(at + (to - at) * share);
+        harness.step();
+    }
+    harness.drop_at(to);
+    harness.run();
+    let tree = harness.state_mut().projects_mut().file_library_mut().tags();
+    let punched = tree.iter().any(|e| match e {
+        suhina_library::TagEntry::Folder { tags, .. } => {
+            suhina_library::store::tags_iter(tags).any(|t| t.name == "Purple")
+        }
+        _ => false,
+    });
+    assert!(punched, "the drop put the tag into the folder");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_tag_drags_into_a_closed_folder() {
+    let (settings, folder) = (temp("closed-folder-settings"), temp("closed-folder"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Drums" })).unwrap();
+    harness.run();
+    // The chevron row closes on its click ([#1254]).
+    harness.get_by_label("Folder Drums (0 tags)").click();
+    harness.run();
+    let closed = harness.state_mut().projects_mut().file_library_mut().tags();
+    assert!(
+        closed.iter().any(|e| matches!(
+            e,
+            suhina_library::TagEntry::Folder { folder, .. } if folder.name == "Drums" && !folder.open
+        )),
+        "the row's click closed the folder"
+    );
+    // Red drags in though the folder is closed: the hint says it, and the drop lands
+    // inside ([#1254] review › dragging into a closed folder).
+    let at = harness.get_by_label("Place Tag Red").rect().center();
+    let to = harness.get_by_label("Folder Drums (0 tags)").rect().center();
+    eprintln!("DBG shelf folderRect={:?} at={at:?} to={to:?}", harness.get_by_label("Folder Drums (0 tags)").rect());
+    harness.hover_at(at);
+    harness.step();
+    harness.drag_at(at);
+    harness.step();
+    harness.hover_at(to);
+    harness.step();
+    eprintln!(
+        "DBG pill={:?} row={:?} tag_id={:?} folderRect={:?} orangeRect={:?} greyRect={:?}",
+        harness.state().browser.drop_pill,
+        harness.state().browser.drop_tag_row,
+        harness.state().browser.drag_tag_id,
+        harness.get_by_label("Folder Drums (0 tags)").rect(),
+        harness.get_by_label("Place Tag Orange").rect(),
+        harness.get_by_label("Place Tag Grey").rect()
+    );
+    // The hint says where the drop goes — into the closed folder ([#1254] review).
+    assert!(
+        matches!(harness.state().status(), Status::Hint(text) if text.contains("Move Red into Drums")),
+        "{:?}",
+        harness.state().status()
+    );
+    harness.drop_at(to);
+    harness.run();
+    let inside = harness.state_mut().projects_mut().file_library_mut().tags();
+    let holds = inside.iter().any(|e| match e {
+        suhina_library::TagEntry::Folder { folder: f, tags } => {
+            f.name == "Drums" && suhina_library::store::tags_iter(tags).any(|t| t.name == "Red")
+        }
+        _ => false,
+    });
+    assert!(holds, "the closed folder took the tag in");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn shift_picked_tags_move_with_the_carry() {
+    let (settings, folder) = (temp("shift-pick-settings"), temp("shift-pick"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Drums" })).unwrap();
+    harness.run();
+    // Shift-click picks Red and Purple beside each other ([#1254] review › multi-select).
+    harness.get_by_label("Place Tag Red").click_modifiers(Modifiers::SHIFT);
+    harness.run();
+    harness.get_by_label("Place Tag Purple").click_modifiers(Modifiers::SHIFT);
+    harness.run();
+    // A drag of one of them lands both in the folder, in the pick's order.
+    let at = harness.get_by_label("Place Tag Red").rect().center();
+    let to = harness.get_by_label("Folder Drums (0 tags)").rect().center();
+    harness.hover_at(at);
+    harness.step();
+    harness.drag_at(at);
+    harness.step();
+    for share in [0.4, 0.8, 1.0] {
+        harness.hover_at(at + (to - at) * share);
+        harness.step();
+    }
+    harness.drop_at(to);
+    harness.run();
+    let tree = harness.state_mut().projects_mut().file_library_mut().tags();
+    let names = tree
+        .iter()
+        .filter_map(|e| match e {
+            suhina_library::TagEntry::Folder { folder, tags } if folder.name == "Drums" => {
+                Some(suhina_library::store::tags_iter(tags).map(|t| t.name.clone()).collect::<Vec<_>>())
+            }
+            _ => None,
+        })
+        .next()
+        .unwrap_or_default();
+    assert_eq!(names, vec!["Red", "Purple"], "both picked tags moved in the pick's order");
+    // The pick lifted itself with the move.
+    assert!(harness.state().browser.tag_selection.is_empty());
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_tags_menu_adds_a_folder_at_the_tags_own_level() {
+    let (settings, folder) = (temp("tags-new-folder-settings"), temp("tags-new-folder"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Drums" })).unwrap();
+    harness.run();
+    // Red files inside Drums by drag ([#1254] › Tag folders).
+    let at = harness.get_by_label("Place Tag Red").rect().center();
+    let to = harness.get_by_label("Folder Drums (0 tags)").rect().center();
+    harness.hover_at(at);
+    harness.step();
+    harness.drag_at(at);
+    harness.step();
+    for share in [0.4, 0.8, 1.0] {
+        harness.hover_at(at + (to - at) * share);
+        harness.step();
+    }
+    harness.drop_at(to);
+    harness.run();
+    // A right-click on the filed Red's menu makes a folder beside it: inside Drums, a
+    // second level ([#1254] review › New folder on any tag). Then the menu needs the
+    // section rendered around Red's row: Drums must be open for its row to show.
+    let open_now =
+        harness.state_mut().projects_mut().file_library_mut().set_section_open(suhina_library::SectionKind::Tags, true);
+    let _ = open_now;
+    harness.get_by_label("Place Tag Red").click_secondary();
+    harness.run();
+    harness.get_by_label("New folder").click();
+    harness.run();
+    let tree = harness.state_mut().projects_mut().file_library_mut().tags();
+    let any_folder =
+        suhina_library::store::folders_iter(&tree).any(|f| suhina_library::store::entry_depth(&tree, f.id) == 2);
+    assert!(any_folder, "a folder made from Red's menu sits at Red's own level (under Drums)");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_section_title_drags_to_another_slot() {
+    let (settings, folder) = (temp("section-drag-settings"), temp("section-drag"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let order = |harness: &mut Harness<'static, App>| -> Vec<SectionKind> {
+        harness.state_mut().projects_mut().file_library_mut().sections().iter().map(|s| s.kind).collect()
+    };
+    assert_eq!(order(&mut harness), [SectionKind::Pinned, SectionKind::Tags, SectionKind::Library]);
+    // Tags's title drags under Library's: the pointer's lower half of Library's title is the
+    // slot ([#1254] review: a thin line shows the slot while it drags).
+    let from = harness.get_by_label("Tags section").rect().center();
+    let to = harness.get_by_label("Library section").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    for share in [0.4, 0.8, 1.0] {
+        harness.hover_at(from + (to - from) * share);
+        harness.step();
+    }
+    // Below the Library title's middle: the slot is under it.
+    harness.drop_at(to + egui::vec2(0.0, 4.0));
+    harness.run();
+    assert_eq!(
+        order(&mut harness),
+        [SectionKind::Pinned, SectionKind::Library, SectionKind::Tags],
+        "the dragged title landed under Library"
+    );
+    // The tree's own search reads the new order; no reset happens by hand.
+    assert_eq!(order(&mut harness), [SectionKind::Pinned, SectionKind::Library, SectionKind::Tags]);
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_tag_drags_with_hints_into_a_subfolder() {
+    let (settings, folder) = (temp("subfolder-hint-settings"), temp("subfolder-hint"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Drums" })).unwrap();
+    harness.run();
+    // A folder under Drums comes by command, the drag hints are what this test follows
+    // ([#1254] › Tag folders).
+    let drums_id = {
+        let forest = harness.state_mut().projects_mut().file_library_mut().tags();
+        forest
+            .iter()
+            .find_map(|e| match e {
+                suhina_library::TagEntry::Folder { folder, .. } if folder.name == "Drums" => Some(folder.id),
+                _ => None,
+            })
+            .unwrap_or(0)
+    };
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.addTagFolder", &json!({ "name": "Folder", "parent": format!("#{drums_id}") }))
+        .unwrap();
+    harness.run();
+    // Red into the subfolder: the hint names both the carried and its landing.
+    let at = harness.get_by_label("Place Tag Red").rect().center();
+    let to = harness.get_by_label_contains("Folder Folder").rect().center();
+    harness.hover_at(at);
+    harness.step();
+    harness.drag_at(at);
+    harness.step();
+    harness.hover_at(to);
+    harness.step();
+    assert!(
+        matches!(harness.state().status(), Status::Hint(text) if text.contains("Move Red into Folder")),
+        "{:?}",
+        harness.state().status()
+    );
+    harness.drop_at(to);
+    harness.run();
+    let two = harness.state_mut().projects_mut().file_library_mut().tags();
+    assert!(two.iter().any(|e| matches!(
+        e,
+        suhina_library::TagEntry::Folder { folder, .. } if folder.name == "Drums"
+    ) && {
+        // Its children hold the subfolder with Red inside it.
+        if let Some(suhina_library::TagEntry::Folder { tags, .. }) = two.iter().find_map(|e| match e {
+            suhina_library::TagEntry::Folder { folder, tags } if folder.name == "Drums" => {
+                Some(suhina_library::TagEntry::Folder { folder: folder.clone(), tags: tags.clone() })
+            }
+            _ => None,
+        }) {
+            tags.iter().any(|e| {
+                matches!(
+                    e,
+                    suhina_library::TagEntry::Folder { folder, tags } if folder.name == "Folder"
+                        && suhina_library::store::tags_iter(tags).any(|t| t.name == "Red")
+                )
+            })
+        } else {
+            false
+        }
+    }),);
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_tag_drops_into_the_deepest_child_folder() {
+    let (settings, folder) = (temp("deepest-drop-settings"), temp("deepest-drop"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    // The tree's folders by name: the chain's ids come from the store, not guesses.
+    let id_of = |harness: &mut Harness<'static, App>, name: &str| -> u32 {
+        let forest = harness.state_mut().projects_mut().file_library_mut().tags();
+        suhina_library::store::folders_iter(&forest).find(|f| f.name == name).map(|f| f.id).unwrap_or(0)
+    };
+    // Four levels of folders, each under the one above ([#1254] › Tag folders).
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "One" })).unwrap();
+    harness.run();
+    let one = id_of(&mut harness, "One");
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.addTagFolder", &json!({ "name": "Two", "parent": format!("#{one}") }))
+        .unwrap();
+    harness.run();
+    let two = id_of(&mut harness, "Two");
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.addTagFolder", &json!({ "name": "Three", "parent": format!("#{two}") }))
+        .unwrap();
+    harness.run();
+    let three = id_of(&mut harness, "Three");
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.addTagFolder", &json!({ "name": "Four", "parent": format!("#{three}") }))
+        .unwrap();
+    harness.run();
+    // Red carried onto the deepest folder's row lands in it: the cap counts folder levels,
+    // a tag adds none ([#1254] review: the lowest folder took no tag before).
+    let at = harness.get_by_label("Place Tag Red").rect().center();
+    let to = harness.get_by_label_contains("Folder Four").rect().center();
+    harness.hover_at(at);
+    harness.step();
+    harness.drag_at(at);
+    harness.step();
+    for share in [0.4, 0.8, 1.0] {
+        harness.hover_at(at + (to - at) * share);
+        harness.step();
+    }
+    harness.drop_at(to);
+    harness.run();
+    let forest = harness.state_mut().projects_mut().file_library_mut().tags();
+    assert_eq!(
+        suhina_library::store::entry_depth(&forest, 1),
+        5,
+        "Red put in the fourth level's folder, its row under it"
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn the_tags_section_leads_with_its_folders() {
+    let (settings, folder) = (temp("folder-first-settings"), temp("folder-first"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    // A folder made last still draws over the tags: each level's folders lead
+    // ([#1254] review).
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Present" })).unwrap();
+    harness.run();
+    let folders = harness.get_by_label("Folder Present (0 tags)").rect();
+    let red = harness.get_by_label("Place Tag Red").rect();
+    let grey = harness.get_by_label("Place Tag Grey").rect();
+    assert!(folders.top() < red.top(), "the section's own folder rows come first ({:?} vs {:?})", folders, red);
+    assert!(red.bottom() < grey.top(), "the tags keep their order below the folders");
+    // A folder's own children: folders of the level lead, then the level's tags.
+    harness.state_mut().projects_mut().execute("library.moveTag", &json!({ "id": "#1", "folder": "#8" })).unwrap();
+    harness.run();
+    let child = harness.get_by_label("Place Tag Red").rect();
+    let folder_now = harness.get_by_label("Folder Present (0 tags)").rect();
+    assert!(folder_now.bottom() <= child.top(), "a level's tags sit under its folders");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn adding_a_subfolder_opens_the_targets_branch() {
+    let (settings, folder) = (temp("branch-open-settings"), temp("branch-open"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Cowboy" })).unwrap();
+    harness.run();
+    // Cowboy hides inside a closed folder ([#1254]: closed folders show no children).
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.setFolderOpen", &json!({ "folder": "#8", "open": false }))
+        .unwrap();
+    harness.run();
+    assert!(harness.query_by_label_contains("Folder Belt").is_none(), "the closed target hides its children");
+    // A folder added to the closed Cowboy's menu lands under it, and the branch opens.
+    harness.get_by_label("Folder Cowboy (0 tags)").click_secondary();
+    harness.run();
+    // The menu's own "Add folder", not the section's "+ Add folder": whichever node sits
+    // beside the clicked row (the higher one).
+    let adds: Vec<_> = harness.get_all_by_label("Add folder").collect();
+    let menu = adds.iter().map(|n| n.rect()).min_by_key(|rect| rect.top() as u32).map(|rect| rect.center()).unwrap();
+    click_at(&mut harness, menu);
+    harness.run();
+    let tree = harness.state_mut().projects_mut().file_library_mut().tags();
+    assert!(
+        suhina_library::store::folders_iter(&tree).any(|f| f.name == "Cowboy" && f.open)
+            && suhina_library::store::folders_iter(&tree).any(|f| suhina_library::store::entry_depth(&tree, f.id) == 2),
+        "the new subfolder sits under Cowboy with the branch open"
+    );
+    assert!(
+        harness.query_by_label_contains("Folder Folder").is_some(),
+        "the subfolder shows without opening anything by hand"
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_folders_menu_colours_a_new_tag_from_the_palette() {
+    let (settings, folder) = (temp("folder-color-settings"), temp("folder-color"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Cowboy" })).unwrap();
+    harness.run();
+    // The folder's menu carries the palette, beside the field for the tag it makes.
+    harness.get_by_label("Folder Cowboy (0 tags)").click_secondary();
+    harness.run();
+    assert!(harness.query_by_label("Select colour").is_some(), "the folder's menu offers the palette");
+    // A pick is the new tag's colour, the same way a tag's own menu recolours.
+    harness.get_by_label("Select colour").click();
+    harness.run();
+    let colour = suhina_ui::interaction::colour_picker::swatches()[5];
+    harness.get_by_label(&format!("Colour {}", suhina_ui::interaction::colour_picker::hex(colour))).click();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Everything");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    let tree = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    let made = tree.iter().find(|t| t.name == "Everything");
+    assert_eq!(
+        made.map(|t| t.color.as_str()),
+        Some(theme::hex(suhina_ui::interaction::colour_picker::color32(colour)).as_str()),
+        "the pick colours the tag the folder's menu made",
+    );
+    // The pick went with the tag: the next one under this menu takes the named colours' next.
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

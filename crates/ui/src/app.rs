@@ -3402,6 +3402,7 @@ impl App {
             drop_overlay(ui, view_area);
         });
         self.browser_drag(ui);
+        self.tag_drag(ui);
         self.device_drag(ui);
         if let Some((items, dropped)) = system {
             self.system_drag(ui, items, dropped);
