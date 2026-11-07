@@ -351,6 +351,10 @@ parameters, value `i` to parameter id `i`, the numbering a VST3 version keeps fr
 one, but only when the plug-in has every id from 0 to the last value's: on the controller
 (`setParamNormalized`) and on the processor through the next block's parameter changes
 (`crates/plugin-host/src/vst3/params.rs`). With that the third plays with the project's settings.
+A single program of values (`FxCk`, an `.fxp` file, from the CLI's `--state`) is set as
+parameters the same way; a program chunk (`FPCh`) is refused, since the plug-in may answer
+`setState` without reading it, and the caller is told (#1167;
+[the VST2 interface](plugin-vst2.md) › State: chunks and banks).
 A newer version of an EQ refuses its predecessor's state and runs with its defaults. An
 instrument found by the id convention plays a project's notes with its saved settings. A
 synth's second version refuses the first version's state in every form tried: the bank, a

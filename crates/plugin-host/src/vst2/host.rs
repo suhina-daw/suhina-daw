@@ -886,12 +886,30 @@ impl Vst2Plugin {
             restored?;
             return Ok(());
         }
-        // Not a bank: a bare chunk, as a plug-in's own file would hold. A standard bank's
-        // shape first — `CcnK` and a bank kind in their places — is refused when neither
-        // reader took it: it stands for a bank that is cut short or lies, and the plug-in
-        // would run with whatever raw bytes remain, saved as the state.
-        if bank_shaped(data) {
-            return Err("the state's bank is not complete".into());
+        // A single program, an `.fxp` file's (#1167): its chunk as the current program's, or its
+        // values as parameters.
+        match suhina_plugins::vst2::single_program(data) {
+            Some(suhina_plugins::vst2::Program::Chunk(chunk)) => {
+                let size = isize::try_from(chunk.len()).unwrap_or(0);
+                let answer = self.send(EffectOp::SetChunk, 1, size, chunk.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
+                suhina_plugins::trace!("vst2 {}: effSetChunk (program) answered {answer}", self.instance);
+                return Ok(());
+            }
+            Some(suhina_plugins::vst2::Program::Values(values)) => {
+                return values
+                    .into_iter()
+                    .enumerate()
+                    .take(self.params)
+                    .try_for_each(|(index, value)| self.set_value(i32::try_from(index).unwrap_or(0), value));
+            }
+            None => {}
+        }
+        // Not a bank: a bare chunk, as a plug-in's own file would hold. A standard bank's or a
+        // single program's shape first — `CcnK` and a kind in their places — is refused when no
+        // reader took it: it stands for one that is cut short or lies, and the plug-in would run
+        // with whatever raw bytes remain, saved as the state.
+        if bank_shaped(data) || suhina_plugins::vst2::program_shaped(data) {
+            return Err("the state's bank or program is not complete".into());
         }
         if !data.is_empty() {
             let size = isize::try_from(data.len()).unwrap_or(0);

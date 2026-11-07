@@ -1,7 +1,8 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The standard VST2 bank (an `.fxb` file's contents): the form the model keeps for a VST2
+//! The standard VST2 bank (an `.fxb` file's contents), and a single program (an `.fxp` file's,
+//! read only, for the CLI's `--state`): the bank is the form the model keeps for a VST2
 //! plug-in's state, the form a VST3 version of the plug-in reads when it stands in for the
 //! VST2 one (ADR 0006, decision 8), and the form the VST2 host saves and loads (ADR 0022,
 //! `docs/spec/plugin-vst2.md` › state). The layout is the VST3 SDK's `vst2persistence.h`
@@ -172,9 +173,60 @@ pub fn program(bank: &[u8]) -> Option<(u32, Vec<f32>)> {
 }
 
 /// The current program's parameter values, in parameter order, when `bank` is a bank of
-/// programs; `None` for a chunk bank or anything else. See [`program`].
+/// programs or a single program of values; `None` for a chunk bank or anything else. See
+/// [`program`] and [`single_program`].
 pub fn program_values(bank: &[u8]) -> Option<Vec<f32>> {
-    program(bank).map(|(_, values)| values)
+    program(bank).map(|(_, values)| values).or_else(|| match single_program(bank)? {
+        Program::Values(values) => Some(values),
+        Program::Chunk(_) => None,
+    })
+}
+
+/// A single program, an `.fxp` file's contents (`CcnK`, the size of the rest, its kind, version
+/// 1, the plug-in's id and version, the number of parameters, the 28-byte name, then the values
+/// or the chunk's size and the chunk).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Program<'a> {
+    /// `FxCk`: each parameter's value, in parameter order.
+    Values(Vec<f32>),
+    /// `FPCh`: the plug-in's own chunk for one program, as it gave it.
+    Chunk(&'a [u8]),
+}
+
+/// `FxCk`: a single program of parameter values.
+const VALUES_PROGRAM: &[u8; 4] = b"FxCk";
+/// `FPCh`: a single program holding the plug-in's own chunk.
+const CHUNK_PROGRAM: &[u8; 4] = b"FPCh";
+/// Offset of a program chunk's size, and of the chunk.
+const PROGRAM_CHUNK: usize = 56;
+
+/// The single program `file` holds (#1167); `None` for a bank, a program cut short or anything
+/// else.
+pub fn single_program(file: &[u8]) -> Option<Program<'_>> {
+    if !program_shaped(file) {
+        return None;
+    }
+    match file.get(8..12)? {
+        kind if kind == VALUES_PROGRAM => {
+            let count = (word(file, PROGRAM_COUNT)? as usize).min(MAX_COUNT);
+            let values = file.get(PROGRAM_VALUES..PROGRAM_VALUES.checked_add(count.checked_mul(4)?)?)?;
+            Some(Program::Values(
+                values.as_chunks::<4>().0.iter().map(|v| f32::from_bits(u32::from_be_bytes(*v))).collect(),
+            ))
+        }
+        _ => {
+            let size = word(file, PROGRAM_CHUNK)? as usize;
+            let from = PROGRAM_CHUNK + 4;
+            file.get(from..from.checked_add(size)?).map(Program::Chunk)
+        }
+    }
+}
+
+/// Whether `data` begins as a single program does: `CcnK`, then `FxCk` or `FPCh` in its place.
+/// One that [`single_program`] does not read is cut short or lies about its size.
+pub fn program_shaped(data: &[u8]) -> bool {
+    data.get(..4) == Some(b"CcnK".as_slice())
+        && (data.get(8..12) == Some(VALUES_PROGRAM.as_slice()) || data.get(8..12) == Some(CHUNK_PROGRAM.as_slice()))
 }
 
 #[cfg(test)]
@@ -258,5 +310,53 @@ mod tests {
         buffer.extend_from_slice(&0.75f32.to_le_bytes());
         let out = bank(&preset, &buffer).unwrap();
         assert_eq!(program_values(&out), Some(vec![0.75]));
+    }
+
+    /// An `.fxp` file: `CcnK`, the size, its kind, version 1, id 7, version 1, `count`, the name,
+    /// then `rest`.
+    fn fxp(kind: &[u8; 4], count: u32, rest: &[u8]) -> Vec<u8> {
+        let mut out = b"CcnK".to_vec();
+        out.extend_from_slice(&u32::try_from(4 * 5 + NAME + rest.len()).unwrap().to_be_bytes());
+        out.extend_from_slice(kind);
+        for value in [1, 7, 1, count] {
+            out.extend_from_slice(&u32::to_be_bytes(value));
+        }
+        out.extend_from_slice(&[0; NAME]);
+        out.extend_from_slice(rest);
+        out
+    }
+
+    /// A single program reads as its values (`FxCk`) or its chunk (`FPCh`); a bank is not one,
+    /// and a program cut short is nothing (#1167).
+    #[test]
+    fn single_programs_read_as_their_values_or_their_chunk() {
+        let values = fxp(b"FxCk", 2, &[0.5f32.to_be_bytes(), 0.25f32.to_be_bytes()].concat());
+        assert_eq!(single_program(&values), Some(Program::Values(vec![0.5, 0.25])));
+        assert_eq!(program_values(&values), Some(vec![0.5, 0.25]), "set as parameters, as a bank's program");
+        let chunk = fxp(b"FPCh", 1, &[&4u32.to_be_bytes()[..], b"gain"].concat());
+        assert_eq!(single_program(&chunk), Some(Program::Chunk(b"gain")));
+        assert_eq!(program_values(&chunk), None);
+        assert!(single_program(&chunk[..chunk.len() - 1]).is_none());
+        assert!(single_program(&values[..values.len() - 1]).is_none());
+        assert!(
+            single_program(
+                &bank(
+                    &Preset {
+                        kind: CHUNK_BANK,
+                        id: 7,
+                        version: 1,
+                        programs: 1,
+                        current: 0,
+                        parameters: 0,
+                        little_endian: false
+                    },
+                    b"gain"
+                )
+                .unwrap()
+            )
+            .is_none()
+        );
+        assert!(program_shaped(&chunk[..20]), "a cut-short program still has its shape");
+        assert!(!program_shaped(b"gain"));
     }
 }
