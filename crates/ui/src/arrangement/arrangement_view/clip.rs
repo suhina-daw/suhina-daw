@@ -605,7 +605,15 @@ pub(super) fn clip_box<'a>(
         .map(|d| edge_by(clip, d.grab, grid.place(d.raw, edge_keys(ui).0, false) - d.from, &grid))
         .map(|extent| off_the_selection(extent, clip, lane, &state.selected))
         .or(settled.filter(|s| !s.moved).map(|s| (s.from, s.to)));
-    let released = released.or(others_edge);
+    // The clip's tempo dragged in the clip panel: it is drawn at that tempo on every frame
+    // (below), and its gain, edges and fade handles go with it, not with the tempo last sent.
+    let tempo_extent = ui
+        .data(|d| d.get_temp::<crate::arrangement::TempoPreview>(crate::arrangement::tempo_preview_key()))
+        .filter(|p| p.clip == clip.id && clip.length > 0.0)
+        .and_then(|p| Some(p.bpm / clip.audio_view.as_ref()?.tempo()?))
+        .filter(|f| f.is_finite() && *f > 0.0 && (f - 1.0).abs() > 1e-6)
+        .map(|f| (clip.start, clip.start + clip.length * f));
+    let released = released.or(others_edge).or(tempo_extent);
     // Copying leaves the clip where it is: its handles stay on it; moving takes them along.
     let copy_drag = state.clip_drag.is_some_and(|d| d.copy || copy_key);
     let base = if copy_drag { clip.start } else { at };
