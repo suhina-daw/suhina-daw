@@ -256,9 +256,12 @@ fn main() -> ExitCode {
     window.app.set_default_themes_folder(themes_env().or(default_themes).unwrap_or_default());
     window.app.set_default_data_folder(default_data_dir().unwrap_or_default());
     // The NAM devices' folders: the defaults exist from the start, so a user's first step is
-    // only to drop files in ([docs/spec/nam-amp-and-cab.md]).
+    // only to drop files in ([docs/spec/nam-amp-and-cab.md]). The defaults are the library's
+    // Sounds folders ([issue 1279]).
     let nam_base = documents_base();
-    let (nam_models, irs) = (nam_base.join("NAM models"), nam_base.join("IRs"));
+    let nam_sounds = nam_base.join("Sounds").join("NAM");
+    let nam_models = nam_sounds.join("Amp models");
+    let irs = nam_sounds.join("Cabinets");
     let _ = std::fs::create_dir_all(&nam_models);
     let _ = std::fs::create_dir_all(&irs);
     window.app.set_nam_default_folders(nam_models, irs);

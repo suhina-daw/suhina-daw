@@ -720,7 +720,7 @@ impl App {
             default_folders: (PathBuf::from("Projects"), PathBuf::from("Templates")),
             themes_default_folder: PathBuf::from("themes"),
             data_default_folder: PathBuf::new(),
-            nam_default_folders: (PathBuf::from("NAM models"), PathBuf::from("IRs")),
+            nam_default_folders: (PathBuf::from("Sounds/NAM/Amp models"), PathBuf::from("Sounds/NAM/Cabinets")),
             nam_cache: NamCache::default(),
             window_title: String::new(),
             browser: BrowserState::default(),
@@ -1336,8 +1336,9 @@ impl App {
     }
 
     /// Where the NAM models' and IR folders sit when the settings leave them empty
-    /// ([docs/spec/nam-amp-and-cab.md]): `Suhina/NAM models` and `Suhina/IRs` in the user's
-    /// documents. The app makes both at start when they are not there.
+    /// ([docs/spec/nam-amp-and-cab.md]): `Suhina/Sounds/NAM/Amp models` and
+    /// `Suhina/Sounds/NAM/Cabinets` in the user's documents folder. The app makes both at
+    /// start when they are not there.
     pub fn set_nam_default_folders(&mut self, models: PathBuf, irs: PathBuf) {
         self.nam_default_folders = (models, irs);
     }
