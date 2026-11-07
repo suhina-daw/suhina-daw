@@ -680,6 +680,14 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Gain envelope",
+        "Envelope editing",
+        "Whether Edit gain envelope opens every audio clip's envelope at once, to set several side by side, or one clip's at a time",
+        &["gain_envelope_editing"],
+        |cx, r| cx.choose(r, &[("All audio clips", true), ("One clip at a time", false)], |s| &mut s.view.envelope_all),
+    ),
+    row(
+        Page::Arrangement,
         "Advanced",
         "Edge drag stretches audio",
         "Dragging an audio clip's edge with Ctrl and Alt held stretches its sound to the new length",

@@ -181,14 +181,14 @@ pub(crate) fn place_labels(labels: &[(Pos2, Vec2)], area: Rect) -> Vec<Option<Re
         .collect()
 }
 
-/// The density raster of the points at `screen` that fall in `rect`: one texel per [`BIN`]
-/// pixels. The points are spread over their neighbourhood with a small Gaussian kernel, so
-/// clusters read as soft regions rather than blocks. A texel is coloured by the mix of the kinds'
-/// colours there, and more opaque the more points are near it (the logarithm, against the densest
-/// texel). `colour(i)` is point `i`'s colour, or `None` when it is dimmed: dimmed points only
-/// show as faint grey under the others. `spread` is how many times the kernel is applied: 0
-/// keeps each point to its own texel, so neighbours stand apart; more makes softer regions.
-/// Drawn with linear filtering.
+/// The density raster of the points at `screen` that fall in `rect`: one texel per [`BIN`] pixels.
+/// The points are spread over their neighbourhood with a small Gaussian kernel, so clusters read as
+/// soft regions rather than blocks. A texel is coloured by the mix of the kinds' colours there
+/// (each weighted by its alpha), and more opaque the more points are near it (the logarithm,
+/// against the densest texel) and the more opaque their colours are. `colour(i)` is point `i`'s
+/// colour, or `None` when it is dimmed: dimmed points only show as faint grey under the others.
+/// `spread` is how many times the kernel is applied: 0 keeps each point to its own texel, so
+/// neighbours stand apart; more makes softer regions. Drawn with linear filtering.
 pub(crate) fn density(
     screen: &[Pos2],
     colour: impl Fn(usize) -> Option<Color32>,
@@ -197,8 +197,8 @@ pub(crate) fn density(
 ) -> ColorImage {
     let width = ((rect.width() / BIN).ceil().max(1.0) as usize).min(4096);
     let height = ((rect.height() / BIN).ceil().max(1.0) as usize).min(4096);
-    // Per texel: count, red, green and blue sums, dimmed count.
-    let mut texels = vec![[0.0f32; 5]; width * height];
+    // Per texel: count, alpha-weighted red, green and blue sums, dimmed count, alpha sum (0 to 1).
+    let mut texels = vec![[0.0f32; 6]; width * height];
     for (i, at) in screen.iter().enumerate() {
         if !rect.contains(*at) {
             continue;
@@ -208,10 +208,13 @@ pub(crate) fn density(
         let Some(texel) = texels.get_mut(y * width + x) else { continue };
         match colour(i) {
             Some(c) => {
+                let [r, g, b, a] = c.to_srgba_unmultiplied();
+                let a = f32::from(a) / 255.0;
                 texel[0] += 1.0;
-                texel[1] += f32::from(c.r());
-                texel[2] += f32::from(c.g());
-                texel[3] += f32::from(c.b());
+                texel[1] += a * f32::from(r);
+                texel[2] += a * f32::from(g);
+                texel[3] += a * f32::from(b);
+                texel[5] += a;
             }
             None => texel[4] += 1.0,
         }
@@ -221,23 +224,25 @@ pub(crate) fn density(
     }
     let densest = texels.iter().map(|t| t[0]).fold(0.0f32, f32::max).max(1e-6).ln_1p();
     let dimmest = texels.iter().map(|t| t[4]).fold(0.0f32, f32::max).max(1e-6).ln_1p();
-    let grey = crate::kit::theme::text_hint();
+    let [grey_r, grey_g, grey_b, grey_a] = crate::kit::theme::text_hint().to_srgba_unmultiplied();
     let pixels = texels
         .iter()
         .map(|t| {
             let shown = (t[0].ln_1p() / densest).min(1.0);
             if t[0] > 0.02 {
                 // Smooth towards the edges; full in the densest regions.
-                let alpha = shown * (2.0 - shown);
+                // ... and as opaque as the points' colours are on average.
+                let alpha = shown * (2.0 - shown) * (t[5] / t[0]).min(1.0);
+                let weight = t[5].max(1e-6);
                 Color32::from_rgba_unmultiplied(
-                    (t[1] / t[0]) as u8,
-                    (t[2] / t[0]) as u8,
-                    (t[3] / t[0]) as u8,
+                    (t[1] / weight) as u8,
+                    (t[2] / weight) as u8,
+                    (t[3] / weight) as u8,
                     (alpha * 255.0) as u8,
                 )
             } else if t[4] > 0.02 {
-                let alpha = 48.0 * (t[4].ln_1p() / dimmest).min(1.0);
-                Color32::from_rgba_unmultiplied(grey.r(), grey.g(), grey.b(), alpha as u8)
+                let alpha = 48.0 * f32::from(grey_a) / 255.0 * (t[4].ln_1p() / dimmest).min(1.0);
+                Color32::from_rgba_unmultiplied(grey_r, grey_g, grey_b, alpha as u8)
             } else {
                 Color32::TRANSPARENT
             }
@@ -252,8 +257,8 @@ const KERNEL: [f32; 5] = [1.0 / 16.0, 4.0 / 16.0, 6.0 / 16.0, 4.0 / 16.0, 1.0 / 
 
 /// `texels` blurred with [`KERNEL`] along one axis: `step` is 1 for rows and `width` for columns,
 /// `length` the number of texels along that axis.
-fn blur(texels: &[[f32; 5]], width: usize, height: usize, step: usize, length: usize) -> Vec<[f32; 5]> {
-    let mut out = vec![[0.0f32; 5]; texels.len()];
+fn blur(texels: &[[f32; 6]], width: usize, height: usize, step: usize, length: usize) -> Vec<[f32; 6]> {
+    let mut out = vec![[0.0f32; 6]; texels.len()];
     for (i, target) in out.iter_mut().enumerate() {
         let along = if step == 1 { i % width } else { i / width };
         for (k, weight) in KERNEL.iter().enumerate() {
@@ -377,6 +382,25 @@ mod tests {
         assert_eq!(image.pixels[3], Color32::TRANSPARENT);
         assert!(image.pixels[10].a() > 0 && image.pixels[10].a() < 64, "a dimmed point is faint");
         assert_eq!(image.pixels[19], Color32::TRANSPARENT);
+    }
+
+    /// A translucent kind colour stays translucent in the raster, keeps its own RGB (not the
+    /// premultiplied one) and counts for less in a mix with an opaque colour.
+    #[test]
+    fn density_keeps_the_alpha_of_translucent_colours() {
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(60.0, 3.0));
+        let faint_red = Color32::from_rgba_unmultiplied(200, 0, 0, 128);
+        let blue = Color32::from_rgb(0, 0, 200);
+        // Texel 0: one faint red point alone; texel 10: a faint red and a blue point.
+        let screen = [Pos2::new(1.0, 1.0), Pos2::new(31.0, 1.0), Pos2::new(32.0, 1.0)];
+        let colour = |i: usize| Some(if i == 2 { blue } else { faint_red });
+        let image = density(&screen, colour, rect, 0);
+        let alone = image.pixels[0].to_srgba_unmultiplied();
+        assert!(alone[0].abs_diff(200) <= 2 && alone[2] == 0, "{alone:?}");
+        assert!(alone[3] < 140, "a translucent colour is not drawn opaque: {alone:?}");
+        let mixed = image.pixels[10].to_srgba_unmultiplied();
+        assert!(mixed[2] > mixed[0], "the opaque blue outweighs the faint red: {mixed:?}");
+        assert!(mixed[3] > alone[3] && mixed[3] < 255, "{mixed:?}");
     }
 
     /// Smaller points spread less: with no spread, two points two texels apart keep a gap

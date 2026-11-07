@@ -56,7 +56,8 @@ clip; devices (ADR 0004) will add many more parameters.
    through the map of the last graph it sent. Cursors into the
    new event lists are found by binary search; playing audio clips are found again by their
    time; an unwarped audio clip plays at its own speed, not the beat's, so it carries on from
-   the file position it was at (after a tempo edit its beat position moves, as in other DAWs).
+   the file position it was at (after a tempo edit its beat position moves, as in other DAWs)
+   until the transport starts or jumps, when it plays from its beats again, where it is drawn.
    Sounding note voices ring on, on their track's chain in the new graph. A track's device
    chain keeps its running devices when the new graph has the same devices on the same track,
    with the new parameter values, so instrument notes and effect tails carry on (ADR 0004
@@ -143,6 +144,18 @@ klingt and JUCE's graph do), now:
 4. **Sounding notes follow their track's mix.** Each sine voice remembers its track and
    velocity; at a swap it takes the new graph's volume, pan and mute (and bus, if the track's
    chain changed) at once instead of keeping them until the note ends.
+5. **An arrangement clip's gain envelope is a message too** (`Controller::set_clip_envelope`,
+   used by `clip.setEnvelope` when the envelope is all the edit changed and the clip is not an
+   ARA clip). The controller builds the envelope off the audio thread and sends it through its
+   own lock-free queue; the renderer puts it on that clip's events, read directly and stretched
+   alike, at the start of the next block, a playing clip gliding to its new gain over 30 ms, and
+   sends each envelope it replaces back to the controller to be freed. A dragged envelope sent a
+   graph every 30 ms before, and each swap handed every stretched voice over: a voice in the
+   middle of a jump (at a loop's wrap) started its jump again at each swap and stayed silent
+   while the drag went on. Each message is numbered, and a graph remembers the clips whose
+   envelope arrived as a message on it; a graph built before a message and taken after it takes
+   those clips' envelopes from the graph it replaces, which plays them already (shared, not
+   copied), as newer parameter messages are applied again (3).
 
 ## Amendment: notes an edit takes away (2026-10-28)
 

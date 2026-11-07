@@ -102,6 +102,47 @@ fn a_gain_envelope_shapes_one_clip_and_undoes_in_one_step() {
     assert_eq!(clips(&session)[1], b);
 }
 
+/// Warp turned off and on again: the clip's length follows its audio, and so do the envelope's
+/// points, each staying on the sound it was put on, then back on its beat.
+#[test]
+fn envelope_points_follow_the_audio_when_warp_turns_off_and_on() {
+    let dir = TempDir::new("clip-audio-warp-envelope");
+    let mut session = two_clips(&wav(&dir, "pad.wav", 2.0, 0.5));
+    let a = clips(&session)[0].id;
+    run(&mut session, "clip.setTempo", json!({ "clip": a.0, "bpm": 100.0, "source": "manual" })).unwrap();
+    run(&mut session, "clip.setEnvelope", json!({ "clip": a.0, "points": [1.0, 0.0, 2.0, -6.0] })).unwrap();
+    let length = clips(&session)[0].length;
+    run(&mut session, "clip.setAudio", json!({ "clip": a.0, "warp": false })).unwrap();
+    let (clip, after) = (clips(&session)[0].clone(), clips(&session)[0].audio.gain_envelope.clone());
+    // The point moved by as much as the clip's length did.
+    let scale = clip.length / length;
+    assert!((scale - 1.0).abs() > 0.01, "the length changed: {scale}");
+    assert!((after[1].beat - 2.0 * scale).abs() < 1e-6, "{after:?} at {scale}");
+    assert_eq!(after[1].db, -6.0);
+    run(&mut session, "clip.setAudio", json!({ "clip": a.0, "warp": true })).unwrap();
+    let back = clips(&session)[0].audio.gain_envelope.clone();
+    assert!((back[1].beat - 2.0).abs() < 1e-6, "{back:?}");
+}
+
+#[test]
+fn two_envelope_points_in_one_place_are_one_and_a_beat_holds_a_step() {
+    let dir = TempDir::new("clip-audio-merge");
+    let mut session = two_clips(&wav(&dir, "pad.wav", 2.0, 0.5));
+    let a = clips(&session)[0].id;
+    // A point dropped on another (same beat, same dB) is one point.
+    let out = run(&mut session, "clip.setEnvelope", json!({ "clip": a.0, "points": [0.0, 0.0, 2.0, -6.0, 2.0, -6.0] }))
+        .unwrap();
+    assert_eq!(out["points"], json!([0.0, 0.0, 2.0, -6.0]));
+    // Two on one beat at other levels are a step; a third there is where the step goes to.
+    let out = run(
+        &mut session,
+        "clip.setEnvelope",
+        json!({ "clip": a.0, "points": [2.0, 0.0, 2.0, -6.0, 2.0, -12.0, 4.0, -12.0] }),
+    )
+    .unwrap();
+    assert_eq!(out["points"], json!([2.0, 0.0, 2.0, -12.0, 4.0, -12.0]));
+}
+
 #[test]
 fn a_split_clip_keeps_its_part_of_the_envelope_and_a_loop_repeats_it() {
     let dir = TempDir::new("clip-audio-split");
@@ -233,4 +274,26 @@ fn a_longer_tempo_never_removes_the_next_clip() {
     assert_eq!((a.start, a.length), (0.0, 4.0), "stopped where the next clip starts");
     assert_eq!(b.start, 4.0, "the next clip is still there");
     assert_eq!(a.audio.tempo(), Some(240.0));
+}
+
+/// `clip.setEnvelope` takes each point's curve, as automation does: a bend or four numbers, null
+/// for straight; a bad one is refused.
+#[test]
+fn an_envelope_takes_curves_between_its_points() {
+    let dir = TempDir::new("clip-audio-curves");
+    let mut session = two_clips(&wav(&dir, "hit.wav", 2.0, 0.5));
+    let clip = clips(&session)[0].id.0;
+    run(
+        &mut session,
+        "clip.setEnvelope",
+        json!({ "clip": clip, "points": [0.0, 0.0, 4.0, -12.0], "curves": [0.5, null] }),
+    )
+    .unwrap();
+    let points = clips(&session)[0].audio.gain_envelope.clone();
+    assert_eq!(points[0].curve, suhina_engine::model::automation::Curve::bend(0.5));
+    assert!(points[1].curve.is_straight());
+    let bad = json!({ "clip": clip, "points": [0.0, 0.0, 4.0, -12.0], "curves": [7.0] });
+    assert!(run(&mut session, "clip.setEnvelope", bad).is_err());
+    let too_many = json!({ "clip": clip, "points": [0.0, 0.0], "curves": [0.5, 0.5] });
+    assert!(run(&mut session, "clip.setEnvelope", too_many).is_err());
 }

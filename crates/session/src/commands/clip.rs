@@ -101,8 +101,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             optional(
                 "scene",
-                ParamType::Integer,
-                "instead of index: the clip in the track's slot of this scene, from 0",
+                ParamType::Item,
+                "instead of index: the clip in the track's slot of this scene, its number from 0 or {\"id\": n} with its scene_id",
             ),
             optional("in", ParamType::Number, "fade-in length in beats from the clip's start, at least 0; 0 is none"),
             optional("out", ParamType::Number, "fade-out length in beats before the clip's end, at least 0; 0 is none"),
@@ -157,8 +157,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             optional(
                 "scene",
-                ParamType::Integer,
-                "with track: the clip in this scene's slot, from 0, as in project.launcher",
+                ParamType::Item,
+                "with track: the clip in this scene's slot, its number from 0 or {\"id\": n} with its scene_id, as in project.launcher",
             ),
         ],
         kind: CommandKind::READ,
@@ -189,8 +189,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             optional(
                 "scene",
-                ParamType::Integer,
-                "instead of start: the scene, from 0, whose slot on the track takes the clip",
+                ParamType::Item,
+                "instead of start: the scene, its number from 0 or {\"id\": n} with its scene_id, whose slot on the track takes the clip",
             ),
             optional("stack", ParamType::Bool, "with start, true leaves clips under it as they are"),
             optional("replace", ParamType::Clip, "with track and start, remove this destination clip before pasting"),
@@ -409,7 +409,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Track,
                 "track to move the clip to (id or name); it must take the clip's kind: notes or audio (default: the same track)",
             ),
-            optional("toScene", ParamType::Integer, "the scene to move it to, from 0 (default: the same scene)"),
+            optional(
+                "toScene",
+                ParamType::Item,
+                "the scene to move it to: its number, from 0, or {\"id\": n} with its scene_id (default: the same scene)",
+            ),
         ],
         kind: CommandKind::EDIT,
         run: move_slot,
@@ -475,7 +479,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setEnvelope",
-        label: "Set an audio clip's gain envelope (an arrangement clip, or the clip in a track's slot by scene): points of a content beat and an offset in dB from the clip's gain, straight in dB between them; an empty list clears it. Only that clip changes",
+        label: "Set an audio clip's gain envelope (an arrangement clip, or the clip in a track's slot by scene): points of a content beat and an offset in dB from the clip's gain, straight in dB between them or along each point's curve; an empty list clears it. Only that clip changes",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -484,8 +488,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param(
                 "points",
                 ParamType::Numbers,
-                "the points as pairs, a beat of the content (from 0) and then dB from the clip's gain (-70 to +24): [0, 0, 4, -12] falls 12 dB over the first four beats; two points on one beat make a step",
+                "the points as pairs, a beat of the content (from 0) and then dB from the clip's gain (-70 to +24): [0, 0, 4, -12] falls 12 dB over the first four beats; two points on one beat make a step; two in one place (same beat and dB) are one, and a third on a beat replaces the second",
             ),
+            optional(
+                "curves",
+                ParamType::Curves,
+                "each point's curve to the next, in the order of points, as automation.movePoint's curve: a bend from -1 to 1 or [x1, y1, x2, y2] each from -0.5 to 1.5; null or missing for straight",
+            ),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_audio::set_envelope,
@@ -639,7 +649,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "with no track: put the new tracks after this one, in its group (default: after the last regular track)",
             ),
             optional("start", ParamType::Number, "arrangement beat the first clip starts at"),
-            optional("scene", ParamType::Integer, "scene number, from 0, of the first clip slot"),
+            optional(
+                "scene",
+                ParamType::Item,
+                "the scene of the first clip slot: its number, from 0, or {\"id\": n} with its scene_id",
+            ),
             optional(
                 "separate",
                 ParamType::Bool,
@@ -661,7 +675,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Make an empty clip on a track that holds clips: MIDI on a notes track, audio with no file yet on an audio track; in an empty clip slot, or at a beat in the arrangement, replacing what it covers unless stacked",
         params: &[
             TRACK,
-            optional("scene", ParamType::Integer, "scene number, from 0, of an empty clip slot"),
+            optional(
+                "scene",
+                ParamType::Item,
+                "the scene of an empty clip slot: its number, from 0, or {\"id\": n} with its scene_id",
+            ),
             optional("start", ParamType::Number, "arrangement beat it starts at, at least 0"),
             optional("length", ParamType::Number, "length in beats (default one bar of the time signature)"),
             optional("stack", ParamType::Bool, "in the arrangement, keep the clips the new one covers (default false)"),
@@ -988,7 +1006,14 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
             p.launcher.columns.get_mut(column).and_then(|c| c.slots.get_mut(scene)).ok_or("the slot is missing")?;
         let replaced = slot.clip.is_some();
         slot.clip = Some(placed);
-        return Ok(json!({ "clip": placed_id.0, "track": track.0, "scene": scene, "replaced": replaced }));
+        let scene_id = scene_id(p, scene);
+        return Ok(json!({
+            "clip": placed_id.0,
+            "track": track.0,
+            "scene": scene,
+            "scene_id": scene_id,
+            "replaced": replaced,
+        }));
     }
     let start = match at {
         PasteAt::Beat(start) => start,
@@ -1078,8 +1103,8 @@ fn delete_clips(session: &mut Session, params: &Value) -> Result<Value, CommandE
             Some(v) => v.as_u64().map(Some).ok_or_else(|| format!("{key} must be a whole number").into()),
         }
     };
-    match (whole("index")?, whole("scene")?) {
-        (Some(_), Some(_)) => Err("give index or scene, not both".into()),
+    match (whole("index")?, Args::new(params).has("scene").then_some(())) {
+        (Some(_), Some(())) => Err("give index or scene, not both".into()),
         (None, None) => Err("give clips, or track with index (an arrangement clip) or scene (a launcher clip)".into()),
         (Some(_), None) => {
             let (lane, index) = lane_and_index(&session.project, params)?;
@@ -1088,9 +1113,10 @@ fn delete_clips(session: &mut Session, params: &Value) -> Result<Value, CommandE
             }
             Ok(json!({ "deleted": index }))
         }
-        (None, Some(scene)) => {
+        (None, Some(())) => {
             let column = column_index(session.project(), params)?;
             let s = scene_index(session.project(), params)?;
+            let scene = s;
             let slot = session
                 .project
                 .launcher
@@ -1430,12 +1456,7 @@ fn move_slot(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         None => None,
         Some(_) => Some(track_at(&session.project, params, "toTrack")?),
     };
-    let to_scene: Option<usize> = match Args::new(params).value("toScene") {
-        None => None,
-        Some(v) => {
-            Some(v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("toScene must be a whole number from 0")?)
-        }
-    };
+    let to_scene = opt_scene_at(&session.project, params, "toScene")?;
 
     // An empty track of the other kind takes the clip's (#945).
     let from = session.project.launcher.columns.get(from_column).map(|c| c.track);
@@ -1534,6 +1555,7 @@ fn move_slot(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         "moved": true,
         "track": to_track.0,
         "scene": to_scene,
+        "scene_id": scene_id(project, to_scene),
         "swapped": swapped,
     }))
 }
@@ -1553,5 +1575,5 @@ fn launch_clip(session: &mut Session, params: &Value) -> Result<Value, CommandEr
         _ => return Err("that slot is empty and has no stop button".into()),
     };
     send(session, LaunchCommand::LaunchClip { column, slot: scene })?;
-    Ok(json!({ "scene": scene, "queued": queued }))
+    Ok(json!({ "scene": scene, "scene_id": scene_id(session.project(), scene), "queued": queued }))
 }

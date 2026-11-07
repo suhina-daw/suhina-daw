@@ -94,7 +94,6 @@ fn project_built() -> Project {
                 track: TrackId(1),
                 slots: vec![Slot { clip: Some(clip(1)), has_stop: true }, Slot { clip: None, has_stop: true }],
             }],
-            mappings: Vec::new(),
         },
         ..Project::default()
     }

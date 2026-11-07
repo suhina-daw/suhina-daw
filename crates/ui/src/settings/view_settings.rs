@@ -115,6 +115,7 @@ impl ViewSettings {
             ceiling: f64::from(self.envelope_ceiling),
             step: f64::from(self.envelope_step) / 10.0,
             free: self.envelope_free,
+            all: self.envelope_all,
         }
     }
 }
@@ -151,6 +152,9 @@ pub struct ViewSettings {
     pub envelope_step: u8,
     /// Gain envelope points move freely by default, instead of on the dB grid.
     pub envelope_free: bool,
+    /// Edit gain envelope opens every audio clip's envelope at once (on by default), rather than
+    /// one clip's at a time.
+    pub envelope_all: bool,
     /// Clip menus carry a name field that renames in place, instead of Rename (off by default).
     pub menu_name_field: bool,
     /// Notes placed over others of their key replace them (on by default); Settings shows it the
@@ -264,6 +268,7 @@ impl Default for ViewSettings {
             envelope_ceiling: 6,
             envelope_step: 10,
             envelope_free: false,
+            envelope_all: true,
             menu_name_field: false,
             notes_replace: true,
             replace_clip: false,
@@ -361,11 +366,12 @@ impl ViewSettings {
             + &format!("background_tint = {}\nbackground_blur = {}\n", self.background_tint, self.background_blur)
             + &format!("arrangement_grid = {}\n", self.default_grid)
             + &format!(
-                "gain_envelope_show = {}\ngain_envelope_ceiling = {}\ngain_envelope_step = {}\ngain_envelope_move = {}\n",
+                "gain_envelope_show = {}\ngain_envelope_ceiling = {}\ngain_envelope_step = {}\ngain_envelope_move = {}\ngain_envelope_editing = {}\n",
                 if self.envelope_show { "on" } else { "off" },
                 self.envelope_ceiling,
                 f64::from(self.envelope_step) / 10.0,
                 if self.envelope_free { "free" } else { "grid" },
+                if self.envelope_all { "all" } else { "one" },
             )
             + &self.track_sizes.to_text()
     }
@@ -459,6 +465,7 @@ impl ViewSettings {
                 _ => return false,
             },
             ("gain_envelope_move", "free" | "grid") => self.envelope_free = value == "free",
+            ("gain_envelope_editing", "all" | "one") => self.envelope_all = value == "all",
             ("menu_name_field", "on" | "off") => self.menu_name_field = value == "on",
             ("notes_replace", "on" | "off") => self.notes_replace = value == "on",
             ("time_select", "ctrl_drag" | "clip_lower_half") => self.time_select_ctrl = value == "ctrl_drag",
@@ -524,6 +531,7 @@ mod tests {
             envelope_ceiling: 24,
             envelope_step: 5,
             envelope_free: true,
+            envelope_all: false,
             menu_name_field: true,
             notes_replace: false,
             time_select_ctrl: true,

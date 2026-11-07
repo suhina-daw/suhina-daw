@@ -49,7 +49,16 @@ pub(crate) struct Graph {
     /// The click's latency compensation while the main fader moves: the click is kept out of
     /// the mix the fader scales, and delayed here as the mix is in `direct_delay`.
     pub(crate) click_delay: Delay,
+    /// The clips whose gain envelope arrived as a message on this graph (`Controller::
+    /// set_clip_envelope`): the message's number, the clip's lane and index. A graph built before
+    /// a message and swapped in after it takes those clips' envelopes from the graph it replaces,
+    /// as parameter messages are applied again. Allocated with room for
+    /// [`ENVELOPE_MESSAGES`]; the oldest give way.
+    pub(crate) envelope_messages: Vec<(u64, usize, usize)>,
 }
+
+/// Clips a graph remembers envelope messages for (`Graph::envelope_messages`).
+pub(crate) const ENVELOPE_MESSAGES: usize = 64;
 
 impl Graph {
     /// Builds the graph for `project`: validates it and prepares every event and voice. Allocates;
@@ -139,6 +148,13 @@ impl Graph {
         let mut stretch_events = Vec::new();
         let mut stretch_voices = Vec::new();
         let mut stretch_heard = Vec::new();
+        // Second voices of the stretched clips that play across the loop's wrap (#1268).
+        let mut stretch_twins = Vec::new();
+        let loop_frames = project
+            .transport
+            .looping()
+            .map(|r| (tempo::frame_of(&tempo, r.start), tempo::frame_of(&tempo, r.end)))
+            .filter(|(start, end)| end > start);
         let mut hosted = Vec::new();
         for (lane_index, lane) in project.arrangement.lanes.iter().enumerate() {
             for (clip_index, placed) in lane.clips.iter().enumerate().filter(|(_, c)| c.enabled) {
@@ -200,6 +216,13 @@ impl Graph {
                                 let (start, end) = (to_frame(clip.start), to_frame(clip.start + clip.length));
                                 let length = end.saturating_sub(start);
                                 let key = ahead::voice_key(clip, region, data, (start, length), tempo_key);
+                                // Played up to the loop end and again after the wrap: its voice is
+                                // read to the wrap, so a twin waits at the loop start.
+                                if loop_frames.is_some_and(|(_, loop_end)| start < loop_end && loop_end <= end)
+                                    && let Some(twin) = StretchVoice::on_map(clip, data.clone(), &tempo, sample_rate)
+                                {
+                                    stretch_twins.push((stretch_voices.len(), twin));
+                                }
                                 stretch_voices.push((voice, start, length, key, clip.id.0));
                                 stretch_heard.push(track_gains(project, track).is_some());
                                 stretch_events.push(StretchEvent {
@@ -273,7 +296,7 @@ impl Graph {
             .collect();
         let rings_began = std::time::Instant::now();
         let voices = stretch_voices.len();
-        let mut ahead = AheadReader::new(stretch_voices, sample_rate);
+        let mut ahead = AheadReader::new(stretch_voices, stretch_twins, sample_rate);
         ahead.set_heard(&stretch_heard);
         let rings_took = rings_began.elapsed();
         let launcher_began = std::time::Instant::now();
@@ -294,6 +317,7 @@ impl Graph {
             ms(levels_took),
         ));
         Ok(Box::new(Graph {
+            envelope_messages: Vec::with_capacity(ENVELOPE_MESSAGES),
             inputs_heard: vec![false; inputs.len()],
             inputs,
             events,

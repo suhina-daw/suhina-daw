@@ -32,7 +32,7 @@ pub use paint::{
     surface, thickness,
 };
 pub use text::paint_text;
-pub use workspace::{Workspace, workspace};
+pub use workspace::{Workspace, splitter_between, workspace};
 
 const MAX_CONTEXTS: usize = 128;
 const MAX_DEPTH: usize = 16;
@@ -59,6 +59,8 @@ pub struct Computed {
     /// `accent-color`: a control's accent, such as a knob's arc.
     pub accent: Color32,
     pub authored: Authored,
+    /// Every custom property the element sees, resolved (`--device-series-1`).
+    variables: Arc<std::collections::BTreeMap<String, String>>,
     gradients: Arc<[paint::Gradient]>,
     shadows: Arc<[shadows::Shadow]>,
     text_shadows: Arc<[text::Shadow]>,
@@ -66,6 +68,11 @@ pub struct Computed {
     animations: Arc<[(Animation, Arc<Frames>)]>,
 }
 impl Computed {
+    /// The custom property `name` (with its `--`) as the element sees it.
+    pub fn variable(&self, name: &str) -> Option<&str> {
+        self.variables.get(name).map(String::as_str)
+    }
+
     pub fn has_gradient(&self) -> bool {
         !self.gradients.is_empty()
     }
@@ -194,6 +201,10 @@ struct Engine {
     contexts: HashMap<Vec<String>, Computed>,
     toolbar: Option<(String, Vec<Module>)>,
     workspace: Option<(String, Option<Workspace>)>,
+    /// Whether the browser and the detail area follow their splitters, by the window's size and
+    /// which panels are open: a splitter drag changes only the preferred sizes, which lays the
+    /// workspace out again without probing the flags anew.
+    workspace_follows: Option<(String, (bool, bool))>,
     toolbar_layout: bool,
     collecting: bool,
     nodes: Vec<StyleNode>,
@@ -214,6 +225,39 @@ struct Engine {
     variant: Option<(Arc<str>, Arc<suhina_style::sheet::Sheet>)>,
     /// Parsed device panel sheets by the hash of their text, bounded.
     device_sheets: HashMap<u64, Arc<suhina_style::sheet::Sheet>>,
+    /// Styles served this frame to a scope with no resolved style of its own.
+    approximations: usize,
+    /// Of those, the ones worked out afresh, not found among the contexts; and the theme swatches
+    /// worked out afresh.
+    context_misses: usize,
+}
+
+/// What the style engine did in the frame drawn last, for budget tests (`suhina-theme-render`):
+/// counts that later work may only lower.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Budget {
+    /// Style nodes the frame entered.
+    pub nodes: usize,
+    /// Distinct scope stacks kept with an approximate style.
+    pub contexts: usize,
+    /// Styles served to a scope whose node had no style resolved from the previous frame, so it
+    /// painted with an approximation from its class names.
+    pub approximations: usize,
+    /// Of those, the ones worked out afresh this frame; and the theme swatches worked out afresh.
+    pub context_misses: usize,
+}
+
+/// The counts of the frame drawn last; read them after the frame, before the next begins.
+pub fn budget() -> Budget {
+    ENGINE.with(|engine| {
+        let engine = engine.borrow();
+        Budget {
+            nodes: engine.nodes.len(),
+            contexts: engine.contexts.len(),
+            approximations: engine.approximations,
+            context_misses: engine.context_misses,
+        }
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -307,6 +351,8 @@ pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
         engine.nodes.clear();
         engine.parents.clear();
         engine.occurrences.clear();
+        engine.approximations = 0;
+        engine.context_misses = 0;
     });
     Frame(ui.ctx().clone(), ui.input(|input| input.time))
 }
@@ -477,7 +523,8 @@ pub const CONTROL_IDS: &[&str] = &[
 ];
 
 /// Level fields a theme selects by id (`#arrangement-volume`).
-pub const LEVEL_FIELDS: &[&str] = &["arrangement-volume", "arrangement-pan", "mixer-volume", "mixer-pan"];
+pub const LEVEL_FIELDS: &[&str] =
+    &["arrangement-volume", "arrangement-pan", "main-volume", "mixer-volume", "mixer-pan"];
 
 /// The element id a theme selects a scope by: documented controls and panels keep their
 /// literal ids; others get one derived from their key.
@@ -499,8 +546,12 @@ fn element_id(node: &StyleNode) -> String {
     {
         return name.clone();
     }
-    if node.class == "divider" && node.name.as_deref() == Some("mixer-divider") {
-        return "mixer-divider".to_owned();
+    // A strip's divider and the workspace's splitters (#1252).
+    if node.class == "divider"
+        && let Some(name) =
+            node.name.as_deref().filter(|name| ["mixer-divider", "detail-splitter", "browser-splitter"].contains(name))
+    {
+        return name.to_owned();
     }
     // A device's panel by what it is: `#device-compressor`, `#device-plugin`.
     if node.class == "device"
@@ -727,6 +778,7 @@ pub fn begin_frame(ui: &egui::Ui) {
             engine.contexts.clear();
             engine.toolbar = None;
             engine.workspace = None;
+            engine.workspace_follows = None;
         }
         if engine.user.as_ref().map(|(text, _)| text) != user.as_ref() {
             // A user sheet that does not parse keeps the last working one.
@@ -742,6 +794,7 @@ pub fn begin_frame(ui: &egui::Ui) {
             engine.contexts.clear();
             engine.toolbar = None;
             engine.workspace = None;
+            engine.workspace_follows = None;
         }
         if engine.source != source {
             let native = suhina_plugins::trace::timed("style paint parse", || {
@@ -787,6 +840,7 @@ pub fn begin_frame(ui: &egui::Ui) {
             engine.contexts.clear();
             engine.toolbar = None;
             engine.workspace = None;
+            engine.workspace_follows = None;
         }
     });
 }
@@ -821,14 +875,42 @@ pub fn scoped(stack: &[String]) -> Option<Computed> {
         {
             return Some(values.clone());
         }
-        if let Some(values) = engine.contexts.get(stack) {
-            return Some(values.clone());
+        // Only a style served is counted: not a lookup that finds none.
+        if let Some(values) = engine.contexts.get(stack).cloned() {
+            engine.approximations += 1;
+            return Some(values);
         }
         if engine.contexts.len() >= MAX_CONTEXTS {
             return None;
         }
         let values = native::scoped(&engine, stack)?;
+        engine.approximations += 1;
+        engine.context_misses += 1;
         engine.contexts.insert(stack.to_vec(), values.clone());
+        Some(values)
+    })
+}
+
+/// A theme's swatch of `color`, drawn as the theme in use styles a `theme-swatch` element with
+/// that `color` attribute (`docs/spec/theme-skins.md` › Swatches); `None` without a theme sheet.
+pub fn theme_swatch(color: Color32) -> Option<Computed> {
+    let key = vec!["theme-swatch".to_owned(), hex(color)];
+    ENGINE.with(|engine| {
+        let mut engine = engine.borrow_mut();
+        engine.source.as_ref()?;
+        if !same_source(engine.source.as_ref()) {
+            return None;
+        }
+        if let Some(values) = engine.contexts.get(&key) {
+            return Some(values.clone());
+        }
+        let values = native::theme_swatch(&engine, &key[1])?;
+        engine.context_misses += 1;
+        // Past the cache's limit a swatch is worked out each time, so that every swatch in a
+        // gallery is styled alike.
+        if engine.contexts.len() < MAX_CONTEXTS {
+            engine.contexts.insert(key, values.clone());
+        }
         Some(values)
     })
 }

@@ -7,7 +7,7 @@
 //! Suhina. What a user can change are custom properties: the **core set** every theme has (the
 //! palette tokens and the settings that were fields of the theme model: meter, artwork frame
 //! rate, liquid materials, surface gradients, the background's strength, Session geometry),
-//! registered here with Suhina Dark's values, and any the theme declares itself with
+//! registered here with Suhina Studio's values, and any the theme declares itself with
 //! `@property`. A **variant** is a small JSON file of values for those properties; the chosen
 //! one applies in the Variant tier, above the theme's own rules.
 //!
@@ -40,10 +40,11 @@ pub struct Vars {
     pub variant: Option<String>,
     /// The chosen variant's name, as the picker shows it.
     pub variant_name: Option<String>,
-    /// Whether the chosen variant says it is light (`Some(true)`) or dark.
-    pub light: Option<bool>,
     /// Why the theme is still in an earlier file format, when its migration was refused.
     pub kept: Option<Arc<str>>,
+    /// Suhina Studio's sheet, set aside while the theme has its own values (its colours are already
+    /// in the palette, so the style engine can stay off), and back in force for a variant.
+    pub sheet: Option<Arc<str>>,
 }
 
 /// A setting's smallest and largest value.
@@ -79,12 +80,12 @@ pub fn token_property(key: &str) -> String {
     format!("--{}", key.replace('.', "-"))
 }
 
-/// The core set as a style sheet: an `@property` rule for each, with Suhina Dark's values.
+/// The core set as a style sheet: an `@property` rule for each, with Suhina Studio's values.
 pub fn core_sheet() -> &'static str {
     static SHEET: OnceLock<String> = OnceLock::new();
     SHEET.get_or_init(|| {
         let defaults = core_values(&Theme::default());
-        let mut css = String::from("/* Suhina's core theme properties, with Suhina Dark's values. */\n");
+        let mut css = String::from("/* Suhina's core theme properties, with Suhina Studio's values. */\n");
         for (name, syntax, range) in core_syntaxes() {
             let Some(initial) = defaults.get(name.as_str()) else { continue };
             css.push_str(&format!("@property {name} {{ syntax: \"{syntax}\"; initial-value: {initial};"));
@@ -327,16 +328,38 @@ pub fn registered<'a>(theme: &'a Theme, name: &str) -> Option<&'a Registered> {
     core().iter().chain(theme.vars.declared.iter()).find(|p| p.name == name)
 }
 
+/// `css` parsed. The last sheet parsed is kept, so the edits of one theme (each of which resolves
+/// it again) do not parse a sheet near the size limit every time.
+fn theme_sheet(css: &Arc<str>) -> Result<Arc<Sheet>, String> {
+    thread_local! {
+        static LAST: std::cell::RefCell<Option<(Arc<str>, Arc<Sheet>)>> = const { std::cell::RefCell::new(None) };
+    }
+    LAST.with(|last| {
+        if let Some((key, sheet)) = &*last.borrow()
+            && Arc::ptr_eq(key, css)
+        {
+            return Ok(sheet.clone());
+        }
+        let sheet = Arc::new(Sheet::parse(css)?);
+        *last.borrow_mut() = Some((css.clone(), sheet.clone()));
+        Ok(sheet)
+    })
+}
+
 /// Sets the model from the theme's own values and the chosen variant's, and the Variant tier's
 /// sheet. A variant value that does not match its property's syntax is skipped with a warning.
 pub fn resolve(theme: &mut Theme) -> Vec<String> {
+    if !theme.vars.values.is_empty() && theme.skin.css.is_none() {
+        theme.skin.css = theme.vars.sheet.clone();
+    }
     let mut warnings = Vec::new();
     let mut merged = (*theme.vars.base).clone();
     let mut chosen = BTreeMap::new();
     for (name, value) in &theme.vars.values {
-        // A registered property, or a variable the theme's own `:root` sets (a helper colour).
-        if registered(theme, name).is_none() && !theme.vars.base.contains_key(name) {
-            warnings.push(format!("{name}: the theme declares no such property"));
+        // A variant holds values for the theme's declared controls (and Suhina's core
+        // properties) only, no variables of its own.
+        if registered(theme, name).is_none() {
+            warnings.push(format!("{name}: the theme declares no such control"));
             continue;
         }
         merged.insert(name.clone(), value.clone());
@@ -364,15 +387,66 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
     theme.skin.variant = variant_sheet(&theme.vars.values);
     // The theme's own variables that refer to a value the variant changes follow it, as they do
     // in the painted sheet.
-    if let (Some(css), Some(variant)) = (theme.skin.css.as_deref(), theme.skin.variant.as_deref())
-        && let (Ok(sheet), Ok(variant)) = (Sheet::parse(css), Sheet::parse(variant))
+    if let (Some(css), Some(variant)) = (theme.skin.css.as_ref(), theme.skin.variant.as_deref())
+        && let (Ok(sheet), Ok(variant)) = (theme_sheet(css), Sheet::parse(variant))
         && let Ok(full) = root_variables(&sheet, Some(&variant))
     {
         values = full;
     }
     theme.skin.variables = Arc::new(values.clone());
     warnings.extend(apply_core(theme, &values));
+    theme.picture = picture(theme);
+    match swatch(theme) {
+        Ok([r, g, b, a]) => theme.swatch = Some(egui::Color32::from_rgba_unmultiplied(r, g, b, a)),
+        Err(error) => {
+            theme.swatch = None;
+            warnings.push(format!("the swatch: {error}"));
+        }
+    }
     warnings
+}
+
+/// After the model was edited and [`sync`]ed: the variables the sheet gives under the variant's
+/// values, and the thumbnail and swatch drawn from them, so the gallery shows the edited colours.
+pub fn refresh_view(theme: &mut Theme) {
+    match theme.skin.css.as_ref().map(theme_sheet) {
+        Some(Ok(sheet)) => {
+            let variant = theme.skin.variant.as_deref().map(Sheet::parse).transpose().ok().flatten();
+            if let Ok(full) = root_variables(&sheet, variant.as_ref()) {
+                theme.skin.variables = Arc::new(full);
+            }
+        }
+        // A theme without a sheet (Suhina Studio): its base values under the variant's, as `resolve`.
+        None => {
+            let mut merged = (*theme.vars.base).clone();
+            merged.extend(theme.vars.values.clone());
+            if let Ok(resolved) = suhina_style::resolve_variables(&merged) {
+                theme.skin.variables = Arc::new(resolved);
+            }
+        }
+        Some(Err(_)) => {}
+    }
+    theme.picture = picture(theme);
+    theme.swatch = swatch(theme).ok().map(|[r, g, b, a]| egui::Color32::from_rgba_unmultiplied(r, g, b, a));
+}
+
+/// `theme`'s thumbnail for the variant it has chosen: `var()` takes the variant's root values,
+/// colours as computed colours, since the SVG renderer has no `color-mix()`.
+pub fn picture(theme: &Theme) -> Option<Arc<str>> {
+    let source = theme.thumbnail.as_deref()?;
+    Some(Arc::from(suhina_style::artwork::substitute(source, &theme.skin.variables).as_ref()))
+}
+
+/// The colour of `theme`'s swatch for the variant it has chosen, from its sheet's `:root` rules
+/// and registered properties (the core ones too) without applying it.
+pub fn swatch(theme: &Theme) -> Result<[u8; 4], String> {
+    let core = core_parsed().ok_or("the core theme properties do not parse")?;
+    let sheet = match theme.skin.css.as_ref() {
+        Some(css) => theme_sheet(css)?,
+        None => Arc::new(Sheet::parse("")?),
+    };
+    let variant = theme.skin.variant.as_deref().map(Sheet::parse).transpose()?;
+    suhina_theme_package::meta::swatch_color(&theme.meta.swatch, &[core], &sheet, variant.as_ref())
 }
 
 /// The variant's values as a `:root` rule, or nothing when it sets none.
@@ -389,18 +463,33 @@ pub fn variant_sheet(values: &BTreeMap<String, String>) -> Option<Arc<str>> {
 }
 
 /// After the model was edited: the variant's values become every core value that differs from
-/// the theme's own, keeping the values it sets for the theme's declared properties.
+/// what the theme's sheet gives for the variant's declared properties, keeping those values. A
+/// core property the sheet derives from a declared one is not written, so it follows the next
+/// change of that setting.
 pub fn sync(theme: &mut Theme) {
     let model = core_values(theme);
     theme.vars.values.retain(|name, _| !is_core(name));
+    let sheet_values = values_with_declared(theme);
     for (name, value) in model {
         // A value written as `var(--x)` or `oklch(…)` that gives the same model stays as written.
-        if theme.vars.base.get(&name).is_some_and(|base| same_value(&name, base, &value)) {
+        if sheet_values.get(&name).is_some_and(|sheet| same_value(&name, sheet, &value)) {
             continue;
         }
         theme.vars.values.insert(name, value);
     }
     theme.skin.variant = variant_sheet(&theme.vars.values);
+}
+
+/// The custom properties at the root from the theme's sheet under the variant's values, which
+/// here are all for declared properties.
+fn values_with_declared(theme: &Theme) -> Arc<BTreeMap<String, String>> {
+    if let (Some(css), Some(variant)) = (theme.skin.css.as_deref(), variant_sheet(&theme.vars.values))
+        && let (Ok(sheet), Ok(variant)) = (Sheet::parse(css), Sheet::parse(&variant))
+        && let Ok(values) = root_variables(&sheet, Some(&variant))
+    {
+        return Arc::new(values);
+    }
+    theme.vars.base.clone()
 }
 
 /// Whether two values of the core property `name` give the same model.
@@ -414,18 +503,17 @@ fn same_value(name: &str, a: &str, b: &str) -> bool {
     apply_core(&mut first, &one).is_empty() && apply_core(&mut second, &two).is_empty() && first == second
 }
 
-/// A theme variant: values for a theme's properties, in `variants/<id>.json`.
+/// A theme variant: values for a theme's declared controls, in `variants/<id>.json`, and its
+/// name. A theme's default variant is its own values, not a file.
 ///
 /// ```json
-/// { "name": "Frost", "appearance": "light", "values": { "--accent": "#88c0d0" } }
+/// { "name": "Frost", "values": { "--accent": "#88c0d0" } }
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     /// The file's name without `.json`.
     pub id: String,
     pub name: String,
-    /// `Some(true)` for a light variant, `Some(false)` for a dark one.
-    pub light: Option<bool>,
     pub values: BTreeMap<String, String>,
 }
 
@@ -454,15 +542,9 @@ impl Variant {
                 id.to_owned()
             }
         };
-        let light = match root.get("appearance").and_then(|a| a.as_str()) {
-            Some("light") => Some(true),
-            Some("dark") => Some(false),
-            None => None,
-            Some(other) => {
-                warnings.push(format!("{id}: appearance is light or dark, not {other}"));
-                None
-            }
-        };
+        for key in root.keys().filter(|key| !matches!(key.as_str(), "name" | "values" | "$schema")) {
+            warnings.push(format!("{id}: {key} is not part of a variant, which holds only values"));
+        }
         let mut values = BTreeMap::new();
         if let Some(object) = root.get("values").and_then(|v| v.as_object()) {
             for (name, value) in object.iter().take(MAX_VALUES) {
@@ -482,15 +564,12 @@ impl Variant {
                 warnings.push(format!("{id}: only the first {MAX_VALUES} values are read"));
             }
         }
-        Ok((Self { id: id.to_owned(), name, light, values }, warnings))
+        Ok((Self { id: id.to_owned(), name, values }, warnings))
     }
 
     pub fn to_json(&self) -> String {
         let mut root = serde_json::Map::new();
         root.insert("name".into(), self.name.clone().into());
-        if let Some(light) = self.light {
-            root.insert("appearance".into(), if light { "light" } else { "dark" }.into());
-        }
         let values: serde_json::Map<String, serde_json::Value> =
             self.values.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
         root.insert("values".into(), values.into());
@@ -505,7 +584,6 @@ pub fn with_variant(theme: &Theme, variant: Option<&Variant>) -> (Theme, Vec<Str
     chosen.vars.values = variant.map(|v| v.values.clone()).unwrap_or_default();
     chosen.vars.variant = variant.map(|v| v.id.clone());
     chosen.vars.variant_name = variant.map(|v| v.name.clone());
-    chosen.vars.light = variant.and_then(|v| v.light);
     let warnings = resolve(&mut chosen);
     (chosen, warnings)
 }
@@ -517,7 +595,6 @@ impl Variant {
         Some(Self {
             name: theme.vars.variant_name.clone().unwrap_or_else(|| id.clone()),
             id,
-            light: theme.vars.light,
             values: theme.vars.values.clone(),
         })
     }

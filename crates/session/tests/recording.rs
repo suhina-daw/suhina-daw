@@ -61,7 +61,6 @@ fn project_built() -> Project {
         tracks: vec![track(1, "Keys", InputChannels::None), track(2, "Mic", InputChannels::Mono(1))],
         channels: vec![channel(1), channel(2)],
         launcher: Launcher {
-            mappings: Vec::new(),
             scenes: vec![Scene::default(), Scene::default()],
             columns: vec![
                 LauncherColumn { track: TrackId(1), slots: vec![empty(), empty()] },
@@ -303,6 +302,37 @@ fn a_take_whose_slot_filled_meanwhile_goes_to_the_next_empty_one() {
     rig.render_to(BEAT * 4 + BLOCK, 0.0);
     rig.settle();
     assert!(rig.slot_clip(0, 1).is_some(), "the take went to scene 2");
+}
+
+#[test]
+fn two_tracks_with_one_name_record_to_two_files() {
+    let dir = std::env::temp_dir().join(format!("suhina-recording-twins-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut p = project();
+    p.tracks.push(track(3, "Mic", InputChannels::Mono(1)));
+    p.channels.push(channel(3));
+    p.launcher.columns.push(LauncherColumn {
+        track: TrackId(3),
+        slots: vec![Slot { clip: None, has_stop: true }, Slot { clip: None, has_stop: true }],
+    });
+    let mut rig = rig(p);
+    rig.session.save(&dir.join("song.suhina"), false).unwrap();
+    rig.run("track.setArm", json!({ "track": 2, "armed": true })).unwrap();
+    rig.run("track.setArm", json!({ "track": 3, "armed": true })).unwrap();
+    rig.run("transport.play", json!({})).unwrap();
+    rig.render_to(BEAT, 0.25);
+    rig.run("transport.record", json!({ "on": true })).unwrap();
+    let state = rig.run("record.state", json!({})).unwrap();
+    let files: Vec<&str> = state["takes"].as_array().unwrap().iter().map(|t| t["file"].as_str().unwrap()).collect();
+    // Both takes were given "Mic bar 1.wav": two writers on one file.
+    assert_eq!(files.len(), 2, "{state}");
+    assert_ne!(files[0], files[1]);
+    assert!(files.iter().any(|f| f.ends_with("Mic bar 1.wav")) && files.iter().any(|f| f.ends_with("Mic bar 1 2.wav")));
+    rig.run("transport.record", json!({ "on": false })).unwrap();
+    rig.render_to(BEAT * 2, 0.25);
+    rig.settle();
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

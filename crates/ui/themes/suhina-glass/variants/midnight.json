@@ -1,0 +1,7 @@
+{
+  "name": "Midnight",
+  "values": {
+    "--ground": "#0A0E24",
+    "--tint": "#A9B8FF"
+  }
+}

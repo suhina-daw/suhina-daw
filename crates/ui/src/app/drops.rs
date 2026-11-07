@@ -590,7 +590,8 @@ impl App {
                 }
             }
             DropTarget::Lane { track, beat } => {
-                let bar = (beat / self.bar_beats()).floor() as u64 + 1;
+                let bar = self.session().map_or(0, |s| s.project().transport.meter().position(beat.max(0.0)).bar);
+                let bar = u64::from(bar) + 1;
                 Some(format!("Copy {clip} to {}, bar {bar}", name(track)))
             }
             _ => None,

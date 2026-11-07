@@ -341,6 +341,7 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
         released.3 = released.3.saturating_sub(1);
         if released.3 == 0 {
             state.edge_released = None;
+            state.stretch_released = None;
         }
     }
     // Showing one track, the view is not scrolled down; where it was is kept for later.
@@ -1536,6 +1537,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         // The main volume as a track's: a bar that a drag sets (heard while dragging, one undo
         // step), a double-click back to 0 dB.
         let field = Rect::from_min_max(Pos2::new(inner.left() + inner.width() * 0.45, inner.top()), inner.max);
+        // An element of its own, `#main-volume`, as the tracks' are `#arrangement-volume`: without
+        // it the field paints `.arrangement`'s style as its own (#1237).
+        let volume_style = crate::kit::style_class::enter_named("value", "main-volume");
         let response = widgets::value_area(
             ui,
             field.intersect(fixed),
@@ -1563,6 +1567,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             Drag::None => {}
         }
         volume_field(&fixed_painter, field, state.main_drag.unwrap_or(db), widgets::hover(ui, &response));
+        drop(volume_style);
         let at = lying_meter(field.left() - PAD, inner.center().y);
         let level = state.meters.main;
         meter::show(ui, &fixed_painter, at, "Main", meter::Source::Main, &level, actions);
@@ -1672,6 +1677,27 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             true,
             &state.clip_look(),
         );
+        // Its gain envelope goes with it, drawn as on any clip not being edited.
+        if let Some(view) = &clip.audio_view {
+            let place = crate::arrangement::envelope::Place {
+                rect: wave_area(rect),
+                origin: x_of(start),
+                beat_width: state.beat_width,
+                ink: ink_on(motion::mix(theme::panel_background(), rgb(clip.color), 0.82)),
+            };
+            let snap = |elapsed: f64| elapsed;
+            crate::arrangement::envelope::show(
+                ui,
+                &painter.with_clip_rect(row.clip),
+                place,
+                clip.id,
+                &clip.name,
+                view,
+                false,
+                &snap,
+                actions,
+            );
+        }
     }
 
     // The empty space under the last lane: buttons that add a track, and new tracks for what

@@ -891,7 +891,6 @@ fn slot_project_built() -> Project {
                 Slot { clip: None, has_stop: true },
             ],
         }],
-        mappings: Default::default(),
     };
     p
 }
@@ -1168,7 +1167,6 @@ fn launcher_project_built() -> Project {
                 slots: vec![Slot { clip: Some(held), has_stop: true }, Slot::default()],
             },
         ],
-        mappings: Default::default(),
     };
     p
 }
@@ -1180,7 +1178,8 @@ fn an_arrangement_clip_pastes_into_a_slot_with_everything_it_carries() {
     run(&mut session, "clip.copy", json!({ "clips": [{ "track": "Bass", "index": 1 }] })).unwrap();
     let pasted = run(&mut session, "clip.paste", json!({ "track": "Drums", "scene": 1 })).unwrap();
     let placed = session.project().launcher.columns[1].slots[1].clip.as_ref().map(|c| c.id.0);
-    assert_eq!(pasted, json!({ "clip": placed, "track": 3, "scene": 1, "replaced": false }));
+    let scene_id = session.project().launcher.scenes[1].id.0;
+    assert_eq!(pasted, json!({ "clip": placed, "track": 3, "scene": 1, "scene_id": scene_id, "replaced": false }));
     assert_ne!(placed, Some(arranged.id.0), "the pasted clip is a new clip");
     let p = session.project();
     let placed = p.launcher.columns[1].slots[1].clip.clone().unwrap();
@@ -1299,11 +1298,8 @@ fn midi_slot_project_built() -> Project {
         track: TrackId(track),
         slots: vec![Slot { clip: None, has_stop: true }, Slot { clip: None, has_stop: true }],
     };
-    p.launcher = Launcher {
-        scenes: vec![Scene::default(), Scene::default()],
-        columns: vec![column(1), column(2), column(3)],
-        mappings: Default::default(),
-    };
+    p.launcher =
+        Launcher { scenes: vec![Scene::default(), Scene::default()], columns: vec![column(1), column(2), column(3)] };
     let full = Clip { start: 0.0, ..p.arrangement.lanes[0].clips[0].clone() };
     p.launcher.columns[1].slots[0].clip = Some(full);
     p
@@ -1375,6 +1371,11 @@ fn an_empty_midi_clip_in_the_arrangement_replaces_what_it_covers_unless_stacked(
     assert_eq!(made["index"], 0);
     let lead = waltz.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(2))).unwrap();
     assert_eq!((lead.clips[0].start, lead.clips[0].length, lead.clips[0].loop_range), (0.0, 3.0, None));
+    // After a change to 7/8 at bar 3 (beat 6), a clip there is one 7/8 bar, 3.5 beats.
+    run(&mut waltz, "timeSignature.add", json!({ "bar": 3, "numerator": 7, "denominator": 8 })).unwrap();
+    run(&mut waltz, "clip.create", json!({ "track": "Lead", "start": 6 })).unwrap();
+    let lead = waltz.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(2))).unwrap();
+    assert_eq!(lead.clips.iter().map(|c| (c.start, c.length)).collect::<Vec<_>>(), [(0.0, 3.0), (6.0, 3.5)]);
 
     let made = run(&mut session, "clip.create", json!({ "track": "Bass", "start": 2, "length": 4 })).unwrap();
     assert_eq!((made["start"].as_f64(), made["index"].as_u64()), (Some(2.0), Some(1)));
@@ -1396,7 +1397,7 @@ fn an_empty_midi_clip_is_refused_where_it_cannot_go_and_changes_nothing() {
         (json!({ "track": "Lead", "scene": 0 }), "already has a clip"),
         (json!({ "track": "Bass", "scene": 2 }), "from 0 to 1"),
         (json!({ "track": "Bass", "scene": -1 }), "from 0"),
-        (json!({ "track": "Bass", "scene": "one" }), "scene must be a whole number"),
+        (json!({ "track": "Bass", "scene": "one" }), "scene must be an index"),
         (json!({ "track": "Bass" }), "either start"),
         (json!({ "track": "Bass", "scene": 0, "start": 0 }), "either start"),
         (json!({ "track": "Bass", "start": -1 }), "start must be"),
@@ -1535,4 +1536,54 @@ fn command_ids_and_parameters_follow_one_convention() {
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn a_scene_without_an_id_reports_no_id_rather_than_zero() {
+    let mut project = lane_project();
+    project.launcher.scenes.push(Scene { id: SceneId(0), ..Scene::default() });
+    // The counter has run out, so `Session::new` cannot give the scene an id.
+    project.next_id = u32::MAX;
+    let mut session = Session::new(project);
+    let grid = run(&mut session, "project.launcher", json!({})).unwrap();
+    let scene = &grid["scenes"][grid["scenes"].as_array().unwrap().len() - 1];
+    assert!(scene["scene_id"].is_null() && scene["id"].is_null(), "{scene}");
+}
+
+/// `track.delete` with `tracks` deletes several tracks as one undo step: one undo brings them all
+/// back in their places, one redo deletes them again (#1188).
+#[test]
+fn several_tracks_delete_as_one_undo_step() {
+    let built = suhina_test_support::with_ids(
+        ProjectBuilder::new()
+            .midi_track(1, "Bass")
+            .midi_track(2, "Lead")
+            .midi_track(3, "Keys")
+            .notes(1, "Riff", 4.0, vec![Note::new(0.0, 1.0, 36, 1.0)])
+            .clip(2, Clip::new(ContentId(1), 0.0, 4.0))
+            .build_without_ids(),
+    );
+    let mut session = Session::new(built.clone());
+    let deleted = run(&mut session, "track.delete", json!({ "tracks": ["Bass", 2] })).unwrap();
+    assert_eq!(deleted["deleted"], json!([1, 2]));
+    assert_eq!(order(&session), ["Keys"]);
+    assert_eq!(session.project().validate(), Ok(()));
+
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &built, "one undo brings both back, Lead's clip too");
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert_eq!(order(&session), ["Keys"], "one redo deletes both again");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+
+    for wrong in [
+        json!({ "track": "Bass", "tracks": ["Lead"] }),
+        json!({}),
+        json!({ "tracks": [] }),
+        json!({ "tracks": "Bass" }),
+        json!({ "tracks": ["Bass", "Nope"] }),
+        json!({ "tracks": [99] }),
+    ] {
+        assert!(run(&mut session, "track.delete", wrong.clone()).is_err(), "{wrong}");
+        assert_eq!(session.project(), &built, "{wrong} changes nothing");
+    }
 }

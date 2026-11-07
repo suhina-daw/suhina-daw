@@ -1,0 +1,13 @@
+{
+  "name": "Snow Storm",
+  "values": {
+    "--ground": "#ECEFF4",
+    "--surface": "#E5E9F0",
+    "--ink": "#2E3440",
+    "--tint": "#5E81AC",
+    "--highlight": "#D08770",
+    "--recording": "#BF616A",
+    "--meter-normal": "#6E9A52",
+    "--meter-hot": "#D08770"
+  }
+}

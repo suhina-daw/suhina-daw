@@ -53,7 +53,6 @@ fn project() -> Project {
         launcher: Launcher {
             scenes: vec![Scene::default(), Scene::default()],
             columns: vec![column(1, Some(clip(2, 0.0))), column(2, None)],
-            mappings: Vec::new(),
         },
         ..Project::default()
     }
@@ -225,7 +224,8 @@ fn a_slot_clip_is_named_by_id_as_well() {
     let mut session = Session::new(project());
     let slot = session.project().launcher.columns[0].slots[0].clip.as_ref().unwrap().id;
     let set = run(&mut session, "clip.setLength", json!({ "clip": slot.0, "length": 2 })).unwrap();
-    assert_eq!(set, json!({ "clip": slot.0, "scene": 0, "length": 2.0 }));
+    let scene_id = session.project().launcher.scenes[0].id.0;
+    assert_eq!(set, json!({ "clip": slot.0, "scene": 0, "scene_id": scene_id, "length": 2.0 }));
     run(&mut session, "clip.delete", json!({ "clip": slot.0 })).unwrap();
     assert!(session.project().launcher.columns[0].slots[0].clip.is_none());
 }

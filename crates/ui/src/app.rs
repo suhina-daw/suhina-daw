@@ -1156,6 +1156,13 @@ impl App {
         &self.arrangement.selected_tracks
     }
 
+    /// Shows `bytes` as the program's RAM from now on and never measures it, so that renders of
+    /// the window come out the same each time (`suhina-theme-render`).
+    pub fn hold_ram(&mut self, bytes: Option<u64>) {
+        self.ram = bytes;
+        self.next_ram = Some(f64::INFINITY);
+    }
+
     /// Turns animations on or off (a setting; on by default).
     pub fn set_animations(ctx: &egui::Context, on: bool) {
         motion::set_enabled(ctx, on);
@@ -1284,6 +1291,11 @@ impl App {
 
     /// Uses the themes read from the theme files in `folder`, and draws with the one the settings
     /// name (the built-in one when there is no such file).
+    /// The names of the folders in the themes folder: ids a new theme does not take.
+    pub fn reserve_theme_ids(&mut self, names: Vec<String>) {
+        self.themes.reserve(names);
+    }
+
     pub fn set_themes(&mut self, ctx: &egui::Context, files: Vec<ThemeEntry>, folder: Option<String>) {
         self.themes.set(files, folder);
         // A variant in use whose file went: its theme's own values take its place.
@@ -2239,6 +2251,12 @@ impl App {
         }
     }
 
+    /// For tests and renders: waits until the background image being loaded is ready, so the
+    /// next frame shows it. Returns at once when none is loading.
+    pub fn wait_for_background(&mut self) {
+        self.background.wait();
+    }
+
     /// A theme file read again after it changed on disk; the window redraws in it if it is the
     /// theme in use.
     pub fn put_theme(&mut self, ctx: &egui::Context, entry: ThemeEntry) {
@@ -2838,6 +2856,8 @@ impl App {
         let corner = if full_screen { 0 } else { self.window_corner };
         if self.title_bar > 0.0 && !full_screen {
             egui::Panel::top("title-bar").exact_size(self.title_bar).frame(egui::Frame::NONE).show(ui, |ui| {
+                // The strip reads as the top of the toolbar under it, in the toolbar's colour.
+                let _style_class = crate::kit::style_class::enter("toolbar");
                 let top = egui::CornerRadius { nw: corner, ne: corner, sw: 0, se: 0 };
                 ui.painter().fill_background(ui.max_rect(), top, theme::panel_background());
             });
@@ -2905,7 +2925,10 @@ impl App {
         self.frame_trace.mark("control bar");
         egui::Panel::bottom("status-bar").exact_size(theme::STATUS_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
             let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
-            ui.painter().fill_background(ui.max_rect(), bottom, theme::panel_background());
+            {
+                let _style_class = crate::kit::style_class::enter("status-bar");
+                ui.painter().fill_background(ui.max_rect(), bottom, theme::panel_background());
+            }
             self.status_bar(ui, grid.as_ref())
         });
         self.frame_trace.mark("bars");
@@ -2964,7 +2987,7 @@ impl App {
             let inner = if let Some(layout) = &css_workspace {
                 if let Some(panel) = layout.browser {
                     over_view(ui, "panel-browser", panel, layout.main, |ui| {
-                        self.browser_panel(ui, inner, Some((panel, layout.main)));
+                        self.browser_panel(ui, inner, Some((panel, layout.main, layout.browser_follows)));
                     });
                 }
                 inner
@@ -3024,10 +3047,11 @@ impl App {
                 && self.detail_open
                 && css_workspace.as_ref().is_none_or(|layout| layout.detail.is_some())
             {
-                let geometry =
-                    css_workspace.as_ref().and_then(|layout| layout.detail.map(|detail| (layout.main, detail)));
+                let geometry = css_workspace
+                    .as_ref()
+                    .and_then(|layout| layout.detail.map(|detail| (layout.main, detail, layout.detail_follows)));
                 match geometry {
-                    Some((main, detail)) => over_view(ui, "panel-detail", detail, main, |ui| {
+                    Some((main, detail, _)) => over_view(ui, "panel-detail", detail, main, |ui| {
                         self.detail_area(ui, inner, &mut actions, geometry)
                     }),
                     None => self.detail_area(ui, inner, &mut actions, geometry),

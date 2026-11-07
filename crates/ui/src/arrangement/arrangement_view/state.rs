@@ -266,6 +266,10 @@ pub struct ArrangementViewState {
     /// It is drawn there until the project has it, or the frame the button came up showed the
     /// clip as it was before the drag for an instant.
     pub(super) edge_released: Option<((TrackId, ClipId), f64, f64, u8)>,
+    /// The edge of that clip that was let go of when it stretched the audio (Ctrl and Alt): until
+    /// the project has it, the clip is drawn stretched about the other edge, as during the drag.
+    /// Drawn unstretched in its new extent, its waveform flashed at its old scale for a few frames.
+    pub(super) stretch_released: Option<super::EdgeGrab>,
     /// Clips of a selection just moved or trimmed together: each clip, the start and end it
     /// was given, whether it moved (its content with it) and the pass it is drawn there until
     /// at most. It is drawn there until the project has it, so the selection does not show
@@ -443,6 +447,7 @@ impl Default for ArrangementViewState {
             painted_from: None,
             edge_drag: None,
             edge_released: None,
+            stretch_released: None,
             settling: Vec::new(),
             menu_beat: None,
             clip_drag: None,

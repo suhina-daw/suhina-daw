@@ -184,7 +184,7 @@ mod tests {
             }
             if motion {
                 assert!(samples[1].offset.x > 1.0 && samples[1].offset.x < 9.0);
-                assert!(samples[1].color.r() > 20 && samples[1].color.b() > 20);
+                assert!(samples[1].color.to_array()[0] > 20 && samples[1].color.to_array()[2] > 20);
                 assert_eq!(samples[2].offset.x, 10.0);
                 assert_eq!(samples[2].color, Color32::BLUE);
             } else {

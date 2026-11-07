@@ -134,8 +134,8 @@ pub(crate) fn mappings(p: &Project) -> Vec<Option<Mapping>> {
     lanes.chain(takes).chain(slots).map(|c| mapping(p, c)).collect()
 }
 
-/// Moves `clip`'s offset, length and loop from `old` to `new`, so it plays the same seconds of
-/// its file; its start stays.
+/// Moves `clip`'s offset, length, loop and gain envelope points from `old` to `new`, so it plays
+/// the same seconds of its file and each point stays on the sound it was put on; its start stays.
 fn remap(clip: &mut Clip, old: &Mapping, new: &Mapping) {
     let convert = |beat: f64| new.beat(old.seconds(beat));
     // The clip's length is in project beats; the content beats it plays are that times the rate.
@@ -150,6 +150,16 @@ fn remap(clip: &mut Clip, old: &Mapping, new: &Mapping) {
         let (start, end) = (convert(range.start), convert(range.end));
         if start.is_finite() && end.is_finite() && end > start {
             clip.loop_range = Some(LoopRange { start: start.max(0.0), end });
+        }
+    }
+    // The envelope's points are content beats, as the offset is: each goes to the beat its
+    // second of the file is at now (warp turned on or off, or the tempo of unwarped audio). Left
+    // on their beats, they slid off the sound they were put on as the waveform stretched under
+    // them. The mapping rises, so the points stay in order.
+    for point in &mut clip.audio.gain_envelope {
+        let beat = convert(point.beat);
+        if beat.is_finite() {
+            point.beat = beat.max(0.0);
         }
     }
     clip.fit_fades();
@@ -181,7 +191,7 @@ pub(crate) fn follow_all(p: &mut Project, before: &[Option<Mapping>]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use suhina_model::{StretchMode, WarpMarker};
+    use suhina_model::{GainPoint, StretchMode, WarpMarker};
 
     fn region(warped: bool, markers: &[(f64, f64)]) -> ClipAudio {
         ClipAudio {
@@ -218,6 +228,30 @@ mod tests {
         assert!((trimmed.offset - scale).abs() < 1e-9 && (trimmed.length - 2.0 * scale).abs() < 1e-9);
         let range = trimmed.loop_range.unwrap_or(LoopRange { start: 0.0, end: 0.0 });
         assert!((range.start - scale).abs() < 1e-9 && (range.end - 3.0 * scale).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_envelope_points_stay_on_their_sound_when_warp_turns_off_and_on() {
+        let seconds = 4.0 * 60.0 / 124.0;
+        let warped = Mapping::of(&region(true, &[(0.0, 0.0), (4.0, seconds)]), 90.0)
+            .unwrap_or(Mapping::Linear { per_beat: 0.0, rate: 1.0 });
+        let unwarped = Mapping::of(&region(false, &[(0.0, 0.0), (4.0, seconds)]), 90.0)
+            .unwrap_or(Mapping::Linear { per_beat: 0.0, rate: 1.0 });
+        let mut clip = Clip::new(ContentId(1), 0.0, 4.0);
+        clip.audio.gain_envelope = vec![GainPoint::new(1.0, 0.0), GainPoint::new(2.0, -6.0)];
+        // The second of the file each point is on, before and after: the same.
+        let second = |m: &Mapping, beat: f64| m.seconds(beat);
+        let before: Vec<f64> = clip.audio.gain_envelope.iter().map(|p| second(&warped, p.beat)).collect();
+        remap(&mut clip, &warped, &unwarped);
+        let after: Vec<f64> = clip.audio.gain_envelope.iter().map(|p| second(&unwarped, p.beat)).collect();
+        for (b, a) in before.iter().zip(&after) {
+            assert!((b - a).abs() < 1e-9, "{before:?} -> {after:?}");
+        }
+        assert!((clip.audio.gain_envelope[0].beat - 90.0 / 124.0).abs() < 1e-9);
+        assert_eq!(clip.audio.gain_envelope[1].db, -6.0, "levels stay");
+        // And back to the beats they had.
+        remap(&mut clip, &unwarped, &warped);
+        assert!((clip.audio.gain_envelope[1].beat - 2.0).abs() < 1e-9);
     }
 
     #[test]

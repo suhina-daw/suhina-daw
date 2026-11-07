@@ -218,6 +218,20 @@ fn panels_follow_a_dragged_line_at_the_playhead() {
 }
 
 #[test]
+fn a_clips_start_counts_bars_through_the_time_signature_changes() {
+    // Eight bars of 4/4 (32 beats), then 3/4: beat 64 is beat 3 of bar 19, not bar 17.
+    let mut project = demo_project();
+    project.transport.time_signature_changes = vec![suhina_engine::model::TimeSignatureChange {
+        bar: 8,
+        time_signature: suhina_engine::model::TimeSignature { numerator: 3, denominator: 4 },
+    }];
+    let beat_b = project.arrangement.lanes[0].clips[1].id;
+    let detail = build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)));
+    let Detail::Clip(info, _) = detail else { panic!("expected the clip") };
+    assert_eq!(info.start, "19.3");
+}
+
+#[test]
 fn a_selected_slot_clip_shows_its_scene_loop_and_fades() {
     let mut project = demo_project();
     let column = project.launcher.columns.iter_mut().find(|c| c.track == TrackId(2)).expect("Bass has slots");
@@ -932,8 +946,7 @@ fn a_theme_lays_a_generated_list_side_by_side() {
     project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
     let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
     let graph = chain.devices[0].graph.as_ref().unwrap();
-    let (theme, _) =
-        crate::kit::theme::from_sheet(".device { --suhina-param-columns: 3; --suhina-param-row: 48px; }", "");
+    let (theme, _) = crate::kit::theme::from_css(".device { --suhina-param-columns: 3; --suhina-param-row: 48px; }");
     crate::kit::skin::configure(&theme.skin);
     let cells = parameter_layout(&graph.parameters, 300.0, f32::INFINITY, &[]);
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
@@ -1134,6 +1147,18 @@ fn panel_harness_tall(detail: Detail, height: f32) -> egui_kittest::Harness<'sta
 
 /// Two presses at `at` close together: a double-click. It waits first, as a person would, so a
 /// click just before does not make it a triple click.
+/// One click at `at`, well after any earlier one (so it is no double-click).
+fn click(harness: &mut egui_kittest::Harness<'static, Vec<Action>>, at: egui::Pos2) {
+    harness.hover_at(at);
+    harness.run();
+    for _ in 0..40 {
+        harness.step();
+    }
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
+}
+
 fn double_click(harness: &mut egui_kittest::Harness<'static, Vec<Action>>, at: egui::Pos2) {
     harness.hover_at(at);
     harness.run();
@@ -1234,8 +1259,9 @@ fn the_tempo_is_typed_halved_and_doubled() {
     harness.run();
     harness.get_by_label("Double the tempo").click();
     harness.run();
+    // One click opens the text field.
     let field = harness.get_by_label("Tempo: 96.000").rect().center();
-    double_click(&mut harness, field);
+    click(&mut harness, field);
     harness.get_by_label("Tempo value").click();
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     harness.get_by_label("Tempo value").type_text("124.5");
@@ -1250,12 +1276,33 @@ fn the_tempo_is_typed_halved_and_doubled() {
     assert_eq!(sets, [(48.0, "manual".into()), (192.0, "manual".into()), (124.5, "manual".into())]);
     assert!(harness.state().iter().all(|a| a.params["clip"] == json!(beat_b.0)));
     let before = harness.state().len();
-    double_click(&mut harness, field);
+    click(&mut harness, field);
     harness.get_by_label("Tempo value").click();
     harness.get_by_label("Tempo value").type_text("80");
     harness.key_press(egui::Key::Escape);
     harness.run();
     assert_eq!(harness.state().len(), before);
+}
+
+/// The tempo field opened with one click still steps with the arrows, a whole BPM each.
+#[test]
+fn the_tempo_field_opened_with_a_click_steps_with_the_arrows() {
+    use egui_kittest::kittest::Queryable;
+    let panel = AudioPanel {
+        tempo: Some(96.0),
+        tempo_source: Some(suhina_engine::model::TempoSource::Name),
+        ..AudioPanel::default()
+    };
+    let (detail, _) = audio_detail(panel, 0.0, 0.0);
+    let mut harness = panel_harness(detail);
+    let field = harness.get_by_label("Tempo: 96.000").rect().center();
+    click(&mut harness, field);
+    assert!(harness.query_by_label("Tempo value").is_some(), "one click opens the text field");
+    harness.key_press(egui::Key::ArrowUp);
+    harness.run();
+    let sets: Vec<f64> =
+        harness.state().iter().filter(|a| a.id == "clip.setTempo").filter_map(|a| a.params["bpm"].as_f64()).collect();
+    assert_eq!(sets, [97.0]);
 }
 
 /// Set beside a marker puts it at the playhead, as a beat of the clip's content, on a quarter beat.
@@ -1567,4 +1614,70 @@ fn a_stacked_midi_panel_puts_the_tools_under_the_clip_part() {
     let head = harness.get_by_label("Whole clip").rect();
     assert!(head.top() >= scale.bottom(), "{scale:?} {head:?}");
     assert!(harness.query_by_label("Fit to scale").is_some());
+}
+
+/// A plug-in's panel, a generated list and a canvas panel in one row are as tall as each other,
+/// the tallest's height, never under a compact panel's (#1238).
+#[test]
+fn the_panels_in_a_row_are_one_height() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let mut project = with_plugin();
+    project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    project.channels[0].devices.push(Device::new("EQ", DeviceKind::Builtin("eq".into())));
+    let detail = build(&project, Some(TrackId(1)), None);
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(2400.0, 500.0)).build_ui(|ui| {
+        show_row(ui, &detail, &[], &mut Vec::new(), &mut Vec::new());
+    });
+    harness.run_steps(3);
+    let heights: Vec<f32> = ["Verb", "Utility", "EQ"]
+        .iter()
+        .map(|name| harness.get_by_label(&format!("Device {name}")).rect().height())
+        .collect();
+    assert!(heights.iter().all(|h| (h - heights[0]).abs() < 0.5), "one height: {heights:?}");
+    assert!(heights[0] >= device_row_height() - 0.5, "at least a compact panel's: {heights:?}");
+}
+
+/// Stacked lists each keep their own scroll, also when a device before them goes: the scroll is
+/// the device's, not its place's (#826).
+#[test]
+fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let mut project = demo_project();
+    project.channels[0].devices = vec![Device::new("Pitch", DeviceKind::Builtin("pitch".into()))];
+    for _ in 0..2 {
+        project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    }
+    let _ = project.assign_ids();
+    let mut harness =
+        Harness::builder().allow_missing_glyphs().with_size(egui::vec2(STACK_WIDTH, 700.0)).build_ui_state(
+            |ui, detail: &mut Detail| {
+                show_stack(ui, detail, &[], &mut Vec::new(), &mut Vec::new());
+            },
+            build(&project, Some(TrackId(1)), None),
+        );
+    harness.run_steps(10);
+    let gains =
+        |harness: &Harness<'_, Detail>| harness.query_all_by_label("Gain").map(|n| n.rect().left()).collect::<Vec<_>>();
+    let start = gains(&harness);
+    // The second Utility's list, scrolled sideways.
+    let second = harness.query_all_by_label("Device Utility").nth(1).unwrap().rect().center();
+    harness.hover_at(second);
+    harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(-150.0, 0.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    harness.run_steps(10);
+    let scrolled = gains(&harness);
+    assert!(scrolled[1] < start[1] - 50.0 && scrolled[0] == start[0], "only the second list scrolls: {scrolled:?}");
+    // Pitch goes: the Utilities move up a place each and keep their own scroll.
+    project.channels[0].devices.remove(0);
+    *harness.state_mut() = build(&project, Some(TrackId(1)), None);
+    harness.hover_at(egui::pos2(1.0, 699.0));
+    harness.run_steps(10);
+    assert_eq!(gains(&harness), scrolled, "each list keeps its own scroll");
 }

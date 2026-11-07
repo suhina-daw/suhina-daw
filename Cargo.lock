@@ -5293,6 +5293,9 @@ dependencies = [
  "drag",
  "eframe",
  "muda",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "raw-window-handle",
  "rfd",
  "serde_json",
@@ -5308,6 +5311,7 @@ dependencies = [
  "suhina-session",
  "suhina-theme-package",
  "suhina-ui",
+ "suhina-ui-gpu",
  "suhina-update",
  "window-vibrancy",
  "winit",
@@ -5797,6 +5801,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "suhina-theme-render"
+version = "0.0.1"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "egui_kittest",
+ "image",
+ "serde_json",
+ "suhina-device-api",
+ "suhina-device-registry",
+ "suhina-session",
+ "suhina-theme-package",
+ "suhina-ui",
+ "suhina-ui-gpu",
+]
+
+[[package]]
 name = "suhina-ui"
 version = "0.0.1"
 dependencies = [
@@ -5823,8 +5844,20 @@ dependencies = [
  "suhina-soundmap",
  "suhina-style",
  "suhina-test-support",
+ "suhina-theme-package",
  "suhina-update",
  "tiny-skia 0.12.0",
+]
+
+[[package]]
+name = "suhina-ui-gpu"
+version = "0.0.1"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "suhina-plugins",
+ "suhina-session",
+ "suhina-ui",
 ]
 
 [[package]]

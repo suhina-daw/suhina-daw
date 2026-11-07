@@ -232,7 +232,7 @@ pub(super) fn clip_box<'a>(
     if visible.width() <= 0.0 || visible.height() <= 0.0 {
         return None;
     }
-    let bar = (clip.start / bar_beats).floor() as u64 + 1;
+    let bar = u64::from(timeline.meter.position(clip.start.max(0.0)).bar) + 1;
     let name = if clip.name.is_empty() { "clip" } else { clip.name.as_str() };
     let response = ui.interact(visible, Id::unique(("arrangement-clip", clip.id.0)), Sense::click_and_drag());
     // The cursor says what a drag does: the lower half moves the clip (a hand; with the copy key
@@ -292,6 +292,9 @@ pub(super) fn clip_box<'a>(
             .filter_map(|(_, id)| lane.clips.iter().find(|c| c.id == *id))
             .fold((clip.start, clip.start + clip.length), |(s, e), c| (s.min(c.start), e.max(c.start + c.length)));
         menus::clip_edit_menu(ui, lane.track, clip.id, (clip.start, clip.length), joined, split_at, actions);
+        if let Some(view) = &clip.audio_view {
+            crate::arrangement::envelope::clear_item(ui, clip.id, &view.envelope, actions);
+        }
         if clip.audio
             && let Some(name) = ara
         {
@@ -353,7 +356,7 @@ pub(super) fn clip_box<'a>(
     }
     // With its gain envelope being edited, the body adds and moves points, not the clip
     // (`docs/spec/clip-panel.md` › Gain envelope).
-    let envelope_edited = clip.audio_view.is_some() && crate::arrangement::envelope::editing(ui.ctx()) == Some(clip.id);
+    let envelope_edited = clip.audio_view.is_some() && crate::arrangement::envelope::is_editing(ui.ctx(), clip.id);
     if response.double_clicked() && !envelope_edited {
         state.clip_opened = true;
     }
@@ -591,6 +594,7 @@ pub(super) fn clip_box<'a>(
         k == key && (clip.start - from).abs() < 1e-9 && (clip.start + clip.length - to).abs() < 1e-9
     }) {
         state.edge_released = None;
+        state.stretch_released = None;
     }
     let released = state.edge_released.filter(|(k, ..)| *k == key).map(|(_, from, to, _)| (from, to));
     // Another selected clip's edge dragged: this one's same edge moves as far (#956); or it was
@@ -601,7 +605,14 @@ pub(super) fn clip_box<'a>(
         .map(|d| edge_by(clip, d.grab, grid.place(d.raw, edge_keys(ui).0, false) - d.from, &grid))
         .map(|extent| off_the_selection(extent, clip, lane, &state.selected))
         .or(settled.filter(|s| !s.moved).map(|s| (s.from, s.to)));
-    let released = released.or(others_edge);
+    // The clip's tempo dragged in the clip panel: it is drawn at that tempo on every frame
+    // (below), and its gain, edges and fade handles go with it, not with the tempo last sent.
+    let tempo_extent = ui
+        .data(|d| d.get_temp::<crate::arrangement::TempoPreview>(crate::arrangement::tempo_preview_key()))
+        .filter(|p| p.clip == clip.id && clip.length > 0.0)
+        .and_then(|p| p.factor(clip.audio_view.as_ref()?))
+        .map(|f| (clip.start, clip.start + clip.length * f));
+    let released = released.or(others_edge).or(tempo_extent);
     // Copying leaves the clip where it is: its handles stay on it; moving takes them along.
     let copy_drag = state.clip_drag.is_some_and(|d| d.copy || copy_key);
     let base = if copy_drag { clip.start } else { at };
@@ -776,6 +787,7 @@ pub(super) fn clip_box<'a>(
                         actions.push(Action::new(if stretch { "clip.stretch" } else { "clip.trim" }, params));
                     }
                     state.edge_released = Some((key, from, to, 30));
+                    state.stretch_released = stretch.then_some(grab);
                 }
             }
         }
@@ -1012,6 +1024,9 @@ pub(super) fn clip_box<'a>(
             &state.clip_look(),
         );
     };
+    let mut envelope_place = None;
+    // The envelope's ink: what reads on the clip's colour, as its name does.
+    let envelope_ink = ink_on(motion::mix(theme::panel_background(), rgb(clip.color), 0.82));
     let result = match state.clip_drag {
         Some(drag) if mine(&drag) && drag.target != lane.track => {
             if drag.copy || copy_key {
@@ -1039,6 +1054,13 @@ pub(super) fn clip_box<'a>(
                     state.edge_released.filter(|(k, ..)| *k == key).map(|(_, from, to, _)| (from, to)).or(others_edge)
                 }
             };
+            // The clip's tempo dragged in the clip panel: drawn at it on every frame, stretched
+            // from its start, between the few times a second the tempo is sent.
+            let tempo_factor = ui
+                .data(|d| d.get_temp::<crate::arrangement::TempoPreview>(crate::arrangement::tempo_preview_key()))
+                .filter(|p| p.clip == clip.id && extent.is_none() && clip.length > 0.0)
+                .and_then(|p| p.factor(clip.audio_view.as_ref()?));
+            let extent = extent.or(tempo_factor.map(|f| (start, start + clip.length * f)));
             let (rect, clip_area) = match extent {
                 Some((from, to)) => {
                     let rect = clip_rect(space, from, to - from, x_of);
@@ -1046,17 +1068,37 @@ pub(super) fn clip_box<'a>(
                 }
                 None => (clip_rect(space, start, clip.length, x_of), row.clip),
             };
+            // The envelope goes with the waveform: counted from the clip's own start, over the
+            // span drawn now.
+            envelope_place = Some(crate::arrangement::envelope::Place {
+                rect: wave_area(rect),
+                origin: x_of(start),
+                beat_width: state.beat_width,
+                ink: envelope_ink,
+            });
             // An audio clip's edge dragged with Ctrl and Alt stretches its audio: drawn stretched
             // as it goes, about the edge that stays, not only once it is let go.
-            let stretching = state
+            // Let go of, it stays drawn stretched until the project has the new length.
+            let dragged = state
                 .edge_drag
                 .filter(|d| d.key == key && clip.audio && state.stretch_alt && edge_keys(ui).1 && clip.length > 0.0)
-                .zip(extent);
+                .map(|d| d.grab);
+            let released_stretch = state
+                .stretch_released
+                .filter(|_| state.edge_drag.is_none() && clip.audio && clip.length > 0.0)
+                .filter(|_| state.edge_released.is_some_and(|(k, ..)| k == key));
+            let stretching = dragged.or(released_stretch).or(tempo_factor.map(|_| EdgeGrab::Right)).zip(extent);
             match stretching {
-                Some((drag, (from, to))) => {
+                Some((grab, (from, to))) => {
                     let factor = (to - from) / clip.length;
-                    let anchor = if drag.grab == EdgeGrab::Left { clip.start + clip.length } else { clip.start };
+                    let anchor = if grab == EdgeGrab::Left { clip.start + clip.length } else { clip.start };
                     let stretched = move |beat: f64| x_of(anchor + (beat - anchor) * factor);
+                    envelope_place = Some(crate::arrangement::envelope::Place {
+                        rect: wave_area(rect),
+                        origin: stretched(start),
+                        beat_width: state.beat_width * factor as f32,
+                        ink: envelope_ink,
+                    });
                     paint_clip(
                         &painter.with_clip_rect(clip_area),
                         rect,
@@ -1105,20 +1147,25 @@ pub(super) fn clip_box<'a>(
     // The gain envelope over the waveform and under the gain field: its line while Show gain
     // envelope is on, its grid and points while it is edited; the Edit gain envelope button left
     // of the name, and Free move under it while editing.
-    if let Some(view) = &clip.audio_view {
+    // Not while it is carried onto another lane, where it is drawn with its envelope (unless a
+    // copy is carried and the clip stays here).
+    let carried_away = result.is_some() && !(copy_key || state.clip_drag.is_some_and(|d| d.copy));
+    if let Some(view) = clip.audio_view.as_ref().filter(|_| !carried_away) {
         let envelope_painter = painter.with_clip_rect(row.clip);
-        let edit = envelope_edited && state.clip_drag.is_none();
-        crate::arrangement::envelope::show(
-            ui,
-            &envelope_painter,
-            wave_area(rect),
-            clip.length,
-            clip.id,
-            name,
-            view,
-            edit,
-            actions,
-        );
+        let edit = envelope_edited && state.clip_drag.is_none() && state.edge_drag.is_none();
+        let place = envelope_place.unwrap_or(crate::arrangement::envelope::Place {
+            rect: wave_area(rect),
+            origin: rect.left(),
+            beat_width: state.beat_width,
+            ink: envelope_ink,
+        });
+        // The envelope's own grid (1/16 until another is picked in the clip's menu), not the
+        // Arrangement's.
+        let step = crate::arrangement::envelope::grid_beats(ui.ctx(), grid.bar_beats);
+        let snap = |elapsed: f64| {
+            if step > 0.0 { ((clip.start + elapsed) / step).round() * step - clip.start } else { elapsed }
+        };
+        crate::arrangement::envelope::show(ui, &envelope_painter, place, clip.id, name, view, edit, &snap, actions);
         if let Some(bar) = clip_name_bar(rect)
             && rect.width() >= ENVELOPE_BUTTON_LEAST
         {
@@ -1371,12 +1418,14 @@ pub(super) fn paint_clip(
     );
     // A looping clip's passes are marked by the notches and lines at their starts (below), not by
     // shades: the body is one colour all along.
-    // The grid shows through the body, faintly, the bars a little stronger.
+    // The grid shows through the body, under the waveform, the bars stronger: at 3.5 % and 7 % of
+    // the clip's ink it was lost on a full clip, and placing an envelope point or an edit by eye
+    // against the lanes' grid was guesswork.
     let lines = &look.grid;
     if !lines.is_empty() {
         let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
         let span = egui::Rangef::new(below, rect.bottom());
-        let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.035), motion::mix(body, ink, 0.07));
+        let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.1), motion::mix(body, ink, 0.2));
         for &(x, on_bar) in lines.iter().filter(|(x, _)| *x > rect.left() + 1.0 && *x < rect.right() - 1.0) {
             painter.vline(x, span, theme::hairline(if on_bar { bar_ink } else { beat_ink }));
         }

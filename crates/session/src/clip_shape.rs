@@ -12,7 +12,7 @@
 use serde_json::{Map, Value, json};
 use suhina_model::{Clip, LoopRange, Project};
 
-use crate::commands::Args;
+use crate::commands::{Args, scene_id};
 use crate::notes::{ClipAt, MAX_BEAT, clip_mut, locate};
 use crate::{CommandError, Session};
 
@@ -45,7 +45,16 @@ fn length(value: Option<&Value>, key: &str) -> Result<f64, CommandError> {
     Ok(length)
 }
 
-/// What names the clip `id` at `at` in a result: its `clip` id, and `index` or `scene` (from 0).
+/// `out` with the `scene_id` of the scene its `scene` names, beside it (#1156).
+fn with_scene_id(p: &Project, mut out: Map<String, Value>) -> Map<String, Value> {
+    if let Some(scene) = out.get("scene").and_then(Value::as_u64).and_then(|n| usize::try_from(n).ok()) {
+        out.insert("scene_id".into(), scene_id(p, scene));
+    }
+    out
+}
+
+/// What names the clip `id` at `at` in a result: its `clip` id, and `index` or `scene` (from 0);
+/// [`with_scene_id`] adds the scene's id.
 fn address(at: ClipAt, id: suhina_model::ClipId) -> Map<String, Value> {
     let mut out = Map::new();
     out.insert("clip".into(), json!(id.0));
@@ -125,7 +134,7 @@ pub(crate) fn set_loop(session: &mut Session, params: &Value) -> Result<Value, C
         out.insert("start".into(), json!(range.start));
         out.insert("end".into(), json!(range.end));
     }
-    Ok(Value::Object(out))
+    Ok(Value::Object(with_scene_id(&session.project, out)))
 }
 
 /// `clip.setLength`: how long a clip plays, in beats. An arrangement clip keeps its start and
@@ -139,7 +148,7 @@ pub(crate) fn set_length(session: &mut Session, params: &Value) -> Result<Value,
     clip.fit_fades();
     let mut out = address(at, clip.id);
     out.insert("length".into(), json!(length));
-    Ok(Value::Object(out))
+    Ok(Value::Object(with_scene_id(&session.project, out)))
 }
 
 /// `clip.setStart`: a clip's start marker, where in its content it starts playing. A clip that
@@ -178,7 +187,7 @@ pub(crate) fn set_start(session: &mut Session, params: &Value) -> Result<Value, 
     let mut out = address(at, clip.id);
     out.insert("offset".into(), json!(offset));
     out.insert("length".into(), json!(clip.length));
-    Ok(Value::Object(out))
+    Ok(Value::Object(with_scene_id(&session.project, out)))
 }
 
 /// The names `clip.setAudio` takes and returns for each warp mode.
@@ -299,7 +308,7 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
     out.insert("warp".into(), json!(warped));
     out.insert("mode".into(), json!(mode_name(stretch)));
     out.insert("transpose".into(), json!(transpose));
-    Ok(Value::Object(out))
+    Ok(Value::Object(with_scene_id(&session.project, out)))
 }
 
 /// Where a clip plays, as the tempo it plays its content at depends on it: an arrangement clip

@@ -94,7 +94,24 @@ pub(crate) struct Fades {
     fade_out_exponent: f64,
     /// The clip's gain envelope; `None` when it has none (flat at its gain).
     envelope: Option<Arc<Envelope>>,
+    /// An envelope edited while the clip plays: the gain it had (as a factor of the new one's),
+    /// the frame since the clip's start where the edit came and the frames it glides over.
+    glide: Option<Glide>,
 }
+
+/// A step in a playing clip's envelope (an edit swapped in under it), made a short ramp: the old
+/// gain over the new one, `ratio`, goes to 1 from frame `at` since the clip's start over
+/// `frames`. Cut from one to the other, a dragged point crackled.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Glide {
+    ratio: f64,
+    at: f64,
+    frames: f64,
+}
+
+/// How long the gain glides from an envelope to the edited one, in seconds: about as long as the
+/// blocks the edits of a drag come in, so a drag is heard as a smooth move.
+pub(crate) const ENVELOPE_GLIDE_SECONDS: f64 = 0.03;
 
 /// A clip's gain envelope as the audio thread reads it: its points, and how a frame since the
 /// clip's start maps to a beat of its content, as the readers play it (offset, loop, the repitch
@@ -115,7 +132,7 @@ pub(crate) struct Envelope {
 
 impl Envelope {
     /// The envelope of `clip` on `clock`, or `None` when it has no points.
-    fn of(clip: &Clip, clock: &TempoClock) -> Option<Arc<Self>> {
+    pub(crate) fn of(clip: &Clip, clock: &TempoClock) -> Option<Arc<Self>> {
         let points = clip.audio.envelope_points();
         if points.is_empty() {
             return None;
@@ -180,6 +197,55 @@ impl Fades {
             fade_in_exponent: clip.fade_in_curve.exponent(),
             fade_out_exponent: clip.fade_out_curve.exponent(),
             envelope: Envelope::of(clip, &TempoClock::Constant { bpm: 0.0, per_beat: frames_per_beat }),
+            glide: None,
+        }
+    }
+
+    /// The envelope's gain (a factor, with any glide) `since_start` frames after the clip
+    /// starts. Never allocates.
+    pub(crate) fn envelope_gain(&self, since_start: f64, extra: f64) -> f64 {
+        let gain = self.envelope.as_ref().map_or(1.0, |e| e.gain(since_start, extra));
+        match self.glide {
+            Some(Glide { ratio, at, frames }) if since_start >= at && since_start < at + frames => {
+                let t = (since_start - at) / frames;
+                gain * (ratio + (1.0 - ratio) * t)
+            }
+            _ => gain,
+        }
+    }
+
+    /// The clip's envelope, shared (no copy): what a graph swapped in after an envelope message
+    /// takes from the graph it replaces.
+    pub(crate) fn envelope(&self) -> Option<Arc<Envelope>> {
+        self.envelope.clone()
+    }
+
+    /// Puts `envelope` in place of the clip's envelope (an edit sent as a message, without a new
+    /// graph) and returns the one it replaces, for the controller to free: nothing is freed on
+    /// the audio thread. A clip playing `since_start` frames after its start glides from the gain
+    /// it had there to the new one over `frames`. Never allocates.
+    pub(crate) fn replace_envelope(
+        &mut self,
+        envelope: Option<Arc<Envelope>>,
+        since_start: Option<f64>,
+        frames: f64,
+    ) -> Option<Arc<Envelope>> {
+        let was = since_start.map(|at| (at, self.envelope_gain(at, 0.0)));
+        let old = std::mem::replace(&mut self.envelope, envelope);
+        if let Some((at, gain)) = was {
+            self.glide_from(gain, at, frames);
+        }
+        old
+    }
+
+    /// Glides from `before`, the gain the clip played `since_start` frames after its start with
+    /// its old envelope, to this envelope over `frames`, when they differ. Never allocates.
+    pub(crate) fn glide_from(&mut self, before: f64, since_start: f64, frames: f64) {
+        self.glide = None;
+        let now = self.envelope_gain(since_start, 0.0);
+        let ratio = before / now;
+        if ratio.is_finite() && (ratio - 1.0).abs() > 1e-6 && frames >= 1.0 {
+            self.glide = Some(Glide { ratio, at: since_start, frames });
         }
     }
 
@@ -218,7 +284,7 @@ impl Fades {
         };
         let fade_in = bent(self.fade_in, since_start, self.fade_in_shape, self.fade_in_exponent);
         let fade_out = bent(self.fade_out, until_end, self.fade_out_shape, self.fade_out_exponent);
-        let envelope = self.envelope.as_ref().map_or(1.0, |e| e.gain(since_start, extra));
+        let envelope = self.envelope_gain(since_start, extra);
         (guard.clamp(0.0, 1.0) * fade_in.clamp(0.0, 1.0) * fade_out.clamp(0.0, 1.0) * envelope) as f32
     }
 }
@@ -323,6 +389,11 @@ impl AudioEvent {
         &self.fades
     }
 
+    /// The clip's fades and gain envelope, to glide an edit in at a swap.
+    pub(crate) fn fades_mut(&mut self) -> &mut Fades {
+        &mut self.fades
+    }
+
     pub(crate) fn warped(&self) -> bool {
         self.warped
     }
@@ -347,6 +418,12 @@ impl AudioEvent {
         self.shift = 0.0;
         let shift = seconds - self.file_seconds(position);
         self.shift = if shift.is_finite() { shift } else { 0.0 };
+    }
+
+    /// Drops a carry-over from [`AudioEvent::continue_from`]: the clip plays the file position
+    /// of its beats again.
+    pub(crate) fn play_from_beats(&mut self) {
+        self.shift = 0.0;
     }
 
     /// The clip beat played `elapsed` project beats after the clip starts: from the offset, then

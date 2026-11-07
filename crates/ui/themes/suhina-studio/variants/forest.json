@@ -1,0 +1,10 @@
+{
+  "name": "Forest",
+  "values": {
+    "--ground": "#131F19",
+    "--surface": "#1B2A22",
+    "--ink": "#E6EEE8",
+    "--tint": "#7FCF9A",
+    "--highlight": "#F0C674"
+  }
+}
