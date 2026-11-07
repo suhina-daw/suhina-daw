@@ -20,10 +20,13 @@ const BEAT: usize = SR as usize / 2;
 /// The click guard at the clip's ends, in frames (2 ms).
 const GUARD: f64 = 0.002 * SR as f64;
 
+/// An audio file and how a clip plays it.
+pub(crate) type Source = (AudioRegion, ClipAudio);
+
 /// One audio track playing `file` from an arrangement clip of `length` beats with the given
 /// fades, and the same clip in its launcher slot.
-pub(crate) fn project(region: AudioRegion, length: f64, fade_in: f64, fade_out: f64) -> Project {
-    let clip = Clip { fade_in, fade_out, ..Clip::new(ContentId(1), 0.0, length) };
+pub(crate) fn project((region, audio): Source, length: f64, fade_in: f64, fade_out: f64) -> Project {
+    let clip = Clip { fade_in, fade_out, audio, ..Clip::new(ContentId(1), 0.0, length) };
     Project {
         tracks: vec![Track {
             content: ContentKinds { notes: false, audio: true },
@@ -57,23 +60,27 @@ pub(crate) fn project(region: AudioRegion, length: f64, fade_in: f64, fade_out: 
     }
 }
 
-pub(crate) fn region(file: &str, warped: bool, stretch: StretchMode, seconds: f64) -> AudioRegion {
-    AudioRegion {
+pub(crate) fn region(file: &str, warped: bool, stretch: StretchMode, seconds: f64) -> Source {
+    let region = AudioRegion {
         sample_rate: Some(SR),
         channels: Some(1),
         duration_seconds: Some(seconds),
+        ..AudioRegion::new(file)
+    };
+    let audio = ClipAudio {
         warped,
         stretch,
         warp_markers: vec![
             WarpMarker { time: 0.0, audio_time: 0.0 },
             WarpMarker { time: seconds * 2.0, audio_time: seconds },
         ],
-        ..AudioRegion::new(file)
-    }
+        ..ClipAudio::default()
+    };
+    (region, audio)
 }
 
 /// Two seconds of a constant 0.25, so the render shows the envelope itself.
-fn constant() -> (AudioRegion, AudioPool) {
+fn constant() -> (Source, AudioPool) {
     let mut pool = AudioPool::new();
     pool.files
         .insert("dc.wav".into(), Arc::new(AudioData { sample_rate: SR, channels: 1, samples: vec![0.25; 16_000] }));
@@ -364,7 +371,7 @@ fn a_clip_ends_on_silence_like_it_starts() {
     assert!(launched[2 * BEAT - 1..].iter().all(|s| *s == 0.0), "{:?}", &launched[2 * BEAT - 3..2 * BEAT + 1]);
 }
 
-fn region_for_stretch() -> AudioRegion {
+fn region_for_stretch() -> Source {
     region("sine.wav", true, StretchMode::Smooth, 2.0)
 }
 

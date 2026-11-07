@@ -230,6 +230,10 @@ clips are under `DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events`**, 
 | Clip gain | `SampleVolume@Value` | Linear, `1` = 0 dB; −6 dB is `0.5011872053` (file `36`). |
 | Transpose | `PitchCoarse@Value`, `PitchFine@Value` | Semitones, and cents **(fine: hypothesis)**. |
 
+The file and its rate and length become the content's audio region; the warp switch, mode, markers,
+gain and transpose become the clip's own audio state (`Clip::audio`, [ADR 0035](../decisions/0035-clip-gain-envelope.md)),
+as each `AudioClip` carries its own.
+
 **Warp markers.** A newly added file got markers at (0 s, beat 0) and (4 s, beat 8): Live assumed
 120 bpm. Each list ends with one more marker 1/32 beat after the last real one
 ((4.015625 s, beat 8.03125)); it sets the playback rate after the last marker. Adding a marker on

@@ -233,7 +233,7 @@ fn beat(params: &Value) -> Result<f64, CommandError> {
 
 /// `params["curve"]`: four numbers (the two control points), each from -0.5 to 1.5 as a split can
 /// give ([`CONTROL_MIN`], [`CONTROL_MAX`]), or one bend from -1 to 1 for the mirrored curve.
-fn curve(params: &Value) -> Result<Option<Curve>, CommandError> {
+pub(crate) fn curve(params: &Value) -> Result<Option<Curve>, CommandError> {
     let bad = || {
         format!("curve must be [x1, y1, x2, y2], each from {CONTROL_MIN} to {CONTROL_MAX}, or a bend from -1 to 1")
             .into()

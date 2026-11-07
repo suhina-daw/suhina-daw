@@ -322,6 +322,38 @@ pub struct ClipInfo {
     /// Every picked MIDI clip, for its row in the column that gives it the piano roll's focus
     /// (#1054): its track and clip, what the row says ("Bass · Riff") and whether it has the focus.
     pub picked: Vec<(TrackId, ClipId, String, bool)>,
+    /// The audio clip's own state the panel's groups show (`docs/spec/clip-panel.md`); none for a
+    /// MIDI clip.
+    pub panel: Option<AudioPanel>,
+}
+
+/// What an audio clip's panel shows beyond the rows: its id, colour, tempo and envelope, and
+/// where the playhead is in it.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AudioPanel {
+    pub clip: ClipId,
+    /// The colour it shows: its own, or its track's.
+    pub color: Option<suhina_engine::model::Rgb>,
+    /// The tempo its audio is warped from, when it is warped, and where that came from.
+    pub tempo: Option<f64>,
+    pub tempo_source: Option<suhina_engine::model::TempoSource>,
+    /// How many points its gain envelope has.
+    pub envelope_points: usize,
+    /// The playhead as a beat of the clip's content, for the Set buttons; none for a slot's clip,
+    /// which has no place on the arrangement's timeline.
+    pub playhead: Option<f64>,
+    /// Whether the panel has Set buttons: an arrangement clip's has, greyed while `playhead` is
+    /// none; a slot's clip has none.
+    pub set_buttons: bool,
+    /// What each source says the tempo is (metadata, file name, detection), once the Find menu
+    /// asked for it.
+    pub candidates: Option<[Option<f64>; 3]>,
+    /// A bar of the project in beats, for the markers' `bar.beat.sixteenth`.
+    pub bar_beats: f64,
+    /// The clip's length in beats, as its title says it.
+    pub length_beats: f64,
+    /// The key of its audio, when one was given (`clip.setScale`).
+    pub scale: Option<suhina_engine::model::Scale>,
 }
 
 /// What the detail area shows for a clip that has an editor: the editor, or its track's devices.
@@ -564,6 +596,24 @@ fn show_value(device_box: &mut DeviceBox, param: &str, value: f64) {
     }
 }
 
+/// The beat of `clip`'s content that plays at song beat `beat`, as the engine plays it: its start
+/// marker plus the beats since its start, times its repitch rate when it is not warped, around its
+/// loop. For the clip panel's Set buttons (`docs/spec/clip-panel.md` › Set to the playhead).
+pub fn content_beat_at(clip: &suhina_engine::model::Clip, beat: f64) -> f64 {
+    let rate = if clip.audio.warped { 1.0 } else { 2f64.powf(clip.audio.transpose / 12.0) };
+    let rate = if rate.is_finite() && rate > 0.0 { rate } else { 1.0 };
+    let loop_range = clip.loop_range.filter(|r| r.end > r.start);
+    let offset = match loop_range {
+        Some(r) if clip.offset >= r.end => r.start,
+        _ => clip.offset,
+    };
+    let content = offset + (beat - clip.start).max(0.0) * rate;
+    match loop_range {
+        Some(r) if content >= r.end => r.start + (content - r.end).rem_euclid(r.end - r.start),
+        _ => content,
+    }
+}
+
 /// The detail for a selected clip (it wins, with its own track's chain) or track.
 pub fn build(project: &Project, track: Option<TrackId>, clip: Option<ClipRef>) -> Detail {
     build_with(project, track, clip, &mut |_, _| None, crate::detail::device_widgets::Lists::default())
@@ -624,10 +674,10 @@ pub fn build_with(
                 looping: placed.loop_range.is_some(),
                 loop_range: placed.loop_range.map(|r| (r.start, r.end)),
                 audio: audio.is_some(),
-                gain_db: audio.map(|region| gain_to_db(region.gain)),
-                warped: audio.is_some_and(|region| region.warped),
-                stretch: audio.map(|region| region.stretch).unwrap_or_default(),
-                transpose: audio.map_or(0.0, |region| region.transpose),
+                gain_db: audio.map(|_| gain_to_db(placed.audio.gain)),
+                warped: audio.is_some() && placed.audio.warped,
+                stretch: if audio.is_some() { placed.audio.stretch } else { Default::default() },
+                transpose: if audio.is_some() { placed.audio.transpose } else { 0.0 },
                 at: Some(match scene {
                     Some(scene) => ClipRef::Slot(id, scene),
                     None => ClipRef::Arrangement(id, placed.id),
@@ -639,6 +689,19 @@ pub fn build_with(
                 switch: None,
                 others: Vec::new(),
                 picked: Vec::new(),
+                panel: audio.map(|_| AudioPanel {
+                    clip: placed.id,
+                    color: placed.color.or_else(|| project.track(id).and_then(|t| t.color)),
+                    tempo: placed.audio.tempo().filter(|_| placed.audio.warped),
+                    tempo_source: placed.audio.tempo_source,
+                    envelope_points: placed.audio.gain_envelope.len(),
+                    playhead: None,
+                    set_buttons: scene.is_none(),
+                    candidates: None,
+                    bar_beats: bar,
+                    length_beats: placed.length,
+                    scale: content.and_then(|c| c.scale),
+                }),
             }),
             chain(project, id, plugins, nam.clone()),
         );
