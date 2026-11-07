@@ -160,21 +160,30 @@ switch; the same again closes it. While it is open:
   point, an open hand, and a closed one while it is dragged;
 - faint lines show the dB grid (Settings › Gain envelope grid: 0.5, 1, 2, 3 or 6 dB, 1 dB by
   default; lines closer than 5 points are left out), the 0 dB line stronger;
-- a **click** on the line adds a point there, on the beat grid, at the level the line has there, so
-  the line keeps its shape;
+- the points are round dots, as an automation lane's are; two never sit on each other: a click on
+  the line within a dot's width (8 points) of a point adds none, and a point let go within a dot's
+  width of another's dot, on any pass of a loop, is one with it;
+- a **click** on the line adds a point there, on the envelope grid, at the level the line has
+  there, so the line keeps its shape;
 - a **drag** from the line adds a point and moves it; a point is **dragged** to move it: sideways in
-  time on the Arrangement's beat grid, up and down in level on the dB grid and below the ceiling;
+  time on the envelope grid, up and down in level on the dB grid and below the ceiling;
   dragged over another point it passes it, as on an automation lane, and on another point's beat it
   stays on the side it came from. Within 3 points of the middle it goes to 0 dB itself, the sample's
   own level. Alt holds it off both grids and the middle while it is dragged, as Free move does (and
   as Alt frees a drag on the piano roll's grid); Shift moves it a tenth as much, off the grids too. Its value shows beside the pointer
   while the button is down ("−3 dB");
-- the **round handle** half-way along a sloping segment (one at least 28 points wide) bends it when
+- the **ring** half-way along a sloping segment (hollow, as a device's curve handle is, so it is not
+  taken for a point) (one at least 28 points wide) bends it when
   dragged up or down, as an automation lane's does, and a double-click on it straightens it; Alt
   and a drag from the line bend the segment under the pointer the same way. A point added on a bent
   segment cuts its curve in two, so the line keeps its shape (`Curve::split`);
-- **Free move**, a button under the name, lets points move freely, in time and to a tenth of a dB,
-  instead of on the grids; Settings › Envelope points move says which it starts as;
+- **Free move**, a button under the name and an item of the clip's menu, lets points move freely,
+  in time and to a tenth of a dB, instead of on the grids; Settings › Envelope points move says
+  which it starts as;
+- the **envelope grid** is the envelope's own, not the Arrangement's: 1/16 until another is picked
+  under **Envelope grid** in any audio clip's menu (8 Bars to 1/32, as the piano roll's fixed grid,
+  and 1/64). The pick holds for every clip's envelope until the app quits. Finer than 1/64 is Free
+  move: 1/128 is about two points apart at a usual zoom;
 - while a clip's edge is dragged, its envelope is drawn with its waveform: a looping clip dragged
   longer shows the envelope on every new pass at once;
 - **Shift** and a drag of the line moves the whole line up or down by the same dB, and

@@ -24,11 +24,12 @@ use super::timeline::AudioView;
 use crate::kit::theme;
 use crate::kit::widgets::Action;
 
-/// The side of a point's square, and of the area that takes the pointer around it.
+/// The width of a point's dot, as an automation lane's are round, and of the area that takes
+/// the pointer around it. Points nearer than a dot's width on screen are one ([`show`]).
 const POINT: f32 = 8.0;
 const POINT_HIT: f32 = 11.0;
 /// Most passes of a loop whose points are drawn; a long loop of a short stretch would draw
-/// thousands of squares nobody can tell apart.
+/// thousands of dots nobody can tell apart.
 const MAX_PASSES: usize = 256;
 /// The line is drawn as a point every this many points across.
 const STEP: f32 = 2.0;
@@ -38,8 +39,8 @@ const GRID_GAP: f32 = 5.0;
 const ZERO_PULL: f32 = 3.0;
 /// How near the line, in points, the pointer adds a point or bends a segment.
 const LINE_HIT: f32 = 5.0;
-/// The bend handle half-way along a segment, as an automation lane's: its radius, and the
-/// narrowest segment, in points, that has one.
+/// The bend handle half-way along a segment, a ring (hollow, as a device's curve handle is, so it
+/// is not taken for a point): its radius, and the narrowest segment, in points, that has one.
 const CURVE_HANDLE: f32 = 3.5;
 const CURVE_HANDLE_MIN: f32 = 28.0;
 /// Points of drag for one step of a curve drag, as on an automation lane.
@@ -389,7 +390,7 @@ pub struct Place {
 /// Draws `view`'s envelope over the clip at `place`. While `edit` is on, the dB grid shows, the
 /// body takes the pointer (a click adds a point, a drag adds one and moves it) and the points can
 /// be dragged; `snap` puts a beat from the clip's start on the timeline's grid, unless Free move
-/// is on or Alt (or Shift, which also moves a tenth as much) held. What changes is pushed to `actions`. The points' squares are named
+/// is on or Alt (or Shift, which also moves a tenth as much) held. What changes is pushed to `actions`. The points' dots are named
 /// "Envelope point N of NAME".
 #[allow(clippy::too_many_arguments)]
 pub fn show(
@@ -486,12 +487,18 @@ pub fn show(
         let beat = mapping.content(placed_at(pointer.x));
         with_point(&points, beat, (envelope_db_at(&points, beat) * 100.0).round() / 100.0)
     };
+    // A point already there, within a dot's width on screen: the line takes no second one on it.
+    let taken = |x: f32| {
+        points.iter().any(|p| mapping.places(p.beat, length).into_iter().any(|at| (x_of(at) - x).abs() < POINT))
+    };
     if let Some(body) = &body
         && body.clicked()
         && let Some(pointer) = body.interact_pointer_pos()
     {
         if !alt {
-            actions.push(set(clip, &add_at(pointer).0));
+            if !taken(pointer.x) {
+                actions.push(set(clip, &add_at(pointer).0));
+            }
         } else if mods.shift {
             // Alt+Shift and a click takes the segment's points away.
             let gone = segment_at(&points, mapping.content(elapsed_at(pointer.x)));
@@ -523,7 +530,7 @@ pub fn show(
                 d.insert_temp(lift_key(), Lift { clip, from: from.clone(), moved, start });
                 d.insert_temp(draft_key(), Draft { clip, index: usize::MAX, points: from });
             });
-        } else if !alt {
+        } else if !alt && !taken(pointer.x) {
             let (more, index) = add_at(pointer);
             ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: more }));
         }
@@ -599,8 +606,8 @@ pub fn show(
                 drag_curve(ui, clip, response.drag_delta().y);
             }
             let hover = if response.hovered() || response.dragged() { 1.5 } else { 0.0 };
-            painter.circle_filled(center, CURVE_HANDLE + hover + 1.5, halo);
-            painter.circle_filled(center, CURVE_HANDLE + hover, line_ink);
+            painter.circle_stroke(center, CURVE_HANDLE + hover, Stroke::new(3.5, halo));
+            painter.circle_stroke(center, CURVE_HANDLE + hover, Stroke::new(1.5, line_ink));
         }
     }
 
@@ -628,9 +635,9 @@ pub fn show(
                 info
             });
             let hovered = response.hovered() || response.dragged() || dragging == Some(index);
-            let square = Rect::from_center_size(center, Vec2::splat(if hovered { POINT + 2.0 } else { POINT }));
-            painter.rect_filled(square.expand(1.5), 1.0, halo);
-            painter.rect_filled(square, 0.0, if hovered { ink } else { line_ink });
+            let radius = if hovered { POINT / 2.0 + 1.0 } else { POINT / 2.0 };
+            painter.circle_filled(center, radius + 1.5, halo);
+            painter.circle_filled(center, radius, if hovered { ink } else { line_ink });
             // Delete over it or Alt and a click takes it away; a double-click puts it back at 0 dB.
             let delete_key = response.hovered() && ui.input(|i| i.key_pressed(egui::Key::Delete));
             if delete_key || (response.clicked() && mods.alt) {
@@ -690,8 +697,24 @@ pub fn show(
             d.remove::<CurveEdit>(curve_key());
             d.remove::<Lift>(lift_key());
         });
-        if done.points != view.envelope {
-            actions.push(dragged(clip, &done.points));
+        // A point let go within a dot's width of another's dot, on screen (on any pass of a loop),
+        // is one with it.
+        let mut kept = done.points;
+        let dots = |p: &GainPoint| -> Vec<Pos2> {
+            let y = y_of(rect, p.db, top);
+            mapping.places(p.beat, length).into_iter().map(|at| Pos2::new(x_of(at), y)).collect()
+        };
+        if let Some(moved) = kept.get(done.index) {
+            let here = dots(moved);
+            let on_another = kept.iter().enumerate().filter(|(i, _)| *i != done.index).any(|(_, p)| {
+                dots(p).iter().any(|q| here.iter().any(|h| (q.x - h.x).abs() < POINT && (q.y - h.y).abs() < POINT))
+            });
+            if on_another {
+                kept.remove(done.index);
+            }
+        }
+        if kept != view.envelope {
+            actions.push(dragged(clip, &kept));
         }
     }
     if let Some(index) = removed {
@@ -818,6 +841,54 @@ pub fn clear_item(ui: &mut Ui, clip: ClipId, envelope: &[GainPoint], actions: &m
         actions.push(set(clip, &[]));
         ui.close();
     }
+    grid_menu(ui);
+}
+
+/// The gain envelope's grid, its own rather than the Arrangement's: an index into the fixed
+/// values (`FIXED_VALUES`), 1/16 until one is picked, kept for every clip until the app quits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EnvelopeGrid(usize);
+
+fn grid_key() -> Id {
+    Id::unique("clip-envelope-grid")
+}
+
+/// The envelope grid's index into the fixed values.
+pub fn grid(ctx: &egui::Context) -> usize {
+    ctx.data(|d| d.get_temp::<EnvelopeGrid>(grid_key()))
+        .map_or(crate::detail::piano_roll_grid::FIXED_SIXTEENTH, |g| g.0)
+}
+
+/// The envelope grid's values: the fixed grid's, and 1/64 for the finest edits of a vocal. Finer
+/// than that is Free move: at any zoom a point can be placed, 1/128 is about two pixels apart.
+const GRID_VALUES: [&str; 10] = ["8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"];
+
+/// The envelope grid's step in beats, at `bar_beats` a bar.
+pub fn grid_beats(ctx: &egui::Context, bar_beats: f64) -> f64 {
+    match grid(ctx) {
+        9 => 1.0 / 16.0,
+        index => crate::detail::piano_roll_grid::fixed_value_beats(index, bar_beats),
+    }
+}
+
+/// Envelope grid in a clip's menu: the values, the one in use checked, and Free move. A pick
+/// holds for every clip's envelope from then on, until the app quits.
+fn grid_menu(ui: &mut Ui) {
+    let current = grid(ui.ctx());
+    let free = free_move(ui.ctx());
+    if ui.selectable_label(free, "Free move").clicked() {
+        set_free_move(ui.ctx(), !free);
+        ui.close();
+    }
+    ui.menu_button("Envelope grid", |ui| {
+        for (index, value) in GRID_VALUES.iter().enumerate() {
+            let name = value.replace(" bars", " Bars").replace(" bar", " Bar");
+            if ui.selectable_label(index == current, name).clicked() {
+                ui.data_mut(|d| d.insert_temp(grid_key(), EnvelopeGrid(index)));
+                ui.close();
+            }
+        }
+    });
 }
 
 /// The Edit gain envelope button at `rect` (left of the clip's name), lit while `on`. Returns

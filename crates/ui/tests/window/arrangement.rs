@@ -2601,6 +2601,75 @@ fn a_clip_carried_to_another_track_leaves_no_envelope_behind() {
     assert!(harness.query_by_label("Edit gain envelope of Loop").is_some(), "back with the clip once it lands");
 }
 
+/// Two envelope points never sit on top of each other on screen, Free move or not: a click on
+/// the line within a dot's width of a point adds none, and a point let go next to another is
+/// one with it.
+#[test]
+fn envelope_points_on_top_of_each_other_are_one() {
+    let mut harness = window_with_step(audio_app(), 1.0 / 60.0);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let clip = harness.get_by_label("Clip Loop on Loop at bar 1").rect();
+    click_name_bar(&mut harness, "Clip Loop on Loop at bar 1");
+    harness.get_by_label("Edit gain envelope of Loop").click();
+    harness.run();
+    harness.get_by_label("Free move").click();
+    harness.run();
+    let body = harness.get_by_label("Gain envelope of Loop").rect();
+    let press = |harness: &mut Harness<'static, App>, from: egui::Pos2, to: egui::Pos2| {
+        // Half a second on from the last press: two presses close together are a double-click.
+        for _ in 0..30 {
+            harness.step();
+        }
+        harness.hover_at(from);
+        harness.run();
+        harness.drag_at(from);
+        harness.run();
+        harness.hover_at(to);
+        harness.run();
+        harness.drop_at(to);
+        harness.run();
+    };
+    let at = egui::pos2(clip.left() + clip.width() * 0.4, body.center().y);
+    press(&mut harness, at, at);
+    assert_eq!(loop_envelope(&harness).len(), 1);
+    // Just beside it, past the point's own grip but within its dot's width: no second one.
+    let beside = at + egui::vec2(7.0, 0.0);
+    press(&mut harness, beside, beside);
+    assert_eq!(loop_envelope(&harness).len(), 1, "no point on top of another");
+    // A second one between two passes of the first, dragged back next to the first, is one with it.
+    // The clip loops its audio every 32 points here, the point with it: half-way between passes.
+    let later = at + egui::vec2(16.0, 0.0);
+    press(&mut harness, later, later);
+    assert_eq!(loop_envelope(&harness).len(), 2);
+    // Its dot where it was added (by content beat it may come first: the clip loops).
+    let point = (1..=2)
+        .flat_map(|n| {
+            harness
+                .get_all_by_label(&format!("Envelope point {n} of Loop"))
+                .map(|n| n.rect().center())
+                .collect::<Vec<_>>()
+        })
+        .min_by(|a, b| a.distance(later).total_cmp(&b.distance(later)))
+        .expect("the point");
+    press(&mut harness, point, at + egui::vec2(3.0, 1.0));
+    assert_eq!(loop_envelope(&harness).len(), 1, "let go on the first: {:?}", loop_envelope(&harness));
+    // The clip's menu has Free move (on here) and the envelope's own grid, down to 1/64.
+    harness.get_by_label("Clip Loop on Loop at bar 1").click_secondary();
+    harness.run();
+    // The menu's item (the button under the clip's name has the same name).
+    harness.get_all_by_label("Free move").last().expect("the menu item").click();
+    harness.run();
+    assert!(!suhina_ui::arrangement::envelope::free_move(&harness.ctx), "Free move from the menu");
+    harness.get_by_label("Clip Loop on Loop at bar 1").click_secondary();
+    harness.run();
+    harness.get_by_label("Envelope grid").hover();
+    harness.run();
+    harness.get_by_label("1/64").click();
+    harness.run();
+    assert_eq!(suhina_ui::arrangement::envelope::grid_beats(&harness.ctx, 4.0), 1.0 / 16.0);
+}
+
 /// The Loop clip's gain envelope points, as the project has them.
 fn loop_envelope(harness: &Harness<'static, App>) -> Vec<(f64, f64)> {
     harness
@@ -2662,7 +2731,7 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     assert_eq!(points.len(), 1, "{points:?}");
     assert!(points[0].1 < 0.0, "below 0 dB, where it was taken: {points:?}");
     assert_eq!(points[0].1, points[0].1.round(), "on the 1 dB grid: {points:?}");
-    assert_eq!(points[0].0, points[0].0.round(), "on the beat grid: {points:?}");
+    assert_eq!(points[0].0 * 4.0, (points[0].0 * 4.0).round(), "on the envelope's 1/16 grid: {points:?}");
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
     assert!(loop_envelope(&harness).is_empty());

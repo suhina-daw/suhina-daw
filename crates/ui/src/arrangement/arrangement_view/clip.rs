@@ -1137,7 +1137,12 @@ pub(super) fn clip_box<'a>(
             beat_width: state.beat_width,
             ink: envelope_ink,
         });
-        let snap = |elapsed: f64| grid.place(clip.start + elapsed, false, false) - clip.start;
+        // The envelope's own grid (1/16 until another is picked in the clip's menu), not the
+        // Arrangement's.
+        let step = crate::arrangement::envelope::grid_beats(ui.ctx(), grid.bar_beats);
+        let snap = |elapsed: f64| {
+            if step > 0.0 { ((clip.start + elapsed) / step).round() * step - clip.start } else { elapsed }
+        };
         crate::arrangement::envelope::show(ui, &envelope_painter, place, clip.id, name, view, edit, &snap, actions);
         if let Some(bar) = clip_name_bar(rect)
             && rect.width() >= ENVELOPE_BUTTON_LEAST
