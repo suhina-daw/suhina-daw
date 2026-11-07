@@ -108,9 +108,15 @@ pub(crate) struct Chain {
     /// The index of the bus chain this chain's output goes into, or `None` for the output. Bus
     /// chains come after the chains that feed them, so they run after them in a block.
     pub(crate) target: Option<usize>,
-    /// Some chain plays into this one (a group bus): it runs after them, in order, rather than
-    /// in the stages the other chains run their plug-ins in together. Set with `target`.
+    /// Some chain plays into this one (a group bus, a return, Main). Set with `target`.
     pub(crate) is_bus: bool,
+    /// When in a block it runs: after the chains that play into it (#1261), and with how much
+    /// of the deadline (see [`crate::sends::Turn`]).
+    pub(crate) turn: crate::sends::Turn,
+    /// What it adds to its bus or the output and to the cue bus, staged when it is done
+    /// ([`Chain::stage`]) and added in chain order, so a sum never depends on which plug-in
+    /// answered first.
+    pub(crate) staged: crate::sends::Staged,
     /// The track's cue is on: its output after the chain is also added to the cue bus, at
     /// these gains (its own channel's volume and pan, divided by `CHAIN_INPUT_GAIN`).
     pub(crate) cue: Option<(f32, f32)>,
@@ -339,6 +345,8 @@ impl Chain {
             mix: None,
             target: None,
             is_bus: false,
+            turn: crate::sends::Turn::default(),
+            staged: crate::sends::Staged::new(),
             cue: None,
             sends: Vec::new(),
             scratch: Vec::new(),
@@ -391,6 +399,8 @@ impl Chain {
             mix: None,
             target: None,
             is_bus: false,
+            turn: crate::sends::Turn::default(),
+            staged: crate::sends::Staged::new(),
             cue: None,
             sends: Vec::new(),
             scratch: Vec::new(),
@@ -1230,9 +1240,9 @@ impl Chain {
     }
 }
 
-/// How long the engine sleeps on one chain's plug-in when none of the blocks out has been
-/// answered, before it looks at all of them again (see [`run_as_answered`]): an answer from
-/// that plug-in wakes it at once, one from another is seen at most this late.
+/// How long the engine waits on one chain's plug-in when none of the blocks out has been
+/// answered, before it looks at all of them again ([`crate::sends::run`]): an answer from that
+/// plug-in ends the wait at once, one from another is seen at most this late.
 pub(crate) const ANSWER_SLICE: Duration = Duration::from_micros(50);
 
 /// The spectrum rings' watched-output capture for one block
@@ -1267,35 +1277,6 @@ impl Capture<'_> {
             return;
         }
         self.spectrum.append(row, watch.generation, output, to - from);
-    }
-}
-
-/// Takes each chain's block as soon as its plug-in answers and runs that chain on to its next
-/// plug-in, until no chain has a block out (#151): a chain does not wait for the plug-ins of the
-/// other chains, only for its own, and only until the block's deadline. The chains were started
-/// with [`Chain::advance`]. While nothing has answered, it waits for the first chain still out,
-/// for at most [`ANSWER_SLICE`] at a time. Never allocates; returns by the deadline in real time
-/// (a plug-in still out then is a miss), and offline once every plug-in has answered or used up
-/// [`OFFLINE_TIMEOUT`].
-pub(crate) fn run_as_answered(chains: &mut [Chain], frames: usize, context: &ProcessContext) {
-    loop {
-        let now = crate::clock::now();
-        let mut out = false;
-        let mut moved = false;
-        for chain in chains.iter_mut().filter(|chain| chain.is_waiting()) {
-            if chain.answered(now) {
-                chain.collect(frames);
-                chain.advance(frames, context);
-                moved = true;
-            }
-            out |= chain.is_waiting();
-        }
-        if !out {
-            return;
-        }
-        if !moved && let Some(chain) = chains.iter_mut().find(|chain| chain.is_waiting()) {
-            chain.answered(now + ANSWER_SLICE);
-        }
     }
 }
 

@@ -204,7 +204,15 @@ plug-ins *at the same time*: every chain hands its block to its first plug-in
 whose blocks are out in turn (`Link::wait_answered`, `PluginProcessor::poll`), takes each
 answer as it comes (`Link::wait`, `PluginProcessor::wait`) and runs that chain on to its
 next plug-in at once, while the others are still out, until every chain is done (#151); a
-bus runs after the chains that play into it. The budget is then set by the slowest chain,
+bus or a return runs as soon as the chains that play into it (through their output or a send)
+are done, in the same loop, its plug-ins' blocks out with the others', and Main last, once
+every other chain is (#1261): a late track holds up only the buses it plays into. What a done
+chain adds to its bus, its returns, the output and the cue bus is staged first and added in
+chain order, so which plug-in answered first never changes a sum and offline renders stay bit
+for bit as before. A chain with buses with plug-ins after it has its plug-ins waited for a
+quarter of the block's time (from its start to the deadline) sooner per bus level, at most
+three, so those buses have the rest when one of its plug-ins is late; without bus plug-ins
+the deadline is as before. The quarter is a first value, to be set by measurement. The budget is then set by the slowest chain,
 not the sum: the same project went from 30 to 50 % of blocks late to none, the longest
 wait 6 ms. (Until #151 the chains went a stage at a time, every chain waiting for every
 chain's answer before any went on, so a chain waited once per plug-in for the slowest
