@@ -117,6 +117,19 @@ impl App {
             "view.editor" => {}
             "view.devices" => self.toggle_devices(),
             "view.araEditor" => self.open_ara_editor(),
+            "view.gainEnvelope" => match self.shown_clip() {
+                Some(ClipRef::Arrangement(track, clip))
+                    if self.piano_clip(Some(ClipRef::Arrangement(track, clip))).is_none() =>
+                {
+                    self.arrangement.toggle_envelope = Some(clip);
+                }
+                // Editing every clip's envelope is a mode: Alt+E turns it on or off without a clip
+                // picked (the clip given is not used then).
+                _ if self.settings.view.envelope_all => {
+                    self.arrangement.toggle_envelope = Some(suhina_engine::model::ClipId(0));
+                }
+                _ => self.status = Status::Hint("Select an audio clip in the Arrangement first".into()),
+            },
             "view.plugin" => self.toggle_plugin_editor(),
             "view.mappingMode" => self.toggle_mapping_mode(),
             "view.quickAdd" if self.quick_add_open() => {}
@@ -436,9 +449,9 @@ impl App {
                         self.view.track_focus = false;
                         self.view.selected = None;
                         self.view.selected_tracks.clear();
-                        for track in tracks {
-                            actions.push(Action::new("track.delete", json!({ "track": track.0 })));
-                        }
+                        // One command, so one undo brings every track back (#1188).
+                        let tracks: Vec<u32> = tracks.iter().map(|t| t.0).collect();
+                        actions.push(Action::new("track.delete", json!({ "tracks": tracks })));
                         return;
                     }
                 }
@@ -1272,10 +1285,12 @@ fn shown_scene(scene: &serde_json::Value) -> String {
 
 /// A mapping command's target in words: "track 2 scene 1", "scene 3", "the stop button of track 2".
 pub(super) fn mapping_target(p: &serde_json::Value) -> String {
-    match p["target"].as_str() {
-        Some("slot") => format!("track {} scene {}", p["track"], shown_scene(&p["scene"])),
-        Some("scene") => format!("scene {}", shown_scene(&p["scene"])),
-        _ => format!("the stop button of track {}", p["track"]),
+    let t = &p["target"];
+    match t["command"].as_str() {
+        Some("clip.launch") => format!("track {} scene {}", t["track"], shown_scene(&t["scene"])),
+        Some("scene.launch") => format!("scene {}", shown_scene(&t["scene"])),
+        Some("track.stop") => format!("the stop button of track {}", t["track"]),
+        _ => String::new(),
     }
 }
 
@@ -1287,12 +1302,17 @@ pub(super) fn describe(action: &Action) -> Option<String> {
         "scene.launch" => format!("Launched scene {}", shown_scene(&p["scene"])),
         "track.stop" => format!("Stopping track {}", p["track"]),
         "launcher.stopAll" => "Stopping all clips".into(),
-        "launcher.addMapping" => format!(
+        "mapping.add" => format!(
             "Mapped {} to {}",
             p["source"].as_str().unwrap_or_default().trim_start_matches("key:"),
             mapping_target(p)
         ),
-        "launcher.removeMapping" => format!("Removed the keys of {}", mapping_target(p)),
+        "mapping.remove" => match (p.get("target"), p["source"].as_str(), p["index"].as_u64()) {
+            (Some(_), ..) => format!("Removed the keys of {}", mapping_target(p)),
+            (None, Some(source), _) => format!("Removed the mapping of {}", source.trim_start_matches("key:")),
+            (None, None, Some(index)) => format!("Removed mapping {index}"),
+            _ => "Removed a mapping".into(),
+        },
         "launcher.setQuantization" => format!("Launch quantisation {}", p["value"].as_str().unwrap_or_default()),
         "clip.setLaunchMode" => format!("Launch mode {}", p["mode"].as_str().unwrap_or_default()),
         "clip.setQuantization" => format!("Clip launch quantisation {}", p["value"].as_str().unwrap_or_default()),

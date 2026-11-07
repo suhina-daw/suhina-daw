@@ -82,7 +82,10 @@ fn render(svg: &str, width: u32, height: u32, name: Color32) -> Option<ColorImag
         let mut paint = Paint { anti_alias: true, ..Paint::default() };
         match colour {
             Some([r, g, b]) => paint.set_color_rgba8(*r, *g, *b, 255),
-            None => paint.set_color_rgba8(name.r(), name.g(), name.b(), name.a()),
+            None => {
+                let [r, g, b, a] = name.to_srgba_unmultiplied();
+                paint.set_color_rgba8(r, g, b, a);
+            }
         }
         pixmap.fill_path(path, &paint, FillRule::EvenOdd, transform, None);
     }

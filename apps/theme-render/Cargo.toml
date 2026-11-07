@@ -1,0 +1,35 @@
+[package]
+name = "suhina-theme-render"
+description = "Renders a theme folder in a fixed set of scenes to PNGs, composited as the real window is, with budget counts of the style engine's work"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+# The tests are one binary, tests/main.rs.
+autotests = false
+
+[[bin]]
+name = "suhina-theme-render"
+path = "src/main.rs"
+
+[dependencies]
+suhina-ui.workspace = true
+suhina-ui-gpu.workspace = true
+suhina-session.workspace = true
+suhina-theme-package.workspace = true
+suhina-device-registry.workspace = true
+suhina-device-api.workspace = true
+serde_json.workspace = true
+egui = "0.37"  # MIT OR Apache-2.0
+egui-wgpu = "0.37"  # MIT OR Apache-2.0
+# Drives the window as its tests do, and renders it offscreen on wgpu.
+egui_kittest = { version = "0.37", features = ["wgpu"] }  # MIT OR Apache-2.0
+image = { version = "0.25.10", default-features = false, features = ["png"] }  # MIT OR Apache-2.0
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
+
+[lints]
+workspace = true

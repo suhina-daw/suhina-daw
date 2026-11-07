@@ -3,7 +3,7 @@ description: How the sample map behaves: samples laid out by how they sound, col
 read_when: sample map, similarity, sound map, browse by sound, t-SNE, UMAP, point cloud, grid layout, similar samples, kick snare hat categories, audio features, MFCC, NKS, preset previews, soundmap commands
 type: spec
 status: draft
-last_verified: 2026-10-29
+last_verified: 2026-11-07
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs
@@ -96,7 +96,9 @@ Both play a sample as soon as the pointer is over it.
   start; a place no screen could show is not used.
 
 The map holds the samples of the browser's place, whichever category filter is chosen (the
-filters choose what the list shows).
+filters choose what the list shows). The **List** / **Sample map** switch over the list shows wherever the
+place can hold samples: Library › Samples, a folder, Pinned, and Recent of every kind or of
+samples; Plug-ins, Instruments, Effects and Presets have none (#862).
 
 **Suhina:** analysis starts with the desktop app and the MCP server, as indexing does; tests
 and the command line never analyse a user's folders unasked.
@@ -166,16 +168,17 @@ Drawing every dot then only hides the dots under it, so the map changes how it d
 number of points in view:
 
 - **Density** when more than 20 000 points are in view. The view is divided into cells of 3 by 3
-  screen pixels. Each point is spread over the cells around it with a small Gaussian kernel (about
-  6 pixels each way), and the raster is drawn with linear filtering, so a cluster reads as a soft
+  screen pixels. Each point is spread over the cells around it with a small Gaussian kernel (about 6
+  pixels each way), and the raster is drawn with linear filtering, so a cluster reads as a soft
   cloud rather than blocks. Each cell is coloured by the mix of the kinds of the points near it
-  (each kind's colour weighted by its count). Its opacity grows with the logarithm of the count,
-  fading out towards a cluster's edge and full in the densest cell in view. Clusters then show as coloured
-  regions, and where kinds meet, their colours blend. Dimmed points (search, tags, legend,
-  Show similar) count only as a faint grey under the others. Points that need to be seen one
-  by one are drawn on top as dots: the selected ones, the ones in use, the similar ones, and
-  the one under the pointer or last previewed. Pointing, clicking, dragging and the tooltip work
-  on the points as before.
+  (each kind's colour weighted by its count and its alpha). Its opacity grows with the logarithm of
+  the count, fading out towards a cluster's edge and full in the densest cell in view, times the
+  points' colours' average alpha, so a theme's translucent kind colour stays translucent. Clusters
+  then show as coloured regions, and where kinds meet, their colours blend. Dimmed points (search,
+  tags, legend, Show similar) count only as a faint grey under the others (the theme's hint text
+  colour, its alpha kept). Points that need to be seen one by one are drawn on top as dots: the
+  selected ones, the ones in use, the similar ones, and the one under the pointer or last previewed.
+  Pointing, clicking, dragging and the tooltip work on the points as before.
 - **Dots** when 20 000 points or fewer are in view. The dots grow as the points spread out: the
   radius follows the room each point has on screen, from 1.5 to 6 pixels. A dot that would cover
   its neighbours is drawn translucent, so overlapping dots read as a denser region rather

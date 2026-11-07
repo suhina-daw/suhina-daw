@@ -5,7 +5,8 @@ use super::*;
 
 fn theme() -> BTreeMap<String, Vec<u8>> {
     [
-        ("theme.css".to_owned(), b"theme { name: \"Night\"; } :root { --accent: #ff8800; }".to_vec()),
+        ("theme.json".to_owned(), br#"{ "format": 1, "name": "Night", "swatch": "var(--accent)" }"#.to_vec()),
+        ("theme.css".to_owned(), b":root { --accent: #ff8800; }".to_vec()),
         ("artwork/play.svg".to_owned(), br#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>"#.to_vec()),
         ("variants/light.json".to_owned(), br#"{"name":"Light"}"#.to_vec()),
     ]
@@ -20,7 +21,7 @@ fn a_package_round_trips_with_its_manifest() {
     assert_eq!(package.name, "Night");
     assert_eq!(package.files, theme());
     assert!(package.warnings.is_empty(), "{:?}", package.warnings);
-    assert_eq!(sheet_name(std::str::from_utf8(&theme()["theme.css"]).unwrap()).as_deref(), Some("Night"));
+    assert_eq!(theme_name(&theme()).as_deref(), Some("Night"));
 }
 
 /// Rewrites `bytes` with `change` applied to its entries.
@@ -72,9 +73,11 @@ fn a_changed_missing_or_extra_file_refuses_the_package() {
 
 #[test]
 fn validation_refuses_what_the_app_would_not_read() {
-    let mut files = theme();
-    files.remove("theme.css");
-    assert!(validate(&files).unwrap_err().contains("theme.css"));
+    for root in ["theme.css", "theme.json"] {
+        let mut files = theme();
+        files.remove(root);
+        assert!(validate(&files).unwrap_err().contains(root), "{root}");
+    }
     for (path, bytes) in [
         ("a.svg", b"<html/>".to_vec()),
         ("a.svg", br#"<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>"#.to_vec()),
@@ -88,7 +91,7 @@ fn validation_refuses_what_the_app_would_not_read() {
         assert!(validate(&files).is_err(), "{path}");
     }
     let mut files = theme();
-    files.insert("theme.css".into(), b".x { colour: red; }".to_vec());
+    files.insert("theme.css".into(), b":root { --accent: red; } .x { colour: red; }".to_vec());
     assert!(validate(&files).unwrap().iter().any(|w| w.contains("colour")), "a notice is a warning");
     assert!(pack("Bad Id", "x", &theme()).is_err());
 }
@@ -106,4 +109,144 @@ fn a_folder_packs_without_its_hidden_files() {
     assert_eq!(read_folder(&dir).unwrap(), theme());
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(is_package(Path::new("x/Night.THEME.suhina")));
+}
+
+#[test]
+fn theme_json_round_trips_and_refuses_a_file_without_a_name_swatch_or_known_format() {
+    let text = br#"{ "format": 1, "name": " Night ", "author": "Ari", "description": "Blue",
+        "default-variant": "Dark", "swatch": "var(--accent)", "toolbar": { "items": ["play"] }, "extra": 1 }"#;
+    let (read, warnings) = meta::ThemeMeta::parse(text).unwrap();
+    assert_eq!(read.name, "Night");
+    assert_eq!(read.default_variant(), "Dark");
+    assert_eq!(read.toolbar, Some(serde_json::json!({ "items": ["play"] })));
+    assert!(warnings.iter().any(|w| w.contains("extra")), "{warnings:?}");
+    // A key it does not read is kept, and named again.
+    assert_eq!(meta::ThemeMeta::parse(read.to_json().as_bytes()).unwrap(), (read, warnings));
+    assert_eq!(meta::ThemeMeta::new("A", "red").default_variant(), meta::DEFAULT_VARIANT);
+    for (text, why) in [
+        (r#"{ "name": "A", "swatch": "red" }"#, "format"),
+        (r#"{ "format": 2, "name": "A", "swatch": "red" }"#, "newer"),
+        (r#"{ "format": 1, "swatch": "red" }"#, "name"),
+        (r#"{ "format": 1, "name": "A" }"#, "swatch"),
+        (r#"{ "format": 1, "name": "A", "swatch": "red; x" }"#, "swatch"),
+        ("[]", "object"),
+    ] {
+        let error = meta::ThemeMeta::parse(text.as_bytes()).unwrap_err();
+        assert!(error.contains(why), "{text}: {error}");
+    }
+}
+
+#[test]
+fn the_swatch_must_resolve_to_a_colour_for_every_variant() {
+    let with = |swatch: &str, variant: &str| {
+        let mut files = theme();
+        files.insert(
+            "theme.json".into(),
+            format!(r#"{{ "format": 1, "name": "Night", "swatch": "{swatch}" }}"#).into_bytes(),
+        );
+        files.insert("theme.css".into(), b":root { --accent: #ff8800; --tint: #ff8800; }".to_vec());
+        files.insert("variants/light.json".into(), variant.as_bytes().to_vec());
+        validate(&files)
+    };
+    assert!(with("color-mix(in srgb, var(--accent), white 50%)", r##"{ "values": { "--accent": "#00f" } }"##).is_ok());
+    // `--tint` is unregistered, so the variant's length stands (a core `<color>` would fall back).
+    let error = with("var(--tint)", r#"{ "values": { "--tint": "12px" } }"#).unwrap_err();
+    assert!(error.contains("variants/light.json"), "{error}");
+    for refused in ["currentColor", "attr(color type(<color>))", "var(--missing)", "12px"] {
+        assert!(with(refused, "{}").is_err(), "{refused}");
+    }
+    let variant = meta::variant_sheet(br##"{ "values": { "--a": "#fff", "b": "red", "--c": "x}" } }"##).unwrap();
+    assert_eq!(variant, ":root { --a: #fff; }");
+}
+
+#[test]
+fn the_swatch_resolves_against_the_core_properties() {
+    // A duplicate of Suhina Studio: an empty `:root`, the swatch left as Suhina Studio's.
+    let with = |swatch: &str| {
+        let mut files = theme();
+        files.insert(
+            "theme.json".into(),
+            format!(r#"{{ "format": 1, "name": "Copy", "swatch": "{swatch}" }}"#).into_bytes(),
+        );
+        files.insert("theme.css".into(), b":root {}".to_vec());
+        files
+    };
+    let copy = with("color-mix(in oklab, var(--panel-background), var(--accent) 35%)");
+    assert_eq!(validate(&copy), Ok(Vec::new()));
+    assert!(read(&pack("copy", "Copy", &copy).unwrap()).is_ok());
+    assert!(validate(&with("var(--not-a-core-property)")).is_err());
+}
+
+#[test]
+fn a_thumbnail_is_a_sixteen_by_nine_svg_and_layout_css_is_named() {
+    let with = |svg: &str| {
+        let mut files = theme();
+        files.insert(meta::THUMBNAIL.into(), svg.as_bytes().to_vec());
+        validate(&files)
+    };
+    assert!(with(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"/>"#).is_ok());
+    assert!(with(r#"<svg xmlns="http://www.w3.org/2000/svg" width="320px" height="180"/>"#).is_ok());
+    for refused in [
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"/>"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg"/>"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><image href="a.png"/></svg>"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="http://www.w3.org/1999/xlink" viewBox="0 0 160 90"><use x:href = "a.svg#b"/></svg>"#,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 90\"><use href\n=\"#b\"/></svg>",
+    ] {
+        assert!(with(refused).is_err(), "{refused}");
+    }
+    let mut files = theme();
+    files.insert("layout.css".into(), b"".to_vec());
+    assert!(validate(&files).unwrap().iter().any(|w| w.contains("layout.css")));
+}
+
+#[test]
+fn validation_keeps_the_limits_the_disk_reader_keeps() {
+    // theme.json and a variant are read up to 64 KiB, and at most 64 variants.
+    let mut files = theme();
+    files.insert(
+        meta::FILE.into(),
+        format!(
+            r#"{{ "format": 1, "name": "Night", "swatch": "var(--accent)", "description": "{}" }}"#,
+            "x".repeat(70_000)
+        )
+        .into_bytes(),
+    );
+    assert!(validate(&files).unwrap_err().contains("exceeds 64 KiB"));
+    let mut files = theme();
+    files.insert("variants/big.json".into(), format!(r#"{{"name":"{}"}}"#, "x".repeat(70_000)).into_bytes());
+    assert!(validate(&files).unwrap_err().contains("exceeds 64 KiB"));
+    let mut files = theme();
+    for n in 0..65 {
+        files.insert(format!("variants/v{n}.json"), br#"{"name":"V"}"#.to_vec());
+    }
+    assert!(validate(&files).unwrap_err().contains("at most 64 variants"));
+}
+
+#[test]
+fn a_thumbnail_must_be_svg_by_namespace_and_have_a_finite_size() {
+    let with = |svg: &str| {
+        let mut files = theme();
+        files.insert(meta::THUMBNAIL.into(), svg.as_bytes().to_vec());
+        validate(&files)
+    };
+    assert!(with(r#"<svg viewBox="0 0 160 90"/>"#).is_ok(), "a root without a namespace is read");
+    for refused in [
+        r#"<svg xmlns="http://example.com/other" viewBox="0 0 160 90"/>"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="inf" height="inf"/>"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 inf inf"/>"#,
+    ] {
+        assert!(with(refused).is_err(), "{refused}");
+    }
+}
+
+#[test]
+fn rewriting_theme_json_keeps_the_schema_and_keys_it_does_not_read() {
+    let text = br#"{ "$schema": "https://example.com/theme.json", "format": 1, "name": "Night", "swatch": "red", "next": { "a": 1 } }"#;
+    let (parsed, warnings) = meta::ThemeMeta::parse(text).unwrap();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("next"), "the schema key is known, an unknown one is named");
+    let (again, _) = meta::ThemeMeta::parse(parsed.to_json().as_bytes()).unwrap();
+    assert_eq!(again.extra["$schema"], "https://example.com/theme.json");
+    assert_eq!(again.extra["next"]["a"], 1);
 }

@@ -16,6 +16,8 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+pub mod meta;
+
 /// The file name ending of a package.
 pub const EXTENSION: &str = ".theme.suhina";
 /// The manifest's name at the package's root.
@@ -29,12 +31,23 @@ const VERSION: u64 = 1;
 pub const MAX_TEXT: usize = 128 * 1024;
 /// A PNG is at most this big.
 pub const MAX_PNG: usize = 8 * 1024 * 1024;
-/// Any other file (a variant, a README) is at most this big.
+/// Any other file (a README, say) is at most this big.
 const MAX_OTHER: usize = 1024 * 1024;
+/// `theme.json` is at most this big, as the disk reader limits it.
+const MAX_META: usize = 64 * 1024;
+/// A variant file is at most this big, and a theme has at most this many variants, as the disk
+/// reader limits them.
+const MAX_VARIANT: usize = 64 * 1024;
+const MAX_VARIANTS: usize = 64;
 /// All files together, unpacked.
 pub const MAX_TOTAL: usize = 32 * 1024 * 1024;
 /// Files in one package.
 pub const MAX_FILES: usize = 512;
+
+/// Suhina's core theme properties as `@property` rules with Suhina Studio's values: the defaults a
+/// theme's swatch resolves against, as in the app. A copy of `suhina_ui::kit::theme_vars::
+/// core_sheet()`, which this crate cannot depend on; a test in `suhina-ui` keeps the two equal.
+pub const CORE_SHEET: &str = include_str!("core.css");
 
 /// A package read and checked: its theme's id and name, its files by path, and what the checks
 /// found that does not stop it from being used.
@@ -86,6 +99,10 @@ pub fn validate(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<String>, String
             MAX_TEXT
         } else if lower.ends_with(".png") {
             MAX_PNG
+        } else if path == meta::FILE {
+            MAX_META
+        } else if path.starts_with("variants/") && lower.ends_with(".json") {
+            MAX_VARIANT
         } else {
             MAX_OTHER
         };
@@ -99,14 +116,9 @@ pub fn validate(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<String>, String
                 .extend(sheet.notices.iter().map(|n| format!("{path} line {}:{}: {}", n.line, n.column, n.message)));
         } else if lower.ends_with(".svg") {
             let text = std::str::from_utf8(bytes).map_err(|_| format!("{path}: not UTF-8 text"))?;
-            let options = roxmltree::ParsingOptions { allow_dtd: false, nodes_limit: 100_000, ..Default::default() };
-            let doc = roxmltree::Document::parse_with_options(text, options).map_err(|e| format!("{path}: {e}"))?;
-            if doc.root_element().tag_name().name() != "svg" {
-                return Err(format!("{path}: not an SVG image"));
-            }
-            let lower = text.to_ascii_lowercase();
-            if ["<script", "<image", "<foreignobject", "href="].iter().any(|s| lower.contains(s)) {
-                return Err(format!("{path}: an SVG holds only self-contained vector artwork"));
+            let doc = meta::svg(text).map_err(|e| format!("{path}: {e}"))?;
+            if path == meta::THUMBNAIL {
+                meta::is_sixteen_by_nine(doc.root_element())?;
             }
         } else if lower.ends_with(".png") {
             if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
@@ -119,7 +131,34 @@ pub fn validate(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<String>, String
     if !files.contains_key("theme.css") {
         return Err("a theme needs a theme.css at its root".into());
     }
+    if files.keys().filter(|path| path.starts_with("variants/") && path.ends_with(".json")).count() > MAX_VARIANTS {
+        return Err(format!("a theme has at most {MAX_VARIANTS} variants"));
+    }
+    let (theme_meta, notes) =
+        meta::ThemeMeta::parse(files.get(meta::FILE).ok_or("a theme needs a theme.json at its root")?)?;
+    warnings.extend(notes);
+    if files.contains_key("layout.css") {
+        warnings.push("layout.css is no longer read: its rules belong in theme.css".into());
+    }
+    check_swatch(&theme_meta, files)?;
     Ok(warnings)
+}
+
+/// Refuses a theme whose swatch does not resolve to a colour for its default variant and for
+/// every variant in `variants/`, with the core properties ([`CORE_SHEET`]) below the theme's sheet.
+fn check_swatch(theme_meta: &meta::ThemeMeta, files: &BTreeMap<String, Vec<u8>>) -> Result<(), String> {
+    let core = suhina_style::sheet::Sheet::parse(CORE_SHEET).map_err(|e| format!("the core theme properties: {e}"))?;
+    let css = std::str::from_utf8(&files["theme.css"]).map_err(|_| "theme.css: not UTF-8 text")?;
+    let sheet = suhina_style::sheet::Sheet::parse(css).map_err(|e| format!("theme.css: {e}"))?;
+    meta::swatch_color(&theme_meta.swatch, &[&core], &sheet, None)
+        .map_err(|e| format!("the swatch for {}: {e}", theme_meta.default_variant()))?;
+    for (path, bytes) in files.iter().filter(|(path, _)| path.starts_with("variants/") && path.ends_with(".json")) {
+        let variant = meta::variant_sheet(bytes).map_err(|e| format!("{path}: {e}"))?;
+        let variant = suhina_style::sheet::Sheet::parse(&variant).map_err(|e| format!("{path}: {e}"))?;
+        meta::swatch_color(&theme_meta.swatch, &[&core], &sheet, Some(&variant))
+            .map_err(|e| format!("the swatch for {path}: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Packs a theme's files into a package for the theme `id` named `name`, after the same checks
@@ -251,16 +290,9 @@ pub fn read_folder(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
     Ok(files)
 }
 
-/// The theme's name from its `theme.css` (`theme { name: "…" }`), when it says one.
-pub fn sheet_name(css: &str) -> Option<String> {
-    let start = css.find("theme")?;
-    let body = &css[start..];
-    let open = body.find('{')?;
-    let close = body[open..].find('}')? + open;
-    body[open + 1..close].split(';').find_map(|declaration| {
-        let (property, value) = declaration.split_once(':')?;
-        (property.trim() == "name").then(|| value.trim().trim_matches(['"', '\'']).to_owned()).filter(|n| !n.is_empty())
-    })
+/// The theme's name from its files' `theme.json`, when it reads.
+pub fn theme_name(files: &BTreeMap<String, Vec<u8>>) -> Option<String> {
+    meta::ThemeMeta::parse(files.get(meta::FILE)?).ok().map(|(theme_meta, _)| theme_meta.name)
 }
 
 fn valid_id(id: &str) -> bool {

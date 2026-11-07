@@ -1,0 +1,10 @@
+{
+  "name": "Blue",
+  "values": {
+    "--ground": "#121A26",
+    "--surface": "#1A2534",
+    "--ink": "#E6ECF4",
+    "--tint": "#7FB2FF",
+    "--highlight": "#F0C674"
+  }
+}

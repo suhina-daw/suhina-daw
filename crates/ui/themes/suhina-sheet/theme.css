@@ -1,0 +1,149 @@
+/* A playful Session worksheet with square SVG controls: its two accent shades set all its colours. */
+@property --tint { syntax: "<color>"; initial-value: #217346; label: "Accent"; group: "Colours"; }
+@property --tint-light { syntax: "<color>"; initial-value: #8FCEA0; label: "Accent, light"; group: "Colours"; }
+:root {
+  --accent: var(--tint);
+  --border: color-mix(in oklab, color-mix(in oklab, var(--tint), white 84%), black 3%);
+  --border-strong: color-mix(in oklab, color-mix(in oklab, var(--tint), white 75%), black 8%);
+  --browser-text-hint: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 14%);
+  --browser-text-primary: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 3%), black 35%);
+  --browser-text-secondary: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 4%), black 18%);
+  --browser-text-value: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 3%), black 35%);
+  --clip-audioDefault: #9BC2E6;
+  --clip-midiDefault: #A9D18E;
+  --control-activeBackground: color-mix(in oklab, var(--tint), white 53%);
+  --control-background: white;
+  --control-hoverBackground: color-mix(in oklab, var(--tint-light), white 53%);
+  --control-playingBackground: color-mix(in oklab, var(--tint), white 69%);
+  --control-selectedBackground: var(--tint);
+  --grid-major: color-mix(in oklab, color-mix(in oklab, var(--tint), white 70%), black 2%);
+  --grid-minor: color-mix(in oklab, var(--tint), white 85%);
+  --kind-bass: #A84F4F;
+  --kind-clap: #5EC0B0;
+  --kind-closedHat: #C6AC5E;
+  --kind-crash: #E0A0C8;
+  --kind-cymbal: #A497CC;
+  --kind-effect: #9CC49C;
+  --kind-hat: #D8C47A;
+  --kind-kick: #D06E5E;
+  --kind-openHat: #D08F6E;
+  --kind-other: #8A8680;
+  --kind-percussion: #8FC06E;
+  --kind-ride: #C8B8E8;
+  --kind-rim: #8CA8E0;
+  --kind-snare: #73AAC0;
+  --kind-tom: #B074A4;
+  --kind-tonal: #6EB0D0;
+  --kind-vocal: #E8D0A0;
+  --meter-hot: #DC9A21;
+  --meter-intensity: 90;
+  --meter-normal: #00B050;
+  --pan-background: white;
+  --pan-centre: color-mix(in oklab, color-mix(in oklab, var(--tint), white 62%), black 11%);
+  --panel-background: color-mix(in oklab, var(--tint), white 94%);
+  --panel-hoverBackground: color-mix(in oklab, var(--tint), white 69%);
+  --recording: #C33C36;
+  --recording-background: #F8E0DD;
+  --selection: color-mix(in oklab, var(--tint), black 3%);
+  --session-header-height: 24px;
+  --session-return-width: 80px;
+  --session-scene-width: 84px;
+  --session-slot-height: 22px;
+  --session-track-width: 88px;
+  --slot-empty: color-mix(in oklab, color-mix(in oklab, var(--tint-light), white 75%), black 10%);
+  --text-hint: color-mix(in oklab, color-mix(in oklab, var(--tint), white 62%), black 27%);
+  --text-inverse: white;
+  --text-onColorDark: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 53%), black 51%);
+  --text-onColorLight: white;
+  --text-playing: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 9%), black 37%);
+  --text-primary: color-mix(in oklab, var(--tint-light), black 60%);
+  --text-secondary: color-mix(in oklab, color-mix(in oklab, var(--tint), white 48%), black 36%);
+  --text-value: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 24%);
+  --track-1: #C99070;
+  --track-2: #D8BA64;
+  --track-3: #83A9B4;
+  --track-4: #A699B8;
+  --track-5: #95AA80;
+  --track-6: #C18F9E;
+  --track-7: #879BBE;
+  --track-8: #80ADA1;
+  --track-headerBackground: color-mix(in oklab, var(--tint), white 94%);
+  --track-headerSelectedBackground: color-mix(in oklab, var(--tint-light), white 61%);
+  --track-mutedBackground: color-mix(in oklab, var(--tint), white 88%);
+  --window-background: white;
+  --on-accent: contrast-color(var(--tint));
+  --art-91ad9a: color-mix(in oklab, color-mix(in oklab, var(--tint), white 56%), black 7%);
+  --art-789a83: color-mix(in oklab, color-mix(in oklab, var(--tint), white 46%), black 10%);
+  --art-e2f0d9: color-mix(in oklab, var(--tint-light), white 67%);
+  --art-dce7df: color-mix(in oklab, var(--tint), white 84%);
+  --art-8ba694: color-mix(in oklab, color-mix(in oklab, var(--tint), white 55%), black 9%);
+  --art-a7beaf: color-mix(in oklab, color-mix(in oklab, var(--tint), white 64%), black 4%);
+  --art-f1f7f2: color-mix(in oklab, var(--tint), white 94%);
+  --art-d2e3d6: color-mix(in oklab, var(--tint), white 79%);
+  --art-e1e9e3: color-mix(in oklab, var(--tint), white 86%);
+  --art-f8faf8: color-mix(in oklab, var(--tint), white 97%);
+  --art-d4ddd6: color-mix(in oklab, color-mix(in oklab, var(--tint), white 84%), black 3%);
+  --art-7b9b85: color-mix(in oklab, color-mix(in oklab, var(--tint), white 50%), black 12%);
+}
+
+/* Copyright (C) 2026 The Suhina contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Original spreadsheet-inspired Suhina Sheet materials. No external resources.
+ */
+@layer suhina-sheet {
+  .window, .session, .arrangement { background-color: white; color: color-mix(in oklab, var(--tint-light), black 60%); }
+  .session {
+    background-image: repeating-linear-gradient(0deg, transparent 0 21px, color-mix(in oklab, var(--tint), white 88%) 21px 22px),
+                      repeating-linear-gradient(90deg, transparent 0 87px, color-mix(in oklab, var(--tint), white 88%) 87px 88px);
+  }
+  .application-bar, .menu-bar, .project-tabs {
+    background-color: var(--tint);
+    color: var(--on-accent);
+    border-color: color-mix(in oklab, var(--tint), black 14%);
+  }
+  .toolbar, .status-bar { background-color: color-mix(in oklab, var(--tint), white 94%); color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 79%), black 42%); }
+  .browser {
+    background-color: var(--tint-light);
+    background-image: linear-gradient(90deg, color-mix(in oklab, var(--tint), var(--tint-light) 66%) 0 45%, var(--tint-light) 45% 100%);
+    color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 3%), black 35%);
+  }
+  .detail, .device-panel { background-color: color-mix(in oklab, var(--tint), white 94%); color: color-mix(in oklab, var(--tint-light), black 60%); }
+  .track-header { background-image: linear-gradient(#ffffff55, #ffffff22); }
+  .track-name { background-image: linear-gradient(#ffffff77, #ffffff55); }
+  .mixer { background-color: color-mix(in oklab, var(--tint), white 97%); box-shadow: inset -1px 0 0 color-mix(in oklab, color-mix(in oklab, var(--tint), white 84%), black 3%); }
+  .button { color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 24%); background-color: white; border-color: color-mix(in oklab, color-mix(in oklab, var(--tint), white 65%), black 5%); border-radius: 0px; }
+  .button:hover { color: color-mix(in oklab, var(--tint), black 14%); background-color: color-mix(in oklab, var(--tint-light), white 67%); border-color: var(--tint); }
+  .knob { color: var(--tint); background-color: white; }
+  .value, .dropdown, .text-input { color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 24%); background-color: white; border-radius: 0px; }
+  .fader-scale { color: color-mix(in oklab, color-mix(in oklab, var(--tint), white 55%), black 29%); }
+  .meter { background-color: color-mix(in oklab, var(--tint), white 86%); }
+  .meter-vertical .meter-level { background: linear-gradient(to top, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
+  .meter-horizontal .meter-level { background: linear-gradient(to right, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
+}
+
+/* Control placements. */
+.control-mixer-color { left: 0px; top: 0px; bottom: auto; display: none; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
+.control-mixer-meter { left: -48px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
+.control-mixer-pan { left: 25px; top: 0px; bottom: auto; display: block; right: auto; width: 24px; height: 24px; --suhina-direction: vertical; }
+.control-mixer-volume { left: 18px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
+.control-mixer-volume-readout { left: -24px; top: 0px; bottom: auto; display: block; right: auto; width: 30px; height: auto; --suhina-direction: vertical; }
+.control-mixer-volume-scale { left: -40px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
+.pan { --suhina-appearance: knob; }
+
+/* Artwork. */
+arm { image: url("assets/arm.svg"); }
+button { image: url("assets/button.svg"); }
+cue { image: url("assets/cue.svg"); }
+fader.cap { image: url("assets/fader.cap.svg"); }
+fader.rail { image: url("assets/fader.rail.svg"); }
+knob.body { image: url("assets/knob.body.svg"); }
+knob.pointer { image: url("assets/knob.pointer.svg"); }
+meter { image: url("assets/meter.svg"); }
+play { image: url("assets/play.svg"); }
+record { image: url("assets/record.svg"); }
+solo { image: url("assets/solo.svg"); }
+stop { image: url("assets/stop.svg"); }
+track.audio { image: url("assets/track.audio.svg"); }
+track.body { image: url("assets/track.body.svg"); }
+track.midi { image: url("assets/track.midi.svg"); }
+track.name { image: url("assets/track.name.svg"); }

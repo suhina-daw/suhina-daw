@@ -52,7 +52,6 @@ fn project_built() -> Project {
                     Slot { clip: None, has_stop: true },
                 ],
             }],
-            mappings: Default::default(),
         },
         ..Project::default()
     }

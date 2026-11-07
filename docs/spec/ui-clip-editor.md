@@ -3,7 +3,7 @@ description: Functional spec of the MIDI clip editor (piano roll): layout, toolb
 read_when: piano roll, clip editor, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools column, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
 type: spec
 status: draft
-last_verified: 2026-11-05
+last_verified: 2026-11-07
 covers:
   - crates/ui/src/detail/piano_roll.rs
   - crates/ui/src/detail/piano_roll_grid.rs
@@ -57,6 +57,9 @@ lane, the grid and zoom, and the `note.*` commands.
   rest. The MIDI clip retains its resizable detail area in both tabs. A device row alone has
   two states: open at 200 logical pixels or closed. Dragging the splitter down past half that(
   )height closes it, dragging it up opens it whole; no height in between cuts its panels.
+  The panels in the row are one height, the tallest's, at least a compact panel's and at most the
+  area's, with their contents at the top; a panel the theme gives a height (`.device { height }`)
+  keeps it, and a plug-in's embedded editor takes the area's height (#1238).
   Dropping an instrument, effect or plug-in there adds it to
   that track as it always does. **Clip** brings the piano roll back. **Ctrl+Shift+D** (the keymap
   action `view.devices`) and **View › Show devices** / **Show clip** do the same; they open the
@@ -777,6 +780,10 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   the strip's left keeps the focus on the clip picked first. Keys and selections act on the
   focused clip: with notes selected the edit keys act on them, and with none selected on the clips.
   The least height grows by 16 px for each row the strip can take.
+- **An audio clip's column** is its panel, in groups (Clip, Audio, Gain, Pitch) with a gain
+  fader, a pitch knob with cents, the clip's tempo, Set buttons and numbers to type:
+  [clip panel spec](clip-panel.md) ([#1190](https://github.com/suhina-daw/suhina-daw/issues/1190)).
+  What follows was the audio clip's column before it, and is the MIDI clip's where it applies.
 - **Built ([#699](https://github.com/suhina-daw/suhina-daw/issues/699)):** the column edits the
   clip, each change one undo step:
   - **Loop** is a switch (`clip.setLoop`). An audio clip that loops has **Loop start** and **Loop
@@ -791,15 +798,16 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
     Re-pitch, Rhythmic, Tonal, Texture, Smooth and High quality) and **Transpose** (dragged by
     semitones, -48 to +48, a double-click puts it at 0), all through `clip.setAudio`. Warp turned
     on for audio without warp markers gives it two, at its start and its end, so it plays as it did
-    and then follows the tempo. Those markers fit the tempo where the clip plays, so a clip whose
-    audio another clip plays where the tempo differs gets its own copy of it first, and the other
-    clip plays as it did ([#874](https://github.com/suhina-daw/suhina-daw/issues/874)). Warp off
+    and then follows the tempo. Those markers fit the tempo where the clip plays; they are the
+    clip's own, so another clip of the same audio keeps its own warp
+    ([#742](https://github.com/suhina-daw/suhina-daw/issues/742); before, the clip got its own copy
+    of the content, [#874](https://github.com/suhina-daw/suhina-daw/issues/874)). Warp off
     plays the file at its own speed whatever the tempo (a transpose repitches it): the clip then
     spans what its seconds take at the song's tempo, and changing the tempo makes it span more or
     fewer beats at once (a 4-beat file at 124 BPM is 1.935 s, 2.903 beats at 90 BPM; warped to
     the song it is 4 beats). Whenever warp, a repitching transpose or the tempo changes what a
-    clip's beats mean in its file, every clip that plays it keeps its start and keeps playing the
-    same part of the file: its offset, length and loop are worked out again, so the waveform, the
+    clip's beats mean in its file, the clip keeps its start and keeps playing the same part of the
+    file: its offset, length and loop are worked out again, so the waveform, the
     end and the Length row agree with what is heard, and undo puts both back (#830).
   - A drag shows its value as it goes and sends one command when it is let go.
 - **Built ([#460](https://github.com/suhina-daw/suhina-daw/issues/460)):** the **Notes** row reads
@@ -1109,8 +1117,8 @@ edits. A command names a clip by `clip`, its id from `project.clips` or `project
 stays the same when the clip or the clips around it move
 ([ADR 0025](../decisions/0025-object-identity.md)); the piano roll names the clip it shows that
 way. The older form, `track` with `index` (an arrangement clip's place on its track) or `scene`
-(the clip in the track's slot of that scene, from 0), still works and is deprecated, except that
-a slot's clip may still be named by its `scene`. The clip must be a MIDI clip: an audio clip, an
+(the clip in the track's slot of that scene, from 0, or `{"id": n}` with the scene's id), still
+works and is deprecated, except that a slot's clip may still be named by its `scene`. The clip must be a MIDI clip: an audio clip, an
 empty slot or a clip that does not exist is an error. Notes are named by their **index** in the clip's notes, as `note.list` returns them, or
 by their **id**, `{"id": n}`, which names a note wherever it is now, after another writer has
 added, deleted or moved notes (#1182; [ADR 0025](../decisions/0025-object-identity.md) › Decided
@@ -1137,8 +1145,8 @@ note another writer deletes leaves it.
 | `note.setMuted` | clip, `notes`, `muted?` | Mutes them (`muted: true`) or unmutes them (`false`); with `muted` left out each note is flipped. Returns the indices and their state |
 | `note.humanize` | clip, `notes?`, `time?`, `velocity?`, `seed?` | Moves each note's start by up to `time` beats (0 to 1, default 0.02) and its velocity by up to `velocity` MIDI steps (0 to 127, default 8), each a fresh random draw; `seed` makes the same call repeatable; returns the indices |
 | `note.fitToScale` | clip, `notes?`, `root?`, `scale?` | Moves each note to the nearest key of `scale` (`major`, `minor`, `harmonicMinor`, `melodicMinor`, `dorian`, `phrygian`, `lydian`, `mixolydian`, `locrian`, `majorPentatonic`, `minorPentatonic`, `blues`; default `major`) over `root` (a key name such as `"C"`, `"F#"`, or 0 to 11; default `"C"`); with neither `root` nor `scale`, the clip's own scale when it has one; a tie goes to the lower key; returns the indices and how many moved |
-| `note.invert` | clip, `notes?` | Mirrors the keys around the middle of the range the notes cover (the lowest key plus the highest, halved, rounded down); returns the indices |
-| `note.reverse` | clip, `notes?` | Turns the notes round in time inside their own span (the earliest start to the latest end): each note's start becomes `span end − its end`, its length unchanged; returns the indices |
+| `note.invert` | clip, `notes?` | Mirrors the keys around the middle of the range the notes cover: each key becomes the lowest key plus the highest minus itself, so those two swap and every key stays in the range; returns the indices |
+| `note.reverse` | clip, `notes?` | Turns the notes round in time inside their own span (the earliest start to the latest end): each note's start becomes `span start + span end − its end`, its length unchanged; returns the indices |
 | `note.legato` | clip, `notes?`, `until?`, `replace?` | Makes each note last until the next of the notes it acts on starts, on any key; when nothing follows, until the beat `until` if that is after its start, or else it stays as it is; notes that start together end together; never shorter than a hundredth of a beat; returns the indices and how many changed |
 | `note.stretch` | clip, `notes?`, `factor` | Stretches the notes in time about the earliest of their starts (`0.01` to `100`): starts and lengths are multiplied, the first start unchanged. `2` is the **×2** button, `0.5` the **÷2** one; returns the indices |
 | `note.randomizeVelocity` | clip, `notes?`, `amount?`, `seed?` | Moves each velocity by up to `amount` MIDI steps (0 to 127, default 16), each kept within 1 to 127; `seed` makes the same call repeatable; returns the indices |

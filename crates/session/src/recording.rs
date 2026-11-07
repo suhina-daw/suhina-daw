@@ -19,13 +19,13 @@ use serde_json::{Value, json};
 use suhina_engine::{LaunchCommand, RecordedJump, RecordedNote};
 use suhina_model::{
     AudioRegion, Clip, ClipContent, ContentId, ContentLane, InputChannels, LaneData, LoopRange, Note, Project,
-    StretchMode, TakeLane, TrackId,
+    TakeLane, TrackId,
 };
 
 use crate::files::TrackKind;
 
 use crate::commands::Args;
-use crate::commands::{column_index, scene_index, track_id};
+use crate::commands::{column_index, scene_id, scene_index, track_id};
 use crate::record_writer::{Order, RecordThread, Report};
 use crate::{CommandError, Session};
 
@@ -234,8 +234,10 @@ impl Session {
         Some((monitor.running(), monitor.beat(), monitor.launch_beat(), monitor.start_beat(), monitor.tempo_bpm()))
     }
 
-    /// The file an audio take of `track` starting at `start` goes to.
-    fn take_file(&self, track: TrackId, start: f64) -> Result<PathBuf, CommandError> {
+    /// The file an audio take of `track` starting at `start` goes to: one no take writes to,
+    /// neither those already running nor `starting` (the files of the takes starting with it,
+    /// which may be of tracks with the same name).
+    fn take_file(&self, track: TrackId, start: f64, starting: &[Option<PathBuf>]) -> Result<PathBuf, CommandError> {
         let folder = self
             .source()
             .and_then(std::path::Path::parent)
@@ -249,7 +251,9 @@ impl Session {
         for n in 1..=crate::editing::MAX_NAME_TRIES {
             let file = if n == 1 { format!("{name}.wav") } else { format!("{name} {n}.wav") };
             let path = folder.join(file);
-            if !path.exists() && !self.live.recording.takes.iter().any(|t| t.file.as_ref() == Some(&path)) {
+            let taken = self.live.recording.takes.iter().any(|t| t.file.as_ref() == Some(&path))
+                || starting.iter().any(|f| f.as_ref() == Some(&path));
+            if !path.exists() && !taken {
                 return Ok(path);
             }
         }
@@ -273,7 +277,8 @@ impl Session {
                     track_name(&self.project, track)
                 )
             })?;
-            files.push(if audio { Some(self.take_file(track, start)?) } else { None });
+            let file = if audio { Some(self.take_file(track, start, &files)?) } else { None };
+            files.push(file);
         }
         let thread = self
             .live
@@ -362,7 +367,9 @@ impl Session {
         take.asked = Some(Instant::now());
         take.play = true;
         self.send_ends();
-        Some(json!({ "scene": scene, "queued": "end recording", "end_beat": end }))
+        Some(
+            json!({ "scene": scene, "scene_id": scene_id(&self.project, scene), "queued": "end recording", "end_beat": end }),
+        )
     }
 
     /// Takes in what the recording thread has, finishes the takes that are done (one undo step
@@ -576,11 +583,6 @@ impl Session {
                     sample_rate: Some(rate),
                     channels: Some(channels),
                     duration_seconds: Some(seconds),
-                    warped: false,
-                    stretch: StretchMode::default(),
-                    warp_markers: Default::default(),
-                    gain: 1.0,
-                    transpose: 0.0,
                     stream: None,
                 };
                 (LaneData::Audio(region), length)
@@ -592,7 +594,7 @@ impl Session {
         let mut placed_slot = None;
         let result = (|| -> Result<(), CommandError> {
             let p = &mut self.project;
-            let source = crate::files::Source { kind, name, length, lane, loops: true };
+            let source = crate::files::Source { kind, name, length, lane, audio: Default::default(), loops: true };
             match take.target {
                 Target::Slot { scene } => {
                     let column = p
@@ -790,11 +792,6 @@ impl Session {
                     sample_rate: Some(rate),
                     channels: Some(channels),
                     duration_seconds: Some(seconds),
-                    warped: false,
-                    stretch: StretchMode::default(),
-                    warp_markers: Default::default(),
-                    gain: 1.0,
-                    transpose: 0.0,
                     stream: None,
                 };
                 Some((region, frames, f64::from(rate)))
@@ -925,6 +922,7 @@ fn put_clip(
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Default::default(),
     };
     let lane = match p.arrangement.lanes.iter().position(|l| l.track == Some(track)) {
@@ -1019,6 +1017,7 @@ pub(crate) fn record_clip(session: &mut Session, params: &Value) -> Result<Value
     Ok(json!({
         "track": track.0,
         "scene": scene,
+        "scene_id": scene_id(session.project(), scene),
         "start_beat": start,
         "count_in_bars": if running { 0 } else { session.live.recording.count_in_bars },
     }))
@@ -1150,7 +1149,7 @@ pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, Co
             json!({
                 "track": t.track.0,
                 "track_name": track_name(p, t.track),
-                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene }), Target::Arrangement => json!("arrangement"), Target::Sampler { device } => json!({"device": device}) },
+                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene, "scene_id": scene_id(p, scene) }), Target::Arrangement => json!("arrangement"), Target::Sampler { device } => json!({"device": device}) },
                 "kind": if t.file.is_some() { "audio" } else { "midi" },
                 "start_beat": t.start,
                 "end_beat": t.end,

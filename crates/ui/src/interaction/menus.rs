@@ -307,9 +307,10 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     ui.separator();
 
     let selected = menu.selection.contains(&menu.track) && menu.selection.len() > 1;
+    // The selection when this track is among it, else this track alone.
+    let tracks: Vec<u32> = if selected { menu.selection.iter().map(|t| t.0).collect() } else { vec![track] };
     let group_label = if selected { "Group selected tracks" } else { "Group" };
     if ui.add(egui::Button::new(group_label).shortcut_text(shown("Ctrl+G"))).clicked() {
-        let tracks: Vec<u32> = if selected { menu.selection.iter().map(|t| t.0).collect() } else { vec![track] };
         actions.push(Action::new("track.group", json!({ "tracks": tracks })));
         ui.close();
     }
@@ -338,7 +339,6 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     ui.separator();
     // Cut, copy and duplicate take the selected tracks when this one is among them (#919).
     if !menu.is_return {
-        let tracks: Vec<u32> = if selected { menu.selection.iter().map(|t| t.0).collect() } else { vec![track] };
         for (label, keys, command) in [
             ("Cut", "Ctrl+X", "track.cut"),
             ("Copy", "Ctrl+C", "track.copy"),
@@ -355,8 +355,9 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         }
         ui.separator();
     }
+    // On a selected track it deletes the selection, as Cut does, in one undo step (#1188).
     if ui.button("Delete track").clicked() {
-        actions.push(Action::new("track.delete", json!({ "track": track })));
+        actions.push(Action::new("track.delete", json!({ "tracks": tracks })));
         ui.close();
     }
 }

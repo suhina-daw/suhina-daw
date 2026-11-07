@@ -59,12 +59,9 @@ pub fn pulse(ctx: &Context) -> f32 {
 pub fn mix(from: Color32, to: Color32, t: f32) -> Color32 {
     let t = t.clamp(0.0, 1.0);
     let channel = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8;
-    Color32::from_rgba_premultiplied(
-        channel(from.r(), to.r()),
-        channel(from.g(), to.g()),
-        channel(from.b(), to.b()),
-        channel(from.a(), to.a()),
-    )
+    // Premultiplied channels blend without a fringe toward a clear colour.
+    let ([r0, g0, b0, a0], [r1, g1, b1, a1]) = (from.to_array(), to.to_array());
+    Color32::from_rgba_premultiplied(channel(r0, r1), channel(g0, g1), channel(b0, b1), channel(a0, a1))
 }
 
 #[cfg(test)]

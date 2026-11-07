@@ -77,6 +77,7 @@ fn clip(start: f64, length: f64) -> Clip {
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
     }
 }
@@ -352,15 +353,19 @@ fn stretched_project(hz: f64, seconds: f64, beats: f64, bpm: f64, mode: StretchM
         sample_rate: Some(file_rate),
         channels: Some(1),
         duration_seconds: Some(seconds),
+        stream: None,
+    };
+    let region_audio = ClipAudio {
         warped: true,
         stretch: mode,
         warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: beats, audio_time: seconds }],
-        gain: 1.0,
-        transpose: 0.0,
-        stream: None,
+        ..ClipAudio::default()
     };
-    let mut project =
-        project_with(vec![ContentLane { target: None, data: LaneData::Audio(region) }], vec![clip(0.0, beats)], 1);
+    let mut project = project_with(
+        vec![ContentLane { target: None, data: LaneData::Audio(region) }],
+        vec![Clip { audio: region_audio, ..clip(0.0, beats) }],
+        1,
+    );
     project.transport.tempo_bpm = bpm;
     let mut pool = AudioPool::new();
     pool.files.insert("sine.wav".into(), std::sync::Arc::new(data));
@@ -879,12 +884,8 @@ fn an_edit_refused_by_a_full_queue_leaves_the_playing_voices_alone() {
 fn an_unwarped_clip_carries_on_through_a_tempo_edit() {
     // Unwarped audio plays at its own speed: a tempo edit must not move it in its file.
     let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
-    for content in &mut project.contents {
-        for lane in &mut content.lanes {
-            if let LaneData::Audio(region) = &mut lane.data {
-                region.warped = false;
-            }
-        }
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warped = false;
     }
     let mut slower = project.clone();
     slower.transport.tempo_bpm = 90.0;
@@ -910,6 +911,223 @@ fn an_unwarped_clip_carries_on_through_a_tempo_edit() {
     assert!(rms(&out, 40_000, 70_000) > 0.1);
     // The same file positions as without the edit (to rounding).
     assert!(max_diff(&out, &original) < 1e-6);
+    // A new start plays the clip from its start in the file again, as drawn at the new tempo:
+    // the carry-over held the file position only while it went on playing. Kept, the clip
+    // started at minus the beats the edit moved, silent until it caught up.
+    renderer.handle(LaunchCommand::Stop);
+    renderer.handle(LaunchCommand::Play);
+    let restarted = blocks(&mut renderer, 150, 480, |_| {});
+    let mut fresh = Renderer::build(
+        &slower,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let fresh = blocks(&mut fresh, 150, 480, |_| {});
+    assert!(rms(&restarted, 0, 20_000) > 0.1, "sound from the start");
+    // After the start's short ramp (the stop before it sounded the clip), sample for sample.
+    let after_ramp = 480 * 2;
+    assert!(max_diff(&restarted[after_ramp..], &fresh[after_ramp..]) < 1e-6, "as the project at the new tempo plays");
+}
+
+/// A point dragged fast while the clip plays, as the window sends it: a new envelope every 30 ms
+/// (`SEND_GAP` in the envelope's view), its point swinging between 0 and -40 dB right where the
+/// clip plays. The sound never steps from one frame to the next more than the clip itself does,
+/// read directly or stretched; a stretched clip's voice that starts afresh at each edit fades in
+/// over the old one, and the fade ends before the next edit.
+#[test]
+fn an_envelope_dragged_fast_while_its_clip_plays_never_clicks() {
+    // 30 ms of frames: the window's least time between two sends of a drag.
+    let gap = SR as usize * 3 / 100;
+    let edits = 60;
+    for warped in [false, true] {
+        let tempo = if warped { 100.0 } else { 120.0 };
+        let (mut project, pool) = stretched_project(220.0, 4.0, 8.0, tempo, StretchMode::Smooth);
+        for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+            clip.audio.warped = warped;
+        }
+        let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+        let mut controller = renderer.controller();
+        let mut worker = renderer.take_stretch_worker();
+        let mut fill = |_| {
+            if let Some(w) = worker.as_mut() {
+                w.fill();
+            }
+        };
+        renderer.handle(LaunchCommand::Play);
+        let plain = blocks(&mut renderer, edits, gap, &mut fill);
+        let clean = largest_step(&plain, 1_000, edits * gap - 1_000);
+        let mut out = Vec::new();
+        for k in 0..edits {
+            let beat = ((edits + k) * gap) as f64 / f64::from(SR) * tempo / 60.0;
+            let db = -((k as f64 * 7.0) % 40.0);
+            let mut edited = project.clone();
+            for clip in edited.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+                clip.audio.gain_envelope = vec![GainPoint::new(beat, 0.0), GainPoint::new(beat + 0.125, db)];
+            }
+            let _ = controller.update(&edited);
+            out.extend(blocks(&mut renderer, 1, gap, &mut fill));
+        }
+        let worst = largest_step(&out, 1_000, edits * gap - 1_000);
+        assert!(worst <= clean * 1.5 + 1e-3, "warped {warped}: a step of {worst}, the clip's own largest {clean}");
+    }
+}
+
+/// An unwarped clip of rich sound (noise, as a voice's consonants are) swapped into a new graph
+/// every 30 ms, as a drag of its envelope does, plays every sample where it would without the
+/// swaps: a read position that slipped a few samples at a swap was no click on a sine and a
+/// click on a voice.
+#[test]
+fn an_unwarped_clip_swapped_often_reads_on_without_a_slip() {
+    let gap = SR as usize * 3 / 100;
+    let (mut project, mut pool) = stretched_project(220.0, 4.0, 8.0, 120.0, StretchMode::Smooth);
+    let mut seed = 1u32;
+    let noise: Vec<f32> = (0..176_400)
+        .map(|_| {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 8) as f32 / (1u32 << 24) as f32 - 0.5
+        })
+        .collect();
+    pool.files
+        .insert("sine.wav".into(), std::sync::Arc::new(AudioData { sample_rate: 44_100, channels: 1, samples: noise }));
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warped = false;
+    }
+    let build = || Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+    let mut plain = build();
+    plain.handle(LaunchCommand::Play);
+    let plain = blocks(&mut plain, 60, gap, |_| {});
+    let mut renderer = build();
+    let mut controller = renderer.controller();
+    renderer.handle(LaunchCommand::Play);
+    let mut out = Vec::new();
+    for _ in 0..60 {
+        let _ = controller.update(&project);
+        out.extend(blocks(&mut renderer, 1, gap, |_| {}));
+    }
+    assert!(max_diff(&out, &plain) < 1e-6, "differs by {}", max_diff(&out, &plain));
+}
+
+/// A clip's envelope sent as a message (`Controller::set_clip_envelope`) takes effect on the
+/// playing graph, gliding, with no new graph: the level falls by 12 dB without a step.
+#[test]
+fn an_envelope_sent_as_a_message_glides_on_the_playing_graph() {
+    let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 120.0, StretchMode::Smooth);
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warped = false;
+    }
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 50, 480, |_| {});
+    let mut clip = project.arrangement.lanes[0].clips[0].clone();
+    clip.audio.gain_envelope = vec![GainPoint::new(0.0, -12.0)];
+    controller.set_clip_envelope(0, 0, &clip).unwrap();
+    out.extend(blocks(&mut renderer, 20, 480, |_| {}));
+    let peaks: Vec<f32> = out[22_000 * 2..32_000 * 2]
+        .chunks(220)
+        .map(|w| w.iter().step_by(2).fold(0.0f32, |m, s| m.max(s.abs())))
+        .collect();
+    let (first, last) = (peaks[0], peaks[peaks.len() - 1]);
+    assert!(last < first * 0.3, "down by 12 dB: {first} -> {last}");
+    let steepest = peaks.windows(2).map(|w| w[1] / w[0]).fold(1.0f32, f32::min);
+    assert!(steepest > 0.8, "no step: {steepest}");
+    // The replaced envelopes go back to the controller, which frees them.
+    controller.collect();
+}
+
+/// A graph built before an envelope message and swapped in after it keeps the message's
+/// envelope: a stretched clip's graph takes over 0.08 s ahead, the message arrives in between,
+/// and the clip stays 12 dB down after the swap instead of going back up.
+#[test]
+fn a_graph_built_before_an_envelope_message_keeps_the_message() {
+    let (project, pool) = stretched_project(220.0, 4.0, 8.0, 100.0, StretchMode::Smooth);
+    let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    let mut worker = renderer.take_stretch_worker().unwrap();
+    renderer.handle(LaunchCommand::Play);
+    let mut fill = |_| worker.fill();
+    let before = blocks(&mut renderer, 40, 480, &mut fill);
+    // A graph of the project as it was (no envelope), on its way while the message passes it.
+    controller.update(&project).unwrap();
+    let mut clip = project.arrangement.lanes[0].clips[0].clone();
+    clip.audio.gain_envelope = vec![GainPoint::new(0.0, -12.0)];
+    controller.set_clip_envelope(0, 0, &clip).unwrap();
+    let after = blocks(&mut renderer, 100, 480, &mut fill);
+    controller.collect();
+    let level = |out: &[f32], from: usize, to: usize| rms(out, from, to);
+    let (was, now) = (level(&before, 9_000, 19_000), level(&after, 38_000, 48_000));
+    assert!(now < was * 0.3, "still 12 dB down after the swap: {was} -> {now}");
+}
+
+/// A stretched clip under the whole loop, its envelope sent as messages every 30 ms through
+/// several wraps (a drag): its voice is never handed over or moved, so not a frame is late and
+/// every pass sounds.
+#[test]
+fn envelope_messages_through_loop_wraps_leave_a_stretched_clip_playing() {
+    let beat = SR as usize / 2;
+    let gap = SR as usize * 3 / 100;
+    let (mut project, pool) = stretched_project(220.0, 2.0, 3.0, 120.0, StretchMode::Smooth);
+    project.arrangement.lanes[0].clips[0].start = 1.0;
+    project.transport.loop_range = Some(LoopRange { start: 1.0, end: 4.0 });
+    project.transport.loop_enabled = true;
+    let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    let mut worker = renderer.take_stretch_worker().unwrap();
+    renderer.handle(LaunchCommand::Play);
+    let mut out = Vec::new();
+    let passes = 4;
+    let mut clip = project.arrangement.lanes[0].clips[0].clone();
+    for k in 0..(passes * 3 + 1) * beat / gap {
+        clip.audio.gain_envelope = vec![GainPoint::new(1.0, -((k % 7) as f64))];
+        controller.set_clip_envelope(0, 0, &clip).unwrap();
+        out.extend(blocks(&mut renderer, 1, gap, |_| worker.fill()));
+        controller.collect();
+    }
+    for k in 1..passes {
+        let at = (k * 3 + 1) * beat;
+        assert!(rms(&out, at + beat / 2, at + beat) > 0.05, "pass {k} sounds");
+    }
+    assert_eq!(renderer.stretch_underruns(), 0, "the voice was never moved");
+}
+
+#[test]
+fn an_envelope_edited_while_its_clip_plays_glides_to_the_new_gain() {
+    // A drag of the envelope swaps in a graph per frame; each step cut in at once crackled.
+    let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 120.0, StretchMode::Smooth);
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warped = false;
+    }
+    let mut lower = project.clone();
+    for clip in lower.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.gain_envelope = vec![GainPoint::new(0.0, -12.0)];
+    }
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 50, 480, |_| {});
+    controller.update(&lower).unwrap();
+    out.extend(blocks(&mut renderer, 20, 480, |_| {}));
+    // The peak of each 110-frame window (a period of 440 Hz is 109 frames) around the edit.
+    let peaks: Vec<f32> = out[22_000 * 2..32_000 * 2]
+        .chunks(220)
+        .map(|w| w.iter().step_by(2).fold(0.0f32, |m, s| m.max(s.abs())))
+        .collect();
+    let (first, last) = (peaks[0], peaks[peaks.len() - 1]);
+    assert!(last < first * 0.3, "down by 12 dB: {first} -> {last}");
+    let steepest = peaks.windows(2).map(|w| w[1] / w[0]).fold(1.0f32, f32::min);
+    assert!(steepest > 0.8, "no step from one window to the next: {steepest} in {peaks:?}");
 }
 
 /// Zero crossings per second of the left channel over frames `from..to`.
@@ -1376,6 +1594,221 @@ fn a_clip_deleted_or_moved_while_playing_stops_where_it_was() {
             let after = rms(&out, at, at + 9_600);
             assert!(after < 1e-4, "{mode:?}, moved {moved}: still playing at {after}");
         }
+    }
+}
+
+/// The largest step between two frames of the left channel in `out[from..to]` (frames).
+fn largest_step(out: &[f32], from: usize, to: usize) -> f32 {
+    let left: Vec<f32> = out.get(from * 2..to * 2).unwrap_or_default().iter().step_by(2).copied().collect();
+    left.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max)
+}
+
+/// The largest second difference of the left channel in `out[from..to]` (frames): a smooth
+/// sound bends a little from frame to frame, a click breaks the line at once.
+fn largest_bend(out: &[f32], from: usize, to: usize) -> f32 {
+    let left: Vec<f32> = out.get(from * 2..to * 2).unwrap_or_default().iter().step_by(2).copied().collect();
+    left.windows(3).map(|w| (w[2] - 2.0 * w[1] + w[0]).abs()).fold(0.0, f32::max)
+}
+
+/// A stretched clip played again and again by the arrangement's loop, through the stretch worker
+/// as the app plays it: every pass starts as the first, with no click at the clip's start.
+#[test]
+fn a_stretched_clip_starts_each_loop_pass_as_cleanly_as_the_first() {
+    let beat = SR as usize / 2;
+    for mode in [StretchMode::Smooth, StretchMode::Rhythmic, StretchMode::HighQuality] {
+        // Two seconds of a 220 Hz sine squeezed onto one beat (four times its speed), at beat 1;
+        // the loop runs from beat 0 to beat 3.
+        let (mut project, mut pool) = stretched_project(220.0, 2.0, 1.0, 120.0, mode);
+        // A kick: a sharp attack, a falling pitch, a decay.
+        let kick: Vec<f32> = (0..88_200)
+            .map(|i| {
+                let t = i as f64 / 44_100.0;
+                ((std::f64::consts::TAU * (50.0 + 150.0 * (-t * 30.0).exp()) * t).sin() * (-t * 6.0).exp() * 0.9) as f32
+            })
+            .collect();
+        pool.files.insert(
+            "sine.wav".into(),
+            std::sync::Arc::new(AudioData { sample_rate: 44_100, channels: 1, samples: kick }),
+        );
+        project.arrangement.lanes[0].clips[0].start = 1.0;
+        project.transport.loop_range = Some(LoopRange { start: 1.0, end: 4.0 });
+        project.transport.loop_enabled = true;
+        let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+        let mut worker = renderer.take_stretch_worker().unwrap();
+        renderer.handle(LaunchCommand::Play);
+        // Blocks of 2048, as an ASIO device asks for them, the worker filling between them.
+        let out = blocks(&mut renderer, (10 * beat) / 2048 + 1, 2048, |_| worker.fill());
+        // The first pass from beat 1, then every three beats the loop starts again at the clip.
+        let pass = |k: usize| (k * 3 + 1) * beat;
+        let first = &out[pass(0) * 2..(pass(0) + beat) * 2];
+        let clean = largest_step(&out, pass(0), pass(0) + beat);
+        for k in 1..3 {
+            let at = pass(k);
+            let step = largest_step(&out, at.saturating_sub(64), at + beat);
+            assert!(
+                step <= clean * 1.5 + 1e-3,
+                "{mode:?} pass {k}: a step of {step}, the first pass's largest {clean}"
+            );
+            let worst = max_diff(&out[at * 2..(at + beat) * 2], first);
+            assert!(worst < 0.05, "{mode:?} pass {k}: differs from the first by {worst}");
+        }
+        assert_eq!(renderer.stretch_underruns(), 0, "{mode:?}");
+    }
+}
+
+/// A stretched clip that plays right up to the loop end (the loop drawn over the clip, the most
+/// common loop) starts every pass at once too: its voice is read until the wrap, so a second
+/// voice of the clip waits at the loop start (#1268). It was silent for blocks after each wrap.
+#[test]
+fn a_stretched_clip_under_the_whole_loop_plays_each_pass_without_a_gap() {
+    let beat = SR as usize / 2;
+    for mode in [StretchMode::Smooth, StretchMode::HighQuality] {
+        // Two seconds of 220 Hz squeezed onto three beats from beat 1; the loop is the clip.
+        let (mut project, pool) = stretched_project(220.0, 2.0, 4.0, 120.0, mode);
+        // A part cut from the middle of the clip: it starts a beat into its audio.
+        let clip = &mut project.arrangement.lanes[0].clips[0];
+        clip.start = 1.0;
+        clip.offset = 1.0;
+        clip.length = 3.0;
+        project.transport.loop_range = Some(LoopRange { start: 1.0, end: 4.0 });
+        project.transport.loop_enabled = true;
+        let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+        let mut worker = renderer.take_stretch_worker().unwrap();
+        renderer.handle(LaunchCommand::Play);
+        // Blocks of 2048, as an ASIO device asks for them, the worker filling between them.
+        let out = blocks(&mut renderer, (10 * beat) / 2048 + 1, 2048, |_| worker.fill());
+        let pass = |k: usize| (k * 3 + 1) * beat;
+        let first = &out[pass(0) * 2..(pass(0) + beat) * 2];
+        let clean = largest_step(&out, pass(0) + 512, pass(1) - 512);
+        for k in 1..3 {
+            let at = pass(k);
+            let step = largest_step(&out, at - 512, at + 512);
+            assert!(step <= clean * 1.5 + 1e-3, "{mode:?} pass {k}: a step of {step} at the wrap, {clean} inside");
+            assert!(rms(&out, at, at + 2_048) > 0.1, "{mode:?} pass {k}: sound from the wrap on");
+            let worst = max_diff(&out[at * 2..(at + beat) * 2], first);
+            assert!(worst < 0.05, "{mode:?} pass {k}: differs from the first by {worst}");
+        }
+        assert_eq!(renderer.stretch_underruns(), 0, "{mode:?}");
+    }
+}
+
+/// A stretched clip under the whole loop, its envelope dragged (a new graph every 30 ms) through
+/// several wraps: every pass sounds. A swap after a wrap could leave the clip reading its voice
+/// that waited at the loop end, ahead of the playhead, and a whole pass was silent.
+#[test]
+fn a_stretched_loop_whose_envelope_is_dragged_sounds_on_every_pass() {
+    let beat = SR as usize / 2;
+    let gap = SR as usize * 3 / 100;
+    let (mut project, pool) = stretched_project(220.0, 2.0, 3.0, 120.0, StretchMode::Smooth);
+    project.arrangement.lanes[0].clips[0].start = 1.0;
+    project.transport.loop_range = Some(LoopRange { start: 1.0, end: 4.0 });
+    project.transport.loop_enabled = true;
+    let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    let mut worker = renderer.take_stretch_worker().unwrap();
+    renderer.handle(LaunchCommand::Play);
+    let mut out = Vec::new();
+    let passes = 4;
+    for k in 0..(passes * 3 + 1) * beat / gap {
+        let mut edited = project.clone();
+        for clip in edited.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+            clip.audio.gain_envelope = vec![GainPoint::new(1.0, -((k % 7) as f64))];
+        }
+        let _ = controller.update(&edited);
+        out.extend(blocks(&mut renderer, 1, gap, |_| worker.fill()));
+    }
+    for k in 1..passes {
+        let at = (k * 3 + 1) * beat;
+        assert!(rms(&out, at + beat / 2, at + beat) > 0.05, "pass {k} sounds: {}", rms(&out, at + beat / 2, at + beat));
+    }
+}
+
+/// Dragging a playing clip's tempo sends a new graph for every step: each one plays the clip's
+/// new voice on from the old one's sound, with no click where the two meet.
+#[test]
+fn a_stretched_clip_changes_its_tempo_while_playing_without_a_click() {
+    for mode in [StretchMode::Smooth, StretchMode::Rhythmic, StretchMode::HighQuality] {
+        let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, mode);
+        let mut renderer = Renderer::build(
+            &project,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
+        let mut controller = renderer.controller();
+        controller.run_stretch_worker(&mut renderer).unwrap();
+        let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
+        let mut out = blocks(&mut renderer, 50, 480, pace);
+        let clean = largest_bend(&out, 12_000, 24_000);
+        // Six steps of a drag, a tenth of a second apart: the clip's tempo up by 3 % each.
+        let mut edited = project.clone();
+        for _ in 0..6 {
+            for marker in &mut edited.arrangement.lanes[0].clips[0].audio.warp_markers {
+                marker.time *= 1.03;
+            }
+            controller.update(&edited).unwrap();
+            out.extend(blocks(&mut renderer, 10, 480, pace));
+        }
+        out.extend(blocks(&mut renderer, 30, 480, pace));
+        let step = largest_bend(&out, 24_000, out.len() / 2);
+        assert!(step <= clean * 3.0, "{mode:?}: a bend of {step}, before the drag {clean}");
+        assert_eq!(renderer.stretch_underruns(), 0, "{mode:?}");
+    }
+}
+
+/// The project's tempo changed from 100 to 90 BPM while a stretched clip plays: its voice for the
+/// new tempo takes over without a click.
+#[test]
+fn a_project_tempo_change_under_a_stretched_clip_does_not_click() {
+    for mode in [StretchMode::Smooth, StretchMode::HighQuality] {
+        // The clip's audio is at 120 BPM: stretched at 100 and at 90 alike.
+        let (project, pool) = stretched_project(440.0, 4.0, 8.0, 100.0, mode);
+        let mut slower = project.clone();
+        slower.transport.tempo_bpm = 90.0;
+        let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+        let mut controller = renderer.controller();
+        let mut worker = renderer.take_stretch_worker().unwrap();
+        renderer.handle(LaunchCommand::Play);
+        let mut fill = |_| worker.fill();
+        let mut out = blocks(&mut renderer, 50, 480, &mut fill);
+        let clean = largest_bend(&out, 12_000, 24_000);
+        controller.update(&slower).unwrap();
+        out.extend(blocks(&mut renderer, 60, 480, &mut fill));
+        let step = largest_bend(&out, 24_000, out.len() / 2);
+        assert!(step <= clean * 3.0, "{mode:?}: a bend of {step}, before {clean}");
+    }
+}
+
+/// A clip dragged from the project's tempo (read from the file directly) to another (stretched),
+/// and back, while it plays: the sound fades from one way of playing to the other, no click.
+#[test]
+fn a_clip_goes_between_direct_and_stretched_while_playing_without_a_click() {
+    // Four seconds of a sine on 110 bpm beats: at the project's 110 bpm it plays as it is.
+    let beats = 4.0 * 110.0 / 60.0;
+    let (project, pool) = stretched_project(440.0, 4.0, beats, 110.0, StretchMode::Smooth);
+    let mut stretched = project.clone();
+    for marker in &mut stretched.arrangement.lanes[0].clips[0].audio.warp_markers {
+        marker.time *= 1.03;
+    }
+    for (from, to) in [(&project, &stretched), (&stretched, &project)] {
+        let mut renderer = Renderer::build(
+            from,
+            RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
+        let mut controller = renderer.controller();
+        controller.run_stretch_worker(&mut renderer).unwrap();
+        let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
+        let mut out = blocks(&mut renderer, 50, 480, pace);
+        let clean = largest_bend(&out, 12_000, 24_000);
+        controller.update(to).unwrap();
+        out.extend(blocks(&mut renderer, 60, 480, pace));
+        let step = largest_bend(&out, 24_000, out.len() / 2);
+        assert!(step <= clean * 3.0, "a bend of {step}, before {clean}");
+        assert_eq!(renderer.stretch_underruns(), 0);
     }
 }
 

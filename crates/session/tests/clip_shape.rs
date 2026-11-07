@@ -29,6 +29,7 @@ fn clip(content: u32, start: f64) -> Clip {
         follow_action: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     }
@@ -81,7 +82,6 @@ fn project_built() -> Project {
                 track: TrackId(1),
                 slots: vec![Slot { clip: Some(clip(3, 0.0)), has_stop: true }, Slot::default()],
             }],
-            mappings: Default::default(),
         },
         ..Project::default()
     }

@@ -1,0 +1,71 @@
+/* Suhina, reduced to a few settings: every token below follows them. */
+@property --ground { syntax: "<color>"; initial-value: #1D1C1A; label: "Background"; group: "Colours"; }
+@property --surface { syntax: "<color>"; initial-value: #252421; label: "Panels"; group: "Colours"; }
+@property --ink { syntax: "<color>"; initial-value: #ECE8E1; label: "Text"; group: "Colours"; }
+@property --tint { syntax: "<color>"; initial-value: #A6A3FF; label: "Accent"; group: "Colours"; }
+@property --highlight { syntax: "<color>"; initial-value: #E3C86A; label: "Selection"; group: "Colours"; }
+:root {
+  --window-background: var(--ground);
+  --panel-background: var(--surface);
+  --panel-hoverBackground: color-mix(in oklab, var(--surface), var(--ink) 7%);
+  --track-headerBackground: var(--surface);
+  --track-headerSelectedBackground: color-mix(in oklab, var(--surface), var(--tint) 22%);
+  --track-mutedBackground: color-mix(in oklab, var(--surface), var(--ground) 50%);
+  --control-background: color-mix(in oklab, var(--surface), var(--ink) 9%);
+  --control-hoverBackground: color-mix(in oklab, var(--surface), var(--ink) 15%);
+  --control-activeBackground: color-mix(in oklab, var(--surface), var(--ink) 22%);
+  --control-playingBackground: color-mix(in oklab, var(--surface), var(--tint) 40%);
+  --control-selectedBackground: color-mix(in oklab, var(--ink), var(--ground) 12%);
+  --border: color-mix(in oklab, var(--surface), var(--ink) 9%);
+  --border-strong: color-mix(in oklab, var(--surface), var(--ink) 20%);
+  --grid-major: color-mix(in oklab, var(--ground), var(--ink) 9%);
+  --grid-minor: color-mix(in oklab, var(--ground), var(--ink) 5%);
+  --slot-empty: color-mix(in oklab, var(--surface), var(--ink) 20%);
+  --pan-background: color-mix(in oklab, var(--ground), var(--surface) 30%);
+  --pan-centre: color-mix(in oklab, var(--ink), var(--surface) 50%);
+  --accent: var(--tint);
+  --selection: var(--highlight);
+  --text-primary: var(--ink);
+  --text-secondary: color-mix(in oklab, var(--ink), var(--surface) 25%);
+  --text-hint: color-mix(in oklab, var(--ink), var(--surface) 48%);
+  --text-value: color-mix(in oklab, var(--ink), var(--surface) 8%);
+  --browser-text-primary: var(--ink);
+  --browser-text-secondary: color-mix(in oklab, var(--ink), var(--surface) 25%);
+  --browser-text-hint: color-mix(in oklab, var(--ink), var(--surface) 48%);
+  --browser-text-value: color-mix(in oklab, var(--ink), var(--surface) 8%);
+  --text-inverse: var(--ground);
+  --text-onColorDark: var(--ground);
+  --text-onColorLight: var(--ink);
+  --text-playing: contrast-color(var(--ground));
+  --recording: #E5484D;
+  --recording-background: color-mix(in oklab, var(--surface), var(--recording) 22%);
+  --meter-normal: #8BC48A;
+  --meter-hot: #E3C86A;
+  --clip-audioDefault: #FF9A3C;
+  --clip-midiDefault: #4FC3F7;
+  --kind-bass: #A84F4F;
+  --kind-clap: #5EC0B0;
+  --kind-closedHat: #C6AC5E;
+  --kind-crash: #E0A0C8;
+  --kind-cymbal: #A497CC;
+  --kind-effect: #9CC49C;
+  --kind-hat: #D8C47A;
+  --kind-kick: #D06E5E;
+  --kind-openHat: #D08F6E;
+  --kind-other: #8A8680;
+  --kind-percussion: #8FC06E;
+  --kind-ride: #C8B8E8;
+  --kind-rim: #8CA8E0;
+  --kind-snare: #73AAC0;
+  --kind-tom: #B074A4;
+  --kind-tonal: #6EB0D0;
+  --kind-vocal: #E8D0A0;
+  --track-1: #FF9A3C;
+  --track-2: #F2D541;
+  --track-3: #4FC3F7;
+  --track-4: #B38BFF;
+  --track-5: #7FDB5A;
+  --track-6: #FF6FA8;
+  --track-7: #5C8DFF;
+  --track-8: #2FD9C4;
+}

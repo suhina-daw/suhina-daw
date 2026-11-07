@@ -13,7 +13,7 @@ use egui::{Key, Modifiers, Pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
-use suhina_engine::model::{ChannelId, LaneData};
+use suhina_engine::model::ChannelId;
 use suhina_library::Library;
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
@@ -738,12 +738,9 @@ fn a_sample_dragged_onto_the_empty_space_makes_an_audio_track() {
     let track = session.project().tracks.iter().find(|t| t.name == "Loop 120bpm").unwrap();
     assert!(track.content.audio);
     // The loop's tempo is in its name, so it is warped.
-    let warped = session
-        .project()
-        .contents
-        .iter()
-        .flat_map(|c| &c.lanes)
-        .any(|l| matches!(&l.data, LaneData::Audio(r) if r.warped));
+    let project = session.project();
+    let slots = project.launcher.columns.iter().flat_map(|c| &c.slots).filter_map(|s| s.clip.as_ref());
+    let warped = project.arrangement.lanes.iter().flat_map(|l| &l.clips).chain(slots).any(|c| c.audio.warped);
     assert!(warped);
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
@@ -1172,6 +1169,28 @@ fn a_place_stays_chosen_on_a_second_click_and_its_cross_shows_everything() {
     harness.get_by_label("Show the samples as a list").click();
     harness.run();
     assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::List);
+    // A place that holds samples has the switch too, and the map shows it: Pinned (#862).
+    let map = "Show the samples laid out by how they sound";
+    harness.get_by_label("Place Pinned").click();
+    harness.run();
+    harness.get_by_label(map).click();
+    harness.run();
+    assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::Other, "Pinned's samples on the map");
+    // The views without samples have none, and the list shows again there.
+    harness.get_by_label("Show Plug-ins").click();
+    harness.run();
+    assert!(harness.query_by_label(map).is_none(), "no switch for Plug-ins");
+    assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::List);
+    // With Recent's kinds as chips, the switch has its own row under them (#862).
+    let ctx = harness.ctx.clone();
+    let mut chips = harness.state().settings().clone();
+    chips.view.recent_chips = true;
+    harness.state_mut().set_settings(&ctx, chips);
+    harness.get_by_label("Place Recent").click();
+    harness.run();
+    let kinds = harness.get_by_label("Recent Samples").rect();
+    let list = harness.get_by_label("Show the samples as a list").rect();
+    assert!(list.top() >= kinds.bottom(), "the switch is below Recent's chips: {list:?} under {kinds:?}");
     // Recent is an item of its own, every kind's recent items together.
     harness.get_by_label("Place Recent").click();
     harness.run();

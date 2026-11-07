@@ -115,6 +115,9 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     egui::Area::new(Id::unique("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(slice.min).show(
         ui.ctx(),
         |ui| {
+            // In the device's own scope, as its compact panel is: a rule on `#device-<id>` (its
+            // `--device-*` tokens) reaches the expanded canvas too.
+            let _device_style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
             // The panel takes the pointer, so the views under it get no clicks.
             let (rect, _) = ui.allocate_exact_size(slice.size(), Sense::click());
             let painter = ui.painter_at(rect);
@@ -209,13 +212,21 @@ pub(super) fn graph_controls(
     state: &crate::detail::device_widgets::PanelState<'_>,
     list_height: f32,
     track: TrackId,
-    at: &DeviceAt,
+    device: &DeviceBox,
     actions: &mut Vec<Action>,
 ) {
+    let at = &device.at;
+    // The list's scroll belongs to the device, not its place: with a device added, removed or
+    // moved before it, each list keeps its own (#826). Before the project gives ids, its place.
+    let scroll = if device.id.is_some() {
+        egui::IdSalt::new(("sd-controls", track.0, device.id))
+    } else {
+        egui::IdSalt::new(("sd-controls", track.0, at))
+    };
     ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
         // The list scrolls under nothing: it is cut at its own top, below the header and buttons.
         ui.set_clip_rect(ui.clip_rect().intersect(body));
-        egui::ScrollArea::both().auto_shrink([false, false]).id_salt(("sd-controls", track.0, at)).show(ui, |ui| {
+        egui::ScrollArea::both().auto_shrink([false, false]).id_salt(scroll).show(ui, |ui| {
             let hidden = graph.canvas.as_ref().map_or(&[][..], |c| c.hidden_parameters.as_slice());
             // A list keeps a compact panel's width unless the theme sizes the panel
             // (`.device { width }`): then it follows the panel, its scroll bar aside.

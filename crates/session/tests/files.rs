@@ -144,6 +144,16 @@ fn a_track_is_added_before_the_returns_with_its_channel_slots_and_lane() {
 }
 
 #[test]
+fn two_tracks_with_the_same_name_are_named_by_id_instead() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "track.rename", json!({ "track": "4 Audio", "name": "3 Audio" })).unwrap();
+    // The first of the two was picked without a word; now the command says it cannot tell.
+    let error = run(&mut session, "track.setMute", json!({ "tracks": ["3 Audio"], "mute": true })).unwrap_err();
+    assert!(error.contains("several tracks are named"), "{error}");
+    assert!(session.project().channels.iter().all(|c| !c.mute), "nothing changed");
+}
+
+#[test]
 fn a_track_added_with_a_device_takes_its_kind_and_name() {
     let mut session = Session::new(blank_project());
     let synth = run(&mut session, "track.add", json!({ "device": "fm-synth" })).unwrap();
@@ -194,7 +204,8 @@ fn samples_go_one_after_another_on_a_track_at_their_length() {
     let content = p.content(lane.clips[0].content).unwrap();
     assert_eq!(content.name, "hit one");
     let LaneData::Audio(region) = &content.lanes[0].data else { panic!("not audio") };
-    assert!(!region.warped);
+    assert!(!lane.clips[0].audio.warped);
+    assert_eq!(lane.clips[0].audio.tempo_source, None, "no tempo found");
     assert_eq!(region.file, text(&std::path::absolute(&one).unwrap()));
     assert!(session.audio().files.contains_key(&region.file), "decoded into the session's pool");
 
@@ -231,10 +242,11 @@ fn a_sample_with_a_tempo_in_its_name_is_warped_to_the_project() {
     let p = session.project();
     let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(3))).unwrap();
     assert_eq!(lane.clips[0].length, 2.0);
-    let LaneData::Audio(region) = &p.content(lane.clips[0].content).unwrap().lanes[0].data else { panic!() };
-    assert!(region.warped);
-    assert_eq!(region.stretch, StretchMode::Rhythmic);
-    assert_eq!(region.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)));
+    let audio = &lane.clips[0].audio;
+    assert!(audio.warped);
+    assert_eq!(audio.stretch, StretchMode::Rhythmic);
+    assert_eq!(audio.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)));
+    assert_eq!((audio.tempo(), audio.tempo_source), (Some(60.0), Some(TempoSource::Name)), "from its name");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -256,10 +268,8 @@ fn warp_on_sets_a_loop_of_known_tempo_back_to_its_own_tempo() {
     run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
     run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": true })).unwrap();
     let c = clip(&session);
-    let p = session.project();
-    let LaneData::Audio(region) = &p.content(c.content).unwrap().lanes[0].data else { panic!() };
-    assert!(region.warped);
-    assert_eq!(region.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)), "60 BPM again");
+    assert!(c.audio.warped);
+    assert_eq!(c.audio.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)), "60 BPM again");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -279,10 +289,7 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     run(&mut session, "clip.addFiles", json!({ "paths": [text(&hit)], "track": "3 Audio", "scene": 0 })).unwrap();
     let clip = slot_clip(session.project(), 3, 1);
     assert_eq!((clip.length, clip.loop_range), (1.5, Some(LoopRange { start: 0.0, end: 1.5 })));
-    let LaneData::Audio(region) = &session.project().content(clip.content).unwrap().lanes[0].data else {
-        panic!("not audio")
-    };
-    assert!(!region.warped, "it plays at its own speed");
+    assert!(!clip.audio.warped, "it plays at its own speed");
 
     // Launched, it repeats: sound in the second and third passes, not only the first.
     let column = session.project().launcher.columns.iter().position(|c| c.track == TrackId(3)).unwrap();
@@ -297,7 +304,8 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
 
     // clip.setLoop off makes it a one-shot: it plays once and the slot falls silent.
     let done = run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 0, "loop": false })).unwrap();
-    assert_eq!(done, json!({ "clip": slot_clip(session.project(), 3, 1).id.0, "scene": 0, "loop": false }));
+    let (clip, scene_id) = (slot_clip(session.project(), 3, 1).id.0, session.project().launcher.scenes[0].id.0);
+    assert_eq!(done, json!({ "clip": clip, "scene": 0, "scene_id": scene_id, "loop": false }));
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, None);
     let out = render(&session);
     assert!(at(&out, 0.3) > 0.1 && at(&out, 1.0) < 1e-6 && at(&out, 1.8) < 1e-6);
