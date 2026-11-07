@@ -25,14 +25,20 @@ fn rects_id() -> Id {
 #[derive(Default)]
 pub(super) struct NativeStyles {
     module: String,
-    scope: Option<crate::kit::style_class::Scope>,
+    scope: Option<crate::kit::element::Entered>,
 }
 impl NativeStyles {
     pub(super) fn enter(&mut self, module: &str) {
         if self.module != module {
             self.scope.take();
             self.module = module.into();
-            self.scope = Some(crate::kit::style_class::enter_named("toolbar-module", module));
+            self.scope = Some(crate::kit::element::TOOLBAR_MODULE.id(module).enter());
+        }
+    }
+    /// The module in scope's surface in `rect`, `fill` where the sheet gives none.
+    pub(super) fn paint(&self, painter: &egui::Painter, rect: Rect, fill: egui::Color32) {
+        if let Some(module) = &self.scope {
+            module.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill });
         }
     }
     pub(super) fn place(&mut self, ui: &Ui, module: &str, base: Rect) -> Rect {
@@ -334,7 +340,7 @@ impl App {
             "browser" => self.browser_toggle(ui, &painter, rect),
             "tempo" => {
                 ui.ctx().data_mut(|d| d.insert_temp(Id::unique("sampler-tempo"), grid.tempo_bpm));
-                self.tempo_field(ui, &painter, rect, grid.tempo_bpm, false, actions);
+                self.tempo_field(ui, &painter, rect, grid.tempo_bpm, None, actions);
             }
             "signature" => {
                 let ts = grid.time_signature();

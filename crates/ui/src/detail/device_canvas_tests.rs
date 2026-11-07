@@ -255,7 +255,7 @@ fn a_token_takes_the_drawings_alpha_without_rounding_its_colour_twice() {
 fn sample_markers_have_one_solid_color_without_an_outline() {
     let context = egui::Context::default();
     let mut output = context.run_ui(egui::RawInput::default(), |ui| {
-        sample_marker(&ui.ctx().layer_painter(egui::LayerId::background()), 20., 10., 80.);
+        sample_marker(&ui.ctx().layer_painter(egui::LayerId::background()), 20., 10., 80., marker_color());
     });
     let strokes: Vec<_> = output
         .shapes
@@ -265,7 +265,7 @@ fn sample_markers_have_one_solid_color_without_an_outline() {
             _ => None,
         })
         .collect();
-    assert_eq!(strokes, vec![Stroke::new(2., sample_marker_color())]);
+    assert_eq!(strokes, vec![Stroke::new(2., marker_color())]);
     output.textures_delta.clear();
 }
 
@@ -312,6 +312,7 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
             serde_json::json!(0),
             &mut Vec::new(),
             false,
+            None,
         );
     });
     output.textures_delta.clear();
@@ -1399,7 +1400,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
     assert!(
         preview.shapes.iter().any(|s| matches!(&s.shape,
             egui::Shape::LineSegment { points, stroke }
-                if stroke.color == slice_line(sample_marker_color()) && (points[0].x - moved.x).abs() < 0.01
+                if stroke.color == slice_line(marker_color()) && (points[0].x - moved.x).abs() < 0.01
         )),
         "the marker follows the pointer before the command is committed"
     );
@@ -1662,6 +1663,7 @@ fn unknown_tempo_has_a_time_grid_under_its_times_whatever_the_grid() {
                 serde_json::json!(0),
                 &mut Vec::new(),
                 false,
+                None,
             );
         });
         let lines = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::LineSegment { points, stroke } if points[0].x == points[1].x && *stroke == Stroke::new(1., crate::kit::theme::palette().text_primary.gamma_multiply(0.09)))).count();
@@ -2474,4 +2476,9 @@ fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
     // Pressed a quarter along the 40-point line: the value starts there and moves on with the drag.
     assert!(parameters[0].value > 0.25, "the drag moves the value from the press, got {}", parameters[0].value);
     assert!(parameters[0].value <= 0.5 + 1e-6, "no further than the pointer went, got {}", parameters[0].value);
+}
+
+/// The sample markers' colour with no sheet: the palette's accent.
+fn marker_color() -> Color32 {
+    color(styled_palette(widget_palette(), None).accent)
 }

@@ -157,8 +157,7 @@ pub(super) fn theme_sets_keys() -> bool {
 
 /// Whether the sheet gives `class` a gradient: it is then painted in place of the style's shading.
 fn has_gradient(class: &str) -> bool {
-    let _style = crate::kit::style_class::enter(class);
-    crate::kit::style_class::computed().is_some_and(|c| c.has_gradient())
+    crate::kit::element::named(class).and_then(|part| part.enter().style()).is_some_and(|c| c.has_gradient())
 }
 
 /// A state's colour from the sheet, when it differs from the base rule's: a rule for `piano-key`

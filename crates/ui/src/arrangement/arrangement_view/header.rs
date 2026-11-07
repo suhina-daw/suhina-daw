@@ -187,7 +187,7 @@ pub(super) fn track_header(
     let low = crate::kit::style_class::theme_compact_below().is_some_and(|below| rect.height() < below);
     let _native = crate::kit::control_layout::native_only(low);
     let mut work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement track header");
-    let _style_class = crate::kit::style_class::enter_named("track-header", &format!("track-{}", lane.track.0));
+    let own = crate::kit::element::TRACK_HEADER.id(&format!("track-{}", lane.track.0)).enter();
     crate::kit::native_css::set_variable("--track-colour", crate::kit::native_css::hex(rgb(lane.color)));
     crate::kit::native_css::mark(
         crate::kit::native_css::HostState::Selected,
@@ -296,7 +296,7 @@ pub(super) fn track_header(
     }
     crate::kit::liquid::paint(painter, rect, header_fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`arrangement track-header`) over the native one.
-    crate::kit::native_css::surface(painter, rect.intersect(clip), 0.0, egui::Color32::TRANSPARENT);
+    own.paint(painter, rect.intersect(clip));
     // The name and the controls' ink read on whichever background is shown.
     let header_fill = crate::kit::style_class::background(header_fill);
     if selected {
@@ -576,7 +576,7 @@ pub(super) fn track_header(
     };
     name = crate::kit::control_layout::place("arrangement-name", name, clip);
     let name_visible = !crate::kit::control_layout::placement("arrangement-name").hidden;
-    let name_style = crate::kit::style_class::enter_named("track-name", &format!("track-{}", lane.track.0));
+    let name_style = crate::kit::element::TRACK_NAME.id(&format!("track-{}", lane.track.0)).enter();
     crate::kit::native_css::set_variable("--track-fill", crate::kit::native_css::hex(header_fill));
     if name_visible {
         crate::kit::skin::paint_colored(
@@ -588,7 +588,7 @@ pub(super) fn track_header(
             rgb(lane.color),
         );
         // The sheet's own background for the name (`arrangement track-name`).
-        crate::kit::native_css::surface(painter, name.intersect(clip), 0.0, egui::Color32::TRANSPARENT);
+        name_style.paint(painter, name.intersect(clip));
     }
     // Ink that reads on the fill, unless the sheet gives the name a colour.
     let name_color = crate::kit::style_class::foreground(if lane.mute {

@@ -75,10 +75,10 @@ pub(super) fn send_knob(
     let (low, high) = widgets::SEND_RANGE;
     let position = ((shown - low) / (high - low)) as f32;
     // `send` styles it here as in the mixer.
-    let _style = crate::kit::style_class::enter_response("send", &response);
+    let el = crate::kit::element::SEND.response(&response).enter();
     let amount = widgets::hover(ui, &response);
     let surface = motion::mix(background, theme::control_hover(), amount);
-    crate::kit::native_css::surface(painter, rect, 0.0, egui::Color32::TRANSPARENT);
+    el.paint(painter, rect);
     let pointer = crate::kit::style_class::foreground(theme::text_on(surface));
     if amount > 0.0 || response.has_focus() {
         let fill = theme::control_hover().gamma_multiply(amount.max(0.3));

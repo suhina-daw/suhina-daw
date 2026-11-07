@@ -151,8 +151,8 @@ fn chain_row(
             let width = editor.map_or(authored_width, |e| authored_width.max(e.x + PAD * 2.0));
             // `device { width }` or `#device-<id> { width }` widens the panel (up to 1600 points).
             let (width, themed_height) = {
-                let _style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
-                let computed = crate::kit::style_class::computed();
+                let el = crate::kit::element::DEVICE.id(&format!("device-{}", device.theme_id)).enter();
+                let computed = el.style();
                 let width = computed
                     .as_ref()
                     .and_then(|c| c.width)
@@ -422,8 +422,8 @@ fn list_right(device: &DeviceBox, graph: &GraphBox) -> f32 {
 /// column that follows that width and scrolls.
 fn list_height(device: &DeviceBox, graph: &GraphBox) -> f32 {
     if graph.canvas.is_none() {
-        let _style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
-        if crate::kit::style_class::computed().is_some_and(|c| c.width.is_some()) {
+        let el = crate::kit::element::DEVICE.id(&format!("device-{}", device.theme_id)).enter();
+        if el.style().is_some_and(|c| c.width.is_some()) {
             return f32::INFINITY;
         }
     }
@@ -817,16 +817,26 @@ fn device_panel(
     // `device` styles every device's panel and `#device-compressor` (a built-in device's id)
     // one kind of them; `device-header` its header row. Everything inside (`device-control`,
     // the generated parameter list's widgets) is in that scope.
-    let _device_style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
+    let device_style = crate::kit::element::DEVICE.id(&format!("device-{}", device.theme_id)).enter();
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, !device.enabled);
+    // A list keeps a compact panel's width unless the theme sizes the panel (`device { width }`).
+    let themed_width = device_style.style().is_some_and(|c| c.width.is_some());
     let mut styled_ui = crate::kit::style_class::ui(ui);
     let ui = &mut *styled_ui;
-    crate::kit::native_css::surface(painter, rect, 0.0, theme::panel_background());
+    device_style.paint_with(
+        painter,
+        rect,
+        crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() },
+    );
     let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     {
-        let _header = crate::kit::style_class::enter("device-header");
-        crate::kit::native_css::surface(painter, header, 0.0, theme::control_background());
+        let header_el = crate::kit::element::DEVICE_HEADER.enter();
+        header_el.paint_with(
+            painter,
+            header,
+            crate::kit::element::Native { radius: 0.0, fill: theme::control_background() },
+        );
     }
     let switch = Rect::from_min_size(
         Pos2::new(header.left() + PAD, header.center().y - ON_SWITCH / 2.0),
@@ -972,7 +982,17 @@ fn device_panel(
         {
             let list = Rect::from_min_max(Pos2::new(body.left(), rect.top() + EDITOR_TOP), body.max);
             if list.height() >= PARAM_ROW {
-                graph_controls(ui, list, graph, &state, list_height(device, graph), track, device, actions);
+                graph_controls(
+                    ui,
+                    list,
+                    graph,
+                    &state,
+                    list_height(device, graph),
+                    track,
+                    device,
+                    themed_width,
+                    actions,
+                );
             }
         }
         outline(painter);
@@ -996,7 +1016,7 @@ fn device_panel(
         return clicked;
     }
     if let Some(graph) = &device.graph {
-        graph_controls(ui, body, graph, &state, list_height(device, graph), track, device, actions);
+        graph_controls(ui, body, graph, &state, list_height(device, graph), track, device, themed_width, actions);
         outline(painter);
         return clicked;
     }

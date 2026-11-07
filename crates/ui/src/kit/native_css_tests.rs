@@ -133,6 +133,7 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
             name: None,
             state: 0,
             variables: Vec::new(),
+            attributes: Vec::new(),
             sheet: 0,
         },
         StyleNode {
@@ -142,6 +143,7 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
             name: Some("play".into()),
             state: 0,
             variables: Vec::new(),
+            attributes: Vec::new(),
             sheet: 0,
         },
     ];
@@ -914,7 +916,7 @@ fn a_transparent_control_background_paints_nothing() {
     let shapes = painted("#tempo { background-color: transparent; }", |ui| {
         let _toolbar = super::super::style_class::enter("toolbar");
         let _module = super::super::style_class::enter_named("toolbar-module", "tempo");
-        surface(ui.painter(), field, 0.0, theme::window_background());
+        surface_now(ui.painter(), field, 0.0, theme::window_background());
     });
     assert!(!rects(&shapes).iter().any(|r| r.rect == field), "{shapes:?}");
 }
@@ -952,7 +954,7 @@ fn a_level_bar_or_surface_squeezed_below_a_point_draws_nothing_and_never_panics(
                 "0.0",
                 egui::Align2::RIGHT_CENTER,
             );
-            surface(ui.painter(), field, 4.0, theme::control_background());
+            surface_now(ui.painter(), field, 4.0, theme::control_background());
         });
     }
 }
@@ -1395,7 +1397,7 @@ fn a_family_class_reaches_every_part_of_its_kind() {
         }
         let response = ui.interact(field, egui::Id::unique("solo"), egui::Sense::click());
         let _solo = super::super::style_class::enter_named_response("button", "solo", &response);
-        surface(ui.painter(), field, 0.0, egui::Color32::BLACK);
+        surface_now(ui.painter(), field, 0.0, egui::Color32::BLACK);
     });
     assert_eq!(
         pan,
@@ -1455,4 +1457,9 @@ fn a_low_track_keeps_its_native_layout() {
     }
     assert_eq!(placement("arrangement-enable"), placed, "the next track places it again");
     skin::configure(&skin::Skin::default());
+}
+
+/// The surface of the element in scope, as a control painted inside it draws it.
+fn surface_now(painter: &egui::Painter, rect: Rect, radius: f32, fill: Color32) -> f32 {
+    surface_with(painter, rect, radius, fill, super::super::style_class::computed())
 }

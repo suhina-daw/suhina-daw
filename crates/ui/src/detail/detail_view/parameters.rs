@@ -62,8 +62,8 @@ pub(super) fn parameter_cell(
         if style.show_value && style.label_position == LabelPosition::Top { style.font_size + 4.0 } else { 0.0 };
     // `device value { width }` sets the value's column; it never takes more than half the row.
     let sheet_value = {
-        let _value = crate::kit::style_class::enter("value");
-        crate::kit::style_class::computed().and_then(|c| c.width)
+        let value = crate::kit::element::VALUE.enter();
+        value.style().and_then(|c| c.width)
     };
     let value_width = if style.show_value && value_height == 0.0 {
         sheet_value.map_or((row.width() * 0.24).min(80.0), |w| w.clamp(0.0, row.width() / 2.0))
@@ -330,11 +330,12 @@ fn slider_gesture(
 /// Whether the theme gives sliders parts of their own: `slider-rail`, `slider-fill` or
 /// `slider-handle` with a background, or `slider.rail` / `slider.fill` / `slider.handle` artwork.
 pub(crate) fn themed_slider() -> bool {
-    let _style = crate::kit::style_class::enter("slider");
-    ["slider-rail", "slider-fill", "slider-handle"].into_iter().any(|class| {
-        let _part = crate::kit::style_class::enter(class);
-        crate::kit::style_class::computed().is_some_and(|c| c.authored.background || c.has_gradient())
-    }) || ["slider.rail", "slider.fill", "slider.handle"].into_iter().any(crate::kit::skin::has_own)
+    use crate::kit::element::{SLIDER, SLIDER_FILL, SLIDER_HANDLE, SLIDER_RAIL};
+    let _slider = SLIDER.enter();
+    [SLIDER_RAIL, SLIDER_FILL, SLIDER_HANDLE]
+        .into_iter()
+        .any(|part| part.enter().style().is_some_and(|c| c.authored.background || c.has_gradient()))
+        || ["slider.rail", "slider.fill", "slider.handle"].into_iter().any(crate::kit::skin::has_own)
 }
 
 /// A parameter slider drawn from the theme's parts: the rail (`slider-rail`, `height` its
@@ -357,8 +358,8 @@ fn themed_slider_widget(
         if logarithmic { (v / min).ln() / (max / min).ln() } else { (v - min) / (max - min).max(f64::EPSILON) }
     };
     let handle_width = {
-        let _handle = crate::kit::style_class::enter("slider-handle");
-        crate::kit::style_class::computed().and_then(|c| c.width).unwrap_or(8.0).clamp(2.0, rect.width().max(2.0))
+        let handle = crate::kit::element::SLIDER_HANDLE.enter();
+        handle.style().and_then(|c| c.width).unwrap_or(8.0).clamp(2.0, rect.width().max(2.0))
     };
     let travel = (rect.width() - handle_width).max(1.0);
     let step = if control == ParameterControl::Integer { 1.0 } else { parameter.ui.step };
@@ -367,33 +368,45 @@ fn themed_slider_widget(
     let state = State::response(&response, false);
     let painter = ui.painter_at(rect);
     let rail = {
-        let _rail = crate::kit::style_class::enter("slider-rail");
+        let rail_el = crate::kit::element::SLIDER_RAIL.enter();
         let thickness = crate::kit::native_css::thickness(4.0).clamp(1.0, rect.height());
         let rail = Rect::from_center_size(rect.center(), Vec2::new(rect.width(), thickness));
         if !(skin::has_own("slider.rail") && skin::paint(&painter, rail, "slider.rail", state, theme::text_hint(), 0.0))
         {
-            crate::kit::native_css::surface(&painter, rail, thickness / 2.0, theme::control_background());
+            rail_el.paint_with(
+                &painter,
+                rail,
+                crate::kit::element::Native { radius: thickness / 2.0, fill: theme::control_background() },
+            );
         }
         rail
     };
     let at = rect.left() + handle_width / 2.0 + travel * position;
     {
-        let _fill = crate::kit::style_class::enter("slider-fill");
+        let fill_el = crate::kit::element::SLIDER_FILL.enter();
         let fill = Rect::from_min_max(rail.min, Pos2::new(at, rail.bottom()));
         if fill.width() >= 1.0
             && !(skin::has_own("slider.fill")
                 && skin::paint(&painter, fill, "slider.fill", state, theme::accent(), 0.0))
         {
-            crate::kit::native_css::surface(&painter, fill, rail.height() / 2.0, theme::control_selected());
+            fill_el.paint_with(
+                &painter,
+                fill,
+                crate::kit::element::Native { radius: rail.height() / 2.0, fill: theme::control_selected() },
+            );
         }
     }
     {
-        let _handle = crate::kit::style_class::enter_response("slider-handle", &response);
+        let handle_el = crate::kit::element::SLIDER_HANDLE.response(&response).enter();
         let handle = Rect::from_center_size(Pos2::new(at, rect.center().y), Vec2::new(handle_width, rect.height()));
         if !(skin::has_own("slider.handle")
             && skin::paint(&painter, handle, "slider.handle", state, theme::text_primary(), 0.0))
         {
-            crate::kit::native_css::surface(&painter, handle, 2.0, theme::text_primary());
+            handle_el.paint_with(
+                &painter,
+                handle,
+                crate::kit::element::Native { radius: 2.0, fill: theme::text_primary() },
+            );
         }
     }
     response
@@ -415,8 +428,8 @@ pub(super) fn knob(
     // `--suhina-param-row` taller rows give it room. Its `accent-color` colours its ring and
     // pointer, unless the device gives an accent of its own.
     let (themed, sheet_accent) = {
-        let _knob = crate::kit::style_class::enter("knob");
-        let computed = crate::kit::style_class::computed();
+        let knob = crate::kit::element::KNOB.enter();
+        let computed = knob.style();
         (computed.as_ref().and_then(|c| c.width.or(c.height)), computed.filter(|c| c.authored.accent).map(|c| c.accent))
     };
     let accent = accent.or(sheet_accent);
@@ -481,15 +494,16 @@ pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Show
             picked = Some(value);
         }
         // `editor-tab` (`[checked]` for the one shown), `#tab-clip` and `#tab-devices`.
-        let _style = crate::kit::style_class::enter_named_response(
-            "editor-tab",
-            &format!("tab-{}", text.to_ascii_lowercase()),
-            &response,
-        );
-        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, value == showing);
+        let tab = format!("tab-{}", text.to_ascii_lowercase());
+        let el = crate::kit::element::EDITOR_TAB
+            .id(&tab)
+            .response(&response)
+            .attr(crate::kit::element::Checked, value == showing)
+            .enter();
         let on = motion::toward(ui.ctx(), response.id.with("on"), value == showing, motion::VALUE);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        crate::kit::native_css::surface(painter, cell, 0.0, motion::mix(idle, theme::control_selected(), on));
+        let fill = motion::mix(idle, theme::control_selected(), on);
+        el.paint_with(painter, cell, crate::kit::element::Native { radius: 0.0, fill });
         let color =
             crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), on));
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);

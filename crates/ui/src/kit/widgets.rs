@@ -221,10 +221,13 @@ pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, response: &Res
 
 /// CSS paint remains above the SVG body, below the control's glyph and label.
 pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bool, fill: Color32, radius: f32) {
-    let _style = super::style_class::control("button", response);
+    // The button's own element: the caller's when it entered one, else one entered here.
+    let own = super::style_class::control("button", response);
     super::native_css::mark(super::native_css::HostState::Checked, on);
+    let style = own.as_ref().map_or_else(super::style_class::computed, super::style_class::Scope::style);
     // A shape the sheet gives the button wins over the artwork Suhina ships, not over the theme's own.
-    let shaped = super::style_class::computed()
+    let shaped = style
+        .as_ref()
         .is_some_and(|style| style.authored.background || style.authored.radius || style.authored.border_width);
     let role = super::skin::button_role();
     if !shaped || role != "button" || super::skin::has_own("button") {
@@ -236,15 +239,15 @@ pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bo
             return;
         }
     }
-    super::native_css::surface(painter, rect, radius, fill);
+    super::native_css::surface_with(painter, rect, radius, fill, style);
 }
 
 /// A track's number, `track-number`: its own `color`, `font-size` and `display: none`, and
 /// `[muted]` while the track is off.
 pub fn track_number_text(painter: &Painter, rect: Rect, number: &str, ink: Color32, muted: bool) {
-    let _style = super::style_class::enter("track-number");
+    let el = super::element::TRACK_NUMBER.enter();
     super::native_css::mark(super::native_css::HostState::Muted, muted);
-    let computed = super::style_class::computed();
+    let computed = el.style();
     if computed.as_ref().is_some_and(|c| !c.visible) {
         return;
     }

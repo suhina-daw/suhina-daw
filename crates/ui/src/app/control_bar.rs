@@ -92,7 +92,7 @@ impl App {
         x = tempo_rect.right() + PAD;
         let tempo_rect = native_styles.place(ui, "tempo", tempo_rect);
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("sampler-tempo"), grid.tempo_bpm));
-        self.tempo_field(ui, &painter, tempo_rect, grid.tempo_bpm, true, actions);
+        self.tempo_field(ui, &painter, tempo_rect, grid.tempo_bpm, Some(&native_styles), actions);
         // The time signature playing, like the tempo: a launched scene may have changed it.
         let ts = grid.time_signature();
         let signature =
@@ -281,7 +281,7 @@ impl App {
         let recording = self.session().is_some_and(|s| s.records_arrangement());
         crate::session::record_controls::record_button(ui, &painter, record, recording, actions);
         let position = native_styles.place(ui, "position", position_base);
-        crate::kit::native_css::surface(&painter, position, 0.0, theme::window_background());
+        native_styles.paint(&painter, position, theme::window_background());
         widgets::text_in(
             &painter,
             position.shrink2(Vec2::new(PAD, 0.0)),
@@ -334,7 +334,7 @@ impl App {
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "performance", rect);
             let percent = f64::from(milli.min(1000)) / 10.0;
-            crate::kit::native_css::surface(&painter, rect, 0.0, theme::window_background());
+            native_styles.paint(&painter, rect, theme::window_background());
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
                 &painter,
@@ -370,7 +370,7 @@ impl App {
             let rect = row(right - 76.0, 76.0);
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "performance", rect);
-            crate::kit::native_css::surface(&painter, rect, 0.0, theme::window_background());
+            native_styles.paint(&painter, rect, theme::window_background());
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
                 &painter,
@@ -546,31 +546,28 @@ impl App {
     /// The tempo field, in the control bar or a theme's toolbar: its value with three decimals, a
     /// drag steps the place under the pointer where it was pressed (the integer part 1 BPM, each
     /// decimal a tenth of the one before, #829), and while it moves the project follows a few times
-    /// a second in one undo step (#916). `native` draws the field's surface, as the plain bar does.
+    /// a second in one undo step (#916). `native`, the plain bar's modules, draws the field's surface as
+    /// the tempo module's.
     pub(super) fn tempo_field(
         &mut self,
         ui: &mut Ui,
         painter: &egui::Painter,
         tempo_rect: Rect,
         bpm_now: f64,
-        native: bool,
+        native: Option<&super::themed_toolbar::NativeStyles>,
         actions: &mut Vec<Action>,
     ) {
         let grab = self.tempo_grab;
         let tempo_shown = self.tempo_drag.map_or(bpm_now, |bpm| snap_tempo(grab, bpm));
         let tempo_text = format!("{tempo_shown:.3}");
         let response = widgets::value_area(ui, tempo_rect, Id::unique("tempo"), "Tempo", tempo_text.clone());
-        if native {
-            crate::kit::native_css::surface(
-                painter,
-                tempo_rect,
-                0.0,
-                motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
-            );
+        if let Some(styles) = native {
+            let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+            styles.paint(painter, tempo_rect, fill);
         }
         let mono = theme::mono_font(theme::TEXT);
         let text_area = tempo_rect.shrink2(Vec2::new(PAD, 0.0));
-        let ink = if native { theme::text_primary() } else { theme::text_value() };
+        let ink = if native.is_some() { theme::text_primary() } else { theme::text_value() };
         widgets::text_in(painter, text_area, Align2::RIGHT_CENTER, &tempo_text, mono.clone(), ink);
         // The place under the pointer, or the one the drag holds: the integer part steps 1 BPM,
         // each decimal a tenth of the one before (#829).

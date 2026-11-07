@@ -85,14 +85,27 @@ pub fn property(key: &str) -> Option<String> {
 pub struct Scope {
     palette: theme::Palette,
     revision: u64,
-    native: bool,
+    /// The element's node in this frame's style tree, when the engine collected it.
+    pub(super) node: Option<usize>,
+    /// How many elements are in scope with this one, itself included.
+    pub(super) depth: usize,
+}
+
+impl Scope {
+    /// This element's own style: the one resolved for its node, never an enclosing element's.
+    pub(super) fn style(&self) -> Option<super::native_css::Computed> {
+        STACK.with(|stack| {
+            let stack = stack.borrow();
+            stack.get(..self.depth).and_then(|names| super::native_css::scoped_at(self.node, names))
+        })
+    }
 }
 impl Drop for Scope {
     fn drop(&mut self) {
         if theme::palette_revision() == self.revision {
             theme::local_palette(self.palette);
         }
-        if self.native {
+        if self.node.is_some() {
             super::native_css::leave();
         }
         STACK.with(|s| {
@@ -118,10 +131,14 @@ pub fn control(class: &str, response: &egui::Response) -> Option<Scope> {
     (!STACK.with(|stack| stack.borrow().last().is_some_and(|current| current == class)))
         .then(|| enter_response(class, response))
 }
-fn enter_inner(class: &str, name: Option<&str>, response: Option<&egui::Response>) -> Scope {
-    let native = super::native_css::enter(class, name, response);
+pub(super) fn enter_inner(class: &str, name: Option<&str>, response: Option<&egui::Response>) -> Scope {
+    let node = super::native_css::enter(class, name, response);
     let saved = theme::palette();
-    STACK.with(|s| s.borrow_mut().push(class.into()));
+    let depth = STACK.with(|s| {
+        let mut stack = s.borrow_mut();
+        stack.push(class.into());
+        stack.len()
+    });
     let mut palette = saved;
     if let Some(color) = property("color").as_deref().and_then(theme::parse_hex) {
         set_foreground(&mut palette, color, class);
@@ -151,7 +168,7 @@ fn enter_inner(class: &str, name: Option<&str>, response: Option<&egui::Response
         }
     }
     theme::local_palette(palette);
-    Scope { palette: saved, revision: theme::palette_revision(), native }
+    Scope { palette: saved, revision: theme::palette_revision(), node, depth }
 }
 
 /// A background for `class`: a view's sets the surfaces inside it, and a control's its own fill
@@ -303,7 +320,9 @@ pub fn view() -> Option<&'static str> {
     })
 }
 
-pub fn computed() -> Option<super::native_css::Computed> {
+/// The style of the element innermost in scope. Private to `kit`: code that draws asks its own
+/// element for its style (`kit::element`), so it never paints with an enclosing one's.
+pub(super) fn computed() -> Option<super::native_css::Computed> {
     STACK.with(|stack| super::native_css::scoped(&stack.borrow()))
 }
 pub fn radius(fallback: f32) -> f32 {

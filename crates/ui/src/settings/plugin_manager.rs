@@ -186,12 +186,14 @@ pub struct ManagerOut {
 /// Draws the manager over `area`.
 pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     // `plugin-manager` styles it; its buttons and fields take the sheet's `button` and `text-input`.
-    let _style = crate::kit::style_class::enter("plugin-manager");
+    let page = crate::kit::element::PLUGIN_MANAGER
+        .native(crate::kit::element::Native { radius: 0.0, fill: theme::window_background() })
+        .enter();
     let mut styled_ui = crate::kit::style_class::ui(ui);
     let ui = &mut *styled_ui;
     let mut out = ManagerOut::default();
     let painter = ui.painter_at(area);
-    crate::kit::native_css::surface(&painter, area, 0.0, theme::window_background());
+    page.paint(&painter, area);
     let inner = area.shrink(2.0 * PAD);
     let small = theme::ui_font(theme::TEXT_SMALL);
 

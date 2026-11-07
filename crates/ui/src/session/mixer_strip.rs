@@ -68,8 +68,8 @@ const CAP: Vec2 = Vec2::new(20.0, 26.0);
 
 /// The fader cap's size: `fader-cap { width; height }` in the theme, else [`CAP`].
 pub(crate) fn cap_size() -> Vec2 {
-    let _style = crate::kit::style_class::enter("fader-cap");
-    let computed = crate::kit::style_class::computed();
+    let el = crate::kit::element::FADER_CAP.enter();
+    let computed = el.style();
     Vec2::new(
         computed.as_ref().and_then(|c| c.width).filter(|w| *w >= 4.0).unwrap_or(CAP.x).min(64.0),
         computed.as_ref().and_then(|c| c.height).filter(|h| *h >= 4.0).unwrap_or(CAP.y).min(96.0),
@@ -78,8 +78,8 @@ pub(crate) fn cap_size() -> Vec2 {
 
 /// The fader rail's thickness: `fader-rail { width }` in the theme, else 5 points.
 pub(crate) fn rail_width() -> f32 {
-    let _style = crate::kit::style_class::enter("fader-rail");
-    crate::kit::style_class::computed().and_then(|c| c.width).filter(|w| *w >= 1.0).unwrap_or(5.0).min(32.0)
+    let el = crate::kit::element::FADER_RAIL.enter();
+    el.style().and_then(|c| c.width).filter(|w| *w >= 1.0).unwrap_or(5.0).min(32.0)
 }
 const LEAST_FADER: f32 = 48.0;
 const TALLEST_FADER_WITH_DEVICES: f32 = 140.0;
@@ -548,8 +548,8 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, rect: Rect, fader: f32
 /// The track's name at the top of a tall strip; screen readers and tests find it as a label.
 fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: Id, selected: bool) {
     let response = ui.interact(rect.intersect(painter.clip_rect()), id.with("strip-name"), Sense::hover());
-    let _name_style =
-        crate::kit::style_class::enter_named_response("track-name", &format!("track-{}", column.track.0), &response);
+    let track_id = format!("track-{}", column.track.0);
+    let name_style = crate::kit::element::TRACK_NAME.id(&track_id).response(&response).enter();
     crate::kit::native_css::set_variable(
         "--track-fill",
         crate::kit::native_css::hex(colour_picker::fill(column.color, column.mute)),
@@ -560,12 +560,11 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
     let native_fill = colour_picker::fill(column.color, column.mute);
     // An alpha material layers over the track colour. An explicitly authored
     // transparent solid background can still remove that colour completely.
-    let fill =
-        if crate::kit::style_class::computed().is_some_and(|style| style.has_gradient() && style.background.a() == 0) {
-            native_fill
-        } else {
-            crate::kit::style_class::background(native_fill)
-        };
+    let fill = if name_style.style().is_some_and(|style| style.has_gradient() && style.background.a() == 0) {
+        native_fill
+    } else {
+        crate::kit::style_class::background(native_fill)
+    };
     if !crate::kit::skin::paint_colored(
         painter,
         rect,
@@ -1106,8 +1105,8 @@ fn paint_fader(
             )
         };
         // `#mixer-volume-readout`: its own background, corners, `font-size`, `color` and number format.
-        let _readout = crate::kit::style_class::enter_named("value", "mixer-volume-readout");
-        crate::kit::native_css::surface(painter, area, 0.0, egui::Color32::TRANSPARENT);
+        let readout = crate::kit::element::VALUE.id("mixer-volume-readout").enter();
+        readout.paint(painter, area);
         let size = crate::kit::style_class::font_size(9.0);
         let ink = crate::kit::style_class::foreground(value_color);
         let text = widgets::formatted_value(&widgets::format_db(db));
@@ -1372,8 +1371,8 @@ fn send_knobs(
     let count = column.sends.len();
     // `send { width; height }` sizes every send, within the row.
     let sheet = {
-        let _send = crate::kit::style_class::enter("send");
-        crate::kit::style_class::computed()
+        let send = crate::kit::element::SEND.enter();
+        send.style()
     };
     let width =
         sheet.as_ref().and_then(|s| s.width).map_or((row.width() - SEND_GAP) / 2.0, |w| w.clamp(8.0, row.width()));
@@ -1468,7 +1467,7 @@ fn send_knobs(
         let position = ((shown - low) / (high - low)) as f32;
         // `send` styles every send, `#mixer-send-N` one of them; `--suhina-appearance: knob`
         // draws it as a knob.
-        let _style = crate::kit::style_class::enter_named_response("send", &name, &response);
+        let el = crate::kit::element::SEND.id(&name).response(&response).enter();
         let pointer = crate::kit::style_class::foreground(motion::mix(
             theme::text_value(),
             theme::text_primary(),
@@ -1481,7 +1480,11 @@ fn send_knobs(
             widgets::knob_with_value(&painter, rect, position, pointer, Some(&response), &text, pointer, under, 7.0);
         } else {
             let state = crate::kit::skin::State::response(&response, false);
-            crate::kit::native_css::surface(&painter, rect, 2.0, egui::Color32::TRANSPARENT);
+            el.paint_with(
+                &painter,
+                rect,
+                crate::kit::element::Native { radius: 2.0, fill: egui::Color32::TRANSPARENT },
+            );
             crate::kit::skin::paint(&painter, rect, "send", state, pointer, 0.0);
             crate::kit::mixer_controls::send_field(&painter, rect, &letter, shown, send.pre_fader, pointer, position);
         }

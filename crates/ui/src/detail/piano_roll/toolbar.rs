@@ -265,8 +265,8 @@ pub(super) fn toolbar(
     let side = row.height().min(icon);
     // `piano-tool { width; height }` sizes the buttons, so stretched artwork has room.
     let size = {
-        let _style = crate::kit::style_class::enter("piano-tool");
-        let own = crate::kit::style_class::computed();
+        let el = crate::kit::element::PIANO_TOOL.enter();
+        let own = el.style();
         Vec2::new(
             own.as_ref().and_then(|c| c.width).map_or(side, |w| w.clamp(8.0, 96.0)),
             own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, row.height().max(8.0))),
@@ -620,8 +620,11 @@ impl ButtonPaint<'_> {
         response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, active, chosen, hint.clone()));
         // `piano-tool` styles them all, `#piano-draw` and the others one; `[checked]` is the
         // chosen tool or an open column. `piano.draw` (`.on`, `.hover`) replaces its shape.
-        let _style = crate::kit::style_class::enter_named_response("piano-tool", button.id(), &response);
-        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, chosen);
+        let el = crate::kit::element::PIANO_TOOL
+            .id(button.id())
+            .response(&response)
+            .attr(crate::kit::element::Checked, chosen)
+            .enter();
         let color = crate::kit::style_class::foreground(if !active {
             theme::text_hint()
         } else if chosen {
@@ -637,12 +640,8 @@ impl ButtonPaint<'_> {
         let role = format!("piano.{}", button.id().trim_start_matches("piano-"));
         if active {
             let fill = if chosen { theme::control_active() } else { theme::control_background() };
-            crate::kit::native_css::surface(
-                painter,
-                area,
-                0.0,
-                crate::kit::motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response)),
-            );
+            let fill = crate::kit::motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response));
+            el.paint_with(painter, area, crate::kit::element::Native { radius: 0.0, fill });
         }
         if !(crate::kit::skin::has_own(&role) && crate::kit::skin::paint(painter, area, &role, state, color, 0.0)) {
             button.draw(painter, area, color, self.scale);

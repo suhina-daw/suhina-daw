@@ -125,8 +125,8 @@ const LOOP_ROW: f32 = 14.0;
 /// The loop row's height: room for `loop-region { height }` when the theme makes the bar
 /// thicker than the native row allows (up to 40 points).
 fn loop_row_height() -> f32 {
-    let _style = crate::kit::style_class::enter("loop-region");
-    crate::kit::style_class::computed().and_then(|c| c.height).map_or(LOOP_ROW, |h| (h + 6.0).clamp(LOOP_ROW, 40.0))
+    let el = crate::kit::element::LOOP_REGION.enter();
+    el.style().and_then(|c| c.height).map_or(LOOP_ROW, |h| (h + 6.0).clamp(LOOP_ROW, 40.0))
 }
 const LOOP_BAR: f32 = 6.0;
 const LOOP_GRAB: f32 = 4.0;
@@ -534,19 +534,22 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     // Ruler: bar numbers through the time-signature changes, a line at each labelled bar.
     // `ruler` styles it: its background, `color` for the bar numbers, `border-color` for
     // their lines; `ruler` is its artwork (nine-sliced when the SVG says so).
-    let ruler_style = crate::kit::style_class::enter("ruler");
+    let ruler_style = crate::kit::element::RULER.enter();
     if !crate::kit::skin::paint(&painter, ruler, "ruler", crate::kit::skin::State::Normal, theme::text_secondary(), 0.0)
     {
-        crate::kit::native_css::surface(&painter, ruler, 0.0, theme::panel_background());
+        ruler_style.paint_with(
+            &painter,
+            ruler,
+            crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() },
+        );
     }
     let ruler_ink = crate::kit::style_class::foreground(theme::text_secondary());
-    let ruler_line =
-        crate::kit::style_class::computed().filter(|c| c.authored.border).map_or_else(theme::border, |c| c.border);
+    let ruler_line = ruler_style.style().filter(|c| c.authored.border).map_or_else(theme::border, |c| c.border);
     // `ruler-number` (its `color`, `font-size`, `display: none`) and `ruler-tick` (its `color`
     // and `width`, `width: 0` hides it) inside `ruler`.
     let (number_ink, number_size, number_shown) = {
-        let _number = crate::kit::style_class::enter("ruler-number");
-        let style = crate::kit::style_class::computed();
+        let number = crate::kit::element::RULER_NUMBER.enter();
+        let style = number.style();
         (
             crate::kit::style_class::foreground(ruler_ink),
             style.as_ref().filter(|s| s.authored.font_size).map_or(theme::TEXT_SMALL, |s| s.font_size),
@@ -554,8 +557,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         )
     };
     let ruler_tick = {
-        let _tick = crate::kit::style_class::enter("ruler-tick");
-        let style = crate::kit::style_class::computed();
+        let tick = crate::kit::element::RULER_TICK.enter();
+        let style = tick.style();
         let ink = crate::kit::style_class::foreground(ruler_line);
         let width = style.as_ref().and_then(|s| s.width).map_or(1.0, |w| w.clamp(0.0, 4.0));
         egui::Stroke::new(width, if style.as_ref().is_some_and(|s| s.authored.color) { ink } else { ruler_line })
@@ -1634,8 +1637,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             .and_then(|(grab, raw)| markers_loop::dragged_loop(timeline, state, free, grab, raw))
             .or_else(|| timeline.loop_brace.filter(|b| b.enabled).map(|b| (b.start, b.end)));
         if let Some((start, end)) = shown {
-            let _line = crate::kit::style_class::enter("loop-line");
-            let style = crate::kit::style_class::computed();
+            let line = crate::kit::element::LOOP_LINE.enter();
+            let style = line.style();
             let colour = crate::kit::style_class::foreground(theme::accent());
             let width = style.as_ref().and_then(|s| s.width).map_or(1.5, |w| w.clamp(0.5, 6.0));
             let down = egui::Rangef::new(lanes_area.top(), fixed.bottom());
@@ -1773,9 +1776,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let x = x_of(timeline.beat).round() + 0.5;
         if x >= time.left() && x <= time.right() {
             // `playhead { color; width }`: its colour and thickness.
-            let _style = crate::kit::style_class::enter("playhead");
+            let el = crate::kit::element::PLAYHEAD.enter();
             let color = crate::kit::style_class::foreground(theme::accent());
-            match crate::kit::style_class::computed().and_then(|c| c.width) {
+            match el.style().and_then(|c| c.width) {
                 Some(width) if width > 0.0 => {
                     painter.vline(x, time.y_range(), egui::Stroke::new(width.min(8.0), color));
                 }

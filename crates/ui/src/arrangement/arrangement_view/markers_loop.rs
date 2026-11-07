@@ -255,7 +255,7 @@ pub(super) fn loop_brace(
     let (left, right) = (x_of(start).round(), x_of(end).round());
     // `loop-region` styles the bar, `[checked]` while looping is on; `height` is its thickness
     // and `loop-region` (`.on` while on) its artwork, nine-sliced when the SVG says so.
-    let _style = crate::kit::style_class::enter("loop-region");
+    let el = crate::kit::element::LOOP_REGION.enter();
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, enabled);
     let thickness = crate::kit::native_css::thickness(LOOP_BAR).clamp(1.0, row.height());
     let bar = Rect::from_min_max(
@@ -269,8 +269,8 @@ pub(super) fn loop_brace(
     };
     let state = if enabled { crate::kit::skin::State::On } else { crate::kit::skin::State::Normal };
     if !crate::kit::skin::paint(&painter, bar, "loop-region", state, edge, 0.0) {
-        let authored = crate::kit::style_class::computed().is_some_and(|c| c.authored.border || c.border_width > 0.0);
-        crate::kit::native_css::surface(&painter, bar, 0.0, fill);
+        let authored = el.style().is_some_and(|c| c.authored.border || c.border_width > 0.0);
+        el.paint_with(&painter, bar, crate::kit::element::Native { radius: 0.0, fill });
         if !authored {
             painter.rect_stroke(bar, 0.0, theme::hairline(edge), StrokeKind::Inside);
         }

@@ -34,6 +34,8 @@ covers:
   - crates/ui/src/kit/theme_vars.rs
   - crates/style/src/registered.rs
   - crates/ui/src/kit/style_class.rs
+  - crates/ui/src/kit/element.rs
+  - crates/theme-package/src/elements.rs
   - crates/theme-package/src/lib.rs
   - crates/theme-package/src/meta.rs
   - crates/ui/src/detail/piano_roll.rs
@@ -368,8 +370,8 @@ scopes are siblings rather than nested controls; their palette/style changes
 must be restored before painting another module. Native hit rectangles, ids,
 commands and default geometry remain unchanged.
 
-**Control surfaces.** A control paints its own surface through one function
-(`native_css::surface`): `background-color`, `background-image`, `border-radius`,
+**Control surfaces.** A control paints its own surface through its element
+(`kit::element`, `Entered::paint`): `background-color`, `background-image`, `border-radius`,
 `border-width` with `border-color` (no border without a width), `box-shadow` and
 `opacity` from its element, the native values where the sheet sets none. A transparent
 background paints nothing, never a see-through hole in the window. A button the sheet
@@ -946,7 +948,7 @@ of bars, and a slider id per parameter.
 - **Window alpha:** backgrounds set the window's pixels only while the theme's
   `--window-background` has alpha below 255; the window otherwise clears to an opaque colour and
   every fill blends. A clip's body, the focused track's lane highlight and a control's surface
-  (`native_css::surface`) blend in every theme.
+  (`Entered::paint`) blend in every theme.
 - **Themes folder:** Settings › Themes › Themes folder (`themes_folder`), `SUHINA_THEMES` over
   it, or `--data-dir` / `SUHINA_DATA` for the whole data folder. Changing the setting reads the
   new folder at once; a folder that does not exist is not read. A theme's own folder may be a

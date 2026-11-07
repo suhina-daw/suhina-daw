@@ -357,9 +357,9 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
 fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, out: &mut BrowserOut) {
     let painter = ui.painter_at(rect);
     // `.browser-search` (or `browser text-input`): its background, border, radius and `color`.
-    let _search_style = crate::kit::style_class::enter_named("text-input", "browser-search");
+    let search_style = crate::kit::element::TEXT_INPUT.id("browser-search").enter();
     paint_row(&painter, rect, theme::window_background());
-    if let Some(style) = crate::kit::style_class::computed().filter(|s| s.border_width > 0.0 && s.border.a() > 0) {
+    if let Some(style) = search_style.style().filter(|s| s.border_width > 0.0 && s.border.a() > 0) {
         painter.rect_stroke(
             rect,
             style.radius,
@@ -921,8 +921,8 @@ fn results_view(
             if let Some(tag) = tags.iter().find(|t| t.name == *name) {
                 let center = tag_dot_center(name_end, i, rect.center().y);
                 // `browser-tag-dot { opacity; border-color }`; its fill stays the tag's colour.
-                let _dot = crate::kit::style_class::enter("browser-tag-dot");
-                let style = crate::kit::style_class::computed();
+                let dot = crate::kit::element::BROWSER_TAG_DOT.enter();
+                let style = dot.style();
                 let fill = tag_color(&tag.color).gamma_multiply(style.as_ref().map_or(1.0, |s| s.opacity));
                 painter.circle_filled(center, DOT / 2.0, fill);
                 if let Some(style) = style.filter(|s| s.border_width > 0.0) {
@@ -1586,8 +1586,8 @@ fn preview_strip(
         );
         let clipped = |part: Rect| painter.with_clip_rect(part.intersect(painter.clip_rect()));
         // `browser-preview-wave { color }` for the part played, `border-color` for the rest.
-        let _wave = crate::kit::style_class::enter("browser-preview-wave");
-        let style = crate::kit::style_class::computed();
+        let wave = crate::kit::element::BROWSER_PREVIEW_WAVE.enter();
+        let style = wave.style();
         let played = crate::kit::style_class::foreground(theme::browser_text_secondary());
         let ahead = style.as_ref().filter(|s| s.authored.border).map_or(theme::browser_text_hint(), |s| s.border);
         crate::kit::waveform::paint(&clipped(done), &shape, crate::kit::waveform::Colors::from(played));

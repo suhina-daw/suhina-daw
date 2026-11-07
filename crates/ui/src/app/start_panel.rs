@@ -98,12 +98,14 @@ pub fn show(
     now: SystemTime,
 ) -> Option<StartChoice> {
     // `start-page` styles it; its buttons and fields take the sheet's `button` and `text-input`.
-    let _style = crate::kit::style_class::enter("start-page");
+    let page = crate::kit::element::START_PAGE
+        .native(crate::kit::element::Native { radius: 0.0, fill: theme::window_background() })
+        .enter();
     let mut styled_ui = crate::kit::style_class::ui(ui);
     let ui = &mut *styled_ui;
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    crate::kit::native_css::surface(&painter, area, 0.0, theme::window_background());
+    page.paint(&painter, area);
     let width = (area.width() - 4.0 * PAD).min(MAX_WIDTH);
     let content = Rect::from_min_max(
         Pos2::new(area.center().x - width / 2.0, area.top() + 4.0 * PAD),

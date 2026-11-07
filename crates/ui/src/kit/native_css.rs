@@ -27,9 +27,10 @@ mod shadows;
 mod text;
 mod workspace;
 pub use diagnostics::{Notice, inspect};
+pub(in crate::kit) use paint::surface_with;
 pub use paint::{
     artwork_shadows, background, background_rounded, background_with, gradients_rounded, level_fill, level_glow,
-    surface, thickness,
+    thickness,
 };
 pub use text::paint_text;
 pub use workspace::{Workspace, splitter_between, workspace};
@@ -270,6 +271,9 @@ struct StyleNode {
     state: u16,
     /// Custom properties the host gives the element ([`set_variable`]).
     variables: Vec<(String, String)>,
+    /// Attributes with a value the host gives the element (`color`), beside the states in
+    /// `state` that are attributes without one.
+    attributes: Vec<(String, String)>,
     /// The device sheet this node is the root of (its hash), or 0.
     sheet: u64,
 }
@@ -357,15 +361,16 @@ pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
     Frame(ui.ctx().clone(), ui.input(|input| input.time))
 }
 
-/// Register an actual native scope. Named project roles retain identity when reordered.
-pub fn enter(class: &str, name: Option<&str>, response: Option<&egui::Response>) -> bool {
+/// Register an actual native scope. Named project roles retain identity when reordered. Returns
+/// the node's index in this frame's tree, or `None` when the engine is not collecting it.
+pub(super) fn enter(class: &str, name: Option<&str>, response: Option<&egui::Response>) -> Option<usize> {
     ENGINE.with(|engine| {
         let mut engine = engine.borrow_mut();
         if !engine.collecting || engine.nodes.len() >= MAX_NODES || engine.parents.len() >= MAX_DEPTH {
-            return false;
+            return None;
         }
         if !suhina_theme_package::elements::is_element(class) {
-            return false;
+            return None;
         }
         let name = name.filter(|name| {
             name.len() <= 96 && name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
@@ -396,12 +401,13 @@ pub fn enter(class: &str, name: Option<&str>, response: Option<&egui::Response>)
             name: name.map(str::to_owned),
             state,
             variables: Vec::new(),
+            attributes: Vec::new(),
             sheet: 0,
         };
         let index = engine.nodes.len();
         engine.nodes.push(node);
         engine.parents.push(index);
-        true
+        Some(index)
     })
 }
 
@@ -466,6 +472,28 @@ pub fn scope_variables() -> Vec<(String, String)> {
 pub fn hex(color: Color32) -> String {
     let [r, g, b, a] = color.to_srgba_unmultiplied();
     if a == 255 { format!("#{r:02x}{g:02x}{b:02x}") } else { format!("#{r:02x}{g:02x}{b:02x}{a:02x}") }
+}
+
+/// Marks the element of this frame's tree at `node` with `state`, so the sheet's `[checked]` and
+/// the others match it from the next frame.
+pub(super) fn mark_node(node: usize, state: HostState) {
+    ENGINE.with(|engine| {
+        if let Some(node) = engine.borrow_mut().nodes.get_mut(node) {
+            node.state |= state as u16;
+        }
+    });
+}
+
+/// Gives the element of this frame's tree at `node` the attribute `name` with `value`.
+pub(super) fn set_attribute(node: usize, name: &str, value: String) {
+    ENGINE.with(|engine| {
+        if let Some(node) = engine.borrow_mut().nodes.get_mut(node)
+            && node.attributes.len() < 8
+            && !node.attributes.iter().any(|(own, _)| own == name)
+        {
+            node.attributes.push((name.to_owned(), value));
+        }
+    });
 }
 
 /// Marks the element now in scope with `state` when `on`, so the sheet's `[checked]`,
@@ -773,7 +801,15 @@ fn same_source(engine: Option<&Arc<str>>) -> bool {
 
 /// Compute inherited colours and native typography for the active class ancestry.
 /// Sibling/object selectors require the host's complete retained component tree.
-pub fn scoped(stack: &[String]) -> Option<Computed> {
+pub(super) fn scoped(stack: &[String]) -> Option<Computed> {
+    let innermost = ENGINE.with(|engine| engine.borrow().parents.last().copied());
+    scoped_at(innermost, stack)
+}
+
+/// The style of the element at `node` in this frame's tree, whose names from the root are
+/// `stack`: the one resolved for it, else an approximation from the names alone. Without a
+/// node (the engine did not collect it) it is never another element's style.
+pub(super) fn scoped_at(node: Option<usize>, stack: &[String]) -> Option<Computed> {
     if stack.is_empty()
         || stack.len() > MAX_DEPTH
         || stack.iter().any(|s| !suhina_theme_package::elements::is_element(s))
@@ -786,9 +822,7 @@ pub fn scoped(stack: &[String]) -> Option<Computed> {
         if !same_source(engine.source.as_ref()) {
             return None;
         }
-        if let Some(values) =
-            engine.parents.last().and_then(|at| engine.nodes.get(*at)).and_then(|node| engine.values.get(&node.key))
-        {
+        if let Some(values) = node.and_then(|at| engine.nodes.get(at)).and_then(|node| engine.values.get(&node.key)) {
             return Some(values.clone());
         }
         // Only a style served is counted: not a lookup that finds none.

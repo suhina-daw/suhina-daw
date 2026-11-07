@@ -195,11 +195,11 @@ pub(crate) struct PartStyle {
 }
 
 pub(crate) fn part_style(class: &str, states: &[crate::kit::native_css::HostState]) -> PartStyle {
-    let _style = crate::kit::style_class::enter(class);
+    let part = crate::kit::element::named(class).map(crate::kit::element::Name::enter);
     for state in states {
         crate::kit::native_css::mark(*state, true);
     }
-    crate::kit::style_class::computed().map_or_else(PartStyle::default, |c| PartStyle {
+    part.and_then(|part| part.style()).map_or_else(PartStyle::default, |c| PartStyle {
         background: c.authored.background.then_some(c.background),
         border: c.authored.border.then_some(c.border),
         color: c.authored.color.then_some(c.color),
