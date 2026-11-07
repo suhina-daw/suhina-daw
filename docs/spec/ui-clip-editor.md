@@ -963,7 +963,10 @@ button opens its clip in the editor.
   like a person playing: each start by a normally distributed draw (most small, a few larger, none
   past **Timing ±**) and each velocity the same way within **Velocity ±**, a fresh draw each time,
   so pressing it twice gives two different results. Milliseconds are counted at the project's
-  tempo. With **Keep chords together** notes that start together move together. A note's end
+  tempo. With **Keep chords together** the notes of a chord move together by one draw: notes that
+  start within 30 ms of a chord's first note belong to it (a played chord, or one humanised before,
+  never starts exactly together), keep their places in it, and a chord at the clip's start moves no
+  earlier than the start as a whole. A note's end
   stays where it was (the note gets longer or shorter by what its start moved), unless that would
   run into the next note on the same key, where it ends at that note's start. Its fields keep
   their width while they are dragged, so the panel does not move. A tooltip on each setting says
@@ -984,6 +987,10 @@ button opens its clip in the editor.
   starts.
 
 ## Shortcuts
+
+The piano roll's keys work after a click anywhere in a MIDI clip's detail area: the piano roll,
+and the clip's panel and note tools beside it, so Ctrl+X or Ctrl+D there act on the notes and not
+on the Arrangement's clips. A field being typed in takes the keys while it is edited.
 
 Built (the first version, and keyboard editing from [#344](https://github.com/suhina-daw/suhina-daw/issues/344)):
 

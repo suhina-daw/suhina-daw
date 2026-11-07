@@ -469,6 +469,32 @@ fn humanize_keeps_chords_together_and_ends_in_place() {
     assert!(spread[0].time != spread[1].time || spread[1].time != spread[2].time, "{spread:?}");
 }
 
+/// A chord whose notes do not start at the very same beat (played in, or humanised before) is
+/// still a chord: notes within 30 ms of its first move with it, keeping their places in it. A
+/// chord at the clip's start is not pulled apart by the start: it moves no earlier than 0 as a
+/// whole.
+#[test]
+fn humanize_keeps_a_loose_chord_together_and_whole_at_the_start() {
+    // At 120 BPM 30 ms is 0.06 beats: the first three are a chord, the fourth (0.1 later) is not.
+    let loose = vec![note(0.0, 1.0, 64), note(0.01, 1.0, 60), note(0.05, 1.0, 57), note(0.1, 1.0, 53)];
+    let mut built = project_built(loose.clone());
+    built.transport.tempo_bpm = 120.0;
+    for seed in 1..=20 {
+        let mut session = Session::new(suhina_test_support::with_ids(built.clone()));
+        run(&mut session, "note.humanize", json!({ "track": 1, "index": 0, "ms": 50, "velocity": 0, "seed": seed }))
+            .unwrap();
+        let after = notes_of(&session, 1);
+        let shift = after[0].time - loose[0].time;
+        for i in 1..3 {
+            assert!(
+                (after[i].time - loose[i].time - shift).abs() < 1e-9,
+                "seed {seed}: the chord moves as one: {after:?}"
+            );
+        }
+        assert!(after.iter().all(|n| n.time >= 0.0), "seed {seed}: {after:?}");
+    }
+}
+
 #[test]
 fn humanize_takes_ms_or_time_and_refuses_both_or_too_much() {
     let mut session = Session::new(project(scale_notes()));
@@ -487,6 +513,16 @@ fn humanize_takes_ms_or_time_and_refuses_both_or_too_much() {
     assert_eq!(notes_of(&session, 1), scale_notes(), "a refused call changes nothing");
     assert!(run(&mut session, "note.humanize", with(json!({ "time": 0.05 }))).is_ok(), "beats still work");
     assert!(run(&mut session, "note.humanize", with(json!({ "ms": 0, "velocity": 0 }))).is_ok());
+}
+
+/// A note a hair after the start, moved back by its distance as the window rounded it, lands on
+/// the start instead of being refused.
+#[test]
+fn a_move_to_the_start_lands_on_it_despite_rounding() {
+    let mut session = Session::new(project(vec![note(0.0233, 1.0, 60)]));
+    run(&mut session, "note.move", json!({ "track": 1, "index": 0, "notes": [0], "beats": -0.023_301_8 })).unwrap();
+    assert_eq!(notes_of(&session, 1)[0].time, 0.0);
+    assert!(run(&mut session, "note.move", json!({ "track": 1, "index": 0, "notes": [0], "beats": -0.01 })).is_err());
 }
 
 #[test]
