@@ -232,7 +232,7 @@ pub(super) fn clip_box<'a>(
     if visible.width() <= 0.0 || visible.height() <= 0.0 {
         return None;
     }
-    let bar = (clip.start / bar_beats).floor() as u64 + 1;
+    let bar = u64::from(timeline.meter.position(clip.start.max(0.0)).bar) + 1;
     let name = if clip.name.is_empty() { "clip" } else { clip.name.as_str() };
     let response = ui.interact(visible, Id::unique(("arrangement-clip", clip.id.0)), Sense::click_and_drag());
     // The cursor says what a drag does: the lower half moves the clip (a hand; with the copy key

@@ -649,7 +649,7 @@ fn keyframes_advance_with_the_clock_and_the_motion_setting_suppresses_them() {
             }));
         }
         if motion {
-            assert!(colors[1].r() > 20 && colors[1].b() > 20, "{colors:?}");
+            assert!(colors[1].to_array()[0] > 20 && colors[1].to_array()[2] > 20, "{colors:?}");
             assert_eq!(colors[2], Color32::BLUE);
         } else {
             assert_eq!(colors, [Color32::RED; 3]);
@@ -688,7 +688,7 @@ fn native_state_change_starts_a_transition() {
         }));
     }
     assert_eq!(colors[0], Color32::RED);
-    assert!(colors[2].r() > 20 && colors[2].b() > 20, "{colors:?}");
+    assert!(colors[2].to_array()[0] > 20 && colors[2].to_array()[2] > 20, "{colors:?}");
     assert_eq!(colors[3], Color32::BLUE);
     skin::configure(&skin::Skin::default());
 }
@@ -759,10 +759,65 @@ fn workspace_grid_resolves_real_panels_and_respects_native_visibility() {
     assert_eq!(layout.main, Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(552.0, 432.0)));
     assert_eq!(layout.browser.unwrap().left(), 560.0);
     assert_eq!(layout.detail.unwrap().top(), 440.0);
+    assert!(!layout.browser_follows && !layout.detail_follows, "the sheet sizes both: no splitters");
     let closed = workspace(Vec2::new(800.0, 600.0), None, None).unwrap();
     assert!(closed.browser.is_none() && closed.detail.is_none());
     prepare(".browser {color:red;}", 800.0);
     assert!(workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, 120.0))).is_none());
+    skin::configure(&skin::Skin::default());
+}
+/// A layout that only adds gaps leaves the panels' sizes to their splitters, beside the view or
+/// stacked; a fixed size takes that panel's (#1240).
+#[test]
+fn a_workspace_layout_keeps_the_splitters_of_the_panels_it_does_not_size() {
+    for stacked in [false, true] {
+        prepare("#workspace { gap: 6px; }", 800.0);
+        let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((stacked, 120.0))).unwrap();
+        assert!(layout.browser_follows && layout.detail_follows, "gaps only, stacked {stacked}: {layout:?}");
+        prepare("#workspace { gap: 6px; } #panel-browser { width: 248px; }", 800.0);
+        let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((stacked, 120.0))).unwrap();
+        assert!(!layout.browser_follows && layout.detail_follows, "a fixed browser, stacked {stacked}: {layout:?}");
+    }
+    // Stacked, with the browser and the detail area in each other's columns: each grows with the
+    // other's preferred size, so neither splitter would resize its own panel.
+    prepare("#workspace { gap: 6px; } #panel-browser { grid-column: 3; } #panel-detail { grid-column: 1; }", 800.0);
+    let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((true, 120.0))).unwrap();
+    assert!(!layout.browser_follows && !layout.detail_follows, "swapped columns: {layout:?}");
+    let between = splitter_between(
+        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(200.0, 600.0)),
+        Rect::from_min_max(egui::pos2(206.0, 0.0), egui::pos2(800.0, 600.0)),
+        4.0,
+    );
+    assert_eq!(between, Rect::from_min_max(egui::pos2(200.0, 0.0), egui::pos2(206.0, 600.0)), "the gap");
+    let thin = splitter_between(
+        Rect::from_min_max(egui::pos2(0.0, 500.0), egui::pos2(800.0, 600.0)),
+        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(800.0, 500.0)),
+        4.0,
+    );
+    assert_eq!(thin, Rect::from_min_max(egui::pos2(0.0, 498.0), egui::pos2(800.0, 502.0)), "at least its thickness");
+    skin::configure(&skin::Skin::default());
+}
+/// A splitter drag changes a panel's preferred size every frame: the workspace is laid out once
+/// for each, not probed again for which panels follow their splitters.
+#[test]
+fn dragging_a_splitter_lays_the_workspace_out_once_a_frame() {
+    prepare("#workspace { gap: 6px; } #panel-browser { width: 248px; }", 800.0);
+    let lays = || super::workspace::LAYS.with(std::cell::Cell::get);
+    let before = lays();
+    let first = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, 120.0))).unwrap();
+    assert_eq!(lays() - before, 3, "the layout and a probe for each panel");
+    for (step, height) in [130.0, 140.0, 150.0].into_iter().enumerate() {
+        let before = lays();
+        let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, height))).unwrap();
+        assert_eq!(lays() - before, 1, "frame {step} of the drag");
+        assert_eq!((layout.browser_follows, layout.detail_follows), (first.browser_follows, first.detail_follows));
+        assert_eq!(layout.detail.unwrap().height(), height, "the detail area follows the drag");
+    }
+    // Another window size, or another set of open panels, probes again.
+    let before = lays();
+    let stacked = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((true, 150.0))).unwrap();
+    assert_eq!(lays() - before, 3);
+    assert!(!stacked.browser_follows && stacked.detail_follows, "{stacked:?}");
     skin::configure(&skin::Skin::default());
 }
 #[test]

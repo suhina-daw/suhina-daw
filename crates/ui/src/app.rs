@@ -2987,7 +2987,7 @@ impl App {
             let inner = if let Some(layout) = &css_workspace {
                 if let Some(panel) = layout.browser {
                     over_view(ui, "panel-browser", panel, layout.main, |ui| {
-                        self.browser_panel(ui, inner, Some((panel, layout.main)));
+                        self.browser_panel(ui, inner, Some((panel, layout.main, layout.browser_follows)));
                     });
                 }
                 inner
@@ -3047,10 +3047,11 @@ impl App {
                 && self.detail_open
                 && css_workspace.as_ref().is_none_or(|layout| layout.detail.is_some())
             {
-                let geometry =
-                    css_workspace.as_ref().and_then(|layout| layout.detail.map(|detail| (layout.main, detail)));
+                let geometry = css_workspace
+                    .as_ref()
+                    .and_then(|layout| layout.detail.map(|detail| (layout.main, detail, layout.detail_follows)));
                 match geometry {
-                    Some((main, detail)) => over_view(ui, "panel-detail", detail, main, |ui| {
+                    Some((main, detail, _)) => over_view(ui, "panel-detail", detail, main, |ui| {
                         self.detail_area(ui, inner, &mut actions, geometry)
                     }),
                     None => self.detail_area(ui, inner, &mut actions, geometry),

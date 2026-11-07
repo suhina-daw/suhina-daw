@@ -436,7 +436,8 @@ pub fn show(
     };
     let ink = theme::accent();
     // Over a halo of the other of black and white, so they read on the waveform too.
-    let light = line_ink.r() as u16 + line_ink.g() as u16 + line_ink.b() as u16 > 3 * 128;
+    let [r, g, b, _] = line_ink.to_srgba_unmultiplied();
+    let light = u16::from(r) + u16::from(g) + u16::from(b) > 3 * 128;
     let halo = if light { egui::Color32::from_black_alpha(150) } else { egui::Color32::from_white_alpha(150) };
     let visible = painter.clip_rect().intersect(rect);
 

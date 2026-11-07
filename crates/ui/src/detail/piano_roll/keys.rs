@@ -58,11 +58,15 @@ pub(super) struct KeyColours {
     black_sheen: Color32,
 }
 
-/// `over` laid over `base` at `share` (0 to 1).
+/// `over` laid over `base` at `share` (0 to 1). Both alphas count (source-over on the
+/// premultiplied channels): a translucent key stays translucent, and a faint colour adds only
+/// what it shows.
 fn mix(base: Color32, over: Color32, share: f32) -> Color32 {
     let share = share.clamp(0.0, 1.0);
-    let channel = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * share).round() as u8;
-    Color32::from_rgb(channel(base.r(), over.r()), channel(base.g(), over.g()), channel(base.b(), over.b()))
+    let (base, over) = (base.to_array(), over.to_array());
+    let cover = share * f32::from(over[3]) / 255.0;
+    let channel = |i: usize| (f32::from(over[i]) * share + f32::from(base[i]) * (1.0 - cover)).round().min(255.0) as u8;
+    Color32::from_rgba_premultiplied(channel(0), channel(1), channel(2), channel(3))
 }
 
 fn shine(r: u8, g: u8, b: u8, alpha: f32) -> Color32 {
@@ -609,5 +613,25 @@ impl PianoRollState {
         self.selected = after_replaced(&self.selected, replaced);
         self.span_notes_replaced(replaced);
         self.click_added = self.click_added.map(moved);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_selected_key_mixes_keep_both_alphas() {
+        let opaque = mix(Color32::from_rgb(200, 0, 0), Color32::from_rgb(0, 0, 200), 0.5);
+        assert_eq!(opaque, Color32::from_rgb(100, 0, 100));
+        // A translucent key stays translucent.
+        let clear = Color32::from_rgba_unmultiplied(255, 255, 255, 0);
+        let mixed = mix(clear, Color32::from_rgb(0, 0, 200), 0.5);
+        assert_eq!(mixed.a(), 128, "{mixed:?}");
+        // A faint colour adds only what it shows: a nearly clear red barely tints white, which
+        // stays opaque.
+        let faint = mix(Color32::WHITE, Color32::from_rgba_unmultiplied(255, 0, 0, 10), 0.5);
+        let [r, g, _, a] = faint.to_srgba_unmultiplied();
+        assert!(a == 255 && r == 255 && g > 245, "{faint:?}");
     }
 }

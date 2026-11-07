@@ -63,6 +63,10 @@ impl ComputedStyle {
     pub fn variable(&self, name: &str) -> Option<&str> {
         self.variables.get(name).map(String::as_str)
     }
+    /// The custom properties, shared rather than copied.
+    pub fn shared_variables(&self) -> Arc<BTreeMap<String, String>> {
+        Arc::clone(&self.variables)
+    }
     /// Host defaults must not replace a native widget's own appearance. Inherited
     /// authored properties retain this marker across the component tree.
     pub fn authored(&self, property: Property) -> bool {

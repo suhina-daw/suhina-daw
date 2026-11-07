@@ -188,24 +188,31 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
 
     // The sidebar alone chooses what the list shows (#711). Over the list: Recent's kinds as
     // chips while Recent is chosen and the setting says chips, and the List / Map switch while
-    // Samples is.
+    // the place can hold samples: Library › Samples, a folder, Pinned, Recent (#862).
     let mut y = search.bottom() + 4.0;
     let mut x = area.left() + PAD;
     let small = theme::ui_font(theme::TEXT_SMALL);
     let map = other_results.is_some();
     let recent = matches!(state.place, Some(Place::Recent(_)));
-    let samples = state.place.is_none() && state.category == Category::Samples;
-    let chips: Vec<(String, Chip)> = if recent && settings.view.recent_chips {
+    let samples = state.place.as_ref().map_or(state.category == Category::Samples, Place::holds_samples);
+    let mut chips: Vec<(String, Chip)> = if recent && settings.view.recent_chips {
         std::iter::once(("All".to_string(), Chip::Recent(None)))
             .chain(Group::ALL.into_iter().map(|g| (g.title().to_string(), Chip::Recent(Some(g)))))
             .collect()
-    } else if samples && map {
-        vec![("List".to_string(), Chip::List), (SAMPLE_MAP.to_string(), Chip::Map)]
     } else {
         Vec::new()
     };
+    if samples && map {
+        chips.extend([("List".to_string(), Chip::List), (SAMPLE_MAP.to_string(), Chip::Map)]);
+    }
     let showing_map = state.mode == crate::browser::ResultsMode::Other;
     for (title, chip) in &chips {
+        // The List / Sample map switch starts its own row after Recent's kinds, so it doesn't
+        // read as two more kinds.
+        if matches!(chip, Chip::List) && x > area.left() + PAD {
+            x = area.left() + PAD;
+            y += FILTER + FILTER_GAP;
+        }
         let width = widgets::text_width(ui, title, small.clone()) + FILTER_PAD * 2.0;
         if x + width > area.right() - PAD && x > area.left() + PAD {
             x = area.left() + PAD;
@@ -255,7 +262,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         x = rect.right() + FILTER_GAP;
     }
     // The map belongs to the samples: anywhere else the list shows.
-    if !samples && !recent {
+    if !samples {
         state.mode = crate::browser::ResultsMode::List;
     }
     if chips.is_empty() {
@@ -1727,7 +1734,8 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
             })
             .inner;
         if picked.changed() {
-            let hex = format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
+            let [r, g, b, _] = color.to_srgba_unmultiplied();
+            let hex = format!("#{r:02X}{g:02X}{b:02X}");
             run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
             state.tag_counts = None;
         }
@@ -1935,7 +1943,8 @@ fn footer_view(
             let mut color = tag_color(&tag.color);
             if egui::color_picker::color_edit_button_srgba(ui, &mut color, egui::color_picker::Alpha::Opaque).changed()
             {
-                let hex = format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
+                let [r, g, b, _] = color.to_srgba_unmultiplied();
+                let hex = format!("#{r:02X}{g:02X}{b:02X}");
                 run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
             }
             if ui.button("Remove tag").clicked() {
@@ -2005,14 +2014,17 @@ pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32
     let response = ui
         .interact(handle, Id::unique("browser-resize"), Sense::click_and_drag())
         .on_hover_cursor(CursorIcon::ResizeHorizontal);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Browser splitter"));
     if response.double_clicked() {
         return (Some(default), true);
     }
-    ui.painter().rect_filled(
-        handle,
-        0.0,
-        if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() },
-    );
+    {
+        // `#browser-splitter` (a `.divider`, with `:hover` and `:active`) takes the element's
+        // `background-color`; without one, the border colour, stronger under the pointer.
+        let _style = crate::kit::style_class::enter_named_response("divider", "browser-splitter", &response);
+        let native = if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() };
+        ui.painter().rect_filled(handle, 0.0, crate::kit::style_class::background(native));
+    }
     // The width follows the pointer from where the drag began, so it never falls behind it
     // (adding each frame's movement to the width rounded to whole points would).
     let start_id = Id::unique("browser-resize-start");

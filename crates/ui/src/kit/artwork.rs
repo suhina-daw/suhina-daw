@@ -55,7 +55,10 @@ fn choose(
     };
     // A toggle that is on falls back to the pressed artwork, as it looked before `.on` existed.
     let fallback = matches!(state, State::On).then_some(".active");
-    let colored = color.map(|color| format!("{role}.color-{:02x}{:02x}{:02x}", color.r(), color.g(), color.b()));
+    let colored = color.map(|color| {
+        let [r, g, b, _] = color.to_srgba_unmultiplied();
+        format!("{role}.color-{r:02x}{g:02x}{b:02x}")
+    });
     let candidates = [
         colored.as_ref().map(|key| format!("{key}{suffix}")),
         colored.as_ref().zip(fallback).map(|(key, fallback)| format!("{key}{fallback}")),
