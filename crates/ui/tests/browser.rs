@@ -1913,43 +1913,20 @@ fn the_sidebar_titles_collapse_reorder_and_keep_their_order() {
 }
 
 #[test]
-fn the_tags_titles_menu_adds_a_tag_and_a_folder_and_the_drag_files_the_tag() {
+fn the_tags_titles_menu_adds_a_folder_and_the_drag_files_the_tag() {
     let (settings, folder) = (temp("section-menu-settings"), temp("section-menu"));
     pack(&folder);
     let mut harness = window(&settings, &folder);
-    // A tag typed into the title's menu lands at the top level ([#1254]: the first folder
-    // comes from here too, so a library need not meet the commands first).
+    // The title's menu keeps only what nothing else offers: New folder ([#1254]), for the
+    // library that has none yet. Adding a tag is the rows' own menus' work.
     harness.get_by_label("Tags section").click_secondary();
     harness.run();
-    harness.get_by_label("New tag name").click();
-    harness.run();
-    harness.get_by_label("New tag name").type_text("Punchy");
-    harness.run();
-    harness.get_by_label("Add tag").click();
-    harness.run();
-    assert!(harness.query_by_label("Place Tag Punchy").is_some(), "the menu's tag lands in the section");
-    let flat = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    assert!(harness.query_by_label("New folder").is_some(), "the title's menu offers the first folder");
     assert!(
-        flat.iter().any(|t| t.name == "Punchy" && t.color == "#800000"),
-        "a tag without a colour takes the named colours' next"
+        harness.query_by_label("New tag name").is_none() && harness.query_by_label("Add tag").is_none(),
+        "adding a tag is the rows' menus' work, not the title's"
     );
-    // A second tag with the same name is refused where it stands, the menu stays.
-    harness.get_by_label("Tags section").click_secondary();
-    harness.run();
-    harness.get_by_label("New tag name").click();
-    harness.run();
-    harness.get_by_label("New tag name").type_text("Punchy");
-    harness.run();
-    harness.get_by_label("Add tag").click();
-    harness.run();
-    assert!(
-        matches!(harness.state().status(), Status::Error(text) if text.contains("Punchy")),
-        "{:?}",
-        harness.state().status()
-    );
-    let count = harness.state_mut().projects_mut().file_library_mut().tag_flat().len();
-    assert_eq!(count, 8, "seven defaults and the tagged one");
-    // New folder puts a folder at the top level.
+    // New folder puts a folder at the top level, named by its kind when left out.
     harness.get_by_label("New folder").click();
     harness.run();
     assert!(harness.query_by_label_contains("Folder Folder").is_some(), "the menu's folder lands in the section");
@@ -1961,9 +1938,10 @@ fn the_tags_titles_menu_adds_a_tag_and_a_folder_and_the_drag_files_the_tag() {
             _ => None,
         })
         .collect::<Vec<_>>();
+    assert_eq!(folders.len(), 1);
     assert_eq!(folders[0].0, "Folder", "the folder is named by its own kind when left out");
-    // Carrying the tag onto the folder's row files it inside ([#1254] › Tag folders).
-    let at = harness.get_by_label("Place Tag Punchy").rect().center();
+    // A default tag carried onto the folder's row files it inside ([#1254] › Tag folders).
+    let at = harness.get_by_label("Place Tag Purple").rect().center();
     let to = harness.get_by_label_contains("Folder Folder").rect().center();
     harness.hover_at(at);
     harness.step();
@@ -1978,7 +1956,7 @@ fn the_tags_titles_menu_adds_a_tag_and_a_folder_and_the_drag_files_the_tag() {
     let tree = harness.state_mut().projects_mut().file_library_mut().tags();
     let punched = tree.iter().any(|e| match e {
         suhina_library::TagEntry::Folder { tags, .. } => {
-            suhina_library::store::tags_iter(tags).any(|t| t.name == "Punchy")
+            suhina_library::store::tags_iter(tags).any(|t| t.name == "Purple")
         }
         _ => false,
     });
