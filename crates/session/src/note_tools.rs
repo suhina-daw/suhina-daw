@@ -264,9 +264,15 @@ fn humanize_beats(session: &Session, params: &Value) -> Result<f64, CommandError
     }
 }
 
+/// How close after a chord's first note another note starts and still belongs to the chord, for
+/// Humanise's `chords`: a played chord, or one humanised before, is never exactly together.
+const CHORD_MS: f64 = 30.0;
+
 /// `note.humanize`: moves each note's start by a normally distributed draw within ±`time` beats
 /// (or ±`ms` milliseconds) and its velocity by one within ±`velocity` MIDI steps, each kept within
-/// its range (#1214). With `chords` (the default) notes that start together move together. A
+/// its range (#1214). With `chords` (the default) the notes of a chord, those that start within
+/// [`CHORD_MS`] of its first, move together by one draw, which keeps the chord's first note at 0 or
+/// later, so the notes keep their places in the chord. A
 /// note's end stays where it was, unless that would run into the next note on the same key. The
 /// same `seed` gives the same result, so a call can be repeated.
 pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -283,21 +289,30 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
     if nothing_to_do(session, params)? {
         return Ok(json!({ "notes": [], "seed": seed }));
     }
+    let bpm = session.project.transport.tempo_bpm;
+    let bpm = if bpm.is_finite() && bpm > 0.0 { bpm } else { 120.0 };
+    let window = if chords { CHORD_MS / 1000.0 * bpm / 60.0 } else { 0.0 };
     edit_notes(&mut session.project, params, move |notes| {
         let named = chosen(params, notes)?;
         let mut rng = Rng::new(seed);
-        // The offset each start got, so a later note of a chord moves with the first.
-        let mut starts: Vec<(f64, f64)> = Vec::new();
+        let chord_of = chords_of(notes, &named, window);
+        // Each chord's offset once drawn, so its other notes move with the first.
+        let mut offsets: Vec<Option<f64>> = vec![None; chord_of.len()];
         let mut moved = Vec::with_capacity(named.len());
-        for &index in &named {
+        for (position, &index) in named.iter().enumerate() {
             let note = notes.get(index).ok_or("a note is missing")?;
             let mut humanized = *note;
             let drawn = rng.next_within(beats);
-            let offset = match starts.iter().find(|(start, _)| chords && (start - note.time).abs() < EPSILON) {
-                Some((_, offset)) => *offset,
+            let (chord, first) = chord_of.get(position).copied().unwrap_or((position, note.time));
+            let offset = match offsets.get(chord).copied().flatten() {
+                Some(offset) => offset,
                 None => {
-                    starts.push((note.time, drawn));
-                    drawn
+                    // The chord's first note goes no earlier than 0, so the chord stays whole.
+                    let offset = drawn.max(-first);
+                    if let Some(slot) = offsets.get_mut(chord) {
+                        *slot = Some(offset);
+                    }
+                    offset
                 }
             };
             let time = (note.time + offset).clamp(0.0, MAX_BEAT);
@@ -320,6 +335,30 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
         keep_off_the_next(notes, &touched);
         Ok(json!({ "notes": named, "seed": seed }))
     })
+}
+
+/// For each of `named` (by its place in it): the chord it belongs to and that chord's first start.
+/// Notes are taken in time; one that starts within `window` beats of a chord's first note joins
+/// it, any other starts a chord of its own. With a `window` of 0 every note is its own chord, but
+/// notes that start at the very same beat still move together.
+fn chords_of(notes: &Notes, named: &[usize], window: f64) -> Vec<(usize, f64)> {
+    let time = |position: usize| named.get(position).and_then(|i| notes.get(*i)).map_or(0.0, |n| n.time);
+    let mut order: Vec<usize> = (0..named.len()).collect();
+    order.sort_by(|a, b| time(*a).total_cmp(&time(*b)));
+    let mut chord_of = vec![(0, 0.0); named.len()];
+    let mut current: Option<(usize, f64)> = None;
+    for position in order {
+        let start = time(position);
+        let chord = match current {
+            Some((chord, first)) if start - first <= window + EPSILON => (chord, first),
+            _ => (position, start),
+        };
+        current = Some(chord);
+        if let Some(slot) = chord_of.get_mut(position) {
+            *slot = chord;
+        }
+    }
+    chord_of
 }
 
 /// Shortens a note that now runs into the next note on its key, where either of the two was moved

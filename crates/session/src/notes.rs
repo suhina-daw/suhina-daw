@@ -29,7 +29,9 @@ pub(crate) const MAX_BEAT: f64 = MAX_START_BEAT;
 /// note (the MIDI default, 64).
 const DEFAULT_VELOCITY: f64 = 100.0;
 const RELEASE_VELOCITY: f32 = 64.0 / 127.0;
-/// Beats this close below 0 are 0: a move by the exact distance to the start lands on it.
+/// Beats this close below 0 are 0: a move by the distance to the start lands on it, however the
+/// distance was rounded on the way (a ten-thousandth of a beat is far below what can be heard).
+const START_SLACK: f64 = 1e-4;
 const EPSILON: f64 = 1e-9;
 
 /// Where a clip is: an arrangement lane and the clip's index in it, or a launcher column and
@@ -456,7 +458,7 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
         for &index in &moved {
             let note = notes.get(index).ok_or("a note is missing")?;
             let mut time = note.time + beats;
-            if (-EPSILON..0.0).contains(&time) {
+            if (-START_SLACK..0.0).contains(&time) {
                 time = 0.0;
             }
             if !(0.0..=MAX_BEAT).contains(&time) {
@@ -526,7 +528,7 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
             let note = notes.get(index).ok_or("a note is missing")?;
             // `startBy` moves the start and keeps the end: the length changes the other way.
             let mut time = note.time + start_by.unwrap_or(0.0);
-            if (-EPSILON..0.0).contains(&time) {
+            if (-START_SLACK..0.0).contains(&time) {
                 time = 0.0;
             }
             if !(0.0..=MAX_BEAT).contains(&time) {
@@ -852,7 +854,7 @@ pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, 
     // Copies `beats` and `semitones` away from the originals: a copy made by dragging.
     let (beats, semitones) = (beats.unwrap_or(0.0), semitones.unwrap_or(0));
     let mut time = clipboard.from + beats;
-    if (-EPSILON..0.0).contains(&time) {
+    if (-START_SLACK..0.0).contains(&time) {
         time = 0.0;
     }
     let mut added = placed(&clipboard, time)?;

@@ -961,7 +961,10 @@ button opens its clip in the editor.
   like a person playing: each start by a normally distributed draw (most small, a few larger, none
   past **Timing ±**) and each velocity the same way within **Velocity ±**, a fresh draw each time,
   so pressing it twice gives two different results. Milliseconds are counted at the project's
-  tempo. With **Keep chords together** notes that start together move together. A note's end
+  tempo. With **Keep chords together** the notes of a chord move together by one draw: notes that
+  start within 30 ms of a chord's first note belong to it (a played chord, or one humanised before,
+  never starts exactly together), keep their places in it, and a chord at the clip's start moves no
+  earlier than the start as a whole. A note's end
   stays where it was (the note gets longer or shorter by what its start moved), unless that would
   run into the next note on the same key, where it ends at that note's start. Its fields keep
   their width while they are dragged, so the panel does not move. A tooltip on each setting says

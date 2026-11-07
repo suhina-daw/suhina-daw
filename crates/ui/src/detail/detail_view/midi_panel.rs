@@ -513,7 +513,12 @@ fn transform_tab(
                 if y + TOGGLE <= body.bottom() + 0.5 {
                     let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), TOGGLE));
                     y += TOGGLE + GAP;
-                    explain(ui, row, "chords", "Notes that start together move together");
+                    explain(
+                        ui,
+                        row,
+                        "chords",
+                        "Notes that start within 30 ms of each other move together, as one chord",
+                    );
                     if toggle(
                         ui,
                         painter,
