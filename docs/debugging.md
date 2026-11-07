@@ -165,7 +165,8 @@ happens. Two counters tell the causes apart:
 - **plug-in blocks late:** a plug-in's block was not back from its host process by the time the
   engine had to hand the device its buffer, so that block passed the sound through unprocessed (a
   crackle on that track). The line names the plug-in late most often and its track. A return's
-  plug-ins run after every track that sends to them, so they have the least time left.
+  plug-ins run once the tracks that send to them are done, with a share of the deadline kept for
+  them (#1261).
 - **not sent** (of the late blocks): the host was still busy with an earlier block when the next
   came, so the engine did not send this one at all — a serve that took longer than a block's
   playing time, not a slow engine.
@@ -186,6 +187,13 @@ published by the engine and read by the UI; no log writes run on the audio threa
 smoothed CPU reading alone does not exclude one long render call or a scheduling delay.
 Counters belong to the current player/graph and may reset on replacement; use the reopen
 records and cumulative values as well as the deltas.
+
+**A second Suhina running** shows in no counter. Two builds in different folders (a test build
+beside an installed one) run side by side, since each build has its own single-instance lock, and
+an ASIO driver may accept both on the same device, which then scratches while every counter of
+the copy playing stays at zero (#1163). As the device opens, the trace says which other Suhina
+apps are running (`other Suhina apps running:`, each one's process id and program, or `none`):
+look there first when crackle comes with clean counters, and close the other copy.
 
 What is normal: a few late plug-in blocks in the first second of playback (every plug-in wakes at
 once), and a few thousand stretched frames late right after a jump of the play position (the
