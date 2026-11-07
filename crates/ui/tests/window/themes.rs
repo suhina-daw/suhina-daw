@@ -992,6 +992,21 @@ fn a_layout_with_only_gaps_keeps_the_splitters_and_a_fixed_width_takes_the_brows
     assert!(wider >= width + 30, "dragging it widens the browser: {width} to {wider}");
     assert!(after.is_some_and(|a| a.top() < before.top() - 30.0), "the detail area's grows: {before:?} {after:?}");
 
+    // The setting puts the browser on the right, the sheet's grid on the left: dragging its
+    // splitter away from it still widens it.
+    let mut h = open("#workspace { gap: 8px; }");
+    let mut settings = h.state().settings().clone();
+    settings.browser_side = suhina_ui::settings::Side::Right;
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    let width = h.state().settings().browser_width;
+    let splitter = drag(&mut h, "Browser splitter", Vec2::new(40.0, 0.0));
+    let wider = h.state().settings().browser_width;
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(splitter.is_some_and(|s| s.center().x < 600.0), "the sheet's grid has it on the left: {splitter:?}");
+    assert!(wider >= width + 30, "dragging right widens the browser on the left: {width} to {wider}");
+
     let h = open("#workspace { gap: 8px; } #panel-browser { width: 260px; }");
     let fixed = h.query_by_label("Browser splitter").is_none();
     let detail = h.query_by_label("Detail area splitter").is_some();

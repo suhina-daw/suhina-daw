@@ -35,6 +35,9 @@ impl App {
         // squeezed, and its handle takes hold only once it is all there.
         let part = self.browser_part.clamp(0.0, 1.0);
         let (shown, handle_width) = (width * part, BROWSER_HANDLE * part);
+        // In a themed layout the panel is where the sheet puts it, which need not be the setting's
+        // side (the native grid has it on the left): its handle drags towards where it is.
+        let left = geometry.map_or(left, |(panel, rest, _)| panel.center().x <= rest.center().x);
         let (panel, handle, rest) = if let Some((panel, rest, follows)) = geometry {
             let handle = if follows {
                 crate::kit::native_css::splitter_between(panel, rest, handle_width)

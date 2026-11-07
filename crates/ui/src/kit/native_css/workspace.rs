@@ -80,9 +80,12 @@ pub fn workspace(size: Vec2, browser: Option<f32>, detail: Option<(bool, f32)>) 
         };
         let (requested, browser_rect, main, detail_rect) = lay(width, detail_size)?;
         let layout = if requested {
-            // Laid out again a point larger: a panel the sheet does not size grows with it, and
-            // keeps its splitter. No list of properties says which: the layout does.
-            let (_, wider, _, larger) = lay(width + 1.0, detail_size + 1.0)?;
+            // Laid out again with one panel's preferred size a point larger at a time: a panel the
+            // sheet does not size grows with its own, and keeps its splitter. No list of
+            // properties says which: the layout does. One at a time, so a sheet that swaps the
+            // panels' tracks does not count one panel's growth as the other's.
+            let (_, wider, _, _) = lay(width + 1.0, detail_size)?;
+            let (_, _, _, larger) = lay(width, detail_size + 1.0)?;
             let grew = |at: Option<Rect>, then: Option<Rect>, across: bool| {
                 at.zip(then).is_some_and(|(a, b)| if across { b.width() > a.width() } else { b.height() > a.height() })
             };

@@ -778,6 +778,11 @@ fn a_workspace_layout_keeps_the_splitters_of_the_panels_it_does_not_size() {
         let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((stacked, 120.0))).unwrap();
         assert!(!layout.browser_follows && layout.detail_follows, "a fixed browser, stacked {stacked}: {layout:?}");
     }
+    // Stacked, with the browser and the detail area in each other's columns: each grows with the
+    // other's preferred size, so neither splitter would resize its own panel.
+    prepare("#workspace { gap: 6px; } #panel-browser { grid-column: 3; } #panel-detail { grid-column: 1; }", 800.0);
+    let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((true, 120.0))).unwrap();
+    assert!(!layout.browser_follows && !layout.detail_follows, "swapped columns: {layout:?}");
     let between = splitter_between(
         Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(200.0, 600.0)),
         Rect::from_min_max(egui::pos2(206.0, 0.0), egui::pos2(800.0, 600.0)),
