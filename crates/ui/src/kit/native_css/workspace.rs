@@ -24,6 +24,12 @@ impl Workspace {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many times `workspace` laid the grid out, for the tests.
+    pub(super) static LAYS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// `detail` is (stacked beside the view, native preferred size). Native visibility
 /// remains authoritative; CSS may further hide a panel but cannot open closed panels.
 /// `None` when the theme writes no workspace layout: the native splitters stay in charge.
@@ -43,6 +49,15 @@ pub fn workspace(size: Vec2, browser: Option<f32>, detail: Option<(bool, f32)>) 
         {
             return layout.clone();
         }
+        // What the follows flags depend on: not the preferred sizes, which a drag changes every
+        // frame. The sizes only move the panels' tracks; whether a panel's track is its own
+        // preferred size is the sheet's, read once for the window's size and its open panels.
+        let follows_key = format!("{size:?}:{}:{:?}", browser.is_some(), detail.map(|(stacked, _)| stacked));
+        let known_follows = engine
+            .workspace_follows
+            .as_ref()
+            .filter(|(previous, _)| previous == &follows_key)
+            .map(|(_, follows)| *follows);
         let mut ids = Vec::new();
         if browser.is_some() {
             ids.push("panel-browser");
@@ -70,6 +85,8 @@ pub fn workspace(size: Vec2, browser: Option<f32>, detail: Option<(bool, f32)>) 
             for id in &ids {
                 elements.push(super::native::element("workspace-panel", Some(id), None, Some(2)));
             }
+            #[cfg(test)]
+            LAYS.with(|lays| lays.set(lays.get() + 1));
             let laid = super::native::layout(&engine, elements, &defaults, [size.x, size.y])?;
             let rectangle = |name: &str| -> Option<Rect> {
                 let index = ids.iter().position(|id| *id == name)? + 1;
@@ -79,26 +96,40 @@ pub fn workspace(size: Vec2, browser: Option<f32>, detail: Option<(bool, f32)>) 
             Some((laid.requested, rectangle("panel-browser"), rectangle("panel-main"), rectangle("panel-detail")))
         };
         let (requested, browser_rect, main, detail_rect) = lay(width, detail_size)?;
+        let mut probed = None;
         let layout = if requested {
-            // Laid out again with one panel's preferred size a point larger at a time: a panel the
-            // sheet does not size grows with its own, and keeps its splitter. No list of
-            // properties says which: the layout does. One at a time, so a sheet that swaps the
-            // panels' tracks does not count one panel's growth as the other's.
-            let (_, wider, _, _) = lay(width + 1.0, detail_size)?;
-            let (_, _, _, larger) = lay(width, detail_size + 1.0)?;
-            let grew = |at: Option<Rect>, then: Option<Rect>, across: bool| {
-                at.zip(then).is_some_and(|(a, b)| if across { b.width() > a.width() } else { b.height() > a.height() })
+            let (browser_follows, detail_follows) = match known_follows {
+                Some(follows) => follows,
+                None => {
+                    // Laid out again with one panel's preferred size a point larger at a time: a
+                    // panel the sheet does not size grows with its own, and keeps its splitter.
+                    // No list of properties says which: the layout does. One at a time, so a
+                    // sheet that swaps the panels' tracks does not count one panel's growth as
+                    // the other's.
+                    let (_, wider, _, _) = lay(width + 1.0, detail_size)?;
+                    let (_, _, _, larger) = lay(width, detail_size + 1.0)?;
+                    let grew = |at: Option<Rect>, then: Option<Rect>, across: bool| {
+                        at.zip(then)
+                            .is_some_and(|(a, b)| if across { b.width() > a.width() } else { b.height() > a.height() })
+                    };
+                    let follows = (grew(browser_rect, wider, true), grew(detail_rect, larger, stacked));
+                    probed = Some(follows);
+                    follows
+                }
             };
             Some(Workspace {
                 browser: browser_rect,
                 main: main.unwrap_or(Rect::from_min_size(egui::Pos2::ZERO, Vec2::ZERO)),
                 detail: detail_rect,
-                browser_follows: grew(browser_rect, wider, true),
-                detail_follows: grew(detail_rect, larger, stacked),
+                browser_follows,
+                detail_follows,
             })
         } else {
             None
         };
+        if let Some(follows) = probed {
+            engine.workspace_follows = Some((follows_key, follows));
+        }
         engine.workspace = Some((key, layout.clone()));
         layout
     })

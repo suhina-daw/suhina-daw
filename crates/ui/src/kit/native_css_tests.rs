@@ -797,6 +797,29 @@ fn a_workspace_layout_keeps_the_splitters_of_the_panels_it_does_not_size() {
     assert_eq!(thin, Rect::from_min_max(egui::pos2(0.0, 498.0), egui::pos2(800.0, 502.0)), "at least its thickness");
     skin::configure(&skin::Skin::default());
 }
+/// A splitter drag changes a panel's preferred size every frame: the workspace is laid out once
+/// for each, not probed again for which panels follow their splitters.
+#[test]
+fn dragging_a_splitter_lays_the_workspace_out_once_a_frame() {
+    prepare("#workspace { gap: 6px; } #panel-browser { width: 248px; }", 800.0);
+    let lays = || super::workspace::LAYS.with(std::cell::Cell::get);
+    let before = lays();
+    let first = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, 120.0))).unwrap();
+    assert_eq!(lays() - before, 3, "the layout and a probe for each panel");
+    for (step, height) in [130.0, 140.0, 150.0].into_iter().enumerate() {
+        let before = lays();
+        let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, height))).unwrap();
+        assert_eq!(lays() - before, 1, "frame {step} of the drag");
+        assert_eq!((layout.browser_follows, layout.detail_follows), (first.browser_follows, first.detail_follows));
+        assert_eq!(layout.detail.unwrap().height(), height, "the detail area follows the drag");
+    }
+    // Another window size, or another set of open panels, probes again.
+    let before = lays();
+    let stacked = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((true, 150.0))).unwrap();
+    assert_eq!(lays() - before, 3);
+    assert!(!stacked.browser_follows && stacked.detail_follows, "{stacked:?}");
+    skin::configure(&skin::Skin::default());
+}
 #[test]
 fn unrelated_css_preserves_native_colours_font_sizes_and_corner_defaults() {
     prepare(".browser { color:rgb(10 20 30); }", 800.0);

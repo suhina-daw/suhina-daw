@@ -201,6 +201,10 @@ struct Engine {
     contexts: HashMap<Vec<String>, Computed>,
     toolbar: Option<(String, Vec<Module>)>,
     workspace: Option<(String, Option<Workspace>)>,
+    /// Whether the browser and the detail area follow their splitters, by the window's size and
+    /// which panels are open: a splitter drag changes only the preferred sizes, which lays the
+    /// workspace out again without probing the flags anew.
+    workspace_follows: Option<(String, (bool, bool))>,
     toolbar_layout: bool,
     collecting: bool,
     nodes: Vec<StyleNode>,
@@ -770,6 +774,7 @@ pub fn begin_frame(ui: &egui::Ui) {
             engine.contexts.clear();
             engine.toolbar = None;
             engine.workspace = None;
+            engine.workspace_follows = None;
         }
         if engine.user.as_ref().map(|(text, _)| text) != user.as_ref() {
             // A user sheet that does not parse keeps the last working one.
@@ -785,6 +790,7 @@ pub fn begin_frame(ui: &egui::Ui) {
             engine.contexts.clear();
             engine.toolbar = None;
             engine.workspace = None;
+            engine.workspace_follows = None;
         }
         if engine.source != source {
             let native = suhina_plugins::trace::timed("style paint parse", || {
@@ -830,6 +836,7 @@ pub fn begin_frame(ui: &egui::Ui) {
             engine.contexts.clear();
             engine.toolbar = None;
             engine.workspace = None;
+            engine.workspace_follows = None;
         }
     });
 }
