@@ -1340,7 +1340,20 @@ fn tag_folder_menu(
         ui.ctx().data_mut(|d| d.insert_temp(rename_id, name.trim().to_string()));
     }
     ui.separator();
-    // A new tag inside: made from the field, moved under the folder it was made for.
+    // A new tag inside: made from the field, moved under the folder it was made for. Its
+    // colour comes from the palette beside the field — the same pick a tag's menu makes,
+    // but for a tag the folder is making ([#1254] review › color options in a folder's
+    // menu); a pick is remembered for the menu, a non-pick takes the named colours' next.
+    let pick_id = Id::unique(("browser-folder-tag-color", folder_id));
+    let picked_now = {
+        let stored: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
+        let current = stored.as_deref().and_then(theme::parse_hex).map(crate::interaction::grid::to_rgb);
+        crate::interaction::colour_picker::select_colour_row(ui, pick_id, current, "Select colour")
+            .map(|picked| theme::hex(crate::interaction::colour_picker::color32(picked)))
+    };
+    if let Some(hex) = picked_now.as_ref() {
+        ui.ctx().data_mut(|d| d.insert_temp(pick_id, hex.clone()));
+    }
     let new_id = Id::unique(("browser-folder-new-tag", folder_id));
     let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
     let field = crate::kit::widgets::text_input(
@@ -1352,13 +1365,19 @@ fn tag_folder_menu(
     let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
     let with_button = ui.button("Add tag").clicked();
     if (with_enter || with_button) && !new_name.trim().is_empty() {
-        let made = run(projects, "library.setTag", json!({ "name": new_name.trim() }), out);
+        let mut params = json!({ "name": new_name.trim() });
+        let picked: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
+        if let Some(hex) = picked {
+            params["color"] = json!(hex);
+        }
+        let made = run(projects, "library.setTag", params, out);
         if made {
             if let Some(id) = projects.file_library_mut().tag_id_of(new_name.trim()) {
                 run(projects, "library.moveTag", json!({ "id": format!("#{id}"), "folder": my }), out);
             }
             out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
             ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+            ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
             state.relist();
             ui.close();
         }

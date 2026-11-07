@@ -2268,3 +2268,38 @@ fn adding_a_subfolder_opens_the_targets_branch() {
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn a_folders_menu_colours_a_new_tag_from_the_palette() {
+    let (settings, folder) = (temp("folder-color-settings"), temp("folder-color"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Cowboy" })).unwrap();
+    harness.run();
+    // The folder's menu carries the palette, beside the field for the tag it makes.
+    harness.get_by_label("Folder Cowboy (0 tags)").click_secondary();
+    harness.run();
+    assert!(harness.query_by_label("Select colour").is_some(), "the folder's menu offers the palette");
+    // A pick is the new tag's colour, the same way a tag's own menu recolours.
+    harness.get_by_label("Select colour").click();
+    harness.run();
+    let colour = suhina_ui::interaction::colour_picker::swatches()[5];
+    harness.get_by_label(&format!("Colour {}", suhina_ui::interaction::colour_picker::hex(colour))).click();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Everything");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    let tree = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    let made = tree.iter().find(|t| t.name == "Everything");
+    assert_eq!(
+        made.map(|t| t.color.as_str()),
+        Some(theme::hex(suhina_ui::interaction::colour_picker::color32(colour)).as_str()),
+        "the pick colours the tag the folder's menu made",
+    );
+    // The pick went with the tag: the next one under this menu takes the named colours' next.
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
