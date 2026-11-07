@@ -1084,3 +1084,69 @@ fn host_values_reach_devices_inside_groups_with_or_without_live_values() {
     assert_eq!(value(&chain.devices, &inner, "#r0"), Some(-3.0));
     assert_eq!(value(&chain.devices, &top, "#r0"), None);
 }
+
+/// A plug-in's panel, a generated list and a canvas panel in one row are as tall as each other,
+/// the tallest's height, never under a compact panel's (#1238).
+#[test]
+fn the_panels_in_a_row_are_one_height() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let mut project = with_plugin();
+    project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    project.channels[0].devices.push(Device::new("EQ", DeviceKind::Builtin("eq".into())));
+    let detail = build(&project, Some(TrackId(1)), None);
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(2400.0, 500.0)).build_ui(|ui| {
+        show_row(ui, &detail, &[], &mut Vec::new(), &mut Vec::new());
+    });
+    harness.run_steps(3);
+    let heights: Vec<f32> = ["Verb", "Utility", "EQ"]
+        .iter()
+        .map(|name| harness.get_by_label(&format!("Device {name}")).rect().height())
+        .collect();
+    assert!(heights.iter().all(|h| (h - heights[0]).abs() < 0.5), "one height: {heights:?}");
+    assert!(heights[0] >= device_row_height() - 0.5, "at least a compact panel's: {heights:?}");
+}
+
+/// Stacked lists each keep their own scroll, also when a device before them goes: the scroll is
+/// the device's, not its place's (#826).
+#[test]
+fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let mut project = demo_project();
+    project.channels[0].devices = vec![Device::new("Pitch", DeviceKind::Builtin("pitch".into()))];
+    for _ in 0..2 {
+        project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    }
+    let _ = project.assign_ids();
+    let mut harness =
+        Harness::builder().allow_missing_glyphs().with_size(egui::vec2(STACK_WIDTH, 700.0)).build_ui_state(
+            |ui, detail: &mut Detail| {
+                show_stack(ui, detail, &[], &mut Vec::new(), &mut Vec::new());
+            },
+            build(&project, Some(TrackId(1)), None),
+        );
+    harness.run_steps(10);
+    let gains =
+        |harness: &Harness<'_, Detail>| harness.query_all_by_label("Gain").map(|n| n.rect().left()).collect::<Vec<_>>();
+    let start = gains(&harness);
+    // The second Utility's list, scrolled sideways.
+    let second = harness.query_all_by_label("Device Utility").nth(1).unwrap().rect().center();
+    harness.hover_at(second);
+    harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(-150.0, 0.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    harness.run_steps(10);
+    let scrolled = gains(&harness);
+    assert!(scrolled[1] < start[1] - 50.0 && scrolled[0] == start[0], "only the second list scrolls: {scrolled:?}");
+    // Pitch goes: the Utilities move up a place each and keep their own scroll.
+    project.channels[0].devices.remove(0);
+    *harness.state_mut() = build(&project, Some(TrackId(1)), None);
+    harness.hover_at(egui::pos2(1.0, 699.0));
+    harness.run_steps(10);
+    assert_eq!(gains(&harness), scrolled, "each list keeps its own scroll");
+}

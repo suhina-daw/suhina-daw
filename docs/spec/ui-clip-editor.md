@@ -57,6 +57,9 @@ lane, the grid and zoom, and the `note.*` commands.
   rest. The MIDI clip retains its resizable detail area in both tabs. A device row alone has
   two states: open at 200 logical pixels or closed. Dragging the splitter down past half that(
   )height closes it, dragging it up opens it whole; no height in between cuts its panels.
+  The panels in the row are one height, the tallest's, at least a compact panel's and at most the
+  area's, with their contents at the top; a panel the theme gives a height (`.device { height }`)
+  keeps it, and a plug-in's embedded editor takes the area's height (#1238).
   Dropping an instrument, effect or plug-in there adds it to
   that track as it always does. **Clip** brings the piano roll back. **Ctrl+Shift+D** (the keymap
   action `view.devices`) and **View › Show devices** / **Show clip** do the same; they open the

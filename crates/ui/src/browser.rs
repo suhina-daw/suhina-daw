@@ -62,6 +62,12 @@ impl Place {
             Self::Recent(Some(Group::Projects) | None) | Self::Pinned | Self::Folder(_) => None,
         }
     }
+
+    /// Whether the place can hold samples, so the list can show as the sample map (#862): a
+    /// folder, Pinned, and Recent of every kind or of samples.
+    pub fn holds_samples(&self) -> bool {
+        matches!(self, Self::Folder(_) | Self::Pinned | Self::Recent(None | Some(Group::Samples)))
+    }
 }
 
 /// How the results area shows what was found.
