@@ -56,7 +56,8 @@ clip; devices (ADR 0004) will add many more parameters.
    through the map of the last graph it sent. Cursors into the
    new event lists are found by binary search; playing audio clips are found again by their
    time; an unwarped audio clip plays at its own speed, not the beat's, so it carries on from
-   the file position it was at (after a tempo edit its beat position moves, as in other DAWs).
+   the file position it was at (after a tempo edit its beat position moves, as in other DAWs)
+   until the transport starts or jumps, when it plays from its beats again, where it is drawn.
    Sounding note voices ring on, on their track's chain in the new graph. A track's device
    chain keeps its running devices when the new graph has the same devices on the same track,
    with the new parameter values, so instrument notes and effect tails carry on (ADR 0004

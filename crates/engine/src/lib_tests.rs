@@ -911,6 +911,24 @@ fn an_unwarped_clip_carries_on_through_a_tempo_edit() {
     assert!(rms(&out, 40_000, 70_000) > 0.1);
     // The same file positions as without the edit (to rounding).
     assert!(max_diff(&out, &original) < 1e-6);
+    // A new start plays the clip from its start in the file again, as drawn at the new tempo:
+    // the carry-over held the file position only while it went on playing. Kept, the clip
+    // started at minus the beats the edit moved, silent until it caught up.
+    renderer.handle(LaunchCommand::Stop);
+    renderer.handle(LaunchCommand::Play);
+    let restarted = blocks(&mut renderer, 150, 480, |_| {});
+    let mut fresh = Renderer::build(
+        &slower,
+        RenderInputs::from_audio(&pool, suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let fresh = blocks(&mut fresh, 150, 480, |_| {});
+    assert!(rms(&restarted, 0, 20_000) > 0.1, "sound from the start");
+    // After the start's short ramp (the stop before it sounded the clip), sample for sample.
+    let after_ramp = 480 * 2;
+    assert!(max_diff(&restarted[after_ramp..], &fresh[after_ramp..]) < 1e-6, "as the project at the new tempo plays");
 }
 
 /// Zero crossings per second of the left channel over frames `from..to`.

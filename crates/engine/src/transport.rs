@@ -131,6 +131,12 @@ impl Renderer {
         // Audio clips that started before `time` and are still playing there start mid-clip.
         self.next_audio = 0;
         self.active_audio_count = 0;
+        // An unwarped clip carried on through a tempo edit (`Renderer::swap`) plays from its
+        // beats again: the carry-over is for the sound that went on, and kept after a start or
+        // a jump the clip played seconds off where it is drawn (silent before its file began).
+        for arranged in &mut self.graph.audio_events {
+            arranged.event.play_from_beats();
+        }
         self.metronome.reset_at(beat);
         self.graph.launcher.beat = beat;
         self.graph.launcher.tempo_from_map();

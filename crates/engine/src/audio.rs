@@ -349,6 +349,12 @@ impl AudioEvent {
         self.shift = if shift.is_finite() { shift } else { 0.0 };
     }
 
+    /// Drops a carry-over from [`AudioEvent::continue_from`]: the clip plays the file position
+    /// of its beats again.
+    pub(crate) fn play_from_beats(&mut self) {
+        self.shift = 0.0;
+    }
+
     /// The clip beat played `elapsed` project beats after the clip starts: from the offset, then
     /// around the loop if there is one.
     fn clip_beat(&self, elapsed: f64) -> f64 {
