@@ -372,6 +372,37 @@ fn a_key_set_in_settings_runs_its_action_and_is_saved() {
     assert_eq!(harness.state().view(), View::Arrangement);
 }
 
+/// Setting a key waits for the key held with Ctrl or Alt: the modifier going down, which the
+/// window reports as a key press of its own, is not taken as the key ("Alt+AltLeft").
+#[test]
+fn setting_a_key_waits_past_the_modifier_for_the_key_held_with_it() {
+    let mut harness = window(demo_app());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    harness.get_by_label("Settings page: Keys").click();
+    harness.run();
+    for (modifiers, modifier, key, text) in [
+        (Modifiers::COMMAND, Key::ControlLeft, Key::Backtick, "Ctrl+Backtick"),
+        (Modifiers::ALT, Key::AltLeft, Key::R, "Alt+R"),
+    ] {
+        harness.get_by_label("Change keys of selection.arm").scroll_to_me();
+        harness.run();
+        harness.get_by_label("Change keys of selection.arm").click();
+        harness.run();
+        let before = harness.state().keymap().binding_text("selection.arm");
+        harness.key_down_modifiers(modifiers, modifier);
+        harness.run();
+        assert!(harness.query_by_label("Press keys").is_some(), "still waiting for the key");
+        assert_eq!(harness.state().keymap().binding_text("selection.arm"), before);
+        harness.key_press_modifiers(modifiers, key);
+        harness.run();
+        assert_eq!(harness.state().keymap().binding_text("selection.arm").as_deref(), Some(text));
+        harness.key_up_modifiers(modifiers, modifier);
+        harness.run();
+    }
+    assert!(suhina_ui::settings::keymap::Shortcut::parse("Alt+AltLeft").is_none(), "a modifier is no key");
+}
+
 #[test]
 fn settings_set_the_toolbar_size_and_the_mouse_switches() {
     let mut harness = window(demo_app());

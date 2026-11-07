@@ -1841,11 +1841,17 @@ fn shortcuts_page(
     let mut changed = false;
     let small = theme::ui_font(theme::TEXT_SMALL);
 
-    // A key being set: the next key pressed (with its modifiers) is the action's key.
+    // A key being set: the next key pressed (with its modifiers) is the action's key. Shift,
+    // Ctrl and Alt going down are pressed keys of their own: the capture waits for the key they
+    // are held with.
     if let Some(action) = state.capture.clone() {
         let pressed = ui.input(|i| {
             i.events.iter().find_map(|e| match e {
-                egui::Event::Key { key, pressed: true, modifiers, .. } => Some(Shortcut::new(*modifiers, *key)),
+                egui::Event::Key { key, pressed: true, modifiers, .. }
+                    if !crate::settings::keymap::is_modifier(*key) =>
+                {
+                    Some(Shortcut::new(*modifiers, *key))
+                }
                 _ => None,
             })
         });
