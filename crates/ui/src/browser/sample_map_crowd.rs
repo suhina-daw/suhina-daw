@@ -181,14 +181,14 @@ pub(crate) fn place_labels(labels: &[(Pos2, Vec2)], area: Rect) -> Vec<Option<Re
         .collect()
 }
 
-/// The density raster of the points at `screen` that fall in `rect`: one texel per [`BIN`]
-/// pixels. The points are spread over their neighbourhood with a small Gaussian kernel, so
-/// clusters read as soft regions rather than blocks. A texel is coloured by the mix of the kinds'
-/// colours there (each weighted by its alpha), and more opaque the more points are near it (the
-/// logarithm, against the densest texel) and the more opaque their colours are. `colour(i)` is point `i`'s colour, or `None` when it is dimmed: dimmed points only
-/// show as faint grey under the others. `spread` is how many times the kernel is applied: 0
-/// keeps each point to its own texel, so neighbours stand apart; more makes softer regions.
-/// Drawn with linear filtering.
+/// The density raster of the points at `screen` that fall in `rect`: one texel per [`BIN`] pixels.
+/// The points are spread over their neighbourhood with a small Gaussian kernel, so clusters read as
+/// soft regions rather than blocks. A texel is coloured by the mix of the kinds' colours there
+/// (each weighted by its alpha), and more opaque the more points are near it (the logarithm,
+/// against the densest texel) and the more opaque their colours are. `colour(i)` is point `i`'s
+/// colour, or `None` when it is dimmed: dimmed points only show as faint grey under the others.
+/// `spread` is how many times the kernel is applied: 0 keeps each point to its own texel, so
+/// neighbours stand apart; more makes softer regions. Drawn with linear filtering.
 pub(crate) fn density(
     screen: &[Pos2],
     colour: impl Fn(usize) -> Option<Color32>,
