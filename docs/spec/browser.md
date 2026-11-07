@@ -94,6 +94,9 @@ model), and Folders, which is not one of them: it always stays last. The order s
 **Pinned, Tags, Library**. Each section's title draws a chevron: a click opens or closes the
 section by command, and the title's right-click menu opens or closes it and moves it among the
 others (Move up, Move down; the first section has no Move up, the last no Move down). The
+Tags section's title menu adds to the top level as well: a **New tag…** name with its **Add
+tag** button, and **New folder** ([#1254] › Tag folders) — so a library reaches its first
+folder from the mouse alone. The
 sections' order and open state are the library's own, kept in `browser.json`
 ([Where it is kept](#where-it-is-kept)), so a closed section stays closed when the window
 reopens.
