@@ -266,15 +266,18 @@ impl Panel {
         let words = suhina_library::words(&state.search);
         let in_use = files_in_use(projects);
         let library = projects.file_library_mut();
+        let flat_tags = library.tag_flat();
         self.points = map
             .points
             .iter()
             .map(|p| {
                 let path_key = p.path.display().to_string();
                 let name = p.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                let tags = library.item_tags(&path_key);
+                let carried = library.item_tags(&path_key);
                 let text_matches = words.is_empty() || suhina_library::rank(&words, &name, &path_key).is_some();
-                let tag_matches = state.tag_filter.is_empty() || tags.iter().any(|t| state.tag_filter.contains(t));
+                let tag_matches = state.tag_filter.is_empty() || carried.iter().any(|id| state.tag_filter.contains(id));
+                let tags =
+                    flat_tags.iter().filter(|tag| carried.contains(&tag.id)).map(|tag| tag.name.clone()).collect();
                 let folder = p.path.parent().map(|f| f.display().to_string()).unwrap_or_default();
                 MapPoint {
                     detail: folder,
@@ -429,7 +432,7 @@ impl Panel {
         self.view.dot_size = settings.map_dot_size as f32 / 100.0;
         self.view.label_size = settings.map_label_size as f32 / 100.0;
         self.view.volume = settings.preview_volume;
-        let tags: Vec<String> = projects.file_library_mut().tags().into_iter().map(|t| t.name).collect();
+        let tags: Vec<String> = projects.file_library_mut().tag_flat().into_iter().map(|t| t.name).collect();
         let status = self.status();
         let details = self.status_details(settings.map_max_seconds);
         let busy = self.busy(ui.input(|i| i.time));

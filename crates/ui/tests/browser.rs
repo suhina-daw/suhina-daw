@@ -1027,7 +1027,17 @@ fn render_the_browser() {
     let mut app = App::new();
     let mut library = Library::new(Some(settings.clone()));
     library.add_folder(&folder).unwrap();
-    library.tag(&folder.join("Drums").join("Kick Hard.wav").display().to_string(), "Red", true).unwrap();
+    library
+        .tag(
+            &folder.join("Drums").join("Kick Hard.wav").display().to_string(),
+            suhina_library::store::named_colours()
+                .iter()
+                .position(|(name, _)| *name == "Red")
+                .map(|at| suhina_library::store::FIRST_TAG_ID + at as u32)
+                .unwrap_or(1),
+            true,
+        )
+        .unwrap();
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
@@ -1374,8 +1384,14 @@ fn an_items_tag_menu_ticks_its_tags_with_painted_boxes_and_toggles_them() {
     assert!(harness.query_by_label_contains("✓").is_none());
     harness.get_by_label("Orange").click();
     harness.run();
-    let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
-    assert!(tags.contains(&"Orange".to_string()) && tags.contains(&"Red".to_string()), "{tags:?}");
+    let library = harness.state_mut().projects_mut().file_library_mut();
+    let flat = library.tag_flat();
+    let tags: Vec<&str> = library
+        .item_tags(&item)
+        .iter()
+        .filter_map(|id| flat.iter().find(|t| t.id == *id).map(|t| t.name.as_str()))
+        .collect();
+    assert!(tags.contains(&"Orange") && tags.contains(&"Red"), "{tags:?}");
     // A click on a ticked entry takes its tag off.
     harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
     harness.run();
@@ -1384,8 +1400,14 @@ fn an_items_tag_menu_ticks_its_tags_with_painted_boxes_and_toggles_them() {
     harness.run();
     harness.get_by_label("Red").click();
     harness.run();
-    let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
-    assert!(!tags.contains(&"Red".to_string()) && tags.contains(&"Orange".to_string()), "{tags:?}");
+    let library = harness.state_mut().projects_mut().file_library_mut();
+    let flat = library.tag_flat();
+    let tags: Vec<&str> = library
+        .item_tags(&item)
+        .iter()
+        .filter_map(|id| flat.iter().find(|t| t.id == *id).map(|t| t.name.as_str()))
+        .collect();
+    assert!(!tags.contains(&"Red") && tags.contains(&"Orange"), "{tags:?}");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -1425,7 +1447,13 @@ fn a_tagged_item_is_found_again_through_the_tags_section() {
     let Some(suhina_ui::browser::Place::Tag(tags)) = harness.state().browser.place.clone() else {
         panic!("the tag is the place, got {:?}", harness.state().browser.place);
     };
-    assert_eq!(tags, ["Red"]);
+    assert_eq!(
+        tags.iter()
+            .map(|id| harness.state_mut().projects_mut().file_library_mut().tag_name_of(*id))
+            .collect::<Vec<_>>(),
+        [Some("Red".to_string())],
+        "the earlier click left it"
+    );
     // A row of the list is selected as any row is.
     harness.get_by_label(&row("Loop 120bpm.wav")).click();
     harness.run();
@@ -1519,11 +1547,11 @@ fn the_tags_right_menu_adds_a_tag() {
     assert!(harness.query_by_label("Place Tag Punchy").is_some(), "the section lists the new tag");
     // The add closes the menu.
     assert!(harness.query_by_label("New tag name").is_none(), "the menu went with the add");
-    let tags = harness.state_mut().projects_mut().file_library_mut().tags();
+    let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
     let added = tags.iter().find(|t| t.name == "Punchy");
     assert_eq!(
         added.map(|t| t.color.as_str()),
-        Some(suhina_library::store::default_tags()[0].color.as_str()),
+        Some(suhina_library::store::named_colours()[0].1),
         "the colour the menu's own tag shows"
     );
     // Nothing carries it: the row is dimmed and the hover says so.
@@ -1563,9 +1591,9 @@ fn the_tags_right_menu_adds_a_tag() {
     harness.run();
     harness.get_by_label("Add tag").click();
     harness.run();
-    let tags = harness.state_mut().projects_mut().file_library_mut().tags();
+    let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
     let punchy_color = tags.iter().find(|t| t.name == "Punchy").map(|t| t.color.clone()).unwrap_or_default();
-    assert_ne!(Some(punchy_color.as_str()), Some(suhina_library::store::default_tags()[2].color.as_str()));
+    assert_ne!(Some(punchy_color.as_str()), Some(suhina_library::store::named_colours()[2].1));
     assert_eq!(
         tags.iter().find(|t| t.name == "Warm").map(|t| t.color.as_str()),
         Some(punchy_color.as_str()),
@@ -1601,7 +1629,7 @@ fn the_tags_right_menu_selects_a_colour() {
     let colour = suhina_ui::interaction::colour_picker::swatches()[3];
     harness.get_by_label(&format!("Colour {}", suhina_ui::interaction::colour_picker::hex(colour))).click();
     harness.run();
-    let first = harness.state_mut().projects_mut().file_library_mut().tags().swap_remove(0);
+    let first = harness.state_mut().projects_mut().file_library_mut().tag_flat().swap_remove(0);
     assert_eq!(
         (first.name, first.color),
         ("Red".to_string(), theme::hex(suhina_ui::interaction::colour_picker::color32(colour)))
@@ -1645,7 +1673,10 @@ fn ctrl_click_combines_tags_in_the_tags_section() {
     let Some(suhina_ui::browser::Place::Tag(tags)) = harness.state().browser.place.clone() else {
         panic!("the place is two tags, got {:?}", harness.state().browser.place);
     };
-    assert!(tags == ["Red", "Blue"]);
+    let tag_names = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    let names: Vec<String> =
+        tags.iter().filter_map(|id| tag_names.iter().find(|t| t.id == *id).map(|t| t.name.clone())).collect();
+    assert!(names == ["Red", "Blue"]);
     assert!(harness.query_by_label(&row("Loop 120bpm.wav")).is_some());
     assert!(harness.query_by_label(&row("Groove.mid")).is_some());
     assert!(harness.query_by_label(&row("Instruments")).is_none());
@@ -1692,7 +1723,13 @@ fn items_dropped_on_a_tag_carry_it() {
     harness.step();
     harness.run();
     let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
-    assert_eq!(tags, ["Red"], "the drop tagged it");
+    assert_eq!(
+        tags.iter()
+            .map(|id| harness.state_mut().projects_mut().file_library_mut().tag_name_of(*id))
+            .collect::<Vec<_>>(),
+        [Some("Red".to_string())],
+        "the drop tagged it"
+    );
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -1734,7 +1771,13 @@ fn a_tag_dragged_onto_an_item_tags_it() {
     harness.step();
     harness.run();
     let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&loop_item);
-    assert_eq!(tags, ["Red"], "the drop tagged the loop");
+    assert_eq!(
+        tags.iter()
+            .map(|id| harness.state_mut().projects_mut().file_library_mut().tag_name_of(*id))
+            .collect::<Vec<_>>(),
+        [Some("Red".to_string())],
+        "the drop tagged the loop"
+    );
     // Both of the two rows selected: the drop on one of them tags the whole selection.
     harness.get_by_label(&row("Groove.mid")).click();
     harness.run();
@@ -1745,12 +1788,14 @@ fn a_tag_dragged_onto_an_item_tags_it() {
     drag(&mut harness, from, to);
     harness.run();
     let library = harness.state_mut().projects_mut().file_library_mut();
-    assert!(
-        library.item_tags(&loop_item).contains(&"Blue".to_string())
-            && library.item_tags(kick.as_str()).is_empty()
-            && library.item_tags(&groove).contains(&"Blue".to_string()),
-        "the selection the row belongs to carries it"
-    );
+    let flat = library.tag_flat();
+    let has_blue = |library: &mut suhina_library::Library, key: &str| {
+        library.item_tags(key).iter().any(|id| flat.iter().any(|t| t.id == *id))
+    };
+    let has_loop_blue = has_blue(library, &loop_item);
+    let kick_carries = library.item_tags(kick.as_str());
+    let has_groove_blue = has_blue(library, &groove);
+    assert!(has_loop_blue && kick_carries.is_empty() && has_groove_blue, "the selection the row belongs to carries it");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

@@ -162,7 +162,7 @@ fn pins_and_tags_are_kept_between_runs() {
     assert_eq!(run(&mut again, "library.pinned", json!({})).unwrap()["items"], json!(["device:utility"]));
     let tagged = run(&mut again, "library.search", json!({ "tags": ["Mixing"] })).unwrap();
     assert_eq!(names(&tagged), ["Utility"]);
-    assert_eq!(tagged["items"][0]["tags"], json!(["Mixing"]));
+    assert_eq!(tagged["items"][0]["tags"][0]["name"], json!("Mixing"));
     let pinned = run(&mut again, "library.search", json!({ "place": "pinned" })).unwrap();
     assert_eq!(names(&pinned), ["Utility"]);
     run(&mut again, "library.removeTag", json!({ "name": "Mixing" })).unwrap();
@@ -190,7 +190,7 @@ fn a_tag_place_lists_every_item_that_carries_the_tag_of_any_kind() -> Result<(),
     // Natural order by name, whatever the kind: the sample, the device, the voice.
     let place = run(&mut p, "library.search", json!({ "place": "tag:Red" })).unwrap();
     assert_eq!(names(&place), ["Snare.wav", "Utility", "Voices.preset.suhina #2"]);
-    assert_eq!(place["items"][0]["tags"], json!(["Red"]));
+    assert_eq!(place["items"][0]["tags"][0]["name"], json!("Red"));
     // The words still narrow the list, as the browser's search field does over a place.
     let named = run(&mut p, "library.search", json!({ "text": "utility", "place": "tag:Red" })).unwrap();
     assert_eq!(names(&named), ["Utility"]);
@@ -258,7 +258,7 @@ fn a_plugins_view_is_kept_and_plug_ins_are_pinned_and_tagged_like_files() {
     let mut again = projects(&settings);
     let pinned = run(&mut again, "library.search", json!({ "place": "pinned" })).unwrap();
     assert_eq!(names(&pinned), ["Alpha Verb"]);
-    assert_eq!(pinned["items"][0]["tags"], json!(["Go-to"]));
+    assert_eq!(pinned["items"][0]["tags"][0]["name"], json!("Go-to"));
     let tagged = run(&mut again, "library.search", json!({ "tags": ["Go-to"] })).unwrap();
     assert_eq!(names(&tagged), ["Alpha Verb"]);
     // The view survives a restart (it is kept in browser.json), and the flat search lists the
@@ -314,7 +314,10 @@ fn move_to_moves_files_numbering_taken_names_and_carries_their_tags_and_pins() {
     let moved = out.join("Kick 2.wav").display().to_string();
     let library = p.file_library_mut();
     assert_eq!(library.pinned(), std::slice::from_ref(&moved));
-    assert_eq!(library.item_tags(&moved), ["Red"]);
+    assert_eq!(
+        library.item_tags(&moved).iter().map(|id| library.tag_name_of(*id)).collect::<Vec<_>>(),
+        [Some("Red".to_string())]
+    );
     assert!(library.item_tags(&kick).is_empty());
     // A file already in the folder stays.
     let again = json!({ "items": [moved], "folder": out.display().to_string() });

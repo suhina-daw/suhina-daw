@@ -798,10 +798,14 @@ mod refused_tests {
         use suhina_session::{ParamType, PathKind};
 
         // Parameters of these commands name something other than a place on disk to read or write.
-        const NOT_A_PLACE: [(&str, &str); 3] = [
+        const NOT_A_PLACE: [(&str, &str); 7] = [
             ("plugin.setFolderEnabled", "toggles a folder the user added; touches no files"),
             ("plugin.scanFile", "reads again a file in the plug-in catalog; any other is refused"),
             ("library.refresh", "reads again a folder the user added; any other is refused"),
+            ("library.renameTagFolder", "names a tag folder, not a place on disk; any other is refused"),
+            ("library.removeTagFolder", "names a tag folder, not a place on disk; any other is refused"),
+            ("library.setFolderOpen", "names a tag folder, not a place on disk; touches no files"),
+            ("library.moveTag", "names the folder a tag moves under, not a place on disk"),
         ];
         let dir = std::env::temp_dir().join(format!("suhina-confine-sweep-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

@@ -35,7 +35,7 @@ pub enum Place {
     /// A tag's place, as one row of the sidebar's Tags section (#1196): every item that
     /// carries the tags, of any kind. Ctrl-click on a tag row adds one to the list, so a
     /// place of several shows the items that carry any of them.
-    Tag(Vec<String>),
+    Tag(Vec<u32>),
     Folder(PathBuf),
 }
 
@@ -49,7 +49,7 @@ impl Place {
             Self::Pinned => "pinned".into(),
             Self::Recent(Some(group)) => format!("recent:{}", group.name()),
             Self::Recent(None) => "recent:all".into(),
-            Self::Tag(tags) => format!("tag:{}", tags.first().map(String::as_str).unwrap_or("")),
+            Self::Tag(tags) => format!("tag:#{}", tags.first().copied().unwrap_or(0)),
             Self::Folder(path) => path.display().to_string(),
         }
     }
@@ -321,14 +321,14 @@ pub struct BrowserState {
     pub selected: Vec<BrowserItem>,
     /// The row last clicked, for Shift+click.
     pub anchor: Option<usize>,
-    /// Only items carrying any of these tags.
-    pub tag_filter: Vec<String>,
+    /// Only items carrying any of these tags' ids ([#1254]: items and filters carry ids).
+    pub tag_filter: Vec<u32>,
     /// The tag whose Remove is armed in the tag's right-click menus: the second click removes
     /// it.
     pub(crate) tag_remove_confirm: Option<String>,
     /// How many items carry each tag, counted when the library's tags last changed (the
     /// sidebar's rows share the cache).
-    pub(crate) tag_counts: Option<(u64, HashMap<String, usize>)>,
+    pub(crate) tag_counts: Option<(u64, HashMap<u32, usize>)>,
     /// The Plug-ins category's list sorts by this column (0 name, 1 format), `true`
     /// descending. The window's own, not kept between runs.
     pub plugin_sort: (u8, bool),
@@ -352,8 +352,17 @@ pub struct BrowserState {
     /// dropped there: the same tagging the other way round (#1196). `None` while nothing
     /// carries it.
     pub drag_tag: Option<String>,
+    /// The id of the tag `drag_tag` carries ([#1254]: moves and lays-outs go by id).
+    pub drag_tag_id: Option<u32>,
+    /// The row a carried tag or tag folder is over: the id of the tag or folder of the
+    /// sidebar's row under the pointer, set as the rows are drawn ([#1254]). Where a drop
+    /// moves the carried entry to.
+    pub drop_tag_row: Option<u32>,
     /// The results row a tag is carried over, which a drop tags; set as the rows are drawn.
     pub drop_item: Option<BrowserItem>,
+    /// The section a carried section title is over, for reordering the sidebar's sections
+    /// ([#1254] › Sidebar sections). The Folders section cannot move and is never carried.
+    pub drop_section: Option<suhina_library::SectionKind>,
     /// The sidebar's scroll when its entries are more than its room: rows above its top have
     /// gone past, as the results list scrolls.
     pub sidebar_scroll: f32,
@@ -415,6 +424,9 @@ impl Default for BrowserState {
             new_folder: None,
             drop_tag: None,
             drag_tag: None,
+            drag_tag_id: None,
+            drop_tag_row: None,
+            drop_section: None,
             drop_item: None,
             sidebar_scroll: 0.0,
             drag: None,
@@ -503,15 +515,15 @@ impl BrowserState {
 
     /// How many items carry each tag: counted once, when the library's tags changed since the
     /// last count (a frame over a large library costs nothing more). The sidebar's Tags rows
-    /// share the cache.
-    pub fn tag_counts(&mut self, library: &mut suhina_library::Library) -> HashMap<String, usize> {
+    /// and the tag editor share the cache.
+    pub fn tag_counts(&mut self, library: &mut suhina_library::Library) -> HashMap<u32, usize> {
         let revision = library.tag_revision();
         let stale = self.tag_counts.as_ref().is_none_or(|(r, _)| *r != revision);
         if stale {
             let mut counts = HashMap::new();
-            for (_, names) in library.tagged() {
-                for name in names {
-                    *counts.entry(name).or_default() += 1;
+            for (_, ids) in library.tagged() {
+                for id in ids {
+                    counts.entry(id).and_modify(|c| *c += 1).or_insert(1);
                 }
             }
             self.tag_counts = Some((revision, counts));
@@ -561,7 +573,7 @@ impl BrowserState {
         // list; a place of several goes through the tags param, the dots' own way, since two
         // names cannot join into one param unambiguously.
         let (place, place_tags) = match &self.place {
-            Some(Place::Tag(tags)) if tags.len() == 1 => (Some(format!("tag:{}", tags[0])), Vec::new()),
+            Some(Place::Tag(tags)) if tags.len() == 1 => (Some(format!("tag:#{}", tags[0])), Vec::new()),
             Some(Place::Tag(tags)) => (None, tags.clone()),
             other => (other.as_ref().map(Place::param), Vec::new()),
         };
