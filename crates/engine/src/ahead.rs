@@ -259,9 +259,12 @@ impl StretchWorker {
             else {
                 continue;
             };
-            if old_jump.requested.load(Ordering::Acquire) != old.jumped
-                || (old.start, old.length) != (writer.start, writer.length)
-            {
+            // A voice with a jump under way is handed over too: the new graph asks for that jump
+            // again (`AheadReader::adopt_from`), as the handover says the writer had not followed
+            // it. Left out, it started afresh, and its new voice had to jump as well; with a new
+            // graph every 30 ms (a dragged envelope) and a jump taking two device blocks, no jump
+            // ever finished and the clip stayed silent while the drag went on.
+            if (old.start, old.length) != (writer.start, writer.length) {
                 continue;
             }
             // The jump the voice is at now, published with the claim below.
@@ -1125,6 +1128,25 @@ mod handover_tests {
         assert_eq!(new.readers[0].jumping, Some(1));
         assert_eq!(new.shared.jumps[0].to.load(Ordering::Acquire), 30_000);
         assert_eq!(new.shared.jumps[0].requested.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn a_voice_with_a_jump_under_way_is_handed_over_and_jumps_again() {
+        // A jump asked for before the worker hands the voice over: the voice still goes to the
+        // new graph, which asks for the same jump, instead of starting afresh.
+        let (mut old, mut new) = (reader(), reader());
+        let (Some(mut old_worker), Some(mut new_worker)) = (old.take_worker_unfilled(), new.take_worker_unfilled())
+        else {
+            panic!("no workers")
+        };
+        old.shared.jumps[0].to.store(30_000, Ordering::Release);
+        old.shared.jumps[0].requested.store(1, Ordering::Release);
+        old.readers[0].jumping = Some(1);
+        new_worker.adopt_from(&mut old_worker);
+        assert_ne!(new.shared.adopted[0].load(Ordering::Acquire), 0, "handed over");
+        new.adopt_from(&mut old);
+        assert_eq!(new.readers[0].jumping, Some(1), "the jump is asked for again");
+        assert_eq!(new.shared.jumps[0].to.load(Ordering::Acquire), 30_000);
     }
 
     #[test]
