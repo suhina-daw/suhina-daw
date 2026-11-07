@@ -25,6 +25,18 @@ fn keys_are_named_with_60_as_c3() {
     assert!(is_black(61) && !is_black(60));
 }
 
+/// With the setting at flats, black keys are named as the flat of the key above, everywhere
+/// `key_name` and `pitch_class_name` name them; white keys are named as before.
+#[test]
+fn black_keys_are_named_as_sharps_or_flats_by_the_setting() {
+    use crate::settings::NoteSpelling;
+    set_note_spelling(NoteSpelling::Flats);
+    let flats = ([key_name(61), key_name(70), key_name(60)], pitch_class_name(6));
+    set_note_spelling(NoteSpelling::Sharps);
+    assert_eq!(flats, (["Db3".to_string(), "Bb3".to_string(), "C3".to_string()], "Gb"));
+    assert_eq!((key_name(61), pitch_class_name(6)), ("C#3".to_string(), "F#"));
+}
+
 /// A sixteenth grid in 4/4 at 40 points a beat.
 fn sixteenths() -> TimelineGrid {
     TimelineGrid::new(0.25, 40.0, 4.0, MIN_LINE_SPACING)

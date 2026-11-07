@@ -2416,6 +2416,29 @@
       "docs/spec/ui-clip-editor.md"
     ]
   },
+  "ClipEditor/Piano roll/note_spelling": {
+    "sourceFingerprint": "a7246a08821d24ad3038205a1d01e7aecbf6d02472d3e4a52741b8fe28b6ce5b",
+    "summary": "Choose whether black keys are named as sharps (C#) or flats (Db).",
+    "description": "A black key sits between two white keys, so it has two names: the sharp of the key below it (C#) or the flat of the key above it (Db). This chooses which one Suhina uses wherever it names a note or a scale's root: the notes and the keys in the piano roll, the clip panel's figures and its Scale root list, and the piano roll's Scale menu. It only changes the names: the notes, the scale and what plays stay the same, and the project file is not changed. White keys are named the same either way.",
+    "options": [
+      {
+        "name": "Sharps (C#)",
+        "description": "C#, D#, F#, G# and A#. This is the default."
+      },
+      {
+        "name": "Flats (Db)",
+        "description": "Db, Eb, Gb, Ab and Bb."
+      }
+    ],
+    "whenToChange": "Pick flats when the music you write or read uses them, such as in keys like F major or Bb minor, so the names match the score.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/app.rs",
+      "crates/ui/src/detail/piano_roll.rs",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
   "Arrangement/Gain envelope/gain_envelope_show": {
     "summary": "Choose whether audio clips with gain envelope points show the line when it is not being edited.",
     "description": "On (the default), an audio clip whose gain envelope has points shows its line over the waveform in the Arrangement, so you can see where its level changes. Off, the line shows only on the clip whose envelope you are editing. The waveform follows the envelope either way.",

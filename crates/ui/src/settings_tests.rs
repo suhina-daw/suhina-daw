@@ -133,6 +133,7 @@ fn settings_survive_a_round_trip() {
     let settings = Settings {
         piano_key_style: PianoKeyStyle::Night,
         piano_key_names: PianoKeyNames::All,
+        note_spelling: NoteSpelling::Flats,
         animations: false,
         setting_descriptions: crate::settings::Descriptions::Icon,
         track_headers: Some(Side::Left),

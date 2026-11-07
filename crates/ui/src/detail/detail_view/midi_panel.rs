@@ -311,9 +311,9 @@ fn fit_to_a_new_scale(response: &egui::Response, tools: &Tools<'_>, actions: &mu
         ui.label(egui::RichText::new("Set the clip's scale").font(theme::ui_font(theme::TEXT_TINY)));
         for mode in ScaleMode::ALL {
             ui.menu_button(mode.label(), |ui| {
-                for (index, root) in ROOT_LABELS.iter().enumerate() {
-                    if ui.button(*root).clicked() {
-                        let name = ROOT_NAMES.get(index).copied().unwrap_or("C");
+                for (index, name) in ROOT_NAMES.iter().enumerate() {
+                    let root = crate::detail::piano_roll::pitch_class_name(u8::try_from(index).unwrap_or(0));
+                    if ui.button(root).clicked() {
                         let mut scale = tools.address.clone();
                         scale["root"] = json!(name);
                         scale["mode"] = json!(mode.name());
@@ -329,9 +329,6 @@ fn fit_to_a_new_scale(response: &egui::Response, tools: &Tools<'_>, actions: &mu
         }
     });
 }
-
-/// The roots as the lists show them.
-const ROOT_LABELS: [&str; 12] = ["C", "C#/Db", "D", "D#/Eb", "E", "F", "F#/Gb", "G", "G#/Ab", "A", "A#/Bb", "B"];
 
 /// What the tools act on, in figures, under the Clip part: a chip with what they act on and how
 /// many notes that is (lit while notes are selected), then the notes' keys, where they start and
