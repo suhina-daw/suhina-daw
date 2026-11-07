@@ -14,8 +14,12 @@ name: Test build links
 # as one run instead of one per platform: the runners are a shared, limited resource
 # (docs/releasing.md › Test builds).
 #
-# test-build.yml from a fork runs as the fork has it, so a build is linked only for a maintainer
-# or an App run backed by a verified trusted request for its exact head. See docs/releasing.md.
+# test-build.yml from a fork runs as the fork has it, so a build is linked only for a maintainer's
+# run of a branch in this repository, or a run backed by a verified trusted request (/test-build)
+# for its exact head: a fork's run needs that request even when a maintainer started it. For a
+# fork's build it links, this workflow also uploads a marker artifact, `suhina-linked-pr<number>-run<run id>`:
+# Suhina's updater lists a fork's build only when the artifacts list holds that marker from a run of
+# this repository, which no fork can upload (docs/spec/updates.md › Channels). See docs/releasing.md.
 #
 # Each linked build is also posted to the Discord testing forum (scripts/discord_test_build.py):
 # the bot (secret DISCORD_BOT_TOKEN, variables DISCORD_GUILD_ID and DISCORD_TESTING_FORUM_ID) finds
@@ -137,9 +141,10 @@ jobs:
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             const trusted = [...String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean), ...String(process.env.TRUSTED_CONTRIBUTORS || '')
               .split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase())];
-            const authorizedBuild = async (actor, number, sha, at, checkMembership = true) => {
-              if (String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean).includes(String(actor).toLowerCase())) return true;
-              if (actor !== 'suhina-bot[bot]') return false;
+            const authorizedBuild = async (actor, number, sha, at, checkMembership = true, fromFork = false) => {
+              const maintainer = String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean).includes(String(actor).toLowerCase());
+              if (maintainer && !fromFork) return true;
+              if (!maintainer && actor !== 'suhina-bot[bot]') return false;
               const comments = await github.paginate(github.rest.issues.listComments, {
                 ...context.repo, issue_number: number, per_page: 100,
               });
@@ -158,7 +163,11 @@ jobs:
               }
               return false;
             };
-            if (!(await authorizedBuild(actor, number, run.head_sha, run.created_at))) {
+            // A fork's run builds the workflow files as the fork has them, so a maintainer starting
+            // it (a label, Update branch, close and reopen) says nothing about its code: it is
+            // linked only with a /test-build request for its exact commit, whoever started it.
+            const fromFork = !run.head_repository?.id || run.head_repository.id !== run.repository?.id;
+            if (!(await authorizedBuild(actor, number, run.head_sha, run.created_at, true, fromFork))) {
               core.info('No authorized request for this run and commit; nothing to link.');
               return;
             }
@@ -176,9 +185,8 @@ jobs:
             const posted = [];
             const rows = PLATFORMS.map(([platform, label, how]) => {
               const job = builds.find((j) => j.name === `test build (${platform})`);
-              const artifact = artifacts.find(
-                (a) => a.name.startsWith('suhina-pr') && a.name.endsWith(`-${platform}`),
-              );
+              // This pull request's name only: a fork's run names its artifacts as it likes.
+              const artifact = artifacts.find((a) => a.name === `suhina-pr${number}-${platform}`);
               if (job && job.conclusion === 'success' && artifact) {
                 const url = `https://github.com/${owner}/${repo}/actions/runs/${run.id}/artifacts/${artifact.id}`;
                 const size = (artifact.size_in_bytes / 1048576).toFixed(0);
@@ -207,7 +215,7 @@ jobs:
             if (!MAINTAINERS.includes(pr.user.login.toLowerCase())) {
               body.push(
                 '',
-                `> **A contributor's build.** A maintainer or trusted contributor requested \`test-build\` after reading \`${commit}\`; later pushes are not built until the label is added again. Read the diff before you run it.`,
+                `> **A contributor's build.** A maintainer or trusted contributor requested \`test-build\` after reading \`${commit}\`; later pushes are built only after a new \`/test-build\` request. Read the diff before you run it.`,
               );
             }
 
@@ -229,6 +237,16 @@ jobs:
             }
             core.info(`Linked run ${run.id} from #${number}.`);
 
+            // Suhina's updater lists a fork's build only with this marker: an artifact of this run,
+            // which no fork can upload into (docs/spec/updates.md › Channels). Its name says which
+            // pull request and run; the file only says where it came from.
+            if (fromFork && posted.some((row) => row.artifact)) {
+              const marker = `${process.env.RUNNER_TEMP}/linked-build.txt`;
+              require('fs').writeFileSync(marker, `${run.html_url}\n`);
+              core.setOutput('marker', `suhina-linked-pr${number}-run${run.id}`);
+              core.setOutput('marker_file', marker);
+            }
+
             // For the Discord post: data in a file, never in a shell command.
             const file = `${process.env.RUNNER_TEMP}/test-build.json`;
             require('fs').writeFileSync(file, JSON.stringify({
@@ -237,6 +255,18 @@ jobs:
               rows: posted,
             }));
             core.setOutput('build', file);
+
+      # Before the Discord post, which may fail: without the marker Suhina does not list the build.
+      # Kept as long as the build itself; a rerun of this run replaces it.
+      - name: Mark a fork's linked build for Suhina's updater
+        if: steps.link.outputs.marker != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.link.outputs.marker }}
+          path: ${{ steps.link.outputs.marker_file }}
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
 
       # main, for the script; never the pull request's code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

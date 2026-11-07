@@ -52,7 +52,6 @@ fn project(notes: Vec<Vec<Note>>, slots: Vec<Slot>) -> Project {
         launcher: Launcher {
             scenes: vec![Scene::default(); slots.len()],
             columns: vec![LauncherColumn { track: TrackId(1), slots }],
-            mappings: Default::default(),
         },
         ..Project::default()
     }

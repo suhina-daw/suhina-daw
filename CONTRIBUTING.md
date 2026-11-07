@@ -113,8 +113,10 @@ A pull request can be tried without building it: GitHub Actions builds packages 
 Windows, macOS and Linux ([`docs/releasing.md` › Test builds](docs/releasing.md#test-builds)) and
 links the downloads from the pull request in a comment, updated with every new build. A maintainer's own pull requests are
 built on every push. A contributor's pull request is built once a maintainer has read the diff and
-added the `test-build` label, or a trusted contributor requests it with `/test-build`; a later
-push takes the label off, and the new commits need a new request. `/test-build` first reuses a
+commented `/test-build`, or a trusted contributor requests it with `/test-build`; a later push
+takes the label off, and the new commits need a new request. On a pull request from a branch in
+this repository, a maintainer may add the `test-build` label instead; on one from a fork the label
+alone is refused, since the fork's own workflow files decide what its run builds. `/test-build` first reuses a
 running build of that commit or a successful build whose requested packages are still available.
 A verified main-only update can reuse the previous build. It starts another build only when no
 suitable build is available.

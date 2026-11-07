@@ -176,7 +176,6 @@ fn scene_replaces_the_arrangement_with_its_clips() {
     let mut project = suhina_session::demo_project();
     let clip = project.arrangement.lanes[0].clips[0].clone();
     project.launcher = Launcher {
-        mappings: Vec::new(),
         scenes: vec![Scene::default(), Scene::default()],
         columns: vec![LauncherColumn {
             track: TrackId(1),
