@@ -1153,10 +1153,13 @@ pub fn percent_slider(
     {
         let at = (f64::from((pointer.x - track.left()) / track.width()).clamp(0.0, 1.0) * 100.0).round();
         if (at - shown).abs() >= 0.5 {
-            if response.dragged() {
+            // Anything but a plain click is part of a drag, its frame included where the drag
+            // is let go or has not passed egui's threshold yet.
+            let dragged = !response.clicked();
+            if dragged {
                 ui.data_mut(|d| d.insert_temp(sent, true));
             }
-            out = Some((at, response.dragged()));
+            out = Some((at, dragged));
         }
     }
     if response.drag_stopped() || !response.dragged() {

@@ -1581,9 +1581,12 @@ fn the_swing_row_sets_the_projects_swing_or_the_clips_own() {
     harness.run();
     harness.drag_at(slider.center());
     harness.run();
-    harness.hover_at(slider.center() + egui::vec2(6.0, 0.0));
-    harness.run();
-    harness.drop_at(slider.center() + egui::vec2(6.0, 0.0));
+    // Past egui's drag threshold, so it is a drag and not a click.
+    for dx in [10.0, 20.0, 30.0] {
+        harness.hover_at(slider.center() + egui::vec2(dx, 0.0));
+        harness.run();
+    }
+    harness.drop_at(slider.center() + egui::vec2(30.0, 0.0));
     harness.run();
     let sets: Vec<Action> = harness.state().0.iter().filter(|a| a.id == "transport.setSwing").cloned().collect();
     assert!(!sets.is_empty(), "{:?}", harness.state().0);
