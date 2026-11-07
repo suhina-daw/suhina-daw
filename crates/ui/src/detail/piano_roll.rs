@@ -422,12 +422,16 @@ pub fn show(
             }
         }
     }
+    // Every press says which modifiers its drag is chosen by, and one outside the grid none, so
+    // a drag never takes an earlier press's (#1048).
+    if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary)) {
+        state.pressed_with = widgets::pointer_over(ui, grid_rect).map(|_| ui.input(|i| i.modifiers));
+    }
     // The audition starts on the press: a note pressed, or the note a press is about to draw, sounds
     // for as long as the button is held (› Playing the keys).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
         && let Some(pos) = widgets::pointer_over(ui, grid_rect)
     {
-        state.pressed_with = Some(ui.input(|i| i.modifiers));
         let sounded = match (note_at(&layout, &clip.notes, pos), state.tool) {
             (_, Tool::Erase | Tool::Mute | Tool::Slice) => None,
             (Some((index, _)), _) => clip.notes.get(index).map(|n| n.key),
