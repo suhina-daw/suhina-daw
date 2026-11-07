@@ -14,7 +14,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
 use suhina_engine::model::{ChannelId, LaneData};
-use suhina_library::Library;
+use suhina_library::{Library, SectionKind};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::{App, Status, kit::theme};
@@ -77,9 +77,21 @@ fn pack(root: &Path) {
 /// The window with the demo project and a browser whose library is kept in `settings` and
 /// holds `folder`.
 fn window(settings: &Path, folder: &Path) -> Harness<'static, App> {
+    window_at(settings, folder, true)
+}
+
+/// A window on a library that may already hold `folder` (a browser.json left by a first
+/// window), so the tests can reopen one on the same settings.
+fn window_reopened(settings: &Path, folder: &Path) -> Harness<'static, App> {
+    window_at(settings, folder, false)
+}
+
+fn window_at(settings: &Path, folder: &Path, adding: bool) -> Harness<'static, App> {
     let mut app = App::new();
     let mut library = Library::new(Some(settings.to_path_buf()));
-    library.add_folder(folder).unwrap();
+    if adding {
+        library.add_folder(folder).unwrap();
+    }
     app.set_file_library(library);
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = Harness::builder()
@@ -1830,6 +1842,72 @@ fn the_arrow_keys_move_through_the_list_after_a_click_on_a_row() {
     harness.key_press(Key::ArrowRight);
     harness.run();
     assert!(harness.query_by_label(&row("FM Synth")).is_some(), "the heading opened");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn the_sidebar_titles_collapse_reorder_and_keep_their_order() {
+    let (settings, folder) = (temp("sections-settings"), temp("sections"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    // The section kinds in the store, in their order ([#1254] › Sidebar sections).
+    fn order(harness: &mut Harness<'static, App>) -> Vec<SectionKind> {
+        harness.state_mut().projects_mut().file_library_mut().sections().iter().map(|s| s.kind).collect()
+    }
+    assert_eq!(order(&mut harness), [SectionKind::Pinned, SectionKind::Tags, SectionKind::Library]);
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "the open section shows its tags");
+    // Clicking the title closes the section; its rows go with the click.
+    harness.get_by_label("Tags section").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Red").is_none(), "closed hides the tags");
+    assert!(harness.query_by_label("Place Tag Orange").is_none(), "every tag row goes with the section");
+    // The title's menu opens the section again.
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("Open Tags").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "open again, the tags show");
+    // Move up from the menu takes Tags above Pinned.
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("Move up").click();
+    harness.run();
+    assert_eq!(
+        order(&mut harness),
+        [SectionKind::Tags, SectionKind::Pinned, SectionKind::Library],
+        "the menu's move reorders the sections"
+    );
+    // The order and the open state are the library's own: a reopened window keeps them.
+    drop(harness);
+    let mut harness = window_reopened(&settings, &folder);
+    harness.run();
+    assert_eq!(
+        order(&mut harness),
+        [SectionKind::Tags, SectionKind::Pinned, SectionKind::Library],
+        "the order survives the restart"
+    );
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "the reopen kept Tags open where it was left");
+    // Library last: its Move down is refused — the dimmed move does nothing — and the
+    // first section's (Tags, from the move above) Move up is dimmed too.
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("Move up").click();
+    harness.run();
+    assert_eq!(
+        order(&mut harness),
+        [SectionKind::Tags, SectionKind::Pinned, SectionKind::Library],
+        "the first section's move up does nothing"
+    );
+    harness.get_by_label("Library section").click_secondary();
+    harness.run();
+    harness.get_by_label("Move down").click();
+    harness.run();
+    assert_eq!(
+        order(&mut harness),
+        [SectionKind::Tags, SectionKind::Pinned, SectionKind::Library],
+        "the last section's move down does nothing"
+    );
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

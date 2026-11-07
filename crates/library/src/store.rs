@@ -177,7 +177,7 @@ impl SectionKind {
     }
 
     /// The sections whose order the sidebar keeps ([#1254]).
-    pub const ALL: [SectionKind; 3] = [Self::Tags, Self::Pinned, Self::Library];
+    pub const ALL: [SectionKind; 3] = [Self::Pinned, Self::Tags, Self::Library];
 }
 
 impl Section {

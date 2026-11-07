@@ -1,6 +1,6 @@
 ---
-description: How the browser behaves: places, categories, search, the tree, previewing, dragging samples, MIDI files, devices, presets and plug-ins into the project, pins, recent items and colour tags
-read_when: browser, quick add, quick-add palette, Ctrl+P, add by name, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
+description: How the browser behaves: places, categories, search, the tree, previewing, dragging samples, MIDI files, devices, presets and plug-ins into the project, pins, recent items, tags, tag folders, collapsible and reorderable sections
+read_when: browser, quick add, quick-add palette, Ctrl+P, add by name, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, tag folders, tag ids, collapsible sections, section order, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
 last_verified: 2026-11-06
@@ -89,7 +89,14 @@ place does not, so Space, Tab and the other shortcuts keep working (`app.rs::key
 
 ## Sidebar
 
-Four sections, each title in small hint text:
+Three sections in an order the library keeps (each id-named kind of its own, [#1254] › Tag
+model), and Folders, which is not one of them: it always stays last. The order starts
+**Pinned, Tags, Library**. Each section's title draws a chevron: a click opens or closes the
+section by command, and the title's right-click menu opens or closes it and moves it among the
+others (Move up, Move down; the first section has no Move up, the last no Move down). The
+sections' order and open state are the library's own, kept in `browser.json`
+([Where it is kept](#where-it-is-kept)), so a closed section stays closed when the window
+reopens.
 
 - **Pinned:** the entries **Pinned** (the pinned items) and **Recent**: every kind's recent
   items together, each kind the last 50 newest first. A project counts when it is opened or
@@ -97,11 +104,15 @@ Four sections, each title in small hint text:
   double-click). Previewing does not count. Recent's kinds (Projects, Samples, MIDI,
   Instruments, Effects, Plug-ins, Presets) are entries indented under it, or with Settings ›
   Browser › Recent's kinds set to Chips, chips over the list while Recent is chosen.
-- **Tags:** one row per tag (#1196), in the order they were made: the tag's colour dot, its
-  name and, at the right, how many items carry it. A tag that no item carries still shows,
-  dimmed, so a new tag can be found before it is used; its row's right-click menu (and the
-  footer dots for the same tags) are the other ways to its actions
-  ([Colour tags](#colour-tags)).
+- **Tags:** one row per tag (#1196), in the order the tags' forest holds
+  ([Colour tags](#colour-tags)): the tag's colour dot, its name and, at the right, how many
+  items carry it. A tag that no item carries still shows, dimmed, so a new tag can be found
+  before it is used; its row's right-click menu (and the footer dots for the same tags) are
+  the other ways to its actions ([Colour tags](#colour-tags)). A tag can live inside a **tag
+  folder**: the folder's row draws a chevron that opens or closes it, holds tags and folders
+  under it (to 4 levels deep), and its right-click menu renames it, adds a tag or a folder
+  under it, and removes it — asking first, saying how many rows move up ([#1254] › Tag
+  folders).
   The wheel scrolls the sidebar when its entries are more than its room, and the rows past
   its top come back; nothing else moves.
 - **Library:** All, Samples, MIDI, Instruments, Effects, Presets, Plug-ins: each shows the whole
@@ -470,9 +481,24 @@ where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no tr
 
 ## Colour tags
 
-Tags have a name and a colour. There are seven at first: Red, Orange, Yellow, Green, Blue,
-Purple and Grey; a right-click on a tag's dot in the footer renames it (a field, Enter; clicks
-inside that menu do not close it),
+Tags have an id, a name and a colour ([#1254] › Tag model). The id comes from 1, is never
+reused, and is shared with tag folders; items, folders and the order refer to a tag by its id,
+so a rename rewrites only the name and everything that carried the tag keeps carrying it. A
+tag placed as `tag:<name>` stays and `tag:#<id>` means the same by id. There are seven at
+first: Red, Orange, Yellow, Green, Blue, Purple and Grey; a new tag without a colour takes the
+next named colour (the enum behind the seven, then the CSS named colours, with numbering —
+"Red 2" — when a name is already taken). There are seven at first and colours may repeat; two
+tags never share a name.
+
+**Tag folders** ([#1254] › Tag folders) hold tags and folders. A folder nests at most four
+deep (a deeper drop is refused), a tag lives in one folder at a time, and removing a folder
+lifts its whole cortège — tags and subfolders — into the parent (the top when it was top); the
+menu asks first, saying how many rows move up. Dragging a tag or folder row (a folder can
+never move under itself) moves it: before another row, into a folder, or to the empty space of
+the section for the top level.
+
+The rest is as it was with the ids in the rows' place (#1196): a right-click on a tag's dot in
+the footer renames it (a field, Enter; clicks inside that menu do not close it),
 recolours it (the swatches of the track colour palette, [components](../design/components.md#colour-palette), or Select colour…, which opens the theme editor's picker in the menu itself) or removes it; new ones are added from a row's Tag menu, up to 64
 (Settings › Browser › Tag limit raises it, at most 1024). Any item can carry any
 number of tags; a tag is a 6 px dot after the name. Hovering a dot — the footer's or an item
@@ -484,8 +510,10 @@ The **sidebar's Tags section** ([Sidebar](#sidebar)) reaches a tag's items as a 
 Pinned does (#1196): a click on the tag's row shows every item that carries it, of any kind
 (samples, MIDI files, presets and presets' voices, projects, device graphs, built-in effects
 and instruments, plug-ins), named first no matter the kind, as a `library.search` place of
-`tag:<name>`. Ctrl-click adds the tag to the place's tags or takes it off: items with any of
-the row's tags show. A place of several tags is built like the coloured dots' filter, so its
+`tag:<name>` (or `tag:#<id>`). Ctrl-click adds the tag to the place's tags or takes it off:
+items with any of the row's tags show; a Ctrl-click on a folder's own row puts its whole
+cortège in the place ([#1254] › Tag folders). A place of several tags is built like the
+coloured dots' filter, so its
 list is ranked as a search's list is, and a preset bank's tagged voice is not among it.
 A ctrl-click on the place's last tag shows the tree again.
 As
@@ -510,7 +538,10 @@ The menu adds a tag for the section too: a typed **New tag…** name, added with
 **Add tag** button beside it, with the colour
 this menu shows outlined — the tag it was added from shows it —, shown dimmed until
 something carries it; the menu closes when the add lands, and stays for a refused name (the
-status bar says why). The row's menu can rename, recolour or remove every tag there is. The
+status bar says why). A **folder's row's** menu (in place of a colour, since it has none)
+renames the folder live, adds a tag or a folder under it, and removes it with the asking-first
+count ([#1254] › Tag folders). The row's menu can rename, recolour or remove every tag there
+is. The
 footer's dots stay as they are (#1196): where the section reaches a tag's items as a
 place, the dots are still the quick filter of whatever list is shown, a search's or a place's
 items included. The section is the one place the tags are kept, so the former tag editor and
@@ -520,10 +551,14 @@ here, and items are tagged from the rows' Tag menu, by the drags, and over the s
 ## Where it is kept
 
 `browser.json` in Suhina's settings folder (beside `settings.txt`): the folders, the pins,
-the recent items by group, the tags and which items carry them, and the tag limit. A missing
-file is an empty library. A file that cannot be read, or parts of it (an unknown group, a tag
-without a name, a colour that is not `#RRGGBB`), are skipped with a warning; lists longer
-than their limits are cut. The file index is kept beside it (ADR 0012). Panel width, side,
+the recent items by group, the tags with their ids in their forest (tags and tag folders, each
+folder's children under it), the tagged items by tag id, the sections' order and open state,
+and the tag limit ([#1254]). A missing file is an empty library. A file kept by an earlier
+shape — tags without ids, `tagged` by tag names — is read in with the ids handed out and its
+name references mapped onto them, and the next save rewrites it in the new shape; parts the
+shape refuses (an unknown group, a tag without a name, a colour that is not `#RRGGBB`, a
+reference to a tag the folder does not hold) are skipped with a warning; lists longer than
+their limits are cut. The file index is kept beside it (ADR 0012). Panel width, side,
 whether it is shown, auto-play, preview volume, how several files are dropped and the warp mode
 are in `settings.txt`.
 
@@ -541,15 +576,22 @@ the CLI can do the same.
 | `library.removeFolder` | `folder` | removes it and its part of the index |
 | `library.refresh` | `folder?` | reads a folder (or every folder) again |
 | `library.list` | `folder` | what is directly in a folder: sub-folders and files of the kinds above, with kind and size |
-| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); `place` takes a tag's place (`tag:<name>`), which lists the items carrying that tag of any kind no matter the folders; a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
+| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); `place` takes a tag's place (`tag:<name>` or, since [#1254], `tag:#<id>`), which lists the items carrying that tag of any kind no matter the folders; a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
 | `library.info` | `item` | a file's kind, size, duration, sample rate, channels, tempo (and where it came from) and key; a Stems file's stems and mastering; a MIDI file's tracks with their notes; a preset's voices; a built-in device's or plug-in's role (and a plug-in's vendor, format and version); the item's tags |
 | `library.pinned` | | the pinned items |
 | `library.pin`, `library.unpin` | `item` | pins or unpins an item |
 | `library.recent` | `group?` | the recent items of one group or all |
-| `library.tags` | | the tags (name, colour) and the limit |
-| `library.setTag` | `name?`, `color?`, `rename?`, `limit?` | adds a tag, or changes one's colour or name; `limit` sets the most tags there may be |
-| `library.removeTag` | `name` | removes a tag from the list and every item |
-| `library.tag` | `item`, `tag`, `on` | sets or clears a tag on an item |
+| `library.tags` | | the tags with their ids, the tag folders (with their children) and the sections' order and open state, and the tagged items by id; and the limit |
+| `library.setTag` | `id?`, `name?`, `color?`, `rename?`, `limit?` | adds a tag (a name no tag has, coloured from the named colours when asked without one), or changes one's colour or name — by id (`#<id>`) or by name; `limit` sets the most tags there may be |
+| `library.removeTag` | `id?`, `name?` | removes a tag (by id or name) from the list and every item |
+| `library.tag` | `item`, `tag`, `on` | sets or clears a tag on an item (`tag` by id or name) |
+| `library.addTagFolder` | `name?`, `parent?` | adds a tag folder under `parent` (by id or name) or at the top; the name is unique among its own level's, named "Folder" when left out ([#1254]) |
+| `library.renameTagFolder` | `folder`, `rename` | renames a tag folder (by id or name) |
+| `library.removeTagFolder` | `folder` | lifts a tag folder's tags and folders into the parent; returns how many moved up |
+| `library.setFolderOpen` | `folder`, `open` | whether a tag folder's children show |
+| `library.moveTag` | `id`, `folder?`, `position?` | moves a tag or folder by id before `position` in its parent's list, or under `folder` (by id or name) at its end, or to the top when both are left out |
+| `library.setSections` | `order` | the sidebar's sections in `order` (`tags`, `pinned`, `library`); a kind left out keeps its state, Folders is never in the list ([#1254]) |
+| `library.setSectionOpen` | `section`, `open` | whether a section's rows show |
 | `library.setPluginsView` | `view` | which plug-ins the Plug-ins category lists: `instruments` (default) or `effects` ([plug-in browsing](plugin-browsing.md)) |
 | `library.moveTo` | `items`, `folder` | moves files (at most 4096) into a folder that exists, named as `library.copyTo` names copies; their pins, recent places and tags go with them and the folders are read again; returns what was `moved` (from, to), what is `missing`, what was `kept` (in that folder already, or played by an open project) and what `failed`; not to an agent attached to the app (#943) |
 | `library.copyTo` | `items`, `folder` | copies files (at most 4096) into a folder that exists, under their own names or the first numbered one free (`Kick 2.wav`); never overwrites; returns what was `copied` (from, to), what is `missing` and what `failed` (#865) |
@@ -590,6 +632,7 @@ the user chooses the browser's folders ([`mcp.md`](../mcp.md)). `library.copyTo`
 | Pins | 1 000 | the oldest go |
 | Recent items | 50 per group | the oldest go |
 | Tags | 64 by default, at most 1024 | refused |
+| Tag folders' nesting | 4 deep | a deeper drop is refused |
 | `browser.json` | 8 MiB | not read; an empty library, with a warning |
 
 ## Not decided yet

@@ -156,7 +156,10 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
         id: "library.removeTag",
         label: "Remove a colour tag from the list and from every item",
-        params: &[param("name", ParamType::Text, "the tag")],
+        params: &[
+            optional("id", ParamType::Text, "the tag, by its id (#<id>) or its name ([#1254])"),
+            optional("name", ParamType::Text, "the tag"),
+        ],
         kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
         run: remove_tag,
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
@@ -166,7 +169,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         label: "Set or clear a colour tag on an item",
         params: &[
             ITEM,
-            param("tag", ParamType::Text, "the tag's name"),
+            param("tag", ParamType::Text, "the tag, by its id (#<id>) or its name ([#1254])"),
             param("on", ParamType::Bool, "true sets it, false clears it"),
         ],
         kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
