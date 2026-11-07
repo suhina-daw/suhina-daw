@@ -1236,6 +1236,7 @@ impl Vst3Plugin {
         }
         if let Some(ara) = self.ara.as_mut() {
             ara.destroy(&edited);
+            ara.select_after(&edited);
         }
         Ok(())
     }
@@ -1265,12 +1266,18 @@ impl Vst3Plugin {
     pub(crate) fn place_editor(&self, placement: crate::window::Placement) {
         if let Some(editor) = &self.editor {
             editor.place(placement);
+            if let Some(ara) = &self.ara {
+                ara.view_placed(placement.clip_width > 0 && placement.clip_height > 0);
+            }
         }
     }
 
     pub(crate) fn close_editor(&mut self) {
         if let Some(editor) = self.editor.take() {
             editor.close();
+            if let Some(ara) = &self.ara {
+                ara.view_placed(false);
+            }
         }
     }
 
