@@ -1993,8 +1993,9 @@ fn a_tag_drags_into_a_closed_folder() {
     harness.step();
     harness.hover_at(to);
     harness.step();
+    // The hint says where the drop goes — into the closed folder ([#1254] review).
     assert!(
-        matches!(harness.state().status(), Status::Hint(text) if text.contains("Drop to put it in")),
+        matches!(harness.state().status(), Status::Hint(text) if text.contains("Move Red into Drums")),
         "{:?}",
         harness.state().status()
     );
@@ -2124,6 +2125,74 @@ fn a_section_title_drags_to_another_slot() {
     );
     // The tree's own search reads the new order; no reset happens by hand.
     assert_eq!(order(&mut harness), [SectionKind::Pinned, SectionKind::Library, SectionKind::Tags]);
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_tag_drags_with_hints_into_a_subfolder() {
+    let (settings, folder) = (temp("subfolder-hint-settings"), temp("subfolder-hint"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Drums" })).unwrap();
+    harness.run();
+    // A folder under Drums comes by command, the drag hints are what this test follows
+    // ([#1254] › Tag folders).
+    let drums_id = {
+        let forest = harness.state_mut().projects_mut().file_library_mut().tags();
+        forest
+            .iter()
+            .find_map(|e| match e {
+                suhina_library::TagEntry::Folder { folder, .. } if folder.name == "Drums" => Some(folder.id),
+                _ => None,
+            })
+            .unwrap_or(0)
+    };
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.addTagFolder", &json!({ "name": "Folder", "parent": format!("#{drums_id}") }))
+        .unwrap();
+    harness.run();
+    // Red into the subfolder: the hint names both the carried and its landing.
+    let at = harness.get_by_label("Place Tag Red").rect().center();
+    let to = harness.get_by_label_contains("Folder Folder").rect().center();
+    harness.hover_at(at);
+    harness.step();
+    harness.drag_at(at);
+    harness.step();
+    harness.hover_at(to);
+    harness.step();
+    assert!(
+        matches!(harness.state().status(), Status::Hint(text) if text.contains("Move Red into Folder")),
+        "{:?}",
+        harness.state().status()
+    );
+    harness.drop_at(to);
+    harness.run();
+    let two = harness.state_mut().projects_mut().file_library_mut().tags();
+    assert!(two.iter().any(|e| matches!(
+        e,
+        suhina_library::TagEntry::Folder { folder, .. } if folder.name == "Drums"
+    ) && {
+        // Its children hold the subfolder with Red inside it.
+        if let Some(suhina_library::TagEntry::Folder { tags, .. }) = two.iter().find_map(|e| match e {
+            suhina_library::TagEntry::Folder { folder, tags } if folder.name == "Drums" => {
+                Some(suhina_library::TagEntry::Folder { folder: folder.clone(), tags: tags.clone() })
+            }
+            _ => None,
+        }) {
+            tags.iter().any(|e| {
+                matches!(
+                    e,
+                    suhina_library::TagEntry::Folder { folder, tags } if folder.name == "Folder"
+                        && suhina_library::store::tags_iter(tags).any(|t| t.name == "Red")
+                )
+            })
+        } else {
+            false
+        }
+    }),);
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

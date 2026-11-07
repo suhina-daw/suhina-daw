@@ -1411,6 +1411,7 @@ fn tags_section(
     let mut y = *py;
     state.drop_tag = None;
     state.drop_tag_row = None;
+    state.drop_pill = None;
     let tag_list = projects.file_library_mut().tags();
     let counts = state.tag_counts(projects.file_library_mut());
     let mut rows = Vec::new();
@@ -1480,6 +1481,21 @@ fn tags_section(
         }
         if move_here {
             state.drop_tag_row = Some(id);
+        }
+        // The pill a carried tag speaks: what the drop does, from where the pointer is
+        // ([#1254] review: drag with hints, into folders and subfolders). The carried row
+        // itself says only what is carried — dropping on itself is no move.
+        if let (Some(carried_id), Some(carried_name)) = (state.drag_tag_id, state.drag_tag.as_deref()) {
+            let pointer_here = pointer.is_some_and(|p| rect.intersect(area).contains(p));
+            if id == carried_id && pointer_here {
+                state.drop_pill = Some(carried_name.to_string());
+            } else if move_here {
+                state.drop_pill = Some(if is_folder {
+                    format!("Move {carried_name} into {name}")
+                } else {
+                    format!("Put {carried_name} before {name}")
+                });
+            }
         }
         let chosen = matches!(&state.place, Some(Place::Tag(tags)) if tags.contains(&id));
         let alone = state.place.as_ref() == Some(&Place::Tag(vec![id]));
@@ -1847,6 +1863,15 @@ fn tags_section(
             state.relist();
         }
         state.drag_tag_id = None;
+    }
+    // No row is under the carried one: the drop goes to the section's top ([#1254] › Tag
+    // folders), and the pill says it.
+    if let (Some(carried_id), Some(carried_name)) = (state.drag_tag_id, state.drag_tag.as_deref())
+        && state.drop_tag_row.is_none()
+        && state.drop_pill.is_none()
+    {
+        let _ = carried_id;
+        state.drop_pill = Some(format!("Move {carried_name} to the top of the tags"));
     }
     // The carried-tag's tag-of-the-row path lives in the app's own `tag_drag` (drops.rs).
     *py = y;

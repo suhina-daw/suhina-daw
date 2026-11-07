@@ -362,6 +362,9 @@ pub struct BrowserState {
     /// the set, [#1254] review): a drag of any of them lands them all in the folder of the
     /// drop, in the pick's order.
     pub tag_selection: Vec<u32>,
+    /// What a carried tag's drop does, worded by the sidebar's rows as they draw: the pill
+    /// by the pointer and the status bar say it while the drag lasts ([#1254] review).
+    pub drop_pill: Option<String>,
     /// The section title a drag carries ([#1254] review: a section moves by dragging it
     /// among the others; Folders is never carried).
     pub drag_section: Option<suhina_library::SectionKind>,
@@ -434,6 +437,7 @@ impl Default for BrowserState {
             drag_tag_id: None,
             drop_tag_row: None,
             tag_selection: Vec::new(),
+            drop_pill: None,
             drag_section: None,
             drop_section: None,
             drop_item: None,

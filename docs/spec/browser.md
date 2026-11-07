@@ -501,8 +501,10 @@ lifts its whole cortège — tags and subfolders — into the parent (the top wh
 menu asks first, saying how many rows move up. A subfolder's row is indented like the
 Pinned section's groups are, and draws its chevron instead of a mark
 ([#1254] review). Dragging a tag or folder row (a folder can never move under itself) moves
-it: before another row, into a folder — a closed one too, the status bar says so —, or to the
-empty space of the section for the top level. Several tags move as one: a Shift-click picks a
+it: before another row, into a folder — a closed one too —, or to the
+empty space of the section for the top level. While it drags, the pill by the pointer (and
+the status bar) says what the drop does, for folders and subfolders alike: *Move Red into
+Drums*, *Put Purple before Yellow*, *Move Red to the top of the tags* ([#1254] review). Several tags move as one: a Shift-click picks a
 tag (a ring marks it; the place keeps doing its own work), a drag of any picked one lands them
 all in the folder of the drop, in the pick's order — a drop before a row moves only the
 carried one. A right-click on any tag's menu offers **New folder** at the tag's own level,

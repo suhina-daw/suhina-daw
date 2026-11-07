@@ -255,16 +255,22 @@ impl App {
         }
         if let Some(item) = self.browser.drop_item.as_ref().filter(|_| !released) {
             self.status = Status::Hint(format!("Drop to tag {} with {tag}", item.name));
+        } else if let Some(move_to) = self.browser.drop_pill.as_ref().filter(|_| !released) {
+            // Over the sidebar, the carried tag's drop is a move: the rows word where it
+            // lands ([#1254] review: hints into folders and subfolders).
+            self.status = Status::Hint(move_to.clone());
         }
         // The pill beside the pointer says what the drop tags, or what is carried (#1196).
         if !released && let Some(pointer) = ui.input(|i| i.pointer.latest_pos()) {
-            let over_item = self.browser.drop_item.clone();
-            drag_pill(
-                ui,
-                pointer,
-                &over_item.as_ref().map_or_else(|| tag.clone(), |item| format!("Tag {} with {tag}", item.name)),
-                over_item.is_some(),
-            );
+            let (over_item, move_to) = (self.browser.drop_item.clone(), self.browser.drop_pill.clone());
+            let (what, accent) = if let Some(item) = over_item {
+                (format!("Tag {} with {tag}", item.name), true)
+            } else if let Some(move_to) = move_to {
+                (move_to, true)
+            } else {
+                (tag.clone(), false)
+            };
+            drag_pill(ui, pointer, &what, accent);
         }
         if released {
             self.browser.drag_tag = None;
