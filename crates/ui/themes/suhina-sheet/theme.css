@@ -91,34 +91,34 @@
  * Original spreadsheet-inspired Suhina Sheet materials. No external resources.
  */
 @layer suhina-sheet {
-  .window, .session, .arrangement { background-color: white; color: color-mix(in oklab, var(--tint-light), black 60%); }
-  .session {
+  window, session, arrangement { background-color: white; color: color-mix(in oklab, var(--tint-light), black 60%); }
+  session {
     background-image: repeating-linear-gradient(0deg, transparent 0 21px, color-mix(in oklab, var(--tint), white 88%) 21px 22px),
                       repeating-linear-gradient(90deg, transparent 0 87px, color-mix(in oklab, var(--tint), white 88%) 87px 88px);
   }
-  .application-bar, .menu-bar, .project-tabs {
+  application-bar, menu-bar, project-tabs {
     background-color: var(--tint);
     color: var(--on-accent);
     border-color: color-mix(in oklab, var(--tint), black 14%);
   }
-  .toolbar, .status-bar { background-color: color-mix(in oklab, var(--tint), white 94%); color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 79%), black 42%); }
-  .browser {
+  toolbar, status-bar { background-color: color-mix(in oklab, var(--tint), white 94%); color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 79%), black 42%); }
+  browser {
     background-color: var(--tint-light);
     background-image: linear-gradient(90deg, color-mix(in oklab, var(--tint), var(--tint-light) 66%) 0 45%, var(--tint-light) 45% 100%);
     color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 3%), black 35%);
   }
-  .detail, .device-panel { background-color: color-mix(in oklab, var(--tint), white 94%); color: color-mix(in oklab, var(--tint-light), black 60%); }
-  .track-header { background-image: linear-gradient(#ffffff55, #ffffff22); }
-  .track-name { background-image: linear-gradient(#ffffff77, #ffffff55); }
-  .mixer { background-color: color-mix(in oklab, var(--tint), white 97%); box-shadow: inset -1px 0 0 color-mix(in oklab, color-mix(in oklab, var(--tint), white 84%), black 3%); }
-  .button { color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 24%); background-color: white; border-color: color-mix(in oklab, color-mix(in oklab, var(--tint), white 65%), black 5%); border-radius: 0px; }
-  .button:hover { color: color-mix(in oklab, var(--tint), black 14%); background-color: color-mix(in oklab, var(--tint-light), white 67%); border-color: var(--tint); }
-  .knob { color: var(--tint); background-color: white; }
-  .value, .dropdown, .text-input { color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 24%); background-color: white; border-radius: 0px; }
-  .fader-scale { color: color-mix(in oklab, color-mix(in oklab, var(--tint), white 55%), black 29%); }
-  .meter { background-color: color-mix(in oklab, var(--tint), white 86%); }
-  .meter-vertical .meter-level { background: linear-gradient(to top, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
-  .meter-horizontal .meter-level { background: linear-gradient(to right, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
+  detail, device-panel { background-color: color-mix(in oklab, var(--tint), white 94%); color: color-mix(in oklab, var(--tint-light), black 60%); }
+  track-header { background-image: linear-gradient(#ffffff55, #ffffff22); }
+  track-name { background-image: linear-gradient(#ffffff77, #ffffff55); }
+  mixer { background-color: color-mix(in oklab, var(--tint), white 97%); box-shadow: inset -1px 0 0 color-mix(in oklab, color-mix(in oklab, var(--tint), white 84%), black 3%); }
+  button { color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 24%); background-color: white; border-color: color-mix(in oklab, color-mix(in oklab, var(--tint), white 65%), black 5%); border-radius: 0px; }
+  button:hover { color: color-mix(in oklab, var(--tint), black 14%); background-color: color-mix(in oklab, var(--tint-light), white 67%); border-color: var(--tint); }
+  knob { color: var(--tint); background-color: white; }
+  value, dropdown, text-input { color: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 24%); background-color: white; border-radius: 0px; }
+  fader-scale { color: color-mix(in oklab, color-mix(in oklab, var(--tint), white 55%), black 29%); }
+  meter { background-color: color-mix(in oklab, var(--tint), white 86%); }
+  meter-vertical meter-level { background: linear-gradient(to top, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
+  meter-horizontal meter-level { background: linear-gradient(to right, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
 }
 
 /* Control placements. */
@@ -128,7 +128,7 @@
 .control-mixer-volume { left: 18px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
 .control-mixer-volume-readout { left: -24px; top: 0px; bottom: auto; display: block; right: auto; width: 30px; height: auto; --suhina-direction: vertical; }
 .control-mixer-volume-scale { left: -40px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
-.pan { --suhina-appearance: knob; }
+pan { --suhina-appearance: knob; }
 
 /* Artwork. */
 arm { image: url("assets/arm.svg"); }

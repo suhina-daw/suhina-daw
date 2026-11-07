@@ -164,17 +164,22 @@ fn draw(painter: &Painter, rect: Rect, gradient: &Gradient, radius: f32, opacity
     true
 }
 
-/// A control's own surface in `rect`: its background, border, corner radius and shadows from the
-/// element in scope, the caller's `radius` and `fill` where the sheet sets none. A transparent
+/// A control's own surface in `rect`: its background, border, corner radius and shadows from
+/// `style` (its element's, `kit::element`), the caller's `radius` and `fill` where the sheet sets none. A transparent
 /// background paints nothing, rather than a see-through hole in the window. The surface blends
 /// with what is under it: a control is never a hole to the desktop, whatever its alpha (only
 /// views, bars and panels set the window's pixels). Returns the radius used, for what the
 /// control draws on top.
-pub fn surface(painter: &Painter, rect: Rect, radius: f32, fill: egui::Color32) -> f32 {
+pub(in crate::kit) fn surface_with(
+    painter: &Painter,
+    rect: Rect,
+    radius: f32,
+    fill: egui::Color32,
+    style: Option<super::Computed>,
+) -> f32 {
     if !rect.is_positive() || !rect.is_finite() {
         return 0.0;
     }
-    let style = super::super::style_class::computed();
     let radius = style.as_ref().filter(|s| s.authored.radius).map_or(radius, |s| s.radius);
     let radius = radius.min(rect.height().min(rect.width()) / 2.0).max(0.0);
     let fill = style.as_ref().filter(|s| s.authored.background).map_or(fill, |s| s.background);

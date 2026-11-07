@@ -142,17 +142,17 @@ pub(super) fn clip_properties(
         let height = ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW;
         Rect::from_min_size(area.min, Vec2::new(area.width(), height))
     } else {
-        // `.clip-info { width }` in the theme (120 to 480 points).
+        // `clip-info { width }` in the theme (120 to 480 points).
         let width = {
-            let _style = crate::kit::style_class::enter("clip-info");
-            crate::kit::style_class::computed().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0))
+            let el = crate::kit::element::CLIP_INFO.enter();
+            el.style().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0))
         };
         Rect::from_min_max(area.min, Pos2::new(area.left() + width, area.bottom()))
     }
     .intersect(area);
-    // `.clip-info` styles the clip's column: its background and its text.
-    let _style = crate::kit::style_class::enter("clip-info");
-    crate::kit::native_css::surface(painter, column, 0.0, theme::panel_background());
+    // `clip-info` styles the clip's column: its background and its text.
+    let el = crate::kit::element::CLIP_INFO.enter();
+    el.paint_with(painter, column, crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() });
     // Rows that do not fit under the column's bottom are left out rather than cut in half, the
     // title last; text never wraps (› Clip column in `docs/spec/ui-clip-editor.md`).
     let title = Rect::from_min_size(column.min, Vec2::new(column.width(), ROW));

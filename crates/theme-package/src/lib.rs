@@ -16,6 +16,7 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+pub mod elements;
 pub mod meta;
 
 /// The file name ending of a package.

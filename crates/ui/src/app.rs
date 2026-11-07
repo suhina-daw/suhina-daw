@@ -3654,8 +3654,8 @@ pub(crate) fn clipboard_line(command: &str) -> Option<String> {
 /// border-color }`), else the theme's border.
 fn with_bar_line<R>(ui: &mut Ui, class: &str, show: impl FnOnce(&mut Ui) -> R) -> R {
     let line = {
-        let _bar = crate::kit::style_class::enter(class);
-        let own = crate::kit::style_class::computed();
+        let bar = crate::kit::element::named(class).map(crate::kit::element::Name::enter);
+        let own = bar.as_ref().and_then(crate::kit::element::Entered::style);
         // A bar with no line (`border-width: 0`, or a transparent border) fills the line's pixel
         // with its own background, so no gap shows the window behind it.
         let lineless = own.as_ref().is_some_and(|c| {

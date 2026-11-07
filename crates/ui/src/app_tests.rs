@@ -640,7 +640,7 @@ fn a_bar_draws_its_separator_in_its_own_border_colour() {
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
     app.settings.animations = false;
     app.use_test_skin(crate::kit::skin::Skin {
-        css: Some(std::sync::Arc::from(".menu-bar { border-color: #FF0000; }")),
+        css: Some(std::sync::Arc::from("menu-bar { border-color: #FF0000; }")),
         ..Default::default()
     });
     let red = egui::Color32::from_rgb(0xFF, 0, 0);
@@ -674,7 +674,7 @@ fn a_bar_without_a_line_fills_the_line_with_its_background() {
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
     app.settings.animations = false;
     app.use_test_skin(crate::kit::skin::Skin {
-        css: Some(std::sync::Arc::from(".menu-bar { background-color: #00FF00; border-width: 0; }")),
+        css: Some(std::sync::Arc::from("menu-bar { background-color: #00FF00; border-width: 0; }")),
         ..Default::default()
     });
     let green = egui::Color32::from_rgb(0, 0xFF, 0);
@@ -708,7 +708,7 @@ fn a_theme_keeps_the_header_column_at_its_least_width() {
     app.settings.animations = false;
     app.shown = View::Arrangement;
     // As a theme file is read: the sheet's --suhina-* values are the app's.
-    let css = ".arrangement { --suhina-header-min-width: 330px; }";
+    let css = "arrangement { --suhina-header-min-width: 330px; }";
     let mut theme = crate::kit::theme::Theme::default();
     assert!(crate::kit::theme_css::read_host_rules(&mut theme, css).is_empty());
     theme.skin.css = Some(std::sync::Arc::from(css));
@@ -737,8 +737,8 @@ fn an_arrangement_header_and_name_draw_the_sheet_s_backgrounds() {
     app.shown = View::Arrangement;
     app.use_test_skin(crate::kit::skin::Skin {
         css: Some(std::sync::Arc::from(
-            ".arrangement .track-header { background-color: #102030; } \
-             .arrangement .track-name { background-color: #FF0000; }",
+            "arrangement track-header { background-color: #102030; } \
+             arrangement track-name { background-color: #FF0000; }",
         )),
         ..Default::default()
     });
@@ -772,8 +772,8 @@ fn a_clip_takes_its_radius_opacity_and_name_colour_from_the_sheet() {
     app.shown = View::Arrangement;
     app.use_test_skin(crate::kit::skin::Skin {
         css: Some(std::sync::Arc::from(
-            ".clip { border-radius: 9px; opacity: 0.5; background-color: #2040FF; } \
-             .clip-name { color: #FF0000; }",
+            "clip { border-radius: 9px; opacity: 0.5; background-color: #2040FF; } \
+             clip-name { color: #FF0000; }",
         )),
         ..Default::default()
     });

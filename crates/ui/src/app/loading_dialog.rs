@@ -29,7 +29,7 @@ pub fn show(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bo
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
-            // The sheet's generic `.button` and `.text-input` rules reach the dialog's own widgets.
+            // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
             let mut styled_ui = crate::kit::style_class::ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
@@ -70,7 +70,7 @@ fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
         Pos2::new(rect.right() - PAD, rect.bottom() - PAD),
     );
     let bar = Rect::from_min_size(inner.min, Vec2::new(inner.width(), BAR));
-    // `.progress` (its background and radius) and `.progress-fill` (its background) style the bar.
+    // `progress` (its background and radius) and `progress-fill` (its background) style the bar.
     let progress_style = crate::kit::style_class::enter("progress");
     let radius = crate::kit::style_class::radius(0.0);
     painter.fill_background(bar, radius, crate::kit::style_class::background(theme::control_background()));

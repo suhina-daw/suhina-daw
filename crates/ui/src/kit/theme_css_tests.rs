@@ -172,11 +172,11 @@ fn malformed_css_does_not_panic_or_load_resources() {
 #[test]
 fn host_rules_inside_a_layer_count_and_media_rules_do_not() {
     let mut theme = Theme::default();
-    let css = "@layer base, theme;\n@layer theme { .pan { --suhina-appearance: knob; } @layer inner { .knob { --suhina-value-position: none; } } }\n@media (max-width: 400px) { .slider { --suhina-appearance: knob; } }";
+    let css = "@layer base, theme;\n@layer theme { pan { --suhina-appearance: knob; } @layer inner { knob { --suhina-value-position: none; } } }\n@media (max-width: 400px) { slider { --suhina-appearance: knob; } }";
     let warnings = read_host_rules(&mut theme, css);
     assert!(warnings.is_empty(), "{warnings:?}");
     let get = |selector: &str, key: &str| theme.skin.styles.get(selector).and_then(|p| p.get(key)).cloned();
-    assert_eq!(get(".pan", "--suhina-appearance").as_deref(), Some("knob"));
-    assert_eq!(get(".knob", "--suhina-value-position").as_deref(), Some("none"));
-    assert_eq!(get(".slider", "--suhina-appearance"), None, "a conditional rule is the style engine's");
+    assert_eq!(get("pan", "--suhina-appearance").as_deref(), Some("knob"));
+    assert_eq!(get("knob", "--suhina-value-position").as_deref(), Some("none"));
+    assert_eq!(get("slider", "--suhina-appearance"), None, "a conditional rule is the style engine's");
 }

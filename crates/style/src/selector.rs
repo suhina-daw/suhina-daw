@@ -9,7 +9,8 @@ const MAX_DEPTH: usize = 32;
 const MAX_SELECTOR_BYTES: usize = 2048;
 const MAX_MATCH_WORK: usize = 16384;
 
-/// States come from the host's controls and project snapshot, never from CSS.
+/// States come from the host's controls and project snapshot, never from CSS. What the app knows
+/// about an element (`[checked]`, `[selected]`) is an attribute instead: [`HOST_ATTRIBUTES`].
 pub const STATES: &[&str] = &[
     "hover",
     "active",
@@ -18,17 +19,15 @@ pub const STATES: &[&str] = &[
     "focus-within",
     "enabled",
     "disabled",
-    "checked",
     "open",
-    "selected",
-    "playing",
     "queued",
-    "recording",
-    "armed",
-    "muted",
     "dragged",
     "drop-target",
 ];
+
+/// The app's states of an element that are attributes without a value, not pseudo-classes: a
+/// selector writes `[checked]`, and `:checked` does not parse.
+pub const HOST_ATTRIBUTES: &[&str] = &["checked", "selected", "playing", "recording", "armed", "muted"];
 
 /// Presentation identity only. Parameter bindings and audio data never enter this tree.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -519,6 +518,9 @@ fn parse_list(parser: &mut Parser<'_>, depth: usize) -> Result<Vec<Selector>, St
                         "first-child" => Test::Nth { a: 0, b: 1, reverse: false },
                         "last-child" => Test::Nth { a: 0, b: 1, reverse: true },
                         state if STATES.contains(&state) => Test::State(state.into()),
+                        state if HOST_ATTRIBUTES.contains(&state) => {
+                            return Err(format!(":{state} is the attribute [{state}]"));
+                        }
                         _ => return Err(format!("Unknown native state :{name}")),
                     };
                     (test, Specificity(0, 1, 0))
@@ -754,5 +756,26 @@ mod tests {
             assert!(Selector::parse_list(source).is_err(), "{source}");
         }
         assert!(Selector::parse_list(&format!("{}knob{}", ":not(".repeat(10), ")".repeat(10))).is_err());
+    }
+
+    #[test]
+    fn the_apps_states_are_attributes_not_pseudo_classes() {
+        let tree = Tree::new(vec![
+            Element::new("window", None),
+            Element::new("button", Some(0)).with_attribute("checked", ""),
+            Element::new("button", Some(0)),
+        ])
+        .unwrap();
+        let checked = Selector::parse_list("button[checked]").unwrap();
+        assert!(checked[0].matches(&tree, 1, None));
+        assert!(!checked[0].matches(&tree, 2, None));
+        assert_eq!(checked[0].specificity, Specificity(0, 1, 1));
+        for state in HOST_ATTRIBUTES {
+            let error = Selector::parse_list(&format!("button:{state}")).unwrap_err();
+            assert!(error.contains(&format!("[{state}]")), "{error}");
+            assert!(
+                Tree::new(vec![Element { states: vec![(*state).into()], ..Element::new("button", None) }]).is_err()
+            );
+        }
     }
 }
