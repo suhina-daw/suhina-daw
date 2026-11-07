@@ -735,6 +735,24 @@ impl ClapPlugin {
             .collect()
     }
 
+    /// The plug-in's own text for each of `values` of parameter `id`, in its plain range
+    /// (#1205); empty where it gives none.
+    pub(crate) fn param_texts(&mut self, id: u32, values: &[f64]) -> Vec<String> {
+        let (Some(params), Some(id)) = (self.params_extension(), ClapId::from_raw(id)) else {
+            return vec![String::new(); values.len()];
+        };
+        let handle = self.instance.plugin_handle();
+        let text =
+            |bytes: &[u8]| String::from_utf8_lossy(bytes.split(|b| *b == 0).next().unwrap_or_default()).into_owned();
+        values
+            .iter()
+            .map(|value| {
+                let mut shown = [0u8; 256];
+                params.value_to_text(&handle, id, *value, &mut shown).map(|t| text(t)).unwrap_or_default()
+            })
+            .collect()
+    }
+
     /// Sets parameter `id` to `value` (kept within its range); the plug-in gets it at the start
     /// of the next block.
     pub(crate) fn set_param(&mut self, id: u32, value: f64) -> Result<ParamInfo, String> {

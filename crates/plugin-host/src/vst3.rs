@@ -1317,6 +1317,24 @@ impl Vst3Plugin {
             .collect()
     }
 
+    /// The controller's own text for each of `values` (normalized) of parameter `id` (#1205);
+    /// empty where it gives none.
+    pub(crate) fn param_texts(&self, id: u32, values: &[f64]) -> Vec<String> {
+        let Some(controller) = &self.controller else { return vec![String::new(); values.len()] };
+        values
+            .iter()
+            .map(|value| {
+                let mut shown: String128 = [0; 128];
+                // SAFETY: a live controller, writing at most 128 UTF-16 units into `shown`.
+                if ok(unsafe { controller.getParamStringByValue(id, *value, &mut shown) }) {
+                    utf16(&shown)
+                } else {
+                    String::new()
+                }
+            })
+            .collect()
+    }
+
     /// Parameter `info` with its current value and text.
     fn param(&self, controller: &ComPtr<IEditController>, info: &ParameterInfo) -> ParamInfo {
         use ParameterInfo_::ParameterFlags_ as Flags;

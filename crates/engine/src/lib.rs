@@ -1103,7 +1103,7 @@ impl Renderer {
         };
         for chain in &mut self.graph.chains {
             chain.transport(&song);
-            chain.automate(at, frames);
+            chain.automate(at, time, frames);
             chain.automate_mix(time, frames, self.transport.running);
         }
         let attack = (ATTACK_SECONDS * f64::from(self.sample_rate)).max(1.0);

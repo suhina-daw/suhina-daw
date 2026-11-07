@@ -78,7 +78,7 @@ fn gain() -> ParamInfo {
 
 #[test]
 fn every_message_round_trips() {
-    assert_eq!(VERSION, 15);
+    assert_eq!(VERSION, 16);
     let messages = [
         Message::Hello { version: VERSION },
         Message::Reconfigure { instance: 7, sample_rate: 48_000.0 },
@@ -130,6 +130,9 @@ fn every_message_round_trips() {
         Message::Params { instance: 4, params: Vec::new() },
         Message::SetParam { instance: 5, id: 7, value: -0.5 },
         Message::Param { instance: 5, param: gain() },
+        Message::GetParamTexts { instance: 5, id: 7, values: vec![0.0, 0.25, -12.5] },
+        Message::GetParamTexts { instance: 5, id: u32::MAX, values: Vec::new() },
+        Message::ParamTexts { instance: 5, id: 7, texts: vec!["-inf dB".into(), String::new(), "Sägä \"x\"".into()] },
         Message::ParamChanged { instance: 5, id: 7, value: 0.125 },
         Message::ParamChanged { instance: u32::MAX, id: u32::MAX, value: f64::MAX },
         Message::OpenEditor { instance: 6, owner: None, embedded: false, title: None },
@@ -231,6 +234,12 @@ fn malformed_lines_are_refused() {
         r#"{"op":"param_changed","instance":1,"value":0.5}"#,
         r#"{"op":"params","instance":1,"params":[{"id":1}]}"#,
         r#"{"op":"param","instance":1}"#,
+        r#"{"op":"get_param_texts","instance":1,"id":1}"#,
+        r#"{"op":"get_param_texts","instance":1,"id":1,"values":[0.5,"x"]}"#,
+        r#"{"op":"get_param_texts","instance":1,"id":-1,"values":[0.5]}"#,
+        r#"{"op":"get_param_texts","id":1,"values":[0.5]}"#,
+        r#"{"op":"param_texts","instance":1,"id":1,"texts":[1]}"#,
+        r#"{"op":"param_texts","instance":1,"texts":["a"]}"#,
         r#"{"op":"editor_opened","instance":1,"width":800}"#,
         r#"{"op":"get_state"}"#,
         r#"{"op":"get_params"}"#,
@@ -261,4 +270,19 @@ fn malformed_lines_are_refused() {
     ] {
         assert_eq!(Message::decode(line), None, "{line}");
     }
+}
+
+/// A request for more texts than [`MAX_PARAM_TEXTS`] values, or an answer with more, is refused
+/// whole: a host's numbers are not trusted (#1205).
+#[test]
+fn param_texts_over_the_cap_are_refused() {
+    let values = vec![serde_json::json!(0.5); MAX_PARAM_TEXTS + 1];
+    let asked = serde_json::json!({ "op": "get_param_texts", "instance": 1, "id": 1, "values": values });
+    assert_eq!(Message::decode(&asked.to_string()), None);
+    let texts = vec![serde_json::json!("a"); MAX_PARAM_TEXTS + 1];
+    let answered = serde_json::json!({ "op": "param_texts", "instance": 1, "id": 1, "texts": texts });
+    assert_eq!(Message::decode(&answered.to_string()), None);
+    let at_cap =
+        serde_json::json!({ "op": "get_param_texts", "instance": 1, "id": 1, "values": vec![0.5; MAX_PARAM_TEXTS] });
+    assert!(Message::decode(&at_cap.to_string()).is_some());
 }

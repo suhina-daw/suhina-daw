@@ -109,8 +109,8 @@ pub use projects::{
     project_commands,
 };
 pub use rack::{
-    BlockCounts, Hosted, OfflinePlugins, PluginEnv, PluginProgress, PluginReport, PluginStatus, ProcessGroup, Rack,
-    is_instrument, plugin_group, start_offline,
+    BlockCounts, Hosted, OfflinePlugins, ParamTexts, PluginEnv, PluginProgress, PluginReport, PluginStatus,
+    ProcessGroup, Rack, is_instrument, plugin_group, start_offline,
 };
 pub use recording::{COUNT_IN_BARS, LiveTake, RECORDED_FOLDER};
 pub use relink::COLLECTED;
@@ -222,6 +222,9 @@ pub struct Session {
     audio: project_audio::ProjectAudio,
     device_files: device_files::DeviceFiles,
     pub(crate) sync: player_sync::PlayerSync,
+    /// Plug-in parameters the user moved in a plug-in's own editor since the window last asked
+    /// (track, device on the track's chain, parameter id), for its lanes to show them (#1205).
+    pub(crate) touched: Vec<(suhina_model::TrackId, usize, u32)>,
     /// When the project was last backed up and where (`backup.rs`).
     pub(crate) backup: backup::SessionBackups,
     pub(crate) live: live_input::LiveInput,
@@ -267,6 +270,7 @@ impl Session {
             audio: project_audio::ProjectAudio::default(),
             device_files: device_files::DeviceFiles::default(),
             sync: player_sync::PlayerSync::default(),
+            touched: Vec::new(),
             backup: backup::SessionBackups::default(),
             live: live_input::LiveInput::default(),
             take_solo: None,
@@ -875,6 +879,28 @@ impl Session {
     pub fn plugin_report_at(&mut self, track: suhina_model::TrackId, path: &[usize]) -> Option<PluginReport> {
         let key = plugin_key_at_path(&self.project, track, path)?;
         self.plugins.report(key)
+    }
+
+    /// The plug-in parameters the user moved in a plug-in's own editor since the last call
+    /// (track, device on the track's own chain, parameter id), each once, for the window to show
+    /// them in the track's lanes (#1205). A value a lane sent there and the plug-in reported back
+    /// is not one.
+    pub fn take_touched_params(&mut self) -> Vec<(suhina_model::TrackId, usize, u32)> {
+        std::mem::take(&mut self.touched)
+    }
+
+    /// The plug-in device at `path` on `track`'s own texts for values it was asked about
+    /// ([`Session::ask_plugin_texts_at`], #1205).
+    pub fn plugin_texts_at(&self, track: suhina_model::TrackId, path: &[usize]) -> Option<std::sync::Arc<ParamTexts>> {
+        self.plugins.texts(plugin_key_at_path(&self.project, track, path)?)
+    }
+
+    /// Asks the plug-in device at `path` on `track` in the background for its own texts of
+    /// `values` of parameter `id`, for automation lanes to show (#1205).
+    pub fn ask_plugin_texts_at(&mut self, track: suhina_model::TrackId, path: &[usize], id: u32, values: &[f64]) {
+        if let Some(key) = plugin_key_at_path(&self.project, track, path) {
+            self.plugins.ask_texts(key, id, values);
+        }
     }
 
     /// Has the plug-in device at `path` on `track` list its parameters again in the background,

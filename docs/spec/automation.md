@@ -75,6 +75,12 @@ and is deleted with its device. One lane per parameter.
   `value`) is kept as `device.setParam` keeps it, a whole number. The lane draws the line the
   lane moves along; the header, the point's tooltip and the panel while it plays show the number
   played.
+- A hosted plug-in's parameter (#1205) moves evenly over the plug-in's own range (a VST3 plug-in's
+  normalized 0 to 1, a CLAP plug-in's plain values) and, for a stepped one, holds each point's
+  value on its nearest step. The header, the point's tooltip, Edit value and the value beside the
+  pointer while dragging show the plug-in's own text for the value ("-3.2 dB"), asked from the
+  plug-in in the background (`get_param_texts`, [the plug-in protocol](plugin-protocol.md)); until
+  it answers, and for a plug-in that names no values (VST2), they show the number.
 - The movement follows the first point's **curve** (`automation::Curve`): a cubic Bezier from
   (0, 0) to (1, 1) in (share of the segment's time, share of the way in position) through two
   inner control points (x1, y1) and (x2, y2). Bending and dragging keep each anywhere from 0 to 1;
@@ -165,6 +171,11 @@ transport runs, and the answer says `"automation": "off"`. The value set by hand
 `automation.setEnabled {enabled: true}` turns the lane on again; the lane's points are kept. Undo
 brings the lane back on with the old value.
 
+A move in a hosted plug-in's own editor turns its lane off the same way, as one undo step, and
+the engine stops playing the lane at once (#1205). A value the plug-in reports that the lane sent
+it does not count: stopped, the lane's value at the playhead; playing, any value the lane went
+through in the last two beats, as a report may come a little after the value it echoes.
+
 ## What the controls show
 
 A control whose parameter follows an enabled lane (a track header's volume and pan, a mixer
@@ -199,7 +210,11 @@ audio thread.
   device starts at the lane's value at beat 0. While stopped, a parameter keeps its last value.
 - **Plug-in parameters**: as #109 built them (ADR 0006 › 3): a value at the block's start, at
   each point and every 64 frames while it moves, as parameter events at their frames; the curve
-  and the enabled flag apply too.
+  and the enabled flag apply too. While stopped, a lane sends its value where the transport
+  stands when the play start marker moves or the lane changes, so the plug-in's editor and its
+  parameter list show what plays there (#1205). A plug-in that starts (the project opened, a
+  restart) keeps the state it was given until then, so opening a project changes nothing in it
+  and leaves no unsaved change.
 - **Mixer lanes**: the track's gains are computed at every 16th frame of the arrangement and move
   in a straight line between, frame by frame, so a frame's gain depends on its time only (not on the
   block size) and a fader move or mute never clicks: a mute switches over 16 frames. A **jump of
@@ -299,7 +314,16 @@ the track's. Dragging the line under a lane makes it taller or shorter (24 to 24
 the lanes below; the envelope is drawn to the new height. A double-click on that line, or
 **Reset height** in the menu a right-click on the lane's header opens, puts it back to 40 px.
 Each lane keeps its height while the track's lanes are hidden, for as long as the project is
-open (#818). The header:
+open (#818), and when it comes to show another parameter, chosen in its dropdown or brought in
+by a control moved by hand (#1205).
+
+A control moved by hand brings its parameter into view when its track's lanes are shown
+(#1205): the track header's volume, pan or mute (Main's too), a knob of a device on the track's
+own chain in the detail view, or a parameter turned in a hosted plug-in's own editor. A lane
+that shows it already stays where it is; otherwise the top lane shows it, ready to be drawn on,
+and it is the lane clicked last (Ctrl+V pastes onto it). A value set on several tracks at once,
+or a value a lane sent a plug-in and the plug-in reported back, brings nothing forward, and
+closed lanes stay closed. The header:
 
 - **The parameter**, a dropdown of the track's volume, pan and mute and each built-in or `.sd`
   device's parameters, grouped by device; a parameter with points is marked " •". Choosing one
@@ -328,7 +352,15 @@ open (#818). The header:
   parameter (where it was chosen, above). Typing narrows the list to the parameters whose device, group and name contain
   every word typed between them ("op 3 coarse", or "lfo" for a whole group), under their
   device's and their group's headings, open; Enter takes the first of them as listed, an automated one first. A parameter another lane
-  of the track shows is greyed out. Clicks in the menu (the search field, a heading, the heading of the lane's own parameter included, which the lane keeps showing) leave it open; choosing a parameter or a click outside closes it, and closing it clears the search. Plug-in parameters can be set by command but are not yet in this dropdown.
+  of the track shows is greyed out. Clicks in the menu (the search field, a heading, the heading of the lane's own parameter included, which the lane keeps showing) leave it open; choosing a parameter or a click outside closes it, and closing it clears the search.
+  A hosted plug-in (CLAP, VST3, VST2) on the track is a device of this list like any other
+  (#1205): its name is the heading, the groups it gives its parameters (a CLAP module path) are
+  the groups under it, and the same search and Automated section take them in. Only the
+  parameters the plug-in marks automatable, and does not hide or keep read-only, are listed, as it
+  last listed them: the session asks a running plug-in on a track whose lanes are open again every
+  couple of seconds in the background, so a long list (thousands of parameters) opens without a
+  wait. A lane whose parameter the plug-in does not list (it is not running or not installed, or
+  no longer has it) stays with its points as "Parameter 7 (not available)".
 - **On/Off** (lanes with points): whether the lane plays. A manual change to the parameter turns
   it off (the envelope is drawn in `text.hint` and the header says "Off: set by hand"); a click
   turns it on again (`automation.setEnabled`), or off.
@@ -396,6 +428,8 @@ order.
 
 ## Not done yet
 
-- Recording automation, drawing with a pencil, and plug-in parameter lanes in the view.
+- Recording automation and drawing with a pencil.
+- A VST3 plug-in's units are not read yet, so its parameters have no groups in the list; a VST2
+  plug-in names only its current value, so its lanes show numbers.
 - Send levels. The tempo changes over the song through the [tempo map](tempo-map.md), not a lane.
 - Importing automation from other formats.

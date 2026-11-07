@@ -2391,6 +2391,8 @@ impl App {
         if let Some(gesture) = action.params.get("gesture").and_then(serde_json::Value::as_str) {
             self.open_gesture = Some(gesture.to_owned());
         }
+        // A control moved by hand shows its parameter in the track's open lanes (#1205).
+        self.focus_touched_lane(action);
         // A fader or a send dragged on one of several selected tracks moves them together.
         if let Some(wider) = self.drag_to_selection(action) {
             return self.run(&wider);
@@ -3234,6 +3236,9 @@ impl App {
                                 })
                                 .collect()
                         });
+                        // What the plug-ins on tracks with open lanes listed, for the lanes'
+                        // parameter chooser (#1205); read before the session is borrowed.
+                        let plugin_lists = self.plugin_lists_for_lanes();
                         if let Some(session) = self.projects.active().and_then(|id| self.projects.get(id)) {
                             self.arrangement.stack_audio = self.settings.sample_stacking;
                             self.arrangement.stack_midi = self.settings.midi_stacking;
@@ -3290,6 +3295,7 @@ impl App {
                                 }
                             };
                             let mut timeline = timeline;
+                            timeline.automation.take_plugins(session.project(), plugin_lists);
                             timeline.follow_automation(session.project());
                             timeline.follow_drag(self.arrangement.automation.dragged.as_ref());
                             timeline.recording_spans = session.arrangement_recording_spans();
@@ -3593,6 +3599,60 @@ impl App {
     /// Where the plug-in device `device` of `track` stands, in the active project.
     fn session_mut_report(&mut self, track: TrackId, device: usize) -> Option<suhina_session::PluginReport> {
         self.projects.session_mut(None).ok()?.plugin_report(track, device)
+    }
+
+    /// The parameters each hosted plug-in on a track with open lanes (Main's too) listed last,
+    /// and its texts for the lanes' values, for the lanes' parameter chooser (#1205). A list a
+    /// couple of seconds old is asked for again in the background, as the device's panel asks.
+    fn plugin_lists_for_lanes(&mut self) -> crate::arrangement::automation_lanes::PluginLists {
+        let mut lists = crate::arrangement::automation_lanes::PluginLists::default();
+        let lanes = &self.arrangement.automation;
+        // The texts the lanes wanted last frame and did not know are asked for now.
+        let asked = self.timeline.as_ref().map(|(_, _, t)| t.automation.asked_texts()).unwrap_or_default();
+        let Ok(session) = self.projects.session_mut(None) else { return lists };
+        for (track, index, id, values) in asked {
+            session.ask_plugin_texts_at(track, &[index], id, &values);
+        }
+        // A parameter moved in a plug-in's own editor shows in its track's open lanes (#1205),
+        // and their faint lines follow the value it has now at once.
+        let touched = session.take_touched_params();
+        for &(track, index, id) in &touched {
+            let value = session
+                .project()
+                .channel_of_track(track)
+                .and_then(|c| c.devices.get(index))
+                .and_then(|d| d.params.iter().find(|p| suhina_engine::param_id(&p.id) == Some(id)))
+                .map(|p| p.value);
+            if let Some(value) = value {
+                lists.moved.push((track, index, id, value));
+            }
+        }
+        let open: Vec<(TrackId, usize)> = session
+            .project()
+            .tracks
+            .iter()
+            .map(|t| t.id)
+            .chain([TrackId::MAIN])
+            .filter(|track| lanes.is_open(*track))
+            .flat_map(|track| {
+                let devices = session.project().channel_of_track(track).map_or(0, |c| c.devices.len());
+                (0..devices).map(move |index| (track, index))
+            })
+            .collect();
+        for (track, index) in open {
+            session.list_plugin_params_at(track, &[index]);
+            if let Some(list) = session.plugin_report_at(track, &[index]).and_then(|r| r.params) {
+                lists.lists.insert((track, index), list);
+            }
+            if let Some(texts) = session.plugin_texts_at(track, &[index]) {
+                lists.texts.insert((track, index), texts);
+            }
+        }
+        for (track, index, id) in touched {
+            let key = crate::arrangement::automation_lanes::LaneKey { device: Some(index), param: id.to_string() };
+            self.arrangement.automation.focus(track, key);
+        }
+        lists
     }
 }
 

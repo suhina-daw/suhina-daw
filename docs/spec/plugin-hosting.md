@@ -113,7 +113,13 @@ set, an automation lane) also goes to the edit controller on the main thread
 so the plug-in's editor follows the sound; and the host reports what was changed in its
 editor back (`param_changed`, #828), so the session keeps
 the project's values in step with it — no undo step of its own, and a change since the
-last save.
+last save. A change there of a parameter an enabled lane plays turns the lane off as one undo
+step, unless it is a value the lane sent (#1205, [automation](automation.md#a-manual-change-turns-the-lane-off)).
+While the transport is stopped, a lane sends its value at the playhead when the playhead moves
+or the lane changes, so the editor follows it stopped too; a plug-in that starts keeps the state
+it was given until then, so opening a project changes nothing in it. For automation lanes the host also names any value of a parameter in the plug-in's own
+words (`get_param_texts`, [the protocol](plugin-protocol.md)), in the background, without setting
+it.
 
 ## Block sync and the deadline
 
