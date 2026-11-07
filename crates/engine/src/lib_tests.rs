@@ -1042,6 +1042,30 @@ fn an_envelope_sent_as_a_message_glides_on_the_playing_graph() {
     controller.collect();
 }
 
+/// A graph built before an envelope message and swapped in after it keeps the message's
+/// envelope: a stretched clip's graph takes over 0.08 s ahead, the message arrives in between,
+/// and the clip stays 12 dB down after the swap instead of going back up.
+#[test]
+fn a_graph_built_before_an_envelope_message_keeps_the_message() {
+    let (project, pool) = stretched_project(220.0, 4.0, 8.0, 100.0, StretchMode::Smooth);
+    let mut renderer = Renderer::stopped(&project, &pool, SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    let mut worker = renderer.take_stretch_worker().unwrap();
+    renderer.handle(LaunchCommand::Play);
+    let mut fill = |_| worker.fill();
+    let before = blocks(&mut renderer, 40, 480, &mut fill);
+    // A graph of the project as it was (no envelope), on its way while the message passes it.
+    controller.update(&project).unwrap();
+    let mut clip = project.arrangement.lanes[0].clips[0].clone();
+    clip.audio.gain_envelope = vec![GainPoint::new(0.0, -12.0)];
+    controller.set_clip_envelope(0, 0, &clip).unwrap();
+    let after = blocks(&mut renderer, 100, 480, &mut fill);
+    controller.collect();
+    let level = |out: &[f32], from: usize, to: usize| rms(out, from, to);
+    let (was, now) = (level(&before, 9_000, 19_000), level(&after, 38_000, 48_000));
+    assert!(now < was * 0.3, "still 12 dB down after the swap: {was} -> {now}");
+}
+
 /// A stretched clip under the whole loop, its envelope sent as messages every 30 ms through
 /// several wraps (a drag): its voice is never handed over or moved, so not a frame is late and
 /// every pass sounds.

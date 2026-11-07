@@ -49,7 +49,16 @@ pub(crate) struct Graph {
     /// The click's latency compensation while the main fader moves: the click is kept out of
     /// the mix the fader scales, and delayed here as the mix is in `direct_delay`.
     pub(crate) click_delay: Delay,
+    /// The clips whose gain envelope arrived as a message on this graph (`Controller::
+    /// set_clip_envelope`): the message's number, the clip's lane and index. A graph built before
+    /// a message and swapped in after it takes those clips' envelopes from the graph it replaces,
+    /// as parameter messages are applied again. Allocated with room for
+    /// [`ENVELOPE_MESSAGES`]; the oldest give way.
+    pub(crate) envelope_messages: Vec<(u64, usize, usize)>,
 }
+
+/// Clips a graph remembers envelope messages for (`Graph::envelope_messages`).
+pub(crate) const ENVELOPE_MESSAGES: usize = 64;
 
 impl Graph {
     /// Builds the graph for `project`: validates it and prepares every event and voice. Allocates;
@@ -308,6 +317,7 @@ impl Graph {
             ms(levels_took),
         ));
         Ok(Box::new(Graph {
+            envelope_messages: Vec::with_capacity(ENVELOPE_MESSAGES),
             inputs_heard: vec![false; inputs.len()],
             inputs,
             events,

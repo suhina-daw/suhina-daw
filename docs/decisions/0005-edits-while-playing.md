@@ -152,8 +152,10 @@ klingt and JUCE's graph do), now:
    sends each envelope it replaces back to the controller to be freed. A dragged envelope sent a
    graph every 30 ms before, and each swap handed every stretched voice over: a voice in the
    middle of a jump (at a loop's wrap) started its jump again at each swap and stayed silent
-   while the drag went on. A graph built before an envelope message and taken after it plays the
-   older envelope until the next message (the next frame of a drag, or the drag's last).
+   while the drag went on. Each message is numbered, and a graph remembers the clips whose
+   envelope arrived as a message on it; a graph built before a message and taken after it takes
+   those clips' envelopes from the graph it replaces, which plays them already (shared, not
+   copied), as newer parameter messages are applied again (3).
 
 ## Amendment: notes an edit takes away (2026-10-28)
 

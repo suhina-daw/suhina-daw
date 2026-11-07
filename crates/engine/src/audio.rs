@@ -214,6 +214,12 @@ impl Fades {
         }
     }
 
+    /// The clip's envelope, shared (no copy): what a graph swapped in after an envelope message
+    /// takes from the graph it replaces.
+    pub(crate) fn envelope(&self) -> Option<Arc<Envelope>> {
+        self.envelope.clone()
+    }
+
     /// Puts `envelope` in place of the clip's envelope (an edit sent as a message, without a new
     /// graph) and returns the one it replaces, for the controller to free: nothing is freed on
     /// the audio thread. A clip playing `since_start` frames after its start glides from the gain
