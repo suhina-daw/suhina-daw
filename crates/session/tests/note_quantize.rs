@@ -53,7 +53,6 @@ fn project_built(notes: Vec<Note>) -> Project {
                 track: TrackId(1),
                 slots: vec![Slot { clip: Some(clip(3)), has_stop: true }],
             }],
-            mappings: Default::default(),
         },
         ..Project::default()
     }

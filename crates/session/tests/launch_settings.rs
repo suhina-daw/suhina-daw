@@ -47,7 +47,6 @@ fn project_built() -> Project {
         channels: vec![channel(1), channel(2)],
         contents: vec![content(1), content(2)],
         launcher: Launcher {
-            mappings: Vec::new(),
             scenes: vec![Scene::default(), Scene::default()],
             columns: vec![
                 LauncherColumn {

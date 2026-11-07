@@ -5,12 +5,13 @@
 
 use crate::*;
 
-/// `theme pack` and `theme validate` (`docs/spec/theme-skins.md` › Theme packages).
+/// `theme pack` and `theme validate` (`docs/spec/theme-skins.md` › Theme packages), and
+/// `theme render`, which runs `suhina-theme-render`.
 pub(crate) fn theme(args: &[String]) -> Result<(), String> {
     use suhina_theme_package as package;
     let usage = || {
         format!(
-            "usage: suhina-cli theme (pack <theme-folder> [-o <out.theme.suhina>] | validate (<file.theme.suhina> | <folder>))\n\n{USAGE}"
+            "usage: suhina-cli theme (pack <theme-folder> [-o <out.theme.suhina>] | validate (<file.theme.suhina> | <folder>) | render <theme-folder | built-in-theme-id> [--backdrop <image.png>] [--out <folder>] [--scale <n>] [--scene <name>] [--budget])\n\n{USAGE}"
         )
     };
     let print_warnings = |warnings: &[String]| {
@@ -57,6 +58,26 @@ pub(crate) fn theme(args: &[String]) -> Result<(), String> {
             println!("valid: {what}, {} warnings", warnings.len());
             Ok(())
         }
+        (Some("render"), Some(_)) => render(&args[1..]),
         _ => Err(usage()),
     }
+}
+
+/// `theme render …`: `suhina-theme-render` from beside this program, with the arguments passed
+/// on, so this program needs no GPU or window toolkit of its own.
+fn render(args: &[String]) -> Result<(), String> {
+    let name = format!("suhina-theme-render{}", std::env::consts::EXE_SUFFIX);
+    let program = std::env::current_exe()
+        .ok()
+        .map(|exe| exe.canonicalize().unwrap_or(exe))
+        .and_then(|exe| exe.parent().map(|dir| dir.join(&name)))
+        .filter(|path| path.is_file())
+        .ok_or_else(|| format!("{name} is not beside suhina-cli; build it with cargo build -p suhina-theme-render"))?;
+    let status =
+        std::process::Command::new(&program).args(args).status().map_err(|e| format!("{}: {e}", program.display()))?;
+    if status.success() {
+        return Ok(());
+    }
+    // The program has said why; this passes its exit code on without a second message.
+    std::process::exit(status.code().unwrap_or(1));
 }

@@ -3,7 +3,7 @@ description: Experimental live modal backdrop and optical coatings for track and
 read_when: glass effect, backdrop blur, rendering materials, Aero
 type: plan
 status: draft
-last_verified: 2026-10-28
+last_verified: 2026-11-06
 covers:
   - crates/ui/src/kit/**
   - apps/suhina/src/main.rs
@@ -43,7 +43,7 @@ Run with `--renderer wgpu` and raise a strength above 0 to opt in. The old
 `--new-instance --demo` opens a separate review window without replacing the running project.
 Do not force-close the user's existing project to try it.
 
-`apps/suhina/src/liquid.rs` replays this frame's already-painted egui shapes into its own
+`crates/ui-gpu/src/liquid.rs` replays this frame's already-painted egui shapes into its own
 offscreen renderer **before** the Settings modal and dimmer are painted. The source and
 horizontal intermediate are sRGB attachments, sampled in linear light; the final vertical
 pass explicitly encodes the result for egui's gamma-encoded native-texture contract.
@@ -128,7 +128,7 @@ The two-pass shader in `crates/ui/src/kit/glass_blur.wgsl` now runs in the stand
 Controls are drawn sharply over the material; Tint and a solid fallback can be compared.
 The example built and its native window started on Windows with no GPU validation error
 reported in stderr. This older example has not been re-profiled or connected to the DAW;
-the native integration above uses its separate `apps/suhina/src/liquid.wgsl` instead.
+the native integration above uses its separate `crates/ui-gpu/src/liquid.wgsl` instead.
 
 Run `cargo run -p suhina --example glass_preview` from the worktree. No new dependencies were added.
 The preview uses fixed-size gamma-space RGBA textures to match egui native texture support;
