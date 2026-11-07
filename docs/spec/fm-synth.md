@@ -3,7 +3,7 @@ description: The built-in FM Synth - operators, waveforms and drawn harmonics, D
 read_when: FM synth, fm-synth, operators, algorithms, FM waveforms, harmonics, time envelope, envelope loop, FM filter, spread, modulation matrix, FM panel, randomize, device.randomize, instrument randomizer
 type: spec
 status: current
-last_verified: 2026-11-04
+last_verified: 2026-11-07
 covers:
   - devices/fm-synth/**
 ---
