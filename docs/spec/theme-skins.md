@@ -385,7 +385,8 @@ under the last track keep their own fill.
 **Level bars.** Volume and pan fields of the track headers and the mixer are one level
 bar (`mixer_controls::level_bar`): the field's element is the track and `.value-fill` the
 lit part; `height` sets the thickness of either. `#arrangement-volume`,
-`#arrangement-pan`, `#mixer-volume` and `#mixer-pan` select them, and `volume.track`,
+`#arrangement-pan`, `#main-volume` (Main's row in the Arrangement view), `#mixer-volume` and
+`#mixer-pan` select them, and `volume.track`,
 `volume.fill`, `pan.track` and `pan.fill` are artwork roles. Without any of these the
 volume field is the native capsule and the pan field the native flat field.
 
@@ -668,9 +669,16 @@ children `#panel-browser`, `#panel-main`, `#panel-detail`. They contain the brow
 Launcher/Arrangement and detail scopes respectively. Authored layout declarations on
 these containers opt into CSS Flex/Grid geometry. With none, native splitters and layout
 remain in charge. Closed native panels do not become visible merely through CSS.
-In CSS layout mode, dimensions and placement come from the stylesheet, so browser/detail
-splitters do not change CSS-owned sizes. Drawing, input clipping and drag/drop targets
-must use the same resolved rectangles. Removing those layout declarations restores the
+In CSS layout mode, placement comes from the stylesheet. A panel whose size the sheet sets has no
+splitter; one whose size it leaves to the native grid (a layout with only gaps or margins) keeps
+its splitter in the gap beside it, and dragging it still sets the saved size. Which panels follow
+is found by laying the grid out again with their preferred sizes a point larger, not by a list of
+properties (#1240). The splitters are `.divider` elements, `#detail-splitter` and
+`#browser-splitter`, with `:hover` and `:active`, in the native layout too, so a theme that owns
+the layout owns the strips in its gaps (#1252). The strip takes `background-color` and the detail
+splitter's grip `color`; without them the detail splitter keeps the control background and a
+hint-coloured grip, and the browser's the border colour, stronger under the pointer. Drawing,
+input clipping and drag/drop targets must use the same resolved rectangles. Removing those layout declarations restores the
 native arrangement and its saved sizes. Bars and floating windows remain host-managed.
 
 ### Authoring opaque backgrounds and readable values
@@ -998,6 +1006,8 @@ of bars, and a slider id per parameter.
 - **Mixer volume readout:** `#mixer-volume-readout` (a `value`): background, radius, `font-size`,
   `color` and the value formats.
 - **Empty slots:** `.slot { background-color }` replaces the track-tinted fill of an empty slot.
+- **Hovered clips:** `.clip:hover { background-color }` replaces the lighter mix of a clip under
+  the pointer in a slot; the clip fades toward it and back as the pointer comes and goes.
 - **Knob artwork per part:** `pan.knob.body|pointer` and `send.knob.body|pointer` for a pan's and
   a send's knob, in the Launcher and the Arrangement; without them they use `knob.*`. An
   Arrangement send is a knob with `.send { --suhina-appearance: knob }`, as in the mixer.

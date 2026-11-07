@@ -1172,6 +1172,28 @@ fn a_place_stays_chosen_on_a_second_click_and_its_cross_shows_everything() {
     harness.get_by_label("Show the samples as a list").click();
     harness.run();
     assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::List);
+    // A place that holds samples has the switch too, and the map shows it: Pinned (#862).
+    let map = "Show the samples laid out by how they sound";
+    harness.get_by_label("Place Pinned").click();
+    harness.run();
+    harness.get_by_label(map).click();
+    harness.run();
+    assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::Other, "Pinned's samples on the map");
+    // The views without samples have none, and the list shows again there.
+    harness.get_by_label("Show Plug-ins").click();
+    harness.run();
+    assert!(harness.query_by_label(map).is_none(), "no switch for Plug-ins");
+    assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::List);
+    // With Recent's kinds as chips, the switch has its own row under them (#862).
+    let ctx = harness.ctx.clone();
+    let mut chips = harness.state().settings().clone();
+    chips.view.recent_chips = true;
+    harness.state_mut().set_settings(&ctx, chips);
+    harness.get_by_label("Place Recent").click();
+    harness.run();
+    let kinds = harness.get_by_label("Recent Samples").rect();
+    let list = harness.get_by_label("Show the samples as a list").rect();
+    assert!(list.top() >= kinds.bottom(), "the switch is below Recent's chips: {list:?} under {kinds:?}");
     // Recent is an item of its own, every kind's recent items together.
     harness.get_by_label("Place Recent").click();
     harness.run();

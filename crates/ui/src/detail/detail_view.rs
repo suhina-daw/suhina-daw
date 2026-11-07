@@ -15,7 +15,7 @@ use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_device_sdk::builtin::{COMPACT_HEIGHT, COMPACT_WIDTH};
 use suhina_device_sdk::{ControlShape, LabelPosition, ParameterControl};
-use suhina_engine::model::{ClipId, DeviceKind, LaneData, Note, Project, StretchMode, TrackId};
+use suhina_engine::model::{ClipId, DeviceKind, LaneData, Meter, Note, Project, StretchMode, TrackId};
 use suhina_session::{Placement, PluginReport, PluginStatus};
 
 use crate::interaction::commands;
@@ -104,9 +104,11 @@ pub fn show_row(
     Picked::default()
 }
 
-/// A chain's devices side by side in `area`; one with an embedded editor is as wide as it. Each
-/// panel is as tall as what it shows; a chain wider than the area scrolls sideways with the
-/// wheel's sideways turn (Shift and the wheel) or the bar along its bottom.
+/// A chain's devices side by side in `area`; one with an embedded editor is as wide as it. The
+/// panels are as tall as the tallest of them shows, at least a compact panel's height and at most
+/// the area's, their contents at the top (#1238); one the theme gives a height (`.device { height }`)
+/// keeps it, and one with an embedded editor takes the area's height. A chain wider than the area
+/// scrolls sideways with the wheel's sideways turn (Shift and the wheel) or the bar along its bottom.
 fn chain_row(
     ui: &mut Ui,
     painter: &egui::Painter,
@@ -127,12 +129,13 @@ fn chain_row(
     flattened(ui, chain.track, &chain.devices, &mut entries);
     let limited: Vec<Option<DeviceBox>> = entries.iter().map(|d| limited_list(ui, chain.track, d)).collect();
     let entries: Vec<&DeviceBox> = entries.iter().zip(&limited).map(|(d, l)| l.as_ref().unwrap_or(d)).collect();
-    // Each panel's width and height first, so the scroll knows how wide the chain is.
-    let boxes: Vec<(f32, f32)> = entries
+    // Each panel's width and height first, so the scroll knows how wide the chain is, and whether
+    // its height is its own (a theme's height or an embedded editor) rather than the row's.
+    let boxes: Vec<(f32, f32, bool)> = entries
         .iter()
         .map(|device| {
             if let Some(group) = &device.group {
-                return (GROUP_WIDTH, group_height(group));
+                return (GROUP_WIDTH, group_height(group), false);
             }
             // An editor embedded in the panel is placed for devices on the track itself.
             let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
@@ -159,14 +162,20 @@ fn chain_row(
             let height = sdk_viewport(device).map_or_else(|| panel_height(device, editor), |v| ROW + PAD * 2.0 + v[1]);
             // `.device { height }` or `#device-<id> { height }` sets the panel's height (60 to 1200
             // points); what does not fit scrolls. An embedded editor keeps its own room.
-            let height = match (themed_height, editor) {
-                (Some(themed), None) => themed.clamp(60.0, 1200.0),
-                _ => height,
-            };
-            (width, height)
+            match (themed_height, editor) {
+                (Some(themed), None) => (width, themed.clamp(60.0, 1200.0), true),
+                (_, Some(_)) => (width, height, true),
+                (None, None) => (width, height, false),
+            }
         })
         .collect();
-    let total = boxes.iter().map(|(w, _)| w + 1.0).sum::<f32>();
+    let row_height = boxes
+        .iter()
+        .filter(|(.., own)| !own)
+        .map(|(_, height, _)| *height)
+        .fold(device_row_height(), f32::max)
+        .min(area.height());
+    let total = boxes.iter().map(|(w, ..)| w + 1.0).sum::<f32>();
     let scroll_id = Id::unique(("chain-scroll", chain.track.0));
     let most = (total - area.width()).max(0.0);
     let mut offset = ui.data(|d| d.get_temp::<f32>(scroll_id)).unwrap_or(0.0).clamp(0.0, most);
@@ -189,14 +198,18 @@ fn chain_row(
     let mut x = area.left() - offset;
     let mut tallest: f32 = 0.0;
     let mut slots = Vec::new();
-    for (device, (width, height)) in entries.iter().zip(boxes) {
+    for (device, (width, height, own)) in entries.iter().zip(boxes) {
         let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
         // A panel with its editor embedded takes the area's whole height, and the editor is
         // fitted to it (#689).
-        let shown_height = if editor.is_some() { area.height() } else { height.min(area.height()) };
+        let shown_height = match (editor, own) {
+            (Some(_), _) => area.height(),
+            (None, true) => height.min(area.height()),
+            (None, false) => row_height,
+        };
         let rect = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(width, shown_height));
         x = rect.right() + 1.0;
-        tallest = tallest.max(height);
+        tallest = tallest.max(shown_height);
         if device.at.top() {
             slots.push((device.index, rect));
         }
@@ -959,7 +972,7 @@ fn device_panel(
         {
             let list = Rect::from_min_max(Pos2::new(body.left(), rect.top() + EDITOR_TOP), body.max);
             if list.height() >= PARAM_ROW {
-                graph_controls(ui, list, graph, &state, list_height(device, graph), track, &device.at, actions);
+                graph_controls(ui, list, graph, &state, list_height(device, graph), track, device, actions);
             }
         }
         outline(painter);
@@ -983,7 +996,7 @@ fn device_panel(
         return clicked;
     }
     if let Some(graph) = &device.graph {
-        graph_controls(ui, body, graph, &state, list_height(device, graph), track, &device.at, actions);
+        graph_controls(ui, body, graph, &state, list_height(device, graph), track, device, actions);
         outline(painter);
         return clicked;
     }

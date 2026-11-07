@@ -3,7 +3,7 @@ description: The built-in three-band Multiband dynamics - crossovers, level foll
 read_when: multiband, multiband dynamics, multiband compressor, upward compression, downward expansion, above threshold, below threshold, level follower, crossover, importing the multiband dynamics device, MultibandDynamics elements
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-07
 covers:
   - devices/multiband/**
   - scripts/multiband_panel.py
@@ -128,7 +128,8 @@ view). The canvases draw from the parameters and from the device's live values
 ([ADR 0032](../decisions/0032-device-readouts.md)), so they follow every knob and the sound. Every
 colour follows the theme: text, panel, control, border and accent are the theme's, and the display,
 the three band colours and the gain line are theme tokens (`--device-display`,
-`--device-series-1` … `3`, `--device-highlight`, `--device-spectrum`; [SDK UI](sdk-custom-ui.md)).
+`--device-series-1` … `3` for the bands, `4` and `5` for the gain line and the spectrum;
+[SDK UI](sdk-custom-ui.md)).
 
 - **Band view** (both canvases): the dark display with each band tinted between the crossovers;
   the input spectrum filled softly in its own colour, the output's (input plus the band's gain change) dotted

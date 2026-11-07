@@ -234,8 +234,10 @@ impl Session {
         Some((monitor.running(), monitor.beat(), monitor.launch_beat(), monitor.start_beat(), monitor.tempo_bpm()))
     }
 
-    /// The file an audio take of `track` starting at `start` goes to.
-    fn take_file(&self, track: TrackId, start: f64) -> Result<PathBuf, CommandError> {
+    /// The file an audio take of `track` starting at `start` goes to: one no take writes to,
+    /// neither those already running nor `starting` (the files of the takes starting with it,
+    /// which may be of tracks with the same name).
+    fn take_file(&self, track: TrackId, start: f64, starting: &[Option<PathBuf>]) -> Result<PathBuf, CommandError> {
         let folder = self
             .source()
             .and_then(std::path::Path::parent)
@@ -249,7 +251,9 @@ impl Session {
         for n in 1..=crate::editing::MAX_NAME_TRIES {
             let file = if n == 1 { format!("{name}.wav") } else { format!("{name} {n}.wav") };
             let path = folder.join(file);
-            if !path.exists() && !self.live.recording.takes.iter().any(|t| t.file.as_ref() == Some(&path)) {
+            let taken = self.live.recording.takes.iter().any(|t| t.file.as_ref() == Some(&path))
+                || starting.iter().any(|f| f.as_ref() == Some(&path));
+            if !path.exists() && !taken {
                 return Ok(path);
             }
         }
@@ -273,7 +277,8 @@ impl Session {
                     track_name(&self.project, track)
                 )
             })?;
-            files.push(if audio { Some(self.take_file(track, start)?) } else { None });
+            let file = if audio { Some(self.take_file(track, start, &files)?) } else { None };
+            files.push(file);
         }
         let thread = self
             .live

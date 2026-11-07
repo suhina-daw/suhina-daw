@@ -431,6 +431,9 @@ fn text_on_a_colour_is_the_text_token_that_stands_out_more() {
     }
     assert_eq!(text_on(rgb(0x202020)), text_primary());
     assert!((contrast(rgb(0x000000), rgb(0xFFFFFF)) - 21.0).abs() < 0.01);
+    let faint_white = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
+    assert!(text_contrast(faint_white, rgb(0x000000)) < 1.5, "faint text counts as faint");
+    assert!((text_contrast(rgb(0xFFFFFF), rgb(0x000000)) - 21.0).abs() < 0.01);
 }
 
 #[test]

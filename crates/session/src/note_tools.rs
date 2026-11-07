@@ -299,10 +299,12 @@ pub(crate) fn invert(session: &mut Session, params: &Value) -> Result<Value, Com
             lowest = lowest.min(note.key);
             highest = highest.max(note.key);
         }
-        let pivot = i64::from((u16::from(lowest) + u16::from(highest)) / 2);
+        // Mirrored around the middle of the range: the lowest and highest keys swap, every key
+        // stays inside the range, and inverting twice gives the notes back.
+        let sum = i64::from(lowest) + i64::from(highest);
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
-            let key = (2 * pivot - i64::from(note.key)).clamp(0, 127) as u8;
+            let key = u8::try_from(sum - i64::from(note.key)).map_err(|_| "a key is out of range")?;
             if key != note.key
                 && let Some(slot) = notes.get_mut(index)
             {
@@ -321,15 +323,18 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
     }
     edit_notes(&mut session.project, params, |notes| {
         let named = chosen(params, notes)?;
-        let mut to = f64::NEG_INFINITY;
+        // Mirrored inside the span from the earliest start to the latest end: a note ending at
+        // the span's end starts at its start, and the notes stay where they were in the clip.
+        let (mut from, mut to) = (f64::INFINITY, f64::NEG_INFINITY);
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
+            from = from.min(note.time);
             to = to.max(note.time + note.duration);
         }
         let mut times = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
-            times.push((index, (to - (note.time + note.duration)).clamp(0.0, MAX_BEAT)));
+            times.push((index, (from + to - (note.time + note.duration)).clamp(0.0, MAX_BEAT)));
         }
         for (index, time) in times {
             if let Some(note) = notes.get_mut(index) {

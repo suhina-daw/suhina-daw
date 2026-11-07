@@ -436,9 +436,9 @@ impl App {
                         self.view.track_focus = false;
                         self.view.selected = None;
                         self.view.selected_tracks.clear();
-                        for track in tracks {
-                            actions.push(Action::new("track.delete", json!({ "track": track.0 })));
-                        }
+                        // One command, so one undo brings every track back (#1188).
+                        let tracks: Vec<u32> = tracks.iter().map(|t| t.0).collect();
+                        actions.push(Action::new("track.delete", json!({ "tracks": tracks })));
                         return;
                     }
                 }

@@ -400,6 +400,30 @@ pub(super) fn gain_of(db: f64) -> f64 {
 }
 
 #[test]
+fn the_wheel_raises_a_silent_fader_from_the_bottom_of_its_scale() {
+    let mut harness = arrangement_app();
+    harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": [1], "db": "-inf" })));
+    harness.run();
+    let at = harness.get_by_label("Drums volume").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    // Ctrl and one line of the wheel turned up, which moves a value.
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, 1.0),
+        modifiers: Modifiers::COMMAND,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    harness.run();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    // -inf plus a step stayed -inf: a fader turned all the way down could not be raised.
+    let volume = harness.state().session().map(|s| s.project().channels[0].volume).unwrap_or(0.0);
+    assert!((volume - gain_of(-69.0)).abs() < 1e-9, "one tick up from the -70 dB floor: {volume}");
+}
+
+#[test]
 fn dragging_one_fader_of_a_selection_moves_every_track_in_proportion() {
     let mut harness = arrangement_app();
     harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": [1], "db": -6.0 })));

@@ -796,7 +796,7 @@ fn a_clip_takes_its_radius_opacity_and_name_colour_from_the_sheet() {
                 egui::Shape::Text(text) => {
                     red_name |= text.galley.job.sections.iter().any(|s| {
                         let c = s.format.color;
-                        c.r() > 0 && c.g() == 0 && c.b() == 0
+                        c.to_array()[0] > 0 && c.to_array()[1] == 0 && c.to_array()[2] == 0
                     });
                 }
                 _ => {}

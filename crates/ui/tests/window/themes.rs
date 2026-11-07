@@ -883,3 +883,265 @@ fn a_theme_with_a_background_image_lets_the_window_rest() {
     assert!(suhina_ui::kit::liquid::background_image(&ctx).is_some(), "the background image loaded");
     assert!(h.try_run().is_ok(), "the window settles within a second of frames: {:?}", ctx.repaint_causes());
 }
+
+/// Main's volume field in the Arrangement view is an element of its own, `#main-volume`: it does
+/// not paint `.arrangement`'s style as its own, and a `#main-volume` rule reaches it (#1237).
+#[test]
+fn mains_volume_field_has_an_element_of_its_own() {
+    fn fills(shape: &egui::Shape, inside: egui::Rect, out: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| fills(s, inside, out)),
+            egui::Shape::Rect(rect) if inside.contains_rect(rect.rect) => out.push(rect.fill),
+            _ => {}
+        }
+    }
+    let mut app = App::new();
+    app.set_session(Session::new(demo_project()), &[]);
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        ".arrangement { background-color: #ff0000; } #main-volume { background-color: #00ff00; }".into(),
+    ));
+    let mut h = window(app);
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    let field = h.get_by_label("Main volume").rect();
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| fills(&s.shape, field.expand(0.5), &mut seen));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!seen.contains(&egui::Color32::RED), "the panel's background stays off the field: {seen:?}");
+    assert!(seen.contains(&egui::Color32::from_rgb(0, 0xFF, 0)), "#main-volume reaches it: {seen:?}");
+}
+
+/// A clip in a slot takes the pointer's hover: `.clip:hover { background-color }` replaces the
+/// lighter mix under the pointer (#1241).
+#[test]
+fn a_hovered_clip_takes_the_themes_hover_background() {
+    fn fills(shape: &egui::Shape, around: egui::Rect, out: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| fills(s, around, out)),
+            egui::Shape::Rect(rect) if rect.rect.contains_rect(around) => out.push(rect.fill),
+            _ => {}
+        }
+    }
+    let mut app = App::new();
+    app.set_session(Session::new(demo_project()), &[]);
+    suhina_ui::kit::native_css::set_user_sheet(Some(".clip:hover { background-color: #00ff00; }".into()));
+    let mut h = window(app);
+    h.get_by_label("Launcher view").click();
+    h.run();
+    let launch = h.get_by_label("Launch Walk on Bass (scene 2)").rect();
+    let painted = |h: &mut Harness<'static, App>| {
+        let mut seen = Vec::new();
+        h.output().shapes.iter().for_each(|s| fills(&s.shape, launch, &mut seen));
+        seen
+    };
+    let green = egui::Color32::from_rgb(0, 0xFF, 0);
+    assert!(!painted(&mut h).contains(&green), "not before the pointer comes");
+    h.hover_at(launch.center());
+    h.run();
+    let hovered = painted(&mut h);
+    h.hover_at(egui::pos2(1.0, 1.0));
+    h.run();
+    let left = painted(&mut h);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(hovered.contains(&green), "the hovered clip takes the rule's background: {hovered:?}");
+    assert!(!left.contains(&green), "and gives it back once the pointer has gone");
+}
+
+/// A clip's own background rule is not a hover's: `.clip { background-color }` alone leaves a
+/// hovered clip its lighter mix, as its colour fills it at rest (#1252).
+#[test]
+fn a_clips_background_rule_alone_does_not_fill_it_when_hovered() {
+    fn fills(shape: &egui::Shape, around: egui::Rect, out: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| fills(s, around, out)),
+            egui::Shape::Rect(rect) if rect.rect.contains_rect(around) => out.push(rect.fill),
+            _ => {}
+        }
+    }
+    let mut app = App::new();
+    app.set_session(Session::new(demo_project()), &[]);
+    suhina_ui::kit::native_css::set_user_sheet(Some(".clip { background-color: #222222; }".into()));
+    let mut h = window(app);
+    h.get_by_label("Launcher view").click();
+    h.run();
+    let launch = h.get_by_label("Launch Walk on Bass (scene 2)").rect();
+    let painted = |h: &mut Harness<'static, App>| {
+        let mut seen = Vec::new();
+        h.output().shapes.iter().for_each(|s| fills(&s.shape, launch, &mut seen));
+        seen
+    };
+    let rest = painted(&mut h);
+    h.hover_at(launch.center());
+    h.run();
+    let hovered = painted(&mut h);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let dark = egui::Color32::from_rgb(0x22, 0x22, 0x22);
+    assert!(!rest.contains(&dark), "the clip's colour fills it at rest: {rest:?}");
+    assert!(!hovered.contains(&dark), "and the lighter mix when it is hovered: {hovered:?}");
+    assert_ne!(rest, hovered, "the hover shows");
+}
+
+fn press(h: &mut Harness<'static, App>, pos: egui::Pos2, pressed: bool) {
+    let (button, modifiers) = (egui::PointerButton::Primary, egui::Modifiers::NONE);
+    h.input_mut().events.push(egui::Event::PointerButton { pos, button, pressed, modifiers });
+    h.step();
+}
+
+/// Drags the control labelled `label` by `by` in six steps; where it is afterwards, if it is.
+fn drag(h: &mut Harness<'static, App>, label: &str, by: Vec2) -> Option<egui::Rect> {
+    let from = h.query_by_label(label)?.rect().center();
+    h.hover_at(from);
+    h.step();
+    press(h, from, true);
+    for step in 1..=6 {
+        h.hover_at(from + by * (step as f32 / 6.0));
+        h.step();
+    }
+    press(h, from + by, false);
+    h.run();
+    h.query_by_label(label).map(|n| n.rect())
+}
+
+/// The demo project with the browser open, the sheet `css`, and a clip's editor in the detail
+/// area (its size is the splitter's; a track's devices open at one height), stacked beside the
+/// view or in a row under it.
+fn open_with_clip(css: &str, stacked: bool) -> Harness<'static, App> {
+    let mut app = App::new();
+    app.set_browser_open(true);
+    app.set_session(Session::new(demo_project()), &[]);
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    let mut h = window(app);
+    if stacked {
+        let mut settings = h.state().settings().clone();
+        settings.device_layout = suhina_ui::settings::DeviceLayout::Stack;
+        let ctx = h.ctx.clone();
+        h.state_mut().set_settings(&ctx, settings);
+        h.run();
+    }
+    h.get_by_label("Launcher view").click();
+    h.run();
+    h.get_by_label("Select Beat B on Drums (scene 3)").click();
+    h.run();
+    h
+}
+
+/// A layout with only gaps holds the detail area's splitter to the sizes the native layout
+/// keeps: stacked, a drag towards the edge leaves the area, and its splitter, in the window;
+/// under the view, a drag up leaves the view its least height (#1252).
+#[test]
+fn a_layout_with_only_gaps_keeps_the_dragged_detail_area_in_bounds() {
+    let right = SIZE.0;
+    let mut h = open_with_clip("#workspace { gap: 8px; }", true);
+    let narrowed = drag(&mut h, "Detail area splitter", Vec2::new(2000.0, 0.0));
+    let back = drag(&mut h, "Detail area splitter", Vec2::new(-100.0, 0.0));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let narrowed = narrowed.map(|s| s.center().x);
+    assert!(
+        narrowed.is_some_and(|x| x <= right - 180.0),
+        "the area keeps its least width, and its splitter: {narrowed:?}"
+    );
+    let back = back.map(|s| s.center().x);
+    assert!(back.zip(narrowed).is_some_and(|(b, n)| b < n - 50.0), "and it drags back: {narrowed:?} to {back:?}");
+
+    let mut h = open_with_clip("#workspace { gap: 8px; }", false);
+    let raised = drag(&mut h, "Detail area splitter", Vec2::new(0.0, -2000.0));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let raised = raised.map(|s| s.top());
+    // The view starts under the bars, so its least height (160 px) puts the splitter below that.
+    assert!(raised.is_some_and(|top| top > 160.0), "the view keeps its least height above it: {raised:?}");
+}
+
+/// A workspace layout with only gaps keeps both splitters, and they still resize their panels; a
+/// fixed browser width takes the browser's splitter away (#1240).
+#[test]
+fn a_layout_with_only_gaps_keeps_the_splitters_and_a_fixed_width_takes_the_browsers() {
+    let open = |css: &str| open_with_clip(css, false);
+    let mut h = open("#workspace { gap: 8px; }");
+    let width = h.state().settings().browser_width;
+    assert!(drag(&mut h, "Browser splitter", Vec2::new(40.0, 0.0)).is_some(), "the browser's splitter stays");
+    let wider = h.state().settings().browser_width;
+    let before = h.get_by_label("Detail area splitter").rect();
+    let after = drag(&mut h, "Detail area splitter", Vec2::new(0.0, -40.0));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(wider >= width + 30, "dragging it widens the browser: {width} to {wider}");
+    assert!(after.is_some_and(|a| a.top() < before.top() - 30.0), "the detail area's grows: {before:?} {after:?}");
+
+    // The setting puts the browser on the right, the sheet's grid on the left: dragging its
+    // splitter away from it still widens it.
+    let mut h = open("#workspace { gap: 8px; }");
+    let mut settings = h.state().settings().clone();
+    settings.browser_side = suhina_ui::settings::Side::Right;
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    let width = h.state().settings().browser_width;
+    let splitter = drag(&mut h, "Browser splitter", Vec2::new(40.0, 0.0));
+    let wider = h.state().settings().browser_width;
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(splitter.is_some_and(|s| s.center().x < 600.0), "the sheet's grid has it on the left: {splitter:?}");
+    assert!(wider >= width + 30, "dragging right widens the browser on the left: {width} to {wider}");
+
+    let h = open("#workspace { gap: 8px; } #panel-browser { width: 260px; }");
+    let fixed = h.query_by_label("Browser splitter").is_none();
+    let detail = h.query_by_label("Detail area splitter").is_some();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(fixed, "the sheet's width owns the browser's size");
+    assert!(detail, "the detail area's height is still the splitter's");
+}
+
+/// The fills of plain rectangles painted inside `inside`, nested shapes too.
+fn fills_inside(h: &Harness<'static, App>, inside: egui::Rect) -> Vec<egui::Color32> {
+    fn fills(shape: &egui::Shape, inside: egui::Rect, out: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| fills(s, inside, out)),
+            egui::Shape::Rect(rect) if inside.contains_rect(rect.rect) => out.push(rect.fill),
+            _ => {}
+        }
+    }
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| fills(&s.shape, inside.expand(0.5), &mut seen));
+    seen
+}
+
+/// The workspace's splitters are elements a theme styles: `#detail-splitter` (its strip's
+/// `background-color`, its grip's `color`, with `:hover`) and `#browser-splitter`, in a layout
+/// with only gaps as in the native one; a sheet without them leaves the native colours (#1252).
+#[test]
+fn a_theme_styles_the_workspace_splitters() {
+    let (magenta, cyan, green, blue) = (
+        egui::Color32::from_rgb(0xFF, 0, 0xFF),
+        egui::Color32::from_rgb(0, 0xFF, 0xFF),
+        egui::Color32::from_rgb(0, 0xFF, 0),
+        egui::Color32::from_rgb(0, 0, 0xFF),
+    );
+    let rules = "#detail-splitter { background-color: #ff00ff; color: #00ffff; } \
+                 #detail-splitter:hover { background-color: #00ff00; } \
+                 #browser-splitter { background-color: #0000ff; }";
+    for layout in ["", "#workspace { gap: 8px; } "] {
+        let mut h = open_with_clip(&format!("{layout}{rules}"), false);
+        let detail = h.get_by_label("Detail area splitter").rect();
+        let browser = h.get_by_label("Browser splitter").rect();
+        let rest = fills_inside(&h, detail);
+        let browser_fills = fills_inside(&h, browser);
+        h.hover_at(detail.center());
+        h.run();
+        let hovered = fills_inside(&h, detail);
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        assert!(rest.contains(&magenta) && rest.contains(&cyan), "{layout}strip and grip take the rules: {rest:?}");
+        assert!(hovered.contains(&green) && !hovered.contains(&magenta), "{layout}and :hover: {hovered:?}");
+        assert!(browser_fills.contains(&blue), "{layout}the browser's splitter takes its rule: {browser_fills:?}");
+    }
+
+    // A transparent strip leaves the gap to what is under it; without a rule the strip keeps the
+    // native fill.
+    let h = open_with_clip("#workspace { gap: 8px; }", false);
+    let detail = h.get_by_label("Detail area splitter").rect();
+    let native = fills_inside(&h, detail);
+    drop(h);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let h = open_with_clip("#workspace { gap: 8px; } #detail-splitter { background-color: transparent; }", false);
+    let clear = fills_inside(&h, h.get_by_label("Detail area splitter").rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(native.contains(&theme::control_background()), "the native strip: {native:?}");
+    assert!(!clear.contains(&theme::control_background()), "a transparent strip paints no fill: {clear:?}");
+}

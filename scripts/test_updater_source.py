@@ -37,7 +37,8 @@ class Pins(unittest.TestCase):
 
     def test_each_pinned_line_changed_fails(self):
         for pin in updater_source.PINNED:
-            changed = {**project(), updater_source.SOURCE: source().replace(pin, pin.replace('"', '"other-', 1))}
+            # Commented out: a changed line is no longer the pinned one, whatever it holds.
+            changed = {**project(), updater_source.SOURCE: source().replace(pin, f"// {pin}")}
             found = updater_source.problems(changed)
             self.assertTrue(any(pin in problem for problem in found), pin)
 
