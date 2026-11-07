@@ -403,6 +403,17 @@ pub fn bar_beats(project: &Project) -> f64 {
     if ts.denominator == 0 { 4.0 } else { f64::from(ts.numerator.max(1)) * 4.0 / f64::from(ts.denominator) }
 }
 
+/// A song position as the column writes it, `bar.beat` counted from one, with the bars of the
+/// project's meter, so it reads the bar the ruler shows after a time-signature change.
+pub fn song_position(beat: f64, meter: &Meter) -> String {
+    if !beat.is_finite() {
+        return "-".into();
+    }
+    let beat = beat.max(0.0);
+    let here = meter.position(beat);
+    format!("{}.{}", u64::from(here.bar) + 1, (beat - here.bar_start).max(0.0).floor() as u64 + 1)
+}
+
 /// A position as the column writes it: `bar.beat`, counted from one for a position and from zero
 /// for a length.
 pub fn bars_beats(beats: f64, bar_beats: f64, from_one: u64) -> String {
@@ -567,6 +578,7 @@ pub fn build_with(
     nam: crate::detail::device_widgets::Lists,
 ) -> Detail {
     let bar = bar_beats(project);
+    let meter = project.transport.meter();
     let track_name = |id: TrackId| project.shown_track_name(id);
     let found = clip.and_then(|clip| match clip {
         ClipRef::Arrangement(id, clip) => project
@@ -606,7 +618,7 @@ pub fn build_with(
             Box::new(ClipInfo {
                 name: content.map(|c| c.name.clone()).unwrap_or_default(),
                 track: track_name(id),
-                start: scene.map_or_else(|| bars_beats(placed.start, bar, 1), |s| (s + 1).to_string()),
+                start: scene.map_or_else(|| song_position(placed.start, &meter), |s| (s + 1).to_string()),
                 scene: scene.is_some(),
                 length: bars_beats(placed.length, bar, 0),
                 looping: placed.loop_range.is_some(),

@@ -1374,6 +1374,11 @@ fn an_empty_midi_clip_in_the_arrangement_replaces_what_it_covers_unless_stacked(
     assert_eq!(made["index"], 0);
     let lead = waltz.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(2))).unwrap();
     assert_eq!((lead.clips[0].start, lead.clips[0].length, lead.clips[0].loop_range), (0.0, 3.0, None));
+    // After a change to 7/8 at bar 3 (beat 6), a clip there is one 7/8 bar, 3.5 beats.
+    run(&mut waltz, "timeSignature.add", json!({ "bar": 3, "numerator": 7, "denominator": 8 })).unwrap();
+    run(&mut waltz, "clip.create", json!({ "track": "Lead", "start": 6 })).unwrap();
+    let lead = waltz.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(2))).unwrap();
+    assert_eq!(lead.clips.iter().map(|c| (c.start, c.length)).collect::<Vec<_>>(), [(0.0, 3.0), (6.0, 3.5)]);
 
     let made = run(&mut session, "clip.create", json!({ "track": "Bass", "start": 2, "length": 4 })).unwrap();
     assert_eq!((made["start"].as_f64(), made["index"].as_u64()), (Some(2.0), Some(1)));

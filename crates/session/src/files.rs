@@ -576,8 +576,17 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
     } else {
         return Err(format!("track {:?} holds no clips (a group or a return)", target.name).into());
     };
+    let start = match Args::new(params).value("start") {
+        None => None,
+        Some(_) => Some(Args::new(params).f64("start")?),
+    };
     let length = match Args::new(params).value("length") {
-        None => bar_beats(p),
+        // An arrangement clip is one bar of the signature where it starts, as a recorded take
+        // is; a slot has no place in the song, so it takes the start signature's bar.
+        None => match start {
+            Some(beat) if beat.is_finite() => p.transport.meter().position(beat.max(0.0)).bar_beats,
+            _ => bar_beats(p),
+        },
         Some(_) => Args::new(params).f64("length")?,
     };
     if !(length > 0.0 && length <= suhina_engine::MAX_START_BEAT) {
@@ -612,10 +621,6 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
             }),
             loops: true,
         },
-    };
-    let start = match Args::new(params).value("start") {
-        None => None,
-        Some(_) => Some(Args::new(params).f64("start")?),
     };
     let scene = opt_scene_at(&session.project, params, "scene")?;
     let stack = Args::new(params).flag("stack")?;

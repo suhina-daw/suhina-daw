@@ -144,6 +144,16 @@ fn a_track_is_added_before_the_returns_with_its_channel_slots_and_lane() {
 }
 
 #[test]
+fn two_tracks_with_the_same_name_are_named_by_id_instead() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "track.rename", json!({ "track": "4 Audio", "name": "3 Audio" })).unwrap();
+    // The first of the two was picked without a word; now the command says it cannot tell.
+    let error = run(&mut session, "track.setMute", json!({ "tracks": ["3 Audio"], "mute": true })).unwrap_err();
+    assert!(error.contains("several tracks are named"), "{error}");
+    assert!(session.project().channels.iter().all(|c| !c.mute), "nothing changed");
+}
+
+#[test]
 fn a_track_added_with_a_device_takes_its_kind_and_name() {
     let mut session = Session::new(blank_project());
     let synth = run(&mut session, "track.add", json!({ "device": "fm-synth" })).unwrap();

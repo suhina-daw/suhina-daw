@@ -212,6 +212,20 @@ fn panels_follow_a_dragged_line_at_the_playhead() {
 }
 
 #[test]
+fn a_clips_start_counts_bars_through_the_time_signature_changes() {
+    // Eight bars of 4/4 (32 beats), then 3/4: beat 64 is beat 3 of bar 19, not bar 17.
+    let mut project = demo_project();
+    project.transport.time_signature_changes = vec![suhina_engine::model::TimeSignatureChange {
+        bar: 8,
+        time_signature: suhina_engine::model::TimeSignature { numerator: 3, denominator: 4 },
+    }];
+    let beat_b = project.arrangement.lanes[0].clips[1].id;
+    let detail = build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)));
+    let Detail::Clip(info, _) = detail else { panic!("expected the clip") };
+    assert_eq!(info.start, "19.3");
+}
+
+#[test]
 fn a_selected_slot_clip_shows_its_scene_loop_and_fades() {
     let mut project = demo_project();
     let column = project.launcher.columns.iter_mut().find(|c| c.track == TrackId(2)).expect("Bass has slots");

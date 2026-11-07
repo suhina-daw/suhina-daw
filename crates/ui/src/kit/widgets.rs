@@ -670,6 +670,18 @@ const WHEEL_TICK: f64 = 50.0;
 
 /// How far the wheel turned this frame, in points, read from the events themselves rather than
 /// from egui's smoothed scroll, so one tick of a wheel is one step and not a run of them.
+/// `value` moved by `step` within `range`. A value off the scale (a volume at -inf) moves from the
+/// scale's end for a step up, as a drag does, and stays where it is for a step down.
+fn stepped(value: f64, range: (f64, f64), step: f64) -> f64 {
+    if value.is_finite() {
+        (value + step).clamp(range.0, range.1)
+    } else if step > 0.0 {
+        (range.0 + step).clamp(range.0, range.1)
+    } else {
+        value
+    }
+}
+
 fn wheel_points(ui: &Ui) -> f32 {
     ui.input(|i| {
         i.raw
@@ -873,10 +885,9 @@ pub fn drag_value_axis(
         return Drag::Set(typed_value(number, range));
     }
     if steps != 0 {
-        let from = if value.is_finite() { value } else { range.0 };
         let step = f64::from(steps) * per_tick * if fine { 0.1 } else { 1.0 };
         *preview = None;
-        return Drag::Done((from + step).clamp(range.0, range.1));
+        return Drag::Done(stepped(value, range, step));
     }
     // Ctrl/Cmd and the wheel over the control move it, as a drag would; the caller commits what it is
     // given. The wheel alone scrolls the view, so scrolling past a field never changes it.
@@ -888,7 +899,7 @@ pub fn drag_value_axis(
             // A positive delta moves the content down: the wheel turned up, which raises it.
             let step = f64::from(points) / WHEEL_TICK * per_tick * fine;
             *preview = None;
-            return Drag::Done((value + step).clamp(range.0, range.1));
+            return Drag::Done(stepped(value, range, step));
         }
     }
     if response.double_clicked() {

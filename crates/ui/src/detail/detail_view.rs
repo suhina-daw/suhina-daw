@@ -15,7 +15,7 @@ use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_device_sdk::builtin::{COMPACT_HEIGHT, COMPACT_WIDTH};
 use suhina_device_sdk::{ControlShape, LabelPosition, ParameterControl};
-use suhina_engine::model::{ClipId, DeviceKind, LaneData, Note, Project, StretchMode, TrackId};
+use suhina_engine::model::{ClipId, DeviceKind, LaneData, Meter, Note, Project, StretchMode, TrackId};
 use suhina_session::{Placement, PluginReport, PluginStatus};
 
 use crate::interaction::commands;

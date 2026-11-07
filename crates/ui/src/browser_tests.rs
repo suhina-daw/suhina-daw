@@ -76,6 +76,11 @@ fn durations_read_as_minutes_and_seconds() {
     assert_eq!(duration_text(4.2), "0:04.2");
     assert_eq!(duration_text(0.06), "0:00.1");
     assert_eq!(duration_text(201.7), "3:21");
+    assert_eq!(duration_text(59.94), "0:59.9");
+    assert_eq!(duration_text(59.97), "1:00", "rounded up to a minute, not 0:60.0");
+    assert_eq!(duration_text(60.0), "1:00");
+    assert_eq!(duration_text(119.96), "1:59", "above a minute the seconds are floored");
+    assert_eq!(duration_text(201.96), "3:21");
     assert_eq!(duration_text(f64::NAN), "");
 }
 

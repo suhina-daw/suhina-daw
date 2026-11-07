@@ -293,3 +293,12 @@ fn text_in_draws_nothing_where_only_an_ellipsis_would_fit() {
     assert!(cut[0].0 <= 24.5, "{cut:?}");
     assert_eq!(texts(400.0).len(), 1, "the whole name");
 }
+
+#[test]
+fn a_silent_value_steps_up_from_the_scale_end_and_stays_when_stepped_down() {
+    let range = (-70.0, 6.0);
+    assert_eq!(stepped(f64::NEG_INFINITY, range, 1.0), -69.0);
+    assert_eq!(stepped(f64::NEG_INFINITY, range, -1.0), f64::NEG_INFINITY);
+    assert_eq!(stepped(-10.0, range, -1.0), -11.0);
+    assert_eq!(stepped(5.5, range, 3.0), 6.0);
+}
