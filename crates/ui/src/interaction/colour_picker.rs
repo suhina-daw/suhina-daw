@@ -7,7 +7,7 @@
 //! is the `track.setColor` command, one undo step.
 
 use crate::kit::surface::Backgrounds as _;
-use egui::{Color32, Id, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{Color32, Id, Key, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::{Rgb, TrackId};
 
@@ -120,9 +120,11 @@ pub fn stepped_color_field(ui: &mut Ui, id: Id, start: Color32) -> Option<Rgb> {
     let mut value = ui.data(|d| d.get_temp::<Color32>(id)).unwrap_or(start);
     let changed = egui::color_picker::color_picker_color32(ui, &mut value, egui::color_picker::Alpha::Opaque);
     ui.data_mut(|d| d.insert_temp(id, value));
-    // Taken when the drag in the field ends, so one pick is one undo step.
+    // Taken when the drag in the field ends, so one pick is one undo step — or when the
+    // field's value is committed from the keyboard: Enter gives the typed colour whether or
+    // not the pointer lets go (#1196).
     if (changed || ui.data(|d| d.get_temp::<bool>(id.with("moved"))).unwrap_or(false))
-        && ui.input(|i| i.pointer.any_released())
+        && (ui.input(|i| i.pointer.any_released()) || ui.input(|i| i.key_pressed(Key::Enter)))
     {
         ui.data_mut(|d| d.remove::<bool>(id.with("moved")));
         Some(to_rgb(value))
@@ -168,6 +170,14 @@ pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str)
     }
     if open {
         picked = stepped_color_field(ui, id.with("value"), current.map_or(Color32::GRAY, color32)).or(picked);
+        if let Some(picked) = picked {
+            // The field's own cache follows the pick: the next custom adjustment starts
+            // from it, not from the older colour it still held (#1196).
+            ui.data_mut(|d| {
+                d.insert_temp(id.with("value"), color32(picked));
+                d.remove::<bool>(id.with("value").with("moved"));
+            });
+        }
     }
     ui.data_mut(|d| d.insert_temp(id, open));
     picked

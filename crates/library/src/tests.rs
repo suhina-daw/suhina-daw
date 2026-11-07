@@ -268,3 +268,24 @@ fn the_same_name_in_several_folders_keeps_the_folders_order_under_a_limit() {
         let _ = std::fs::remove_dir_all(folder);
     }
 }
+
+#[test]
+fn a_moved_files_tag_records_move_with_it_and_the_revision_advances() {
+    let settings = temp("relocate-tags");
+    let mut library = Library::new(Some(settings.clone()));
+    library.set_tag("Vocals", Some("#AA00AA"), None).unwrap();
+    library.tag("/a/loop.wav", "Vocals", true).unwrap();
+    let before = library.tag_revision();
+    library.relocate(Path::new("/a/loop.wav"), Path::new("/b/loop.wav")).unwrap();
+    assert_eq!(library.item_tags("/b/loop.wav"), ["Vocals"]);
+    assert!(library.item_tags("/a/loop.wav").is_empty());
+    assert_ne!(
+        library.tag_revision(),
+        before,
+        "the sidebar's caches read the move as a change (a now-unused tag must dim again)"
+    );
+    // The counts go with the move: the file the tag carries is the moved one.
+    assert_eq!(library.tagged_count("Vocals"), 1);
+    assert!(library.take_warnings().is_empty());
+    let _ = std::fs::remove_dir_all(&settings);
+}

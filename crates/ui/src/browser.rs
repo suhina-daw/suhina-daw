@@ -443,7 +443,7 @@ impl Default for BrowserState {
 
 fn item_kind(found: &Found) -> ItemKind {
     match found.kind {
-        "sample" => ItemKind::Sample,
+        "sample" | "stems" => ItemKind::Sample,
         "midi" => ItemKind::Midi,
         "preset" => ItemKind::Preset,
         "project" => ItemKind::Project,
@@ -475,10 +475,13 @@ impl BrowserState {
         &self.rows
     }
 
-    /// Forgets what was listed, so folders are read again (after a refresh or a change).
+    /// Forgets what was listed, so folders are read again (after a refresh or a change): the
+    /// tags' counts too, whose cache keys only on a revision that a replaced library may
+    /// carry again (or a moved file's records, [#1196]).
     pub fn relist(&mut self) {
         self.listings.clear();
         self.voices.clear();
+        self.tag_counts = None;
         self.generation = self.generation.wrapping_add(1);
         self.rows_key = None;
     }
@@ -500,7 +503,7 @@ impl BrowserState {
 
     /// How many items carry each tag: counted once, when the library's tags changed since the
     /// last count (a frame over a large library costs nothing more). The sidebar's Tags rows
-    /// and the tag editor share the cache.
+    /// share the cache.
     pub fn tag_counts(&mut self, library: &mut suhina_library::Library) -> HashMap<String, usize> {
         let revision = library.tag_revision();
         let stale = self.tag_counts.as_ref().is_none_or(|(r, _)| *r != revision);
@@ -531,9 +534,12 @@ impl BrowserState {
     /// Builds the rows when what they come from changed.
     pub fn refresh_rows(&mut self, projects: &mut Projects) -> Result<(), String> {
         let revision = projects.file_library_mut().revision();
+        // The tags filter or place the rows through, so a tag change (even one made
+        // elsewhere, as the sample map's, [#1196]) rebuilds them with the revision.
+        let tag_revision = projects.file_library_mut().tag_revision();
         let plugins_view = projects.file_library_mut().plugins_view();
         let key = format!(
-            "{}\u{1}{:?}\u{1}{:?}\u{1}{:?}\u{1}{revision}\u{1}{}\u{1}{}\u{1}{:?}",
+            "{}\u{1}{:?}\u{1}{:?}\u{1}{:?}\u{1}{revision}\u{1}{tag_revision}\u{1}{}\u{1}{}\u{1}{:?}",
             self.search,
             self.category,
             self.place,

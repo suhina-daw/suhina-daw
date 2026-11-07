@@ -172,7 +172,7 @@ fn pins_and_tags_are_kept_between_runs() {
 }
 
 #[test]
-fn a_tag_place_lists_every_item_that_carries_the_tag_of_any_kind() {
+fn a_tag_place_lists_every_item_that_carries_the_tag_of_any_kind() -> Result<(), Box<dyn std::error::Error>> {
     let settings = temp("tag-place-settings");
     let samples = temp("tag-place");
     wav(&samples.join("Drums").join("Kick Hard.wav"));
@@ -206,7 +206,22 @@ fn a_tag_place_lists_every_item_that_carries_the_tag_of_any_kind() {
     // A place of a tag that no longer is one is an error, not an empty list.
     assert!(run(&mut p, "library.search", json!({ "place": "tag:Nope" })).is_err());
     assert!(run(&mut p, "library.search", json!({ "place": "tag:" })).is_err());
+    // A tag place sorts by name before the limit cuts: the keys' order would rank
+    // `/a/Zebra` over `/z/Apple` otherwise (#1196).
+    let deep = temp("tag-place-order");
+    std::fs::create_dir_all(deep.join("a"))?;
+    std::fs::create_dir_all(deep.join("z"))?;
+    wav(&deep.join("a").join("Zebra.wav"));
+    wav(&deep.join("z").join("Apple.wav"));
+    run(&mut p, "library.addFolder", json!({ "folder": deep.display().to_string() })).unwrap();
+    for (letter, name) in [("a", "Zebra.wav"), ("z", "Apple.wav")] {
+        let item = deep.join(letter).join(name).display().to_string();
+        run(&mut p, "library.tag", json!({ "item": item, "tag": "Hot", "on": true })).unwrap();
+    }
+    let limited = run(&mut p, "library.search", json!({ "place": "tag:Hot", "limit": 1 })).unwrap();
+    assert_eq!(names(&limited), ["Apple.wav"], "the sort leads, the limit cuts after it");
     let _ = std::fs::remove_dir_all(&settings);
+    Ok(())
 }
 
 /// A plug-in catalog as a scan leaves one, in the settings' plug-in library.

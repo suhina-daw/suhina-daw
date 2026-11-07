@@ -268,6 +268,9 @@ impl App {
         }
         if released {
             self.browser.drag_tag = None;
+            // The tag-drag spec stops the preview as any drop does not (the sidebar's item
+            // rows included, #1196).
+            browser_view::stop_preview(&mut self.browser, &mut self.projects);
             let Some(row) = self.browser.drop_item.take() else { return };
             let group = self.browser.selected.iter().any(|s| s.key == row.key && s.kind == row.kind)
                 && !matches!(row.kind, drop::ItemKind::Heading | drop::ItemKind::Folder);

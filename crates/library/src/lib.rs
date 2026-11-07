@@ -697,7 +697,11 @@ impl Library {
     /// the folders that held it and hold it now are read again, so the index follows.
     pub fn relocate(&mut self, from: &Path, to: &Path) -> Result<(), String> {
         self.load();
-        if self.store.relocate(&Item::File(from.to_path_buf()).key(), &Item::File(to.to_path_buf()).key()) {
+        let moved = self.store.relocate(&Item::File(from.to_path_buf()).key(), &Item::File(to.to_path_buf()).key());
+        if moved {
+            // The tag records moved with the file: the rows' caches read the same
+            // revision the tag commands do ([#1196]).
+            self.tag_revision = self.tag_revision.wrapping_add(1);
             self.save()?;
         }
         let roots: Vec<PathBuf> = self

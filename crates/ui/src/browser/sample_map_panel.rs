@@ -249,13 +249,16 @@ impl Panel {
         let selected: HashSet<&str> = state.selected().iter().map(|i| i.key.as_str()).collect();
         let pinned: HashSet<String> = projects.file_library_mut().pinned().into_iter().collect();
         let key = format!(
-            "{}\u{1}{:?}\u{1}{:?}\u{1}{}\u{1}{}\u{1}{}",
+            "{}\u{1}{:?}\u{1}{:?}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
             state.search,
             state.tag_filter,
             selected.iter().collect::<std::collections::BTreeSet<_>>(),
             pinned.len(),
             revision,
             projects.file_library_mut().revision(),
+            // A tag drop re-lights (or dims) the matching point even when nothing else in the
+            // library moved (#1196).
+            projects.file_library_mut().tag_revision(),
         );
         if self.flags_key.as_deref() == Some(key.as_str()) && self.points.len() == map.points.len() {
             return;

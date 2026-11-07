@@ -432,7 +432,7 @@ fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
 fn fits(found: &Found, category: Category) -> bool {
     match category {
         Category::All => true,
-        Category::Samples => found.kind == "sample",
+        Category::Samples => matches!(found.kind, "sample" | "stems"),
         Category::Midi => found.kind == "midi",
         Category::Presets => found.kind == "preset",
         Category::Instruments => found.kind == "instrument",
@@ -567,13 +567,13 @@ pub fn prepare_search(
             {
                 out.push(found);
             }
-            if out.len() >= limit {
-                break;
-            }
         }
+        // A place that sorts by name sorts before the limit: a cut in key order would
+        // rank `/a/Zebra` over `/z/Apple` (#1196).
         if sorted_by_name {
             out.sort_by(|a, b| suhina_library::natural_cmp(&a.name, &b.name));
         }
+        out.truncate(limit);
         return Ok(PreparedSearch { listed: Some(out), ranked: Vec::new(), files: None, words, limit });
     }
     let within = place.map(PathBuf::from);
