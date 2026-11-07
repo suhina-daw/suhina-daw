@@ -343,7 +343,7 @@ impl App {
         let (view, splitter, detail) = if let Some((view, detail, _)) = geometry {
             (view, css_splitter.unwrap_or(Rect::NOTHING), detail)
         } else if stacked {
-            self.detail_width = self.detail_width.clamp(180.0, (area.width() - 240.0).max(180.0));
+            self.detail_width = detail_width_in(self.detail_width, area.width());
             let x = area.right() - self.detail_width;
             (
                 Rect::from_min_max(area.min, Pos2::new(x - SPLITTER, area.bottom())),
@@ -354,8 +354,7 @@ impl App {
             // Only the chain shown: no taller than its panels, but never held under the area's
             // default height. A chain of short panels (a plug-in whose editor is not embedded,
             // or no devices at all) would otherwise keep the area too short to drag up.
-            let most = (area.height() - MIN_VIEW).max(editor_needs.min(area.height() - SPLITTER)).max(least);
-            self.detail_height = self.detail_height.clamp(least, most);
+            self.detail_height = detail_height_in(self.detail_height, area.height(), editor_needs, least);
             // A track's devices, reached by clicking the track, are open at one height or closed; the
             // height the user drags is the clip's, its editor's and the devices reached from it.
             let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
@@ -413,6 +412,18 @@ impl App {
                 }
             } else {
                 self.detail_drag = None;
+            }
+            // A theme's layout that follows the splitter holds the dragged size to the bounds the
+            // native layout keeps, in the room the view and the detail area share: a drag neither
+            // takes the area, and with it its splitter, away nor closes the view. Held here, after
+            // the drag, as a size the layout gives no room hides the area until it is opened again.
+            if let Some((view, detail, true)) = geometry {
+                let room = view.union(detail);
+                if stacked {
+                    self.detail_width = detail_width_in(self.detail_width, room.width());
+                } else {
+                    self.detail_height = detail_height_in(self.detail_height, room.height(), editor_needs, least);
+                }
             }
             let painter = ui.painter_at(splitter);
             painter.fill_background(splitter, 0.0, theme::control_background());
@@ -922,4 +933,19 @@ impl App {
     pub fn piano_roll_mut(&mut self) -> &mut PianoRollState {
         &mut self.piano_roll
     }
+}
+
+/// The width of a detail area stacked beside the view, in a `room` this wide shared with it: at
+/// least 180 px, and leaving the view 240 px.
+fn detail_width_in(width: f32, room: f32) -> f32 {
+    width.clamp(180.0, (room - 240.0).max(180.0))
+}
+
+/// The height of a detail area in a row under the view, in a `room` this tall shared with it: at
+/// least `least`, and no taller than leaves the view its least height, unless an embedded editor
+/// `needs` more. A chain of short panels (a plug-in whose editor is not embedded, or no devices at
+/// all) would otherwise keep the area too short to drag up.
+fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
+    let most = (room - MIN_VIEW).max(needs.min(room - SPLITTER)).max(least);
+    height.clamp(least, most)
 }

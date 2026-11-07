@@ -947,41 +947,81 @@ fn a_hovered_clip_takes_the_themes_hover_background() {
     assert!(!left.contains(&green), "and gives it back once the pointer has gone");
 }
 
+fn press(h: &mut Harness<'static, App>, pos: egui::Pos2, pressed: bool) {
+    let (button, modifiers) = (egui::PointerButton::Primary, egui::Modifiers::NONE);
+    h.input_mut().events.push(egui::Event::PointerButton { pos, button, pressed, modifiers });
+    h.step();
+}
+
+/// Drags the control labelled `label` by `by` in six steps; where it is afterwards, if it is.
+fn drag(h: &mut Harness<'static, App>, label: &str, by: Vec2) -> Option<egui::Rect> {
+    let from = h.query_by_label(label)?.rect().center();
+    h.hover_at(from);
+    h.step();
+    press(h, from, true);
+    for step in 1..=6 {
+        h.hover_at(from + by * (step as f32 / 6.0));
+        h.step();
+    }
+    press(h, from + by, false);
+    h.run();
+    h.query_by_label(label).map(|n| n.rect())
+}
+
+/// The demo project with the browser open, the sheet `css`, and a clip's editor in the detail
+/// area (its size is the splitter's; a track's devices open at one height), stacked beside the
+/// view or in a row under it.
+fn open_with_clip(css: &str, stacked: bool) -> Harness<'static, App> {
+    let mut app = App::new();
+    app.set_browser_open(true);
+    app.set_session(Session::new(demo_project()), &[]);
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    let mut h = window(app);
+    if stacked {
+        let mut settings = h.state().settings().clone();
+        settings.device_layout = suhina_ui::settings::DeviceLayout::Stack;
+        let ctx = h.ctx.clone();
+        h.state_mut().set_settings(&ctx, settings);
+        h.run();
+    }
+    h.get_by_label("Launcher view").click();
+    h.run();
+    h.get_by_label("Select Beat B on Drums (scene 3)").click();
+    h.run();
+    h
+}
+
+/// A layout with only gaps holds the detail area's splitter to the sizes the native layout
+/// keeps: stacked, a drag towards the edge leaves the area, and its splitter, in the window;
+/// under the view, a drag up leaves the view its least height (#1252).
+#[test]
+fn a_layout_with_only_gaps_keeps_the_dragged_detail_area_in_bounds() {
+    let right = SIZE.0;
+    let mut h = open_with_clip("#workspace { gap: 8px; }", true);
+    let narrowed = drag(&mut h, "Detail area splitter", Vec2::new(2000.0, 0.0));
+    let back = drag(&mut h, "Detail area splitter", Vec2::new(-100.0, 0.0));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let narrowed = narrowed.map(|s| s.center().x);
+    assert!(
+        narrowed.is_some_and(|x| x <= right - 180.0),
+        "the area keeps its least width, and its splitter: {narrowed:?}"
+    );
+    let back = back.map(|s| s.center().x);
+    assert!(back.zip(narrowed).is_some_and(|(b, n)| b < n - 50.0), "and it drags back: {narrowed:?} to {back:?}");
+
+    let mut h = open_with_clip("#workspace { gap: 8px; }", false);
+    let raised = drag(&mut h, "Detail area splitter", Vec2::new(0.0, -2000.0));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let raised = raised.map(|s| s.top());
+    // The view starts under the bars, so its least height (160 px) puts the splitter below that.
+    assert!(raised.is_some_and(|top| top > 160.0), "the view keeps its least height above it: {raised:?}");
+}
+
 /// A workspace layout with only gaps keeps both splitters, and they still resize their panels; a
 /// fixed browser width takes the browser's splitter away (#1240).
 #[test]
 fn a_layout_with_only_gaps_keeps_the_splitters_and_a_fixed_width_takes_the_browsers() {
-    fn press(h: &mut Harness<'static, App>, pos: egui::Pos2, pressed: bool) {
-        let (button, modifiers) = (egui::PointerButton::Primary, egui::Modifiers::NONE);
-        h.input_mut().events.push(egui::Event::PointerButton { pos, button, pressed, modifiers });
-        h.step();
-    }
-    fn drag(h: &mut Harness<'static, App>, label: &str, by: Vec2) -> Option<egui::Rect> {
-        let from = h.query_by_label(label)?.rect().center();
-        h.hover_at(from);
-        h.step();
-        press(h, from, true);
-        for step in 1..=6 {
-            h.hover_at(from + by * (step as f32 / 6.0));
-            h.step();
-        }
-        press(h, from + by, false);
-        h.run();
-        h.query_by_label(label).map(|n| n.rect())
-    }
-    let open = |css: &str| {
-        let mut app = App::new();
-        app.set_browser_open(true);
-        app.set_session(Session::new(demo_project()), &[]);
-        suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
-        let mut h = window(app);
-        // A clip's editor: its height is the splitter's (a track's devices open at one height).
-        h.get_by_label("Launcher view").click();
-        h.run();
-        h.get_by_label("Select Beat B on Drums (scene 3)").click();
-        h.run();
-        h
-    };
+    let open = |css: &str| open_with_clip(css, false);
     let mut h = open("#workspace { gap: 8px; }");
     let width = h.state().settings().browser_width;
     assert!(drag(&mut h, "Browser splitter", Vec2::new(40.0, 0.0)).is_some(), "the browser's splitter stays");
