@@ -51,12 +51,6 @@ impl Place {
     /// The category a recent group's place belongs to: choosing the place chooses it, so the
     /// category never hides everything the place lists. `None` for the places that hold any
     /// kind (the pins, a folder, the recent projects).
-    /// Whether the place can hold samples, so the list can show as the sample map (#862): a
-    /// folder, Pinned, and Recent of every kind or of samples.
-    pub fn holds_samples(&self) -> bool {
-        matches!(self, Self::Folder(_) | Self::Pinned | Self::Recent(None | Some(Group::Samples)))
-    }
-
     pub fn category(&self) -> Option<Category> {
         match self {
             Self::Recent(Some(Group::Samples)) => Some(Category::Samples),
@@ -67,6 +61,12 @@ impl Place {
             Self::Recent(Some(Group::Presets)) => Some(Category::Presets),
             Self::Recent(Some(Group::Projects) | None) | Self::Pinned | Self::Folder(_) => None,
         }
+    }
+
+    /// Whether the place can hold samples, so the list can show as the sample map (#862): a
+    /// folder, Pinned, and Recent of every kind or of samples.
+    pub fn holds_samples(&self) -> bool {
+        matches!(self, Self::Folder(_) | Self::Pinned | Self::Recent(None | Some(Group::Samples)))
     }
 }
 

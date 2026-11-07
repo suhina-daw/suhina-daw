@@ -209,7 +209,7 @@ fn chain_row(
         };
         let rect = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(width, shown_height));
         x = rect.right() + 1.0;
-        tallest = tallest.max(height);
+        tallest = tallest.max(shown_height);
         if device.at.top() {
             slots.push((device.index, rect));
         }

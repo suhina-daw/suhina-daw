@@ -207,6 +207,12 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     }
     let showing_map = state.mode == crate::browser::ResultsMode::Other;
     for (title, chip) in &chips {
+        // The List / Sample map switch starts its own row after Recent's kinds, so it doesn't
+        // read as two more kinds.
+        if matches!(chip, Chip::List) && x > area.left() + PAD {
+            x = area.left() + PAD;
+            y += FILTER + FILTER_GAP;
+        }
         let width = widgets::text_width(ui, title, small.clone()) + FILTER_PAD * 2.0;
         if x + width > area.right() - PAD && x > area.left() + PAD {
             x = area.left() + PAD;
