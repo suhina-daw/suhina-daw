@@ -1016,6 +1016,15 @@ fn numbers_that_are_not_finite_are_written_as_zero() {
     assert_eq!(read, Ok(0.0));
 }
 
+/// What a session's decoded files would say for a project in `from`: the relative path when that
+/// file is there, else the absolute one when it is.
+fn found_on_disk(from: PathBuf) -> impl Fn(&str, Option<&str>) -> Option<PathBuf> {
+    move |file, absolute| {
+        let here = from.join(file);
+        if here.is_file() { Some(here) } else { absolute.map(PathBuf::from).filter(|p| p.is_file()) }
+    }
+}
+
 #[test]
 fn audio_paths_follow_a_project_saved_elsewhere() {
     let base = std::env::temp_dir().join(format!("suhina-project-file-rebase-{}", std::process::id()));
@@ -1023,13 +1032,18 @@ fn audio_paths_follow_a_project_saved_elsewhere() {
     std::fs::create_dir_all(&samples).unwrap_or_default();
     std::fs::write(samples.join("loop.wav"), b"RIFF").unwrap_or_default();
     let mut project = everything();
-    rebase_audio(&mut project, &base.join("old"), &base.join("new").join("songs"));
+    rebase_audio(&mut project, &base.join("old"), &base.join("new").join("songs"), &found_on_disk(base.join("old")));
     let LaneData::Audio(region) = &project.contents[1].lanes[0].data else { return };
     assert_eq!(region.file, "../../old/Samples/loop.wav");
     let absolute = region.absolute_file.clone().unwrap_or_default();
     assert!(Path::new(&absolute).ends_with("old/Samples/loop.wav"), "{absolute}");
     // Saved beside it again: the path is relative to the same folder.
-    rebase_audio(&mut project, &base.join("new").join("songs"), &base.join("old"));
+    rebase_audio(
+        &mut project,
+        &base.join("new").join("songs"),
+        &base.join("old"),
+        &found_on_disk(base.join("new").join("songs")),
+    );
     let LaneData::Audio(region) = &project.contents[1].lanes[0].data else { return };
     assert_eq!(region.file, "Samples/loop.wav");
     let _clean = std::fs::remove_dir_all(&base);
@@ -1046,10 +1060,53 @@ fn a_missing_audio_file_is_found_by_its_absolute_path() {
         region.file = "gone/kept.wav".into();
         region.absolute_file = Some(file.display().to_string());
     }
-    rebase_audio(&mut project, &base.join("elsewhere"), &base);
+    rebase_audio(&mut project, &base.join("elsewhere"), &base, &found_on_disk(base.join("elsewhere")));
     let LaneData::Audio(region) = &project.contents[1].lanes[0].data else { return };
     assert_eq!(region.file, "kept.wav");
     let _clean = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn a_path_no_decoded_file_came_from_is_moved_by_name_and_never_looked_at() {
+    // A network share, a device path, a path out of the folder: nothing was decoded from them,
+    // so saving keeps the absolute path as the project has it and asks only `found`.
+    for (file, absolute) in [
+        (r"\\server\share\x.wav", Some(r"\\server\share\x.wav")),
+        ("x.wav", Some(r"\\?\C:\x.wav")),
+        ("x.wav", Some("//server/share/x.wav")),
+        ("../../x.wav", Some("../../x.wav")),
+    ] {
+        let mut project = everything();
+        if let LaneData::Audio(region) = &mut project.contents[1].lanes[0].data {
+            region.file = file.into();
+            region.absolute_file = absolute.map(str::to_owned);
+        }
+        let asked = std::cell::RefCell::new(Vec::new());
+        rebase_audio(&mut project, Path::new("/songs/old"), Path::new("/songs/new"), &|f, a| {
+            asked.borrow_mut().push((f.to_string(), a.map(str::to_owned)));
+            None
+        });
+        let LaneData::Audio(region) = &project.contents[1].lanes[0].data else { return };
+        assert_eq!(region.absolute_file.as_deref(), absolute, "{file}");
+        assert!(asked.borrow().contains(&(file.to_string(), absolute.map(str::to_owned))), "{file}");
+    }
+}
+
+#[test]
+fn the_file_that_was_decoded_is_the_one_saved() {
+    // The clip names a share as its absolute path, but its audio was decoded from the file in the
+    // project's folder: that file is what the saved project points at.
+    let mut project = everything();
+    if let LaneData::Audio(region) = &mut project.contents[1].lanes[0].data {
+        region.file = "Samples/loop.wav".into();
+        region.absolute_file = Some(r"\\server\share\loop.wav".into());
+    }
+    let decoded = std::path::absolute("/songs/old/Samples/loop.wav").unwrap_or_default();
+    let from = decoded.clone();
+    rebase_audio(&mut project, Path::new("/songs/old"), Path::new("/songs/old"), &move |_, _| Some(from.clone()));
+    let LaneData::Audio(region) = &project.contents[1].lanes[0].data else { return };
+    assert_eq!(region.file, "Samples/loop.wav");
+    assert_eq!(region.absolute_file, Some(decoded.display().to_string()));
 }
 
 #[test]
@@ -1064,7 +1121,7 @@ fn an_empty_audio_region_is_left_alone_by_rebase_audio() {
         extensions: Extensions::default(),
         scale: None,
     });
-    rebase_audio(&mut project, Path::new("/nowhere"), Path::new("/elsewhere"));
+    rebase_audio(&mut project, Path::new("/nowhere"), Path::new("/elsewhere"), &|_, _| None);
     let LaneData::Audio(region) = &project.contents[2].lanes[0].data else { return };
     assert_eq!(region.file, "", "the empty clip still names no file");
     assert!(region.absolute_file.is_none(), "no absolute path is invented either: {:?}", region.absolute_file);

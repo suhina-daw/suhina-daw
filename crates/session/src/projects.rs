@@ -933,6 +933,8 @@ impl Projects {
                     folders.push(folder.to_path_buf());
                 }
             }
+            // The devices' files (NAM models and IRs) are the person's choice as well.
+            let files: Vec<PathBuf> = files.into_iter().chain(session.loaded_device_files()).collect();
             if let Err(e) = self.browser.files.trust_audio(files) {
                 suhina_plugins::trace!("trusted audio not kept: {e}");
             }

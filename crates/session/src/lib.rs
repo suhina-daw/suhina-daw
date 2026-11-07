@@ -247,6 +247,9 @@ pub(crate) fn records_audio(track: &suhina_model::Track, channels: &[suhina_mode
 
 /// Files kept decoded ahead of the commands that use them.
 const MAX_DECODED: usize = 16;
+/// A device panel's note for a file the project names outside where its audio may be read from.
+const DEVICE_FILE_OUTSIDE: &str =
+    "the file is outside the project's folder and what Suhina trusts: choose it again to load it";
 
 impl Session {
     /// A session on `project`. Its lanes, clips and scenes without an id get one, so commands can
@@ -413,6 +416,19 @@ impl Session {
     /// `docs/spec/missing-files.md`); the app gives it before the audio is decoded.
     pub fn set_trusted(&mut self, trusted: suhina_media::Trusted) {
         self.audio.trusted = trusted;
+        // The devices' files the old trust left unread may be read now.
+        self.sync_device_files();
+    }
+
+    /// Where the file the project names as `file` (with its `absolute` path) was decoded from:
+    /// what the person loaded in this session, or the path [`suhina_media::locate`] accepts
+    /// from the project's folder and what it trusts, as opening decoded it. `None` for a path
+    /// neither accepts, which is never touched (a network share a project names; #617).
+    pub(crate) fn loaded_path(&self, file: &str, absolute: Option<&str>) -> Option<PathBuf> {
+        if let Some(path) = self.audio.origins.get(file) {
+            return Some(path.clone());
+        }
+        suhina_media::locate(file, absolute, &self.audio_from(), &self.audio.trusted)
     }
 
     pub fn trusted(&self) -> &suhina_media::Trusted {
@@ -432,16 +448,21 @@ impl Session {
         out
     }
 
+    /// The files the project's devices run that are read now (NAM models and IRs), for saving
+    /// them as trusted with the audio.
+    pub(crate) fn loaded_device_files(&self) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> =
+            self.device_files.assets.entries.keys().map(PathBuf::from).filter(|p| p.is_absolute()).collect();
+        out.sort();
+        out
+    }
+
     /// [`Session::loaded_audio_paths`] with the name the clips and devices give each (the key
     /// of its decoded audio), each name once.
     pub(crate) fn loaded_audio(&self) -> Vec<(String, PathBuf)> {
         let loaded = |file: &str| {
             self.audio.pool.files.contains_key(file)
                 || self.audio.pool.files.contains_key(&suhina_model::stream_key(file, 0))
-        };
-        let from = self.audio_from();
-        let path = |file: &str, absolute: Option<&str>| {
-            absolute.map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| from.join(file))
         };
         let mut out: Vec<(String, PathBuf)> = Vec::new();
         let devices = self.project.channels.iter().flat_map(|c| &c.devices);
@@ -455,8 +476,8 @@ impl Session {
         );
         for (file, absolute) in named {
             if loaded(file) && !out.iter().any(|(f, _)| f == file) {
-                let path = path(file, absolute);
-                if path.is_absolute() {
+                // The file that was decoded, not whatever the project's absolute path names.
+                if let Some(path) = self.loaded_path(file, absolute).filter(|p| p.is_absolute()) {
                     out.push((file.to_string(), path));
                 }
             }
@@ -468,6 +489,7 @@ impl Session {
     /// player is started with [`Session::audio`].
     pub fn set_audio(&mut self, audio: suhina_engine::AudioPool) {
         self.audio.pool = audio;
+        self.audio.origins.clear();
         self.audio.changed = true;
     }
 
@@ -500,6 +522,10 @@ impl Session {
     /// Puts audio made by a command (a consolidated range) into the pool under `key`, for the
     /// player to hear with the next edit.
     pub(crate) fn add_audio(&mut self, key: String, data: suhina_engine::AudioData) {
+        // Its key is the file it was written to.
+        if Path::new(&key).is_absolute() {
+            self.audio.origins.insert(key.clone(), PathBuf::from(&key));
+        }
         self.audio.pool.files.insert(key, std::sync::Arc::new(data));
         self.audio.changed = true;
     }
@@ -528,6 +554,7 @@ impl Session {
     /// provided, or decoded now.
     pub(crate) fn decoded_audio(&mut self, path: &Path) -> Result<std::sync::Arc<suhina_engine::AudioData>, String> {
         let key = path.display().to_string();
+        self.audio.origins.insert(key.clone(), path.to_path_buf());
         let data = if let Some(data) = self.audio.pool.files.get(&key) {
             return Ok(std::sync::Arc::clone(data));
         } else if let Some((_, data)) = self.audio.decoded.iter().find(|(k, _)| *k == key) {
@@ -570,6 +597,7 @@ impl Session {
         if all.len() != tracks {
             return Err(format!("{} audio tracks where {tracks} were expected", all.len()));
         }
+        self.audio.origins.insert(file, path.to_path_buf());
         for (key, data) in keys.into_iter().zip(&all) {
             if let std::collections::hash_map::Entry::Vacant(slot) = self.audio.pool.files.entry(key) {
                 slot.insert(std::sync::Arc::clone(data));
@@ -983,7 +1011,7 @@ impl Session {
         }
         let to = path.parent().map_or_else(PathBuf::new, Path::to_path_buf);
         let (mut project, states) = self.heard();
-        suhina_project_file::rebase_audio(&mut project, &self.audio_from(), &to);
+        suhina_project_file::rebase_audio(&mut project, &self.audio_from(), &to, &|f, a| self.loaded_path(f, a));
         suhina_project_file::write_file(&path, &project).map_err(|e| CommandError(e.0))?;
         if !copy {
             self.source = Some(path.clone());
@@ -1000,7 +1028,7 @@ impl Session {
         // busy plug-in on the window's thread at every backup.
         let states = self.plugins.known_states();
         let mut project = self.with_states(&states);
-        suhina_project_file::rebase_audio(&mut project, &self.audio_from(), folder);
+        suhina_project_file::rebase_audio(&mut project, &self.audio_from(), folder, &|f, a| self.loaded_path(f, a));
         project
     }
 
@@ -1246,9 +1274,22 @@ impl Session {
         }
         let mut changed = false;
         for (path, kind) in need.iter() {
+            // A path the project names is not even looked at unless its audio could be read
+            // from there (#617): a network share would be asked for the person's sign-in.
+            if !self.device_file_allowed(path) {
+                self.device_files.modified.remove(path);
+                if self.device_files.assets.entries.remove(path.as_str()).is_some()
+                    || self.device_files.notes.get(path.as_str()).map(String::as_str) != Some(DEVICE_FILE_OUTSIDE)
+                {
+                    self.device_files.notes.insert(path.clone(), DEVICE_FILE_OUTSIDE.to_string());
+                    changed = true;
+                }
+                continue;
+            }
             let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
             if (self.device_files.assets.entries.contains_key(path.as_str())
                 || self.device_files.notes.contains_key(path.as_str()))
+                && self.device_files.modified.contains_key(path)
                 && self.device_files.modified.get(path).and_then(|seen| *seen) == mtime
             {
                 continue;
@@ -1272,11 +1313,20 @@ impl Session {
         }
     }
 
+    /// Whether the device file at `path`, as a project names it, may be read: one the person
+    /// chose in this session, or one at a path [`suhina_media::locate`] accepts for audio (in
+    /// the project's folder, or trusted outside it). Decided before anything on disk is looked at.
+    fn device_file_allowed(&self, path: &str) -> bool {
+        self.device_files.chosen.contains(path)
+            || suhina_media::locate(path, Some(path), &self.audio_from(), &self.audio.trusted).is_some()
+    }
+
     /// What a file-backed device of `kind` runs for the file at `path`, read by the device
     /// through the registry (a model for the Amp Modeler, an IR for the Cab Loader). The reads run
     /// here, at command or project-load time, never on the audio thread. The registry refuses a
-    /// path without the device's extension, so a project's stored path cannot point a device at
-    /// some other file (a UNC path, for one).
+    /// path without the device's extension and this anything but a plain file (a named pipe would
+    /// block the session). Where a project's stored path may point is decided before this
+    /// (`Session::device_file_allowed`): the extension alone does not keep out a network share.
     pub(crate) fn load_device_file(
         &self,
         kind: &str,
@@ -1285,7 +1335,11 @@ impl Session {
         // An IR joins the project at the engine's rate; the session's rate is the player's, or
         // 48 kHz until the first output opens.
         let rate = self.sync.player.as_ref().map_or(48_000, Player::sample_rate);
-        suhina_device_registry::load_file(kind, std::path::Path::new(path), rate)
+        let file = std::path::Path::new(path);
+        if !file.is_file() {
+            return Err(format!("{path} is not a file"));
+        }
+        suhina_device_registry::load_file(kind, file, rate)
     }
 
     /// Lets a playing engine hear the project as it is now, with any audio added to the pool.

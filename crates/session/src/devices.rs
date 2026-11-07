@@ -1111,6 +1111,8 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     let absolute = crate::files::absolute(std::path::Path::new(path));
     let absolute_text = absolute.display().to_string();
     let asset = session.load_device_file(&kind, &absolute_text).map_err(CommandError)?;
+    // The person's own choice: read wherever it is while the session runs.
+    session.device_files.chosen.insert(absolute_text.clone());
     let name = suhina_device_registry::asset_name(&asset, &absolute).unwrap_or_default();
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;

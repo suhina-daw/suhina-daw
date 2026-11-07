@@ -3,6 +3,7 @@
 
 //! [`ProjectAudio`]: a project's decoded audio and where it may be read from (ADR 0011).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -25,4 +26,8 @@ pub(crate) struct ProjectAudio {
     /// saved elsewhere, because the decoded audio is kept under those paths; saving writes them
     /// relative to the new file.
     pub(crate) folder: Option<PathBuf>,
+    /// Where each file decoded after the project opened was read from, by the key its clips and
+    /// devices name: what the person loaded, relinked, recorded or consolidated. A file decoded
+    /// with the project is found again the way it was decoded (`media::locate`).
+    pub(crate) origins: HashMap<String, PathBuf>,
 }

@@ -160,6 +160,12 @@ which run hostile parameter values, hostile buffers, every block size and 8…38
   setting says where they are, and says **Model missing** when it does not
   ([§ States](#states)); joining the missing-files view and relink is later work
   ([§ Limits](#limits)).
+- A project's stored path is read only from where its audio may be
+  ([missing-files.md › Project file boundaries](missing-files.md#project-file-boundaries)): inside
+  the project's folder, or trusted outside it (in the desktop app any local disk). A network share
+  or a device path is not even looked at, and the panel's note says to choose the file again; a
+  file chosen with `device.setNamFile` is read wherever it is, and saving the project trusts it.
+  Only a plain file is read, so a named pipe cannot block the session.
 
 ## Sample rates
 

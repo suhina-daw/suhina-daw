@@ -149,3 +149,13 @@ the CLI and the MCP server any path not trusted. A project that comes from someo
 collaboration, when it arrives) is opened with the stricter rule too.
 Choose such a file through Locate/Apply to use it; saving then trusts it. MCP paths stay
 inside its configured read root.
+
+The same rule holds after opening (#617). Saving, the automatic backup, Collect and save, the
+trust a save keeps and the tempo warp reads all use the file that was decoded: the one the rule
+above found, or the one the person loaded, relinked, recorded or consolidated in the session
+(`Session::loaded_path`). A path nothing was decoded from is never looked at: saving moves its
+relative path by name and keeps its absolute path as the project had it. So a project that names
+a network share, or another file on the disk beside a sample in its folder, cannot get it read,
+copied or trusted by being edited and saved. A NAM model or IR a project names is read only from
+where its audio may be ([nam-amp-and-cab.md](nam-amp-and-cab.md)); one the person chose is read
+wherever it is, and saving trusts it with the audio.
