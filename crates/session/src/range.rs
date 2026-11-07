@@ -13,14 +13,32 @@ use crate::commands::{Args, clip_list, make_room, new_content_id, track_at, trac
 use crate::editing::{content_rate, split};
 use crate::{CommandError, Session};
 
-/// The span a command names: `tracks`, and `start` before `end`, both at least 0.
-fn span(p: &Project, params: &Value) -> Result<(Vec<TrackId>, f64, f64), CommandError> {
+/// The span a command names: `tracks`, `start` before `end`, both at least 0, and the clips it
+/// keeps to.
+fn span(p: &Project, params: &Value) -> Result<(Vec<TrackId>, f64, f64, Only), CommandError> {
     let tracks = track_list(p, params)?;
     let (start, end) = (Args::new(params).f64("start")?, Args::new(params).f64("end")?);
     if !(start >= 0.0 && end > start && end.is_finite()) {
         return Err(format!("start and end must be beats with 0 ≤ start < end, got {start} and {end}").into());
     }
-    Ok((tracks, start, end))
+    Ok((tracks, start, end, Only(Args::new(params).opt_ids("clips")?)))
+}
+
+/// The clips a command acts on: those named in `clips` (one row of a stack, #701), or all.
+#[derive(Debug, Clone, Default)]
+struct Only(Option<Vec<u32>>);
+
+impl Only {
+    fn holds(&self, clip: &Clip) -> bool {
+        self.0.as_ref().is_none_or(|ids| ids.contains(&clip.id.0))
+    }
+
+    /// A part split off a held clip is held too.
+    fn add(&mut self, clip: &Clip) {
+        if let Some(ids) = &mut self.0 {
+            ids.push(clip.id.0);
+        }
+    }
 }
 
 /// The arrangement lane of `track`, made (with an id of its own) when it has none.
@@ -34,16 +52,17 @@ fn lane_of(p: &mut Project, track: TrackId) -> Result<usize, CommandError> {
     Ok(p.arrangement.lanes.len() - 1)
 }
 
-/// Splits every clip of lane `lane` that crosses `at`; each second part is a new clip with an id
-/// of its own (ADR 0025).
-fn split_lane_at(p: &mut Project, lane: usize, at: f64) -> Result<(), CommandError> {
+/// Splits every clip of lane `lane` that `only` holds and that crosses `at`; each second part is
+/// a new clip with an id of its own (ADR 0025), held as its clip was.
+fn split_lane_at(p: &mut Project, lane: usize, at: f64, only: &mut Only) -> Result<(), CommandError> {
     let clips: Vec<Clip> = p.arrangement.lanes.get(lane).map(|l| l.clips.clone()).unwrap_or_default();
     let mut out = Vec::with_capacity(clips.len() + 1);
     for clip in clips {
-        if clip.start + 1e-6 < at && at < clip.start + clip.length - 1e-6 {
+        if only.holds(&clip) && clip.start + 1e-6 < at && at < clip.start + clip.length - 1e-6 {
             let rate = content_rate(p, &clip);
             let (first, mut second) = split(&clip, at, rate);
             second.id = p.new_clip_id()?;
+            only.add(&second);
             out.push(first);
             out.push(second);
         } else {
@@ -57,12 +76,14 @@ fn split_lane_at(p: &mut Project, lane: usize, at: f64) -> Result<(), CommandErr
     Ok(())
 }
 
-/// The clips of the span, each cut to it, with their contents and tracks: what a copy holds.
-fn pieces(p: &Project, tracks: &[TrackId], start: f64, end: f64) -> Vec<(TrackId, Clip, ClipContent)> {
+/// The clips of the span that `only` holds, each cut to it, with their contents and tracks: what
+/// a copy holds.
+fn pieces(p: &Project, tracks: &[TrackId], start: f64, end: f64, only: &Only) -> Vec<(TrackId, Clip, ClipContent)> {
     let mut out = Vec::new();
     for &track in tracks {
         let Some(lane) = p.arrangement.lanes.iter().find(|l| l.track == Some(track)) else { continue };
-        out.extend(lane.clips.iter().filter_map(|c| cut_to_span(p, c, start, end)).map(|(c, cc)| (track, c, cc)));
+        let held = lane.clips.iter().filter(|c| only.holds(c));
+        out.extend(held.filter_map(|c| cut_to_span(p, c, start, end)).map(|(c, cc)| (track, c, cc)));
     }
     out
 }
@@ -130,13 +151,13 @@ fn place(
     Ok(placed)
 }
 
-/// The clips lying inside the span after a split, as `{clip, track, index}`.
-fn inside(p: &Project, tracks: &[TrackId], start: f64, end: f64) -> Vec<Value> {
+/// The clips `only` holds lying inside the span after a split, as `{clip, track, index}`.
+fn inside(p: &Project, tracks: &[TrackId], start: f64, end: f64, only: &Only) -> Vec<Value> {
     let mut out = Vec::new();
     for &track in tracks {
         let Some(lane) = p.arrangement.lanes.iter().find(|l| l.track == Some(track)) else { continue };
         for (index, clip) in lane.clips.iter().enumerate() {
-            if clip.start >= start - 1e-6 && clip.start + clip.length <= end + 1e-6 {
+            if only.holds(clip) && clip.start >= start - 1e-6 && clip.start + clip.length <= end + 1e-6 {
                 out.push(json!({ "clip": clip.id.0, "track": track.0, "index": index }));
             }
         }
@@ -192,7 +213,7 @@ pub(crate) fn insert_time(session: &mut Session, params: &Value) -> Result<Value
     }
     // Clips crossing the start are split there; what starts from it on moves later.
     for lane in 0..p.arrangement.lanes.len() {
-        split_lane_at(p, lane, start)?;
+        split_lane_at(p, lane, start, &mut Only::default())?;
     }
     for clip in p.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
         if after(clip.start) {
@@ -251,27 +272,31 @@ pub(crate) fn insert_time(session: &mut Session, params: &Value) -> Result<Value
 }
 
 pub(crate) fn split_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (tracks, start, end) = span(&session.project, params)?;
+    let (tracks, start, end, mut only) = span(&session.project, params)?;
     let p = &mut session.project;
     for &track in &tracks {
         let Some(lane) = p.arrangement.lanes.iter().position(|l| l.track == Some(track)) else { continue };
-        split_lane_at(p, lane, start)?;
-        split_lane_at(p, lane, end)?;
+        split_lane_at(p, lane, start, &mut only)?;
+        split_lane_at(p, lane, end, &mut only)?;
     }
-    Ok(json!({ "clips": inside(p, &tracks, start, end) }))
+    Ok(json!({ "clips": inside(p, &tracks, start, end, &only) }))
 }
 
-/// `range.delete {tracks, start, end}`: what plays inside the span goes; the clips crossing an
-/// edge keep their parts outside it, and the gap stays.
+/// `range.delete {tracks, start, end, clips?}`: what plays inside the span goes; the clips
+/// crossing an edge keep their parts outside it, and the gap stays.
 pub(crate) fn delete_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (tracks, start, end) = span(&session.project, params)?;
+    let (tracks, start, end, only) = span(&session.project, params)?;
     let p = &mut session.project;
     let mut removed = 0usize;
     for &track in &tracks {
         let Some(lane) = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)) else { continue };
-        let before = lane.clips.len();
-        make_room(&mut lane.clips, start, end);
-        removed += before.saturating_sub(lane.clips.len());
+        let (mut held, others): (Vec<Clip>, Vec<Clip>) = lane.clips.drain(..).partition(|c| only.holds(c));
+        let before = held.len();
+        make_room(&mut held, start, end);
+        removed += before.saturating_sub(held.len());
+        lane.clips = others;
+        lane.clips.append(&mut held);
+        lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     }
     Ok(
         json!({ "start": start, "end": end, "tracks": tracks.iter().map(|t| t.0).collect::<Vec<_>>(), "removed": removed }),
@@ -281,8 +306,8 @@ pub(crate) fn delete_range(session: &mut Session, params: &Value) -> Result<Valu
 /// `range.copy {tracks, start, end}`: copies what plays inside the span, cut to it, for
 /// `clip.paste`; a paste with no track puts each part back on its own track.
 pub(crate) fn copy_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (tracks, start, end) = span(&session.project, params)?;
-    let parts = pieces(&session.project, &tracks, start, end);
+    let (tracks, start, end, only) = span(&session.project, params)?;
+    let parts = pieces(&session.project, &tracks, start, end, &only);
     if parts.is_empty() {
         return Err("nothing plays in the selection".into());
     }
@@ -326,9 +351,9 @@ pub(crate) fn cut_range(session: &mut Session, params: &Value) -> Result<Value, 
 /// `range.duplicate {tracks, start, end, stack?}`: a copy of the span goes right after it, on
 /// the same tracks; answers with the copies.
 pub(crate) fn duplicate_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (tracks, start, end) = span(&session.project, params)?;
+    let (tracks, start, end, only) = span(&session.project, params)?;
     let stack = Args::new(params).flag("stack")?;
-    let parts = pieces(&session.project, &tracks, start, end);
+    let parts = pieces(&session.project, &tracks, start, end, &only);
     if parts.is_empty() {
         return Err("nothing plays in the selection".into());
     }

@@ -912,3 +912,48 @@ fn copies_put_a_line_on_the_system_clipboard() {
     }
     assert_eq!(clipboard_line("automation.paste"), None);
 }
+
+/// A time selection painted in one row of a stack: the edit keys name that row's clips, so
+/// Delete, Cut, Copy, Split, Duplicate and Consolidate leave the other rows be (#701).
+#[test]
+fn the_edit_keys_on_a_row_of_a_stack_keep_to_its_clips() {
+    use suhina_engine::model::{Clip, ContentId, Note};
+    let project = suhina_test_support::ProjectBuilder::from(suhina_session::blank_project())
+        .notes(1, "Riff", 4.0, vec![Note::new(0.0, 4.0, 60, 0.8)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .clip(1, Clip::new(ContentId(1), 2.0, 4.0))
+        .build_without_ids();
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(project), &[]);
+    app.shown = View::Arrangement;
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    let app = harness.state_mut();
+    let lane = app.timeline.as_ref().unwrap().2.lanes.iter().find(|l| l.track == TrackId(1)).unwrap().clone();
+    let upper = lane.clips.iter().find(|c| c.row == 1).expect("a stack of two rows");
+    assert_eq!(upper.rows, 2);
+    use crate::arrangement::arrangement_view::TimeSelection;
+    let span = TimeSelection { tracks: vec![TrackId(1)], start: 2.0, end: 4.0, row: Some((1, 2)) };
+    for (key, command) in [
+        ("selection.delete", "range.delete"),
+        ("selection.cut", "range.cut"),
+        ("selection.copy", "range.copy"),
+        ("selection.split", "range.split"),
+        ("selection.duplicate", "range.duplicate"),
+        ("selection.consolidate", "clip.consolidate"),
+    ] {
+        app.arrangement.set_time_selection(Some(span.clone()));
+        let mut actions = Vec::new();
+        app.do_action(key, &mut actions);
+        let sent = actions.iter().find(|a| a.id == command).unwrap_or_else(|| panic!("{key}: {actions:?}"));
+        assert_eq!(sent.params["clips"], json!([upper.id.0]), "{key}");
+    }
+    // Over the whole track, no clips are named: every row.
+    app.arrangement.set_time_selection(Some(TimeSelection { row: None, ..span }));
+    let mut actions = Vec::new();
+    app.do_action("selection.delete", &mut actions);
+    assert!(actions.iter().any(|a| a.id == "range.delete" && a.params.get("clips").is_none()), "{actions:?}");
+}

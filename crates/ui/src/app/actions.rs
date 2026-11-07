@@ -337,7 +337,13 @@ impl App {
             {
                 let Some(span) = self.arrangement.time_selection().cloned() else { return };
                 let tracks: Vec<u32> = span.tracks.iter().map(|t| t.0).collect();
-                let params = json!({ "tracks": tracks, "start": span.start, "end": span.end });
+                let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
+                // In one row of a stack: that row's clips only, the other rows left be (#701).
+                let in_row = timeline.and_then(|t| span.row_clips(t));
+                let mut params = json!({ "tracks": tracks, "start": span.start, "end": span.end });
+                if let Some(clips) = &in_row {
+                    params["clips"] = json!(clips);
+                }
                 match action {
                     "selection.delete" => actions.push(Action::new("range.delete", params)),
                     "selection.cut" => actions.push(Action::new("range.cut", params)),
@@ -358,28 +364,14 @@ impl App {
                     _ => {
                         // Each track of the span with something in it: the new clip runs over the
                         // whole span, its empty part silent.
-                        let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
                         let playing = |track: u32| {
                             timeline.and_then(|t| t.lanes.iter().find(|l| l.track.0 == track)).is_some_and(|l| {
                                 l.clips.iter().any(|c| c.start < span.end && c.start + c.length > span.start)
                             })
                         };
-                        // In one row of a stack: that row's clips only, the other rows left be.
-                        let in_row = |track: u32| -> Option<Vec<serde_json::Value>> {
-                            let (row, rows) = span.row?;
-                            let lane = timeline?.lanes.iter().find(|l| l.track.0 == track)?;
-                            Some(
-                                lane.clips
-                                    .iter()
-                                    .filter(|c| c.row == row && c.rows == rows)
-                                    .filter(|c| c.start < span.end && c.start + c.length > span.start)
-                                    .map(|c| json!(c.id.0))
-                                    .collect(),
-                            )
-                        };
                         for track in tracks.into_iter().filter(|t| playing(*t)) {
                             let mut params = json!({ "track": track, "start": span.start, "end": span.end });
-                            if let Some(clips) = in_row(track) {
+                            if let Some(clips) = &in_row {
                                 params["clips"] = json!(clips);
                             }
                             actions.push(Action::new("clip.consolidate", params));
