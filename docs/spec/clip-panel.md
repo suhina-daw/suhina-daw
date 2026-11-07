@@ -207,6 +207,11 @@ so the clip is heard as the line is drawn while the button is down (each new lev
 30 ms glide, not a step, which crackled), and the drag's frames are one undo step; a click is one `clip.setEnvelope`. The clip itself is moved by its name bar while
 its envelope is edited. A slot's clip has no waveform there; its envelope is set by command.
 
+The points stay on the sound they were put on. Their beats are the content's, so whatever moves
+the audio against the beats moves them with it: a clip's tempo or a stretch scales them with the
+warp markers, and Warp turned on or off, or the project's tempo under unwarped audio, moves each
+to the beat its second of the file is at now, as the clip's offset, length and loop move.
+
 ## The grey box
 
 Before #1190 every editable value of the column (Loop to Transpose) was filled with the control

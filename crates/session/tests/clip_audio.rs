@@ -102,6 +102,28 @@ fn a_gain_envelope_shapes_one_clip_and_undoes_in_one_step() {
     assert_eq!(clips(&session)[1], b);
 }
 
+/// Warp turned off and on again: the clip's length follows its audio, and so do the envelope's
+/// points, each staying on the sound it was put on, then back on its beat.
+#[test]
+fn envelope_points_follow_the_audio_when_warp_turns_off_and_on() {
+    let dir = TempDir::new("clip-audio-warp-envelope");
+    let mut session = two_clips(&wav(&dir, "pad.wav", 2.0, 0.5));
+    let a = clips(&session)[0].id;
+    run(&mut session, "clip.setTempo", json!({ "clip": a.0, "bpm": 100.0, "source": "manual" })).unwrap();
+    run(&mut session, "clip.setEnvelope", json!({ "clip": a.0, "points": [1.0, 0.0, 2.0, -6.0] })).unwrap();
+    let length = clips(&session)[0].length;
+    run(&mut session, "clip.setAudio", json!({ "clip": a.0, "warp": false })).unwrap();
+    let (clip, after) = (clips(&session)[0].clone(), clips(&session)[0].audio.gain_envelope.clone());
+    // The point moved by as much as the clip's length did.
+    let scale = clip.length / length;
+    assert!((scale - 1.0).abs() > 0.01, "the length changed: {scale}");
+    assert!((after[1].beat - 2.0 * scale).abs() < 1e-6, "{after:?} at {scale}");
+    assert_eq!(after[1].db, -6.0);
+    run(&mut session, "clip.setAudio", json!({ "clip": a.0, "warp": true })).unwrap();
+    let back = clips(&session)[0].audio.gain_envelope.clone();
+    assert!((back[1].beat - 2.0).abs() < 1e-6, "{back:?}");
+}
+
 #[test]
 fn two_envelope_points_in_one_place_are_one_and_a_beat_holds_a_step() {
     let dir = TempDir::new("clip-audio-merge");
