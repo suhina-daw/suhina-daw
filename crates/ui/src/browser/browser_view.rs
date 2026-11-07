@@ -1452,6 +1452,7 @@ fn tags_section(
         if response.drag_started() && rect.intersects(area) {
             state.drag_tag = Some(name.clone());
             state.drag_tag_id = Some(id);
+            suhina_plugins::trace!("tag carry starts {} (id {})", name, id);
         }
         // Dragging items here tags them when they land on a tag's row; a folder's own rows
         // are never a place for the items, and a closed folder says so ([#1254]).
@@ -1824,6 +1825,19 @@ fn tags_section(
     // skipped the event still ends the drag ([#1254] review). Either way — the carry ends
     // on the frame the pointer comes up; nothing fires twice.
     let up = !ui.input(|i| i.pointer.primary_down());
+    if state.drag_tag_id.is_some() {
+        suhina_plugins::trace::state(
+            "tag carry",
+            format!(
+                "armed {} up {} over row {:?} over item {} pill {:?}",
+                state.drag_tag_id.unwrap_or(0),
+                up,
+                state.drop_tag_row,
+                state.drop_item.is_some(),
+                state.drop_pill.as_deref().unwrap_or("")
+            ),
+        );
+    }
     if up && state.drag_tag_id.is_some() && state.drop_item.is_none() {
         if let Some(carried) = state.drag_tag_id {
             let carried_name = state.drag_tag.take().unwrap_or_default();
@@ -1878,6 +1892,7 @@ fn tags_section(
                 1 => out.status = Some(Status::Done(landing)),
                 n => out.status = Some(Status::Done(format!("Moved {n} tags together"))),
             }
+            suhina_plugins::trace!("tag carry of {carried} lands {landed} over {target:?}");
             state.tag_selection.clear();
             state.relist();
         }
