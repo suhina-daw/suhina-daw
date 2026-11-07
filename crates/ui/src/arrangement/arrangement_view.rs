@@ -759,10 +759,25 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         {
             let free = ui.input(|i| i.modifiers.alt);
             state.marker_menu_beat = beat_at(pointer.x, free, state);
+            state.signature_menu_beat = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
         }
         response.context_menu(|ui| {
             if ui.button("Add marker here").clicked() {
                 actions.push(Action::new("marker.add", json!({ "beat": state.marker_menu_beat })));
+                ui.close();
+            }
+            // The time signature from the bar line nearest the click (#1259, #1264): the song's
+            // at bar 1, a change after it.
+            let (bar, current, changed) =
+                crate::arrangement::timeline::bar_line_near(&timeline.meter, state.signature_menu_beat);
+            let shown = bar.saturating_add(1);
+            // At a bar that only inherits its signature, picking that one starts a change there.
+            let same = if changed || shown <= 1 { menus::SameSignature::Nothing } else { menus::SameSignature::Set };
+            ui.menu_button(format!("Time signature from bar {shown}"), |ui| {
+                menus::time_signature_menu(ui, shown, current, same, actions);
+            });
+            if changed && ui.button(format!("Remove the time-signature change at bar {shown}")).clicked() {
+                actions.push(Action::new("timeSignature.delete", json!({ "bar": shown })));
                 ui.close();
             }
             // Empty time as long as the time selection, at its start; what comes after moves
@@ -775,6 +790,38 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 ui.close();
             }
         });
+    }
+    // A time-signature change's line on the ruler drags along it to another bar line; it lands
+    // on the nearest one, in one undo step (#1259).
+    for mark in timeline.marks.iter().filter(|m| m.beat >= first_beat - 1.0 && m.beat <= last_beat + 1.0) {
+        let Some(from) = mark.signature_bar else { continue };
+        let x = x_of(mark.beat).round() + 0.5;
+        let handle = Rect::from_x_y_ranges(egui::Rangef::new(x - 4.0, x + 4.0), ruler.y_range());
+        let shown = u64::from(from) + 1;
+        let response = ui
+            .interact(handle, Id::unique(("time-signature-change", from)), Sense::drag())
+            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Time-signature change at bar {shown}"))
+        });
+        // Only the primary button: a middle-button pan that reaches the ruler moves nothing.
+        let primary = egui::PointerButton::Primary;
+        let Some(pointer) =
+            ui.ctx().pointer_latest_pos().filter(|_| response.dragged_by(primary) || response.drag_stopped_by(primary))
+        else {
+            continue;
+        };
+        let beat = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
+        let (to, _, _) = crate::arrangement::timeline::bar_line_near(&timeline.meter, beat);
+        let to = to.max(1);
+        if response.drag_stopped_by(primary) {
+            if to != from {
+                actions.push(Action::new("timeSignature.move", json!({ "bar": shown, "to": u64::from(to) + 1 })));
+            }
+        } else {
+            let line = x_of(timeline.meter.bar_start(to)).round() + 0.5;
+            ruler_painter.vline(line, ruler.y_range(), Stroke::new(2.0, theme::accent()));
+        }
     }
     loop_brace(ui, timeline, state, actions, loop_row, &x_of);
     marker_flags(ui, timeline, state, actions, marker_row, &x_of);

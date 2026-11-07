@@ -1,6 +1,6 @@
 ---
 description: Tempo and time-signature changes over the song (the tempo map): steps and ramps, bars through signature changes, how the engine converts beats to time, the commands
-read_when: tempo map, tempo change, tempo ramp, time-signature change, meter, bars, beats to samples, beat to frame, tempo.addPoint, timeSignature.add, bar ruler
+read_when: tempo map, tempo change, tempo ramp, time signature, time-signature change, change the time signature, meter, bars, beats to samples, beat to frame, tempo.addPoint, timeSignature.add, transport.setTimeSignature, bar ruler, control bar signature
 type: spec
 status: current
 last_verified: 2026-11-03
@@ -10,6 +10,7 @@ covers:
   - crates/session/src/tempo.rs
   - crates/session/tests/tempo.rs
   - crates/engine/src/tempo_tests.rs
+  - crates/ui/src/arrangement/timeline.rs
 ---
 
 # Tempo map
@@ -23,7 +24,8 @@ covers:
   [`311-tempo.als`](als-corpus.md#arrangement-automation-300314) is the check for the tempo, and
   a time-signature change has no corpus file yet.
 - **Status:** first version, implemented in `crates/model/src/tempo.rs` (the conversion), the
-  engine, the project file, the commands and the Arrangement's bar ruler (issue #402).
+  engine, the project file, the commands and the Arrangement's bar ruler (issue #402); the time
+  signature is edited in the window from the control bar and the ruler (#1259, #1264).
 
 This document describes the behaviour Suhina implements, in Suhina's terms. Where Suhina decides
 something the sources do not settle, the text says so (**Suhina:**).
@@ -163,6 +165,7 @@ not an index into a list.
 | `tempo.addPoint` | `beat` (> 0), `bpm` (20–999), `ramp?` (default false) | adds a change; one of the same kind (step or ramp) already on that beat is replaced |
 | `tempo.movePoint` | `point`, `beat?`, `bpm?`, `ramp?` | changes a point; moved onto a beat with a point of the same kind, it replaces that one |
 | `tempo.deletePoint` | `point` | removes a point |
+| `transport.setTimeSignature` | `numerator` (1–99), `denominator` (1, 2, 4, 8, 16) | sets the start signature, the one of bar 1; the changes keep their bars, so their beats move with the bars before them |
 | `timeSignature.add` | `bar` (≥ 2), `numerator` (1–99), `denominator` (1, 2, 4, 8, 16) | adds a change at the start of the bar; one already there is replaced |
 | `timeSignature.move` | `bar`, `to?`, `numerator?`, `denominator?` | moves a change to bar `to` or changes its signature |
 | `timeSignature.delete` | `bar` | removes the change at that bar |
@@ -182,14 +185,52 @@ by hand opens; a command never writes a value the file reader refuses.
 |---|---|---|
 | Tempo | 20 to 999 bpm (`transport.setTempo`, `tempo.addPoint`, `scene.setTempo`) | 1 to 999 bpm, for the start tempo and every change |
 | Time signature change | numerator 1 to 99, denominator 1, 2, 4, 8 or 16 (`timeSignature.add`) | the same |
-| Start time signature | as a change | numerator 1 to 255, denominator 1, 2, 4, 8 or 16 ([project file](suhina-format.md)) |
+| Start time signature | as a change (`transport.setTimeSignature`) | numerator 1 to 255, denominator 1, 2, 4, 8 or 16 ([project file](suhina-format.md)) |
 | A scene's time signature | numerator 1 to 99, denominator 1, 2, 4, 8 or 16 (`scene.setTimeSignature`) | numerator from 1, denominator 1, 2, 4, 8 or 16 ([project file](suhina-format.md)) |
 
 ## The Arrangement
 
 The bar ruler numbers bars through the meter and marks each change: a tempo change with its bpm
-(with `→` before it for a ramp), a signature change with the new signature. **Suhina:** editing the changes
-in the window comes later; the commands edit them now (MCP and `suhina-cli`).
+(with `→` before it for a ramp), a signature change with the new signature. **Suhina:** tempo
+changes are edited with the commands only so far (MCP and `suhina-cli`); time signatures are
+edited in the window ([Editing in the window](#editing-in-the-window)).
+
+## Editing in the window
+
+Every edit here is one of the commands above and one undo step.
+
+- **The control bar** shows the time signature playing, as it shows the tempo (a launched
+  scene's while it drives the clock), as two numbers that work like the tempo field. Dragging
+  the numerator up or down changes it from 1 to 99; dragging the denominator steps it through
+  1, 2, 4, 8 and 16. The project follows the drag while it moves, so the grids of the
+  Arrangement and the piano roll change with it, and the whole drag is one undo step. Clicked, a
+  number takes the keys: the arrow keys step it, and digits are typed into it. `/`, `-` or Space
+  after the numerator's digits goes on to the denominator, Backspace in an empty denominator
+  goes back to the numerator, and Enter sets what was typed (one number typed sets that number
+  alone). Escape or a click elsewhere drops it. A double-click puts the number clicked back to 4.
+  Picking or typing the project's signature while a launched scene's drives the clock puts the
+  clock back on the map (`transport.followTempoMap`). The chevron at its right, and only the
+  chevron, opens the common signatures to pick (2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 9/8, 12/8, 15/16),
+  the current one ticked. Its width fits the widest signature, 99 / 16, in the font it is drawn
+  with, as the tempo field's fits 999.999, also when a theme makes the font larger. It sets the project's signature in effect at the playhead: the start signature
+  (`transport.setTimeSignature`) before the first change, otherwise the change the playhead is
+  past (`timeSignature.add` at that change's bar, which replaces it). **Suhina:** while a scene's
+  signature drives the clock, the field still edits the project's signature; the edit puts the
+  clock back on the map ([Scenes and the tempo map](#scenes-and-the-tempo-map)), so the field
+  then shows the signature it set.
+- **The ruler's right-click menu** (the bar ruler or the marker row, beside *Add marker here*)
+  has *Time signature from bar N*, with a field for any signature typed as `6/8` (Enter applies
+  it) and the common ones, for the bar line nearest the click as it was, not snapped to the
+  grid: at bar 1 it sets the start signature, after it a change at that bar. At a bar that only
+  inherits its signature, picking that signature starts a change there all the same, so a later
+  edit before it no longer moves it. When a change
+  starts on that bar, *Remove the time-signature change at bar N* deletes it
+  (`timeSignature.delete`).
+- **A signature change's line on the ruler** drags sideways with the primary button; it lands on the bar line nearest
+  the pointer when released (`timeSignature.move`), never on bar 1, and a line in the accent
+  colour shows where while it moves. Released on its own bar, nothing changes.
+- A typed signature outside the ranges is sent to the command as typed, and its error is shown;
+  nothing changes.
 
 ## Live Sets
 
