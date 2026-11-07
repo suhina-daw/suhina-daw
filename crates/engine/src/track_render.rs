@@ -106,6 +106,7 @@ fn alone(project: &Project, track: TrackId) -> Project {
         launcher: Default::default(),
         extensions: Extensions::default(),
         default_scale: None,
+        controller_mappings: Vec::new(),
     }
 }
 

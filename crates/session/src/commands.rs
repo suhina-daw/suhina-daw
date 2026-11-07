@@ -13,9 +13,7 @@ use suhina_model::{
     TrackId,
 };
 
-use crate::{
-    CommandError, Session, device_groups, devices, editing, files, follow, launch, mapping, meters, note_tools, notes,
-};
+use crate::{CommandError, Session, device_groups, devices, editing, files, follow, launch, meters, note_tools, notes};
 
 mod args;
 mod automation;
@@ -24,6 +22,7 @@ mod clip;
 mod device;
 mod history;
 mod launcher;
+mod mapping;
 mod marker;
 mod mixer;
 mod note;
@@ -124,6 +123,7 @@ impl ParamType {
             Self::NameOrNumber => "name or number",
             Self::Item => "index or id",
             Self::Items => "indices or ids",
+            Self::MappingTarget => "mapping target",
             Self::Path(PathKind::File) => "file",
             Self::Path(PathKind::Files) => "files",
             Self::Path(PathKind::Folder) => "folder",
@@ -159,6 +159,7 @@ impl ParamType {
             Self::NameOrNumber => "a name or a number",
             Self::Item => "an index, from 0, or {\"id\": n}",
             Self::Items => "a list of indices, from 0, or {\"id\": n}",
+            Self::MappingTarget => "a target, {\"command\", \"track\", \"scene\"}",
             Self::Path(_) => "a path",
         }
     }
@@ -187,7 +188,7 @@ impl ParamType {
             Self::Tracks | Self::Texts | Self::Integers | Self::Notes | Self::Numbers | Self::Clips => value.is_array(),
             Self::Items => value.is_array(),
             Self::Path(PathKind::Files) => value.is_array(),
-            Self::Range => value.is_object(),
+            Self::Range | Self::MappingTarget => value.is_object(),
         }
     }
 }
@@ -261,6 +262,9 @@ pub enum ParamType {
     Item,
     /// A list of [`ParamType::Item`]s.
     Items,
+    /// What a controller mapping runs: `{ "command", "track", "scene" }`, the command and the
+    /// parameters it fixes (`docs/spec/midi-mapping.md`).
+    MappingTarget,
     /// A place on disk the command reads or writes, as text (a list of them for
     /// [`PathKind::Files`]). An agent's is checked against its roots before the command runs
     /// (`suhina-automation`'s `confine`), by this kind.
@@ -604,7 +608,7 @@ impl<T> CommandSpec<T> {
                 ParamType::DevicePath => json!(["integer", "string", "object"]),
                 ParamType::Item => json!(["integer", "object"]),
                 ParamType::Decibels | ParamType::NameOrNumber => json!(["number", "string"]),
-                ParamType::Range => json!("object"),
+                ParamType::Range | ParamType::MappingTarget => json!("object"),
                 ParamType::Text | ParamType::Path(_) => json!("string"),
             };
             properties.insert(p.name.to_string(), json!({ "type": ty, "description": p.doc }));
@@ -691,6 +695,7 @@ static NAMESPACES: &[&[CommandSpec]] = &[
     range::COMMANDS,
     marker::COMMANDS,
     launcher::COMMANDS,
+    mapping::COMMANDS,
     scene::COMMANDS,
     device::COMMANDS,
     preview::COMMANDS,

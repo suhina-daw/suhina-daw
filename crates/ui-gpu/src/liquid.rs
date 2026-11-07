@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
-use eframe::{egui, egui_wgpu, wgpu};
+use egui_wgpu::wgpu;
 use suhina_ui::kit::liquid::{Backdrop, Provider};
 use wgpu::util::DeviceExt;
 
