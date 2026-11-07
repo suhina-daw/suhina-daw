@@ -21,6 +21,6 @@ pub(crate) struct DeviceFiles {
     pub(crate) modified: HashMap<String, Option<SystemTime>>,
     /// The files the person chose for a device in this session (`device.setNamFile`), which are
     /// read wherever they are; a path the project names is read only from where its audio may
-    /// be (`Session::device_file_allowed`).
+    /// be (`Session::device_file_location`).
     pub(crate) chosen: HashSet<String>,
 }

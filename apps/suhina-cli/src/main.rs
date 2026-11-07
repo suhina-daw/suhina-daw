@@ -151,9 +151,9 @@ fn main() -> ExitCode {
             let result = parse_args(args.get(1..).unwrap_or_default(), command).and_then(|a| match command {
                 Command::Render => render(&a),
                 Command::Play => {
-                    let (project, audio, assets) = load_project(&a)?;
+                    let (project, audio, assets, access) = load_project(&a)?;
                     if a.launcher {
-                        play::launcher(project, &audio, &assets, &a.audio_output)
+                        play::launcher(project, &audio, &assets, access, &a.audio_output)
                     } else {
                         play::play(&project, &audio, &assets, &a.audio_output)
                     }
@@ -343,11 +343,20 @@ fn parse_args(args: &[String], command: Command) -> Result<Args, String> {
     })
 }
 
+/// A project opened to play or render: the project, its decoded audio and devices' files, and
+/// where its files are read from.
+type Loaded = (Project, AudioPool, suhina_engine::DeviceAssets, suhina_session::FileAccess);
+
 /// Opens the project named by the arguments and the audio files it uses, printing warnings, and
 /// applies `--scene`.
-fn load_project(args: &Args) -> Result<(Project, AudioPool, suhina_engine::DeviceAssets), String> {
-    let (project, audio, assets) = match &args.source {
-        Source::Demo => (suhina_session::demo_project(), AudioPool::new(), suhina_engine::DeviceAssets::new()),
+fn load_project(args: &Args) -> Result<Loaded, String> {
+    let (project, audio, assets, access) = match &args.source {
+        Source::Demo => (
+            suhina_session::demo_project(),
+            AudioPool::new(),
+            suhina_engine::DeviceAssets::new(),
+            suhina_session::FileAccess::default(),
+        ),
         Source::Als(path) => {
             // A Suhina project (.suhina) or a Live Set to import.
             // Opened, and its audio trusted, as the window and the MCP server do (#764 › 3).
@@ -365,7 +374,7 @@ fn load_project(args: &Args) -> Result<(Project, AudioPool, suhina_engine::Devic
             if !audio.files.is_empty() {
                 eprintln!("audio: {} files decoded in {:.1} s", audio.files.len(), started.elapsed().as_secs_f64());
             }
-            (session.project().clone(), audio, session.device_assets().clone())
+            (session.project().clone(), audio, session.device_assets().clone(), session.file_access())
         }
     };
     let mut project = match args.scene {
@@ -377,7 +386,7 @@ fn load_project(args: &Args) -> Result<(Project, AudioPool, suhina_engine::Devic
         eprintln!("FM synth: {}", if patch.name().is_empty() { "(no name)".to_string() } else { patch.name() });
         put_fm_synth_on_note_tracks(&mut project, &patch);
     }
-    Ok((project, audio, assets))
+    Ok((project, audio, assets, access))
 }
 
 /// The voice `--fm` asks for: from a DX7 voice or bank file, or the initial voice.
@@ -459,7 +468,7 @@ fn fm_synth(args: &[String]) -> Result<(), String> {
 
 fn render(args: &Args) -> Result<(), String> {
     let path = args.output.as_ref().ok_or("missing --output")?;
-    let (project, audio, assets) = load_project(args)?;
+    let (project, audio, assets, _) = load_project(args)?;
     let mut library = suhina_plugins::library::Library::default();
     let env = suhina_session::PluginEnv::from_library(&mut library);
     if let Some(node) = &args.node {
