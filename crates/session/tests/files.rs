@@ -777,7 +777,7 @@ fn a_shipped_ir_key_loads_the_pack_at_the_rate() {
         json!({ "track": 1, "device": 0, "path": "builtin:nam-cab-loader/Synthetic Cabinet Plain.wav" }),
     )
     .unwrap();
-    assert_eq!(out["name"], "Suhina", "a cab's shown name is its pack's");
+    assert_eq!(out["name"], "Synthetic Cabinet Plain", "a cab's shown name is the IR file's own, never the folder's");
 }
 
 /// `device.setNamFile`: the state keeps what was chosen, and what a project carries. A file

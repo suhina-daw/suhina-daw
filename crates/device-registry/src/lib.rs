@@ -593,7 +593,6 @@ fn read_ir(path: &Path, rate: u32) -> Result<Arc<AssetData>, String> {
     Ok(Arc::new(suhina_device_nam_cab_loader::ir::read(path, rate)?))
 }
 
-<<<<<<< HEAD
 fn read_nam_bytes(bytes: &[u8], rate: u32) -> Result<Arc<AssetData>, String> {
     let model = suhina_device_nam_amp_modeler::model::read_bytes(bytes)?;
     // The same gates as the path form: what the runtime will not run, and a rate the device
@@ -615,13 +614,6 @@ fn ir_name(path: &Path, _data: &AssetData) -> Option<String> {
     // reads the folder, and a file whose name shares its folder's made the two pickers look
     // alike (~issue 1289).
     path.file_stem().map(|stem| stem.to_string_lossy().into_owned())
-=======
-fn ir_name(path: &Path, _data: &AssetData) -> Option<String> {
-    // The file's own name without its extension, never the folder's: the pack row already
-    // reads the folder, and a file whose name shares its folder's made the two pickers look
-    // alike (~issue 1289).
-    path.file_stem().map(|stem| stem.to_string_lossy().into_owned())
->>>>>>> origin/fix/nam-panel-pickers
 }
 
 fn make_cab(data: &AssetData) -> Option<Box<dyn Device>> {
