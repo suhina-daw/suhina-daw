@@ -837,6 +837,38 @@ fn a_stopped_preview_releases_its_note_on_the_frame_the_stop_applies() {
     }
 }
 
+/// Notes added to a held preview in quick succession, so that several arrive before the audio
+/// thread's next block, all reach the plug-in instrument: none is replaced before it started (the
+/// selecting rectangle swept fast over a chord).
+#[test]
+fn held_notes_added_within_one_block_all_reach_the_plug_in() {
+    let p = project(Vec::new(), 8.0, vec![plug(vst3())]);
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    for (key, add) in [(72, false), (76, true), (79, true)] {
+        let notes = crate::preview_notes([(0.0, 0.5, key, 1.0)], 120.0, SR, Some(TrackId(1)), None);
+        if add {
+            controller.preview_note_add(notes, 1.0).unwrap();
+        } else {
+            controller.preview_note_on(notes, 1.0).unwrap();
+        }
+    }
+    blocks(&mut renderer, 8, 512);
+    let seen = seen.lock().unwrap();
+    let on: Vec<u8> =
+        seen.iter().filter_map(|(_, e)| if let NoteEvent::On { key, .. } = e { Some(*key) } else { None }).collect();
+    assert_eq!(on, [72, 76, 79], "{seen:?}");
+}
+
 #[test]
 fn a_plug_in_instrument_is_released_when_the_transport_stops() {
     let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![plug(vst3())]);
