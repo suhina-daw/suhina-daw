@@ -269,6 +269,15 @@ impl Preview {
                     None => return,
                 },
             };
+            // Notes that join a held preview wait for the next block while that preview has notes
+            // not yet started (two arrived in one block): joining replaces the notes to start, and
+            // the earlier ones would never sound.
+            if matches!(command, PreviewCommand::Hold { add: true, .. })
+                && self.notes.as_ref().is_some_and(|play| play.held_only && play.next < play.notes.notes.len())
+            {
+                self.waiting = Some(command);
+                return;
+            }
             if let PreviewCommand::Gain(gain) = command {
                 if let Some(play) = self.sample.as_mut() {
                     play.target = gain;
