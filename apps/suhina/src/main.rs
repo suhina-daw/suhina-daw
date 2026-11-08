@@ -270,7 +270,7 @@ fn main() -> ExitCode {
     // only where a file is missing, never over one ([issue 1279]). The old defaults' contents
     // move into the library first, packs carried whole, and their move lands in the start-up
     // warnings.
-    let old_warnings = pack_materialize::migrate_old_folders(&nam_sounds);
+    let old_warnings = pack_materialize::migrate_old_folders(&nam_base, &nam_sounds);
     pack_materialize::unpack_pack(&nam_sounds);
     if let Some(start_up) = window.start_up.as_mut() {
         start_up.warnings.extend(old_warnings);

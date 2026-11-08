@@ -68,10 +68,13 @@ pub fn unpack_pack(sounds: &Path) -> usize {
 const OLD_DEVICE_FOLDERS: &[(&str, &str)] = &[("nam-amp-modeler", "NAM models"), ("nam-cab-loader", "IRs")];
 
 /// Moves the old defaults' contents into the library's device folders before the pack unpacks:
-/// a pack subfolder moves as a pack, a file moves by its name, and a name the new tree already
-/// holds stays where it is, so nothing is ever overwritten ([issue 1279]). Each moved-empty old
-/// folder is removed; the returned lines go to the start-up warnings.
-pub fn migrate_old_folders(sounds: &Path) -> Vec<String> {
+/// `base` is the library's root (`Documents/Suhina`), `sounds` the NAM sounds under it — the
+/// old folders sit at the root, the device folders under `sounds`. A pack subfolder moves as a
+/// pack, a file moves by its name, and a name the new tree already holds stays where it is, so
+/// nothing is ever overwritten ([issue 1279]). Each moved-empty old folder is removed; the
+/// returned lines go to the start-up warnings.
+pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
+    let debug = std::env::var("SUHINA_PACK_DEBUG").as_deref() == Ok("1");
     let mut warnings = Vec::new();
     for (device, old_name) in OLD_DEVICE_FOLDERS {
         let Some(library_folder) = suhina_device_registry::pack_files_flat()
@@ -80,10 +83,16 @@ pub fn migrate_old_folders(sounds: &Path) -> Vec<String> {
         else {
             continue;
         };
-        let old = sounds.join(old_name);
+        let old = base.join(old_name);
         let fresh = sounds.join(library_folder);
         if !old.is_dir() {
+            if debug {
+                eprintln!("pack migrate: no old {old_name} folder at {old:?}");
+            }
             continue;
+        }
+        if debug {
+            eprintln!("pack migrate: moving {old:?} into {fresh:?}");
         }
         let _ = std::fs::create_dir_all(&fresh);
         let mut moved = 0;
@@ -93,13 +102,22 @@ pub fn migrate_old_folders(sounds: &Path) -> Vec<String> {
             let target = fresh.join(entry.file_name());
             let source = entry.path();
             if move_entry(&source, &target) {
+                if debug {
+                    eprintln!("pack migrate: moved {:?}", entry.file_name());
+                }
                 moved += 1;
             } else {
+                if debug {
+                    eprintln!("pack migrate: kept {:?} where it is (its name is in the new tree)", entry.file_name());
+                }
                 kept += 1;
             }
         }
         if old.is_dir() && is_empty(&old) {
             let _ = std::fs::remove_dir(&old);
+            if debug {
+                eprintln!("pack migrate: removed the emptied old folder {old:?}");
+            }
         }
         match (moved, kept) {
             (0, 0) => {}
@@ -196,7 +214,7 @@ mod tests {
         std::fs::create_dir_all(&old_irs).unwrap();
         std::fs::write(old_irs.join("Dark.wav"), b"three").unwrap();
 
-        let warnings = migrate_old_folders(&dir);
+        let warnings = migrate_old_folders(&dir, &dir);
         assert_eq!(warnings.len(), 2, "{warnings:?}");
         assert!(warnings.iter().all(|line| line.contains("moved into the library")));
 
@@ -222,7 +240,7 @@ mod tests {
         std::fs::create_dir_all(&models).unwrap();
         std::fs::write(models.join("Clash.nam"), b"the new bytes").unwrap();
 
-        let warnings = migrate_old_folders(&dir);
+        let warnings = migrate_old_folders(&dir, &dir);
         assert_eq!(std::fs::read(models.join("Clash.nam")).unwrap(), b"the new bytes", "overwritten");
         assert_eq!(std::fs::read(old_models.join("Clash.nam")).unwrap(), b"the old bytes", "moved over");
         assert!(old_models.exists(), "a folder with leftovers is not removed");
@@ -242,7 +260,7 @@ mod tests {
             std::fs::create_dir_all(&folder).unwrap();
             std::fs::write(folder.join(name), bytes).unwrap();
         }
-        migrate_old_folders(&dir);
+        migrate_old_folders(&dir, &dir);
         let written = unpack_pack(&dir);
         assert_eq!(written, 0, "the move carries the pack: the unpack writes nothing over it");
         let _ = std::fs::remove_dir_all(&dir);
