@@ -261,6 +261,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_INDEX,
             CLIP_SCENE,
             NOTE_SELECTION,
+            REPLACE,
             optional(
                 "root",
                 ParamType::NameOrNumber,
@@ -279,7 +280,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.invert",
         label: "Mirror the keys of notes of a MIDI clip around the middle of the range they cover, each kept within 0 to 127",
-        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE],
         kind: CommandKind::EDIT,
         run: note_tools::invert,
         policy: Policy::DEFAULT,
@@ -287,7 +288,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.reverse",
         label: "Turn notes of a MIDI clip round in time inside their own span (the earliest start to the latest end), lengths unchanged",
-        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE],
         kind: CommandKind::EDIT,
         run: note_tools::reverse,
         policy: Policy::DEFAULT,
@@ -322,6 +323,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_SCENE,
             NOTE_SELECTION,
             param("factor", ParamType::Number, "how much longer or shorter, 0.01 to 100"),
+            REPLACE,
         ],
         kind: CommandKind::EDIT,
         run: note_tools::stretch,

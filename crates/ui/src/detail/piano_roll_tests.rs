@@ -315,10 +315,7 @@ fn a_note_off_the_grid_drags_magnetically() {
     // A sixteenth grid in 4/4.
     let grid = TimelineGrid { step: 0.25, bar_beats: 4.0, snaps: true };
     let notes = &c.notes;
-    let moved = |raw: f64| {
-        let (stepped, _) = move_delta(raw, 0, notes, grid, false);
-        edits::magnetic(1.03, raw, stepped, notes, grid)
-    };
+    let moved = |raw: f64| edits::magnetic(1.03, raw, notes, grid);
     // Before the first line (1.25) it moves freely.
     assert!((moved(0.1) - 0.1).abs() < 1e-9);
     // Past it, near a line it lands on the line.
@@ -329,8 +326,14 @@ fn a_note_off_the_grid_drags_magnetically() {
     assert!((moved(-0.04) + 0.03).abs() < 1e-9, "onto 1.0: {}", moved(-0.04));
     // A note on the grid goes by whole steps.
     let on = clip(vec![note(1.0, 1.0, 60)]);
-    let (stepped, _) = move_delta(0.3, 0, &on.notes, grid, false);
-    assert_eq!(edits::magnetic(1.0, 0.3, stepped, &on.notes, grid), 0.25);
+    assert_eq!(edits::magnetic(1.0, 0.3, &on.notes, grid), 0.25);
+    // The end of an off-grid note is dragged the same way: free, then onto a line or its offset.
+    let humanised = note(1.0, 1.03, 60);
+    assert!((resize_by(0.1, &humanised, &[humanised], grid, false) - 0.1).abs() < 1e-9, "free first");
+    assert!((resize_by(0.225, &humanised, &[humanised], grid, false) - 0.22).abs() < 1e-9, "onto 2.25");
+    // And its start.
+    let late = note(1.03, 1.0, 60);
+    assert!((start_by(-0.04, &late, &[late], grid, false) + 0.03).abs() < 1e-9, "onto 1.0");
 }
 
 #[test]

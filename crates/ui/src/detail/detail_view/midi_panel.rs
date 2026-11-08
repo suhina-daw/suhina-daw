@@ -280,13 +280,15 @@ fn notes_tab(
                 continue;
             }
             let mut params = tools.params();
+            // With stacked notes off, every tool's notes replace what they land on (› Allow
+            // stacked notes), as a move's do.
+            state.replacing(&mut params);
             let id = match name {
                 "Fit to scale" => "note.fitToScale",
                 "Invert" => "note.invert",
                 "Reverse" => "note.reverse",
                 "Legato" => {
                     params["until"] = json!(tools.legato_until(state.span_end()));
-                    state.replacing(&mut params);
                     "note.legato"
                 }
                 "×2" => {

@@ -133,7 +133,7 @@ const NEAR_COLOR: i32 = 120;
 /// lengths: the end on the grid unless `free`, and no note shorter than [`MIN_LENGTH`].
 pub fn resize_by(raw: f64, grabbed: &Note, resized: &[Note], grid: TimelineGrid, free: bool) -> f64 {
     let end = grabbed.time + grabbed.duration;
-    let mut new_end = grid.place(end + raw, free, false);
+    let mut new_end = end + magnetic_by(end, raw, grid, free);
     if grid.snaps && !free && new_end <= grabbed.time + EPSILON {
         // Snapped onto or before its start: the end goes to the first line after the start.
         new_end = grid.next_line(grabbed.time);
@@ -143,6 +143,34 @@ pub fn resize_by(raw: f64, grabbed: &Note, resized: &[Note], grid: TimelineGrid,
     let by = if shortest.is_finite() { by.max(MIN_LENGTH - shortest) } else { by };
     if by.is_finite() { by } else { 0.0 }
 }
+
+/// How far a drag of `raw` beats takes a start or an end at `from`, the grid snapping
+/// magnetically (› Moving, › Resizing): one on the grid goes to the grid line nearest to where
+/// the pointer is. One off the grid (played in, or humanised) moves freely until it reaches the
+/// first grid line, and from there snaps to whichever is nearer: a grid line, or its own offset
+/// from the grid a whole number of steps away; so it can be put back on the grid by dragging, or
+/// moved keeping its feel. `raw` itself with `free` (Alt held) or a grid that does not snap. The
+/// one rule for a note's move, its copy and the drags of its start and its end.
+pub(crate) fn magnetic_by(from: f64, raw: f64, grid: TimelineGrid, free: bool) -> f64 {
+    if free || !grid.snaps || !raw.is_finite() || !from.is_finite() || raw == 0.0 {
+        return raw;
+    }
+    let target = from + raw;
+    let line = grid.place(target, false, false) - from;
+    if (grid.place(from, false, false) - from).abs() < ON_GRID {
+        return line;
+    }
+    let first = if raw > 0.0 { grid.next_line(from) } else { grid.previous_line(from) };
+    let reached = if raw > 0.0 { target >= first } else { target <= first };
+    if !reached {
+        return raw;
+    }
+    let offset = (raw / grid.step).round() * grid.step;
+    if (line - raw).abs() <= (offset - raw).abs() { line } else { offset }
+}
+
+/// How close to a grid line a start or an end counts as on it, in beats.
+const ON_GRID: f64 = 1e-6;
 
 /// The note at `pos`, the topmost (latest) first, and which part of it `pos` is on.
 pub(super) fn note_at(layout: &Layout, notes: &[Note], pos: Pos2) -> Option<(usize, Part)> {

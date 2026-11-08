@@ -629,15 +629,17 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   step. One `note.resize` with `lengths`, one undo step; with snapping off, a whole step either way.
   With **Alt** held too, the end goes a 1/128 note either way, off the grid, under the same limits.
 - **Built ([#1113](https://github.com/suhina-daw/suhina-daw/issues/1113)):** with **Allow stacked
-  notes** off (the default), a note drawn, moved, resized, pasted, duplicated, quantised or made
-  legato replaces the notes of its key under it: a note it covers whole is removed, one that starts
+  notes** off (the default), a note drawn, moved, copied, resized, pasted, duplicated, quantised,
+  transposed, made legato, fitted to the scale, inverted, reversed or stretched (×2, ÷2) replaces
+  the notes of its key under it: a note it covers whole is removed, one that starts
   before it ends where it starts, and one that runs on past it starts where it ends. A paint stroke
   paints only the gaps: it adds nothing that would start inside a note. On, notes of a key may overlap. The commands take this as `replace`, so the CLI and MCP choose too; left out,
   notes may overlap.
 - **Built ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** the pointer over the
   first few pixels of a note shows a resize cursor too; dragging there moves the start of every
   selected note by the same amount and keeps each end. The dragged note's start snaps to the grid
-  (Alt: freely); dragged onto or past its end it goes to the last grid line before the end. No
+  as a move does (magnetically: one off the grid moves freely to the first line, then to a line or
+  its own offset; Alt: freely); dragged onto or past its end it goes to the last grid line before the end. No
   start goes before beat 0 and no note gets shorter than a hundredth of a beat, for the whole
   selection. Letting go is one `note.resize` with `startBy`, one undo step. Each edge zone is
   5 px, at most a third of the note's width, so a small note keeps a middle that moves it.
@@ -999,7 +1001,7 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Click, Shift+click, Ctrl+click | Selects a note, adds or takes it out of the selection (a note not selected is selected as the button goes down; a selected note keeps the selection until the click ends, so it can be dragged) |
 | Drag from an empty spot | Selects the notes in the rectangle |
 | Drag a note | Moves the selection (time snapped by grid steps; a grabbed note off the grid moves freely to the first grid line, then snaps to a line or to its own offset from the grid, whichever is nearer, so it can be put back on the grid; pitch by semitones; folded, each note by the same number of shown rows from its own key, so none lands on a hidden key) |
-| Drag a note's right edge | Changes the selection's length |
+| Drag a note's right edge | Changes the selection's length (the grabbed end snaps as a move does: magnetically when it is off the grid) |
 | Drag a note's left edge | Moves the selection's starts, keeping their ends |
 | Ctrl+drag a note (Cmd on macOS) | Copies the selection to where it is let go (folded, each copy by the same number of shown rows from its note's key, as a move) |
 | Alt+drag a note up, down | Changes the selection's velocity (Alt held at the start) |
