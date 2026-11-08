@@ -149,16 +149,15 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
    [#443](https://github.com/suhina-daw/suhina-daw/issues/443) and
    [#460](https://github.com/suhina-daw/suhina-daw/issues/460)): the tools, then the note
    clipboard, then the note tools' toggle and the **Audition** button, then the
-   **workflow menu** (› Workflow modes), the **ghost menu** (› Ghost notes) and the **Scale
-   menu** (› Scale and key, [#347](https://github.com/suhina-daw/suhina-daw/issues/347)), and at
-   the right end the piano roll's grid
-   value (› Grid and snapping), and after it, at the very end, the **×** that hides the editor
-   (› Least height and closing). Each of the three menus takes the width its button needs, so the
-   next starts right after it. A menu is shown only while there is room for it with the grid value
-   still after it, and is left out otherwise; the grid value's **Grid** caption is left out first
-   when the Scale menu needs the room (at 1280 px with the browser closed and the note tools
-   shown, all three menus and the grid value show, without the caption). **Later:** tabs for Notes,
-   Envelopes and Expression.
+   words **Fold**, **Scale** (Fold to scale) and **Highlight** (› Scale and key,
+   [#347](https://github.com/suhina-daw/suhina-daw/issues/347)), then the **workflow menu**
+   (› Workflow modes) and the **ghost menu** (› Ghost notes), and at the right end the piano roll's
+   grid value (› Grid and snapping), and after it, at the very end, the **×** that hides the editor
+   (› Least height and closing). The words come before the menus so they stay in sight: each word
+   and each menu takes the width it needs, so the next starts right after it, and each is shown
+   only while there is room for it with the grid value still after it, left out otherwise; the
+   grid value's **Grid** caption is left out first when they need the room. **Later:** tabs for
+   Notes, Envelopes and Expression.
 
    The tools are **Select**, **Draw**, **Paint**, **Erase**, **Slice** and **Mute** (› Drawing
    notes, › Muting), each an
@@ -410,12 +409,12 @@ pull up.
   the end of the part it plays), both within the zoom range and leaving the key rows as they are.
   Both keys work after a click in the piano roll (`pianoRoll.zoomSelection`, `pianoRoll.zoomClip`)
   and change the view only, not the project.
-- **Built ([#347](https://github.com/suhina-daw/suhina-daw/issues/347)):** **Fold** and **Fold
-  to scale**, in the Scale menu (› Scale and key), show fewer key rows. Fold shows only the keys
-  that have notes in the clip (every key while it has none); Fold to scale shows the keys of the
-  clip's scale and any key that has a note, so no note is ever hidden (greyed out while the clip
-  has no scale). The two are one choice: picking one turns the other off, picking the ticked one
-  again shows every key. The rows sit one under the other with no gap for the keys left out, and
+- **Built ([#347](https://github.com/suhina-daw/suhina-daw/issues/347)):** **Fold** and
+  **Scale** (Fold to scale), words in the toolbar (› Layout, › Scale and key), show fewer key rows.
+  Fold shows only the keys that have notes in the clip (every key while it has none); Fold to scale
+  shows the keys of the clip's scale and any key that has a note, so no note is ever hidden (greyed
+  out while the clip has no scale). Each is lit while on; the two are one choice: turning one on
+  turns the other off, a click on the lit one shows every key again. The rows sit one under the other with no gap for the keys left out, and
   every row of the key column is named while folded, since the keys beside each other are no
   longer neighbours. Everything that turns a height into a key goes through the rows shown: a
   click or double-click lands on the row's key, painting and the key column play and select that
@@ -603,6 +602,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   (Shift and the arrows, a drag of an edge, quantise, ×2), an end that was on the notes' start or
   end stays on it, and the stretch grows to keep them all in, so the bar goes on showing them. A
   stretch with no notes selected stays where it is when the notes that start in it change length.
+  It always holds the notes selected with it: one that misses them all takes their extent.
 - **Built:** the selection lives in the window only; it is not part of the project and is not an
   undo step. It is cleared when another clip is shown.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344)):** while the piano roll has
@@ -619,7 +619,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **Built:** dragging a selected note (or any note, which selects it first unless it is already in
   the selection) moves the whole selection: sideways in time, snapped by whole grid steps (Alt:
   freely), up and down by semitones. The notes are shown where they go while dragging; the move is
-  one command, one undo step, when the mouse is let go. A move that would put a note before the
+  one command, one undo step, when the mouse is let go. **Ctrl** (Cmd on macOS) pressed or let go
+  during the drag switches between moving and copying (the notes stay where they were while it is
+  held, and the pointer shows the copy cursor): what it is when the button is let go decides. A move that would put a note before the
   content's start or outside keys 0 to 127 stops at that limit, for the whole selection, so the
   selection keeps its shape.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344)):** while the piano roll has
@@ -858,13 +860,17 @@ scale: a root (C to B) and a mode: major, minor, harmonic minor, melodic minor, 
 belongs to the clip's content ([ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment:
 clip scales) and is saved with the project; a clip has none until one is set.
 
-- **The Scale menu** in the toolbar, after the ghost menu (› Layout), reads **Scale**, dimmed while
-  the clip has none; its accessible label and its tooltip name the scale ("Scale D dorian", or
-  "Scale off"). Its entries: **Off**; a **Root** submenu ("Root: D") with the twelve roots; a
-  **Mode** submenu ("Mode: Dorian") with the modes; then **Fold** and **Fold to scale** (› Zoom and
-  scroll). The chosen ones are ticked. Off, a root and a mode each run `clip.setScale`, one undo
-  step (Ctrl+Z takes it back): a root keeps the mode the clip has (major when it has none), a mode
-  keeps the root (C when it has none).
+- **The clip panel's Scale row** (› Clip column, `docs/spec/clip-panel.md`) sets it: a switch (a
+  little keyboard, lit while the clip has a scale; "Scale switch: On"), the **root** and the
+  **mode**, each a list. Off, the root and the mode show the scale the switch turns on: the one the
+  clip had when it was switched off (kept while Suhina is open), or Settings › Clip editor ›
+  **Default scale** (C major unless changed). The switch, a root and a mode each run
+  `clip.setScale`, one undo step (Ctrl+Z takes it back); a root or a mode picked while off turns
+  the scale on with it.
+- **The toolbar's words** (› Layout): **Fold** and **Scale** (Fold to scale, › Zoom and scroll)
+  and **Highlight** (Highlight scale), each lit while on. Highlight, on unless turned off, tints
+  the rows of the scale and marks its keys as below; off, the rows look as without a scale, while
+  the scale still folds rows, fits notes and names the key column's rows. It is kept in Settings.
 - **The rows of the keys in the scale are tinted with the clip's colour** (8 % of it over the
   dark rows, the root's 14 %), in place of the white-key and black-key rows a clip without a scale
   shows, and the other rows stay dark; each key in the scale
@@ -877,7 +883,8 @@ clip scales) and is saved with the project; a clip has none until one is set.
 - **The project's default scale** (`project.setDefaultScale`, also in `project.info`) is the
   scale a new MIDI clip takes: one `clip.create` makes, a recorded take and a MIDI file dropped
   on a track. Clips that exist keep theirs; a new audio clip has none. There is no control for it
-  in the window yet; agents and the CLI set it.
+  in the window yet; agents and the CLI set it. Settings' **Default scale** is apart from it: it is
+  only what a clip's switch turns on.
 - **Fit to scale** (`note.fitToScale`, › Note tools) fits to the clip's own scale when the
   call names neither a root nor a scale; the Notes tab's button fits to the clip's scale, and for
   a clip with none sets one first (the panel's Scale sets it too, › Clip column).
@@ -1041,7 +1048,7 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Drag a note | Moves the selection (time snapped by grid steps; a grabbed note off the grid moves freely to the first grid line, then snaps to a line or to its own offset from the grid, whichever is nearer, so it can be put back on the grid; pitch by semitones; folded, each note by the same number of shown rows from its own key, so none lands on a hidden key) |
 | Drag a note's right edge | Changes the selection's length (the grabbed end snaps as a move does: magnetically when it is off the grid) |
 | Drag a note's left edge | Moves the selection's starts, keeping their ends |
-| Ctrl+drag a note (Cmd on macOS) | Copies the selection to where it is let go (folded, each copy by the same number of shown rows from its note's key, as a move) |
+| Ctrl+drag a note (Cmd on macOS) | Copies the selection to where it is let go (folded, each copy by the same number of shown rows from its note's key, as a move); Ctrl pressed or let go during a drag switches between moving and copying |
 | Alt+drag a note up, down | Changes the selection's velocity (Alt held at the start) |
 | Alt while drawing, or pressed during a drag | No snapping |
 | Ctrl+1, Ctrl+2 | Makes the grid finer, coarser (Narrow grid, Widen grid; after a click in the piano roll) |

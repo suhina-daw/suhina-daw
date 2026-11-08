@@ -2691,6 +2691,11 @@ impl App {
         self.piano_roll.key_style = self.settings.piano_key_style;
         self.piano_roll.key_names = self.settings.piano_key_names;
         crate::detail::piano_roll::set_note_spelling(self.settings.note_spelling);
+        crate::detail::piano_roll::set_default_scale(
+            self.settings.default_scale_root,
+            self.settings.default_scale_mode,
+        );
+        self.piano_roll.highlight_scale = self.settings.highlight_scale;
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;

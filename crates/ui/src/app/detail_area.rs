@@ -752,6 +752,7 @@ impl App {
                 piano_roll::ViewPick::KeyStyle(style) => self.settings.piano_key_style = style,
                 piano_roll::ViewPick::KeyNames(names) => self.settings.piano_key_names = names,
                 piano_roll::ViewPick::AllowStacked(on) => self.settings.view.notes_replace = !on,
+                piano_roll::ViewPick::HighlightScale(on) => self.settings.highlight_scale = on,
             }
             self.settings_changed = true;
         }

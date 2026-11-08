@@ -121,6 +121,22 @@ pub fn set_note_spelling(spelling: crate::settings::NoteSpelling) {
     SPELLING.with(|s| s.set(spelling));
 }
 
+thread_local! {
+    /// The scale a clip's Scale switch turns on when the clip has none of its own (the setting).
+    static DEFAULT_SCALE: std::cell::Cell<(u8, suhina_engine::model::ScaleMode)> =
+        const { std::cell::Cell::new((0, suhina_engine::model::ScaleMode::Major)) };
+}
+
+/// The Settings' *Default scale*, given each frame: its root (0 is C) and its mode.
+pub fn set_default_scale(root: u8, mode: suhina_engine::model::ScaleMode) {
+    DEFAULT_SCALE.with(|s| s.set((root % 12, mode)));
+}
+
+/// The scale a clip's Scale switch turns on when the clip has none of its own.
+pub fn default_scale() -> (u8, suhina_engine::model::ScaleMode) {
+    DEFAULT_SCALE.with(std::cell::Cell::get)
+}
+
 /// The name of pitch class `class` (0 is C), as a sharp or a flat by the setting.
 pub fn pitch_class_name(class: u8) -> &'static str {
     let names = match SPELLING.with(std::cell::Cell::get) {
@@ -610,6 +626,11 @@ pub fn show(
     let stopped = response.drag_stopped_by(PointerButton::Primary)
         || response.drag_stopped_by(PointerButton::Secondary)
         || lane_response.as_ref().is_some_and(|r| r.drag_stopped_by(PointerButton::Primary));
+    // Ctrl (Cmd) pressed or let go while notes are dragged switches between moving and copying
+    // them; what it is when the button is let go decides (› Moving).
+    if dragging && let Some(Gesture::Move { copy, .. }) = &mut state.gesture {
+        *copy = inputs.command;
+    }
     if dragging && let Some(now) = now {
         match state.gesture {
             Some(Gesture::Paint) => paint(state, &layout, clip, now),

@@ -254,11 +254,13 @@ pub(super) fn draw(
             Pos2::new(layout.grid.left(), top),
             Pos2::new(layout.grid.right(), top + layout.key_height),
         );
-        // With a scale, its keys are lighter; without one, the white keys are (› Scale and key).
+        // With a scale highlighted, its keys are lighter; without one, the white keys are
+        // (› Scale and key).
         let own = if is_black(key) { black_row_style.background } else { row_style.background };
-        let fill = match (clip.scale, own) {
+        let highlighted = clip.scale.filter(|_| state.highlight_scale);
+        let fill = match (highlighted, own) {
             (None, Some(own)) => own,
-            _ => scale_view::row_fill(clip.scale, key, is_black(key), clip.color),
+            _ => scale_view::row_fill(highlighted, key, is_black(key), clip.color),
         };
         grid_painter.fill_background(row, 0.0, fill);
         // The row under the pointer, so it can be followed to the strip that names it.

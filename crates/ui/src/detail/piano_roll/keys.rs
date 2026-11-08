@@ -31,6 +31,8 @@ const RANGE_TINT: f32 = 0.11;
 pub enum ViewPick {
     KeyStyle(PianoKeyStyle),
     KeyNames(PianoKeyNames),
+    /// Whether the rows of the clip's scale are tinted (the toolbar's Highlight).
+    HighlightScale(bool),
     /// Whether notes of one key may overlap.
     AllowStacked(bool),
 }
@@ -362,7 +364,7 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
                 key_painter.hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, colours.line));
             }
         }
-        scale_view::key_mark(&key_painter, clip.scale, key, row, colours.scale);
+        scale_view::key_mark(&key_painter, clip.scale.filter(|_| state.highlight_scale), key, row, colours.scale);
         if named(key, state.key_names, folded, layout.key_height) {
             let right = if black && !folded { black_right - BLACK_NAME_INSET } else { row.right() - NAME_INSET };
             key_painter.text(

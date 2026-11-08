@@ -1351,15 +1351,17 @@ fn the_panels_fields_do_not_touch() {
     assert!(mode.top() - warp.bottom() >= 4.0, "{warp:?} {mode:?}");
 }
 
-/// The scale's root and mode are lists under their fields; a pick sets the clip's scale.
+/// The scale: a switch, then its root and mode as lists under their fields. Off, the fields show
+/// the scale the switch turns on (the default, C major); a pick turns the scale on with it.
 #[test]
-fn the_scale_is_picked_from_lists_under_its_fields() {
+fn the_scale_is_switched_and_picked_from_lists_under_its_fields() {
     use egui_kittest::kittest::Queryable;
     let (detail, beat_b) = audio_detail(AudioPanel::default(), 0.0, 0.0);
     // Tall enough for the list to open under its field (with no room it opens over it).
     let mut harness = panel_harness_tall(detail, 600.0);
-    let field = harness.get_by_label("Scale: None").rect();
-    harness.get_by_label("Scale: None").click();
+    assert!(harness.query_by_label("Scale switch: Off").is_some());
+    let field = harness.get_by_label("Scale mode: Major").rect();
+    harness.get_by_label("Scale mode: Major").click();
     harness.run();
     let minor = harness.get_by_label("Minor").rect();
     assert!(
@@ -1368,14 +1370,18 @@ fn the_scale_is_picked_from_lists_under_its_fields() {
     );
     harness.get_by_label("Minor").click();
     harness.run();
-    harness.get_by_label("Scale root: —").click();
+    harness.get_by_label("Scale root: C").click();
     harness.run();
-    harness.get_by_label("F#/Gb").click();
+    harness.get_by_label("F#").click();
+    harness.run();
+    harness.get_by_label("Scale switch: Off").click();
     harness.run();
     let actions = harness.state();
-    assert_eq!(actions.len(), 2, "{actions:?}");
-    assert_eq!((actions[0].id, &actions[0].params["mode"]), ("clip.setScale", &json!("minor")));
-    assert_eq!((actions[1].id, &actions[1].params["root"]), ("clip.setScale", &json!("F#")));
+    assert_eq!(actions.len(), 3, "{actions:?}");
+    let set = |i: usize| (actions[i].id, actions[i].params["root"].clone(), actions[i].params["mode"].clone());
+    assert_eq!(set(0), ("clip.setScale", json!("C"), json!("minor")));
+    assert_eq!(set(1), ("clip.setScale", json!("F#"), json!("major")));
+    assert_eq!(set(2), ("clip.setScale", json!("C"), json!("major")), "the switch turns on the default");
     assert!(actions.iter().all(|a| a.params["clip"] == json!(beat_b.0)));
 }
 
@@ -1536,7 +1542,7 @@ fn the_midi_panels_tabs_run_the_note_tools() {
     assert!(harness.query_by_label("Selection").is_some(), "the chip says what the tools act on");
     assert!(harness.query_by_label("2 of 4").is_some(), "and how many");
     // The figures are under the Clip part, the tools beside them.
-    let scale = harness.get_by_label_contains("Scale: ").rect();
+    let scale = harness.get_by_label_contains("Scale mode: ").rect();
     let chip = harness.get_by_label("Selection").rect();
     let reverse = harness.get_by_label("Reverse").rect();
     assert!(chip.top() >= scale.bottom() && chip.right() <= reverse.left(), "{scale:?} {chip:?} {reverse:?}");
@@ -1596,7 +1602,7 @@ fn fit_to_scale_uses_the_clips_scale() {
     use egui_kittest::kittest::Queryable;
     let scale = suhina_engine::model::Scale::new(2, suhina_engine::model::ScaleMode::Minor);
     let mut harness = midi_harness(scale, &[], egui::vec2(1000.0, 260.0), false);
-    assert!(harness.query_by_label("Scale: Minor").is_some(), "the Clip part shows the scale");
+    assert!(harness.query_by_label("Scale mode: Minor").is_some(), "the Clip part shows the scale");
     harness.get_by_label("Fit to scale").click();
     harness.run();
     let fit = harness.state().0.last().cloned();
@@ -1610,7 +1616,7 @@ fn fit_to_scale_uses_the_clips_scale() {
 fn a_stacked_midi_panel_puts_the_tools_under_the_clip_part() {
     use egui_kittest::kittest::Queryable;
     let harness = midi_harness(None, &[], egui::vec2(260.0, 700.0), true);
-    let scale = harness.get_by_label("Scale: None").rect();
+    let scale = harness.get_by_label("Scale mode: Major").rect();
     let head = harness.get_by_label("Whole clip").rect();
     assert!(head.top() >= scale.bottom(), "{scale:?} {head:?}");
     assert!(harness.query_by_label("Fit to scale").is_some());

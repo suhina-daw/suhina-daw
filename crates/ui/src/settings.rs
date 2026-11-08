@@ -439,6 +439,12 @@ pub struct Settings {
     pub piano_key_names: PianoKeyNames,
     /// Whether black keys are named as sharps or flats, wherever a note or a scale's root is named.
     pub note_spelling: NoteSpelling,
+    /// The scale a clip's Scale switch turns on when the clip has none of its own: its root (0 is
+    /// C) and its mode (Settings › Clip editor › Default scale).
+    pub default_scale_root: u8,
+    pub default_scale_mode: suhina_engine::model::ScaleMode,
+    /// Whether the piano roll tints the rows of the clip's scale (the toolbar's Highlight).
+    pub highlight_scale: bool,
     /// A track's volume and pan as a field or as a knob (Settings › Launcher and mixer).
     pub mixer_controls: MixerControls,
     /// Where plug-in editors open.
@@ -557,6 +563,9 @@ impl Default for Settings {
             piano_key_style: PianoKeyStyle::default(),
             piano_key_names: PianoKeyNames::default(),
             note_spelling: NoteSpelling::default(),
+            default_scale_root: 0,
+            default_scale_mode: suhina_engine::model::ScaleMode::Major,
+            highlight_scale: true,
             mixer_controls: MixerControls::Field,
             plugin_editors: EditorPlacement::Window,
             theme: crate::kit::theme::BUILT_IN.into(),

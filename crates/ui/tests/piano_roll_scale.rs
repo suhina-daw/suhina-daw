@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The piano roll's scale (`docs/spec/ui-clip-editor.md` › Scale and key, › Zoom and scroll ›
-//! Fold): the toolbar's Scale menu sets the clip's scale (a command, undone with Ctrl+Z), the keys
-//! in the scale are marked and named, and Fold and Fold to scale show fewer rows that still hit
-//! and add notes on their own keys.
+//! Fold): the clip panel's Scale switch, root and mode set the clip's scale (a command, undone with
+//! Ctrl+Z), the keys in the scale are marked and named, the toolbar's Highlight tints them, and its
+//! Fold and Fold to scale show fewer rows that still hit and add notes on their own keys.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers outside #[test] functions
 
@@ -92,16 +92,17 @@ fn clicks(h: &mut Harness<'static, App>, pos: Pos2, count: usize) {
     h.run();
 }
 
-/// Opens the Scale menu, whose button reads `now`, then the submenu `sub` (if any), and picks
-/// `entry`.
-fn pick(h: &mut Harness<'static, App>, now: &str, sub: Option<&str>, entry: &str) {
-    h.get_by_label(now).click();
+/// Opens the clip panel's list whose field reads `field` and picks `entry`.
+fn pick(h: &mut Harness<'static, App>, field: &str, entry: &str) {
+    h.get_by_label(field).click();
     h.run();
-    if let Some(sub) = sub {
-        h.get_by_label(sub).click();
-        h.run();
-    }
     h.get_by_label(entry).click();
+    h.run();
+}
+
+/// Clicks the control labelled `label`.
+fn press(h: &mut Harness<'static, App>, label: &str) {
+    h.get_by_label(label).click();
     h.run();
 }
 
@@ -119,20 +120,23 @@ fn key_rows(h: &Harness<'static, App>) -> Vec<(String, Rect)> {
 }
 
 #[test]
-fn the_scale_menu_sets_the_clips_scale_and_ctrl_z_undoes_it() {
+fn the_clip_panel_sets_the_clips_scale_and_ctrl_z_undoes_it() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
-    // It fits the toolbar at 1280 px with the MIDI tools column open.
-    assert!(h.query_by_label("Scale off").is_some(), "the menu is in the toolbar");
+    // Fold, Fold to scale and Highlight are words in the toolbar, at 1280 px with the tools open.
+    for word in ["Fold", "Fold to scale", "Highlight scale"] {
+        assert!(h.query_by_label(word).is_some(), "{word} is in the toolbar");
+    }
     assert_eq!(edited(&h).1, None);
+    assert!(h.query_by_label("Scale switch: Off").is_some());
     assert!(key_rows(&h).is_empty(), "without a scale or a fold the rows are not named");
 
-    pick(&mut h, "Scale off", Some("Scale root: C"), "Scale root D");
-    assert_eq!(edited(&h).1, Scale::new(2, ScaleMode::Major), "a root on its own is major");
-    assert!(h.query_by_label("Scale D major").is_some());
-    pick(&mut h, "Scale D major", Some("Scale mode: Major"), "Scale mode Dorian");
+    // Off, the fields show the default scale, C major; a pick turns the scale on with it.
+    pick(&mut h, "Scale root: C", "D");
+    assert_eq!(edited(&h).1, Scale::new(2, ScaleMode::Major));
+    assert!(h.query_by_label("Scale switch: On").is_some());
+    pick(&mut h, "Scale mode: Major", "Dorian");
     assert_eq!(edited(&h).1, Scale::new(2, ScaleMode::Dorian));
-    assert!(h.query_by_label("Scale D dorian").is_some());
 
     // Ctrl+Z takes back one pick at a time.
     h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
@@ -141,20 +145,38 @@ fn the_scale_menu_sets_the_clips_scale_and_ctrl_z_undoes_it() {
     h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     h.run();
     assert_eq!(edited(&h).1, None);
-    assert!(h.query_by_label("Scale off").is_some());
 
-    // Off clears it again.
-    pick(&mut h, "Scale off", Some("Scale mode: Major"), "Scale mode Minor");
-    assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Minor));
-    pick(&mut h, "Scale C minor", None, "Scale: Off");
+    // The switch turns the scale on (the default) and off; off and on again brings back the
+    // scale the clip had.
+    press(&mut h, "Scale switch: Off");
+    assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Major));
+    pick(&mut h, "Scale mode: Major", "Minor");
+    press(&mut h, "Scale switch: On");
     assert_eq!(edited(&h).1, None);
+    assert!(h.query_by_label("Scale mode: Minor").is_some(), "off, it shows the scale it had");
+    press(&mut h, "Scale switch: Off");
+    assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Minor));
+}
+
+/// Settings' Default scale is what the switch turns on for a clip that never had a scale.
+#[test]
+fn the_default_scale_setting_is_what_the_switch_turns_on() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let settings = Settings { default_scale_root: 7, default_scale_mode: ScaleMode::Minor, ..Settings::default() };
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    assert!(h.query_by_label("Scale root: G").is_some() && h.query_by_label("Scale mode: Minor").is_some());
+    press(&mut h, "Scale switch: Off");
+    assert_eq!(edited(&h).1, Scale::new(7, ScaleMode::Minor));
 }
 
 #[test]
 fn the_keys_in_the_scale_are_marked_and_named() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
-    pick(&mut h, "Scale off", Some("Scale root: C"), "Scale root E");
+    pick(&mut h, "Scale root: C", "E");
     let rows = key_rows(&h);
     assert!(rows.len() > 5, "the rows in view are named: {rows:?}");
     // E major: E F# G# A B C# D#. Every row in view says whether it is in the scale.
@@ -168,6 +190,13 @@ fn the_keys_in_the_scale_are_marked_and_named() {
     assert!(rows.iter().any(|(l, _)| !l.ends_with(" in scale")));
     // Nothing of this hides a row: they are one key apart.
     assert_eq!(h.state().piano_roll().fold, Fold::Off);
+    // Highlight turns the tint off and on again, kept in Settings; the scale stays the clip's.
+    assert!(h.state().piano_roll().highlight_scale);
+    press(&mut h, "Highlight scale");
+    assert!(!h.state().piano_roll().highlight_scale && !h.state().settings().highlight_scale);
+    assert_eq!(edited(&h).1, Scale::new(4, ScaleMode::Major));
+    press(&mut h, "Highlight scale");
+    assert!(h.state().piano_roll().highlight_scale && h.state().settings().highlight_scale);
 }
 
 #[test]
@@ -179,7 +208,7 @@ fn fold_shows_only_the_rows_with_notes_and_a_double_click_adds_on_the_rows_key()
     keys.sort_unstable();
     keys.dedup();
     keys.reverse();
-    pick(&mut h, "Scale off", None, "Fold");
+    press(&mut h, "Fold");
     assert_eq!(h.state().piano_roll().fold, Fold::Notes);
     let rows = key_rows(&h);
     let names: Vec<String> =
@@ -206,7 +235,7 @@ fn fold_shows_only_the_rows_with_notes_and_a_double_click_adds_on_the_rows_key()
     assert_eq!(added.key, *keys.last().unwrap(), "the new note is on the row's key");
 
     // Fold again: every key shows, and the rows are no longer named.
-    pick(&mut h, "Scale off", None, "Fold");
+    press(&mut h, "Fold");
     assert_eq!(h.state().piano_roll().fold, Fold::Off);
     assert!(key_rows(&h).is_empty());
 }
@@ -215,15 +244,11 @@ fn fold_shows_only_the_rows_with_notes_and_a_double_click_adds_on_the_rows_key()
 fn fold_to_scale_shows_the_scales_keys_and_the_keys_with_notes() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
-    // Without a scale there is nothing to fold to: the entry is greyed out.
-    h.get_by_label("Scale off").click();
-    h.run();
+    // Without a scale there is nothing to fold to: the word is greyed out.
     assert!(h.get_by_label("Fold to scale").accesskit_node().is_disabled());
-    h.get_by_label("Scale off").click();
-    h.run();
 
-    pick(&mut h, "Scale off", Some("Scale mode: Major"), "Scale mode Major pentatonic");
-    pick(&mut h, "Scale C major pentatonic", None, "Fold to scale");
+    pick(&mut h, "Scale mode: Major", "Major pentatonic");
+    press(&mut h, "Fold to scale");
     assert_eq!(h.state().piano_roll().fold, Fold::Scale);
     let (notes, scale) = edited(&h);
     let scale = scale.unwrap();

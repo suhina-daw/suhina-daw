@@ -358,9 +358,54 @@ pub(super) fn toolbar(
             state.audition_pending.clear();
         }
     }
+    let hide_left = row.right() - side;
+    // Fold, Fold to scale and Highlight, words that switch, in sight before the menus, each while
+    // the grid value still fits after it (› Scale and key).
+    x.set(x.get() + 6.0);
+    let fits = |right: f32| right + gap + 2.0 + GRID_MENU + 6.0 <= hide_left - gap;
+    let fold = state.fold;
+    let words = [
+        ("Fold", "Fold", "Shows only the rows that have notes", fold == Fold::Notes, true),
+        (
+            "Scale",
+            "Fold to scale",
+            "Shows only the rows of the clip's scale and those that have notes; turn the scale on in the clip panel",
+            fold == Fold::Scale,
+            clip.scale.is_some(),
+        ),
+        (
+            "Highlight",
+            "Highlight scale",
+            "Tints the rows of the clip's scale and marks its keys",
+            state.highlight_scale,
+            true,
+        ),
+    ];
+    for (index, (word, label, hint, on, enabled)) in words.into_iter().enumerate() {
+        let width = widgets::text_width(ui, word, theme::ui_font(theme::TEXT_SMALL)) + 12.0;
+        let rect = Rect::from_min_size(Pos2::new(x.get(), row.top()), Vec2::new(width, row.height()));
+        if !fits(rect.right()) {
+            break;
+        }
+        if word_toggle(ui, rect, (word, label, hint), on, enabled) {
+            match index {
+                0 => state.fold = if on { Fold::Off } else { Fold::Notes },
+                1 => state.fold = if on { Fold::Off } else { Fold::Scale },
+                _ => {
+                    state.highlight_scale = !on;
+                    state.view_picked = Some(super::ViewPick::HighlightScale(!on));
+                }
+            }
+        }
+        x.set(rect.right() + 3.0);
+    }
+    if state.fold != fold {
+        // Another set of rows: the notes are centred again in them.
+        state.scrolled_by_hand = false;
+        state.centred_for = 0.0;
+    }
     // The workflow menu: the mode's name, the four modes and every workflow setting
     // (› Workflow modes).
-    let hide_left = row.right() - side;
     let workflow = Rect::from_min_size(Pos2::new(x.get() + 4.0, row.top()), Vec2::new(WORKFLOW_MENU, row.height()));
     if workflow.right() + 4.0 + 104.0 < hide_left {
         // Each menu takes the width its button needs, so the next one starts right after it.
@@ -372,22 +417,6 @@ pub(super) fn toolbar(
         if ghosts.right() + 4.0 + 104.0 < hide_left {
             let shown = ghost_view::menu(ui, ghosts, &clip.ghosts, &mut state.ghost_source);
             x.set(shown.right().min(ghosts.right()) + gap);
-            // The Scale menu after it, when the grid value still fits after it (› Scale and key);
-            // the grid value's caption gives way to it.
-            let menu = Rect::from_min_size(
-                Pos2::new(x.get() + 4.0, row.top()),
-                Vec2::new(scale_view::MENU_WIDTH, row.height()),
-            );
-            if menu.right() + gap + 2.0 + GRID_MENU + 6.0 <= hide_left - gap {
-                let before = state.fold;
-                let shown = scale_view::menu(ui, menu, clip, &mut state.fold, actions);
-                if state.fold != before {
-                    // Another set of rows: the notes are centred again in them.
-                    state.scrolled_by_hand = false;
-                    state.centred_for = 0.0;
-                }
-                x.set(shown.right().min(menu.right()) + gap);
-            }
         }
     }
     let paint = ButtonPaint { ui, painter: &painter, keymap, scale };
@@ -563,6 +592,20 @@ pub(super) const WORKFLOW_MENU: f32 = 96.0;
 /// The toolbar's workflow menu: its button shows the mode, its menu offers the four modes and,
 /// under a divider, a submenu per workflow setting with its choices. A pick is left in `state`
 /// for the window, which keeps it in the keymap.
+/// A word in the toolbar that switches something (Fold, Fold to scale, Highlight): lit while on,
+/// dim while it cannot be used; its accessible label and tooltip say what it does. Returns whether
+/// it was clicked.
+fn word_toggle(ui: &mut Ui, rect: Rect, (word, label, hint): (&str, &str, &str), on: bool, enabled: bool) -> bool {
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let response = ui
+        .add_enabled_ui(enabled, |ui| ui.put(rect, egui::Button::selectable(on, egui::RichText::new(word).font(font))))
+        .inner;
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, on, label));
+    let clicked = response.clicked();
+    response.on_hover_text(hint).on_disabled_hover_text(hint);
+    clicked
+}
+
 pub(super) fn workflow_menu(
     ui: &mut Ui,
     rect: Rect,

@@ -263,6 +263,22 @@ pub(super) const LATER: &[Field] = &[
     named!("piano_key_names", piano_key_names, PianoKeyNames),
     named!("note_spelling", note_spelling, NoteSpelling),
     Field {
+        key: "default_scale_root",
+        write: |s| {
+            suhina_engine::model::ROOT_NAMES.get(usize::from(s.default_scale_root)).copied().unwrap_or("C").to_string()
+        },
+        read: |s, v| {
+            let root = suhina_engine::model::ROOT_NAMES.iter().position(|name| *name == v);
+            root.and_then(|i| u8::try_from(i).ok()).map(|i| s.default_scale_root = i).is_some()
+        },
+    },
+    Field {
+        key: "default_scale_mode",
+        write: |s| s.default_scale_mode.name().to_string(),
+        read: |s, v| suhina_engine::model::ScaleMode::from_name(v).map(|m| s.default_scale_mode = m).is_some(),
+    },
+    switch!("highlight_scale", highlight_scale),
+    Field {
         key: "background_image",
         write: |s| s.background_image.replace(['\r', '\n'], ""),
         read: |s, v| {

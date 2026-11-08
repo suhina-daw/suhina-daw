@@ -52,6 +52,13 @@ impl TimeSpan {
                 self.end = if (self.end - was_to).abs() < EPSILON { to } else { self.end.max(to) };
             }
         }
+        // It always holds the notes selected with it: one that misses them was left from other
+        // notes at those indices (an undo the window could not tell apart), and becomes theirs.
+        if from >= self.end - EPSILON || to <= self.start + EPSILON {
+            (self.start, self.end) = (from, to);
+        } else {
+            (self.start, self.end) = (self.start.min(from), self.end.max(to));
+        }
         self.notes_at = Some((from, to));
     }
 }

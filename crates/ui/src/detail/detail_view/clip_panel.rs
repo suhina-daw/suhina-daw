@@ -459,6 +459,30 @@ pub(super) fn toggle(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, t
     response.clicked()
 }
 
+/// The Scale switch: a little keyboard, lit while the clip has a scale. Returns whether it was
+/// clicked.
+fn scale_switch(ui: &Ui, painter: &egui::Painter, rect: Rect, on: bool) -> bool {
+    let state = if on { "On" } else { "Off" };
+    let response =
+        widgets::button_area(ui, rect, Id::unique("clip-panel-scale-switch"), format!("Scale switch: {state}"));
+    let (fill, ink) = widgets::toggle_colors(ui, &response, on);
+    painter.fill_background(rect, 3.0, fill);
+    if !on {
+        painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+    }
+    let keys = Rect::from_center_size(rect.center(), Vec2::new(12.0, 10.0));
+    let line = egui::Stroke::new(1.0, ink);
+    painter.rect_stroke(keys, 1.0, line, egui::StrokeKind::Inside);
+    for third in [1.0, 2.0] {
+        let x = (keys.left() + keys.width() * third / 3.0).round() + 0.5;
+        painter.vline(x, keys.y_range(), line);
+        painter.rect_filled(Rect::from_min_size(Pos2::new(x - 1.5, keys.top()), Vec2::new(3.0, 5.5)), 0.0, ink);
+    }
+    let clicked = response.clicked();
+    response.on_hover_text("The clip's scale: its rows are marked, and Fold to scale and Fit to scale use it");
+    clicked
+}
+
 /// A name over a control: the name at the left of `rect`, small.
 pub(super) fn name_over(painter: &egui::Painter, rect: Rect, text: &str, align: Align2) {
     widgets::text_in(painter, rect, align, text, theme::ui_font(theme::TEXT_TINY), theme::text_secondary());
@@ -829,38 +853,58 @@ pub(super) fn clip_part(
     if !fits(y, NAME + FIELD) {
         return y;
     }
-    // The scale: its root and its mode, each a list under its field.
+    // The scale: a switch, its root and its mode, each a list under its field. Off, the root and the
+    // mode show the scale the switch turns on: the clip's own from before, or Settings' Default
+    // scale; picking either turns the scale on with it.
     let name = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), NAME));
     name_over(painter, name, "Scale", Align2::LEFT_BOTTOM);
-    let root_rect = Rect::from_min_size(Pos2::new(part.left(), y + NAME), Vec2::new(52.0, FIELD));
+    let switch = Rect::from_min_size(Pos2::new(part.left(), y + NAME), Vec2::new(FIELD + 6.0, FIELD));
+    let root_rect = Rect::from_min_size(Pos2::new(switch.right() + 4.0, switch.top()), Vec2::new(46.0, FIELD));
     let mode_rect = Rect::from_min_max(
         Pos2::new(root_rect.right() + 4.0, root_rect.top()),
         Pos2::new(part.right(), root_rect.bottom()),
     );
-    let root = panel.scale.map(|s| usize::from(s.root()));
+    let kept = Id::unique(("clip-panel-scale-kept", panel.clip.0));
+    let (root, mode) = panel
+        .scale
+        .map(|s| (s.root(), s.mode))
+        .or_else(|| ui.data(|d| d.get_temp::<(u8, ScaleMode)>(kept)))
+        .unwrap_or_else(crate::detail::piano_roll::default_scale);
+    let root_name = ROOT_NAMES.get(usize::from(root)).copied().unwrap_or("C");
+    let on = panel.scale.is_some();
+    if scale_switch(ui, painter, switch, on) {
+        let params = if on {
+            ui.data_mut(|d| d.insert_temp(kept, (root, mode)));
+            json!({ "off": true })
+        } else {
+            json!({ "root": root_name, "mode": mode.name() })
+        };
+        actions.push(Action::new("clip.setScale", on_clip(at, params)));
+    }
     let name_of = |class: usize| crate::detail::piano_roll::pitch_class_name(u8::try_from(class).unwrap_or(0));
-    let root_shown = root.map_or("—", name_of);
-    let roots: Vec<Option<(&str, bool)>> = (0..12).map(|i| Some((name_of(i), root == Some(i)))).collect();
+    let roots: Vec<Option<(&str, bool)>> = (0..12).map(|i| Some((name_of(i), usize::from(root) == i))).collect();
     let id = Id::unique(("clip-panel-scale-root", panel.clip.0));
+    let root_shown = name_of(usize::from(root));
     if let Some(picked) =
         drop_down(ui, painter, root_rect, id, "Scale root", root_shown, &roots, root_rect.width() + 20.0)
     {
         let name = ROOT_NAMES.get(picked).copied().unwrap_or("C");
-        actions.push(Action::new("clip.setScale", on_clip(at, json!({ "root": name }))));
+        actions.push(Action::new("clip.setScale", on_clip(at, json!({ "root": name, "mode": mode.name() }))));
     }
-    let mode = panel.scale.map(|s| s.mode);
-    let mode_shown = mode.map_or("None", |m| m.label());
-    let mut modes: Vec<Option<(&str, bool)>> = vec![Some(("None", mode.is_none())), None];
-    modes.extend(ScaleMode::ALL.iter().map(|m| Some((m.label(), mode == Some(*m)))));
+    let modes: Vec<Option<(&str, bool)>> = ScaleMode::ALL.iter().map(|m| Some((m.label(), mode == *m))).collect();
     let id = Id::unique(("clip-panel-scale-mode", panel.clip.0));
-    if let Some(picked) =
-        drop_down(ui, painter, mode_rect, id, "Scale", mode_shown, &modes, mode_rect.width() + root_rect.width() + 4.0)
+    if let Some(picked) = drop_down(
+        ui,
+        painter,
+        mode_rect,
+        id,
+        "Scale mode",
+        mode.label(),
+        &modes,
+        mode_rect.width() + root_rect.width() + 4.0,
+    ) && let Some(picked) = ScaleMode::ALL.get(picked)
     {
-        let params = match picked.checked_sub(2).and_then(|i| ScaleMode::ALL.get(i)) {
-            Some(mode) => json!({ "mode": mode.name() }),
-            None => json!({ "off": true }),
-        };
-        actions.push(Action::new("clip.setScale", on_clip(at, params)));
+        actions.push(Action::new("clip.setScale", on_clip(at, json!({ "root": root_name, "mode": picked.name() }))));
     }
     y + NAME + FIELD
 }

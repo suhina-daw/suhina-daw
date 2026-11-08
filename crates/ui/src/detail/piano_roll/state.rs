@@ -198,6 +198,9 @@ pub struct PianoRollState {
     /// Notes placed over others of their key replace them: Allow stacked notes off (Settings; the
     /// window sets it each frame).
     pub notes_replace: bool,
+    /// Whether the rows of the clip's scale are tinted and its keys marked (Settings, the
+    /// toolbar's Highlight); the scale still folds rows and fits notes without it.
+    pub highlight_scale: bool,
     /// How the keys look and which of them are named (Settings; the window sets them each frame).
     pub key_style: crate::settings::PianoKeyStyle,
     pub key_names: crate::settings::PianoKeyNames,
@@ -319,6 +322,7 @@ impl Default for PianoRollState {
             transform: Transform::default(),
             tool: Tool::Select,
             notes_replace: true,
+            highlight_scale: true,
             key_style: crate::settings::PianoKeyStyle::default(),
             key_names: crate::settings::PianoKeyNames::default(),
             view_picked: None,

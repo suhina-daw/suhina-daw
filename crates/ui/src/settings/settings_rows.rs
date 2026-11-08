@@ -801,6 +801,14 @@ pub(crate) static ROWS: &[Entry] = &[
         },
     ),
     row(
+        Page::ClipEditor,
+        "Piano roll",
+        "Default scale",
+        "The scale a clip's Scale switch turns on when the clip has none of its own",
+        &["default_scale_root", "default_scale_mode"],
+        |cx, r| cx.default_scale(r),
+    ),
+    row(
         Page::Browser,
         "Browser",
         "Browser side",

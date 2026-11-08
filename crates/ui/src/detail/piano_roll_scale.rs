@@ -10,15 +10,10 @@
 //! through it, so a folded view draws, hits and adds notes on the rows it shows.
 
 use egui::{Id, Pos2, Rect, Sense, Ui, Vec2};
-use serde_json::json;
-use suhina_engine::model::{ROOT_NAMES, Scale, ScaleMode};
+use suhina_engine::model::Scale;
 
 use crate::detail::piano_roll::{PianoClip, key_name};
 use crate::kit::theme;
-use crate::kit::widgets::Action;
-
-/// How wide the toolbar's Scale menu button is, in points.
-pub const MENU_WIDTH: f32 = 56.0;
 
 /// Which key rows the piano roll shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -200,100 +195,10 @@ pub(crate) fn key_readers(
     }
 }
 
-/// What the Scale menu's button says: "Scale C major", or "Scale off".
-pub fn menu_label(scale: Option<Scale>) -> String {
-    match scale {
-        Some(scale) => format!("Scale {}", scale.describe()),
-        None => "Scale off".to_string(),
-    }
-}
-
-/// The toolbar's Scale menu: Off, a Root submenu with the twelve roots and a Mode submenu with the
-/// modes, each a `clip.setScale`; then Fold and Fold to scale, window state. Its button reads
-/// "Scale", dimmed while the clip has none; its accessible label and tooltip name the scale.
-/// Returns the button's rect.
-pub(crate) fn menu(ui: &mut Ui, rect: Rect, clip: &PianoClip, fold: &mut Fold, actions: &mut Vec<Action>) -> Rect {
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    let scale = clip.scale;
-    let mut picked: Option<serde_json::Value> = None;
-    let mut folded = None;
-    let mut shown = rect;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-        let color = if scale.is_none() { theme::text_hint() } else { theme::text_value() };
-        let text = egui::RichText::new("Scale   ").font(font.clone()).color(color);
-        let menu = ui.menu_button(text, |ui| {
-            let entry = |ui: &mut Ui, on: bool, shown: &str, label: &str, enabled: bool| -> bool {
-                let response = ui
-                    .add_enabled(enabled, egui::Button::selectable(on, egui::RichText::new(shown).font(font.clone())));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, on, label));
-                let clicked = response.clicked();
-                if clicked {
-                    ui.close();
-                }
-                clicked
-            };
-            if entry(ui, scale.is_none(), "Off", "Scale: Off", true) && scale.is_some() {
-                picked = Some(json!({ "off": true }));
-            }
-            ui.separator();
-            let root = scale.map_or("C", |s| crate::detail::piano_roll::pitch_class_name(s.root()));
-            let roots = ui.menu_button(egui::RichText::new(format!("Root: {root}")).font(font.clone()), |ui| {
-                for index in 0..ROOT_NAMES.len() {
-                    let name = crate::detail::piano_roll::pitch_class_name(u8::try_from(index).unwrap_or(0));
-                    let on = scale.is_some_and(|s| usize::from(s.root()) == index);
-                    if entry(ui, on, name, &format!("Scale root {name}"), true) && !on {
-                        picked = Some(json!({ "root": index }));
-                    }
-                }
-            });
-            roots
-                .response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Scale root: {root}")));
-            let mode = scale.map_or(ScaleMode::Major, |s| s.mode).label();
-            let modes = ui.menu_button(egui::RichText::new(format!("Mode: {mode}")).font(font.clone()), |ui| {
-                for choice in ScaleMode::ALL {
-                    let on = scale.is_some_and(|s| s.mode == choice);
-                    if entry(ui, on, choice.label(), &format!("Scale mode {}", choice.label()), true) && !on {
-                        picked = Some(json!({ "mode": choice.name() }));
-                    }
-                }
-            });
-            modes
-                .response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Scale mode: {mode}")));
-            ui.separator();
-            if entry(ui, *fold == Fold::Notes, "Fold", "Fold", true) {
-                folded = Some(if *fold == Fold::Notes { Fold::Off } else { Fold::Notes });
-            }
-            if entry(ui, *fold == Fold::Scale, "Fold to scale", "Fold to scale", scale.is_some()) {
-                folded = Some(if *fold == Fold::Scale { Fold::Off } else { Fold::Scale });
-            }
-        });
-        let label = menu_label(scale);
-        crate::detail::piano_roll::menu_arrow(ui, menu.response.rect, color);
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-        shown = menu.response.rect;
-        let named = scale.map_or_else(|| "none".to_string(), Scale::describe);
-        menu.response
-            .on_hover_text(format!("Scale: {named}. Marks the keys in the clip's scale; Fold shows fewer rows"));
-    });
-    if let Some(mut params) = picked {
-        if let (Some(params), Some(address)) = (params.as_object_mut(), clip.address.as_object()) {
-            for (key, value) in address {
-                params.insert(key.clone(), value.clone());
-            }
-        }
-        actions.push(Action::new("clip.setScale", params));
-    }
-    if let Some(next) = folded {
-        *fold = next;
-    }
-    shown
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use suhina_engine::model::ScaleMode;
 
     fn scale(root: u8, mode: ScaleMode) -> Scale {
         Scale::new(root, mode).unwrap()
@@ -348,11 +253,5 @@ mod tests {
         assert_eq!(row_fill(c, 61, false, red), dark, "white or black alike");
         assert_eq!(row_fill(None, 61, true, red), theme::window_background());
         assert_eq!(row_fill(None, 60, false, red), theme::panel_background());
-    }
-
-    #[test]
-    fn the_menu_label_names_the_scale() {
-        assert_eq!(menu_label(None), "Scale off");
-        assert_eq!(menu_label(Some(scale(6, ScaleMode::HarmonicMinor))), "Scale F# harmonic minor");
     }
 }

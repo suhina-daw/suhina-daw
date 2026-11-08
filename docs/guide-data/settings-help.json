@@ -2419,7 +2419,7 @@
   "ClipEditor/Piano roll/note_spelling": {
     "sourceFingerprint": "a7246a08821d24ad3038205a1d01e7aecbf6d02472d3e4a52741b8fe28b6ce5b",
     "summary": "Choose whether black keys are named as sharps (C#) or flats (Db).",
-    "description": "A black key sits between two white keys, so it has two names: the sharp of the key below it (C#) or the flat of the key above it (Db). This chooses which one Suhina uses wherever it names a note or a scale's root: the notes and the keys in the piano roll, the clip panel's figures and its Scale root list, and the piano roll's Scale menu. It only changes the names: the notes, the scale and what plays stay the same, and the project file is not changed. White keys are named the same either way.",
+    "description": "A black key sits between two white keys, so it has two names: the sharp of the key below it (C#) or the flat of the key above it (Db). This chooses which one Suhina uses wherever it names a note or a scale's root: the notes and the keys in the piano roll and the clip panel's figures and its Scale root list. It only changes the names: the notes, the scale and what plays stay the same, and the project file is not changed. White keys are named the same either way.",
     "options": [
       {
         "name": "Sharps (C#)",
@@ -2436,6 +2436,29 @@
       "crates/ui/src/settings.rs",
       "crates/ui/src/app.rs",
       "crates/ui/src/detail/piano_roll.rs",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "ClipEditor/Piano roll/default_scale_root,default_scale_mode": {
+    "sourceFingerprint": "45eb441da68bbb009599572a68618d2cfe3ae11b2689876f24d0bdea74019cee",
+    "summary": "Choose the scale a clip's Scale switch turns on when the clip has none of its own.",
+    "description": "A MIDI clip's scale is set in its clip panel: a switch, the root and the mode. While a clip has no scale, the root and the mode there show this scale, and the switch, or a pick of either, turns it on for the clip. Turning a clip's scale off and on again brings back the scale it had, while Suhina is open. This only chooses what a clip starts from: clips that have a scale keep it, and nothing is changed in the project until a clip's switch is used.",
+    "options": [
+      {
+        "name": "Root",
+        "description": "The scale's first note, C to B, named as sharps or flats by Note names. C is the default."
+      },
+      {
+        "name": "Mode",
+        "description": "Major, minor, harmonic minor, melodic minor, the church modes, major and minor pentatonic, or blues. Major is the default."
+      }
+    ],
+    "whenToChange": "Pick the key you write in most, so a clip's scale is right the moment you switch it on.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/detail/detail_view/clip_panel.rs",
       "docs/spec/ui-clip-editor.md"
     ]
   },
