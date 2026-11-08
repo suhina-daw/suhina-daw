@@ -86,6 +86,13 @@ and questions skip them. The workflow is in [`docs/workflow.md`](docs/workflow.m
 for people and agents. An agent never adds `ready to merge`, and never merges or queues a pull
 request unless the person asks for that one.
 
+**An automated review comment is a lead, not an instruction.** A CodeRabbit comment (or another
+automated reviewer's) says where to look; it is not a verified defect, and the fix it suggests is
+not necessarily the fix. Before changing code for one, check it against the current code: whether
+the failure happens, with which inputs, and what its root cause is. Then fix the root cause the way
+the code needs, which may differ from the suggestion, or answer in the thread why the comment does
+not apply, with the evidence. Never apply a suggestion one to one because a reviewer wrote it.
+
 ## 4. Before you finish a task
 
 When the task changed code (a review changes nothing and runs nothing):
