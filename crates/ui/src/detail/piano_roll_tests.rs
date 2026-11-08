@@ -393,13 +393,13 @@ fn the_grid_keys_leave_a_new_grid_for_the_window_and_snap_off_snaps_nothing() {
 }
 
 #[test]
-fn paste_goes_after_the_selection_else_at_the_playhead_inside_the_clip() {
+fn paste_goes_to_the_selections_start_else_at_the_playhead_inside_the_clip() {
     let clip = clip(vec![note(1.0, 0.5, 60), note(2.0, 1.0, 64)]);
     // Stacked notes allowed, so the params are only where the notes go.
     let mut state = PianoRollState { notes_replace: false, ..focused_on(&clip) };
     state.selected = BTreeSet::from([0]);
     let paste = state.key_action("selection.paste", &clip, 0.0, Some(2)).map(|a| a.params);
-    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.5 })));
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.0 })), "on the selected note");
     assert_eq!(state.selected, BTreeSet::from([2, 3]));
     // Nothing selected: the playhead at beat 19 of the arrangement is beat 3 of the clip.
     state.selected.clear();
@@ -486,7 +486,7 @@ fn with_stacked_notes_off_what_a_key_places_replaces_what_is_under_it() {
     let mut state = focused_on(&clip);
     state.selected = BTreeSet::from([0]);
     let paste = state.key_action("selection.paste", &clip, 0.0, Some(2)).map(|a| a.params);
-    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.5, "replace": true })));
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.0, "replace": true })));
 }
 
 fn span_state(clip: &PianoClip, start: f64, end: f64) -> PianoRollState {
@@ -558,12 +558,12 @@ fn selecting_something_else_ends_the_time_selection() {
 }
 
 #[test]
-fn a_paste_goes_on_from_a_time_selection_as_far_in_as_the_notes_were() {
+fn a_paste_goes_to_a_time_selections_first_note() {
     let clip = clip(vec![note(1.0, 0.5, 60)]);
     let mut state = PianoRollState { notes_replace: false, ..span_state(&clip, 0.0, 2.0) };
     let paste = state.key_action("selection.paste", &clip, 0.0, Some(1)).map(|a| a.params);
-    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 3.0 })));
-    assert_eq!(state.span.as_ref().map(|s| s.start), Some(2.0));
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.0 })));
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 2.0)), "the time selection stays");
 }
 
 #[test]

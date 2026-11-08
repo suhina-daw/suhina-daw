@@ -883,6 +883,15 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
         None => clipboard.from + clipboard.span,
     };
     let added = placed(clipboard, time)?;
+    // Pasted where they were copied from, the copies lie on their originals, to be moved off
+    // them: they replace nothing there, or the originals would go.
+    if (time - clipboard.from).abs() < EPSILON && replaces(params) {
+        let mut kept = params.clone();
+        if let Some(map) = kept.as_object_mut() {
+            map.remove("replace");
+        }
+        return append(session, &kept, added);
+    }
     append(session, params, added)
 }
 

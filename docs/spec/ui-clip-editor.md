@@ -688,7 +688,12 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344)):** while the piano roll has
   the keyboard, **Ctrl+C** copies the selected notes (`note.copy`), **Ctrl+X** cuts them
   (`note.cut`: copies and deletes, one undo step), **Ctrl+V** pastes the copied notes
-  (`note.paste`) and the duplicate key duplicates the selected notes (`note.duplicate`). The
+  (`note.paste`) and the duplicate key duplicates the selected notes (`note.duplicate`). A paste
+  goes to the start of what is selected (its first note, or a time selection's start), so a copy
+  pasted at once lies on the notes it came from, selected, to be moved off them (they replace
+  nothing there, whatever **Allow stacked notes** says); with nothing selected it goes to the
+  insert mark (a cut leaves it where the notes were), else the playhead inside the clip, else right
+  after the copied notes. Duplicate goes on right after the selection. The
   duplicate key is **Ctrl+B** with the **Draw-first** keymap preset and **Ctrl+D** with
   **Select-first**, the default (› Keymap presets); it can be changed like any other key.
   With no note

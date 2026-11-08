@@ -431,21 +431,28 @@ impl PianoRollState {
         let count = clip.notes.len();
         let mut params = clip.address.clone();
         if action == "selection.paste" {
-            // In the stretch after a time selection, as far in as the first note was; after the
-            // selection; at the insert mark; at the playhead when it is inside the clip; else where
-            // the command puts it (right after the copied notes).
+            // At the start of what is selected, where the insert mark of a selection is: its first
+            // note, or a time selection's start (so a copy pasted at once lands on the notes it was
+            // copied from, to be moved off them); with nothing selected at the insert mark, at the
+            // playhead when it is inside the clip, else where the command puts it (right after the
+            // copied notes). Duplicate is the key that goes on after the selection.
             let copied = copied?;
             let first = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
-            let end = chosen.iter().map(|n| n.time + n.duration).fold(f64::NEG_INFINITY, f64::max);
             let time = match &self.span {
-                Some(span) => Some(span.end + if first.is_finite() { first - span.start } else { 0.0 }),
-                None if end.is_finite() => Some(end),
+                _ if first.is_finite() => Some(first),
+                Some(span) => Some(span.start),
                 None => self.insert_at.or_else(|| clip.placement.content_beat(playhead)),
             };
             if let Some(time) = time {
                 params["time"] = json!(round_beat(time));
             }
+            // The copies lie where the selection is, so a time selection stays where it is, now
+            // with the copies (a duplicate's moves on with them).
+            let kept = self.span.clone();
             self.select_copies((count..count.saturating_add(copied)).collect(), &clip.notes);
+            if let Some(span) = kept {
+                self.span = Some(TimeSpan { with: self.selected.clone(), ..span });
+            }
             self.replacing(&mut params);
             return Some(Action::new("note.paste", params));
         }
@@ -508,8 +515,11 @@ impl PianoRollState {
         let (id, beats, keys) = match action {
             "selection.copy" => return Some(Action::new("note.copy", params)),
             "selection.cut" => {
+                // The insert mark stays where the notes were, so a paste puts them back there.
+                let first = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
                 self.selected.clear();
                 self.span_notes.clear();
+                self.insert_at = first.is_finite().then_some(first);
                 return Some(Action::new("note.cut", params));
             }
             "selection.duplicate" => {
