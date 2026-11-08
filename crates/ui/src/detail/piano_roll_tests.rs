@@ -307,6 +307,32 @@ fn folded_up_and_down_keep_the_notes_in_the_scale() {
     assert_eq!(plain.as_ref().and_then(|p| p.get("semitones")).cloned(), Some(json!(1)), "{plain:?}");
 }
 
+/// A drag of a note off the grid is magnetic: free until the first grid line, then it snaps to a
+/// line or to its own offset, whichever is nearer; a note on the grid goes by grid steps.
+#[test]
+fn a_note_off_the_grid_drags_magnetically() {
+    let c = clip(vec![note(1.03, 1.0, 60)]);
+    // A sixteenth grid in 4/4.
+    let grid = TimelineGrid { step: 0.25, bar_beats: 4.0, snaps: true };
+    let notes = &c.notes;
+    let moved = |raw: f64| {
+        let (stepped, _) = move_delta(raw, 0, notes, grid, false);
+        edits::magnetic(1.03, raw, stepped, notes, grid)
+    };
+    // Before the first line (1.25) it moves freely.
+    assert!((moved(0.1) - 0.1).abs() < 1e-9);
+    // Past it, near a line it lands on the line.
+    assert!((moved(0.225) - 0.22).abs() < 1e-9, "onto 1.25: {}", moved(0.225));
+    // Near its own offset a step on (1.28), it keeps the offset.
+    assert!((moved(0.26) - 0.25).abs() < 1e-9, "1.28 keeps the feel: {}", moved(0.26));
+    // Back to the left it lands on 1.0.
+    assert!((moved(-0.04) + 0.03).abs() < 1e-9, "onto 1.0: {}", moved(-0.04));
+    // A note on the grid goes by whole steps.
+    let on = clip(vec![note(1.0, 1.0, 60)]);
+    let (stepped, _) = move_delta(0.3, 0, &on.notes, grid, false);
+    assert_eq!(edits::magnetic(1.0, 0.3, stepped, &on.notes, grid), 0.25);
+}
+
 #[test]
 fn z_fits_the_selection_and_shift_z_the_whole_clip() {
     let clip = clip(vec![note(2.0, 1.0, 60), note(3.0, 1.0, 62), note(6.0, 1.0, 64)]);
