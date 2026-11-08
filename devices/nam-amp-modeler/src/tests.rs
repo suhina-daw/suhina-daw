@@ -268,6 +268,57 @@ fn a_model_at_a_higher_rate_delivers_the_legs_stream_too() {
 }
 
 #[test]
+fn a_rate_matched_model_delivers_the_models_dc_stream() {
+    // A model at the project's rate runs without the legs; its whole stage is the model and
+    // its DC blocker. The device must deliver that stream exactly — the staging lists are
+    // longer than a chunk, and feeding the DC blocker the slots past a chunk's frames (old
+    // zero and stale values, sitting in the list) dragged its state off every tick and made
+    // the stream crackle.
+    const TINY: &str = r#"{
+        "version": "0.5.4", "architecture": "WaveNet",
+        "config": {
+            "layers": [{
+                "input_size": 1, "condition_size": 1, "channels": 1, "head_size": 1,
+                "kernel_size": 1, "dilations": [1], "activation": "ReLU",
+                "gated": false, "head_bias": false
+            }],
+            "head": null, "head_scale": 10.0
+        },
+        "weights": [1.0, 2.0, 0.5, 1.0, 3.0, 0.1, 0.5, 10.0],
+        "sample_rate": 48000.0
+    }"#;
+    let parsed = Arc::new(NamModel::from_json_str(TINY).expect("the rate-matched model parses"));
+    let mut amp = NamAmp::with_model(Arc::clone(&parsed));
+    amp.set_param(param::EQ_ON, 0.0);
+    amp.prepare(SR).expect("prepare");
+    assert_eq!(amp.latency(), D as u32, "no legs, no holdback");
+
+    let input: Vec<f32> =
+        (0..9_600usize).map(|i| ((2.0 * std::f64::consts::PI * 220.0 * i as f64 / SR).sin() * 0.4) as f32).collect();
+    let mut s: Vec<f32> = input.iter().flat_map(|&v| [v, v]).collect();
+    amp.process(&ProcessContext::default(), &mut s);
+
+    let mut running = nam_rs::Model::from_nam(parsed.as_ref()).expect("the model builds");
+    let mut buf = input.clone();
+    running.process_buffer(&mut buf);
+    let mut dc = DcBlocker::new(SR);
+    let reference: Vec<f64> = buf.iter().map(|&v| dc.process(f64::from(v))).collect();
+
+    let left: Vec<f64> = s.as_chunks::<2>().0.iter().map(|f| f64::from(f[0])).collect();
+    for (n, &want) in reference.iter().take(left.len() - D).enumerate() {
+        let delivered = left[n + D];
+        assert_eq!(
+            delivered,
+            f64::from(want as f32),
+            "frame {n} delivered at {}: device {}, reference {}",
+            n + D,
+            delivered,
+            want
+        );
+    }
+}
+
+#[test]
 fn a_refused_model_at_another_rate_keeps_the_chunk_schedule() {
     // A model the runtime refuses never runs: no legs, no holdback, and the stream is the
     // pass-through through the stages, bit-true.

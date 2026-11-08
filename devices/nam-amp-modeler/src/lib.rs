@@ -376,7 +376,7 @@ impl NamAmp {
         if self.running[side].is_none() {
             // No model: the trims and EQ stand in for it, with no DC blocker to run.
             self.model_io[side][..CHUNK].copy_from_slice(&chunk);
-            for (k, io) in self.model_io[side].iter().enumerate() {
+            for (k, io) in self.model_io[side].iter().take(CHUNK).enumerate() {
                 self.stage_out[side][k] = f64::from(*io);
             }
             return CHUNK;
@@ -387,7 +387,10 @@ impl NamAmp {
             if let Some(model) = self.running.get_mut(side).and_then(|slot| slot.as_mut()) {
                 model.process_buffer(&mut self.model_io[side][..CHUNK]);
             }
-            for (k, io) in self.model_io[side].iter().enumerate() {
+            // The DC blocker only ever sees the chunk's frames: the staging list is longer
+            // than the chunk, and feeding it the slots past the chunk would drag its state
+            // off with old values every tick.
+            for (k, io) in self.model_io[side].iter().take(CHUNK).enumerate() {
                 self.stage_out[side][k] = self.sides[side].dc.process(f64::from(*io));
             }
             return CHUNK;
