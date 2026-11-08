@@ -565,9 +565,17 @@ impl Output {
                 )),
             }
         }
-        let range = devices::buffer_range(supported.buffer_size());
-        let wanted = devices::wanted_buffer(&host_name, choice.buffer_frames, ENGINE_BLOCK as u32);
-        let fitted = wanted.map(|wanted| devices::fit_for_host(&host_name, wanted, range));
+        // An ASIO driver is asked again: a size set in its control panel since the device was
+        // listed (the driver then asks for a reset, and the output opens again here) shows only
+        // this way. Its preferred size, the control panel's, plays when none is chosen.
+        let driver = devices::driver_buffers(&device, true);
+        let range = driver.map_or_else(|| devices::buffer_range(supported.buffer_size()), |driver| driver.range());
+        let chosen = choice.buffer_frames.or(driver.and_then(|driver| driver.default_size()));
+        let wanted = devices::wanted_buffer(&host_name, chosen, ENGINE_BLOCK as u32);
+        let fitted = wanted.map(|wanted| match &driver {
+            Some(driver) => devices::fit_to_driver(wanted, driver),
+            None => devices::fit_for_host(&host_name, wanted, range),
+        });
         if let (Some(wanted), Some((block, asked))) = (choice.buffer_frames, fitted)
             && let Some(notice) = devices::buffer_notice(&host_name, &device_name, wanted, block, asked, range)
         {

@@ -90,7 +90,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `project.*` commands that list, switch and close projects.
 - **Choosing the output.** `audio.devices` lists the audio hosts (WASAPI, and ASIO in a build
   with the `asio` feature; ALSA and, with a sound server running, PulseAudio on Linux; JACK or CoreAudio elsewhere) and each one's output devices with
-  `sample_rates`, `buffer_sizes` (what the driver allows), `buffer_range` and whether WASAPI
+  `sample_rates`, `buffer_sizes` (what the driver allows), `buffer_range`, `default_buffer` (the size an ASIO
+  driver prefers, which plays when none is chosen) and whether WASAPI
   exclusive mode is possible, plus the output `chosen`. `audio.setOutput {host?, device?,
   sample_rate?, buffer_frames?, exclusive?}` changes the parts given (an empty text or 0 goes back
   to the default; a new host forgets the device) and reopens the active project's output there,

@@ -72,6 +72,7 @@ impl AudioSystem for Stand {
             default_sample_rate: Some(SR),
             buffer_sizes: vec![256, 512, 1024],
             buffer_range: Some((256, 1024)),
+            default_buffer: None,
             exclusive: false,
         };
         let mut devices = vec![device.clone()];

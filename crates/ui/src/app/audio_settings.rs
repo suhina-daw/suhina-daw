@@ -281,7 +281,13 @@ impl App {
                 self.list_midi_inputs();
             }
             let names = self.projects.audio_system().and_then(|system| system.device_names());
-            if self.audio_devices.changed(names) {
+            // An output opened again (after a size set in the ASIO driver's control panel, say)
+            // has asked its driver for its sizes anew, so the list is made again from them.
+            let opened = self.about.audio_live.as_ref().map(|live| {
+                let (rate, frames, block) = (live.sample_rate, live.buffer_frames, live.engine_block);
+                (live.host.clone(), live.device.clone(), rate, frames, block, live.failed)
+            });
+            if self.audio_devices.changed(names) | self.audio_output_watch.changed(Some(opened)) {
                 self.list_audio_devices();
             }
         }

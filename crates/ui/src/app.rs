@@ -314,6 +314,10 @@ struct AutoArm {
     armed: std::collections::BTreeMap<ProjectId, TrackId>,
 }
 
+/// What Settings › Audio follows of the output playing: host, device, rate, callback frames,
+/// engine block and whether it failed.
+type OpenedOutput = (String, String, u32, u32, u32, bool);
+
 pub struct App {
     background: background::Background,
     /// When the level meters last showed something new (`ui.input` time).
@@ -483,6 +487,9 @@ pub struct App {
     midi_listed: Option<std::time::Instant>,
     /// Follows the audio devices while Settings › Audio shows, so headphones connected later show up.
     audio_devices: suhina_session::audio::DeviceWatch,
+    /// Follows the output playing while Settings › Audio shows: one opened again has asked its
+    /// driver for its buffer sizes anew, so the list is made again.
+    audio_output_watch: suhina_session::audio::Watch<Option<OpenedOutput>>,
     /// The themes to pick from; the settings say which is in use.
     themes: Themes,
     /// The project dialog (File › New or open) while it shows, and what it lists.
@@ -695,6 +702,7 @@ impl App {
             about: About::default(),
             midi_listed: None,
             audio_devices: suhina_session::audio::DeviceWatch::default(),
+            audio_output_watch: suhina_session::audio::Watch::default(),
             themes: Themes::default(),
             project_dialog: None,
             project_lists: Lists::default(),

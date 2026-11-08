@@ -255,3 +255,110 @@ fn only_a_sound_server_is_asked_for_the_engines_block_unasked() {
     assert_eq!(wanted_buffer("ALSA", None, 1024), None);
     assert_eq!(wanted_buffer("ALSA", Some(256), 1024), Some(256));
 }
+
+fn driver(min: u32, max: u32, preferred: u32, granularity: i32) -> DriverBuffers {
+    DriverBuffers { min, max, preferred, granularity: Granularity::from_driver(granularity) }
+}
+
+/// A driver whose size is set in its own control panel answers with that one size as smallest,
+/// largest and preferred: the list holds it alone, and it plays by default.
+#[test]
+fn a_driver_fixed_to_its_control_panels_size_offers_that_size_by_default() {
+    let fixed = driver(128, 128, 128, 0);
+    assert_eq!(fixed.sizes(), vec![128]);
+    assert_eq!(fixed.default_size(), Some(128));
+    assert_eq!(fit_to_driver(128, &fixed), (128, Some(128)));
+    // A size saved before the control panel changed comes to the driver's one size.
+    assert_eq!(fit_to_driver(2048, &fixed), (128, Some(128)));
+    // A size outside what the engine renders in is asked for no size: the driver keeps its own.
+    let tiny = driver(32, 32, 32, 0);
+    assert!(tiny.sizes().is_empty());
+    assert_eq!(tiny.default_size(), None);
+    assert_eq!(fit_to_driver(1024, &tiny).1, None);
+}
+
+#[test]
+fn powers_of_two_are_every_power_in_the_drivers_range() {
+    let powers = driver(32, 8192, 256, -1);
+    assert_eq!(powers.sizes(), vec![64, 128, 256, 512, 1024, 2048, 4096]);
+    assert_eq!(powers.default_size(), Some(256));
+    // Ends that are not powers of two are not sizes such a driver takes.
+    assert_eq!(driver(96, 1000, 128, -1).sizes(), vec![128, 256, 512]);
+    assert_eq!(fit_to_driver(300, &driver(96, 1000, 128, -1)), (256, Some(256)));
+}
+
+#[test]
+fn a_stepped_driver_offers_every_size_on_its_steps() {
+    // 48 to 480 in steps of 48: 96, 144 and 192 are offered, though they are no powers of two.
+    let stepped = driver(48, 480, 144, 48);
+    assert_eq!(stepped.sizes(), vec![96, 144, 192, 240, 288, 336, 384, 432, 480]);
+    assert_eq!(stepped.default_size(), Some(144));
+    assert_eq!(fit_to_driver(200, &stepped), (192, Some(192)));
+    // A size off its steps is never asked for.
+    assert_eq!(fit_to_driver(256, &stepped), (240, Some(240)));
+    // More steps than a list can show: the common sizes on them, and its own.
+    let fine = driver(16, 4096, 200, 8);
+    assert_eq!(fine.sizes(), vec![64, 128, 200, 256, 512, 1024, 2048, 4096]);
+    // A granularity below -1 is a step no size but the smallest is on, as the stream checks it.
+    assert_eq!(driver(64, 2048, 64, -2).sizes(), vec![64]);
+}
+
+#[test]
+fn an_unstated_granularity_offers_the_preferred_size_alone() {
+    assert_eq!(driver(96, 2000, 333, 0).sizes(), vec![333]);
+    assert_eq!(fit_to_driver(1024, &driver(96, 2000, 333, 0)), (333, Some(333)));
+    // A preferred size outside the range says nothing: the common sizes and ends in the range.
+    let odd = driver(256, 512, 4096, 0);
+    assert_eq!(odd.sizes(), vec![256, 512]);
+    assert_eq!(odd.default_size(), None);
+}
+
+#[test]
+fn a_driver_answer_that_makes_no_sense_counts_as_none() {
+    for broken in [driver(0, 0, 0, 0), driver(2048, 64, 128, -1)] {
+        assert_eq!(broken.range(), None);
+        assert_eq!(broken.sizes(), BUFFER_SIZES.to_vec());
+        assert_eq!(fit_to_driver(512, &broken), (512, None), "never asked for a size it did not declare");
+    }
+}
+
+/// An ASIO device as the list reads it: its offers say only the range, the driver says the rest.
+#[derive(Clone)]
+struct Driven(DriverBuffers);
+
+impl Listed for Driven {
+    fn name(&self) -> Option<String> {
+        Some("Interface".into())
+    }
+
+    fn plays(&self) -> bool {
+        true
+    }
+
+    fn offers(&self) -> Vec<Offer> {
+        vec![Offer { rates: (44_100, 44_100), channels: 2, buffer: self.0.range() }]
+    }
+
+    fn own(&self) -> Option<Offer> {
+        self.offers().first().copied()
+    }
+
+    fn driver(&self) -> Option<DriverBuffers> {
+        Some(self.0)
+    }
+}
+
+#[test]
+fn the_list_holds_what_the_asio_driver_allows_and_its_preferred_size() {
+    let listed = listed_outputs([Driven(driver(128, 128, 128, 0))], "ASIO", None);
+    assert_eq!(listed[0].buffer_sizes, vec![128]);
+    assert_eq!(listed[0].buffer_range, Some((128, 128)));
+    assert_eq!(listed[0].default_buffer, Some(128));
+    let listed = listed_outputs([Driven(driver(32, 2048, 256, -1))], "ASIO", None);
+    assert_eq!(listed[0].buffer_sizes, vec![64, 128, 256, 512, 1024, 2048]);
+    assert_eq!(listed[0].default_buffer, Some(256));
+    // Other hosts say no preferred size.
+    let own = Offer { rates: (48_000, 48_000), channels: 2, buffer: Some((256, 512)) };
+    let card = Stand { name: Some("Card"), plays: true, offers: vec![own], own: Some(own) };
+    assert_eq!(listed_outputs([card], "ALSA", None)[0].default_buffer, None);
+}

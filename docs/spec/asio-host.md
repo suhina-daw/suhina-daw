@@ -58,6 +58,26 @@ The latter is not a claim about every internal hardware/WDM buffer. The driver
 owns its internal settings. External offline panels may edit defaults rather than
 the running application's settings; the native call addresses the current instance.
 
+## Buffer sizes
+
+`ASIOGetBufferSize` answers with the smallest, largest and preferred buffer size and a
+granularity (ASIO SDK 2.3, section 3): -1 for the powers of two from the smallest to the largest,
+a positive step for the smallest and every step after it, and 0 with the smallest equal to the
+largest for that one size. Drivers whose size is set in their own control panel commonly answer
+with that one size as smallest, largest and preferred. Settings › Audio offers the sizes the
+answer allows within what the engine renders in (64 to 4096 frames): with powers of two every
+power in the range; with a step every size on it (the common sizes on it when there would be more
+than 64); with 0 and a range, the preferred size alone, the one size such a driver is sure to take;
+and the smallest, largest and preferred when the driver takes them. With no size chosen the driver's preferred size plays, and the
+engine renders in blocks of that size; the **Default** entry names it.
+
+The answer is kept with the device descriptor (below) and asked again each time an ASIO output
+opens, loading the driver for the call when none is loaded. A size changed in the driver's
+control panel while Suhina runs reaches Suhina as `kAsioResetRequest` or
+`kAsioBufferSizeChange`; both invalidate the stream, the output opens again with the new answer,
+and Settings › Audio lists the devices again when the output playing changes. A size chosen
+before the change goes to the nearest size the driver now takes, with a notice.
+
 ## Device catalog during playback
 
 CPAL 0.18.2's ASIO device descriptors cache metadata without retaining a driver.

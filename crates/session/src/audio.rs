@@ -318,6 +318,9 @@ pub struct DeviceInfo {
     pub buffer_sizes: Vec<u32>,
     /// The driver's own range, when it reports one.
     pub buffer_range: Option<(u32, u32)>,
+    /// The buffer size that plays when none is chosen, when the driver says: the one an ASIO
+    /// driver prefers, which is the size set in its control panel.
+    pub default_buffer: Option<u32>,
     /// Whether it can be opened in exclusive mode (WASAPI).
     pub exclusive: bool,
 }
@@ -480,14 +483,24 @@ pub trait AudioSystem: Send + Sync {
 /// Follows the answers of [`AudioSystem::device_names`]: says when the devices are no longer the
 /// ones the last answer named. The first answer only sets what is known: the list it would be
 /// compared with was made when the list first showed.
-#[derive(Debug, Default)]
-pub struct DeviceWatch {
-    known: Option<Vec<String>>,
+pub type DeviceWatch = Watch<Vec<String>>;
+
+/// Follows a value read again and again, such as the devices there or the output playing: says
+/// when it is no longer the one last read. The first answer only sets what is known.
+#[derive(Debug)]
+pub struct Watch<T> {
+    known: Option<T>,
 }
 
-impl DeviceWatch {
-    /// Takes an answer; true when the devices have changed since the last one.
-    pub fn changed(&mut self, answer: Option<Vec<String>>) -> bool {
+impl<T> Default for Watch<T> {
+    fn default() -> Self {
+        Self { known: None }
+    }
+}
+
+impl<T: PartialEq> Watch<T> {
+    /// Takes an answer (`None` when there is none to take); true when it differs from the last.
+    pub fn changed(&mut self, answer: Option<T>) -> bool {
         let Some(names) = answer else { return false };
         let changed = self.known.as_ref().is_some_and(|known| *known != names);
         self.known = Some(names);
@@ -601,6 +614,7 @@ pub(crate) fn hosts_json(hosts: &[HostInfo]) -> Value {
                         "default_sample_rate": d.default_sample_rate,
                         "buffer_sizes": d.buffer_sizes,
                         "buffer_range": d.buffer_range.map(|(min, max)| json!({ "min": min, "max": max })),
+                        "default_buffer": d.default_buffer,
                         "exclusive": d.exclusive,
                     })).collect::<Vec<_>>(),
                     "inputs": h.inputs.iter().map(|d| json!({

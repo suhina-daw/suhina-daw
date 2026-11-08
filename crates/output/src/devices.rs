@@ -121,6 +121,130 @@ pub fn allowed_buffers(range: Option<(u32, u32)>) -> Vec<u32> {
     sizes
 }
 
+/// The most sizes a stepped ASIO driver is offered one by one; with more, the common ones on its
+/// steps are offered.
+pub const MOST_STEPS: usize = 64;
+
+/// Which sizes between its smallest and largest an ASIO driver takes: the granularity
+/// `ASIOGetBufferSize` answers with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Granularity {
+    /// -1: the powers of two from the smallest to the largest.
+    PowersOfTwo,
+    /// 0: with the smallest equal to the largest that is its only size; otherwise only the one it
+    /// prefers is sure to be taken.
+    Unstated,
+    /// The smallest size and every `step` frames after it.
+    Step(u32),
+}
+
+impl Granularity {
+    /// The granularity a driver answered with. One that is neither -1, 0 nor positive is taken as
+    /// a step too large to reach any size but the smallest, as the stream's own check takes it.
+    pub fn from_driver(granularity: i32) -> Self {
+        match granularity {
+            -1 => Self::PowersOfTwo,
+            0 => Self::Unstated,
+            step => Self::Step(u32::try_from(step).unwrap_or(u32::MAX)),
+        }
+    }
+}
+
+/// What an ASIO driver answers about its buffer sizes (`ASIOGetBufferSize`): the smallest, the
+/// largest, the one it prefers and the steps between. A driver whose size is set in its own
+/// control panel commonly answers with that one size as smallest, largest and preferred.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DriverBuffers {
+    pub min: u32,
+    pub max: u32,
+    pub preferred: u32,
+    pub granularity: Granularity,
+}
+
+impl DriverBuffers {
+    /// The range declared, when it makes sense.
+    pub fn range(&self) -> Option<(u32, u32)> {
+        (self.min > 0 && self.min <= self.max).then_some((self.min, self.max))
+    }
+
+    /// Whether the driver takes `frames`: inside its range and on its granularity.
+    fn takes(&self, frames: u32) -> bool {
+        within(self.range(), frames)
+            && match self.granularity {
+                Granularity::PowersOfTwo => frames.is_power_of_two(),
+                // Nothing stated: its one size, or the one it prefers.
+                // A preferred size outside its range says nothing, and the range stands.
+                Granularity::Unstated => {
+                    self.min == self.max || frames == self.preferred || !within(self.range(), self.preferred)
+                }
+                Granularity::Step(step) => step > 0 && (frames - self.min).is_multiple_of(step),
+            }
+    }
+
+    /// The sizes it can be asked for, smallest first, within [`MIN_BUFFER_FRAMES`] …
+    /// [`MAX_BUFFER_FRAMES`]: with powers of two every power in its range; with a step every size
+    /// on it, or when that would be more than [`MOST_STEPS`] the common sizes on it; with nothing
+    /// stated its preferred size alone when that is in its range (its one size when the smallest
+    /// is the largest). Its smallest, largest and preferred are in when it takes them. A range
+    /// that makes no sense counts as none, as in [`allowed_buffers`].
+    pub fn sizes(&self) -> Vec<u32> {
+        let Some((min, max)) = self.range() else {
+            return allowed_buffers(None);
+        };
+        let engine = |n: &u32| (MIN_BUFFER_FRAMES..=MAX_BUFFER_FRAMES).contains(n);
+        let mut sizes: Vec<u32> = match self.granularity {
+            Granularity::Unstated if min == max => vec![min],
+            Granularity::Unstated if within(self.range(), self.preferred) => vec![self.preferred],
+            // A preferred size outside its own range: the common sizes in it, as with no answer.
+            Granularity::Unstated => allowed_buffers(self.range()),
+            Granularity::PowersOfTwo => (0..u32::BITS).filter_map(|shift| 1u32.checked_shl(shift)).collect(),
+            Granularity::Step(step) => {
+                let on_steps: Vec<u32> =
+                    (min..=max.min(MAX_BUFFER_FRAMES)).step_by(step.max(1) as usize).filter(engine).collect();
+                if on_steps.len() <= MOST_STEPS { on_steps } else { BUFFER_SIZES.to_vec() }
+            }
+        };
+        sizes.extend([min, max, self.preferred]);
+        sizes.retain(|n| engine(n) && self.takes(*n));
+        sizes.sort_unstable();
+        sizes.dedup();
+        sizes
+    }
+
+    /// The size that plays when none is chosen: the one the driver prefers, when it can be asked
+    /// for. A driver whose size is set in its control panel prefers that size.
+    pub fn default_size(&self) -> Option<u32> {
+        Some(self.preferred).filter(|n| self.sizes().contains(n))
+    }
+}
+
+/// Fits a wanted buffer size to an ASIO driver's answer: the frames the engine renders per block,
+/// and the size to ask the driver for (none when it takes no size the engine renders in).
+pub fn fit_to_driver(wanted: u32, driver: &DriverBuffers) -> (u32, Option<u32>) {
+    let sizes = driver.sizes();
+    let fitted = fit_buffer(wanted, &sizes);
+    (fitted, (sizes.contains(&fitted) && driver.takes(fitted)).then_some(fitted))
+}
+
+/// What the ASIO `device`'s driver answered about its buffer sizes when last asked; `fresh` asks
+/// it again first (loading it for the call when no driver is loaded), so a size set in its control
+/// panel since shows. A device of another host has none.
+#[allow(unused_variables)]
+pub(crate) fn driver_buffers(device: &cpal::Device, fresh: bool) -> Option<DriverBuffers> {
+    #[cfg(all(windows, feature = "asio"))]
+    if let cpal::platform::DeviceInner::Asio(device) = device.as_inner() {
+        let sizes = if fresh { device.refresh_buffer_sizes().ok() } else { None };
+        let sizes = sizes.unwrap_or_else(|| device.buffer_sizes());
+        return Some(DriverBuffers {
+            min: sizes.min,
+            max: sizes.max,
+            preferred: sizes.preferred,
+            granularity: Granularity::from_driver(sizes.granularity),
+        });
+    }
+    None
+}
+
 /// Whether the driver's declared `range` holds `frames`: only such a size may be asked for.
 pub fn within(range: Option<(u32, u32)>, frames: u32) -> bool {
     range.is_some_and(|(min, max)| min > 0 && min <= max && (min..=max).contains(&frames))
@@ -341,6 +465,10 @@ trait Listed {
     fn offers(&self) -> Vec<Offer>;
     /// The format it asks for itself.
     fn own(&self) -> Option<Offer>;
+    /// What its ASIO driver answered about buffer sizes; none on other hosts.
+    fn driver(&self) -> Option<DriverBuffers> {
+        None
+    }
 }
 
 impl Listed for cpal::Device {
@@ -374,6 +502,11 @@ impl Listed for cpal::Device {
             buffer: buffer_range(config.buffer_size()),
         })
     }
+
+    fn driver(&self) -> Option<DriverBuffers> {
+        // The answer kept from the last time the driver was asked: listing calls no driver.
+        driver_buffers(self, false)
+    }
 }
 
 /// The channels to list for a device: the most it offers, and on a sound server, which offers every
@@ -406,13 +539,17 @@ fn listed_outputs<D: Listed>(
                 offers.iter().filter_map(|offer| offer.buffer),
             );
             let most = offers.iter().map(|offer| offer.channels).max().unwrap_or(0);
+            let driver = device.driver();
+            let buffer_range = driver.map_or(buffer_range, |driver| driver.range());
+            let buffer_sizes = driver.map_or_else(|| offered_buffers(host_name, buffer_range), |driver| driver.sizes());
             Some(DeviceInfo {
                 default: default == Some(name.as_str()),
                 channels: listed_channels(host_name, own.as_ref().map(|offer| offer.channels), most),
                 sample_rates: sample_rates(&ranges),
                 default_sample_rate: own.map(|offer| offer.rates.0).filter(|r| *r > 0 && *r <= MAX_SAMPLE_RATE),
-                buffer_sizes: offered_buffers(host_name, buffer_range),
+                buffer_sizes,
                 buffer_range,
+                default_buffer: driver.and_then(|driver| driver.default_size()),
                 name,
                 ..DeviceInfo::default()
             })

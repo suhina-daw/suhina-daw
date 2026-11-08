@@ -1078,6 +1078,18 @@ impl Device {
                             if let Some(s) = stream {
                                 s.buffer_size = value;
                             }
+                            drop(streams);
+                            // Suhina patch: the application renders in blocks fitted to the
+                            // driver's size, so a new size (set in the driver's control panel)
+                            // invalidates the stream as kAsioResetRequest does, and the
+                            // application opens it again at the new size.
+                            if StreamState::load(&state, Ordering::Acquire) != StreamState::Starting
+                            {
+                                let _ = timer_tx.send(Error::with_message(
+                                    ErrorKind::StreamInvalidated,
+                                    format!("The ASIO driver changed its buffer size to {value}"),
+                                ));
+                            }
                         }
                         true
                     }

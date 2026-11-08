@@ -2575,7 +2575,10 @@ fn output_rows(
         ("Engine block", "Suhina's render block; the driver keeps its own buffer size".to_string())
     };
     label(painter, r, name, &note);
-    let mut options: Vec<(String, Option<u32>)> = vec![("Default (1024 frames)".to_string(), None)];
+    // With none chosen an ASIO driver plays the size it prefers (the one set in its control
+    // panel); elsewhere the engine renders in its own 1024-frame block.
+    let default_frames = device.and_then(|d| d.default_buffer).unwrap_or(1024);
+    let mut options: Vec<(String, Option<u32>)> = vec![(format!("Default ({default_frames} frames)"), None)];
     options.extend(sizes.iter().map(|n| (format!("{n} frames ({:.1} ms)", f64::from(*n) * 1000.0 / rate), Some(*n))));
     if let Some(frames) = choice_dropdown(ui, painter, r, name, &options, &choice.buffer_frames) {
         picked = choice.with_params(&serde_json::json!({ "bufferFrames": frames.unwrap_or(0) })).ok();
