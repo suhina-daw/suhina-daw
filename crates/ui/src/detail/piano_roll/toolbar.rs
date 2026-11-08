@@ -87,11 +87,38 @@ impl IconButton {
         })
     }
 
-    /// Our own strokes for the shape, in a 14 px box around `rect`'s centre, scaled with the
-    /// toolbar (Toolbar size): `scale` multiplies the shape and its strokes together.
+    /// The button's icon, drawn from Suhina's own artwork (`assets/icons/piano-roll/`) in
+    /// `currentColor`; `None` for the ones still drawn in code.
+    pub(crate) fn svg(self) -> Option<&'static str> {
+        Some(match self {
+            Self::Select => include_str!("../../../../../assets/icons/piano-roll/select.svg"),
+            Self::Draw => include_str!("../../../../../assets/icons/piano-roll/draw.svg"),
+            Self::Paint => include_str!("../../../../../assets/icons/piano-roll/paint.svg"),
+            Self::Erase => include_str!("../../../../../assets/icons/piano-roll/erase.svg"),
+            Self::Slice => include_str!("../../../../../assets/icons/piano-roll/slice.svg"),
+            Self::Mute => include_str!("../../../../../assets/icons/piano-roll/mute.svg"),
+            Self::Cut => include_str!("../../../../../assets/icons/piano-roll/cut.svg"),
+            Self::Copy => include_str!("../../../../../assets/icons/piano-roll/copy.svg"),
+            Self::Paste => include_str!("../../../../../assets/icons/piano-roll/paste.svg"),
+            Self::Duplicate => include_str!("../../../../../assets/icons/piano-roll/duplicate.svg"),
+            Self::Quantise => include_str!("../../../../../assets/icons/piano-roll/quantise.svg"),
+            Self::MidiTools => include_str!("../../../../../assets/icons/piano-roll/midi-tools.svg"),
+            Self::Audition => include_str!("../../../../../assets/icons/piano-roll/audition.svg"),
+            Self::Hide => return None,
+        })
+    }
+
+    /// The shape in a 14 px box around `rect`'s centre, scaled with the toolbar (Toolbar size):
+    /// the button's artwork in `color`, or, for the × and where the artwork does not raster, our
+    /// own strokes, `scale` multiplying the shape and its strokes together.
     pub fn draw(self, painter: &egui::Painter, rect: Rect, color: Color32, scale: f32) {
         let scale = if scale.is_finite() { scale.clamp(0.5, 2.5) } else { 1.0 };
         let c = rect.center();
+        if let Some(svg) = self.svg()
+            && crate::kit::skin::paint_icon(painter, Rect::from_center_size(c, Vec2::splat(14.0 * scale)), svg, color)
+        {
+            return;
+        }
         let stroke = Stroke::new(1.1 * scale, color);
         let at = |x: f32, y: f32| c + Vec2::new(x * scale, y * scale);
         let size = |w: f32, h: f32| Vec2::new(w * scale, h * scale);

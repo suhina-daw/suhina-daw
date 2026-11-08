@@ -162,17 +162,19 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
 
    The tools are **Select**, **Draw**, **Paint**, **Erase**, **Slice** and **Mute** (› Drawing
    notes, › Muting), each an
-   icon button: the shape is drawn in code with our own strokes ([`crates/ui/src/browser/browser_view.rs`](../../crates/ui/src/browser/browser_view.rs)
-   › `icon` does the same for the browser), on a 14 px box, 1.1 px wide, in `text.secondary`; the
+   icon button: the shape is Suhina's own artwork, one SVG per button in
+   [`assets/icons/piano-roll/`](../../assets/icons/piano-roll/) drawn in `currentColor` (the × that
+   hides the editor is still drawn in code), on a 14 px box with lines about 1.1 px wide, in `text.secondary`; the
    chosen tool's is `text.primary` on `control.activeBackground`. A click chooses the tool; the
    number keys **1** to **6** do too, after a click in the piano roll (› Shortcuts). The pointer
    over a button shows its name and its current key, such as "Draw (2)", and the button has that
    name as its accessible label, so a reader and a test find it by name.
 
-   The six tool shapes are drawn as an outline (the pointer is a filled arrow with a stem, the
-   pencil and the brush a tip and a body, the eraser a slanted block with a lighter rubbing end,
-   the blade a handle over a line, the mute tool a speaker with a cross beside it), so they are
-   told apart at 14 px and at the larger toolbar sizes below. The pointer over the grid takes the
+   The six tool shapes (a filled pointer with a stem, a pencil, a brush, an eraser, a blade
+   cutting, a speaker with a cross beside it) are told apart at 14 px and at the larger toolbar
+   sizes below; the clipboard's are scissors, two pages (Copy), a clipboard (Paste) and a page in
+   front of another (Duplicate), quantise is notes of several lengths on a line, the MIDI tools
+   three sliders and the audition headphones. The Arrangement's tools draw the same artwork. The pointer over the grid takes the
    tool's own shape where the window can show one: a crosshair for Draw and Paint, an **eraser**
    for Erase (the shape of the eraser button, not the no-entry sign it used before), a text cursor
    for Slice, an arrow for Select and Mute.

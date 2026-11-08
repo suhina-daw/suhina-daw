@@ -16,6 +16,25 @@ fn the_editor_spans_the_loop_or_the_clips_part_of_its_content() {
     assert_eq!(content_end(None, 0.0, 1e300, 16.0), 120_000.0);
 }
 
+/// Every toolbar icon drawn from artwork parses and rasters, so none falls back unseen.
+#[test]
+fn the_toolbar_icons_raster_from_their_artwork() {
+    use crate::detail::piano_roll::IconButton::*;
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        for button in
+            [Select, Draw, Paint, Erase, Slice, Mute, Cut, Copy, Paste, Duplicate, Quantise, MidiTools, Audition]
+        {
+            let svg = button.svg().unwrap_or_default();
+            assert!(crate::kit::skin::parse_svg(svg).is_ok(), "{:?}", button.name());
+            let rect = Rect::from_min_size(Pos2::ZERO, Vec2::splat(14.0));
+            assert!(crate::kit::skin::paint_icon(ui.painter(), rect, svg, Color32::WHITE), "{}", button.name());
+        }
+        assert!(Hide.svg().is_none(), "the × is drawn in code");
+    });
+    output.textures_delta.clear();
+}
+
 #[test]
 fn keys_are_named_with_60_as_c3() {
     assert_eq!(key_name(60), "C3");
