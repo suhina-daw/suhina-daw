@@ -193,8 +193,12 @@ fn a_click_adds_and_down_moves_the_lit_row() {
     select(&mut harness, "3 Audio");
     open(&mut harness);
     type_text(&mut harness, "e");
-    // Down moves the lit row; the list still offers rows to click.
+    // Down moves the lit row; the list still offers rows to click. The query matches more
+    // rows than the palette's twelve show, so the row scrolls in before its click
+    // (the access tree lists the rows the viewport hides; a real user scrolls to them).
     press(&mut harness, Key::ArrowDown);
+    harness.get_by_label("Add Reverb").scroll_to_me();
+    harness.run();
     harness.get_by_label("Add Reverb").click();
     harness.run();
     assert!(!harness.state().quick_add_open());
