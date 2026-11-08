@@ -1155,8 +1155,18 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
             return Ok(json!({ "device": path_value(&device_track), "file": path, "name": name }));
         }
         None => {
+            // A file inside the library stores relative to it ([ADR 0036] › a project stores a
+            // file's path relative to the library): the project opens on another machine with
+            // the same pack and finds it there. A file outside the library keeps its absolute
+            // path, recorded when it is all there is.
             let absolute = crate::files::absolute(std::path::Path::new(path));
-            absolute.display().to_string()
+            match session.library_base() {
+                Some(base) if absolute.starts_with(base) => match absolute.strip_prefix(base) {
+                    Ok(relative) => relative.display().to_string(),
+                    Err(_) => absolute.display().to_string(),
+                },
+                _ => absolute.display().to_string(),
+            }
         }
     };
     let asset = session.load_device_file(&kind, &state_text).map_err(CommandError)?;

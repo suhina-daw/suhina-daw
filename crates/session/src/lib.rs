@@ -283,9 +283,17 @@ impl Session {
     /// The library's root (`Documents/Suhina`, [ADR 0036]): where the user's own presets are
     /// kept and the library's folders sit under (`Sounds/NAM` …). The app sets the library's
     /// base below, since defaults are built beside it; a session without one cannot save into
-    /// the library.
+    /// the library. The library-relative device file states load against it from here on:
+    /// what opening tried without the base is tried again.
     pub fn set_library_base(&mut self, base: PathBuf) {
         self.library_base = Some(base);
+        // A load that missed the base left its marks keyed by the relative text; those entries
+        // are built again with the base set (a shipped key and an absolute path stand either
+        // way, so they keep what they have).
+        self.device_files.modified.clear();
+        let keyed = |path: &str| std::path::Path::new(path).is_absolute() || path.starts_with("builtin:");
+        self.device_files.notes.retain(|path, _| keyed(path));
+        self.device_files.assets.entries.retain(|path, _| keyed(path.as_ref()));
     }
 
     /// The library's root, when it was set ([`Session::set_library_base`]).
@@ -1313,6 +1321,13 @@ impl Session {
     /// here, at command or project-load time, never on the audio thread. The registry refuses a
     /// path without the device's extension, so a project's stored path cannot point a device at
     /// some other file (a UNC path, for one).
+    ///
+    /// A state's text is what the project carries: a shipped file's `builtin:` key, a
+    /// library-relative path ([`ADR 0036`] › it — `Sounds/NAM/…` joins the library's base on
+    /// this machine), or an absolute one. A library-relative file the disk does not carry still
+    /// runs when the pack carries a file of its name: the project opens on another machine
+    /// without the file on disk and renders from the pack. The state keeps the text it was
+    /// given; the resolution is what the loads hear.
     pub(crate) fn load_device_file(
         &self,
         kind: &str,
@@ -1331,10 +1346,32 @@ impl Session {
             if packed_id != kind {
                 return Err(format!("{kind:?} runs a shipped file of its own kind, not {packed_id:?}"));
             }
-            suhina_device_registry::load_builtin_file(kind, name, rate)
-        } else {
-            suhina_device_registry::load_file(kind, std::path::Path::new(path), rate)
+            return suhina_device_registry::load_builtin_file(kind, name, rate);
         }
+        // A library-relative path is resolved first ([ADR 0036]): the library's base joins it.
+        // A relative text with no base set resolves against the working folder, as an absolute
+        // one would have been there already.
+        let resolved = if std::path::Path::new(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            self.library_base()
+                .map_or_else(|| crate::files::absolute(std::path::Path::new(path)), |base| base.join(path))
+        };
+        if resolved.exists() {
+            return suhina_device_registry::load_file(kind, &resolved, rate);
+        }
+        // The disk does not carry it; the pack may. A file of the state's own name rides the
+        // executable — the on-disk copy's stand-in, so a project that opened on a machine
+        // without the file on disk still renders from the pack ([`ADR 0036`] › 7). A renamed
+        // copy is no stand-in: nothing proves it is the pack's file.
+        let state_name = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned());
+        let shipped = state_name.as_deref().and_then(|name| {
+            suhina_device_registry::pack_files(kind).into_iter().find(|(packed, _)| packed.eq_ignore_ascii_case(name))
+        });
+        if let Some((packed_name, _)) = shipped {
+            return suhina_device_registry::load_builtin_file(kind, packed_name, rate);
+        }
+        suhina_device_registry::load_file(kind, &resolved, rate)
     }
 
     /// Lets a playing engine hear the project as it is now, with any audio added to the pool.

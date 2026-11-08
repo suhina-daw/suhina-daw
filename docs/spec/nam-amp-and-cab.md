@@ -273,9 +273,12 @@ Everything the user does is one of the existing device commands plus one new `Ed
     off the audio thread, bounded by the caps above. The command errors with what the file's
     fault is ("…is not a NAM model", "…is unreadable", "…is more than 256 MiB"). The parsed
     model or decoded IR goes into the session's cache.
-  - The device's `state` becomes the file's absolute path; the chain's device id hashes it
-    (`.sd`'s trick), so changing the file rebuilds that one device and a project replay keeps
-    its state. One undo step, as `device.setParam` takes.
+  - The device's `state` carries what the project opens elsewhere from: a shipped file's key;
+    a file inside the library — library-relative ([ADR 0036] › 4, for example
+    `Sounds/NAM/Amp models/Suhina/<file>.nam`), resolved against the library's base wherever
+    the project opens, with the pack's file of the same name standing in when this machine's
+    disk (and its unpacked copy) is not there; a file outside the library — its absolute path,
+    recorded when it is all there is. One undo step, as `device.setParam` takes.
 - `device.savePreset{track, device, name}` — the device's values, and the file it selects, into
   the library's `Presets/<device id>/<name>.<device id>.preset.suhina`
   ([ADR 0036] › 5, [ADR 0014]'s format with its `file` field). A same-name preset is replaced.
@@ -394,8 +397,10 @@ the panel's Model missing note.
 
 ## Limits
 
-- The missing-files view and relink do not know the NAM and IR paths yet; joining them (the
-  panel then benefits from a fetched file and the one-click relink) is its own issue.
+- The missing-files view and relink do not read the NAM and IR paths yet; a library-relative
+  state opens against this machine's library root, with the pack's file standing in by name,
+  and the panels' note says when a load missed — but the *relink* story (a fetched file, a
+  one-click relink, the missing-files view listing the NAM and IR paths) is its own issue.
 - A2's width dial is run at its widest by **HQ**; a graduated quality choice (a knob over the
   sub-models) comes with a model that shows the trade-off, not with this pair.
 - Models are fed per side through their own running instance; a mono signal both sides share
