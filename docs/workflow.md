@@ -11,6 +11,7 @@ covers:
   - .github/workflows/comment-pr.yml
   - .github/workflows/branch-name.yml
   - .github/workflows/overlap.yml
+  - .github/workflows/closes-notice.yml
   - .github/workflows/docs-generated.yml
   - .github/labeler.yml
 ---
@@ -279,6 +280,11 @@ An issue closed by hand, outside a merge, gets a comment that names the commit o
 request that did the work and goes through the issue's points one by one, with a follow-up issue
 for any point left; a glance at the headline is not a check. A half-done issue found on the board
 is closed the same way, with a follow-up for what is left, never left waiting.
+
+The *Closes* notice ([`closes-notice.yml`](../.github/workflows/closes-notice.yml)) comments on a
+pull request whose title or description names an open issue with no closing keyword or relation
+phrase (`Part of`, `Depends on`, `Alternative to`, `Follow-up:`) for it, and keeps the comment up
+to date with each push; like the *Overlap* notice, it never fails.
 
 ### How to check it
 
