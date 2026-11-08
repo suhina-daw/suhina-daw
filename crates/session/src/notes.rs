@@ -938,6 +938,26 @@ pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, 
     append(session, params, added)
 }
 
+/// `note.makeRoom`: the notes `notes` names keep their places and the notes of their keys under
+/// them make room, as `replace` does (a note covered whole goes, one partly covered is cut). The
+/// piano roll sends it when notes edited while selected are let go, so a move through other notes
+/// erases nothing on the way. A named note no longer in the clip (deleted since) is left out.
+pub(crate) fn make_room(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let list = Args::new(params)
+        .value("notes")
+        .and_then(Value::as_array)
+        .ok_or("notes must be a list of note indices or {\"id\": n}")?;
+    if list.len() > MAX_NOTES_PER_COMMAND {
+        return Err(format!("at most {MAX_NOTES_PER_COMMAND} notes in one command, got {}", list.len()).into());
+    }
+    edit_notes(&mut session.project, params, |notes| {
+        let mut finder = Named::new(notes, NoteId);
+        let placed: Vec<usize> = list.iter().filter_map(|item| finder.at(item).ok()).collect();
+        let replaced = replace_under(notes, &placed);
+        Ok(json!({ "replaced": replaced }))
+    })
+}
+
 /// Whether the note `note` spans the beat `at`: it starts before and ends after it, so a note
 /// that starts or ends exactly at `at` is already cut there.
 fn spans(note: &Note, at: f64) -> bool {

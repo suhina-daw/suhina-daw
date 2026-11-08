@@ -709,6 +709,7 @@ pub fn show(
     scale_view::key_readers(ui, layout.keys, clip, &layout.rows, |key| layout.y_of(key), layout.key_height);
     // Notes the audition sounds go on now and off a moment later.
     let track = clip.address.get("track").and_then(Value::as_u64);
+    state.settle_frame(clip, actions);
     state.audition_frame(ui, track, actions);
     state.remember_selection(&clip.notes, selecting_new || sent_edit(&actions[sent_from..]));
 }

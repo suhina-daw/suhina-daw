@@ -62,6 +62,48 @@ impl Tool {
     ];
 }
 
+/// Selected notes edited with stacked notes off: their clip, their indices while they stay
+/// selected, and their ids once the clip shows them.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct Settling {
+    pub(super) address: Value,
+    pub(super) notes: BTreeSet<usize>,
+    pub(super) ids: Vec<NoteId>,
+}
+
+impl Settling {
+    /// `note.makeRoom` for the notes, by id.
+    pub(super) fn make_room(&self) -> Action {
+        let mut params = self.address.clone();
+        params["notes"] = json!(self.ids.iter().map(|id| json!({ "id": id.0 })).collect::<Vec<_>>());
+        Action::new("note.makeRoom", params)
+    }
+
+    /// `note.makeRoom` when one of the notes overlaps another note of its key in `clip` (none when
+    /// nothing overlaps, so no empty undo step).
+    pub(super) fn action(&self, clip: &PianoClip) -> Option<Action> {
+        if self.ids.is_empty() {
+            return None;
+        }
+        let ours: Vec<&Note> = clip
+            .notes
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| clip.notes.id(*i).is_some_and(|id| self.ids.contains(&id)))
+            .map(|(_, n)| n)
+            .collect();
+        let overlaps = clip.notes.iter().enumerate().any(|(i, other)| {
+            !clip.notes.id(i).is_some_and(|id| self.ids.contains(&id))
+                && ours.iter().any(|n| {
+                    n.key == other.key
+                        && n.time < other.time + other.duration - EPSILON
+                        && other.time < n.time + n.duration - EPSILON
+                })
+        });
+        overlaps.then(|| self.make_room())
+    }
+}
+
 /// A drag in progress, from where it started.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Gesture {
@@ -209,6 +251,10 @@ pub struct PianoRollState {
     /// The index the note the last click added will have, so the second click of a double-click
     /// selects that note rather than deleting it.
     pub(super) click_added: Option<usize>,
+    /// An edit of the selected notes asked to make room under them once they are let go.
+    pub(super) settle_pending: bool,
+    /// The selected notes edited with stacked notes off, waiting to make room once let go.
+    pub(super) settling: Option<Settling>,
     /// The note a press with Shift or Ctrl added to the selection, so the click that ends the
     /// press does not take it out again.
     pub(super) press_added: Option<usize>,
@@ -296,6 +342,8 @@ impl Default for PianoRollState {
             hover_key: None,
             last_click: None,
             click_added: None,
+            settle_pending: false,
+            settling: None,
             press_added: None,
             workflow_picked: None,
             ruler: RulerState::default(),
@@ -389,12 +437,14 @@ impl PianoRollState {
         params["notes"] = json!(self.acting().iter().collect::<Vec<_>>());
         self.selected.clear();
         self.span_notes.clear();
+        // Deleted, they have nothing to make room for.
+        self.settling = None;
         Some(Action::new("note.delete", params))
     }
 
     /// `note.quantize` for the selected notes, or every note when none is selected, with the
     /// last settings; `None` when no clip is shown.
-    pub fn quantize_selected(&self) -> Option<Action> {
+    pub fn quantize_selected(&mut self) -> Option<Action> {
         let mut params = self.shown.clone()?;
         if self.acting().is_empty() && self.span.is_some() {
             return None;
@@ -517,6 +567,7 @@ impl PianoRollState {
             "selection.cut" => {
                 // The insert mark stays where the notes were, so a paste puts them back there.
                 let first = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
+                self.settling = None;
                 self.selected.clear();
                 self.span_notes.clear();
                 self.insert_at = first.is_finite().then_some(first);

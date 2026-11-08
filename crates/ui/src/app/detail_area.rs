@@ -642,8 +642,10 @@ impl App {
             None => detail,
         };
         if piano.is_none() {
-            // A note the audition sounds goes off with the piano roll.
+            // A note the audition sounds goes off with the piano roll, and the notes edited while
+            // selected make room now.
             actions.extend(self.piano_roll.stop_audition());
+            actions.extend(self.piano_roll.settle_on_hide());
             self.piano_roll.hide();
         }
         let mut places = Vec::new();

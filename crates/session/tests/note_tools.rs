@@ -601,6 +601,17 @@ fn a_paste_in_place_keeps_the_originals() {
     assert_eq!(notes_of(&session, 1).iter().filter(|n| n.time == 3.0).count(), 1, "elsewhere it replaces");
 }
 
+/// `note.makeRoom` makes room under the notes it names, as `replace` does, and leaves out a note
+/// no longer in the clip.
+#[test]
+fn make_room_clears_under_the_named_notes() {
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 60), note(2.0, 1.0, 60)]));
+    let out =
+        run(&mut session, "note.makeRoom", json!({ "track": 1, "index": 0, "notes": [1, { "id": 999_999 }] })).unwrap();
+    assert_eq!(out["replaced"], json!([0]), "{out}");
+    assert_eq!(notes_of(&session, 1).len(), 2);
+}
+
 #[test]
 fn a_mute_rides_through_the_other_note_tools() {
     let mut session = Session::new(project(scale_notes()));

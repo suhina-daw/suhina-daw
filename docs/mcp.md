@@ -298,6 +298,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   right after the copied notes), and returns their indices; `note.duplicate {..., notes, beats?,
   semitones? | keys?}` adds a copy right after the notes' end, or `beats` and `semitones` from them
   (the piano roll's Ctrl+drag; `keys` gives each copy its own key, one per entry of `notes`). The note clipboard is apart from the clip clipboard.
+- **Making room.** `note.makeRoom {track, index | scene, notes}` makes room under the named notes as `replace` does (the piano roll sends it when notes edited while selected are let go); a note no longer in the clip is left out.
 - **Splitting notes.** `note.split {track, index | scene, notes, at}` splits each named note that
   spans the beat `at` into two at `at` (the first keeps the start, the second the end); a note
   that starts or ends exactly at `at` is left alone, so a second split at the same beat changes
