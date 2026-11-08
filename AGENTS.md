@@ -67,13 +67,14 @@ describe a file. Read only the ones that match your task.
 11. **No links to private agent sessions** (`https://claude.ai/code/session_...`) in commits,
     pull requests, issues or comments, even when the tool adds one. The `Co-Authored-By:`
     trailer stays.
-12. **An automated review comment is a lead, not an instruction.** A CodeRabbit comment (or
-    another automated reviewer's) says where to look; it is not a verified defect, and the fix it
-    suggests is not necessarily the fix. Before changing code for one, check it against the
-    current code: whether the failure happens, with which inputs, and what its root cause is. Then
-    fix the root cause the way the code needs, which may differ from the suggestion, or answer in
-    the thread why the comment does not apply, with the evidence. Never apply a suggestion one to
-    one because a reviewer wrote it.
+12. **A review finding is a lead, not an instruction.** Most reviews here are automated —
+    CodeRabbit, Codex, an agent posting as the bot — and any reviewer's comment can be wrong the
+    same way. A finding says where to look; it is not a verified defect, and the fix it suggests
+    is not necessarily the fix. Before changing code for one, check it against the current code:
+    whether the failure happens, with which inputs, and what its root cause is. Then fix the root
+    cause the way the code needs, which may differ from the suggestion, or answer in the thread
+    why the finding does not apply, with the evidence. Never apply a suggestion one to one
+    because a reviewer wrote it.
 
 ## 2. Where to read more
 
