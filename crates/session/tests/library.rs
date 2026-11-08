@@ -383,6 +383,12 @@ fn a_place_of_several_tags_is_the_ids_joined_and_the_filter_narrows_it() {
     // A joined place of a tag that is not one refuses.
     let missing = red + 500;
     assert!(run(&mut p, "library.search", json!({ "place": format!("tag:#{red}+#{missing}") })).is_err());
+    // A part that is not an id's own number at all refuses rather than searching what
+    // parsed ([#1254] review: the caller reads what is asked, not the subset silently).
+    for bad in ["oops", "4294967296"] {
+        let place = format!("tag:#{red}+{bad}");
+        assert!(run(&mut p, "library.search", json!({ "place": place })).is_err(), "{bad} in the join is refused");
+    }
     // The `tags` filter narrows the place's list, it does not widen it: the item must also
     // carry a filter tag ([#1254] review).
     run(&mut p, "library.setTag", json!({ "name": "Hot", "color": "#336699" })).unwrap();
@@ -407,9 +413,13 @@ fn set_tag_makes_a_tag_for_an_unused_name_and_an_id_selector_refuses() {
     assert!(made["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("Drums")));
     made_id_tagged(&mut p, "Drums");
     // The rename goes with the make: the id's name is formed, what rename says names it.
+    // The whole list is the check: a filtered one would pass an ignored rename by being
+    // empty ([#1254] review).
     run(&mut p, "library.setTag", json!({ "id": "Strums", "rename": "Plucks" })).unwrap();
-    let tags = made_id_tagged(&mut p, "Plucks");
-    assert!(!tags.iter().any(|t| t["name"] == json!("Strums")), "the rename named it instead");
+    let listed = run(&mut p, "library.tags", json!({})).unwrap();
+    let tags = listed["tags"].as_array().unwrap();
+    assert!(tags.iter().any(|t| t["name"] == json!("Plucks")), "the rename named it: {tags:?}");
+    assert!(!tags.iter().any(|t| t["name"] == json!("Strums")), "the rename named it instead: {tags:?}");
     // An id's own form that is not a tag: refused, as before.
     assert!(run(&mut p, "library.setTag", json!({ "id": "#999" })).is_err());
     // The `name` form keeps its place when `id` is missing.
@@ -500,5 +510,66 @@ fn set_sections_keeps_whether_a_section_showed_open() {
     // A second reorder, back over, keeps it closed still.
     run(&mut p, "library.setSections", json!({ "order": ["pinned", "library", "tags"] })).unwrap();
     assert_eq!(sections(&mut p).last().map(|s| s.1), Some(false), "Tags closed through both reorders");
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+// A `limit` and a make in the one command both run: the limit does not stand over the
+// tag's own work ([#1254] review: `done` is the none-of-them marker, not the one-only).
+#[test]
+fn set_tag_runs_the_limit_and_the_make_together() {
+    let settings = temp("set-tag-limit-settings");
+    let mut p = projects(&settings);
+    // The seven first tags would stop a lower limit; a raise makes both halves.
+    run(&mut p, "library.setTag", json!({ "limit": 10, "name": "Warm" })).unwrap();
+    let tags = run(&mut p, "library.tags", json!({})).unwrap();
+    assert_eq!(tags["limit"], json!(10), "the limit set");
+    assert!(tags["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("Warm")), "the tag made too");
+    // The id's own keeps its place beside the limit.
+    run(&mut p, "library.setTag", json!({ "limit": 11, "id": "#1", "color": "#123456" })).unwrap();
+    let tags = run(&mut p, "library.tags", json!({})).unwrap();
+    assert_eq!(tags["limit"], json!(11));
+    assert_eq!(tags["tags"][0]["color"], json!("#123456"), "the id's colour with the limit");
+    // The nothing form still refuses.
+    assert!(run(&mut p, "library.setTag", json!({})).is_err());
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+// A folder name that more than one folder has refuses a name-based command: the forest
+// order would pick one, and a reordering can change which ([#1254] review).
+#[test]
+fn an_ambiguous_folder_name_refuses_a_name_command() {
+    let settings = temp("ambiguous-folder-settings");
+    let mut p = projects(&settings);
+    run(&mut p, "library.addTagFolder", json!({ "name": "Box" })).unwrap();
+    run(&mut p, "library.addTagFolder", json!({ "name": "Kick" })).unwrap();
+    let folders = run(&mut p, "library.tags", json!({})).unwrap();
+    let one = folders["folders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == json!("Box"))
+        .map(|f| f["id"].as_u64().unwrap_or(0))
+        .unwrap_or(0);
+    run(&mut p, "library.addTagFolder", json!({ "name": "Kick", "parent": format!("#{one}") })).unwrap();
+    // Two Kick-named folders now: a name-based rename refuses.
+    let refused = run(&mut p, "library.renameTagFolder", json!({ "folder": "Kick", "rename": "Other" }));
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(matches!(&refused, Err(e) if e.to_string().contains("2 tag folders named")), "{refused:?}");
+    // The commands by id still take their folder.
+    let folders = run(&mut p, "library.tags", json!({})).unwrap();
+    let kick = folders["folders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == json!("Kick"))
+        .map(|f| f["id"].as_u64().unwrap_or(0))
+        .unwrap_or(0);
+    run(&mut p, "library.renameTagFolder", json!({ "folder": format!("#{kick}"), "rename": "Drums" })).unwrap();
+    let folders = run(&mut p, "library.tags", json!({})).unwrap();
+    assert!(folders["folders"].as_array().unwrap().iter().any(|f| f["name"] == json!("Drums")));
+    // A single-named folder still works by name, and the ambiguity lifts when it is one's own again.
+    run(&mut p, "library.renameTagFolder", json!({ "folder": "Drums", "rename": "Toe" })).unwrap();
+    let folders = run(&mut p, "library.tags", json!({})).unwrap();
+    assert!(folders["folders"].as_array().unwrap().iter().any(|f| f["name"] == json!("Toe")));
     let _ = std::fs::remove_dir_all(&settings);
 }

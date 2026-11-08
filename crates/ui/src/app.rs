@@ -798,6 +798,9 @@ impl App {
     /// it Suhina's settings folder and starts it.
     pub fn set_file_library(&mut self, library: suhina_library::Library) {
         self.projects.set_file_library(library);
+        // The map's kept layouts key on the old library's files; a replacement can read the
+        // same place and the same revisions, so they are dropped with it ([#1254] review).
+        self.sample_map.library_replaced();
         self.browser.relist();
     }
 

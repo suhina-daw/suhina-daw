@@ -101,6 +101,25 @@ impl Default for Panel {
     }
 }
 
+impl Panel {
+    /// The library went under a replacement (tests set one, and reopening does): the
+    /// layouts the panel kept are for its files and its keys only, and a new library can
+    /// read the same place and the same revisions, so they are dropped with it
+    /// ([#1254] review). What the user holds (the view's largeness, a window) stays.
+    pub fn library_replaced(&mut self) {
+        self.map = None;
+        self.grid = None;
+        self.grid_aspect = 1.0;
+        self.shown = None;
+        self.job = None;
+        self.grid_job = None;
+        self.last_layout = f64::NEG_INFINITY;
+        self.points.clear();
+        self.flags_key = None;
+        self.stale = true;
+    }
+}
+
 fn item_of(path: &Path) -> BrowserItem {
     BrowserItem {
         key: path.display().to_string(),

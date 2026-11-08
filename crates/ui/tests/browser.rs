@@ -2532,13 +2532,15 @@ fn a_tag_dropped_on_a_later_tag_lands_before_it() {
     let (settings, folder) = (temp("before-settings"), temp("before"));
     pack(&folder);
     let mut harness = window(&settings, &folder);
+    // Red onto Yellow: theforest order would be untouched if the drop moved nothing
+    // (Red already sits before Orange), so the landed order has to say the move.
     let from = harness.get_by_label("Place Tag Red").rect().center();
-    let to = harness.get_by_label("Place Tag Orange").rect().center();
+    let to = harness.get_by_label("Place Tag Yellow").rect().center();
     drag(&mut harness, from, to);
     harness.run();
     let forest = harness.state_mut().projects_mut().file_library_mut().tags();
     let names: Vec<&str> = forest.iter().map(|e| e.name()).collect();
-    assert_eq!(names[..3], ["Red", "Orange", "Yellow"], "Red before Orange, as the pill said: {names:?}");
+    assert_eq!(names[..3], ["Orange", "Red", "Yellow"], "Red before Yellow, past Orange: {names:?}");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -2672,8 +2674,12 @@ fn the_footer_reaches_the_tags_its_dots_do_not_draw() {
         let library = harness.state_mut().projects_mut().file_library_mut();
         library.tag_flat().into_iter().last().map(|t| (t.id, t.name)).unwrap_or_default()
     };
-    // The hidden tags list, each under its own name as the dot would say it.
+    // The hidden tags list, each under its own name as the dot would say it. Past ten
+    // rows the menu scrolls its own room: the last tag is brought into its view
+    // ([#1254] review), the way a user reads them by wheel.
     assert!(harness.query_by_label(&format!("Tag {}", last.1)).is_some(), "the last tag reached");
+    harness.get_by_label(&format!("Tag {}", last.1)).scroll_to_me();
+    harness.run();
     harness.get_by_label(&format!("Tag {}", last.1)).click();
     harness.run();
     let on = harness.state().browser.tag_filter.clone();

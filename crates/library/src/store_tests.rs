@@ -421,3 +421,28 @@ fn a_repeated_section_kind_keeps_its_first_slot() {
     store.set_section_open(SectionKind::Tags, false);
     assert_eq!(store.sections.iter().filter(|s| s.kind == SectionKind::Tags).count(), 1, "one slot to close");
 }
+
+// A tag renamed to a sibling folder's name: refused — the two kinds keep their names apart
+// in the forest, so the shape the loader skips cannot be saved ([#1254] review: the tag's
+// rename was the shape's own door).
+#[test]
+fn a_tag_renamed_to_a_folders_name_is_refused() {
+    let mut store = Store::default();
+    let belt = store.add_tag_folder(Some("Belt"), None).unwrap();
+    // The tag Orange, at Belt's own level, cannot take Belt's name.
+    assert!(store.rename_tag(2, "Belt").is_err(), "the level's folder name refuses");
+    assert_eq!(
+        tag_by_id(&store.tags, 2).map(|t| t.name.as_str()),
+        Some("Orange"),
+        "the refuse leaves the tag as it was"
+    );
+    // A rename into its own name stays no-op-ish, and other levels' folder names do not stop it.
+    store.rename_tag(2, "Belt").unwrap_err();
+    let under = store.add_tag_folder(Some("Belt"), Some(belt)).unwrap();
+    assert_eq!(under, belt + 1, "the second Belt sits under the first");
+    assert!(store.rename_tag(2, "Belt").is_err(), "any level's own folder name refuses");
+    // The make takes the same rule: a top-level folder's name is not a made tag's.
+    assert!(store.set_tag("Belt", None, None).is_err(), "the top-level folder's name refuses the make");
+    store.set_tag("Deep", Some("#123123"), None).unwrap();
+    assert!(tags_iter(&store.tags).any(|t| t.name == "Deep"));
+}

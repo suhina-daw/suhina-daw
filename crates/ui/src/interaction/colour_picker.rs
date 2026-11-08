@@ -179,6 +179,12 @@ pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str)
             d.insert_temp(id.with("value"), color32(picked));
             d.remove::<bool>(id.with("value").with("moved"));
         });
+    } else if !open {
+        // Nothing is being adjusted: the field's cache stays with the colour of what it
+        // edits, so an outer change (a command's, another menu's) is not lost when the
+        // field reopens ([#1254] review). Being open holds the field's own draft, as a
+        // text field holds a typed one.
+        ui.data_mut(|d| d.insert_temp(id.with("value"), current.map_or(Color32::GRAY, color32)));
     }
     ui.data_mut(|d| d.insert_temp(id, open));
     picked

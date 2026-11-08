@@ -613,7 +613,7 @@ the CLI can do the same.
 | `library.renameTagFolder` | `folder`, `rename` | renames a tag folder (by id or name); the name is unique among its own level's ([#1254] review) |
 | `library.removeTagFolder` | `folder` | lifts a tag folder's tags and folders into the parent; returns how many moved up |
 | `library.setFolderOpen` | `folder`, `open` | whether a tag folder's children show |
-| `library.moveTag` | `id`, `folder?`, `position?` | moves a tag or folder by id before `position` in its parent's list, or under `folder` (by id or name) at its end, or to the top when both are left out |
+| `library.moveTag` | `id`, `folder?`, `position?` | moves a tag or folder under `folder` (by id or name), or to the top level when `folder` is left out; `position` is the zero-based insertion index of that level after the move is taken out of its old place, clamped to the level's length, or the end when left out ([#1254]) |
 | `library.setSections` | `order` | the sidebar's sections in `order`; each keeps whether it showed open, so collapsing survives a reordering ([#1254] review), and Folders is never in the list ([#1254]) |
 | `library.setSectionOpen` | `section`, `open` | whether a section's rows show |
 | `library.setPluginsView` | `view` | which plug-ins the Plug-ins category lists: `instruments` (default) or `effects` ([plug-in browsing](plugin-browsing.md)) |

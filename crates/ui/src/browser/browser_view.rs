@@ -1639,10 +1639,11 @@ fn tags_section(
             );
             if response.hovered() {
                 out.status = Some(Status::Hint(format!(
-                    "{}{} — {} item{}",
+                    "{}{} — {} {}{}",
                     if is_folder { "Folder " } else { "Tag " },
                     name,
                     count,
+                    if is_folder { "tag" } else { "item" },
                     if count == 1 { "" } else { "s" }
                 )));
             }
@@ -1770,131 +1771,153 @@ fn tags_section(
         }
         // Right-click: rename (as it is typed), recolour, add inside, remove — asking first
         // while a remove empties a folder ([#1254] › Tag folders).
-        egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-            if is_folder {
-                tag_folder_menu(ui, row.entry.id(), state, projects, out);
-                return;
-            }
-            let field_id = Id::unique(("browser-rename-tag", id));
-            let mut name: String = ui.ctx().data(|d| d.get_temp(field_id)).unwrap_or_else(|| name.clone());
-            let rename_field = crate::kit::widgets::text_input(
-                ui,
-                egui::TextEdit::singleline(&mut name).id(field_id).desired_width(120.0),
-            );
-            rename_field.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", row.entry.name()))
-            });
-            if rename_field.clicked() {
-                rename_field.request_focus();
-            }
-            ui.ctx().data_mut(|d| d.insert_temp(field_id, name.clone()));
-            // The rename is as it is typed: a differing, filled name runs as the store
-            // command — an other tag's name is refused with the status's saying ([#1254]: the
-            // name is all the rename rewrites).
-            if !name.trim().is_empty()
-                && name.trim() != row.entry.name()
-                && run(
-                    projects,
-                    "library.setTag",
-                    json!({ "id": format!("#{}", row.entry.id()), "rename": name.trim() }),
-                    out,
-                )
-            {
-                ui.ctx().data_mut(|d| d.insert_temp(field_id, name.trim().to_string()));
-                state.relist();
-            }
-            let current = theme::parse_hex(tag_row_color(&row.entry)).map(crate::interaction::grid::to_rgb);
-            // Select colour: the palette's swatches and the theme editor's picker, opened in
-            // the menu (a picker of its own would end the menu as a click outside it does),
-            // the colour one command a pick.
-            if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
-                ui,
-                Id::unique(("browser-tag-colour", row.entry.id())),
-                current,
-                "Select colour",
-            ) {
-                let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
-                run(projects, "library.setTag", json!({ "id": format!("#{}", row.entry.id()), "color": hex }), out);
-            }
-            ui.separator();
-            // A new tag from here: a typed name, added with Enter or the Add tag button, in
-            // the colour this menu shows outlined, shown dimmed until something carries it
-            // (#1196).
-            let new_id = Id::unique(("browser-section-new-tag", row.entry.id()));
-            let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
-            let field = crate::kit::widgets::text_input(
-                ui,
-                egui::TextEdit::singleline(&mut new_name).id(new_id).hint_text("New tag…").desired_width(120.0),
-            );
-            field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
-            ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
-            let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-            let with_button = ui.button("Add tag").clicked();
-            if (with_enter || with_button) && !new_name.trim().is_empty() {
-                let taken = projects.file_library_mut().tag_flat();
-                if taken.iter().any(|t| t.name == new_name.trim()) {
-                    out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
-                } else {
-                    // The colour this menu shows outlined: a new tag comes out of the colour
-                    // the tag it was added from shows (#1196/#1254).
-                    let color = tag_row_color(&row.entry).to_string();
-                    if run(projects, "library.setTag", json!({ "name": new_name.trim(), "color": color }), out) {
-                        out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
-                        ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+        let was_open =
+            ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-row-menu-open", id)))).unwrap_or(false);
+        let popup = egui::Popup::context_menu(&response)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                if is_folder {
+                    tag_folder_menu(ui, row.entry.id(), state, projects, out);
+                    return;
+                }
+                let field_id = Id::unique(("browser-rename-tag", id));
+                let mut name: String = ui.ctx().data(|d| d.get_temp(field_id)).unwrap_or_else(|| name.clone());
+                let rename_field = crate::kit::widgets::text_input(
+                    ui,
+                    egui::TextEdit::singleline(&mut name).id(field_id).desired_width(120.0),
+                );
+                rename_field.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", row.entry.name()))
+                });
+                if rename_field.clicked() {
+                    rename_field.request_focus();
+                }
+                ui.ctx().data_mut(|d| d.insert_temp(field_id, name.clone()));
+                // The rename is as it is typed: a differing, filled name runs as the store
+                // command — an other tag's name is refused with the status's saying ([#1254]: the
+                // name is all the rename rewrites).
+                if !name.trim().is_empty()
+                    && name.trim() != row.entry.name()
+                    && run(
+                        projects,
+                        "library.setTag",
+                        json!({ "id": format!("#{}", row.entry.id()), "rename": name.trim() }),
+                        out,
+                    )
+                {
+                    ui.ctx().data_mut(|d| d.insert_temp(field_id, name.trim().to_string()));
+                    state.relist();
+                }
+                let current = theme::parse_hex(tag_row_color(&row.entry)).map(crate::interaction::grid::to_rgb);
+                // Select colour: the palette's swatches and the theme editor's picker, opened in
+                // the menu (a picker of its own would end the menu as a click outside it does),
+                // the colour one command a pick.
+                if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
+                    ui,
+                    Id::unique(("browser-tag-colour", row.entry.id())),
+                    current,
+                    "Select colour",
+                ) {
+                    let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
+                    run(projects, "library.setTag", json!({ "id": format!("#{}", row.entry.id()), "color": hex }), out);
+                }
+                ui.separator();
+                // A new tag from here: a typed name, added with Enter or the Add tag button, in
+                // the colour this menu shows outlined, shown dimmed until something carries it
+                // (#1196).
+                let new_id = Id::unique(("browser-section-new-tag", row.entry.id()));
+                let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
+                let field = crate::kit::widgets::text_input(
+                    ui,
+                    egui::TextEdit::singleline(&mut new_name).id(new_id).hint_text("New tag…").desired_width(120.0),
+                );
+                field
+                    .widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
+                ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
+                let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                let with_button = ui.button("Add tag").clicked();
+                if (with_enter || with_button) && !new_name.trim().is_empty() {
+                    let taken = projects.file_library_mut().tag_flat();
+                    if taken.iter().any(|t| t.name == new_name.trim()) {
+                        out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
+                    } else {
+                        // The colour this menu shows outlined: a new tag comes out of the colour
+                        // the tag it was added from shows (#1196/#1254).
+                        let color = tag_row_color(&row.entry).to_string();
+                        if run(projects, "library.setTag", json!({ "name": new_name.trim(), "color": color }), out) {
+                            out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
+                            ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+                            state.relist();
+                            // Done is done: the add closes the menu, as a rename or a remove
+                            // do; a refused name keeps it, so the name can be corrected.
+                            ui.close();
+                        }
+                    }
+                }
+                // A new folder beside the tag: the right-click on any tag offers the first
+                // folder too, at the tag's own level ([#1254] review › New folder on any tag).
+                if ui.button("New folder").clicked() {
+                    let store = projects.file_library_mut().tags();
+                    let parent = suhina_library::store::find_entry_parent(&store, row.entry.id()).and_then(|(p, _)| p);
+                    let params = match parent {
+                        Some(folder) => json!({ "parent": format!("#{folder}") }),
+                        None => json!({}),
+                    };
+                    if run(projects, "library.addTagFolder", params, out) {
+                        // The target's branch opens, so the new folder shows wherever it
+                        // landed ([#1254] review).
+                        if let Some(folder) = parent {
+                            tag_branch_open(projects, out, folder);
+                        }
                         state.relist();
-                        // Done is done: the add closes the menu, as a rename or a remove
-                        // do; a refused name keeps it, so the name can be corrected.
                         ui.close();
                     }
                 }
-            }
-            // A new folder beside the tag: the right-click on any tag offers the first
-            // folder too, at the tag's own level ([#1254] review › New folder on any tag).
-            if ui.button("New folder").clicked() {
-                let store = projects.file_library_mut().tags();
-                let parent = suhina_library::store::find_entry_parent(&store, row.entry.id()).and_then(|(p, _)| p);
-                let params = match parent {
-                    Some(folder) => json!({ "parent": format!("#{folder}") }),
-                    None => json!({}),
-                };
-                if run(projects, "library.addTagFolder", params, out) {
-                    // The target's branch opens, so the new folder shows wherever it
-                    // landed ([#1254] review).
-                    if let Some(folder) = parent {
-                        tag_branch_open(projects, out, folder);
-                    }
-                    state.relist();
-                    ui.close();
-                }
-            }
-            let armed = state.tag_remove_confirm.as_deref() == Some(row.entry.name());
-            let label = if armed {
-                format!("Remove {}? ({count} items)", row.entry.name())
-            } else {
-                format!("Remove tag {}", row.entry.name())
-            };
-            if ui.button(label).clicked() {
-                if !armed && suhina_library::store::tag_count(std::slice::from_ref(&row.entry)) > 0 {
-                    state.tag_remove_confirm = Some(row.entry.name().to_string());
+                let armed = state.tag_remove_confirm.as_deref() == Some(row.entry.name());
+                let label = if armed {
+                    format!("Remove {}? ({count} items)", row.entry.name())
                 } else {
-                    if run(projects, "library.removeTag", json!({ "id": format!("#{}", row.entry.id()) }), out) {
-                        state.tag_filter.retain(|t| *t != row.entry.id());
-                        if let Some(Place::Tag(tags)) = &mut state.place {
-                            tags.retain(|t| *t != row.entry.id());
-                            if tags.is_empty() {
-                                state.place = None;
+                    format!("Remove tag {}", row.entry.name())
+                };
+                if ui.button(label).clicked() {
+                    if !armed && suhina_library::store::tag_count(std::slice::from_ref(&row.entry)) > 0 {
+                        state.tag_remove_confirm = Some(row.entry.name().to_string());
+                    } else {
+                        if run(projects, "library.removeTag", json!({ "id": format!("#{}", row.entry.id()) }), out) {
+                            state.tag_filter.retain(|t| *t != row.entry.id());
+                            if let Some(Place::Tag(tags)) = &mut state.place {
+                                tags.retain(|t| *t != row.entry.id());
+                                if tags.is_empty() {
+                                    state.place = None;
+                                }
                             }
                         }
+                        state.tag_remove_confirm = None;
+                        state.relist();
+                        ui.close();
                     }
-                    state.tag_remove_confirm = None;
-                    state.relist();
-                    ui.close();
                 }
-            }
-            if armed && ui.button("Keep").clicked() {
-                state.tag_remove_confirm = None;
-            }
-        });
+                if armed && ui.button("Keep").clicked() {
+                    state.tag_remove_confirm = None;
+                }
+            });
+        // Closed: the drafts go with it, as the footer's menus do ([#1254] review: a stale
+        // draft would replay a refused rename every open, and save an old name over an
+        // external one — one command resets the field to what the store has).
+        let open = popup.is_some();
+        let open_key = Id::unique(("browser-row-menu-open", id));
+        if was_open && !open {
+            ui.ctx().data_mut(|d| {
+                if is_folder {
+                    d.remove::<String>(Id::unique(("browser-tag-folder", id)));
+                    d.remove::<String>(Id::unique(("browser-folder-new-tag", id)));
+                } else {
+                    d.remove::<String>(Id::unique(("browser-rename-tag", id)));
+                    d.remove::<String>(Id::unique(("browser-section-new-tag", id)));
+                }
+            });
+        }
+        ui.ctx().data_mut(|d| d.insert_temp(open_key, open));
     }
     // The carry armed in this very pass: the pre-paint derivation ran before it, so it
     // derives now — the pointer of this frame, the rows the frame drew ([#1254] review: a
@@ -1927,9 +1950,13 @@ fn tags_section(
     // results' rows the app's `tag_drag` carries the tag to the item instead (drops.rs), so
     // the sidebar takes the move only when the pointer is over the sidebar ([#1254] review:
     // a pointer that crossed onto an item or a row for the releasing frame commits to
-    // nothing of yesterday's target). The landing keys on the released frame — a pointer's
-    // up state flickers under the hover events of a carried drag ([#1254] review).
+    // nothing of yesterday's target). Escape in the frame the release is: the carry ends,
+    // the landing takes none of it — the app's own `tag_drag` reads the key first and the
+    // two would otherwise both own the frame ([#1254] review). The landing keys on the
+    // released frame — a pointer's up state flickers under the hover events of a carried
+    // drag ([#1254] review).
     let up = ui.input(|i| i.pointer.primary_released());
+    let escaped = ui.input(|i| i.key_pressed(Key::Escape));
     if state.drag_tag_id.is_some() {
         suhina_plugins::trace::state(
             "tag carry",
@@ -1944,7 +1971,7 @@ fn tags_section(
             ),
         );
     }
-    if up && state.drag_tag_id.is_some() && pointer.is_some_and(|p| area.contains(p)) {
+    if up && !escaped && state.drag_tag_id.is_some() && pointer.is_some_and(|p| area.contains(p)) {
         if let Some(carried) = state.drag_tag_id {
             let carried_name = state.drag_tag.take().unwrap_or_default();
             let target: Option<u32> = state.drop_tag_row.filter(|id| *id != carried);
@@ -2687,9 +2714,10 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
         // lights its ring while its filter is on, and its menu reaches every filter the
         // footer hides).
         if rect.right() + 2.0 > area.right() - 110.0 {
-            if at + 1 < tags.len() {
-                footer_overflow(ui, &painter, area, rect, &tags[at..], state);
-            }
+            // Every tag from here is off the footer's dots — a last one included: an
+            // active filter with no control at all would be worse than a wide one
+            // ([#1254] review).
+            footer_overflow(ui, &painter, area, rect, &tags[at..], state);
             break;
         }
         x = rect.right() + 2.0;
@@ -2858,6 +2886,12 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
 /// have gone: its menu holds every filter the footer hides, and the ring shows while one
 /// of them is on ([#1254] review: a hidden one could otherwise be toggled only by moving
 /// tags, which riffs back into their order).
+/// The overflow menu's rows past this scroll inside their own room, no window's height for
+/// a library wide in tags.
+const OVERFLOW_ROWS: f32 = 10.0;
+/// How tall an overflow menu's row shows.
+const OVERFLOW_ROW: f32 = 22.0;
+
 fn footer_overflow(
     ui: &mut Ui,
     painter: &egui::Painter,
@@ -2884,19 +2918,36 @@ fn footer_overflow(
     egui::Popup::menu(&response)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .align(egui::RectAlign::TOP_START)
+        .gap(2.0)
         .show(|ui| {
-            // The rows toggle the filters, and the menu stays for more than one.
-            for tag in tags {
-                let on = state.tag_filter.contains(&tag.id);
-                let row = ui.button(format!("Tag {}", tag.name));
-                if row.clicked() {
-                    if on {
-                        state.tag_filter.retain(|t| *t != tag.id);
-                    } else {
-                        state.tag_filter.push(tag.id);
+            // The rows toggle the filters, and the menu stays for more than one. A library
+            // wide in tags hides more rows than a window holds: the rows scroll inside
+            // their own room, so each one is reachable by the pointer ([#1254] review).
+            egui::ScrollArea::vertical().max_height(OVERFLOW_ROWS * OVERFLOW_ROW).show(ui, |ui| {
+                for tag in tags {
+                    let on = state.tag_filter.contains(&tag.id);
+                    let label = format!("Tag {}", tag.name);
+                    let row = ui.add(egui::Button::selectable(on, &label).min_size(Vec2::new(0.0, OVERFLOW_ROW)));
+                    // The folded state is its own: what the label says stays, so tests and
+                    // readers find the filter they mean, and the screen lets the ring's
+                    // state read ([#1254] review).
+                    row.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label.clone()));
+                    if let Some(color) = theme::parse_hex(&tag.color) {
+                        let at = row.rect.left_center() + Vec2::new(8.0, 0.0);
+                        ui.painter().circle_filled(at, 3.0, color);
+                        if on {
+                            ui.painter().circle_stroke(at, 4.5, Stroke::new(1.0, theme::browser_text_primary()));
+                        }
+                    }
+                    if row.clicked() {
+                        if on {
+                            state.tag_filter.retain(|t| *t != tag.id);
+                        } else {
+                            state.tag_filter.push(tag.id);
+                        }
                     }
                 }
-            }
+            });
         });
 }
 

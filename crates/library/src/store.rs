@@ -1070,6 +1070,12 @@ impl Store {
                     }
                     named = r.to_string();
                 }
+                // A made tag lands at the top: a folder's name of that level is not one it
+                // takes, the way a rename is held off one ([#1254] review). The `named`
+                // names no tag here (the None branch), so this is the folders' names only.
+                if level_names(&self.tags, None).contains(&named) {
+                    return Err(format!("there is a tag folder {named:?} at the top already"));
+                }
                 let color = match color {
                     // The colour as it was asked; else the named colours' turn from the
                     // name it is made under.
@@ -1083,7 +1089,7 @@ impl Store {
     }
 
     /// The colour a new tag named `name` takes when none was asked: the named colours'
-    /// entry the name names (a hand-named "Coral" gets its coral), else the enum's next
+    /// entry the name names (a hand-named "Tomato" gets its tomato), else the enum's next
     /// colour ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
     fn new_tag_color_for(&self, name: &str) -> String {
         match named_colours().iter().find(|(named, _)| *named == name.trim()) {
@@ -1125,6 +1131,8 @@ impl Store {
 
     /// Renames `id`'s tag; the name stays unique in the library, and nothing that referred
     /// to the tag by its id changes ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+    /// A name a folder of the tag's own level has is refused too ([#1254] review): the two
+    /// kinds keep their names apart, in the forest and over a reload both.
     pub fn rename_tag(&mut self, id: u32, name: &str) -> Result<(), String> {
         let name = name.trim();
         if name.is_empty() || name.len() > MAX_TAG_NAME {
@@ -1132,6 +1140,14 @@ impl Store {
         }
         if tag_name_taken(&self.tags, name) && tag_by_id(&self.tags, id).map(|t| t.name.as_str()) != Some(name) {
             return Err(format!("there is a tag {name:?} already"));
+        }
+        // A folder's name at the tag's own level: the tag takes none, so the shape the
+        // loader refuses cannot be saved ([#1254] review).
+        if let Some((parent, _)) = find_entry_parent(&self.tags, id)
+            && level_names(&self.tags, parent).iter().any(|shown| shown == name)
+            && tag_by_id(&self.tags, id).map(|t| t.name.as_str()) != Some(name)
+        {
+            return Err(format!("there is a tag folder {name:?} at its level already"));
         }
         match self.tag_mut(id) {
             Some(tag) => {
