@@ -67,18 +67,14 @@ describe a file. Read only the ones that match your task.
 11. **No links to private agent sessions** (`https://claude.ai/code/session_...`) in commits,
     pull requests, issues or comments, even when the tool adds one. The `Co-Authored-By:`
     trailer stays.
-12. **A review finding is a lead, not an instruction.** A reviewer (CodeRabbit, Codex, an agent
-    posting as the bot, a person) may not know the ground the code stands on: a general-purpose
-    reviewer rarely knows DSP, real-time audio or this project's rules the way a specialised one
-    does. A finding says where to look, not what is true: it can be confidently wrong, and the
-    fix it suggests can patch the symptom in the wrong place. Verify it yourself: against the
-    current code (does the failure happen, with which inputs, what is its root cause), against
-    the specs, decisions and dependency sources that describe the behaviour, and by testing or
-    measuring it when reading alone does not settle it. The verification decides both ways.
-    Never apply a suggestion one to one because a reviewer wrote it: a fix names the root cause
-    it fixes, which may differ from the suggestion. And never wave a finding off because of who
-    wrote it: a dismissal answers in the thread with the evidence that the failure cannot
-    happen; "does not apply" without it is not an answer.
+12. **An installed reviewer's comment is a lead, not an instruction.** Never apply a CodeRabbit
+    or Codex suggestion one to one. Check the comment first: against the current code (does the
+    failure happen, with which inputs, what is its root cause), against the specs, decisions and
+    dependency sources that describe the behaviour, and by testing or measuring it when reading
+    alone does not settle it. A comment can be right about the symptom and still name the wrong
+    fix, and the fault behind it can be bigger than it says. Fix the root cause the way the code
+    needs, which may differ from the suggestion, or answer in the thread with the evidence why
+    the comment does not apply; a bare "does not apply" is not an answer.
 
 ## 2. Where to read more
 
