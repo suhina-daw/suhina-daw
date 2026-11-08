@@ -44,13 +44,19 @@ struct ScopeKey {
 /// A finished layout: the map, its grid and the view's aspect the grid was made for.
 type Laid = (Map, Grid, f32);
 
-/// A layout being computed on a thread of its own.
+/// A layout being computed on a thread of its own. The thread's handle rides along: the
+/// panel joins an obsolete job's thread before it computes a replacement's room, so the
+/// two never compete (a map being computed there and one let go when the scope turned
+/// anywhere else), the old receiver's answer is dropped either way ([#1254] review).
 struct Job {
     key: ScopeKey,
     receiver: Receiver<Laid>,
     progress: Progress,
     /// When it started, in the window's time.
     started: f64,
+    /// The worker's own join, so its replacement's start is the only moment the panel
+    /// waits for it.
+    worker: std::thread::JoinHandle<()>,
 }
 
 /// The map's state in the window.
@@ -63,8 +69,8 @@ pub struct Panel {
     shown: Option<ScopeKey>,
     job: Option<Job>,
     /// A grid being made again for the view's new shape, on a thread of its own: the aspect it is
-    /// made for, and where it arrives.
-    grid_job: Option<(f32, Receiver<Grid>)>,
+    /// made for, where it arrives, and the thread's own join ([#1254] review).
+    grid_job: Option<(f32, Receiver<Grid>, std::thread::JoinHandle<()>)>,
     last_layout: f64,
     points: Vec<MapPoint>,
     /// What the points' flags were made from: search, tags, selection, pins, project.
@@ -102,17 +108,28 @@ impl Default for Panel {
 }
 
 impl Panel {
+    /// Ends the layout and the grid jobs that are on, their threads joined: the answers
+    /// they send from here on go to a receiver nobody reads, and the join keeps an
+    /// obsolete worker off its replacement's room ([#1254] review).
+    fn end_jobs(&mut self) {
+        if let Some(Job { worker, .. }) = self.job.take() {
+            let _ = worker.join();
+        }
+        if let Some((_, _, worker)) = self.grid_job.take() {
+            let _ = worker.join();
+        }
+    }
+
     /// The library went under a replacement (tests set one, and reopening does): the
     /// layouts the panel kept are for its files and its keys only, and a new library can
     /// read the same place and the same revisions, so they are dropped with it
     /// ([#1254] review). What the user holds (the view's largeness, a window) stays.
     pub fn library_replaced(&mut self) {
+        self.end_jobs();
         self.map = None;
         self.grid = None;
         self.grid_aspect = 1.0;
         self.shown = None;
-        self.job = None;
-        self.grid_job = None;
         self.last_layout = f64::NEG_INFINITY;
         self.points.clear();
         self.flags_key = None;
@@ -179,14 +196,13 @@ impl Panel {
                     self.grid = Some(grid);
                     self.grid_aspect = aspect;
                     self.flags_key = None;
-                    self.job = None;
-                    self.grid_job = None;
+                    self.end_jobs();
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
                     ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
                     return;
                 }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.job = None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.end_jobs(),
             }
         }
         let now = ui.input(|i| i.time);
@@ -228,8 +244,13 @@ impl Panel {
             let _ = sender.send((map, grid, aspect));
             ctx.request_repaint();
         });
-        if spawned.is_ok() {
-            self.job = Some(Job { key, receiver, progress, started: now });
+        if let Ok(worker) = spawned {
+            // The job it replaces is obsolete from here on: its thread joins before the
+            // replacement computes whatever it asks of the room ([#1254] review).
+            if let Some(old) = self.job.take() {
+                let _ = old.worker.join();
+            }
+            self.job = Some(Job { key, receiver, progress, started: now, worker });
         }
     }
 
@@ -238,18 +259,21 @@ impl Panel {
     /// 150 000 samples), so it is done on a thread of its own, one at a time, and only while the
     /// grid is shown; the old grid is drawn stretched meanwhile.
     fn fit_grid(&mut self, ui: &Ui) {
-        if let Some((aspect, receiver)) = &self.grid_job {
-            match receiver.try_recv() {
+        if let Some(borrowed) = self.grid_job.as_ref() {
+            let aspect = borrowed.0;
+            match borrowed.1.try_recv() {
                 Ok(grid) => {
-                    self.grid_aspect = *aspect;
+                    self.grid_aspect = aspect;
                     self.grid = Some(grid);
-                    self.grid_job = None;
+                    if let Some((_, _, worker)) = self.grid_job.take() {
+                        let _ = worker.join();
+                    }
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
                     ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
                     return;
                 }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.grid_job = None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.end_jobs(),
             }
         }
         let aspect = self.view.aspect();
@@ -267,8 +291,11 @@ impl Panel {
             let _ = sender.send(suhina_soundmap::grid::snap(&positions, aspect));
             ctx.request_repaint();
         });
-        if spawned.is_ok() {
-            self.grid_job = Some((aspect, receiver));
+        if let Ok(worker) = spawned {
+            if let Some((_, _, old)) = self.grid_job.take() {
+                let _ = old.join();
+            }
+            self.grid_job = Some((aspect, receiver, worker));
         }
     }
 

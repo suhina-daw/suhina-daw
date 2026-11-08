@@ -265,6 +265,13 @@ impl PluginsView {
     const EARLIER: [&'static str; 3] = ["grouped", "type", "flat"];
 }
 
+/// Whether a name spells a tag id's selector form (`#<digits>`): reserved, because a tag in
+/// such a name would answer its id's selectors instead of its name ([#1254] review). Other
+/// leading-# forms (`#notes`) are names like any of the rest.
+pub fn name_is_id_form(name: &str) -> bool {
+    name.starts_with('#') && name[1..].chars().all(|c| c.is_ascii_digit())
+}
+
 /// The folder `id`'s children, wherever it sits in the forest (`None` back when there is
 /// no such folder) — for counts and menus ([#1254]).
 pub fn folder_children(entries: &[TagEntry], id: u32) -> Option<&[TagEntry]> {
@@ -491,8 +498,14 @@ fn read_tag_entries(
                 warnings.push("browser.json: a tag without a usable name; skipped".into());
             } else if !is_color(color) {
                 warnings.push(format!("browser.json: tag {name:?} has no #RRGGBB colour; skipped"));
+            } else if name_is_id_form(name) {
+                warnings.push(format!("browser.json: tag {name:?} spells an id's selector; no tag is made of it"));
             } else if tag_name_taken(entries, name) {
                 warnings.push(format!("browser.json: tag {name:?} twice; the second skipped"));
+            } else if level_names(entries, parent).iter().any(|shown| shown == name) {
+                // A name the level's own folder has: the shape the moves refuse, skipped on
+                // load ([#1254] review), so a reload keeps the same turns.
+                warnings.push(format!("browser.json: tag {name:?} conflicts with a sibling folder; skipped"));
             } else if tag_count(entries) >= limit_warning(entries) {
                 warnings.push(format!("browser.json: more than {} tags; the rest skipped", limit_warning(entries)));
                 break;
@@ -527,6 +540,10 @@ fn read_tag_entries(
             let taken = level_names(entries, parent).into_iter().any(|shown| shown == name);
             if name.is_empty() || name.len() > MAX_TAG_FOLDER_NAME {
                 warnings.push("browser.json: a tag folder without a usable name; skipped".into());
+            } else if name_is_id_form(name) {
+                warnings.push(format!(
+                    "browser.json: tag folder {name:?} spells an id's selector; no folder is made of it"
+                ));
             } else if taken {
                 warnings.push(format!("browser.json: tag folder {name:?} twice in a level; the second skipped"));
             } else if folders_iter(entries).count() >= MAX_TAG_FOLDERS {
@@ -557,8 +574,12 @@ fn read_tag_entries(
                 warnings.push("browser.json: a tag without a usable name; skipped".into());
             } else if !is_color(color) {
                 warnings.push(format!("browser.json: tag {name:?} has no #RRGGBB colour; skipped"));
+            } else if name_is_id_form(name) {
+                warnings.push(format!("browser.json: tag {name:?} spells an id's selector; no tag is made of it"));
             } else if tag_name_taken(entries, name) {
                 warnings.push(format!("browser.json: tag {name:?} twice; the second skipped"));
+            } else if level_names(entries, parent).iter().any(|shown| shown == name) {
+                warnings.push(format!("browser.json: tag {name:?} conflicts with a sibling folder; skipped"));
             } else {
                 let id = *next;
                 *next += 1;
@@ -1047,10 +1068,25 @@ impl Store {
     /// the one it names. A `name` that no tag has and no `id` names a new one, created with
     /// the named colours' next turn when `color` is None ([#1254]). The name it wants
     /// belongs to another tag already: refused.
-    pub fn set_tag(&mut self, name: &str, color: Option<&str>, rename: Option<&str>) -> Result<(), String> {
+    ///
+    /// `folder` puts a made tag in that folder from its first byte ([#1254] review: the
+    /// destination's own level is where the make asks its name), where `None` is the top.
+    /// Its own change only: a make, the same colours as its top-level ride, the checks at
+    /// the level it lands in; colours and renames of a tag another `id` names go on as
+    /// they did, with `folder` refused.
+    pub fn set_tag(
+        &mut self,
+        name: &str,
+        color: Option<&str>,
+        rename: Option<&str>,
+        folder: Option<u32>,
+    ) -> Result<(), String> {
         let wanted = name.trim();
         if wanted.is_empty() || wanted.len() > MAX_TAG_NAME {
             return Err(format!("a tag's name is 1 to {MAX_TAG_NAME} bytes"));
+        }
+        if name_is_id_form(wanted) {
+            return Err("a tag's name does not spell an id's selector (#[0-9]+)".into());
         }
         if let Some(c) = color
             && !is_color(c)
@@ -1060,6 +1096,9 @@ impl Store {
         let found = tags_iter(&self.tags).find(|t| t.name == wanted).map(|t| t.id);
         match found {
             Some(id) => {
+                if folder.is_some() {
+                    return Err("a tag the library has cannot be made again; give its moves to library.moveTag".into());
+                }
                 self.set_tag_color(id, color)?;
                 if let Some(renamed) = rename {
                     self.rename_tag(id, renamed)?;
@@ -1077,16 +1116,27 @@ impl Store {
                     if r.len() > MAX_TAG_NAME {
                         return Err(format!("a tag's name is 1 to {MAX_TAG_NAME} bytes"));
                     }
+                    if name_is_id_form(r) {
+                        return Err("a tag's name does not spell an id's selector (#[0-9]+)".into());
+                    }
                     if tag_name_taken(&self.tags, r) {
                         return Err(format!("there is a tag {r:?} already"));
                     }
                     named = r.to_string();
                 }
-                // A made tag lands at the top: a folder's name of that level is not one it
-                // takes, the way a rename is held off one ([#1254] review). The `named`
-                // names no tag here (the None branch), so this is the folders' names only.
-                if level_names(&self.tags, None).contains(&named) {
-                    return Err(format!("there is a tag folder {named:?} at the top already"));
+                // The destination: `folder`'s level when one is given, else the top — the
+                // make asks its name of the level it lands in, folder or not ([#1254]
+                // review; the folder's own existence checked beside it).
+                if folder.is_some_and(|folder_id| folder_by_id(&self.tags, folder_id).is_none()) {
+                    return Err(format!("there is no tag folder #{:?}", folder.unwrap_or(0)));
+                }
+                if level_names(&self.tags, folder).contains(&named) {
+                    let folder =
+                        folder.map(|id| folder_by_id(&self.tags, id).map(|f| f.name.clone()).unwrap_or_default());
+                    return match folder {
+                        Some(named_folder) => Err(format!("there is a tag {named_folder:?} there already")),
+                        None => Err(format!("there is a tag folder {named:?} at the top already")),
+                    };
                 }
                 let color = match color {
                     // The colour as it was asked; else the named colours' turn from the
@@ -1094,7 +1144,7 @@ impl Store {
                     Some(c) => c.to_string(),
                     None => self.new_tag_color_for(&named),
                 };
-                self.push_tag(named, color, None)?;
+                self.push_tag(named, color, folder)?;
             }
         }
         Ok(())
@@ -1149,6 +1199,9 @@ impl Store {
         let name = name.trim();
         if name.is_empty() || name.len() > MAX_TAG_NAME {
             return Err(format!("a tag's name is 1 to {MAX_TAG_NAME} bytes"));
+        }
+        if name_is_id_form(name) {
+            return Err("a tag's name does not spell an id's selector (#[0-9]+)".into());
         }
         if tag_name_taken(&self.tags, name) && tag_by_id(&self.tags, id).map(|t| t.name.as_str()) != Some(name) {
             return Err(format!("there is a tag {name:?} already"));
@@ -1234,6 +1287,9 @@ impl Store {
                 if name.len() > MAX_TAG_FOLDER_NAME {
                     return Err(format!("a tag folder's name is 1 to {MAX_TAG_FOLDER_NAME} bytes"));
                 }
+                if name_is_id_form(name) {
+                    return Err("a tag folder's name does not spell an id's selector (#[0-9]+)".into());
+                }
                 if level_names(&self.tags, parent).iter().any(|shown| shown == name) {
                     return Err(format!("there is a tag folder {name:?} here already"));
                 }
@@ -1261,6 +1317,9 @@ impl Store {
         let name = name.trim();
         if name.is_empty() || name.len() > MAX_TAG_FOLDER_NAME {
             return Err(format!("a tag folder's name is 1 to {MAX_TAG_FOLDER_NAME} bytes"));
+        }
+        if name_is_id_form(name) {
+            return Err("a tag folder's name does not spell an id's selector (#[0-9]+)".into());
         }
         // A folder's name is unique among the folders of its own level (tags keep their own
         // uniqueness, so the few characters that could be both names are refused wherever

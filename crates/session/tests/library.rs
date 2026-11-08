@@ -433,6 +433,81 @@ fn set_tag_makes_a_tag_for_an_unused_name_and_an_id_selector_refuses() {
     let _ = std::fs::remove_dir_all(&settings);
 }
 
+// The `#`-selector's shapes and their names ([#1254] review): `#<digits>` is the id's own
+// shape no tag can take, and any other leading-# name is made and reached as a name.
+#[test]
+fn a_hash_name_made_and_reached_as_a_name_refuses_the_id_form() {
+    let settings = temp("hash-name-settings");
+    let mut p = projects(&settings);
+    // `#notes` is a name: made, reached by its name in a `tag:` place, and removing it by
+    // that name removes it, not an id.
+    run(&mut p, "library.setTag", json!({ "name": "#notes" })).unwrap();
+    run(&mut p, "library.search", json!({ "place": "tag:#notes" })).unwrap();
+    run(&mut p, "library.removeTag", json!({ "name": "#notes" })).unwrap();
+    assert!(run(&mut p, "library.removeTag", json!({ "name": "#notes" })).is_err(), "the second remove is none");
+    let tags = run(&mut p, "library.tags", json!({})).unwrap();
+    assert!(!tags["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("#notes")), "{tags:?}");
+    run(&mut p, "library.setTag", json!({ "name": "#notes" })).unwrap();
+    run(&mut p, "library.search", json!({ "place": "tag:#notes" })).unwrap();
+    // `#1` is the id's own: no tag by that name, and the make refuses.
+    assert!(run(&mut p, "library.setTag", json!({ "name": "#1" })).is_err());
+    // A rename into the id's form is refused too, and a folder's.
+    run(&mut p, "library.addTagFolder", json!({ "name": "Box" })).unwrap();
+    run(&mut p, "library.setTag", json!({ "name": "Notes" })).unwrap();
+    run(&mut p, "library.setTag", json!({ "name": "Fret", "color": "#123456" })).unwrap();
+    assert!(run(&mut p, "library.setTag", json!({ "name": "Fret", "rename": "#2" })).is_err());
+    assert!(run(&mut p, "library.addTagFolder", json!({ "name": "#2" })).is_err());
+    // `tag:#notes` resolved above; the id's shape nobody holds stays an error for the
+    // place's part too.
+    assert!(
+        run(&mut p, "library.search", json!({ "place": "tag:#8765432" })).is_err(),
+        "the unknown id's place refuses",
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+// A make with a `folder` lands in the folder from its first byte, its name asked of the
+// destination's own level ([#1254] review): a top-level folder's name is no show-stopper.
+#[test]
+fn set_tag_makes_into_the_folder_the_params_ask() {
+    let settings = temp("set-tag-folder-settings");
+    let mut p = projects(&settings);
+    run(&mut p, "library.addTagFolder", json!({ "name": "Box" })).unwrap();
+    // The first folder the command made carries its id in the reply ([#1254]: ids list).
+    let tags = run(&mut p, "library.addTagFolder", json!({ "parent": "#8", "name": "Drums" })).unwrap();
+    let box_id = tags["folder"].as_u64().unwrap_or(0);
+    // A tag named Drums (which a *top-level* folder too may be named) inside Box: the
+    // destination's own level is what the make asks its name of. The old flow (made at
+    // the top, moved under) refused with the top's saying.
+    run(&mut p, "library.addTagFolder", json!({ "name": "Outfit" })).unwrap();
+    run(&mut p, "library.setTag", json!({ "name": "Snare", "folder": format!("#{box_id}") })).unwrap();
+    run(&mut p, "library.setTag", json!({ "name": "Drums", "folder": format!("#{box_id}") })).unwrap();
+    let tags = run(&mut p, "library.tags", json!({})).unwrap();
+    // The makes landed in the folder: in the flat list, neither name is among the rows
+    // whose `folder` is none ([#1254] review).
+    let tops = tags["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|t| ["Snare", "Drums"].contains(&t["name"].as_str().unwrap_or_default()) && t["folder"].is_null())
+        .count();
+    assert_eq!(tops, 0, "{tags:?}: the makes landed in the folder, not at the top");
+    // A folder the params do not name refuses the same make.
+    assert!(run(&mut p, "library.setTag", json!({ "name": "Rim", "folder": "#76543" })).is_err());
+    // A tag the library has takes no `folder`: its `id` change runs plain, the moves go
+    // through `library.moveTag`.
+    let made = run(&mut p, "library.setTag", json!({ "name": "Belt" })).unwrap();
+    let belt_id = made["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == json!("Belt"))
+        .map(|t| t["id"].as_u64().unwrap_or(0))
+        .unwrap_or(0);
+    assert!(run(&mut p, "library.setTag", json!({ "id": format!("#{belt_id}"), "folder": "#8" })).is_err());
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
 fn made_id_tagged(p: &mut Projects, want: &str) -> Vec<Value> {
     run(p, "library.tags", json!({})).unwrap()["tags"]
         .as_array()
@@ -548,6 +623,16 @@ fn set_tag_runs_the_limit_and_the_make_together() {
     assert_eq!(tags["tags"][0]["color"], json!("#123456"), "the colour stayed");
     // The nothing form still refuses.
     assert!(run(&mut p, "library.setTag", json!({})).is_err());
+    // The one command, whole: a lowered limit the made tags would not carry refuses with
+    // nothing set or made ([#1254] review).
+    run(&mut p, "library.addTagFolder", json!({ "name": "Next" })).unwrap();
+    let before = run(&mut p, "library.tags", json!({})).unwrap();
+    let count = before["tags"].as_array().unwrap().len();
+    assert!(run(&mut p, "library.setTag", json!({ "name": "Stand", "limit": count })).is_err());
+    let after = run(&mut p, "library.tags", json!({})).unwrap();
+    assert_eq!(after["limit"], json!(11), "the limit the make would break came back");
+    assert!(!after["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("Stand")));
+    assert_eq!(after["tags"].as_array().unwrap().len(), count);
     let _ = std::fs::remove_dir_all(&settings);
 }
 

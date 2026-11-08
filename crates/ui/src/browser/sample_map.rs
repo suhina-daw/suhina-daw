@@ -311,6 +311,10 @@ impl MapView {
         self.hovered = None;
         self.previewed = None;
         self.pressed = None;
+        // A rubber band held over the old layout selects nothing of the new one's: the
+        // gesture ends here before a stretched release can pick by the old indices
+        // ([#1254] review).
+        self.rubber_band = None;
     }
 
     /// Shows the answer to [`MapEvent::Similar`]: rings these items and lists them at the side.

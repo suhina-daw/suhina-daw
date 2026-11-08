@@ -151,6 +151,11 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
                 "its colour, #RRGGBB (new tags take a named colour when it is left out)",
             ),
             optional("rename", ParamType::Text, "a new name for it"),
+            optional(
+                "folder",
+                ParamType::Text,
+                "the tag folder a made tag lands in, by its id (#<id>) or name; the top when it is left out ([#1254] review)",
+            ),
             optional("limit", ParamType::Integer, "the most tags there may be, from 1 to 1024 (default 64)"),
         ],
         kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
@@ -1143,62 +1148,90 @@ fn collect_tag_json(tree: &[suhina_library::TagEntry], parent: Option<u32>) -> V
 }
 
 fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    // The limit goes in last and what it asks is read whole before anything: a make or a
-    // change that fails leaves the limit what it was ([#1254] review — the one command
-    // does not go half in).
+    // What the command asks is agreed before anything runs: the limit's form, and the
+    // folder a make lands in ([#1254] review). The limit goes in before the tag's own
+    // work, so a raise makes past the library's own wall — `{"name":"Extra","limit":65}`
+    // at the 64 tags makes, where the old limit refused both. A tag work that fails
+    // rolls that limit back, so the one command lands whole or refuses whole ([#1254]
+    // review: a make behind a lowered limit is refused with nothing half in).
     let limit = Args::new(params).value("limit").filter(|v| !v.is_null());
-    if let Some(limit) = &limit {
-        let parsed = limit.as_u64().and_then(|n| usize::try_from(n).ok());
-        if parsed.is_none_or(|n| !(1..=suhina_library::MAX_TAG_LIMIT).contains(&n)) {
-            return Err("the tag limit is from 1 to 1024".into());
+    let parsed_limit = match &limit {
+        Some(limit) => match limit.as_u64().and_then(|n| usize::try_from(n).ok()) {
+            Some(n) if (1..=suhina_library::MAX_TAG_LIMIT).contains(&n) => Some(n),
+            _ => return Err("the tag limit is from 1 to 1024".into()),
+        },
+        None => None,
+    };
+    let folder = match optional_text(params, "folder")? {
+        Some(given) => Some(resolve_folder_param(projects, given).map_err(CommandError)?),
+        None => None,
+    };
+    let mut raised = None;
+    if let Some(max) = parsed_limit {
+        let old = projects.file_library_mut().tag_limit();
+        if old != max {
+            projects.file_library_mut().set_tag_limit(max).map_err(CommandError)?;
+            raised = Some(old);
         }
     }
-    let mut done = false;
-    match tag_param(projects, params)? {
-        // A tag by its id or name, changed, or created from the named colours when the name
-        // is not one yet ([#1254]):
-        Some(SetTagGiven::Tag((id, rename))) => {
-            if let Some(renamed) = rename {
-                projects.file_library_mut().rename_tag(id, &renamed).map_err(CommandError)?;
+    let work = |projects: &mut Projects| -> Result<Value, CommandError> {
+        // The limit applied before this runs is its own turn: the nothing form refuses
+        // when no limit and no tag came with it ([#1254] review).
+        let mut done = parsed_limit.is_some();
+        match tag_param(projects, params)? {
+            // A tag by its id or name, changed, or created from the named colours when the name
+            // is not one yet ([#1254]):
+            Some(SetTagGiven::Tag((id, rename))) => {
+                if folder.is_some() {
+                    // A tag the library has takes no `folder`: where it goes is
+                    // `library.moveTag`'s ([#1254] review).
+                    return Err("a tag the library has takes no folder; give its moves to library.moveTag".into());
+                }
+                if let Some(renamed) = rename {
+                    projects.file_library_mut().rename_tag(id, &renamed).map_err(CommandError)?;
+                }
+                if let Some(color) = optional_text(params, "color")? {
+                    projects.file_library_mut().set_tag_color(id, Some(color)).map_err(CommandError)?;
+                }
+                done = true;
             }
-            if let Some(color) = optional_text(params, "color")? {
-                projects.file_library_mut().set_tag_color(id, Some(color)).map_err(CommandError)?;
-            }
-            done = true;
-        }
-        // A name the `id` carried that no tag has: made from the store's make, which holds
-        // the same turn for `rename` ([#1254] review).
-        Some(SetTagGiven::Name(name)) => {
-            projects
-                .file_library_mut()
-                .set_tag(&name, optional_text(params, "color")?, optional_text(params, "rename")?)
-                .map_err(CommandError)?;
-            done = true;
-        }
-        // The `name` param is the id-keep's own: read as soon as no id gave, so a limit and
-        // a make can come in the one command ([#1254] review: the word forms keep their own
-        // work beside the limit's).
-        None => {
-            if let Some(name) = optional_text(params, "name")? {
+            // A name the `id` carried that no tag has: made from the store's make, which holds
+            // the same turn for `rename` and lands in the `folder` when one is asked ([#1254]
+            // review).
+            Some(SetTagGiven::Name(name)) => {
                 projects
                     .file_library_mut()
-                    .set_tag(name, optional_text(params, "color")?, optional_text(params, "rename")?)
+                    .set_tag(&name, optional_text(params, "color")?, optional_text(params, "rename")?, folder)
                     .map_err(CommandError)?;
                 done = true;
             }
+            // The `name` param is the id-keep's own: read as soon as no id gave, so a limit and
+            // a make can come in the one command ([#1254] review: the word forms keep their own
+            // work beside the limit's).
+            None => {
+                if let Some(name) = optional_text(params, "name")? {
+                    projects
+                        .file_library_mut()
+                        .set_tag(name, optional_text(params, "color")?, optional_text(params, "rename")?, folder)
+                        .map_err(CommandError)?;
+                    done = true;
+                }
+            }
+        }
+        if !done {
+            return Err("give a tag's id or name, a tag folder's, or a limit".into());
+        }
+        tags(projects, &Value::Null)
+    };
+    match work(projects) {
+        Ok(reply) => Ok(reply),
+        Err(e) => {
+            if let Some(old) = raised {
+                let _ = projects.file_library_mut().set_tag_limit(old);
+            }
+            Err(e)
         }
     }
-    // The limit's own application: the tag work has gone in, so a lowering that the
-    // made tags would not carry is refused with the count said ([#1254] review).
-    if let Some(limit) = limit {
-        let parsed = limit.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("limit must be a whole number")?;
-        projects.file_library_mut().set_tag_limit(parsed).map_err(CommandError)?;
-        done = true;
-    }
-    if !done {
-        return Err("give a tag's id or name, a tag folder's, or a limit".into());
-    }
-    tags(projects, &Value::Null)
 }
 
 /// A `set_tag`'s `id` names a tag the library has, with its rename untouched, or a name
@@ -1218,7 +1251,10 @@ fn tag_param(projects: &mut Projects, params: &Value) -> Result<Option<SetTagGiv
             if let Some(id) = resolve_tag_param(projects, given) {
                 return Ok(Some(SetTagGiven::Tag((id, rename))));
             }
-            if given.starts_with('#') {
+            // The id's own shape (`#` over digits and nothing else, [#1254] review) that
+            // is not one of the library's stays an error; other leading-# forms are
+            // names, made and reached as names.
+            if suhina_library::store::name_is_id_form(given) {
                 return Err(format!("there is no tag {given:?}; library.tags lists them").into());
             }
             Ok(Some(SetTagGiven::Name(given.to_string())))
@@ -1257,10 +1293,12 @@ fn tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
 }
 
 /// The tag a `tag`-sounding param names: `#<id>` for the id's own, else the name (names are
-/// unique, [#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+/// unique, [#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)). The id's form is
+/// `#` over digits and nothing else ([#1254] review): any other leading-# text is a name the
+/// store hands out, and the name answers before anything else is tried.
 pub(crate) fn resolve_tag_param(projects: &mut Projects, given: &str) -> Option<u32> {
-    if let Some(id) = given.strip_prefix('#') {
-        let id: u32 = id.parse().ok()?;
+    if let Some(digits) = given.strip_prefix('#').filter(|d| d.parse::<u32>().is_ok()) {
+        let id: u32 = digits.parse().ok()?;
         let library = projects.file_library_mut();
         suhina_library::store::tag_by_id(&library.tags(), id).map(|_| id)
     } else {

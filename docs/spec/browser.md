@@ -502,7 +502,14 @@ joins the ids `tag:#<id>+#<id>` ([#1254] review). There are seven at
 first: Red, Orange, Yellow, Green, Blue, Purple and Grey; a new tag without a colour takes the
 next named colour (the enum behind the seven, then the CSS named colours, with numbering —
 "Red 2" — when a name is already taken). There are seven at first and colours may repeat; two
-tags never share a name.
+tags never share a name. A name is 1 to 64 bytes and never spells an id's selector: `#` over
+digits and nothing else is the selectors' own shape (`#<id>`), refused at the make, the rename
+and the load ([#1254] review); another leading-`#` name (`#notes`) is a name like any of the
+rest, and `tag:#notes` reads it as one.
+`library.setTag` makes at the top and, with its `folder`, in that tag folder from its first
+byte ([#1254] review), the make's name asked of that level; a limit and a make in the one
+command land whole or refuse whole, the limit raising before the make and rolling back when
+its work fails ([#1254] review).
 
 **Tag folders** ([#1254] › Tag folders) hold tags and folders. A folder nests at most four
 deep (a deeper drop is refused; the cap counts folder levels, so a tag lives in even the
@@ -518,7 +525,9 @@ its parent's ([#1254] review), and a few points of air go between the rows where
 changes, so the nesting reads like the Pinned section's groups do; a folder's row draws its
 chevron, no mark before it ([#1254] review). Dragging a tag or folder row (a folder can never move under itself) moves
 it: before another row, into a folder — a closed one too —, or to the
-empty space of the section for the top level. While it drags, the pill by the pointer (and
+empty space of the section for the top level. Before a folder splits in two: the folder row's
+top half orders the carried row before it ([#1254] review), its lower half into it, the closed
+folder's row into it only, as the hint says ([#1254]). While it drags, the pill by the pointer (and
 the status bar) says what the drop does, for folders and subfolders alike: *Move Red into
 Drums*, *Put Purple before Yellow*, *Move Red to the top of the tags* ([#1254] review). Several tags move as one: a Shift-click picks a
 tag (a ring marks it; the place keeps doing its own work), a drag of any picked one lands them
@@ -544,7 +553,10 @@ or takes it off:
 items with any of the row's tags show; a Ctrl-click on a folder's own row puts its whole
 cortège in the place ([#1254] › Tag folders). A place of several tags is a search place of its
 ids joined: items with any of them, named first, as a single tag's place lists them
-([#1254] review).
+([#1254] review). A plain click of a tag a place of several holds sets the place to its tag
+alone ([#1254] review), and a tag the library dropped goes from the browser's states with it:
+a place, a filter or a Shift pick the rows no longer hold reads back as gone ([#1254]
+review).
 A ctrl-click on the place's last tag shows the tree again.
 As
 any chosen place, the row shows a **×** that lets the place go. While items are dragged, a tag

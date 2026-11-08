@@ -792,6 +792,7 @@ impl App {
     /// views keep from them is read again.
     pub fn note_outside_change(&mut self) {
         self.revision += 1;
+        self.browser.reconcile(&mut self.projects);
     }
 
     /// Uses `library` for the browser and the `library.*` commands (ADR 0012); the app gives
@@ -801,7 +802,7 @@ impl App {
         // The map's kept layouts key on the old library's files; a replacement can read the
         // same place and the same revisions, so they are dropped with it ([#1254] review).
         self.sample_map.library_replaced();
-        self.browser.relist();
+        self.browser.reconcile(&mut self.projects);
     }
 
     /// The open projects, to change (the browser's library, for the app).

@@ -87,7 +87,7 @@ fn search_ranks_exact_then_prefix_then_word_start_then_the_rest() {
     assert_eq!(names(&mut library, Query { limit: 2, ..Query::default() }).len(), 2);
     // Tags ([#1254]: a query's tags are the tag ids).
     let kick = samples.join("Loops").join("kick.wav").display().to_string();
-    library.set_tag("Red", None, None).unwrap();
+    library.set_tag("Red", None, None, None).unwrap();
     let red = library.tag_id_of("Red").unwrap();
     library.tag(&kick, red, true).unwrap();
     assert_eq!(names(&mut library, Query { tags: vec![red], ..Query::default() }), ["kick.wav"]);
@@ -205,7 +205,7 @@ fn pins_recent_and_tags_are_kept() {
     let mut library = Library::new(Some(settings.clone()));
     library.pin("device:overdrive").unwrap();
     library.record(Group::Instruments, "device:fm-synth").unwrap();
-    library.set_tag("Vocals", Some("#AA00AA"), None).unwrap();
+    library.set_tag("Vocals", Some("#AA00AA"), None, None).unwrap();
     let vocals = library.tag_id_of("Vocals").unwrap();
     library.tag("/x.wav", vocals, true).unwrap();
     let mut again = Library::new(Some(settings.clone()));
@@ -276,7 +276,7 @@ fn the_same_name_in_several_folders_keeps_the_folders_order_under_a_limit() {
 fn a_moved_files_tag_records_move_with_it_and_the_revision_advances() {
     let settings = temp("relocate-tags");
     let mut library = Library::new(Some(settings.clone()));
-    library.set_tag("Vocals", Some("#AA00AA"), None).unwrap();
+    library.set_tag("Vocals", Some("#AA00AA"), None, None).unwrap();
     // The store's own tags carry ids; the first one drawn is Vocals here.
     let vocals = store::tags_iter(&library.tags().clone()).find(|t| t.name == "Vocals").map(|t| t.id).unwrap_or(1);
     library.tag("/a/loop.wav", vocals, true).unwrap();

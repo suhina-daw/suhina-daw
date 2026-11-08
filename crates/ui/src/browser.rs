@@ -367,6 +367,11 @@ pub struct BrowserState {
     /// What a carried tag's drop does, worded by the sidebar's rows as they draw: the pill
     /// by the pointer and the status bar say it while the drag lasts ([#1254] review).
     pub drop_pill: Option<String>,
+    /// The tag folder a carried tag goes **before**, when the pointer holds its top half:
+    /// a folder takes a drop into itself by the row's lower half, and the top half orders
+    /// it among its siblings as the spec's *before another row* says ([#1254] review).
+    /// `None` while no such pointing is on.
+    pub drop_folder_before: Option<u32>,
     /// The section title a drag carries ([#1254] review: a section moves by dragging it
     /// among the others; Folders is never carried).
     pub drag_section: Option<suhina_library::SectionKind>,
@@ -445,6 +450,7 @@ impl Default for BrowserState {
             drop_tag_row: None,
             tag_selection: Vec::new(),
             drop_pill: None,
+            drop_folder_before: None,
             drag_section: None,
             drop_section: None,
             drag_pointer: None,
@@ -517,6 +523,32 @@ impl BrowserState {
         self.tag_counts = None;
         self.generation = self.generation.wrapping_add(1);
         self.rows_key = None;
+    }
+
+    /// What the library no longer holds the browser lets go ([#1254] review): a place, a
+    /// filter or a pick that names a tag the library dropped reads back as nothing of its
+    /// own — a place that fails its search, a footer filter without its control, a carry
+    /// that tries a deleted id first. The rows and their caches are read again after.
+    pub fn reconcile(&mut self, projects: &mut Projects) {
+        let live: HashSet<u32> =
+            suhina_library::store::tag_ids(&projects.file_library_mut().tags()).into_iter().collect();
+        self.tag_filter.retain(|id| live.contains(id));
+        self.tag_selection.retain(|id| live.contains(id));
+        if let Some(Place::Tag(tags)) = &mut self.place {
+            tags.retain(|id| live.contains(id));
+            if tags.is_empty() {
+                self.place = None;
+            }
+        }
+        // A carried tag the library dropped mid-carry: the carry ends, for its id is none
+        // it can land for.
+        if self.drag_tag_id.is_some_and(|id| !live.contains(&id)) {
+            self.drag_tag = None;
+            self.drag_tag_id = None;
+            self.drop_tag_row = None;
+            self.drop_pill = None;
+        }
+        self.relist();
     }
 
     /// Opens or closes a node of the tree.

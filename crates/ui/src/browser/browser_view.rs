@@ -687,11 +687,14 @@ fn sidebar_view(
     };
     // The sidebar's sections in the store's order, each title collapsible and carrying a
     // menu that opens, closes and reorders — Folders is not one of them: it is always last
-    // ([#1254] › Sidebar sections). The drop targets for a carried tag clear here; a closed
-    // section's rows must not keep pointing at yesterday's frame.
-    // The sidebar's sections in the store's order, each title collapsible and carrying a
-    // menu that opens, closes and reorders — Folders is not one of them: it is always last
-    // ([#1254] › Sidebar sections).
+    // ([#1254] › Sidebar sections). The drop targets for a carried tag clear at the
+    // sidebar's own start: a closed section draws no rows of its own, and yesterday's
+    // targets pointing through a command that closed it would land a drop on a hidden
+    // tag ([#1254] review).
+    state.drop_tag = None;
+    state.drop_tag_row = None;
+    state.drop_folder_before = None;
+    state.drop_pill = None;
     let sections_list = projects.file_library_mut().sections();
     let mut slots = Vec::new();
     for (at, section) in sections_list.iter().enumerate() {
@@ -1359,41 +1362,26 @@ fn tag_folder_menu(
     if (with_enter || with_button) && !new_name.trim().is_empty() {
         // The name one of the tags has: refused before the command, as the section's menus
         // do ([#1254] review: `setTag` would recolour and file that tag instead, and say it
-        // was added).
+        // was added). The name a row of the destination's own level holds is the store's
+        // refusal now: the make lands in the folder from its first byte, its name asked of
+        // that level ([#1254] review).
         if projects.file_library_mut().tag_flat().iter().any(|t| t.name == new_name.trim()) {
             out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
         } else {
-            // The destination's own level is the fitting check: the tag is made at the top
-            // and moved here, so a name a row of this level holds is refused with where it
-            // stands ([#1254] review: what the menu wants is a tag of this folder, not a
-            // top-level one).
-            let forest = projects.file_library_mut().tags();
-            if suhina_library::store::folder_children(&forest, folder_id)
-                .unwrap_or(&[])
-                .iter()
-                .any(|e| e.name() == new_name.trim())
-            {
-                out.status = Some(Status::Error(format!("there is a tag folder {:?} there already", new_name.trim())));
-            } else {
-                let mut params = json!({ "name": new_name.trim() });
-                let picked: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
-                if let Some(hex) = picked {
-                    params["color"] = json!(hex);
-                }
-                let made = run(projects, "library.setTag", params, out);
-                if made {
-                    if let Some(id) = projects.file_library_mut().tag_id_of(new_name.trim()) {
-                        run(projects, "library.moveTag", json!({ "id": format!("#{id}"), "folder": my }), out);
-                    }
-                    // The add shows itself: the folder opens, however deeply it sat, as the
-                    // subfolder's making does ([#1254] review).
-                    tag_branch_open(projects, out, folder_id);
-                    out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
-                    ui.ctx().data_mut(|d| d.remove::<String>(new_id));
-                    ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
-                    state.relist();
-                    ui.close();
-                }
+            let mut params = json!({ "name": new_name.trim(), "folder": my });
+            let picked: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
+            if let Some(hex) = picked {
+                params["color"] = json!(hex);
+            }
+            if run(projects, "library.setTag", params, out) {
+                // The add shows itself: the folder opens, however deeply it sat, as the
+                // subfolder's making does ([#1254] review).
+                tag_branch_open(projects, out, folder_id);
+                out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
+                ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+                ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
+                state.relist();
+                ui.close();
             }
         }
     }
@@ -1458,13 +1446,15 @@ fn tags_section(
 ) {
     let item_font = theme::ui_font(theme::TEXT_SMALL);
     let mut y = *py;
-    state.drop_tag = None;
-    state.drop_tag_row = None;
-    state.drop_pill = None;
     let tag_list = projects.file_library_mut().tags();
     let counts = state.tag_counts(projects.file_library_mut());
     let mut rows = Vec::new();
     tag_rows_of(&tag_list, 0, &mut rows);
+
+    // The pick prunes itself against the rows: a dead id the sidebar or the footer's
+    // removal left (the places' own reconciles run where the library's changes land,
+    // [#1254] review) takes nothing of the pick's landing with it.
+    state.tag_selection.retain(|id| rows.iter().any(|row| row.entry.id() == *id));
 
     // The rows' own geometry first: rects are derived from the rows to draw, so the frame's
     // fill and the landing know them in time ([#1254] review: the drop's row lights on the
@@ -1498,6 +1488,7 @@ fn tags_section(
     let pointer = ui.input(|i| i.pointer.latest_pos());
     if state.drag_tag_id.is_some() {
         state.drop_tag_row = None;
+        state.drop_folder_before = None;
         state.drop_pill = None;
         for (rid, name, is_folder, open, rect) in &row_rects {
             if !pointer.is_some_and(|p| rect.contains(p)) {
@@ -1507,7 +1498,13 @@ fn tags_section(
                 state.drop_pill = state.drag_tag.clone();
             } else {
                 state.drop_tag_row = Some(*rid);
-                state.drop_pill = Some(if *is_folder {
+                // A closed folder takes the drop into itself (the hint says so ([#1254]));
+                // an open folder's lower half goes in as well, its top half orders the
+                // carried one before it, as the spec's *before another row* does
+                // ([#1254] review).
+                let top_half = pointer.is_some_and(|p| p.y < rect.center().y) && *open;
+                state.drop_folder_before = if *is_folder && top_half { Some(*rid) } else { None };
+                state.drop_pill = Some(if *is_folder && !top_half {
                     format!("Move {} into {name}", state.drag_tag.clone().unwrap_or_default())
                 } else {
                     format!("Put {} before {name}", state.drag_tag.clone().unwrap_or_default())
@@ -1518,6 +1515,8 @@ fn tags_section(
             }
             break;
         }
+    } else {
+        state.drop_folder_before = None;
     }
     for (index, row) in rows.iter().enumerate() {
         let rect = rects[index];
@@ -1611,9 +1610,11 @@ fn tags_section(
                     color = color.gamma_multiply(0.5);
                 }
                 painter.circle_filled(center, DOT / 2.0, color);
-                if chosen || picked {
-                    painter.circle_stroke(center, DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
-                }
+            }
+            // A picked row's ring, a tag's dot's and a folder's own beside its chevron:
+            // where a group move's membership reads ([#1254] review).
+            if chosen || picked {
+                painter.circle_stroke(center, DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
             }
             let text = Rect::from_min_max(
                 Pos2::new(
@@ -1757,6 +1758,12 @@ fn tags_section(
                                     state.place = None;
                                 }
                             }
+                        } else if chosen && !ctrl {
+                            // A plain click of a tag the combined place holds shows its tag
+                            // alone: the place is the clicked tag's ([#1254] review).
+                            state.place = Some(Place::Tag(vec![id]));
+                            state.category = Category::All;
+                            state.scroll = 0.0;
                         } else if !chosen {
                             if ctrl
                                 && let Some(Place::Tag(tags)) = &mut state.place
@@ -1889,13 +1896,9 @@ fn tags_section(
                         state.tag_remove_confirm = Some(row.entry.name().to_string());
                     } else {
                         if run(projects, "library.removeTag", json!({ "id": format!("#{}", row.entry.id()) }), out) {
-                            state.tag_filter.retain(|t| *t != row.entry.id());
-                            if let Some(Place::Tag(tags)) = &mut state.place {
-                                tags.retain(|t| *t != row.entry.id());
-                                if tags.is_empty() {
-                                    state.place = None;
-                                }
-                            }
+                            // The removal's purge is the reconcile's: the pick, the place and
+                            // the filter lose the id the library dropped ([#1254] review).
+                            state.reconcile(projects);
                         }
                         state.tag_remove_confirm = None;
                         state.relist();
@@ -1916,6 +1919,10 @@ fn tags_section(
                 if is_folder {
                     d.remove::<String>(Id::unique(("browser-tag-folder", id)));
                     d.remove::<String>(Id::unique(("browser-folder-new-tag", id)));
+                    // The pick held for the tag it was to colour: a menu that closes
+                    // without its add leaves no colour for the next one to inherit
+                    // ([#1254] review).
+                    d.remove::<String>(Id::unique(("browser-folder-tag-color", id)));
                     crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-folder-tag-color", id)));
                 } else {
                     d.remove::<String>(Id::unique(("browser-rename-tag", id)));
@@ -1931,6 +1938,8 @@ fn tags_section(
     // drag's own arm frame says its drop as the next one would).
     if state.drag_tag_id.is_some() && state.drop_pill.is_none() {
         let pointer = ui.input(|i| i.pointer.latest_pos());
+        state.drop_tag_row = None;
+        state.drop_folder_before = None;
         for (rid, name, is_folder, open, rect) in &row_rects {
             if !pointer.is_some_and(|p| rect.contains(p)) {
                 continue;
@@ -1939,7 +1948,9 @@ fn tags_section(
                 state.drop_pill = state.drag_tag.clone();
             } else {
                 state.drop_tag_row = Some(*rid);
-                state.drop_pill = Some(if *is_folder {
+                let top_half = pointer.is_some_and(|p| p.y < rect.center().y) && *open;
+                state.drop_folder_before = if *is_folder && top_half { Some(*rid) } else { None };
+                state.drop_pill = Some(if *is_folder && !top_half {
                     format!("Move {} into {name}", state.drag_tag.clone().unwrap_or_default())
                 } else {
                     format!("Put {} before {name}", state.drag_tag.clone().unwrap_or_default())
@@ -1982,6 +1993,10 @@ fn tags_section(
         if let Some(carried) = state.drag_tag_id {
             let carried_name = state.drag_tag.take().unwrap_or_default();
             let target: Option<u32> = state.drop_tag_row.filter(|id| *id != carried);
+            // A folder's top half was where the pointer let the drop go: before the folder,
+            // not into it ([#1254] review).
+            let before_folder = matches!(target, Some(t) if state.drop_folder_before == Some(t));
+            let into_folder = matches!(target, Some(t) if folder_row_is_folder(&rows, t)) && !before_folder;
             // The picked ones move with the carried tag, in the pick's order — into a
             // folder, or up to the top, the carried one of them ([#1254] review: the pick
             // follows only when the drag is a picked tag's). A drop before a row
@@ -1990,7 +2005,7 @@ fn tags_section(
             let folder_of = |target: u32| -> Option<String> {
                 rows.iter().find(|r| r.entry.id() == target).map(|r| r.entry.name().to_string())
             };
-            let filing = target.is_none() || matches!(target, Some(target) if folder_row_is_folder(&rows, target));
+            let filing = target.is_none() || into_folder;
             let carrying = if filing && state.tag_selection.contains(&carried) {
                 state.tag_selection.clone()
             } else {
@@ -2002,7 +2017,7 @@ fn tags_section(
             for entry_id in carrying {
                 let mut params = json!({ "id": format!("#{entry_id}") });
                 let did = match target {
-                    Some(target) if folder_row_is_folder(&rows, target) => {
+                    Some(target) if into_folder => {
                         params["folder"] = json!(format!("#{target}"));
                         format!("Moved {} into {}", carried_name, folder_of(target).unwrap_or_default())
                     }
@@ -2234,6 +2249,9 @@ fn section_title(
     if was_open && !open && kind == SectionKind::Tags {
         ui.ctx().data_mut(|d| {
             d.remove::<String>(Id::unique(("browser-title-new-tag", kind.name())));
+            // The pick held for the tag it was to colour ([#1254] review: a menu that
+            // closes without its add leaves no colour for the next one to inherit).
+            d.remove::<String>(Id::unique(("browser-title-tag-color", kind.name())));
             crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-title-tag-color", kind.name())));
         });
     }
@@ -2935,13 +2953,9 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
 
                 if ui.button("Remove tag").clicked() {
                     if run(projects, "library.removeTag", json!({ "id": format!("#{0}", tag.id) }), out) {
-                        state.tag_filter.retain(|t| *t != tag.id);
-                        if let Some(Place::Tag(tags)) = &mut state.place {
-                            tags.retain(|t| *t != tag.id);
-                            if tags.is_empty() {
-                                state.place = None;
-                            }
-                        }
+                        // The removal's purge is the reconcile's: the pick among them, the
+                        // place and the filter too ([#1254] review).
+                        state.reconcile(projects);
                     }
                     state.relist();
                     ui.close();
@@ -2997,6 +3011,18 @@ fn footer_overflow(
     state: &mut BrowserState,
 ) {
     let clipped = rect.intersect(area);
+    // A dot the footer no longer room for drops its drafts where the sidebar's menus read
+    // them from: the rename's is one they share ([#1254] review — the row's menu must not
+    // open over a draft the hidden dot left). No menu of this tag is on: the reach here is
+    // the overflow's, whose rows hold filters, not drafts.
+    ui.ctx().data_mut(|d| {
+        for tag in tags {
+            d.remove::<String>(Id::unique(("browser-rename-tag", tag.id)));
+            d.remove::<bool>(Id::unique(("browser-footer-menu-open", tag.id)));
+            d.remove::<String>(Id::unique(("browser-section-new-tag", tag.id)));
+            crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-tag-colour", tag.id)));
+        }
+    });
     let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "More tags".to_string()));
     let fill = widgets::hover(ui, &response);

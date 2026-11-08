@@ -746,9 +746,15 @@ impl Library {
         self.save()
     }
 
-    pub fn set_tag(&mut self, name: &str, color: Option<&str>, rename: Option<&str>) -> Result<(), String> {
+    pub fn set_tag(
+        &mut self,
+        name: &str,
+        color: Option<&str>,
+        rename: Option<&str>,
+        folder: Option<u32>,
+    ) -> Result<(), String> {
         self.load();
-        self.store.set_tag(name, color, rename)?;
+        self.store.set_tag(name, color, rename, folder)?;
         self.tag_revision = self.tag_revision.wrapping_add(1);
         self.save()
     }

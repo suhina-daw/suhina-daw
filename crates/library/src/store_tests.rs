@@ -119,7 +119,7 @@ fn a_moved_files_pin_recent_place_and_tags_go_with_it() {
 /// id). The store's own ids are handed out in order, so the tests find the tag by its
 /// name where the helper does.
 fn set_tag_then_id_of(store: &mut Store, name: &str, color: Option<&str>) -> u32 {
-    store.set_tag(name, color, None).unwrap();
+    store.set_tag(name, color, None, None).unwrap();
     tags_iter(&store.tags).find(|t| t.name == name).map_or(FIRST_TAG_ID, |t| t.id)
 }
 
@@ -136,7 +136,7 @@ fn a_store_round_trips_and_a_missing_file_is_empty() {
     store.record(Group::Samples, "/samples/a.wav");
     store.record(Group::Samples, "/samples/b.wav");
     store.record(Group::Samples, "/samples/a.wav");
-    store.set_tag("Drums", Some("#112233"), None).unwrap();
+    store.set_tag("Drums", Some("#112233"), None, None).unwrap();
     let drums = set_tag_then_id_of(&mut store, "Drums", Some("#112233"));
     store.tag("/samples/kick.wav", drums, true).unwrap();
     store.plugins_view = PluginsView::Effects;
@@ -356,7 +356,7 @@ fn the_flattened_tags_lead_with_each_levels_folders() {
 #[test]
 fn a_new_tag_made_without_a_colour_answers_its_rename() {
     let mut store = Store::default();
-    store.set_tag("Coral", None, Some("Reef")).unwrap();
+    store.set_tag("Coral", None, Some("Reef"), None).unwrap();
     let made = tags_iter(&store.tags).find(|t| t.name == "Reef").map_or(0, |t| t.id);
     assert!(made >= FIRST_TAG_ID, "the rename named the made tag");
     assert_eq!(
@@ -365,12 +365,12 @@ fn a_new_tag_made_without_a_colour_answers_its_rename() {
         "the no-colour make took the named colours' next turn from the name it was made under"
     );
     // A rename that another tag has: refused, not silently made under the asked name.
-    assert!(store.set_tag("Coral", None, Some("Orange")).is_err(), "the taken name refuses");
+    assert!(store.set_tag("Coral", None, Some("Orange"), None).is_err(), "the taken name refuses");
     // Too long: the same refusal a rename of an existing tag gets.
     let long = "x".repeat(MAX_TAG_NAME + 1);
-    assert!(store.set_tag("Gold", None, Some(&long)).is_err());
+    assert!(store.set_tag("Gold", None, Some(&long), None).is_err());
     // An empty rename is none: Gold made as asked.
-    assert!(store.set_tag("Gold", None, Some("   ")).is_ok());
+    assert!(store.set_tag("Gold", None, Some("   "), None).is_ok());
     assert!(tags_iter(&store.tags).any(|t| t.name == "Gold"));
 }
 
@@ -442,8 +442,8 @@ fn a_tag_renamed_to_a_folders_name_is_refused() {
     assert_eq!(under, belt + 1, "the second Belt sits under the first");
     assert!(store.rename_tag(2, "Belt").is_err(), "any level's own folder name refuses");
     // The make takes the same rule: a top-level folder's name is not a made tag's.
-    assert!(store.set_tag("Belt", None, None).is_err(), "the top-level folder's name refuses the make");
-    store.set_tag("Deep", Some("#123123"), None).unwrap();
+    assert!(store.set_tag("Belt", None, None, None).is_err(), "the top-level folder's name refuses the make");
+    store.set_tag("Deep", Some("#123123"), None, None).unwrap();
     assert!(tags_iter(&store.tags).any(|t| t.name == "Deep"));
 }
 
@@ -455,7 +455,7 @@ fn a_move_that_would_pair_a_level_s_names_is_refused() {
     let mut store = Store::default();
     // A tag Belt at the top (an old make's), a folder Belt inside Box: both legal on
     // their own levels.
-    store.set_tag("Belt", Some("#765432"), None).unwrap();
+    store.set_tag("Belt", Some("#765432"), None, None).unwrap();
     let box_id = store.add_tag_folder(Some("Box"), None).unwrap();
     let belt_id = store.add_tag_folder(Some("Belt"), Some(box_id)).unwrap();
     // Moving the folder Belt out to the top pairs the level's names: refused, the

@@ -88,7 +88,8 @@ fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
 pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
     let mut picked = swatch_strip(ui, current);
     let any_id = ui.scope_id().with("any-colour");
-    let mut any_open = ui.data(|d| d.get_temp::<bool>(any_id)).unwrap_or(false);
+    let was_any_open = ui.data(|d| d.get_temp::<bool>(any_id)).unwrap_or(false);
+    let mut any_open = was_any_open;
     // "+": any colour.
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::click());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, any_open, "Any colour"));
@@ -107,6 +108,14 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
     }
     if any_open {
         picked = stepped_color_field(ui, any_id.with("value"), current.map_or(Color32::GRAY, color32)).or(picked);
+    }
+    // A closing "Any colour" leaves no stale colour behind, as the rows' field does
+    // ([#1254] review).
+    if was_any_open && !any_open {
+        ui.data_mut(|d| {
+            d.remove::<Color32>(any_id.with("value"));
+            d.remove::<bool>(any_id.with("value").with("moved"));
+        });
     }
     ui.data_mut(|d| d.insert_temp(any_id, any_open));
     picked
@@ -143,6 +152,7 @@ pub fn stepped_color_field(ui: &mut Ui, id: Id, start: Color32) -> Option<Rgb> {
 /// or the field's drag ended. `id` keeps one row's own picker state between frames.
 pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str) -> Option<Rgb> {
     let mut picked = swatch_strip(ui, current);
+    let was_open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     let mut open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     let text = if open { format!("{label}…") } else { label.to_string() };
     // The row is its content's own width: a popup menu given the parent's whole room would
@@ -185,6 +195,16 @@ pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str)
         // field reopens ([#1254] review). Being open holds the field's own draft, as a
         // text field holds a typed one.
         ui.data_mut(|d| d.insert_temp(id.with("value"), current.map_or(Color32::GRAY, color32)));
+    }
+    // A palette closing drops the field's own draft: the mid-adjust colour it held goes
+    // with the palette ([#1254] review), and a later opening starts from the colour the
+    // row edits now. A widget that runs no frame (a menu closed by another's open) skips
+    // the sync above, so the close itself clears.
+    if was_open && !open {
+        ui.data_mut(|d| {
+            d.remove::<Color32>(id.with("value"));
+            d.remove::<bool>(id.with("value").with("moved"));
+        });
     }
     ui.data_mut(|d| d.insert_temp(id, open));
     picked
