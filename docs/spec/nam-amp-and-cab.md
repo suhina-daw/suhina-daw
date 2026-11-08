@@ -3,7 +3,7 @@ description: The NAM Amp Modeler and NAM Cab Loader devices: what a .nam model f
 read_when: NAM, Neural Amp Modeler, nam, amp modeler, cab loader, neural amp, .nam file, impulse response, IR, cab, model file, device.setNamFile, nam models folder, IR folder
 type: spec
 status: draft
-last_verified: 2026-11-02
+last_verified: 2026-11-07
 covers:
   - devices/nam-amp-modeler/**
   - devices/nam-cab-loader/**
