@@ -198,8 +198,9 @@ play start where it was clicked, on the grid (Alt: free), as a click on an empty
 does; a thin line (the insert marker) shows it in that lane while the play start is there, also
 while the transport plays and the playhead moves on. A clip picked this way is not lit but
 outlined, so the clip the detail area shows and Delete takes is plain to see; a clip picked whole
-is lit. The grid's lines show through a clip's body, faintly in its own colour,
-the bars a little stronger (Settings › Arrangement › *Grid in clips*, `clip_grid = on | off`,
+is lit. The grid's lines show through a clip's body in its own colour, under the waveform: a
+tenth of the way from the body to its ink between beats, a fifth on the bars, enough to place an
+edit or an envelope point by eye against the lanes' grid (Settings › Arrangement › *Grid in clips*, `clip_grid = on | off`,
 on by default). With *Ctrl+drag selects time
 over clips* on, a plain drag moves clips and Ctrl paints time.
 Ctrl (Cmd) held as the drag begins copies the clips instead (Shift when Ctrl selects time):
@@ -269,8 +270,17 @@ Let go, it is
 
 With Ctrl and Alt held (Settings › Arrangement › *Ctrl+Alt-drag on an edge stretches audio*, on by
 default) an
-audio clip's edge stretches its audio to the new length, its pitch kept: `clip.stretch {track, index, start?, end?}` scales the content's warp markers (an unwarped
-clip is warped first) and gives the clip a content of its own when another clip plays the same.
+audio clip's edge stretches its audio to the new length, its pitch kept: `clip.stretch {track, index, start?, end?}` scales the clip's warp markers and its gain
+envelope (an unwarped clip is warped first) and gives the clip a content of its own when another
+clip plays the same, as the content's length in beats changes. The clip is drawn stretched while
+the edge is dragged and stays drawn so once let go, until the project has the new length: drawn
+unstretched in its new extent for those frames, its waveform flashed at its old scale.
+
+**Each audio clip is its own.** Its gain, gain envelope, transpose, warp and warp markers are the
+clip's: a duplicate, a pasted copy and a split's parts start with the same and change apart, and
+the gain field on a clip changes that clip only ([clip panel](clip-panel.md),
+[ADR 0035](../decisions/0035-clip-gain-envelope.md)). The gain envelope is drawn on the clip's
+waveform while the clip panel's Envelope switch is on (› Gain envelope there).
 
 A time selection over a clip and empty time, consolidated (Ctrl+J), becomes one clip over the
 whole span, its empty part silent.
@@ -388,13 +398,14 @@ the beginning), which must be inside the clip (not on its edges). It is one undo
 both parts' indices (`first`, `second`).
 
 - **Both parts play the same content** (one content in the pool, as before the cut), so editing
-  the notes or the audio of one changes the other, as for a duplicated clip.
+  the notes of one changes the other, as for a duplicated clip; the audio's gain, envelope, pitch
+  and warp are each part's own (#742), and each part plays its own stretch of the envelope.
 - **The second part carries on from where the clip was at the cut:** its start marker
   (`offset`) is the content position the clip had reached there, following the loop (a clip
   whose start marker is at or past the loop end starts at the loop start) and, for a transposed
   audio clip that is not warped, the faster or slower speed it moves through its file at
-  (`2^(transpose / 12)` content beats per beat). Loop, warp markers, warp mode, gain and
-  transpose are the content's or the clip's, and stay as they are.
+  (`2^(transpose / 12)` content beats per beat). Loop, warp markers, warp mode, gain, envelope and
+  transpose are the clip's, and both parts keep them as they were.
 - **Fades:** the first part keeps the fade-in and the second the fade-out, each with its shape
   and curve; there is no fade at the cut (a zero-length fade, so only the engine's 2 ms click
   guard is there). A fade longer than its part shrinks to fit it, as when a clip is shortened.
@@ -741,9 +752,12 @@ end; dragging its middle moves the whole region, keeping its length. A click on 
 on** or **Turn loop off**) turn looping on or off. With a time selection or clips selected, Ctrl+L
 loops their span; pressed again while the loop is on over that very span, it turns looping off.
 
-**Limits.** A time-stretched audio clip in the region is silent for a moment after each wrap in
-real-time playback, until the stretch worker has caught up with the loop start, as after any jump
-while playing; offline it plays without a gap.
+A time-stretched audio clip plays the loop start at once after each wrap, in real time as offline.
+Its stretched audio is rendered ahead (ADR 0003), so it is ready at the loop start before the wrap
+comes: a clip that has played out is moved there ahead, and a clip that plays up to the loop end
+(a loop drawn over the clip) has a second voice that waits at the loop start while the first plays
+to the end; the two take turns at each wrap (#1268). Only a loop shorter than about half a second
+can still leave a moment of silence after a wrap.
 
 ## Tracks
 

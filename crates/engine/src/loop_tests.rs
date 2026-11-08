@@ -18,7 +18,7 @@ const SR: u32 = 8_000;
 const BEAT: usize = SR as usize / 2;
 
 /// Two seconds (4 beats) of a ramp from 0 up, so every frame says where in the clip it is.
-fn ramp() -> (AudioRegion, AudioPool) {
+fn ramp() -> (crate::fade_tests::Source, AudioPool) {
     let mut pool = AudioPool::new();
     let samples = (0..16_000).map(|i| i as f32 / 32_000.0).collect();
     pool.files.insert("ramp.wav".into(), Arc::new(AudioData { sample_rate: SR, channels: 1, samples }));

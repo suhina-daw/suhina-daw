@@ -166,13 +166,9 @@ fn a_split_audio_clip_plays_as_it_did_apart_from_the_click_guard_at_the_cut() {
     // carries on from where it was.
     run(&mut session, "edit.undo", json!({})).unwrap();
     let mut transposed = session.project().clone();
-    for content in &mut transposed.contents {
-        for lane in &mut content.lanes {
-            if let LaneData::Audio(region) = &mut lane.data {
-                region.warped = false;
-                region.transpose = 7.0;
-            }
-        }
+    for clip in transposed.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warped = false;
+        clip.audio.transpose = 7.0;
     }
     let audio = session.audio().clone();
     let mut session = Session::new(transposed);
@@ -300,8 +296,8 @@ fn consolidated_audio_is_rendered_to_a_file_next_to_the_project() {
     assert_eq!((clips[0].start, clips[0].length, clips[0].fade_in), (0.0, 8.0, 0.0));
     let content = session.project().content(clips[0].content).unwrap();
     let LaneData::Audio(region) = &content.lanes[0].data else { panic!("not audio") };
-    assert!(!region.warped);
-    assert_eq!(region.gain, 1.0);
+    assert!(!clips[0].audio.warped);
+    assert_eq!(clips[0].audio.gain, 1.0);
     assert!(session.audio().files.contains_key(&region.file), "the rendered audio joins the pool");
     let after = render(&session);
     // The range starts and ends in silence, so even the click guard of the new clip is not heard.

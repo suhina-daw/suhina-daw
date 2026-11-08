@@ -4,7 +4,7 @@ read_when: edit while playing, graph swap, renderer rebuild, Controller::update,
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-05
+last_verified: 2026-11-07
 covers:
   - crates/engine/src/lib.rs
   - crates/engine/src/swap.rs
@@ -46,7 +46,9 @@ clip; devices (ADR 0004) will add many more parameters.
 3. **The swap happens at an exact frame.** The controller picks a frame a little ahead of the
    playhead it reads from the monitor (`SWAP_AHEAD_SECONDS`), moves the new graph's stretch voices there
    and fills their rings before sending it. `process` splits its block at that frame, so the
-   block before it is the old graph and the frames from it the new one.
+   block before it is the old graph and the frames from it the new one. The playhead is read as
+   the audio thread published it for one block (`LauncherMonitor::playhead`), and a frame past the
+   loop end is counted on from the loop start, where the playhead will be.
 4. **State carries over at the swap, without allocation.** The playhead stays in beats: if the
    tempo map changed, the transport's origin is moved so the same beat plays on (the old map's
    beat at the playhead, placed through the new map; between two constant tempos the old
@@ -54,7 +56,8 @@ clip; devices (ADR 0004) will add many more parameters.
    through the map of the last graph it sent. Cursors into the
    new event lists are found by binary search; playing audio clips are found again by their
    time; an unwarped audio clip plays at its own speed, not the beat's, so it carries on from
-   the file position it was at (after a tempo edit its beat position moves, as in other DAWs).
+   the file position it was at (after a tempo edit its beat position moves, as in other DAWs)
+   until the transport starts or jumps, when it plays from its beats again, where it is drawn.
    Sounding note voices ring on, on their track's chain in the new graph. A track's device
    chain keeps its running devices when the new graph has the same devices on the same track,
    with the new parameter values, so instrument notes and effect tails carry on (ADR 0004
@@ -67,7 +70,14 @@ clip; devices (ADR 0004) will add many more parameters.
    launched scene set stays across the swap, like its tempo, unless the project's own changed. A slot
    whose stretched audio is unchanged keeps its built stretch voice (moved from the old graph to
    the new, whether its clip plays or not; ADR 0003 › decision 7); any other playing clip's new
-   voice is moved to the clip's position. Level meters keep their levels and clip
+   voice is moved to the clip's position. An arrangement clip whose stretch voice changed (its
+   tempo, transpose or warp edited while it plays) fades over 20 ms from the old voice's ring to
+   the new voice, which plays from another place of the clip; the old ring plays on alone until
+   the new voice's frames arrive (`AheadReader::adopt_from`). Cutting from one to the other
+   clicked at every step of a tempo drag. A clip whose sound goes from the file directly to a
+   stretch voice or back (its tempo dragged to or from the project's) fades the same way: the old
+   graph is held for those 20 ms and plays its sound of the clip out (`PathFade`). Level meters
+   keep their levels and clip
    indicators while each meter slot plays the same track as before; a slot that now holds
    another track (tracks moved in the project's order) starts from silence
    ([level meters](../spec/level-meters.md)).
@@ -76,7 +86,8 @@ clip; devices (ADR 0004) will add many more parameters.
    that queue is full, the audio thread keeps the old graph and takes no new one until it can.
 6. **If the playhead moved unexpectedly** (the transport stopped, started or jumped between the
    build and the swap), the swap moves the stretch voices to where the playhead really is
-   (`AheadReader::move_to`); with the transport stopped, to the play start marker, where the
+   (`AheadReader::move_voices`, which lets the fades from changed clips' old voices play on);
+   with the transport stopped, to the play start marker, where the
    next start begins. Until the worker has done so, stretched clips are silent; they
    never play out of time. That silence is the move's, so it is not counted as underruns.
 7. **The stretch worker thread serves every graph.** It owns a list of workers; a new graph's
@@ -133,6 +144,18 @@ klingt and JUCE's graph do), now:
 4. **Sounding notes follow their track's mix.** Each sine voice remembers its track and
    velocity; at a swap it takes the new graph's volume, pan and mute (and bus, if the track's
    chain changed) at once instead of keeping them until the note ends.
+5. **An arrangement clip's gain envelope is a message too** (`Controller::set_clip_envelope`,
+   used by `clip.setEnvelope` when the envelope is all the edit changed and the clip is not an
+   ARA clip). The controller builds the envelope off the audio thread and sends it through its
+   own lock-free queue; the renderer puts it on that clip's events, read directly and stretched
+   alike, at the start of the next block, a playing clip gliding to its new gain over 30 ms, and
+   sends each envelope it replaces back to the controller to be freed. A dragged envelope sent a
+   graph every 30 ms before, and each swap handed every stretched voice over: a voice in the
+   middle of a jump (at a loop's wrap) started its jump again at each swap and stayed silent
+   while the drag went on. Each message is numbered, and a graph remembers the clips whose
+   envelope arrived as a message on it; a graph built before a message and taken after it takes
+   those clips' envelopes from the graph it replaces, which plays them already (shared, not
+   copied), as newer parameter messages are applied again (3).
 
 ## Amendment: notes an edit takes away (2026-10-28)
 

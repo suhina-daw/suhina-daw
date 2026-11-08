@@ -3,7 +3,7 @@ description: The NAM Amp Modeler and NAM Cab Loader devices: what a .nam model f
 read_when: NAM, Neural Amp Modeler, nam, amp modeler, cab loader, neural amp, .nam file, impulse response, IR, cab, model file, device.setNamFile, nam models folder, IR folder
 type: spec
 status: draft
-last_verified: 2026-11-02
+last_verified: 2026-11-07
 covers:
   - devices/nam-amp-modeler/**
   - devices/nam-cab-loader/**
@@ -101,9 +101,9 @@ EQ and delay still work.
 - **Volume** sets the output level, after the model.
 - **No bypass of its own** (decided 2026-10-18, #645): a device has one on/off state, the
   header's square and the 0 key (`device.setEnabled`), which turns the whole device off.
-- **Latency:** the model adds none. The resampler adds its own few frames when it runs; the
-  device reports them in `latency()` so the engine's compensation keeps parallel chains in
-  phase. The **Delay** knob's frames are not reported.
+- **Latency:** the model adds none. The device reports its 512-frame chunk in `latency()`, plus
+  the resamplers' holdback when they run (about a millisecond), so the engine's compensation
+  keeps parallel chains in phase. The **Delay** knob's frames are not reported.
 
 ### NAM Cab Loader (`nam-cab-loader`)
 
@@ -133,10 +133,15 @@ not a mix.
   paths, as with the limiter's look-ahead. Longer IRs are handled inside the same delay with the
   partition's tail buffers. The **Delay** knob is not reported.
 
-Both devices process in fixed 256-frame internal blocks counted from `reset` — like the FM
-synth's internal blocks — so the output never depends on how a stream is divided, whatever the
-host's buffer size or the conformance tests throw at them, and nothing on the audio path
-allocates ([ADR 0004] › rules 3 and 6). Both pass the contract tests (`device_api::conformance`),
+The Cab Loader processes in fixed 512-frame internal blocks counted from `reset` — like the
+FM synth's internal blocks. The Amp Modeler runs its stages on the frames each call brings,
+as they arrive: the model, its DC blocker and the resampler legs all keep streaming state
+whose output never depends on how a stream is divided into calls, and spreading the model's
+work over the call keeps its cost even (a whole chunk's model run inside one small block
+leaves the render thread no room for anything else, and cracks as an underrun). Either way
+the output never depends on how a stream is divided, whatever the host's buffer size or the
+conformance tests throw at them, and nothing on the audio path allocates
+([ADR 0004] › rules 3 and 6). Both pass the contract tests (`device_api::conformance`),
 which run hostile parameter values, hostile buffers, every block size and 8…384 kHz.
 
 ## Model and IR files
@@ -163,13 +168,21 @@ which run hostile parameter values, hostile buffers, every block size and 8…38
 
 ## Sample rates
 
-A model runs at `expected_sample_rate()`. When the project runs at another rate, each side's
+A model runs at `expected_sample_rate()`. A model whose rate the project cannot share with it
+is kept but refused: a rate that is not a number, outside Suhina's own rate range (8–384 kHz)
+or more than sixteen times the project's on either side asks for staging that grows with the
+ratio (unbounded vs the audio thread's rules) and outgrows the delivery ring, so the device
+plays as if switched off and the note row says why — checked when the file is chosen and again
+whenever the project's rate changes. When the project runs at another rate, each side's
 signal is resampled into the model's rate before the model and back after it, by a windowed-sinc
 polyphase resampler (`crates/dsp::resampler`, a fixed kernel table, no allocation): the input
 under-runs nothing and the output is not silent when the project starts mid-stream. At the same
-rate, both resamplers pass through untouched. The device reports the resampler's added frames —
-about a millisecond — as latency; the offline render and the live engine run the same code, so a
-render of a 44.1 kHz project with a 48 kHz model is what playback sounds like.
+rate, both resamplers pass through untouched. The device holds the stream back its 512-frame
+chunk plus the resamplers' holdback — a few dozen frames, about a millisecond — and reports that
+sum in `latency()`: the legs' produced frames trail the chunked feed by that much, and a delivery
+that ran any sooner would read slots the legs had not reached yet, as loud crackle. The offline
+render and the live engine run the same code, so a render of a 44.1 kHz project with a 48 kHz
+model is what playback sounds like.
 
 ## Folders
 
