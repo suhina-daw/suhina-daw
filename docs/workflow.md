@@ -3,7 +3,7 @@ description: The one copy of how work is done on Suhina - issues and their types
 read_when: opening an issue, claiming, /claim, opening a pull request, branch name, issue type, labels, overlapping work, Depends on, post as the bot, agent_post, how to check it, settings help, which documents to update, generated files, front matter, last_verified, merging
 type: howto
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-08
 covers:
   - scripts/agent_post.py
   - scripts/branch_name.py
