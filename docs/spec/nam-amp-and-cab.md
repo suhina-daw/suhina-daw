@@ -243,11 +243,10 @@ NAM models/
     the file row is `Amp Modeler: model file` with `previous file` / `next file` (the Cab
     Loader likewise, with `cab file`). Choosing a pack loads its **first** file; both choices
     run `device.setNamFile`, one undo step each, as everything else on the panel.
-- The shown name of a model is still its `metadata` name ("Fender Super Reverb 1965") or its
-  file's own name without the extension — the model's `metadata` name in place of its file's
-  name — and never its folder's, so a file whose name shares its folder's reads apart from the
-  pack row. The pack row itself always shows the pack's folder name, with the folder's icon
-  before it.
+- The shown name is the file's own, without the extension — for a model, its `metadata` name
+  ("Fender Super Reverb 1965") in place of the file's name — and never the folder's, so a file
+  whose name shares its folder's reads apart from the pack row. The pack row itself always
+  shows the pack's folder name, with the folder's icon before it.
 - The scan reads the folder's and each pack's write time, re-reading the folder when its own
   writes change and a pack when its writes change — the app reads it once per frame, and file
   loading stays on the session thread (the session re-reads at open or by command only).
