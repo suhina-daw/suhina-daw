@@ -339,6 +339,7 @@ fn the_device_widgets_show_state_and_dispatch_their_commands() {
         irs: vec![],
         names: std::collections::HashMap::from([("bad.nam".into(), "Bad amp".into())]),
         notes: std::collections::HashMap::from([("bad.nam".into(), "not a NAM model".into())]),
+        ..crate::detail::device_widgets::Lists::default()
     };
     fn state_of<'a>(
         lists: &'a crate::detail::device_widgets::Lists,
@@ -504,6 +505,7 @@ fn a_folder_and_its_file_read_apart_and_the_folder_carries_the_artwork() {
         }],
         names: std::collections::HashMap::new(),
         notes: std::collections::HashMap::new(),
+        ..crate::detail::device_widgets::Lists::default()
     };
     fn state_of<'a>(
         lists: &'a crate::detail::device_widgets::Lists,

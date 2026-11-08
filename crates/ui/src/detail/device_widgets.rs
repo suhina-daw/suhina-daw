@@ -8,6 +8,7 @@
 //! still a `device.*` command ([docs/spec/nam-amp-and-cab.md] › The panels).
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use egui::{Align2, Pos2, Rect, Sense, Ui, Vec2};
 use suhina_device_sdk::ui::FileRowPart;
@@ -44,6 +45,10 @@ pub struct Lists {
     pub names: HashMap<String, String>,
     /// Why a device's file does not run, by path: what a load gave.
     pub notes: HashMap<String, String>,
+    /// The library's root (`Documents/Suhina`), where a device's file state can be a name
+    /// relative to it (`Sounds/NAM/…`, [ADR 0036] › it) — the rows read that state the way
+    /// this machine's lists carry it (`state_as_listed`).
+    pub library: Option<PathBuf>,
 }
 
 /// What a canvas's device widgets read beside its parameters: the device's own state and,
@@ -113,11 +118,25 @@ fn packs_of<'a>(lists: &'a Lists, what: &str) -> &'a [Set] {
 /// loose files' "(entered directly)"), or nothing when no pack lists it (a changed folder,
 /// a missing file). Membership, not the parent's name: the folders' loose files form the
 /// loose pack, and a file somewhere else that shares a pack's folder name lists nowhere.
+/// The current state reads the way the lists carry its file (`state_as_listed`): a relative
+/// one joins the library's root, a shipped key stands whole against the shipped pack's rows
+/// and, beside the unpacked copy that scan pinned, reads its own file's name there.
 fn pack_of_current<'a>(current: &str, sets: &'a [Set]) -> Option<&'a Set> {
     if current.is_empty() {
         return None;
     }
-    sets.iter().find(|pack| pack.files.iter().any(|(path, _)| path == current))
+    if let Some(pack) = sets.iter().find(|pack| pack.files.iter().any(|(path, _)| path == current)) {
+        return Some(pack);
+    }
+    let (_, file) = current.strip_prefix("builtin:")?.split_once('/')?;
+    let file_name = Path::new(file).file_name()?.to_string_lossy().into_owned();
+    sets.iter().find(|pack| {
+        pack.name == suhina_device_registry::SHIPPED_PACK
+            && pack
+                .files
+                .iter()
+                .any(|(path, _)| Path::new(path).file_name().is_some_and(|n| n.to_string_lossy() == file_name))
+    })
 }
 
 /// The salt a device widget scopes its state and popups by: the device on the track, the
@@ -129,6 +148,18 @@ fn salt(track: TrackId, at: &DeviceAt, part: FileRowPart) -> egui::Id {
 /// Where `current` sits in `files`.
 fn index_of(files: &[(String, String)], current: &str) -> Option<usize> {
     files.iter().position(|(path, _)| path == current)
+}
+
+/// The device's file state as the lists carry its file: a shipped key stands whole (the
+/// shipped pack's rows and the pack lookup read it), a name relative to the library joins
+/// this machine's root — the state a project carries names the same file wherever it opens,
+/// [ADR 0036] › it — an absolute one stands. The panel rows compare this form; the row's
+/// own reads (the shown name, the fault note) stay on the state as the project holds it.
+fn state_as_listed(state: &str, lists: &Lists) -> String {
+    if state.starts_with("builtin:") || Path::new(state).is_absolute() {
+        return state.to_owned();
+    }
+    lists.library.as_ref().map_or_else(|| state.to_owned(), |base| base.join(state).display().to_string())
 }
 
 /// Steps `current` through `files` by `by` (wrapping); a file that is not in the list steps
@@ -240,7 +271,9 @@ pub(crate) fn files(
     // one control each, so a panel's two dropdowns never share a salt.
     let salt = salt(track, at, part);
     let packs = packs_of(lists, what);
-    let in_pack = pack_of_current(current, packs);
+    // The state reads as the lists carry it, for every lookup between the rows and them.
+    let listed = state_as_listed(current, lists);
+    let in_pack = pack_of_current(&listed, packs);
     let shown_pack = in_pack.map_or(String::new(), |pack| pack.name.clone());
     let files: &[(String, String)] = in_pack.map_or(&[], |pack| pack.files.as_slice());
     let packs_rows = || packs.iter().map(|pack| (pack.name.clone(), pack.name.clone())).collect::<Vec<_>>();
@@ -268,7 +301,7 @@ pub(crate) fn files(
         }
         FileRowPart::File => {
             let shown = file_shown(current, lists);
-            dropdown(ui, rect, salt, files, current, &shown, words.file, &format!("{label}: {what} file"), None)
+            dropdown(ui, rect, salt, files, &listed, &shown, words.file, &format!("{label}: {what} file"), None)
         }
         FileRowPart::PreviousPack | FileRowPart::NextPack => {
             let up = part == FileRowPart::PreviousPack;
@@ -283,7 +316,7 @@ pub(crate) fn files(
             let step = if up { -1 } else { 1 };
             let label = if up { format!("{label}: previous file") } else { format!("{label}: next file") };
             let clicked = stepper(ui, rect, salt, up, label).clicked();
-            clicked.then(|| step_through(files, current, step)).flatten()
+            clicked.then(|| step_through(files, &listed, step)).flatten()
         }
     };
     set_file(actions, track, at, current, ask);

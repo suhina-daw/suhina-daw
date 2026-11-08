@@ -23,6 +23,7 @@ fn the_note_names_what_the_file_faulted_with() {
         irs: vec![],
         names: HashMap::from([("m.nam".into(), "Pack".into()), ("gone.nam".into(), "Gone amp".into())]),
         notes: HashMap::from([("broken.nam".into(), "bad weights".into())]),
+        ..Lists::default()
     };
     let state =
         |file: &'static str| PanelState { name: "NAM Amp Modeler".into(), enabled: true, file, lists: Some(&lists) };
@@ -52,6 +53,7 @@ fn a_file_shows_its_own_name_and_a_pack_holds_it() {
         irs: vec![],
         names: HashMap::from([("p/Test amp/test.nam".into(), "Fender Super Reverb".into())]),
         notes: HashMap::new(),
+        ..Lists::default()
     };
     // The pack that lists the file, by membership; a file somewhere else that shares a pack's
     // folder name lists nowhere, and a file no pack lists is none of the loose pack's either.
@@ -77,4 +79,56 @@ fn the_words_name_what_a_panel_calls_its_file() {
     assert_eq!(label, "Amp Modeler");
     label = PanelState { name: "Utility".into(), ..PanelState::none() }.label();
     assert_eq!(label, "Utility", "the prefix is only dropped where it led");
+}
+
+#[test]
+fn a_state_relative_to_the_library_reads_the_lists_files() {
+    // The device's state says the library-relative name a project carries ([ADR 0036] › 4);
+    // the lists carry the same file as a whole path. The pack row and the file row read the
+    // file either way: the pack lookup canonicalises the state against the lists' root.
+    let lists = Lists {
+        models: vec![Set {
+            name: "Suhina".into(),
+            files: vec![("/mine/Suhina/Amp models/Suhina/lead.nam".into(), "lead".into())],
+        }],
+        irs: vec![],
+        names: HashMap::new(),
+        notes: HashMap::new(),
+        library: Some(PathBuf::from("/mine")),
+    };
+    let state = PanelState {
+        name: "NAM Amp Modeler".into(),
+        enabled: true,
+        file: "Suhina/Amp models/Suhina/lead.nam",
+        lists: Some(&lists),
+    };
+    assert_eq!(
+        pack_of_current(&state_as_listed(state.file, &lists), &lists.models).map(|pack| pack.name.as_str()),
+        Some("Suhina"),
+        "the relative state reads the pack whole"
+    );
+    assert_eq!(file_shown(state.file, &lists), "lead", "the shown name falls to the file's own");
+}
+
+#[test]
+fn a_shipped_key_reads_the_pack_and_the_unpacked_copy_of_its_file() {
+    // The shipped pack's key beside the unpacked copy: the scan's set lists whole paths, so
+    // the key lists the pack only by its file's own name in there ([ADR 0036] › the pack).
+    let lists_with_unpacked = Lists {
+        models: vec![Set {
+            name: "Suhina".into(),
+            files: vec![("/library/Amp models/Suhina/Suhina Overdrive.nam".into(), "Suhina Overdrive".into())],
+        }],
+        ..Lists::default()
+    };
+    let scanned = lists_with_unpacked.models.clone();
+    let key = "builtin:nam-amp-modeler/Suhina Overdrive.nam";
+    assert_eq!(pack_of_current(key, &scanned).map(|pack| pack.name.as_str()), Some("Suhina"), "the unpacked copy");
+    assert_eq!(pack_of_current("builtin:nam-amp-modeler/Nothing.nam", &scanned), None);
+    // And without the unpacked copy, the shipped set's own rows list the key as they are.
+    let shipped = vec![Set {
+        name: "Suhina".into(),
+        files: vec![("builtin:nam-amp-modeler/Suhina Overdrive.nam".into(), "Suhina Overdrive".into())],
+    }];
+    assert_eq!(pack_of_current(key, &shipped).map(|pack| pack.name.as_str()), Some("Suhina"));
 }

@@ -561,6 +561,9 @@ pub struct App {
     data_default_folder: PathBuf,
     /// The NAM models' and IR folders while the settings leave them empty.
     nam_default_folders: (PathBuf, PathBuf),
+    /// The library's root, where a set-library-relative device file state reads ([ADR 0036] ›
+    /// it); the panel rows resolve a relative state against it.
+    library_base: Option<PathBuf>,
     /// The NAM folders' files, read again when either folder's writes change
     /// ([docs/spec/nam-amp-and-cab.md] › Folders).
     nam_cache: NamCache,
@@ -743,6 +746,7 @@ impl App {
             themes_default_folder: PathBuf::from("themes"),
             data_default_folder: PathBuf::new(),
             nam_default_folders: (PathBuf::from("Sounds/NAM/Amp models"), PathBuf::from("Sounds/NAM/Cabinets")),
+            library_base: None,
             nam_cache: NamCache::default(),
             window_title: String::new(),
             browser: BrowserState::default(),
@@ -820,6 +824,7 @@ impl App {
     /// the user's own presets save into its `Presets/<device id>/` folders, and the browser
     /// lists them beside the stock ones.
     pub fn set_library_base(&mut self, base: PathBuf) {
+        self.library_base = Some(base.clone());
         self.browser.set_library(Some(base.clone()));
         self.projects.set_library_base(base);
     }
@@ -1427,6 +1432,7 @@ impl App {
             irs: cache.irs.clone(),
             names: self.nam_names(),
             notes: self.nam_notes(),
+            library: self.library_base.clone(),
         };
         self.nam_cache = cache;
         lists
