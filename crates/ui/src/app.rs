@@ -271,8 +271,6 @@ fn scan_sets(
 }
 
 /// The shipped pack's name, what the panels always list first ([ADR 0036]).
-pub(crate) const SHIPPED_PACK: &str = "Suhina";
-
 /// The shipped files of the device `id`, `(key, shown name)` ([ADR 0036]): the key the file
 /// command takes (a shipped file's state), the name the file's own shows in the lists.
 fn shipped_files(id: &str) -> Vec<(String, String)> {
@@ -290,7 +288,8 @@ fn shipped_files(id: &str) -> Vec<(String, String)> {
 /// the device ships no files.
 fn shipped_set(id: &str) -> Option<crate::detail::device_widgets::Set> {
     let files = shipped_files(id);
-    (!files.is_empty()).then_some(crate::detail::device_widgets::Set { name: SHIPPED_PACK.to_string(), files })
+    (!files.is_empty())
+        .then_some(crate::detail::device_widgets::Set { name: suhina_device_registry::SHIPPED_PACK.to_string(), files })
 }
 
 /// A device's file path (its state as UTF-8), when it is a file-running one
@@ -1390,7 +1389,7 @@ impl App {
         // that already holds the pack's files (the unpack did, or the user carried them)
         // supplies its own "Suhina" rows, so the embedded listing stands down beside it.
         let shipped_first = |rows: &mut Vec<crate::detail::device_widgets::Set>, id: &str| {
-            if !rows.iter().any(|set| set.name == SHIPPED_PACK)
+            if !rows.iter().any(|set| set.name == suhina_device_registry::SHIPPED_PACK)
                 && let Some(shipped) = shipped_set(id)
             {
                 let mut ahead = vec![shipped];

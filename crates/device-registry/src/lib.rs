@@ -395,13 +395,19 @@ pub fn builtin_file_key(id: &str, name: &str) -> String {
     format!("builtin:{id}/{name}")
 }
 
-/// Every shipped file, flat: `(device id, library folder, file name, bytes)` — the folder is
-/// the device's own under the library's NAM folders ([ADR 0036] › the library), so an
-/// installer or the app unpacks the pack without naming device ids itself.
-pub fn pack_files_flat() -> Vec<(&'static str, &'static str, &'static str, &'static [u8])> {
+/// The shipped pack's folder inside each device's library folder ([ADR 0036] › the library).
+pub const SHIPPED_PACK: &str = "Suhina";
+
+/// Every shipped file, flat: `(device id, library folder, pack folder, file name, bytes)`.
+/// The device's own library folder and the pack's own folder inside it compose the unpack
+/// path ([ADR 0036] › the library), so an installer or the app unpacks the pack without
+/// naming device ids itself.
+pub fn pack_files_flat() -> Vec<(&'static str, &'static str, &'static str, &'static str, &'static [u8])> {
     PACK_FILES
         .iter()
-        .filter_map(|(device, name, bytes)| file_kind(device).map(|file| (*device, file.library_folder, *name, *bytes)))
+        .filter_map(|(device, name, bytes)| {
+            file_kind(device).map(|file| (*device, file.library_folder, SHIPPED_PACK, *name, *bytes))
+        })
         .collect()
 }
 
