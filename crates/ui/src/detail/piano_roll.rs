@@ -137,6 +137,45 @@ pub fn default_scale() -> (u8, suhina_engine::model::ScaleMode) {
     DEFAULT_SCALE.with(std::cell::Cell::get)
 }
 
+/// A clip's address as the piano roll names it (`{"track", "clip"}` or `{"track", "scene"}`):
+/// the key the Scale switch keeps a clip's scale under.
+pub(crate) fn clip_address(at: ClipRef) -> Value {
+    match at {
+        ClipRef::Arrangement(track, clip) => json!({ "track": track.0, "clip": clip.0 }),
+        ClipRef::Slot(track, scene) => json!({ "track": track.0, "scene": scene }),
+    }
+}
+
+/// Where the Scale switch keeps the scale a clip had when it was switched off, by its address, for
+/// as long as Suhina is open.
+fn kept_scale_id(address: &Value) -> Id {
+    Id::unique(("scale-switch-kept", address.to_string()))
+}
+
+/// The scale a clip's Scale switch turns on: the clip's own from before it was switched off, or
+/// Settings' Default scale. The clip panel shows it while the clip has none.
+pub(crate) fn switch_scale(ctx: &egui::Context, address: &Value) -> (u8, suhina_engine::model::ScaleMode) {
+    ctx.data(|d| d.get_temp::<(u8, suhina_engine::model::ScaleMode)>(kept_scale_id(address)))
+        .unwrap_or_else(default_scale)
+}
+
+/// The `clip.setScale` parameters the Scale switch sends (the clip panel's and the toolbar's are one
+/// switch) for a clip whose scale is `scale`: off when it has one, which is kept to turn on again;
+/// else the switch's scale ([`switch_scale`]). Without the clip's address.
+pub(crate) fn scale_switch_params(ctx: &egui::Context, address: &Value, scale: Option<Scale>) -> Value {
+    match scale {
+        Some(scale) => {
+            ctx.data_mut(|d| d.insert_temp(kept_scale_id(address), (scale.root(), scale.mode)));
+            json!({ "off": true })
+        }
+        None => {
+            let (root, mode) = switch_scale(ctx, address);
+            let root = suhina_engine::model::ROOT_NAMES.get(usize::from(root)).copied().unwrap_or("C");
+            json!({ "root": root, "mode": mode.name() })
+        }
+    }
+}
+
 /// The name of pitch class `class` (0 is C), as a sharp or a flat by the setting.
 pub fn pitch_class_name(class: u8) -> &'static str {
     let names = match SPELLING.with(std::cell::Cell::get) {
@@ -293,7 +332,7 @@ pub fn show(
     }
     // A newly shown clip fits the width with its notes in the middle; until the rows are scrolled
     // by hand, a change in height centres the notes again, so they are in view at any height.
-    let rows = scale_view::rows(clip, state.fold);
+    let rows = scale_view::rows(clip, state.fold_for(clip));
     if fresh {
         fit(state, grid_rect, clip, &rows);
     } else if !state.scrolled_by_hand && (grid_rect.height() - state.centred_for).abs() > 0.5 {
@@ -709,10 +748,12 @@ pub fn show(
     let shape = shape.unwrap_or(clip.shape);
     draw(ui, &layout, clip, state, grid, preview, shape.played());
     draw_strip(ui, &layout, state);
-    view_menu(
+    corner(
         ui,
         Rect::from_min_max(Pos2::new(strip.left(), ruler.top()), Pos2::new(keys.right(), ruler.bottom())),
         state,
+        keymap,
+        scale,
     );
     if let Some((grabbed, by)) = velocity_label {
         gestures::draw_velocity_label(ui, &layout, clip, grabbed, by);

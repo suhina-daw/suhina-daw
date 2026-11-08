@@ -123,8 +123,8 @@ fn key_rows(h: &Harness<'static, App>) -> Vec<(String, Rect)> {
 fn the_clip_panel_sets_the_clips_scale_and_ctrl_z_undoes_it() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
-    // Fold, Fold to scale and Highlight are words in the toolbar, at 1280 px with the tools open.
-    for word in ["Fold", "Fold to scale", "Highlight scale"] {
+    // Fold, Scale and Highlight are in the toolbar, at 1280 px with the tools open.
+    for word in ["Fold", "Scale", "Highlight scale"] {
         assert!(h.query_by_label(word).is_some(), "{word} is in the toolbar");
     }
     assert_eq!(edited(&h).1, None);
@@ -240,16 +240,35 @@ fn fold_shows_only_the_rows_with_notes_and_a_double_click_adds_on_the_rows_key()
     assert!(key_rows(&h).is_empty());
 }
 
+/// The toolbar's Scale and the clip panel's switch are one switch: either turns the clip's scale
+/// on and off, and both show it.
 #[test]
-fn fold_to_scale_shows_the_scales_keys_and_the_keys_with_notes() {
+fn the_toolbar_scale_is_the_clip_panels_switch() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
-    // Without a scale there is nothing to fold to: the word is greyed out.
-    assert!(h.get_by_label("Fold to scale").accesskit_node().is_disabled());
+    let lit = |h: &Harness<'static, App>| h.get_by_label("Scale").accesskit_node().is_selected();
+    assert_eq!(lit(&h), Some(false));
+    press(&mut h, "Scale");
+    assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Major), "the default scale");
+    assert!(h.query_by_label("Scale switch: On").is_some(), "the panel's switch is on too");
+    assert_eq!(lit(&h), Some(true));
+    pick(&mut h, "Scale mode: Major", "Dorian");
+    press(&mut h, "Scale switch: On");
+    assert_eq!(edited(&h).1, None);
+    assert_eq!(lit(&h), Some(false));
+    // On again from the toolbar: the scale the clip had, kept by either.
+    press(&mut h, "Scale");
+    assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Dorian));
+}
 
+/// Fold with a scale on shows the scale's keys and the keys with notes.
+#[test]
+fn fold_with_a_scale_shows_the_scales_keys_and_the_keys_with_notes() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
     pick(&mut h, "Scale mode: Major", "Major pentatonic");
-    press(&mut h, "Fold to scale");
-    assert_eq!(h.state().piano_roll().fold, Fold::Scale);
+    press(&mut h, "Fold");
+    assert_eq!(h.state().piano_roll().fold, Fold::Notes, "Fold is on");
     let (notes, scale) = edited(&h);
     let scale = scale.unwrap();
     let rows = key_rows(&h);

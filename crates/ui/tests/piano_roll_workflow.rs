@@ -304,23 +304,27 @@ fn the_double_click_settings_turn_adding_and_deleting_off() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The workflow menu in the toolbar.
+// The workflow menu: the Workflow submenu of the options menu above the keys.
 // ---------------------------------------------------------------------------------------------
 
-/// The workflow menu holds Allow stacked notes too, the same setting as the View menu's.
+/// Opens the options menu above the keys (the three dots).
+fn options(h: &mut Harness<'static, App>) {
+    h.get_by_label("Piano roll options").click();
+    h.run();
+}
+
+/// The options menu holds Allow stacked notes beside the Workflow submenu.
 #[test]
-fn the_workflow_menu_switches_stacked_notes() {
+fn the_options_menu_switches_stacked_notes() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     assert!(h.state().piano_roll().notes_replace, "stacked notes off at first");
-    h.get_by_label("Workflow Select-first").click();
-    h.run();
-    h.get_by_label("Workflow: Allow stacked notes").click();
+    options(&mut h);
+    h.get_by_label("Allow stacked notes").click();
     h.run();
     assert!(!h.state().piano_roll().notes_replace, "stacked notes allowed");
-    h.get_by_label("Workflow Select-first").click();
-    h.run();
-    h.get_by_label("Workflow: Allow stacked notes").click();
+    options(&mut h);
+    h.get_by_label("Allow stacked notes").click();
     h.run();
     assert!(h.state().piano_roll().notes_replace, "and off again");
 }
@@ -329,6 +333,7 @@ fn the_workflow_menu_switches_stacked_notes() {
 fn the_toolbar_menu_switches_the_workflow_and_a_setting_makes_it_custom() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
+    options(&mut h);
     assert!(h.query_by_label("Workflow Select-first").is_some(), "the menu shows the mode");
     h.get_by_label("Workflow Select-first").click();
     h.run();
@@ -337,9 +342,12 @@ fn the_toolbar_menu_switches_the_workflow_and_a_setting_makes_it_custom() {
     assert_eq!(h.state().keymap().preset(), Preset::MouseFirst);
     assert_eq!(h.state().keymap().workflow(), Workflow::MOUSE_FIRST, "the preset filled in its settings");
     assert!(h.state_mut().take_changed_keymap().is_some(), "the window saves the keymap");
+    options(&mut h);
     assert!(h.query_by_label("Workflow Mouse-first").is_some());
+    options(&mut h);
 
     // One setting changed in the same menu: the mode is Custom, the rest stay Mouse-first's.
+    options(&mut h);
     h.get_by_label("Workflow Mouse-first").click();
     h.run();
     h.get_by_label_contains("Double-click on a note: Deletes it").click();
@@ -350,7 +358,9 @@ fn the_toolbar_menu_switches_the_workflow_and_a_setting_makes_it_custom() {
     assert_eq!(keymap.preset(), Preset::Custom);
     assert!(!keymap.workflow().double_click_deletes);
     assert!(keymap.workflow().empty_click_draws, "the other settings are kept");
+    options(&mut h);
     assert!(h.query_by_label("Workflow Custom").is_some());
+    options(&mut h);
     // The choice is kept with the keys.
     let (again, warnings) = Keymap::from_json(&keymap.to_json());
     assert_eq!((again, warnings.len()), (keymap, 0));
@@ -367,6 +377,7 @@ fn the_toolbar_menu_switches_the_workflow_and_a_setting_makes_it_custom() {
 fn the_duplicate_setting_in_the_menu_moves_the_key() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
+    options(&mut h);
     h.get_by_label("Workflow Select-first").click();
     h.run();
     h.get_by_label_contains("Duplicate key: Ctrl+D").click();
@@ -425,6 +436,7 @@ fn render_the_workflow_menu_and_settings() {
     h.run();
     h.get_by_label(CLIP).click();
     h.run();
+    options(&mut h);
     h.get_by_label("Workflow Select-first").click();
     h.run();
     h.get_by_label("Double-click on a note: Deletes it").hover();

@@ -290,7 +290,7 @@ pub struct PianoRollState {
     /// Which other clips show as ghost notes, picked in the toolbar's ghost menu; kept until
     /// Suhina closes (› Ghost notes).
     pub ghost_source: GhostSource,
-    /// Which key rows show, picked in the toolbar's Scale menu (Fold, Fold to scale); kept until
+    /// Whether the key rows are folded, the toolbar's Fold ([`Self::fold_for`] says to what); kept until
     /// Suhina closes (› Zoom and scroll).
     pub fold: Fold,
 }
@@ -370,6 +370,16 @@ impl Default for PianoRollState {
 }
 
 impl PianoRollState {
+    /// The rows Fold shows for `clip`: none folded while it is off; while it is on, the rows of the
+    /// clip's scale and those with notes when the clip has a scale, else the rows with notes.
+    pub(super) fn fold_for(&self, clip: &PianoClip) -> Fold {
+        match (self.fold, clip.scale) {
+            (Fold::Off, _) => Fold::Off,
+            (_, Some(_)) => Fold::Scale,
+            (_, None) => Fold::Notes,
+        }
+    }
+
     /// Whether the tools show Quantise: the Transform tab with Quantise chosen (the toolbar's
     /// quantise button lights while they do).
     pub fn quantize_open(&self) -> bool {
@@ -617,10 +627,12 @@ impl PianoRollState {
             "pianoRoll.later" => ("note.move", moves(key_step(&chosen, grid, false), 0).0, 0),
             "pianoRoll.earlierFine" => ("note.move", moves(-FINE_STEP, 0).0, 0),
             "pianoRoll.laterFine" => ("note.move", moves(FINE_STEP, 0).0, 0),
-            "pianoRoll.up" | "pianoRoll.down" if crate::detail::piano_roll_scale::rows(clip, self.fold).folded() => {
+            "pianoRoll.up" | "pianoRoll.down"
+                if crate::detail::piano_roll_scale::rows(clip, self.fold_for(clip)).folded() =>
+            {
                 // Folded, each note steps to the next row shown (a key of the scale, or one with
                 // notes), so a move never lands on a key the fold hides.
-                let rows = crate::detail::piano_roll_scale::rows(clip, self.fold);
+                let rows = crate::detail::piano_roll_scale::rows(clip, self.fold_for(clip));
                 let up = if action == "pianoRoll.up" { 1 } else { -1 };
                 let mut keys = Vec::with_capacity(acting.len());
                 for &index in &acting {

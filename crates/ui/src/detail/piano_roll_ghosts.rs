@@ -553,7 +553,7 @@ fn round(beat: f64) -> f64 {
 /// Playing together"); its menu offers
 /// None, Playing together, This track and, in a submenu, every other MIDI clip. A pick changes
 /// `source` at once: window state, not a command.
-pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostSource) -> Rect {
+pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostSource, word: bool) -> Rect {
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut picked = None;
     let mut shown = rect;
@@ -561,7 +561,8 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
         // The button is short, so it fits beside the workflow menu; it is dimmed while nothing
         // shows, and its tooltip and accessible label name what does.
         let color = if *source == GhostSource::None { theme::text_hint() } else { theme::text_value() };
-        let text = egui::RichText::new("Ghosts   ").font(font.clone()).color(color);
+        // Short of room, the arrow alone (› Layout).
+        let text = egui::RichText::new(if word { "Ghosts   " } else { "   " }).font(font.clone()).color(color);
         let menu = ui.menu_button(text, |ui| {
             let mut entry = |ui: &mut Ui, choice: GhostSource, shown: &str, label: &str| {
                 let on = *source == choice;

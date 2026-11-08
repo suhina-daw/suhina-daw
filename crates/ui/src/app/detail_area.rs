@@ -329,6 +329,12 @@ impl App {
             }
             _ => None,
         };
+        // Leaving the one track the editor pulled to the top (a click on its header picks the
+        // track and lets go of the clip), the view keeps that track in sight, not the top of the
+        // whole list.
+        if focus.is_none() && self.arrangement.focus.is_some() {
+            self.arrangement.reveal = self.arrangement.focus;
+        }
         self.arrangement.focus = focus;
         suhina_plugins::trace::state(
             "detail",

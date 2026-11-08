@@ -49,7 +49,7 @@ can be changed while editing ([spec](spec/ui-clip-editor.md) › Workflow modes)
 | **Mouse-first** | working with the mouse | the four mouse switches below are all on, so the left button draws in the Select tool, the right button deletes a note (a drag deletes the notes it passes over), Shift+right slices the notes under a short drag, and Alt (Option on macOS) with the right button held plays the clip from the point under the pointer; duplicate is **Ctrl+D** |
 
 Every behaviour that differs between the presets is a **workflow setting** of its own, a row in
-Settings › Keys › Mouse and key behaviour and an entry in the toolbar's workflow menu: **Click on empty
+Settings › Keys › Mouse and key behaviour and an entry in the piano roll's Workflow submenu (the options menu above the keys): **Click on empty
 grid**, **Right click on a note**, **Shift+right drag**, **Alt+right button**, **Duplicate key**,
 **Double-click on empty grid** and **Double-click on a note**. Changing one makes the mode
 **Custom** and keeps the others; choosing a preset again fills them all in. They are kept in

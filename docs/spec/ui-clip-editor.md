@@ -147,17 +147,19 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
 
 1. **Toolbar** (built, [#442](https://github.com/suhina-daw/suhina-daw/issues/442), icons
    [#443](https://github.com/suhina-daw/suhina-daw/issues/443) and
-   [#460](https://github.com/suhina-daw/suhina-daw/issues/460)): the tools, then the note
-   clipboard, then the note tools' toggle and the **Audition** button, then the
-   words **Fold**, **Scale** (Fold to scale) and **Highlight** (› Scale and key,
-   [#347](https://github.com/suhina-daw/suhina-daw/issues/347)), then the **workflow menu**
-   (› Workflow modes) and the **ghost menu** (› Ghost notes), and at the right end the piano roll's
-   grid value (› Grid and snapping), and after it, at the very end, the **×** that hides the editor
-   (› Least height and closing). The words come before the menus so they stay in sight: each word
-   and each menu takes the width it needs, so the next starts right after it, and each is shown
-   only while there is room for it with the grid value still after it, left out otherwise; the
-   grid value's **Grid** caption is left out first when they need the room. **Later:** tabs for
-   Notes, Envelopes and Expression.
+   [#460](https://github.com/suhina-daw/suhina-daw/issues/460)): at the left the tools, then the
+   note clipboard, then **Quantise** and the note tools' toggle, each group after a divider; at
+   the right the **Rows** group (**Fold**, **Scale** and **Highlight**, framed together; › Scale and
+   key, [#347](https://github.com/suhina-daw/suhina-daw/issues/347)), the **ghost menu**
+   (› Ghost notes), a divider, the piano roll's grid value with its **Grid** caption (› Grid and
+   snapping) and, at the very end, the **×** that hides the editor (› Least height and closing).
+   The corner above the keys holds the rest (› Key column): the options menu (three dots) at its
+   left and the **Audition** headphones at its right. With less room the toolbar gives way in
+   steps, never leaving a part out while the next step would do: first the **Grid** caption,
+   then the Rows group's words (their icons stay, each named by its tooltip), then the clipboard's
+   four buttons fold into one **Edit** menu (Cut, Copy, Paste, Duplicate), then the ghost menu
+   keeps only its arrow. The tools, Quantise, the note tools' toggle, the grid value and the ×
+   always show. **Later:** tabs for Notes, Envelopes and Expression.
 
    The tools are **Select**, **Draw**, **Paint**, **Erase**, **Slice** and **Mute** (› Drawing
    notes, › Muting), each an
@@ -200,13 +202,11 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
    The **MIDI tools** icon (three horizontal sliders) shows and hides the clip panel's note tools
    (› Note tools); it is highlighted while they show, and a click on it is window
    state only, not a command. The **Audition** icon (headphones, built
-   [#351](https://github.com/suhina-daw/suhina-daw/issues/351)) after it turns the audition on
-   and off (› Playing the keys); it is off when Suhina starts, highlighted while on, and a click
-   on it is window state only, not a command. The workflow menu and the ghost menu are left out,
-   the ghost menu first, when the toolbar is too narrow for them and the grid menu. The grid menu
-   stays at the right end of the toolbar (› Grid and
-   snapping); the quantise
-   controls are in the clip's properties column (› Quantise).
+   [#351](https://github.com/suhina-daw/suhina-daw/issues/351)) in the corner above the keys
+   turns the audition on and off (› Playing the keys); it is off when Suhina starts, highlighted
+   while on, and a click on it is window state only, not a command. The grid menu stays at the
+   right end of the toolbar (› Grid and snapping); the quantise controls are in the clip's
+   properties column (› Quantise).
 2. **Ruler** (built, the loop row and the markers [#353](https://github.com/suhina-daw/suhina-daw/issues/353)):
    36 px tall. On top a 14 px **loop row**: a bar from the clip's loop start to its loop end with
    a **handle** at each end (named "Loop start" and "Loop end" for readers and tests), bright while
@@ -318,7 +318,7 @@ What stays above it is a setting, Settings › Clip editor › Piano roll › **
 - **Whole window**: the piano roll fills the whole area under the control bar.
 
 It stays pulled up while MIDI clips (or, with an ARA plug-in, audio clips) are edited; selecting
-something else (another kind of clip, a track, nothing), hiding the detail area (Shift+Tab) or the Launcher view shows the view as before. With the
+something else (another kind of clip, a track, nothing), hiding the detail area (Shift+Tab) or the Launcher view shows the view as before, scrolled so the track that was pulled up stays in sight (a click on its header picks the track and keeps it where it was). With the
 device chain as a column beside the view (Settings › Devices › Device panels) there is nothing to
 pull up.
 
@@ -409,12 +409,12 @@ pull up.
   the end of the part it plays), both within the zoom range and leaving the key rows as they are.
   Both keys work after a click in the piano roll (`pianoRoll.zoomSelection`, `pianoRoll.zoomClip`)
   and change the view only, not the project.
-- **Built ([#347](https://github.com/suhina-daw/suhina-daw/issues/347)):** **Fold** and
-  **Scale** (Fold to scale), words in the toolbar (› Layout, › Scale and key), show fewer key rows.
-  Fold shows only the keys that have notes in the clip (every key while it has none); Fold to scale
-  shows the keys of the clip's scale and any key that has a note, so no note is ever hidden (greyed
-  out while the clip has no scale). Each is lit while on; the two are one choice: turning one on
-  turns the other off, a click on the lit one shows every key again. The rows sit one under the other with no gap for the keys left out, and
+- **Built ([#347](https://github.com/suhina-daw/suhina-daw/issues/347)):** **Fold**, in the
+  toolbar's Rows group (› Layout, › Scale and key), shows fewer key rows, lit while on. While the
+  clip has a scale it folds to the scale: the keys of the scale and any key that has a note, so no
+  note is ever hidden; while it has none, only the keys that have notes (every key while it has
+  none). Turning the scale on or off while folded changes which rows show at once; a click on the
+  lit Fold shows every key again. The rows sit one under the other with no gap for the keys left out, and
   every row of the key column is named while folded, since the keys beside each other are no
   longer neighbours. Everything that turns a height into a key goes through the rows shown: a
   click or double-click lands on the row's key, painting and the key column play and select that
@@ -539,8 +539,8 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   for another range or Shift+click.
 - **Audition (built, [#351](https://github.com/suhina-daw/suhina-daw/issues/351),
   [#939](https://github.com/suhina-daw/suhina-daw/issues/939),
-  [#1116](https://github.com/suhina-daw/suhina-daw/issues/1116)):** with the toolbar's **Audition**
-  button on, a note sounds through the track's instrument at the press that takes it or is about to
+  [#1116](https://github.com/suhina-daw/suhina-daw/issues/1116)):** with the **Audition** headphones (above the keys) on,
+  a note sounds through the track's instrument at the press that takes it or is about to
   draw it, not when the button is let go, and for as long as the button is held. A drag sounds the
   notes at each new pitch they reach, and moving them in time only sounds nothing new. A note added
   to the selection (a click, Shift+click) sounds at once, so notes sound in the order they were
@@ -577,10 +577,11 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   or on the keys, shows at that row, the row itself a little lighter in the grid. Over the strip the
   pointer is a magnifier and no row is named, and a drag changes the row height (› Zoom and scroll).
   The ruler shows the same magnifier where a drag on it zooms.
-- The **View** menu in the corner over the keys holds the key style, the key names and **Allow
-  stacked notes**, and keeps them in the settings, where the same choices are on the Clip editor
-  page. **Allow stacked notes** is in the toolbar's workflow menu too, under the workflow
-  settings, as it decides what an edit does to the notes under it.
+- The **options menu** in the corner over the keys (three dots, "Piano roll options") holds the
+  **Workflow** submenu (› Workflow modes), **Key style** and **Key names**, each a submenu with
+  its value dim at the right ("Key style (Bone)"), and under a divider **Allow stacked notes**; it
+  keeps them in the settings, where the same choices are on the Clip editor page. The corner's
+  right end holds the **Audition** headphones (› Layout).
 
 ## Selecting
 
@@ -867,10 +868,12 @@ clip scales) and is saved with the project; a clip has none until one is set.
   **Default scale** (C major unless changed). The switch, a root and a mode each run
   `clip.setScale`, one undo step (Ctrl+Z takes it back); a root or a mode picked while off turns
   the scale on with it.
-- **The toolbar's words** (› Layout): **Fold** and **Scale** (Fold to scale, › Zoom and scroll)
-  and **Highlight** (Highlight scale), each lit while on. Highlight, on unless turned off, tints
-  the rows of the scale and marks its keys as below; off, the rows look as without a scale, while
-  the scale still folds rows, fits notes and names the key column's rows. It is kept in Settings.
+- **The toolbar's Rows group** (› Layout): **Fold** (› Zoom and scroll), **Scale** and
+  **Highlight** (Highlight scale), each lit while on. **Scale** is the clip panel's switch in the
+  toolbar: the same switch, so either turns the clip's scale on (the scale the clip had, or the
+  Default scale) and off, and both are lit together. Highlight, on unless turned off, tints the
+  rows of the scale and marks its keys as below; off, the rows look as without a scale, while the
+  scale still folds rows, fits notes and names the key column's rows. It is kept in Settings.
 - **The rows of the keys in the scale are tinted with the clip's colour** (8 % of it over the
   dark rows, the root's 14 %), in place of the white-key and black-key rows a clip without a scale
   shows, and the other rows stay dark; each key in the scale
@@ -899,7 +902,8 @@ are drawn faintly behind the edited clip's own notes and cannot be edited, so a 
 written against another (a bass line against the chords). A double-click on one with the right
 button opens its clip in the editor.
 
-- **The ghost menu** in the toolbar, after the workflow menu (› Layout), reads **Ghosts**, dimmed
+- **The ghost menu** in the toolbar, after the Rows group (› Layout), reads **Ghosts** (its arrow
+  alone when the toolbar is short of room), dimmed
   while nothing is shown; its accessible label and its tooltip name what is shown ("Ghost notes
   Playing together"). Its entries, the chosen one ticked:
   - **None**: no ghost notes.
@@ -1094,10 +1098,10 @@ Later: Ctrl+G (glue), added to the keymap when built.
 ## Workflow modes
 
 **Built ([#490](https://github.com/suhina-daw/suhina-daw/issues/490)).** The way the piano roll
-works is a **mode**: one of the three presets below, or **Custom**. The **workflow menu** in the
-piano roll's toolbar, after the MIDI tools icon, shows the mode's name (its accessible label is
-"Workflow" and the name, such as "Workflow Select-first") and can be changed at any time, while
-editing; Settings › Keys › **Preset** offers the same four modes. The menu lists the four
+works is a **mode**: one of the three presets below, or **Custom**. The **Workflow** submenu of
+the options menu above the keys (› Key column) shows the mode's name at its right (its accessible
+label is "Workflow" and the name, such as "Workflow Select-first") and can be changed at any time,
+while editing; Settings › Keys › **Preset** offers the same four modes. The menu lists the four
 modes, ticked as chosen, and under a divider every **workflow setting**, one row each: the
 gesture in a word or two (**Click empty**, **Right-click note**, **Shift right-drag**, **Alt
 right-hold**, **Duplicate**, **Double-click empty**, **Double-click note**), its value dim at the

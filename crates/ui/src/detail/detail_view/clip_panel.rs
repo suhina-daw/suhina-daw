@@ -479,7 +479,7 @@ fn scale_switch(ui: &Ui, painter: &egui::Painter, rect: Rect, on: bool) -> bool 
         painter.rect_filled(Rect::from_min_size(Pos2::new(x - 1.5, keys.top()), Vec2::new(3.0, 5.5)), 0.0, ink);
     }
     let clicked = response.clicked();
-    response.on_hover_text("The clip's scale: its rows are marked, and Fold to scale and Fit to scale use it");
+    response.on_hover_text("The clip's scale: its rows are marked, and Fold and Fit to scale use it; the piano roll toolbar's Scale is the same switch");
     clicked
 }
 
@@ -864,21 +864,15 @@ pub(super) fn clip_part(
         Pos2::new(root_rect.right() + 4.0, root_rect.top()),
         Pos2::new(part.right(), root_rect.bottom()),
     );
-    let kept = Id::unique(("clip-panel-scale-kept", panel.clip.0));
+    // The same switch as the piano roll toolbar's Scale: it keeps a clip's scale under the clip.
+    let address = crate::detail::piano_roll::clip_address(at);
     let (root, mode) = panel
         .scale
         .map(|s| (s.root(), s.mode))
-        .or_else(|| ui.data(|d| d.get_temp::<(u8, ScaleMode)>(kept)))
-        .unwrap_or_else(crate::detail::piano_roll::default_scale);
+        .unwrap_or_else(|| crate::detail::piano_roll::switch_scale(ui.ctx(), &address));
     let root_name = ROOT_NAMES.get(usize::from(root)).copied().unwrap_or("C");
-    let on = panel.scale.is_some();
-    if scale_switch(ui, painter, switch, on) {
-        let params = if on {
-            ui.data_mut(|d| d.insert_temp(kept, (root, mode)));
-            json!({ "off": true })
-        } else {
-            json!({ "root": root_name, "mode": mode.name() })
-        };
+    if scale_switch(ui, painter, switch, panel.scale.is_some()) {
+        let params = crate::detail::piano_roll::scale_switch_params(ui.ctx(), &address, panel.scale);
         actions.push(Action::new("clip.setScale", on_clip(at, params)));
     }
     let name_of = |class: usize| crate::detail::piano_roll::pitch_class_name(u8::try_from(class).unwrap_or(0));

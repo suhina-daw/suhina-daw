@@ -175,6 +175,27 @@ fn pulled_to_the_top_the_view_shows_only_the_edited_track() {
     assert!((splitter(&h).center().y - 500.0).abs() < 20.0, "at {:?}", splitter(&h));
 }
 
+/// Pulled to the top over the second track, a click on its header picks the track and lets go of
+/// the clip: the view keeps that track in sight rather than going back to the first.
+#[test]
+fn leaving_the_pulled_track_by_its_header_keeps_it_in_view() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    h.get_by_label("Clip Walk on Bass at bar 17").click();
+    h.run();
+    pull_to(&mut h, 40.0);
+    assert!(h.query_all_by_label_contains(" on Drums at bar").next().is_none(), "only Bass shows");
+    h.get_by_label("Track Bass").click();
+    h.run();
+    let top = splitter(&h).top();
+    let bass = h.get_by_label("Track Bass").rect();
+    assert!(bass.center().y < top, "the clicked track stays above the splitter: {bass:?}, splitter at {top}");
+    // Drums, the first track, is scrolled away above it (or not drawn at all).
+    if let Some(drums) = h.query_by_label("Track Drums").map(|n| n.rect()) {
+        assert!(drums.bottom() <= bass.top() + 1.0, "Drums above Bass: {drums:?} {bass:?}");
+    }
+}
+
 #[test]
 fn pulled_to_the_top_over_the_whole_window_nothing_stays_above() {
     let mut renderer = engine();
@@ -989,9 +1010,17 @@ fn the_corner_menu_chooses_the_keys_and_stacking() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
     assert_eq!(h.state().piano_roll().key_style, suhina_ui::settings::PianoKeyStyle::Bone);
-    for label in ["Key style: Stone", "Key names: All keys", "Allow stacked notes"] {
-        h.get_by_label("Piano roll view").click();
+    for (submenu, label) in [
+        (Some("Key style ("), "Key style: Stone"),
+        (Some("Key names ("), "Key names: All keys"),
+        (None, "Allow stacked notes"),
+    ] {
+        h.get_by_label("Piano roll options").click();
         h.run();
+        if let Some(submenu) = submenu {
+            h.get_by_label_contains(submenu).click();
+            h.run();
+        }
         h.get_by_label(label).click();
         h.run();
     }

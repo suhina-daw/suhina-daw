@@ -487,25 +487,53 @@ pub(super) fn draw_ranges(painter: &egui::Painter, layout: &Layout, state: &Pian
     }
 }
 
-/// The menu in the corner over the keys: how the keys look and name themselves, and whether notes
-/// of a key may overlap. What is picked is kept in the settings by the window.
-pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
+/// The corner above the keys (› Layout): at its left the three dots of the piano roll's options,
+/// a menu with the Workflow submenu (› Workflow modes), Key style, Key names and Allow stacked
+/// notes, each submenu with its value dim at the right; at its right the audition headphones
+/// (› Playing the keys).
+pub(super) fn corner(
+    ui: &mut Ui,
+    corner: Rect,
+    state: &mut PianoRollState,
+    keymap: &crate::settings::keymap::Keymap,
+    scale: f32,
+) {
     if corner.width() < 1.0 || corner.height() < 1.0 {
         return;
     }
+    let painter = ui.painter_at(corner);
+    let side = (TOOL_ICON * scale).min(corner.height() - 4.0).max(8.0);
+    let more = Rect::from_min_size(Pos2::new(corner.left() + 3.0, corner.center().y - side / 2.0), Vec2::splat(side));
+    let audition = Rect::from_min_size(Pos2::new(corner.right() - 3.0 - side, more.top()), Vec2::splat(side));
+    let paint = super::ButtonPaint { ui, painter: &painter, keymap, scale };
+    if audition.left() > more.right() && paint.place(audition, IconButton::Audition, state.audition, true) {
+        state.audition = !state.audition;
+        if !state.audition {
+            state.audition_pending.clear();
+        }
+    }
+    let response = widgets::button_area(ui, more, Id::unique("piano-roll-options"), IconButton::More.name());
+    let (fill, ink) = widgets::toggle_colors(ui, &response, false);
+    painter.rect_filled(more, 3.0, fill);
+    IconButton::More.draw(&painter, more, ink, scale);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let theme_keys = theme_sets_keys();
     let mut picked = None;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(corner), |ui| {
-        let text = egui::RichText::new("View   ").font(font.clone()).color(theme::text_value());
-        let menu = ui.menu_button(text, |ui| {
-            let heading = |ui: &mut Ui, text: &str| {
-                ui.label(egui::RichText::new(text).font(font.clone()).color(theme::text_secondary()));
-            };
-            heading(ui, "Key style");
+    egui::Popup::menu(&response).show(|ui| {
+        let submenu = |ui: &mut Ui, name: &str, value: &str, label: String, entries: &mut dyn FnMut(&mut Ui)| {
+            let button = egui::Button::new(egui::RichText::new(name).font(font.clone())).right_text((
+                egui::RichText::new(value).font(font.clone()).color(theme::text_hint()),
+                egui::containers::menu::SubMenuButton::arrow_atom(None),
+            ));
+            let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| entries(ui));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+        };
+        let mode = keymap.preset().name();
+        submenu(ui, "Workflow", mode, format!("Workflow {mode}"), &mut |ui| super::workflow_entries(ui, keymap, state));
+        let style = if theme_keys { "Theme" } else { state.key_style.name() };
+        submenu(ui, "Key style", style, format!("Key style ({style})"), &mut |ui| {
             if theme_keys {
-                let theme_label = egui::RichText::new("Theme").font(font.clone());
-                let response = ui.selectable_label(true, theme_label);
+                let response = ui.selectable_label(true, egui::RichText::new("Theme").font(font.clone()));
                 response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, true, "Key style: Theme"));
             }
             for style in PianoKeyStyle::ALL {
@@ -521,8 +549,9 @@ pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
                     ui.close();
                 }
             }
-            ui.separator();
-            heading(ui, "Key names");
+        });
+        let names = state.key_names.name();
+        submenu(ui, "Key names", names, format!("Key names ({names})"), &mut |ui| {
             for names in PianoKeyNames::ALL {
                 let on = state.key_names == names;
                 let response = ui.selectable_label(on, egui::RichText::new(names.name()).font(font.clone()));
@@ -533,20 +562,17 @@ pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
                     ui.close();
                 }
             }
-            ui.separator();
-            let stacked = !state.notes_replace;
-            let response = ui.selectable_label(stacked, egui::RichText::new("Allow stacked notes").font(font.clone()));
-            response
-                .widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, stacked, "Allow stacked notes"));
-            if response.clicked() {
-                picked = Some(ViewPick::AllowStacked(!stacked));
-                ui.close();
-            }
         });
-        menu_arrow(ui, menu.response.rect, theme::text_value());
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Piano roll view"));
-        menu.response.on_hover_text("How the keys look, which keys are named, and whether notes may overlap");
+        ui.separator();
+        let stacked = !state.notes_replace;
+        let response = ui.selectable_label(stacked, egui::RichText::new("Allow stacked notes").font(font.clone()));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, stacked, "Allow stacked notes"));
+        if response.clicked() {
+            picked = Some(ViewPick::AllowStacked(!stacked));
+            ui.close();
+        }
     });
+    response.on_hover_text("Piano roll options: the workflow, how the keys look and are named, stacked notes");
     if picked.is_some() {
         state.view_picked = picked;
     }

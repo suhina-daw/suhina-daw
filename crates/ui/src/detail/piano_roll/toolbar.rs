@@ -1,7 +1,8 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The piano roll's toolbar: its tool buttons, and the grid and workflow menus.
+//! The piano roll's toolbar: its tool buttons, the Rows group, and the grid menu; and the
+//! workflow entries of the options menu above the keys.
 
 use super::*;
 
@@ -26,6 +27,14 @@ pub enum IconButton {
     Audition,
     /// The × at the right end: hides the editor.
     Hide,
+    /// Fold: only the rows that have notes (or the scale's, while the clip has one).
+    Fold,
+    /// The clip's scale switch, the same as the clip panel's.
+    Scale,
+    /// Highlight scale: the scale's rows tinted and its keys marked.
+    Highlight,
+    /// Three dots above the keys: the piano roll's options (workflow, keys, stacked notes).
+    More,
 }
 
 impl IconButton {
@@ -46,6 +55,10 @@ impl IconButton {
             Self::MidiTools => "MIDI tools",
             Self::Audition => "Audition",
             Self::Hide => "Hide editor",
+            Self::Fold => "Fold",
+            Self::Scale => "Scale",
+            Self::Highlight => "Highlight scale",
+            Self::More => "Piano roll options",
         }
     }
 
@@ -66,6 +79,10 @@ impl IconButton {
             Self::MidiTools => "piano-midi-tools",
             Self::Audition => "piano-audition",
             Self::Hide => "piano-hide",
+            Self::Fold => "piano-fold",
+            Self::Scale => "piano-scale",
+            Self::Highlight => "piano-highlight",
+            Self::More => "piano-more",
         }
     }
 
@@ -83,7 +100,13 @@ impl IconButton {
             Self::Paste => "selection.paste",
             Self::Duplicate => "selection.duplicate",
             Self::Hide => "view.editor",
-            Self::Quantise | Self::MidiTools | Self::Audition => return None,
+            Self::Quantise
+            | Self::MidiTools
+            | Self::Audition
+            | Self::Fold
+            | Self::Scale
+            | Self::Highlight
+            | Self::More => return None,
         })
     }
 
@@ -104,7 +127,7 @@ impl IconButton {
             Self::Quantise => include_str!("../../../../../assets/icons/piano-roll/quantise.svg"),
             Self::MidiTools => include_str!("../../../../../assets/icons/piano-roll/midi-tools.svg"),
             Self::Audition => include_str!("../../../../../assets/icons/piano-roll/audition.svg"),
-            Self::Hide => return None,
+            Self::Hide | Self::Fold | Self::Scale | Self::Highlight | Self::More => return None,
         })
     }
 
@@ -245,6 +268,44 @@ impl IconButton {
                 painter.rect_filled(Rect::from_center_size(at(-5.0, 3.5), size(3.0, 5.0)), 0.0, color);
                 painter.rect_filled(Rect::from_center_size(at(5.0, 3.5), size(3.0, 5.0)), 0.0, color);
             }
+            // Two rows with arrows pointing in between them: fewer rows.
+            Self::Fold => {
+                line((-6.0, -6.0), (6.0, -6.0));
+                line((-6.0, 6.0), (6.0, 6.0));
+                line((-3.0, -3.5), (0.0, -1.0));
+                line((0.0, -1.0), (3.0, -3.5));
+                line((-3.0, 3.5), (0.0, 1.0));
+                line((0.0, 1.0), (3.0, 3.5));
+            }
+            // A little keyboard: three white keys and two black ones.
+            Self::Scale => {
+                painter.rect_stroke(
+                    Rect::from_center_size(at(0.0, 0.0), size(12.0, 10.0)),
+                    1.0,
+                    stroke,
+                    StrokeKind::Inside,
+                );
+                for x in [-2.0, 2.0] {
+                    line((x, -5.0), (x, 5.0));
+                    painter.rect_filled(Rect::from_center_size(at(x, -1.5), size(2.5, 5.0)), 0.0, color);
+                }
+            }
+            // A band between two rows: the scale's rows tinted.
+            Self::Highlight => {
+                line((-6.0, -5.5), (6.0, -5.5));
+                line((-6.0, 5.5), (6.0, 5.5));
+                painter.rect_filled(
+                    Rect::from_center_size(at(0.0, 0.0), size(12.0, 4.0)),
+                    1.0,
+                    color.gamma_multiply(0.6),
+                );
+            }
+            // Three dots: more.
+            Self::More => {
+                for x in [-4.5, 0.0, 4.5] {
+                    painter.circle_filled(at(x, 0.0), 1.3 * scale, color);
+                }
+            }
             // Three horizontal sliders: the MIDI tools column's toggle.
             Self::MidiTools => {
                 for (y, knob) in [(-4.0, -2.0), (0.0, 3.0), (4.0, -1.0)] {
@@ -266,9 +327,12 @@ pub(super) struct ToolbarCx<'a> {
     pub(super) scale: f32,
 }
 
-/// The toolbar along the top of the piano roll: the tools, the note clipboard and the quantise
-/// button as icons drawn in code, and the grid value at the right end. Returns nothing; a button
-/// that runs something adds to `actions`.
+/// The toolbar along the top of the piano roll (› Layout): the tools, the note clipboard, quantise
+/// and the MIDI tools at the left; the Rows group (Fold, Scale, Highlight), the ghost menu, the
+/// grid value and the × at the right. With less room it gives way in steps, never hiding a part
+/// outright: first the Grid caption, then the Rows words (their icons stay), then the clipboard
+/// folds into an Edit menu, then the ghost menu loses its word. A button that runs something adds
+/// to `actions`.
 pub(super) fn toolbar(
     ui: &mut Ui,
     rect: Rect,
@@ -281,7 +345,6 @@ pub(super) fn toolbar(
         return;
     }
     let painter = ui.painter_at(rect);
-    let paint = ButtonPaint { ui, painter: &painter, keymap, scale };
     painter.fill_background(rect, 0.0, theme::panel_background());
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(theme::border()));
     let row = rect.shrink2(Vec2::new(4.0, 3.0));
@@ -299,143 +362,85 @@ pub(super) fn toolbar(
             own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, row.height().max(8.0))),
         )
     };
+    let step = layout_step(ui, row, size, gap, side);
+    let paint = ButtonPaint { ui, painter: &painter, keymap, scale };
     let x = std::cell::Cell::new(row.left() + TOOLBAR_INSET);
     let place = || {
         let area = Rect::from_min_size(Pos2::new(x.get(), row.top() + (row.height() - size.y) / 2.0), size);
         x.set(area.right() + gap);
         area
     };
+    let divider = || {
+        x.set(x.get() + 2.0);
+        if x.get() < row.right() {
+            painter.vline(x.get(), row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
+        }
+        x.set(x.get() + 5.0);
+    };
     for (tool, button) in [
-        (Some(Tool::Select), IconButton::Select),
-        (Some(Tool::Draw), IconButton::Draw),
-        (Some(Tool::Paint), IconButton::Paint),
-        (Some(Tool::Erase), IconButton::Erase),
-        (Some(Tool::Slice), IconButton::Slice),
-        (Some(Tool::Mute), IconButton::Mute),
+        (Tool::Select, IconButton::Select),
+        (Tool::Draw, IconButton::Draw),
+        (Tool::Paint, IconButton::Paint),
+        (Tool::Erase, IconButton::Erase),
+        (Tool::Slice, IconButton::Slice),
+        (Tool::Mute, IconButton::Mute),
     ] {
-        let area = place();
-        let chosen = tool == Some(state.tool);
-        if paint.place(area, button, chosen, true) {
-            state.tool = tool.unwrap_or(state.tool);
+        if paint.place(place(), button, tool == state.tool, true) {
+            state.tool = tool;
         }
     }
-    // A divider, then the note clipboard's buttons.
-    x.set(x.get() + 2.0);
-    if x.get() < row.right() {
-        painter.vline(x.get(), row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
-    }
-    x.set(x.get() + 5.0);
+    divider();
+    // The note clipboard: four buttons, or one Edit menu when room is short.
     let selected = !state.acting().is_empty();
-    for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {
-        let area = place();
-        let active = matches!(button, IconButton::Paste) || selected;
-        if paint.place(area, button, false, active)
-            && let Some(command) = state.clipboard_action(button, clip, copied)
-        {
-            actions.push(command);
+    let clipboard = [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate];
+    if step >= Step::Edit {
+        let area = Rect::from_min_size(
+            Pos2::new(x.get(), row.top() + (row.height() - size.y) / 2.0),
+            size + Vec2::new(10.0, 0.0),
+        );
+        x.set(area.right() + gap);
+        if let Some(button) = edit_menu(&paint, area, selected) {
+            actions.extend(state.clipboard_action(button, clip, copied));
+        }
+    } else {
+        for button in clipboard {
+            let active = matches!(button, IconButton::Paste) || selected;
+            if paint.place(place(), button, false, active) {
+                actions.extend(state.clipboard_action(button, clip, copied));
+            }
         }
     }
-    // A divider, then the quantise button (which shows Quantise in the clip panel's tools) and the
-    // tools part's own toggle.
-    x.set(x.get() + 2.0);
-    if x.get() < row.right() {
-        painter.vline(x.get(), row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
-    }
-    x.set(x.get() + 5.0);
-    let quantise = place();
-    if paint.place(quantise, IconButton::Quantise, state.quantize_open(), true) {
+    divider();
+    // Quantise (which shows Quantise in the clip panel's tools) and the tools part's own toggle.
+    if paint.place(place(), IconButton::Quantise, state.quantize_open(), true) {
         let open = !state.quantize_open();
         state.set_quantize_open(open);
     }
-    let tools = place();
-    if paint.place(tools, IconButton::MidiTools, state.tools_open, true) {
+    if paint.place(place(), IconButton::MidiTools, state.tools_open, true) {
         state.tools_open = !state.tools_open;
     }
-    let audition = place();
-    if paint.place(audition, IconButton::Audition, state.audition, true) {
-        state.audition = !state.audition;
-        if !state.audition {
-            state.audition_pending.clear();
-        }
-    }
-    let hide_left = row.right() - side;
-    // Fold, Fold to scale and Highlight, words that switch, in sight before the menus, each while
-    // the grid value still fits after it (› Scale and key).
-    x.set(x.get() + 6.0);
-    let fits = |right: f32| right + gap + 2.0 + GRID_MENU + 6.0 <= hide_left - gap;
-    let fold = state.fold;
-    let words = [
-        ("Fold", "Fold", "Shows only the rows that have notes", fold == Fold::Notes, true),
-        (
-            "Scale",
-            "Fold to scale",
-            "Shows only the rows of the clip's scale and those that have notes; turn the scale on in the clip panel",
-            fold == Fold::Scale,
-            clip.scale.is_some(),
-        ),
-        (
-            "Highlight",
-            "Highlight scale",
-            "Tints the rows of the clip's scale and marks its keys",
-            state.highlight_scale,
-            true,
-        ),
-    ];
-    for (index, (word, label, hint, on, enabled)) in words.into_iter().enumerate() {
-        let width = widgets::text_width(ui, word, theme::ui_font(theme::TEXT_SMALL)) + 12.0;
-        let rect = Rect::from_min_size(Pos2::new(x.get(), row.top()), Vec2::new(width, row.height()));
-        if !fits(rect.right()) {
-            break;
-        }
-        if word_toggle(ui, rect, (word, label, hint), on, enabled) {
-            match index {
-                0 => state.fold = if on { Fold::Off } else { Fold::Notes },
-                1 => state.fold = if on { Fold::Off } else { Fold::Scale },
-                _ => {
-                    state.highlight_scale = !on;
-                    state.view_picked = Some(super::ViewPick::HighlightScale(!on));
-                }
-            }
-        }
-        x.set(rect.right() + 3.0);
-    }
-    if state.fold != fold {
-        // Another set of rows: the notes are centred again in them.
-        state.scrolled_by_hand = false;
-        state.centred_for = 0.0;
-    }
-    // The workflow menu: the mode's name, the four modes and every workflow setting
-    // (› Workflow modes).
-    let workflow = Rect::from_min_size(Pos2::new(x.get() + 4.0, row.top()), Vec2::new(WORKFLOW_MENU, row.height()));
-    if workflow.right() + 4.0 + 104.0 < hide_left {
-        // Each menu takes the width its button needs, so the next one starts right after it.
-        let shown = workflow_menu(ui, workflow, keymap, state);
-        x.set(shown.right().min(workflow.right()) + gap);
-        // The ghost menu after it, when there is room for both (› Ghost notes).
-        let ghosts =
-            Rect::from_min_size(Pos2::new(x.get() + 4.0, row.top()), Vec2::new(ghost_view::MENU_WIDTH, row.height()));
-        if ghosts.right() + 4.0 + 104.0 < hide_left {
-            let shown = ghost_view::menu(ui, ghosts, &clip.ghosts, &mut state.ghost_source);
-            x.set(shown.right().min(ghosts.right()) + gap);
-        }
-    }
-    let paint = ButtonPaint { ui, painter: &painter, keymap, scale };
-    let x = x.get();
-    // At the very end the × that hides the editor, then the grid value before it.
+    let left_end = x.get();
+
+    // From the right end: the ×, the grid value and its caption, a divider, the ghost menu and
+    // the Rows group.
     let hide =
         Rect::from_min_size(Pos2::new(row.right() - side, row.top() + (row.height() - side) / 2.0), Vec2::splat(side));
-    if hide.left() >= x && paint.place(hide, IconButton::Hide, false, true) {
+    if hide.left() >= left_end && paint.place(hide, IconButton::Hide, false, true) {
         state.hide_requested = true;
     }
-    let row = Rect::from_min_max(row.min, Pos2::new(hide.left() - gap - 2.0, row.bottom()));
-    let menu = Rect::from_min_max(Pos2::new(row.right() - GRID_MENU, row.top()), row.max);
-    if menu.left() < x + 6.0 {
+    let menu = Rect::from_min_max(
+        Pos2::new(hide.left() - gap - 2.0 - GRID_MENU, row.top()),
+        Pos2::new(hide.left() - gap - 2.0, row.bottom()),
+    );
+    if menu.left() < left_end + 6.0 {
         return;
     }
-    // The caption, when there is room for it too.
-    if menu.left() >= x + 40.0 {
-        let label =
-            Rect::from_min_max(Pos2::new(menu.left() - 34.0, row.top()), Pos2::new(menu.left() - 4.0, row.bottom()));
+    if let Some(picked) = grid_menu(ui, menu, clip, keymap) {
+        state.grid_picked = Some(picked);
+    }
+    let mut right = menu.left();
+    if step == Step::Full {
+        let label = Rect::from_min_max(Pos2::new(right - 34.0, row.top()), Pos2::new(right - 4.0, row.bottom()));
         widgets::text_in(
             &painter,
             label,
@@ -444,10 +449,201 @@ pub(super) fn toolbar(
             theme::ui_font(theme::TEXT_SMALL),
             theme::text_hint(),
         );
+        right -= 40.0;
     }
-    if let Some(picked) = grid_menu(ui, menu, clip, keymap) {
-        state.grid_picked = Some(picked);
+    if step == Step::Squeezed {
+        return;
     }
+    painter.vline(right - 5.0, row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
+    right -= 10.0;
+    let words = step < Step::Icons;
+    let ghost_width = if step >= Step::GhostArrow { GHOST_ARROW } else { ghost_view::MENU_WIDTH };
+    let ghosts = Rect::from_min_max(Pos2::new(right - ghost_width, row.top()), Pos2::new(right, row.bottom()));
+    ghost_view::menu(ui, ghosts, &clip.ghosts, &mut state.ghost_source, step < Step::GhostArrow);
+    right = ghosts.left() - 6.0;
+    rows_group(ui, &painter, right, row, side, words, cx, state, actions);
+}
+
+/// How far the toolbar gives way this frame (› Layout): each step leaves out one more thing the
+/// row has no room for, in this order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Step {
+    /// Everything, with the grid value's caption.
+    Full,
+    /// Without the Grid caption.
+    NoCaption,
+    /// The Rows group as icons.
+    Icons,
+    /// The clipboard in one Edit menu.
+    Edit,
+    /// The ghost menu as its arrow.
+    GhostArrow,
+    /// Not even that fits: only the tools, the grid value and the ×.
+    Squeezed,
+}
+
+/// The width of the ghost menu as its arrow alone, in points.
+const GHOST_ARROW: f32 = 22.0;
+
+/// The words of the Rows group: Fold, Scale (the clip's scale switch) and Highlight.
+const ROWS: [(IconButton, &str); 3] =
+    [(IconButton::Fold, "Fold"), (IconButton::Scale, "Scale"), (IconButton::Highlight, "Highlight")];
+
+/// The width of one of the Rows group's toggles: its icon, and its word when `word`.
+fn row_toggle_width(ui: &Ui, side: f32, word: Option<&str>) -> f32 {
+    match word {
+        Some(word) => side + 10.0 + widgets::text_width(ui, word, theme::ui_font(theme::TEXT_SMALL)),
+        None => side + 6.0,
+    }
+}
+
+/// The least the toolbar gives way to fit `row` (› Layout).
+fn layout_step(ui: &Ui, row: Rect, size: Vec2, gap: f32, side: f32) -> Step {
+    let button = size.x + gap;
+    let rows = |words: bool| -> f32 {
+        ROWS.iter().map(|(_, word)| row_toggle_width(ui, side, words.then_some(*word)) + 2.0).sum::<f32>() + 4.0
+    };
+    let need = |step: Step| {
+        let clipboard = if step >= Step::Edit { size.x + 10.0 + gap } else { 4.0 * button };
+        let caption = if step == Step::Full { 40.0 } else { 0.0 };
+        let ghosts = if step >= Step::GhostArrow { GHOST_ARROW } else { ghost_view::MENU_WIDTH };
+        TOOLBAR_INSET
+            + 8.0 * button
+            + clipboard
+            + 14.0
+            + 8.0
+            + rows(step < Step::Icons)
+            + 6.0
+            + ghosts
+            + 10.0
+            + caption
+            + GRID_MENU
+            + gap
+            + 2.0
+            + side
+    };
+    [Step::Full, Step::NoCaption, Step::Icons, Step::Edit, Step::GhostArrow]
+        .into_iter()
+        .find(|step| need(*step) <= row.width())
+        .unwrap_or(Step::Squeezed)
+}
+
+/// The Rows group, its right end at `right`, framed: Fold, Scale and Highlight, each lit while
+/// on, as an icon and a word or, when `words` is off, the icon alone (its tooltip names it).
+/// Fold shows the rows with notes, or the scale's while the clip has one; Scale is the clip's
+/// scale switch, the same as the clip panel's; Highlight tints the scale's rows (› Scale and key).
+#[allow(clippy::too_many_arguments)]
+fn rows_group(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    right: f32,
+    row: Rect,
+    side: f32,
+    words: bool,
+    cx: ToolbarCx<'_>,
+    state: &mut PianoRollState,
+    actions: &mut Vec<Action>,
+) {
+    let clip = cx.clip;
+    let widths: Vec<f32> = ROWS.iter().map(|(_, word)| row_toggle_width(ui, side, words.then_some(*word))).collect();
+    let total = widths.iter().map(|w| w + 2.0).sum::<f32>() + 2.0;
+    let group = Rect::from_min_max(Pos2::new(right - total, row.top()), Pos2::new(right, row.bottom()));
+    painter.rect_stroke(group, 4.0, theme::hairline(theme::border_strong()), StrokeKind::Inside);
+    let folded = state.fold != Fold::Off;
+    let hints = [
+        "Fold: shows only the rows that have notes, or the scale's rows while the clip has a scale",
+        "Scale: turns the clip's scale on or off, as the clip panel's switch does",
+        "Highlight scale: tints the rows of the clip's scale and marks its keys",
+    ];
+    let ons = [folded, clip.scale.is_some(), state.highlight_scale];
+    let mut x = group.left() + 2.0;
+    for (index, ((button, word), width)) in ROWS.iter().zip(&widths).enumerate() {
+        let rect = Rect::from_min_size(Pos2::new(x, group.top() + 1.0), Vec2::new(*width, group.height() - 2.0));
+        x = rect.right() + 2.0;
+        let on = ons.get(index).copied().unwrap_or(false);
+        if !row_toggle(
+            ui,
+            painter,
+            rect,
+            (*button, words.then_some(*word)),
+            on,
+            hints.get(index).copied().unwrap_or(""),
+            cx.scale,
+        ) {
+            continue;
+        }
+        match button {
+            IconButton::Fold => state.fold = if folded { Fold::Off } else { Fold::Notes },
+            IconButton::Scale => {
+                let mut params = crate::detail::piano_roll::scale_switch_params(ui.ctx(), &clip.address, clip.scale);
+                if let (Some(params), Some(address)) = (params.as_object_mut(), clip.address.as_object()) {
+                    params.extend(address.clone());
+                }
+                actions.push(Action::new("clip.setScale", params));
+            }
+            _ => {
+                state.highlight_scale = !on;
+                state.view_picked = Some(super::ViewPick::HighlightScale(!on));
+            }
+        }
+        if matches!(button, IconButton::Fold | IconButton::Scale) {
+            // Another set of rows: the notes are centred again in them.
+            state.scrolled_by_hand = false;
+            state.centred_for = 0.0;
+        }
+    }
+}
+
+/// One of the Rows group's toggles: lit while on, its icon and, given one, its word; its accessible
+/// label is the button's name, its tooltip `hint`. Returns whether it was clicked.
+fn row_toggle(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    (button, word): (IconButton, Option<&str>),
+    on: bool,
+    hint: &str,
+    scale: f32,
+) -> bool {
+    let response = widgets::button_area(ui, rect, Id::unique(("piano-roll-rows", button.name())), button.name());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, button.name()));
+    let (fill, ink) = widgets::toggle_colors(ui, &response, on);
+    painter.rect_filled(rect, 3.0, fill);
+    let icon = Rect::from_min_size(rect.min + Vec2::new(3.0, 0.0), Vec2::new(rect.height(), rect.height()));
+    button.draw(painter, icon, ink, scale * 0.9);
+    if let Some(word) = word {
+        let text = Rect::from_min_max(Pos2::new(icon.right() + 2.0, rect.top()), rect.max);
+        widgets::text_in(painter, text, Align2::LEFT_CENTER, word, theme::ui_font(theme::TEXT_SMALL), ink);
+    }
+    let clicked = response.clicked();
+    response.on_hover_text(hint);
+    clicked
+}
+
+/// The note clipboard as one menu, when the toolbar is short of room: the Copy icon and an arrow,
+/// its list Cut, Copy, Paste and Duplicate (greyed out with nothing to act on, Paste aside).
+/// Returns the button picked.
+fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<IconButton> {
+    let ui = paint.ui;
+    let response = widgets::button_area(ui, area, Id::unique("piano-roll-edit-menu"), "Edit");
+    let (fill, ink) = widgets::toggle_colors(ui, &response, false);
+    paint.painter.rect_filled(area, 3.0, fill);
+    let icon = Rect::from_min_size(area.min, Vec2::splat(area.height()));
+    IconButton::Copy.draw(paint.painter, icon, ink, paint.scale);
+    menu_arrow(ui, area, ink);
+    let mut picked = None;
+    egui::Popup::menu(&response).show(|ui| {
+        for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {
+            let enabled = matches!(button, IconButton::Paste) || selected;
+            let text = egui::RichText::new(icon_hint(button, paint.keymap)).font(theme::ui_font(theme::TEXT_SMALL));
+            if ui.add_enabled(enabled, egui::Button::new(text)).clicked() {
+                picked = Some(button);
+                ui.close();
+            }
+        }
+    });
+    response.on_hover_text("Edit: cut, copy, paste, duplicate");
+    picked
 }
 
 /// How wide the toolbar's grid menu button is, in points.
@@ -586,111 +782,57 @@ pub(crate) fn menu_arrow(ui: &Ui, button: Rect, color: Color32) {
     ));
 }
 
-/// How wide the toolbar's workflow menu is, in points.
-pub(super) const WORKFLOW_MENU: f32 = 96.0;
-
-/// The toolbar's workflow menu: its button shows the mode, its menu offers the four modes and,
-/// under a divider, a submenu per workflow setting with its choices. A pick is left in `state`
-/// for the window, which keeps it in the keymap.
-/// A word in the toolbar that switches something (Fold, Fold to scale, Highlight): lit while on,
-/// dim while it cannot be used; its accessible label and tooltip say what it does. Returns whether
-/// it was clicked.
-fn word_toggle(ui: &mut Ui, rect: Rect, (word, label, hint): (&str, &str, &str), on: bool, enabled: bool) -> bool {
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    let response = ui
-        .add_enabled_ui(enabled, |ui| ui.put(rect, egui::Button::selectable(on, egui::RichText::new(word).font(font))))
-        .inner;
-    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, on, label));
-    let clicked = response.clicked();
-    response.on_hover_text(hint).on_disabled_hover_text(hint);
-    clicked
-}
-
-pub(super) fn workflow_menu(
-    ui: &mut Ui,
-    rect: Rect,
-    keymap: &crate::settings::keymap::Keymap,
-    state: &mut PianoRollState,
-) -> Rect {
+/// The workflow entries (› Workflow modes), the options menu's Workflow submenu: the four modes
+/// and, under a divider, a submenu per workflow setting with its choices, each in a word or two
+/// with its value dim at the right. A pick is left in `state` for the window, which keeps it in the
+/// keymap.
+pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Keymap, state: &mut PianoRollState) {
     use crate::settings::keymap::Preset;
     use crate::settings::workflow::{Pick, Setting};
     let mode = keymap.preset();
     let current = keymap.workflow();
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut picked = None;
-    let mut stacking = None;
-    let mut shown = rect;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-        let text = egui::RichText::new(format!("{}   ", mode.name())).font(font.clone()).color(theme::text_value());
-        let menu = ui.menu_button(text, |ui| {
-            for choice in Preset::MODES {
-                let response =
-                    ui.selectable_label(choice == mode, egui::RichText::new(choice.name()).font(font.clone()));
+    for choice in Preset::MODES {
+        let response = ui.selectable_label(choice == mode, egui::RichText::new(choice.name()).font(font.clone()));
+        if response.clicked() {
+            if choice != mode {
+                picked = Some(Pick::Mode(choice));
+            }
+            ui.close();
+        }
+    }
+    ui.separator();
+    // Each setting in a word or two, its value dim at the right and its choices one level down:
+    // short enough to read at a glance, and changed and tried at once.
+    for setting in Setting::ALL {
+        let chosen = current.get(setting);
+        let shown = setting.choices().get(chosen).copied().unwrap_or("");
+        let value = setting.short_choices().get(chosen).copied().unwrap_or(shown);
+        let button = egui::Button::new(egui::RichText::new(setting.short_name()).font(font.clone())).right_text((
+            egui::RichText::new(value).font(font.clone()).color(theme::text_hint()),
+            egui::containers::menu::SubMenuButton::arrow_atom(None),
+        ));
+        let label = format!("{}: {shown}", setting.name());
+        let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
+            for (index, choice) in setting.choices().iter().enumerate() {
+                let response = ui.selectable_label(index == chosen, egui::RichText::new(*choice).font(font.clone()));
+                let name = format!("{}: {choice}", setting.name());
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, index == chosen, &name));
                 if response.clicked() {
-                    if choice != mode {
-                        picked = Some(Pick::Mode(choice));
+                    if index != chosen {
+                        picked = Some(Pick::Setting(setting, index));
                     }
                     ui.close();
                 }
             }
-            ui.separator();
-            // Each setting in a word or two, its value dim at the right and its choices one level
-            // down: short enough to read at a glance, and changed and tried at once.
-            for setting in Setting::ALL {
-                let chosen = current.get(setting);
-                let shown = setting.choices().get(chosen).copied().unwrap_or("");
-                let value = setting.short_choices().get(chosen).copied().unwrap_or(shown);
-                let button = egui::Button::new(egui::RichText::new(setting.short_name()).font(font.clone()))
-                    .right_text((
-                        egui::RichText::new(value).font(font.clone()).color(theme::text_hint()),
-                        egui::containers::menu::SubMenuButton::arrow_atom(None),
-                    ));
-                let label = format!("{}: {shown}", setting.name());
-                let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
-                    for (index, choice) in setting.choices().iter().enumerate() {
-                        let response =
-                            ui.selectable_label(index == chosen, egui::RichText::new(*choice).font(font.clone()));
-                        let name = format!("{}: {choice}", setting.name());
-                        response.widget_info(|| {
-                            egui::WidgetInfo::selected(egui::Role::Button, true, index == chosen, &name)
-                        });
-                        if response.clicked() {
-                            if index != chosen {
-                                picked = Some(Pick::Setting(setting, index));
-                            }
-                            ui.close();
-                        }
-                    }
-                });
-                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-                response.on_hover_text(setting.note());
-            }
-            // How notes that land on others of their key behave belongs with how the mouse edits
-            // them; the same setting as the View menu's (› Allow stacked notes).
-            ui.separator();
-            let stacked = !state.notes_replace;
-            let response = ui.selectable_label(stacked, egui::RichText::new("Allow stacked notes").font(font.clone()));
-            response.widget_info(|| {
-                egui::WidgetInfo::selected(egui::Role::Button, true, stacked, "Workflow: Allow stacked notes")
-            });
-            if response.clicked() {
-                stacking = Some(super::ViewPick::AllowStacked(!stacked));
-                ui.close();
-            }
         });
-        let label = format!("Workflow {}", mode.name());
-        menu_arrow(ui, menu.response.rect, theme::text_value());
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-        shown = menu.response.rect;
-        menu.response.on_hover_text("How clicks, right-clicks and double-clicks work: a preset, or Custom");
-    });
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+        response.on_hover_text(setting.note());
+    }
     if picked.is_some() {
         state.workflow_picked = picked;
     }
-    if stacking.is_some() {
-        state.view_picked = stacking;
-    }
-    shown
 }
 
 /// The toolbar's icon buttons as they are painted this frame: the surface they are drawn on, the
