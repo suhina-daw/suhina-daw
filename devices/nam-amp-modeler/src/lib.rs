@@ -11,11 +11,14 @@
 //! the device keeps one running instance per side, fed by `nam-rs` (MIT), whose
 //! `process_buffer` is allocation-free. Nothing on the audio path allocates.
 //!
-//! The stream runs in fixed chunks of [`CHUNK`] frames counted from a reset, and the output
-//! trails the input by one chunk plus the resampler legs' holdback — [`CHUNK`] when the
-//! model's rate is the project's, told through `latency()` — so a host's block sizes never
-//! change the sound. A missing model, or one the runtime refuses, leaves the trims, EQ and
-//! delay in place and the model silent, so the rest of the chain still works.
+//! The stages run on the frames each call brings, as they arrive, and the output trails the
+//! input by one chunk plus the resampler legs' holdback — [`CHUNK`] when the model's rate is
+//! the project's, told through `latency()` — so a host's block sizes never change the sound:
+//! the model, the DC blocker and the resampler legs all keep streaming state whose output
+//! never depends on how a stream is divided into calls. Running the work as it arrives also
+//! keeps its cost even — a whole chunk's model run inside one small block leaves the render
+//! thread no room for anything else. A missing model, or one the runtime refuses, leaves the
+//! trims, EQ and delay in place and the model silent, so the rest of the chain still works.
 
 use std::sync::Arc;
 
@@ -124,6 +127,10 @@ pub struct NamAmp {
     /// The stream positions of the next input frame and of the next produced output.
     in_pos: u64,
     produced_pos: u64,
+    /// How many input frames have been pushed through the stages. The chunk array is the
+    /// staging room (a span never crosses its end); what sits between this and `in_pos` is
+    /// the frames this call brought, run as they arrive.
+    staged_total: u64,
     /// Frames the two resampler legs' production trails the chunked feed, which the delivery
     /// waits for so it never reads a slot before production reaches it. Zero without a
     /// running model, when the model refuses to build, and when the rates match (no legs).
@@ -176,6 +183,7 @@ impl NamAmp {
             ready_right: Box::new([0.0; RING]),
             in_pos: 0,
             produced_pos: 0,
+            staged_total: 0,
             leg_hold: 0,
             chunk_f64: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
             model_input: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
@@ -264,6 +272,7 @@ impl NamAmp {
         self.ready_right.fill(0.0);
         self.in_pos = 0;
         self.produced_pos = 0;
+        self.staged_total = 0;
         self.delays = [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)];
         // The legs' staging is sized for the rate pair: what the legs move is within a chunk
         // times the ratio, plus the kernels' halves — all four stage lists sized alike so a
@@ -338,14 +347,28 @@ impl NamAmp {
         }
     }
 
-    /// The completed chunk: each side's model stage (a copy of the chunk into the model's
-    /// buffer when the rates match, with the resampler legs around it when they do not), then
-    /// the tail stages per produced frame. Both sides produce the same number of frames; the
-    /// tails run them in stream order at their own positions.
-    fn complete_chunk(&mut self) {
+    /// Runs the stages over every frame the calls have brought since the last run, a span at
+    /// a time (a span never crosses the chunk array's end, so one long call becomes several
+    /// spans). Both sides' stages run per span, then the tails over what they produced, in
+    /// stream order.
+    fn run_stages(&mut self) {
+        while self.staged_total < self.in_pos {
+            let at = (self.staged_total % CHUNK as u64) as usize;
+            let len = (self.in_pos - self.staged_total).min((CHUNK - at) as u64) as usize;
+            self.run_span(at, len);
+            self.staged_total += len as u64;
+        }
+    }
+
+    /// One span of the stages, the chunk's frames `[at, at+len)`: each side's model stage — a
+    /// copy of the span into the model's buffer when the rates match, the resampler legs
+    /// around it when they do not — then the tail stages per produced frame, landing in the
+    /// delivery ring at their stream positions. A model the runtime refuses passes the span
+    /// through.
+    fn run_span(&mut self, at: usize, len: usize) {
         let mut counts = [0usize; 2];
         for (side, count) in counts.iter_mut().enumerate() {
-            *count = self.model_stage(side);
+            *count = self.model_stage(side, at, len);
         }
         let count = counts[0].min(counts[1]).min(RING);
         for k in 0..count {
@@ -367,39 +390,37 @@ impl NamAmp {
         self.produced_pos += count as u64;
     }
 
-    /// One side's stage between the head-stored chunk and the tails: the model, with the
-    /// resampler legs when the model's rate is another one (and no legs without a model), plus
-    /// its DC blocker. The produced frames land in `stage_out[side]`; the count comes back. A
-    /// model the runtime refuses passes the chunk through.
-    fn model_stage(&mut self, side: usize) -> usize {
-        let chunk: [f32; CHUNK] = *self.chunk[side];
+    /// One side's stage between the head-stored chunk and the tails: the model over the span,
+    /// with the resampler legs when the model's rate is another one (and no legs without a
+    /// model), plus its DC blocker. The produced frames land in `stage_out[side]`; the count
+    /// comes back.
+    fn model_stage(&mut self, side: usize, at: usize, len: usize) -> usize {
         if self.running[side].is_none() {
             // No model: the trims and EQ stand in for it, with no DC blocker to run.
-            self.model_io[side][..CHUNK].copy_from_slice(&chunk);
-            for (k, io) in self.model_io[side].iter().take(CHUNK).enumerate() {
-                self.stage_out[side][k] = f64::from(*io);
+            for (k, &value) in self.chunk[side][at..at + len].iter().enumerate() {
+                self.stage_out[side][k] = f64::from(value);
             }
-            return CHUNK;
+            return len;
         }
         let rate_match = self.rates_match();
         if rate_match {
-            self.model_io[side][..CHUNK].copy_from_slice(&chunk);
+            self.model_io[side][..len].copy_from_slice(&self.chunk[side][at..at + len]);
             if let Some(model) = self.running.get_mut(side).and_then(|slot| slot.as_mut()) {
-                model.process_buffer(&mut self.model_io[side][..CHUNK]);
+                model.process_buffer(&mut self.model_io[side][..len]);
             }
-            // The DC blocker only ever sees the chunk's frames: the staging list is longer
-            // than the chunk, and feeding it the slots past the chunk would drag its state
-            // off with old values every tick.
-            for (k, io) in self.model_io[side].iter().take(CHUNK).enumerate() {
+            // The DC blocker only ever sees the span's frames: the staging list is longer
+            // than a span, and feeding it the slots past the span would drag its state off
+            // with old values.
+            for (k, io) in self.model_io[side].iter().take(len).enumerate() {
                 self.stage_out[side][k] = self.sides[side].dc.process(f64::from(*io));
             }
-            return CHUNK;
+            return len;
         }
         // The legs: into the model's rate, through the model, the DC blocker, and back.
-        for (k, value) in self.chunk[side].iter().enumerate() {
-            self.chunk_f64[side][k] = f64::from(*value);
+        for (k, &value) in self.chunk[side][at..at + len].iter().enumerate() {
+            self.chunk_f64[side][k] = f64::from(value);
         }
-        let fed = self.sides[side].into_model.process(&self.chunk_f64[side][..CHUNK], &mut self.model_input[side]);
+        let fed = self.sides[side].into_model.process(&self.chunk_f64[side][..len], &mut self.model_input[side]);
         for (k, value) in self.model_input[side].iter().take(fed).enumerate() {
             self.model_io[side][k] = *value as f32;
         }
@@ -431,11 +452,15 @@ impl NamAmp {
             }
             let slot = (in_at as usize) & (CHUNK - 1);
             self.head(input, slot);
-            if slot == CHUNK - 1 {
-                self.complete_chunk();
-            }
             self.in_pos = in_at.wrapping_add(1);
+            // A call longer than the chunk keeps its stages moving inside the call, so the
+            // frames it delivers later in the same call are already produced.
+            if slot == CHUNK - 1 {
+                self.run_stages();
+            }
         }
+        // The stages run over what this call brought, as it brought it.
+        self.run_stages();
     }
 }
 

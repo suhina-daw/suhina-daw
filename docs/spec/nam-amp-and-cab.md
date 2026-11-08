@@ -133,10 +133,15 @@ not a mix.
   paths, as with the limiter's look-ahead. Longer IRs are handled inside the same delay with the
   partition's tail buffers. The **Delay** knob is not reported.
 
-Both devices process in fixed 512-frame internal blocks counted from `reset` — like the FM
-synth's internal blocks — so the output never depends on how a stream is divided, whatever the
-host's buffer size or the conformance tests throw at them, and nothing on the audio path
-allocates ([ADR 0004] › rules 3 and 6). Both pass the contract tests (`device_api::conformance`),
+The Cab Loader processes in fixed 512-frame internal blocks counted from `reset` — like the
+FM synth's internal blocks. The Amp Modeler runs its stages on the frames each call brings,
+as they arrive: the model, its DC blocker and the resampler legs all keep streaming state
+whose output never depends on how a stream is divided into calls, and spreading the model's
+work over the call keeps its cost even (a whole chunk's model run inside one small block
+leaves the render thread no room for anything else, and cracks as an underrun). Either way
+the output never depends on how a stream is divided, whatever the host's buffer size or the
+conformance tests throw at them, and nothing on the audio path allocates
+([ADR 0004] › rules 3 and 6). Both pass the contract tests (`device_api::conformance`),
 which run hostile parameter values, hostile buffers, every block size and 8…384 kHz.
 
 ## Model and IR files
