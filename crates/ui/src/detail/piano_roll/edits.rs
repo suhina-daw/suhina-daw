@@ -31,7 +31,8 @@ pub(super) fn single_click(
         }
         (None, Tool::Erase | Tool::Mute) => {}
         (Some(index), _) if inputs.shift || inputs.command => {
-            if !state.selected.remove(&index) {
+            // A note the press already added stays; any other is taken out or added.
+            if state.press_added.take() != Some(index) && !state.selected.remove(&index) {
                 state.selected.insert(index);
                 state.audition_keys(clip.notes.get(index).map(|n| n.key));
             }

@@ -209,6 +209,9 @@ pub struct PianoRollState {
     /// The index the note the last click added will have, so the second click of a double-click
     /// selects that note rather than deleting it.
     pub(super) click_added: Option<usize>,
+    /// The note a press with Shift or Ctrl added to the selection, so the click that ends the
+    /// press does not take it out again.
+    pub(super) press_added: Option<usize>,
     /// A workflow mode or setting picked in the toolbar's menu this frame, for the window to keep
     /// in the keymap.
     pub workflow_picked: Option<crate::settings::workflow::Pick>,
@@ -293,6 +296,7 @@ impl Default for PianoRollState {
             hover_key: None,
             last_click: None,
             click_added: None,
+            press_added: None,
             workflow_picked: None,
             ruler: RulerState::default(),
             view_width: 0.0,
