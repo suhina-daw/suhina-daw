@@ -357,12 +357,126 @@ pub fn load_file(id: &str, path: &Path, rate: u32) -> Result<DeviceAsset, String
 /// devices work at once and offline, with nothing on disk. Keep the pack small: the ADR caps
 /// the whole thing, and a test here keeps the rows honest.
 const PACK_FILES: &[(&str, &str, &[u8])] = &[
+    (
+        "nam-amp-modeler",
+        "Helga B 5150 BlockLetter - NoBoost.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Helga B 5150 BlockLetter - NoBoost.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Jason Z KSR CERES - light blue channel - all noon EQ.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Jason Z KSR CERES - light blue channel - all noon EQ.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Mikhail K Sovtek MIG50.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Mikhail K Sovtek MIG50.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Peter N HM-2_V5_L10_H10_D0_Std_ESR-0.0004.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Peter N HM-2_V5_L10_H10_D0_Std_ESR-0.0004.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Phillipe P Bug333-Clean-ESR0,002.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Phillipe P Bug333-Clean-ESR0,002.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Phillipe P Bug333-Crunch-NoDrive-ESR0,002.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Phillipe P Bug333-Crunch-NoDrive-ESR0,002.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Phillipe P LaneyGH100S-Lo-CrunchGain-ESR0,024.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Phillipe P LaneyGH100S-Lo-CrunchGain-ESR0,024.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Roman A LT_MESA_MARKIV_1.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Roman A LT_MESA_MARKIV_1.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Roman A YERASOV_MESHUGGAH.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Roman A YERASOV_MESHUGGAH.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Sascha S DirtyShirleyMini_Clean_B1_M6_T7_MV10_G4.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Sascha S DirtyShirleyMini_Clean_B1_M6_T7_MV10_G4.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Sascha S DirtyShirleyMini_crunch_G6.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Sascha S DirtyShirleyMini_crunch_G6.nam"),
+    ),
     ("nam-amp-modeler", "Suhina Overdrive.nam", include_bytes!("../../../packs/nam-amp-modeler/Suhina Overdrive.nam")),
     (
-        "nam-cab-loader",
-        "Synthetic Cabinet Plain.wav",
-        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Plain.wav"),
+        "nam-amp-modeler",
+        "Tim R Fender TwinVerb Vibrato Bright.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Tim R Fender TwinVerb Vibrato Bright.nam"),
     ),
+    (
+        "nam-amp-modeler",
+        "Tim R JCM2000 Crunch.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Tim R JCM2000 Crunch.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Tim R Splawn Pro Mod 2nd Gear - G12.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Tim R Splawn Pro Mod 2nd Gear - G12.nam"),
+    ),
+    ("nam-amp-modeler", "Tim R TS9.nam", include_bytes!("../../../packs/nam-amp-modeler/Tim R TS9.nam")),
+    (
+        "nam-amp-modeler",
+        "Tudor N Driftwood Low Gain.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Tudor N Driftwood Low Gain.nam"),
+    ),
+    ("nam-cab-loader", "Blackat Leon S7.wav", include_bytes!("../../../packs/nam-cab-loader/Blackat Leon S7.wav")),
+    (
+        "nam-cab-loader",
+        "Cicognani Imperivm Luxury.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Cicognani Imperivm Luxury.wav"),
+    ),
+    ("nam-cab-loader", "DV Mark Triple 6.wav", include_bytes!("../../../packs/nam-cab-loader/DV Mark Triple 6.wav")),
+    ("nam-cab-loader", "EVH 5150 III.wav", include_bytes!("../../../packs/nam-cab-loader/EVH 5150 III.wav")),
+    ("nam-cab-loader", "Engl Retro Tube.wav", include_bytes!("../../../packs/nam-cab-loader/Engl Retro Tube.wav")),
+    (
+        "nam-cab-loader",
+        "Engl Special Edition.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Engl Special Edition.wav"),
+    ),
+    ("nam-cab-loader", "Fortin Natas.wav", include_bytes!("../../../packs/nam-cab-loader/Fortin Natas.wav")),
+    ("nam-cab-loader", "Kaos Sludge 15.wav", include_bytes!("../../../packs/nam-cab-loader/Kaos Sludge 15.wav")),
+    (
+        "nam-cab-loader",
+        "Krank Krankenstein.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Krank Krankenstein.wav"),
+    ),
+    ("nam-cab-loader", "Laney ironheart.wav", include_bytes!("../../../packs/nam-cab-loader/Laney ironheart.wav")),
+    (
+        "nam-cab-loader",
+        "MakosampCustomHatred.wav",
+        include_bytes!("../../../packs/nam-cab-loader/MakosampCustomHatred.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Marshall JMP 2203  Jose Arredondo mod.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Marshall JMP 2203  Jose Arredondo mod.wav"),
+    ),
+    ("nam-cab-loader", "Marshall MG 15.wav", include_bytes!("../../../packs/nam-cab-loader/Marshall MG 15.wav")),
+    (
+        "nam-cab-loader",
+        "Mesa Boogie Mark V.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Mesa Boogie Mark V.wav"),
+    ),
+    ("nam-cab-loader", "Peavey Vypyr 15.wav", include_bytes!("../../../packs/nam-cab-loader/Peavey Vypyr 15.wav")),
+    ("nam-cab-loader", "Randall Satan.wav", include_bytes!("../../../packs/nam-cab-loader/Randall Satan.wav")),
+    ("nam-cab-loader", "Randall thrasher.wav", include_bytes!("../../../packs/nam-cab-loader/Randall thrasher.wav")),
+    ("nam-cab-loader", "Splawn Nitro.wav", include_bytes!("../../../packs/nam-cab-loader/Splawn Nitro.wav")),
+    ("nam-cab-loader", "Splawn Quick Rod.wav", include_bytes!("../../../packs/nam-cab-loader/Splawn Quick Rod.wav")),
     (
         "nam-cab-loader",
         "Synthetic Cabinet Bright.wav",
@@ -380,6 +494,11 @@ const PACK_FILES: &[(&str, &str, &[u8])] = &[
     ),
     (
         "nam-cab-loader",
+        "Synthetic Cabinet Plain.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Plain.wav"),
+    ),
+    (
+        "nam-cab-loader",
         "Synthetic Cabinet Room.wav",
         include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Room.wav"),
     ),
@@ -388,6 +507,7 @@ const PACK_FILES: &[(&str, &str, &[u8])] = &[
         "Synthetic Cabinet Worse.wav",
         include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Worse.wav"),
     ),
+    ("nam-cab-loader", "Taurus Stomphead.wav", include_bytes!("../../../packs/nam-cab-loader/Taurus Stomphead.wav")),
 ];
 
 /// The shipped file in the pack's state key ([ADR 0036] · `builtin:<device id>/<file name>`).

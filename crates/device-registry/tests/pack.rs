@@ -46,7 +46,11 @@ fn rendered(device: &mut dyn Device, frames: &mut [f32]) -> Vec<f32> {
 /// latency ([ADR 0036] › the starter pack). The bound is far above the model's own fit.
 #[test]
 fn the_own_model_renders_within_a_bound_of_its_source_chain() {
-    let Some((name, _)) = pack_files("nam-amp-modeler").first().copied() else { panic!("the pack has no model") };
+    let Some((name, _)) =
+        pack_files("nam-amp-modeler").iter().find(|(name, _)| *name == "Suhina Overdrive.nam").copied()
+    else {
+        panic!("the pack has no own model to prove");
+    };
     let asset = load_builtin_file("nam-amp-modeler", name, RATE).unwrap();
     let mut model = create_with("nam-amp-modeler", Some(&asset)).unwrap();
 
