@@ -1135,7 +1135,14 @@ pub(crate) fn device_file_state(session: &Session, path: &str) -> String {
     let absolute = crate::files::absolute(std::path::Path::new(path));
     match session.library_base() {
         Some(base) if absolute.starts_with(base) => match absolute.strip_prefix(base) {
-            Ok(relative) => relative.display().to_string(),
+            // The libraries-relative form carries forward slashes on every platform, so a
+            // project saved on this machine's folders opens on another's, and the stored
+            // text joins a base the same way ([ADR 0036] › 4).
+            Ok(relative) => relative
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/"),
             Err(_) => absolute.display().to_string(),
         },
         _ => absolute.display().to_string(),

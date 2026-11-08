@@ -510,8 +510,8 @@ impl BrowserState {
         self.rows_key = None;
     }
 
-    /// Where the library's own presets save ([`App::set_library_base`]); the browser's tree
-    /// reads them when it builds rows.
+    /// Where the library's own presets save ([`crate::app::App::set_library_base`]); the
+    /// browser's tree reads them when it builds rows.
     pub fn set_library(&mut self, base: Option<PathBuf>) {
         self.library = base;
         self.rows_key = None;
