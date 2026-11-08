@@ -366,7 +366,10 @@ pub(super) fn toolbar(
             own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, row.height().max(8.0))),
         )
     };
-    let step = layout_step(ui, row, size, gap, side);
+    // The workflow and ghost menus as wide as their words, so they sit close by.
+    let workflow_named = menu_width(ui, keymap.preset().name());
+    let ghosts_named = menu_width(ui, "Ghosts");
+    let step = layout_step(ui, row, (size, gap, side), workflow_named + ghosts_named);
     let paint = ButtonPaint { ui, painter: &painter, keymap, scale };
     let x = std::cell::Cell::new(row.left() + TOOLBAR_INSET);
     let place = || {
@@ -462,11 +465,11 @@ pub(super) fn toolbar(
     right -= 10.0;
     let words = step < Step::Icons;
     let named = step < Step::Arrows;
-    let ghost_width = if named { ghost_view::MENU_WIDTH } else { MENU_ARROW };
+    let ghost_width = if named { ghosts_named } else { MENU_ARROW };
     let ghosts = Rect::from_min_max(Pos2::new(right - ghost_width, row.top()), Pos2::new(right, row.bottom()));
     ghost_view::menu(ui, ghosts, &clip.ghosts, &mut state.ghost_source, named);
     right = ghosts.left() - 4.0;
-    let workflow_width = if named { WORKFLOW_MENU } else { MENU_ARROW };
+    let workflow_width = if named { workflow_named } else { MENU_ARROW };
     let workflow = Rect::from_min_max(Pos2::new(right - workflow_width, row.top()), Pos2::new(right, row.bottom()));
     workflow_menu(ui, workflow, keymap, state, named);
     right = workflow.left() - 6.0;
@@ -497,8 +500,11 @@ const BUTTON_ROOM: f32 = 8.0;
 /// The width of a toolbar menu as its arrow alone, in points.
 const MENU_ARROW: f32 = 22.0;
 
-/// How wide the toolbar's workflow menu is with the mode's name, in points.
-const WORKFLOW_MENU: f32 = 96.0;
+/// How wide a toolbar menu's button is with `word` on it: the word, the room the menu's arrow
+/// takes after it, and the button's padding.
+fn menu_width(ui: &Ui, word: &str) -> f32 {
+    widgets::text_width(ui, &format!("{word}   "), theme::ui_font(theme::TEXT_SMALL)) + 10.0
+}
 
 /// The words of the Rows group: Fold, Scale (the clip's scale switch) and Highlight.
 const ROWS: [(IconButton, &str); 3] =
@@ -513,7 +519,7 @@ fn row_toggle_width(ui: &Ui, side: f32, word: Option<&str>) -> f32 {
 }
 
 /// The least the toolbar gives way to fit `row` (› Layout).
-fn layout_step(ui: &Ui, row: Rect, size: Vec2, gap: f32, side: f32) -> Step {
+fn layout_step(ui: &Ui, row: Rect, (size, gap, side): (Vec2, f32, f32), menus_named: f32) -> Step {
     let button = size.x + gap;
     let rows = |words: bool| -> f32 {
         ROWS.iter().map(|(_, word)| row_toggle_width(ui, side, words.then_some(*word)) + 2.0).sum::<f32>() + 4.0
@@ -521,7 +527,7 @@ fn layout_step(ui: &Ui, row: Rect, size: Vec2, gap: f32, side: f32) -> Step {
     let need = |step: Step| {
         let clipboard = if step >= Step::Edit { size.x + 10.0 + gap } else { 4.0 * button };
         let caption = if step == Step::Full { 40.0 } else { 0.0 };
-        let menus = if step >= Step::Arrows { 2.0 * MENU_ARROW } else { ghost_view::MENU_WIDTH + WORKFLOW_MENU };
+        let menus = if step >= Step::Arrows { 2.0 * MENU_ARROW } else { menus_named };
         TOOLBAR_INSET
             + 8.0 * button
             + clipboard
