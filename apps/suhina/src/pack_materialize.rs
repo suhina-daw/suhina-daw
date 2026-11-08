@@ -63,6 +63,100 @@ pub fn unpack_pack(sounds: &Path) -> usize {
     written
 }
 
+/// The old default folders each device's files may still carry
+/// ([issue 1279] · the library move): `(device id, old folder name)`.
+const OLD_DEVICE_FOLDERS: &[(&str, &str)] = &[("nam-amp-modeler", "NAM models"), ("nam-cab-loader", "IRs")];
+
+/// Moves the old defaults' contents into the library's device folders before the pack unpacks:
+/// a pack subfolder moves as a pack, a file moves by its name, and a name the new tree already
+/// holds stays where it is, so nothing is ever overwritten ([issue 1279]). Each moved-empty old
+/// folder is removed; the returned lines go to the start-up warnings.
+pub fn migrate_old_folders(sounds: &Path) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for (device, old_name) in OLD_DEVICE_FOLDERS {
+        let Some(library_folder) = suhina_device_registry::pack_files_flat()
+            .iter()
+            .find_map(|(id, folder, _, _, _)| (*id == *device).then_some(*folder))
+        else {
+            continue;
+        };
+        let old = sounds.join(old_name);
+        let fresh = sounds.join(library_folder);
+        if !old.is_dir() {
+            continue;
+        }
+        let _ = std::fs::create_dir_all(&fresh);
+        let mut moved = 0;
+        let mut kept = 0;
+        let entries = std::fs::read_dir(&old).map(|entries| entries.flatten().collect::<Vec<_>>()).unwrap_or_default();
+        for entry in entries {
+            let target = fresh.join(entry.file_name());
+            let source = entry.path();
+            if move_entry(&source, &target) {
+                moved += 1;
+            } else {
+                kept += 1;
+            }
+        }
+        if old.is_dir() && is_empty(&old) {
+            let _ = std::fs::remove_dir(&old);
+        }
+        match (moved, kept) {
+            (0, 0) => {}
+            (moved, 0) => warnings.push(format!(
+                "your old {} folder ({}) moved into the library's {} folder: {moved} file(s)",
+                old_name,
+                old.display(),
+                library_folder
+            )),
+            (0, kept) => warnings.push(format!(
+                "your old {} folder ({}) kept its {kept} file(s): their names are already in the library's {} folder",
+                old_name,
+                old.display(),
+                library_folder
+            )),
+            (moved, kept) => warnings.push(format!(
+                "your old {} folder ({}) mostly moved into the library's {} folder: {moved} file(s), {kept} kept in place \
+                 because their names were already there",
+                old_name,
+                old.display(),
+                library_folder
+            )),
+        }
+    }
+    warnings
+}
+
+/// Moves one file or folder into `target` when it is missing there. Folders move recursively,
+/// their own names carried; a folder that lands only in part stays whole beside its moved
+/// files. A `target` that exists is never written over.
+fn move_entry(source: &Path, target: &Path) -> bool {
+    if target.exists() {
+        if !source.is_dir() {
+            return false;
+        }
+        let entries =
+            std::fs::read_dir(source).map(|entries| entries.flatten().collect::<Vec<_>>()).unwrap_or_default();
+        let mut moved = 0;
+        for entry in entries {
+            let inner = target.join(entry.file_name());
+            if move_entry(&entry.path(), &inner) {
+                moved += 1;
+            }
+        }
+        if source.is_dir() && is_empty(source) {
+            let _ = std::fs::remove_dir(source);
+        }
+        moved > 0
+    } else {
+        std::fs::rename(source, target).is_ok()
+    }
+}
+
+fn is_empty(folder: &Path) -> bool {
+    std::fs::read_dir(folder).is_ok_and(|mut entries| entries.next().is_none())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,6 +179,72 @@ mod tests {
         }
         let again = unpack_pack(&dir);
         assert_eq!(again, 0, "a second start overwrote or rewrote the user's files");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An old layout moves into the sounds folders: a pack moves as a pack, loose files move
+    /// by name, an emptied old folder is removed, and the warnings carry the line.
+    #[test]
+    fn an_old_library_moves_into_the_sounds_folders() {
+        let dir = std::env::temp_dir().join(format!("suhina-pack-migrate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let old_models = dir.join("NAM models");
+        std::fs::create_dir_all(old_models.join("Bright Pack")).unwrap();
+        std::fs::write(old_models.join("Bright Pack/One.nam"), b"one").unwrap();
+        std::fs::write(old_models.join("Loose Two.nam"), b"two").unwrap();
+        let old_irs = dir.join("IRs");
+        std::fs::create_dir_all(&old_irs).unwrap();
+        std::fs::write(old_irs.join("Dark.wav"), b"three").unwrap();
+
+        let warnings = migrate_old_folders(&dir);
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(warnings.iter().all(|line| line.contains("moved into the library")));
+
+        let models = dir.join("Amp models");
+        assert_eq!(std::fs::read(models.join("Bright Pack/One.nam")).unwrap(), b"one");
+        assert_eq!(std::fs::read(models.join("Loose Two.nam")).unwrap(), b"two");
+        assert_eq!(std::fs::read(dir.join("Cabinets/Dark.wav")).unwrap(), b"three");
+        assert!(!old_models.exists(), "the moved-empty old folder stays behind");
+        assert!(!old_irs.exists(), "the moved-empty old folder stays behind");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A name the new tree already holds is never overwritten: that file stays in the old
+    /// folder, the old folder stays, and the warning says what was kept.
+    #[test]
+    fn a_name_the_new_tree_holds_is_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!("suhina-pack-keep-old-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let old_models = dir.join("NAM models");
+        std::fs::create_dir_all(&old_models).unwrap();
+        std::fs::write(old_models.join("Clash.nam"), b"the old bytes").unwrap();
+        let models = dir.join("Amp models");
+        std::fs::create_dir_all(&models).unwrap();
+        std::fs::write(models.join("Clash.nam"), b"the new bytes").unwrap();
+
+        let warnings = migrate_old_folders(&dir);
+        assert_eq!(std::fs::read(models.join("Clash.nam")).unwrap(), b"the new bytes", "overwritten");
+        assert_eq!(std::fs::read(old_models.join("Clash.nam")).unwrap(), b"the old bytes", "moved over");
+        assert!(old_models.exists(), "a folder with leftovers is not removed");
+        assert!(warnings.iter().all(|line| line.contains("kept")), "{warnings:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// After the move the unpack sees the carried files: a pack carried over from the old
+    /// folders skips, and only what is still missing (the own model) writes.
+    #[test]
+    fn the_pack_unpack_runs_after_the_move() {
+        let dir = std::env::temp_dir().join(format!("suhina-pack-after-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for (_, library_folder, pack, name, bytes) in suhina_device_registry::pack_files_flat() {
+            let old_folder = if library_folder == "Amp models" { "NAM models" } else { "IRs" };
+            let folder = dir.join(old_folder).join(pack);
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(folder.join(name), bytes).unwrap();
+        }
+        migrate_old_folders(&dir);
+        let written = unpack_pack(&dir);
+        assert_eq!(written, 0, "the move carries the pack: the unpack writes nothing over it");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

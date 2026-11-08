@@ -199,7 +199,10 @@ Projects folder row (a field on the right, the default shown when the setting is
   1279](https://github.com/suhina-daw/suhina-daw/issues/1279)). The desktop app makes both
   default folders at start when they do not exist, so a user's first step is only to drop
   files in; a chosen (non-default) folder is left as the user's, and the device panels' list
-  of a folder that is not there is empty, with the path and a note to put files in it.
+  of a folder that is not there is empty, with the path and a note to put files in it. The
+  *old* defaults `Suhina/NAM models` and `Suhina/IRs` move into these folders at start — a
+  pack carried whole, a name moved only where it is missing, a moved-empty old folder
+  removed, leftovers kept, and the move told in the start-up warnings.
 - The pick bridge gets two fields (`PickField::NamModelsFolder`, `PickField::IrFolder`) so the
   system dialog opens for them like for the Projects folder (macOS waits on the main thread, as
   those already do).

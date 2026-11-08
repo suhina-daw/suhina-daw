@@ -72,10 +72,13 @@ and store absolute paths in projects.
 
 4. **A project stores a file's path relative to the library**, for example
    `Sounds/NAM/Cabinets/<pack>/<file>.wav`, so a project opens on another machine that has the
-   pack installed. Opening searches the library there first; the old folders
-   `Documents/Suhina/NAM models` and `Documents/Suhina/IRs` are still read, so files already
-   placed do not get lost; an absolute path is the last resort, recorded when it is all there
-   is. The shipped file in a device's `builtin:<device id>/<file name>` state loads from the
+   pack installed. Opening searches the library there first, and an absolute path is the last
+   resort, recorded when it is all there is. The old defaults `Documents/Suhina/NAM models` and
+   `Documents/Suhina/IRs` *move into* the device folders at start — a pack carried whole, a
+   name moved only where it is missing, an old folder left whole when a name would be written
+   over, a moved-empty folder removed, and the move told in a start-up warning — so files
+   already placed land in the library and the old default disappears by emptying out. The
+   shipped file in a device's `builtin:<device id>/<file name>` state loads from the
    executable always — the pack rides the build, and the unpack's on-disk copy is the user's
    plain file. `device.setNamFile` stays the command that chooses a file, keys and paths both.
 
