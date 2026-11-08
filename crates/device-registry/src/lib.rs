@@ -6,7 +6,7 @@
 //! through this crate; front ends list what can be added.
 
 use std::any::Any;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use suhina_device_api::{Device, DeviceInfo};
@@ -38,6 +38,9 @@ pub struct FileKind {
     pub extension: &'static str,
     /// Reads and checks the file at `path` for an engine running at `rate` Hz.
     read: fn(&Path, u32) -> Result<Arc<AssetData>, String>,
+    /// Reads and checks the pack's bytes ([ADR 0036] › the starter pack), the same parse the
+    /// path form gave them.
+    read_bytes: fn(&[u8], u32) -> Result<Arc<AssetData>, String>,
     /// What a panel calls the loaded file at `path`.
     name: fn(&Path, &AssetData) -> Option<String>,
     /// A new device at its defaults, running the file.
@@ -132,13 +135,25 @@ pub const ENTRIES: [Entry; 17] = [
         info: &suhina_device_nam_amp_modeler::INFO,
         make: || Box::new(suhina_device_nam_amp_modeler::NamAmp::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/nam-amp-modeler/panel.json")),
-        file: Some(FileKind { extension: "nam", read: read_nam, name: nam_name, make: make_nam }),
+        file: Some(FileKind {
+            extension: "nam",
+            read: read_nam,
+            read_bytes: read_nam_bytes,
+            name: nam_name,
+            make: make_nam,
+        }),
     },
     Entry {
         info: &suhina_device_nam_cab_loader::INFO,
         make: || Box::new(suhina_device_nam_cab_loader::CabLoader::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/nam-cab-loader/panel.json")),
-        file: Some(FileKind { extension: "wav", read: read_ir, name: folder_name, make: make_cab }),
+        file: Some(FileKind {
+            extension: "wav",
+            read: read_ir,
+            read_bytes: read_ir_bytes,
+            name: folder_name,
+            make: make_cab,
+        }),
     },
     Entry {
         info: &suhina_device_delay::INFO,
@@ -261,6 +276,16 @@ pub fn asset_name(asset: &DeviceAsset, path: &Path) -> Option<String> {
     file_kind(asset.device()).and_then(|file| (file.name)(path, asset.data()))
 }
 
+/// A shipped file's key as a library-shaped path, for the name fns that read a folder from a
+/// path: the Cab Loader's shown name is its pack's name ([docs/spec/nam-amp-and-cab.md]) and
+/// the shipped pack's name is "Suhina" ([ADR 0036]). The Amp Modeler's name fn reads the
+/// model's metadata and leaves the path alone, so the shape is only for the folder.
+pub fn builtin_file_path(key: &str) -> Option<PathBuf> {
+    let rest = key.strip_prefix("builtin:")?;
+    let (_, name) = rest.split_once('/')?;
+    Some(PathBuf::from(format!("Suhina/{name}")))
+}
+
 /// Every built-in device, as the factory the engine builds with (#1147).
 pub struct Registry;
 
@@ -322,6 +347,76 @@ pub fn load_file(id: &str, path: &Path, rate: u32) -> Result<DeviceAsset, String
     Ok(DeviceAsset::new(&entry.info.id, (file.read)(path, rate)?))
 }
 
+/// Every shipped file ([ADR 0036] › the starter pack): the device's id, the file's library
+/// name, and its bytes — `include_bytes!` puts the raw pack inside the executable, so the
+/// devices work at once and offline, with nothing on disk. Keep the pack small: the ADR caps
+/// the whole thing, and a test here keeps the rows honest.
+const PACK_FILES: &[(&str, &str, &[u8])] = &[
+    ("nam-amp-modeler", "Suhina Overdrive.nam", include_bytes!("../../../packs/nam-amp-modeler/Suhina Overdrive.nam")),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Plain.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Plain.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Bright.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Bright.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Dark.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Dark.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Off Axis.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Off Axis.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Room.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Room.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Worse.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Worse.wav"),
+    ),
+];
+
+/// The shipped file in the pack's state key ([ADR 0036] · `builtin:<device id>/<file name>`).
+pub fn builtin_file_key(id: &str, name: &str) -> String {
+    format!("builtin:{id}/{name}")
+}
+
+/// A device's shipped files, `(name, bytes)`, the pack the panels list first ([ADR 0036]).
+/// An empty list for a device that runs no file or carries none.
+pub fn pack_files(id: &str) -> Vec<(&'static str, &'static [u8])> {
+    PACK_FILES.iter().filter_map(|(device, name, bytes)| (*device == id).then_some((*name, *bytes))).collect()
+}
+
+/// Sizes every shipped file, all of them together (the ADR's ceiling, a test's bound).
+pub fn pack_bytes() -> usize {
+    PACK_FILES.iter().map(|(_, _, bytes)| bytes.len()).sum()
+}
+
+/// Runs the device `id` over the shipped file named `name`, for an engine at `rate` Hz — the
+/// same readers, gates and failure messages as [`load_file`] gave a path, at the pack's bytes
+/// ([ADR 0036]). Reads and allocates: call it off the audio thread.
+pub fn load_builtin_file(id: &str, name: &str, rate: u32) -> Result<DeviceAsset, String> {
+    let Some((entry, file)) = entry(id).and_then(|entry| Some((entry, entry.file.as_ref()?))) else {
+        return Err(format!("{id:?} does not run a file"));
+    };
+    if !name.ends_with(&format!(".{}", file.extension)) {
+        return Err(format!("a {id} runs a .{} file", file.extension));
+    }
+    let Some((_, bytes)) = pack_files(id).into_iter().find(|(file_name, _)| *file_name == name) else {
+        return Err(format!("no shipped file {name:?} for {id:?}; pack_files lists them"));
+    };
+    Ok(DeviceAsset::new(&entry.info.id, (file.read_bytes)(bytes, rate)?))
+}
+
 /// A new device with this id, its defaults, and `asset` already loaded — `None` for an unknown
 /// id. An asset another device read is ignored. Allocation: off the audio thread.
 pub fn create_with(id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>> {
@@ -355,6 +450,22 @@ fn make_nam(data: &AssetData) -> Option<Box<dyn Device>> {
 
 fn read_ir(path: &Path, rate: u32) -> Result<Arc<AssetData>, String> {
     Ok(Arc::new(suhina_device_nam_cab_loader::ir::read(path, rate)?))
+}
+
+fn read_nam_bytes(bytes: &[u8], rate: u32) -> Result<Arc<AssetData>, String> {
+    let model = suhina_device_nam_amp_modeler::model::read_bytes(bytes)?;
+    // The same gates as the path form: what the runtime will not run, and a rate the device
+    // would refuse again at prepare. Read at command or project-load time, off the audio
+    // thread.
+    if let Err(e) = nam_rs::Model::from_nam(&model) {
+        return Err(format!("the model does not run: {e}"));
+    }
+    suhina_device_nam_amp_modeler::model::runnable_rate(f64::from(rate), model.expected_sample_rate())?;
+    Ok(Arc::new(Arc::new(model)))
+}
+
+fn read_ir_bytes(bytes: &[u8], rate: u32) -> Result<Arc<AssetData>, String> {
+    Ok(Arc::new(suhina_device_nam_cab_loader::ir::read_bytes(bytes, rate)?))
 }
 
 fn folder_name(path: &Path, _data: &AssetData) -> Option<String> {

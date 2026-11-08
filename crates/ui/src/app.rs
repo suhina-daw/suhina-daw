@@ -270,6 +270,29 @@ fn scan_sets(
     packs.into_iter().map(|(name, files)| crate::detail::device_widgets::Set { name, files }).collect()
 }
 
+/// The shipped pack's name, what the panels always list first ([ADR 0036]).
+pub(crate) const SHIPPED_PACK: &str = "Suhina";
+
+/// The shipped files of the device `id`, `(key, shown name)` ([ADR 0036]): the key the file
+/// command takes (a shipped file's state), the name the file's own shows in the lists.
+fn shipped_files(id: &str) -> Vec<(String, String)> {
+    let extension = format!(".{}", suhina_device_registry::file_extension(id).unwrap_or_default());
+    suhina_device_registry::pack_files(id)
+        .into_iter()
+        .map(|(name, _)| {
+            let key = suhina_device_registry::builtin_file_key(id, name);
+            (key, name.strip_suffix(&extension).unwrap_or(name).to_string())
+        })
+        .collect()
+}
+
+/// The shipped pack as one Set, for `nam_lists` ([ADR 0036] › the starter pack). `None` when
+/// the device ships no files.
+fn shipped_set(id: &str) -> Option<crate::detail::device_widgets::Set> {
+    let files = shipped_files(id);
+    (!files.is_empty()).then_some(crate::detail::device_widgets::Set { name: SHIPPED_PACK.to_string(), files })
+}
+
 /// A device's file path (its state as UTF-8), when it is a file-running one
 /// ([docs/spec/nam-amp-and-cab.md]).
 fn device_file_path(device: &suhina_engine::model::Device) -> Option<String> {
@@ -1362,9 +1385,11 @@ impl App {
                 **sets = scan_sets(folder, extension, &previous, &mut cache.pack_writes);
             }
         }
+        // The shipped pack lists first, before every folder's own, whatever the settings say
+        // ([ADR 0036] › the starter pack). Its key is what the file command takes.
         let lists = crate::detail::device_widgets::Lists {
-            models: cache.models.clone(),
-            irs: cache.irs.clone(),
+            models: shipped_set("nam-amp-modeler").into_iter().chain(cache.models.clone()).collect(),
+            irs: shipped_set("nam-cab-loader").into_iter().chain(cache.irs.clone()).collect(),
             names: self.nam_names(),
             notes: self.nam_notes(),
         };

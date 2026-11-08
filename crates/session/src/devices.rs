@@ -1108,15 +1108,41 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     if !path.to_lowercase().ends_with(&format!(".{want_extension}")) {
         return Err(format!("a {kind} runs a .{want_extension} file").into());
     }
-    let absolute = crate::files::absolute(std::path::Path::new(path));
-    let absolute_text = absolute.display().to_string();
-    let asset = session.load_device_file(&kind, &absolute_text).map_err(CommandError)?;
-    let name = suhina_device_registry::asset_name(&asset, &absolute).unwrap_or_default();
+    // A shipped file's key is its own state ([ADR 0036]): `builtin:<device id>/<file name>` —
+    // the pack's bytes load through the device's loader, one undo step, the same shown names.
+    // Every other path joins the project at its absolute path, as before.
+    let state_text = match path.strip_prefix("builtin:") {
+        Some(shipped) => {
+            let (packed_id, _) =
+                shipped.split_once('/').ok_or("a shipped file's key is builtin:<device id>/<file name>")?;
+            if packed_id != kind {
+                return Err(format!("{kind:?} runs a shipped file of its own kind, not {packed_id:?}").into());
+            }
+            let asset = session.load_device_file(&kind, path).map_err(CommandError)?;
+            let name = suhina_device_registry::asset_name(
+                &asset,
+                &suhina_device_registry::builtin_file_path(path)
+                    .ok_or("a shipped file's key is builtin:<device id>/<file name>")?,
+            )
+            .unwrap_or_default();
+            let channel = device_channel(session, params)?;
+            let device_track = device_path(&channel.devices, params, "device")?;
+            let device = device_at_mut(&mut channel.devices, &device_track).ok_or("the device is missing")?;
+            device.state = Some(path.as_bytes().into());
+            return Ok(json!({ "device": path_value(&device_track), "file": path, "name": name }));
+        }
+        None => {
+            let absolute = crate::files::absolute(std::path::Path::new(path));
+            absolute.display().to_string()
+        }
+    };
+    let asset = session.load_device_file(&kind, &state_text).map_err(CommandError)?;
+    let name = suhina_device_registry::asset_name(&asset, std::path::Path::new(&state_text)).unwrap_or_default();
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
-    device.state = Some(absolute_text.as_bytes().into());
-    Ok(json!({ "device": path_value(&path), "file": absolute_text, "name": name }))
+    device.state = Some(state_text.as_bytes().into());
+    Ok(json!({ "device": path_value(&path), "file": state_text, "name": name }))
 }
 
 /// `device.file`: the file a NAM device runs — its absolute path (empty when none is set) and

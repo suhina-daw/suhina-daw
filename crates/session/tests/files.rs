@@ -713,3 +713,65 @@ fn previews_need_a_player_and_show_in_the_launcher_state() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A shipped file's key rides `device.setNamFile`: the device's state holds the key, the
+/// pack's real bytes load through the device's own loader, the shown name comes back, one
+/// undo step takes it back, and another device's pack is refused ([ADR 0036]).
+#[test]
+fn a_shipped_file_key_sets_the_state_and_undoes() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+
+    let before = run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+    assert_eq!(before["file"], "");
+
+    let key = "builtin:nam-amp-modeler/Suhina Overdrive.nam";
+    let out = run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": key })).unwrap();
+    assert_eq!((out["file"].as_str(), out["name"].as_str()), (Some(key), Some("Suhina Overdrive")));
+
+    let after = run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+    assert_eq!(after["file"], key);
+    assert_eq!(after["name"], "Suhina Overdrive");
+    assert_eq!(after["file"], key);
+    assert_eq!(after["name"], "Suhina Overdrive");
+
+    // A cab key is not a model's.
+    assert!(
+        run(
+            &mut session,
+            "device.setNamFile",
+            json!({ "track": 1, "device": 0, "path": "builtin:nam-cab-loader/Synthetic Cabinet Plain.wav" })
+        )
+        .is_err()
+    );
+    // An unknown shipped file is.
+    assert!(
+        run(
+            &mut session,
+            "device.setNamFile",
+            json!({ "track": 1, "device": 0, "path": "builtin:nam-amp-modeler/Nothing.nam" })
+        )
+        .is_err()
+    );
+
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let undone = run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+    assert_eq!(undone["file"], "");
+}
+
+/// The shipped pack is there on a fresh session with nothing on disk: a Cab Loader picks its
+/// file from the pack's bytes too.
+#[test]
+fn a_shipped_ir_key_loads_the_pack_at_the_rate() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-cab-loader" })).unwrap();
+    let out = run(
+        &mut session,
+        "device.setNamFile",
+        json!({ "track": 1, "device": 0, "path": "builtin:nam-cab-loader/Synthetic Cabinet Plain.wav" }),
+    )
+    .unwrap();
+    assert_eq!(out["name"], "Suhina", "a cab's shown name is its pack's");
+}

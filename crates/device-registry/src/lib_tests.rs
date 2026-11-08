@@ -342,3 +342,31 @@ fn the_multiband_panel_switches_bands_and_opens_an_expanded_spectrum() {
     }
     assert!(panel.expanded.as_ref().is_some_and(|e| e.size[0] > compact.size[0]));
 }
+
+#[test]
+fn every_pack_file_is_named_for_its_device_and_reads() {
+    assert!(is_file_device("nam-amp-modeler") && is_file_device("nam-cab-loader"));
+    for (device, name, bytes) in super::PACK_FILES {
+        let extension = file_extension(device).unwrap();
+        assert!(name.ends_with(&format!(".{extension}")), "{name} does not end in .{extension}");
+        assert!(bytes.len() <= 8 << 20, "{name} is {}, which is too large a first cut", bytes.len());
+        match *device {
+            "nam-amp-modeler" => {
+                let model = suhina_device_nam_amp_modeler::model::read_bytes(bytes)
+                    .unwrap_or_else(|e| panic!("{name} does not read: {e}"));
+                nam_rs::Model::from_nam(&model).expect("{name} does not run");
+            }
+            "nam-cab-loader" => {
+                suhina_device_nam_cab_loader::ir::read_bytes(bytes, 48_000)
+                    .unwrap_or_else(|e| panic!("{name} does not read: {e}"));
+            }
+            _ => panic!("{name} is in the pack for {device:?}, which runs no file"),
+        }
+        let key = builtin_file_key(device, name);
+        assert!(key == format!("builtin:{device}/{name}"), "{key} does not carry {device:?} as its folder");
+        assert!(pack_files(device).iter().any(|(file_name, _)| *file_name == *name), "{name} is not in pack_files");
+    }
+    // The ADR's ceiling for the whole pack ([ADR 0036]): it grows through this bound and the
+    // download window is its valve.
+    assert!(pack_bytes() <= 16 << 20, "the pack is {} bytes, more than the ADR's ceiling", pack_bytes());
+}

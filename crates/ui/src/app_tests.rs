@@ -912,3 +912,20 @@ fn copies_put_a_line_on_the_system_clipboard() {
     }
     assert_eq!(clipboard_line("automation.paste"), None);
 }
+
+#[test]
+fn the_pack_lists_first() {
+    let set = super::shipped_set("nam-amp-modeler").expect("the Amp Modeler ships files");
+    assert_eq!(set.name, "Suhina");
+    assert_eq!(
+        set.files[0],
+        ("builtin:nam-amp-modeler/Suhina Overdrive.nam".to_string(), "Suhina Overdrive".to_string())
+    );
+    let cab = super::shipped_set("nam-cab-loader").expect("the Cab Loader ships files");
+    assert_eq!(cab.name, "Suhina");
+    assert!(
+        cab.files.iter().any(|(key, name)| key == "builtin:nam-cab-loader/Synthetic Cabinet Plain.wav"
+            && name == "Synthetic Cabinet Plain")
+    );
+    assert_eq!(super::shipped_set("compressor"), None, "a device without files lists none");
+}

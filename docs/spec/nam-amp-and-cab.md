@@ -242,6 +242,11 @@ NAM models/
     the file row is `Amp Modeler: model file` with `previous file` / `next file` (the Cab
     Loader likewise, with `cab file`). Choosing a pack loads its **first** file; both choices
     run `device.setNamFile`, one undo step each, as everything else on the panel.
+- **The shipped pack first:** the top of every device's pack row lists the pack the executable
+  carries — "Suhina", a handful of files each, inside the build with nothing on disk
+  ([issue 1279]). Its files load anywhere, offline, with no folder set: a fresh install picks a
+  model and a cabinet from there before anything else is arranged. Its file rows show the
+  files' names the same way a folder's rows do.
 - The shown name of a model is still its `metadata` name ("Fender Super Reverb 1965") or its
   file's name without the extension; a cab file's shown name is its pack's name. The pack row
   itself always shows the pack's folder name.
@@ -256,9 +261,11 @@ Everything the user does is one of the existing device commands plus one new `Ed
 - `device.add{id, position?}` — unchanged; `"nam-amp-modeler"` and `"nam-cab-loader"` are
   ordinary effects. A fresh NAM Amp Modeler has no model: it passes the audio through and its
   panel says to choose a file. (There is no `device.addNam`; choosing a file is its own step.)
-- `device.setNamFile{track, device, path}` — the file a device runs.
-  - The device must be one of the two; the path must end in `.nam` for an Amp Modeler and
-    `.wav` for a Cab Loader (message otherwise).
+- `device.setNamFile{track, device, path}` — the file a device runs:
+  — a pack's file by its library key (`builtin:<device id>/<file name>`), or a path.
+  - The device must be one of the two; the path or the key must end in `.nam` for an Amp
+    Modeler and `.wav` for a Cab Loader (message otherwise). A key of the other device's pack
+    is refused.
   - The reading, parsing or decoding and the running model's construction run at command time,
     off the audio thread, bounded by the caps above. The command errors with what the file's
     fault is ("…is not a NAM model", "…is unreadable", "…is more than 256 MiB"). The parsed

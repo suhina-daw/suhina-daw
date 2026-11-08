@@ -490,7 +490,15 @@ impl Session {
     /// for a NAM Amp Modeler, the IR's parent folder's name for a NAM Cab Loader. `None` while
     /// the file is not in the assets.
     pub fn device_asset_name(&self, path: &str) -> Option<String> {
-        suhina_device_registry::asset_name(self.device_files.assets.get(path)?, std::path::Path::new(path))
+        let asset = self.device_files.assets.get(path)?;
+        // A shipped file's name reads its key's library shape ([ADR 0036]): the Cab Loader's
+        // name fn takes the pack's name from the parent folder, so the key's file rides
+        // `Suhina/`.
+        let shape = match suhina_device_registry::builtin_file_path(path) {
+            Some(shaped) => shaped,
+            None => std::path::PathBuf::from(path),
+        };
+        suhina_device_registry::asset_name(asset, &shape)
     }
 
     /// Why a device's file is not in the assets, by the path: what a read gave, for a device
@@ -1244,7 +1252,17 @@ impl Session {
             }
         }
         if need.is_empty() {
+            #[cfg(test)]
+            if std::env::var("SUH_INA_SYNC_DEBUG").is_ok() {
+                println!("SCRATCH sync sees no need");
+            }
             return;
+        }
+        #[cfg(test)]
+        if std::env::var("SUH_INA_SYNC_DEBUG").is_ok() {
+            for (path, kind) in &need {
+                println!("SCRATCH need {path:?} ({kind})");
+            }
         }
         let mut changed = false;
         for (path, kind) in need.iter() {
@@ -1287,7 +1305,20 @@ impl Session {
         // An IR joins the project at the engine's rate; the session's rate is the player's, or
         // 48 kHz until the first output opens.
         let rate = self.sync.player.as_ref().map_or(48_000, Player::sample_rate);
-        suhina_device_registry::load_file(kind, std::path::Path::new(path), rate)
+        // A shipped file's key rides the same state slot ([ADR 0036]): `builtin:<device
+        // id>/<file name>`, run against the pack's bytes through the device's own loader. A
+        // key of another device's pack is refused here, as a path of the wrong extension
+        // would be.
+        if let Some(rest) = path.strip_prefix("builtin:") {
+            let (packed_id, name) =
+                rest.split_once('/').ok_or("a shipped file's key is builtin:<device id>/<file name>")?;
+            if packed_id != kind {
+                return Err(format!("{kind:?} runs a shipped file of its own kind, not {packed_id:?}"));
+            }
+            suhina_device_registry::load_builtin_file(kind, name, rate)
+        } else {
+            suhina_device_registry::load_file(kind, std::path::Path::new(path), rate)
+        }
     }
 
     /// Lets a playing engine hear the project as it is now, with any audio added to the pool.
