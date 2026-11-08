@@ -34,6 +34,7 @@ fn clip(content: u32) -> Clip {
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
     }
 }
@@ -59,11 +60,6 @@ fn project_built() -> Project {
         sample_rate: None,
         channels: None,
         duration_seconds: None,
-        warped: false,
-        stretch: StretchMode::default(),
-        warp_markers: Default::default(),
-        gain: 1.0,
-        transpose: 0.0,
         stream: None,
     };
     Project {
@@ -187,7 +183,6 @@ fn bad_input_is_refused_and_changes_nothing() {
         (json!({ "track": 1, "index": 0, "mode": 3 }), "mode must be a text"),
         (json!({ "track": 1, "index": 0, "off": "yes" }), "off must be true or false"),
         (json!({ "track": 1, "index": 0, "off": true, "root": "C" }), "not both"),
-        (json!({ "track": 1, "index": 2, "root": "C" }), "audio clip"),
         (json!({ "track": 1, "index": 9, "root": "C" }), "does not exist"),
         (json!({ "track": 1, "scene": 1, "root": "C" }), "empty"),
         (json!({ "track": 1, "index": 0, "scene": 0, "root": "C" }), "not both"),
@@ -211,7 +206,8 @@ fn bad_input_is_refused_and_changes_nothing() {
             Ok(v) => panic!("{params} was taken: {v}"),
         }
     }
-    assert!(run(&mut session, "clip.scale", json!({ "track": 1, "index": 2 })).is_err());
+    // An audio clip has a scale too (the key of its audio): reading it is not an error.
+    assert!(run(&mut session, "clip.scale", json!({ "track": 1, "index": 2 })).is_ok());
     assert_eq!(session.project(), &before);
     assert!(!session.can_undo());
 }
@@ -284,4 +280,18 @@ fn consolidated_midi_clips_keep_the_first_clips_scale() {
     run(&mut session, "clip.consolidate", json!({ "track": 1, "start": 0.0, "end": 8.0 })).unwrap();
     assert_eq!(session.project().arrangement.lanes[0].clips[0].length, 8.0);
     assert_eq!(scale_at(&session, 0), scale(7, ScaleMode::Mixolydian));
+}
+
+/// An audio clip takes a scale too: the key of its audio, shown in the clip panel.
+#[test]
+fn an_audio_clip_takes_a_scale() {
+    let mut session = Session::new(project());
+    let out =
+        run(&mut session, "clip.setScale", json!({ "track": 1, "index": 2, "root": "D", "mode": "minor" })).unwrap();
+    assert_eq!(out["changed"], true);
+    let content = session.project().arrangement.lanes[0].clips[2].content;
+    let scale = session.project().content(content).and_then(|c| c.scale);
+    assert_eq!(scale.map(|s| (s.root(), s.mode)), Some((2, ScaleMode::Minor)));
+    run(&mut session, "clip.setScale", json!({ "track": 1, "index": 2, "off": true })).unwrap();
+    assert_eq!(session.project().content(content).and_then(|c| c.scale), None);
 }

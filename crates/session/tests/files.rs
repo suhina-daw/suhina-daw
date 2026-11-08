@@ -204,7 +204,8 @@ fn samples_go_one_after_another_on_a_track_at_their_length() {
     let content = p.content(lane.clips[0].content).unwrap();
     assert_eq!(content.name, "hit one");
     let LaneData::Audio(region) = &content.lanes[0].data else { panic!("not audio") };
-    assert!(!region.warped);
+    assert!(!lane.clips[0].audio.warped);
+    assert_eq!(lane.clips[0].audio.tempo_source, None, "no tempo found");
     assert_eq!(region.file, text(&std::path::absolute(&one).unwrap()));
     assert!(session.audio().files.contains_key(&region.file), "decoded into the session's pool");
 
@@ -241,10 +242,11 @@ fn a_sample_with_a_tempo_in_its_name_is_warped_to_the_project() {
     let p = session.project();
     let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(3))).unwrap();
     assert_eq!(lane.clips[0].length, 2.0);
-    let LaneData::Audio(region) = &p.content(lane.clips[0].content).unwrap().lanes[0].data else { panic!() };
-    assert!(region.warped);
-    assert_eq!(region.stretch, StretchMode::Rhythmic);
-    assert_eq!(region.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)));
+    let audio = &lane.clips[0].audio;
+    assert!(audio.warped);
+    assert_eq!(audio.stretch, StretchMode::Rhythmic);
+    assert_eq!(audio.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)));
+    assert_eq!((audio.tempo(), audio.tempo_source), (Some(60.0), Some(TempoSource::Name)), "from its name");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -266,10 +268,8 @@ fn warp_on_sets_a_loop_of_known_tempo_back_to_its_own_tempo() {
     run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
     run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": true })).unwrap();
     let c = clip(&session);
-    let p = session.project();
-    let LaneData::Audio(region) = &p.content(c.content).unwrap().lanes[0].data else { panic!() };
-    assert!(region.warped);
-    assert_eq!(region.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)), "60 BPM again");
+    assert!(c.audio.warped);
+    assert_eq!(c.audio.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)), "60 BPM again");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -289,10 +289,7 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
     run(&mut session, "clip.addFiles", json!({ "paths": [text(&hit)], "track": "3 Audio", "scene": 0 })).unwrap();
     let clip = slot_clip(session.project(), 3, 1);
     assert_eq!((clip.length, clip.loop_range), (1.5, Some(LoopRange { start: 0.0, end: 1.5 })));
-    let LaneData::Audio(region) = &session.project().content(clip.content).unwrap().lanes[0].data else {
-        panic!("not audio")
-    };
-    assert!(!region.warped, "it plays at its own speed");
+    assert!(!clip.audio.warped, "it plays at its own speed");
 
     // Launched, it repeats: sound in the second and third passes, not only the first.
     let column = session.project().launcher.columns.iter().position(|c| c.track == TrackId(3)).unwrap();

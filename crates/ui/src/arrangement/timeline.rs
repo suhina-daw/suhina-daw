@@ -41,9 +41,21 @@ pub struct AudioView {
     /// Clip beats per project beat (transpose on an unwarped clip).
     pub rate: f64,
     pub gain_db: f64,
+    /// The clip's gain envelope: points of a content beat and dB from the gain, in beat order
+    /// (ADR 0035).
+    pub envelope: Vec<suhina_engine::model::GainPoint>,
 }
 
 impl AudioView {
+    /// The tempo the clip's audio is warped from, by its first and last warp markers: what
+    /// `clip.setTempo` scales it from. `None` without two rising markers (unwarped audio).
+    pub fn tempo(&self) -> Option<f64> {
+        let (Some(first), Some(last)) = (self.markers.first(), self.markers.last()) else { return None };
+        let (beats, seconds) = (last.0 - first.0, last.1 - first.1);
+        let bpm = beats / seconds * 60.0;
+        (beats > 0.0 && seconds > 0.0 && bpm.is_finite()).then_some(bpm)
+    }
+
     /// The file position, in seconds, `elapsed` project beats after the clip starts, as the
     /// engine plays it.
     pub fn seconds(&self, elapsed: f64) -> f64 {
@@ -801,7 +813,8 @@ fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<Audi
         LaneData::Audio(region) => Some(region),
         LaneData::Notes(_) => None,
     })?;
-    let mut markers: Vec<(f64, f64)> = region
+    let audio = &clip.audio;
+    let mut markers: Vec<(f64, f64)> = audio
         .warp_markers
         .iter()
         .filter(|m| m.time.is_finite() && m.audio_time.is_finite())
@@ -809,15 +822,16 @@ fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<Audi
         .collect();
     markers.sort_by(|a, b| a.0.total_cmp(&b.0));
     markers.dedup_by(|a, b| a.0 == b.0);
-    let rate = if region.warped { 1.0 } else { 2f64.powf(region.transpose / 12.0) };
+    let rate = if audio.warped { 1.0 } else { 2f64.powf(audio.transpose / 12.0) };
     Some(AudioView {
         file: region.pool_key().into_owned(),
         offset: clip.offset,
         loop_range: clip.loop_range.filter(|r| r.end > r.start).map(|r| (r.start, r.end)),
-        markers: if region.warped { markers } else { Vec::new() },
+        markers: if audio.warped { markers } else { Vec::new() },
         seconds_per_beat: if tempo_bpm > 0.0 { 60.0 / tempo_bpm } else { 0.5 },
         rate: if rate.is_finite() && rate > 0.0 { rate } else { 1.0 },
-        gain_db: gain_to_db(region.gain),
+        gain_db: gain_to_db(audio.gain),
+        envelope: audio.envelope_points(),
     })
 }
 

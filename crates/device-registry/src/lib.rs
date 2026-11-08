@@ -331,12 +331,15 @@ pub fn create_with(id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn Devi
     loaded.or_else(|| create(id))
 }
 
-fn read_nam(path: &Path, _rate: u32) -> Result<Arc<AssetData>, String> {
+fn read_nam(path: &Path, rate: u32) -> Result<Arc<AssetData>, String> {
     let model = suhina_device_nam_amp_modeler::model::read(path)?;
-    // The runtime's verdict, so the panel can say why a file is silent.
+    // The verdicts the panel can say why a file is silent: what the model's runtime will
+    // not run, and a rate too far from the project's to resample. The device checks the
+    // rate again at every prepare, so a project's rate changing later is as safe as this.
     if let Err(e) = nam_rs::Model::from_nam(&model) {
         return Err(format!("the model does not run: {e}"));
     }
+    suhina_device_nam_amp_modeler::model::runnable_rate(f64::from(rate), model.expected_sample_rate())?;
     Ok(Arc::new(Arc::new(model)))
 }
 

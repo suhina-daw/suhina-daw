@@ -35,6 +35,7 @@ mod automation_range;
 pub mod backup;
 mod blank;
 mod clip_ara;
+mod clip_audio;
 mod clip_color;
 mod clip_edges;
 mod clip_shape;
@@ -90,6 +91,7 @@ pub use ara::ClipNotes;
 pub use audio::{AudioSystem, InputChoice, LiveOutput, OutputChoice, OutputInfo, audio_commands};
 pub use automation_range::{SHAPES as AUTOMATION_SHAPES, shape_points as automation_shape};
 pub use blank::{blank_project, blank_project_with};
+pub use clip_audio::clip_tempo_candidates;
 pub use commands::{
     After, Agents, CommandKind, CommandSpec, Effect, Param, ParamType, PathKind, Policy, Recent, Run, Target, commands,
     parse_quantization,

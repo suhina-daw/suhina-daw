@@ -197,6 +197,15 @@ impl PianoGrid {
     }
 }
 
+/// Fixed value `index` of [`FIXED_VALUES`] in beats, at `bar_beats` a bar: what a grid of its
+/// own (the gain envelope's) puts its points on.
+pub(crate) fn fixed_value_beats(index: usize, bar_beats: f64) -> f64 {
+    fixed_beats(index.min(FIXED_VALUES.len() - 1), bar_beats, false)
+}
+
+/// The index of 1/16 in [`FIXED_VALUES`], the default of a grid of its own.
+pub(crate) const FIXED_SIXTEENTH: usize = SIXTEENTH;
+
 /// Fixed value `index` in beats.
 fn fixed_beats(index: usize, bar_beats: f64, triplet: bool) -> f64 {
     let bar = timeline_grid::bar_length(bar_beats);

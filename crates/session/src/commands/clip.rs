@@ -71,7 +71,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setGain",
-        label: "Set an audio clip's gain, an arrangement clip's or a slot's (every clip that plays the same audio content follows)",
+        label: "Set an audio clip's gain, an arrangement clip's or a slot's; only that clip changes",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -82,6 +82,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             CLIP_SCENE,
             param("db", ParamType::Decibels, "gain in dB, at most +24; \"-inf\" or below -150 is silence"),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: set_clip_gain,
@@ -449,6 +450,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             optional("start", ParamType::Number, "the loop's start in content beats, 0 to 120000"),
             optional("end", ParamType::Number, "the loop's end in content beats, after start, at most 120000"),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_shape::set_loop,
@@ -456,7 +458,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setAudio",
-        label: "Set an audio clip's warp switch, warp mode or transpose (an arrangement clip, or the clip in a track's slot by scene); every clip that plays the same audio follows, unless warp turned on would fit its markers to another tempo than theirs",
+        label: "Set an audio clip's warp switch, warp mode or transpose (an arrangement clip, or the clip in a track's slot by scene); only that clip changes, another clip of the same audio keeps its own",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -469,9 +471,62 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the warp mode: repitch, rhythmic, tonal, texture, smooth or high-quality",
             ),
             optional("transpose", ParamType::Number, "pitch shift in semitones, -48 to 48 (fractions are cents)"),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_shape::set_audio,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.setEnvelope",
+        label: "Set an audio clip's gain envelope (an arrangement clip, or the clip in a track's slot by scene): points of a content beat and an offset in dB from the clip's gain, straight in dB between them or along each point's curve; an empty list clears it. Only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param(
+                "points",
+                ParamType::Numbers,
+                "the points as pairs, a beat of the content (from 0) and then dB from the clip's gain (-70 to +24): [0, 0, 4, -12] falls 12 dB over the first four beats; two points on one beat make a step; two in one place (same beat and dB) are one, and a third on a beat replaces the second",
+            ),
+            optional(
+                "curves",
+                ParamType::Curves,
+                "each point's curve to the next, in the order of points, as automation.movePoint's curve: a bend from -1 to 1 or [x1, y1, x2, y2] each from -0.5 to 1.5; null or missing for straight",
+            ),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::set_envelope,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.setTempo",
+        label: "Set the tempo an audio clip's audio is warped from, and where that tempo came from: the audio fills the beats it holds at that tempo (a higher tempo plays slower against the song), the clip's length follows and its start stays; warp turns on. Only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param("bpm", ParamType::Number, "the audio's tempo in beats per minute, 20 to 999"),
+            optional(
+                "source",
+                ParamType::Text,
+                "where the tempo came from: metadata, name, detected or manual (the default, a tempo typed, halved or doubled)",
+            ),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::set_tempo,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.findTempo",
+        label: "What each source says an audio clip's tempo is (its file's metadata, its file's name, detection in its sound; null where one finds nothing), and the tempo the clip has now with its source",
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
+        kind: CommandKind::READ,
+        run: crate::clip_audio::find_tempo,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -483,6 +538,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_INDEX,
             CLIP_SCENE,
             param("length", ParamType::Number, "the new length in beats, above 0 and at most 120000"),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_shape::set_length,
@@ -501,6 +557,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Number,
                 "the start marker in content beats, 0 to 120000; before the loop's end, or the clip's end",
             ),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_shape::set_start,
@@ -641,7 +698,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setScale",
-        label: "Set the scale of a MIDI clip (the piano roll marks its keys), or clear it with off; a content other clips also play is copied for this clip first",
+        label: "Set the scale of a clip: a MIDI clip's marks the piano roll's keys, an audio clip's says the key of its audio; clear it with off; a content other clips also play is copied for this clip first",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -719,19 +776,12 @@ fn set_clip_gain(session: &mut Session, params: &Value) -> Result<Value, Command
         return Err(format!("db must be at most +24, got {db}").into());
     }
     let gain = if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) };
-    let (_, content, _) = crate::notes::locate(&session.project, params)?;
-    let content =
-        session.project.contents.iter_mut().find(|c| c.id == content).ok_or("the clip's content is missing")?;
-    let mut audio = false;
-    for lane in &mut content.lanes {
-        if let LaneData::Audio(region) = &mut lane.data {
-            region.gain = gain;
-            audio = true;
-        }
-    }
-    if !audio {
+    let (at, content, _) = crate::notes::locate(&session.project, params)?;
+    if crate::audio_timing::region(&session.project, content).is_none() {
         return Err("only an audio clip has a gain".into());
     }
+    // Only this clip: every clip has its own gain (#742).
+    crate::notes::clip_mut(&mut session.project, at).ok_or("the clip is missing")?.audio.gain = gain;
     Ok(json!({ "gain_db": to_db(gain) }))
 }
 

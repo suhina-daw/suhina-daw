@@ -34,6 +34,7 @@ fn clip(content: u32, start: f64) -> Clip {
         follow_action: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     }
@@ -76,11 +77,6 @@ fn project_built() -> Project {
         sample_rate: None,
         channels: None,
         duration_seconds: None,
-        warped: false,
-        stretch: StretchMode::default(),
-        warp_markers: Default::default(),
-        gain: 1.0,
-        transpose: 0.0,
         stream: None,
     };
     Project {

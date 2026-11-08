@@ -36,6 +36,7 @@ pub(super) fn clip(content: u32, length: f64, looping: bool) -> Clip {
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
     }
 }
@@ -665,12 +666,15 @@ fn launched_audio_loops_from_its_start_marker() {
         sample_rate: Some(SR),
         channels: Some(1),
         duration_seconds: Some(1.0),
+        stream: None,
+    };
+    let region_audio = ClipAudio {
         warped: true,
         stretch: StretchMode::Smooth,
         warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 2.0, audio_time: 1.0 }],
         gain: 1.0,
         transpose: 0.0,
-        stream: None,
+        ..ClipAudio::default()
     };
     let content = ClipContent {
         id: ContentId(1),
@@ -681,7 +685,7 @@ fn launched_audio_loops_from_its_start_marker() {
         scale: None,
     };
     // Loop beats 0..1 (0..0.5 s of the file), starting at beat 0.5.
-    let c = Clip { offset: 0.5, ..clip(1, 1.0, true) };
+    let c = Clip { offset: 0.5, audio: region_audio, ..clip(1, 1.0, true) };
     let p = project(vec![content], vec![vec![with(c)]]);
     let launch = [(0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 })];
     let out = render_launches(&p, &audio, SR, &launch, 1.0, suhina_device_registry::factory()).unwrap();
@@ -707,12 +711,15 @@ fn a_launched_clip_s_plan_leaves_its_stretcher_to_the_stretch_thread() {
         sample_rate: Some(SR),
         channels: Some(1),
         duration_seconds: Some(1.0),
+        stream: None,
+    };
+    let region_audio = ClipAudio {
         warped: true,
         stretch: StretchMode::Smooth,
         warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 3.0, audio_time: 1.0 }],
         gain: 1.0,
         transpose: 0.0,
-        stream: None,
+        ..ClipAudio::default()
     };
     let content = ClipContent {
         id: ContentId(1),
@@ -722,7 +729,7 @@ fn a_launched_clip_s_plan_leaves_its_stretcher_to_the_stretch_thread() {
         extensions: Extensions::default(),
         scale: None,
     };
-    let c = clip(1, 3.0, true);
+    let c = Clip { audio: region_audio, ..clip(1, 3.0, true) };
     let p = project(vec![content], vec![vec![with(c.clone())]]);
     let Some(plan) = plan_clip(&p, &audio, &[], &c, p.tracks[0].id, BEAT as f64, SR) else { panic!("no plan") };
     let Some(voice) = plan.audio.first().and_then(|a| a.stretch.as_ref()) else { panic!("no stretch voice") };
@@ -743,12 +750,15 @@ fn launched_unwarped_audio_loops_over_the_whole_file() {
         sample_rate: Some(SR),
         channels: Some(1),
         duration_seconds: Some(0.75),
+        stream: None,
+    };
+    let region_audio = ClipAudio {
         warped: false,
         stretch: StretchMode::default(),
         warp_markers: Default::default(),
         gain: 1.0,
         transpose: 0.0,
-        stream: None,
+        ..ClipAudio::default()
     };
     let content = ClipContent {
         id: ContentId(1),
@@ -759,7 +769,8 @@ fn launched_unwarped_audio_loops_over_the_whole_file() {
         scale: None,
     };
     let launch = [(0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 })];
-    let looping = project(vec![content.clone()], vec![vec![with(clip(1, 1.5, true))]]);
+    let looping =
+        project(vec![content.clone()], vec![vec![with(Clip { audio: region_audio.clone(), ..clip(1, 1.5, true) })]]);
     let out = render_launches(&looping, &audio, SR, &launch, 2.0, suhina_device_registry::factory()).unwrap();
     let left = |out: &[f32], seconds: f64| out[2 * (seconds * f64::from(SR)) as usize];
     assert!((left(&out, 0.25) - 0.25).abs() < 0.01, "{}", left(&out, 0.25));
@@ -767,7 +778,7 @@ fn launched_unwarped_audio_loops_over_the_whole_file() {
     assert!((left(&out, 1.0) - 0.25).abs() < 0.01, "{}", left(&out, 1.0));
     assert!((left(&out, 1.85) - 0.35).abs() < 0.01, "{}", left(&out, 1.85));
     // With its loop off the same clip plays once and the column falls silent.
-    let once = project(vec![content], vec![vec![with(clip(1, 1.5, false))]]);
+    let once = project(vec![content], vec![vec![with(Clip { audio: region_audio, ..clip(1, 1.5, false) })]]);
     let out = render_launches(&once, &audio, SR, &launch, 2.0, suhina_device_registry::factory()).unwrap();
     assert!((left(&out, 0.25) - 0.25).abs() < 0.01);
     assert!(out[2 * SR as usize..].iter().all(|s| *s == 0.0), "silent after the end");
@@ -786,13 +797,16 @@ fn stretched_sine() -> (Project, AudioPool) {
         sample_rate: Some(SR),
         channels: Some(1),
         duration_seconds: Some(2.0),
+        stream: None,
+    };
+    let region_audio = ClipAudio {
         warped: true,
         stretch: StretchMode::Smooth,
         // Two beats (1 s at 120 bpm) play 0.9 s of the file.
         warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 2.0, audio_time: 0.9 }],
         gain: 1.0,
         transpose: 0.0,
-        stream: None,
+        ..ClipAudio::default()
     };
     let content = ClipContent {
         id: ContentId(1),
@@ -802,7 +816,7 @@ fn stretched_sine() -> (Project, AudioPool) {
         extensions: Extensions::default(),
         scale: None,
     };
-    (project(vec![content], vec![vec![with(clip(1, 2.0, true))]]), audio)
+    (project(vec![content], vec![vec![with(Clip { audio: region_audio, ..clip(1, 2.0, true) })]]), audio)
 }
 
 /// Upward zero crossings per second in the left channel of `out[from..to]` (frames).
