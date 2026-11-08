@@ -117,6 +117,10 @@ impl Panel {
         self.points.clear();
         self.flags_key = None;
         self.stale = true;
+        // Show similar's list and a hover, a preview or a pressed point are indices into
+        // the old points list; left with a new map's, they read as unrelated samples
+        // ([#1254] review). The view's own largeness and window stay.
+        self.view.forget_points();
     }
 }
 

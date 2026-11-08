@@ -281,6 +281,18 @@ pub fn folder_children(entries: &[TagEntry], id: u32) -> Option<&[TagEntry]> {
     None
 }
 
+/// Whether a name is taken at the level `parent` holds, whatever kind the taker is
+/// ([#1254] review: a level keeps its names one word apart, tags and folders in the one
+/// set — the shape the loader skips cannot be made by the moves either). `skip` is the
+/// id the check reads past, the moved one's own.
+fn level_name_taken(entries: &[TagEntry], parent: Option<u32>, name: &str, skip: u32) -> bool {
+    let level = match parent {
+        None => entries,
+        Some(id) => folder_children(entries, id).unwrap_or(&[]),
+    };
+    level.iter().any(|e| e.id() != skip && e.name() == name)
+}
+
 /// Whether `text` is a colour as `#RRGGBB`.
 pub fn is_color(text: &str) -> bool {
     text.len() == 7 && text.starts_with('#') && text[1..].chars().all(|c| c.is_ascii_hexdigit())
@@ -1295,13 +1307,27 @@ impl Store {
         else {
             return Err(format!("there is no tag folder {id}"));
         };
-        let TagEntry::Folder { tags: children, .. } = entry else {
+        let TagEntry::Folder { tags: children, folder } = entry else {
             return Err(format!("there is no tag folder {id}"));
         };
         // The count the menus ask first with: every row that moves up — tags AND folders
         // ([#1254]: a folder's whole cortège moves up).
         let carried = entry_count(&children);
-        // The children go where the folder was, in its order ([#1254]).
+        // The children go where the folder was, in its order ([#1254]). A child's name a
+        // sibling at that level has: the lift would sit two of a name together, and the
+        // reload skips the second — the children stay put and the removal is refused
+        // ([#1254] review: a rename is the way out, not a lift).
+        let taken =
+            children.iter().map(|c| c.name().to_string()).find(|name| level_name_taken(&self.tags, parent, name, id));
+        if let Some(child) = taken {
+            if let Some(level) = level_mut(&mut self.tags, parent) {
+                let at = at.min(level.len());
+                level.insert(at, TagEntry::Folder { folder, tags: children });
+            }
+            return Err(format!(
+                "there is a tag or tag folder {child:?} at that level already; rename it or the lifted one first"
+            ));
+        }
         match level_mut(&mut self.tags, parent) {
             Some(level) => {
                 level.splice(at..at, children);
@@ -1334,6 +1360,22 @@ impl Store {
             let (old_parent, at) = origin.unwrap_or((None, 0));
             put_entry(&mut self.tags, old_parent, &entry, at);
             return Err(format!("tag folders nest at most {MAX_TAG_DEPTH} deep"));
+        }
+        // A name the destination's level holds — other than the moved one's own slot: a
+        // same-level reorder is a move's own ([#1254] review) — is refused, so a move
+        // cannot set up the two-of-a-name level the reload would skip. The entry goes
+        // back where it was.
+        if level_name_taken(&self.tags, parent, entry.name(), id) {
+            let (old_parent, at) = origin.unwrap_or((None, 0));
+            put_entry(&mut self.tags, old_parent, &entry, at);
+            return Err(format!(
+                "there is a {} {:?} at that level already; rename it first",
+                match &entry {
+                    TagEntry::Folder { .. } => "tag folder",
+                    TagEntry::Tag(_) => "tag",
+                },
+                entry.name()
+            ));
         }
         if !put_entry(&mut self.tags, parent, &entry, position) {
             // Does not happen in one synchronous call, but the entry is never lost.

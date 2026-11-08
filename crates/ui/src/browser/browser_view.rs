@@ -1360,21 +1360,34 @@ fn tag_folder_menu(
         if projects.file_library_mut().tag_flat().iter().any(|t| t.name == new_name.trim()) {
             out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
         } else {
-            let mut params = json!({ "name": new_name.trim() });
-            let picked: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
-            if let Some(hex) = picked {
-                params["color"] = json!(hex);
-            }
-            let made = run(projects, "library.setTag", params, out);
-            if made {
-                if let Some(id) = projects.file_library_mut().tag_id_of(new_name.trim()) {
-                    run(projects, "library.moveTag", json!({ "id": format!("#{id}"), "folder": my }), out);
+            // The destination's own level is the fitting check: the tag is made at the top
+            // and moved here, so a name a row of this level holds is refused with where it
+            // stands ([#1254] review: what the menu wants is a tag of this folder, not a
+            // top-level one).
+            let forest = projects.file_library_mut().tags();
+            if suhina_library::store::folder_children(&forest, folder_id)
+                .unwrap_or(&[])
+                .iter()
+                .any(|e| e.name() == new_name.trim())
+            {
+                out.status = Some(Status::Error(format!("there is a tag folder {:?} there already", new_name.trim())));
+            } else {
+                let mut params = json!({ "name": new_name.trim() });
+                let picked: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
+                if let Some(hex) = picked {
+                    params["color"] = json!(hex);
                 }
-                out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
-                ui.ctx().data_mut(|d| d.remove::<String>(new_id));
-                ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
-                state.relist();
-                ui.close();
+                let made = run(projects, "library.setTag", params, out);
+                if made {
+                    if let Some(id) = projects.file_library_mut().tag_id_of(new_name.trim()) {
+                        run(projects, "library.moveTag", json!({ "id": format!("#{id}"), "folder": my }), out);
+                    }
+                    out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
+                    ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+                    ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
+                    state.relist();
+                    ui.close();
+                }
             }
         }
     }
@@ -1911,9 +1924,11 @@ fn tags_section(
                 if is_folder {
                     d.remove::<String>(Id::unique(("browser-tag-folder", id)));
                     d.remove::<String>(Id::unique(("browser-folder-new-tag", id)));
+                    crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-folder-tag-color", id)));
                 } else {
                     d.remove::<String>(Id::unique(("browser-rename-tag", id)));
                     d.remove::<String>(Id::unique(("browser-section-new-tag", id)));
+                    crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-tag-colour", id)));
                 }
             });
         }
@@ -2859,6 +2874,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             ui.ctx().data_mut(|d| {
                 d.remove::<String>(Id::unique(("browser-rename-tag", tag.id)));
                 d.remove::<String>(Id::unique(("browser-section-new-tag", tag.id)));
+                crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-tag-colour", tag.id)));
             });
         }
         ui.ctx().data_mut(|d| d.insert_temp(open_key, open));

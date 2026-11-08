@@ -1143,12 +1143,17 @@ fn collect_tag_json(tree: &[suhina_library::TagEntry], parent: Option<u32>) -> V
 }
 
 fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let mut done = false;
-    if let Some(limit) = Args::new(params).value("limit").filter(|v| !v.is_null()) {
-        let limit = limit.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("limit must be a whole number")?;
-        projects.file_library_mut().set_tag_limit(limit).map_err(CommandError)?;
-        done = true;
+    // The limit goes in last and what it asks is read whole before anything: a make or a
+    // change that fails leaves the limit what it was ([#1254] review — the one command
+    // does not go half in).
+    let limit = Args::new(params).value("limit").filter(|v| !v.is_null());
+    if let Some(limit) = &limit {
+        let parsed = limit.as_u64().and_then(|n| usize::try_from(n).ok());
+        if parsed.is_none_or(|n| !(1..=suhina_library::MAX_TAG_LIMIT).contains(&n)) {
+            return Err("the tag limit is from 1 to 1024".into());
+        }
     }
+    let mut done = false;
     match tag_param(projects, params)? {
         // A tag by its id or name, changed, or created from the named colours when the name
         // is not one yet ([#1254]):
@@ -1182,6 +1187,13 @@ fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
                 done = true;
             }
         }
+    }
+    // The limit's own application: the tag work has gone in, so a lowering that the
+    // made tags would not carry is refused with the count said ([#1254] review).
+    if let Some(limit) = limit {
+        let parsed = limit.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("limit must be a whole number")?;
+        projects.file_library_mut().set_tag_limit(parsed).map_err(CommandError)?;
+        done = true;
     }
     if !done {
         return Err("give a tag's id or name, a tag folder's, or a limit".into());

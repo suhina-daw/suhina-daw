@@ -301,6 +301,18 @@ impl MapView {
         aspect_of(self.area)
     }
 
+    /// The map's points are gone (the library they came from went under a replacement, and
+    /// the next one's are laid out in their place): the point-index states — the shown
+    /// similar ones and who they are for, a hover, a preview, the pressed point — are
+    /// indices into a points list that no longer is, and they read as unrelated samples of
+    /// the new layout ([#1254] review). The sizes, layout, zoom and centre are kept.
+    pub fn forget_points(&mut self) {
+        self.similar = None;
+        self.hovered = None;
+        self.previewed = None;
+        self.pressed = None;
+    }
+
     /// Shows the answer to [`MapEvent::Similar`]: rings these items and lists them at the side.
     pub fn show_similar(&mut self, of: usize, items: Vec<usize>) {
         self.similar = Some((of, items));

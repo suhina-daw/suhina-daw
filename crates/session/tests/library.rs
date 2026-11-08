@@ -388,6 +388,10 @@ fn a_place_of_several_tags_is_the_ids_joined_and_the_filter_narrows_it() {
     for bad in ["oops", "4294967296"] {
         let place = format!("tag:#{red}+{bad}");
         assert!(run(&mut p, "library.search", json!({ "place": place })).is_err(), "{bad} in the join is refused");
+        // With its `#` head the part reaches the joined parse: a regression that drops a
+        // hash-prefixed component would pass the bare form alone ([#1254] review).
+        let place = format!("tag:#{red}+#{bad}");
+        assert!(run(&mut p, "library.search", json!({ "place": place })).is_err(), "#{bad} in the join is refused");
     }
     // The `tags` filter narrows the place's list, it does not widen it: the item must also
     // carry a filter tag ([#1254] review).
@@ -529,6 +533,19 @@ fn set_tag_runs_the_limit_and_the_make_together() {
     let tags = run(&mut p, "library.tags", json!({})).unwrap();
     assert_eq!(tags["limit"], json!(11));
     assert_eq!(tags["tags"][0]["color"], json!("#123456"), "the id's colour with the limit");
+    // The one command does not go half in: a make that fails leaves the limit what it
+    // was ([#1254] review). A top-level folder named as the make's name is the failing
+    // make.
+    run(&mut p, "library.addTagFolder", json!({ "name": "Spare" })).unwrap();
+    assert!(run(&mut p, "library.setTag", json!({ "limit": 12, "name": "Spare" })).is_err());
+    let tags = run(&mut p, "library.tags", json!({})).unwrap();
+    assert_eq!(tags["limit"], json!(11), "the limit stayed with the failed make");
+    assert!(!tags["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("Spare")));
+    // The id's own too: a colour that is not one changes nothing of the limit's.
+    assert!(run(&mut p, "library.setTag", json!({ "limit": 12, "id": "#1", "color": "nope" })).is_err());
+    let tags = run(&mut p, "library.tags", json!({})).unwrap();
+    assert_eq!(tags["limit"], json!(11), "the limit stayed");
+    assert_eq!(tags["tags"][0]["color"], json!("#123456"), "the colour stayed");
     // The nothing form still refuses.
     assert!(run(&mut p, "library.setTag", json!({})).is_err());
     let _ = std::fs::remove_dir_all(&settings);

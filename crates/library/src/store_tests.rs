@@ -446,3 +446,63 @@ fn a_tag_renamed_to_a_folders_name_is_refused() {
     store.set_tag("Deep", Some("#123123"), None).unwrap();
     assert!(tags_iter(&store.tags).any(|t| t.name == "Deep"));
 }
+
+// A move cannot sit a tag and a folder of one name together at a level: the reload
+// skipped that shape, so the moves hold to the one set of names per level ([#1254]
+// review — the find's own case: a same-named tag beside a moved folder).
+#[test]
+fn a_move_that_would_pair_a_level_s_names_is_refused() {
+    let mut store = Store::default();
+    // A tag Belt at the top (an old make's), a folder Belt inside Box: both legal on
+    // their own levels.
+    store.set_tag("Belt", Some("#765432"), None).unwrap();
+    let box_id = store.add_tag_folder(Some("Box"), None).unwrap();
+    let belt_id = store.add_tag_folder(Some("Belt"), Some(box_id)).unwrap();
+    // Moving the folder Belt out to the top pairs the level's names: refused, the
+    // folder back where it was.
+    assert!(store.move_tag_node(belt_id, None, 0).is_err(), "the pair refuse");
+    let children =
+        folder_children(&store.tags, box_id).map(|c| c.iter().map(|e| e.name().to_string()).collect::<Vec<_>>());
+    assert_eq!(children.as_deref(), Some(["Belt".to_string()].as_slice()), "the folder stayed in Box: {children:?}");
+    // A move whose destination pairs nothing goes: Orange joins Box beside the folder.
+    store.move_tag_node(2, Some(box_id), 0).unwrap();
+    let children =
+        folder_children(&store.tags, box_id).map(|c| c.iter().map(|e| e.name().to_string()).collect::<Vec<_>>());
+    assert_eq!(
+        children.as_deref(),
+        Some(["Orange".to_string(), "Belt".to_string()].as_slice()),
+        "the plain move went: {children:?}"
+    );
+    // Its own level's reorder is fine: Yellow to the top of the top level's own list.
+    store.move_tag_node(3, None, 0).unwrap();
+    assert_eq!(store.tags.first().map(|e| e.name()), Some("Yellow"));
+    // The rename is the way out: the TAG Belt (the made one) goes as Copper, then the
+    // folder's move carries nothing to pair.
+    let belt_tag = tags_iter(&store.tags).find(|t| t.name == "Belt").map(|t| t.id).unwrap();
+    store.rename_tag(belt_tag, "Copper").unwrap();
+    store.move_tag_node(belt_id, None, 0).unwrap();
+    let top = store.tags.iter().map(|e| e.name().to_string()).collect::<Vec<_>>();
+    assert!(top.contains(&"Belt".to_string()) && top.contains(&"Copper".to_string()), "{top:?}");
+}
+
+// Lifting a folder's cortège that holds a name the destination has is refused too
+// ([#1254] review): the removal's lift makes the same pair a move would.
+#[test]
+fn a_lift_that_would_pair_a_level_s_names_is_refused() {
+    let mut store = Store::default();
+    // Store an already-paired level inside Box: a tag Punch and a folder Punch " below
+    // side by side — a shape an old file holds (the make and the rename refuse it now).
+    let box_id = store.add_tag_folder(Some("Box"), None).unwrap();
+    let inner = store.add_tag_folder(Some("Punch"), Some(box_id)).unwrap();
+    store.move_tag_node(1, Some(inner), 0).unwrap();
+    store.rename_tag(1, "Punch").unwrap();
+    // Top has its own Punch-named folder: lifting Box's cortège would pair it.
+    let top_punch = store.add_tag_folder(Some("Punch"), None).unwrap();
+    let _ = top_punch;
+    // The removal refuses rather than pairing the top.
+    let removed = store.remove_tag_folder(box_id);
+    assert!(matches!(&removed, Err(e) if e.to_string().contains("at that level already")), "{removed:?}");
+    // Box stands; nothing was lifted away.
+    assert!(folder_by_id(&store.tags, box_id).is_some(), "the folder came back");
+    assert!(folder_children(&store.tags, box_id).is_some_and(|c| !c.is_empty()), "the cortège stayed inside");
+}

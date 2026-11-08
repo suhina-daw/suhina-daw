@@ -190,6 +190,15 @@ pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str)
     picked
 }
 
+/// Forgets a row's picker state — the items a menu's close drops with its drafts: the
+/// field's open flag, its cache and the moved flag ([#1254] review). A caller that holds
+/// `Context::data_mut` already puts the removals inside it; this waits for none.
+pub fn forget_state(d: &mut egui::util::IdTypeMap, id: Id) {
+    d.remove::<bool>(id);
+    d.remove::<Color32>(id.with("value"));
+    d.remove::<bool>(id.with("value").with("moved"));
+}
+
 /// A track's colour area in `rect` (drawn by the caller): a click opens the palette under it, and
 /// a swatch picked there sets the track's colour. The area is a button named "<track> colour".
 pub fn area(
