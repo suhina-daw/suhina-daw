@@ -218,3 +218,17 @@ fn choosing_another_audio_device_brings_back_its_input() {
     let kept = restore_input(OutputPick::Device(same.clone()), &active, &settings);
     assert!(matches!(kept, OutputPick::Device(c) if c == same));
 }
+
+/// A driver fixed to its control panel's 128 frames: Default names that size, and a size chosen
+/// before (2048) stays chosen and listed, saying the device does not take it now.
+#[test]
+fn the_buffer_list_names_the_drivers_default_and_keeps_an_earlier_choice() {
+    let options = buffer_options(&[128], 128, None, 44_100.0);
+    let labels: Vec<&str> = options.iter().map(|(label, _)| label.as_str()).collect();
+    assert_eq!(labels, ["Default (128 frames)", "128 frames (2.9 ms)"]);
+    let options = buffer_options(&[128], 128, Some(2048), 44_100.0);
+    assert_eq!(options.iter().map(|(_, n)| *n).collect::<Vec<_>>(), [None, Some(128), Some(2048)]);
+    assert!(options[2].0.contains("does not take it now"), "{}", options[2].0);
+    // A choice the device offers is listed once.
+    assert_eq!(buffer_options(&[128, 256], 128, Some(256), 44_100.0).len(), 3);
+}

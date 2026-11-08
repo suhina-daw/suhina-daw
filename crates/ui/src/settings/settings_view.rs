@@ -2578,8 +2578,7 @@ fn output_rows(
     // With none chosen an ASIO driver plays the size it prefers (the one set in its control
     // panel); elsewhere the engine renders in its own 1024-frame block.
     let default_frames = device.and_then(|d| d.default_buffer).unwrap_or(1024);
-    let mut options: Vec<(String, Option<u32>)> = vec![(format!("Default ({default_frames} frames)"), None)];
-    options.extend(sizes.iter().map(|n| (format!("{n} frames ({:.1} ms)", f64::from(*n) * 1000.0 / rate), Some(*n))));
+    let options = buffer_options(&sizes, default_frames, choice.buffer_frames, rate);
     if let Some(frames) = choice_dropdown(ui, painter, r, name, &options, &choice.buffer_frames) {
         picked = choice.with_params(&serde_json::json!({ "bufferFrames": frames.unwrap_or(0) })).ok();
     }
@@ -2623,6 +2622,22 @@ fn output_rows(
     }
 
     picked.map(OutputPick::Setting)
+}
+
+/// The Buffer size list: Default (`default_frames`, what plays with none chosen), then `sizes`
+/// with their length at `rate`. A size chosen before that the device does not offer now stays
+/// chosen and is listed in its place, saying so: it plays again once the driver takes it, and
+/// meanwhile the nearest size the driver takes plays.
+fn buffer_options(sizes: &[u32], default_frames: u32, chosen: Option<u32>, rate: f64) -> Vec<(String, Option<u32>)> {
+    let ms = |n: u32| f64::from(n) * 1000.0 / rate.max(1.0);
+    let mut listed: Vec<(u32, String)> = sizes.iter().map(|n| (*n, format!("{n} frames ({:.1} ms)", ms(*n)))).collect();
+    if let Some(kept) = chosen.filter(|n| !sizes.contains(n)) {
+        listed.push((kept, format!("{kept} frames, chosen; the device does not take it now")));
+        listed.sort_by_key(|(n, _)| *n);
+    }
+    std::iter::once((format!("Default ({default_frames} frames)"), None))
+        .chain(listed.into_iter().map(|(n, label)| (label, Some(n))))
+        .collect()
 }
 
 /// What the Device row says about the driver chosen: why it lists nothing, and where a driver's

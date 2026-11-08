@@ -76,7 +76,10 @@ opens, loading the driver for the call when none is loaded. A size changed in th
 control panel while Suhina runs reaches Suhina as `kAsioResetRequest` or
 `kAsioBufferSizeChange`; both invalidate the stream, the output opens again with the new answer,
 and Settings › Audio lists the devices again when the output playing changes. A size chosen
-before the change goes to the nearest size the driver now takes, with a notice.
+is remembered whatever the driver says: while the driver does not take it, the nearest size it
+takes plays with a notice, and the list keeps the chosen size, saying the device does not take
+it now; it plays again once the driver takes it. Default (the driver's preferred size) applies
+only when no size is chosen.
 
 ## Device catalog during playback
 
