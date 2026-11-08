@@ -130,6 +130,7 @@ button { image: url("assets/button.svg"); }
 cue { image: url("assets/cue.svg"); }
 fader.cap { image: url("assets/fader.cap.svg"); }
 fader.rail { image: url("assets/fader.rail.svg"); }
+folder { image: url("assets/folder.svg"); }
 knob.body { image: url("assets/knob.body.svg"); }
 knob.pointer { image: url("assets/knob.pointer.svg"); }
 meter { image: url("assets/meter.svg"); }

@@ -138,7 +138,7 @@ pub const ENTRIES: [Entry; 17] = [
         info: &suhina_device_nam_cab_loader::INFO,
         make: || Box::new(suhina_device_nam_cab_loader::CabLoader::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/nam-cab-loader/panel.json")),
-        file: Some(FileKind { extension: "wav", read: read_ir, name: folder_name, make: make_cab }),
+        file: Some(FileKind { extension: "wav", read: read_ir, name: ir_name, make: make_cab }),
     },
     Entry {
         info: &suhina_device_delay::INFO,
@@ -354,8 +354,11 @@ fn read_ir(path: &Path, rate: u32) -> Result<Arc<AssetData>, String> {
     Ok(Arc::new(suhina_device_nam_cab_loader::ir::read(path, rate)?))
 }
 
-fn folder_name(path: &Path, _data: &AssetData) -> Option<String> {
-    path.parent().and_then(Path::file_name).map(|folder| folder.to_string_lossy().into_owned())
+fn ir_name(path: &Path, _data: &AssetData) -> Option<String> {
+    // The file's own name without its extension, never the folder's: the pack row already
+    // reads the folder, and a file whose name shares its folder's made the two pickers look
+    // alike (~issue 1289).
+    path.file_stem().map(|stem| stem.to_string_lossy().into_owned())
 }
 
 fn make_cab(data: &AssetData) -> Option<Box<dyn Device>> {

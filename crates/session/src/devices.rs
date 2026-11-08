@@ -1120,7 +1120,8 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
 }
 
 /// `device.file`: the file a NAM device runs — its absolute path (empty when none is set) and
-/// the model's own name or the cab's (the IR's parent folder's name), for a device panel.
+/// the shown name either reads: the model's `metadata` name or the file's own without its
+/// extension, for a device panel.
 pub(crate) fn device_file(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let channel = device_channel_read(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;

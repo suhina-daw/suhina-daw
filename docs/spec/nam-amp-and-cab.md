@@ -219,7 +219,9 @@ NAM models/
   same 2000 cap per pack.
 - Files that sit beside the packs form a pack of their own, shown as **(entered directly)**.
 - The panels show the pack and the file at the two dropdown rows:
-  - **The pack row** (the name row): the current file's pack's name (the file's parent folder;
+  - **The pack row** (the name row): a folder icon before it (the design system's folder
+    artwork, so a theme supplies its own) and the current file's pack's name (the file's parent
+    folder;
     **(entered directly)** for a loose file), "No model" / "No IR" when none is set. Its
     dropdown lists every pack's name; its ▲ ▼ steppers step through the packs.
   - **The file row**: the current file's own name, its dropdown lists the current pack's files
@@ -229,8 +231,10 @@ NAM models/
     Loader likewise, with `cab file`). Choosing a pack loads its **first** file; both choices
     run `device.setNamFile`, one undo step each, as everything else on the panel.
 - The shown name of a model is still its `metadata` name ("Fender Super Reverb 1965") or its
-  file's name without the extension; a cab file's shown name is its pack's name. The pack row
-  itself always shows the pack's folder name.
+  file's own name without the extension — the model's `metadata` name in place of its file's
+  name — and never its folder's, so a file whose name shares its folder's reads apart from the
+  pack row. The pack row itself always shows the pack's folder name, with the folder's icon
+  before it.
 - The scan reads the folder's and each pack's write time, re-reading the folder when its own
   writes change and a pack when its writes change — the app reads it once per frame, and file
   loading stays on the session thread (the session re-reads at open or by command only).

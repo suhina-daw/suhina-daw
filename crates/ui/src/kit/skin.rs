@@ -31,6 +31,7 @@ pub const MODULES: &[&str] = &[
     "agents",
 ];
 pub const ROLES: &[&str] = &[
+    "folder",
     "fader.cap",
     "fader.rail",
     "knob.body",
@@ -109,6 +110,7 @@ pub const OWN_ROLES: &[&str] = &[
 
 /// The very same original SVG sources are embedded and distributed as editable files.
 pub const DEFAULT_SVGS: &[(&str, &str)] = &[
+    ("folder", include_str!("../../../../assets/themes/default/folder.svg")),
     ("fader.cap", include_str!("../../../../assets/themes/default/fader.cap.svg")),
     ("fader.rail", include_str!("../../../../assets/themes/default/fader.rail.svg")),
     ("knob.body", include_str!("../../../../assets/themes/default/knob.body.svg")),

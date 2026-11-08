@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use egui::{Align2, Rect, Sense, Ui};
+use egui::{Align2, Pos2, Rect, Sense, Ui, Vec2};
 use suhina_device_sdk::ui::FileRowPart;
 use suhina_engine::model::TrackId;
 
@@ -253,13 +253,22 @@ pub(crate) fn files(
     let ask: Option<String> = match part {
         FileRowPart::Pack => {
             let rows = packs_rows();
-            let picked =
-                dropdown(ui, rect, salt, &rows, &shown_pack, &shown_pack, words.pack, &format!("{label}: pack"));
+            let picked = dropdown(
+                ui,
+                rect,
+                salt,
+                &rows,
+                &shown_pack,
+                &shown_pack,
+                words.pack,
+                &format!("{label}: pack"),
+                Some("folder"),
+            );
             picked.as_deref().and_then(first_of)
         }
         FileRowPart::File => {
             let shown = file_shown(current, lists);
-            dropdown(ui, rect, salt, files, current, &shown, words.file, &format!("{label}: {what} file"))
+            dropdown(ui, rect, salt, files, current, &shown, words.file, &format!("{label}: {what} file"), None)
         }
         FileRowPart::PreviousPack | FileRowPart::NextPack => {
             let up = part == FileRowPart::PreviousPack;
@@ -282,9 +291,10 @@ pub(crate) fn files(
 
 /// A dropdown pill in `rect`, its shown text and the rows under it (`rows` lists each as
 /// (path, label); the pack row's paths are the packs' names). The shown text falls back to
-/// the path's own name; with no rows, the empty text alone. Returns the row's path a click
-/// asked for.
-#[allow(clippy::too_many_arguments)] // the labels, current value and rows of one dropdown
+/// the path's own name; with no rows, the empty text alone. The pack row draws the design
+/// system's folder artwork before its name (`icon`), so the two pickers read apart. Returns
+/// the row's path a click asked for.
+#[allow(clippy::too_many_arguments)] // the labels, current value, rows and artwork of one dropdown
 fn dropdown(
     ui: &mut Ui,
     rect: Rect,
@@ -294,8 +304,25 @@ fn dropdown(
     shown: &str,
     empty: &str,
     label: &str,
+    icon: Option<&str>,
 ) -> Option<String> {
-    let mut row = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    let mut row = match icon {
+        Some(role) => {
+            // The folder's icon sits in the row's own margin: artwork a theme keeps
+            // changeable (nam spec › The panels), the size the pill's text starts after.
+            let icon_rect = Rect::from_min_size(Pos2::new(rect.left() + 8.0, rect.center().y - 7.0), Vec2::splat(14.0));
+            crate::kit::skin::paint(
+                ui.painter(),
+                icon_rect,
+                role,
+                crate::kit::skin::State::Normal,
+                theme::text_secondary(),
+                0.0,
+            );
+            ui.new_child(egui::UiBuilder::new().max_rect(rect.with_min_x(rect.left() + 24.0)))
+        }
+        None => ui.new_child(egui::UiBuilder::new().max_rect(rect)),
+    };
     let current_name = if current.is_empty() {
         empty.to_owned()
     } else if shown.is_empty() {
