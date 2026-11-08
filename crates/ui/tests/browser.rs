@@ -13,7 +13,7 @@ use egui::{Key, Modifiers, Pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
-use suhina_engine::model::{ChannelId, LaneData};
+use suhina_engine::model::ChannelId;
 use suhina_library::{Library, SectionKind};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
