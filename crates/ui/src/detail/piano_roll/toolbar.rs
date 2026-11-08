@@ -356,12 +356,13 @@ pub(super) fn toolbar(
     let icon = (TOOL_ICON * scale).min(row.height());
     let gap = TOOL_GAP * scale;
     let side = row.height().min(icon);
-    // `.piano-tool { width; height }` sizes the buttons, so stretched artwork has room.
+    // `.piano-tool { width; height }` sizes the buttons, so stretched artwork has room. Unstyled,
+    // a button is wider than its icon by a little room at each side, so the icons do not crowd.
     let size = {
         let _style = crate::kit::style_class::enter("piano-tool");
         let own = crate::kit::style_class::computed();
         Vec2::new(
-            own.as_ref().and_then(|c| c.width).map_or(side, |w| w.clamp(8.0, 96.0)),
+            own.as_ref().and_then(|c| c.width).map_or(side + BUTTON_ROOM * scale, |w| w.clamp(8.0, 96.0)),
             own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, row.height().max(8.0))),
         )
     };
@@ -489,6 +490,9 @@ enum Step {
     /// Not even that fits: only the tools, the grid value and the ×.
     Squeezed,
 }
+
+/// The room a toolbar button has beside its icon, both sides together, at Normal size, in points.
+const BUTTON_ROOM: f32 = 8.0;
 
 /// The width of a toolbar menu as its arrow alone, in points.
 const MENU_ARROW: f32 = 22.0;
