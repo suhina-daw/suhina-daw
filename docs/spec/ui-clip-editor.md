@@ -1000,7 +1000,7 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Double-click on a note | Deletes it (Select tool; › Double-click) |
 | Click, Shift+click, Ctrl+click | Selects a note, adds or takes it out of the selection (a note not selected is selected as the button goes down; a selected note keeps the selection until the click ends, so it can be dragged) |
 | Drag from an empty spot | Selects the notes in the rectangle |
-| Drag a note | Moves the selection (time snapped by grid steps, pitch by semitones; folded, each note by the same number of shown rows from its own key, so none lands on a hidden key) |
+| Drag a note | Moves the selection (time snapped by grid steps; a grabbed note off the grid moves freely to the first grid line, then snaps to a line or to its own offset from the grid, whichever is nearer, so it can be put back on the grid; pitch by semitones; folded, each note by the same number of shown rows from its own key, so none lands on a hidden key) |
 | Drag a note's right edge | Changes the selection's length |
 | Drag a note's left edge | Moves the selection's starts, keeping their ends |
 | Ctrl+drag a note (Cmd on macOS) | Copies the selection to where it is let go |
