@@ -291,7 +291,8 @@ mod tests {
     #[test]
     fn a_clicked_swatch_wins_over_a_pending_custom_colour() {
         use egui_kittest::Harness;
-        let id = Id::new("test-select-colour");
+        use egui_kittest::kittest::Queryable as _;
+        let id = Id::unique("test-select-colour");
         let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(400.0, 400.0)).build_ui_state(
             |ui, picked: &mut Vec<Rgb>| {
                 if let Some(colour) = select_colour_row(ui, id, Some(Rgb(1, 2, 3)), "Select colour") {
@@ -319,6 +320,7 @@ mod tests {
     #[test]
     fn a_palette_opened_again_starts_its_any_colour_afresh() {
         use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable as _;
         let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(400.0, 400.0)).build_ui_state(
             |ui, (shown, any_id): &mut (bool, Option<Id>)| {
                 *any_id = Some(ui.scope_id().with("any-colour"));
