@@ -295,8 +295,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   changes nothing); `note.cut` copies and deletes them. `note.paste {track, index | scene, time?}`
   adds the copied notes to any MIDI clip with their spacing kept, the first at `time` (by default
   right after the copied notes), and returns their indices; `note.duplicate {..., notes, beats?,
-  semitones?}` adds a copy right after the notes' end, or `beats` and `semitones` from them (the
-  piano roll's Ctrl+drag). The note clipboard is apart from the clip clipboard.
+  semitones? | keys?}` adds a copy right after the notes' end, or `beats` and `semitones` from them
+  (the piano roll's Ctrl+drag; `keys` gives each copy its own key, one per entry of `notes`). The note clipboard is apart from the clip clipboard.
 - **Splitting notes.** `note.split {track, index | scene, notes, at}` splits each named note that
   spans the beat `at` into two at `at` (the first keeps the start, the second the end); a note
   that starts or ends exactly at `at` is left alone, so a second split at the same beat changes

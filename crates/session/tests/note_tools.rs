@@ -543,6 +543,25 @@ fn a_move_with_keys_takes_each_note_to_its_own_key() {
     }
 }
 
+/// `note.duplicate` with `keys` puts each copy on its own key (a copy through a scale), the
+/// originals untouched; keys with semitones are refused.
+#[test]
+fn a_duplicate_with_keys_puts_each_copy_on_its_own_key() {
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 64)]));
+    run(
+        &mut session,
+        "note.duplicate",
+        json!({ "track": 1, "index": 0, "notes": [0, 1], "beats": 1.0, "keys": [62, 65] }),
+    )
+    .unwrap();
+    let all = notes_of(&session, 1);
+    let copies: Vec<(f64, u8)> = all.iter().filter(|n| n.time == 1.0).map(|n| (n.time, n.key)).collect();
+    assert_eq!(copies, [(1.0, 62), (1.0, 65)], "{all:?}");
+    assert_eq!(all.iter().filter(|n| n.time == 0.0).map(|n| n.key).collect::<Vec<_>>(), [60, 64], "originals stay");
+    let both = json!({ "track": 1, "index": 0, "notes": [0], "beats": 1.0, "keys": [62], "semitones": 1 });
+    assert!(run(&mut session, "note.duplicate", both).is_err());
+}
+
 #[test]
 fn a_mute_rides_through_the_other_note_tools() {
     let mut session = Session::new(project(scale_notes()));

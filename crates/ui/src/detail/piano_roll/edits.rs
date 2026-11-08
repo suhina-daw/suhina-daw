@@ -265,9 +265,9 @@ pub(super) fn commit(
                 state.span_moved(beats);
             }
             params["beats"] = json!(round_beat(beats));
-            // Folded, each note steps through the shown rows on its own, so none lands on a key
-            // the fold hides; a copy goes by the grabbed note's semitones.
-            if rows.is_some() && !*copy {
+            // Folded, each note (or its copy) steps through the shown rows on its own, so none
+            // lands on a key the fold hides.
+            if rows.is_some() {
                 params["keys"] = json!(landing);
             } else {
                 params["semitones"] = json!(keys);

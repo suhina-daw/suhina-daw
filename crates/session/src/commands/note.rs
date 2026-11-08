@@ -180,6 +180,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             NOTES,
             optional("beats", ParamType::Number, "instead of right after: beats from the notes to the copies"),
             optional("semitones", ParamType::Integer, "semitones from the notes to the copies, higher when positive"),
+            optional(
+                "keys",
+                ParamType::Integers,
+                "instead of semitones: the key each note's copy goes to, 0 to 127, one per entry of notes (a copy through a scale)",
+            ),
             REPLACE,
         ],
         kind: CommandKind::EDIT,
