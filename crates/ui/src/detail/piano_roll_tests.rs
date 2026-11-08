@@ -321,7 +321,7 @@ fn folded_up_and_down_keep_the_notes_in_the_scale() {
     c.scale = Scale::new(0, suhina_engine::model::ScaleMode::Major);
     let mut state = focused_on(&c);
     state.selected = BTreeSet::from([0, 1, 2]);
-    state.fold = Fold::Scale;
+    // The scale on folds the rows to it.
     state.audition = true;
     let up = state.key_action("pianoRoll.up", &c, 0.0, None).map(|a| a.params);
     assert_eq!(state.audition_pending, [62, 65, 69], "the notes sound where they go");
@@ -335,8 +335,9 @@ fn folded_up_and_down_keep_the_notes_in_the_scale() {
     let dragged: Vec<u8> = [57u8, 60, 64].iter().map(|k| edits::moved_key(&rows, *k, 1, Some(1))).collect();
     assert_eq!(dragged, [59, 62, 65], "A, C, E up a row: B, D, F");
     assert_eq!(edits::moved_key(&rows, 60, 1, None), 61, "unfolded, the semitones");
-    state.fold = Fold::Off;
-    let plain = state.key_action("pianoRoll.up", &c, 0.0, None).map(|a| a.params);
+    let mut plain_clip = c.clone();
+    plain_clip.scale = None;
+    let plain = state.key_action("pianoRoll.up", &plain_clip, 0.0, None).map(|a| a.params);
     assert_eq!(plain.as_ref().and_then(|p| p.get("semitones")).cloned(), Some(json!(1)), "{plain:?}");
 }
 

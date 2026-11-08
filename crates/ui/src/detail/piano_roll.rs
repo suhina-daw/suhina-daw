@@ -63,7 +63,7 @@ pub use gestures::start_by;
 const TOOLBAR: f32 = 22.0;
 const SCALE_STRIP: f32 = 26.0;
 const KEYS: f32 = 60.0;
-const TOOLBAR_INSET: f32 = 32.0;
+const TOOLBAR_INSET: f32 = 4.0;
 const RULER: f32 = 36.0;
 const VELOCITY_LANE: f32 = 72.0;
 /// The velocity lane is left out under this height, and leaves at least this many key rows.

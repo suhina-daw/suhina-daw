@@ -58,7 +58,7 @@ impl IconButton {
             Self::Fold => "Fold",
             Self::Scale => "Scale",
             Self::Highlight => "Highlight scale",
-            Self::More => "Piano roll options",
+            Self::More => "Piano roll settings",
         }
     }
 
@@ -290,15 +290,18 @@ impl IconButton {
                     painter.rect_filled(Rect::from_center_size(at(x, -1.5), size(2.5, 5.0)), 0.0, color);
                 }
             }
-            // A band between two rows: the scale's rows tinted.
+            // A highlighter pen, tilted, over the band it leaves: the scale's rows tinted.
             Self::Highlight => {
-                line((-6.0, -5.5), (6.0, -5.5));
-                line((-6.0, 5.5), (6.0, 5.5));
-                painter.rect_filled(
-                    Rect::from_center_size(at(0.0, 0.0), size(12.0, 4.0)),
-                    1.0,
-                    color.gamma_multiply(0.6),
-                );
+                painter.rect_filled(Rect::from_min_max(at(-6.5, 3.5), at(6.5, 6.5)), 1.0, color.gamma_multiply(0.5));
+                line((-3.0, 1.5), (3.0, -4.5));
+                line((3.0, -4.5), (5.5, -2.0));
+                line((5.5, -2.0), (-0.5, 4.0));
+                line((-0.5, 4.0), (-3.0, 1.5));
+                painter.add(egui::Shape::convex_polygon(
+                    vec![at(-3.0, 1.5), at(-0.5, 4.0), at(-3.5, 4.5)],
+                    color,
+                    Stroke::NONE,
+                ));
             }
             // Three dots: more.
             Self::More => {
@@ -457,10 +460,15 @@ pub(super) fn toolbar(
     painter.vline(right - 5.0, row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
     right -= 10.0;
     let words = step < Step::Icons;
-    let ghost_width = if step >= Step::GhostArrow { GHOST_ARROW } else { ghost_view::MENU_WIDTH };
+    let named = step < Step::Arrows;
+    let ghost_width = if named { ghost_view::MENU_WIDTH } else { MENU_ARROW };
     let ghosts = Rect::from_min_max(Pos2::new(right - ghost_width, row.top()), Pos2::new(right, row.bottom()));
-    ghost_view::menu(ui, ghosts, &clip.ghosts, &mut state.ghost_source, step < Step::GhostArrow);
-    right = ghosts.left() - 6.0;
+    ghost_view::menu(ui, ghosts, &clip.ghosts, &mut state.ghost_source, named);
+    right = ghosts.left() - 4.0;
+    let workflow_width = if named { WORKFLOW_MENU } else { MENU_ARROW };
+    let workflow = Rect::from_min_max(Pos2::new(right - workflow_width, row.top()), Pos2::new(right, row.bottom()));
+    workflow_menu(ui, workflow, keymap, state, named);
+    right = workflow.left() - 6.0;
     rows_group(ui, &painter, right, row, side, words, cx, state, actions);
 }
 
@@ -476,14 +484,17 @@ enum Step {
     Icons,
     /// The clipboard in one Edit menu.
     Edit,
-    /// The ghost menu as its arrow.
-    GhostArrow,
+    /// The workflow and ghost menus as their arrows.
+    Arrows,
     /// Not even that fits: only the tools, the grid value and the ×.
     Squeezed,
 }
 
-/// The width of the ghost menu as its arrow alone, in points.
-const GHOST_ARROW: f32 = 22.0;
+/// The width of a toolbar menu as its arrow alone, in points.
+const MENU_ARROW: f32 = 22.0;
+
+/// How wide the toolbar's workflow menu is with the mode's name, in points.
+const WORKFLOW_MENU: f32 = 96.0;
 
 /// The words of the Rows group: Fold, Scale (the clip's scale switch) and Highlight.
 const ROWS: [(IconButton, &str); 3] =
@@ -506,7 +517,7 @@ fn layout_step(ui: &Ui, row: Rect, size: Vec2, gap: f32, side: f32) -> Step {
     let need = |step: Step| {
         let clipboard = if step >= Step::Edit { size.x + 10.0 + gap } else { 4.0 * button };
         let caption = if step == Step::Full { 40.0 } else { 0.0 };
-        let ghosts = if step >= Step::GhostArrow { GHOST_ARROW } else { ghost_view::MENU_WIDTH };
+        let menus = if step >= Step::Arrows { 2.0 * MENU_ARROW } else { ghost_view::MENU_WIDTH + WORKFLOW_MENU };
         TOOLBAR_INSET
             + 8.0 * button
             + clipboard
@@ -514,7 +525,8 @@ fn layout_step(ui: &Ui, row: Rect, size: Vec2, gap: f32, side: f32) -> Step {
             + 8.0
             + rows(step < Step::Icons)
             + 6.0
-            + ghosts
+            + menus
+            + 4.0
             + 10.0
             + caption
             + GRID_MENU
@@ -522,7 +534,7 @@ fn layout_step(ui: &Ui, row: Rect, size: Vec2, gap: f32, side: f32) -> Step {
             + 2.0
             + side
     };
-    [Step::Full, Step::NoCaption, Step::Icons, Step::Edit, Step::GhostArrow]
+    [Step::Full, Step::NoCaption, Step::Icons, Step::Edit, Step::Arrows]
         .into_iter()
         .find(|step| need(*step) <= row.width())
         .unwrap_or(Step::Squeezed)
@@ -551,8 +563,8 @@ fn rows_group(
     painter.rect_stroke(group, 4.0, theme::hairline(theme::border_strong()), StrokeKind::Inside);
     let folded = state.fold != Fold::Off;
     let hints = [
-        "Fold: shows only the rows that have notes, or the scale's rows while the clip has a scale",
-        "Scale: turns the clip's scale on or off, as the clip panel's switch does",
+        "Fold: shows only the rows that have notes",
+        "Scale: turns the clip's scale on, showing only its rows and those with notes, or off; the clip panel's switch is the same",
         "Highlight scale: tints the rows of the clip's scale and marks its keys",
     ];
     let ons = [folded, clip.scale.is_some(), state.highlight_scale];
@@ -607,7 +619,15 @@ fn row_toggle(
 ) -> bool {
     let response = widgets::button_area(ui, rect, Id::unique(("piano-roll-rows", button.name())), button.name());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, button.name()));
-    let (fill, ink) = widgets::toggle_colors(ui, &response, on);
+    // Lit as a selected word is (the selection's fill and ink), as the toolbar's words were.
+    let visuals = ui.visuals();
+    let (fill, ink) = if on {
+        (visuals.selection.bg_fill, visuals.selection.stroke.color)
+    } else if response.hovered() {
+        (visuals.widgets.hovered.weak_bg_fill, theme::text_primary())
+    } else {
+        (Color32::TRANSPARENT, theme::text_secondary())
+    };
     painter.rect_filled(rect, 3.0, fill);
     let icon = Rect::from_min_size(rect.min + Vec2::new(3.0, 0.0), Vec2::new(rect.height(), rect.height()));
     button.draw(painter, icon, ink, scale * 0.9);
@@ -782,10 +802,33 @@ pub(crate) fn menu_arrow(ui: &Ui, button: Rect, color: Color32) {
     ));
 }
 
-/// The workflow entries (› Workflow modes), the options menu's Workflow submenu: the four modes
-/// and, under a divider, a submenu per workflow setting with its choices, each in a word or two
-/// with its value dim at the right. A pick is left in `state` for the window, which keeps it in the
-/// keymap.
+/// The toolbar's workflow menu (› Workflow modes): its button shows the mode's name (its arrow
+/// alone when the toolbar is short of room), its menu the workflow entries.
+fn workflow_menu(
+    ui: &mut Ui,
+    rect: Rect,
+    keymap: &crate::settings::keymap::Keymap,
+    state: &mut PianoRollState,
+    named: bool,
+) {
+    let mode = keymap.preset();
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+        let text = if named { format!("{}   ", mode.name()) } else { "   ".to_string() };
+        let menu = ui.menu_button(egui::RichText::new(text).font(font).color(theme::text_value()), |ui| {
+            workflow_entries(ui, keymap, state);
+        });
+        menu_arrow(ui, menu.response.rect, theme::text_value());
+        let label = format!("Workflow {}", mode.name());
+        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+        menu.response.on_hover_text("How clicks, right-clicks and double-clicks work: a preset, or Custom");
+    });
+}
+
+/// The workflow entries (› Workflow modes), the toolbar's workflow menu: the four modes and, under
+/// a divider, a submenu per workflow setting with its choices, each in a word or two with its value
+/// dim at the right, then Allow stacked notes. A pick is left in `state` for the window, which
+/// keeps it in the keymap.
 pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Keymap, state: &mut PianoRollState) {
     use crate::settings::keymap::Preset;
     use crate::settings::workflow::{Pick, Setting};
@@ -829,6 +872,17 @@ pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Ke
         });
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         response.on_hover_text(setting.note());
+    }
+    // How notes that land on others of their key behave belongs with how the mouse edits them
+    // (› Allow stacked notes).
+    ui.separator();
+    let stacked = !state.notes_replace;
+    let response = ui.selectable_label(stacked, egui::RichText::new("Allow stacked notes").font(font.clone()));
+    response
+        .widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, stacked, "Workflow: Allow stacked notes"));
+    if response.clicked() {
+        state.view_picked = Some(super::ViewPick::AllowStacked(!stacked));
+        ui.close();
     }
     if picked.is_some() {
         state.workflow_picked = picked;

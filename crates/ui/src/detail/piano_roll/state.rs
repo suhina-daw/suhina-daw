@@ -290,7 +290,7 @@ pub struct PianoRollState {
     /// Which other clips show as ghost notes, picked in the toolbar's ghost menu; kept until
     /// Suhina closes (› Ghost notes).
     pub ghost_source: GhostSource,
-    /// Whether the key rows are folded, the toolbar's Fold ([`Self::fold_for`] says to what); kept until
+    /// Whether the toolbar's Fold is on: the rows with notes ([`Self::fold_for`]); kept until
     /// Suhina closes (› Zoom and scroll).
     pub fold: Fold,
 }
@@ -370,13 +370,14 @@ impl Default for PianoRollState {
 }
 
 impl PianoRollState {
-    /// The rows Fold shows for `clip`: none folded while it is off; while it is on, the rows of the
-    /// clip's scale and those with notes when the clip has a scale, else the rows with notes.
+    /// The rows that show for `clip`: with Fold on, the rows with notes; else, while the clip has a
+    /// scale (the toolbar's Scale, the clip panel's switch), the scale's rows and those with notes;
+    /// else every row.
     pub(super) fn fold_for(&self, clip: &PianoClip) -> Fold {
         match (self.fold, clip.scale) {
-            (Fold::Off, _) => Fold::Off,
-            (_, Some(_)) => Fold::Scale,
-            (_, None) => Fold::Notes,
+            (Fold::Notes | Fold::Scale, _) => Fold::Notes,
+            (Fold::Off, Some(_)) => Fold::Scale,
+            (Fold::Off, None) => Fold::Off,
         }
     }
 

@@ -147,19 +147,19 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
 
 1. **Toolbar** (built, [#442](https://github.com/suhina-daw/suhina-daw/issues/442), icons
    [#443](https://github.com/suhina-daw/suhina-daw/issues/443) and
-   [#460](https://github.com/suhina-daw/suhina-daw/issues/460)): at the left the tools, then the
-   note clipboard, then **Quantise** and the note tools' toggle, each group after a divider; at
-   the right the **Rows** group (**Fold**, **Scale** and **Highlight**, framed together; › Scale and
-   key, [#347](https://github.com/suhina-daw/suhina-daw/issues/347)), the **ghost menu**
-   (› Ghost notes), a divider, the piano roll's grid value with its **Grid** caption (› Grid and
-   snapping) and, at the very end, the **×** that hides the editor (› Least height and closing).
-   The corner above the keys holds the rest (› Key column): the options menu (three dots) at its
-   left and the **Audition** headphones at its right. With less room the toolbar gives way in
-   steps, never leaving a part out while the next step would do: first the **Grid** caption,
-   then the Rows group's words (their icons stay, each named by its tooltip), then the clipboard's
-   four buttons fold into one **Edit** menu (Cut, Copy, Paste, Duplicate), then the ghost menu
-   keeps only its arrow. The tools, Quantise, the note tools' toggle, the grid value and the ×
-   always show. **Later:** tabs for Notes, Envelopes and Expression.
+   [#460](https://github.com/suhina-daw/suhina-daw/issues/460)): from near its left edge the
+   tools, then the note clipboard, then **Quantise** and the note tools' toggle, each group after
+   a divider; at the right the **Rows** group (**Fold**, **Scale** and **Highlight**, framed
+   together; › Scale and key, [#347](https://github.com/suhina-daw/suhina-daw/issues/347)), the
+   **workflow menu** (› Workflow modes), the **ghost menu** (› Ghost notes), a divider, the piano
+   roll's grid value with its **Grid** caption (› Grid and snapping) and, at the very end, the
+   **×** that hides the editor (› Least height and closing). The corner above the keys holds the
+   piano roll's own settings (three dots) at its left and the **Audition** headphones at its
+   right (› Key column). With less room the toolbar gives way in steps, never leaving a part out
+   while the next step would do: first the **Grid** caption, then the Rows group's words (their
+   icons stay, each named by its tooltip), then the clipboard's four buttons fold into one
+   **Edit** menu (Cut, Copy, Paste, Duplicate), then the workflow and ghost menus keep only their
+   arrows. The tools, Quantise, the note tools' toggle, the grid value and the × always show. **Later:** tabs for Notes, Envelopes and Expression.
 
    The tools are **Select**, **Draw**, **Paint**, **Erase**, **Slice** and **Mute** (› Drawing
    notes, › Muting), each an
@@ -409,12 +409,12 @@ pull up.
   the end of the part it plays), both within the zoom range and leaving the key rows as they are.
   Both keys work after a click in the piano roll (`pianoRoll.zoomSelection`, `pianoRoll.zoomClip`)
   and change the view only, not the project.
-- **Built ([#347](https://github.com/suhina-daw/suhina-daw/issues/347)):** **Fold**, in the
-  toolbar's Rows group (› Layout, › Scale and key), shows fewer key rows, lit while on. While the
-  clip has a scale it folds to the scale: the keys of the scale and any key that has a note, so no
-  note is ever hidden; while it has none, only the keys that have notes (every key while it has
-  none). Turning the scale on or off while folded changes which rows show at once; a click on the
-  lit Fold shows every key again. The rows sit one under the other with no gap for the keys left out, and
+- **Built ([#347](https://github.com/suhina-daw/suhina-daw/issues/347)):** the toolbar's Rows
+  group (› Layout, › Scale and key) shows fewer key rows. **Fold**, lit while on, shows only the
+  keys that have notes in the clip (every key while it has none), whether or not the clip has a
+  scale. **Scale**, the clip's scale switch, shows while it is on the keys of the scale and any
+  key that has a note, so no note is ever hidden; Fold on goes before it. A click on the lit one
+  shows the rows again. The rows sit one under the other with no gap for the keys left out, and
   every row of the key column is named while folded, since the keys beside each other are no
   longer neighbours. Everything that turns a height into a key goes through the rows shown: a
   click or double-click lands on the row's key, painting and the key column play and select that
@@ -577,10 +577,11 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   or on the keys, shows at that row, the row itself a little lighter in the grid. Over the strip the
   pointer is a magnifier and no row is named, and a drag changes the row height (› Zoom and scroll).
   The ruler shows the same magnifier where a drag on it zooms.
-- The **options menu** in the corner over the keys (three dots, "Piano roll options") holds the
-  **Workflow** submenu (› Workflow modes), **Key style** and **Key names**, each a submenu with
-  its value dim at the right ("Key style (Bone)"), and under a divider **Allow stacked notes**; it
-  keeps them in the settings, where the same choices are on the Clip editor page. The corner's
+- The **settings menu** in the corner over the keys (three dots, "Piano roll settings") holds
+  the piano roll's own settings: **Key style** and **Key names**, each a submenu with its value
+  dim at the right ("Key style (Bone)"); it keeps them in the settings, where the same choices
+  are on the Clip editor page. **Allow stacked notes** is in the toolbar's workflow menu, under
+  the workflow settings, as it decides what an edit does to the notes under it. The corner's
   right end holds the **Audition** headphones (› Layout).
 
 ## Selecting
@@ -871,7 +872,8 @@ clip scales) and is saved with the project; a clip has none until one is set.
 - **The toolbar's Rows group** (› Layout): **Fold** (› Zoom and scroll), **Scale** and
   **Highlight** (Highlight scale), each lit while on. **Scale** is the clip panel's switch in the
   toolbar: the same switch, so either turns the clip's scale on (the scale the clip had, or the
-  Default scale) and off, and both are lit together. Highlight, on unless turned off, tints the
+  Default scale) and off, and both are lit together; while it is on the rows fold to the scale
+  (› Zoom and scroll). Highlight, on unless turned off, tints the
   rows of the scale and marks its keys as below; off, the rows look as without a scale, while the
   scale still folds rows, fits notes and names the key column's rows. It is kept in Settings.
 - **The rows of the keys in the scale are tinted with the clip's colour** (8 % of it over the
@@ -902,7 +904,7 @@ are drawn faintly behind the edited clip's own notes and cannot be edited, so a 
 written against another (a bass line against the chords). A double-click on one with the right
 button opens its clip in the editor.
 
-- **The ghost menu** in the toolbar, after the Rows group (› Layout), reads **Ghosts** (its arrow
+- **The ghost menu** in the toolbar, after the workflow menu (› Layout), reads **Ghosts** (its arrow
   alone when the toolbar is short of room), dimmed
   while nothing is shown; its accessible label and its tooltip name what is shown ("Ghost notes
   Playing together"). Its entries, the chosen one ticked:
@@ -1098,10 +1100,10 @@ Later: Ctrl+G (glue), added to the keymap when built.
 ## Workflow modes
 
 **Built ([#490](https://github.com/suhina-daw/suhina-daw/issues/490)).** The way the piano roll
-works is a **mode**: one of the three presets below, or **Custom**. The **Workflow** submenu of
-the options menu above the keys (› Key column) shows the mode's name at its right (its accessible
-label is "Workflow" and the name, such as "Workflow Select-first") and can be changed at any time,
-while editing; Settings › Keys › **Preset** offers the same four modes. The menu lists the four
+works is a **mode**: one of the three presets below, or **Custom**. The **workflow menu** in the
+piano roll's toolbar, after the Rows group, shows the mode's name (its arrow alone when the toolbar
+is short of room; its accessible label is "Workflow" and the name, such as "Workflow Select-first")
+and can be changed at any time, while editing; Settings › Keys › **Preset** offers the same four modes. The menu lists the four
 modes, ticked as chosen, and under a divider every **workflow setting**, one row each: the
 gesture in a word or two (**Click empty**, **Right-click note**, **Shift right-drag**, **Alt
 right-hold**, **Duplicate**, **Double-click empty**, **Double-click note**), its value dim at the

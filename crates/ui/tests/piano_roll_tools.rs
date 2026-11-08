@@ -1013,9 +1013,10 @@ fn the_corner_menu_chooses_the_keys_and_stacking() {
     for (submenu, label) in [
         (Some("Key style ("), "Key style: Stone"),
         (Some("Key names ("), "Key names: All keys"),
-        (None, "Allow stacked notes"),
+        (None, "Workflow: Allow stacked notes"),
     ] {
-        h.get_by_label("Piano roll options").click();
+        let opener = if submenu.is_some() { "Piano roll settings" } else { "Workflow Select-first" };
+        h.get_by_label(opener).click();
         h.run();
         if let Some(submenu) = submenu {
             h.get_by_label_contains(submenu).click();

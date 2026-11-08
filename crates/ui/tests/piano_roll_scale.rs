@@ -176,20 +176,21 @@ fn the_default_scale_setting_is_what_the_switch_turns_on() {
 fn the_keys_in_the_scale_are_marked_and_named() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
+    let (notes, _) = edited(&h);
     pick(&mut h, "Scale root: C", "E");
     let rows = key_rows(&h);
     assert!(rows.len() > 5, "the rows in view are named: {rows:?}");
-    // E major: E F# G# A B C# D#. Every row in view says whether it is in the scale.
+    // E major: E F# G# A B C# D#. Every row in view says whether it is in the scale; with the
+    // scale on only its rows show, and those with notes.
     let scale = Scale::new(4, ScaleMode::Major).unwrap();
     for (label, _) in &rows {
         let name = label.trim_start_matches("Key ").trim_end_matches(" in scale");
         let key = (0..=127u8).find(|k| suhina_ui::detail::piano_roll::key_name(*k) == name).unwrap();
         assert_eq!(label.ends_with(" in scale"), scale.contains(key), "{label}");
+        assert!(scale.contains(key) || notes.iter().any(|n| n.key == key), "{label}");
     }
     assert!(rows.iter().any(|(l, _)| l.ends_with(" in scale")));
-    assert!(rows.iter().any(|(l, _)| !l.ends_with(" in scale")));
-    // Nothing of this hides a row: they are one key apart.
-    assert_eq!(h.state().piano_roll().fold, Fold::Off);
+    assert_eq!(h.state().piano_roll().fold, Fold::Off, "Fold stays off");
     // Highlight turns the tint off and on again, kept in Settings; the scale stays the clip's.
     assert!(h.state().piano_roll().highlight_scale);
     press(&mut h, "Highlight scale");
@@ -261,14 +262,12 @@ fn the_toolbar_scale_is_the_clip_panels_switch() {
     assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Dorian));
 }
 
-/// Fold with a scale on shows the scale's keys and the keys with notes.
+/// The scale on shows the scale's keys and the keys with notes; Fold, the keys with notes alone.
 #[test]
-fn fold_with_a_scale_shows_the_scales_keys_and_the_keys_with_notes() {
+fn the_scale_shows_its_keys_and_fold_the_keys_with_notes() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     pick(&mut h, "Scale mode: Major", "Major pentatonic");
-    press(&mut h, "Fold");
-    assert_eq!(h.state().piano_roll().fold, Fold::Notes, "Fold is on");
     let (notes, scale) = edited(&h);
     let scale = scale.unwrap();
     let rows = key_rows(&h);
@@ -279,9 +278,24 @@ fn fold_with_a_scale_shows_the_scales_keys_and_the_keys_with_notes() {
         let key = (0..=127u8).find(|k| suhina_ui::detail::piano_roll::key_name(*k) == name).unwrap();
         assert!(scale.contains(key) || notes.iter().any(|n| n.key == key), "{label}");
     }
+    assert!(
+        rows.iter().any(|(label, _)| {
+            let name = label.trim_start_matches("Key ").trim_end_matches(" in scale");
+            notes.iter().all(|n| suhina_ui::detail::piano_roll::key_name(n.key) != name)
+        }),
+        "a key of the scale without notes shows"
+    );
     // Rows sit one under the other, a key row apart, with no gaps for the folded keys.
     for pair in rows.windows(2) {
         assert!((pair[1].1.top() - pair[0].1.bottom()).abs() < 1.5, "{pair:?}");
     }
     assert_eq!(h.query_all_by_label_contains("Note ").count(), notes.len());
+    // Fold: the keys with notes alone, the scale kept.
+    press(&mut h, "Fold");
+    assert_eq!(h.state().piano_roll().fold, Fold::Notes);
+    for (label, _) in &key_rows(&h) {
+        let name = label.trim_start_matches("Key ").trim_end_matches(" in scale");
+        assert!(notes.iter().any(|n| suhina_ui::detail::piano_roll::key_name(n.key) == name), "{label}");
+    }
+    assert!(edited(&h).1.is_some());
 }

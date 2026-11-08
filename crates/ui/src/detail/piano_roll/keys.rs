@@ -487,10 +487,10 @@ pub(super) fn draw_ranges(painter: &egui::Painter, layout: &Layout, state: &Pian
     }
 }
 
-/// The corner above the keys (› Layout): at its left the three dots of the piano roll's options,
-/// a menu with the Workflow submenu (› Workflow modes), Key style, Key names and Allow stacked
-/// notes, each submenu with its value dim at the right; at its right the audition headphones
-/// (› Playing the keys).
+/// The corner above the keys (› Layout): at its left the three dots of the piano roll's own
+/// settings, Key style and Key names, each a submenu with its value dim at the right; at its right
+/// the audition headphones (› Playing the keys). The workflow and Allow stacked notes are in the
+/// toolbar's workflow menu.
 pub(super) fn corner(
     ui: &mut Ui,
     corner: Rect,
@@ -512,7 +512,7 @@ pub(super) fn corner(
             state.audition_pending.clear();
         }
     }
-    let response = widgets::button_area(ui, more, Id::unique("piano-roll-options"), IconButton::More.name());
+    let response = widgets::button_area(ui, more, Id::unique("piano-roll-settings"), IconButton::More.name());
     let (fill, ink) = widgets::toggle_colors(ui, &response, false);
     painter.rect_filled(more, 3.0, fill);
     IconButton::More.draw(&painter, more, ink, scale);
@@ -528,8 +528,6 @@ pub(super) fn corner(
             let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| entries(ui));
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         };
-        let mode = keymap.preset().name();
-        submenu(ui, "Workflow", mode, format!("Workflow {mode}"), &mut |ui| super::workflow_entries(ui, keymap, state));
         let style = if theme_keys { "Theme" } else { state.key_style.name() };
         submenu(ui, "Key style", style, format!("Key style ({style})"), &mut |ui| {
             if theme_keys {
@@ -563,16 +561,8 @@ pub(super) fn corner(
                 }
             }
         });
-        ui.separator();
-        let stacked = !state.notes_replace;
-        let response = ui.selectable_label(stacked, egui::RichText::new("Allow stacked notes").font(font.clone()));
-        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, stacked, "Allow stacked notes"));
-        if response.clicked() {
-            picked = Some(ViewPick::AllowStacked(!stacked));
-            ui.close();
-        }
     });
-    response.on_hover_text("Piano roll options: the workflow, how the keys look and are named, stacked notes");
+    response.on_hover_text("Piano roll settings: how the keys look and are named");
     if picked.is_some() {
         state.view_picked = picked;
     }
