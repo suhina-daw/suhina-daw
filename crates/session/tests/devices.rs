@@ -770,8 +770,9 @@ fn a_nam_device_loads_its_file_with_the_command() {
     run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 1, "path": &ir_file })).unwrap();
     let ir = run(&mut session, "device.file", json!({ "track": 1, "device": 1 })).unwrap();
     assert_eq!(ir["file"], ir_file);
-    // The cab's shown name is its parent folder's, per the spec (its files are the cabs).
-    assert_eq!(ir["name"], "IRs");
+    // The cab's shown name is its own, never its folder's (a folder sharing its file's name
+    // once made the two panel pickers read alike).
+    assert_eq!(ir["name"], "cabinet");
     assert_eq!(session.device_asset(&ir_file).map(|a| a.device()), Some("nam-cab-loader"));
 
     // A wrong extension is refused with a message that names what it wants.

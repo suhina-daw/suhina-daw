@@ -410,7 +410,8 @@ fn a_device_ignores_an_asset_another_device_read() {
     writer.finalize().unwrap();
     let asset = load_file("nam-cab-loader", &wav, 48_000).unwrap();
     assert_eq!(asset.device(), "nam-cab-loader");
-    assert_eq!(asset_name(&asset, &wav), dir.file_name().map(|n| n.to_string_lossy().into_owned()));
+    // The cab's shown name is its own file, never its folder's (~issue 1289).
+    assert_eq!(asset_name(&asset, &wav).as_deref(), Some("ir"));
     assert!(create_with("nam-cab-loader", Some(&asset)).is_some());
     // The Amp Modeler is given the IR: it starts at its defaults, as with no file.
     let amp = create_with("nam-amp-modeler", Some(&asset)).unwrap();
