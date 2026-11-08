@@ -443,6 +443,28 @@ pub fn show(
             }
         }
     }
+    // A press on a note that is not selected selects it at once, as the press goes down, not when
+    // the button is let go (with Shift or Ctrl it joins the selection); a press on a selected note
+    // keeps the selection, so it can be dragged, and its click picks the note alone (› Selecting).
+    if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
+        && matches!(state.tool, Tool::Select | Tool::Draw | Tool::Paint)
+        && let Some(pos) = widgets::pointer_over(ui, grid_rect)
+    {
+        state.press_added = None;
+        if let Some((index, _)) = note_at(&layout, &clip.notes, pos)
+            && !state.selected.contains(&index)
+        {
+            if inputs.shift || inputs.command {
+                state.selected.insert(index);
+                state.press_added = Some(index);
+            } else {
+                state.selected = BTreeSet::from([index]);
+                if let Some(note) = clip.notes.get(index) {
+                    state.remember(note);
+                }
+            }
+        }
+    }
     // The audition starts on the press: a note pressed, or the note a press is about to draw, sounds
     // for as long as the button is held (› Playing the keys).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))

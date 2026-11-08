@@ -918,6 +918,27 @@ fn an_edit_key_with_no_notes_selected_stays_in_the_piano_roll() {
     assert!(h.state().piano_roll().focused, "and the keyboard is still the piano roll's");
 }
 
+/// A press on a note that is not selected selects it while the button is still down, not when it
+/// is let go; a press on a selected note keeps the selection until the click ends.
+#[test]
+fn a_press_selects_a_note_at_once() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let all = notes(&h);
+    let (first, second) = (note_rect(&h, &all[0]).center(), note_rect(&h, &all[1]).center());
+    click(&mut h, first);
+    assert!(h.state().piano_roll().selected.contains(&0));
+    h.hover_at(second);
+    h.step();
+    button(&mut h, second, true);
+    h.step();
+    let selected = h.state().piano_roll().selected.clone();
+    assert!(selected.contains(&1) && !selected.contains(&0), "selected on the press: {selected:?}");
+    button(&mut h, second, false);
+    h.run();
+    assert_eq!(h.state().piano_roll().selected.iter().copied().collect::<Vec<_>>(), [1]);
+}
+
 /// A click in the clip's panel beside the piano roll keeps the keyboard with the piano roll, so
 /// Ctrl+D duplicates the selected note and not the clip in the Arrangement.
 #[test]
