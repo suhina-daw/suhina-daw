@@ -987,3 +987,50 @@ fn the_pack_lists_first() {
     );
     assert_eq!(super::shipped_set("compressor"), None, "a device without files lists none");
 }
+
+/// A real library after the unpack: the Suhina folders are on the disk too, so the scan's own
+/// "Suhina" set stands beside the shipped one — a device placed there still starts on a file,
+/// and the lists hold both packs and every file. The hand check that read "not selecting
+/// suhina for amp models or cabinets" ran against a build without this.
+#[test]
+fn a_new_device_starts_on_a_file_in_the_library_the_unpacked_or_else_the_pack() {
+    use suhina_engine::model::*;
+
+    let dir = std::env::temp_dir().join(format!("suhina-app-real-library-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("Amp models"), dir.join("Cabinets"));
+    for (id, folder) in [("nam-amp-modeler", &models), ("nam-cab-loader", &irs)] {
+        let suhina = folder.join("Suhina");
+        std::fs::create_dir_all(&suhina).unwrap();
+        for (name, bytes) in suhina_device_registry::pack_files(id) {
+            std::fs::write(suhina.join(name), bytes).unwrap();
+        }
+    }
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    for id in ["nam-amp-modeler", "nam-cab-loader"] {
+        let file = app.device_default_file(id).unwrap_or_else(|| panic!("{id} starts on a file"));
+        assert!(
+            file.starts_with(&models.display().to_string()) || file.starts_with(&irs.display().to_string()),
+            "{id}: {file}"
+        );
+    }
+    let lists = app.nam_lists();
+    assert_eq!(
+        lists.models.first().map(|set| (set.name.clone(), set.files.len())),
+        Some(("Suhina".to_owned(), 17)),
+        "the unpacked pack lists first either way"
+    );
+    assert_eq!(lists.irs.first().map(|set| (set.name.clone(), set.files.len())), Some(("Suhina".to_owned(), 26)));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
