@@ -78,6 +78,8 @@ pub const CLIP_STRIP: f32 = 16.0;
 /// The toolbar's icon size and the space between its buttons, in points.
 const TOOL_ICON: f32 = 14.0;
 const TOOL_GAP: f32 = 3.0;
+/// The size of a tool's icon drawn in place of the pointer over the grid, about a system cursor's.
+const TOOL_POINTER: f32 = 18.0;
 /// Key row heights and points per beat: the default and the zoom ranges.
 const DEFAULT_KEY_HEIGHT: f32 = 12.0;
 const KEY_HEIGHT_RANGE: (f32, f32) = (6.0, 160.0);
@@ -335,28 +337,37 @@ pub fn show(
     // empty grid around it are told apart by where the press was.
     let response = ui.interact(grid_rect, Id::unique("piano-roll-grid"), Sense::click_and_drag());
     let pointer = response.interact_pointer_pos().or_else(|| ui.ctx().pointer_hover_pos());
-    let mut eraser = None;
-    if let Some(pos) = ui.ctx().pointer_hover_pos().filter(|p| grid_rect.contains(*p)) {
+    // The tool whose icon stands in for the pointer, and where: the windowing layer has no pencil,
+    // brush, eraser or mute cursor, so the pointer is hidden and the icon is drawn where it is.
+    // Not where a menu or a window covers the grid: the pointer is that one's there.
+    let mut tool_icon = None;
+    if let Some(pos) =
+        ui.ctx().pointer_hover_pos().filter(|p| grid_rect.contains(*p) && ui.rect_contains_pointer(grid_rect))
+    {
         let over = note_at(&layout, &clip.notes, pos);
+        let mut drawn = |tool: Tool| {
+            tool_icon = tool_pointer(tool).map(|icon| (icon, pos));
+            cursor_for(tool)
+        };
         let cursor = match (&state.gesture, over, state.tool) {
             (Some(Gesture::Resize { .. } | Gesture::ResizeStart { .. }), _, _) => Some(CursorIcon::ResizeHorizontal),
             (Some(Gesture::Move { copy: true, .. }), _, _) => Some(CursorIcon::Copy),
             (Some(Gesture::Move { .. }), _, _) => Some(CursorIcon::Grabbing),
             (Some(Gesture::NoteVelocity { .. }), _, _) => Some(CursorIcon::ResizeVertical),
             (Some(Gesture::Slice { .. }), _, _) | (None, _, Tool::Slice) => Some(CursorIcon::Text),
-            // There is no eraser cursor in the windowing layer, so the pointer is hidden and the
-            // eraser button's shape is drawn where the pointer is.
-            (Some(Gesture::Erase), _, _) | (None, _, Tool::Erase) => {
-                eraser = Some(pos);
-                Some(CursorIcon::None)
-            }
+            // Erase, Mute and Paint act on whatever they touch, a note's edge included.
+            (Some(Gesture::Erase), _, _) | (None, _, Tool::Erase) => drawn(Tool::Erase),
+            (Some(Gesture::Mute), _, _) | (None, _, Tool::Mute) => drawn(Tool::Mute),
+            (Some(Gesture::Paint), _, _) | (None, _, Tool::Paint) => drawn(Tool::Paint),
+            (Some(Gesture::Draw { .. } | Gesture::DrawRun), _, Tool::Draw) => drawn(Tool::Draw),
+            // A note drawn with the Select tool (Left click draws).
+            (Some(Gesture::Draw { .. } | Gesture::DrawRun), _, _) => Some(CursorIcon::Crosshair),
+            // Draw resizes and moves a note it presses on, as Select does.
             (None, Some((_, Part::Start | Part::End)), _) => Some(CursorIcon::ResizeHorizontal),
             (None, Some((_, Part::Body)), Tool::Select | Tool::Draw) if ui.input(|i| i.modifiers.command) => {
                 Some(CursorIcon::Copy)
             }
-            (Some(Gesture::Draw { .. } | Gesture::Paint), _, _) | (None, None, Tool::Draw | Tool::Paint) => {
-                Some(CursorIcon::Crosshair)
-            }
+            (None, _, Tool::Draw) => drawn(Tool::Draw),
             _ => None,
         };
         if let Some(cursor) = cursor {
@@ -680,16 +691,8 @@ pub fn show(
     let axis = ruler_view::Axis { origin: grid_rect.left() - state.scroll.x, beat_width: state.beat_width };
     ruler_view::draw(ui, ruler, &axis, &shape);
     draw_span_bar(ui, &layout, clip, state, selecting);
-    // The eraser under the pointer: the windowing layer has no eraser cursor, so the pointer is
-    // hidden and the Erase button's shape is drawn where it is.
-    if let Some(pos) = eraser {
-        let painter = ui.painter_at(whole);
-        IconButton::Erase.draw(
-            &painter,
-            Rect::from_center_size(pos, Vec2::splat(TOOL_ICON * scale)),
-            theme::text_primary(),
-            scale,
-        );
+    if let Some(((icon, hotspot), pos)) = tool_icon {
+        draw_tool_pointer(&ui.painter_at(whole), icon, tool_pointer_rect(pos, hotspot, TOOL_POINTER));
     }
     if state.magnifier
         && let Some(pos) = ui.input(|i| i.pointer.latest_pos())

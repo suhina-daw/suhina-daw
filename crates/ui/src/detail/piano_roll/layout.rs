@@ -207,15 +207,47 @@ pub(super) fn velocity_height(velocity: f32, lane: Rect) -> f32 {
     (lane.height() - 4.0).max(0.0) * v / 127.0
 }
 
-/// The cursor a tool shows over the grid. Erase hides the pointer and draws the eraser button's
-/// shape in its place (`show`), since the windowing layer has no eraser cursor.
+/// The cursor a tool shows over the grid: the arrow for Select, the text cursor for Slice, and
+/// none for the tools whose icon is drawn in its place ([`tool_pointer`]).
 pub(super) fn cursor_for(tool: Tool) -> Option<CursorIcon> {
     match tool {
-        Tool::Select | Tool::Mute => None,
-        Tool::Draw | Tool::Paint => Some(CursorIcon::Crosshair),
-        Tool::Erase => Some(CursorIcon::None),
+        Tool::Select => None,
+        Tool::Draw | Tool::Paint | Tool::Erase | Tool::Mute => Some(CursorIcon::None),
         Tool::Slice => Some(CursorIcon::Text),
     }
+}
+
+/// The toolbar icon that stands in for the pointer while a tool is chosen, and its hotspot: the
+/// point of the icon that sits on the pointer, as fractions of its square from the top left (the
+/// pencil's and the brush's tip, the eraser's rubbing edge, the middle of the mute sign). The
+/// windowing layer has no such cursors, so the pointer is hidden and the icon drawn where it is.
+pub(super) fn tool_pointer(tool: Tool) -> Option<(IconButton, Vec2)> {
+    match tool {
+        Tool::Draw => Some((IconButton::Draw, Vec2::new(0.013, 0.948))),
+        Tool::Paint => Some((IconButton::Paint, Vec2::new(0.045, 0.913))),
+        Tool::Erase => Some((IconButton::Erase, Vec2::new(0.153, 0.847))),
+        Tool::Mute => Some((IconButton::Mute, Vec2::splat(0.5))),
+        Tool::Select | Tool::Slice => None,
+    }
+}
+
+/// The square a tool's icon is drawn in for a pointer at `pos`: `size` wide, its hotspot on `pos`.
+pub(super) fn tool_pointer_rect(pos: Pos2, hotspot: Vec2, size: f32) -> Rect {
+    Rect::from_min_size(pos - hotspot * size, Vec2::splat(size))
+}
+
+/// A tool's icon in place of the pointer, in `rect`: in the text colour, ringed with a point of
+/// the window's colour so it reads over a note as well as over the empty grid.
+pub(super) fn draw_tool_pointer(painter: &egui::Painter, icon: IconButton, rect: Rect) {
+    if let Some(svg) = icon.svg() {
+        for (x, y) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+            crate::kit::skin::paint_icon(painter, rect.translate(Vec2::new(x, y)), svg, theme::window_background());
+        }
+        if crate::kit::skin::paint_icon(painter, rect, svg, theme::text_primary()) {
+            return;
+        }
+    }
+    icon.draw(painter, rect, theme::text_primary(), rect.width() / TOOL_ICON);
 }
 
 /// Beats rounded to a millionth, so a value made of steps such as thirds sends no float noise.

@@ -212,13 +212,27 @@ fn the_sixth_tool_is_mute_and_the_tools_stop_at_it() {
 }
 
 #[test]
-fn the_eraser_cursor_is_hidden_so_its_shape_can_be_drawn() {
-    // The windowing layer has no eraser, so the pointer is hidden over the grid and the
-    // Erase button's shape is drawn in its place.
-    assert_eq!(cursor_for(Tool::Erase), Some(CursorIcon::None));
-    assert_eq!(cursor_for(Tool::Mute), None);
+fn the_drawing_tools_hide_the_pointer_for_their_icon() {
+    // The windowing layer has no pencil, brush, eraser or mute cursor, so the pointer is hidden
+    // over the grid and the tool's toolbar icon is drawn in its place.
+    for (tool, icon) in [
+        (Tool::Draw, IconButton::Draw),
+        (Tool::Paint, IconButton::Paint),
+        (Tool::Erase, IconButton::Erase),
+        (Tool::Mute, IconButton::Mute),
+    ] {
+        assert_eq!(cursor_for(tool), Some(CursorIcon::None), "{tool:?}");
+        let (drawn, hotspot) = tool_pointer(tool).unwrap();
+        assert_eq!(drawn, icon);
+        assert!((0.0..=1.0).contains(&hotspot.x) && (0.0..=1.0).contains(&hotspot.y), "{tool:?}");
+    }
     assert_eq!(cursor_for(Tool::Select), None);
-    assert_eq!(cursor_for(Tool::Draw), Some(CursorIcon::Crosshair));
+    assert_eq!(cursor_for(Tool::Slice), Some(CursorIcon::Text));
+    assert!(tool_pointer(Tool::Select).is_none() && tool_pointer(Tool::Slice).is_none());
+    // The pencil's tip is at the bottom left: its square stands up and to the right of the pointer.
+    let (_, hotspot) = tool_pointer(Tool::Draw).unwrap();
+    let rect = tool_pointer_rect(Pos2::new(100.0, 100.0), hotspot, 18.0);
+    assert!(rect.left() < 100.0 && rect.right() > 115.0 && rect.bottom() > 100.0 && rect.top() < 85.0, "{rect:?}");
 }
 
 fn clip(notes: Vec<Note>) -> PianoClip {

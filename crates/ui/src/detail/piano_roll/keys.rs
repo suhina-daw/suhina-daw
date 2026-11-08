@@ -449,7 +449,7 @@ pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRoll
 }
 
 /// The pointer where a drag zooms: the windowing layer has no magnifier cursor on every system, so
-/// the pointer is hidden and a magnifier is drawn where it is, as the eraser is.
+/// the pointer is hidden and a magnifier is drawn where it is, as the drawing tools' icons are.
 pub(super) fn draw_magnifier(ui: &Ui, pos: Pos2) {
     ui.ctx().set_cursor_icon(CursorIcon::None);
     let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("piano-roll-magnifier")));

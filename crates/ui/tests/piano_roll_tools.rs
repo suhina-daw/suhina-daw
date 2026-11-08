@@ -133,7 +133,7 @@ fn undo(h: &mut Harness<'static, App>) {
 fn tool(h: &mut Harness<'static, App>, name: &str) {
     // The toolbar's tool buttons are icons; their label is the tool's name and key ("Draw (2)",
     // "Select (1)") and their tooltip the same.
-    let keys = ["1", "2", "3", "4", "5"];
+    let keys = ["1", "2", "3", "4", "5", "6"];
     let label = keys
         .iter()
         .map(|key| format!("{name} ({key})"))
@@ -319,6 +319,33 @@ fn the_erase_tool_deletes_what_it_passes_over_in_one_undo_step() {
     let at = note_rect(&h, notes(&h).last().unwrap()).center();
     click(&mut h, at);
     assert_eq!(notes(&h).len(), before - 1);
+}
+
+/// Draw, Paint, Erase and Mute hide the pointer over the grid and draw their toolbar icon in its
+/// place (18 points, its tip on the pointer); Select keeps the arrow.
+#[test]
+fn the_drawing_tools_draw_their_icon_in_place_of_the_pointer() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let at = spot(&h, notes(&h)[0].time + 0.05, empty_key(&h));
+    let icon_at_pointer = |h: &Harness<'static, App>| {
+        h.output().shapes.iter().any(|s| {
+            matches!(&s.shape, egui::Shape::Rect(r)
+                if r.brush.is_some() && r.rect.contains(at) && (r.rect.size() - vec2(18.0, 18.0)).length() < 0.5)
+        })
+    };
+    for name in ["Draw", "Paint", "Erase", "Mute"] {
+        tool(&mut h, name);
+        h.hover_at(at);
+        h.run();
+        assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::None, "{name}");
+        assert!(icon_at_pointer(&h), "{name}: its icon where the pointer is");
+    }
+    tool(&mut h, "Select");
+    h.hover_at(at);
+    h.run();
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Default);
+    assert!(!icon_at_pointer(&h));
 }
 
 #[test]
