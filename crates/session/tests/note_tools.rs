@@ -612,6 +612,30 @@ fn make_room_clears_under_the_named_notes() {
     assert_eq!(notes_of(&session, 1).len(), 2);
 }
 
+/// A note covered from its start that runs on past the named note keeps what runs on by default,
+/// and goes whole with `covered` "delete"; one that starts first is cut back either way.
+#[test]
+fn make_room_keeps_or_deletes_a_note_covered_from_its_start() {
+    let place = |covered: Option<&str>| {
+        // The first note is the one placed: the second starts under it and runs on past it.
+        let mut session = Session::new(project(vec![note(1.0, 1.0, 60), note(1.5, 2.0, 60), note(0.0, 1.5, 60)]));
+        let mut params = json!({ "track": 1, "index": 0, "notes": [0] });
+        if let Some(covered) = covered {
+            params["covered"] = json!(covered);
+        }
+        run(&mut session, "note.makeRoom", params).unwrap();
+        let mut left: Vec<(f64, f64)> = notes_of(&session, 1).iter().map(|n| (n.time, n.duration)).collect();
+        left.sort_by(|a, b| a.0.total_cmp(&b.0));
+        left
+    };
+    // Kept: the one starting first ends where the placed note starts, the covered one starts where
+    // it ends.
+    assert_eq!(place(None), [(0.0, 1.0), (1.0, 1.0), (2.0, 1.5)]);
+    assert_eq!(place(Some("cut")), [(0.0, 1.0), (1.0, 1.0), (2.0, 1.5)]);
+    // Deleted: the covered one goes whole; the one starting first is cut back as before.
+    assert_eq!(place(Some("delete")), [(0.0, 1.0), (1.0, 1.0)]);
+}
+
 #[test]
 fn a_mute_rides_through_the_other_note_tools() {
     let mut session = Session::new(project(scale_notes()));

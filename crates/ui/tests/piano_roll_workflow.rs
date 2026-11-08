@@ -357,6 +357,23 @@ fn the_workflow_menu_switches_stacked_notes() {
     assert!(h.state().piano_roll().notes_replace, "and off again");
 }
 
+/// Covered notes, under Allow stacked notes: a note covered from its start goes whole (the
+/// default), or keeps what runs on past; the choice is kept in Settings.
+#[test]
+fn the_workflow_menu_chooses_what_covered_notes_do() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    assert!(h.state().piano_roll().covered_whole, "deleted whole at first");
+    h.get_by_label("Workflow Select-first").click();
+    h.run();
+    h.get_by_label("Covered notes: Delete them").click();
+    h.run();
+    h.get_by_label("Covered notes: Keep the rest").click();
+    h.run();
+    assert!(!h.state().piano_roll().covered_whole, "keeps the rest now");
+    assert!(!h.state().settings().view.covered_whole, "and Settings keeps it");
+}
+
 #[test]
 fn the_toolbar_menu_switches_the_workflow_and_a_setting_makes_it_custom() {
     let mut renderer = engine();

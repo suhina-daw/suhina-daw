@@ -107,13 +107,19 @@ pub(crate) fn replaces(params: &Value) -> bool {
     params.get("replace").and_then(Value::as_bool) == Some(true)
 }
 
+/// Whether `params` asks that a note covered from its start by placed notes go whole (`covered`
+/// "delete"), rather than keep what runs on past them (the default).
+pub(crate) fn covered_go(params: &Value) -> bool {
+    params.get("covered").and_then(Value::as_str) == Some("delete")
+}
+
 /// Makes room for the notes at `placed`, so no two notes of a key overlap where they are: a note
 /// covered whole is removed, one that starts before a placed note ends where that note starts,
-/// and one that runs on past a placed note starts where that note ends. Placed notes overlapping
-/// each other are treated the same way, the later one winning. Returns the removed notes' indices
-/// as they were, in rising order; later notes close up, so the caller moves its indices with
-/// [`after_removal`].
-pub(crate) fn replace_under(notes: &mut Notes, placed: &[usize]) -> Vec<usize> {
+/// and one that runs on past a placed note starts where that note ends, or, with `whole`
+/// (`covered` "delete"), is removed too. Placed notes overlapping each other are treated the same
+/// way, the later one winning. Returns the removed notes' indices as they were, in rising order;
+/// later notes close up, so the caller moves its indices with [`after_removal`].
+pub(crate) fn replace_under(notes: &mut Notes, placed: &[usize], whole: bool) -> Vec<usize> {
     let mut removed = Vec::new();
     let mut sorted: Vec<usize> = placed.iter().copied().filter(|i| *i < notes.len()).collect();
     sorted.sort_unstable();
@@ -160,7 +166,7 @@ pub(crate) fn replace_under(notes: &mut Notes, placed: &[usize]) -> Vec<usize> {
         if let Some(cut) = head {
             note.time = start;
             note.duration = cut - start;
-        } else if start >= end - EPSILON {
+        } else if start >= end - EPSILON || (whole && start != note.time) {
             removed.push(index);
         } else if start != note.time {
             note.time = start;
@@ -485,7 +491,7 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
         }
         // Moved notes replace what they land on; a move of nothing replaces nothing.
         let replaced = if replaces(params) && (beats.abs() >= EPSILON || semitones != 0 || keys.is_some()) {
-            replace_under(notes, &moved)
+            replace_under(notes, &moved, covered_go(params))
         } else {
             Vec::new()
         };
@@ -567,8 +573,11 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
                 note.duration = new;
             }
         }
-        let replaced =
-            if replaces(params) && !changed.is_empty() { replace_under(notes, &changed) } else { Vec::new() };
+        let replaced = if replaces(params) && !changed.is_empty() {
+            replace_under(notes, &changed, covered_go(params))
+        } else {
+            Vec::new()
+        };
         Ok(with_replaced(params, json!({ "notes": after_removal(&resized, &replaced) }), &replaced))
     })
 }
@@ -819,7 +828,8 @@ pub(crate) fn quantize(session: &mut Session, params: &Value) -> Result<Value, C
                 note.duration = duration;
             }
         }
-        let replaced = if replaces(params) && moved > 0 { replace_under(notes, &chosen) } else { Vec::new() };
+        let replaced =
+            if replaces(params) && moved > 0 { replace_under(notes, &chosen, covered_go(params)) } else { Vec::new() };
         Ok(with_replaced(params, json!({ "notes": after_removal(&chosen, &replaced), "moved": moved }), &replaced))
     })
 }
@@ -880,7 +890,7 @@ fn append(session: &mut Session, params: &Value, added: Vec<Note>) -> Result<Val
         let first = notes.len();
         notes.extend(added);
         let new: Vec<usize> = (first..notes.len()).collect();
-        let replaced = if replaces(params) { replace_under(notes, &new) } else { Vec::new() };
+        let replaced = if replaces(params) { replace_under(notes, &new, covered_go(params)) } else { Vec::new() };
         let at = after_removal(&new, &replaced);
         Ok(with_replaced(params, json!({ "added": at, "ids": ids_at(notes, &at), "count": notes.len() }), &replaced))
     })
@@ -984,7 +994,7 @@ pub(crate) fn make_room(session: &mut Session, params: &Value) -> Result<Value, 
     edit_notes(&mut session.project, params, |notes| {
         let mut finder = Named::new(notes, NoteId);
         let placed: Vec<usize> = list.iter().filter_map(|item| finder.at(item).ok()).collect();
-        let replaced = replace_under(notes, &placed);
+        let replaced = replace_under(notes, &placed, covered_go(params));
         Ok(json!({ "replaced": replaced }))
     })
 }

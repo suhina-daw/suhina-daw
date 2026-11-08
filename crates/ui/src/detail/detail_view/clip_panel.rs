@@ -791,10 +791,18 @@ pub(super) fn clip_part(
     // The loop switch, the width of the part.
     let switch = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), TOGGLE));
     if toggle(ui, painter, switch, "Loop", "Loop", info.looping) {
+        // Several clips selected: one undo step for all of them, the click's own gesture.
+        let gesture = crate::interaction::commands::gesture(format_args!("loop {:.3}", ui.input(|i| i.time)));
+        let joined = |mut params: serde_json::Value| {
+            if !info.others.is_empty() {
+                params["gesture"] = gesture.clone();
+            }
+            params
+        };
         for other in &info.others {
-            actions.push(Action::new("clip.setLoop", json!({ "clip": other, "loop": !info.looping })));
+            actions.push(Action::new("clip.setLoop", joined(json!({ "clip": other, "loop": !info.looping }))));
         }
-        actions.push(Action::new("clip.setLoop", on_clip(at, json!({ "loop": !info.looping }))));
+        actions.push(Action::new("clip.setLoop", joined(on_clip(at, json!({ "loop": !info.looping })))));
     }
     y += TOGGLE + GAP;
     if !fits(y, NAME + FIELD) {

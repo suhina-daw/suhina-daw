@@ -69,6 +69,8 @@ pub(super) struct Settling {
     pub(super) address: Value,
     pub(super) notes: BTreeSet<usize>,
     pub(super) ids: Vec<NoteId>,
+    /// What happens to a note covered from its start: `note.makeRoom`'s `covered`.
+    pub(super) covered: &'static str,
 }
 
 impl Settling {
@@ -76,6 +78,7 @@ impl Settling {
     pub(super) fn make_room(&self) -> Action {
         let mut params = self.address.clone();
         params["notes"] = json!(self.ids.iter().map(|id| json!({ "id": id.0 })).collect::<Vec<_>>());
+        params["covered"] = json!(self.covered);
         Action::new("note.makeRoom", params)
     }
 
@@ -198,6 +201,9 @@ pub struct PianoRollState {
     /// Notes placed over others of their key replace them: Allow stacked notes off (Settings; the
     /// window sets it each frame).
     pub notes_replace: bool,
+    /// With stacked notes off, a note covered from its start goes whole, rather than keeping what
+    /// runs on past (Settings › Covered notes; the window sets it each frame).
+    pub covered_whole: bool,
     /// Whether the rows of the clip's scale are tinted and its keys marked (Settings, the
     /// toolbar's Highlight); the scale still folds rows and fits notes without it.
     pub highlight_scale: bool,
@@ -328,6 +334,7 @@ impl Default for PianoRollState {
             transform: Transform::default(),
             tool: Tool::Select,
             notes_replace: true,
+            covered_whole: true,
             highlight_scale: true,
             key_style: crate::settings::PianoKeyStyle::default(),
             key_names: crate::settings::PianoKeyNames::default(),

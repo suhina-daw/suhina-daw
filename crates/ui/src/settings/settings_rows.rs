@@ -770,6 +770,14 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::ClipEditor,
         "Piano roll",
+        "Covered notes",
+        "With stacked notes off, what happens to a note that a note placed over it covers from its start: it goes whole, or keeps what runs on past",
+        &["covered_notes"],
+        |cx, r| cx.choose(r, &[("Delete them", true), ("Keep the rest", false)], |s| &mut s.view.covered_whole),
+    ),
+    row(
+        Page::ClipEditor,
+        "Piano roll",
         "Piano key style",
         "How the piano roll's keys are drawn, when the theme does not set them",
         &["piano_key_style"],

@@ -160,6 +160,9 @@ pub struct ViewSettings {
     /// Notes placed over others of their key replace them (on by default); Settings shows it the
     /// other way round, as Allow stacked notes.
     pub notes_replace: bool,
+    /// With stacked notes off, a note covered from its start by notes placed over it goes whole (on
+    /// by default), rather than keeping what runs on past them (Covered notes).
+    pub covered_whole: bool,
     /// Pasting onto a selected arrangement clip replaces that clip at its start.
     pub replace_clip: bool,
     /// How long the crossfade of a part comped from a take is: 10, 20 or 40 milliseconds, or 0
@@ -271,6 +274,7 @@ impl Default for ViewSettings {
             envelope_all: true,
             menu_name_field: false,
             notes_replace: true,
+            covered_whole: true,
             replace_clip: false,
             take_crossfade: 10,
             take_crossfade_custom: 10,
@@ -318,7 +322,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\n",
+            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ncovered_notes = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\n",
             if self.device_list_vertical { "vertical" } else { "horizontal" },
             self.mixer_height,
             self.strip_fader,
@@ -326,6 +330,7 @@ impl ViewSettings {
             if self.double_click_clip { "on" } else { "off" },
             if self.menu_name_field { "on" } else { "off" },
             if self.notes_replace { "on" } else { "off" },
+            if self.covered_whole { "delete" } else { "keep" },
             if self.time_select_ctrl { "ctrl_drag" } else { "clip_lower_half" },
             if self.stretch_alt { "on" } else { "off" },
             if self.rename_selected { "on" } else { "off" },
@@ -468,6 +473,7 @@ impl ViewSettings {
             ("gain_envelope_editing", "all" | "one") => self.envelope_all = value == "all",
             ("menu_name_field", "on" | "off") => self.menu_name_field = value == "on",
             ("notes_replace", "on" | "off") => self.notes_replace = value == "on",
+            ("covered_notes", "delete" | "keep") => self.covered_whole = value == "delete",
             ("time_select", "ctrl_drag" | "clip_lower_half") => self.time_select_ctrl = value == "ctrl_drag",
             ("stretch_alt_drag", "on" | "off") => self.stretch_alt = value == "on",
             ("rename_selected_clips", "on" | "off") => self.rename_selected = value == "on",
@@ -534,6 +540,7 @@ mod tests {
             envelope_all: false,
             menu_name_field: true,
             notes_replace: false,
+            covered_whole: false,
             time_select_ctrl: true,
             clip_halves: true,
             grid_in_clips: false,

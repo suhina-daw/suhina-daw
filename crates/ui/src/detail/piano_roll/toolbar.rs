@@ -958,6 +958,38 @@ pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Ke
         state.view_picked = Some(super::ViewPick::AllowStacked(!stacked));
         ui.close();
     }
+    // With stacked notes off, what a note covered from its start does: it goes whole, or keeps what
+    // runs on past the note placed over it (› Resizing, Covered notes).
+    let whole = state.covered_whole;
+    let mut covered_pick = None;
+    ui.add_enabled_ui(!stacked, |ui| {
+        let value = if whole { "Delete" } else { "Keep rest" };
+        let button = egui::Button::new(egui::RichText::new("Covered notes").font(font.clone())).right_text((
+            egui::RichText::new(value).font(font.clone()).color(theme::text_hint()),
+            egui::containers::menu::SubMenuButton::arrow_atom(None),
+        ));
+        let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
+            for (on, name) in [(true, "Delete them"), (false, "Keep the rest")] {
+                let response = ui.selectable_label(whole == on, egui::RichText::new(name).font(font.clone()));
+                let label = format!("Covered notes: {name}");
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, whole == on, &label));
+                if response.clicked() {
+                    if whole != on {
+                        covered_pick = Some(on);
+                    }
+                    ui.close();
+                }
+            }
+        });
+        let label = format!("Covered notes: {}", if whole { "Delete them" } else { "Keep the rest" });
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, !stacked, &label));
+        response.on_hover_text(
+            "With stacked notes off: a note that one placed over it covers from its start goes whole, or keeps what runs on past",
+        );
+    });
+    if let Some(on) = covered_pick {
+        state.view_picked = Some(super::ViewPick::CoveredWhole(on));
+    }
     if picked.is_some() {
         state.workflow_picked = picked;
     }

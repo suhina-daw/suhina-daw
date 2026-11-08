@@ -14,6 +14,14 @@ const REPLACE: Param = optional(
      cover in part is cut back, and the result lists the removed notes as replaced (default false: notes may overlap)",
 );
 
+/// With `replace` (and in `note.makeRoom`): what happens to a note the placed ones cover from its
+/// start.
+const COVERED: Param = optional(
+    "covered",
+    ParamType::Text,
+    "with replace, and in note.makeRoom: what happens to a note that a placed note covers from its start and that runs on past it.      \"delete\" removes it, the rest of it too; \"cut\" (the default) keeps what runs on past the placed note",
+);
+
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.list",
@@ -33,6 +41,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_SCENE,
             param("notes", ParamType::Notes, "the notes, each {time, length, key, velocity?}; at most 10000"),
             REPLACE,
+            COVERED,
         ],
         kind: CommandKind::EDIT,
         run: notes::add,
@@ -63,6 +72,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "instead of semitones: the key each note goes to, 0 to 127, one per entry of notes (a move through a scale)",
             ),
             REPLACE,
+            COVERED,
         ],
         kind: CommandKind::EDIT,
         run: notes::move_notes,
@@ -90,6 +100,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "instead: one length in beats (above 0) per entry of notes, in the same order",
             ),
             REPLACE,
+            COVERED,
         ],
         kind: CommandKind::EDIT,
         run: notes::resize,
@@ -129,6 +140,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional("amount", ParamType::Number, "how far towards the line, 0 to 100 percent (default 100: onto it)"),
             optional("ends", ParamType::Bool, "also move each note's end to the nearest line (default false)"),
             REPLACE,
+            COVERED,
         ],
         kind: CommandKind::EDIT,
         run: notes::quantize,
@@ -164,6 +176,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "where the first copied note starts, in beats; default: right after the copied notes",
             ),
             REPLACE,
+            COVERED,
         ],
         kind: CommandKind::EDIT,
         run: notes::paste,
@@ -186,6 +199,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "instead of semitones: the key each note's copy goes to, 0 to 127, one per entry of notes (a copy through a scale)",
             ),
             REPLACE,
+            COVERED,
         ],
         kind: CommandKind::EDIT,
         run: notes::duplicate,
@@ -194,7 +208,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.makeRoom",
         label: "Make room for notes of a MIDI clip: the notes of their keys under them are removed or cut, as replace does; notes no longer in the clip are left out",
-        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES, COVERED],
         kind: CommandKind::EDIT,
         run: notes::make_room,
         policy: Policy::DEFAULT,
@@ -280,6 +294,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_SCENE,
             NOTE_SELECTION,
             REPLACE,
+            COVERED,
             optional(
                 "root",
                 ParamType::NameOrNumber,
@@ -298,7 +313,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.invert",
         label: "Mirror the keys of notes of a MIDI clip around the middle of the range they cover, each kept within 0 to 127",
-        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE, COVERED],
         kind: CommandKind::EDIT,
         run: note_tools::invert,
         policy: Policy::DEFAULT,
@@ -306,7 +321,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.reverse",
         label: "Turn notes of a MIDI clip round in time inside their own span (the earliest start to the latest end), lengths unchanged",
-        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE, COVERED],
         kind: CommandKind::EDIT,
         run: note_tools::reverse,
         policy: Policy::DEFAULT,
@@ -326,6 +341,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the beat the last notes last until; left out, they keep their length",
             ),
             REPLACE,
+            COVERED,
         ],
         kind: CommandKind::EDIT,
         run: note_tools::legato,
@@ -342,6 +358,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             NOTE_SELECTION,
             param("factor", ParamType::Number, "how much longer or shorter, 0.01 to 100"),
             REPLACE,
+            COVERED,
         ],
         kind: CommandKind::EDIT,
         run: note_tools::stretch,

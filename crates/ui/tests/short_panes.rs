@@ -24,8 +24,9 @@ const SIZE: (f32, f32) = (1280.0, 800.0);
 /// The demo clip the tests edit: on Drums, at bar 17 (beat 64).
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
 const CLIP_START: f64 = 64.0;
-/// The piano roll's least height (› Least height and closing).
-const LEAST: f32 = 132.0;
+/// The detail area's least height with a clip in it: the device panels' compact height, the
+/// area's default (› Least height and closing).
+const LEAST: f32 = 200.0;
 
 fn window() -> Harness<'static, App> {
     let mut app = App::new();
@@ -214,7 +215,8 @@ fn a_lane_at_its_least_height_still_shows_its_notes() {
 fn the_splitter_stops_at_the_piano_rolls_least_height() {
     let mut h = piano_app();
     let bottom = detail_bottom(&h);
-    pull_to(&mut h, bottom - 90.0);
+    // Under the least height but above half of it: it stops at the least height.
+    pull_to(&mut h, bottom - 130.0);
     let height = bottom - splitter(&h).bottom();
     assert!((height - LEAST).abs() < 1.5, "the detail area stops at {LEAST} px, not {height}");
     assert!(piano_shows(&h));
@@ -253,15 +255,15 @@ fn going_back_up_in_the_same_drag_keeps_the_editor_open() {
     h.hover_at(from);
     h.step();
     button(&mut h, from, true);
-    for y in [from.y + 60.0, bottom - 10.0, bottom - 20.0, bottom - 150.0] {
+    for y in [from.y + 60.0, bottom - 10.0, bottom - 20.0, bottom - 260.0] {
         h.hover_at(pos2(from.x, y));
         h.step();
     }
-    button(&mut h, pos2(from.x, bottom - 150.0), false);
+    button(&mut h, pos2(from.x, bottom - 260.0), false);
     h.run();
     assert!(piano_shows(&h), "back above the closing point, the editor is open again");
     let height = bottom - splitter(&h).bottom();
-    assert!((height - 147.0).abs() < 8.0, "under the pointer: {height}");
+    assert!((height - 257.0).abs() < 8.0, "under the pointer: {height}");
 }
 
 // 3. The notes in view at any height.
@@ -285,7 +287,7 @@ fn at_the_least_height_the_notes_are_in_view() {
     let bottom = detail_bottom(&h);
     let middle = middle_note(&h);
     assert!(h.query_by_label(&middle).is_some(), "{middle} shows at the default height");
-    pull_to(&mut h, bottom - 90.0);
+    pull_to(&mut h, bottom - 130.0);
     assert!(h.query_by_label(&middle).is_some(), "{middle} shows at the least height");
     // Taller again, the notes are still centred.
     pull_to(&mut h, bottom - 420.0);

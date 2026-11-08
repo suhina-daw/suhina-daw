@@ -765,6 +765,7 @@ impl App {
                 piano_roll::ViewPick::KeyStyle(style) => self.settings.piano_key_style = style,
                 piano_roll::ViewPick::KeyNames(names) => self.settings.piano_key_names = names,
                 piano_roll::ViewPick::AllowStacked(on) => self.settings.view.notes_replace = !on,
+                piano_roll::ViewPick::CoveredWhole(on) => self.settings.view.covered_whole = on,
                 piano_roll::ViewPick::HighlightScale(on) => self.settings.highlight_scale = on,
             }
             self.settings_changed = true;
@@ -825,8 +826,10 @@ impl App {
         Rect::from_min_max(area.min, Pos2::new(area.right(), splitter.top()))
     }
 
-    /// The least height of the detail area in a row: the piano roll's while it shows one, else
-    /// 80 px.
+    /// The least height of the detail area in a row: the device panels' compact height (the
+    /// area's default), so a clip's panel, its piano roll or its editor never gets too short to
+    /// use, or the piano roll's own when that is more (several clips picked add their strip).
+    /// Dragged under half of it, the area closes (› Least height and closing).
     pub(super) fn least_detail_height(&self) -> f32 {
         let piano = self.settings.device_layout != DeviceLayout::Stack
             && self.detail_showing == detail_view::Showing::Clip
@@ -835,7 +838,8 @@ impl App {
         let picked = self.arrangement.selected_clips().len();
         let rows = if picked > 1 { picked.min(crate::detail::piano_roll_ghosts::MAX_STRIP_ROWS) } else { 0 };
         let strip = piano_roll::CLIP_STRIP * rows as f32;
-        if piano { piano_roll::LEAST_HEIGHT + strip } else { 80.0 }
+        let compact = detail_view::device_row_height();
+        if piano { (piano_roll::LEAST_HEIGHT + strip).max(compact) } else { compact }
     }
 
     /// The clip the detail area shows: the Arrangement view's selected clip, or the Launcher view's

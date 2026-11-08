@@ -98,7 +98,7 @@ lane, the grid and zoom, and the `note.*` commands.
   lasts while the same clip stays selected; **selecting another clip** (in the Arrangement view or
   in a slot) shows its editor again, and in the Arrangement view so does a click on the clip
   already selected, so a single click on a clip keeps meaning "edit this clip". While the devices show, the piano roll's keys and Ctrl+U do nothing
-  (there are no notes on screen), the splitter's least height is the devices' 80 px (the height dragged freely is for a clip's view and the devices reached from it; a track's devices, reached by clicking the track, are open at a compact panel's height or closed, never between: a drag on the splitter past half that height closes or opens the area, and a double-click closes it; a plug-in's editor embedded in the chain gets its full height, taking the view's least room when it needs to), and nothing
+  (there are no notes on screen), the splitter's least height is the device panels' compact height, 200 px, as with a clip (the height dragged freely is for a clip's view and the devices reached from it; a track's devices, reached by clicking the track, are open at a compact panel's height or closed, never between: a drag on the splitter past half that height closes or opens the area, and a double-click closes it; a plug-in's editor embedded in the chain gets its full height, taking the view's least room when it needs to), and nothing
   is pulled to the top.
 - **Built ([#505](https://github.com/suhina-daw/suhina-daw/issues/505)):** a **double-click on a
   track** shows its devices: on an Arrangement track header ([arrangement
@@ -272,19 +272,21 @@ of keys grows and shrinks.
 
 ### Least height and closing
 
-**Built:** the smallest open piano roll is 132 px of detail area (in a row under the view): the
-toolbar, the ruler and at least five key rows at the default 12 px row height, with the clip
-column beside them showing its title (the clip's name) and its Track, Start, Length, Loop and
-Notes rows whole. The splitter, dragged down, stops at that height. Above it the view keeps its
-own least height (160 px), as before; with the detail area showing a track's devices instead the
-detail area's least height stays 80 px.
+**Built:** the smallest open detail area (in a row under the view) with a clip in it, its piano
+roll, an audio clip's panel or a plug-in's clip editor, is the device panels' compact height,
+200 px, the area's default height: the piano roll then has its toolbar, its ruler and more than
+five key rows at the default 12 px row height, and the clip column beside it its title and its
+Start, End, Loop and tools rows whole. The splitter, dragged down, stops at that height, so no
+panel gets too short to use; several clips picked add their strip's rows when the piano roll needs
+more. Above it the view keeps its own least height (160 px), as before. A track's devices are open
+at that height or closed.
 
 The editor closes three ways, and each does the same as **View › Hide detail area** (Shift+Tab):
 the detail area is hidden and the view takes the whole height, its height is kept for when it
 comes back. It is window state, not a command, and not an undo step.
 
-- **The splitter dragged down** past half the least height (60 px from the bottom with the
-  editor, 40 px with devices): the detail area collapses to the 6 px splitter along the bottom
+- **The splitter dragged down** past half the least height (100 px from the bottom): the detail
+  area collapses to the 6 px splitter along the bottom
   of the window. While the same drag goes back up past that point, it opens again under the
   pointer. Once it is let go, the splitter stays at the bottom, and dragging it up opens the
   detail area again at the height the drag reaches (at least the least height).
@@ -690,7 +692,11 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   them again they show whole. A note drawn, a paint stroke, a duplicate (the duplicate key, or a
   Ctrl+drag copy, which go onto whatever is after or under them) and a tool with nothing selected
   replace at once. Selected notes are drawn over the others. Replacing: a note it covers whole is removed, one that starts
-  before it ends where it starts, and one that runs on past it starts where it ends. A paint stroke
+  before it ends where it starts, and one whose start it covers and that runs on past it is removed
+  too (**Covered notes** › **Delete them**, the default) or starts where it ends (**Keep the
+  rest**, which keeps the tails of notes lengthened over, for new rhythms). Covered notes is in
+  Settings › Clip editor › Piano roll and in the toolbar's workflow menu under Allow stacked notes;
+  the commands take it as `covered` (`"delete"` or `"cut"`, the default for the CLI and MCP). A paint stroke
   paints only the gaps: it adds nothing that would start inside a note. On, notes of a key may overlap. The commands take this as `replace`, so the CLI and MCP choose too; left out,
   notes may overlap.
 - **Built ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** the pointer over the
@@ -843,7 +849,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   roll takes the rest.
 - **Several clips picked** in the Arrangement: the title says how many ("2 selected") and the
   panel shows the last picked clip; its Loop switch turns every picked clip's loop on or off with
-  it. With several MIDI clips picked (#1054) the piano roll edits one of them, the one with the
+  it, all of them one undo step (one `clip.setLoop` each, with one `gesture`). With several MIDI clips picked (#1054) the piano roll edits one of them, the one with the
   focus (the last picked); the others' notes are drawn faint where they play, as ghost notes are,
   and the view runs on over them. The title's name is then a list of the picked clips, the one
   being edited lit (**Editing**); picking another gives it the focus. A strip over the ruler shows

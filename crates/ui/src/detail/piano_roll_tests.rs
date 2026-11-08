@@ -502,18 +502,21 @@ fn a_longer_key_goes_to_the_next_line_over_the_next_note_of_the_key() {
 fn notes_under_selected_ones_show_what_making_room_leaves() {
     let n = note(1.0, 2.0, 60);
     let cover = |from: f64, to: f64| (60u8, from, to);
-    assert_eq!(left_after(&n, &[]), Some(n));
-    assert_eq!(left_after(&n, &[(62, 0.0, 4.0)]), Some(n), "another key's note covers nothing");
-    assert_eq!(left_after(&n, &[cover(0.5, 3.5)]), None, "covered whole");
-    assert_eq!(left_after(&n, &[cover(1.0, 3.0)]), None, "covered exactly");
-    // Covered from its start: what runs on past it.
-    let tail = left_after(&n, &[cover(1.0, 2.0)]).unwrap();
+    for whole in [false, true] {
+        assert_eq!(left_after(&n, &[], whole), Some(n));
+        assert_eq!(left_after(&n, &[(62, 0.0, 4.0)], whole), Some(n), "another key's note covers nothing");
+        assert_eq!(left_after(&n, &[cover(0.5, 3.5)], whole), None, "covered whole");
+        assert_eq!(left_after(&n, &[cover(1.0, 3.0)], whole), None, "covered exactly");
+        // Starting first: what comes before the first that covers it.
+        let head = left_after(&n, &[cover(2.5, 4.0), cover(1.5, 2.0)], whole).unwrap();
+        assert!((head.time - 1.0).abs() < 1e-9 && (head.duration - 0.5).abs() < 1e-9, "{head:?}");
+        // Touching it, not covering it.
+        assert_eq!(left_after(&n, &[cover(3.0, 4.0), cover(0.0, 1.0)], whole), Some(n));
+    }
+    // Covered from its start: what runs on past it, or (Delete them) nothing.
+    let tail = left_after(&n, &[cover(1.0, 2.0)], false).unwrap();
     assert!((tail.time - 2.0).abs() < 1e-9 && (tail.duration - 1.0).abs() < 1e-9, "{tail:?}");
-    // Starting first: what comes before the first that covers it.
-    let head = left_after(&n, &[cover(2.5, 4.0), cover(1.5, 2.0)]).unwrap();
-    assert!((head.time - 1.0).abs() < 1e-9 && (head.duration - 0.5).abs() < 1e-9, "{head:?}");
-    // Touching it, not covering it.
-    assert_eq!(left_after(&n, &[cover(3.0, 4.0), cover(0.0, 1.0)]), Some(n));
+    assert_eq!(left_after(&n, &[cover(1.0, 2.0)], true), None);
 }
 
 #[test]

@@ -114,6 +114,43 @@ fn the_clip_column_edits_the_clip() {
     );
 }
 
+/// Several arrangement clips selected: Loop turns every one of them as it turns the one shown, one
+/// `clip.setLoop` each, all with one gesture so they are one undo step.
+#[test]
+fn the_loop_switch_turns_every_selected_clip() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let project = demo_project();
+    let beat_b = project.arrangement.lanes[0].clips[1].id;
+    let Detail::Clip(mut info, chain) =
+        build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)))
+    else {
+        panic!("expected the clip")
+    };
+    info.audio = true;
+    info.gain_db = Some(0.0);
+    info.others = vec![41, 42];
+    let detail = Detail::Clip(info, chain);
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 400.0)).build_ui_state(
+        |ui, actions: &mut Vec<Action>| {
+            show_row(ui, &detail, &[], actions, &mut Vec::new());
+        },
+        Vec::new(),
+    );
+    harness.get_by_label("Loop: On").click();
+    harness.run();
+    let actions = harness.state();
+    let clips: Vec<serde_json::Value> =
+        actions.iter().filter(|a| a.id == "clip.setLoop").map(|a| a.params["clip"].clone()).collect();
+    assert_eq!(clips, [json!(41), json!(42), json!(beat_b.0)]);
+    assert!(actions.iter().all(|a| a.params["loop"] == json!(false)), "all of them off: {actions:?}");
+    let gesture = &actions[0].params["gesture"];
+    assert!(
+        gesture.is_string() && actions.iter().all(|a| &a.params["gesture"] == gesture),
+        "one undo step: {actions:?}"
+    );
+}
+
 /// An audio clip's column shows its start marker, and its end marker when it does not loop; a
 /// slot's clip edits its gain too (#699).
 #[test]

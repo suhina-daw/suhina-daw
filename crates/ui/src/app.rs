@@ -2694,6 +2694,7 @@ impl App {
             d.insert_temp(egui::Id::unique(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)
         });
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
+        self.piano_roll.covered_whole = self.settings.view.covered_whole;
         self.piano_roll.key_style = self.settings.piano_key_style;
         self.piano_roll.key_names = self.settings.piano_key_names;
         crate::detail::piano_roll::set_note_spelling(self.settings.note_spelling);

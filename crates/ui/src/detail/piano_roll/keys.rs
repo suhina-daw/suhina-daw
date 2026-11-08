@@ -35,6 +35,8 @@ pub enum ViewPick {
     HighlightScale(bool),
     /// Whether notes of one key may overlap.
     AllowStacked(bool),
+    /// Whether a note covered from its start goes whole (Covered notes).
+    CoveredWhole(bool),
 }
 
 /// What the key column is painted with: a key style's values, and over them what the theme sets.
@@ -614,17 +616,24 @@ impl PianoRollState {
             return;
         }
         if self.acting().is_empty() {
-            params["replace"] = json!(true);
+            self.replacing_now(params);
         } else {
             self.settle_pending = true;
         }
     }
 
-    /// `replace` at once, for notes that are not left selected (a note drawn, a paint stroke).
+    /// `replace` at once, for notes that are not left selected (a note drawn, a paint stroke), and
+    /// what happens to a note covered from its start (Covered notes).
     pub(crate) fn replacing_now(&self, params: &mut Value) {
         if self.notes_replace {
             params["replace"] = json!(true);
+            params["covered"] = json!(self.covered());
         }
+    }
+
+    /// The `covered` a command or `note.makeRoom` takes: "delete" or "cut".
+    pub(super) fn covered(&self) -> &'static str {
+        if self.covered_whole { "delete" } else { "cut" }
     }
 
     /// Once a frame: the notes edited while selected, once let go (another selection, none, another
@@ -646,7 +655,14 @@ impl PianoRollState {
             let notes = self.acting().clone();
             match &self.settling {
                 Some(settling) if settling.notes == notes && settling.address == clip.address => {}
-                _ => self.settling = Some(Settling { address: clip.address.clone(), notes, ids: Vec::new() }),
+                _ => {
+                    self.settling = Some(Settling {
+                        address: clip.address.clone(),
+                        notes,
+                        ids: Vec::new(),
+                        covered: self.covered(),
+                    })
+                }
             }
         }
     }

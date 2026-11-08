@@ -18,8 +18,8 @@ use suhina_model::{Note, Notes, Scale, ScaleMode};
 
 use crate::commands::Args;
 use crate::notes::{
-    MAX_BEAT, MAX_NOTES_PER_COMMAND, after_removal, edit_notes, indices, midi_velocity, notes_of, replace_under,
-    replaces, velocity_of, with_replaced,
+    MAX_BEAT, MAX_NOTES_PER_COMMAND, after_removal, covered_go, edit_notes, indices, midi_velocity, notes_of,
+    replace_under, replaces, velocity_of, with_replaced,
 };
 use crate::{CommandError, Session};
 
@@ -407,7 +407,8 @@ pub(crate) fn fit_to_scale(session: &mut Session, params: &Value) -> Result<Valu
                 moved += 1;
             }
         }
-        let replaced = if replaces(params) && moved > 0 { replace_under(notes, &named) } else { Vec::new() };
+        let replaced =
+            if replaces(params) && moved > 0 { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
         Ok(json!({ "notes": after_removal(&named, &replaced), "moved": moved, "replaced": replaced }))
     })
 }
@@ -438,7 +439,7 @@ pub(crate) fn invert(session: &mut Session, params: &Value) -> Result<Value, Com
                 slot.key = key;
             }
         }
-        let replaced = if replaces(params) { replace_under(notes, &named) } else { Vec::new() };
+        let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
         Ok(json!({ "notes": after_removal(&named, &replaced), "replaced": replaced }))
     })
 }
@@ -469,7 +470,7 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
                 note.time = time;
             }
         }
-        let replaced = if replaces(params) { replace_under(notes, &named) } else { Vec::new() };
+        let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
         Ok(json!({ "notes": after_removal(&named, &replaced), "replaced": replaced }))
     })
 }
@@ -508,7 +509,11 @@ pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, Com
             }
         }
         let changed = lengthened.len();
-        let replaced = if replaces(params) && changed > 0 { replace_under(notes, &lengthened) } else { Vec::new() };
+        let replaced = if replaces(params) && changed > 0 {
+            replace_under(notes, &lengthened, covered_go(params))
+        } else {
+            Vec::new()
+        };
         Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced), "changed": changed }), &replaced))
     })
 }
@@ -551,7 +556,7 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
                 note.duration = length;
             }
         }
-        let replaced = if replaces(params) { replace_under(notes, &named) } else { Vec::new() };
+        let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
         Ok(json!({ "notes": after_removal(&named, &replaced), "replaced": replaced }))
     })
 }

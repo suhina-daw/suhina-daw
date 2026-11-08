@@ -141,8 +141,9 @@ pub(super) fn drawn_note(
 
 /// What is left of `note` once the notes `covers` (each a key, a start and an end) make room as
 /// `note.makeRoom` does: nothing when they cover it from its start to its end, the part before the
-/// first one that starts inside it, or the part after those that cover its start.
-pub(super) fn left_after(note: &Note, covers: &[(u8, f64, f64)]) -> Option<Note> {
+/// first one that starts inside it, or the part after those that cover its start (nothing with
+/// `whole`, Covered notes' Delete them).
+pub(super) fn left_after(note: &Note, covers: &[(u8, f64, f64)], whole: bool) -> Option<Note> {
     let end = note.time + note.duration;
     let mut row: Vec<(f64, f64)> = covers.iter().filter(|c| c.0 == note.key).map(|c| (c.1, c.2)).collect();
     if row.is_empty() {
@@ -162,7 +163,8 @@ pub(super) fn left_after(note: &Note, covers: &[(u8, f64, f64)]) -> Option<Note>
         }
         start = start.max(to);
     }
-    (start < end - EPSILON).then_some(Note { time: start, duration: end - start, ..*note })
+    let covered_start = start > note.time + EPSILON;
+    (start < end - EPSILON && !(whole && covered_start)).then_some(Note { time: start, duration: end - start, ..*note })
 }
 
 /// A paint stroke at `now`: the slot of the stroke's note length under the pointer gets a note
@@ -428,7 +430,7 @@ pub(super) fn draw(
         let note = if covers.is_empty() || state.selected.contains(&i) {
             note
         } else {
-            match left_after(&note, &covers) {
+            match left_after(&note, &covers, state.covered_whole) {
                 Some(left) => left,
                 None => continue,
             }
