@@ -247,10 +247,16 @@ impl App {
     /// lights, and a drop tags that item — or every selected item when the row is one of
     /// them, as the tag editor's checkbox does (#1196).
     pub(super) fn tag_drag(&mut self, ui: &Ui) {
-        let Some(tag) = self.browser.drag_tag.clone() else { return };
+        let Some(tag) = self.browser.drag_tag.clone() else {
+            eprintln!("TDBG tag_drag: no carry");
+            return;
+        };
         let (released, escape) = ui.input(|i| (!i.pointer.primary_down(), i.key_pressed(Key::Escape)));
         if escape {
+            // Both of the carry's own: the id with the name, or a release over the sidebar
+            // would still move what was cancelled ([#1254] review).
             self.browser.drag_tag = None;
+            self.browser.drag_tag_id = None;
             return;
         }
         if let Some(item) = self.browser.drop_item.as_ref().filter(|_| !released) {

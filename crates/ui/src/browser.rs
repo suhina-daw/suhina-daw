@@ -24,7 +24,9 @@ use suhina_media::info::{Tempo, TempoSource};
 use suhina_session::{Category, Found, Projects};
 
 use crate::interaction::drop::{BrowserItem, ItemKind};
+
 use crate::kit::waveform::{Peaks, peaks};
+use egui::Pos2;
 
 /// What the sidebar can show instead of the whole tree.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -40,16 +42,15 @@ pub enum Place {
 }
 
 impl Place {
-    /// As `library.search` takes it. A place of one tag is `tag:<name>`; a place of several
-    /// tags goes to the search through the `tags` param instead (a tag name may hold any
-    /// characters, so two names cannot join into one param unambiguously). Nothing sends
-    /// [`Place::Tag`] through here with more than one.
+    /// As `library.search` takes it. A tag's place is `tag:#<id>`; a place of several joins
+    /// its ids with `+` (`tag:#1+#2`), the ids because no two names can join one param
+    /// unambiguously ([#1254] review).
     pub fn param(&self) -> String {
         match self {
             Self::Pinned => "pinned".into(),
             Self::Recent(Some(group)) => format!("recent:{}", group.name()),
             Self::Recent(None) => "recent:all".into(),
-            Self::Tag(tags) => format!("tag:#{}", tags.first().copied().unwrap_or(0)),
+            Self::Tag(tags) => format!("tag:{}", tags.iter().map(|id| format!("#{id}")).collect::<Vec<_>>().join("+")),
             Self::Folder(path) => path.display().to_string(),
         }
     }
@@ -71,10 +72,11 @@ impl Place {
         }
     }
 
-    /// Whether the place can hold samples, so the list can show as the sample map (#862): a
-    /// folder, Pinned, and Recent of every kind or of samples.
+    /// Whether the place can hold samples, so the list can show as the sample map (#862):
+    /// a folder, Pinned, Recent of every kind or of samples, and a tag's place ([#1254]):
+    /// the tags that hold samples map with it.
     pub fn holds_samples(&self) -> bool {
-        matches!(self, Self::Folder(_) | Self::Pinned | Self::Recent(None | Some(Group::Samples)))
+        matches!(self, Self::Folder(_) | Self::Pinned | Self::Recent(None | Some(Group::Samples)) | Self::Tag(_))
     }
 }
 
@@ -368,6 +370,11 @@ pub struct BrowserState {
     /// The section title a drag carries ([#1254] review: a section moves by dragging it
     /// among the others; Folders is never carried).
     pub drag_section: Option<suhina_library::SectionKind>,
+    /// Where a drag from the map's own window is, in this window: that drag's own position,
+    /// given before the views draw ([#1254] review). The main window's pointer stays unset
+    /// or stale while the map window has it, so the hits test the drags with this instead.
+    /// `None` when no such drag is on.
+    pub drag_pointer: Option<Pos2>,
     /// The results row a tag is carried over, which a drop tags; set as the rows are drawn.
     pub drop_item: Option<BrowserItem>,
     /// The section a carried section title is over, for reordering the sidebar's sections
@@ -440,6 +447,7 @@ impl Default for BrowserState {
             drop_pill: None,
             drag_section: None,
             drop_section: None,
+            drag_pointer: None,
             drop_item: None,
             sidebar_scroll: 0.0,
             drag: None,
@@ -581,24 +589,25 @@ impl BrowserState {
         if let Some(stale) = self.search_job.take() {
             stale.cancel.store(true, Ordering::Relaxed);
         }
-        // A tag's place is a list of the items carrying its tags: a place of one tag goes as
-        // `library.search` takes the place (`tag:<name>`), so the footer's dots filter that
-        // list; a place of several goes through the tags param, the dots' own way, since two
-        // names cannot join into one param unambiguously.
-        let (place, place_tags) = match &self.place {
-            Some(Place::Tag(tags)) if tags.len() == 1 => (Some(format!("tag:#{}", tags[0])), Vec::new()),
-            Some(Place::Tag(tags)) => (None, tags.clone()),
-            other => (other.as_ref().map(Place::param), Vec::new()),
-        };
-        let mut query_tags = self.tag_filter.clone();
-        query_tags.extend(place_tags);
+        // A tag's place is a list of the items carrying its tags: it goes as
+        // `library.search` takes the place (`tag:#<id>`, joined for a place of several,
+        // [#1254]), so the footer's dots filter that place's list, each separately ([#1254]
+        // review: an item must carry a tag of the place AND one the footer asks, not one
+        // of either).
+        let place = self.place.as_ref().map(Place::param);
         let flat = !self.search.trim().is_empty()
-            || !query_tags.is_empty()
+            || !self.tag_filter.is_empty()
             || matches!(self.place, Some(Place::Pinned | Place::Recent(_) | Place::Tag(_)));
         let rows = if flat {
-            let search =
-                suhina_session::prepare_search(projects, &self.search, self.category, place.as_deref(), &query_tags, 0)
-                    .map_err(String::from)?;
+            let search = suhina_session::prepare_search(
+                projects,
+                &self.search,
+                self.category,
+                place.as_deref(),
+                &self.tag_filter,
+                0,
+            )
+            .map_err(String::from)?;
             if search.files() > self.search_inline_files {
                 let started = self.start_search(search);
                 if started.is_err() {

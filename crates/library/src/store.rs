@@ -181,7 +181,7 @@ impl SectionKind {
 }
 
 impl Section {
-    /// The sidebar's sections as a new library has them: Tags at the top, then Pinned, then
+    /// The sidebar's sections as a new library has them: Pinned at the top, then Tags, then
     /// Library, all open ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
     pub fn default_sections() -> Vec<Section> {
         SectionKind::ALL.into_iter().map(|kind| Section { kind, open: true }).collect()
@@ -269,10 +269,13 @@ impl PluginsView {
 /// no such folder) — for counts and menus ([#1254]).
 pub fn folder_children(entries: &[TagEntry], id: u32) -> Option<&[TagEntry]> {
     for entry in entries {
-        if let TagEntry::Folder { folder, tags } = entry
-            && folder.id == id
-        {
-            return Some(tags);
+        if let TagEntry::Folder { folder, tags } = entry {
+            if folder.id == id {
+                return Some(tags);
+            }
+            if let Some(under) = folder_children(tags, id) {
+                return Some(under);
+            }
         }
     }
     None
@@ -283,12 +286,25 @@ pub fn is_color(text: &str) -> bool {
     text.len() == 7 && text.starts_with('#') && text[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Every tag in the forest, in the order shown (a folder's after its folder's).
+/// Every tag in the forest, in the order shown: a level's folders carry their tags ahead of
+/// the level's own tags, as the sidebar's rows go ([#1254] › Tag folders).
 pub fn tags_iter(entries: &[TagEntry]) -> impl Iterator<Item = &Tag> {
-    entries.iter().flat_map(|entry| match entry {
-        TagEntry::Tag(tag) => vec![tag],
-        TagEntry::Folder { tags, .. } => tags_iter(tags).collect(),
-    })
+    let mut all = Vec::new();
+    collect_tags_in_order(entries, &mut all);
+    all.into_iter()
+}
+
+fn collect_tags_in_order<'a>(entries: &'a [TagEntry], out: &mut Vec<&'a Tag>) {
+    for entry in entries {
+        if let TagEntry::Folder { tags, .. } = entry {
+            collect_tags_in_order(tags, out);
+        }
+    }
+    for entry in entries {
+        if let TagEntry::Tag(tag) = entry {
+            out.push(tag);
+        }
+    }
 }
 
 /// Every tag's id in the forest, in the order shown.
@@ -499,8 +515,8 @@ fn read_tag_entries(
             let taken = level_names(entries, parent).into_iter().any(|shown| shown == name);
             if name.is_empty() || name.len() > MAX_TAG_FOLDER_NAME {
                 warnings.push("browser.json: a tag folder without a usable name; skipped".into());
-            } else if taken || folders_iter(entries).any(|f| f.name == name) {
-                warnings.push(format!("browser.json: tag folder {name:?} twice; the second skipped"));
+            } else if taken {
+                warnings.push(format!("browser.json: tag folder {name:?} twice in a level; the second skipped"));
             } else if folders_iter(entries).count() >= MAX_TAG_FOLDERS {
                 warnings.push(format!("browser.json: more than {MAX_TAG_FOLDERS} tag folders; the rest skipped"));
                 break;
@@ -1041,16 +1057,26 @@ impl Store {
                 if tag_count(&self.tags) >= self.tag_limit {
                     return Err(format!("there are {} tags already, the limit", self.tag_limit));
                 }
-                let (name, color) = match (color, rename) {
-                    // A new tag made by hand: its name and colour as they were asked, or
-                    // the named colours' next turn when the colour is left out.
-                    (Some(c), rename) => {
-                        let r = rename.map(str::trim).filter(|r| !r.is_empty());
-                        (r.unwrap_or(wanted).to_string(), c.to_string())
+                // The name it is made under: the rename's when one is asked, held to the
+                // same checks whichever colour came with it ([#1254] review: the no-colour
+                // make answers its `rename` too).
+                let mut named = wanted.to_string();
+                if let Some(r) = rename.map(str::trim).filter(|r| !r.is_empty()) {
+                    if r.len() > MAX_TAG_NAME {
+                        return Err(format!("a tag's name is 1 to {MAX_TAG_NAME} bytes"));
                     }
-                    (None, _) => (wanted.to_string(), self.new_tag_color_for(name)),
+                    if tag_name_taken(&self.tags, r) {
+                        return Err(format!("there is a tag {r:?} already"));
+                    }
+                    named = r.to_string();
+                }
+                let color = match color {
+                    // The colour as it was asked; else the named colours' turn from the
+                    // name it is made under.
+                    Some(c) => c.to_string(),
+                    None => self.new_tag_color_for(&named),
                 };
-                self.push_tag(name, color, None)?;
+                self.push_tag(named, color, None)?;
             }
         }
         Ok(())
@@ -1201,19 +1227,20 @@ impl Store {
     }
 
     /// Renames the tag folder `id`; the name is unique among the folders of its own level
-    /// ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+    /// ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254): a folder under another
+    /// parent may carry the name).
     pub fn rename_tag_folder(&mut self, id: u32, name: &str) -> Result<(), String> {
         let name = name.trim();
         if name.is_empty() || name.len() > MAX_TAG_FOLDER_NAME {
             return Err(format!("a tag folder's name is 1 to {MAX_TAG_FOLDER_NAME} bytes"));
         }
-        // A folder's name is unique among the folders that show (and tags keep their own
+        // A folder's name is unique among the folders of its own level (tags keep their own
         // uniqueness, so the few characters that could be both names are refused wherever
         // they show).
-        if folder_by_id(&self.tags, id).is_none() {
+        let Some((parent, _)) = find_entry_parent(&self.tags, id) else {
             return Err(format!("there is no tag folder {id}"));
-        }
-        if folders_iter(&self.tags).any(|f| f.name == name)
+        };
+        if level_names(&self.tags, parent).iter().any(|shown| *shown == name)
             && folder_by_id(&self.tags, id).map(|f| f.name.as_str()) != Some(name)
         {
             return Err(format!("there is a tag folder {name:?} already"));
@@ -1301,12 +1328,18 @@ impl Store {
         Ok(())
     }
 
-    /// The sections in the order their titles show: the three movable ones in the order
-    /// given (unknown or repeated ones were refused up in the caller), and whether each is
+    /// The sections in the order their titles show: the three movable ones in the order the
+    /// caller gave, first slot of a kind when one is asked twice (the command refuses the
+    /// repeats; this keeps the memory whole whatever a caller says), and whether each is
     /// open. Missing kinds are appended in their default order ([#1254]).
     pub fn set_sections(&mut self, order: Option<&[Section]>) {
         if let Some(order) = order {
-            let mut sections = order.to_vec();
+            let mut sections: Vec<Section> = Vec::new();
+            for section in order {
+                if !sections.iter().any(|s| s.kind == section.kind) {
+                    sections.push(*section);
+                }
+            }
             for kind in SectionKind::ALL {
                 if !sections.iter().any(|s| s.kind == kind) {
                     if let Some(known) = self.sections.iter().find(|s| s.kind == kind) {

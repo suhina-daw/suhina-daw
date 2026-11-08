@@ -58,8 +58,9 @@ Both play a sample as soon as the pointer is over it.
 - **Map:** the plane with one **point** per item. An item is a sample file from the library or
   an NKS preset with a preview (see *NKS presets*).
 - **Scope:** the items a map holds: those of the place selected in the browser (a folder, Pinned,
-  a Recent group, a tag's place (`tag:<name>`), or every recent item), or of every folder when
-  no place is selected.
+  a Recent group, a tag's place (`tag:<name>`, by id `tag:#<id>`, the ids joined
+  `tag:#<id>+#<id>` for a place of several, [#1254] review), or every recent item), or of every
+  folder when no place is selected.
 - **Features:** numbers computed from an item's audio that describe its sound
   ([ADR 0013](../decisions/0013-sample-map-analysis.md) lists them). Two items are **similar**
   when their features are close.
@@ -98,8 +99,9 @@ Both play a sample as soon as the pointer is over it.
 
 The map holds the samples of the browser's place, whichever category filter is chosen (the
 filters choose what the list shows). The **List** / **Sample map** switch over the list shows wherever the
-place can hold samples: Library › Samples, a folder, Pinned, and Recent of every kind or of
-samples; Plug-ins, Instruments, Effects and Presets have none (#862).
+place can hold samples: Library › Samples, a folder, Pinned, Recent of every kind or of
+samples, and a tag's place ([#1254] review: the tags that hold samples map with it);
+Plug-ins, Instruments, Effects and Presets have none (#862).
 
 **Suhina:** analysis starts with the desktop app and the MCP server, as indexing does; tests
 and the command line never analyse a user's folders unasked.

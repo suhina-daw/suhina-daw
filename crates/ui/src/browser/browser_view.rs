@@ -46,10 +46,10 @@ fn tag_rows_of(entries: &[suhina_library::TagEntry], depth: usize, out: &mut Vec
     for entry in entries {
         if let suhina_library::TagEntry::Folder { folder, tags } = entry {
             if folder.open {
-                out.push(TagRow {
-                    entry: suhina_library::TagEntry::Folder { folder: folder.clone(), tags: Vec::new() },
-                    depth,
-                });
+                // The row keeps its whole entry: what its title says it counts and what
+                // Ctrl-click adds come from it ([#1254] review); its children show by
+                // their own rows.
+                out.push(TagRow { entry: entry.clone(), depth });
                 tag_rows_of(tags, depth + 1, out);
             } else {
                 out.push(TagRow { entry: entry.clone(), depth });
@@ -1354,21 +1354,28 @@ fn tag_folder_menu(
     let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
     let with_button = ui.button("Add tag").clicked();
     if (with_enter || with_button) && !new_name.trim().is_empty() {
-        let mut params = json!({ "name": new_name.trim() });
-        let picked: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
-        if let Some(hex) = picked {
-            params["color"] = json!(hex);
-        }
-        let made = run(projects, "library.setTag", params, out);
-        if made {
-            if let Some(id) = projects.file_library_mut().tag_id_of(new_name.trim()) {
-                run(projects, "library.moveTag", json!({ "id": format!("#{id}"), "folder": my }), out);
+        // The name one of the tags has: refused before the command, as the section's menus
+        // do ([#1254] review: `setTag` would recolour and file that tag instead, and say it
+        // was added).
+        if projects.file_library_mut().tag_flat().iter().any(|t| t.name == new_name.trim()) {
+            out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
+        } else {
+            let mut params = json!({ "name": new_name.trim() });
+            let picked: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
+            if let Some(hex) = picked {
+                params["color"] = json!(hex);
             }
-            out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
-            ui.ctx().data_mut(|d| d.remove::<String>(new_id));
-            ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
-            state.relist();
-            ui.close();
+            let made = run(projects, "library.setTag", params, out);
+            if made {
+                if let Some(id) = projects.file_library_mut().tag_id_of(new_name.trim()) {
+                    run(projects, "library.moveTag", json!({ "id": format!("#{id}"), "folder": my }), out);
+                }
+                out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
+                ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+                ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
+                state.relist();
+                ui.close();
+            }
         }
     }
     if ui.button("Add folder").clicked() && run(projects, "library.addTagFolder", json!({ "parent": my }), out) {
@@ -1377,7 +1384,10 @@ fn tag_folder_menu(
         tag_branch_open(projects, out, folder_id);
         state.relist();
     }
-    let carried = suhina_library::store::tag_count(&under_folder_tags(&projects.file_library_mut().tags(), folder_id));
+    // What moves up when the folder goes: the tags AND the folders it held ([#1254] review:
+    // a folder of nothing but an empty subfolder is asked about too).
+    let carried =
+        suhina_library::store::entry_count(&under_folder_tags(&projects.file_library_mut().tags(), folder_id));
     let armed = state.tag_remove_confirm.as_deref() == Some(my.as_str());
     let label =
         if armed { format!("Remove folder {}? ({} move up)", store_name, carried) } else { "Remove".to_string() };
@@ -1435,12 +1445,63 @@ fn tags_section(
     let tag_list = projects.file_library_mut().tags();
     let counts = state.tag_counts(projects.file_library_mut());
     let mut rows = Vec::new();
-    // A level's own rows as the frame drew them: id, name, whether a folder, the drawn
-    // rect. A press arms its carry mid-loop (its own row's drag_started), so where the
-    // pointer lands derives from this list after the loop ([#1254] review).
-    let mut row_rects: Vec<(u32, String, bool, bool, Rect)> = Vec::new();
     tag_rows_of(&tag_list, 0, &mut rows);
-    for row in &rows {
+
+    // The rows' own geometry first: rects are derived from the rows to draw, so the frame's
+    // fill and the landing know them in time ([#1254] review: the drop's row lights on the
+    // very frames it is dragged over).
+    let rects: Vec<Rect> = rows
+        .iter()
+        .scan(y, |y_rows, _| {
+            let rect = Rect::from_min_size(Pos2::new(area.left(), *y_rows), Vec2::new(area.width(), ROW));
+            *y_rows += ROW;
+            Some(rect)
+        })
+        .collect();
+    let row_rects: Vec<(u32, String, bool, bool, Rect)> = rows
+        .iter()
+        .zip(rects.iter())
+        .map(|(row, rect)| {
+            (
+                row.entry.id(),
+                row.entry.name().to_string(),
+                matches!(row.entry, suhina_library::TagEntry::Folder { .. }),
+                matches!(&row.entry, suhina_library::TagEntry::Folder { folder, .. } if folder.open),
+                rect.intersect(area),
+            )
+        })
+        .collect();
+    y += ROW * rows.len() as f32;
+    // Where a carried tag's drop goes, from the frame's own rows: derived before the rows
+    // paint, so what the pointer is over lights that very frame ([#1254] review). A press
+    // arms its carry in the painting pass; the carry made there is derived again after the
+    // rows ([#1254] review: a drag's arm frame says its drop as any frame does).
+    let pointer = ui.input(|i| i.pointer.latest_pos());
+    if state.drag_tag_id.is_some() {
+        state.drop_tag_row = None;
+        state.drop_pill = None;
+        for (rid, name, is_folder, open, rect) in &row_rects {
+            if !pointer.is_some_and(|p| rect.contains(p)) {
+                continue;
+            }
+            if *rid == state.drag_tag_id.unwrap_or(0) {
+                state.drop_pill = state.drag_tag.clone();
+            } else {
+                state.drop_tag_row = Some(*rid);
+                state.drop_pill = Some(if *is_folder {
+                    format!("Move {} into {name}", state.drag_tag.clone().unwrap_or_default())
+                } else {
+                    format!("Put {} before {name}", state.drag_tag.clone().unwrap_or_default())
+                });
+                if *is_folder && !*open {
+                    out.status = Some(Status::Hint(format!("Drop to put it in {name}")));
+                }
+            }
+            break;
+        }
+    }
+    for (index, row) in rows.iter().enumerate() {
+        let rect = rects[index];
         let id = row.entry.id();
         let name = row.entry.name().to_string();
         let is_folder = matches!(row.entry, suhina_library::TagEntry::Folder { .. });
@@ -1452,9 +1513,6 @@ fn tags_section(
             suhina_library::TagEntry::Folder { folder, .. } => folder.open,
             _ => true,
         };
-        let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW));
-        y += ROW;
-        row_rects.push((id, name.clone(), is_folder, open, rect.intersect(area)));
         // A press carries the tag to an item of the results (and a folder's carries the
         // folder, to move it among its cortège); a click selects the tag's place and a
         // folder's row opens or closes it.
@@ -1479,8 +1537,10 @@ fn tags_section(
             suhina_plugins::trace!("tag carry starts {} (id {})", name, id);
         }
         // Dragging items here tags them when they land on a tag's row; a folder's own rows
-        // are never a place for the items, and a closed folder says so ([#1254]).
-        let pointer = ui.input(|i| i.pointer.latest_pos());
+        // are never a place for the items, and a closed folder says so ([#1254]). The
+        // drag's own pointer: a drag carried from the map's own window reaches here as
+        // that window's pointer ([#1254] review).
+        let pointer = state.drag_pointer.or_else(|| ui.input(|i| i.pointer.latest_pos()));
         let drag_here =
             state.drag.is_some() && rect.intersects(area) && pointer.is_some_and(|p| rect.intersect(area).contains(p));
         if drag_here {
@@ -1836,13 +1896,11 @@ fn tags_section(
             }
         });
     }
-    // Where a carried tag's drop goes, from the frame's own drawn rows: a press arms its
-    // carry mid-loop (its row's drag_started), so the rows' own pass may read the carry
-    // before it arms — the rects settle it after the loop ([#1254] review).
-    let pointer = ui.input(|i| i.pointer.latest_pos());
-    if state.drag_tag_id.is_some() {
-        state.drop_tag_row = None;
-        state.drop_pill = None;
+    // The carry armed in this very pass: the pre-paint derivation ran before it, so it
+    // derives now — the pointer of this frame, the rows the frame drew ([#1254] review: a
+    // drag's own arm frame says its drop as the next one would).
+    if state.drag_tag_id.is_some() && state.drop_pill.is_none() {
+        let pointer = ui.input(|i| i.pointer.latest_pos());
         for (rid, name, is_folder, open, rect) in &row_rects {
             if !pointer.is_some_and(|p| rect.contains(p)) {
                 continue;
@@ -1863,49 +1921,50 @@ fn tags_section(
             break;
         }
     }
-    // A carried tag or folder landing: where the pointer let go of it decides — a folder
-    // takes it in at the end, a row takes it before itself, no row is the top level's end
-    // ([#1254] › Tag folders). A release over the results' rows is the item drop instead:
-    // the app's own `tag_drag` carries it there (drops.rs), so the sidebar stands down.
-    // The landing keys on the released frame — a pointer's up state flickers under the
-    // hover events of a carried drag ([#1254] review).
+    // A carried tag or folder landing: where the release lands in the sidebar decides — a
+    // folder takes it in at the end, a row takes it before itself, no row of its own is the
+    // top level's end ([#1254] › Tag folders). The targets are the release's own: over the
+    // results' rows the app's `tag_drag` carries the tag to the item instead (drops.rs), so
+    // the sidebar takes the move only when the pointer is over the sidebar ([#1254] review:
+    // a pointer that crossed onto an item or a row for the releasing frame commits to
+    // nothing of yesterday's target). The landing keys on the released frame — a pointer's
+    // up state flickers under the hover events of a carried drag ([#1254] review).
     let up = ui.input(|i| i.pointer.primary_released());
     if state.drag_tag_id.is_some() {
         suhina_plugins::trace::state(
             "tag carry",
             format!(
-                "armed {} up {} over row {:?} over item {} pill {:?}",
+                "armed {} up {} over row {:?} over item {} pill {:?} in_area {} pointer {pointer:?}",
                 state.drag_tag_id.unwrap_or(0),
                 up,
                 state.drop_tag_row,
                 state.drop_item.is_some(),
-                state.drop_pill.as_deref().unwrap_or("")
+                state.drop_pill.as_deref().unwrap_or(""),
+                pointer.is_some_and(|p| area.contains(p))
             ),
         );
     }
-    if up && state.drag_tag_id.is_some() && state.drop_item.is_none() {
+    if up && state.drag_tag_id.is_some() && pointer.is_some_and(|p| area.contains(p)) {
         if let Some(carried) = state.drag_tag_id {
             let carried_name = state.drag_tag.take().unwrap_or_default();
             let target: Option<u32> = state.drop_tag_row.filter(|id| *id != carried);
             // The picked ones move with the carried tag, in the pick's order — into a
-            // folder, or up to the top ([#1254] review). A drop before a row
+            // folder, or up to the top, the carried one of them ([#1254] review: the pick
+            // follows only when the drag is a picked tag's). A drop before a row
             // repositions only the carried one; the pick lifts itself here, never
             // mid-position.
             let folder_of = |target: u32| -> Option<String> {
                 rows.iter().find(|r| r.entry.id() == target).map(|r| r.entry.name().to_string())
             };
             let filing = target.is_none() || matches!(target, Some(target) if folder_row_is_folder(&rows, target));
-            let carrying = if filing {
-                let mut all = state.tag_selection.clone();
-                if !all.contains(&carried) {
-                    all.push(carried);
-                }
-                all
+            let carrying = if filing && state.tag_selection.contains(&carried) {
+                state.tag_selection.clone()
             } else {
                 vec![carried]
             };
             let mut landed = 0;
             let mut landing = String::new();
+            let mut refused: Option<String> = None;
             for entry_id in carrying {
                 let mut params = json!({ "id": format!("#{entry_id}") });
                 let did = match target {
@@ -1914,12 +1973,19 @@ fn tags_section(
                         format!("Moved {} into {}", carried_name, folder_of(target).unwrap_or_default())
                     }
                     Some(target) if !filing => {
+                        // The carried one comes out before the insert: where it sat in the
+                        // same level ahead of the target, that target steps left one when
+                        // it is taken, so the before-position follows it ([#1254] review).
                         let others = projects.file_library_mut().tags();
                         if let Some((t_parent, t_at)) = suhina_library::store::find_entry_parent(&others, target) {
                             if let Some(p) = t_parent {
                                 params["folder"] = json!(format!("#{p}"));
                             }
-                            params["position"] = json!(t_at);
+                            let position = match suhina_library::store::find_entry_parent(&others, entry_id) {
+                                Some((parent, at)) if parent == t_parent && at < t_at => t_at.saturating_sub(1),
+                                _ => t_at,
+                            };
+                            params["position"] = json!(position);
                         }
                         format!("Moved {} before {}", carried_name, folder_of(target).unwrap_or_default())
                     }
@@ -1929,22 +1995,39 @@ fn tags_section(
                     landed += 1;
                     landing = did;
                 } else {
+                    // The refusal the run left in the status: a move that went halfway
+                    // keeps it and says how much moved, so the user can carry the rest
+                    // ([#1254] review).
+                    if let Some(Status::Error(why)) = &out.status {
+                        refused = Some(why.clone());
+                    }
                     break;
                 }
             }
-            match landed {
-                0 => {}
-                1 => out.status = Some(Status::Done(landing)),
-                n => out.status = Some(Status::Done(format!("Moved {n} tags together"))),
+            match (landed, refused.as_ref()) {
+                // The run's own refusal stands; the pick stays with it.
+                (0, _) => {}
+                (1, None) => out.status = Some(Status::Done(landing)),
+                (n, None) => out.status = Some(Status::Done(format!("Moved {n} tags together"))),
+                (n, Some(why)) => {
+                    out.status = Some(Status::Error(format!(
+                        "Moved {}; rest refused: {why}",
+                        if n == 1 { "1 tag".into() } else { format!("{n} tags") }
+                    )))
+                }
             }
             suhina_plugins::trace!("tag carry of {carried} lands {landed} over {target:?}");
-            state.tag_selection.clear();
+            // The pick lifts itself with the move it rode in ([#1254] review: a carry that
+            // was none of the pick moved alone, and the pick stays for its own).
+            if refused.is_none() && filing && state.tag_selection.contains(&carried) {
+                state.tag_selection.clear();
+            }
             state.relist();
         }
         state.drag_tag_id = None;
-        // Else (drop_item is Some): the results' item drop is the app pass's `tag_drag` —
-        // it takes the carry state and ends it itself (drops.rs).
     }
+    // Over anything else the release is no move: the app's `tag_drag` ends the carry
+    // itself (it tags an item when the pointer is over one, drops.rs).
     // No row is under the carried one: the drop goes to the section's top ([#1254] › Tag
     // folders), and the pill says it.
     if let (Some(carried_id), Some(carried_name)) = (state.drag_tag_id, state.drag_tag.as_deref())
@@ -2597,13 +2680,19 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
     let tags = projects.file_library_mut().tag_flat();
     // The dots' ids ride the tag's id, so a live rename keeps the menu and its field
     // ([#1254] › Tag model: the ids are the stable reference).
-    for tag in tags {
+    for (at, tag) in tags.iter().enumerate() {
         let rect = Rect::from_center_size(Pos2::new(x + DOT / 2.0 + 2.0, area.center().y), Vec2::splat(DOT + 4.0));
-        x = rect.right() + 2.0;
-        // The dots stop before the count at the right end.
-        if x > area.right() - 110.0 {
+        // The dots stop before the count at the right end: the tags past them keep their
+        // filters through the control that takes their room ([#1254] review: a hidden one
+        // lights its ring while its filter is on, and its menu reaches every filter the
+        // footer hides).
+        if rect.right() + 2.0 > area.right() - 110.0 {
+            if at + 1 < tags.len() {
+                footer_overflow(ui, &painter, area, rect, &tags[at..], state);
+            }
             break;
         }
+        x = rect.right() + 2.0;
         let response = widgets::button_area(ui, rect, Id::unique(("browser-tag", tag.id)), format!("Tag {}", tag.name))
             .on_hover_text(&tag.name);
         if response.hovered() {
@@ -2628,6 +2717,27 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
         // does not run again by itself ([#1254] › Tag model; [#1196]).
         let was_open =
             ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-footer-menu-open", tag.id)))).unwrap_or(false);
+        // A click on the dot while its own menu stood: the menu closes for it, but the click
+        // reaches the widget this frame — the typed rename commits now, before the close
+        // can drop its draft ([#1254] review).
+        let dot_click = ui.input(|i| {
+            i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| rect.intersect(area).contains(p))
+        });
+        if was_open && dot_click {
+            let commit_id = Id::unique(("browser-rename-tag", tag.id));
+            let draft: Option<String> = ui.ctx().data(|d| d.get_temp(commit_id));
+            if let Some(name) = draft
+                && name.trim() != tag.name
+            {
+                if run(projects, "library.setTag", json!({ "id": format!("#{0}", tag.id), "rename": name.trim() }), out)
+                {
+                    state.relist();
+                    ui.ctx().data_mut(|d| d.remove::<String>(commit_id));
+                } else {
+                    ui.ctx().data_mut(|d| d.insert_temp(commit_id, tag.name.clone()));
+                }
+            }
+        }
         let popup = egui::Popup::context_menu(&response)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
@@ -2742,6 +2852,52 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
         theme::mono_font(theme::TEXT_TINY),
         theme::browser_text_hint(),
     );
+}
+
+/// The tags the footer is too narrow to draw, from one control where the next dot would
+/// have gone: its menu holds every filter the footer hides, and the ring shows while one
+/// of them is on ([#1254] review: a hidden one could otherwise be toggled only by moving
+/// tags, which riffs back into their order).
+fn footer_overflow(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    area: Rect,
+    rect: Rect,
+    tags: &[suhina_library::Tag],
+    state: &mut BrowserState,
+) {
+    let clipped = rect.intersect(area);
+    let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "More tags".to_string()));
+    let fill = widgets::hover(ui, &response);
+    painter.rect_filled(clipped, 0.0, theme::panel_hover().gamma_multiply(fill));
+    painter.text(
+        clipped.center(),
+        Align2::CENTER_CENTER,
+        "…",
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::browser_text_secondary(),
+    );
+    if tags.iter().any(|t| state.tag_filter.contains(&t.id)) {
+        painter.circle_stroke(clipped.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
+    }
+    egui::Popup::menu(&response)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .align(egui::RectAlign::TOP_START)
+        .show(|ui| {
+            // The rows toggle the filters, and the menu stays for more than one.
+            for tag in tags {
+                let on = state.tag_filter.contains(&tag.id);
+                let row = ui.button(format!("Tag {}", tag.name));
+                if row.clicked() {
+                    if on {
+                        state.tag_filter.retain(|t| *t != tag.id);
+                    } else {
+                        state.tag_filter.push(tag.id);
+                    }
+                }
+            }
+        });
 }
 
 /// The browser's resize handle at its inner edge: dragged, the width it is dragged to;

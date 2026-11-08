@@ -492,7 +492,8 @@ where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no tr
 Tags have an id, a name and a colour ([#1254] › Tag model). The id comes from 1, is never
 reused, and is shared with tag folders; items, folders and the order refer to a tag by its id,
 so a rename rewrites only the name and everything that carried the tag keeps carrying it. A
-tag placed as `tag:<name>` stays and `tag:#<id>` means the same by id. There are seven at
+tag placed as `tag:<name>` stays and `tag:#<id>` means the same by id; a place of several
+joins the ids `tag:#<id>+#<id>` ([#1254] review). There are seven at
 first: Red, Orange, Yellow, Green, Blue, Purple and Grey; a new tag without a colour takes the
 next named colour (the enum behind the seven, then the CSS named colours, with numbering —
 "Red 2" — when a name is already taken). There are seven at first and colours may repeat; two
@@ -531,11 +532,12 @@ The **sidebar's Tags section** ([Sidebar](#sidebar)) reaches a tag's items as a 
 Pinned does (#1196): a click on the tag's row shows every item that carries it, of any kind
 (samples, MIDI files, presets and presets' voices, projects, device graphs, built-in effects
 and instruments, plug-ins), named first no matter the kind, as a `library.search` place of
-`tag:<name>` (or `tag:#<id>`). Ctrl-click adds the tag to the place's tags or takes it off:
+`tag:<name>` (or `tag:#<id>`, joined for several). Ctrl-click adds the tag to the place's tags
+or takes it off:
 items with any of the row's tags show; a Ctrl-click on a folder's own row puts its whole
-cortège in the place ([#1254] › Tag folders). A place of several tags is built like the
-coloured dots' filter, so its
-list is ranked as a search's list is, and a preset bank's tagged voice is not among it.
+cortège in the place ([#1254] › Tag folders). A place of several tags is a search place of its
+ids joined: items with any of them, named first, as a single tag's place lists them
+([#1254] review).
 A ctrl-click on the place's last tag shows the tree again.
 As
 any chosen place, the row shows a **×** that lets the place go. While items are dragged, a tag
@@ -598,21 +600,21 @@ the CLI can do the same.
 | `library.removeFolder` | `folder` | removes it and its part of the index |
 | `library.refresh` | `folder?` | reads a folder (or every folder) again |
 | `library.list` | `folder` | what is directly in a folder: sub-folders and files of the kinds above, with kind and size |
-| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); `place` takes a tag's place (`tag:<name>` or, since [#1254], `tag:#<id>`), which lists the items carrying that tag of any kind no matter the folders; a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
+| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); `place` takes a tag's place (`tag:<name>`, `tag:#<id>`, or the ids joined `tag:#<id>+#<id>` for a place of several, [#1254]), which lists the items carrying it or any of them of any kind no matter the folders; a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
 | `library.info` | `item` | a file's kind, size, duration, sample rate, channels, tempo (and where it came from) and key; a Stems file's stems and mastering; a MIDI file's tracks with their notes; a preset's voices; a built-in device's or plug-in's role (and a plug-in's vendor, format and version); the item's tags |
 | `library.pinned` | | the pinned items |
 | `library.pin`, `library.unpin` | `item` | pins or unpins an item |
 | `library.recent` | `group?` | the recent items of one group or all |
-| `library.tags` | | the tags with their ids, the tag folders (with their children) and the sections' order and open state, and the tagged items by id; and the limit |
+| `library.tags` | | flat lists of tags and tag folders with their ids; each tag's `folder` and each folder's `parent` is the containing folder's id, or `null` at the top level; also the sections' order and open state, tagged items by id, and the limit |
 | `library.setTag` | `id?`, `name?`, `color?`, `rename?`, `limit?` | adds a tag (a name no tag has, coloured from the named colours when asked without one), or changes one's colour or name — by id (`#<id>`) or by name; `limit` sets the most tags there may be |
 | `library.removeTag` | `id?`, `name?` | removes a tag (by id or name) from the list and every item |
 | `library.tag` | `item`, `tag`, `on` | sets or clears a tag on an item (`tag` by id or name) |
 | `library.addTagFolder` | `name?`, `parent?` | adds a tag folder under `parent` (by id or name) or at the top; the name is unique among its own level's, named "Folder" when left out ([#1254]) |
-| `library.renameTagFolder` | `folder`, `rename` | renames a tag folder (by id or name) |
+| `library.renameTagFolder` | `folder`, `rename` | renames a tag folder (by id or name); the name is unique among its own level's ([#1254] review) |
 | `library.removeTagFolder` | `folder` | lifts a tag folder's tags and folders into the parent; returns how many moved up |
 | `library.setFolderOpen` | `folder`, `open` | whether a tag folder's children show |
 | `library.moveTag` | `id`, `folder?`, `position?` | moves a tag or folder by id before `position` in its parent's list, or under `folder` (by id or name) at its end, or to the top when both are left out |
-| `library.setSections` | `order` | the sidebar's sections in `order` (`tags`, `pinned`, `library`); a kind left out keeps its state, Folders is never in the list ([#1254]) |
+| `library.setSections` | `order` | the sidebar's sections in `order`; each keeps whether it showed open, so collapsing survives a reordering ([#1254] review), and Folders is never in the list ([#1254]) |
 | `library.setSectionOpen` | `section`, `open` | whether a section's rows show |
 | `library.setPluginsView` | `view` | which plug-ins the Plug-ins category lists: `instruments` (default) or `effects` ([plug-in browsing](plugin-browsing.md)) |
 | `library.moveTo` | `items`, `folder` | moves files (at most 4096) into a folder that exists, named as `library.copyTo` names copies; their pins, recent places and tags go with them and the folders are read again; returns what was `moved` (from, to), what is `missing`, what was `kept` (in that folder already, or played by an open project) and what `failed`; not to an agent attached to the app (#943) |

@@ -170,14 +170,15 @@ pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str)
     }
     if open {
         picked = stepped_color_field(ui, id.with("value"), current.map_or(Color32::GRAY, color32)).or(picked);
-        if let Some(picked) = picked {
-            // The field's own cache follows the pick: the next custom adjustment starts
-            // from it, not from the older colour it still held (#1196).
-            ui.data_mut(|d| {
-                d.insert_temp(id.with("value"), color32(picked));
-                d.remove::<bool>(id.with("value").with("moved"));
-            });
-        }
+    }
+    if let Some(picked) = picked {
+        // The field's own cache follows the pick, even while it is closed: the next custom
+        // adjustment starts from what was picked, not from the older colour it still held
+        // ([#1254] review, #1196).
+        ui.data_mut(|d| {
+            d.insert_temp(id.with("value"), color32(picked));
+            d.remove::<bool>(id.with("value").with("moved"));
+        });
     }
     ui.data_mut(|d| d.insert_temp(id, open));
     picked

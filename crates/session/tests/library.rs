@@ -358,3 +358,147 @@ fn copy_to_copies_files_into_a_folder_numbering_taken_names_and_lists_the_missin
     let nowhere = out.join("no such folder").display().to_string();
     assert!(run(&mut p, "library.copyTo", json!({ "items": items, "folder": nowhere })).is_err());
 }
+
+// A place of several tags goes as the ids joined `tag:#<id>+#<id>`: the items carrying any
+// of them, and the `tags` filter still narrows it ([#1254] review).
+#[test]
+fn a_place_of_several_tags_is_the_ids_joined_and_the_filter_narrows_it() {
+    let settings = temp("tags-joined-settings");
+    let samples = temp("tags-joined");
+    wav(&samples.join("Kick.wav"));
+    wav(&samples.join("Snare.wav"));
+    let mut p = projects(&settings);
+    run(&mut p, "library.addFolder", json!({ "folder": samples.display().to_string() })).unwrap();
+    let kick = samples.join("Kick.wav").display().to_string();
+    let snare = samples.join("Snare.wav").display().to_string();
+    run(&mut p, "library.tag", json!({ "item": kick, "tag": "Red", "on": true })).unwrap();
+    run(&mut p, "library.tag", json!({ "item": snare, "tag": "Blue", "on": true })).unwrap();
+    let library = p.file_library_mut();
+    let flat = library.tag_flat();
+    let id_of = |name: &str| flat.iter().find(|t| t.name == name).map(|t| t.id).unwrap_or(0);
+    let (red, blue) = (id_of("Red"), id_of("Blue"));
+    // The ids joined list the items carrying either.
+    let either = run(&mut p, "library.search", json!({ "place": format!("tag:#{red}+#{blue}") })).unwrap();
+    assert_eq!(names(&either), ["Kick.wav", "Snare.wav"]);
+    // A joined place of a tag that is not one refuses.
+    let missing = red + 500;
+    assert!(run(&mut p, "library.search", json!({ "place": format!("tag:#{red}+#{missing}") })).is_err());
+    // The `tags` filter narrows the place's list, it does not widen it: the item must also
+    // carry a filter tag ([#1254] review).
+    run(&mut p, "library.setTag", json!({ "name": "Hot", "color": "#336699" })).unwrap();
+    run(&mut p, "library.tag", json!({ "item": snare, "tag": "Hot", "on": true })).unwrap();
+    let both =
+        run(&mut p, "library.search", json!({ "place": format!("tag:#{red}+#{blue}"), "tags": ["Hot"] })).unwrap();
+    assert_eq!(names(&both), ["Snare.wav"], "only one carried a tag of the place AND the filter's");
+    // One tag still resolves as a name too.
+    let single = run(&mut p, "library.search", json!({ "place": format!("tag:#{red}") })).unwrap();
+    assert_eq!(names(&single), ["Kick.wav"]);
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+// `library.setTag` makes a tag for an unused name given as its `id` ([#1254] review: the
+// help says so), while an id's own form that is not one stays an error.
+#[test]
+fn set_tag_makes_a_tag_for_an_unused_name_and_an_id_selector_refuses() {
+    let settings = temp("set-tag-name-settings");
+    let mut p = projects(&settings);
+    // `id` as an unused name: made, coloured from the named colours' next turn.
+    let made = run(&mut p, "library.setTag", json!({ "id": "Drums" })).unwrap();
+    assert!(made["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("Drums")));
+    made_id_tagged(&mut p, "Drums");
+    // The rename goes with the make: the id's name is formed, what rename says names it.
+    run(&mut p, "library.setTag", json!({ "id": "Strums", "rename": "Plucks" })).unwrap();
+    let tags = made_id_tagged(&mut p, "Plucks");
+    assert!(!tags.iter().any(|t| t["name"] == json!("Strums")), "the rename named it instead");
+    // An id's own form that is not a tag: refused, as before.
+    assert!(run(&mut p, "library.setTag", json!({ "id": "#999" })).is_err());
+    // The `name` form keeps its place when `id` is missing.
+    run(&mut p, "library.setTag", json!({ "name": "Beats" })).unwrap();
+    let tags = made_id_tagged(&mut p, "Beats");
+    assert_eq!(tags.iter().filter(|t| t["name"] == json!("Beats")).count(), 1);
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+fn made_id_tagged(p: &mut Projects, want: &str) -> Vec<Value> {
+    run(p, "library.tags", json!({})).unwrap()["tags"]
+        .as_array()
+        .unwrap()
+        .clone()
+        .into_iter()
+        .filter(|t| t["name"] == json!(want))
+        .collect()
+}
+
+// The folder params are folder-sounding: a tag of the same name does not shadow the
+// folder ([#1254] review); `moveTag`'s `id` still takes both.
+#[test]
+fn folder_params_resolve_folders_even_when_a_tag_shares_the_name() {
+    let settings = temp("folder-param-settings");
+    let mut p = projects(&settings);
+    // A tag named Belt at the top, and a folder named Belt under a folder of its own.
+    run(&mut p, "library.setTag", json!({ "name": "Belt" })).unwrap();
+    run(&mut p, "library.addTagFolder", json!({ "name": "Box" })).unwrap();
+    run(&mut p, "library.addTagFolder", json!({ "name": "Belt", "parent": "Box" })).unwrap();
+    // Renaming the folder by name now names the folder, not reaching for the tag.
+    run(&mut p, "library.renameTagFolder", json!({ "folder": "Belt", "rename": "Pouch" })).unwrap();
+    let tags = run(&mut p, "library.tags", json!({})).unwrap();
+    let folders = tags["folders"].as_array().unwrap();
+    assert!(folders.iter().any(|f| f["name"] == json!("Pouch")), "{folders:?}");
+    assert!(folders.iter().all(|f| f["name"] != json!("Belt")), "{folders:?}");
+    // The tag named Belt still stands, unrenamed.
+    assert!(tags["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("Belt")), "the tag kept its name");
+    // A same-named tag does not stop a folder command either: removing by name lifts the
+    // folder (its tags and folders up), the tag untouched ([#1254] review).
+    run(&mut p, "library.removeTagFolder", json!({ "folder": "Pouch" })).unwrap();
+    let after = run(&mut p, "library.tags", json!({})).unwrap();
+    assert!(after["folders"].as_array().unwrap().iter().all(|f| f["name"] == json!("Box")), "{after:?}");
+    assert!(after["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("Belt")));
+    // `library.moveTag`'s own `id` still reads a tag first: the tag named Belt moves, not
+    // the folder named Box ([#1254]: the mixed id).
+    let library = p.file_library_mut();
+    let flat = library.tag_flat();
+    let tag = flat.iter().find(|t| t.name == "Belt").map(|t| t.id).unwrap_or(0);
+    run(&mut p, "library.moveTag", json!({ "id": format!("#{tag}"), "folder": "Box" })).unwrap();
+    let after = run(&mut p, "library.tags", json!({})).unwrap();
+    // The tag Belt now sits under Box's level: its folder is Box's id.
+    let box_id = after["folders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == json!("Box"))
+        .map(|f| f["id"].as_u64().unwrap_or(0))
+        .unwrap_or(0);
+    assert!(
+        after["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("Belt") && t["folder"] == json!(box_id)),
+        "{after:?}"
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+}
+
+// Reordering the sidebar keeps whether a section showed open ([#1254] review: both
+// reorderings list every section, and a collapse survived nothing before).
+#[test]
+fn set_sections_keeps_whether_a_section_showed_open() {
+    let settings = temp("sections-state-settings");
+    let mut p = projects(&settings);
+    run(&mut p, "library.setSectionOpen", json!({ "section": "tags", "open": false })).unwrap();
+    // The order the UI's drag and menu send: every section, each once.
+    run(&mut p, "library.setSections", json!({ "order": ["tags", "pinned", "library"] })).unwrap();
+    let sections = |p: &mut Projects| -> Vec<(String, bool)> {
+        run(p, "library.tags", json!({})).unwrap()["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| (s["kind"].as_str().unwrap_or_default().to_string(), s["open"].as_bool().unwrap_or(true)))
+            .collect()
+    };
+    assert_eq!(
+        sections(&mut p),
+        [("tags".to_string(), false), ("pinned".to_string(), true), ("library".to_string(), true)],
+        "Tags stayed closed through the reorder"
+    );
+    // A second reorder, back over, keeps it closed still.
+    run(&mut p, "library.setSections", json!({ "order": ["pinned", "library", "tags"] })).unwrap();
+    assert_eq!(sections(&mut p).last().map(|s| s.1), Some(false), "Tags closed through both reorders");
+    let _ = std::fs::remove_dir_all(&settings);
+}

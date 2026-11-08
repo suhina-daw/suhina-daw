@@ -30,12 +30,15 @@ const BUSY_AFTER_SECONDS: f64 = 0.3;
 /// made again.
 const GRID_ASPECT_SLACK: f32 = 0.05;
 
-/// What a layout was made from, to know when it is out of date.
+/// What a layout was made from, to know when it is out of date. A tag place's scope follows
+/// the tag assignments too: anything tagged in or out of a chosen tag re-lays it
+/// ([#1254] review).
 #[derive(Debug, Clone, PartialEq)]
 struct ScopeKey {
     place: Option<String>,
     max_seconds: u32,
     layout_key: u64,
+    tags_revision: u64,
 }
 
 /// A finished layout: the map, its grid and the view's aspect the grid was made for.
@@ -128,15 +131,14 @@ fn files_in_use(projects: &Projects) -> HashSet<PathBuf> {
 }
 
 impl Panel {
-    /// The browser's place as the `soundmap.*` commands take it. A tag's place is not one the
-    /// commands take; the panel is not drawn with it, reached only while the samples are the
-    /// place (#862).
+    /// The browser's place as the `soundmap.*` commands take it. A tag's place is one the
+    /// commands take: `tag:#<id>`, joined for a place of several ([#1254] review: the map
+    /// follows the tags, #862).
     fn place(state: &BrowserState) -> Option<String> {
         match &state.place {
             None => None,
             Some(Place::Pinned) => Some("pinned".into()),
-            Some(place @ Place::Recent(_)) => Some(place.param()),
-            Some(Place::Tag(_)) => None,
+            Some(place @ (Place::Recent(_) | Place::Tag(_))) => Some(place.param()),
             Some(Place::Folder(path)) => Some(path.display().to_string()),
         }
     }
@@ -166,8 +168,16 @@ impl Panel {
         }
         let now = ui.input(|i| i.time);
         let place = Self::place(state);
+        // A tag place's map follows the tag assignments as well: anything tagged in or out
+        // of a chosen tag re-lays it ([#1254] review). The revision read once, and only for
+        // the places it matters to; the rest of the tags' doings are none of the map's.
+        let tags_revision = matches!(&state.place, Some(Place::Tag(_)))
+            .then(|| projects.file_library_mut().tag_revision())
+            .unwrap_or_default();
         let scope_changed = self.stale
-            || self.shown.as_ref().is_none_or(|s| s.place != place || s.max_seconds != settings.map_max_seconds);
+            || self.shown.as_ref().is_none_or(|s| {
+                s.place != place || s.max_seconds != settings.map_max_seconds || s.tags_revision != tags_revision
+            });
         if !scope_changed && !(analysed && now - self.last_layout >= RELAYOUT_SECONDS) {
             if analysed {
                 ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(RELAYOUT_SECONDS));
@@ -177,7 +187,7 @@ impl Panel {
         let Ok(files) = suhina_session::scope_files(projects, place.as_deref()) else { return };
         let prepared = projects.sound_map_mut().prepare(&files, settings.map_max_seconds as f32);
         self.stale = false;
-        let key = ScopeKey { place, max_seconds: settings.map_max_seconds, layout_key: prepared.key() };
+        let key = ScopeKey { place, max_seconds: settings.map_max_seconds, layout_key: prepared.key(), tags_revision };
         self.last_layout = now;
         if self.shown.as_ref() == Some(&key) {
             return;

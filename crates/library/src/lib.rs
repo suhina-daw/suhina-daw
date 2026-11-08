@@ -812,8 +812,7 @@ impl Library {
     /// Sets whether the tag folder `id` shows open, remembered between runs ([#1254]).
     pub fn set_tag_folder_open(&mut self, id: u32, open: bool) -> Result<(), String> {
         self.load();
-        let set = self.store.set_tag_folder_open(id, open);
-        let _ = set;
+        self.store.set_tag_folder_open(id, open)?;
         self.save()
     }
 

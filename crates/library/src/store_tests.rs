@@ -325,3 +325,99 @@ fn the_deepest_folders_tags_round_trip_and_a_fifth_level_is_left_out() {
     assert_eq!(entry_depth(&store.tags, deep), 1);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// The flattened tags lead with a level's folders' own tags, as the sidebar's rows go:
+// the footer, a tag's menu and `library.tags` list them too ([#1254] review).
+#[test]
+fn the_flattened_tags_lead_with_each_levels_folders() {
+    let mut store = Store::default();
+    // The defaults, Red..Grey by id, then a folder appended last, Red filed in it.
+    let drum = store.add_tag_folder(Some("Drums"), None).unwrap();
+    store.move_tag_node(1, Some(drum), 0).unwrap();
+    let in_order: Vec<&str> = tags_iter(&store.tags).map(|t| t.name.as_str()).collect();
+    assert_eq!(
+        in_order,
+        ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Grey"],
+        "the folder leads its level, the tags follow"
+    );
+    // A tag of a deeper folder leads its own level too.
+    let inner = store.add_tag_folder(Some("Kicks"), Some(drum)).unwrap();
+    store.move_tag_node(2, Some(inner), 0).unwrap();
+    let in_order: Vec<&str> = tags_iter(&store.tags).map(|t| t.name.as_str()).collect();
+    assert_eq!(
+        in_order,
+        ["Orange", "Red", "Yellow", "Green", "Blue", "Purple", "Grey"],
+        "a subfolder's tag leads its parent level"
+    );
+}
+
+// A new tag made without a colour is made under its `rename` still, held to the same
+// name checks ([#1254] review).
+#[test]
+fn a_new_tag_made_without_a_colour_answers_its_rename() {
+    let mut store = Store::default();
+    store.set_tag("Coral", None, Some("Reef")).unwrap();
+    let made = tags_iter(&store.tags).find(|t| t.name == "Reef").map_or(0, |t| t.id);
+    assert!(made >= FIRST_TAG_ID, "the rename named the made tag");
+    assert_eq!(
+        tags_iter(&store.tags).find(|t| t.name == "Reef").map(|t| t.color.as_str()),
+        Some("#800000"), // Maroon's: the next named colour no tag has
+        "the no-colour make took the named colours' next turn from the name it was made under"
+    );
+    // A rename that another tag has: refused, not silently made under the asked name.
+    assert!(store.set_tag("Coral", None, Some("Orange")).is_err(), "the taken name refuses");
+    // Too long: the same refusal a rename of an existing tag gets.
+    let long = "x".repeat(MAX_TAG_NAME + 1);
+    assert!(store.set_tag("Gold", None, Some(&long)).is_err());
+    // An empty rename is none: Gold made as asked.
+    assert!(store.set_tag("Gold", None, Some("   ")).is_ok());
+    assert!(tags_iter(&store.tags).any(|t| t.name == "Gold"));
+}
+
+// A folder's name is unique among its own level alone: a folder of another parent may
+// carry it, at a rename and over a reload ([#1254] review).
+#[test]
+fn a_folders_name_is_unique_in_its_level_alone() {
+    let mut store = Store::default();
+    let belt = store.add_tag_folder(Some("Belt"), None).unwrap();
+    let two = store.add_tag_folder(Some("Two"), None).unwrap();
+    store.add_tag_folder(Some("Kick"), Some(belt)).unwrap();
+    // Renaming the top level's Two to a name Belt's level holds: fine — different level.
+    store.rename_tag_folder(two, "Kick").unwrap();
+    // Renaming it to ITS level's own existing name: refused.
+    assert!(store.rename_tag_folder(two, "Belt").is_err(), "the level's own name refuses");
+    // Making a second Kick under Belt itself: refused there as well.
+    assert!(store.add_tag_folder(Some("Kick"), Some(belt)).is_err(), "the level already has Kick");
+    // A nested level's own names count too ([#1254]): the check reaches the nested level.
+    let one = store.add_tag_folder(Some("One"), None).unwrap();
+    store.add_tag_folder(Some("Kick"), Some(one)).unwrap();
+    assert!(store.add_tag_folder(Some("Kick"), Some(one)).is_err(), "a nested level refuses a second of its own names");
+    // Three Kick-named folders, under three parents (each level's own one): the reload keeps them.
+    let dir = temp("folder-level-names");
+    let file = dir.join("browser.json");
+    store.save(&file).unwrap();
+    let (again, warnings) = Store::load(&file);
+    assert_eq!(warnings.len(), 0, "{warnings:?}");
+    assert_eq!(folders_iter(&again.tags).filter(|f| f.name == "Kick").count(), 3, "nothing was dropped");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// A second section kind in the order given keeps its first slot, as the load does
+// ([#1254] review).
+#[test]
+fn a_repeated_section_kind_keeps_its_first_slot() {
+    let mut store = Store::default();
+    store.set_section_open(SectionKind::Tags, false);
+    store.set_sections(Some(&[
+        Section { kind: SectionKind::Tags, open: true },
+        Section { kind: SectionKind::Pinned, open: true },
+        Section { kind: SectionKind::Tags, open: true },
+    ]));
+    assert_eq!(
+        store.sections.iter().map(|s| (s.kind, s.open)).collect::<Vec<_>>(),
+        [(SectionKind::Tags, true), (SectionKind::Pinned, true), (SectionKind::Library, true)],
+        "the repeated kind kept its first slot, the rest of the order led"
+    );
+    store.set_section_open(SectionKind::Tags, false);
+    assert_eq!(store.sections.iter().filter(|s| s.kind == SectionKind::Tags).count(), 1, "one slot to close");
+}
