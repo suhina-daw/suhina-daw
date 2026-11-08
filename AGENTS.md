@@ -74,7 +74,10 @@ describe a file. Read only the ones that match your task.
     alone does not settle it. A comment can be right about the symptom and still name the wrong
     fix, and the fault behind it can be bigger than it says. Fix the root cause the way the code
     needs, which may differ from the suggestion, or answer in the thread with the evidence why
-    the comment does not apply; a bare "does not apply" is not an answer.
+    the comment does not apply; a bare "does not apply" is not an answer. A comment that holds
+    is fixed in this pull request when the fix belongs here
+    ([docs/workflow.md](docs/workflow.md) › What belongs in one pull request), and becomes an
+    issue or a pull request of its own only when it does not; the thread's answer names which.
 
 ## 2. Where to read more
 
