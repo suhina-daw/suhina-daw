@@ -362,7 +362,10 @@ fn a_device_row_dropped_on_a_track_starts_on_the_first_file_of_its_folder() {
     let device = session.project().channel(channel).unwrap().devices.first().unwrap();
     let state =
         String::from_utf8(device.state.as_ref().map(|b| b.as_ref().to_vec()).unwrap_or_default()).unwrap_or_default();
-    assert_eq!(state, irs.join("Alpha").join("catty.wav").display().to_string(), "the cab starts on the first file");
+    // The pack the executable carries lists first ([ADR 0036]): a dropped device starts on
+    // its first file, by the key that loads anywhere — the test folder's own packs are
+    // *beside* it, after, where the panels and the starts read them.
+    assert_eq!(state, suhina_device_registry::builtin_file_key("nam-cab-loader", "Blackat Leon S7.wav"));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

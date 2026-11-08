@@ -1125,10 +1125,13 @@ pub(crate) fn set_enabled_many(session: &mut Session, params: &Value) -> Result<
 }
 
 /// The state text a device's file path stores (`device.add {file}`, `device.setNamFile`):
-/// a file inside the library documents stores relative to it ([ADR 0036] › it, so the project
-/// opens on another machine that has the same pack), one outside keeps its absolute path,
-/// recorded when it is all there is.
+/// a shipped file's key stands whole; a file inside the library documents stores relative to
+/// it ([ADR 0036] › it, so the project opens on another machine that has the same pack), one
+/// outside keeps its absolute path, recorded when it is all there is.
 pub(crate) fn device_file_state(session: &Session, path: &str) -> String {
+    if path.starts_with("builtin:") {
+        return path.to_owned();
+    }
     let absolute = crate::files::absolute(std::path::Path::new(path));
     match session.library_base() {
         Some(base) if absolute.starts_with(base) => match absolute.strip_prefix(base) {
