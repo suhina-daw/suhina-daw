@@ -12,13 +12,18 @@ fn sine(hz: f64, seconds: f64, sample_rate: u32) -> Arc<AudioData> {
     Arc::new(AudioData { sample_rate, channels: 1, samples })
 }
 
-fn region(markers: &[(f64, f64)], mode: StretchMode) -> AudioRegion {
-    AudioRegion {
+fn region(markers: &[(f64, f64)], mode: StretchMode) -> ClipAudio {
+    ClipAudio {
         warped: true,
         stretch: mode,
         warp_markers: markers.iter().map(|&(time, audio_time)| WarpMarker { time, audio_time }).collect(),
-        ..AudioRegion::new("sine.wav")
+        ..ClipAudio::default()
     }
+}
+
+/// `clip` playing with `audio`.
+fn with(clip: &Clip, audio: &ClipAudio) -> Clip {
+    Clip { audio: audio.clone(), ..clip.clone() }
 }
 
 fn clip(length: f64, offset: f64, loop_range: Option<(f64, f64)>) -> Clip {
@@ -34,7 +39,7 @@ fn playlist_follows_markers_and_loops() {
     let data = sine(440.0, 4.0, 1000);
     // Beats 0–4 = 0–2 s, beats 4–6 = 2–4 s; loop beats 2–6; play 8 beats from beat 3.
     let r = region(&[(0.0, 0.0), (4.0, 2.0), (6.0, 4.0)], StretchMode::Smooth);
-    let (pieces, _, _) = playlist(&clip(8.0, 3.0, Some((2.0, 6.0))), &r, &data, 120.0).unwrap();
+    let (pieces, _, _) = playlist(&with(&clip(8.0, 3.0, Some((2.0, 6.0))), &r), &data, 120.0).unwrap();
     let summary: Vec<(f64, f64, f64, f64, f64)> =
         pieces.iter().map(|p| (p.out_start, p.src_start, p.src_end, p.rate, p.stream_start)).collect();
     assert_eq!(
@@ -65,9 +70,9 @@ fn a_clip_with_many_warp_markers_builds_and_plays() {
         .collect();
     let r = region(&markers, StretchMode::Smooth);
     let c = clip(60.0, 0.0, None);
-    let (pieces, _, _) = playlist(&c, &r, &data, 120.0).unwrap();
+    let (pieces, _, _) = playlist(&with(&c, &r), &data, 120.0).unwrap();
     assert_eq!(pieces.len(), 40_000);
-    let mut voice = StretchVoice::new(&c, &r, data, 120.0, 48_000).unwrap().prepared();
+    let mut voice = StretchVoice::new(&with(&c, &r), data, 120.0, 48_000).unwrap().prepared();
     voice.seek(48_000 * 15);
     let mut out = vec![0.0f32; 2 * 4096];
     for _ in 0..4 {
@@ -84,7 +89,7 @@ fn seam(slower: f64) -> Vec<(f64, f32, f32)> {
     let data = sine(440.0, 8.0, rate);
     let r = region(&[(0.0, 0.0), (4.0, 4.0), (8.0, 4.0 + 2.0 * slower)], StretchMode::Smooth);
     let c = clip(8.0, 0.0, None);
-    let mut voice = StretchVoice::new(&c, &r, data, 120.0, rate).unwrap().prepared();
+    let mut voice = StretchVoice::new(&with(&c, &r), data, 120.0, rate).unwrap().prepared();
     let mut out = vec![0.0f32; 2 * 4 * rate as usize];
     for block in out.chunks_mut(2 * 512) {
         voice.render(block);
@@ -150,7 +155,7 @@ fn a_loop_past_the_piece_cap_keeps_looping() {
         .collect();
     let r = region(&markers, StretchMode::Smooth);
     let c = clip(30_000.0, 0.0, Some((0.0, 0.5)));
-    let (pieces, _, _) = playlist(&c, &r, &data, 120.0).unwrap();
+    let (pieces, _, _) = playlist(&with(&c, &r), &data, 120.0).unwrap();
     assert!(pieces.len() <= MAX_PIECES);
     // At 120 bpm a beat is 24 000 project frames. Beats 1 000 and 25 000 are both at the
     // loop's start, the second far past where the playlist was cut; and playing on across
@@ -159,7 +164,7 @@ fn a_loop_past_the_piece_cap_keeps_looping() {
     let cut = (last.out_start + (last.src_end - last.src_start) / 8000.0 / last.rate) * 2.0;
     assert!(cut > 1_000.0 && cut < 30_000.0 && (cut * 2.0 - (cut * 2.0).round()).abs() < 1e-6, "{cut}");
     let render_from = |beat: f64| {
-        let mut voice = StretchVoice::new(&c, &r, data.clone(), 120.0, 48_000).unwrap().prepared();
+        let mut voice = StretchVoice::new(&with(&c, &r), data.clone(), 120.0, 48_000).unwrap().prepared();
         voice.seek((beat * 24_000.0).round() as u64);
         let mut out = vec![0.0f32; 2 * 24_000];
         voice.render(&mut out);
@@ -181,7 +186,7 @@ fn a_loop_past_the_piece_cap_keeps_looping() {
 fn an_offset_past_the_loop_end_starts_at_the_loop_start() {
     let data = sine(440.0, 4.0, 1000);
     let r = region(&[(0.0, 0.0), (4.0, 2.0), (6.0, 4.0)], StretchMode::Smooth);
-    let (pieces, _, _) = playlist(&clip(4.0, 7.0, Some((2.0, 6.0))), &r, &data, 120.0).unwrap();
+    let (pieces, _, _) = playlist(&with(&clip(4.0, 7.0, Some((2.0, 6.0))), &r), &data, 120.0).unwrap();
     let summary: Vec<(f64, f64, f64)> = pieces.iter().map(|p| (p.out_start, p.src_start, p.src_end)).collect();
     assert_eq!(summary, [(0.0, 1000.0, 2000.0), (1.0, 2000.0, 4000.0)]);
 }
@@ -219,9 +224,9 @@ fn onsets(stereo: &[f32], sample_rate: u32) -> Vec<f64> {
 fn click_errors(markers: &[(f64, f64)], length_beats: f64, seek: f64, transpose: f64) -> Vec<f64> {
     let sr = 48_000;
     let data = clicks(0.5, 40.0, sr);
-    let r = AudioRegion { transpose, ..region(markers, StretchMode::Smooth) };
+    let r = ClipAudio { transpose, ..region(markers, StretchMode::Smooth) };
     let c = clip(length_beats, 0.0, None);
-    let mut voice = StretchVoice::new(&c, &r, data, 120.0, sr).unwrap().prepared();
+    let mut voice = StretchVoice::new(&with(&c, &r), data, 120.0, sr).unwrap().prepared();
     let skipped = (seek * f64::from(sr)) as usize;
     if skipped > 0 {
         voice.seek(skipped as u64);
@@ -309,8 +314,8 @@ fn transposed_clips_keep_transients_on_the_grid() {
 fn transposed(hz: f64, markers: &[(f64, f64)], beats: f64, transpose: f64) -> (f64, usize) {
     let sr = 48_000;
     let data = sine(hz, 20.0, 44_100);
-    let r = AudioRegion { transpose, ..region(markers, StretchMode::Smooth) };
-    let mut voice = StretchVoice::new(&clip(beats, 0.0, None), &r, data, 120.0, sr).unwrap().prepared();
+    let r = ClipAudio { transpose, ..region(markers, StretchMode::Smooth) };
+    let mut voice = StretchVoice::new(&with(&clip(beats, 0.0, None), &r), data, 120.0, sr).unwrap().prepared();
     let frames = (beats * 0.5 * f64::from(sr)) as usize;
     let mut out = vec![0.0; frames * 2];
     for block in out.chunks_mut(512 * 2) {
@@ -346,8 +351,9 @@ fn plays_through_at_any_device_rate_and_block_size() {
     for markers in [vec![(0.0, 0.0), (64.0, 30.4)], vec![(0.0, 0.0), (64.0, 45.0)]] {
         let r = region(&markers, StretchMode::Smooth);
         for (device_rate, block) in [(44_100, 441), (44_100, 448), (96_000, 37), (22_050, 1000)] {
-            let mut voice =
-                StretchVoice::new(&clip(60.0, 0.0, None), &r, data.clone(), 120.0, device_rate).unwrap().prepared();
+            let mut voice = StretchVoice::new(&with(&clip(60.0, 0.0, None), &r), data.clone(), 120.0, device_rate)
+                .unwrap()
+                .prepared();
             let mut out = vec![0.0; block * 2];
             for _ in 0..(30 * device_rate as usize / block) {
                 voice.render(&mut out);
@@ -360,12 +366,12 @@ fn plays_through_at_any_device_rate_and_block_size() {
 fn unusable_clips_get_no_voice() {
     let data = sine(440.0, 1.0, 48_000);
     let one_marker = region(&[(0.0, 0.0)], StretchMode::Smooth);
-    assert!(StretchVoice::new(&clip(1.0, 0.0, None), &one_marker, data.clone(), 120.0, 48_000).is_none());
+    assert!(StretchVoice::new(&with(&clip(1.0, 0.0, None), &one_marker), data.clone(), 120.0, 48_000).is_none());
     let unity = region(&[(0.0, 0.0), (2.0, 1.0)], StretchMode::Smooth);
-    assert!(StretchVoice::new(&clip(1.0, 0.0, None), &unity, data.clone(), 120.0, 48_000).is_none());
+    assert!(StretchVoice::new(&with(&clip(1.0, 0.0, None), &unity), data.clone(), 120.0, 48_000).is_none());
     let repitch = region(&[(0.0, 0.0), (2.0, 0.9)], StretchMode::Repitch);
-    assert!(StretchVoice::new(&clip(1.0, 0.0, None), &repitch, data.clone(), 120.0, 48_000).is_none());
+    assert!(StretchVoice::new(&with(&clip(1.0, 0.0, None), &repitch), data.clone(), 120.0, 48_000).is_none());
     // 1 beat holding 0.02 s at 120 bpm: 0.04x speed, too slow to stretch.
     let extreme = region(&[(0.0, 0.0), (1.0, 0.02)], StretchMode::Smooth);
-    assert!(StretchVoice::new(&clip(1.0, 0.0, None), &extreme, data, 120.0, 48_000).is_none());
+    assert!(StretchVoice::new(&with(&clip(1.0, 0.0, None), &extreme), data, 120.0, 48_000).is_none());
 }

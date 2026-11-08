@@ -140,6 +140,7 @@ impl Session {
             CommandKind::EDIT => {
                 self.sync.param_edits.clear();
                 self.sync.mixer_edits.clear();
+                self.sync.envelope_edit = None;
                 self.sync.unheard = false;
                 let open = self.history.gesture.as_ref();
                 prepared.joins = gesture.is_some() && open.map(|g| g.id.as_str()) == gesture;
@@ -227,6 +228,7 @@ impl Session {
             // A parameter change goes to the engine as a message; anything else, or a message
             // that cannot be sent, as a new graph.
             let mixer = std::mem::take(&mut self.sync.mixer_edits);
+            let envelope = self.sync.envelope_edit.take();
             // An edit that changes nothing the engine plays (a colour, a name, a marker) keeps the
             // playing graph: colouring every clip of a large project built a graph for each of
             // them, six seconds in all.
@@ -239,6 +241,10 @@ impl Session {
                     (true, false, Some(player)) => {
                         mixer.into_iter().all(|change| player.set_device_param(change).is_ok())
                     }
+                    (true, true, Some(player)) => envelope.is_some_and(|(lane, index)| {
+                        let clip = self.project.arrangement.lanes.get(lane).and_then(|l| l.clips.get(index));
+                        clip.is_some_and(|clip| player.set_clip_envelope(lane, index, clip).is_ok())
+                    }),
                     _ => false,
                 };
             if !sent {

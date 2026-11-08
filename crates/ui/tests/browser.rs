@@ -750,12 +750,9 @@ fn a_sample_dragged_onto_the_empty_space_makes_an_audio_track() {
     let track = session.project().tracks.iter().find(|t| t.name == "Loop 120bpm").unwrap();
     assert!(track.content.audio);
     // The loop's tempo is in its name, so it is warped.
-    let warped = session
-        .project()
-        .contents
-        .iter()
-        .flat_map(|c| &c.lanes)
-        .any(|l| matches!(&l.data, LaneData::Audio(r) if r.warped));
+    let project = session.project();
+    let slots = project.launcher.columns.iter().flat_map(|c| &c.slots).filter_map(|s| s.clip.as_ref());
+    let warped = project.arrangement.lanes.iter().flat_map(|l| &l.clips).chain(slots).any(|c| c.audio.warped);
     assert!(warped);
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);

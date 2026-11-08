@@ -2774,6 +2774,7 @@ impl App {
             crate::kit::waveform::Scale::Linear
         };
         crate::kit::waveform::set_scale(ui.ctx(), scale);
+        crate::arrangement::envelope::set_settings(ui.ctx(), self.settings.view.envelope());
         self.frame_trace.mark("input");
 
         let grid = self.session().map(|s| {

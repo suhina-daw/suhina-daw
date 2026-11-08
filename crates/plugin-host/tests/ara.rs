@@ -43,11 +43,6 @@ fn project(clip: bool) -> Project {
         sample_rate: Some(SR),
         channels: Some(2),
         duration_seconds: Some(1.0),
-        warped: false,
-        stretch: StretchMode::default(),
-        warp_markers: Default::default(),
-        gain: 1.0,
-        transpose: 0.0,
         stream: None,
     };
     let mut channel = Channel::new(ChannelId(1), "C");
