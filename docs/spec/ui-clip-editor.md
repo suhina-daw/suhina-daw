@@ -559,7 +559,8 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   The ruler shows the same magnifier where a drag on it zooms.
 - The **View** menu in the corner over the keys holds the key style, the key names and **Allow
   stacked notes**, and keeps them in the settings, where the same choices are on the Clip editor
-  page.
+  page. **Allow stacked notes** is in the toolbar's workflow menu too, under the workflow
+  settings, as it decides what an edit does to the notes under it.
 
 ## Selecting
 
