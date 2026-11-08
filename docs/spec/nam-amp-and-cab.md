@@ -264,14 +264,24 @@ NAM models/
 
 Everything the user does is one of the existing device commands plus one new `Edit` command:
 
-- `device.add{id, position?}` — unchanged; `"nam-amp-modeler"` and `"nam-cab-loader"` are
-  ordinary effects. A fresh NAM Amp Modeler has no model: it passes the audio through and its
-  panel says to choose a file. (There is no `device.addNam`; choosing a file is its own step.)
+- `device.add{id, position?, file?}` — a file-backed device added **with** a `file` runs it at
+  once, as `device.setNamFile` gives it: the path passes the extension check, the parsed model
+  or decoded IR goes into the session's assets and the device's state becomes the file's
+  library-relative or absolute path ([ADR 0036] › it), all inside the add's own undo step. A
+  wrong extension, a device that runs no file, and a file that cannot run are refused, changing
+  nothing. Without `file`, a fresh NAM Amp Modeler has no model: it passes the audio through
+  and its panel says to choose a file. (There is no `device.addNam`; `file` is how a device
+  starts on one.) `track.add` takes the same `file` with its `device`/`preset`/`stock`.
+- **The file a device starts on**, from the app: a drag from the browser's device folders and a
+  quick-add choice of a device give it `file` — the first pack's **first** file of the folder
+  the device lists from (the setting's or the default's, the same one the pack row reads), so a
+  new Amp Modeler or Cab Loader lands loaded when that folder holds any, and without files
+  lands empty as above. A preset or a stock preset decides its own: they carry parameters and,
+  with [ADR 0036] › **A preset may name a file**, the file their `file` names.
 - `device.setNamFile{track, device, path}` — the file a device runs:
   — a pack's file by its library key (`builtin:<device id>/<file name>`), or a path.
-  - The device must be one of the two; the path or the key must end in `.nam` for an Amp
-    Modeler and `.wav` for a Cab Loader (message otherwise). A key of the other device's pack
-    is refused.
+  - The device must be one of the two; the path must end in `.nam` for an Amp Modeler and
+    `.wav` for a Cab Loader (message otherwise). A key of the other device's pack is refused.
   - The reading, parsing or decoding and the running model's construction run at command time,
     off the audio thread, bounded by the caps above. The command errors with what the file's
     fault is ("…is not a NAM model", "…is unreadable", "…is more than 256 MiB"). The parsed

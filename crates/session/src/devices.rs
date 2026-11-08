@@ -653,6 +653,23 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     };
     let info = suhina_device_registry::info(id)
         .ok_or_else(|| format!("no built-in effect or instrument {id:?}; device.list lists them"))?;
+    // A file-backed device may start on a file ([docs/spec/nam-amp-and-cab.md]): the loaded
+    // model or IR goes into the session's assets, and the device's state becomes its absolute
+    // path before the device lands, so one undo step takes the whole add back.
+    let file = match Args::new(params).value("file") {
+        None | Some(Value::Null) => None,
+        Some(v) => {
+            let path = v.as_str().ok_or("file must be a .nam model or a .wav IR file's path")?;
+            let want_extension = suhina_device_registry::file_extension(info.id.as_ref())
+                .ok_or_else(|| format!("{id:?} does not run a file"))?;
+            if !path.to_lowercase().ends_with(&format!(".{want_extension}")) {
+                return Err(format!("a {id} runs a .{want_extension} file").into());
+            }
+            let absolute_text = crate::files::absolute(std::path::Path::new(path)).display().to_string();
+            session.load_device_file(info.id.as_ref(), &absolute_text).map_err(CommandError)?;
+            Some(absolute_text)
+        }
+    };
     let params_of_preset = preset.as_ref().map_or_else(
         || {
             suhina_device_registry::new_device_params(&info.id)
@@ -662,6 +679,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
         },
         |p| p.params.iter().map(|(id, value)| DeviceParam::new(*id, *value)).collect(),
     );
+<<<<<<< HEAD
     // A preset that names a file loads it now ([ADR 0036] › device.savePreset, the file a
     // preset may name): a stock preset's file is the pack's, a user preset's their own. A file
     // that does not load leaves the device without one and says so; the device is still added.
@@ -689,6 +707,17 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
         return Ok(with_file_result(
             json!({ "device": value, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name) }),
         ));
+=======
+    let device = Device {
+        params: params_of_preset,
+        state: file.as_ref().map(|text| text.as_bytes().into()),
+        ..Device::new(&*info.name, DeviceKind::Builtin(info.id.to_string()))
+    };
+    if let Some(value) = crate::device_groups::insert_into_group(session, params, device.clone())? {
+        return Ok(
+            json!({ "device": value, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name), "file": file }),
+        );
+>>>>>>> origin/feature/nam-start-file
     }
     let instrument = info.role == Role::Instrument;
     let midi_effect = info.role == Role::MidiEffect;
@@ -737,6 +766,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     channel.devices.insert(position, device);
     Ok(with_file_result(json!({
         "device": position, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name),
+        "file": file,
         "replaced": replaced.map(|(_, name)| name),
     })))
 }

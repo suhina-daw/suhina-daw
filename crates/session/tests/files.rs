@@ -187,6 +187,28 @@ fn a_track_added_with_a_device_takes_its_kind_and_name() {
     assert_eq!(session.project(), &before, "failed adds change nothing");
 }
 
+/// `track.add` with a `file`: the device it adds runs the file at once, as `device.add` does
+/// ([docs/spec/nam-amp-and-cab.md]); a file a device does not run changes nothing.
+#[test]
+fn a_track_added_with_a_file_starts_its_device_on_it() {
+    let dir = temp_dir("track-file");
+    let model = wav(&dir, "raw cabinet.wav", 0.1, 0.5);
+    let mut session = Session::new(blank_project());
+    let added =
+        run(&mut session, "track.add", json!({ "device": "nam-cab-loader", "file": model.display().to_string() }))
+            .unwrap();
+    assert_eq!(added["kind"], "audio");
+    let file = run(&mut session, "device.file", json!({ "track": added["track"], "device": 0 })).unwrap();
+    assert_eq!(file["file"], model.display().to_string(), "the device runs the file");
+    assert_eq!(session.device_asset(&model.display().to_string()).map(|a| a.device()), Some("nam-cab-loader"));
+
+    let before = session.project().clone();
+    let error = run(&mut session, "track.add", json!({ "device": "fm-synth", "file": model.display().to_string() }))
+        .unwrap_err();
+    assert!(error.contains("does not run a file"), "{error}");
+    assert_eq!(session.project(), &before, "a refused file added nothing");
+}
+
 #[test]
 fn samples_go_one_after_another_on_a_track_at_their_length() {
     let dir = temp_dir("sequence");

@@ -824,6 +824,61 @@ fn a_projects_stored_path_gets_the_extension_check() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// `device.add` with a `file`: the device it adds runs the file at once — the state and the
+/// asset land with the add ([docs/spec/nam-amp-and-cab.md]), one undo step takes the whole add
+/// back, and a wrong extension, a plug-in's file or an unreadable file changes nothing.
+#[test]
+fn a_device_added_with_a_file_starts_on_it() {
+    let dir = std::env::temp_dir().join(format!("suhina-devices-nam-add-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("the folder is made");
+    let irs = dir.join("IRs");
+    std::fs::create_dir_all(&irs).expect("the IR folder is made");
+    let ir_path = irs.join("cabinet.wav");
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(&ir_path, spec).unwrap();
+    writer.write_sample(16_384_i16).unwrap();
+    drop(writer);
+
+    let mut session = Session::new(project());
+    let ir_file = ir_path.display().to_string();
+    let added =
+        run(&mut session, "device.add", json!({ "track": 1, "id": "nam-cab-loader", "file": &ir_file })).unwrap();
+    assert_eq!(added["file"], ir_file);
+    let file_info = run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+    assert_eq!(file_info["file"], ir_file);
+    assert_eq!(session.device_asset(&ir_file).map(|a| a.device()), Some("nam-cab-loader"));
+
+    // A wrong extension, a plug-in's device or an unreadable file leave the project alone.
+    let before = session.project().clone();
+    let wrong =
+        run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler", "file": &ir_file })).unwrap_err();
+    assert!(wrong.contains(".nam"), "{wrong}");
+    let broken = irs.join("broken.nam");
+    std::fs::write(&broken, "{not json").unwrap();
+    let fault = run(
+        &mut session,
+        "device.add",
+        json!({ "track": 1, "id": "nam-amp-modeler", "file": broken.display().to_string() }),
+    )
+    .unwrap_err();
+    assert!(fault.contains("not a NAM model"), "{fault}");
+    assert_eq!(session.project(), &before, "a refused file added nothing");
+
+    // One undo step takes the whole add back.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let channel = session.project().tracks.iter().find(|t| t.id.0 == 1).and_then(|t| t.channel);
+    let devices = channel.map(|ch| session.project().channel(ch).map_or(0, |c| c.devices.len())).unwrap_or(0);
+    assert_eq!(devices, 0, "the undo takes the device with its file off");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn devices_are_copied_pasted_and_removed_together_in_one_step_each() {
     let mut session = Session::new(project());

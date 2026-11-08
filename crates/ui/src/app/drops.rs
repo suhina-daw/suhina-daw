@@ -731,13 +731,40 @@ impl App {
         drop::plan(items, target, separate, self.settings.warp_mode.param(), stack, &name)
     }
 
+    /// A file-backed device dropped from the browser starts on the file its folder lists first
+    /// ([docs/spec/nam-amp-and-cab.md]): the plan's plain device adds and their `track.add`
+    /// twin on empty space gain the file, in the same command one undo step takes back. A plan
+    /// that already starts a device on a preset, a stock row or an .sd graph stands.
+    fn default_the_files(&mut self, plan: &mut drop::DropPlan) {
+        for (command, params) in plan.commands.iter_mut() {
+            let key = match *command {
+                "device.add" => "id",
+                "track.add" => "device",
+                _ => continue,
+            };
+            let Some(id) = params.get(key).and_then(Value::as_str) else { continue };
+            if params.get("file").is_some()
+                || params.get("preset").is_some()
+                || params.get("stock").is_some()
+                || params.get("path").is_some()
+                || params.get("sd").is_some()
+            {
+                continue;
+            }
+            if let Some(file) = self.device_default_file(id) {
+                params["file"] = json!(file);
+            }
+        }
+    }
+
     /// Runs a drop: decodes its samples on another thread first, so the window never waits,
     /// then runs its commands (ADR 0011).
     pub(super) fn drop_items(&mut self, items: &[BrowserItem], target: DropTarget, separate: bool) {
-        let Some(plan) = self.plan_drop(items, target, separate) else {
+        let Some(mut plan) = self.plan_drop(items, target, separate) else {
             self.status = Status::Hint("Nothing to add there".into());
             return;
         };
+        self.default_the_files(&mut plan);
         self.decode_then_run(plan.samples, plan.commands);
     }
 
