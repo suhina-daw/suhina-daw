@@ -399,6 +399,74 @@ fn a_refused_model_at_another_rate_keeps_the_chunk_schedule() {
 }
 
 #[test]
+fn a_hostile_rate_cannot_bound_the_staging_or_overflow() {
+    // A file can name any rate. A rate no larger than any number, or barely above zero,
+    // must be refused before the staging lists are sized: sizing asked no questions, a
+    // rate of 0.0001 Hz asked for staging of ~30 000 000 000 frames a list, and rates
+    // beyond the numbers overflowed the count on the way there. Through the public
+    // constructor, like the engine's rate-change prepare builds devices:
+    for rate in [0.000_1, 0.001, 1e300, 1e-300] {
+        let mut amp = NamAmp::with_model(parsed(Some(rate)));
+        amp.set_param(param::EQ_ON, 0.0);
+        amp.prepare(SR).expect("prepare");
+        assert_eq!(amp.latency(), D as u32, "{rate} refused: no holdback");
+        // Every staging list is the count a passthrough pair needs, not the ratio's.
+        assert!(amp.model_io[0].len() < 10_000, "rate {rate}: staging {}", amp.model_io[0].len());
+        // And the stream is the passthrough: identical input, one chunk late.
+        let mut input = sine(0.5, 220.0, 2_000);
+        input[0] = 0.5;
+        input[1] = -0.5;
+        let mut s = input.clone();
+        amp.process(&ProcessContext::default(), &mut s);
+        for (n, frame) in frames(&s).iter().enumerate() {
+            let want = if n < D { [0.0, 0.0] } else { frames(&input)[n - D] };
+            for (w, f) in want.iter().zip(frame) {
+                assert!((f64::from(*f) - f64::from(*w)).abs() < 1e-5, "rate {rate} frame {n}");
+            }
+        }
+    }
+}
+
+#[test]
+fn the_sixteen_to_one_boundary_runs_bit_exact_with_one_frame_calls() {
+    // The widest pair the gate allows: a 3 kHz model in a 48 kHz project, exactly 16 to
+    // one. One-frame calls put every leg and the model through their smallest step, and
+    // the delivered stream still has to be the reference bit for bit — which a ring
+    // overrun or a mis-counted hold would break.
+    const MODEL_HZ: f64 = 24_000.0;
+    const PROJECT_HZ: f64 = 384_000.0;
+    let parsed = parsed(Some(MODEL_HZ));
+    let mut amp = NamAmp::with_model(parsed.clone());
+    amp.set_param(param::EQ_ON, 0.0);
+    amp.prepare(PROJECT_HZ).expect("prepare");
+    let hold_frames = hold(&amp);
+    let want_hold = (f64::from((HALF_TAPS + 3) as u32) * (1.0 + PROJECT_HZ / MODEL_HZ) + 4.0).ceil() as u32;
+    assert_eq!(amp.latency(), CHUNK as u32 + want_hold, "the boundary pair runs, with its holdback");
+    let count = 4_096usize;
+    let input: Vec<f32> =
+        (0..count).map(|i| ((2.0 * std::f64::consts::PI * 220.0 * i as f64 / PROJECT_HZ).sin() * 0.4) as f32).collect();
+    let mut delivered: Vec<f64> = Vec::new();
+    for &frame in &input {
+        let mut one = [frame, frame];
+        amp.process(&ProcessContext::default(), &mut one);
+        delivered.push(f64::from(one[0]));
+    }
+    let reference = leg_reference(parsed.as_ref(), MODEL_HZ, PROJECT_HZ, &input);
+    let window = reference.len().min(count.saturating_sub(D + hold_frames + 64));
+    for (p, &want) in reference.iter().enumerate().skip(100).take(window - 100) {
+        let n = p + D + hold_frames;
+        assert_eq!(
+            delivered[n],
+            f64::from(want as f32),
+            "frame {n} (produced {p}): device {}, reference {}",
+            delivered[n],
+            want
+        );
+    }
+    assert!(window > 2_500, "the comparison ran over too little: {window}");
+}
+
+#[test]
 fn a_model_with_an_unrunnable_rate_is_refused() {
     // Outside the rates Suhina runs at all...
     for rate in [7_999.0, 500_000.0] {

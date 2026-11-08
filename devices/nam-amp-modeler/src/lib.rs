@@ -264,7 +264,13 @@ impl NamAmp {
         let sr = self.sample_rate;
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
         self.model_rate = self.model.as_ref().map_or(0.0, |m| m.expected_sample_rate());
-        let model_rate = self.model_hertz().max(1.0);
+        // The rate gate runs before anything is sized or allocated: sizing asked the file's
+        // rate no questions, and a hostile file could ask for staging that grows with the
+        // ratio without a bound ([model::runnable_rate]). A refused model is sized as the
+        // passthrough it plays as.
+        self.model_refused =
+            self.model.as_ref().is_some_and(|parsed| model::runnable_rate(sr, parsed.expected_sample_rate()).is_err());
+        let model_rate = if self.model_refused { sr } else { self.model_hertz().max(1.0) };
         self.sides = [Side::new(sr, model_rate), Side::new(sr, model_rate)];
         self.chunk[0].fill(0.0);
         self.chunk[1].fill(0.0);
@@ -297,18 +303,13 @@ impl NamAmp {
             delay.set_frames(frames);
         }
         self.tune();
-        // The running model, two instances (one per side), or its refusal. A model whose
-        // rate the project cannot share with it refuses through the same path: beyond the
-        // rate gate the legs' staging would be sized by an unbounded ratio and they could
-        // outgrow the delivery ring, so out of the way it is ([model::runnable_rate]).
+        // The running model, two instances (one per side), or the refusal the gate decided
+        // before any sizing. A model whose features the runtime refuses joins it here.
         self.running = [None, None];
-        self.model_refused = false;
-        if let Some(parsed) = self.model.as_ref() {
-            self.model_refused = model::runnable_rate(self.sample_rate, parsed.expected_sample_rate()).is_err();
+        if let Some(parsed) = self.model.as_ref()
+            && !self.model_refused
+        {
             for slot in self.running.iter_mut() {
-                if self.model_refused {
-                    break;
-                }
                 match Model::from_nam(parsed.as_ref()) {
                     Ok(instance) => *slot = Some(instance),
                     Err(_) => {
