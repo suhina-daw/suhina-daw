@@ -12,9 +12,10 @@
 //! `process_buffer` is allocation-free. Nothing on the audio path allocates.
 //!
 //! The stream runs in fixed chunks of [`CHUNK`] frames counted from a reset, and the output
-//! trails the input by one chunk — [`CHUNK`], told through `latency()` — so a host's block
-//! sizes never change the sound. A missing model, or one the runtime refuses, leaves the trims,
-//! EQ and delay in place and the model silent, so the rest of the chain still works.
+//! trails the input by one chunk plus the resampler legs' holdback — [`CHUNK`] when the
+//! model's rate is the project's, told through `latency()` — so a host's block sizes never
+//! change the sound. A missing model, or one the runtime refuses, leaves the trims, EQ and
+//! delay in place and the model silent, so the rest of the chain still works.
 
 use std::sync::Arc;
 
@@ -123,6 +124,10 @@ pub struct NamAmp {
     /// The stream positions of the next input frame and of the next produced output.
     in_pos: u64,
     produced_pos: u64,
+    /// Frames the two resampler legs' production trails the chunked feed, which the delivery
+    /// waits for so it never reads a slot before production reaches it. Zero without a
+    /// running model, when the model refuses to build, and when the rates match (no legs).
+    leg_hold: u32,
     /// Staging per side: the chunk staged into the model's rate, the model's own f32 buffer,
     /// the DC's output, and the side's produced frames waiting for the tails.
     chunk_f64: [Vec<f64>; 2],
@@ -171,6 +176,7 @@ impl NamAmp {
             ready_right: Box::new([0.0; RING]),
             in_pos: 0,
             produced_pos: 0,
+            leg_hold: 0,
             chunk_f64: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
             model_input: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
             model_io: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
@@ -300,6 +306,17 @@ impl NamAmp {
                 self.apply_hq();
             }
         }
+        // When the legs run, their produced stream trails the chunked feed by the two legs'
+        // kernel halves — about `(HALF_TAPS + 2)·(1 + project/model)` frames, plus a frame or
+        // two of each leg's tick-to-tick phase jitter. The delivery waits this much past the
+        // chunk so it never reads a slot production has not reached yet; `latency()` reports
+        // the same sum to the engine's compensation.
+        self.leg_hold = if !self.model_refused && self.running[0].is_some() && self.model_rate != self.sample_rate {
+            let ratio = self.sample_rate / self.model_hertz().max(1.0);
+            ((f64::from((HALF_TAPS + 3) as u32) * (1.0 + ratio) + 4.0).ceil()) as u32
+        } else {
+            0
+        };
     }
 }
 
@@ -399,8 +416,9 @@ impl NamAmp {
         for pair in buffer.as_chunks_mut::<2>().0 {
             let in_at = self.in_pos;
             let input = [pair[0], pair[1]];
-            // The output CHUNK frames behind: produced the moment this frame is fed.
-            match in_at.checked_sub(CHUNK as u64) {
+            // The output CHUNK frames behind — plus the legs' holdback when they run: produced
+            // the moment this frame is fed.
+            match in_at.checked_sub(CHUNK as u64 + u64::from(self.leg_hold)) {
                 Some(p) => {
                     let slot = (p as usize) & (RING - 1);
                     pair[0] = self.ready_left[slot];
@@ -456,9 +474,10 @@ impl Device for NamAmp {
     }
 
     fn latency(&self) -> u32 {
-        // One fixed chunk; the model's own stream placement is exact and the legs' production
-        // is schedule-covered.
-        CHUNK as u32
+        // One fixed chunk, plus the resampler legs' holdback when they run: the delivery never
+        // reads a slot the legs' production has not reached, and the engine's compensation
+        // knows the stream's whole placement.
+        CHUNK as u32 + self.leg_hold
     }
 
     fn process(&mut self, _context: &ProcessContext, buffer: &mut [f32]) {

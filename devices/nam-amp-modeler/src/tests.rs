@@ -168,6 +168,134 @@ fn a_model_at_another_rate_still_runs() {
     assert!(tail.iter().any(|v| v.abs() > 1e-3), "silence through the legs");
 }
 
+/// The frames the resampler legs hold their stream back by: `latency()` minus the chunk.
+fn hold(amp: &NamAmp) -> usize {
+    amp.latency() as usize - D
+}
+
+/// The stream the legs' stages produce outside the device: the trims the device's head runs
+/// (the tests here turn the EQ off, so the trims only), the resampler into the model's rate,
+/// the model, its DC blocker and the resampler back — fed the whole stream in one call, since
+/// the resampler's output never depends on how a stream is divided into calls. The device has
+/// to deliver these frames, at these indices, once its schedule adds the chunk and the legs'
+/// holdback.
+fn leg_reference(model: &NamModel, model_rate: f64, sample_rate: f64, samples: &[f32]) -> Vec<f64> {
+    let mut running = Model::from_nam(model).expect("the model builds");
+    let mut into = Resampler::new(sample_rate, model_rate);
+    let mut back = Resampler::new(model_rate, sample_rate);
+    let mut dc = DcBlocker::new(model_rate.max(1.0));
+    let input: Vec<f64> = samples.iter().map(|&x| f64::from(x)).collect();
+    let mut mid = vec![0.0f64; input.len() * 3 + 128];
+    let fed = into.process(&input, &mut mid);
+    let mut io: Vec<f32> = mid[..fed].iter().map(|&v| v as f32).collect();
+    running.process_buffer(&mut io);
+    let dced: Vec<f64> = io.iter().map(|&io| dc.process(f64::from(io))).collect();
+    let mut produced = vec![0.0f64; input.len() * 3 + 128];
+    let wrote = back.process(&dced, &mut produced);
+    produced.truncate(wrote);
+    produced
+}
+
+#[test]
+fn a_model_at_a_lower_rate_delivers_the_legs_stream() {
+    // A 44.1 kHz model in a 48 kHz project: the legs run and hold the stream back. The output
+    // must be the legs' produced stream, delayed by the chunk plus the holdback, frame for
+    // frame. (The delivery used to run one chunk ahead of production: the last ~52 frames of
+    // every chunk read slots the legs had not reached yet and landed as loud crackle.)
+    const MODEL_HZ: f64 = 44_100.0;
+    let parsed = parsed(Some(MODEL_HZ));
+    let mut amp = loader(Some(Arc::clone(&parsed)), &[(param::EQ_ON, 0.0)]);
+    let want_hold = (f64::from((HALF_TAPS + 3) as u32) * (1.0 + SR / MODEL_HZ) + 4.0).ceil() as u32;
+    assert_eq!(amp.latency(), CHUNK as u32 + want_hold, "the legs' holdback, told through latency()");
+    let input = sine(0.4, 220.0, 9_600);
+    let mut s = input.clone();
+    amp.process(&ProcessContext::default(), &mut s);
+    let left: Vec<f32> = frames(&input).iter().map(|f| f[0]).collect();
+    let reference = leg_reference(parsed.as_ref(), MODEL_HZ, SR, &left);
+    let delivered: Vec<f64> = frames(&s).iter().map(|f| f64::from(f[0])).collect();
+    let window = reference.len().min(9_600usize.saturating_sub(D + hold(&amp) + 64));
+    for (p, &want) in reference.iter().enumerate().skip(200).take(window - 200) {
+        let n = p + D + hold(&amp);
+        // The delivered stream is the reference after its own f32 round trip, bit for bit.
+        assert_eq!(
+            delivered[n],
+            f64::from(want as f32),
+            "frame {n} (produced {p}): device {}, reference {}",
+            delivered[n],
+            want
+        );
+    }
+    assert!(window > 3_000, "the comparison ran over too little: {window}");
+}
+
+#[test]
+fn a_model_at_a_higher_rate_delivers_the_legs_stream_too() {
+    // A 48 kHz model in a 44.1 kHz project: the legs run the other way round; the schedule has
+    // to hold back for that rate pair the same way.
+    let parsed = parsed(Some(48_000.0));
+    let mut amp = NamAmp::with_model(Arc::clone(&parsed));
+    amp.set_param(param::EQ_ON, 0.0);
+    amp.prepare(44_100.0).expect("prepare");
+    let want_hold = (f64::from((HALF_TAPS + 3) as u32) * (1.0 + 44_100.0 / 48_000.0) + 4.0).ceil() as u32;
+    assert_eq!(amp.latency(), CHUNK as u32 + want_hold, "the legs' holdback, other way");
+    let count = 8_800usize;
+    let input: Vec<f32> = (0..count)
+        .flat_map(|n| {
+            let v = ((2.0 * std::f64::consts::PI * 200.0 * n as f64 / 44_100.0).sin() * 0.4) as f32;
+            [v, v]
+        })
+        .collect();
+    let mut s = input.clone();
+    amp.process(&ProcessContext::default(), &mut s);
+    let left: Vec<f32> = frames(&input).iter().map(|f| f[0]).collect();
+    let reference = leg_reference(parsed.as_ref(), 48_000.0, 44_100.0, &left);
+    let delivered: Vec<f64> = frames(&s).iter().map(|f| f64::from(f[0])).collect();
+    for (p, &want) in reference
+        .iter()
+        .enumerate()
+        .skip(200)
+        .take(reference.len().min(count.saturating_sub(D + hold(&amp) + 64)) - 200)
+    {
+        let n = p + D + hold(&amp);
+        assert_eq!(
+            delivered[n],
+            f64::from(want as f32),
+            "frame {n} (produced {p}): device {}, reference {}",
+            delivered[n],
+            want
+        );
+    }
+}
+
+#[test]
+fn a_refused_model_at_another_rate_keeps_the_chunk_schedule() {
+    // A model the runtime refuses never runs: no legs, no holdback, and the stream is the
+    // pass-through through the stages, bit-true.
+    const REFUSED: &str = r#"{
+        "version": "0.5.4", "architecture": "WaveNet",
+        "config": { "in_channels": 2, "layers": [{
+            "input_size": 1, "condition_size": 1, "channels": 1, "head_size": 1,
+            "kernel_size": 1, "dilations": [1], "activation": "ReLU",
+            "gated": false, "head_bias": false
+        }], "head": null, "head_scale": 1.0 },
+        "weights": [1.0, 2.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0]
+    }"#;
+    let mut model = NamModel::from_json_str(REFUSED).expect("the refused model parses");
+    model.sample_rate = Some(44_100.0);
+    let parsed = Arc::new(model);
+    let mut amp = loader(Some(parsed), &[(param::EQ_ON, 0.0)]);
+    assert_eq!(amp.latency(), D as u32, "no legs, no holdback");
+    let input = sine(0.5, 300.0, 2_000);
+    let mut s = input.clone();
+    amp.process(&ProcessContext::default(), &mut s);
+    for (n, frame) in frames(&s).iter().enumerate() {
+        let want = frames(&input)[n.saturating_sub(D)];
+        for (w, f) in want.iter().zip(frame) {
+            assert!((f64::from(*f) - f64::from(*w)).abs() < 1e-5, "frame {n}: {f} vs {w}");
+        }
+    }
+}
+
 #[test]
 fn hostile_numbers_stay_finite() {
     let mut amp = loader(

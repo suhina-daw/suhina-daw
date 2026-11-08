@@ -101,9 +101,9 @@ EQ and delay still work.
 - **Volume** sets the output level, after the model.
 - **No bypass of its own** (decided 2026-10-18, #645): a device has one on/off state, the
   header's square and the 0 key (`device.setEnabled`), which turns the whole device off.
-- **Latency:** the model adds none. The resampler adds its own few frames when it runs; the
-  device reports them in `latency()` so the engine's compensation keeps parallel chains in
-  phase. The **Delay** knob's frames are not reported.
+- **Latency:** the model adds none. The device reports its 512-frame chunk in `latency()`, plus
+  the resamplers' holdback when they run (about a millisecond), so the engine's compensation
+  keeps parallel chains in phase. The **Delay** knob's frames are not reported.
 
 ### NAM Cab Loader (`nam-cab-loader`)
 
@@ -133,7 +133,7 @@ not a mix.
   paths, as with the limiter's look-ahead. Longer IRs are handled inside the same delay with the
   partition's tail buffers. The **Delay** knob is not reported.
 
-Both devices process in fixed 256-frame internal blocks counted from `reset` — like the FM
+Both devices process in fixed 512-frame internal blocks counted from `reset` — like the FM
 synth's internal blocks — so the output never depends on how a stream is divided, whatever the
 host's buffer size or the conformance tests throw at them, and nothing on the audio path
 allocates ([ADR 0004] › rules 3 and 6). Both pass the contract tests (`device_api::conformance`),
@@ -167,9 +167,12 @@ A model runs at `expected_sample_rate()`. When the project runs at another rate,
 signal is resampled into the model's rate before the model and back after it, by a windowed-sinc
 polyphase resampler (`crates/dsp::resampler`, a fixed kernel table, no allocation): the input
 under-runs nothing and the output is not silent when the project starts mid-stream. At the same
-rate, both resamplers pass through untouched. The device reports the resampler's added frames —
-about a millisecond — as latency; the offline render and the live engine run the same code, so a
-render of a 44.1 kHz project with a 48 kHz model is what playback sounds like.
+rate, both resamplers pass through untouched. The device holds the stream back its 512-frame
+chunk plus the resamplers' holdback — a few dozen frames, about a millisecond — and reports that
+sum in `latency()`: the legs' produced frames trail the chunked feed by that much, and a delivery
+that ran any sooner would read slots the legs had not reached yet, as loud crackle. The offline
+render and the live engine run the same code, so a render of a 44.1 kHz project with a 48 kHz
+model is what playback sounds like.
 
 ## Folders
 
