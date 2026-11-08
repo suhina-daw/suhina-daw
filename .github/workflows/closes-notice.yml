@@ -94,11 +94,11 @@ jobs:
               }
             }
 
-            let body;
+            let notice;
             if (open.length > 0) {
               const lines = open.slice(0, 10).map((issue) => `- #${issue.number} ${issue.title}`);
               if (open.length > 10) lines.push(`- and ${open.length - 10} more`);
-              body =
+              notice =
                 `${MARKER}\nThe title or description names open issues without a closing keyword:\n\n` +
                 `${lines.join("\n")}\n\n` +
                 `If this pull request settles one, write \`Closes #N\` on its own line in the description: ` +
@@ -107,9 +107,9 @@ jobs:
                 `(docs/workflow.md › Closing issues). This is a notice, not a check.`;
             } else {
               if (incomplete) return;
-              body = `${MARKER}\nEvery issue named is closed by a keyword, marked as related, or already closed.`;
+              notice = `${MARKER}\nEvery issue named is closed by a keyword, marked as related, or already closed.`;
             }
-            if (incomplete) body += "\n\nThe scan is incomplete because an API lookup failed; other issues may be missing.";
+            if (incomplete) notice += "\n\nThe scan is incomplete because an API lookup failed; other issues may be missing.";
 
             try {
               const comments = await github.paginate(github.rest.issues.listComments, {
@@ -123,11 +123,11 @@ jobs:
               if (previous) {
                 // Preserve the last complete notice until a complete scan can replace it.
                 if (incomplete) return;
-                if (previous.body !== body) {
-                  await github.rest.issues.updateComment({ ...context.repo, comment_id: previous.id, body });
+                if (previous.body !== notice) {
+                  await github.rest.issues.updateComment({ ...context.repo, comment_id: previous.id, body: notice });
                 }
               } else if (open.length > 0) {
-                await github.rest.issues.createComment({ ...context.repo, issue_number: pr.number, body });
+                await github.rest.issues.createComment({ ...context.repo, issue_number: pr.number, body: notice });
               }
             } catch (error) {
               core.warning(`Could not write the comment: ${error.message}`);
