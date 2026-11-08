@@ -168,7 +168,12 @@ which run hostile parameter values, hostile buffers, every block size and 8…38
 
 ## Sample rates
 
-A model runs at `expected_sample_rate()`. When the project runs at another rate, each side's
+A model runs at `expected_sample_rate()`. A model whose rate the project cannot share with it
+is kept but refused: a rate that is not a number, outside Suhina's own rate range (8–384 kHz)
+or more than sixteen times the project's on either side asks for staging that grows with the
+ratio (unbounded vs the audio thread's rules) and outgrows the delivery ring, so the device
+plays as if switched off and the note row says why — checked when the file is chosen and again
+whenever the project's rate changes. When the project runs at another rate, each side's
 signal is resampled into the model's rate before the model and back after it, by a windowed-sinc
 polyphase resampler (`crates/dsp::resampler`, a fixed kernel table, no allocation): the input
 under-runs nothing and the output is not silent when the project starts mid-stream. At the same

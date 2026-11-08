@@ -143,6 +143,53 @@ fn the_delay_holds_a_pulse_back() {
 }
 
 #[test]
+fn the_stages_run_over_varied_calls() {
+    // The stages run on the frames each call brings, whatever size it is, and a call
+    // longer than the chunk splits at the chunk array's end. Calls of sizes below, one
+    // over, at, and far over the chunk must keep the staging caught up to every call's
+    // frames, with the delivered stream the reference bit for bit.
+    const MODEL_HZ: f64 = 44_100.0;
+    let parsed = parsed(Some(MODEL_HZ));
+    let mut amp = NamAmp::with_model(parsed.clone());
+    amp.set_param(param::EQ_ON, 0.0);
+    amp.prepare(SR).expect("prepare");
+    let sizes = [3usize, 1, 513, 7, 512, 963];
+    let total = sizes.iter().sum::<usize>();
+    let input: Vec<f32> = (0..total)
+        .flat_map(|n| {
+            let v = ((2.0 * std::f64::consts::PI * 220.0 * n as f64 / SR).sin() * 0.4) as f32;
+            [v, v]
+        })
+        .collect();
+    let left: Vec<f32> = frames(&input).iter().map(|f| f[0]).collect();
+    let reference = leg_reference(parsed.as_ref(), MODEL_HZ, SR, &left);
+
+    let mut delivered: Vec<f64> = Vec::new();
+    let mut at = 0usize;
+    for &size in &sizes {
+        let (from, to) = (at * 2, (at + size) * 2);
+        let mut block: Vec<f32> = input[from..to].to_vec();
+        amp.process(&ProcessContext::default(), &mut block);
+        delivered.extend(block.as_chunks::<2>().0.iter().map(|f| f64::from(f[0])));
+        // Every frame the call brought has been through the stages before it ends.
+        assert_eq!(amp.staged_total as usize, at + size, "after a call of {size}");
+        at += size;
+    }
+    let window = reference.len().min(total.saturating_sub(D + hold(&amp) + 64));
+    for (p, &want) in reference.iter().enumerate().skip(100).take(window - 100) {
+        let n = p + D + hold(&amp);
+        assert_eq!(
+            delivered[n],
+            f64::from(want as f32),
+            "frame {n} (produced {p}): device {}, reference {}",
+            delivered[n],
+            want
+        );
+    }
+    assert!(window > 1_000, "the comparison ran over too little: {window}");
+}
+
+#[test]
 fn the_volume_sets_the_level_of_what_runs() {
     // Without a model, the trims shape the stream: ±12 dB on both ends.
     let mut amp = loader(None, &[(param::EQ_ON, 0.0), (param::INPUT_GAIN, -6.0), (param::OUTPUT_VOLUME, -6.0)]);
@@ -336,15 +383,61 @@ fn a_refused_model_at_another_rate_keeps_the_chunk_schedule() {
     let parsed = Arc::new(model);
     let mut amp = loader(Some(parsed), &[(param::EQ_ON, 0.0)]);
     assert_eq!(amp.latency(), D as u32, "no legs, no holdback");
-    let input = sine(0.5, 300.0, 2_000);
+    // The first frames stand out (0.5, -0.5): startup must read silence, not a copy of
+    // frame 0.
+    let mut input = sine(0.5, 300.0, 2_000);
+    input[0] = 0.5;
+    input[1] = -0.5;
     let mut s = input.clone();
     amp.process(&ProcessContext::default(), &mut s);
     for (n, frame) in frames(&s).iter().enumerate() {
-        let want = frames(&input)[n.saturating_sub(D)];
+        let want = if n < D { [0.0, 0.0] } else { frames(&input)[n - D] };
         for (w, f) in want.iter().zip(frame) {
             assert!((f64::from(*f) - f64::from(*w)).abs() < 1e-5, "frame {n}: {f} vs {w}");
         }
     }
+}
+
+#[test]
+fn a_model_with_an_unrunnable_rate_is_refused() {
+    // Outside the rates Suhina runs at all...
+    for rate in [7_999.0, 500_000.0] {
+        let amp = loader(Some(parsed(Some(rate))), &[(param::EQ_ON, 0.0)]);
+        assert_eq!(amp.latency(), D as u32, "{rate} does not run: no legs, no holdback");
+    }
+    // ...or too far from the project's: an 8 kHz model at 384 kHz sits 48 times off, a
+    // 1 kHz model 384. The device passes the signal through here as well, with no legs.
+    for (model, project) in [(8_000.0_f64, 384_000.0_f64), (1_000.0, 384_000.0)] {
+        let mut amp = NamAmp::with_model(parsed(Some(model)));
+        amp.prepare(project).expect("prepare");
+        assert_eq!(amp.latency(), D as u32, "{model} at {project}: refused, no holdback");
+    }
+    // And the gate does not refuse what it should run: the same 8 kHz model at the 48 kHz
+    // default resamples like any other.
+    let parsed = parsed(Some(8_000.0));
+    let mut amp = NamAmp::with_model(parsed.clone());
+    amp.set_param(param::EQ_ON, 0.0);
+    amp.prepare(SR).expect("prepare");
+    assert!(amp.latency() > D as u32, "an 8 kHz model at a 48 kHz project runs");
+    let input = sine(0.4, 220.0, 6_400);
+    let mut s = input.clone();
+    amp.process(&ProcessContext::default(), &mut s);
+    let left: Vec<f32> = frames(&input).iter().map(|f| f[0]).collect();
+    let reference = leg_reference(parsed.as_ref(), 8_000.0, SR, &left);
+    let delivered: Vec<f64> = frames(&s).iter().map(|f| f64::from(f[0])).collect();
+    let (chunk, hold_frames) = (D, hold(&amp));
+    let reachable = reference.len().min(6_400usize.saturating_sub(chunk + hold_frames + 64));
+    for (p, &want) in reference.iter().enumerate().skip(200).take(reachable - 200) {
+        let n = p + chunk + hold_frames;
+        assert_eq!(
+            delivered[n],
+            f64::from(want as f32),
+            "frame {n} (produced {p}): device {}, reference {}",
+            delivered[n],
+            want
+        );
+    }
+    assert!(reachable > 2_000, "the comparison ran over too little: {reachable}");
 }
 
 #[test]

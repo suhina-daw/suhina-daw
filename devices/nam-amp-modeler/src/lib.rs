@@ -297,11 +297,18 @@ impl NamAmp {
             delay.set_frames(frames);
         }
         self.tune();
-        // The running model, two instances (one per side), or its refusal.
+        // The running model, two instances (one per side), or its refusal. A model whose
+        // rate the project cannot share with it refuses through the same path: beyond the
+        // rate gate the legs' staging would be sized by an unbounded ratio and they could
+        // outgrow the delivery ring, so out of the way it is ([model::runnable_rate]).
         self.running = [None, None];
         self.model_refused = false;
         if let Some(parsed) = self.model.as_ref() {
+            self.model_refused = model::runnable_rate(self.sample_rate, parsed.expected_sample_rate()).is_err();
             for slot in self.running.iter_mut() {
+                if self.model_refused {
+                    break;
+                }
                 match Model::from_nam(parsed.as_ref()) {
                     Ok(instance) => *slot = Some(instance),
                     Err(_) => {
