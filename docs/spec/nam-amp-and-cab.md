@@ -194,11 +194,12 @@ Projects folder row (a field on the right, the default shown when the setting is
 | NAM | **Amp models folder** | The folder the NAM Amp Modeler lists its amp models from | `nam_models_folder` |
 | NAM | **Cabinet sounds folder** | The folder the NAM Cab Loader lists its speaker cabinet recordings from | `irs_folder` |
 
-- **Defaults:** `Suhina/NAM models` and `Suhina/IRs` in the user's documents folder — beside the
-  default Projects and Templates folders, with the same old-folder fallback. The desktop app
-  makes both default folders at start when they do not exist, so a user's first step is only to
-  drop files in; a chosen (non-default) folder is left as the user's, and the device panels'
-  list of a folder that is not there is empty, with the path and a note to put files in it.
+- **Defaults:** `Suhina/Sounds/NAM/Amp models` and `Suhina/Sounds/NAM/Cabinets` in the user's
+  documents folder, under Sounds/NAM, with the same old-folder fallback as the Projects and
+  Templates defaults. The desktop app makes both default folders at start when they do not
+  exist, so a user's first step is only to drop files in; a chosen (non-default) folder is left
+  as the user's, and the device panels' list of a folder that is not there is empty, with the
+  path and a note to put files in it.
 - The pick bridge gets two fields (`PickField::NamModelsFolder`, `PickField::IrFolder`) so the
   system dialog opens for them like for the Projects folder (macOS waits on the main thread, as
   those already do).
@@ -217,7 +218,7 @@ The folders the users keep are an everyday thing: a NAM capture drop usually arr
 are two levels deep, the same for both devices:
 
 ```text
-NAM models/
+Amp models/
 ├── British Plexi (Slammin Captures)/   ← a pack: one subfolder
 │   ├── Bright Cranked.nam
 │   ├── Crunch.nam
