@@ -11,7 +11,7 @@
     "guitar"
   ],
   "params": {
-    "inputGain": -1.0,
+    "inputGain": 8.0,
     "eqBass": 0.0,
     "eqMid": 1.5,
     "eqTreble": 3.0,
@@ -19,7 +19,7 @@
     "eqOn": 1.0,
     "delay": 0.0,
     "hq": 1.0,
-    "outputVolume": 0.0
+    "outputVolume": 1.5
   },
   "file": "builtin:nam-amp-modeler/Tim R Fender TwinVerb Vibrato Bright.nam"
 }

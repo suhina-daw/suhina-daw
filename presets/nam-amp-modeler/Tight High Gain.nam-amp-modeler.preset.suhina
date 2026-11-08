@@ -19,7 +19,7 @@
     "eqOn": 1.0,
     "delay": 0.0,
     "hq": 1.0,
-    "outputVolume": 0.0
+    "outputVolume": 9.0
   },
   "file": "builtin:nam-amp-modeler/Helga B 5150 BlockLetter - NoBoost.nam"
 }

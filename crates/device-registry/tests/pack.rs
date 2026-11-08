@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use suhina_device_api::conformance::test_signal;
 use suhina_device_api::{Device, ProcessContext};
-use suhina_device_registry::{create, create_with, load_builtin_file, pack_files};
+use suhina_device_registry::{create, create_with, info, load_builtin_file, pack_files, stock_presets};
 
 const RATE: u32 = 48_000;
 
@@ -122,5 +122,41 @@ fn every_pack_ir_runs_stereo() {
         cab.process(&ProcessContext::default(), &mut frames);
         let passive = frames.as_chunks::<2>().0.iter().any(|[l, _]| l.abs() > 1e-3);
         assert!(passive, "{name} renders silence");
+    }
+}
+
+/// Every stock preset that names a file is heard when it is added (its values at the pack's
+/// asset, as `device.add {}` runs them): the pair makes up the model's own level — the clean
+/// pairing reads quieter than the loud ones — the peak stays under full scale, and the
+/// loudness is not the model's silent tail. The bounds hold the balance: until 2026-11-08
+/// Bright Clean sat −18 dB under the crunch pairings and rode over full scale once raised.
+#[test]
+fn every_stock_preset_naming_a_file_renders_heard_and_under_full_scale() {
+    let phrase = phrase();
+    for stock in stock_presets() {
+        let Some(file) = stock.preset.file.as_deref() else { continue };
+        let Some((id, name)) = file.strip_prefix("builtin:").and_then(|s| s.split_once('/')) else {
+            panic!("{}: {} is not a shipped file's key", stock.key, file);
+        };
+        let asset = load_builtin_file(id, name, RATE).unwrap_or_else(|e| panic!("{}: {e}", stock.key));
+        let mut device = create_with(id, Some(&asset)).unwrap();
+        for (param, value) in &stock.preset.params {
+            let info = info(id).unwrap();
+            let index = info.param_index(param).unwrap_or_else(|| panic!("{}: {param:?}", stock.key));
+            device.set_param(index, *value);
+        }
+        let mut clone = phrase.clone();
+        let out = rendered(device.as_mut(), &mut clone);
+        let peak = out.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        let peak_db = 20.0 * f64::from(peak).log10().max(-96.0);
+        let rms = out.iter().map(|s| f64::from(*s) * f64::from(*s)).sum::<f64>() / out.len().max(1) as f64;
+        let loudness_db = 10.0 * rms.log10().max(-96.0);
+        assert!(peak_db <= -0.05, "{} renders at {peak_db:+.1} dBFS, over full scale", stock.key);
+        assert!(
+            loudness_db >= -34.0,
+            "{} renders at {loudness_db:+.1} dB, {:+.} under the level a preset is meant to start at",
+            stock.key,
+            loudness_db + 34.0
+        );
     }
 }
