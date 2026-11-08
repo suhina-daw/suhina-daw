@@ -41,7 +41,7 @@ mod layout;
 mod span;
 mod state;
 mod toolbar;
-pub(crate) use toolbar::{grid_entries, grid_key_labels, menu_arrow};
+pub(crate) use toolbar::{grid_entries, grid_key_labels, menu_arrow, menu_face};
 
 pub use self::clip::*;
 #[cfg(test)]

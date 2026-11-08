@@ -366,10 +366,14 @@ pub(super) fn toolbar(
             own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, row.height().max(8.0))),
         )
     };
-    // The workflow and ghost menus as wide as their words, so they sit close by.
-    let workflow_named = menu_width(ui, keymap.preset().name());
-    let ghosts_named = menu_width(ui, "Ghosts");
-    let step = layout_step(ui, row, (size, gap, side), workflow_named + ghosts_named);
+    // The menus as wide as their words, so they sit close by.
+    let workflow_named = menu_width(ui, (None, keymap.preset().name()));
+    let ghosts_named = menu_width(ui, (None, "Ghosts"));
+    let arrow = menu_width(ui, (None, ""));
+    let grid_value = clip.grid_menu.label();
+    let grids = (menu_width(ui, (Some("Grid"), &grid_value)), menu_width(ui, (None, &grid_value)));
+    let widths = MenuWidths { named: workflow_named + ghosts_named, arrows: 2.0 * arrow, grids };
+    let step = layout_step(ui, row, (size, gap, side), widths);
     let paint = ButtonPaint { ui, painter: &painter, keymap, scale };
     let x = std::cell::Cell::new(row.left() + TOOLBAR_INSET);
     let place = || {
@@ -428,36 +432,26 @@ pub(super) fn toolbar(
     }
     let left_end = x.get();
 
-    // From the right end: the ×, the grid value and its caption, a divider, the ghost menu and
-    // the Rows group.
+    // From the right end: the ×, the grid menu (its value after a dim "Grid"), a divider, the
+    // ghost and workflow menus and the Rows group.
     let hide =
         Rect::from_min_size(Pos2::new(row.right() - side, row.top() + (row.height() - side) / 2.0), Vec2::splat(side));
     if hide.left() >= left_end && paint.place(hide, IconButton::Hide, false, true) {
         state.hide_requested = true;
     }
+    let caption = step == Step::Full;
+    let grid_width = if caption { grids.0 } else { grids.1 };
     let menu = Rect::from_min_max(
-        Pos2::new(hide.left() - gap - 2.0 - GRID_MENU, row.top()),
+        Pos2::new(hide.left() - gap - 2.0 - grid_width, row.top()),
         Pos2::new(hide.left() - gap - 2.0, row.bottom()),
     );
     if menu.left() < left_end + 6.0 {
         return;
     }
-    if let Some(picked) = grid_menu(ui, menu, clip, keymap) {
+    if let Some(picked) = grid_menu(ui, menu, clip, keymap, caption) {
         state.grid_picked = Some(picked);
     }
     let mut right = menu.left();
-    if step == Step::Full {
-        let label = Rect::from_min_max(Pos2::new(right - 34.0, row.top()), Pos2::new(right - 4.0, row.bottom()));
-        widgets::text_in(
-            &painter,
-            label,
-            Align2::RIGHT_CENTER,
-            "Grid",
-            theme::ui_font(theme::TEXT_SMALL),
-            theme::text_hint(),
-        );
-        right -= 40.0;
-    }
     if step == Step::Squeezed {
         return;
     }
@@ -465,11 +459,11 @@ pub(super) fn toolbar(
     right -= 10.0;
     let words = step < Step::Icons;
     let named = step < Step::Arrows;
-    let ghost_width = if named { ghosts_named } else { MENU_ARROW };
+    let ghost_width = if named { ghosts_named } else { arrow };
     let ghosts = Rect::from_min_max(Pos2::new(right - ghost_width, row.top()), Pos2::new(right, row.bottom()));
     ghost_view::menu(ui, ghosts, &clip.ghosts, &mut state.ghost_source, named);
-    right = ghosts.left() - 4.0;
-    let workflow_width = if named { workflow_named } else { MENU_ARROW };
+    right = ghosts.left() - 2.0;
+    let workflow_width = if named { workflow_named } else { arrow };
     let workflow = Rect::from_min_max(Pos2::new(right - workflow_width, row.top()), Pos2::new(right, row.bottom()));
     workflow_menu(ui, workflow, keymap, state, named);
     right = workflow.left() - 6.0;
@@ -497,13 +491,66 @@ enum Step {
 /// The room a toolbar button has beside its icon, both sides together, at Normal size, in points.
 const BUTTON_ROOM: f32 = 8.0;
 
-/// The width of a toolbar menu as its arrow alone, in points.
-const MENU_ARROW: f32 = 22.0;
+/// The room a toolbar menu's button leaves before its first word and after its chevron, in points.
+const MENU_PAD: f32 = 6.0;
 
-/// How wide a toolbar menu's button is with `word` on it: the word, the room the menu's arrow
-/// takes after it, and the button's padding.
-fn menu_width(ui: &Ui, word: &str) -> f32 {
-    widgets::text_width(ui, &format!("{word}   "), theme::ui_font(theme::TEXT_SMALL)) + 10.0
+/// The room between a toolbar menu's words, and between its last word and the chevron, in points.
+const MENU_SPACE: f32 = 4.0;
+
+/// How wide a toolbar menu's chevron is, in points.
+const CHEVRON: f32 = 7.0;
+
+/// How wide a toolbar menu's button is with a dim `caption` and `word` on it (either may be left
+/// out; with neither, the chevron alone): the words, the chevron after them and the padding.
+pub(crate) fn menu_width(ui: &Ui, (caption, word): (Option<&str>, &str)) -> f32 {
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let caption = caption.map_or(0.0, |c| widgets::text_width(ui, c, font.clone()) + MENU_SPACE);
+    let word = if word.is_empty() { 0.0 } else { widgets::text_width(ui, word, font) + MENU_SPACE };
+    MENU_PAD + caption + word + CHEVRON + MENU_PAD
+}
+
+/// A toolbar menu's button in `rect`, drawn as the Rows group's toggles are, so the right side of
+/// the toolbar has one look (› Layout): no fill until hovered or while its menu is open, rounded,
+/// a dim `caption` when given, its `word` in `ink` and a chevron right after. Its accessible label
+/// is `label`. Returns its response, for the menu to open from.
+pub(crate) fn menu_face(
+    ui: &Ui,
+    rect: Rect,
+    id: Id,
+    (caption, word): (Option<&str>, &str),
+    ink: Color32,
+    label: &str,
+) -> egui::Response {
+    let rect =
+        Rect::from_min_max(Pos2::new(rect.left(), rect.top() + 1.0), Pos2::new(rect.right(), rect.bottom() - 1.0));
+    let response = widgets::button_area(ui, rect, id, label);
+    let lit = response.hovered() || egui::Popup::menu(&response).is_open();
+    let (fill, ink) = if lit {
+        (ui.visuals().widgets.hovered.weak_bg_fill, theme::text_primary())
+    } else {
+        (Color32::TRANSPARENT, ink)
+    };
+    let painter = ui.painter();
+    painter.rect_filled(rect, 3.0, fill);
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let mut x = rect.left() + MENU_PAD;
+    for (text, color) in [(caption, theme::text_hint()), ((!word.is_empty()).then_some(word), ink)] {
+        let Some(text) = text else { continue };
+        let area = Rect::from_min_max(Pos2::new(x, rect.top()), rect.max);
+        widgets::text_in(painter, area, Align2::LEFT_CENTER, text, font.clone(), color);
+        x += widgets::text_width(ui, text, font.clone()) + MENU_SPACE;
+    }
+    chevron(painter, Pos2::new(x + CHEVRON / 2.0, rect.center().y), ink);
+    response
+}
+
+/// A small chevron pointing down, centred on `at`: a toolbar menu's sign that it opens a list.
+fn chevron(painter: &egui::Painter, at: Pos2, color: Color32) {
+    let half = CHEVRON / 2.0;
+    painter.add(egui::Shape::line(
+        vec![at + Vec2::new(-half, -1.5), at + Vec2::new(0.0, 2.0), at + Vec2::new(half, -1.5)],
+        Stroke::new(1.2, color),
+    ));
 }
 
 /// The words of the Rows group: Fold, Scale (the clip's scale switch) and Highlight.
@@ -518,16 +565,24 @@ fn row_toggle_width(ui: &Ui, side: f32, word: Option<&str>) -> f32 {
     }
 }
 
+/// How wide the toolbar's menus are this frame: the workflow and ghost menus with their words and
+/// as arrows (both together), and the grid menu with its "Grid" caption and without.
+struct MenuWidths {
+    named: f32,
+    arrows: f32,
+    grids: (f32, f32),
+}
+
 /// The least the toolbar gives way to fit `row` (› Layout).
-fn layout_step(ui: &Ui, row: Rect, (size, gap, side): (Vec2, f32, f32), menus_named: f32) -> Step {
+fn layout_step(ui: &Ui, row: Rect, (size, gap, side): (Vec2, f32, f32), widths: MenuWidths) -> Step {
     let button = size.x + gap;
     let rows = |words: bool| -> f32 {
         ROWS.iter().map(|(_, word)| row_toggle_width(ui, side, words.then_some(*word)) + 2.0).sum::<f32>() + 4.0
     };
     let need = |step: Step| {
         let clipboard = if step >= Step::Edit { size.x + 10.0 + gap } else { 4.0 * button };
-        let caption = if step == Step::Full { 40.0 } else { 0.0 };
-        let menus = if step >= Step::Arrows { 2.0 * MENU_ARROW } else { menus_named };
+        let grid = if step == Step::Full { widths.grids.0 } else { widths.grids.1 };
+        let menus = if step >= Step::Arrows { widths.arrows } else { widths.named };
         TOOLBAR_INSET
             + 8.0 * button
             + clipboard
@@ -536,10 +591,9 @@ fn layout_step(ui: &Ui, row: Rect, (size, gap, side): (Vec2, f32, f32), menus_na
             + rows(step < Step::Icons)
             + 6.0
             + menus
-            + 4.0
+            + 2.0
             + 10.0
-            + caption
-            + GRID_MENU
+            + grid
             + gap
             + 2.0
             + side
@@ -661,7 +715,7 @@ fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<Icon
     paint.painter.rect_filled(area, 3.0, fill);
     let icon = Rect::from_min_size(area.min, Vec2::splat(area.height()));
     IconButton::Copy.draw(paint.painter, icon, ink, paint.scale);
-    menu_arrow(ui, area, ink);
+    chevron(paint.painter, Pos2::new(area.right() - MENU_PAD, area.center().y), ink);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
         for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {
@@ -677,33 +731,29 @@ fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<Icon
     picked
 }
 
-/// How wide the toolbar's grid menu button is, in points.
-pub(super) const GRID_MENU: f32 = 76.0;
-
-/// The toolbar's grid menu (› Grid and snapping): its button shows the grid value; its menu holds
-/// Snap to grid, the adaptive widths, the fixed values, Narrow grid, Widen grid and Triplet grid,
-/// each with its key, the chosen ones ticked. Returns the grid picked this frame.
+/// The toolbar's grid menu (› Grid and snapping): its button shows the grid value, after a dim
+/// "Grid" when `caption`; its menu holds Snap to grid, the adaptive widths, the fixed values,
+/// Narrow grid, Widen grid and Triplet grid, each with its key, the chosen ones ticked. Returns
+/// the grid picked this frame.
 pub(super) fn grid_menu(
     ui: &mut Ui,
     rect: Rect,
     clip: &PianoClip,
     keymap: &crate::settings::keymap::Keymap,
+    caption: bool,
 ) -> Option<PianoGrid> {
     let grid = clip.grid_menu;
-    let mono = theme::mono_font(theme::TEXT_SMALL);
     let shown = grid.label();
+    let label = format!("Grid value {shown}");
+    let id = Id::unique("piano-roll-grid-menu");
+    let words = (caption.then_some("Grid"), shown.as_str());
+    let response = menu_face(ui, rect, id, words, theme::text_secondary(), &label);
     let mut picked = None;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-        let text = egui::RichText::new(format!("{shown}   ")).font(mono.clone()).color(theme::text_value());
-        let menu = ui.menu_button(text, |ui| {
-            let keys = grid_key_labels(keymap, &PIANO_GRID_KEYS);
-            picked = grid_entries(ui, grid, &keys, &|_| true);
-        });
-        let label = format!("Grid value {shown}");
-        menu_arrow(ui, menu.response.rect, theme::text_value());
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-        menu.response.on_hover_text("The grid: snapping, adaptive or fixed lines, triplets");
+    egui::Popup::menu(&response).show(|ui| {
+        let keys = grid_key_labels(keymap, &PIANO_GRID_KEYS);
+        picked = grid_entries(ui, grid, &keys, &|_| true);
     });
+    response.on_hover_text("The grid: snapping, adaptive or fixed lines, triplets");
     picked.filter(|p| *p != grid)
 }
 
@@ -823,17 +873,12 @@ fn workflow_menu(
     named: bool,
 ) {
     let mode = keymap.preset();
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-        let text = if named { format!("{}   ", mode.name()) } else { "   ".to_string() };
-        let menu = ui.menu_button(egui::RichText::new(text).font(font).color(theme::text_value()), |ui| {
-            workflow_entries(ui, keymap, state);
-        });
-        menu_arrow(ui, menu.response.rect, theme::text_value());
-        let label = format!("Workflow {}", mode.name());
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-        menu.response.on_hover_text("How clicks, right-clicks and double-clicks work: a preset, or Custom");
-    });
+    let label = format!("Workflow {}", mode.name());
+    let word = if named { mode.name() } else { "" };
+    let id = Id::unique("piano-roll-workflow-menu");
+    let response = menu_face(ui, rect, id, (None, word), theme::text_secondary(), &label);
+    egui::Popup::menu(&response).show(|ui| workflow_entries(ui, keymap, state));
+    response.on_hover_text("How clicks, right-clicks and double-clicks work: a preset, or Custom");
 }
 
 /// The workflow entries (› Workflow modes), the toolbar's workflow menu: the four modes and, under
@@ -942,7 +987,7 @@ impl ButtonPaint<'_> {
             crate::kit::native_css::surface(
                 painter,
                 area,
-                0.0,
+                3.0,
                 crate::kit::motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response)),
             );
         }

@@ -153,7 +153,11 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
    together; › Scale and key, [#347](https://github.com/suhina-daw/suhina-daw/issues/347)), the
    **workflow menu** (› Workflow modes), the **ghost menu** (› Ghost notes), a divider, the piano
    roll's grid value with its **Grid** caption (› Grid and snapping) and, at the very end, the
-   **×** that hides the editor (› Least height and closing). The corner above the keys holds the
+   **×** that hides the editor (› Least height and closing). The menus look as the Rows group's
+   toggles do: no fill until the pointer is over one or its list is open, rounded corners, their
+   words in the same small type with a chevron right after them, each as wide as its words; the
+   grid menu's **Grid** caption is dim inside it. The buttons' fills, the chosen tool's too, have
+   rounded corners. The corner above the keys holds the
    piano roll's own settings (three dots) at its left and the **Audition** headphones at its
    right (› Key column). With less room the toolbar gives way in steps, never leaving a part out
    while the next step would do: first the **Grid** caption, then the Rows group's words (their

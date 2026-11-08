@@ -439,6 +439,25 @@ fn the_toolbar_grid_menu_changes_the_piano_rolls_grid() {
     assert_eq!(notes(&h).last().unwrap().duration, 0.5);
 }
 
+/// The toolbar's menus look as the Rows group's toggles do: as tall and level with them, each as
+/// wide as its words, so no gap opens between the workflow and ghost menus.
+#[test]
+fn the_toolbar_menus_line_up_with_the_rows_toggles() {
+    let mut renderer = engine();
+    let h = piano_app(&mut renderer, Settings::default());
+    let fold = h.get_by_label("Fold").rect();
+    let workflow = h.get_by_label("Workflow Select-first").rect();
+    let ghosts = h.get_by_label_contains("Ghost notes ").rect();
+    let grid = h.get_by_label("Grid value 1/16").rect();
+    for (name, menu) in [("workflow", workflow), ("ghosts", ghosts), ("grid", grid)] {
+        let level = (menu.top() - fold.top()).abs() < 0.5 && (menu.bottom() - fold.bottom()).abs() < 0.5;
+        assert!(level, "the {name} menu {menu:?} is as tall as Fold {fold:?}");
+    }
+    assert!(ghosts.left() - workflow.right() <= 4.0, "the menus sit close: {workflow:?} {ghosts:?}");
+    assert!(ghosts.width() < 70.0, "the ghost menu is as wide as its word: {ghosts:?}");
+    assert!(fold.right() < workflow.left(), "the Rows group comes first: {fold:?} {workflow:?}");
+}
+
 #[test]
 fn a_new_note_takes_the_length_of_the_note_last_clicked() {
     let mut renderer = engine();
