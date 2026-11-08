@@ -120,12 +120,15 @@ fn packs_of<'a>(lists: &'a Lists, what: &str) -> &'a [Set] {
 /// loose pack, and a file somewhere else that shares a pack's folder name lists nowhere.
 /// The current state reads the way the lists carry its file (`state_as_listed`): a relative
 /// one joins the library's root, a shipped key stands whole against the shipped pack's rows
-/// and, beside the unpacked copy that scan pinned, reads its own file's name there.
+/// and, beside the unpacked copy that scan pinned, reads its own file's name there. The
+/// texts compare by `canonical_paths`: this platform's join and the scan may fold their
+/// own separators in, and the texts must read the same file ([ADR 0036] › 4).
 fn pack_of_current<'a>(current: &str, sets: &'a [Set]) -> Option<&'a Set> {
     if current.is_empty() {
         return None;
     }
-    if let Some(pack) = sets.iter().find(|pack| pack.files.iter().any(|(path, _)| path == current)) {
+    let current = canonical_paths(current);
+    if let Some(pack) = sets.iter().find(|pack| pack.files.iter().any(|(path, _)| canonical_paths(path) == current)) {
         return Some(pack);
     }
     let (_, file) = current.strip_prefix("builtin:")?.split_once('/')?;
@@ -145,21 +148,37 @@ fn salt(track: TrackId, at: &DeviceAt, part: FileRowPart) -> egui::Id {
     egui::Id::unique(("device-files", track.0, &at.0, part))
 }
 
-/// Where `current` sits in `files`.
+/// Where `current` sits in `files`. The two texts read the same file by
+/// `canonical_paths` — the rows' whole paths and the state's joined form fold what
+/// separators their own platform made in ([ADR 0036] › 4).
 fn index_of(files: &[(String, String)], current: &str) -> Option<usize> {
-    files.iter().position(|(path, _)| path == current)
+    let current = canonical_paths(current);
+    files.iter().position(|(path, _)| canonical_paths(path) == current)
 }
 
 /// The device's file state as the lists carry its file: a shipped key stands whole (the
 /// shipped pack's rows and the pack lookup read it), a name relative to the library joins
 /// this machine's root — the state a project carries names the same file wherever it opens,
-/// [ADR 0036] › it — an absolute one stands. The panel rows compare this form; the row's
-/// own reads (the shown name, the fault note) stay on the state as the project holds it.
+/// [ADR 0036] › it — an absolute one stands. The panel rows compare this form by
+/// `canonical_paths`, both sides; the row's own reads (the shown name, the fault note) stay
+/// on the state as the project holds it.
 fn state_as_listed(state: &str, lists: &Lists) -> String {
     if state.starts_with("builtin:") || Path::new(state).is_absolute() {
         return state.to_owned();
     }
     lists.library.as_ref().map_or_else(|| state.to_owned(), |base| base.join(state).display().to_string())
+}
+
+/// The texts the lists' whole paths and a state's joined form compare by: path components
+/// joined with `/` ([ADR 0036] › 4, the portable form). A Windows join folds backslashes
+/// in, the mac's does not, and both must read the same file; the compare does not care
+/// which separator either text was quoted with.
+fn canonical_paths(text: &str) -> String {
+    std::path::Path::new(text)
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Steps `current` through `files` by `by` (wrapping); a file that is not in the list steps
@@ -379,7 +398,7 @@ fn dropdown(
                     .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{label}: {empty}")));
             }
             for (path, name) in rows {
-                let mut on = path == current;
+                let mut on = canonical_paths(path) == canonical_paths(current);
                 let item = ui.selectable_value(
                     &mut on,
                     true,
