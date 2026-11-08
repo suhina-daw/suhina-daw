@@ -1939,14 +1939,14 @@ fn the_tags_titles_menu_adds_a_folder_and_the_drag_files_the_tag() {
     let (settings, folder) = (temp("section-menu-settings"), temp("section-menu"));
     pack(&folder);
     let mut harness = window(&settings, &folder);
-    // The title's menu keeps only what nothing else offers: New folder ([#1254]), for the
-    // library that has none yet. Adding a tag is the rows' own menus' work.
+    // The title's menu makes tags too ([#1254] review): palette, field, button. The folder
+    // making it already had, and it keeps its place beside them.
     harness.get_by_label("Tags section").click_secondary();
     harness.run();
     assert!(harness.query_by_label("New folder").is_some(), "the title's menu offers the first folder");
     assert!(
-        harness.query_by_label("New tag name").is_none() && harness.query_by_label("Add tag").is_none(),
-        "adding a tag is the rows' menus' work, not the title's"
+        harness.query_by_label("New tag name").is_some() && harness.query_by_label("Select colour").is_some(),
+        "the title's menu makes tags too ([#1254] review)"
     );
     // New folder puts a folder at the top level, named by its kind when left out.
     harness.get_by_label("New folder").click();
@@ -1983,6 +1983,92 @@ fn the_tags_titles_menu_adds_a_folder_and_the_drag_files_the_tag() {
         _ => false,
     });
     assert!(punched, "the drop put the tag into the folder");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The Tags title's menu makes a tag where the rows' menus do: typed beside the palette, the
+/// store's next colour when no pick was made, a pick's colour when one was, the menu closed
+/// by the add and a name one already has refused ([#1254] review).
+#[test]
+fn the_tags_titles_menu_adds_a_tag_in_a_colour() {
+    let (settings, folder) = (temp("title-tag-settings"), temp("title-tag"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    // No pick: the named colours' next, the store's own dealing ([#1254]).
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Punchy");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Punchy").is_some(), "the section lists the title's tag");
+    assert!(harness.query_by_label("New tag name").is_none(), "the add closes the title's menu");
+    let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    // The store's dealing without a colour: the first named colour whose name no tag has
+    // ([#1254]; "Punchy" names its own, so the dealing names nothing it makes here).
+    let wanted = suhina_library::store::named_colours()
+        .iter()
+        .find(|(name, _)| tags.iter().all(|t| t.name != *name))
+        .map(|(_, color)| *color)
+        .expect("a named colour deals itself into every library");
+    assert_eq!(
+        tags.iter().find(|t| t.name == "Punchy").map(|t| t.color.as_str()),
+        Some(wanted),
+        "no pick takes the named colours' next"
+    );
+    // A pick from the palette is the colour the next tag comes out with, the way a folder's
+    // menu colours its own.
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("Select colour").click();
+    harness.run();
+    let colour = suhina_ui::interaction::colour_picker::swatches()[5];
+    harness.get_by_label(&format!("Colour {}", suhina_ui::interaction::colour_picker::hex(colour))).click();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Everything");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    assert_eq!(
+        tags.iter().find(|t| t.name == "Everything").map(|t| t.color.as_str()),
+        Some(theme::hex(suhina_ui::interaction::colour_picker::color32(colour)).as_str()),
+        "the pick colours the tag the title's menu made",
+    );
+    // The name one already has refuses, the add leaving the menu open for the correction.
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Punchy");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    assert!(
+        matches!(harness.state().status(), Status::Error(text) if text.contains("Punchy")),
+        "{:?}",
+        harness.state().status()
+    );
+    // The add shows itself: over a closed section the menu's add opens it with its tag
+    // ([#1254] review), as a folder's add opens the branch it lands in.
+    harness.get_by_label("Close Tags").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Punchy").is_none(), "the section closed, its rows hidden");
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Warm");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Warm").is_some(), "the add opened the section to show its tag");
+    assert!(harness.query_by_label("New tag name").is_none(), "the menu closed with the add");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -2298,6 +2384,21 @@ fn the_tags_section_leads_with_its_folders() {
     let child = harness.get_by_label("Place Tag Red").rect();
     let folder_now = harness.get_by_label("Folder Present (1 tag)").rect();
     assert!(folder_now.bottom() <= child.top(), "a level's tags sit under its folders");
+    // Where the rows change level a few points of air sit between them, a sibling's rows
+    // tight as ever ([#1254] review: the nesting reads like the Pinned section's groups).
+    let gap = child.top() - folder_now.bottom();
+    assert!(
+        (suhina_ui::browser::browser_view::LEVEL_GAP - gap).abs() < 0.5,
+        "a child's level takes its air after its folder ({gap:?})"
+    );
+    let orange = harness.get_by_label("Place Tag Orange").rect();
+    let yellow = harness.get_by_label("Place Tag Yellow").rect();
+    let back = orange.top() - child.bottom();
+    assert!(
+        (suhina_ui::browser::browser_view::LEVEL_GAP - back).abs() < 0.5,
+        "the row the child's level returns to keeps its air too ({back:?})"
+    );
+    assert!((yellow.top() - orange.bottom()).abs() < 0.5, "a level's own siblings sit tight");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -2369,6 +2470,28 @@ fn a_folders_menu_colours_a_new_tag_from_the_palette() {
         made.map(|t| t.color.as_str()),
         Some(theme::hex(suhina_ui::interaction::colour_picker::color32(colour)).as_str()),
         "the pick colours the tag the folder's menu made",
+    );
+    // The add shows itself ([#1254] review): a tag made at a closed folder opens the
+    // folder, the way a subfolder's making opens the branch it lands in.
+    harness.get_by_label("Folder Cowboy (1 tag)").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Everything").is_none(), "the closed folder hides its tags");
+    harness.get_by_label("Folder Cowboy (1 tag)").click_secondary();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Second");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Second").is_some(), "the add opened the folder to show its tag");
+    let tree = harness.state_mut().projects_mut().file_library_mut().tags();
+    assert!(
+        tree.iter().any(|e| matches!(
+            e,
+            suhina_library::TagEntry::Folder { folder, .. } if folder.name == "Cowboy" && folder.open
+        )),
+        "the folder stands open after its add",
     );
     // The pick went with the tag: the next one under this menu takes the named colours' next.
     let _ = std::fs::remove_dir_all(&settings);
@@ -2647,6 +2770,33 @@ fn the_footer_renames_when_its_own_dot_is_clicked_again() {
     let names: Vec<String> = library.tag_flat().into_iter().map(|t| t.name).collect();
     assert!(names.contains(&"Rose".to_string()) && !names.contains(&"Red".to_string()), "{names:?}");
     assert!(harness.query_by_label("Tag Rose").is_some(), "the dot itself says the new name");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The footer's dot menu adds a tag of its own, and the add shows itself: the tags section
+/// closed stays reachable from the footer, which opens with the tag it made ([#1254] review).
+#[test]
+fn the_footers_add_opens_the_closed_section() {
+    let (settings, folder) = (temp("footer-add-settings"), temp("footer-add"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    // The section closed, its rows hidden, the footer's dots still at hand.
+    harness.get_by_label("Tags section").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Red").is_none(), "the closed section hides its rows");
+    harness.get_by_label("Tag Red").click_secondary();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Warm");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Warm").is_some(), "the add opened the section to show its tag");
+    assert!(harness.query_by_label("New tag name").is_none(), "the menu closed with the add");
+    let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    assert_eq!(tags.iter().filter(|t| t.name == "Warm").count(), 1, "added once");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

@@ -28,6 +28,9 @@ pub const SEARCH: f32 = 26.0;
 pub const FILTER: f32 = 16.0;
 pub const SIDEBAR: f32 = 104.0;
 pub const INDENT: f32 = 12.0;
+/// The air between two of the Tags section's rows that change level: a child level and the
+/// row it returns to sit a few points apart where a sibling is tight, so the nesting reads.
+pub const LEVEL_GAP: f32 = 4.0;
 
 /// Clicks left of this on a row that opens are its chevron: the triangle sits 10 pt wide,
 /// 4 pt in from the row's indent.
@@ -1382,6 +1385,9 @@ fn tag_folder_menu(
                     if let Some(id) = projects.file_library_mut().tag_id_of(new_name.trim()) {
                         run(projects, "library.moveTag", json!({ "id": format!("#{id}"), "folder": my }), out);
                     }
+                    // The add shows itself: the folder opens, however deeply it sat, as the
+                    // subfolder's making does ([#1254] review).
+                    tag_branch_open(projects, out, folder_id);
                     out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
                     ui.ctx().data_mut(|d| d.remove::<String>(new_id));
                     ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
@@ -1462,15 +1468,15 @@ fn tags_section(
 
     // The rows' own geometry first: rects are derived from the rows to draw, so the frame's
     // fill and the landing know them in time ([#1254] review: the drop's row lights on the
-    // very frames it is dragged over).
-    let rects: Vec<Rect> = rows
-        .iter()
-        .scan(y, |y_rows, _| {
-            let rect = Rect::from_min_size(Pos2::new(area.left(), *y_rows), Vec2::new(area.width(), ROW));
-            *y_rows += ROW;
-            Some(rect)
-        })
-        .collect();
+    // very frames it is dragged over). Where two rows change level a few points of air go
+    // between them ([#1254] review: the nesting reads like the sidebar's groups do).
+    let mut rects: Vec<Rect> = Vec::with_capacity(rows.len());
+    let mut y_rows = y;
+    for (index, row) in rows.iter().enumerate() {
+        rects.push(Rect::from_min_size(Pos2::new(area.left(), y_rows), Vec2::new(area.width(), ROW)));
+        let air = rows.get(index + 1).is_some_and(|next| next.depth != row.depth);
+        y_rows += ROW + if air { LEVEL_GAP } else { 0.0 };
+    }
     let row_rects: Vec<(u32, String, bool, bool, Rect)> = rows
         .iter()
         .zip(rects.iter())
@@ -1484,7 +1490,7 @@ fn tags_section(
             )
         })
         .collect();
-    y += ROW * rows.len() as f32;
+    y = y_rows;
     // Where a carried tag's drop goes, from the frame's own rows: derived before the rows
     // paint, so what the pointer is over lights that very frame ([#1254] review). A press
     // arms its carry in the painting pass; the carry made there is derived again after the
@@ -1596,17 +1602,7 @@ fn tags_section(
             }
             let dim = !is_folder && count == 0;
             let center = Pos2::new(lead.x + (if is_folder { 16.0 } else { 7.0 }), rect.center().y);
-            if is_folder {
-                // A folder's mark: the top level's carries the dash; a subfolder is
-                // indented like Recent's groups are, the chevron says its kind
-                // ([#1254] review).
-                if row.depth == 0 {
-                    painter.line_segment(
-                        [Pos2::new(center.x - 4.5, center.y), Pos2::new(center.x + 4.5, center.y)],
-                        Stroke::new(1.4, theme::text_hint()),
-                    );
-                }
-            } else {
+            if !is_folder {
                 let mut color = match &row.entry {
                     suhina_library::TagEntry::Tag(tag) => tag_color(&tag.color),
                     _ => theme::text_hint(),
@@ -1621,12 +1617,8 @@ fn tags_section(
             }
             let text = Rect::from_min_max(
                 Pos2::new(
-                    if is_folder && row.depth == 0 {
-                        // The dash-carrying top level: the name sits after its mark.
-                        center.x + 7.0
-                    } else if is_folder {
-                        // A subfolder's name beside its chevron: no dash keeps a gap
-                        // ([#1254] review).
+                    if is_folder {
+                        // A folder's name beside its chevron, no mark before it.
                         center.x - 4.0
                     } else {
                         center.x + DOT / 2.0 + 3.0
@@ -1652,7 +1644,7 @@ fn tags_section(
             );
             if response.hovered() {
                 out.status = Some(Status::Hint(format!(
-                    "{}{} — {} {}{}",
+                    "{}{}, {} {}{}",
                     if is_folder { "Folder " } else { "Tag " },
                     name,
                     count,
@@ -2132,47 +2124,120 @@ fn section_title(
     {
         state.relist();
     }
-    // The menu: open or close, and move among the others ([#1254] › Sidebar sections).
-    egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-        let label = if open { format!("Close {}", kind.title()) } else { format!("Open {}", kind.title()) };
-        if ui.button(label).clicked()
-            && run(projects, "library.setSectionOpen", json!({ "section": kind.name(), "open": !open }), out)
-        {
-            state.relist();
-            ui.close();
-        }
-        let order = sections_list.iter().map(|s| s.kind).collect::<Vec<SectionKind>>();
-        let (up, down) = (at > 0, at + 1 < order.len());
-        if ui.add_enabled(up, egui::Button::new("Move up")).clicked() {
-            let mut moved = order.clone();
-            moved.swap(at - 1, at);
-            let params = json!({ "order": moved.iter().map(|k| json!(k.name())).collect::<Vec<_>>() });
-            if run(projects, "library.setSections", params, out) {
+    // The menu: open or close, and move among the others ([#1254] › Sidebar sections). The
+    // drafts inside go when it closes, so the was-open state is kept like the rows' menus'
+    // (a stale draft would show an old name over what the store changed elsewhere).
+    let was_open =
+        ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-title-menu-open", kind.name())))).unwrap_or(false);
+    let popup =
+        egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+            let label = if open { format!("Close {}", kind.title()) } else { format!("Open {}", kind.title()) };
+            if ui.button(label).clicked()
+                && run(projects, "library.setSectionOpen", json!({ "section": kind.name(), "open": !open }), out)
+            {
                 state.relist();
                 ui.close();
             }
-        }
-        if ui.add_enabled(down, egui::Button::new("Move down")).clicked() {
-            let mut moved = order.clone();
-            moved.swap(at, at + 1);
-            let params = json!({ "order": moved.iter().map(|k| json!(k.name())).collect::<Vec<_>>() });
-            if run(projects, "library.setSections", params, out) {
-                state.relist();
-                ui.close();
+            let order = sections_list.iter().map(|s| s.kind).collect::<Vec<SectionKind>>();
+            let (up, down) = (at > 0, at + 1 < order.len());
+            if ui.add_enabled(up, egui::Button::new("Move up")).clicked() {
+                let mut moved = order.clone();
+                moved.swap(at - 1, at);
+                let params = json!({ "order": moved.iter().map(|k| json!(k.name())).collect::<Vec<_>>() });
+                if run(projects, "library.setSections", params, out) {
+                    state.relist();
+                    ui.close();
+                }
             }
-        }
-        // The Tags section's title makes its first folder ([#1254] › Tag folders), so a
-        // library reaches the folders by mouse alone. Adding a tag is the rows' own menus'
-        // work — every tag's menu does it — so the title keeps only what nothing else
-        // offers.
-        if kind == SectionKind::Tags
-            && ui.button("New folder").clicked()
-            && run(projects, "library.addTagFolder", json!({}), out)
-        {
-            state.relist();
-            ui.close();
-        }
-    });
+            if ui.add_enabled(down, egui::Button::new("Move down")).clicked() {
+                let mut moved = order.clone();
+                moved.swap(at, at + 1);
+                let params = json!({ "order": moved.iter().map(|k| json!(k.name())).collect::<Vec<_>>() });
+                if run(projects, "library.setSections", params, out) {
+                    state.relist();
+                    ui.close();
+                }
+            }
+            // The Tags title makes tags of its own: a pick from the palette colours it, a typo
+            // of a name is refused the rows' menus' way, and no pick takes the named colours'
+            // next ([#1254] review: the top level has no tag to inherit a colour from, so the
+            // store's way is the menu's too). The field and the button are the same the rows'
+            // menus carry.
+            if kind == SectionKind::Tags {
+                ui.separator();
+                let pick_id = Id::unique(("browser-title-tag-color", kind.name()));
+                let picked_now = {
+                    let stored: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
+                    let current = stored.as_deref().and_then(theme::parse_hex).map(crate::interaction::grid::to_rgb);
+                    crate::interaction::colour_picker::select_colour_row(ui, pick_id, current, "Select colour")
+                        .map(|picked| theme::hex(crate::interaction::colour_picker::color32(picked)))
+                };
+                if let Some(hex) = picked_now.as_ref() {
+                    ui.ctx().data_mut(|d| d.insert_temp(pick_id, hex.clone()));
+                }
+                let new_id = Id::unique(("browser-title-new-tag", kind.name()));
+                let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
+                let field = crate::kit::widgets::text_input(
+                    ui,
+                    egui::TextEdit::singleline(&mut new_name).id(new_id).hint_text("New tag…").desired_width(120.0),
+                );
+                field
+                    .widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
+                ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
+                let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                let with_button = ui.button("Add tag").clicked();
+                if (with_enter || with_button) && !new_name.trim().is_empty() {
+                    // The name one of the tags has: refused before the command, as the rows'
+                    // menus do ([#1254] review: `setTag` would recolour that tag instead and say
+                    // it was added). A folder's name the store refuses itself, and the status
+                    // says where it stands.
+                    if projects.file_library_mut().tag_flat().iter().any(|t| t.name == new_name.trim()) {
+                        out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
+                    } else {
+                        let mut params = json!({ "name": new_name.trim() });
+                        let picked: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
+                        if let Some(hex) = picked {
+                            params["color"] = json!(hex);
+                        }
+                        if run(projects, "library.setTag", params, out) {
+                            // The add shows itself ([#1254] review): a closed section opens,
+                            // the way a folder's add opens the branch it lands in.
+                            if !open {
+                                run(
+                                    projects,
+                                    "library.setSectionOpen",
+                                    json!({ "section": kind.name(), "open": true }),
+                                    out,
+                                );
+                            }
+                            out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
+                            ui.ctx().data_mut(|d| d.remove::<String>(new_id));
+                            ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
+                            state.relist();
+                            // Done is done: the menus close on their adds, a refusal keeps them
+                            // open for the name to be corrected.
+                            ui.close();
+                        }
+                    }
+                }
+                // The first folder still comes from here ([#1254] › Tag folders): a top-level
+                // one has no row's menu to come from.
+                if ui.button("New folder").clicked() && run(projects, "library.addTagFolder", json!({}), out) {
+                    state.relist();
+                    ui.close();
+                }
+            }
+        });
+    // Closed: the drafts go with it, as the rows' menus do ([#1254] review — a stale pick
+    // or name would colour a later add without the menu showing why).
+    let open = popup.is_some();
+    if was_open && !open && kind == SectionKind::Tags {
+        ui.ctx().data_mut(|d| {
+            d.remove::<String>(Id::unique(("browser-title-new-tag", kind.name())));
+            crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-title-tag-color", kind.name())));
+        });
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(Id::unique(("browser-title-menu-open", kind.name())), open));
 }
 
 /// A subfolder's making opens the branch from its target up ([#1254] review): the new row
@@ -2743,7 +2808,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             // read where the tags are kept, so it costs no copy of a list.
             let items = projects.file_library_mut().tagged_count(tag.id);
             out.status =
-                Some(Status::Hint(format!("Tag {} — {} item{}", tag.name, items, if items == 1 { "" } else { "s" })));
+                Some(Status::Hint(format!("Tag {}, {} item{}", tag.name, items, if items == 1 { "" } else { "s" })));
         }
         let on = state.tag_filter.contains(&tag.id);
         if response.clicked() {
@@ -2845,6 +2910,21 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                     } else {
                         let color = tag.color.clone();
                         if run(projects, "library.setTag", json!({ "name": new_name.trim(), "color": color }), out) {
+                            // The add shows itself: the footer stays where the tags section
+                            // is not, and a closed one opens to show the tag ([#1254] review).
+                            let closed = projects
+                                .file_library_mut()
+                                .sections()
+                                .iter()
+                                .any(|s| s.kind == SectionKind::Tags && !s.open);
+                            if closed {
+                                run(
+                                    projects,
+                                    "library.setSectionOpen",
+                                    json!({ "section": "tags", "open": true }),
+                                    out,
+                                );
+                            }
                             out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
                             ui.ctx().data_mut(|d| d.remove::<String>(new_id));
                             state.relist();

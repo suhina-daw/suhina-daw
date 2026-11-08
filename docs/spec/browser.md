@@ -98,7 +98,12 @@ section also moves by dragging its title ([#1254] review): a thin line under the
 shows the slot — the pointer's half over a title picks above or below it, and the release
 commits; Escape or a release on empty sidebar space cancels. The Tags section's title menu
 offers **New folder** ([#1254] › Tag folders), so a library reaches
-its first folder from the mouse alone; adding a tag stays the rows' own menus' work. The
+its first folder from the mouse alone, and makes a tag of its own beside it: the same
+palette and New tag field a folder's or a tag's menu carries ([#1254] review), the pick
+colouring the tag, no pick taking the named colours' next
+([Where tags come from](#colour-tags)). An added tag shows
+itself: the add opens the Tags section when it is closed, the way a folder's add opens the
+folder ([#1254] review). The
 sections' order and open state are the library's own, kept in `browser.json`
 ([Where it is kept](#where-it-is-kept)), so a closed section stays closed when the window
 reopens.
@@ -505,11 +510,13 @@ fourth level's folder — that drop is not a deeper nesting), a tag lives in one
 time, and removing a folder
 lifts its whole cortège — tags and subfolders — into the parent (the top when it was top); the
 menu asks first, saying how many rows move up; a made subfolder opens its target's branch,
-so the new row shows however deeply the target sat ([#1254] review). A folder's own menu
+so the new row shows however deeply the target sat, and a tag a folder makes opens the
+folder the same way ([#1254] review). A folder's own menu
 carries the palette beside its New tag field: the pick colours the tag a folder makes, the
-same pick a tag's menu makes ([#1254] review). A subfolder's row is indented like the
-Pinned section's groups are, and draws its chevron instead of a mark
-([#1254] review). Dragging a tag or folder row (a folder can never move under itself) moves
+same pick a tag's menu makes ([#1254] review). Each level of the tree indents a step from
+its parent's ([#1254] review), and a few points of air go between the rows where the level
+changes, so the nesting reads like the Pinned section's groups do; a folder's row draws its
+chevron, no mark before it ([#1254] review). Dragging a tag or folder row (a folder can never move under itself) moves
 it: before another row, into a folder — a closed one too —, or to the
 empty space of the section for the top level. While it drags, the pill by the pointer (and
 the status bar) says what the drop does, for folders and subfolders alike: *Move Red into
@@ -521,7 +528,7 @@ which reaches the first folder from the mouse on any tag.
 
 The rest is as it was with the ids in the rows' place (#1196): a right-click on a tag's dot in
 the footer renames it (a field, Enter; clicks inside that menu do not close it),
-recolours it (the swatches of the track colour palette, [components](../design/components.md#colour-palette), or Select colour…, which opens the theme editor's picker in the menu itself) or removes it; new ones are added from a row's Tag menu, up to 64
+recolours it (the swatches of the track colour palette, [components](../design/components.md#colour-palette), or Select colour…, which opens the theme editor's picker in the menu itself) or removes it; new ones are added from a row's Tag menu or a footer dot's menu — and the add opens the Tags section when it is closed, to show the tag it made ([#1254] review) — up to 64
 (Settings › Browser › Tag limit raises it, at most 1024). Any item can carry any
 number of tags; a tag is a 6 px dot after the name. Hovering a dot — the footer's or an item
 row's — says the tag's name: as a tooltip, and in the status bar (the footer's dot adds how
