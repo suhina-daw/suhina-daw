@@ -307,6 +307,24 @@ fn the_double_click_settings_turn_adding_and_deleting_off() {
 // The workflow menu in the toolbar.
 // ---------------------------------------------------------------------------------------------
 
+/// The workflow menu holds Allow stacked notes too, the same setting as the View menu's.
+#[test]
+fn the_workflow_menu_switches_stacked_notes() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    assert!(h.state().piano_roll().notes_replace, "stacked notes off at first");
+    h.get_by_label("Workflow Select-first").click();
+    h.run();
+    h.get_by_label("Workflow: Allow stacked notes").click();
+    h.run();
+    assert!(!h.state().piano_roll().notes_replace, "stacked notes allowed");
+    h.get_by_label("Workflow Select-first").click();
+    h.run();
+    h.get_by_label("Workflow: Allow stacked notes").click();
+    h.run();
+    assert!(h.state().piano_roll().notes_replace, "and off again");
+}
+
 #[test]
 fn the_toolbar_menu_switches_the_workflow_and_a_setting_makes_it_custom() {
     let mut renderer = engine();

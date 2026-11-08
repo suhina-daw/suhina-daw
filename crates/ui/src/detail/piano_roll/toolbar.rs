@@ -548,6 +548,7 @@ pub(super) fn workflow_menu(
     let current = keymap.workflow();
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut picked = None;
+    let mut stacking = None;
     let mut shown = rect;
     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
         let text = egui::RichText::new(format!("{}   ", mode.name())).font(font.clone()).color(theme::text_value());
@@ -584,6 +585,18 @@ pub(super) fn workflow_menu(
                     }
                 });
             }
+            // How notes that land on others of their key behave belongs with how the mouse edits
+            // them; the same setting as the View menu's (› Allow stacked notes).
+            ui.separator();
+            let stacked = !state.notes_replace;
+            let response = ui.selectable_label(stacked, egui::RichText::new("Allow stacked notes").font(font.clone()));
+            response.widget_info(|| {
+                egui::WidgetInfo::selected(egui::Role::Button, true, stacked, "Workflow: Allow stacked notes")
+            });
+            if response.clicked() {
+                stacking = Some(super::ViewPick::AllowStacked(!stacked));
+                ui.close();
+            }
         });
         let label = format!("Workflow {}", mode.name());
         menu_arrow(ui, menu.response.rect, theme::text_value());
@@ -593,6 +606,9 @@ pub(super) fn workflow_menu(
     });
     if picked.is_some() {
         state.workflow_picked = picked;
+    }
+    if stacking.is_some() {
+        state.view_picked = stacking;
     }
     shown
 }
