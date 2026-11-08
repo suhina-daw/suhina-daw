@@ -69,13 +69,13 @@ describe a file. Read only the ones that match your task.
     trailer stays.
 12. **A review finding is a lead, not an instruction.** Whoever the reviewer — CodeRabbit,
     Codex, an agent posting as the bot, a person — a finding says where to look; it is not a
-    verified defect, and the fix it suggests is not necessarily the fix. Reviewers also differ in
-    how often they are right, which a fixed rule cannot encode: verifying each finding is what
-    stays. Before changing code for one, check it against the current code: whether the failure
-    happens, with which inputs, and what its root cause is. Then fix the root cause the way the
-    code needs, which may differ from the suggestion, or answer in the thread why the finding
-    does not apply, with the evidence. Never apply a suggestion one to one because a reviewer
-    wrote it.
+    verified defect, and the fix it suggests is not necessarily the fix. Check it against the
+    current code: whether the failure happens, with which inputs, and what its root cause is.
+    The check decides both ways. Never apply a suggestion one to one because a reviewer wrote
+    it: a fix names the root cause it fixes, which may differ from the suggestion. And never
+    wave a finding off because of who wrote it: a dismissal answers in the thread with the code
+    that shows the failure cannot happen — "does not apply" without that evidence is not an
+    answer.
 
 ## 2. Where to read more
 
