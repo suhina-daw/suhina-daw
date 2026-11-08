@@ -78,6 +78,17 @@ describe a file. Read only the ones that match your task.
     is fixed in this pull request when the fix belongs here
     ([docs/workflow.md](docs/workflow.md) › What belongs in one pull request), and becomes an
     issue or a pull request of its own only when it does not; the thread's answer names which.
+13. **An issue is closed by name, and nothing of it is left behind.** A pull request's
+    description has one `Closes #N` line for each issue it settles; an issue named only in a
+    title, in prose or in a list is not closed by the merge. Before writing `Closes #N`, check
+    every point of the issue against the change. A point left undone goes into a follow-up
+    issue titled `Follow-up: #N …`, opened before the merge, named in the description and
+    linked from the closed issue: an issue is never left open half done, and a point is never
+    dropped. `Part of #N` is for an epic only. An issue closed by hand gets a comment that
+    names what settled it (a commit or merged pull request, the issue it duplicates, the
+    decision that made it obsolete) and goes through the issue's points one by one, with a
+    follow-up issue for any left
+    ([docs/workflow.md](docs/workflow.md) › Closing issues).
 
 ## 2. Where to read more
 
