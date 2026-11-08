@@ -257,8 +257,7 @@ fn main() -> ExitCode {
     window.app.set_default_data_folder(default_data_dir().unwrap_or_default());
     // The NAM devices' folders: the defaults exist from the start, so a user's first step is
     // only to drop files in ([docs/spec/nam-amp-and-cab.md]).
-    let nam_base = documents_base();
-    let (nam_models, irs) = (nam_base.join("NAM models"), nam_base.join("IRs"));
+    let (nam_models, irs) = nam_default_folders(&documents_base());
     let _ = std::fs::create_dir_all(&nam_models);
     let _ = std::fs::create_dir_all(&irs);
     window.app.set_nam_default_folders(nam_models, irs);
@@ -1026,6 +1025,13 @@ fn documents_base() -> PathBuf {
     if !new.exists() && old.is_dir() { old } else { new }
 }
 
+/// The NAM folders' defaults under a Suhina documents folder: the amp models' and the IRs',
+/// under Sounds/NAM ([docs/spec/nam-amp-and-cab.md] › Folders).
+fn nam_default_folders(base: &Path) -> (PathBuf, PathBuf) {
+    let nam = base.join("Sounds").join("NAM");
+    (nam.join("Amp models"), nam.join("Cabinets"))
+}
+
 /// Connects the output `choice` names to `session`, playing its audio; a device that is gone
 /// falls back to the default with a warning, and without any output the project still opens.
 /// Returns the session and warnings.
@@ -1209,6 +1215,13 @@ mod tests {
         assert!(!is_bundle_program(Path::new("/Users/me/Suhina/Contents/MacOS/suhina")));
         assert!(!is_bundle_program(Path::new("/Contents/MacOS/suhina")));
         assert!(!is_bundle_program(Path::new("suhina")));
+    }
+
+    #[test]
+    fn the_nam_defaults_are_the_sounds_nam_folders() {
+        let (models, irs) = nam_default_folders(Path::new("/home/me/Documents/Suhina"));
+        assert_eq!(models, Path::new("/home/me/Documents/Suhina/Sounds/NAM/Amp models"));
+        assert_eq!(irs, Path::new("/home/me/Documents/Suhina/Sounds/NAM/Cabinets"));
     }
 }
 
