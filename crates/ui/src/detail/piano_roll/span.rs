@@ -26,6 +26,44 @@ pub(super) struct TimeSpan {
     pub(super) start: f64,
     pub(super) end: f64,
     pub(super) with: BTreeSet<usize>,
+    /// Where the notes selected with it began and ended when it last followed them
+    /// ([`TimeSpan::follow`]); `None` until they are all there, and for a stretch with none.
+    pub(super) notes_at: Option<(f64, f64)>,
+}
+
+impl TimeSpan {
+    pub(super) fn new(start: f64, end: f64, with: BTreeSet<usize>) -> Self {
+        Self { start, end, with, notes_at: None }
+    }
+
+    /// The stretch follows edits of the notes selected with it: moved, it moves along; made longer
+    /// or shorter, an edge that was on theirs stays on it, and the stretch grows to keep them in,
+    /// so the bar over the ruler goes on showing them (› Selecting). A stretch with no notes
+    /// selected stays as it is: growing over the notes that start in it would take in more.
+    fn follow(&mut self, notes: &[Note]) {
+        let Some((from, to)) = extent(notes, &self.with) else { return };
+        if let Some((was_from, was_to)) = self.notes_at {
+            let (start_by, end_by) = (from - was_from, to - was_to);
+            if (start_by - end_by).abs() < EPSILON {
+                self.start += start_by;
+                self.end += end_by;
+            } else {
+                self.start = if (self.start - was_from).abs() < EPSILON { from } else { self.start.min(from) };
+                self.end = if (self.end - was_to).abs() < EPSILON { to } else { self.end.max(to) };
+            }
+        }
+        self.notes_at = Some((from, to));
+    }
+}
+
+/// Where the notes `of` begin and end; `None` for none, or when one of them is not in `notes`.
+fn extent(notes: &[Note], of: &BTreeSet<usize>) -> Option<(f64, f64)> {
+    if of.is_empty() {
+        return None;
+    }
+    of.iter().try_fold((f64::INFINITY, f64::NEG_INFINITY), |(start, end), i| {
+        notes.get(*i).map(|n| (start.min(n.time), end.max(n.time + n.duration)))
+    })
 }
 
 /// What a copy (the duplicate key, a paste) left behind, to go back to when it is undone: the
@@ -91,6 +129,9 @@ impl PianoRollState {
         if self.span.as_ref().is_some_and(|span| span.with != self.selected) {
             self.span = None;
         }
+        if let Some(span) = &mut self.span {
+            span.follow(notes);
+        }
         if !self.selected.is_empty() {
             self.insert_at = None;
         }
@@ -144,18 +185,15 @@ impl PianoRollState {
     pub(super) fn select_span(&mut self, start: f64, end: f64) {
         self.clear_span();
         if end - start > EPSILON {
-            self.span = Some(TimeSpan { start, end, with: self.selected.clone() });
+            self.span = Some(TimeSpan::new(start, end, self.selected.clone()));
         }
     }
 
     /// Copies are about to become the selection, indices `copies`, made from `notes`: a time selection
     /// goes on to the stretch after it, so the next copy lands after these, and an undo comes back here.
     pub(super) fn select_copies(&mut self, copies: BTreeSet<usize>, notes: &[Note]) {
-        let next = self.span.as_ref().map(|span| TimeSpan {
-            start: span.end,
-            end: span.end + (span.end - span.start),
-            with: copies.clone(),
-        });
+        let next =
+            self.span.as_ref().map(|span| TimeSpan::new(span.end, span.end + (span.end - span.start), copies.clone()));
         if self.span_undo.len() >= SPAN_STEPS {
             self.span_undo.remove(0);
         }
@@ -170,11 +208,16 @@ impl PianoRollState {
         self.selecting_new = true;
     }
 
-    /// Moved notes take a time selection along.
+    /// Moved notes take a time selection along at once; where they are expected to land goes along
+    /// too, so it does not move again when they get there, and moves back if they never do.
     pub(super) fn span_moved(&mut self, beats: f64) {
         if let Some(span) = &mut self.span {
             span.start += beats;
             span.end += beats;
+            if let Some((from, to)) = &mut span.notes_at {
+                *from += beats;
+                *to += beats;
+            }
         }
     }
 

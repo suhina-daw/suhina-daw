@@ -716,6 +716,43 @@ fn a_rectangle_that_reached_notes_copies_by_its_whole_stretch() {
     assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((2.0, 4.0)));
 }
 
+/// The stretch a rectangle selected follows the notes selected with it: made longer or shorter,
+/// an end on theirs goes along; an empty part before them stays, growing to take in a note that
+/// now starts earlier; moved by a key, it goes along once, not again when the notes land.
+#[test]
+fn a_time_selection_follows_the_notes_selected_with_it() {
+    let chord = |length: f64| clip(vec![note(1.0, length, 60), note(1.0, length, 64)]);
+    let selected = |start: f64, end: f64| {
+        let mut state = focused_on(&chord(0.25));
+        state.selected = BTreeSet::from([0, 1]);
+        state.select_span(start, end);
+        state.settle_selection(&chord(0.25).notes);
+        state
+    };
+    let span = |state: &PianoRollState| state.span.as_ref().map(|s| (s.start, s.end));
+    let mut state = selected(1.0, 1.25);
+    // Shift and Right made both a beat longer, then shorter again.
+    state.settle_selection(&chord(1.25).notes);
+    assert_eq!(span(&state), Some((1.0, 2.25)), "the end follows the notes'");
+    assert_eq!(state.span_shown(&chord(1.25)), Some((1.0, 2.25)), "and so does the bar");
+    state.settle_selection(&chord(0.25).notes);
+    assert_eq!(span(&state), Some((1.0, 1.25)));
+
+    // An empty part before the notes stays, and the stretch grows to keep a note now earlier in.
+    let mut state = selected(0.5, 1.25);
+    state.settle_selection(&clip(vec![note(0.25, 1.0, 60), note(1.0, 0.25, 64)]).notes);
+    assert_eq!(span(&state), Some((0.25, 1.25)));
+
+    // A key moves it along at once; the notes landing there move it no further.
+    let mut state = selected(1.0, 1.25);
+    let beats = state.key_action("pianoRoll.later", &chord(0.25), 0.0, None).and_then(|a| a.params["beats"].as_f64());
+    let beats = beats.unwrap_or_default();
+    assert!(beats > 0.0);
+    assert_eq!(span(&state), Some((1.0 + beats, 1.25 + beats)));
+    state.settle_selection(&clip(vec![note(1.0 + beats, 0.25, 60), note(1.0 + beats, 0.25, 64)]).notes);
+    assert_eq!(span(&state), Some((1.0 + beats, 1.25 + beats)), "moved once");
+}
+
 /// A longer key from a triplet line a command rounded goes on to the next line.
 #[test]
 fn a_longer_key_goes_on_along_triplet_lines() {

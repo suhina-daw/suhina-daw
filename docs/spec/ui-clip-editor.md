@@ -599,6 +599,10 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **Shift or Ctrl and a rectangle** keep what is selected: the notes stay selected, the new ones join them, and the stretch selected in time runs over both.
 - **Built:** a bar along the ruler's lower edge shows what is selected in time: what a rectangle covers
   while it is drawn, the stretch, or from the selected notes' earliest start to their latest end.
+  The stretch follows the notes selected with it: moved, it moves along; made longer or shorter
+  (Shift and the arrows, a drag of an edge, quantise, ×2), an end that was on the notes' start or
+  end stays on it, and the stretch grows to keep them all in, so the bar goes on showing them. A
+  stretch with no notes selected stays where it is when the notes that start in it change length.
 - **Built:** the selection lives in the window only; it is not part of the project and is not an
   undo step. It is cleared when another clip is shown.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344)):** while the piano roll has

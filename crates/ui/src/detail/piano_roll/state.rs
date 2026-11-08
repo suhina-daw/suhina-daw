@@ -503,7 +503,7 @@ impl PianoRollState {
             let kept = self.span.clone();
             self.select_copies((count..count.saturating_add(copied)).collect(), &clip.notes);
             if let Some(span) = kept {
-                self.span = Some(TimeSpan { with: self.selected.clone(), ..span });
+                self.span = Some(TimeSpan { with: self.selected.clone(), notes_at: None, ..span });
             }
             self.replacing(&mut params);
             return Some(Action::new("note.paste", params));
