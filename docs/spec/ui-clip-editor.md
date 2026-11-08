@@ -1063,7 +1063,13 @@ works is a **mode**: one of the three presets below, or **Custom**. The **workfl
 piano roll's toolbar, after the MIDI tools icon, shows the mode's name (its accessible label is
 "Workflow" and the name, such as "Workflow Select-first") and can be changed at any time, while
 editing; Settings › Keys › **Preset** offers the same four modes. The menu lists the four
-modes, ticked as chosen, and under a divider every **workflow setting** with its choices:
+modes, ticked as chosen, and under a divider every **workflow setting**, one row each: the
+gesture in a word or two (**Click empty**, **Right-click note**, **Shift right-drag**, **Alt
+right-hold**, **Duplicate**, **Double-click empty**, **Double-click note**), its value dim at the
+right in a word (Selects, Nothing, Off, Ctrl+D …) and its choices one level down, so a choice is
+changed and tried at once; the row's tooltip says what the setting does, and its accessible label
+is the setting's full name and value ("Double-click on a note: Deletes it"). Under another
+divider, **Allow stacked notes**. The settings and their choices:
 
 | Setting | Choices | Select-first | Draw-first | Mouse-first |
 |---|---|---|---|---|

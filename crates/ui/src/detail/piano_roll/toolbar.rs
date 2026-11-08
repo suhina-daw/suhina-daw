@@ -564,11 +564,19 @@ pub(super) fn workflow_menu(
                 }
             }
             ui.separator();
+            // Each setting in a word or two, its value dim at the right and its choices one level
+            // down: short enough to read at a glance, and changed and tried at once.
             for setting in Setting::ALL {
                 let chosen = current.get(setting);
                 let shown = setting.choices().get(chosen).copied().unwrap_or("");
-                let title = egui::RichText::new(format!("{}: {shown}", setting.name())).font(font.clone());
-                ui.menu_button(title, |ui| {
+                let value = setting.short_choices().get(chosen).copied().unwrap_or(shown);
+                let button = egui::Button::new(egui::RichText::new(setting.short_name()).font(font.clone()))
+                    .right_text((
+                        egui::RichText::new(value).font(font.clone()).color(theme::text_hint()),
+                        egui::containers::menu::SubMenuButton::arrow_atom(None),
+                    ));
+                let label = format!("{}: {shown}", setting.name());
+                let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
                     for (index, choice) in setting.choices().iter().enumerate() {
                         let response =
                             ui.selectable_label(index == chosen, egui::RichText::new(*choice).font(font.clone()));
@@ -584,6 +592,8 @@ pub(super) fn workflow_menu(
                         }
                     }
                 });
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+                response.on_hover_text(setting.note());
             }
             // How notes that land on others of their key behave belongs with how the mouse edits
             // them; the same setting as the View menu's (› Allow stacked notes).
