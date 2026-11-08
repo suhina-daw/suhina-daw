@@ -175,25 +175,44 @@ fn pulled_to_the_top_the_view_shows_only_the_edited_track() {
     assert!((splitter(&h).center().y - 500.0).abs() < 20.0, "at {:?}", splitter(&h));
 }
 
-/// Pulled to the top over the second track, a click on its header picks the track and lets go of
-/// the clip: the view keeps that track in sight rather than going back to the first.
+/// Escape, and Escape again a frame later.
+fn escape_twice(h: &mut Harness<'static, App>) {
+    h.key_press(Key::Escape);
+    h.step();
+    h.key_press(Key::Escape);
+    h.run();
+}
+
+/// Pulled to the top over the second track, a click on its header shows the track's devices and
+/// keeps the pull: only that track stays above. Escape twice lets it go, the track still in view;
+/// Escape twice again pulls it up.
 #[test]
-fn leaving_the_pulled_track_by_its_header_keeps_it_in_view() {
+fn the_pulled_track_stays_pulled_with_its_devices_and_escape_twice_lets_it_go() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
     h.get_by_label("Clip Walk on Bass at bar 17").click();
     h.run();
     pull_to(&mut h, 40.0);
+    let pulled = splitter(&h).top();
     assert!(h.query_all_by_label_contains(" on Drums at bar").next().is_none(), "only Bass shows");
     h.get_by_label("Track Bass").click();
     h.run();
+    assert!(h.query_all_by_label_contains(" on Drums at bar").next().is_none(), "still only Bass");
+    assert!((splitter(&h).top() - pulled).abs() < 40.0, "still pulled up: {:?}", splitter(&h));
+
+    // Escape twice: the view comes back, Bass kept in sight.
+    escape_twice(&mut h);
     let top = splitter(&h).top();
+    assert!(top > pulled + 100.0, "let go: the splitter went down from {pulled} to {top}");
     let bass = h.get_by_label("Track Bass").rect();
-    assert!(bass.center().y < top, "the clicked track stays above the splitter: {bass:?}, splitter at {top}");
-    // Drums, the first track, is scrolled away above it (or not drawn at all).
+    assert!(bass.center().y < top, "Bass stays above the splitter: {bass:?}, splitter at {top}");
     if let Some(drums) = h.query_by_label("Track Drums").map(|n| n.rect()) {
         assert!(drums.bottom() <= bass.top() + 1.0, "Drums above Bass: {drums:?} {bass:?}");
     }
+
+    // And twice again: pulled up once more.
+    escape_twice(&mut h);
+    assert!(splitter(&h).top() < top - 100.0, "pulled up again: {:?}", splitter(&h));
 }
 
 #[test]

@@ -646,7 +646,8 @@ fn row_toggle(
 fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<IconButton> {
     let ui = paint.ui;
     let response = widgets::button_area(ui, area, Id::unique("piano-roll-edit-menu"), "Edit");
-    let (fill, ink) = widgets::toggle_colors(ui, &response, false);
+    let fill = crate::kit::motion::mix(Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response));
+    let ink = theme::text_secondary();
     paint.painter.rect_filled(area, 3.0, fill);
     let icon = Rect::from_min_size(area.min, Vec2::splat(area.height()));
     IconButton::Copy.draw(paint.painter, icon, ink, paint.scale);
@@ -926,7 +927,8 @@ impl ButtonPaint<'_> {
         };
         let role = format!("piano.{}", button.id().trim_start_matches("piano-"));
         if active {
-            let fill = if chosen { theme::control_active() } else { theme::control_background() };
+            // Only the chosen tool or an open part has a fill; the others show one on hover.
+            let fill = if chosen { theme::control_active() } else { Color32::TRANSPARENT };
             crate::kit::native_css::surface(
                 painter,
                 area,

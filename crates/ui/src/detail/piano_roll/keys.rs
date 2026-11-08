@@ -513,7 +513,8 @@ pub(super) fn corner(
         }
     }
     let response = widgets::button_area(ui, more, Id::unique("piano-roll-settings"), IconButton::More.name());
-    let (fill, ink) = widgets::toggle_colors(ui, &response, false);
+    let fill = crate::kit::motion::mix(Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response));
+    let ink = theme::text_secondary();
     painter.rect_filled(more, 3.0, fill);
     IconButton::More.draw(&painter, more, ink, scale);
     let font = theme::ui_font(theme::TEXT_SMALL);

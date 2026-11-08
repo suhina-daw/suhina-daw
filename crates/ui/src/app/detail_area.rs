@@ -5,6 +5,9 @@
 
 use super::*;
 
+/// How soon a second Escape must follow the first to count as Escape twice, in seconds.
+const DOUBLE_ESCAPE: f64 = 0.45;
+
 impl App {
     /// A double-click on a track (an Arrangement header, a Launcher column's name or channel
     /// strip) selects it and shows its devices, opening the detail area; a clip selected on
@@ -310,28 +313,32 @@ impl App {
         }
         let least = self.least_detail_height();
         // The piano roll, or an ARA plug-in's editor in the clip's place, can be pulled to the
-        // top, the edited track's lane above it (Melodyne as a MIDI clip's notes are).
-        let pullable =
-            geometry.is_none() && !stacked && (piano.is_some() || ara.is_some()) && self.shown == View::Arrangement;
+        // top, the edited track's lane above it (Melodyne as a MIDI clip's notes are). Pulled up,
+        // it stays so while the track's devices show instead: the switch on Devices, or a click on
+        // the track's header (› Pulled to the top in `docs/spec/ui-clip-editor.md`).
+        let track_devices = clip.is_none() && track.is_some();
+        let base = geometry.is_none() && !stacked && self.shown == View::Arrangement;
+        // Escape twice in a row pulls the editor (or the track's devices) to the top and lets it
+        // go again.
+        if std::mem::take(&mut self.escape_twice) && base && (piano.is_some() || ara.is_some() || track_devices) {
+            self.detail_max = !self.detail_max;
+        }
+        let pullable = base && (piano.is_some() || ara.is_some() || (track_devices && self.detail_max));
         let pulled = pullable && self.detail_max;
-        // With the switch on Devices the track's devices take the editor's place, and nothing is
-        // pulled to the top (› Where it opens in `docs/spec/ui-clip-editor.md`).
+        // With the switch on Devices the track's devices take the editor's place, pulled up as it
+        // was (› Where it opens in `docs/spec/ui-clip-editor.md`).
         let switch = (piano.is_some() || ara.is_some()).then_some(self.detail_showing);
         let ara = ara.filter(|_| self.detail_showing == detail_view::Showing::Clip);
         let piano = piano.filter(|_| self.detail_showing == detail_view::Showing::Clip);
         let edits = piano.is_some() || ara.is_some();
-        let (pullable, pulled) = (pullable && edits, pulled && edits);
         let focus = match clip {
-            Some(detail_view::ClipRef::Arrangement(track, _))
-                if pulled && self.settings.piano_roll_top == PianoRollTop::Track =>
-            {
-                Some(track)
-            }
-            _ => None,
+            _ if !pulled || self.settings.piano_roll_top != PianoRollTop::Track => None,
+            Some(detail_view::ClipRef::Arrangement(track, _)) => Some(track),
+            Some(detail_view::ClipRef::Slot(..)) => None,
+            None => track,
         };
-        // Leaving the one track the editor pulled to the top (a click on its header picks the
-        // track and lets go of the clip), the view keeps that track in sight, not the top of the
-        // whole list.
+        // Leaving the one track pulled to the top (Escape twice, another clip or nothing picked), the
+        // view keeps that track in sight, not the top of the whole list.
         if focus.is_none() && self.arrangement.focus.is_some() {
             self.arrangement.reveal = self.arrangement.focus;
         }
@@ -833,6 +840,22 @@ impl App {
 
     /// The clip the detail area shows: the Arrangement view's selected clip, or the Launcher view's
     /// selected slot's.
+    /// Whether Escape was pressed twice in a row this frame (the second press within
+    /// [`DOUBLE_ESCAPE`] seconds of the first), with no text field taking the keys.
+    pub(super) fn double_escape(&mut self, ui: &egui::Ui) -> bool {
+        let (pressed, now) = ui.input(|i| (i.key_pressed(egui::Key::Escape) && i.modifiers.is_none(), i.time));
+        if !pressed || ui.ctx().egui_wants_keyboard_input() {
+            return false;
+        }
+        match self.last_escape.take() {
+            Some(at) if now - at <= DOUBLE_ESCAPE => true,
+            _ => {
+                self.last_escape = Some(now);
+                false
+            }
+        }
+    }
+
     pub(super) fn shown_clip(&self) -> Option<ClipRef> {
         match self.shown {
             View::Session => self.view.selected_slot.map(|(t, s)| ClipRef::Slot(t, s)),

@@ -453,6 +453,10 @@ pub struct App {
     /// and the detail area's height a splitter drag has reached so far, unclamped.
     detail_max: bool,
     detail_drag: Option<f32>,
+    /// When Escape was last pressed, and whether it was pressed twice in a row this frame (the
+    /// focus mode, read before the shortcuts take the key).
+    last_escape: Option<f64>,
+    escape_twice: bool,
     /// The app's own window (`set_editor_owner`): a press on its controls takes the keyboard
     /// back from an embedded plug-in editor (`kit::keyboard`).
     window: Option<u64>,
@@ -679,6 +683,8 @@ impl App {
             quick_add_kept: String::new(),
             clips_before: Vec::new(),
             detail_max: false,
+            last_escape: None,
+            escape_twice: false,
             detail_drag: None,
             window: None,
             title_bar: 0.0,

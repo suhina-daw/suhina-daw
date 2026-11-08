@@ -317,8 +317,14 @@ What stays above it is a setting, Settings › Clip editor › Piano roll › **
   lane moves the play position and keeps the clip selected, so the editor stays up.
 - **Whole window**: the piano roll fills the whole area under the control bar.
 
-It stays pulled up while MIDI clips (or, with an ARA plug-in, audio clips) are edited; selecting
-something else (another kind of clip, a track, nothing), hiding the detail area (Shift+Tab) or the Launcher view shows the view as before, scrolled so the track that was pulled up stays in sight (a click on its header picks the track and keeps it where it was). With the
+It stays pulled up while MIDI clips (or, with an ARA plug-in, audio clips) are edited, and while
+the track's devices show in the editor's place: the detail area's switch on **Devices**, or a click
+on the track's header, which picks the track and shows its devices with the track alone above them.
+Selecting something else (another kind of clip, nothing), hiding the detail area (Shift+Tab) or
+the Launcher view shows the view as before, scrolled so the track that was pulled up stays in
+sight. **Escape twice** in a row (the second within half a second, no text field taking the keys)
+pulls the editor, or the track's devices, to the top and lets it go again: the first Escape still
+clears the piano roll's note selection. With the
 device chain as a column beside the view (Settings › Devices › Device panels) there is nothing to
 pull up.
 
