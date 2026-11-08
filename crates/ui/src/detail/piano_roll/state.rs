@@ -256,6 +256,12 @@ pub struct PianoRollState {
     /// The index the note the last click added will have, so the second click of a double-click
     /// selects that note rather than deleting it.
     pub(super) click_added: Option<usize>,
+    /// The second press of a double-click on an empty spot is drawing a note (the gesture's Draw):
+    /// it is added when the button is let go, dragged or not, and that click adds nothing more.
+    pub(super) press_draw: bool,
+    /// The fold and the clip's scale the rows were last drawn for: when they change, the notes are
+    /// centred in the new rows.
+    pub(super) rows_for: Option<(Fold, Option<Scale>)>,
     /// An edit of the selected notes asked to make room under them once they are let go.
     pub(super) settle_pending: bool,
     /// The selected notes edited with stacked notes off, waiting to make room once let go.
@@ -348,6 +354,8 @@ impl Default for PianoRollState {
             hover_key: None,
             last_click: None,
             click_added: None,
+            press_draw: false,
+            rows_for: None,
             settle_pending: false,
             settling: None,
             press_added: None,
@@ -597,7 +605,10 @@ impl PianoRollState {
                     params["beats"] = json!(round_beat(span.end - span.start));
                 }
                 self.select_copies((count..count.saturating_add(chosen.len())).collect(), &clip.notes);
-                self.replacing(&mut params);
+                // With stacked notes off the copies replace what is under them at once: they go
+                // after the notes, onto whatever is there (a paste lands on the notes it copies,
+                // to be moved off them, so it waits until it is let go).
+                self.replacing_now(&mut params);
                 return Some(Action::new("note.duplicate", params));
             }
             "pianoRoll.shorter" | "pianoRoll.longer" | "pianoRoll.shorterFine" | "pianoRoll.longerFine" => {
@@ -610,7 +621,7 @@ impl PianoRollState {
                 let mut lengths = Vec::new();
                 for &index in &acting {
                     let Some(note) = clip.notes.get(index) else { continue };
-                    let end = key_step_end(note, &clip.notes, grid, longer, self.notes_replace);
+                    let end = key_step_end(note, grid, longer);
                     if (end - note.time - note.duration).abs() > EPSILON {
                         named.push(index);
                         lengths.push(round_beat(end - note.time));
@@ -687,6 +698,7 @@ impl PianoRollState {
         self.selected.clear();
         self.clear_span();
         self.gesture = None;
+        self.press_draw = false;
         self.focused = false;
         self.set_quantize_open(false);
         self.selecting_new = false;
@@ -775,23 +787,14 @@ impl PianoRollState {
     }
 }
 
-/// Where a grid key leaves the end of `note`. Longer: the next grid line, or the start of the next
-/// note of its key when that comes first and `stops` says it may not be run over; a note already
-/// touching it stays. Shorter: the previous grid line, never less than one step from its start. Off
-/// the grid, a whole step either way.
-pub(super) fn key_step_end(note: &Note, notes: &[Note], grid: TimelineGrid, longer: bool, stops: bool) -> f64 {
+/// Where a grid key leaves the end of `note`. Longer: the next grid line, over the next note of its
+/// key too (with stacked notes off, that note makes room once the selection is let go). Shorter:
+/// the previous grid line, never less than one step from its start. Off the grid, a whole step
+/// either way.
+pub(super) fn key_step_end(note: &Note, grid: TimelineGrid, longer: bool) -> f64 {
     let end = note.time + note.duration;
     if longer {
-        let line = if grid.snaps { grid.next_line(end) } else { end + grid.step };
-        if !stops {
-            return line;
-        }
-        let next = notes
-            .iter()
-            .filter(|n| n.key == note.key && n.time > note.time + EPSILON)
-            .map(|n| n.time)
-            .fold(f64::INFINITY, f64::min);
-        if next <= end + EPSILON { end } else { line.min(next) }
+        if grid.snaps { grid.next_line(end) } else { end + grid.step }
     } else {
         let line = if grid.snaps { grid.previous_line(end) } else { end - grid.step };
         line.max(note.time + grid.step).min(end)

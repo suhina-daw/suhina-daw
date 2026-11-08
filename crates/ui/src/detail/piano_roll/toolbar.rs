@@ -330,9 +330,9 @@ pub(super) struct ToolbarCx<'a> {
     pub(super) scale: f32,
 }
 
-/// The toolbar along the top of the piano roll (› Layout): the tools, the note clipboard, quantise
-/// and the MIDI tools at the left; the Rows group (Fold, Scale, Highlight), the ghost menu, the
-/// grid value and the × at the right. With less room it gives way in steps, never hiding a part
+/// The toolbar along the top of the piano roll (› Layout): the tools, the note clipboard, quantise,
+/// the MIDI tools and the Rows group (Fold, Scale, Highlight) at the left; the workflow and ghost
+/// menus, the grid value and the × at the right. With less room it gives way in steps, never hiding a part
 /// outright: first the Grid caption, then the Rows words (their icons stay), then the clipboard
 /// folds into an Edit menu, then the ghost menu loses its word. A button that runs something adds
 /// to `actions`.
@@ -430,10 +430,16 @@ pub(super) fn toolbar(
     if paint.place(place(), IconButton::MidiTools, state.tools_open, true) {
         state.tools_open = !state.tools_open;
     }
+    // The Rows group after them, unless the row has room for nothing but the tools.
+    if step < Step::Squeezed {
+        divider();
+        let end = rows_group(ui, &painter, x.get(), row, side, step < Step::Icons, cx, state, actions);
+        x.set(end + gap);
+    }
     let left_end = x.get();
 
-    // From the right end: the ×, the grid menu (its value after a dim "Grid"), a divider, the
-    // ghost and workflow menus and the Rows group.
+    // From the right end: the ×, the grid menu (its value after a dim "Grid"), a divider, and the
+    // ghost and workflow menus.
     let hide =
         Rect::from_min_size(Pos2::new(row.right() - side, row.top() + (row.height() - side) / 2.0), Vec2::splat(side));
     if hide.left() >= left_end && paint.place(hide, IconButton::Hide, false, true) {
@@ -457,17 +463,19 @@ pub(super) fn toolbar(
     }
     painter.vline(right - 5.0, row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
     right -= 10.0;
-    let words = step < Step::Icons;
     let named = step < Step::Arrows;
     let ghost_width = if named { ghosts_named } else { arrow };
     let ghosts = Rect::from_min_max(Pos2::new(right - ghost_width, row.top()), Pos2::new(right, row.bottom()));
+    if ghosts.left() < left_end {
+        return;
+    }
     ghost_view::menu(ui, ghosts, &clip.ghosts, &mut state.ghost_source, named);
     right = ghosts.left() - 2.0;
     let workflow_width = if named { workflow_named } else { arrow };
     let workflow = Rect::from_min_max(Pos2::new(right - workflow_width, row.top()), Pos2::new(right, row.bottom()));
-    workflow_menu(ui, workflow, keymap, state, named);
-    right = workflow.left() - 6.0;
-    rows_group(ui, &painter, right, row, side, words, cx, state, actions);
+    if workflow.left() >= left_end {
+        workflow_menu(ui, workflow, keymap, state, named);
+    }
 }
 
 /// How far the toolbar gives way this frame (› Layout): each step leaves out one more thing the
@@ -494,18 +502,26 @@ const BUTTON_ROOM: f32 = 8.0;
 /// The room a toolbar menu's button leaves before its first word and after its chevron, in points.
 const MENU_PAD: f32 = 6.0;
 
-/// The room between a toolbar menu's words, and between its last word and the chevron, in points.
+/// The room between a toolbar menu's caption and its word, in points.
 const MENU_SPACE: f32 = 4.0;
+
+/// The room between a toolbar menu's word and its chevron, in points: enough that the chevron reads
+/// as the button's sign, not as part of the value.
+const CHEVRON_GAP: f32 = 7.0;
 
 /// How wide a toolbar menu's chevron is, in points.
 const CHEVRON: f32 = 7.0;
+
+/// How large a toolbar button's icon is drawn, against its own box: a little room above and below
+/// it inside the button.
+const ICON_IN_BUTTON: f32 = 0.82;
 
 /// How wide a toolbar menu's button is with a dim `caption` and `word` on it (either may be left
 /// out; with neither, the chevron alone): the words, the chevron after them and the padding.
 pub(crate) fn menu_width(ui: &Ui, (caption, word): (Option<&str>, &str)) -> f32 {
     let font = theme::ui_font(theme::TEXT_SMALL);
     let caption = caption.map_or(0.0, |c| widgets::text_width(ui, c, font.clone()) + MENU_SPACE);
-    let word = if word.is_empty() { 0.0 } else { widgets::text_width(ui, word, font) + MENU_SPACE };
+    let word = if word.is_empty() { 0.0 } else { widgets::text_width(ui, word, font) + CHEVRON_GAP };
     MENU_PAD + caption + word + CHEVRON + MENU_PAD
 }
 
@@ -534,11 +550,13 @@ pub(crate) fn menu_face(
     painter.rect_filled(rect, 3.0, fill);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut x = rect.left() + MENU_PAD;
-    for (text, color) in [(caption, theme::text_hint()), ((!word.is_empty()).then_some(word), ink)] {
+    for (text, color, after) in
+        [(caption, theme::text_hint(), MENU_SPACE), ((!word.is_empty()).then_some(word), ink, CHEVRON_GAP)]
+    {
         let Some(text) = text else { continue };
         let area = Rect::from_min_max(Pos2::new(x, rect.top()), rect.max);
         widgets::text_in(painter, area, Align2::LEFT_CENTER, text, font.clone(), color);
-        x += widgets::text_width(ui, text, font.clone()) + MENU_SPACE;
+        x += widgets::text_width(ui, text, font.clone()) + after;
     }
     chevron(painter, Pos2::new(x + CHEVRON / 2.0, rect.center().y), ink);
     response
@@ -583,13 +601,16 @@ fn layout_step(ui: &Ui, row: Rect, (size, gap, side): (Vec2, f32, f32), widths: 
         let clipboard = if step >= Step::Edit { size.x + 10.0 + gap } else { 4.0 * button };
         let grid = if step == Step::Full { widths.grids.0 } else { widths.grids.1 };
         let menus = if step >= Step::Arrows { widths.arrows } else { widths.named };
+        // The tools, the clipboard, Quantise and the tools' toggle, the Rows group after a third
+        // divider, some room, then the menus, the grid value and the × from the right.
         TOOLBAR_INSET
             + 8.0 * button
             + clipboard
             + 14.0
-            + 8.0
+            + 7.0
             + rows(step < Step::Icons)
-            + 6.0
+            + gap
+            + 8.0
             + menus
             + 2.0
             + 10.0
@@ -604,26 +625,27 @@ fn layout_step(ui: &Ui, row: Rect, (size, gap, side): (Vec2, f32, f32), widths: 
         .unwrap_or(Step::Squeezed)
 }
 
-/// The Rows group, its right end at `right`, framed: Fold, Scale and Highlight, each lit while
+/// The Rows group, its left end at `left`, framed: Fold, Scale and Highlight, each lit while
 /// on, as an icon and a word or, when `words` is off, the icon alone (its tooltip names it).
 /// Fold shows the rows with notes, or the scale's while the clip has one; Scale is the clip's
 /// scale switch, the same as the clip panel's; Highlight tints the scale's rows (› Scale and key).
+/// Returns where the group ends at the right.
 #[allow(clippy::too_many_arguments)]
 fn rows_group(
-    ui: &mut Ui,
+    ui: &Ui,
     painter: &egui::Painter,
-    right: f32,
+    left: f32,
     row: Rect,
     side: f32,
     words: bool,
     cx: ToolbarCx<'_>,
     state: &mut PianoRollState,
     actions: &mut Vec<Action>,
-) {
+) -> f32 {
     let clip = cx.clip;
     let widths: Vec<f32> = ROWS.iter().map(|(_, word)| row_toggle_width(ui, side, words.then_some(*word))).collect();
     let total = widths.iter().map(|w| w + 2.0).sum::<f32>() + 2.0;
-    let group = Rect::from_min_max(Pos2::new(right - total, row.top()), Pos2::new(right, row.bottom()));
+    let group = Rect::from_min_max(Pos2::new(left, row.top()), Pos2::new(left + total, row.bottom()));
     painter.rect_stroke(group, 4.0, theme::hairline(theme::border_strong()), StrokeKind::Inside);
     let folded = state.fold != Fold::Off;
     let hints = [
@@ -662,12 +684,8 @@ fn rows_group(
                 state.view_picked = Some(super::ViewPick::HighlightScale(!on));
             }
         }
-        if matches!(button, IconButton::Fold | IconButton::Scale) {
-            // Another set of rows: the notes are centred again in them.
-            state.scrolled_by_hand = false;
-            state.centred_for = 0.0;
-        }
     }
+    group.right()
 }
 
 /// One of the Rows group's toggles: lit while on, its icon and, given one, its word; its accessible
@@ -694,7 +712,7 @@ fn row_toggle(
     };
     painter.rect_filled(rect, 3.0, fill);
     let icon = Rect::from_min_size(rect.min + Vec2::new(3.0, 0.0), Vec2::new(rect.height(), rect.height()));
-    button.draw(painter, icon, ink, scale * 0.9);
+    button.draw(painter, icon, ink, scale * ICON_IN_BUTTON);
     if let Some(word) = word {
         let text = Rect::from_min_max(Pos2::new(icon.right() + 2.0, rect.top()), rect.max);
         widgets::text_in(painter, text, Align2::LEFT_CENTER, word, theme::ui_font(theme::TEXT_SMALL), ink);
@@ -714,7 +732,7 @@ fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<Icon
     let ink = theme::text_secondary();
     paint.painter.rect_filled(area, 3.0, fill);
     let icon = Rect::from_min_size(area.min, Vec2::splat(area.height()));
-    IconButton::Copy.draw(paint.painter, icon, ink, paint.scale);
+    IconButton::Copy.draw(paint.painter, icon, ink, paint.scale * ICON_IN_BUTTON);
     chevron(paint.painter, Pos2::new(area.right() - MENU_PAD, area.center().y), ink);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
@@ -992,7 +1010,7 @@ impl ButtonPaint<'_> {
             );
         }
         if !(crate::kit::skin::has_own(&role) && crate::kit::skin::paint(painter, area, &role, state, color, 0.0)) {
-            button.draw(painter, area, color, self.scale);
+            button.draw(painter, area, color, self.scale * ICON_IN_BUTTON);
         }
         active && response.clicked()
     }

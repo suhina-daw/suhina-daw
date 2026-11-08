@@ -139,6 +139,32 @@ pub(super) fn drawn_note(
     Some(note)
 }
 
+/// What is left of `note` once the notes `covers` (each a key, a start and an end) make room as
+/// `note.makeRoom` does: nothing when they cover it from its start to its end, the part before the
+/// first one that starts inside it, or the part after those that cover its start.
+pub(super) fn left_after(note: &Note, covers: &[(u8, f64, f64)]) -> Option<Note> {
+    let end = note.time + note.duration;
+    let mut row: Vec<(f64, f64)> = covers.iter().filter(|c| c.0 == note.key).map(|c| (c.1, c.2)).collect();
+    if row.is_empty() {
+        return Some(*note);
+    }
+    row.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut start = note.time;
+    for (from, to) in row {
+        if to <= start + EPSILON {
+            continue;
+        }
+        if from >= end - EPSILON {
+            break;
+        }
+        if start < from - EPSILON {
+            return Some(Note { time: start, duration: from - start, ..*note });
+        }
+        start = start.max(to);
+    }
+    (start < end - EPSILON).then_some(Note { time: start, duration: end - start, ..*note })
+}
+
 /// A paint stroke at `now`: the slot of the stroke's note length under the pointer gets a note
 /// in the row under it, unless the stroke has one there already.
 pub(super) fn paint(state: &mut PianoRollState, layout: &Layout, clip: &PianoClip, now: Pos2) {
@@ -375,8 +401,38 @@ pub(super) fn draw(
             }
         }
     }
-    for (i, note) in clip.notes.iter().enumerate() {
+    // With stacked notes off, the notes of a key under selected notes that are to make room for
+    // them (moved, resized or nudged and not let go yet, or being dragged) show what is left of them
+    // once they do, as `note.makeRoom` leaves them: gone where covered whole, cut where covered in
+    // part. Moved off them before being let go, they show whole again (› Resizing).
+    let making_room = state.notes_replace
+        && (state.settle_pending
+            || state.settling.as_ref().is_some_and(|s| s.notes == *state.acting())
+            || matches!(preview, Some(Effect::Move(..) | Effect::Resize(_) | Effect::ResizeStart(_))));
+    let covers: Vec<(u8, f64, f64)> = if making_room {
+        state
+            .selected
+            .iter()
+            .filter_map(|&i| clip.notes.get(i).map(|n| shown(i, n)))
+            .map(|n| (n.key, n.time, n.time + n.duration))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    // The selected notes are drawn last, over the others: a note moved onto another of its key is
+    // seen while it is moved.
+    let order = (0..clip.notes.len()).filter(|i| !state.selected.contains(i)).chain(state.selected.iter().copied());
+    for i in order {
+        let Some(note) = clip.notes.get(i) else { continue };
         let note = shown(i, note);
+        let note = if covers.is_empty() || state.selected.contains(&i) {
+            note
+        } else {
+            match left_after(&note, &covers) {
+                Some(left) => left,
+                None => continue,
+            }
+        };
         let rect = layout.note_rect(&note);
         if !rect.intersects(layout.grid) {
             continue;

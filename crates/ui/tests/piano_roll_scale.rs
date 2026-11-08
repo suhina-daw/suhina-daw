@@ -262,6 +262,22 @@ fn the_toolbar_scale_is_the_clip_panels_switch() {
     assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Dorian));
 }
 
+/// Switching the scale on from the toolbar centres the notes in the rows it shows, wherever the
+/// rows were scrolled: the view never lands on rows without notes.
+#[test]
+fn the_toolbar_scale_centres_the_notes_in_its_rows() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let (notes, _) = edited(&h);
+    // Scrolled up to the highest keys, far from the notes.
+    h.state_mut().piano_roll_mut().scroll.y = 0.0;
+    h.run();
+    assert_eq!(h.query_all_by_label_contains("Note ").count(), 0, "no note in view up there");
+    press(&mut h, "Scale");
+    assert!(edited(&h).1.is_some());
+    assert_eq!(h.query_all_by_label_contains("Note ").count(), notes.len(), "the notes are in view again");
+}
+
 /// The scale on shows the scale's keys and the keys with notes; Fold, the keys with notes alone.
 #[test]
 fn the_scale_shows_its_keys_and_fold_the_keys_with_notes() {

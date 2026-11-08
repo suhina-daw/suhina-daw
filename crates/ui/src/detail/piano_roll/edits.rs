@@ -303,8 +303,9 @@ pub(super) fn commit(
             }
             if *copy {
                 // Ctrl+drag: one `note.duplicate` puts the copies where the drag let go; the
-                // copies are appended, so they are the next indices, and they are selected.
-                state.replacing(&mut params);
+                // copies are appended, so they are the next indices, and they are selected. With
+                // stacked notes off they replace what they land on at once, as Ctrl+D's do.
+                state.replacing_now(&mut params);
                 actions.push(Action::new("note.duplicate", params));
                 state.select_copies((clip.notes.len()..clip.notes.len() + notes.len()).collect(), &clip.notes);
                 // They went where the drag put them, not a stretch on.
@@ -347,8 +348,10 @@ pub(super) fn commit(
         }
         // Shift and Draw: one `note.add` for the whole stroke, the notes it drew.
         (Gesture::DrawRun, _) => {
-            let stroke: Vec<Note> = std::mem::take(&mut state.stroke)
-                .into_iter()
+            let stroke: Vec<Note> = state
+                .stroke
+                .iter()
+                .copied()
                 .filter(|p| !clip.notes.iter().any(|n| n.key == p.key && (n.time - p.time).abs() < EPSILON))
                 .collect();
             if !stroke.is_empty() {
@@ -383,8 +386,10 @@ pub(super) fn commit(
             // A painted note on top of one already there (same key, same start) is left out, and so,
             // where notes do not stack, is one that would start inside it: a stroke paints the gaps.
             let inside = state.notes_replace;
-            let stroke: Vec<Note> = std::mem::take(&mut state.stroke)
-                .into_iter()
+            let stroke: Vec<Note> = state
+                .stroke
+                .iter()
+                .copied()
                 .filter(|p| {
                     !clip.notes.iter().any(|n| {
                         n.key == p.key
@@ -401,7 +406,7 @@ pub(super) fn commit(
         }
         (Gesture::Erase, _) if !state.erasing.is_empty() => {
             let mut params = clip.address.clone();
-            params["notes"] = json!(std::mem::take(&mut state.erasing).into_iter().collect::<Vec<_>>());
+            params["notes"] = json!(state.erasing.iter().collect::<Vec<_>>());
             state.selected.clear();
             actions.push(Action::new("note.delete", params));
         }
@@ -409,7 +414,7 @@ pub(super) fn commit(
         // state the first note it touched takes (› Muting).
         (Gesture::Mute, _) if !state.muting.is_empty() => {
             let mut params = clip.address.clone();
-            params["notes"] = json!(std::mem::take(&mut state.muting).into_iter().collect::<Vec<_>>());
+            params["notes"] = json!(state.muting.iter().collect::<Vec<_>>());
             params["muted"] = json!(state.mute_target);
             actions.push(Action::new("note.setMuted", params));
         }

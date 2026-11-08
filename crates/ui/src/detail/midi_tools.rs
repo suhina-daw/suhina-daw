@@ -156,7 +156,7 @@ impl Tools<'_> {
 /// where it is used, so a typed number never reaches a command out of range.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolSettings {
-    /// Semitones **Transpose** moves the notes by.
+    /// Semitones **Transpose** moves the notes by: 0 until one is chosen, which moves nothing.
     pub transpose: i32,
     /// How far **Humanise** may move a start, in milliseconds (#1214).
     pub humanize_ms: f64,
@@ -174,7 +174,7 @@ pub struct ToolSettings {
 impl Default for ToolSettings {
     fn default() -> Self {
         Self {
-            transpose: 1,
+            transpose: 0,
             humanize_ms: 10.0,
             humanize_velocity: 8.0,
             humanize_chords: true,

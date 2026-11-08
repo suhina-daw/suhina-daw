@@ -173,11 +173,7 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 88] = [
     ("pianoRoll.octaveUp", "Move the selected notes an octave up", PIANO_ROLL),
     ("pianoRoll.octaveDown", "Move the selected notes an octave down", PIANO_ROLL),
     ("pianoRoll.shorter", "Make the selected notes one grid step shorter", PIANO_ROLL),
-    (
-        "pianoRoll.longer",
-        "Make the selected notes longer, to the next grid line or the next note of the key",
-        PIANO_ROLL,
-    ),
+    ("pianoRoll.longer", "Make the selected notes longer, to the next grid line", PIANO_ROLL),
     ("pianoRoll.shorterFine", "Make the selected notes a fine step shorter, off the grid", PIANO_ROLL),
     ("pianoRoll.longerFine", "Make the selected notes a fine step longer, off the grid", PIANO_ROLL),
     ("pianoRoll.draw", "Switch the piano roll between the Select and Draw tools", PIANO_ROLL),
@@ -234,10 +230,32 @@ pub fn slot_only(action: &str) -> bool {
     matches!(action, "selection.launch" | "selection.up" | "selection.down" | "selection.left" | "selection.right")
 }
 
-/// Whether `action` is left alone while the piano roll has the keyboard: the selected slot's keys,
-/// and selecting every arrangement clip, whose key selects every note there instead.
+/// Whether `action` is left alone while the piano roll has the keyboard: what edits or shows the
+/// Arrangement or the Launcher behind it (the selected slot's keys, the selected clips' edits, the
+/// Arrangement's tools, grid, lanes and markers), even when the piano roll has no key of its own on
+/// it, so a key pressed while editing notes never acts on the view behind them. The window's own
+/// keys (play, save, undo, the views, Settings) go on working.
 pub fn not_in_piano_roll(action: &str) -> bool {
-    slot_only(action) || action == "selection.selectAll" || arrangement_only(action)
+    slot_only(action)
+        || arrangement_only(action)
+        || matches!(
+            action,
+            "selection.selectAll"
+                | "selection.mute"
+                | "selection.rename"
+                | "selection.split"
+                | "selection.consolidate"
+                | "selection.group"
+                | "selection.ungroup"
+                | "selection.takeUp"
+                | "selection.takeDown"
+                | "view.automation"
+                | "view.gainEnvelope"
+                | "view.waveformZoomIn"
+                | "view.waveformZoomOut"
+                | "marker.addAtPlayhead"
+                | "clip.insertMidi"
+        )
 }
 
 /// Whether `a` and `b` can both run on the same key press, so one key for both is a conflict.

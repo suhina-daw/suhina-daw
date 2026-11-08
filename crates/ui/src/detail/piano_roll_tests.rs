@@ -477,24 +477,43 @@ fn keys_stop_at_the_limits_and_never_make_notes_shorter_than_a_step() {
     assert!(state.selected.is_empty());
 }
 
+/// Shift+Right goes to the next grid line over the next note of the key, as far as a step goes:
+/// with stacked notes off that note makes room once the selection is let go.
 #[test]
-fn a_longer_key_goes_to_the_next_line_or_the_next_note_of_the_key() {
-    let notes = [note(0.0, 0.3, 60), note(0.4, 0.25, 60), note(1.0, 0.25, 60), note(0.2, 1.0, 62)];
+fn a_longer_key_goes_to_the_next_line_over_the_next_note_of_the_key() {
+    let notes = [note(0.0, 0.3, 60), note(0.4, 0.25, 60), note(0.2, 1.0, 62)];
     let grid = TimelineGrid::new(0.25, 400.0, 4.0, MIN_LINE_SPACING);
-    let end = |index: usize, longer, stops| key_step_end(&notes[index], &notes, grid, longer, stops);
-    // Off the grid at 0.3: the next line would be 0.5, and the next note of its key is at 0.4.
-    assert!((end(0, true, true) - 0.4).abs() < 1e-9);
-    // Allowed to stack, the next note does not stop it.
-    assert!((end(0, true, false) - 0.5).abs() < 1e-9);
-    // Off the grid at 0.65, the next line is 0.75 and the next note far enough.
-    assert!((end(1, true, true) - 0.75).abs() < 1e-9);
-    // Touching the next note, or the last of its key: it stays, or goes on to the line.
-    let touching = [note(0.0, 0.4, 60), note(0.4, 0.25, 60)];
-    assert!((key_step_end(&touching[0], &touching, grid, true, true) - 0.4).abs() < 1e-9);
-    assert!((end(3, true, true) - 1.25).abs() < 1e-9);
+    let end = |index: usize, longer| key_step_end(&notes[index], grid, longer);
+    // Off the grid at 0.3: the next line is 0.5, over the next note of its key at 0.4.
+    assert!((end(0, true) - 0.5).abs() < 1e-9);
+    // Off the grid at 0.65, the next line is 0.75.
+    assert!((end(1, true) - 0.75).abs() < 1e-9);
+    // Touching the next note: it goes on to the line all the same.
+    let touching = note(0.0, 0.4, 60);
+    assert!((key_step_end(&touching, grid, true) - 0.5).abs() < 1e-9);
+    assert!((end(2, true) - 1.25).abs() < 1e-9);
     // Shorter: the line before, and never less than a step from the start.
-    assert!((end(3, false, true) - 0.75 - 0.25).abs() < 1e-9);
-    assert!((end(1, false, true) - 0.65).abs() < 1e-9, "a step long already");
+    assert!((end(2, false) - 0.75 - 0.25).abs() < 1e-9);
+    assert!((end(1, false) - 0.65).abs() < 1e-9, "a step long already");
+}
+
+/// A note under selected notes that are to make room shows what `note.makeRoom` will leave of it.
+#[test]
+fn notes_under_selected_ones_show_what_making_room_leaves() {
+    let n = note(1.0, 2.0, 60);
+    let cover = |from: f64, to: f64| (60u8, from, to);
+    assert_eq!(left_after(&n, &[]), Some(n));
+    assert_eq!(left_after(&n, &[(62, 0.0, 4.0)]), Some(n), "another key's note covers nothing");
+    assert_eq!(left_after(&n, &[cover(0.5, 3.5)]), None, "covered whole");
+    assert_eq!(left_after(&n, &[cover(1.0, 3.0)]), None, "covered exactly");
+    // Covered from its start: what runs on past it.
+    let tail = left_after(&n, &[cover(1.0, 2.0)]).unwrap();
+    assert!((tail.time - 2.0).abs() < 1e-9 && (tail.duration - 1.0).abs() < 1e-9, "{tail:?}");
+    // Starting first: what comes before the first that covers it.
+    let head = left_after(&n, &[cover(2.5, 4.0), cover(1.5, 2.0)]).unwrap();
+    assert!((head.time - 1.0).abs() < 1e-9 && (head.duration - 0.5).abs() < 1e-9, "{head:?}");
+    // Touching it, not covering it.
+    assert_eq!(left_after(&n, &[cover(3.0, 4.0), cover(0.0, 1.0)]), Some(n));
 }
 
 #[test]
@@ -520,9 +539,15 @@ fn with_stacked_notes_off_what_a_key_places_replaces_what_is_under_it() {
     let mut state = focused_on(&clip);
     state.selected = BTreeSet::from([0]);
     let paste = state.key_action("selection.paste", &clip, 0.0, Some(2)).map(|a| a.params);
-    // The copies stay selected: they make room once they are let go, not now.
+    // A paste lands on the notes it copies, to be moved off them: it makes room once it is let go.
     assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.0 })));
     assert!(state.settle_pending);
+    // A duplicate goes after its notes, onto whatever is there, and replaces it at once.
+    let mut state = focused_on(&clip);
+    state.selected = BTreeSet::from([0]);
+    let duplicate = state.key_action("selection.duplicate", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(duplicate.map(|p| p["replace"].clone()), Some(json!(true)));
+    assert!(!state.settle_pending);
     // With nothing selected a command replaces at once.
     let mut state = focused_on(&clip);
     let quantise = state.quantize_selected().map(|a| a.params);
@@ -759,7 +784,7 @@ fn a_time_selection_follows_the_notes_selected_with_it() {
 fn a_longer_key_goes_on_along_triplet_lines() {
     let grid = TimelineGrid { step: 1.0 / 3.0, bar_beats: 4.0, snaps: true };
     let first = note(0.0, 0.333333, 60);
-    assert!((key_step_end(&first, &[first], grid, true, true) - 2.0 / 3.0).abs() < 1e-9);
+    assert!((key_step_end(&first, grid, true) - 2.0 / 3.0).abs() < 1e-9);
 }
 
 /// Alt and an arrow key goes a fine step, off the grid; with Shift it changes the length that way.
@@ -779,13 +804,17 @@ fn alt_and_an_arrow_key_go_a_fine_step_off_the_grid() {
     assert_eq!(shorter["lengths"][0].as_f64(), Some(0.96875));
 }
 
+/// A step longer runs over the next note of the key, which, with stacked notes off, makes room once
+/// the note is let go.
 #[test]
-fn a_fine_step_longer_stops_at_the_next_note_of_the_key() {
+fn a_fine_step_longer_runs_over_the_next_note_of_the_key() {
     let clip = clip(vec![note(1.0, 1.24, 60), note(2.25, 1.0, 60)]);
     let mut state = focused_on(&clip);
     state.selected = BTreeSet::from([0]);
     let longer = state.key_action("pianoRoll.longerFine", &clip, 0.0, None).map(|a| a.params);
-    assert_eq!(longer.and_then(|p| p["lengths"][0].as_f64()), Some(1.25));
+    let length = longer.and_then(|p| p["lengths"][0].as_f64()).unwrap_or(0.0);
+    assert!((length - 1.27125).abs() < 1e-6, "{length}");
+    assert!(state.settle_pending, "the next note makes room once it is let go");
 }
 
 #[test]

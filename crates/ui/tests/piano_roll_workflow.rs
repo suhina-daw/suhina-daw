@@ -177,6 +177,38 @@ fn a_double_click_on_empty_grid_adds_one_note_even_right_after_another_click() {
     }
 }
 
+/// The second press of a double-click on an empty spot adds the note as it goes down, and a drag
+/// before letting go sets its length, on the grid: one note, one undo step.
+#[test]
+fn a_double_click_held_and_dragged_draws_the_note_as_long_as_the_drag() {
+    let mut renderer = engine();
+    let mut h = with_preset(&mut renderer, Preset::SelectFirst);
+    let before = notes(&h);
+    let (low, high) = (before.iter().map(|n| n.key).min().unwrap(), before.iter().map(|n| n.key).max().unwrap());
+    let key = (low..=high).find(|k| before.iter().all(|n| n.key != *k)).unwrap_or(low - 1);
+    let start = before[1].time + 0.5;
+    let (at, to) = (spot(&h, start, key), spot(&h, start + 1.5, key));
+    h.hover_at(at);
+    h.step();
+    pointer(&mut h, at, true);
+    pointer(&mut h, at, false);
+    pointer(&mut h, at, true);
+    for step in 1..=6 {
+        h.hover_at(at + (to - at) * (step as f32 / 6.0));
+        h.step();
+    }
+    pointer(&mut h, to, false);
+    h.run();
+    let after = notes(&h);
+    assert_eq!(after.len(), before.len() + 1, "{after:?}");
+    let drawn = after.iter().find(|n| n.key == key).unwrap();
+    assert!((drawn.time - start).abs() < 1e-6, "{drawn:?}");
+    assert!((drawn.duration - 1.5).abs() < 1e-6, "as long as the drag: {drawn:?}");
+    assert_eq!(selected(&h), 1, "and selected");
+    undo(&mut h);
+    assert_eq!(notes(&h), before, "one undo step");
+}
+
 #[test]
 fn a_double_click_on_a_note_or_its_edge_deletes_it_in_select() {
     for edge in [false, true] {

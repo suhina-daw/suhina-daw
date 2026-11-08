@@ -91,6 +91,11 @@ status bar.
 
 ## Default keys
 
+While the piano roll has the keyboard (after a click in it), a key that edits or shows the
+Arrangement or the Launcher (the clip and slot keys below, the Arrangement's tools and grid,
+**A**, **M**, Insert MIDI clip) does nothing, even where the piano roll has no key of its own on it
+([spec](spec/ui-clip-editor.md) › Shortcuts); the window's own keys go on working.
+
 | Action | Keys |
 |---|---|
 | Play or stop (`transport.toggle`; Play starts from the play start marker or the selected clip, as Settings › Arrangement › Time and play › Play from says; Stop goes back to the marker or stays, as Settings › Arrangement › Time and play › Playhead after Stop says) | Space |
@@ -128,8 +133,8 @@ status bar.
 | In the piano roll: move the selected notes to the previous, the next grid line, the first of them on the line and the others keeping their distance to it (`pianoRoll.earlier`, `.later`) | Left; Right |
 | In the piano roll: move the selected notes a fine step (a 1/128 note) earlier, later, off the grid (`pianoRoll.earlierFine`, `.laterFine`) | Alt+Left; Alt+Right |
 | In the piano roll: move the selected notes a semitone, an octave up or down (`pianoRoll.up`, `.down`, `.octaveUp`, `.octaveDown`) | Up, Down; Shift+Up, Shift+Down |
-| In the piano roll: take the selected notes' ends to the previous, the next grid line, or to the next note of the key (`pianoRoll.shorter`, `.longer`; never shorter than a step) | Shift+Left; Shift+Right |
-| In the piano roll: make the selected notes a fine step shorter, longer, off the grid, stopping at the next note of the key unless stacked notes are allowed (`pianoRoll.shorterFine`, `.longerFine`) | Alt+Shift+Left; Alt+Shift+Right |
+| In the piano roll: take the selected notes' ends to the previous, the next grid line, over the next note of the key too (`pianoRoll.shorter`, `.longer`; never shorter than a step) | Shift+Left; Shift+Right |
+| In the piano roll: make the selected notes a fine step shorter, longer, off the grid, over the next note of the key too (`pianoRoll.shorterFine`, `.longerFine`) | Alt+Shift+Left; Alt+Shift+Right |
 | In the piano roll: switch between the Select and Draw tools (`pianoRoll.draw`, [spec](spec/ui-clip-editor.md) › Drawing notes) | B |
 | In the piano roll: make the grid finer, coarser (`pianoRoll.gridNarrow`, `.gridWiden`, [spec](spec/ui-clip-editor.md) › Grid and snapping) | Ctrl+1; Ctrl+2 |
 | In the piano roll: turn the triplet grid on or off (`pianoRoll.gridTriplet`) | Ctrl+3 |

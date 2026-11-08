@@ -292,6 +292,20 @@ fn the_midi_tools_column_says_what_it_acts_on() {
     assert!(h.query_by_label("Whole clip").is_some(), "Escape clears the selection");
 }
 
+/// Transpose starts at 0 semitones, and its Apply moves nothing until a number is chosen.
+#[test]
+fn transpose_starts_at_zero_and_applies_nothing_until_chosen() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    assert_eq!(h.state().piano_roll().tools.transpose, 0);
+    let before = notes(&h);
+    let at = note_rect(&h, &before[0]).center();
+    click(&mut h, at);
+    h.get_by_label("Transpose").click_accesskit();
+    h.run();
+    assert_eq!(notes(&h), before, "nothing moved at 0");
+}
+
 #[test]
 fn transpose_moves_the_selected_note_a_semitone() {
     let mut renderer = engine();

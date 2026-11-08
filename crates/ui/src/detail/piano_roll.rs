@@ -279,6 +279,7 @@ pub fn show(
         state.selected.clear();
         state.selected_ids = None;
         state.gesture = None;
+        state.press_draw = false;
         state.playing_key = None;
         state.key_live = None;
         state.clear_span();
@@ -333,8 +334,18 @@ pub fn show(
     // A newly shown clip fits the width with its notes in the middle; until the rows are scrolled
     // by hand, a change in height centres the notes again, so they are in view at any height.
     let rows = scale_view::rows(clip, state.fold_for(clip));
+    // Another set of rows (Fold, or the clip's scale switched or changed here, in the clip panel or
+    // by a command) centres the notes in them, so they stay in view: the scroll of the last rows
+    // means nothing in the new ones. Scale's rows change a frame after its click, once the
+    // command has run.
+    let rows_for = (state.fold_for(clip), clip.scale);
+    let rows_changed = state.rows_for.is_some_and(|was| was != rows_for);
+    state.rows_for = Some(rows_for);
     if fresh {
         fit(state, grid_rect, clip, &rows);
+    } else if rows_changed {
+        state.scrolled_by_hand = false;
+        centre_notes(state, grid_rect.height(), clip, &rows);
     } else if !state.scrolled_by_hand && (grid_rect.height() - state.centred_for).abs() > 0.5 {
         centre_notes(state, grid_rect.height(), clip, &rows);
     }
@@ -440,7 +451,10 @@ pub fn show(
         );
     }
     let workflow = options.workflow;
+    // The click that lets go of a note the second press of a double-click is drawing adds nothing
+    // more: the note is added when the button is let go (below).
     if response.clicked()
+        && !state.press_draw
         && let Some(pos) = pointer
     {
         // The piano roll counts its own double-clicks: two clicks close in time and space, and a
@@ -465,7 +479,8 @@ pub fn show(
     // its faint note too; any other opens with a double-click of the right button.
     if let Some(pos) = pointer.filter(|pos| note_at(&layout, &clip.notes, *pos).is_none()) {
         let ghost = || ghost_view::ghost_at(&clip.ghosts, pos, |g| layout.note_rect(&g.note()));
-        let clicked = response.clicked() && state.tool == Tool::Select && !workflow.empty_click_draws;
+        let clicked =
+            response.clicked() && state.tool == Tool::Select && !workflow.empty_click_draws && !state.press_draw;
         if (clicked || response.double_clicked_by(PointerButton::Secondary))
             && let Some(from) = ghost().filter(|from| clip.ghosts.is_picked(*from))
         {
@@ -512,6 +527,28 @@ pub fn show(
             }
         }
     }
+    // The second press of a double-click on an empty spot, with Select: the note is there as the
+    // press goes down, not when the button is let go, and dragging before letting go sets its
+    // length as the Draw tool's drag does (› Double-click).
+    if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
+        && state.tool == Tool::Select
+        && workflow.double_click_adds
+        && !workflow.empty_click_draws
+        && !(inputs.shift || inputs.command)
+        && let Some(pos) = widgets::pointer_over(ui, grid_rect)
+        && note_at(&layout, &clip.notes, pos).is_none()
+    {
+        let time = ui.input(|i| i.time);
+        if state
+            .last_click
+            .is_some_and(|(at, from)| time - at < DOUBLE_CLICK_TIME && from.distance(pos) < DOUBLE_CLICK_DISTANCE)
+        {
+            state.last_click = None;
+            state.press_draw = true;
+            state.selected.clear();
+            state.gesture = Some(Gesture::Draw { from: pos });
+        }
+    }
     // A press on a note that is not selected selects it at once, as the press goes down, not when
     // the button is let go (with Shift or Ctrl it joins the selection); a press on a selected note
     // keeps the selection, so it can be dragged, and its click picks the note alone (› Selecting).
@@ -543,7 +580,7 @@ pub fn show(
             (_, Tool::Erase | Tool::Mute | Tool::Slice) => None,
             (Some((index, _)), _) => clip.notes.get(index).map(|n| n.key),
             (None, Tool::Draw | Tool::Paint) => state.new_note(&layout, clip, grid, pos, inputs.alt).map(|n| n.key),
-            (None, Tool::Select) if workflow.empty_click_draws => {
+            (None, Tool::Select) if workflow.empty_click_draws || state.press_draw => {
                 state.new_note(&layout, clip, grid, pos, inputs.alt).map(|n| n.key)
             }
             (None, Tool::Select) => None,
@@ -553,7 +590,8 @@ pub fn show(
             state.audition_press = true;
         }
     }
-    if response.drag_started_by(PointerButton::Primary) {
+    // A drag from the second press of a double-click goes on drawing the note it pressed.
+    if response.drag_started_by(PointerButton::Primary) && !state.press_draw {
         let from = ui.input(|i| i.pointer.press_origin()).or(pointer).unwrap_or(grid_rect.center());
         state.stroke.clear();
         state.erasing.clear();
@@ -586,11 +624,11 @@ pub fn show(
             // empty spot the way Draw does (› Keymap presets).
             (None, Tool::Select) if workflow.empty_click_draws => Gesture::Draw { from },
             (Some((grabbed, part)), _) => {
-                if !state.selected.contains(&grabbed) {
-                    if !(inputs.shift || inputs.command) {
-                        state.selected.clear();
-                    }
-                    state.selected.insert(grabbed);
+                // A drag from a note that was not selected before its press takes that note alone,
+                // the rest let go, Shift or Ctrl held or not: a drag moves (or copies) either the
+                // selection it starts in or the one note it starts on, never both (› Moving).
+                if !state.selected.contains(&grabbed) || state.press_added.take() == Some(grabbed) {
+                    state.selected = BTreeSet::from([grabbed]);
                 }
                 // The ends resize; on the body Alt changes the velocity and Ctrl copies
                 // (› Moving, › Resizing, › Velocity).
@@ -662,9 +700,13 @@ pub fn show(
     let dragging = response.dragged_by(PointerButton::Primary)
         || response.dragged_by(PointerButton::Secondary)
         || lane_response.as_ref().is_some_and(|r| r.dragged_by(PointerButton::Primary));
-    let stopped = response.drag_stopped_by(PointerButton::Primary)
+    let drag_stopped = response.drag_stopped_by(PointerButton::Primary)
         || response.drag_stopped_by(PointerButton::Secondary)
         || lane_response.as_ref().is_some_and(|r| r.drag_stopped_by(PointerButton::Primary));
+    // The note the second press of a double-click is drawing is added when the button is let go,
+    // dragged or not.
+    let press_released = state.press_draw && ui.input(|i| i.pointer.button_released(PointerButton::Primary));
+    let stopped = drag_stopped || press_released;
     // Ctrl (Cmd) pressed or let go while notes are dragged switches between moving and copying
     // them; what it is when the button is let go decides (› Moving).
     if dragging && let Some(Gesture::Move { copy, .. }) = &mut state.gesture {
@@ -693,8 +735,12 @@ pub fn show(
     }
     let chosen: Vec<Note> = state.selected.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
     let preview = match (state.gesture.as_ref(), now) {
-        (Some(Gesture::Draw { from }), Some(now)) if dragging || stopped => {
+        (Some(Gesture::Draw { from }), Some(now)) if dragging || drag_stopped => {
             Some(Effect::Draw(drawn_note(state, &layout, clip, grid, *from, now, inputs.alt)))
+        }
+        // Pressed and not dragged: the note a click would add, where it was pressed.
+        (Some(Gesture::Draw { from }), Some(_)) if state.press_draw => {
+            Some(Effect::Draw(state.new_note(&layout, clip, grid, *from, inputs.alt)))
         }
         (Some(Gesture::VelocityLine { from }), Some(now)) if dragging || stopped => {
             Some(gestures::velocity_line(&layout, &clip.notes, *from, now))
@@ -737,9 +783,10 @@ pub fn show(
             commit(&gesture, effect, clip, state, actions, &layout);
         }
         state.gesture = None;
-        state.erasing.clear();
+        state.press_draw = false;
     } else if !dragging && !ui.input(|i| i.pointer.any_down()) {
         state.gesture = None;
+        state.press_draw = false;
         state.stroke.clear();
         state.erasing.clear();
         state.muting.clear();
@@ -747,6 +794,14 @@ pub fn show(
 
     let shape = shape.unwrap_or(clip.shape);
     draw(ui, &layout, clip, state, grid, preview, shape.played());
+    // A stroke let go this frame is drawn as it ends once more: its command runs after this frame,
+    // so the notes it deletes, mutes or adds change from the next one, and no frame between shows
+    // them as they were.
+    if stopped {
+        state.erasing.clear();
+        state.muting.clear();
+        state.stroke.clear();
+    }
     draw_strip(ui, &layout, state);
     corner(
         ui,

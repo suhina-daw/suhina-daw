@@ -361,6 +361,131 @@ fn the_erase_tool_deletes_what_it_passes_over_in_one_undo_step() {
     assert_eq!(notes(&h).len(), before - 1);
 }
 
+/// The notes an erase stroke deletes stay faded until they are gone: the frame the button is let
+/// go in draws them as the stroke left them, never whole again for a moment.
+#[test]
+fn an_erase_stroke_never_shows_its_notes_whole_again_before_they_go() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let key = empty_key(&h);
+    let first = notes(&h)[0].time;
+    let mut params = h.state().piano_roll_address().unwrap();
+    params["notes"] = json!([
+        { "time": first, "length": 0.25, "key": key, "velocity": 127 },
+        { "time": first + 0.5, "length": 0.25, "key": key, "velocity": 127 },
+    ]);
+    h.state_mut().run(&Action::new("note.add", params));
+    h.run();
+    let before = notes(&h).len();
+    let erased: Vec<Rect> = notes(&h).iter().filter(|n| n.key == key).map(|n| note_rect(&h, n)).collect();
+    tool(&mut h, "Erase");
+    let (p0, p1) = (spot(&h, first + 0.05, key), spot(&h, first + 0.6, key));
+    h.hover_at(p0);
+    h.step();
+    button(&mut h, p0, true);
+    for step in 1..=10 {
+        h.hover_at(p0 + (p1 - p0) * (step as f32 / 10.0));
+        h.step();
+    }
+    // The frame the button is let go in.
+    button(&mut h, p1, false);
+    let whole = h.output().shapes.iter().any(|s| {
+        matches!(&s.shape, egui::Shape::Rect(r)
+            if r.fill.a() > 100
+                && erased.iter().any(|n| (r.rect.min - n.min).length() < 0.6 && (r.rect.max - n.max).length() < 0.6))
+    });
+    assert!(!whole, "an erased note drawn whole as the stroke ends");
+    h.run();
+    assert_eq!(notes(&h).len(), before - 2);
+}
+
+/// With stacked notes off, the duplicate key's copies replace the notes they land on at once, and
+/// stay selected.
+#[test]
+fn a_duplicate_replaces_the_notes_it_lands_on_at_once() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let key = empty_key(&h);
+    let first = notes(&h)[0].time;
+    let mut params = h.state().piano_roll_address().unwrap();
+    params["notes"] = json!([
+        { "time": first, "length": 1.0, "key": key, "velocity": 100 },
+        { "time": first + 1.0, "length": 0.5, "key": key, "velocity": 100 },
+    ]);
+    h.state_mut().run(&Action::new("note.add", params));
+    h.run();
+    let before = notes(&h).len();
+    let long = notes(&h).into_iter().find(|n| n.key == key && n.time == first).unwrap();
+    let at = note_rect(&h, &long).center();
+    click(&mut h, at);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::D);
+    h.run();
+    let row: Vec<Note> = notes(&h).into_iter().filter(|n| n.key == key).collect();
+    assert_eq!(row.len(), 2, "the short note under the copy is gone: {row:?}");
+    assert!(row.iter().any(|n| (n.time - (first + 1.0)).abs() < 1e-9 && (n.duration - 1.0).abs() < 1e-9), "{row:?}");
+    assert_eq!(notes(&h).len(), before);
+    assert_eq!(h.state().piano_roll().selected.len(), 1, "the copy stays selected");
+    undo(&mut h);
+    assert_eq!(notes(&h).len(), before, "one undo step brings the short note back");
+    assert_eq!(notes(&h).into_iter().filter(|n| n.key == key).count(), 2);
+}
+
+/// A drag (here a Ctrl+drag, a copy) that starts on a note outside the selection takes that note
+/// alone: never the selection and the note together.
+#[test]
+fn a_drag_from_a_note_outside_the_selection_takes_that_note_alone() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let before = notes(&h);
+    let last = before.len() - 1;
+    h.state_mut().piano_roll_mut().selected = (0..last).collect();
+    h.run();
+    let key = empty_key(&h);
+    let from = note_rect(&h, &before[last]).center();
+    let to = pos2(from.x, spot(&h, before[last].time, key).y);
+    // Ctrl held from the press to the release.
+    let ctrl_button = |h: &mut Harness<'static, App>, pos: Pos2, pressed: bool| {
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::COMMAND,
+        });
+        h.step();
+    };
+    h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    h.hover_at(from);
+    h.step();
+    ctrl_button(&mut h, from, true);
+    for step in 1..=6 {
+        h.hover_at(from + (to - from) * (step as f32 / 6.0));
+        h.step();
+    }
+    ctrl_button(&mut h, to, false);
+    h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
+    h.run();
+    let after = notes(&h);
+    assert_eq!(after.len(), before.len() + 1, "one copy: {after:?}");
+    assert_eq!(after.iter().filter(|n| n.key == key).count(), 1, "of the note the drag started on");
+    assert_eq!(h.state().piano_roll().selected.len(), 1, "the copy alone is selected");
+}
+
+/// While the piano roll has the keyboard, a key of the Arrangement it has no use for does nothing:
+/// M adds no marker.
+#[test]
+fn arrangement_keys_do_nothing_while_the_piano_roll_has_the_keyboard() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let at = note_rect(&h, &notes(&h)[0]).center();
+    click(&mut h, at);
+    assert!(h.state().piano_roll().focused);
+    let markers = |h: &Harness<'static, App>| h.state().session().unwrap().project().arrangement.markers.len();
+    let before = markers(&h);
+    h.key_press(Key::M);
+    h.run();
+    assert_eq!(markers(&h), before, "M adds no marker while the notes have the keys");
+}
+
 /// Draw, Paint, Erase, Slice and Mute hide the pointer over the grid and draw their toolbar icon in its
 /// place (18 points, its tip on the pointer); Select keeps the arrow.
 #[test]
@@ -454,8 +579,14 @@ fn the_toolbar_menus_line_up_with_the_rows_toggles() {
         assert!(level, "the {name} menu {menu:?} is as tall as Fold {fold:?}");
     }
     assert!(ghosts.left() - workflow.right() <= 4.0, "the menus sit close: {workflow:?} {ghosts:?}");
-    assert!(ghosts.width() < 70.0, "the ghost menu is as wide as its word: {ghosts:?}");
+    assert!(ghosts.width() < 72.0, "the ghost menu is as wide as its word: {ghosts:?}");
     assert!(fold.right() < workflow.left(), "the Rows group comes first: {fold:?} {workflow:?}");
+    // The Rows group is at the left, right after Quantise and the note tools' toggle.
+    let quantise = h.get_by_label_contains("Quantise (").rect();
+    assert!(
+        quantise.right() < fold.left() && fold.left() - quantise.right() < 60.0,
+        "the Rows group follows the tools' buttons: {quantise:?} {fold:?}"
+    );
 }
 
 #[test]
