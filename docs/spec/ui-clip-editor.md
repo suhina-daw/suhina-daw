@@ -340,10 +340,10 @@ pull up.
      drawing, moving, resizing and slicing place notes freely, as with Alt held, and a new note
      takes the length of the note last drawn or clicked, else a 1/16.
   2. **Adaptive grid**: **Adaptive widest**, **wide**, **medium**, **narrow**, **narrowest**. The
-     lines follow the zoom: the step is the finest note value of 1/32, 1/16, 1/8, 1/4 and 1/2
+     lines follow the zoom: the step is the finest note value of 1/128, 1/64, 1/32, 1/16, 1/8, 1/4 and 1/2
      (the ones shorter than a bar), then 1 bar, 2 bars, 4 bars and on doubling, whose lines are at
      least 96, 48, 24, 12 or 6 points apart (widest to narrowest). Zooming in makes it finer,
-     zooming out coarser; it is never finer than 1/32.
+     zooming out coarser; it is never finer than 1/128 (the fixed values stop at 1/32).
   3. **Fixed grid**: **8 bars**, **4 bars**, **2 bars**, **1 bar**, **1/2**, **1/4**, **1/8**,
      **1/16**, **1/32**. A note value is that part of a 4/4 bar (1/4 is a beat); a bar is the time
      signature's bar.
