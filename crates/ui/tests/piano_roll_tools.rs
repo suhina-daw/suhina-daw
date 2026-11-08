@@ -321,7 +321,7 @@ fn the_erase_tool_deletes_what_it_passes_over_in_one_undo_step() {
     assert_eq!(notes(&h).len(), before - 1);
 }
 
-/// Draw, Paint, Erase and Mute hide the pointer over the grid and draw their toolbar icon in its
+/// Draw, Paint, Erase, Slice and Mute hide the pointer over the grid and draw their toolbar icon in its
 /// place (18 points, its tip on the pointer); Select keeps the arrow.
 #[test]
 fn the_drawing_tools_draw_their_icon_in_place_of_the_pointer() {
@@ -334,7 +334,7 @@ fn the_drawing_tools_draw_their_icon_in_place_of_the_pointer() {
                 if r.brush.is_some() && r.rect.contains(at) && (r.rect.size() - vec2(18.0, 18.0)).length() < 0.5)
         })
     };
-    for name in ["Draw", "Paint", "Erase", "Mute"] {
+    for name in ["Draw", "Paint", "Erase", "Slice", "Mute"] {
         tool(&mut h, name);
         h.hover_at(at);
         h.run();

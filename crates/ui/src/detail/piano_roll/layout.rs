@@ -207,27 +207,28 @@ pub(super) fn velocity_height(velocity: f32, lane: Rect) -> f32 {
     (lane.height() - 4.0).max(0.0) * v / 127.0
 }
 
-/// The cursor a tool shows over the grid: the arrow for Select, the text cursor for Slice, and
-/// none for the tools whose icon is drawn in its place ([`tool_pointer`]).
+/// The cursor a tool shows over the grid: the arrow for Select, and none for the tools whose
+/// icon is drawn in its place ([`tool_pointer`]).
 pub(super) fn cursor_for(tool: Tool) -> Option<CursorIcon> {
     match tool {
         Tool::Select => None,
-        Tool::Draw | Tool::Paint | Tool::Erase | Tool::Mute => Some(CursorIcon::None),
-        Tool::Slice => Some(CursorIcon::Text),
+        Tool::Draw | Tool::Paint | Tool::Erase | Tool::Slice | Tool::Mute => Some(CursorIcon::None),
     }
 }
 
 /// The toolbar icon that stands in for the pointer while a tool is chosen, and its hotspot: the
 /// point of the icon that sits on the pointer, as fractions of its square from the top left (the
-/// pencil's and the brush's tip, the eraser's rubbing edge, the middle of the mute sign). The
-/// windowing layer has no such cursors, so the pointer is hidden and the icon drawn where it is.
+/// pencil's and the brush's tip, the eraser's rubbing edge, the blade's point, the middle of the
+/// mute sign). The windowing layer has no such cursors, so the pointer is hidden and the icon
+/// drawn where it is.
 pub(super) fn tool_pointer(tool: Tool) -> Option<(IconButton, Vec2)> {
     match tool {
         Tool::Draw => Some((IconButton::Draw, Vec2::new(0.013, 0.948))),
         Tool::Paint => Some((IconButton::Paint, Vec2::new(0.045, 0.913))),
         Tool::Erase => Some((IconButton::Erase, Vec2::new(0.153, 0.847))),
+        Tool::Slice => Some((IconButton::Slice, Vec2::new(0.164, 0.093))),
         Tool::Mute => Some((IconButton::Mute, Vec2::splat(0.5))),
-        Tool::Select | Tool::Slice => None,
+        Tool::Select => None,
     }
 }
 

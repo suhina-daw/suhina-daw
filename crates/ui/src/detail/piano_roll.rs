@@ -338,7 +338,7 @@ pub fn show(
     let response = ui.interact(grid_rect, Id::unique("piano-roll-grid"), Sense::click_and_drag());
     let pointer = response.interact_pointer_pos().or_else(|| ui.ctx().pointer_hover_pos());
     // The tool whose icon stands in for the pointer, and where: the windowing layer has no pencil,
-    // brush, eraser or mute cursor, so the pointer is hidden and the icon is drawn where it is.
+    // brush, eraser, blade or mute cursor, so the pointer is hidden and the icon is drawn there.
     // Not where a menu or a window covers the grid: the pointer is that one's there.
     let mut tool_icon = None;
     if let Some(pos) =
@@ -354,8 +354,8 @@ pub fn show(
             (Some(Gesture::Move { copy: true, .. }), _, _) => Some(CursorIcon::Copy),
             (Some(Gesture::Move { .. }), _, _) => Some(CursorIcon::Grabbing),
             (Some(Gesture::NoteVelocity { .. }), _, _) => Some(CursorIcon::ResizeVertical),
-            (Some(Gesture::Slice { .. }), _, _) | (None, _, Tool::Slice) => Some(CursorIcon::Text),
-            // Erase, Mute and Paint act on whatever they touch, a note's edge included.
+            // Erase, Slice, Mute and Paint act on whatever they touch, a note's edge included.
+            (Some(Gesture::Slice { .. }), _, _) | (None, _, Tool::Slice) => drawn(Tool::Slice),
             (Some(Gesture::Erase), _, _) | (None, _, Tool::Erase) => drawn(Tool::Erase),
             (Some(Gesture::Mute), _, _) | (None, _, Tool::Mute) => drawn(Tool::Mute),
             (Some(Gesture::Paint), _, _) | (None, _, Tool::Paint) => drawn(Tool::Paint),

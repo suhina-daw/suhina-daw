@@ -213,12 +213,13 @@ fn the_sixth_tool_is_mute_and_the_tools_stop_at_it() {
 
 #[test]
 fn the_drawing_tools_hide_the_pointer_for_their_icon() {
-    // The windowing layer has no pencil, brush, eraser or mute cursor, so the pointer is hidden
-    // over the grid and the tool's toolbar icon is drawn in its place.
+    // The windowing layer has no pencil, brush, eraser, blade or mute cursor, so the pointer is
+    // hidden over the grid and the tool's toolbar icon is drawn in its place.
     for (tool, icon) in [
         (Tool::Draw, IconButton::Draw),
         (Tool::Paint, IconButton::Paint),
         (Tool::Erase, IconButton::Erase),
+        (Tool::Slice, IconButton::Slice),
         (Tool::Mute, IconButton::Mute),
     ] {
         assert_eq!(cursor_for(tool), Some(CursorIcon::None), "{tool:?}");
@@ -227,8 +228,7 @@ fn the_drawing_tools_hide_the_pointer_for_their_icon() {
         assert!((0.0..=1.0).contains(&hotspot.x) && (0.0..=1.0).contains(&hotspot.y), "{tool:?}");
     }
     assert_eq!(cursor_for(Tool::Select), None);
-    assert_eq!(cursor_for(Tool::Slice), Some(CursorIcon::Text));
-    assert!(tool_pointer(Tool::Select).is_none() && tool_pointer(Tool::Slice).is_none());
+    assert!(tool_pointer(Tool::Select).is_none());
     // The pencil's tip is at the bottom left: its square stands up and to the right of the pointer.
     let (_, hotspot) = tool_pointer(Tool::Draw).unwrap();
     let rect = tool_pointer_rect(Pos2::new(100.0, 100.0), hotspot, 18.0);

@@ -176,14 +176,14 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
    front of another (Duplicate), quantise is notes of several lengths on a line, the MIDI tools
    three sliders and the audition headphones. The Arrangement's tools draw the same artwork.
 
-   The pointer over the grid is the chosen tool: for Draw, Paint, Erase and Mute the system
-   pointer is hidden and the tool's toolbar icon is drawn in its place, 18 points, in
+   The pointer over the grid is the chosen tool: for Draw, Paint, Erase, Slice and Mute the
+   system pointer is hidden and the tool's toolbar icon is drawn in its place, 18 points, in
    `text.primary` ringed with a point of `window.background` so it reads over notes, with its
    working point on the pointer: the pencil's and the brush's tip, the eraser's rubbing edge, the
-   middle of the mute sign (the windowing layer has none of these cursors). Slice shows the text
-   cursor, Select the arrow. Draw shows the resize cursor over a note's start or end and the copy
+   blade's point (a slice cuts at the pointer's x), the middle of the mute sign (the windowing
+   layer has none of these cursors). Select shows the arrow. Draw shows the resize cursor over a note's start or end and the copy
    cursor over a note with Ctrl (Cmd on macOS) held, as Select does, since it resizes and moves a
-   note it presses on; Erase, Mute and Paint act on what they touch, edges included, so they keep
+   note it presses on; Erase, Slice, Mute and Paint act on what they touch, edges included, so they keep
    their icon there. Dragging a note shows the grabbing hand, resizing it the resize cursor.
    Where a menu or a window covers the grid, the pointer is that one's.
 
@@ -478,8 +478,8 @@ pull up.
     their meaning elsewhere in the window.
   - A new note takes the length and velocity of the note last drawn or clicked (one grid step and
     100 until then), so repeated drawing keeps one feel. The pointer shows the tool (› Layout):
-    the pencil, brush, eraser or mute icon in place of the pointer, a text cursor to slice, an
-    arrow for Select.
+    the pencil, brush, eraser, blade or mute icon in place of the pointer, an arrow for
+    Select.
 - **Later ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** dragging up or down while
   drawing sets the length.
 
