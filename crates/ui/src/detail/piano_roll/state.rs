@@ -561,6 +561,8 @@ impl PianoRollState {
                     }
                     keys.push(i32::from(note.key) + step);
                 }
+                // The notes sound where they go, as any other move by the keys does.
+                self.audition_keys(keys.iter().filter_map(|k| u8::try_from(*k).ok()));
                 params["keys"] = json!(keys);
                 self.replacing(&mut params);
                 return Some(Action::new("note.move", params));

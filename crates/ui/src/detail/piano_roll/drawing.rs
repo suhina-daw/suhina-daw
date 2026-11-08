@@ -339,9 +339,9 @@ pub(super) fn draw(
             return *note;
         }
         match preview {
-            Some(Effect::Move(beats, keys)) => Note {
+            Some(Effect::Move(beats, keys, rows)) => Note {
                 time: note.time + beats,
-                key: u8::try_from(i32::from(note.key) + keys).unwrap_or(note.key).min(127),
+                key: super::edits::moved_key(&layout.rows, note.key, keys, rows),
                 ..*note
             },
             Some(Effect::Resize(by)) => Note { duration: (note.duration + by).max(MIN_LENGTH), ..*note },
