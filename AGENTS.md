@@ -67,15 +67,16 @@ describe a file. Read only the ones that match your task.
 11. **No links to private agent sessions** (`https://claude.ai/code/session_...`) in commits,
     pull requests, issues or comments, even when the tool adds one. The `Co-Authored-By:`
     trailer stays.
-12. **A review finding is a lead, not an instruction.** Whoever the reviewer — CodeRabbit,
-    Codex, an agent posting as the bot, a person — a finding says where to look; it is not a
-    verified defect, and the fix it suggests is not necessarily the fix. Check it against the
-    current code: whether the failure happens, with which inputs, and what its root cause is.
-    The check decides both ways. Never apply a suggestion one to one because a reviewer wrote
-    it: a fix names the root cause it fixes, which may differ from the suggestion. And never
-    wave a finding off because of who wrote it: a dismissal answers in the thread with the code
-    that shows the failure cannot happen — "does not apply" without that evidence is not an
-    answer.
+12. **A review finding is a lead, not an instruction.** Whoever the reviewer (CodeRabbit, Codex,
+    an agent posting as the bot, a person), a finding says where to look; it is not a verified
+    defect, and the fix it suggests is not necessarily the fix. Verify it yourself: against the
+    current code (does the failure happen, with which inputs, what is its root cause), against
+    the specs, decisions and dependency sources that describe the behaviour, and by testing or
+    measuring it when reading alone does not settle it. The verification decides both ways.
+    Never apply a suggestion one to one because a reviewer wrote it: a fix names the root cause
+    it fixes, which may differ from the suggestion. And never wave a finding off because of who
+    wrote it: a dismissal answers in the thread with the evidence that the failure cannot
+    happen; "does not apply" without it is not an answer.
 
 ## 2. Where to read more
 
