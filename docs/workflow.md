@@ -261,25 +261,30 @@ signed off (CONTRIBUTING › Developer Certificate of Origin).
 ### Closing issues
 
 A pull request closes every issue it settles by name: one `Closes #N` line per issue in the
-description. GitHub closes an issue only from a closing keyword, so an issue named in the title,
-in prose or in a list ("#681 to #725") is not closed by the merge. Before writing `Closes #N`, go
-through the issue's points one by one against the change.
+description. GitHub closes an issue only from a closing keyword in the description (or a link
+made by hand in the pull request's Development box), never from the title, so an issue named in
+the title, in prose or in a list ("#681 to #725") is not closed by the merge. A stacked pull
+request's `Closes` line takes effect when it reaches `main`: GitHub retargets it there once the
+pull request below it merges. Before writing `Closes #N`, go through the issue's points one by
+one against the change.
 
-When the main work is done but a point or a few are left, the pull request still closes the
-issue: what is left goes into a follow-up opened before the merge, named in the description and
-linked from the closed issue in a comment. A follow-up is one issue when one pull request can do
-what is left, or an epic with a sub-issue per piece when the pieces each need a pull request, a
-design or a person of their own; when the closed issue already sits under an epic, the follow-ups
-go under that epic instead. Every follow-up's title, an issue's or an epic's, starts with
-`Follow-up:` and names the closed issue (`Follow-up: #740 Import: MIDI effect groups`), so the
-board shows where it came from. An issue is never left open half done, and a point is never
-dropped. `Part of #N` is written only for an epic, which stays open while its sub-issues are
-worked on.
+When the main work is done but a point or a few are left, the pull request still closes the issue:
+what is left goes into a follow-up opened before the merge, named in the description and linked
+from the closed issue in a comment. A follow-up is one issue when one pull request can do what is
+left, or an epic with a sub-issue per piece when the pieces each need a pull request, a design or a
+person of their own; when the closed issue already sits under an epic, the follow-ups go under that
+epic instead (when that epic is closed too, the follow-up stands on its own and names the epic in
+its body, since the bot adds an issue only under an open epic). Every follow-up's title, an issue's
+or an epic's, starts with `Follow-up:` and names the closed issue (`Follow-up: #740 Import: MIDI
+effect groups`), so the board shows where it came from. An issue is never left open half done, and
+a point is never dropped. `Part of #N` is written only for an epic, which stays open while its
+sub-issues are worked on.
 
-An issue closed by hand, outside a merge, gets a comment that names the commit or merged pull
-request that did the work and goes through the issue's points one by one, with a follow-up issue
-for any point left; a glance at the headline is not a check. A half-done issue found on the board
-is closed the same way, with a follow-up for what is left, never left waiting.
+An issue closed by hand, outside a merge, gets a comment that names what settled it (the commit
+or merged pull request that did the work, the earlier issue it duplicates, or the decision that
+made it obsolete) and goes through the issue's points one by one, with a follow-up issue for any
+point left; a glance at the headline is not a check. A half-done issue found on the board is
+closed the same way, with a follow-up for what is left, never left waiting.
 
 The *Closes* notice ([`closes-notice.yml`](../.github/workflows/closes-notice.yml)) comments on a
 pull request whose title or description names an open issue with no closing keyword or relation

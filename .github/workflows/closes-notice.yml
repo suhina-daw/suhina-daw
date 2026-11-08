@@ -2,8 +2,9 @@ name: Closes notice
 
 # Lists the open issues a pull request's title or description names without a closing keyword or a
 # relation phrase, so an issue the pull request settles is not left open by a wording slip: GitHub
-# closes an issue only from a closing keyword, and a title, prose or a list ("#681 to #725") closes
-# nothing (docs/workflow.md › Closing issues). It writes one comment on the pull request and keeps
+# closes an issue only from a closing keyword in the description (or a link made by hand in the
+# Development box), never from the title, and prose or a list ("#681 to #725") closes nothing
+# (docs/workflow.md › Closing issues). It writes one comment on the pull request and keeps
 # it up to date with each push; it never fails, and a lookup that fails only leaves its part out.
 #
 # A number is not listed when a closing keyword covers it, when it is written as a relation
@@ -38,12 +39,14 @@ jobs:
             const MARKER = "<!-- closes-notice -->";
             // The template's examples sit in HTML comments and do not count; one left open runs
             // to the end of the body, as GitHub renders it.
-            const said = `${pr.title || ""}\n${String(pr.body || "").replace(/<!--[\s\S]*?(?:-->|$)/g, "")}`;
+            const body = String(pr.body || "").replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+            const said = `${pr.title || ""}\n${body}`;
 
-            // The numbers a closing keyword covers, as GitHub reads them (overlap.yml reads the
-            // same way), plus the ones GitHub itself linked for a pull request into main.
+            // The numbers a closing keyword covers, as GitHub reads them: from the description
+            // only, never from the title (overlap.yml reads the same way), plus the ones GitHub
+            // itself linked for a pull request into main, by hand in the Development box included.
             const covered = new Set();
-            for (const match of said.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)\b/gi)) {
+            for (const match of body.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)\b/gi)) {
               covered.add(Number(match[1]));
             }
             try {
@@ -98,8 +101,8 @@ jobs:
               body =
                 `${MARKER}\nThe title or description names open issues without a closing keyword:\n\n` +
                 `${lines.join("\n")}\n\n` +
-                `If this pull request settles one, write \`Closes #N\` on its own line — a title, prose ` +
-                `or a list closes nothing. If it only relates, saying how keeps it off this list: ` +
+                `If this pull request settles one, write \`Closes #N\` on its own line in the description: ` +
+                `a title, prose or a list closes nothing. If it only relates, saying how keeps it off this list: ` +
                 `\`Part of #N\` for an epic, \`Depends on #N\`, \`Alternative to #N\`, \`Follow-up: #N\` ` +
                 `(docs/workflow.md › Closing issues). This is a notice, not a check.`;
             } else {

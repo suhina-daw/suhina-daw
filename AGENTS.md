@@ -85,8 +85,9 @@ describe a file. Read only the ones that match your task.
     issue titled `Follow-up: #N …`, opened before the merge, named in the description and
     linked from the closed issue: an issue is never left open half done, and a point is never
     dropped. `Part of #N` is for an epic only. An issue closed by hand gets a comment that
-    names the commit or merged pull request that did the work and goes through the issue's
-    points one by one, with a follow-up issue for any left
+    names what settled it (a commit or merged pull request, the issue it duplicates, the
+    decision that made it obsolete) and goes through the issue's points one by one, with a
+    follow-up issue for any left
     ([docs/workflow.md](docs/workflow.md) › Closing issues).
 
 ## 2. Where to read more
