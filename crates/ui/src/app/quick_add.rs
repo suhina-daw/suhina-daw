@@ -482,7 +482,17 @@ impl App {
         // A device: what `device.*` takes on a track and `track.add` on a new one.
         let device = match (&found.item, found.kind) {
             (Item::Plugin(spec), _) => Some(("device.addPlugin", json!({ "plugin": spec }), json!({ "device": spec }))),
-            (Item::Device(id), _) => Some(("device.add", json!({ "id": id }), json!({ "device": id }))),
+            (Item::Device(id), _) => {
+                // The device starts on the file its folder lists first
+                // ([docs/spec/nam-amp-and-cab.md]), on a track or on a new one as one command.
+                let mut params = json!({ "id": id });
+                let mut on_new_track = json!({ "device": id });
+                if let Some(file) = self.device_default_file(id) {
+                    params["file"] = json!(file.clone());
+                    on_new_track["file"] = json!(file);
+                }
+                Some(("device.add", params, on_new_track))
+            }
             (Item::Voice(path, voice), _) => {
                 let preset = json!({ "preset": path.display().to_string(), "voice": voice });
                 Some(("device.add", preset.clone(), preset))

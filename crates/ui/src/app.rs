@@ -1335,6 +1335,21 @@ impl App {
         self.default_folders = (projects, templates);
     }
 
+    /// The file a file-backed device starts on ([docs/spec/nam-amp-and-cab.md]): the first
+    /// pack's first file from the folder it lists from — the setting's or the default's — when
+    /// that folder holds any. A drag or a quick add offers it with the device, so a new NAM Amp
+    /// Modeler or Cab Loader lands loaded.
+    pub fn device_default_file(&mut self, id: &str) -> Option<String> {
+        let extension = suhina_device_registry::file_extension(id)?;
+        let lists = self.nam_lists();
+        let packs = match extension {
+            "nam" => lists.models.as_slice(),
+            "wav" => lists.irs.as_slice(),
+            _ => return None,
+        };
+        packs.first()?.files.first().map(|(path, _)| path.clone())
+    }
+
     /// Where the NAM models' and IR folders sit when the settings leave them empty
     /// ([docs/spec/nam-amp-and-cab.md]): `Suhina/NAM models` and `Suhina/IRs` in the user's
     /// documents. The app makes both at start when they are not there.

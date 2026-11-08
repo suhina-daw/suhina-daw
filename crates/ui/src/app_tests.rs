@@ -313,6 +313,59 @@ fn empty_midi_track_drop_adds_sampler_before_loading_source() {
     assert!(app.plan_drop(&[sample], DropTarget::Chain(TrackId(1)), false).is_none());
 }
 
+/// A device row dropped from the browser starts on the file its folder lists first
+/// ([docs/spec/nam-amp-and-cab.md]): the first pack's first file, from the setting or the
+/// default, in the same command one undo step takes back.
+#[test]
+fn a_device_row_dropped_on_a_track_starts_on_the_first_file_of_its_folder() {
+    use suhina_engine::model::*;
+    let dir = std::env::temp_dir().join(format!("suhina-app-drop-nam-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let irs = dir.join("IRs");
+    for (pack, names) in [("Alpha", vec!["catty.wav", "drum.wav"]), ("Beta", vec!["zebra.wav"])] {
+        std::fs::create_dir_all(irs.join(pack)).unwrap();
+        for name in &names {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: 48_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut writer = hound::WavWriter::create(irs.join(pack).join(name), spec).unwrap();
+            writer.write_sample(16_384_i16).unwrap();
+            drop(writer);
+        }
+    }
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(dir.join("models"), irs.clone());
+
+    let cab = drop::BrowserItem {
+        key: "device:nam-cab-loader".into(),
+        name: "Cab Loader".into(),
+        kind: drop::ItemKind::Effect,
+        plugin: false,
+    };
+    app.drop_items(std::slice::from_ref(&cab), DropTarget::Track(TrackId(1)), false);
+    let session = app.session().unwrap();
+    let channel = session.project().tracks.iter().find(|t| t.id.0 == 1).and_then(|t| t.channel).unwrap();
+    let device = session.project().channel(channel).unwrap().devices.first().unwrap();
+    let state =
+        String::from_utf8(device.state.as_ref().map(|b| b.as_ref().to_vec()).unwrap_or_default()).unwrap_or_default();
+    assert_eq!(state, irs.join("Alpha").join("catty.wav").display().to_string(), "the cab starts on the first file");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn the_browser_slides_out_and_in_with_animations_on() {
     let mut app = App::new();

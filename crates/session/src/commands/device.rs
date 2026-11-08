@@ -47,6 +47,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Text,
                 "a preset that ships with Suhina, by its key: what follows stock: in library.search",
             ),
+            optional(
+                "file",
+                ParamType::Path(PathKind::File),
+                "a .nam model or .wav impulse response the device starts on (the NAM Amp Modeler or Cab Loader only; loads it as device.setNamFile does)",
+            ),
             optional("voice", ParamType::Integer, "which voice of a preset bank, from 1 (default 1)"),
         ],
         kind: CommandKind::EDIT,
