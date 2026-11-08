@@ -588,6 +588,19 @@ fn the_note_tools_replace_what_they_cover_when_asked() {
     assert_eq!(notes_of(&session, 1).len(), 2);
 }
 
+/// A paste where the notes were copied from lays the copies on their originals and replaces
+/// nothing, even with `replace`: the copies are there to be moved off them. Anywhere else
+/// `replace` makes room as usual.
+#[test]
+fn a_paste_in_place_keeps_the_originals() {
+    let mut session = Session::new(project(vec![note(1.0, 1.0, 60), note(3.0, 1.0, 60)]));
+    run(&mut session, "note.copy", json!({ "track": 1, "index": 0, "notes": [0] })).unwrap();
+    run(&mut session, "note.paste", json!({ "track": 1, "index": 0, "time": 1.0, "replace": true })).unwrap();
+    assert_eq!(notes_of(&session, 1).iter().filter(|n| n.time == 1.0).count(), 2, "copy and original");
+    run(&mut session, "note.paste", json!({ "track": 1, "index": 0, "time": 3.0, "replace": true })).unwrap();
+    assert_eq!(notes_of(&session, 1).iter().filter(|n| n.time == 3.0).count(), 1, "elsewhere it replaces");
+}
+
 #[test]
 fn a_mute_rides_through_the_other_note_tools() {
     let mut session = Session::new(project(scale_notes()));

@@ -459,7 +459,7 @@ fn shift_left_and_right_change_the_selections_length_by_a_grid_step() {
 }
 
 #[test]
-fn copy_and_paste_put_the_notes_after_the_selection_and_select_them() {
+fn copy_and_paste_put_the_notes_on_the_selection_and_select_them() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     let before = notes(&h);
@@ -468,13 +468,15 @@ fn copy_and_paste_put_the_notes_after_the_selection_and_select_them() {
     assert_eq!(notes(&h), before, "copy changes nothing");
     key(&mut h, Modifiers::COMMAND, Key::V);
     let after = notes(&h);
-    assert_eq!(after.len(), before.len() + 1);
+    assert_eq!(after.len(), before.len() + 1, "the original stays under its copy");
     let pasted = after[before.len()];
-    assert_eq!((pasted.time, pasted.key), (before[1].time + before[1].duration, before[1].key));
+    assert_eq!((pasted.time, pasted.key), (before[1].time, before[1].key), "on the copied note");
     assert_eq!(selected(&h), [before.len()]);
-    // Again: after the pasted note, which is now the selection.
-    key(&mut h, Modifiers::COMMAND, Key::V);
-    assert_eq!(notes(&h)[before.len() + 1].time, pasted.time + pasted.duration);
+    // The copy, selected, goes up an octave and the original stays.
+    key(&mut h, Modifiers::SHIFT, Key::ArrowUp);
+    let moved = notes(&h);
+    assert!(moved.contains(&before[1]), "the original is still there");
+    assert!(moved.iter().any(|n| n.time == before[1].time && n.key == before[1].key + 12), "{moved:?}");
     undo(&mut h);
     undo(&mut h);
     assert_eq!(notes(&h), before);
@@ -492,10 +494,10 @@ fn cut_removes_the_notes_and_paste_brings_them_back() {
     assert_eq!(notes(&h), &before[1..]);
     assert_eq!(clips(&h), count, "the clip stays");
     assert!(selected(&h).is_empty());
-    // Nothing selected: the paste goes where the command puts it, right after the cut note.
+    // Nothing selected: the insert mark stays where the cut note was, so the paste puts it back.
     key(&mut h, Modifiers::COMMAND, Key::V);
     let back = *notes(&h).last().unwrap();
-    assert_eq!((back.time, back.key), (before[0].time + before[0].duration, before[0].key));
+    assert_eq!((back.time, back.key), (before[0].time, before[0].key));
     undo(&mut h);
     undo(&mut h);
     assert_eq!(notes(&h), before);
