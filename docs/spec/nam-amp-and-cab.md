@@ -276,6 +276,10 @@ Everything the user does is one of the existing device commands plus one new `Ed
   - The device's `state` becomes the file's absolute path; the chain's device id hashes it
     (`.sd`'s trick), so changing the file rebuilds that one device and a project replay keeps
     its state. One undo step, as `device.setParam` takes.
+- `device.savePreset{track, device, name}` — the device's values, and the file it selects, into
+  the library's `Presets/<device id>/<name>.<device id>.preset.suhina`
+  ([ADR 0036] › 5, [ADR 0014]'s format with its `file` field). A same-name preset is replaced.
+  Not a project change: no undo step, nothing to save; the panel's menu runs it.
 
 The session keeps the parsed models and decoded IRs keyed by path — the same road the decoded
 audio files take ([ADR 0011](../decisions/0011-preview-and-added-audio.md); the session fills a
@@ -294,21 +298,31 @@ and the search finds them; they are also added with `device.add {stock}` and `tr
 or dragged from the browser onto a track — one undo step each.
 
 A preset of the shared preset format holds the device's parameter values — the controls
-([§ The devices' parameters](#the-devices-parameters)) and nothing else. It does not name a model
-or an impulse response: the file the device runs is its state
-([§ Model and IR files](#model-and-ir-files)), and a preset leaves it as the user has set it, so
-adding one to a device that already points at a file keeps that file, and adding one to a device
-with none leaves it none. The Amp Modeler's five set how the capture is trimmed and shaped; the
-Cab Loader's five set what the cabinet is stripped down to:
+([§ The devices' parameters](#the-devices-parameters)) and, since
+[ADR 0036] › **A preset may name a file**, the file the device runs in its optional `file` field.
+A stock preset's `file` names a shipped file by its key (`builtin:<device id>/<file name>`), and a
+user preset's may name the user's own file. A preset without `file` leaves the state as the user
+has set it, so adding one to a device that already points at a file keeps that file, and adding
+one to a device with none leaves it none; a preset that names one loads it when it is added —
+a stock preset's from the pack, the user's with a file that does not load leaving the device
+without one (the add says so). The Amp Modeler's five; four of them pair a shipped model, which
+the file's key carries alongside the trimming values ([issue 1279]; the pack's files
+[§ Limits](#limits)):
 
-- **NAM Amp Modeler:** Bright Clean (a finish on the bright side), Tight High Gain (the low end
-  pulled back for a tight sound), Warm Crunch, Dark Lead (a darker top and a short rise in the
-  delay), Clean Boost (the gain up, the EQ off).
-- **NAM Cab Loader:** Rumble Cut, Dark Cabinet, Bright Cabinet, Mid Dip (a dip at 900 Hz),
-  Second Cab (the phase reversed and the volume a step down, to blend under a first cabinet).
+- **NAM Amp Modeler:** Bright Clean (with the pack's Tim R Fender TwinVerb Vibrato Bright model),
+  Tight High Gain (with the pack's Helga B 5150 model), Warm Crunch (with Tim R JCM2000 Crunch),
+  Dark Lead (with Tudor N Driftwood Low Gain, a darker top and a short rise in the delay),
+  Clean Boost (the gain up, the EQ off, no file of its own).
+- **NAM Cab Loader:** Bright Cabinet and Dark Cabinet (with the pack's synthetic cabinets of the
+  same names), Rumble Cut, Mid Dip (a dip at 900 Hz), Second Cab (the phase reversed and the
+  volume a step down, to blend under a first cabinet) — the last three name no file: they are
+  cuts around whatever impulse response the user loads.
 
-No preset brings a model or an impulse response of its own: those would name files Suhina ships,
-and which files those can be is a decision of its own ([§ Limits](#limits)).
+`device.savePreset{name}` ([ADR 0036] › 5) saves one device's values — and, with the file it
+selects, one file reference — into the library's `Presets/<device id>/` as
+`<name>.<device id>.preset.suhina` ([ADR 0014]'s format), a preset of the same name replaced.
+The device panel has **Save as preset…** on it; the name is typed into the panel's menu field.
+The browser lists the library's presets beside the stock ones, under their device.
 
 ## The panels
 
@@ -389,10 +403,9 @@ the panel's Model missing note.
 - Browsers and libraries do not list `.nam` files yet; the folders and the pick dialog are the
   whole surface. Drag-and-drop of a `.wav` from the browser onto a Cab Loader is a natural
   follow-on (the file row's dropdown lists it all the same).
-- No stock preset names a model or an impulse response ([§ Stock presets](#stock-presets));
-  presets that also bring a file need files Suhina ships and a preset format that may name a
-  built-in file, and are a follow-up of their own.
 
 [issue 489]: https://github.com/suhina-daw/suhina-daw/issues/489
 [ADR 0004]: ../decisions/0004-built-in-devices.md
 [ADR 0021]: ../decisions/0021-device-graph-files.md
+[ADR 0036]: ../decisions/0036-library-and-shipped-content.md
+[ADR 0014]: ../decisions/0014-stock-presets.md

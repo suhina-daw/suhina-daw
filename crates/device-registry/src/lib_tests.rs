@@ -153,6 +153,100 @@ fn a_device_preset_file_is_read_and_a_bad_one_refused() {
 }
 
 #[test]
+fn a_written_preset_file_reads_back_its_name_file_and_values() {
+    // A file device's preset carries the file it selects through ADR 0014's `file` field.
+    let values: [(&str, f64); 2] = [("inputGain", -1.0), ("eqBass", 1.0)];
+    let bytes = write_preset_file(
+        "nam-amp-modeler",
+        "Home Crunch",
+        Some("builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam"),
+        &values,
+    )
+    .unwrap();
+    let read = preset(&bytes, 1).unwrap();
+    assert_eq!(read.name, "Home Crunch");
+    assert_eq!(read.file.as_deref(), Some("builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam"));
+    let value = |id: &str| read.params.iter().find(|(p, _)| *p == id).unwrap().1;
+    assert_eq!(value("inputGain"), -1.0);
+    assert_eq!(value("eqBass"), 1.0);
+    assert_eq!(value("eqOn"), 1.0, "what the write leaves out takes its default");
+    // Every declared parameter is in the file, so a device reading it keeps the values it has.
+    let written: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(written["params"].as_object().unwrap().len(), info("nam-amp-modeler").unwrap().params.len());
+    // The file rides the same format's shape, and is read by the same code.
+    assert_eq!(written["format"], "suhina-preset");
+    assert_eq!(preset_voices(&bytes).unwrap(), vec![(1, "Home Crunch".to_string())]);
+}
+
+#[test]
+fn a_preset_may_name_a_file() {
+    let file = |rest: &str| {
+        format!(
+            r#"{{ "format": "suhina-preset", "version": 1, "device": "nam-amp-modeler", "role": "effect", "name": "Mine", {rest} }}"#
+        )
+    };
+    let named = file(r#""file": "builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam", "params": {}"#);
+    let read = preset(named.as_bytes(), 1).unwrap();
+    assert_eq!(read.file.as_deref(), Some("builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam"));
+    // A file another device's pack is keyed to is refused by the loader, not here; a blank is
+    // no file at all.
+    let blank = file(r#""file": "  ", "params": {}"#);
+    assert_eq!(preset(blank.as_bytes(), 1).unwrap().file, None);
+    // Where the device runs no file, a named one is refused: the preset could never be kept.
+    let no_file = |id: &str| {
+        format!(
+            r#"{{ "format": "suhina-preset", "version": 1, "device": "{id}", "role": "effect", "name": "Mine", "file": "x.wav", "params": {{}} }}"#
+        )
+    };
+    assert!(preset(no_file("compressor").as_bytes(), 1).is_err(), "the compressor runs no file");
+    for bad in [file(r#""file": 1, "params": {}"#), file(r#""file": [], "params": {}"#)] {
+        assert!(preset(bad.as_bytes(), 1).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_saved_preset_file_is_whole_or_refused() {
+    let values: [(&str, f64); 0] = [];
+    // Every declared parameter goes in, so a device reading it later keeps what it is given.
+    let bytes = write_preset_file("nam-amp-modeler", "Home Crunch", None, &values).unwrap();
+    assert_eq!(preset(&bytes, 1).unwrap().file, None);
+    let squeeze: [(&str, f64); 0] = [];
+    assert!(write_preset_file("compressor", "Home Squeeze", None, squeeze.as_slice()).is_ok());
+    let out_of_range: [(&str, f64); 1] = [("inputGain", 999.0)];
+    for (device, name, file, values, why) in [
+        ("nam-amp-modeler", "", None, values.as_slice(), "no name"),
+        ("nam-amp-modeler", " a/b ", None, values.as_slice(), "a slash is not a file name"),
+        ("nam-amp-modeler", "..", None, values.as_slice(), "a relative climb is not one"),
+        (
+            "nam-amp-modeler",
+            "Mine",
+            Some("builtin:compressor/other.wav"),
+            values.as_slice(),
+            "a file is written by the session",
+        ),
+        ("compressor", "Mine", Some("x.wav"), squeeze.as_slice(), "the compressor runs no file"),
+        ("nothing", "Mine", None, values.as_slice(), "no device"),
+        ("nam-amp-modeler", "Mine", None, out_of_range.as_slice(), "a value outside the range"),
+    ] {
+        assert!(write_preset_file(device, name, file, values).is_err(), "{why}");
+    }
+    let read = preset(&bytes, 1).unwrap();
+    assert!(read.params.iter().any(|(id, _)| *id == "inputGain"), "the file still carries every declared parameter");
+}
+
+#[test]
+fn every_stock_preset_naming_a_file_loads_it_from_the_pack() {
+    for stock in stock_presets() {
+        if let Some(file) = &stock.preset.file {
+            let Some((device, name)) = file.strip_prefix("builtin:").and_then(|rest| rest.split_once('/')) else {
+                panic!("{} names {}: a stock preset's file is builtin:<device id>/<file name>", stock.key, file);
+            };
+            load_builtin_file(device, name, 48_000).unwrap_or_else(|e| panic!("{}: {file}: {e}", stock.key));
+        }
+    }
+}
+
+#[test]
 fn every_layout_loads_and_names_only_its_devices_parameters() {
     // A layout that names a parameter id its device lacks fails here, rather than falling
     // back to the generated list unnoticed.

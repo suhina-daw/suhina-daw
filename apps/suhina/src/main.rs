@@ -275,6 +275,10 @@ fn main() -> ExitCode {
     if let Some(start_up) = window.start_up.as_mut() {
         start_up.warnings.extend(old_warnings);
     }
+    // The user's own presets save into the library's Presets folders (`device.savePreset`,
+    // docs/decisions/0036-library-and-shipped-content.md › 5), and the browser lists them
+    // beside the stock ones.
+    window.app.set_library_base(nam_base.clone());
     // Backups of projects never saved, and the journal of the newest backups, beside the
     // settings; what a crash left there is offered once the window starts (`docs/spec/backups.md`).
     let backups = data_dir().map(|d| d.join(suhina_session::backup::SETTINGS_SUBFOLDER));

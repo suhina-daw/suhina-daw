@@ -38,6 +38,9 @@ pub struct DeviceBox {
     pub at: DeviceAt,
     /// Which device it is, wherever it moves (`DeviceId::NONE` before the project gives ids).
     pub id: suhina_engine::model::DeviceId,
+    /// A built-in effect, instrument or MIDI effect: its values one preset saves
+    /// (`device.savePreset`, [docs/spec/nam-amp-and-cab.md] › Presets).
+    pub is_builtin: bool,
     /// For a device group: its settings and branches.
     pub group: Option<GroupBox>,
     pub name: String,
@@ -749,6 +752,7 @@ pub(super) fn device_box(
         index: path.last().copied().unwrap_or(0),
         at: DeviceAt(path.to_vec()),
         id: d.id,
+        is_builtin: matches!(d.kind, DeviceKind::Builtin(_)),
         group: d.as_group().map(|g| group_box(g, d, path, id, plugins)),
         name: device_display_name(d),
         theme_id: match &d.kind {

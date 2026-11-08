@@ -662,10 +662,33 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
         },
         |p| p.params.iter().map(|(id, value)| DeviceParam::new(*id, *value)).collect(),
     );
-    let device =
-        Device { params: params_of_preset, ..Device::new(&*info.name, DeviceKind::Builtin(info.id.to_string())) };
+    // A preset that names a file loads it now ([ADR 0036] › device.savePreset, the file a
+    // preset may name): a stock preset's file is the pack's, a user preset's their own. A file
+    // that does not load leaves the device without one and says so; the device is still added.
+    let mut file_missing: Option<String> = None;
+    let preset_file = preset.as_ref().and_then(|p| p.file.clone());
+    let state = preset_file.as_ref().and_then(|file| match session.load_device_file(&info.id, file) {
+        Ok(_) => Some(file.clone()),
+        Err(error) => {
+            file_missing = Some(error);
+            None
+        }
+    });
+    let device = Device {
+        params: params_of_preset,
+        state: state.map(|state| state.as_bytes().into()),
+        ..Device::new(&*info.name, DeviceKind::Builtin(info.id.to_string()))
+    };
+    let with_file_result = |mut out: Value| {
+        if let Some(missing) = &file_missing {
+            out["file_missing"] = json!(missing);
+        }
+        out
+    };
     if let Some(value) = crate::device_groups::insert_into_group(session, params, device.clone())? {
-        return Ok(json!({ "device": value, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name) }));
+        return Ok(with_file_result(
+            json!({ "device": value, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name) }),
+        ));
     }
     let instrument = info.role == Role::Instrument;
     let midi_effect = info.role == Role::MidiEffect;
@@ -712,10 +735,10 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     }
     let position = take_out(&mut channel.devices, replaced.as_ref(), position);
     channel.devices.insert(position, device);
-    Ok(json!({
+    Ok(with_file_result(json!({
         "device": position, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name),
         "replaced": replaced.map(|(_, name)| name),
-    }))
+    })))
 }
 
 pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -1161,6 +1184,54 @@ pub(crate) fn device_file(session: &mut Session, params: &Value) -> Result<Value
     let file = device.state.as_deref().and_then(|state| std::str::from_utf8(state).ok()).unwrap_or_default();
     let name = if file.is_empty() { String::new() } else { session.device_asset_name(file).unwrap_or_default() };
     Ok(json!({ "file": file, "name": name }))
+}
+
+/// `device.savePreset` ([ADR 0036] › it): a built-in device's values — and, with the file it
+/// selects, one file reference (`device.state`, the NAM devices') — written into the library as
+/// `Presets/<device id>/<name>.<device id>.preset.suhina` ([`ADR 0014`]'s format). A preset of
+/// the same name is replaced: the preset is the user's, and saving again keeps working. Nothing
+/// is written before the preset's bytes are made; the library's base is the one set on the
+/// session (`Session::set_library_base`).
+pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let name = Args::new(params).text("name")?;
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at(&channel.devices, &path).ok_or("the device is missing")?;
+    let (info, file) = match &device.kind {
+        DeviceKind::Builtin(id) => {
+            let info =
+                suhina_device_registry::info(id).ok_or_else(|| format!("{id:?} is not a device this version knows"))?;
+            let file = if suhina_device_registry::is_file_device(id) {
+                device.state.as_deref().and_then(|state| std::str::from_utf8(state).ok()).map(str::to_owned)
+            } else {
+                None
+            };
+            (info, file)
+        }
+        _ => return Err("a preset is saved from a built-in effect, instrument or MIDI effect".into()),
+    };
+    let values: Vec<(&str, f64)> = info
+        .params
+        .iter()
+        .map(|param| {
+            let value =
+                device.params.iter().rev().find(|p| p.id == param.id).map_or(param.default, |p| param.clamp(p.value));
+            (&*param.id, value)
+        })
+        .collect();
+    let bytes =
+        suhina_device_registry::write_preset_file(&info.id, name, file.as_deref(), &values).map_err(CommandError)?;
+    let base = session.library_base().ok_or("the library's folder is not set")?;
+    let folder = base.join("Presets").join(info.id.as_ref());
+    if std::fs::create_dir_all(&folder).is_err() {
+        return Err(format!("the library's {} folder could not be made", folder.display()).into());
+    }
+    let file_name = format!("{name}.{}.preset.suhina", info.id);
+    std::fs::write(folder.join(&file_name), &bytes)
+        .map_err(|e| CommandError(format!("{}: {e}", folder.join(&file_name).display())))?;
+    Ok(
+        json!({ "preset": base.join("Presets").join(info.id.as_ref()).join(&file_name).display().to_string(), "name": name.trim() }),
+    )
 }
 
 pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

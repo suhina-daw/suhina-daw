@@ -816,6 +816,14 @@ impl App {
         self.browser.relist();
     }
 
+    /// The library's root (`Documents/Suhina`, docs/decisions/0036-library-and-shipped-content.md › 5):
+    /// the user's own presets save into its `Presets/<device id>/` folders, and the browser
+    /// lists them beside the stock ones.
+    pub fn set_library_base(&mut self, base: PathBuf) {
+        self.browser.set_library(Some(base.clone()));
+        self.projects.set_library_base(base);
+    }
+
     /// The open projects, to change (the browser's library, for the app).
     pub fn projects_mut(&mut self) -> &mut Projects {
         &mut self.projects
@@ -2553,6 +2561,16 @@ impl App {
                         }
                     }
                     self.select_tracks(tracks);
+                }
+                // A saved preset is said in the status bar, where the library writes land
+                // (`device.savePreset`, docs/decisions/0036-library-and-shipped-content.md › 5).
+                if action.id == "device.savePreset" {
+                    self.browser.refresh();
+                    let name = result["name"].as_str().unwrap_or_default();
+                    self.status = match result["file_missing"].as_str() {
+                        Some(file) => Status::Hint(format!("Preset {name} saved, but {file}")),
+                        None => Status::Hint(format!("Preset {name} saved into the library's Presets folder")),
+                    };
                 }
                 // A new track is selected and scrolled into view (#918).
                 if action.id == "track.add" {

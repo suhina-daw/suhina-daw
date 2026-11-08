@@ -116,6 +116,8 @@ struct Devices {
     midi: crate::midi::MidiInputs,
     /// Projects opened read their audio wherever it is on a local disk ([`Projects::read_local_audio`]).
     local_audio: bool,
+    /// The library's root, handed to every session ([`Projects::set_library_base`], ADR 0036).
+    library_base: Option<PathBuf>,
 }
 
 /// The open projects in tab order, and which one is active; and the plug-in library, which
@@ -470,6 +472,9 @@ impl Projects {
             session.set_trusted(self.trusted_audio_for(source.as_deref()));
         }
         session.set_default_input(self.track_input());
+        if let Some(base) = &self.devices.library_base {
+            session.set_library_base(base.clone());
+        }
         self.tabs.open.push(Open { id, name, session });
         self.activate(id);
         Ok(id)
@@ -505,6 +510,11 @@ impl Projects {
                     CommandError(format!("no audio output: {e}"))
                 })?;
             self.preview = Some(session);
+        }
+        if let Some(session) = self.preview.as_mut()
+            && let Some(base) = &self.devices.library_base
+        {
+            session.set_library_base(base.clone());
         }
         self.preview.as_mut().ok_or_else(no_project)
     }
@@ -687,6 +697,19 @@ impl Projects {
         // The sound map keeps its caches beside the library's indexes.
         self.browser.sound_map = None;
         self.browser.sound_map_revision = None;
+    }
+
+    /// The library's root (`Documents/Suhina`, [ADR 0036]): where the user's own presets are
+    /// saved, and where the library's folders sit. Given to every project open now and from
+    /// now on, like the default track input is.
+    pub fn set_library_base(&mut self, base: PathBuf) {
+        self.devices.library_base = Some(base.clone());
+        for open in &mut self.tabs.open {
+            open.session.set_library_base(base.clone());
+        }
+        if let Some(session) = self.preview.as_mut() {
+            session.set_library_base(base);
+        }
     }
 
     /// The browser's library.

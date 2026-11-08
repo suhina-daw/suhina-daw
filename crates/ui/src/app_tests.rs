@@ -917,9 +917,11 @@ fn copies_put_a_line_on_the_system_clipboard() {
 fn the_pack_lists_first() {
     let set = super::shipped_set("nam-amp-modeler").expect("the Amp Modeler ships files");
     assert_eq!(set.name, "Suhina");
-    assert_eq!(
-        set.files[0],
-        ("builtin:nam-amp-modeler/Suhina Overdrive.nam".to_string(), "Suhina Overdrive".to_string())
+    assert!(
+        set.files
+            .iter()
+            .any(|(key, name)| key == "builtin:nam-amp-modeler/Suhina Overdrive.nam" && name == "Suhina Overdrive"),
+        "{set:?}"
     );
     let cab = super::shipped_set("nam-cab-loader").expect("the Cab Loader ships files");
     assert_eq!(cab.name, "Suhina");

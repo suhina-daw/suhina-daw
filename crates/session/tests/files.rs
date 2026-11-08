@@ -775,3 +775,111 @@ fn a_shipped_ir_key_loads_the_pack_at_the_rate() {
     .unwrap();
     assert_eq!(out["name"], "Suhina", "a cab's shown name is its pack's");
 }
+
+/// `device.savePreset` (docs/decisions/0036-library-and-shipped-content.md › 5): a device's
+/// values and, with the file it selects, one file reference, written into the library's
+/// `Presets/<device id>/` ([`ADR 0014`]'s format), a save again replacing the same name's file,
+/// and the project it runs on changed by nothing. The stock presets that name a pack file add
+/// their device with the file state it carries.
+#[test]
+fn a_preset_is_saved_into_the_library_and_replaced_on_saving_again() {
+    let dir = temp_dir("save-preset");
+    let mut session = Session::new(blank_project());
+    session.set_library_base(dir.clone());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+    let key = "builtin:nam-amp-modeler/Suhina Overdrive.nam";
+    run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": key })).unwrap();
+    run(&mut session, "device.setParam", json!({ "track": 1, "device": 0, "param": "inputGain", "value": 2.5 }))
+        .unwrap();
+
+    let before = session.project().clone();
+    let saved =
+        run(&mut session, "device.savePreset", json!({ "track": 1, "device": 0, "name": "Home Crunch" })).unwrap();
+    assert_eq!(saved["name"], "Home Crunch");
+    let path = PathBuf::from(saved["preset"].as_str().unwrap());
+    assert_eq!(path, dir.join("Presets/nam-amp-modeler/Home Crunch.nam-amp-modeler.preset.suhina"));
+    assert_eq!(session.project(), &before, "saving a preset writes the library, not the project");
+
+    let read = suhina_device_registry::preset(&std::fs::read(&path).unwrap(), 1).unwrap();
+    assert_eq!(read.file.as_deref(), Some(key), "the preset names the file the device runs");
+    let input_gain =
+        |read: &suhina_device_registry::Preset| read.params.iter().find(|(id, _)| *id == "inputGain").unwrap().1;
+    assert_eq!(input_gain(&read), 2.5);
+
+    // Saving again over the same name replaces the file with the device as it is now.
+    run(&mut session, "device.setParam", json!({ "track": 1, "device": 0, "param": "inputGain", "value": 1.5 }))
+        .unwrap();
+    run(&mut session, "device.savePreset", json!({ "track": 1, "device": 0, "name": "Home Crunch" })).unwrap();
+    let read = suhina_device_registry::preset(&std::fs::read(&path).unwrap(), 1).unwrap();
+    assert_eq!(input_gain(&read), 1.5);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_preset_is_not_saved_without_the_library_or_a_name() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "compressor" })).unwrap();
+    let error = run(&mut session, "device.savePreset", json!({ "track": 1, "device": 0, "name": "Home" })).unwrap_err();
+    assert!(error.contains("the library's folder is not set"), "{error}");
+    let dir = temp_dir("save-preset-refused");
+    session.set_library_base(dir.clone());
+    for bad in [
+        json!({ "track": 1, "device": 0 }),
+        json!({ "track": 1, "device": 0, "name": "  " }),
+        json!({ "track": 1, "device": 0, "name": "a/b" }),
+        json!({ "track": 1, "device": 0, "name": ".." }),
+        json!({ "track": 1, "device": 1 }),
+        json!({ "track": 1, "device": 0, "name": "Home", "track2": 1 }),
+    ] {
+        assert!(run(&mut session, "device.savePreset", bad.clone()).is_err(), "{bad}");
+    }
+    assert!(!dir.join("Presets/compressor/Nothing was written").exists());
+    assert!(dir.read_dir().is_ok_and(|mut entries| entries.next().is_none()), "nothing was written");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_stock_preset_naming_a_file_adds_its_device_with_the_file() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    let added =
+        run(&mut session, "device.add", json!({ "track": 1, "stock": "nam-amp-modeler/bright-clean" })).unwrap();
+    assert_eq!(added["preset"], "Bright Clean");
+    let file = run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+    assert_eq!(file["file"], "builtin:nam-amp-modeler/Tim R Fender TwinVerb Vibrato Bright.nam", "{file}");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(
+        session.project().channel(ChannelId(1)).unwrap().devices.is_empty(),
+        "the undo takes the added device with its file"
+    );
+}
+
+#[test]
+fn a_preset_file_naming_a_missing_file_adds_its_device_and_says_so() {
+    let dir = temp_dir("preset-missing-file");
+    let mut session = Session::new(blank_project());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    let preset = dir.join("Away.nam-amp-modeler.preset.suhina");
+    std::fs::write(
+        &preset,
+        r#"{ "format": "suhina-preset", "version": 1, "device": "nam-amp-modeler", "role": "effect", "name": "Away", "file": "nowhere/bright.nam", "params": { "inputGain": -1.0 } }"#,
+    )
+    .unwrap();
+    let added = run(&mut session, "device.add", json!({ "track": 1, "preset": text(&preset) })).unwrap();
+    assert_eq!(added["preset"], "Away");
+    assert!(added["file_missing"].as_str().is_some(), "{added}");
+    let file = run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+    assert_eq!(file["file"], "", "the device runs without one");
+
+    // Where the device runs no file, a named one is refused at the read.
+    std::fs::write(
+        &preset,
+        r#"{ "format": "suhina-preset", "version": 1, "device": "compressor", "role": "effect", "name": "No File", "file": "x.wav", "params": {} }"#,
+    )
+    .unwrap();
+    let error = run(&mut session, "device.add", json!({ "track": 1, "preset": text(&preset) })).unwrap_err();
+    assert!(error.contains("does not run"), "{error}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

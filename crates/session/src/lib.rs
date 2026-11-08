@@ -238,6 +238,8 @@ pub struct Session {
     /// was made or since: they follow the default while the project stays unchanged
     /// ([`Session::set_default_input`]).
     defaulted: Vec<suhina_model::TrackId>,
+    /// The library's root (`Documents/Suhina`, [ADR 0036]), where `device.savePreset` writes.
+    library_base: Option<PathBuf>,
 }
 
 /// Whether `track` records audio from an input: an audio track on a regular mixer strip (a return
@@ -274,7 +276,21 @@ impl Session {
             take_solo: None,
             default_input: suhina_model::InputChannels::None,
             defaulted: Vec::new(),
+            library_base: None,
         }
+    }
+
+    /// The library's root (`Documents/Suhina`, [ADR 0036]): where the user's own presets are
+    /// kept and the library's folders sit under (`Sounds/NAM` …). The app sets the library's
+    /// base below, since defaults are built beside it; a session without one cannot save into
+    /// the library.
+    pub fn set_library_base(&mut self, base: PathBuf) {
+        self.library_base = Some(base);
+    }
+
+    /// The library's root, when it was set ([`Session::set_library_base`]).
+    pub fn library_base(&self) -> Option<&Path> {
+        self.library_base.as_deref()
     }
 
     /// Sets the audio input new audio tracks take from now on ([`Projects`] keeps it in line

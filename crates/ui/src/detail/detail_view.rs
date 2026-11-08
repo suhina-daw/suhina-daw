@@ -796,9 +796,10 @@ fn device_panel(
     actions: &mut Vec<Action>,
     nam: &crate::detail::device_widgets::Lists,
 ) -> bool {
-    // The panel answers a right-click with its menu (the device's remove); its label is the
-    // screen-reader and test name the chain drew for it before. A click selects the device, so
-    // the Delete key takes it off the track.
+    // The panel answers a right-click with its menu; the menu stays open on a click inside, so
+    // the preset name's field and button live here (the slot menu does the same). Its label is
+    // the screen-reader and test name the chain drew for it before. A click selects the device,
+    // so the Delete key takes it off the track.
     let panel = ui
         .interact(rect, Id::unique(("device-panel", track.0, &device.at)), Sense::click_and_drag())
         .on_hover_text("Right-click for the device's menu; drag onto another track to move it there, Ctrl to copy it");
@@ -807,8 +808,16 @@ fn device_panel(
     }
     panel.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Device {}", device.name)));
     let clicked = panel.clicked();
-    panel.context_menu(|ui| {
-        menus::device_menu(ui, track, &device.at, device.group.as_ref().map(|g| g.branches.len()), actions)
+    egui::Popup::context_menu(&panel).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+        menus::device_menu(
+            ui,
+            track,
+            &device.at,
+            device.group.as_ref().map(|g| g.branches.len()),
+            device.is_builtin,
+            &device.name,
+            actions,
+        )
     });
     // The selection outline, over everything the panel draws — on every path out of here.
     let outline = |painter: &egui::Painter| {

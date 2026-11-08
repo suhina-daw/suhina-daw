@@ -72,6 +72,7 @@ and descriptions, and the files themselves.
      "name": "Soft filter",
      "author": "github-handle",
      "tags": ["gentle", "filter"],
+     "file": "Sounds/NAM/Cabinets/Mine.wav",
      "params": { "cutoff": 1800.0, "resonance": 0.7 }
    }
    ```
@@ -111,6 +112,19 @@ The stock presets are built into the executable from `presets/`, so nothing besi
 values: what a sound gets from effects after it is not in the preset. A test keeps every file in
 `presets/` built in, and every stock preset naming every parameter of its device.
 
+## Amendment: a preset may name a file (2026-11-08)
+
+A preset's format gains one optional field, `file`: a text, the file the preset's device runs,
+left out when the device runs none ([ADR 0036](0036-library-and-shipped-content.md) › 5). It is
+what `device.setNamFile` set on the device the preset was saved from: a shipped file's key
+(`builtin:<device id>/<file name>`), the file's library-relative path, or its absolute one.
+A preset of a device that runs no file names none, and a file that is another device's shipped
+key is refused at the read and the write. Adding a preset that names a file loads it — a stock
+preset's from the pack, a user's from their file — and when the user's file is not there, the
+device is still added without one and the answer says so. `device.savePreset` writes the field
+from the device's state; the names of a preset and its file's own page say what a preset may
+carry, the commands and the library's folders are [ADR 0036](0036-library-and-shipped-content.md)'s.
+
 ## Consequences
 
 - `.github/PULL_REQUEST_TEMPLATE/preset.md` and the *Preset contribution* issue form ask for the
@@ -120,5 +134,6 @@ values: what a sound gets from effects after it is not in the preset. A test kee
 ## Not decided yet
 
 - `.sd` preset application to an existing device.
-- Saving the user's own presets in the settings folder.
+- Where the user's own presets save is [ADR 0036](0036-library-and-shipped-content.md)'s:
+  the library's `Presets/<device>/`, which `device.savePreset` writes.
 - CLAP preset discovery and VST3 presets for plug-ins.

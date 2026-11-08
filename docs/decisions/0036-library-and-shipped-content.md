@@ -86,9 +86,10 @@ and store absolute paths in projects.
    one file reference — into the library: `Presets/<device>/<name>.<device id>.preset.suhina`,
    the format of [ADR 0014](0014-stock-presets.md) with its optional `file` field. The device
    panel has **Save as preset…** on it; a stock preset's `file` names a factory file, and a
-   user preset's may name the user's own file. The amendment is written on
-   [ADR 0014](0014-stock-presets.md) › Amendment: a preset may name a file. The browser lists
-   the library's presets beside the stock ones.
+   user preset's may name the user's own file. [ADR 0014](0014-stock-presets.md) › Amendment:
+   a preset may name a file holds the format's wording; the browser lists the library's presets
+   beside the stock ones, and the leftover "user-saved presets in the settings folder" there is
+   this library instead.
 
 6. **Content by the rule in 1**, and the format's proof first: NAM's own MIT-licensed example
    models go into the tests, so the A1 model format is proven to load through `nam-rs` before
@@ -117,9 +118,9 @@ and store absolute paths in projects.
 - A project is portable across machines that share the pack (any machine with Suhina, for the
   factory pack's files) and reads the files a user carried beside the packs.
 - `[ADR 0014]`'s "user-saved presets in the settings folder" is replaced by the library's
-  `Presets/<device>/` (the settings row for user presets is removed with this pull request); the
-  NAM models and IRs settings rows keep pointing at other folders, and their defaults move to
-  the library's `Sounds/NAM/` paths.
+  `Presets/<device>/` — no settings row for them exists to remove; the NAM models and IRs
+  settings rows keep pointing at other folders, and their defaults move to the library's
+  `Sounds/NAM/` paths.
 
 ## Not decided yet
 

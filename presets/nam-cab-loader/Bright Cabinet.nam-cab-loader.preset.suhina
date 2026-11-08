@@ -1,23 +1,24 @@
 {
-"format": "suhina-preset",
-"version": 1,
-"device": "nam-cab-loader",
-"role": "effect",
-"name": "Bright Cabinet",
-"author": "suhina",
-"tags": [
-"bright",
-"present",
-"cabinet"
-],
-"params": {
-"phase": 0.0,
-"hpOn": 1.0,
-"cutBass": -4.0,
-"cutMid": 0.0,
-"cutTreble": 0.0,
-"cutMidFreq": 600.0,
-"delay": 0.0,
-"volume": 0.0
-}
+  "format": "suhina-preset",
+  "version": 1,
+  "device": "nam-cab-loader",
+  "role": "effect",
+  "name": "Bright Cabinet",
+  "author": "suhina",
+  "tags": [
+    "bright",
+    "present",
+    "cabinet"
+  ],
+  "params": {
+    "phase": 0.0,
+    "hpOn": 1.0,
+    "cutBass": -4.0,
+    "cutMid": 0.0,
+    "cutTreble": 0.0,
+    "cutMidFreq": 600.0,
+    "delay": 0.0,
+    "volume": 0.0
+  },
+  "file": "builtin:nam-cab-loader/Synthetic Cabinet Bright.wav"
 }

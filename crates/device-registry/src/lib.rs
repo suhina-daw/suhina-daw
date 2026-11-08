@@ -631,6 +631,11 @@ pub struct Preset {
     pub name: String,
     /// Every parameter by its id, with the preset's value.
     pub params: Vec<(&'static str, f64)>,
+    /// The file the preset's device selects, for a device that runs one: a shipped file's
+    /// `builtin:<device id>/<file name>` key, or the file's path as the project carries it
+    /// (`device.setNamFile`; the library-relative one is portable, an absolute one opens where
+    /// the file sits). Left out for a device that runs none.
+    pub file: Option<String>,
 }
 
 /// A preset that ships with Suhina (ADR 0014): a file of `presets/` built into the executable.
@@ -742,7 +747,81 @@ fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
         params.push((&*param.id, value));
     }
     let tags = file["tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str().map(String::from)).collect();
-    Ok((Preset { device: &info.id, name: name.to_string(), params }, tags))
+    let file = match &file["file"] {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(text) => Some(text.trim()).filter(|f| !f.is_empty()).map(str::to_owned),
+        _ => return Err("a preset file's file is text (the file its device runs)".into()),
+    };
+    if file.is_some() && !is_file_device(&info.id) {
+        return Err(format!("the preset names a file, which {} does not run", info.name));
+    }
+    Ok((Preset { device: &info.id, name: name.to_string(), params, file }, tags))
+}
+
+/// Writes `device`'s values as a preset file's JSON: one name, the file its device selects (for a
+/// device that runs one, [`ADR 0036`] › **A preset may name a file**) and every declared
+/// parameter with the given value. The tags come from the device's presets alone; a saved preset
+/// carries none. [`ADR 0014`] names the shape; `device.savePreset` calls this.
+pub fn write_preset_file(
+    device: &str,
+    name: &str,
+    file: Option<&str>,
+    params: &[(&str, f64)],
+) -> Result<Vec<u8>, String> {
+    let info =
+        info(device).ok_or_else(|| format!("no built-in effect or instrument {device:?}; device.list lists them"))?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("a preset has a name".into());
+    }
+    if name.contains(['/', '\\', ':']) || name.trim_matches('.') != name || name.chars().any(char::is_control) {
+        return Err(format!("{name:?} is not a preset file's name"));
+    }
+    // A shipped file's key is the running device's own (load_builtin_file refuses another), and
+    // a device that runs no file names none at all. Where the file is the user's own path, the
+    // writer leaves it as it is: the state already carries it.
+    if let Some(file) = file.map(str::trim).filter(|file| !file.is_empty()) {
+        if !is_file_device(info.id.as_ref()) {
+            return Err(format!("{} runs no file, so the preset names none", info.name));
+        }
+        if let Some((packed_id, _)) = file.strip_prefix("builtin:").and_then(|rest| rest.split_once('/'))
+            && packed_id != info.id.as_ref()
+        {
+            return Err(format!("{} runs a shipped file of its own kind, not {packed_id:?}", info.name));
+        }
+    }
+    let mut written = serde_json::Map::new();
+    written.insert("format".into(), serde_json::Value::from("suhina-preset"));
+    written.insert("version".into(), serde_json::Value::from(1));
+    written.insert("device".into(), serde_json::Value::from(info.id.clone()));
+    written.insert(
+        "role".into(),
+        serde_json::Value::from(match info.role {
+            suhina_device_api::Role::Effect => "effect",
+            suhina_device_api::Role::MidiEffect => "midi_effect",
+            suhina_device_api::Role::Instrument => "instrument",
+        }),
+    );
+    written.insert("name".into(), serde_json::Value::from(name));
+    if let Some(file) = file.map(str::trim).filter(|file| !file.is_empty()) {
+        written.insert("file".into(), serde_json::Value::from(file));
+    }
+    let mut values = serde_json::Map::new();
+    for param in info.params.iter() {
+        let value = params.iter().find(|(id, _)| *id == param.id).map_or(param.default, |(_, value)| *value);
+        if !(param.min..=param.max).contains(&value) {
+            return Err(format!("{} is {value}, outside {} to {}", param.id, param.min, param.max));
+        }
+        values.insert((*param.id).into(), serde_json::Value::from(value));
+    }
+    written.insert("params".into(), serde_json::Value::Object(values));
+    let mut bytes =
+        serde_json::to_vec_pretty(&serde_json::Value::Object(written)).map_err(|e| format!("not written: {e}"))?;
+    bytes.push(b'\n');
+    if bytes.len() > MAX_PRESET_BYTES {
+        return Err(format!("a preset file is at most {} KiB", MAX_PRESET_BYTES / 1024));
+    }
+    Ok(bytes)
 }
 
 /// Whether a preset file's data is a device preset's JSON rather than DX7 voice data.
@@ -782,7 +861,7 @@ pub fn preset(data: &[u8], voice: usize) -> Result<Preset, String> {
     let info = &suhina_device_fm_synth::INFO;
     let params =
         info.params.iter().enumerate().filter_map(|(i, p)| synth.param(i).map(|value| (&*p.id, value))).collect();
-    Ok(Preset { device: &info.id, name: patch.name().trim().to_string(), params })
+    Ok(Preset { device: &info.id, name: patch.name().trim().to_string(), params, file: None })
 }
 
 fn check_preset_size(data: &[u8]) -> Result<(), String> {
