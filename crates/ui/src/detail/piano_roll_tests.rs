@@ -264,7 +264,7 @@ fn a_fold_maps_heights_to_the_shown_keys_and_back() {
         grid,
         false,
     );
-    assert!(matches!(moved, Effect::Move(_, 20)), "{moved:?}");
+    assert!(matches!(moved, Effect::Move(_, 20, Some(_))), "{moved:?}");
     // Fold to scale: C major's keys and every key with a note; without a scale, every key.
     assert_eq!(scale_view::rows(&c, Fold::Scale).len(), 128);
     c.scale = Scale::new(0, ScaleMode::Major);
@@ -289,11 +289,19 @@ fn folded_up_and_down_keep_the_notes_in_the_scale() {
     let mut state = focused_on(&c);
     state.selected = BTreeSet::from([0, 1, 2]);
     state.fold = Fold::Scale;
+    state.audition = true;
     let up = state.key_action("pianoRoll.up", &c, 0.0, None).map(|a| a.params);
+    assert_eq!(state.audition_pending, [62, 65, 69], "the notes sound where they go");
+    state.audition_pending.clear();
     // C, E, G go to D, F, A: two, one and two semitones.
     assert_eq!(up.as_ref().and_then(|p| p.get("keys")).cloned(), Some(json!([62, 65, 69])), "{up:?}");
     let down = state.key_action("pianoRoll.down", &c, 0.0, None).map(|a| a.params);
     assert_eq!(down.as_ref().and_then(|p| p.get("keys")).cloned(), Some(json!([59, 62, 65])), "{down:?}");
+    // A drag folded: each note steps the same number of shown rows from its own key.
+    let rows = scale_view::rows(&c, Fold::Scale);
+    let dragged: Vec<u8> = [57u8, 60, 64].iter().map(|k| edits::moved_key(&rows, *k, 1, Some(1))).collect();
+    assert_eq!(dragged, [59, 62, 65], "A, C, E up a row: B, D, F");
+    assert_eq!(edits::moved_key(&rows, 60, 1, None), 61, "unfolded, the semitones");
     state.fold = Fold::Off;
     let plain = state.key_action("pianoRoll.up", &c, 0.0, None).map(|a| a.params);
     assert_eq!(plain.as_ref().and_then(|p| p.get("semitones")).cloned(), Some(json!(1)), "{plain:?}");

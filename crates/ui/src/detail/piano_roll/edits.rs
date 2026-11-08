@@ -97,10 +97,22 @@ pub(super) fn second_click(
     }
 }
 
+/// The key a note on `key` goes to with a move of `keys` semitones, or, with the rows folded,
+/// `rows` shown rows (each note through the rows from its own, stopping at the top and bottom).
+pub(super) fn moved_key(shown: &KeyRows, key: u8, keys: i32, rows: Option<i32>) -> u8 {
+    let step = match rows {
+        Some(rows) => shown.semitones(key, rows),
+        None => keys,
+    };
+    u8::try_from(i32::from(key) + step).ok().filter(|k| *k <= 127).unwrap_or(key)
+}
+
 /// What a gesture does with the pointer at `now`.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Effect {
-    Move(f64, i32),
+    /// Beats and semitones the selection moves by; with the rows folded, also how many shown rows,
+    /// which each note steps through on its own (› [`moved_key`]).
+    Move(f64, i32, Option<i32>),
     Resize(f64),
     /// Beats the selection's starts move by, their ends kept.
     ResizeStart(f64),
@@ -136,7 +148,7 @@ pub(super) fn effect(
             // Folded, the grabbed note steps through the shown rows; the rest move as far.
             let keys = clip.notes.get(*grabbed).map_or(rows, |n| layout.rows.semitones(n.key, rows));
             let (beats, keys) = move_delta(raw, keys, chosen, grid, free);
-            Effect::Move(beats, keys)
+            Effect::Move(beats, keys, layout.rows.folded().then_some(rows))
         }
         Gesture::Resize { from, grabbed } => {
             let raw = f64::from((now.x - from.x) / layout.beat_width);
@@ -211,14 +223,23 @@ pub(super) fn commit(
     let mut params = clip.address.clone();
     params["notes"] = json!(notes);
     match (gesture, effect) {
-        (Gesture::Move { copy, .. }, Effect::Move(beats, keys)) if !notes.is_empty() && (beats != 0.0 || keys != 0) => {
+        (Gesture::Move { copy, .. }, Effect::Move(beats, keys, rows))
+            if !notes.is_empty() && (beats != 0.0 || keys != 0 || rows.is_some_and(|r| r != 0)) =>
+        {
             let moved: Vec<Note> = notes.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
-            state.audition_moved(&moved, keys);
+            let landing: Vec<u8> = moved.iter().map(|n| moved_key(&layout.rows, n.key, keys, rows)).collect();
+            state.audition_keys(landing.iter().copied());
             if !*copy {
                 state.span_moved(beats);
             }
             params["beats"] = json!(round_beat(beats));
-            params["semitones"] = json!(keys);
+            // Folded, each note steps through the shown rows on its own, so none lands on a key
+            // the fold hides; a copy goes by the grabbed note's semitones.
+            if rows.is_some() && !*copy {
+                params["keys"] = json!(landing);
+            } else {
+                params["semitones"] = json!(keys);
+            }
             if *copy {
                 // Ctrl+drag: one `note.duplicate` puts the copies where the drag let go; the
                 // copies are appended, so they are the next indices, and they are selected.

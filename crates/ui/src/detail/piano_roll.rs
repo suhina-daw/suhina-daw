@@ -611,7 +611,9 @@ pub fn show(
     // While a note is dragged, the keys it is on sound; the keys that already sound go on.
     if dragging {
         match preview {
-            Some(Effect::Move(_, keys)) => state.audition_moved(&chosen, keys),
+            Some(Effect::Move(_, keys, rows)) => {
+                state.audition_keys(chosen.iter().map(|n| edits::moved_key(&layout.rows, n.key, keys, rows)));
+            }
             Some(Effect::Draw(Some(note))) => state.audition_keys([note.key]),
             Some(Effect::Select(rect)) => state.audition_swept(&layout, clip, rect),
             _ => {}
