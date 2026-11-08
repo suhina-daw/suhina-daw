@@ -445,8 +445,11 @@ pub fn show(
                 actions.push(Action::new("transport.play", json!({})));
                 state.right_playing = true;
             }
+        } else if state.tool == Tool::Slice {
+            // The Slice tool's right button cuts and deletes the shorter piece of each note.
+            state.gesture = Some(Gesture::Slice { from, delete: true, by_shift: false });
         } else if workflow.shift_right_splits && inputs.shift {
-            state.gesture = Some(Gesture::Slice { from });
+            state.gesture = Some(Gesture::Slice { from, delete: false, by_shift: true });
         } else if right_deletes {
             state.gesture = Some(Gesture::Erase);
             if let Some((index, _)) = note_at(&layout, &clip.notes, from) {
@@ -502,7 +505,7 @@ pub fn show(
         state.muting.clear();
         state.gesture = Some(match (note_at(&layout, &clip.notes, from), state.tool) {
             (_, Tool::Erase) => Gesture::Erase,
-            (_, Tool::Slice) => Gesture::Slice { from },
+            (_, Tool::Slice) => Gesture::Slice { from, delete: false, by_shift: false },
             // Mute: the state the stroke gives every note it touches is the first note's, flipped.
             (Some((index, _)), Tool::Mute) => {
                 state.mute_target = clip.notes.get(index).is_some_and(|note| !note.muted);
@@ -637,7 +640,7 @@ pub fn show(
             Some(gestures::velocity_line(&layout, &clip.notes, *from, now))
         }
         (Some(gesture), Some(now)) if dragging || stopped => {
-            Some(effect(gesture, now, &layout, clip, &chosen, grid, inputs.alt))
+            Some(effect(gesture, now, &layout, clip, &chosen, grid, inputs))
         }
         _ => None,
     };
@@ -666,10 +669,15 @@ pub fn show(
         _ => None,
     };
     if stopped {
-        if let (Some(effect), Some(gesture)) = (preview.clone(), state.gesture.take()) {
+        // A right-button hold that chose tools with the wheel edits nothing when it is let go.
+        let stepped = state.right_stepped && response.drag_stopped_by(PointerButton::Secondary);
+        if let (Some(effect), Some(gesture)) = (preview.clone(), state.gesture.take())
+            && !stepped
+        {
             commit(&gesture, effect, clip, state, actions, &layout);
         }
         state.gesture = None;
+        state.erasing.clear();
     } else if !dragging && !ui.input(|i| i.pointer.any_down()) {
         state.gesture = None;
         state.stroke.clear();

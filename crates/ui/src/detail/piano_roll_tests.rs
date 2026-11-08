@@ -295,7 +295,7 @@ fn a_fold_maps_heights_to_the_shown_keys_and_back() {
         &c,
         &c.notes[..1],
         grid,
-        false,
+        Inputs::default(),
     );
     assert!(matches!(moved, Effect::Move(_, 20, Some(_))), "{moved:?}");
     // Fold to scale: C major's keys and every key with a note; without a scale, every key.

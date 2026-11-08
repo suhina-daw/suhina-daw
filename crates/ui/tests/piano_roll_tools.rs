@@ -533,6 +533,82 @@ fn the_slice_tool_splits_the_notes_a_cut_line_crosses() {
     assert_eq!(notes(&h).len(), count, "one stroke, one undo step");
 }
 
+/// Presses with `button` at `from`, moves to `to` in `steps` frames and lets go, with `modifiers`
+/// held throughout.
+fn drag_with(
+    h: &mut Harness<'static, App>,
+    (from, to): (Pos2, Pos2),
+    button: egui::PointerButton,
+    modifiers: Modifiers,
+) {
+    h.hover_at(from);
+    h.step();
+    h.input_mut().events.push(egui::Event::ModifiersChanged(modifiers));
+    h.input_mut().events.push(egui::Event::PointerButton { pos: from, button, pressed: true, modifiers });
+    h.step();
+    for step in 1..=6 {
+        h.hover_at(from + (to - from) * (step as f32 / 6.0));
+        h.step();
+    }
+    h.input_mut().events.push(egui::Event::PointerButton { pos: to, button, pressed: false, modifiers });
+    h.step();
+    h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
+    h.run();
+}
+
+/// Shift slants the Slice tool's line, so each note is cut where the line crosses its row (on
+/// the grid), and the right button's slice deletes the shorter piece of each note it cuts; each
+/// one undo step (`docs/spec/ui-clip-editor.md` › Drawing notes, Slice).
+#[test]
+fn shift_slants_the_slice_and_the_right_button_deletes_the_shorter_pieces() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let first = notes(&h)[0].time;
+    // Two rows without notes, the second above the first.
+    let shown = notes(&h);
+    let (low, high) = (shown.iter().map(|n| n.key).min().unwrap(), shown.iter().map(|n| n.key).max().unwrap());
+    let empty: Vec<u8> = (low..=high).filter(|k| shown.iter().all(|n| n.key != *k)).collect();
+    let (a, b) = (empty[0], empty[1]);
+    // A note a beat long on each, from beat 1.
+    let mut params = h.state().piano_roll_address().unwrap();
+    params["notes"] = json!([
+        { "time": first + 1.0, "length": 1.0, "key": a, "velocity": 100 },
+        { "time": first + 1.0, "length": 1.0, "key": b, "velocity": 100 },
+    ]);
+    h.state_mut().run(&Action::new("note.add", params));
+    h.run();
+    let count = notes(&h).len();
+    let pieces = |h: &Harness<'static, App>, key: u8| {
+        let mut out: Vec<(f64, f64)> = notes(h)
+            .iter()
+            .filter(|n| n.key == key && n.time >= first + 1.0 - 1e-9 && n.time < first + 2.0)
+            .map(|n| (((n.time - first) * 1e6).round() / 1e6, (n.duration * 1e6).round() / 1e6))
+            .collect();
+        out.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        out
+    };
+    tool(&mut h, "Slice");
+    // From beat 1.25 on the lower row to beat 1.75 on the upper: each note is cut at its own beat.
+    let line = (spot(&h, first + 1.25, a), spot(&h, first + 1.75, b));
+    drag_with(&mut h, line, egui::PointerButton::Primary, Modifiers::SHIFT);
+    assert_eq!(pieces(&h, a), [(1.0, 0.25), (1.25, 0.75)]);
+    assert_eq!(pieces(&h, b), [(1.0, 0.75), (1.75, 0.25)]);
+    undo(&mut h);
+    assert_eq!(notes(&h).len(), count, "one stroke, one undo step");
+    // The same line with the right button: the shorter piece of each goes, nothing is added.
+    drag_with(&mut h, line, egui::PointerButton::Secondary, Modifiers::SHIFT);
+    assert_eq!(pieces(&h, a), [(1.25, 0.75)]);
+    assert_eq!(pieces(&h, b), [(1.0, 0.75)]);
+    assert!(h.state().piano_roll().selected.is_empty(), "nothing is selected after a deleting slice");
+    undo(&mut h);
+    assert_eq!(pieces(&h, a), [(1.0, 1.0)]);
+    assert_eq!(pieces(&h, b), [(1.0, 1.0)]);
+    // Without Shift the line stands straight on the pointer's beat.
+    drag_with(&mut h, line, egui::PointerButton::Primary, Modifiers::NONE);
+    assert_eq!(pieces(&h, a), [(1.0, 0.75), (1.75, 0.25)]);
+    assert_eq!(pieces(&h, b), [(1.0, 0.75), (1.75, 0.25)]);
+}
+
 #[test]
 fn the_right_button_and_the_wheel_choose_the_tools() {
     let mut renderer = engine();

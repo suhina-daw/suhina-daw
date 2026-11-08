@@ -455,15 +455,20 @@ pub(super) fn draw(
         grid_painter.rect_filled(rect, 0.0, clip.color.gamma_multiply(0.7));
         grid_painter.rect_stroke(rect, 0.0, Stroke::new(1.0, theme::text_primary()), StrokeKind::Inside);
     }
-    // The cut line of a slice drag, and a mark on each note it would split.
-    if let Some(Effect::Slice(at, cut)) = &preview {
-        let x = layout.x_of(*at).round() + 0.5;
-        grid_painter.vline(x, layout.grid.y_range(), Stroke::new(1.0, theme::accent()));
-        for index in cut {
-            if let Some(note) = clip.notes.get(*index) {
-                let row = layout.note_rect(note);
-                grid_painter.hline(row.x_range(), row.top() - 0.5, Stroke::new(1.0, theme::accent()));
+    // The cut line of a slice drag, and a mark where it cuts each note; the right button's slice
+    // is drawn in the recording red and fades the piece of each note it deletes.
+    if let Some(Effect::Slice(cut)) = &preview {
+        let ink = if cut.delete { theme::recording() } else { theme::accent() };
+        grid_painter.line_segment(cut.line, Stroke::new(1.5, ink));
+        for &(index, at) in &cut.cuts {
+            let Some(note) = clip.notes.get(index) else { continue };
+            let rect = layout.note_rect(note);
+            if cut.delete {
+                let (start, end) = edits::SliceCut::removed(note, at);
+                let gone = Rect::from_x_y_ranges(layout.x_of(start)..=layout.x_of(end), rect.y_range());
+                grid_painter.rect_filled(gone.intersect(rect), 0.0, theme::window_background().gamma_multiply(0.75));
             }
+            grid_painter.vline(layout.x_of(at).round() + 0.5, rect.y_range().expand(1.0), Stroke::new(2.0, ink));
         }
     }
     painter.hline(layout.lane.x_range(), layout.lane.top() + 0.5, theme::hairline(theme::border_strong()));

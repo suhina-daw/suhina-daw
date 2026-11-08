@@ -299,12 +299,14 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   semitones? | keys?}` adds a copy right after the notes' end, or `beats` and `semitones` from them
   (the piano roll's Ctrl+drag; `keys` gives each copy its own key, one per entry of `notes`). The note clipboard is apart from the clip clipboard.
 - **Making room.** `note.makeRoom {track, index | scene, notes}` makes room under the named notes as `replace` does (the piano roll sends it when notes edited while selected are let go); a note no longer in the clip is left out.
-- **Splitting notes.** `note.split {track, index | scene, notes, at}` splits each named note that
-  spans the beat `at` into two at `at` (the first keeps the start, the second the end); a note
-  that starts or ends exactly at `at` is left alone, so a second split at the same beat changes
-  nothing. One undo step; it returns the indices and `ids` of the notes it made (each first half
-  keeps its note's id), and `at` is a beat from 0
-  to 120 000.
+- **Splitting notes.** `note.split {track, index | scene, notes, at | times, keepLonger?}` splits
+  each named note that spans the beat `at` into two at `at` (the first keeps the start, the second
+  the end); `times` instead gives each note a beat of its own, one per entry of `notes` (the piano
+  roll's slanted cut). A note that starts or ends exactly at its beat is left alone, so a second
+  split at the same beat changes nothing. One undo step; it returns the indices and `ids` of the
+  notes it made (each first half keeps its note's id), and every beat is from 0 to 120 000. With
+  `keepLonger: true` each note split keeps only its longer piece (the first when they are as
+  long) in its place, so nothing is added, and `trimmed` lists the notes cut down.
 - **Follow actions.** `clip.setFollowAction {track, scene, enabled?, time?, linked?, actionA?,
   actionB?, chanceA?, chanceB?}` sets what a slot clip does after its follow time (one undo
   step); `project.launcher` lists each slot clip's `follow_action`. A `project_render` script

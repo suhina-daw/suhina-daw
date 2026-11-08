@@ -459,11 +459,22 @@ pull up.
     one `note.add`, one undo step, and the painted notes are selected. A click adds one note.
   - **Erase**: a click on a note deletes it; dragging deletes every note the pointer passes over
     (they fade while the drag lasts), one `note.delete`, one undo step.
-  - **Slice**: pressing and dragging draws a cut line across the grid; when it is let go, every
-    note the line crosses is split where the line crosses it, the cut on the grid (Alt: where the
-    line is). A cut that lands on a note's start or end leaves that note alone; a vertical drag
-    that crosses no note does nothing. The whole stroke is one `note.split`, one undo step, and
-    the notes the cut made are selected. A click (no drag) does nothing.
+  - **Slice**: pressing and dragging draws a cut line from the press to the pointer, standing
+    straight up or down on the beat the pointer is at; with **Shift** held it runs slanted, from
+    the press to the pointer. When it is let go, every note whose row the line reaches is split
+    where the line is at the row's middle (at the line's nearer end when it stops short of the
+    middle), each cut on the grid (Alt: where the line is), so a slanted line cuts the notes of a
+    chord at different beats. A row the line does not reach, or the fold hides, is left alone, and
+    so is a note the cut meets at its start or end; a drag that reaches no note does nothing. The
+    whole stroke is one `note.split` (`at`, or `times`, a beat per note, for a slanted line), one
+    undo step, and the notes the cut made are selected. A click (no drag) does nothing.
+  - **Slice with the right button**: the same line, in the recording red, and when it is let go
+    each note it cuts also loses its shorter piece (the later one when they are as long), the
+    pieces fading while the drag lasts: one `note.split` with `keepLonger`, one undo step, and
+    nothing selected. Shift slants it as on the left button. A right-button hold that chose tools
+    with the wheel cuts nothing. In the other tools, the Mouse-first **Shift+right drag** switch
+    (› Keymap presets) slices with the left button's rules, Shift starting it rather than slanting
+    it.
   - **Mute** (built,
     [#460](https://github.com/suhina-daw/suhina-daw/issues/460)): a click on a note mutes it, or
     unmutes it when it is already muted; pressing and dragging sets every note the pointer passes
@@ -925,9 +936,10 @@ button opens its clip in the editor.
 ## Slicing and gluing
 
 - **Built ([#443](https://github.com/suhina-daw/suhina-daw/issues/443)):** the **Slice** tool (›
-  Drawing notes) splits the notes a drawn cut line crosses, and `note.split` (see Commands) does
-  the same for named notes at one beat, so the CLI and MCP can split too. One stroke is one
-  command, one undo step.
+  Drawing notes) splits the notes a drawn cut line crosses, straight or slanted with Shift, and
+  with the right button also deletes the shorter piece of each; `note.split` (see Commands) does
+  the same for named notes at one beat or a beat each, so the CLI and MCP can split too. One stroke
+  is one command, one undo step.
 - **Later ([#349](https://github.com/suhina-daw/suhina-daw/issues/349)):** a command that chops the
   selection into notes of one grid step each; glue (join) touching notes of the same key into one
   note (Ctrl+G); legato (each note lasts until the next one starts); the command `note.join`.
@@ -1182,7 +1194,7 @@ note another writer deletes leaves it.
 | `note.paste` | clip, `time?`, `replace?` | Adds the copied notes, the first at `time` (default: right after the copied notes); returns their indices and ids |
 | `note.duplicate` | clip, `notes`, `beats?`, `semitones?` or `keys?`, `replace?` | Adds a copy right after the notes' end; with `beats` or `semitones`, that far from the notes instead (`keys`: the key each copy goes to, one per entry of `notes`, as a copy through folded rows) (a copy made by dragging; the copies keep length, velocity and mute). Returns the copies' indices and ids |
 | `note.makeRoom` | clip, `notes` | Makes room under the named notes as `replace` does (a note of their key covered whole goes, one partly covered is cut); a named note no longer in the clip is left out; returns the removed notes as `replaced`. The piano roll sends it when notes edited while selected are let go |
-| `note.split` | clip, `notes`, `at` | Splits each named note that spans the beat `at` into two at `at`; a note that starts or ends at `at` is left alone; the first half keeps the note's id; returns the indices and ids of the second halves |
+| `note.split` | clip, `notes`, `at` or `times`, `keepLonger?` | Splits each named note that spans the beat `at` (or its own entry of `times`, one per entry of `notes`) into two there; a note that starts or ends at its beat is left alone; the first half keeps the note's id; returns the indices and ids of the second halves. With `keepLonger` each note keeps only its longer piece (the first when they are as long), in its place, and `trimmed` lists them |
 | `clip.scale` | clip | The clip's scale, `{ "root": "D", "mode": "dorian" }` or `null`, and the project's `default_scale` the same way; changes nothing |
 | `clip.setScale` | clip, `root?`, `mode?`, `off?` | Sets the clip's scale: `root` (a key name such as `"C"`, `"F#"` or `"Bb"`, or 0 to 11) and `mode` (one of the names `note.fitToScale` takes as `scale`), the one left out kept from the scale the clip has (C, major when it has none); `off: true` clears it, and is an error with `root` or `mode`; one of them is needed. A content other clips play is copied for this clip first (› Scale and key). Returns the scale and whether it changed; the same scale again changes nothing and is no undo step |
 | `project.setDefaultScale` | `root?`, `mode?`, `off?` | The same for the scale new MIDI clips take; clips that exist keep theirs |

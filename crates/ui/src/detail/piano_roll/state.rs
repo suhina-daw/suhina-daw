@@ -129,7 +129,9 @@ pub(super) enum Gesture {
     /// Notes the drag passes over are deleted ([`PianoRollState::erasing`]).
     Erase,
     /// A cut line from where the press was; the notes it crosses are split when it is let go.
-    Slice { from: Pos2 },
+    /// `delete`: the right button's slice, which also deletes the shorter piece of each note.
+    /// `by_shift`: Shift started it (Shift right-drag), so Shift does not slant its line.
+    Slice { from: Pos2, delete: bool, by_shift: bool },
     /// A mute stroke: every note it passes over is set to [`PianoRollState::mute_target`], which
     /// is the state the first note the stroke touched takes, so a stroke that starts on a muted
     /// note unmutes the run.

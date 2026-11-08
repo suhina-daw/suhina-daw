@@ -208,7 +208,17 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_INDEX,
             CLIP_SCENE,
             NOTES,
-            param("at", ParamType::Number, "the beat to split at, in beats from the content's start"),
+            optional("at", ParamType::Number, "the beat to split at, in beats from the content's start"),
+            optional(
+                "times",
+                ParamType::Numbers,
+                "instead of at: the beat to split each note at, one per entry of notes (a slanted cut)",
+            ),
+            optional(
+                "keepLonger",
+                ParamType::Bool,
+                "keep only the longer piece of each note split (the first when they are as long), in the note's place; the result's trimmed lists them",
+            ),
         ],
         kind: CommandKind::EDIT,
         run: notes::split,

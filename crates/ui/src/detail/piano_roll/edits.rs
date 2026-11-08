@@ -139,10 +139,30 @@ pub(super) enum Effect {
     },
     /// The note a draw drag makes.
     Draw(Option<Note>),
-    /// A slice: the beat the cut is at, and the notes it crosses.
-    Slice(f64, Vec<usize>),
+    /// A slice: its cut line and the cuts it makes.
+    Slice(SliceCut),
     /// A paint or erase stroke: what it does is in the state.
     Stroke,
+}
+
+/// A slice drag's cut line and what it cuts (› Drawing notes, Slice).
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SliceCut {
+    /// The line as drawn: from where the press was to the pointer.
+    pub(super) line: [Pos2; 2],
+    /// Each note the line cuts and the beat it is cut at.
+    pub(super) cuts: Vec<(usize, f64)>,
+    /// The right button's slice: the shorter piece of each note cut goes.
+    pub(super) delete: bool,
+}
+
+impl SliceCut {
+    /// The beats of the piece of `note`, cut at `at`, that a deleting slice removes: the shorter
+    /// one, the later when they are as long (`note.split` with `keepLonger` keeps the first then).
+    pub(super) fn removed(note: &Note, at: f64) -> (f64, f64) {
+        let end = note.time + note.duration;
+        if at - note.time >= end - at { (at, end) } else { (note.time, at) }
+    }
 }
 
 pub(super) fn effect(
@@ -152,8 +172,9 @@ pub(super) fn effect(
     clip: &PianoClip,
     chosen: &[Note],
     grid: TimelineGrid,
-    free: bool,
+    inputs: Inputs,
 ) -> Effect {
+    let free = inputs.alt;
     match gesture {
         Gesture::Move { from, grabbed, .. } => {
             let raw = f64::from((now.x - from.x) / layout.beat_width);
@@ -192,10 +213,11 @@ pub(super) fn effect(
                 clip.notes.get(*grabbed).map_or(target, |n| f64::from(suhina_session::midi_velocity(n.velocity)));
             Effect::Velocity(target - current)
         }
-        Gesture::Slice { .. } => match slice_at(clip, layout, grid, now.x, free) {
-            Some((at, cut)) => Effect::Slice(at, cut),
-            None => Effect::Stroke,
-        },
+        Gesture::Slice { from, delete, by_shift } => {
+            // Shift slants the line, unless Shift is what started the slice (Shift right-drag).
+            let slanted = inputs.shift && !by_shift;
+            Effect::Slice(SliceCut { delete: *delete, ..slice_cut(clip, layout, grid, (*from, now), slanted, free) })
+        }
         Gesture::Draw { .. }
         | Gesture::DrawRun
         | Gesture::Paint
@@ -205,27 +227,49 @@ pub(super) fn effect(
     }
 }
 
-/// The beat a cut at `x` lands on, and the notes it crosses; `None` when it misses every note.
-/// The line's own x is used, so the cut is where the pointer is, not where the drag started.
-pub(super) fn slice_at(
+/// A slice's cut line from `from` to the pointer at `now`, and the cuts it makes. The line stands
+/// straight up or down on the beat the pointer is at, or, `slanted` (Shift), runs from `from` to
+/// the pointer. Each note whose row the line reaches is cut where the line is at the row's middle
+/// (at the line's nearer end when it stops short of the middle), on the grid unless `free`; a cut
+/// on a note's start or end, or outside it, leaves the note alone. A row the fold hides is never
+/// reached.
+pub(super) fn slice_cut(
     clip: &PianoClip,
     layout: &Layout,
     grid: TimelineGrid,
-    x: f32,
+    (from, now): (Pos2, Pos2),
+    slanted: bool,
     free: bool,
-) -> Option<(f64, Vec<usize>)> {
-    let at = if free { layout.beat_at(x).max(0.0) } else { nearest_line(grid, layout.beat_at(x)) };
-    if !at.is_finite() {
-        return None;
-    }
-    let crossed: Vec<usize> = clip
+) -> SliceCut {
+    let snap = |x: f32| {
+        let beat = layout.beat_at(x).max(0.0);
+        if free { beat } else { nearest_line(grid, beat) }
+    };
+    let straight = snap(now.x);
+    let line = if slanted {
+        [from, now]
+    } else {
+        let x = layout.x_of(straight);
+        [Pos2::new(x, from.y), Pos2::new(x, now.y)]
+    };
+    let [a, b] = line;
+    let (top, bottom) = (a.y.min(b.y), a.y.max(b.y));
+    let x_at = |y: f32| if (b.y - a.y).abs() < 0.5 { b.x } else { a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y) };
+    let cuts = clip
         .notes
         .iter()
         .enumerate()
-        .filter(|(_, n)| n.time < at - EPSILON && n.time + n.duration > at + EPSILON)
-        .map(|(i, _)| i)
+        .filter_map(|(i, n)| {
+            let row_top = layout.y_of(n.key);
+            let row_bottom = row_top + layout.key_height;
+            if row_bottom < top || row_top > bottom {
+                return None;
+            }
+            let at = if slanted { snap(x_at(((row_top + row_bottom) / 2.0).clamp(top, bottom))) } else { straight };
+            (at.is_finite() && n.time < at - EPSILON && n.time + n.duration > at + EPSILON).then_some((i, at))
+        })
         .collect();
-    if crossed.is_empty() { None } else { Some((at, crossed)) }
+    SliceCut { line, cuts, delete: false }
 }
 
 pub(super) fn commit(
@@ -316,13 +360,23 @@ pub(super) fn commit(
                 }
             }
         }
-        // Slice: one `note.split` for the whole stroke, at the beat the line ends at.
-        (Gesture::Slice { .. }, Effect::Slice(at, cut)) if !cut.is_empty() => {
+        // Slice: one `note.split` for the whole stroke, each note at the beat the line cuts it.
+        (Gesture::Slice { .. }, Effect::Slice(cut)) if !cut.cuts.is_empty() => {
             let mut params = clip.address.clone();
-            params["notes"] = json!(cut);
-            params["at"] = json!(round_beat(at));
-            // `note.split` appends the second halves: they are the notes after the ones there.
-            state.selected = (clip.notes.len()..clip.notes.len() + cut.len()).collect();
+            params["notes"] = json!(cut.cuts.iter().map(|(index, _)| *index).collect::<Vec<_>>());
+            let times: Vec<f64> = cut.cuts.iter().map(|(_, at)| round_beat(*at)).collect();
+            match times.split_first() {
+                Some((first, rest)) if rest.iter().all(|at| at == first) => params["at"] = json!(first),
+                _ => params["times"] = json!(times),
+            }
+            if cut.delete {
+                // The right button's slice keeps the longer piece of each note, in its place.
+                params["keepLonger"] = json!(true);
+                state.selected.clear();
+            } else {
+                // `note.split` appends the second halves: they are the notes after the ones there.
+                state.selected = (clip.notes.len()..clip.notes.len() + cut.cuts.len()).collect();
+            }
             actions.push(Action::new("note.split", params));
         }
         (Gesture::Paint, _) => {

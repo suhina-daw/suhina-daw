@@ -640,7 +640,6 @@ pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Valu
     })
 }
 
-/// `params.velocities`: one velocity, 1 to 127, per entry of `notes`; `None` when left out.
 /// The key each note of `keys` goes to, by its index: one key per entry of `params.notes`, in the
 /// order given (a repeated index takes its last); empty when there are no `keys`. Shared by
 /// `note.move` and `note.duplicate`, the piano roll's moves and copies through folded rows.
@@ -649,20 +648,51 @@ fn keys_by_note(
     notes: &Notes,
     keys: Option<&[u8]>,
 ) -> Result<std::collections::HashMap<usize, u8>, CommandError> {
-    let mut key_of = std::collections::HashMap::new();
-    let Some(keys) = keys else { return Ok(key_of) };
+    per_note(params, notes, keys, "keys")
+}
+
+/// The entry of the list `name` (`list`) for each note, by its index: one entry per entry of
+/// `params.notes`, in the order given (a repeated index takes its last); empty when there is no
+/// list.
+fn per_note<T: Copy>(
+    params: &Value,
+    notes: &Notes,
+    list: Option<&[T]>,
+    name: &str,
+) -> Result<std::collections::HashMap<usize, T>, CommandError> {
+    let mut of = std::collections::HashMap::new();
+    let Some(list) = list else { return Ok(of) };
     let named = Args::new(params)
         .value("notes")
         .and_then(Value::as_array)
-        .ok_or("notes must be a list of note indices to give keys")?;
-    if keys.len() != named.len() {
-        return Err(format!("keys must have one key per note: {} notes, {} keys", named.len(), keys.len()).into());
+        .ok_or_else(|| format!("notes must be a list of note indices to give {name}"))?;
+    if list.len() != named.len() {
+        return Err(format!("{name} must have one entry per note: {} notes, {} {name}", named.len(), list.len()).into());
     }
     let mut finder = Named::new(notes, NoteId);
-    for (value, key) in named.iter().zip(keys) {
-        key_of.insert(finder.at(value).map_err(note_miss)?, *key);
+    for (value, entry) in named.iter().zip(list) {
+        of.insert(finder.at(value).map_err(note_miss)?, *entry);
     }
-    Ok(key_of)
+    Ok(of)
+}
+
+/// `params[name]`: a list of beats, one per entry of `notes`; `None` when left out.
+fn number_list(params: &Value, name: &str) -> Result<Option<Vec<f64>>, CommandError> {
+    let list = match Args::new(params).value(name) {
+        None => return Ok(None),
+        Some(v) => v.as_array().ok_or_else(|| format!("{name} must be a list of beats, one per note"))?,
+    };
+    if list.len() > MAX_NOTES_PER_COMMAND {
+        return Err(format!("at most {MAX_NOTES_PER_COMMAND} {name} in one command, got {}", list.len()).into());
+    }
+    list.iter()
+        .map(|v| {
+            v.as_f64()
+                .filter(|v| v.is_finite())
+                .ok_or_else(|| CommandError::from(format!("each of {name} must be a number")))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
 
 /// `params.keys` of `note.move` and `note.duplicate`: one key, 0 to 127, per entry of `notes`;
@@ -686,6 +716,7 @@ fn key_list(params: &Value) -> Result<Option<Vec<u8>>, CommandError> {
         .map(Some)
 }
 
+/// `params.velocities`: one velocity, 1 to 127, per entry of `notes`; `None` when left out.
 fn velocity_list(params: &Value) -> Result<Option<Vec<f64>>, CommandError> {
     let list = match Args::new(params).value("velocities") {
         None => return Ok(None),
@@ -964,41 +995,80 @@ fn spans(note: &Note, at: f64) -> bool {
     note.time < at - EPSILON && note.time + note.duration > at + EPSILON
 }
 
-/// `note.split`: splits each named note that spans the beat `at` into two at `at`, the first
-/// keeping its start and id and the second its end, as a new note. One command, one undo step; the
-/// second halves are appended, so the indices of the notes the command did not split stay valid.
+/// `note.split`: splits each named note that spans its beat (`at` for all of them, or its own
+/// entry of `times`, a slanted cut) into two there, the first keeping its start and id and the
+/// second its end, as a new note. With `keepLonger` only the longer piece of each is kept (the
+/// first when they are as long), in the note's place, so nothing is added. One command, one undo
+/// step; the second halves are appended, so the indices of the notes the command did not split
+/// stay valid.
 pub(crate) fn split(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let at = Args::new(params).opt_f64("at")?.ok_or("give at, the beat to split the notes at")?;
-    if !(0.0..=MAX_BEAT).contains(&at) {
-        return Err(format!("at must be 0 to {MAX_BEAT} beats, got {at}").into());
+    let args = Args::new(params);
+    let at = args.opt_f64("at")?;
+    let times = number_list(params, "times")?;
+    match (at, &times) {
+        (Some(_), Some(_)) => return Err("give at or times, not both".into()),
+        (None, None) => {
+            return Err("at must be given: the beat to split the notes at (or times, one beat per note)".into());
+        }
+        _ => {}
     }
+    for beat in at.iter().chain(times.iter().flatten()) {
+        if !(0.0..=MAX_BEAT).contains(beat) {
+            let name = if at.is_some() { "at" } else { "each of times" };
+            return Err(format!("{name} must be 0 to {MAX_BEAT} beats, got {beat}").into());
+        }
+    }
+    let keep_longer = args.flag("keepLonger")?;
     edit_notes(&mut session.project, params, |notes| {
         let chosen = indices(params, notes)?;
+        let at_of = per_note(params, notes, times.as_deref(), "times")?;
         // The first halves are made from the notes as they are; the second halves are appended
         // once every one of them is known, so an index always means the same note.
         let mut firsts: Vec<(usize, f64)> = Vec::new();
         let mut seconds = Vec::new();
+        let mut later: Vec<(usize, Note)> = Vec::new();
         for &index in &chosen {
             let note = notes.get(index).ok_or("a note is missing")?;
+            let Some(at) = at_of.get(&index).copied().or(at) else { continue };
             if !spans(note, at) {
                 continue;
             }
-            firsts.push((index, at - note.time));
-            seconds.push(Note { time: at, duration: note.time + note.duration - at, ..*note });
+            let (first, second) =
+                (at - note.time, Note { time: at, duration: note.time + note.duration - at, ..*note });
+            match keep_longer {
+                false => {
+                    firsts.push((index, first));
+                    seconds.push(second);
+                }
+                true if first >= second.duration => firsts.push((index, first)),
+                true => later.push((index, second)),
+            }
         }
         let total = notes.len().saturating_add(seconds.len());
         if total > MAX_NOTES_PER_CLIP {
             return Err(format!("a clip holds at most {MAX_NOTES_PER_CLIP} notes; this would make {total}").into());
         }
+        let mut trimmed: Vec<usize> = firsts.iter().map(|(index, _)| *index).collect();
         for (index, duration) in firsts {
             if let Some(note) = notes.get_mut(index) {
                 note.duration = duration;
             }
         }
+        for (index, piece) in later {
+            if let Some(note) = notes.get_mut(index) {
+                *note = piece;
+                trimmed.push(index);
+            }
+        }
         let first_new = notes.len();
         notes.extend(seconds);
         let made: Vec<usize> = (first_new..notes.len()).collect();
-        Ok(json!({ "notes": made, "ids": ids_at(notes, &made), "count": made.len() }))
+        let mut out = json!({ "notes": made, "ids": ids_at(notes, &made), "count": made.len() });
+        if keep_longer {
+            trimmed.sort_unstable();
+            out["trimmed"] = json!(trimmed);
+        }
+        Ok(out)
     })
 }
 
