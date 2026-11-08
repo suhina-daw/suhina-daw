@@ -231,6 +231,100 @@ fn folders_hold_tags_nest_to_the_cap_and_remove_moves_up() {
     assert_eq!(tag_count(&level_store.tags), 7, "removing a folder never removes tags");
 }
 
+// The count the menus ask first with is the count the removal moves up: a folder holding
+// nothing but an empty folder carries that one row ([#1254] review: the helper counted the
+// tags alone and said 0).
+#[test]
+fn a_folders_carried_count_is_what_its_removal_moves_up() {
+    let mut store = Store::default();
+    let outer = store.add_tag_folder(Some("Outer"), None).unwrap();
+    store.add_tag_folder(Some("Empty"), Some(outer)).unwrap();
+    assert_eq!(folder_carried(&store.tags, outer), 1, "the empty folder is one row moving up");
+    let holder = store.add_tag_folder(Some("Holder"), None).unwrap();
+    let inner = store.add_tag_folder(Some("Inner"), Some(holder)).unwrap();
+    store.move_tag_node(1, Some(inner), 0).unwrap();
+    store.move_tag_node(2, Some(holder), 0).unwrap();
+    assert_eq!(folder_carried(&store.tags, holder), 3, "Inner, its tag and the folder's own tag");
+    assert_eq!(folder_carried(&store.tags, 9999), 0, "no such folder carries nothing");
+    for folder in [outer, holder] {
+        let asked = folder_carried(&store.tags, folder);
+        assert_eq!(store.remove_tag_folder(folder).unwrap(), asked, "the removal moves up what was asked");
+    }
+}
+
+// The ids a file keeps are kept once, and the ones handed out start past all of them: an
+// id-less tag after `{"id": 1}` took 1 too and the two answered as one, a folder could keep
+// a tag's id, and an id near `u32::MAX` overflowed the next one made ([#1254] review).
+#[test]
+fn a_files_ids_are_kept_once_and_the_handed_out_ones_take_none_of_them() {
+    let dir = temp("file-ids");
+    let file = dir.join("browser.json");
+    let text = json!({
+        "tags": [
+            { "tag": { "id": 1, "name": "Kept", "color": "#112233" } },
+            { "tag": { "name": "Idless", "color": "#223344" } },
+            { "name": "Legacy", "color": "#334455" },
+            { "folder": { "id": 1, "name": "Shares", "open": true }, "tags": [
+                { "tag": { "id": 7, "name": "Deep", "color": "#445566" } },
+            ] },
+            { "tag": { "id": 7, "name": "Twin", "color": "#556677" } },
+            { "tag": { "id": u32::MAX, "name": "Huge", "color": "#667788" } },
+        ],
+        "tagged": { "/a.wav": [1] },
+    })
+    .to_string();
+    std::fs::write(&file, text).unwrap();
+    let (mut store, _) = Store::load(&file);
+    let id_of = |store: &Store, name: &str| tags_iter(&store.tags).find(|t| t.name == name).map(|t| t.id);
+    assert_eq!((id_of(&store, "Kept"), id_of(&store, "Deep")), (Some(1), Some(7)), "usable ids are kept");
+    let mut ids = tag_ids(&store.tags);
+    ids.extend(folders_iter(&store.tags).map(|f| f.id));
+    let mut unique = ids.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(unique.len(), ids.len(), "tags and folders share the id space, each id once: {ids:?}");
+    assert_eq!(ids.len(), 7, "six tags and the folder: {ids:?}");
+    for name in ["Idless", "Legacy", "Twin", "Huge"] {
+        let id = id_of(&store, name).unwrap_or(0);
+        assert!(id > 7, "{name} took {id}: an id the file keeps, or under them");
+    }
+    assert_eq!(store.tagged["/a.wav"], [1], "the item carries Kept alone");
+    // Removing the id-less tag leaves Kept and what carries it.
+    store.remove_tag(id_of(&store, "Idless").unwrap()).unwrap();
+    assert_eq!(id_of(&store, "Kept"), Some(1));
+    assert_eq!(store.tagged["/a.wav"], [1]);
+    // The next one made takes a free id, past the highest.
+    let made = set_tag_then_id_of(&mut store, "Made", None);
+    assert!(!ids.contains(&made) && made > 7, "{made}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// The selectors' shape is `#` over digits, alone or joined with `+`: that much is reserved,
+// and a bare `#`, a sign or other text after `#` stays a name ([#1254] review: `#` was
+// refused and `#+1` read as the id 1).
+#[test]
+fn only_the_selectors_own_shape_is_reserved() {
+    for reserved in ["#1", "#007", "#1+#2", "#3+#3", "#99999999999"] {
+        assert!(name_is_id_form(reserved), "{reserved}");
+    }
+    for name in ["#", "#+1", "#-1", "#1a", "# 1", "#notes", "1", "#1+", "#1+2", "+#1", "#１"] {
+        assert!(!name_is_id_form(name), "{name}");
+    }
+    assert_eq!(id_of_selector("#12"), Some(12));
+    for not_one in ["#", "#+1", "#1+#2", "#99999999999", "12", "#1a"] {
+        assert_eq!(id_of_selector(not_one), None, "{not_one}");
+    }
+    let mut store = Store::default();
+    for name in ["#", "#+1", "#notes"] {
+        store.set_tag(name, None, None, None).unwrap();
+        assert!(tags_iter(&store.tags).any(|t| t.name == name), "{name} is a name");
+    }
+    // The level keeps its names one word apart, so the folder named `#` is another store's.
+    Store::default().add_tag_folder(Some("#"), None).unwrap();
+    assert!(store.set_tag("#1+#2", None, None, None).is_err(), "a joined selector is no name");
+    assert!(store.add_tag_folder(Some("#4+#5"), None).is_err(), "nor a folder's");
+}
+
 #[test]
 fn the_sections_are_orderable_and_collapsible() {
     let mut store = Store::default();

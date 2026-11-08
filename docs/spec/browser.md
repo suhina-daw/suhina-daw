@@ -101,9 +101,10 @@ offers **New folder** ([#1254] › Tag folders), so a library reaches
 its first folder from the mouse alone, and makes a tag of its own beside it: the same
 palette and New tag field a folder's or a tag's menu carries ([#1254] review), the pick
 colouring the tag, no pick taking the named colours' next
-([Where tags come from](#colour-tags)). An added tag shows
-itself: the add opens the Tags section when it is closed, the way a folder's add opens the
-folder ([#1254] review). The
+([Where tags come from](#colour-tags)). An added tag or tag folder shows
+itself, from any menu that adds one: the add opens the Tags section when it is closed, the
+way a folder's add opens the folder, and the sidebar scrolls just far enough to show the new
+row ([#1254] review). The
 sections' order and open state are the library's own, kept in `browser.json`
 ([Where it is kept](#where-it-is-kept)), so a closed section stays closed when the window
 reopens.
@@ -503,9 +504,11 @@ first: Red, Orange, Yellow, Green, Blue, Purple and Grey; a new tag without a co
 next named colour (the enum behind the seven, then the CSS named colours, with numbering —
 "Red 2" — when a name is already taken). There are seven at first and colours may repeat; two
 tags never share a name. A name is 1 to 64 bytes and never spells an id's selector: `#` over
-digits and nothing else is the selectors' own shape (`#<id>`), refused at the make, the rename
-and the load ([#1254] review); another leading-`#` name (`#notes`) is a name like any of the
-rest, and `tag:#notes` reads it as one.
+one or more ASCII digits and nothing else is the selectors' own shape (`#<id>`), and so are
+such ids joined with `+` (`#1+#2`, a place of several); both are refused at the make, the
+rename and the load, for tags and tag folders alike ([#1254] review). Another leading-`#`
+name (`#`, `#notes`, `#+1`) is a name like any of the rest, and `tag:#notes` reads it as one,
+as the tag and folder params of the commands do.
 `library.setTag` makes at the top and, with its `folder`, in that tag folder from its first
 byte ([#1254] review), the make's name asked of that level; a limit and a make in the one
 command land whole or refuse whole, the limit raising before the make and rolling back when

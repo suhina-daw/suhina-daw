@@ -210,14 +210,44 @@ fn tag_color(text: &str) -> Color32 {
 
 /// Runs a library or preview command for the browser; an error goes to the status bar.
 fn run(projects: &mut Projects, id: &str, params: serde_json::Value, out: &mut BrowserOut) -> bool {
+    run_reply(projects, id, params, out).is_some()
+}
+
+/// [`run`], with the command's reply when it ran.
+fn run_reply(
+    projects: &mut Projects,
+    id: &str,
+    params: serde_json::Value,
+    out: &mut BrowserOut,
+) -> Option<serde_json::Value> {
     match projects.execute(id, &params) {
-        Ok(_) => true,
+        Ok(reply) => Some(reply),
         Err(e) => {
             suhina_plugins::trace!("{} refused {} — {}", id, params, e.message());
             out.status = Some(Status::Error(e.message().to_owned()));
-            false
+            None
         }
     }
+}
+
+/// Makes a tag folder with `library.addTagFolder`: the made folder's row is shown once the
+/// sidebar lays it out ([#1254] review). Whether it was made.
+fn add_tag_folder(
+    state: &mut BrowserState,
+    projects: &mut Projects,
+    params: serde_json::Value,
+    out: &mut BrowserOut,
+) -> bool {
+    let Some(reply) = run_reply(projects, "library.addTagFolder", params, out) else { return false };
+    state.reveal_tag_row =
+        reply.get("folder").and_then(serde_json::Value::as_u64).and_then(|id| u32::try_from(id).ok());
+    true
+}
+
+/// The tag `name` was just added: its row is shown once the sidebar lays it out, scrolled
+/// into view however many rows come before it ([#1254] review).
+fn reveal_added_tag(state: &mut BrowserState, projects: &mut Projects, name: &str) {
+    state.reveal_tag_row = projects.file_library_mut().tag_id_of(name);
 }
 
 /// Draws the browser in `area`.
@@ -910,7 +940,27 @@ fn sidebar_view(
     if ui.rect_contains_pointer(area) {
         state.sidebar_scroll -= ui.input(|i| i.smooth_scroll_delta.y);
     }
+    // A row just added scrolls into view ([#1254] review); one waiting for a Tags section
+    // that stays closed is let go.
+    if let Some(by) = state.sidebar_reveal_by.take() {
+        state.sidebar_scroll += by;
+    }
+    if !projects.file_library_mut().sections().iter().any(|s| s.kind == SectionKind::Tags && s.open) {
+        state.reveal_tag_row = None;
+    }
     state.sidebar_scroll = state.sidebar_scroll.clamp(0.0, max_scroll);
+}
+
+/// How far the sidebar's scroll moves so `row` shows inside `area`: down by what lies under
+/// the bottom edge, up by what lies over the top; `None` when it shows already.
+fn reveal_shift(row: Rect, area: Rect) -> Option<f32> {
+    if row.bottom() > area.bottom() {
+        Some(row.bottom() - area.bottom())
+    } else if row.top() < area.top() {
+        Some(row.top() - area.top())
+    } else {
+        None
+    }
 }
 
 fn results_view(
@@ -1375,8 +1425,9 @@ fn tag_folder_menu(
             }
             if run(projects, "library.setTag", params, out) {
                 // The add shows itself: the folder opens, however deeply it sat, as the
-                // subfolder's making does ([#1254] review).
+                // subfolder's making does ([#1254] review), and its row scrolls into view.
                 tag_branch_open(projects, out, folder_id);
+                reveal_added_tag(state, projects, new_name.trim());
                 out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
                 ui.ctx().data_mut(|d| d.remove::<String>(new_id));
                 ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
@@ -1385,7 +1436,7 @@ fn tag_folder_menu(
             }
         }
     }
-    if ui.button("Add folder").clicked() && run(projects, "library.addTagFolder", json!({ "parent": my }), out) {
+    if ui.button("Add folder").clicked() && add_tag_folder(state, projects, json!({ "parent": my }), out) {
         // The branch itself opens, so the new folder shows wherever it sits
         // ([#1254] review).
         tag_branch_open(projects, out, folder_id);
@@ -1393,8 +1444,7 @@ fn tag_folder_menu(
     }
     // What moves up when the folder goes: the tags AND the folders it held ([#1254] review:
     // a folder of nothing but an empty subfolder is asked about too).
-    let carried =
-        suhina_library::store::entry_count(&under_folder_tags(&projects.file_library_mut().tags(), folder_id));
+    let carried = projects.file_library_mut().folder_carried(folder_id);
     let armed = state.tag_remove_confirm.as_deref() == Some(my.as_str());
     let label =
         if armed { format!("Remove folder {}? ({} move up)", store_name, carried) } else { "Remove".to_string() };
@@ -1412,25 +1462,6 @@ fn tag_folder_menu(
     if armed && ui.button("Keep").clicked() {
         state.tag_remove_confirm = None;
     }
-}
-
-/// The tags the folder `id` holds, its subfolders' under them, without the folder itself
-/// ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
-fn under_folder_tags(entries: &[suhina_library::TagEntry], id: u32) -> Vec<suhina_library::TagEntry> {
-    for entry in entries {
-        if let suhina_library::TagEntry::Folder { folder, tags } = entry
-            && folder.id == id
-        {
-            return tags.clone();
-        }
-        if let suhina_library::TagEntry::Folder { tags, .. } = entry {
-            let under = under_folder_tags(tags, id);
-            if !under.is_empty() {
-                return under;
-            }
-        }
-    }
-    Vec::new()
 }
 
 /// The Tags section's rows: the tags and folders as places ([#1254]), which the sidebar
@@ -1451,10 +1482,16 @@ fn tags_section(
     let mut rows = Vec::new();
     tag_rows_of(&tag_list, 0, &mut rows);
 
-    // The pick prunes itself against the rows: a dead id the sidebar or the footer's
+    // The pick prunes itself against the whole forest: a dead id the sidebar or the footer's
     // removal left (the places' own reconciles run where the library's changes land,
-    // [#1254] review) takes nothing of the pick's landing with it.
-    state.tag_selection.retain(|id| rows.iter().any(|row| row.entry.id() == *id));
+    // [#1254] review) takes nothing of the pick's landing with it. A row a closed folder
+    // hides still is, and stays picked: a command can close the folder without a click
+    // clearing the pick, and the group's move then takes it along ([#1254] review).
+    let live: std::collections::HashSet<u32> = suhina_library::store::tag_ids(&tag_list)
+        .into_iter()
+        .chain(suhina_library::store::folders_iter(&tag_list).map(|f| f.id))
+        .collect();
+    state.tag_selection.retain(|id| live.contains(id));
 
     // The rows' own geometry first: rects are derived from the rows to draw, so the frame's
     // fill and the landing know them in time ([#1254] review: the drop's row lights on the
@@ -1481,6 +1518,14 @@ fn tags_section(
         })
         .collect();
     y = y_rows;
+    // A row just added shows itself: the sidebar's scroll moves just far enough to hold it,
+    // at the end of the frame, once the room is measured ([#1254] review). A row this
+    // section does not draw (a folder closed over it) asks nothing more.
+    if let Some(wanted) = state.reveal_tag_row.take()
+        && let Some(rect) = rows.iter().zip(rects.iter()).find(|(row, _)| row.entry.id() == wanted).map(|(_, r)| *r)
+    {
+        state.sidebar_reveal_by = reveal_shift(rect, area);
+    }
     // Where a carried tag's drop goes, from the frame's own rows: derived before the rows
     // paint, so what the pointer is over lights that very frame ([#1254] review). A press
     // arms its carry in the painting pass; the carry made there is derived again after the
@@ -1857,6 +1902,7 @@ fn tags_section(
                         // the tag it was added from shows (#1196/#1254).
                         let color = tag_row_color(&row.entry).to_string();
                         if run(projects, "library.setTag", json!({ "name": new_name.trim(), "color": color }), out) {
+                            reveal_added_tag(state, projects, new_name.trim());
                             out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
                             ui.ctx().data_mut(|d| d.remove::<String>(new_id));
                             state.relist();
@@ -1875,7 +1921,7 @@ fn tags_section(
                         Some(folder) => json!({ "parent": format!("#{folder}") }),
                         None => json!({}),
                     };
-                    if run(projects, "library.addTagFolder", params, out) {
+                    if add_tag_folder(state, projects, params, out) {
                         // The target's branch opens, so the new folder shows wherever it
                         // landed ([#1254] review).
                         if let Some(folder) = parent {
@@ -2216,15 +2262,12 @@ fn section_title(
                         }
                         if run(projects, "library.setTag", params, out) {
                             // The add shows itself ([#1254] review): a closed section opens,
-                            // the way a folder's add opens the branch it lands in.
+                            // the way a folder's add opens the branch it lands in, and the
+                            // row scrolls into view however many rows come before it.
                             if !open {
-                                run(
-                                    projects,
-                                    "library.setSectionOpen",
-                                    json!({ "section": kind.name(), "open": true }),
-                                    out,
-                                );
+                                open_tags_section(projects, out);
                             }
+                            reveal_added_tag(state, projects, new_name.trim());
                             out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
                             ui.ctx().data_mut(|d| d.remove::<String>(new_id));
                             ui.ctx().data_mut(|d| d.remove::<String>(pick_id));
@@ -2236,8 +2279,12 @@ fn section_title(
                     }
                 }
                 // The first folder still comes from here ([#1254] › Tag folders): a top-level
-                // one has no row's menu to come from.
-                if ui.button("New folder").clicked() && run(projects, "library.addTagFolder", json!({}), out) {
+                // one has no row's menu to come from. It shows itself as the tag's add does: a
+                // closed section opens for it ([#1254] review).
+                if ui.button("New folder").clicked() && add_tag_folder(state, projects, json!({}), out) {
+                    if !open {
+                        open_tags_section(projects, out);
+                    }
                     state.relist();
                     ui.close();
                 }
@@ -2256,6 +2303,12 @@ fn section_title(
         });
     }
     ui.ctx().data_mut(|d| d.insert_temp(Id::unique(("browser-title-menu-open", kind.name())), open));
+}
+
+/// Opens the Tags section, for an add made while it was closed to show itself ([#1254]
+/// review).
+fn open_tags_section(projects: &mut Projects, out: &mut BrowserOut) {
+    run(projects, "library.setSectionOpen", json!({ "section": SectionKind::Tags.name(), "open": true }), out);
 }
 
 /// A subfolder's making opens the branch from its target up ([#1254] review): the new row
@@ -2850,7 +2903,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| rect.intersect(area).contains(p))
         });
         if was_open && dot_click {
-            let commit_id = Id::unique(("browser-rename-tag", tag.id));
+            let commit_id = Id::unique(("browser-footer-rename-tag", tag.id));
             let draft: Option<String> = ui.ctx().data(|d| d.get_temp(commit_id));
             if let Some(name) = draft
                 && name.trim() != tag.name
@@ -2867,7 +2920,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
         let popup = egui::Popup::context_menu(&response)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
-                let id = Id::unique(("browser-rename-tag", tag.id));
+                let id = Id::unique(("browser-footer-rename-tag", tag.id));
                 let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
                 let field = crate::kit::widgets::text_input(
                     ui,
@@ -2902,7 +2955,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
                 if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
                     ui,
-                    Id::unique(("browser-tag-colour", tag.id)),
+                    Id::unique(("browser-footer-tag-colour", tag.id)),
                     current,
                     "Select colour",
                 ) {
@@ -2910,7 +2963,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                     run(projects, "library.setTag", json!({ "id": format!("#{0}", tag.id), "color": hex }), out);
                 }
                 ui.separator();
-                let new_id = Id::unique(("browser-section-new-tag", tag.id));
+                let new_id = Id::unique(("browser-footer-new-tag", tag.id));
                 let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
                 let field = crate::kit::widgets::text_input(
                     ui,
@@ -2936,13 +2989,9 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                                 .iter()
                                 .any(|s| s.kind == SectionKind::Tags && !s.open);
                             if closed {
-                                run(
-                                    projects,
-                                    "library.setSectionOpen",
-                                    json!({ "section": "tags", "open": true }),
-                                    out,
-                                );
+                                open_tags_section(projects, out);
                             }
+                            reveal_added_tag(state, projects, new_name.trim());
                             out.status = Some(Status::Done(format!("Added tag {}", new_name.trim())));
                             ui.ctx().data_mut(|d| d.remove::<String>(new_id));
                             state.relist();
@@ -2966,9 +3015,9 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
         let open_key = Id::unique(("browser-footer-menu-open", tag.id));
         if was_open && !open {
             ui.ctx().data_mut(|d| {
-                d.remove::<String>(Id::unique(("browser-rename-tag", tag.id)));
-                d.remove::<String>(Id::unique(("browser-section-new-tag", tag.id)));
-                crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-tag-colour", tag.id)));
+                d.remove::<String>(Id::unique(("browser-footer-rename-tag", tag.id)));
+                d.remove::<String>(Id::unique(("browser-footer-new-tag", tag.id)));
+                crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-footer-tag-colour", tag.id)));
             });
         }
         ui.ctx().data_mut(|d| d.insert_temp(open_key, open));
@@ -3011,16 +3060,17 @@ fn footer_overflow(
     state: &mut BrowserState,
 ) {
     let clipped = rect.intersect(area);
-    // A dot the footer no longer room for drops its drafts where the sidebar's menus read
-    // them from: the rename's is one they share ([#1254] review — the row's menu must not
-    // open over a draft the hidden dot left). No menu of this tag is on: the reach here is
-    // the overflow's, whose rows hold filters, not drafts.
+    // A dot the footer has no room for drops its own menu's drafts: its menu is not drawn,
+    // so it cannot close by itself and clear them, and a dot coming back opens clean. The
+    // footer's menus keep their state under keys of their own, never the sidebar rows'
+    // ([#1254] review: shared keys cleared an open sidebar menu's draft and picker every
+    // frame its tag spent in the overflow).
     ui.ctx().data_mut(|d| {
         for tag in tags {
-            d.remove::<String>(Id::unique(("browser-rename-tag", tag.id)));
+            d.remove::<String>(Id::unique(("browser-footer-rename-tag", tag.id)));
             d.remove::<bool>(Id::unique(("browser-footer-menu-open", tag.id)));
-            d.remove::<String>(Id::unique(("browser-section-new-tag", tag.id)));
-            crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-tag-colour", tag.id)));
+            d.remove::<String>(Id::unique(("browser-footer-new-tag", tag.id)));
+            crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-footer-tag-colour", tag.id)));
         }
     });
     let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");

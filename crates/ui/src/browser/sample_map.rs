@@ -317,6 +317,22 @@ impl MapView {
         self.rubber_band = None;
     }
 
+    /// The map was laid out again, its points in a new order: the point-index states follow
+    /// their items to `moved(old index)`, and one whose item is not on the new map goes
+    /// ([#1254] review: Show similar's list kept the old indices and showed, and previewed,
+    /// unrelated samples). Show similar ends when the point it was asked for is gone; a
+    /// rubber band ends, as the points under it moved.
+    pub fn rebind_points(&mut self, moved: impl Fn(usize) -> Option<usize>) {
+        self.similar = self.similar.take().and_then(|(of, items)| {
+            let of = moved(of)?;
+            Some((of, items.into_iter().filter_map(&moved).collect()))
+        });
+        self.hovered = self.hovered.and_then(|(i, since)| Some((moved(i)?, since)));
+        self.previewed = self.previewed.and_then(&moved);
+        self.pressed = self.pressed.and_then(&moved);
+        self.rubber_band = None;
+    }
+
     /// Shows the answer to [`MapEvent::Similar`]: rings these items and lists them at the side.
     pub fn show_similar(&mut self, of: usize, items: Vec<usize>) {
         self.similar = Some((of, items));

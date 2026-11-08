@@ -153,3 +153,25 @@ fn the_map_shows_the_place_and_acts_on_the_browser() {
     let _ = std::fs::remove_dir_all(settings_dir);
     let _ = std::fs::remove_dir_all(samples);
 }
+
+/// An obsolete job is let go, never waited for: a worker still running when its job ends
+/// leaves the window's thread free ([#1254] review: joining an unfinished snap held the
+/// window for seconds). The worker here runs until the test lets it go, after the end has
+/// returned; a regression that joins it waits forever instead.
+#[test]
+fn ending_a_job_never_waits_for_its_worker() {
+    let mut panel = Panel::default();
+    let (release, wait) = std::sync::mpsc::channel::<()>();
+    let (_answer, receiver) = std::sync::mpsc::channel::<Grid>();
+    let worker = std::thread::spawn(move || {
+        let _ = wait.recv();
+    });
+    panel.grid_job = Some((1.0, receiver, worker));
+    panel.end_jobs();
+    assert!(panel.grid_job.is_none(), "the job ended");
+    assert_eq!(panel.retired.len(), 1, "its running worker is retired, not joined");
+    release.send(()).unwrap();
+    for worker in std::mem::take(&mut panel.retired) {
+        worker.join().unwrap();
+    }
+}

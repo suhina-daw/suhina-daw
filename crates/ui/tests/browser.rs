@@ -2976,3 +2976,157 @@ fn the_footer_reaches_the_tags_its_dots_do_not_draw() {
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+// The pick and the carry hold the sidebar's rows, folders among them: an agent's change keeps
+// a folder that still is, and a command closing a folder keeps the tags it hides picked
+// ([#1254] review: the reconcile kept tags alone, and the rows' prune dropped what a closed
+// folder hides).
+#[test]
+fn the_pick_and_the_carry_keep_live_folders_and_hidden_tags() {
+    let (settings, folder) = (temp("pick-live-settings"), temp("pick-live"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let made = harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Box" })).unwrap();
+    let box_id = made["folder"].as_u64().and_then(|id| u32::try_from(id).ok()).unwrap();
+    let boxed = json!({ "id": "#1", "folder": format!("#{box_id}") });
+    harness.state_mut().projects_mut().execute("library.moveTag", &boxed).unwrap();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "Red shows inside the open Box");
+    // Red and Box picked, Box carried; an agent's change elsewhere keeps them.
+    harness.state_mut().browser.tag_selection = vec![1, box_id];
+    harness.state_mut().browser.drag_tag_id = Some(box_id);
+    harness.state_mut().browser.drag_tag = Some("Box".into());
+    harness.state_mut().projects_mut().execute("library.setTag", &json!({ "name": "Elsewhere" })).unwrap();
+    harness.state_mut().note_outside_change();
+    assert_eq!(harness.state().browser.tag_selection, [1, box_id], "the folder stays picked");
+    assert_eq!(harness.state().browser.drag_tag_id, Some(box_id), "the folder's carry goes on");
+    harness.state_mut().browser.drag_tag_id = None;
+    harness.state_mut().browser.drag_tag = None;
+    // A command closes Box: Red's row hides, and Red stays picked.
+    let closed = json!({ "folder": format!("#{box_id}"), "open": false });
+    harness.state_mut().projects_mut().execute("library.setFolderOpen", &closed).unwrap();
+    harness.state_mut().note_outside_change();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Red").is_none(), "the closed folder hides Red");
+    assert_eq!(harness.state().browser.tag_selection, [1, box_id], "the hidden tag stays picked");
+    // A folder the library dropped leaves the pick; its tag moved up and stays.
+    let removed = json!({ "folder": format!("#{box_id}") });
+    harness.state_mut().projects_mut().execute("library.removeTagFolder", &removed).unwrap();
+    harness.state_mut().note_outside_change();
+    harness.run();
+    assert_eq!(harness.state().browser.tag_selection, [1]);
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+// A replaced library's tag ids are its own: the place of tags, the filter and the pick go
+// with the old one, not onto whatever tag the new one gives those numbers ([#1254] review).
+#[test]
+fn a_replaced_library_takes_the_tag_place_filter_and_pick_with_it() {
+    let (settings, folder, other) = (temp("replaced-settings"), temp("replaced"), temp("replaced-other-settings"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().browser.place = Some(Place::Tag(vec![1]));
+    harness.state_mut().browser.tag_filter = vec![2];
+    harness.state_mut().browser.tag_selection = vec![3];
+    harness.state_mut().set_file_library(Library::new(Some(other.clone())));
+    harness.run();
+    let browser = &harness.state().browser;
+    assert_eq!(browser.place, None, "the tag place went with its library");
+    assert!(browser.tag_filter.is_empty() && browser.tag_selection.is_empty(), "the filter and the pick too");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+    let _ = std::fs::remove_dir_all(&other);
+}
+
+// The Tags title's New folder shows its folder as Add tag shows its tag: a closed section
+// opens for it ([#1254] review).
+#[test]
+fn the_tags_titles_new_folder_opens_a_closed_section() {
+    let (settings, folder) = (temp("title-folder-settings"), temp("title-folder"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Tags section").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Red").is_none(), "the section closed");
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("New folder").click();
+    harness.run();
+    let sections = harness.state_mut().projects_mut().file_library_mut().sections();
+    assert!(sections.iter().any(|s| s.kind == SectionKind::Tags && s.open), "the add opened the section");
+    let forest = harness.state_mut().projects_mut().file_library_mut().tags();
+    let folders: Vec<String> = suhina_library::store::folders_iter(&forest).map(|f| f.name.clone()).collect();
+    assert_eq!(folders.len(), 1, "one folder made: {folders:?}");
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "the section's rows show again");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+// A tag added below many others shows itself: the sidebar scrolls its row into view
+// ([#1254] review: the status said it was added, and the row stayed under the bottom edge).
+#[test]
+fn an_added_tag_scrolls_into_view() {
+    let (settings, folder) = (temp("reveal-settings"), temp("reveal"));
+    pack(&folder);
+    let mut harness = window_at_size(&settings, &folder, (1280.0, 600.0), true);
+    for n in 8..53 {
+        let params = json!({ "name": format!("Extra {n}") });
+        harness.state_mut().projects_mut().execute("library.setTag", &params).unwrap();
+    }
+    harness.state_mut().browser.relist();
+    harness.run();
+    assert_eq!(harness.state().browser.sidebar_scroll, 0.0, "the sidebar starts at its top");
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Newest");
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    assert!(harness.state().browser.sidebar_scroll > 0.0, "the sidebar scrolled to the new row");
+    let row = harness.get_by_label("Place Tag Newest").rect();
+    assert!(row.height() > 0.0 && row.bottom() <= 600.0, "the new row shows: {row:?}");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+// A tag the footer has no room for keeps its sidebar menu: the footer's menus keep their
+// state under keys of their own ([#1254] review: the overflow cleared the sidebar menu's
+// picker and new-tag draft every frame).
+#[test]
+fn a_tag_in_the_footers_overflow_keeps_its_sidebar_menu() {
+    let (settings, folder) = (temp("overflow-menu-settings"), temp("overflow-menu"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    for n in 8..53 {
+        let params = json!({ "name": format!("Extra {n}") });
+        harness.state_mut().projects_mut().execute("library.setTag", &params).unwrap();
+    }
+    let closed = json!({ "section": "library", "open": false });
+    harness.state_mut().projects_mut().execute("library.setSectionOpen", &closed).unwrap();
+    drop(harness);
+    let mut harness = window_at_size(&settings, &folder, (700.0, 800.0), false);
+    assert!(harness.query_by_label("More tags").is_some(), "the last tags are in the footer's overflow");
+    // The sidebar's last rows, scrolled to (the scroll keeps to its room).
+    harness.state_mut().browser.sidebar_scroll = 100_000.0;
+    harness.run();
+    harness.get_by_label("Place Tag Extra 52").click_secondary();
+    harness.run();
+    harness.get_by_label("Select colour").click();
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label("Select colour…").is_some(), "the picker stays open");
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Draft");
+    harness.run();
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    assert!(tags.iter().any(|t| t.name == "Draft"), "the draft was still there to add");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}

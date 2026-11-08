@@ -388,6 +388,13 @@ pub struct BrowserState {
     /// The sidebar's scroll when its entries are more than its room: rows above its top have
     /// gone past, as the results list scrolls.
     pub sidebar_scroll: f32,
+    /// A tag or tag folder just added from a menu, whose row the sidebar scrolls into view
+    /// once it has laid the row out ([#1254] review: a tag added below many others stayed
+    /// under the bottom edge). Gone once shown, or when the Tags section draws without it.
+    pub reveal_tag_row: Option<u32>,
+    /// How far the sidebar's scroll moves at the end of this frame to show
+    /// [`BrowserState::reveal_tag_row`]; added after the frame's room is measured.
+    pub(crate) sidebar_reveal_by: Option<f32>,
     /// Items being dragged into the project.
     pub drag: Option<Vec<BrowserItem>>,
     /// The folder row under the pointer while samples are dragged, which a drop moves or
@@ -456,6 +463,8 @@ impl Default for BrowserState {
             drag_pointer: None,
             drop_item: None,
             sidebar_scroll: 0.0,
+            reveal_tag_row: None,
+            sidebar_reveal_by: None,
             drag: None,
             drop_folder: None,
             previewing: None,
@@ -530,25 +539,52 @@ impl BrowserState {
     /// own — a place that fails its search, a footer filter without its control, a carry
     /// that tries a deleted id first. The rows and their caches are read again after.
     pub fn reconcile(&mut self, projects: &mut Projects) {
-        let live: HashSet<u32> =
-            suhina_library::store::tag_ids(&projects.file_library_mut().tags()).into_iter().collect();
-        self.tag_filter.retain(|id| live.contains(id));
-        self.tag_selection.retain(|id| live.contains(id));
+        let forest = projects.file_library_mut().tags();
+        // The filter and the place are tags' alone; the pick and the carry hold the
+        // sidebar's rows, folders among them ([#1254] review: a folder that still is kept
+        // its pick and its carry).
+        let live_tags: HashSet<u32> = suhina_library::store::tag_ids(&forest).into_iter().collect();
+        let live_rows: HashSet<u32> =
+            live_tags.iter().copied().chain(suhina_library::store::folders_iter(&forest).map(|f| f.id)).collect();
+        self.tag_filter.retain(|id| live_tags.contains(id));
+        self.tag_selection.retain(|id| live_rows.contains(id));
         if let Some(Place::Tag(tags)) = &mut self.place {
-            tags.retain(|id| live.contains(id));
+            tags.retain(|id| live_tags.contains(id));
             if tags.is_empty() {
                 self.place = None;
             }
         }
-        // A carried tag the library dropped mid-carry: the carry ends, for its id is none
-        // it can land for.
-        if self.drag_tag_id.is_some_and(|id| !live.contains(&id)) {
-            self.drag_tag = None;
-            self.drag_tag_id = None;
-            self.drop_tag_row = None;
-            self.drop_pill = None;
+        // A carried tag or folder the library dropped mid-carry: the carry ends, for its
+        // id is none it can land for.
+        if self.drag_tag_id.is_some_and(|id| !live_rows.contains(&id)) {
+            self.end_tag_carry();
         }
         self.relist();
+    }
+
+    /// The library went under a replacement: its tag ids are another library's, and the
+    /// same number can name another tag there, so nothing kept by id stays — the place of
+    /// tags, the filter, the pick, a carry, an asked-first removal and a row to show
+    /// ([#1254] review: a kept id selected the replacement's tag of that number).
+    pub fn forget_tags(&mut self) {
+        self.tag_filter.clear();
+        self.tag_selection.clear();
+        if matches!(self.place, Some(Place::Tag(_))) {
+            self.place = None;
+        }
+        self.end_tag_carry();
+        self.tag_remove_confirm = None;
+        self.reveal_tag_row = None;
+        self.relist();
+    }
+
+    /// Ends a carried tag's or folder's drag, landing nothing.
+    fn end_tag_carry(&mut self) {
+        self.drag_tag = None;
+        self.drag_tag_id = None;
+        self.drop_tag_row = None;
+        self.drop_folder_before = None;
+        self.drop_pill = None;
     }
 
     /// Opens or closes a node of the tree.

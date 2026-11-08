@@ -44,18 +44,17 @@ struct ScopeKey {
 /// A finished layout: the map, its grid and the view's aspect the grid was made for.
 type Laid = (Map, Grid, f32);
 
-/// A layout being computed on a thread of its own. The thread's handle rides along: the
-/// panel joins an obsolete job's thread before it computes a replacement's room, so the
-/// two never compete (a map being computed there and one let go when the scope turned
-/// anywhere else), the old receiver's answer is dropped either way ([#1254] review).
+/// A layout being computed on a thread of its own. The thread's handle rides along: an
+/// obsolete job's thread is retired, its answer going to a receiver nobody reads, and
+/// joined once it has finished — never waited for on the window's thread, where a large
+/// map's layout or snap would hold the window for seconds ([#1254] review).
 struct Job {
     key: ScopeKey,
     receiver: Receiver<Laid>,
     progress: Progress,
     /// When it started, in the window's time.
     started: f64,
-    /// The worker's own join, so its replacement's start is the only moment the panel
-    /// waits for it.
+    /// The worker's own join, taken once it has finished.
     worker: std::thread::JoinHandle<()>,
 }
 
@@ -71,6 +70,9 @@ pub struct Panel {
     /// A grid being made again for the view's new shape, on a thread of its own: the aspect it is
     /// made for, where it arrives, and the thread's own join ([#1254] review).
     grid_job: Option<(f32, Receiver<Grid>, std::thread::JoinHandle<()>)>,
+    /// Workers whose answers nobody waits for any more, joined as each one finishes: the
+    /// window's thread never waits on one ([#1254] review).
+    retired: Vec<std::thread::JoinHandle<()>>,
     last_layout: f64,
     points: Vec<MapPoint>,
     /// What the points' flags were made from: search, tags, selection, pins, project.
@@ -96,6 +98,7 @@ impl Default for Panel {
             shown: None,
             job: None,
             grid_job: None,
+            retired: Vec::new(),
             last_layout: f64::NEG_INFINITY,
             points: Vec::new(),
             flags_key: None,
@@ -108,16 +111,44 @@ impl Default for Panel {
 }
 
 impl Panel {
-    /// Ends the layout and the grid jobs that are on, their threads joined: the answers
-    /// they send from here on go to a receiver nobody reads, and the join keeps an
-    /// obsolete worker off its replacement's room ([#1254] review).
+    /// Ends the layout and the grid jobs that are on: the answers they send from here on go
+    /// to a receiver nobody reads, and their threads are retired, not waited for
+    /// ([#1254] review: joining an unfinished snap held the window until it was done).
     fn end_jobs(&mut self) {
+        self.end_layout_job();
+        self.end_grid_job();
+    }
+
+    /// Ends the layout job alone, its thread retired.
+    fn end_layout_job(&mut self) {
         if let Some(Job { worker, .. }) = self.job.take() {
-            let _ = worker.join();
+            self.retire(worker);
         }
+    }
+
+    /// Ends the grid job alone, its thread retired: a grid's end leaves the layout on.
+    fn end_grid_job(&mut self) {
         if let Some((_, _, worker)) = self.grid_job.take() {
+            self.retire(worker);
+        }
+    }
+
+    /// Lets a worker go: joined at once when it has finished, else when a later frame finds
+    /// it finished ([`Panel::reap`]).
+    fn retire(&mut self, worker: std::thread::JoinHandle<()>) {
+        self.retired.push(worker);
+        self.reap();
+    }
+
+    /// Joins the retired workers that have finished; the others are left running, their
+    /// answers going nowhere.
+    fn reap(&mut self) {
+        let (finished, running): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut self.retired).into_iter().partition(|worker| worker.is_finished());
+        for worker in finished {
             let _ = worker.join();
         }
+        self.retired = running;
     }
 
     /// The library went under a replacement (tests set one, and reopening does): the
@@ -139,6 +170,13 @@ impl Panel {
         // ([#1254] review). The view's own largeness and window stay.
         self.view.forget_points();
     }
+}
+
+/// Where the point `index` of `old` is in `new`, found by its file; `None` when the file is
+/// not on the new map.
+fn rebound(old: &Map, new: &Map, index: usize) -> Option<usize> {
+    let path = &old.points.get(index)?.path;
+    new.points.iter().position(|point| &point.path == path)
 }
 
 fn item_of(path: &Path) -> BrowserItem {
@@ -187,11 +225,19 @@ impl Panel {
     /// finished layout and starts a new one when it is out of date.
     fn refresh(&mut self, ui: &Ui, state: &BrowserState, projects: &mut Projects, settings: &Settings) {
         let analysed = projects.poll_sound_map();
+        self.reap();
         if let Some(job) = &self.job {
             match job.receiver.try_recv() {
                 Ok((map, grid, aspect)) => {
                     projects.sound_map_mut().keep(&map);
                     self.shown = Some(job.key.clone());
+                    // The view's point indices follow their files into the new map: a tag
+                    // dropped or a file analysed shifts the indices, and Show similar's list
+                    // read unrelated samples ([#1254] review).
+                    match &self.map {
+                        Some(old) => self.view.rebind_points(|i| rebound(old, &map, i)),
+                        None => self.view.forget_points(),
+                    }
                     self.map = Some(map);
                     self.grid = Some(grid);
                     self.grid_aspect = aspect;
@@ -245,11 +291,9 @@ impl Panel {
             ctx.request_repaint();
         });
         if let Ok(worker) = spawned {
-            // The job it replaces is obsolete from here on: its thread joins before the
-            // replacement computes whatever it asks of the room ([#1254] review).
-            if let Some(old) = self.job.take() {
-                let _ = old.worker.join();
-            }
+            // The job it replaces is obsolete from here on: its thread is retired, its answer
+            // read by nobody, and the window does not wait for it ([#1254] review).
+            self.end_layout_job();
             self.job = Some(Job { key, receiver, progress, started: now, worker });
         }
     }
@@ -265,15 +309,14 @@ impl Panel {
                 Ok(grid) => {
                     self.grid_aspect = aspect;
                     self.grid = Some(grid);
-                    if let Some((_, _, worker)) = self.grid_job.take() {
-                        let _ = worker.join();
-                    }
+                    self.end_grid_job();
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
                     ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
                     return;
                 }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.end_jobs(),
+                // The grid's worker is gone: its job ends, the layout's goes on.
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.end_grid_job(),
             }
         }
         let aspect = self.view.aspect();
@@ -292,9 +335,7 @@ impl Panel {
             ctx.request_repaint();
         });
         if let Ok(worker) = spawned {
-            if let Some((_, _, old)) = self.grid_job.take() {
-                let _ = old.join();
-            }
+            self.end_grid_job();
             self.grid_job = Some((aspect, receiver, worker));
         }
     }

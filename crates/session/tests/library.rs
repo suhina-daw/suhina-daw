@@ -466,6 +466,53 @@ fn a_hash_name_made_and_reached_as_a_name_refuses_the_id_form() {
     let _ = std::fs::remove_dir_all(&settings);
 }
 
+// The selectors' grammar is checked before a number is read ([#1254] review): `#+1` is a
+// name (Rust's number parse took its sign and reached Red, the tag of id 1, so removing
+// `#+1` removed Red and what carried it), a bare `#` is a name, `#notes` names a folder as
+// it names a tag, and a joined shape (`#1+#2`) is the place of several, never a name.
+#[test]
+fn a_selectors_shape_is_checked_before_its_number_is_read() {
+    let settings = temp("selector-grammar-settings");
+    let samples = temp("selector-grammar");
+    wav(&samples.join("Kick.wav"));
+    let mut p = projects(&settings);
+    run(&mut p, "library.addFolder", json!({ "folder": samples.display().to_string() })).unwrap();
+    let kick = samples.join("Kick.wav").display().to_string();
+    run(&mut p, "library.tag", json!({ "item": kick.clone(), "tag": "#1", "on": true })).unwrap();
+    let red = p.file_library_mut().tag_flat().iter().find(|t| t.name == "Red").map(|t| t.id).unwrap_or(0);
+    assert_eq!(red, 1, "Red is the first tag");
+    for name in ["#+1", "#"] {
+        run(&mut p, "library.setTag", json!({ "name": name })).unwrap();
+        run(&mut p, "library.tag", json!({ "item": kick.clone(), "tag": name, "on": true })).unwrap();
+        let found = run(&mut p, "library.search", json!({ "place": format!("tag:{name}") })).unwrap();
+        assert_eq!(names(&found), ["Kick.wav"], "{name} reaches its own tag");
+        run(&mut p, "library.removeTag", json!({ "name": name })).unwrap();
+        let flat = p.file_library_mut().tag_flat();
+        assert!(flat.iter().any(|t| t.name == "Red"), "removing {name} left Red: {flat:?}");
+        assert!(!flat.iter().any(|t| t.name == name), "{name} itself went");
+    }
+    let carried = run(&mut p, "library.search", json!({ "place": "tag:#1" })).unwrap();
+    assert_eq!(names(&carried), ["Kick.wav"], "the item still carries Red");
+    // A joined shape is the selectors', so no tag is named so.
+    assert!(run(&mut p, "library.setTag", json!({ "name": "#1+#2" })).is_err());
+    assert!(run(&mut p, "library.setTag", json!({ "name": "Fret", "rename": "#3+#4" })).is_err());
+    // A folder named `#notes` (or `#`) is reached by its name in every folder param.
+    for name in ["#notes", "#"] {
+        let made = run(&mut p, "library.addTagFolder", json!({ "name": name })).unwrap();
+        let id = made["folder"].as_u64().unwrap_or(0);
+        run(&mut p, "library.setFolderOpen", json!({ "folder": name, "open": false })).unwrap();
+        run(&mut p, "library.renameTagFolder", json!({ "folder": name, "rename": format!("{name} box") })).unwrap();
+        let renamed = format!("{name} box");
+        run(&mut p, "library.setTag", json!({ "name": format!("in {name}"), "folder": renamed.clone() })).unwrap();
+        let listed = run(&mut p, "library.tags", json!({})).unwrap();
+        let inside = listed["tags"].as_array().unwrap().iter().find(|t| t["name"] == json!(format!("in {name}")));
+        assert_eq!(inside.map(|t| t["folder"].clone()), Some(json!(id)), "made in {renamed}: {listed}");
+        run(&mut p, "library.removeTagFolder", json!({ "folder": renamed })).unwrap();
+    }
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&samples);
+}
+
 // A make with a `folder` lands in the folder from its first byte, its name asked of the
 // destination's own level ([#1254] review): a top-level folder's name is no show-stopper.
 #[test]

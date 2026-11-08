@@ -839,10 +839,11 @@ impl Library {
     }
 
     /// The folder `id`'s tags and folders move up when it is removed ([#1254]); the count
-    /// comes back for the menus' asking.
+    /// comes back for the menus' asking, the same [`Library::remove_tag_folder`] answers
+    /// with ([#1254] review).
     pub fn folder_carried(&mut self, id: u32) -> usize {
         self.load();
-        crate::store::tag_count(crate::store::folder_children(&self.store.tags, id).unwrap_or(&[]))
+        crate::store::folder_carried(&self.store.tags, id)
     }
 
     /// The sidebar's sections, in the order they show ([#1254]).

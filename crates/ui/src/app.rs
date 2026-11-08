@@ -802,7 +802,9 @@ impl App {
         // The map's kept layouts key on the old library's files; a replacement can read the
         // same place and the same revisions, so they are dropped with it ([#1254] review).
         self.sample_map.library_replaced();
-        self.browser.reconcile(&mut self.projects);
+        // Its tag ids are the new library's own: a number the old one used can name another
+        // tag there, so the browser keeps nothing by id ([#1254] review).
+        self.browser.forget_tags();
     }
 
     /// The open projects, to change (the browser's library, for the app).

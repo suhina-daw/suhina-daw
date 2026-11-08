@@ -88,6 +88,17 @@ fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
 pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
     let mut picked = swatch_strip(ui, current);
     let any_id = ui.scope_id().with("any-colour");
+    // A row that was not drawn in the pass before was closed with the palette around it (a
+    // menu's or a colour area's): it opens as new, "Any colour" shut and its field holding
+    // nothing of the last time, so no adjustment starts from an older colour than the one
+    // it edits now ([#1254] review). The palettes' callers need no close of their own.
+    let pass = ui.ctx().cumulative_pass_nr();
+    let seen_id = any_id.with("seen");
+    let shown_before = ui.data(|d| d.get_temp::<u64>(seen_id)).is_some_and(|seen| seen.saturating_add(1) >= pass);
+    ui.data_mut(|d| d.insert_temp(seen_id, pass));
+    if !shown_before {
+        ui.data_mut(|d| forget_state(d, any_id));
+    }
     let was_any_open = ui.data(|d| d.get_temp::<bool>(any_id)).unwrap_or(false);
     let mut any_open = was_any_open;
     // "+": any colour.
@@ -107,7 +118,18 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
         any_open = !any_open;
     }
     if any_open {
-        picked = stepped_color_field(ui, any_id.with("value"), current.map_or(Color32::GRAY, color32)).or(picked);
+        // A swatch clicked is the pick: the click's release would otherwise give the field's
+        // pending colour too, and an unfinished adjustment won over the swatch ([#1254]
+        // review).
+        let field = stepped_color_field(ui, any_id.with("value"), current.map_or(Color32::GRAY, color32));
+        picked = picked.or(field);
+    }
+    if let Some(picked) = picked {
+        // The field follows the pick: the next adjustment starts from it ([#1254] review).
+        ui.data_mut(|d| {
+            d.insert_temp(any_id.with("value"), color32(picked));
+            d.remove::<bool>(any_id.with("value").with("moved"));
+        });
     }
     // A closing "Any colour" leaves no stale colour behind, as the rows' field does
     // ([#1254] review).
@@ -179,7 +201,11 @@ pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str)
         open = !open;
     }
     if open {
-        picked = stepped_color_field(ui, id.with("value"), current.map_or(Color32::GRAY, color32)).or(picked);
+        // A swatch clicked is the pick, and its draft goes below: the click's release would
+        // otherwise give the field's pending colour, and an adjustment never committed won
+        // over the swatch ([#1254] review).
+        let field = stepped_color_field(ui, id.with("value"), current.map_or(Color32::GRAY, color32));
+        picked = picked.or(field);
     }
     if let Some(picked) = picked {
         // The field's own cache follows the pick, even while it is closed: the next custom
@@ -258,6 +284,67 @@ mod tests {
         unique.sort_by_key(|c| (c.0, c.1, c.2));
         unique.dedup();
         assert_eq!(unique.len(), palette.len(), "every swatch is its own colour");
+    }
+
+    /// A swatch clicked while the field holds an adjustment never committed is the pick: the
+    /// click's release gave the pending colour instead ([#1254] review).
+    #[test]
+    fn a_clicked_swatch_wins_over_a_pending_custom_colour() {
+        use egui_kittest::Harness;
+        let id = Id::new("test-select-colour");
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(400.0, 400.0)).build_ui_state(
+            |ui, picked: &mut Vec<Rgb>| {
+                if let Some(colour) = select_colour_row(ui, id, Some(Rgb(1, 2, 3)), "Select colour") {
+                    picked.push(colour);
+                }
+            },
+            Vec::new(),
+        );
+        harness.run();
+        harness.get_by_label("Select colour").click();
+        harness.run();
+        // An adjustment moved in the field and never let go of.
+        harness.ctx.data_mut(|d| {
+            d.insert_temp(id.with("value"), Color32::from_rgb(9, 9, 9));
+            d.insert_temp(id.with("value").with("moved"), true);
+        });
+        let swatch = swatches()[2];
+        harness.get_by_label(&format!("Colour {}", hex(swatch))).click();
+        harness.run();
+        assert_eq!(harness.state().as_slice(), [swatch], "the swatch alone was picked");
+    }
+
+    /// A palette closed with its "Any colour" open and an adjustment pending opens again
+    /// afresh: no older colour than the one it edits seeds a later pick ([#1254] review).
+    #[test]
+    fn a_palette_opened_again_starts_its_any_colour_afresh() {
+        use egui_kittest::Harness;
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(400.0, 400.0)).build_ui_state(
+            |ui, (shown, any_id): &mut (bool, Option<Id>)| {
+                *any_id = Some(ui.scope_id().with("any-colour"));
+                if *shown {
+                    let _ = swatch_row(ui, Some(Rgb(10, 20, 30)));
+                }
+            },
+            (true, None),
+        );
+        harness.run();
+        harness.get_by_label("Any colour").click();
+        harness.run();
+        let any_id = harness.state().1.unwrap_or(Id::NULL);
+        assert_eq!(harness.ctx.data(|d| d.get_temp::<bool>(any_id)), Some(true), "Any colour opened");
+        harness.ctx.data_mut(|d| {
+            d.insert_temp(any_id.with("value"), Color32::from_rgb(9, 9, 9));
+            d.insert_temp(any_id.with("value").with("moved"), true);
+        });
+        // The palette closes (its row is not drawn) and opens again.
+        harness.state_mut().0 = false;
+        harness.run();
+        harness.state_mut().0 = true;
+        harness.run();
+        assert_eq!(harness.ctx.data(|d| d.get_temp::<bool>(any_id)), Some(false), "Any colour shut");
+        assert_eq!(harness.ctx.data(|d| d.get_temp::<Color32>(any_id.with("value"))), None, "no old colour kept");
+        assert_eq!(harness.ctx.data(|d| d.get_temp::<bool>(any_id.with("value").with("moved"))), None);
     }
 
     #[test]

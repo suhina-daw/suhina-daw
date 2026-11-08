@@ -567,17 +567,17 @@ pub(crate) fn listed_keys(projects: &mut Projects, place: Option<&str>) -> Resul
             // ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)). A joined
             // `tag:#<id>+#<id>…` is a place of several: the ids only, because no two names
             // join into one param unambiguously, and every part names its tag — a part that
-            // is not an id's own number refuses rather than quietly searching the rest
-            // ([#1254] review).
+            // is not one of the library's ids refuses rather than quietly searching the rest
+            // ([#1254] review). The joined shape is the selectors' alone (`#` over digits),
+            // which no name may spell, so a name with `+` and `#` in it (`#notes+#rock`)
+            // reads as the name it is ([#1254] review).
             let given = &p["tag:".len()..];
-            let joined = given.contains('+') && given.split('+').all(|t| t.len() > 1 && t.starts_with('#'));
+            let joined = given.contains('+') && suhina_library::store::name_is_id_form(given);
             let ids = if joined {
                 let mut ids: Vec<u32> = Vec::new();
                 for part in given.split('+') {
-                    let part = &part[1..];
-                    let id = part
-                        .parse::<u32>()
-                        .map_err(|_| format!("a tag place's ids are numbers after #; {part:?} is not one"))?;
+                    let id = suhina_library::store::id_of_selector(part)
+                        .ok_or_else(|| format!("there is no tag {part:?}; library.tags lists them"))?;
                     if !ids.contains(&id) {
                         ids.push(id);
                     }
@@ -1294,11 +1294,12 @@ fn tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
 
 /// The tag a `tag`-sounding param names: `#<id>` for the id's own, else the name (names are
 /// unique, [#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)). The id's form is
-/// `#` over digits and nothing else ([#1254] review): any other leading-# text is a name the
-/// store hands out, and the name answers before anything else is tried.
+/// `#` over ASCII digits and nothing else, the shape no name may spell ([#1254] review:
+/// `#+1` parsed as the id 1 and reached Red instead of the tag named so); any other text,
+/// leading-# or not, is a name.
 pub(crate) fn resolve_tag_param(projects: &mut Projects, given: &str) -> Option<u32> {
-    if let Some(digits) = given.strip_prefix('#').filter(|d| d.parse::<u32>().is_ok()) {
-        let id: u32 = digits.parse().ok()?;
+    if suhina_library::store::name_is_id_form(given) {
+        let id = suhina_library::store::id_of_selector(given)?;
         let library = projects.file_library_mut();
         suhina_library::store::tag_by_id(&library.tags(), id).map(|_| id)
     } else {
@@ -1377,11 +1378,13 @@ pub(crate) fn record_use(library: &mut Library, recent: crate::Recent, params: &
 /// ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254) review: folder params know
 /// folders only, so a tag of the same name does not shadow the folder). A name that more
 /// than one folder has is refused: the forest order would pick one of them, and a
-/// reordering would change which ([#1254] review), the id's own says which.
-/// The paths' errors are the callers'.
+/// reordering would change which ([#1254] review), the id's own says which. The id's form is
+/// the selectors' shape alone (`#` over ASCII digits); a folder named `#notes` or `#` is
+/// reached by its name ([#1254] review). The paths' errors are the callers'.
 pub(crate) fn resolve_folder_param(projects: &mut Projects, given: &str) -> Result<u32, String> {
-    if let Some(id) = given.strip_prefix('#') {
-        let id: u32 = id.parse().map_err(|_| format!("a folder's id is a number after #; {given:?} is not one"))?;
+    if suhina_library::store::name_is_id_form(given) {
+        let id = suhina_library::store::id_of_selector(given)
+            .ok_or_else(|| format!("there is no tag folder {given:?}; library.tags lists the folders"))?;
         let library = projects.file_library_mut();
         if suhina_library::store::folder_by_id(&library.tags(), id).is_some() {
             Ok(id)
