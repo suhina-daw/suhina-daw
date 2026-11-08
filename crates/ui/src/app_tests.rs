@@ -1034,3 +1034,60 @@ fn a_new_device_starts_on_a_file_in_the_library_the_unpacked_or_else_the_pack() 
     assert_eq!(lists.irs.first().map(|set| (set.name.clone(), set.files.len())), Some(("Suhina".to_owned(), 26)));
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A stock preset that names no file — the trims — lands *loaded* too: the placed Cab Loader
+/// runs the folder's first impulse response with the trim's values beside it, and the undo
+/// takes the whole add back (docs/spec/nam-amp-and-cab.md › The file a device starts on).
+#[test]
+fn a_trim_preset_placed_starts_the_cab_on_the_folders_first_file() {
+    use suhina_engine::model::*;
+
+    let dir = std::env::temp_dir().join(format!("suhina-app-trim-drop-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("Amp models"), dir.join("Cabinets"));
+    for (id, folder) in [("nam-amp-modeler", &models), ("nam-cab-loader", &irs)] {
+        let suhina = folder.join("Suhina");
+        std::fs::create_dir_all(&suhina).unwrap();
+        for (name, bytes) in suhina_device_registry::pack_files(id) {
+            std::fs::write(suhina.join(name), bytes).unwrap();
+        }
+    }
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    app.set_library_base(dir.clone());
+    app.drop_items(
+        std::slice::from_ref(&drop::BrowserItem {
+            key: "stock:nam-cab-loader/rumble-cut".into(),
+            name: "Rumble Cut".into(),
+            kind: drop::ItemKind::Preset,
+            plugin: false,
+        }),
+        DropTarget::Track(TrackId(1)),
+        false,
+    );
+    let session = app.session().unwrap();
+    let channel = session.project().tracks[0].channel.unwrap();
+    let device = session.project().channel(channel).unwrap().devices.first().unwrap();
+    let state = device.state.as_ref().map(|b| String::from_utf8_lossy(b.as_ref()).into_owned()).unwrap_or_default();
+    assert_eq!(state, "Cabinets/Suhina/Blackat Leon S7.wav", "the start file stores relative to the library");
+    let cut = device.params.iter().find(|p| p.id == "cutBass").map(|p| p.value).unwrap_or_default();
+    assert_eq!(cut, -6.0, "the trim's values ride beside the file");
+    // One undo takes the whole add (the file and the values) back.
+    app.run(&crate::kit::widgets::Action::new("edit.undo", serde_json::json!({})));
+    let channel = app.session().unwrap().project().tracks[0].channel.unwrap();
+    assert!(
+        app.session().unwrap().project().channel(channel).unwrap().devices.is_empty(),
+        "the device with its file went"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}

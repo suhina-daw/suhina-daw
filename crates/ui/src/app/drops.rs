@@ -733,24 +733,42 @@ impl App {
 
     /// A file-backed device dropped from the browser starts on the file its folder lists first
     /// ([docs/spec/nam-amp-and-cab.md]): the plan's plain device adds and their `track.add`
-    /// twin on empty space gain the file, in the same command one undo step takes back. A plan
-    /// that already starts a device on a preset, a stock row or an .sd graph stands.
+    /// twin on empty space gain that file, in the same command one undo step takes back. A
+    /// stock preset that names one brings its own; a stock preset (or a user's preset file)
+    /// that names none keeps the device — without a file when its values carry none — and an
+    /// .sd or plug-in row stands.
     fn default_the_files(&mut self, plan: &mut drop::DropPlan) {
         for (command, params) in plan.commands.iter_mut() {
+            // A stock preset decides its own start ([ADR 0036] › a preset may name a file):
+            // one that names one brings it; one that names none — the trims — starts on the
+            // same first file a plain device does, its values beside ([ADR 0014] › the
+            // loader: a preset is values, the file the device runs is its state).
+            if let Some(stock_key) = params.get("stock").and_then(Value::as_str) {
+                let names_a_file =
+                    suhina_device_registry::stock_preset(stock_key).is_none_or(|stock| stock.preset.file.is_some());
+                if names_a_file {
+                    continue;
+                }
+                if params["file"].as_str().is_none()
+                    && let Some(file) = self.device_default_file(stock_key.split_once('/').map_or("", |(id, _)| id))
+                {
+                    params["file"] = json!(file);
+                }
+                continue;
+            }
+            if params.get("preset").is_some()
+                || params.get("file").is_some()
+                || params.get("path").is_some()
+                || params.get("sd").is_some()
+            {
+                continue;
+            }
             let key = match *command {
                 "device.add" => "id",
                 "track.add" => "device",
                 _ => continue,
             };
             let Some(id) = params.get(key).and_then(Value::as_str) else { continue };
-            if params.get("file").is_some()
-                || params.get("preset").is_some()
-                || params.get("stock").is_some()
-                || params.get("path").is_some()
-                || params.get("sd").is_some()
-            {
-                continue;
-            }
             if let Some(file) = self.device_default_file(id) {
                 params["file"] = json!(file);
             }

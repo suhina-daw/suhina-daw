@@ -497,7 +497,20 @@ impl App {
                 let preset = json!({ "preset": path.display().to_string(), "voice": voice });
                 Some(("device.add", preset.clone(), preset))
             }
-            (Item::Stock(key), _) => Some(("device.add", json!({ "stock": key }), json!({ "stock": key }))),
+            (Item::Stock(key), _) => {
+                // A stock preset that names a file brings it ([ADR 0036] › a preset may name
+                // a file); one that names none — the trims — starts the placed device on the
+                // same first file a plain device does, its values beside it
+                // ([docs/spec/nam-amp-and-cab.md] › The file a device starts on).
+                let (id, _) = key.split_once('/').map_or(("", ""), |(id, rest)| (id, rest));
+                let named = suhina_device_registry::stock_preset(key).is_none_or(|s| s.preset.file.is_some());
+                let mut params = json!({ "stock": key });
+                if !named && let Some(file) = self.device_default_file(id) {
+                    params["file"] = json!(file);
+                }
+                let on_new_track = params.clone();
+                Some(("device.add", params, on_new_track))
+            }
             (Item::File(path), "preset") => {
                 let preset = json!({ "preset": path.display().to_string() });
                 Some(("device.add", preset.clone(), preset))

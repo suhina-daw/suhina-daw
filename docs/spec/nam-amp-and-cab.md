@@ -276,8 +276,11 @@ Everything the user does is one of the existing device commands plus one new `Ed
   quick-add choice of a device give it `file` — the first pack's **first** file of the folder
   the device lists from (the setting's or the default's, the same one the pack row reads), so a
   new Amp Modeler or Cab Loader lands loaded when that folder holds any, and without files
-  lands empty as above. A preset or a stock preset decides its own: they carry parameters and,
-  with [ADR 0036] › **A preset may name a file**, the file their `file` names.
+  lands empty as above. A stock preset that names a file brings that one
+  ([ADR 0036] › **A preset may name a file**); a stock preset that names none — the trims —
+  lands on the same first file, its values beside, so a placed Cab Loader is heard. A user's
+  preset file decides its own: a preset is values, the file the device runs is its state
+  ([ADR 0014] › the loader), and the add's `file` would write over what the preset's own named.
 - `device.setNamFile{track, device, path}` — the file a device runs:
   — a pack's file by its library key (`builtin:<device id>/<file name>`), or a path.
   - The device must be one of the two; the path must end in `.nam` for an Amp Modeler and
