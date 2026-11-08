@@ -486,7 +486,14 @@ fn with_stacked_notes_off_what_a_key_places_replaces_what_is_under_it() {
     let mut state = focused_on(&clip);
     state.selected = BTreeSet::from([0]);
     let paste = state.key_action("selection.paste", &clip, 0.0, Some(2)).map(|a| a.params);
-    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.0, "replace": true })));
+    // The copies stay selected: they make room once they are let go, not now.
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.0 })));
+    assert!(state.settle_pending);
+    // With nothing selected a command replaces at once.
+    let mut state = focused_on(&clip);
+    let quantise = state.quantize_selected().map(|a| a.params);
+    assert_eq!(quantise.map(|p| p["replace"].clone()), Some(json!(true)));
+    assert!(!state.settle_pending);
 }
 
 fn span_state(clip: &PianoClip, start: f64, end: f64) -> PianoRollState {
@@ -711,15 +718,58 @@ fn a_fine_step_longer_stops_at_the_next_note_of_the_key() {
 }
 
 #[test]
-fn a_key_resize_replaces_what_is_under_it_unless_notes_stack() {
+fn a_key_resize_makes_room_once_let_go_unless_notes_stack() {
     let clip = clip(vec![note(0.0, 1.0, 60)]);
     let mut state = focused_on(&clip);
     state.selected = BTreeSet::from([0]);
     let longer = state.key_action("pianoRoll.longer", &clip, 0.0, None).map(|a| a.params);
-    assert_eq!(longer.map(|p| p["replace"].clone()), Some(json!(true)));
+    assert_eq!(longer.map(|p| p["replace"].clone()), Some(Value::Null), "not while selected");
+    assert!(state.settle_pending, "but once let go");
+    state.settle_pending = false;
     state.notes_replace = false;
     let longer = state.key_action("pianoRoll.longer", &clip, 0.0, None).map(|a| a.params);
     assert_eq!(longer.map(|p| p["replace"].clone()), Some(Value::Null));
+    assert!(!state.settle_pending, "stacked notes allowed: nothing to make room for");
+}
+
+/// Selected notes edited with stacked notes off make room under them once they are let go, and
+/// only where they overlap a note of their key: a move through other notes erases nothing on
+/// the way.
+#[test]
+fn selected_notes_make_room_once_let_go_and_only_where_they_overlap() {
+    let on_top = clip(vec![note(0.0, 1.0, 62), note(0.0, 1.0, 62)]);
+    let mut state = focused_on(&on_top);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&on_top, &mut actions);
+    state.settle_frame(&on_top, &mut actions);
+    assert!(actions.is_empty(), "nothing while the note stays selected");
+    state.selected.clear();
+    state.settle_frame(&on_top, &mut actions);
+    assert_eq!(actions.iter().map(|a| a.id).collect::<Vec<_>>(), ["note.makeRoom"]);
+    assert_eq!(actions[0].params["notes"].as_array().map(Vec::len), Some(1), "by id");
+    // Moved off again before being let go: nothing to make room for.
+    let apart = clip(vec![note(0.0, 1.0, 62), note(0.0, 1.0, 60)]);
+    let mut state = focused_on(&apart);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&apart, &mut actions);
+    state.settle_frame(&apart, &mut actions);
+    state.selected.clear();
+    state.settle_frame(&apart, &mut actions);
+    assert!(actions.is_empty(), "no overlap, no command");
+    // Deleted while waiting: nothing to make room for.
+    let mut state = focused_on(&on_top);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&on_top, &mut actions);
+    state.settle_frame(&on_top, &mut actions);
+    assert!(state.delete_selected().is_some());
+    state.settle_frame(&on_top, &mut actions);
+    assert!(actions.is_empty(), "a deleted note makes no room");
 }
 
 /// An arrow key takes the first note to the next line, the rest keeping their distance to it, and

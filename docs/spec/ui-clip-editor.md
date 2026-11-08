@@ -632,7 +632,11 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **Built ([#1113](https://github.com/suhina-daw/suhina-daw/issues/1113)):** with **Allow stacked
   notes** off (the default), a note drawn, moved, copied, resized, pasted, duplicated, quantised,
   transposed, made legato, fitted to the scale, inverted, reversed or stretched (×2, ÷2) replaces
-  the notes of its key under it: a note it covers whole is removed, one that starts
+  the notes of its key under it. Notes that stay selected after the edit (a move, a copy, a paste,
+  a nudge with the arrow keys, a tool on the selection) do so once they are let go (another
+  selection, none, another clip, the piano roll closed), with one `note.makeRoom` and only where
+  they still overlap, so a move through other notes erases nothing on the way; a note drawn, a
+  paint stroke and a tool with nothing selected replace at once. Replacing: a note it covers whole is removed, one that starts
   before it ends where it starts, and one that runs on past it starts where it ends. A paint stroke
   paints only the gaps: it adds nothing that would start inside a note. On, notes of a key may overlap. The commands take this as `replace`, so the CLI and MCP choose too; left out,
   notes may overlap.
@@ -1159,6 +1163,7 @@ note another writer deletes leaves it.
 | `note.cut` | clip, `notes` | Copies them and deletes them |
 | `note.paste` | clip, `time?`, `replace?` | Adds the copied notes, the first at `time` (default: right after the copied notes); returns their indices and ids |
 | `note.duplicate` | clip, `notes`, `beats?`, `semitones?` or `keys?`, `replace?` | Adds a copy right after the notes' end; with `beats` or `semitones`, that far from the notes instead (`keys`: the key each copy goes to, one per entry of `notes`, as a copy through folded rows) (a copy made by dragging; the copies keep length, velocity and mute). Returns the copies' indices and ids |
+| `note.makeRoom` | clip, `notes` | Makes room under the named notes as `replace` does (a note of their key covered whole goes, one partly covered is cut); a named note no longer in the clip is left out; returns the removed notes as `replaced`. The piano roll sends it when notes edited while selected are let go |
 | `note.split` | clip, `notes`, `at` | Splits each named note that spans the beat `at` into two at `at`; a note that starts or ends at `at` is left alone; the first half keeps the note's id; returns the indices and ids of the second halves |
 | `clip.scale` | clip | The clip's scale, `{ "root": "D", "mode": "dorian" }` or `null`, and the project's `default_scale` the same way; changes nothing |
 | `clip.setScale` | clip, `root?`, `mode?`, `off?` | Sets the clip's scale: `root` (a key name such as `"C"`, `"F#"` or `"Bb"`, or 0 to 11) and `mode` (one of the names `note.fitToScale` takes as `scale`), the one left out kept from the scale the clip has (C, major when it has none); `off: true` clears it, and is an error with `root` or `mode`; one of them is needed. A content other clips play is copied for this clip first (› Scale and key). Returns the scale and whether it changed; the same scale again changes nothing and is no undo step |

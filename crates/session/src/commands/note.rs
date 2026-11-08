@@ -192,6 +192,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "note.makeRoom",
+        label: "Make room for notes of a MIDI clip: the notes of their keys under them are removed or cut, as replace does; notes no longer in the clip are left out",
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
+        kind: CommandKind::EDIT,
+        run: notes::make_room,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "note.split",
         label: "Split notes of a MIDI clip at a beat, each note that spans it into two; the result gives the new notes' indices and ids; each first half keeps its note's id",
         params: &[

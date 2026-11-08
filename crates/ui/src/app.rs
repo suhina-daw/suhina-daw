@@ -3063,6 +3063,7 @@ impl App {
                 // a note its audition sounds goes off.
                 self.piano_roll.focused = false;
                 actions.extend(self.piano_roll.stop_audition());
+                actions.extend(self.piano_roll.settle_on_hide());
                 self.arrangement.focus = None;
                 // In a row under the view, the splitter stays along the bottom, to drag it open.
                 if let Some(layout) = &css_workspace {

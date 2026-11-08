@@ -586,17 +586,63 @@ impl PianoRollState {
         self.sweep_wanted = Some(keys);
     }
 
-    /// Whether notes this command places replace what is under them (Allow stacked notes off).
-    pub(crate) fn replacing(&self, params: &mut Value) {
+    /// With stacked notes off, what an edit of the selected notes does to the notes under them: it
+    /// makes no room while they stay selected (a move through other notes erases nothing on the
+    /// way), only once they are let go ([`Self::settle_frame`]). With nothing selected, the
+    /// command replaces at once (`replace`).
+    pub(crate) fn replacing(&mut self, params: &mut Value) {
+        if !self.notes_replace {
+            return;
+        }
+        if self.acting().is_empty() {
+            params["replace"] = json!(true);
+        } else {
+            self.settle_pending = true;
+        }
+    }
+
+    /// `replace` at once, for notes that are not left selected (a note drawn, a paint stroke).
+    pub(crate) fn replacing_now(&self, params: &mut Value) {
         if self.notes_replace {
             params["replace"] = json!(true);
         }
     }
 
+    /// Once a frame: the notes edited while selected, once let go (another selection, none, another
+    /// clip), make room under them with one `note.makeRoom`, when they overlap a note of their key.
+    /// They are named by id, taken once the clip shows them (a paste's copies a frame later), so a
+    /// note deleted meanwhile is left out.
+    pub(super) fn settle_frame(&mut self, clip: &PianoClip, actions: &mut Vec<Action>) {
+        let acting = self.acting().clone();
+        if let Some(settling) = &mut self.settling {
+            let let_go = settling.address != clip.address || settling.notes != acting;
+            if settling.ids.is_empty() && !let_go {
+                settling.ids = settling.notes.iter().filter_map(|i| clip.notes.id(*i)).collect();
+            }
+            if let_go {
+                actions.extend(self.settling.take().and_then(|s| s.action(clip)));
+            }
+        }
+        if std::mem::take(&mut self.settle_pending) && !self.acting().is_empty() {
+            let notes = self.acting().clone();
+            match &self.settling {
+                Some(settling) if settling.notes == notes && settling.address == clip.address => {}
+                _ => self.settling = Some(Settling { address: clip.address.clone(), notes, ids: Vec::new() }),
+            }
+        }
+    }
+
+    /// For a piano roll no longer shown: the notes edited while selected make room now.
+    pub fn settle_on_hide(&mut self) -> Option<Action> {
+        self.settle_pending = false;
+        let settling = self.settling.take()?;
+        (!settling.ids.is_empty()).then(|| settling.make_room())
+    }
+
     /// `note.add` for `notes`, under the rule for stacked notes.
     pub(super) fn add_action(&self, clip: &PianoClip, notes: &[Note]) -> Action {
         let mut params = add_params(clip, notes);
-        self.replacing(&mut params);
+        self.replacing_now(&mut params);
         Action::new("note.add", params)
     }
 
