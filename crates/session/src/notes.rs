@@ -458,23 +458,7 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
     }
     edit_notes(&mut session.project, params, |notes| {
         let moved = indices(params, notes)?;
-        // `keys`: one per entry of `notes`, in the order given; a repeated index takes its last.
-        let mut key_of: std::collections::HashMap<usize, u8> = std::collections::HashMap::new();
-        if let Some(keys) = &keys {
-            let named = Args::new(params)
-                .value("notes")
-                .and_then(Value::as_array)
-                .ok_or("notes must be a list of note indices to give keys")?;
-            if keys.len() != named.len() {
-                return Err(
-                    format!("keys must have one key per note: {} notes, {} keys", named.len(), keys.len()).into()
-                );
-            }
-            let mut finder = Named::new(notes, NoteId);
-            for (value, key) in named.iter().zip(keys) {
-                key_of.insert(finder.at(value).map_err(note_miss)?, *key);
-            }
-        }
+        let key_of = keys_by_note(params, notes, keys.as_deref())?;
         let mut changed = Vec::with_capacity(moved.len());
         for &index in &moved {
             let note = notes.get(index).ok_or("a note is missing")?;
@@ -657,7 +641,32 @@ pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Valu
 }
 
 /// `params.velocities`: one velocity, 1 to 127, per entry of `notes`; `None` when left out.
-/// `params.keys` of `note.move`: one key, 0 to 127, per entry of `notes`; `None` when left out.
+/// The key each note of `keys` goes to, by its index: one key per entry of `params.notes`, in the
+/// order given (a repeated index takes its last); empty when there are no `keys`. Shared by
+/// `note.move` and `note.duplicate`, the piano roll's moves and copies through folded rows.
+fn keys_by_note(
+    params: &Value,
+    notes: &Notes,
+    keys: Option<&[u8]>,
+) -> Result<std::collections::HashMap<usize, u8>, CommandError> {
+    let mut key_of = std::collections::HashMap::new();
+    let Some(keys) = keys else { return Ok(key_of) };
+    let named = Args::new(params)
+        .value("notes")
+        .and_then(Value::as_array)
+        .ok_or("notes must be a list of note indices to give keys")?;
+    if keys.len() != named.len() {
+        return Err(format!("keys must have one key per note: {} notes, {} keys", named.len(), keys.len()).into());
+    }
+    let mut finder = Named::new(notes, NoteId);
+    for (value, key) in named.iter().zip(keys) {
+        key_of.insert(finder.at(value).map_err(note_miss)?, *key);
+    }
+    Ok(key_of)
+}
+
+/// `params.keys` of `note.move` and `note.duplicate`: one key, 0 to 127, per entry of `notes`;
+/// `None` when left out.
 fn key_list(params: &Value) -> Result<Option<Vec<u8>>, CommandError> {
     let list = match Args::new(params).value("keys") {
         None => return Ok(None),
@@ -888,10 +897,15 @@ pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, 
     if beats.is_some_and(|b| b.abs() > MAX_BEAT) {
         return Err(format!("beats must be within ±{MAX_BEAT}").into());
     }
+    let keys = key_list(params)?;
+    if keys.is_some() && semitones.is_some() {
+        return Err("give semitones or keys, not both".into());
+    }
     let notes = notes_of(&session.project, params)?;
     let chosen = indices(params, notes)?;
+    let key_of = keys_by_note(params, notes, keys.as_deref())?;
     let clipboard = clipboard_of(notes, &chosen)?;
-    if beats.is_none() && semitones.is_none() {
+    if beats.is_none() && semitones.is_none() && keys.is_none() {
         let added = placed(&clipboard, clipboard.from + clipboard.span)?;
         return append(session, params, added);
     }
@@ -902,11 +916,15 @@ pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, 
         time = 0.0;
     }
     let mut added = placed(&clipboard, time)?;
-    for note in &mut added {
-        note.key = u8::try_from(i64::from(note.key) + semitones)
-            .ok()
-            .filter(|k| *k <= 127)
-            .ok_or("a copy would leave the keys 0 to 127")?;
+    // The copies are in the order of `chosen`; with `keys` each goes to its original's key.
+    for (note, index) in added.iter_mut().zip(&chosen) {
+        note.key = match key_of.get(index) {
+            Some(key) => *key,
+            None => u8::try_from(i64::from(note.key) + semitones)
+                .ok()
+                .filter(|k| *k <= 127)
+                .ok_or("a copy would leave the keys 0 to 127")?,
+        };
     }
     append(session, params, added)
 }

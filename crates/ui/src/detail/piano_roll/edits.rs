@@ -104,26 +104,11 @@ pub(super) fn second_click(
 /// grid line, and from there snaps to whichever is nearer: a grid line, or its own offset from
 /// the grid a whole number of steps away. So it can be put back on the grid by dragging, or moved
 /// keeping its feel. Never before the start for any of `moved`.
-pub(super) fn magnetic(start: f64, raw: f64, stepped: f64, moved: &[Note], grid: TimelineGrid) -> f64 {
-    let on_grid = (grid.place(start, false, false) - start).abs() < ON_GRID;
-    if on_grid || raw == 0.0 {
-        return stepped;
-    }
-    let target = start + raw;
-    let first = if raw > 0.0 { grid.next_line(start) } else { grid.previous_line(start) };
-    let reached = if raw > 0.0 { target >= first } else { target <= first };
-    let beats = if reached {
-        let line = grid.place(target, false, false) - start;
-        if (line - raw).abs() <= (stepped - raw).abs() { line } else { stepped }
-    } else {
-        raw
-    };
+pub(super) fn magnetic(start: f64, raw: f64, moved: &[Note], grid: TimelineGrid) -> f64 {
+    let beats = magnetic_by(start, raw, grid, false);
     let earliest = moved.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
     if earliest.is_finite() { beats.max(-earliest) } else { beats }
 }
-
-/// How close to a grid line a start counts as on it, in beats.
-const ON_GRID: f64 = 1e-6;
 
 /// The key a note on `key` goes to with a move of `keys` semitones, or, with the rows folded,
 /// `rows` shown rows (each note through the rows from its own, stopping at the top and bottom).
@@ -177,7 +162,7 @@ pub(super) fn effect(
             let keys = clip.notes.get(*grabbed).map_or(rows, |n| layout.rows.semitones(n.key, rows));
             let (beats, keys) = move_delta(raw, keys, chosen, grid, free);
             let beats = match clip.notes.get(*grabbed) {
-                Some(g) if !free && grid.snaps => magnetic(g.time, raw, beats, chosen, grid),
+                Some(g) if !free && grid.snaps => magnetic(g.time, raw, chosen, grid),
                 _ => beats,
             };
             Effect::Move(beats, keys, layout.rows.folded().then_some(rows))
@@ -265,9 +250,9 @@ pub(super) fn commit(
                 state.span_moved(beats);
             }
             params["beats"] = json!(round_beat(beats));
-            // Folded, each note steps through the shown rows on its own, so none lands on a key
-            // the fold hides; a copy goes by the grabbed note's semitones.
-            if rows.is_some() && !*copy {
+            // Folded, each note (or its copy) steps through the shown rows on its own, so none
+            // lands on a key the fold hides.
+            if rows.is_some() {
                 params["keys"] = json!(landing);
             } else {
                 params["semitones"] = json!(keys);

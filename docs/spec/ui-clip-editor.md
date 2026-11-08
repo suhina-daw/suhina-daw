@@ -629,15 +629,17 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   step. One `note.resize` with `lengths`, one undo step; with snapping off, a whole step either way.
   With **Alt** held too, the end goes a 1/128 note either way, off the grid, under the same limits.
 - **Built ([#1113](https://github.com/suhina-daw/suhina-daw/issues/1113)):** with **Allow stacked
-  notes** off (the default), a note drawn, moved, resized, pasted, duplicated, quantised or made
-  legato replaces the notes of its key under it: a note it covers whole is removed, one that starts
+  notes** off (the default), a note drawn, moved, copied, resized, pasted, duplicated, quantised,
+  transposed, made legato, fitted to the scale, inverted, reversed or stretched (×2, ÷2) replaces
+  the notes of its key under it: a note it covers whole is removed, one that starts
   before it ends where it starts, and one that runs on past it starts where it ends. A paint stroke
   paints only the gaps: it adds nothing that would start inside a note. On, notes of a key may overlap. The commands take this as `replace`, so the CLI and MCP choose too; left out,
   notes may overlap.
 - **Built ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** the pointer over the
   first few pixels of a note shows a resize cursor too; dragging there moves the start of every
   selected note by the same amount and keeps each end. The dragged note's start snaps to the grid
-  (Alt: freely); dragged onto or past its end it goes to the last grid line before the end. No
+  as a move does (magnetically: one off the grid moves freely to the first line, then to a line or
+  its own offset; Alt: freely); dragged onto or past its end it goes to the last grid line before the end. No
   start goes before beat 0 and no note gets shorter than a hundredth of a beat, for the whole
   selection. Letting go is one `note.resize` with `startBy`, one undo step. Each edge zone is
   5 px, at most a third of the note's width, so a small note keeps a middle that moves it.
@@ -1001,9 +1003,9 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Click, Shift+click, Ctrl+click | Selects a note, adds or takes it out of the selection (a note not selected is selected as the button goes down; a selected note keeps the selection until the click ends, so it can be dragged) |
 | Drag from an empty spot | Selects the notes in the rectangle |
 | Drag a note | Moves the selection (time snapped by grid steps; a grabbed note off the grid moves freely to the first grid line, then snaps to a line or to its own offset from the grid, whichever is nearer, so it can be put back on the grid; pitch by semitones; folded, each note by the same number of shown rows from its own key, so none lands on a hidden key) |
-| Drag a note's right edge | Changes the selection's length |
+| Drag a note's right edge | Changes the selection's length (the grabbed end snaps as a move does: magnetically when it is off the grid) |
 | Drag a note's left edge | Moves the selection's starts, keeping their ends |
-| Ctrl+drag a note (Cmd on macOS) | Copies the selection to where it is let go |
+| Ctrl+drag a note (Cmd on macOS) | Copies the selection to where it is let go (folded, each copy by the same number of shown rows from its note's key, as a move) |
 | Alt+drag a note up, down | Changes the selection's velocity (Alt held at the start) |
 | Alt while drawing, or pressed during a drag | No snapping |
 | Ctrl+1, Ctrl+2 | Makes the grid finer, coarser (Narrow grid, Widen grid; after a click in the piano roll) |
@@ -1152,7 +1154,7 @@ note another writer deletes leaves it.
 | `note.copy` | clip, `notes` | Copies them to the note clipboard; changes nothing and is no undo step |
 | `note.cut` | clip, `notes` | Copies them and deletes them |
 | `note.paste` | clip, `time?`, `replace?` | Adds the copied notes, the first at `time` (default: right after the copied notes); returns their indices and ids |
-| `note.duplicate` | clip, `notes`, `beats?`, `semitones?`, `replace?` | Adds a copy right after the notes' end; with `beats` or `semitones`, that far from the notes instead (a copy made by dragging; the copies keep length, velocity and mute). Returns the copies' indices and ids |
+| `note.duplicate` | clip, `notes`, `beats?`, `semitones?` or `keys?`, `replace?` | Adds a copy right after the notes' end; with `beats` or `semitones`, that far from the notes instead (`keys`: the key each copy goes to, one per entry of `notes`, as a copy through folded rows) (a copy made by dragging; the copies keep length, velocity and mute). Returns the copies' indices and ids |
 | `note.split` | clip, `notes`, `at` | Splits each named note that spans the beat `at` into two at `at`; a note that starts or ends at `at` is left alone; the first half keeps the note's id; returns the indices and ids of the second halves |
 | `clip.scale` | clip | The clip's scale, `{ "root": "D", "mode": "dorian" }` or `null`, and the project's `default_scale` the same way; changes nothing |
 | `clip.setScale` | clip, `root?`, `mode?`, `off?` | Sets the clip's scale: `root` (a key name such as `"C"`, `"F#"` or `"Bb"`, or 0 to 11) and `mode` (one of the names `note.fitToScale` takes as `scale`), the one left out kept from the scale the clip has (C, major when it has none); `off: true` clears it, and is an error with `root` or `mode`; one of them is needed. A content other clips play is copied for this clip first (› Scale and key). Returns the scale and whether it changed; the same scale again changes nothing and is no undo step |

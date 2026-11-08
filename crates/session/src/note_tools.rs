@@ -407,7 +407,8 @@ pub(crate) fn fit_to_scale(session: &mut Session, params: &Value) -> Result<Valu
                 moved += 1;
             }
         }
-        Ok(json!({ "notes": named, "moved": moved }))
+        let replaced = if replaces(params) && moved > 0 { replace_under(notes, &named) } else { Vec::new() };
+        Ok(json!({ "notes": after_removal(&named, &replaced), "moved": moved, "replaced": replaced }))
     })
 }
 
@@ -437,7 +438,8 @@ pub(crate) fn invert(session: &mut Session, params: &Value) -> Result<Value, Com
                 slot.key = key;
             }
         }
-        Ok(json!({ "notes": named }))
+        let replaced = if replaces(params) { replace_under(notes, &named) } else { Vec::new() };
+        Ok(json!({ "notes": after_removal(&named, &replaced), "replaced": replaced }))
     })
 }
 
@@ -467,7 +469,8 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
                 note.time = time;
             }
         }
-        Ok(json!({ "notes": named }))
+        let replaced = if replaces(params) { replace_under(notes, &named) } else { Vec::new() };
+        Ok(json!({ "notes": after_removal(&named, &replaced), "replaced": replaced }))
     })
 }
 
@@ -548,7 +551,8 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
                 note.duration = length;
             }
         }
-        Ok(json!({ "notes": named }))
+        let replaced = if replaces(params) { replace_under(notes, &named) } else { Vec::new() };
+        Ok(json!({ "notes": after_removal(&named, &replaced), "replaced": replaced }))
     })
 }
 

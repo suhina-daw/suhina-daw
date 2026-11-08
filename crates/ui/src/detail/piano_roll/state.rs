@@ -558,12 +558,12 @@ impl PianoRollState {
                 let mut keys = Vec::with_capacity(acting.len());
                 for &index in &acting {
                     let note = clip.notes.get(index)?;
-                    let step = rows.semitones(note.key, up);
+                    let key = super::edits::moved_key(&rows, note.key, up, Some(up));
                     // A note at the top or the bottom row stops the whole move, as the plain one does.
-                    if step == 0 {
+                    if key == note.key {
                         return None;
                     }
-                    keys.push(i32::from(note.key) + step);
+                    keys.push(i32::from(key));
                 }
                 // The notes sound where they go, as any other move by the keys does.
                 self.audition_keys(keys.iter().filter_map(|k| u8::try_from(*k).ok()));

@@ -68,7 +68,7 @@ pub fn start_by(raw: f64, grabbed: &Note, moved: &[Note], grid: TimelineGrid, fr
         return 0.0;
     }
     let end = grabbed.time + grabbed.duration;
-    let mut start = grid.place(grabbed.time + raw, free, false);
+    let mut start = (grabbed.time + super::magnetic_by(grabbed.time, raw, grid, free)).max(0.0);
     if grid.snaps && !free && start >= end - EPSILON {
         start = grid.previous_line(end);
     }

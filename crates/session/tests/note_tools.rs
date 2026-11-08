@@ -543,6 +543,51 @@ fn a_move_with_keys_takes_each_note_to_its_own_key() {
     }
 }
 
+/// `note.duplicate` with `keys` puts each copy on its own key (a copy through a scale), the
+/// originals untouched; keys with semitones are refused.
+#[test]
+fn a_duplicate_with_keys_puts_each_copy_on_its_own_key() {
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 64)]));
+    run(
+        &mut session,
+        "note.duplicate",
+        json!({ "track": 1, "index": 0, "notes": [0, 1], "beats": 1.0, "keys": [62, 65] }),
+    )
+    .unwrap();
+    let all = notes_of(&session, 1);
+    let copies: Vec<(f64, u8)> = all.iter().filter(|n| n.time == 1.0).map(|n| (n.time, n.key)).collect();
+    assert_eq!(copies, [(1.0, 62), (1.0, 65)], "{all:?}");
+    assert_eq!(all.iter().filter(|n| n.time == 0.0).map(|n| n.key).collect::<Vec<_>>(), [60, 64], "originals stay");
+    let both = json!({ "track": 1, "index": 0, "notes": [0], "beats": 1.0, "keys": [62], "semitones": 1 });
+    assert!(run(&mut session, "note.duplicate", both).is_err());
+}
+
+/// With `replace` (stacked notes off) the note tools that move or lengthen notes make room as a
+/// move does: a note they cover whole on its key goes, and the result names it.
+#[test]
+fn the_note_tools_replace_what_they_cover_when_asked() {
+    // Stretch: the first C, twice as long, covers the second C.
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(1.0, 1.0, 60)]));
+    let out = run(
+        &mut session,
+        "note.stretch",
+        json!({ "track": 1, "index": 0, "notes": [0], "factor": 2, "replace": true }),
+    )
+    .unwrap();
+    assert_eq!(out["replaced"], json!([1]), "{out}");
+    assert_eq!(notes_of(&session, 1).len(), 1);
+    // Fit to scale: C# goes to C, where a C already sounds over it.
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 61)]));
+    let fit = json!({ "track": 1, "index": 0, "notes": [1], "root": "C", "scale": "major", "replace": true });
+    let out = run(&mut session, "note.fitToScale", fit).unwrap();
+    assert_eq!(out["replaced"], json!([0]), "{out}");
+    assert_eq!(notes_of(&session, 1).iter().map(|n| n.key).collect::<Vec<_>>(), [60]);
+    // Without replace they stack, as before.
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(1.0, 1.0, 60)]));
+    run(&mut session, "note.stretch", json!({ "track": 1, "index": 0, "notes": [0], "factor": 2 })).unwrap();
+    assert_eq!(notes_of(&session, 1).len(), 2);
+}
+
 #[test]
 fn a_mute_rides_through_the_other_note_tools() {
     let mut session = Session::new(project(scale_notes()));
