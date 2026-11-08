@@ -256,7 +256,9 @@ impl Graph {
                 }
             }
         }
-        events.sort_by_key(|e| e.start);
+        // Notes that start together go out lowest first, so an instrument that plays one note at a
+        // time (the last one it is given) plays the highest of a chord.
+        events.sort_by_key(|e| (e.start, e.key));
         audio_events.sort_by_key(|a| a.event.start);
         hosted.sort_by_key(|h: &HostedClip| h.start);
 

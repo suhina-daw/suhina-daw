@@ -30,7 +30,14 @@ late. This is the scale a step sequencer's swing knob uses, 0 straight and 100 h
 on the other common scale, where 50 % is straight, 100 % here is 75 % and 67 % here is 66.7 %. A
 note that starts between the sixteenths moves in proportion (the time up to the second sixteenth
 stretches, the time after it shrinks), the eighths themselves stay where they are, and no note
-passes another. A note keeps its length, so a delayed note ends that much later too.
+passes another. A note's end swings as its start does: it goes where swing puts that point of the
+eighth. So notes that touch keep touching (a line of sixteenths stays unbroken, and an instrument
+that plays one note at a time never falls back, in a gap before a delayed note, to a note held
+under the line), a delayed note that ends on the next eighth is that much shorter, and the note
+before it that much longer.
+
+Notes that start at the same moment go to the instrument lowest first, so one that plays a note at
+a time (the last one it is given) plays the highest of them, with swing or without.
 
 Swing works on the content's beats, so every pass of a looping clip swings the same, and a clip's
 start marker does not change which sixteenths are delayed.

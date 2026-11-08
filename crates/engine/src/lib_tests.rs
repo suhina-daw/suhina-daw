@@ -1658,7 +1658,8 @@ fn a_stretched_clip_starts_each_loop_pass_as_cleanly_as_the_first() {
 }
 
 /// Swing delays the second sixteenth of each eighth on every pass of a loop, by half a sixteenth at
-/// full swing, and leaves the eighths where they are; a note keeps its length (#1221).
+/// full swing, and leaves the eighths where they are; a note's end swings as its start does, so
+/// sixteenths that touch keep touching (#1221): no gap opens before a delayed note.
 #[test]
 fn swing_moves_the_second_sixteenth_of_every_pass() {
     let notes = vec![Note::new(0.0, 0.25, 60, 1.0), Note::new(0.25, 0.25, 62, 1.0)];
@@ -1675,11 +1676,30 @@ fn swing_moves_the_second_sixteenth_of_every_pass() {
         spans
     };
     assert_eq!(events(0.0), [(0, 6_000), (6_000, 12_000), (12_000, 18_000), (18_000, 24_000)]);
-    // Full swing: the second sixteenth half a sixteenth late, three eighths of a beat in, its length
-    // kept (the last one cut at the clip's end).
-    assert_eq!(events(1.0), [(0, 6_000), (9_000, 15_000), (12_000, 18_000), (21_000, 24_000)]);
+    // Full swing: the second sixteenth half a sixteenth late, three eighths of a beat in; the first
+    // ends where it starts and it ends on the next eighth, so the line stays unbroken.
+    assert_eq!(events(1.0), [(0, 9_000), (9_000, 12_000), (12_000, 21_000), (21_000, 24_000)]);
     // Half way.
-    assert_eq!(events(0.5)[1], (7_500, 13_500));
+    assert_eq!(events(0.5)[..2], [(0, 7_500), (7_500, 12_000)]);
+    for swing in [0.25, 0.5, 0.75, 1.0] {
+        let spans = events(swing);
+        for pair in spans.windows(2) {
+            assert_eq!(pair[0].1, pair[1].0, "{swing}: no gap and no overlap between touching notes");
+        }
+    }
+}
+
+/// Notes that start together go out lowest first, whatever order they were drawn in, so an
+/// instrument that plays one note at a time (the last one it is given) plays the highest of them.
+#[test]
+fn notes_that_start_together_go_out_lowest_first() {
+    let notes =
+        vec![note(0.0, 2.0, 65), note(0.0, 0.25, 64), note(0.25, 0.25, 64), note(0.0, 1.0, 72), note(0.0, 1.0, 60)];
+    let project = project_with(untargeted(notes), vec![clip(0.0, 4.0)], 1);
+    let renderer =
+        Renderer::stopped(&project, &crate::AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let together: Vec<u8> = renderer.graph.events.iter().filter(|e| e.start == 0).map(|e| e.key).collect();
+    assert_eq!(together, [60, 64, 65, 72]);
 }
 
 /// A stretched clip that plays right up to the loop end (the loop drawn over the clip, the most

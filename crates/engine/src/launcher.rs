@@ -1083,9 +1083,12 @@ fn plan_clip(
                 let swing = clip.swing.effective(project.transport.swing);
                 for note in lane_notes.iter().filter(|n| !n.muted && n.time.is_finite() && n.duration.is_finite()) {
                     let velocity = note_velocity(note.velocity);
+                    // The end swings as the start does, so notes that touch keep touching.
+                    let time = suhina_model::swung(note.time, swing);
+                    let end = suhina_model::swung(note.time + note.duration.max(0.0), swing);
                     notes.push(PlanNote {
-                        time: suhina_model::swung(note.time, swing),
-                        duration: note.duration.max(0.0),
+                        time,
+                        duration: (end - time).max(0.0),
                         frequency: 440.0 * 2f64.powf((f64::from(note.key) - 69.0) / 12.0),
                         key: note.key.min(127),
                         velocity,
@@ -1160,7 +1163,9 @@ fn plan_clip(
             }
         }
     }
-    notes.sort_by(|a, b| a.time.total_cmp(&b.time));
+    // Notes that start together go out lowest first, so an instrument that plays one note at a time
+    // (the last one it is given) plays the highest of a chord.
+    notes.sort_by(|a, b| a.time.total_cmp(&b.time).then(a.key.cmp(&b.key)));
     Some(ClipPlan {
         offset: crate::audio::start_beat(clip.offset, loop_range),
         length: clip.length,
