@@ -41,6 +41,9 @@ pub struct FileKind {
     /// Reads and checks the pack's bytes ([ADR 0036] › the starter pack), the same parse the
     /// path form gave them.
     read_bytes: fn(&[u8], u32) -> Result<Arc<AssetData>, String>,
+    /// The library folder the pack unpacks beside ([ADR 0036] › the library): "Amp models" for
+    /// the Amp Modeler, "Cabinets" for the Cab Loader.
+    pub library_folder: &'static str,
     /// What a panel calls the loaded file at `path`.
     name: fn(&Path, &AssetData) -> Option<String>,
     /// A new device at its defaults, running the file.
@@ -139,6 +142,7 @@ pub const ENTRIES: [Entry; 17] = [
             extension: "nam",
             read: read_nam,
             read_bytes: read_nam_bytes,
+            library_folder: "Amp models",
             name: nam_name,
             make: make_nam,
         }),
@@ -151,6 +155,7 @@ pub const ENTRIES: [Entry; 17] = [
             extension: "wav",
             read: read_ir,
             read_bytes: read_ir_bytes,
+            library_folder: "Cabinets",
             name: folder_name,
             make: make_cab,
         }),
@@ -388,6 +393,16 @@ const PACK_FILES: &[(&str, &str, &[u8])] = &[
 /// The shipped file in the pack's state key ([ADR 0036] · `builtin:<device id>/<file name>`).
 pub fn builtin_file_key(id: &str, name: &str) -> String {
     format!("builtin:{id}/{name}")
+}
+
+/// Every shipped file, flat: `(device id, library folder, file name, bytes)` — the folder is
+/// the device's own under the library's NAM folders ([ADR 0036] › the library), so an
+/// installer or the app unpacks the pack without naming device ids itself.
+pub fn pack_files_flat() -> Vec<(&'static str, &'static str, &'static str, &'static [u8])> {
+    PACK_FILES
+        .iter()
+        .filter_map(|(device, name, bytes)| file_kind(device).map(|file| (*device, file.library_folder, *name, *bytes)))
+        .collect()
 }
 
 /// A device's shipped files, `(name, bytes)`, the pack the panels list first ([ADR 0036]).

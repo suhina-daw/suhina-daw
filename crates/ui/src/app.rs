@@ -1386,10 +1386,23 @@ impl App {
             }
         }
         // The shipped pack lists first, before every folder's own, whatever the settings say
-        // ([ADR 0036] › the starter pack). Its key is what the file command takes.
+        // ([ADR 0036] › the starter pack). Its key is what the file command takes. A folder
+        // that already holds the pack's files (the unpack did, or the user carried them)
+        // supplies its own "Suhina" rows, so the embedded listing stands down beside it.
+        let shipped_first = |rows: &mut Vec<crate::detail::device_widgets::Set>, id: &str| {
+            if !rows.iter().any(|set| set.name == SHIPPED_PACK)
+                && let Some(shipped) = shipped_set(id)
+            {
+                let mut ahead = vec![shipped];
+                ahead.extend(std::mem::take(rows));
+                *rows = ahead;
+            }
+        };
+        shipped_first(&mut cache.models, "nam-amp-modeler");
+        shipped_first(&mut cache.irs, "nam-cab-loader");
         let lists = crate::detail::device_widgets::Lists {
-            models: shipped_set("nam-amp-modeler").into_iter().chain(cache.models.clone()).collect(),
-            irs: shipped_set("nam-cab-loader").into_iter().chain(cache.irs.clone()).collect(),
+            models: cache.models.clone(),
+            irs: cache.irs.clone(),
             names: self.nam_names(),
             notes: self.nam_notes(),
         };

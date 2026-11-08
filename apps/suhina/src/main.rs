@@ -36,6 +36,7 @@ mod crash_log;
 mod data_folder;
 #[cfg(target_os = "macos")]
 mod mac_menu;
+mod pack_materialize;
 mod recent;
 mod save_error;
 mod theme_files;
@@ -265,6 +266,9 @@ fn main() -> ExitCode {
     let _ = std::fs::create_dir_all(&nam_models);
     let _ = std::fs::create_dir_all(&irs);
     window.app.set_nam_default_folders(nam_models, irs);
+    // The shipped pack unpacks beside the user's own files in the library's Suhina folders —
+    // only where a file is missing, never over one ([issue 1279]).
+    pack_materialize::unpack_pack(&nam_sounds);
     // Backups of projects never saved, and the journal of the newest backups, beside the
     // settings; what a crash left there is offered once the window starts (`docs/spec/backups.md`).
     let backups = data_dir().map(|d| d.join(suhina_session::backup::SETTINGS_SUBFOLDER));
