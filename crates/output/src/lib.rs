@@ -53,7 +53,7 @@ pub mod devices;
 mod exclusive;
 mod input;
 
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 use suhina_engine::{RenderInputs, RenderOptions};
@@ -110,6 +110,8 @@ pub struct Progress {
     frames: AtomicU64,
     underruns: AtomicU64,
     stream_error: AtomicBool,
+    /// Why the device reported its error ([`Failure`] as a number; 0 before one).
+    failure: AtomicU8,
     /// Frames the device asked for in its last callback.
     callback_frames: AtomicUsize,
     /// The last measured latency, engine to speaker, in microseconds.
@@ -179,6 +181,82 @@ impl Progress {
         self.stream_error.store(true, Ordering::Relaxed);
     }
 
+    /// [`Progress::fail`], keeping why. Lock-free and without allocation, as it may be called
+    /// from the device's own thread.
+    pub(crate) fn fail_because(&self, failure: Failure) {
+        self.failure.store(failure as u8, Ordering::Relaxed);
+        self.fail();
+    }
+
+    /// Why the device reported its error, in words; `None` before one, or when it did not say.
+    pub fn failure(&self) -> Option<&'static str> {
+        Failure::from_code(self.failure.load(Ordering::Relaxed)).map(Failure::describe)
+    }
+}
+
+/// Why an output stopped playing and is opened again, for the trace and `audio.info`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum Failure {
+    /// The ASIO driver asked to be reset, as after a setting changed in its control panel.
+    ResetRequested = 1,
+    /// The ASIO driver said its buffer size changed.
+    BufferSizeChanged = 2,
+    /// The ASIO driver asked to be started again after losing data.
+    Resynchronised = 3,
+    /// The driver's sample rate changed.
+    SampleRateChanged = 4,
+    /// Suhina asked the ASIO driver, and it now answers other buffer sizes.
+    DriverChanged = 5,
+    /// The device is gone, or another program took it.
+    DeviceGone = 6,
+    /// Any other error the device reported.
+    Other = 7,
+}
+
+impl Failure {
+    fn from_code(code: u8) -> Option<Self> {
+        [
+            Self::ResetRequested,
+            Self::BufferSizeChanged,
+            Self::Resynchronised,
+            Self::SampleRateChanged,
+            Self::DriverChanged,
+            Self::DeviceGone,
+            Self::Other,
+        ]
+        .into_iter()
+        .find(|failure| *failure as u8 == code)
+    }
+
+    fn describe(self) -> &'static str {
+        match self {
+            Self::ResetRequested => "the driver asked for a reset",
+            Self::BufferSizeChanged => "the driver changed its buffer size",
+            Self::Resynchronised => "the driver asked to start again",
+            Self::SampleRateChanged => "the driver's sample rate changed",
+            Self::DriverChanged => "the driver's buffer sizes changed",
+            Self::DeviceGone => "the device is gone or taken",
+            Self::Other => "the device reported an error",
+        }
+    }
+
+    /// The reason a stream error gives: its kind, and for an invalidated ASIO stream the
+    /// driver's message. Compares text only, no allocation.
+    fn of(error: &cpal::Error) -> Self {
+        let message = error.message().unwrap_or_default();
+        match error.kind() {
+            cpal::ErrorKind::DeviceNotAvailable | cpal::ErrorKind::DeviceBusy => Self::DeviceGone,
+            cpal::ErrorKind::StreamInvalidated if message.contains("buffer size") => Self::BufferSizeChanged,
+            cpal::ErrorKind::StreamInvalidated if message.contains("reset") => Self::ResetRequested,
+            cpal::ErrorKind::StreamInvalidated if message.contains("resynchronization") => Self::Resynchronised,
+            cpal::ErrorKind::StreamInvalidated if message.contains("Sample rate") => Self::SampleRateChanged,
+            _ => Self::Other,
+        }
+    }
+}
+
+impl Progress {
     pub(crate) fn set_latency(&self, latency: Duration) {
         self.latency_us.store(u64::try_from(latency.as_micros()).unwrap_or(u64::MAX), Ordering::Relaxed);
     }
@@ -429,6 +507,13 @@ pub struct Output {
     cue_gain: f32,
     /// What could not be had as chosen.
     notices: Vec<String>,
+    /// The buffer size the device is asked for (`cpal::BufferSize::Fixed`), when one is: an
+    /// ASIO input on the same driver is opened at the same size.
+    asked: Option<u32>,
+    /// What the ASIO driver answered about its buffer sizes when this was chosen.
+    driver: Option<devices::DriverBuffers>,
+    /// Keeps the ASIO driver loaded from the answer to the stream, so it is not loaded twice.
+    _driver_hold: Option<devices::DriverHold>,
 }
 
 impl Output {
@@ -443,6 +528,13 @@ impl Output {
     /// device is never asked for one outside the range its driver declared — a driver whose
     /// sizes the engine cannot render in is asked for none and keeps its own, with a notice.
     pub fn choose(choice: &OutputChoice) -> Result<Self, String> {
+        Self::choose_sized(choice, false)
+    }
+
+    /// [`Output::choose`], or with `driver_keeps_size` the device asked for no buffer size at
+    /// all: the retry when a driver refused the size it was asked for. An ASIO driver then plays
+    /// the size it prefers, and the engine renders in that size when it can.
+    fn choose_sized(choice: &OutputChoice, driver_keeps_size: bool) -> Result<Self, String> {
         let mut notices = Vec::new();
         let default_host = devices::default_host_id();
         let host_id = match &choice.host {
@@ -498,6 +590,9 @@ impl Output {
                 cue,
                 cue_gain: choice.cue_gain,
                 notices,
+                asked: None,
+                driver: None,
+                _driver_hold: None,
             });
         }
 
@@ -567,27 +662,38 @@ impl Output {
         }
         // An ASIO driver is asked again: a size set in its control panel since the device was
         // listed (the driver then asks for a reset, and the output opens again here) shows only
-        // this way. Its preferred size, the control panel's, plays when none is chosen.
-        let driver = devices::driver_buffers(&device, true);
-        let range = driver.map_or_else(|| devices::buffer_range(supported.buffer_size()), |driver| driver.range());
-        let chosen = choice.buffer_frames.or(driver.and_then(|driver| driver.default_size()));
-        let wanted = devices::wanted_buffer(&host_name, chosen, ENGINE_BLOCK as u32);
-        let fitted = wanted.map(|wanted| match &driver {
-            Some(driver) => devices::fit_to_driver(wanted, driver),
-            None => devices::fit_for_host(&host_name, wanted, range),
-        });
-        if let (Some(wanted), Some((block, asked))) = (choice.buffer_frames, fitted)
-            && let Some(notice) = devices::buffer_notice(&host_name, &device_name, wanted, block, asked, range)
-        {
-            notices.push(notice);
+        // this way. Its preferred size, the control panel's, plays when none is chosen. The
+        // driver stays loaded from this answer to the stream (`_driver_hold`): loaded once.
+        let (driver, driver_hold) = match devices::ask_driver(&device) {
+            Some((driver, hold)) => (Some(driver), hold),
+            None => (None, None),
+        };
+        let range = devices::buffer_range(supported.buffer_size());
+        let chosen = choice.buffer_frames.filter(|_| !driver_keeps_size);
+        let fitted = match &driver {
+            // Asked for no size, the driver plays the size it prefers: the engine renders in it
+            // when it renders in it at all.
+            Some(driver) if driver_keeps_size => Some(driver.preferred)
+                .filter(|n| (MIN_BUFFER_FRAMES..=MAX_BUFFER_FRAMES).contains(n))
+                .map(|size| (size, None)),
+            Some(driver) => devices::plan_for_driver(chosen, driver),
+            None => devices::wanted_buffer(&host_name, chosen, ENGINE_BLOCK as u32)
+                .map(|wanted| devices::fit_for_host(&host_name, wanted, range)),
+        };
+        if let (Some(wanted), Some((block, asked))) = (chosen, fitted) {
+            notices.extend(match &driver {
+                Some(driver) => devices::driver_notice(&device_name, wanted, block, asked, driver),
+                None => devices::buffer_notice(&host_name, &device_name, wanted, block, asked, range),
+            });
         }
         let buffer = fitted.map(|(block, _)| block);
+        let asked = fitted.and_then(|(_, asked)| asked);
         let format = supported.sample_format();
         let mut config: cpal::StreamConfig = supported.into();
         if config.channels == 0 {
             return Err(format!("audio output {device_name} reports no channels"));
         }
-        if let Some((_, Some(frames))) = fitted {
+        if let Some(frames) = asked {
             config.buffer_size = cpal::BufferSize::Fixed(frames);
         }
         let exclusive = host_name == "ASIO";
@@ -602,7 +708,27 @@ impl Output {
             cue: cue_channel(choice.cue_pair, config.channels),
             cue_gain: choice.cue_gain,
             notices,
+            asked,
+            driver,
+            _driver_hold: driver_hold,
         })
+    }
+
+    /// Whether the ASIO driver now answers differently about its buffer sizes from when this
+    /// output was chosen: a size set in the driver's control panel that the driver did not
+    /// announce. The output is then opened again, so what plays, the engine's block and the
+    /// sizes Settings › Audio lists all follow the new answer, even when the size chosen stays.
+    /// Asks the driver loaded for the stream; another host's output never differs.
+    fn driver_changed(&self) -> bool {
+        let device = match &self.backend {
+            Backend::Cpal { device, .. } => device,
+            #[cfg(windows)]
+            Backend::Exclusive { .. } => return false,
+        };
+        let (Some(before), Some((now, _hold))) = (self.driver, devices::ask_driver(device)) else {
+            return false;
+        };
+        now != before
     }
 
     /// The pair the cue plays on (1 is channels 3 and 4), or `None` with the main output.
@@ -820,21 +946,24 @@ fn tell_once(told: &AtomicBool, notice: Option<String>) -> Option<String> {
 /// which cpal's range cannot tell us about — and the device is not given up over it. The stream
 /// does not play yet.
 fn open_fitting(choice: &OutputChoice) -> Result<(Output, DeviceStream, rtrb::Producer<f32>, Arc<Progress>), String> {
-    let mut tries = vec![choice.clone()];
-    if choice.buffer_frames.is_some() {
-        tries.push(OutputChoice { buffer_frames: None, ..choice.clone() });
+    // Each try with whether the device is asked for no buffer size at all. With no size chosen
+    // an ASIO driver is still asked for the size it prefers, so it gets that retry too.
+    let mut tries = vec![(choice.clone(), false)];
+    let asio = choice.host.as_deref().is_some_and(|host| devices::same_name(host, "ASIO"));
+    if choice.buffer_frames.is_some() || asio {
+        tries.push((OutputChoice { buffer_frames: None, ..choice.clone() }, true));
     }
     if choice.exclusive {
-        tries.push(OutputChoice { exclusive: false, ..choice.clone() });
+        tries.push((OutputChoice { exclusive: false, ..choice.clone() }, false));
     }
     // The default output keeps the cue's settings; it may have the cue's pair too.
     if choice.device_only() != OutputChoice::default() {
-        tries.push(OutputChoice::default().with_cue_of(choice));
+        tries.push((OutputChoice::default().with_cue_of(choice), false));
     }
     let mut notices = Vec::new();
     let mut last = String::from("no audio output");
-    for (i, attempt) in tries.iter().enumerate() {
-        let output = match Output::choose(attempt) {
+    for (i, (attempt, keeps_size)) in tries.iter().enumerate() {
+        let output = match Output::choose_sized(attempt, *keeps_size) {
             Ok(output) => output,
             Err(e) => {
                 last = e;
@@ -852,8 +981,8 @@ fn open_fitting(choice: &OutputChoice) -> Result<(Output, DeviceStream, rtrb::Pr
             }
             Err(e) => {
                 let next = match tries.get(i + 1) {
-                    Some(next) if next.buffer_frames != attempt.buffer_frames => "it keeps its own buffer size",
-                    Some(next) if !next.exclusive && attempt.exclusive => "it plays shared",
+                    Some((_, true)) => "it keeps its own buffer size",
+                    Some((next, _)) if !next.exclusive && attempt.exclusive => "it plays shared",
                     Some(_) => "the default output plays",
                     None => "",
                 };
@@ -878,6 +1007,8 @@ struct Owner {
 enum OwnerRequest {
     Close,
     ControlPanel,
+    /// Ask the ASIO driver whether its buffer sizes changed ([`Output::driver_changed`]).
+    CheckDriver,
 }
 
 impl suhina_session::OutputHandle for Owner {
@@ -936,6 +1067,13 @@ impl LiveOutput for Live {
         Ok(())
     }
 
+    fn check_driver(&self) {
+        if self.host == "ASIO" {
+            // The owner thread holds the driver; it is gone only when the output closes.
+            let _ = self.owner.send(OwnerRequest::CheckDriver);
+        }
+    }
+
     fn info(&self) -> OutputInfo {
         OutputInfo {
             host: self.host.clone(),
@@ -949,6 +1087,7 @@ impl LiveOutput for Live {
             live_latency_ms: self.progress.live_latency(self.sample_rate).as_secs_f64() * 1000.0,
             underruns: self.progress.underruns(),
             failed: self.progress.failed(),
+            failure: self.progress.failure(),
             fallback: self.fallback,
             channels: self.channels,
             cue_pair: self.cue_pair,
@@ -1008,7 +1147,13 @@ pub fn open_chosen(
                 )
                 .map_err(|e| e.to_string())?;
                 // The input device, when one is chosen: a failure leaves the output playing.
-                let input = match input::open(&output.host, &choice.input, output.sample_rate, Arc::clone(&progress)) {
+                let input = match input::open(
+                    &output.host,
+                    &choice.input,
+                    output.sample_rate,
+                    output.asked,
+                    Arc::clone(&progress),
+                ) {
                     Ok(Some((stream, ring))) => {
                         renderer.set_audio_input(ring, stream.channels, Arc::clone(&stream.underruns));
                         Some(stream)
@@ -1030,6 +1175,7 @@ pub fn open_chosen(
             match started {
                 Ok((output, controller, progress, stream, kept, input)) => {
                     let panel_pending = Arc::new(AtomicBool::new(false));
+                    let watched = Arc::clone(&progress);
                     let live = Live {
                         owner: owner_requests,
                         panel_pending: Arc::clone(&panel_pending),
@@ -1057,6 +1203,14 @@ pub fn open_chosen(
                                         eprintln!("ASIO control panel: {error}");
                                     }
                                     panel_pending.store(false, Ordering::Release);
+                                }
+                                // Asked on this thread, which holds the driver: a size set in
+                                // its control panel that the driver did not announce opens the
+                                // output again, as a reset it asked for does.
+                                OwnerRequest::CheckDriver => {
+                                    if output.driver_changed() {
+                                        watched.fail_because(Failure::DriverChanged);
+                                    }
                                 }
                             }
                         }
@@ -1244,7 +1398,7 @@ where
                 // Rerouted to the new default device, or no real-time rights: it plays on.
                 cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::RealtimeDenied => {}
                 // A reset the driver asked for, a device gone: the output is opened again.
-                _ => on_error.fail(),
+                _ => on_error.fail_because(Failure::of(&err)),
             },
             None,
         )

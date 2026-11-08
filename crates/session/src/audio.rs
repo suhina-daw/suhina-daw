@@ -358,6 +358,9 @@ pub struct OutputInfo {
     pub underruns: u64,
     /// The device reported an error (unplugged, taken by another program).
     pub failed: bool,
+    /// Why, in words, when it said: "the driver asked for a reset", "the driver's buffer sizes
+    /// changed"…
+    pub failure: Option<&'static str>,
     /// The chosen host or device was not there when the output opened, so another one (the
     /// default) plays in its place until it is back.
     pub fallback: bool,
@@ -387,6 +390,7 @@ impl OutputInfo {
             "live_latency_ms": (self.live_latency_ms * 100.0).round() / 100.0,
             "underruns": self.underruns,
             "failed": self.failed,
+            "failure": self.failure,
             "fallback": self.fallback,
             "channels": self.channels,
             "cue_pair": self.cue_pair,
@@ -427,6 +431,10 @@ pub trait LiveOutput: Send + Sync {
     fn open_control_panel(&self) -> Result<(), String> {
         Err("this output has no native control panel".into())
     }
+    /// Asks the active ASIO driver for its buffer sizes again, on the thread that holds it: when
+    /// they changed without the driver saying so (a size set in its control panel), the output
+    /// reports a failure and is opened again. Nothing to ask on other hosts.
+    fn check_driver(&self) {}
 }
 
 /// A player on the output a choice names.
@@ -515,6 +523,14 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[],
         kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
         run: open_control_panel,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "audio.checkDriver",
+        label: "Ask the active ASIO driver for its buffer sizes again; when a size set in its control panel changed them, the output opens again at the new size. Does nothing on other hosts",
+        params: &[],
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
+        run: check_driver,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -719,6 +735,15 @@ fn open_control_panel(projects: &mut Projects, _: &Value) -> Result<Value, Comma
     Ok(json!({ "requested": true }))
 }
 
+/// `audio.checkDriver`: the playing output asks its driver on its own thread; a change shows as a
+/// failure, and the output is opened again as after one ([`Projects::check_output`]).
+fn check_driver(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
+    let session = projects.session_mut(None)?;
+    let player = session.player().ok_or_else(|| CommandError("no audio output is open".into()))?;
+    player.check_driver();
+    Ok(json!({ "requested": true }))
+}
+
 /// Where the transport was, to put it back on a new output: the play start marker, the
 /// playhead, and what the launcher plays and has queued.
 #[derive(Debug, Clone, PartialEq)]
@@ -823,6 +848,14 @@ mod tests {
         let mut projects = Projects::new();
         projects.add(crate::Session::new(crate::blank_project()), None).unwrap();
         let error = projects.execute("audio.openControlPanel", &json!({})).unwrap_err();
+        assert_eq!(error.to_string(), "no audio output is open");
+    }
+
+    #[test]
+    fn checking_the_driver_requires_an_active_output() {
+        let mut projects = Projects::new();
+        projects.add(crate::Session::new(crate::blank_project()), None).unwrap();
+        let error = projects.execute("audio.checkDriver", &json!({})).unwrap_err();
         assert_eq!(error.to_string(), "no audio output is open");
     }
 

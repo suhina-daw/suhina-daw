@@ -314,10 +314,6 @@ struct AutoArm {
     armed: std::collections::BTreeMap<ProjectId, TrackId>,
 }
 
-/// What Settings › Audio follows of the output playing: host, device, rate, callback frames,
-/// engine block and whether it failed.
-type OpenedOutput = (String, String, u32, u32, u32, bool);
-
 pub struct App {
     background: background::Background,
     /// When the level meters last showed something new (`ui.input` time).
@@ -487,9 +483,14 @@ pub struct App {
     midi_listed: Option<std::time::Instant>,
     /// Follows the audio devices while Settings › Audio shows, so headphones connected later show up.
     audio_devices: suhina_session::audio::DeviceWatch,
-    /// Follows the output playing while Settings › Audio shows: one opened again has asked its
-    /// driver for its buffer sizes anew, so the list is made again.
-    audio_output_watch: suhina_session::audio::Watch<Option<OpenedOutput>>,
+    /// Follows how many times an output was opened while Settings › Audio shows: each opening
+    /// asked an ASIO driver for its buffer sizes anew, so the list is made again.
+    audio_output_watch: suhina_session::audio::Watch<u64>,
+    /// Settings › Audio showed in the last frame, and the window had the focus: when the page
+    /// opens or closes, or the window gets the focus back while it shows (from a driver's control
+    /// panel, say), the ASIO driver is asked for its sizes again (`audio.checkDriver`).
+    audio_page_shown: bool,
+    window_focused: bool,
     /// The themes to pick from; the settings say which is in use.
     themes: Themes,
     /// The project dialog (File › New or open) while it shows, and what it lists.
@@ -703,6 +704,8 @@ impl App {
             midi_listed: None,
             audio_devices: suhina_session::audio::DeviceWatch::default(),
             audio_output_watch: suhina_session::audio::Watch::default(),
+            audio_page_shown: false,
+            window_focused: true,
             themes: Themes::default(),
             project_dialog: None,
             project_lists: Lists::default(),
@@ -3426,6 +3429,7 @@ impl App {
         let actions_held = self.dialog_holds_actions();
         self.plugin_dialog(ui, window);
         self.project_dialogs(ui, window);
+        self.follow_audio_page(ui.ctx());
         if self.settings_open {
             // Embedded plug-in editors are windows of their own and would cover the dialog.
             if !self.page.window {

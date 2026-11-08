@@ -64,22 +64,46 @@ the running application's settings; the native call addresses the current instan
 granularity (ASIO SDK 2.3, section 3): -1 for the powers of two from the smallest to the largest,
 a positive step for the smallest and every step after it, and 0 with the smallest equal to the
 largest for that one size. Drivers whose size is set in their own control panel commonly answer
-with that one size as smallest, largest and preferred. Settings › Audio offers the sizes the
-answer allows within what the engine renders in (64 to 4096 frames): with powers of two every
-power in the range; with a step every size on it (the common sizes on it when there would be more
-than 64); with 0 and a range, the preferred size alone, the one size such a driver is sure to take;
-and the smallest, largest and preferred when the driver takes them. With no size chosen the driver's preferred size plays, and the
-engine renders in blocks of that size; the **Default** entry names it.
+with that one size as smallest, largest and preferred.
+
+Settings › Audio offers the sizes the answer allows within what the engine renders in (64 to 4096
+frames): with powers of two every power in the range; with a step every size on it, or, when
+there would be more than 64, the size on the steps nearest each common size (64, 128 … 4096), so
+every size offered stays on the driver's steps; with 0 and a range, the preferred size alone, the
+one size such a driver is sure to take, or with a preferred size outside its range only the two
+ends it declared; and the smallest, largest and preferred when the driver takes them. An answer
+that makes no sense (an empty or reversed range) counts as none: the engine's own sizes are
+offered and the driver is asked for none. A driver that takes one size has the Buffer size row
+say that size, with a note that it is set in the driver's own control panel (**Control panel…**
+opens it), instead of a list with nothing to choose.
+
+With no size chosen the driver's preferred size plays and the engine renders in blocks of that
+size; the **Default** entry names it. When the driver cannot be asked for its preferred size (off
+its steps, or outside what the engine renders in), the size it takes nearest the engine's own
+block (1024 frames) plays instead, so the engine's block and the driver's buffer stay the same
+size. Should a driver refuse the size it is asked for, the output opens once more asking for none
+(the driver plays its preferred size), and a notice says it keeps its own buffer size. An ASIO
+input on the same interface is opened at the output's size: input and output share one driver
+and one buffer size, and an input opened without it would put the driver back on its own size
+under the output.
 
 The answer is kept with the device descriptor (below) and asked again each time an ASIO output
-opens, loading the driver for the call when none is loaded. A size changed in the driver's
-control panel while Suhina runs reaches Suhina as `kAsioResetRequest` or
-`kAsioBufferSizeChange`; both invalidate the stream, the output opens again with the new answer,
-and Settings › Audio lists the devices again when the output playing changes. A size chosen
-is remembered whatever the driver says: while the driver does not take it, the nearest size it
-takes plays with a notice, and the list keeps the chosen size, saying the device does not take
-it now; it plays again once the driver takes it. Default (the driver's preferred size) applies
-only when no size is chosen.
+opens. When no driver is loaded the driver is loaded for the question and kept loaded until the
+stream is built, so it is loaded once. A size changed in the driver's control panel while Suhina
+runs reaches Suhina as `kAsioResetRequest` or `kAsioBufferSizeChange`; both invalidate the stream
+(a `kAsioBufferSizeChange` repeating the size already playing does not), and the output opens
+again with the new answer. For drivers that announce nothing, Suhina asks the driver itself
+(`audio.checkDriver`, on the thread that holds the driver) when Settings › Audio opens or
+closes and when the window gets the focus back while it shows, as after using the driver's
+control panel; when the answer differs from the one the output opened with, the output opens
+again. Settings › Audio lists the devices again each time an output opens. The trace says
+why an output opened again (`audio output failed: the driver asked for a reset`, … `the
+driver's buffer sizes changed`), and `audio.info` reports it as `failure`.
+
+A size chosen is remembered whatever the driver says: while the driver does not take it, the
+nearest size it takes plays with a notice saying what the driver takes, and the list keeps the
+chosen size, saying the device does not take it now; it plays again once the driver takes it.
+Default (the driver's preferred size) applies only when no size is chosen.
 
 ## Device catalog during playback
 

@@ -33,11 +33,14 @@ pub(crate) struct InputStream {
 
 /// Opens the input `choice` names on the host `host_name` at `sample_rate`, playing into a ring
 /// whose reading end is returned for the engine. `Ok(None)` when the choice is off.
-/// Its callback measures the device's own latency into `progress`.
+/// Its callback measures the device's own latency into `progress`. `output_buffer` is the size
+/// the output was asked for: on ASIO input and output share one driver and one buffer size, and
+/// an input opened without it would make the driver go back to its own size under the output.
 pub(crate) fn open(
     host_name: &str,
     choice: &InputChoice,
     sample_rate: u32,
+    output_buffer: Option<u32>,
     progress: Arc<Progress>,
 ) -> Result<Option<(InputStream, rtrb::Consumer<f32>)>, String> {
     if *choice == InputChoice::Off {
@@ -70,7 +73,10 @@ pub(crate) fn open(
         .and_then(|c| c.try_with_sample_rate(sample_rate))
         .ok_or_else(|| format!("audio input {name} does not record at {sample_rate} Hz, the output's rate"))?;
     let format = supported.sample_format();
-    let config: cpal::StreamConfig = supported.into();
+    let mut config: cpal::StreamConfig = supported.into();
+    if let Some(frames) = output_buffer.filter(|_| devices::same_name(host_name, "ASIO")) {
+        config.buffer_size = cpal::BufferSize::Fixed(frames);
+    }
     let device_channels = usize::from(config.channels);
     if device_channels == 0 {
         return Err(format!("audio input {name} reports no channels"));
@@ -178,11 +184,16 @@ mod tests {
     #[test]
     fn an_input_off_or_missing_opens_nothing() {
         let progress = || Arc::new(Progress::default());
-        assert!(open("anything", &InputChoice::Off, 48_000, progress()).is_ok_and(|o| o.is_none()));
-        let missing =
-            open(cpal::default_host().id().name(), &InputChoice::Named("No Such Input".into()), 48_000, progress());
+        assert!(open("anything", &InputChoice::Off, 48_000, None, progress()).is_ok_and(|o| o.is_none()));
+        let missing = open(
+            cpal::default_host().id().name(),
+            &InputChoice::Named("No Such Input".into()),
+            48_000,
+            None,
+            progress(),
+        );
         assert!(missing.is_err());
-        assert!(open("No Such Host", &InputChoice::Default, 48_000, progress()).is_err());
+        assert!(open("No Such Host", &InputChoice::Default, 48_000, None, progress()).is_err());
     }
 
     #[test]
