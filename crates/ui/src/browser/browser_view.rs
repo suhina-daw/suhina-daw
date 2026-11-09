@@ -2182,10 +2182,13 @@ fn section_title(
     projects: &mut Projects,
     out: &mut BrowserOut,
 ) {
+    // The title's menu keys on the library's epoch as the rows' menus do: a replaced library
+    // gets none of the old one's open menu, typed name or picked colour ([#1254] review).
+    let epoch = state.tag_epoch;
     *y += 8.0;
     let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, *y), Vec2::new(area.width() - PAD, 12.0));
     let response =
-        ui.interact(rect.intersect(area), Id::unique(("browser-section", kind.name())), Sense::click_and_drag());
+        ui.interact(rect.intersect(area), Id::unique(("browser-section", epoch, kind.name())), Sense::click_and_drag());
     // The slot the carry lands in: this title's own rect tells the sidebar's landing which
     // title the pointer is over ([#1254] review).
     slots.push((rect.intersect(area), kind));
@@ -2220,8 +2223,10 @@ fn section_title(
     // The menu: open or close, and move among the others ([#1254] › Sidebar sections). The
     // drafts inside go when it closes, so the was-open state is kept like the rows' menus'
     // (a stale draft would show an old name over what the store changed elsewhere).
-    let was_open =
-        ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-title-menu-open", kind.name())))).unwrap_or(false);
+    let was_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(Id::unique(("browser-title-menu-open", epoch, kind.name()))))
+        .unwrap_or(false);
     let popup =
         egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             let label = if open { format!("Close {}", kind.title()) } else { format!("Open {}", kind.title()) };
@@ -2258,7 +2263,7 @@ fn section_title(
             // menus carry.
             if kind == SectionKind::Tags {
                 ui.separator();
-                let pick_id = Id::unique(("browser-title-tag-color", kind.name()));
+                let pick_id = Id::unique(("browser-title-tag-color", epoch, kind.name()));
                 let picked_now = {
                     let stored: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
                     let current = stored.as_deref().and_then(theme::parse_hex).map(crate::interaction::grid::to_rgb);
@@ -2268,7 +2273,7 @@ fn section_title(
                 if let Some(hex) = picked_now.as_ref() {
                     ui.ctx().data_mut(|d| d.insert_temp(pick_id, hex.clone()));
                 }
-                let new_id = Id::unique(("browser-title-new-tag", kind.name()));
+                let new_id = Id::unique(("browser-title-new-tag", epoch, kind.name()));
                 let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
                 let field = crate::kit::widgets::text_input(
                     ui,
@@ -2327,14 +2332,17 @@ fn section_title(
     let open = popup.is_some();
     if was_open && !open && kind == SectionKind::Tags {
         ui.ctx().data_mut(|d| {
-            d.remove::<String>(Id::unique(("browser-title-new-tag", kind.name())));
+            d.remove::<String>(Id::unique(("browser-title-new-tag", epoch, kind.name())));
             // The pick held for the tag it was to colour ([#1254] review: a menu that
             // closes without its add leaves no colour for the next one to inherit).
-            d.remove::<String>(Id::unique(("browser-title-tag-color", kind.name())));
-            crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-title-tag-color", kind.name())));
+            d.remove::<String>(Id::unique(("browser-title-tag-color", epoch, kind.name())));
+            crate::interaction::colour_picker::forget_state(
+                d,
+                Id::unique(("browser-title-tag-color", epoch, kind.name())),
+            );
         });
     }
-    ui.ctx().data_mut(|d| d.insert_temp(Id::unique(("browser-title-menu-open", kind.name())), open));
+    ui.ctx().data_mut(|d| d.insert_temp(Id::unique(("browser-title-menu-open", epoch, kind.name())), open));
 }
 
 /// Opens the Tags section, for an add made while it was closed to show itself ([#1254]

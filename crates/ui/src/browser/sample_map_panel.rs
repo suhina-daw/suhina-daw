@@ -302,8 +302,11 @@ impl Panel {
         }
         // Too many let-go workers still running: the next layout waits for them to finish,
         // a frame at a time, never on the window's thread ([#1254] review: replacing scopes
-        // fast piled workers up beside the new one).
+        // fast piled workers up beside the new one). The layout asked for stays asked: a
+        // notification of analysed samples comes once, and a frame that waits keeps it
+        // ([#1254] review).
         if self.busy_retiring(ui) {
+            self.stale = true;
             return;
         }
         let Ok(files) = suhina_session::scope_files(projects, place.as_deref()) else { return };

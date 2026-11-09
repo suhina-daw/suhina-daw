@@ -525,80 +525,153 @@ fn file_id(node: &Value, entries: &[TagEntry]) -> Option<u32> {
         .filter(|id| tag_by_id(entries, *id).is_none() && folder_by_id(entries, *id).is_none())
 }
 
-/// The highest id the file's forest keeps that [`file_id`] could take, tags' and folders'
-/// together: the ids handed to entries without a usable one start past it, so none of them
-/// takes an id an entry of the file keeps ([#1254] review: an id-less tag after
-/// `{"id": 1}` took 1 too, and the two answered as one tag).
-fn highest_file_id(list: &[Value], depth: usize) -> u32 {
-    let mut high = 0;
+/// The ids the file's forest keeps that [`file_id`] could take, tags' and folders' together:
+/// the ids handed to entries without a usable one take none of them ([#1254] review: an
+/// id-less tag after `{"id": 1}` took 1 too, and the two answered as one tag).
+fn collect_file_ids(
+    list: &[Value],
+    depth: usize,
+    out: &mut std::collections::HashSet<u32>,
+    names: &mut std::collections::HashSet<String>,
+) {
     for entry in list {
+        let node = entry.get("tag").or_else(|| entry.get("folder")).unwrap_or(entry);
+        if let Some(name) = node.get("name").and_then(Value::as_str) {
+            names.insert(name.trim().to_string());
+        }
         let own = entry
             .get("tag")
             .or_else(|| entry.get("folder"))
             .and_then(|node| node.get("id"))
             .and_then(Value::as_u64)
             .and_then(|id| u32::try_from(id).ok())
-            .filter(|id| *id <= MAX_FILE_TAG_ID);
+            .filter(|id| (FIRST_TAG_ID..=MAX_FILE_TAG_ID).contains(id));
         if let Some(id) = own {
-            high = high.max(id);
+            out.insert(id);
         }
         if depth <= MAX_TAG_DEPTH
             && entry.get("folder").is_some()
             && let Some(children) = entry.get("tags").and_then(Value::as_array)
         {
-            high = high.max(highest_file_id(children, depth + 1));
+            collect_file_ids(children, depth + 1, out, names);
         }
     }
-    high
 }
 
-/// The next id handed out, `next` moving past it.
-fn hand_out(next: &mut u32) -> u32 {
-    let id = *next;
-    *next = next.saturating_add(1);
-    id
+/// What reading a file's tag forest keeps besides the entries: the ids it hands out and the
+/// names it had to change ([#1254] review).
+struct FileIds {
+    /// The next id handed out: past every id the file keeps.
+    next: u32,
+    /// Every id the file keeps, which no handed-out id takes.
+    kept: std::collections::HashSet<u32>,
+    /// A name the file had that spells an id's selector, and the name its tag got instead,
+    /// so the legacy assignments that named it still find it.
+    renamed: Vec<(String, String)>,
+    /// Every name the file's tags and folders have: a renamed one takes none of them, so it
+    /// never pushes out an entry read after it ([#1254] review).
+    names: std::collections::HashSet<String>,
+}
+
+impl FileIds {
+    fn of(list: &[Value]) -> Self {
+        let (mut kept, mut names) = (std::collections::HashSet::new(), std::collections::HashSet::new());
+        collect_file_ids(list, 1, &mut kept, &mut names);
+        let next = kept.iter().copied().max().unwrap_or(0).saturating_add(1).max(FIRST_TAG_ID);
+        Self { next, kept, renamed: Vec::new(), names }
+    }
+
+    /// An id for an entry without a usable one: the next past the file's, while that stays
+    /// within [`MAX_FILE_TAG_ID`]; past it the lowest one neither the file nor an entry read
+    /// has, so every id read is one a reload reads back ([#1254] review: a file keeping the
+    /// highest id handed out one past it). `None` when there is none left.
+    fn hand_out(&mut self, entries: &[TagEntry]) -> Option<u32> {
+        let free = |id: u32| tag_by_id(entries, id).is_none() && folder_by_id(entries, id).is_none();
+        while self.next <= MAX_FILE_TAG_ID {
+            let id = self.next;
+            self.next += 1;
+            if !self.kept.contains(&id) && free(id) {
+                return Some(id);
+            }
+        }
+        (FIRST_TAG_ID..=MAX_FILE_TAG_ID).find(|id| !self.kept.contains(id) && free(*id))
+    }
+}
+
+/// A name for an entry whose own spells an id's selector (`#1`, a file from before the
+/// selectors were reserved): `Tag #1`, numbered when that is taken as well, within `max`
+/// bytes. The entry and what carries it are kept under it ([#1254] review: the entry was
+/// dropped with its assignments). `None` when no such name fits.
+fn unreserved_name(kind: &str, name: &str, max: usize, taken: impl Fn(&str) -> bool) -> Option<String> {
+    let base = format!("{kind} {name}");
+    std::iter::once(base.clone()).chain((2..100).map(|n| format!("{base} {n}"))).find(|c| c.len() <= max && !taken(c))
 }
 
 /// Reads one level of the file's tag forest into `entries` under `parent` (None for the
 /// top); `depth` is how deep the level is, against [`MAX_TAG_DEPTH`] — the cap counts
 /// folder levels, so tags sit in the deepest folder fine and a folder past it is left out
-/// — and `next` hands ids out to entries without a usable one ([`file_id`]), first served
-/// in file order, from past every id the file keeps ([`highest_file_id`], [#1254]).
+/// — and `ids` hands ids out to entries without a usable one ([`file_id`]), first served
+/// in file order, from past every id the file keeps ([#1254]).
 fn read_tag_entries(
     list: &[Value],
     parent: Option<u32>,
     entries: &mut Vec<TagEntry>,
-    next: &mut u32,
+    ids: &mut FileIds,
     depth: usize,
     warnings: &mut Vec<String>,
 ) {
     for entry in list {
-        if let Some(tag) = entry.get("tag") {
-            // {"tag": {"id", "name", "color"}}.
-            let id = file_id(tag, entries);
+        // A tag of the new shape, {"tag": {"id", "name", "color"}}, or #1250's flat one,
+        // {"name", "color"} with no id of its own.
+        let flat = entry.get("tag").is_none() && (entry.get("name").is_some() || entry.get("color").is_some());
+        let node = if flat { Some(entry) } else { entry.get("tag") };
+        if let Some(tag) = node {
+            let id = if flat { None } else { file_id(tag, entries) };
             let name = tag.get("name").and_then(Value::as_str).map(str::trim).unwrap_or("");
             let color = tag.get("color").and_then(Value::as_str).unwrap_or("");
             if name.is_empty() || name.len() > MAX_TAG_NAME {
                 warnings.push("browser.json: a tag without a usable name; skipped".into());
-            } else if !is_color(color) {
+                continue;
+            }
+            if !is_color(color) {
                 warnings.push(format!("browser.json: tag {name:?} has no #RRGGBB colour; skipped"));
-            } else if name_is_id_form(name) {
-                warnings.push(format!("browser.json: tag {name:?} spells an id's selector; no tag is made of it"));
-            } else if tag_name_taken(entries, name) {
+                continue;
+            }
+            let name = if name_is_id_form(name) {
+                let taken = |n: &str| {
+                    ids.names.contains(n)
+                        || tag_name_taken(entries, n)
+                        || level_names(entries, parent).iter().any(|s| s == n)
+                };
+                match unreserved_name("Tag", name, MAX_TAG_NAME, taken) {
+                    Some(renamed) => {
+                        warnings
+                            .push(format!("browser.json: tag {name:?} spells an id's selector; renamed {renamed:?}"));
+                        ids.renamed.push((name.to_string(), renamed.clone()));
+                        renamed
+                    }
+                    None => {
+                        warnings.push(format!("browser.json: tag {name:?} spells an id's selector; skipped"));
+                        continue;
+                    }
+                }
+            } else {
+                name.to_string()
+            };
+            if tag_name_taken(entries, &name) {
                 warnings.push(format!("browser.json: tag {name:?} twice; the second skipped"));
-            } else if level_names(entries, parent).iter().any(|shown| shown == name) {
+            } else if level_names(entries, parent).iter().any(|shown| *shown == name) {
                 // A name the level's own folder has: the shape the moves refuse, skipped on
                 // load ([#1254] review), so a reload keeps the same turns.
                 warnings.push(format!("browser.json: tag {name:?} conflicts with a sibling folder; skipped"));
-            } else if tag_count(entries) >= limit_warning(entries) {
-                warnings.push(format!("browser.json: more than {} tags; the rest skipped", limit_warning(entries)));
-                break;
             } else {
-                let id = id.unwrap_or_else(|| hand_out(next));
+                let Some(id) = id.or_else(|| ids.hand_out(entries)) else {
+                    warnings.push(format!("browser.json: no tag id is left for {name:?}; skipped"));
+                    continue;
+                };
                 if let Some(level) = level_mut(entries, parent) {
-                    level.push(TagEntry::Tag(Tag { id, name: name.to_string(), color: color.to_string() }));
+                    level.push(TagEntry::Tag(Tag { id, name, color: color.to_string() }));
                 }
-                continue;
             }
         } else if let Some(folder) = entry.get("folder") {
             // {"folder": {"id", "name", "open"}, "tags": [...]}.
@@ -613,62 +686,50 @@ fn read_tag_entries(
             let id = file_id(folder, entries);
             let name = folder.get("name").and_then(Value::as_str).map(str::trim).unwrap_or("");
             let open = folder.get("open").and_then(Value::as_bool).unwrap_or(true);
-            let taken = level_names(entries, parent).into_iter().any(|shown| shown == name);
             if name.is_empty() || name.len() > MAX_TAG_FOLDER_NAME {
                 warnings.push("browser.json: a tag folder without a usable name; skipped".into());
-            } else if name_is_id_form(name) {
-                warnings.push(format!(
-                    "browser.json: tag folder {name:?} spells an id's selector; no folder is made of it"
-                ));
-            } else if taken {
+                continue;
+            }
+            // A folder whose name spells a selector keeps its place and its cortège under a
+            // name of its own ([#1254] review).
+            let name = if name_is_id_form(name) {
+                let taken = |n: &str| ids.names.contains(n) || level_names(entries, parent).iter().any(|s| s == n);
+                match unreserved_name("Folder", name, MAX_TAG_FOLDER_NAME, taken) {
+                    Some(renamed) => {
+                        warnings.push(format!(
+                            "browser.json: tag folder {name:?} spells an id's selector; renamed {renamed:?}"
+                        ));
+                        renamed
+                    }
+                    None => {
+                        warnings.push(format!("browser.json: tag folder {name:?} spells an id's selector; skipped"));
+                        continue;
+                    }
+                }
+            } else {
+                name.to_string()
+            };
+            if level_names(entries, parent).iter().any(|shown| *shown == name) {
                 warnings.push(format!("browser.json: tag folder {name:?} twice in a level; the second skipped"));
             } else if folders_iter(entries).count() >= MAX_TAG_FOLDERS {
                 warnings.push(format!("browser.json: more than {MAX_TAG_FOLDERS} tag folders; the rest skipped"));
                 break;
             } else {
-                let id = id.unwrap_or_else(|| hand_out(next));
+                let Some(id) = id.or_else(|| ids.hand_out(entries)) else {
+                    warnings.push(format!("browser.json: no tag id is left for folder {name:?}; skipped"));
+                    continue;
+                };
                 if let Some(level) = level_mut(entries, parent) {
-                    level.push(TagEntry::Folder {
-                        folder: TagFolder { id, name: name.to_string(), open },
-                        tags: Vec::new(),
-                    });
+                    level.push(TagEntry::Folder { folder: TagFolder { id, name, open }, tags: Vec::new() });
                 }
                 if let Some(children) = entry.get("tags").and_then(Value::as_array) {
-                    read_tag_entries(children, Some(id), entries, next, depth + 1, warnings);
-                }
-                continue;
-            }
-        } else if entry.get("name").is_some() || entry.get("color").is_some() {
-            // #1250's flat tag: {"name", "color"}, with no id of its own.
-            let name = entry.get("name").and_then(Value::as_str).map(str::trim).unwrap_or("");
-            let color = entry.get("color").and_then(Value::as_str).unwrap_or("");
-            if name.is_empty() || name.len() > MAX_TAG_NAME {
-                warnings.push("browser.json: a tag without a usable name; skipped".into());
-            } else if !is_color(color) {
-                warnings.push(format!("browser.json: tag {name:?} has no #RRGGBB colour; skipped"));
-            } else if name_is_id_form(name) {
-                warnings.push(format!("browser.json: tag {name:?} spells an id's selector; no tag is made of it"));
-            } else if tag_name_taken(entries, name) {
-                warnings.push(format!("browser.json: tag {name:?} twice; the second skipped"));
-            } else if level_names(entries, parent).iter().any(|shown| shown == name) {
-                warnings.push(format!("browser.json: tag {name:?} conflicts with a sibling folder; skipped"));
-            } else {
-                let id = hand_out(next);
-                if let Some(level) = level_mut(entries, parent) {
-                    level.push(TagEntry::Tag(Tag { id, name: name.to_string(), color: color.to_string() }));
+                    read_tag_entries(children, Some(id), entries, ids, depth + 1, warnings);
                 }
             }
-            continue;
         } else {
             warnings.push("browser.json: a tag entry that is neither a tag nor a folder; skipped".into());
         }
     }
-}
-
-/// The tags a file may hold, for the reader's warning: the limit the file has is not know
-/// here, so the warning's caller counts against it before the reader is entered.
-fn limit_warning(entries: &[TagEntry]) -> usize {
-    tag_count(entries) + 1
 }
 
 /// The list one level of the forest is held in, for writing: `None` for the top level,
@@ -952,6 +1013,9 @@ impl Store {
             }
             store.sections = sections;
         }
+        // The names the reader changed (a name that spelled a selector), for the legacy
+        // assignments below that named the tag ([#1254] review).
+        let mut renamed: Vec<(String, String)> = Vec::new();
         if let Some(tags) = map.get("tags") {
             // The tags are the forest a new file keeps: a tag is {"tag": {"id", "name",
             // "color"}}, a folder is {"folder": {"id", "name", "open"}, "tags": [...]}, up
@@ -962,8 +1026,9 @@ impl Store {
                 Some(list) => {
                     store.tags.clear();
                     // The ids handed out start past every id the file keeps ([#1254] review).
-                    let mut next = highest_file_id(list, 1).saturating_add(1).max(FIRST_TAG_ID);
-                    read_tag_entries(list, None, &mut store.tags, &mut next, 1, warnings);
+                    let mut ids = FileIds::of(list);
+                    read_tag_entries(list, None, &mut store.tags, &mut ids, 1, warnings);
+                    renamed = ids.renamed;
                     if tag_count(&store.tags) > store.tag_limit {
                         // The limit is over the tags a file read in; the last ones drop.
                         for id in tag_ids(&store.tags).split_off(store.tag_limit) {
@@ -1008,7 +1073,11 @@ impl Store {
                         }
                         // The old format: names.
                         Value::String(name) => {
-                            if let Some(id) = tags_iter(&store.tags).find(|t| t.name == *name).map(|t| t.id)
+                            let name = renamed
+                                .iter()
+                                .find(|(from, _)| from == name)
+                                .map_or(name.as_str(), |(_, to)| to.as_str());
+                            if let Some(id) = tags_iter(&store.tags).find(|t| t.name == name).map(|t| t.id)
                                 && !carries.contains(&id)
                             {
                                 carries.push(id);

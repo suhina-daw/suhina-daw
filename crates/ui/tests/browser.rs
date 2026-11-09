@@ -3186,6 +3186,52 @@ fn a_replaced_library_leaves_an_open_tag_menu_behind() {
     let _ = std::fs::remove_dir_all(&other);
 }
 
+// The Tags title's menu goes with a replaced library too: its typed tag name is not made in
+// the replacement ([#1254] review).
+#[test]
+fn a_replaced_library_leaves_the_tags_titles_menu_behind() {
+    let (settings, folder, other) =
+        (temp("title-replaced-settings"), temp("title-replaced"), temp("title-replaced-other"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("New tag name").click();
+    harness.run();
+    harness.get_by_label("New tag name").type_text("Stale");
+    harness.run();
+    harness.state_mut().set_file_library(Library::new(Some(other.clone())));
+    harness.run();
+    assert!(harness.query_by_label("New tag name").is_none(), "the old library's menu closed");
+    harness.get_by_label("Tags section").click_secondary();
+    harness.run();
+    harness.get_by_label("Add tag").click();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    assert!(!tags.iter().any(|t| t.name == "Stale"), "no draft of the old menu made a tag: {tags:?}");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+    let _ = std::fs::remove_dir_all(&other);
+}
+
+// A carried tag renamed meanwhile (by an agent) carries its new name, and its drop names it by
+// its id ([#1254] review: the old name could reach another tag or none).
+#[test]
+fn a_carried_tag_renamed_meanwhile_carries_its_new_name() {
+    let (settings, folder) = (temp("carry-rename-settings"), temp("carry-rename"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().browser.drag_tag_id = Some(1);
+    harness.state_mut().browser.drag_tag = Some("Red".into());
+    let rename = json!({ "id": "#1", "rename": "Crimson" });
+    harness.state_mut().projects_mut().execute("library.setTag", &rename).unwrap();
+    harness.state_mut().note_outside_change();
+    assert_eq!(harness.state().browser.drag_tag.as_deref(), Some("Crimson"));
+    assert_eq!(harness.state().browser.drag_tag_id, Some(1), "the carry goes on");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 // The Tags title's New folder shows its folder as Add tag shows its tag: a closed section
 // opens for it ([#1254] review).
 #[test]

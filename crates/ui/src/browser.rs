@@ -567,6 +567,16 @@ impl BrowserState {
         if self.drag_tag_id.is_some_and(|id| !live_rows.contains(&id)) {
             self.end_tag_carry();
         }
+        // A carried tag or folder renamed meanwhile carries its new name: the pill and the
+        // status say what will land ([#1254] review).
+        if let Some(id) = self.drag_tag_id {
+            let name = suhina_library::store::tag_by_id(&forest, id)
+                .map(|tag| tag.name.clone())
+                .or_else(|| suhina_library::store::folder_by_id(&forest, id).map(|folder| folder.name.clone()));
+            if name.is_some() {
+                self.drag_tag = name;
+            }
+        }
         self.relist();
     }
 

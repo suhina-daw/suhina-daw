@@ -200,3 +200,32 @@ fn a_layout_for_a_scope_no_longer_asked_for_is_let_go() {
         worker.join().unwrap();
     }
 }
+
+/// A layout asked for while let-go workers are still busy stays asked: the frame that waits
+/// marks it, so a notification of analysed samples that comes once is not lost
+/// ([#1254] review).
+#[test]
+fn a_layout_asked_while_workers_are_busy_stays_asked() {
+    let mut panel = Panel::default();
+    let mut releases = Vec::new();
+    for _ in 0..MAX_RETIRED_RUNNING {
+        let (release, wait) = std::sync::mpsc::channel::<()>();
+        releases.push(release);
+        panel.retired.push(std::thread::spawn(move || {
+            let _ = wait.recv();
+        }));
+    }
+    let mut projects = Projects::new();
+    let state = BrowserState::default();
+    let settings = Settings::default();
+    let ctx = egui::Context::default();
+    let _ = ctx.run_ui(egui::RawInput::default(), |ui| panel.refresh(ui, &state, &mut projects, &settings));
+    assert!(panel.stale, "the asked layout is kept for a later frame");
+    assert!(panel.job.is_none(), "no layout starts beside the busy workers");
+    for release in releases {
+        release.send(()).unwrap();
+    }
+    for worker in std::mem::take(&mut panel.retired) {
+        worker.join().unwrap();
+    }
+}

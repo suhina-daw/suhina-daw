@@ -299,6 +299,67 @@ fn a_files_ids_are_kept_once_and_the_handed_out_ones_take_none_of_them() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// A file that keeps the highest id still reads its id-less tags in under ids a reload reads
+// back: the lowest free ones, never one past the cap ([#1254] review: the id-less tag took
+// one past it, and once the highest went a reload gave it another and its items lost it).
+#[test]
+fn a_file_keeping_the_highest_id_hands_out_ids_a_reload_keeps() {
+    let dir = temp("highest-kept");
+    let file = dir.join("browser.json");
+    let text = json!({
+        "tags": [
+            { "tag": { "id": MAX_FILE_TAG_ID, "name": "Top", "color": "#112233" } },
+            { "tag": { "name": "Idless", "color": "#223344" } },
+        ],
+    })
+    .to_string();
+    std::fs::write(&file, text).unwrap();
+    let (mut store, _) = Store::load(&file);
+    let idless = tags_iter(&store.tags).find(|t| t.name == "Idless").map(|t| t.id).unwrap_or(0);
+    assert_eq!(idless, FIRST_TAG_ID, "the lowest free id, within the cap");
+    store.tag("/a.wav", idless, true).unwrap();
+    store.remove_tag(MAX_FILE_TAG_ID).unwrap();
+    store.save(&file).unwrap();
+    let (again, _) = Store::load(&file);
+    assert_eq!(tags_iter(&again.tags).find(|t| t.name == "Idless").map(|t| t.id), Some(idless));
+    assert_eq!(again.tagged["/a.wav"], [idless], "the item keeps its tag through the reload");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// A legacy tag or folder whose name spells a selector is kept under a name of its own, with
+// what carries it ([#1254] review: #1250's file could hold a tag named `#1`, and the reader
+// dropped it with its assignments, the next save making the loss for good).
+#[test]
+fn a_legacy_selector_name_is_renamed_not_dropped() {
+    let dir = temp("legacy-selector");
+    let file = dir.join("browser.json");
+    let text = json!({
+        "tags": [
+            { "name": "#1", "color": "#112233" },
+            { "name": "Tag #1", "color": "#223344" },
+            { "folder": { "name": "#2", "open": true }, "tags": [
+                { "tag": { "name": "Inside", "color": "#334455" } },
+            ] },
+        ],
+        "tagged": { "/a.wav": ["#1", "Tag #1"] },
+    })
+    .to_string();
+    std::fs::write(&file, text).unwrap();
+    let (store, warnings) = Store::load(&file);
+    let names: Vec<String> = tags_iter(&store.tags).map(|t| t.name.clone()).collect();
+    assert!(names.contains(&"Tag #1 2".to_string()), "renamed past the name taken: {names:?} {warnings:?}");
+    assert!(names.contains(&"Inside".to_string()), "the folder's tag stays: {names:?}");
+    assert!(folders_iter(&store.tags).any(|f| f.name == "Folder #2"), "the folder is renamed, not dropped");
+    let renamed = tags_iter(&store.tags).find(|t| t.name == "Tag #1 2").map(|t| t.id).unwrap_or(0);
+    let other = tags_iter(&store.tags).find(|t| t.name == "Tag #1").map(|t| t.id).unwrap_or(0);
+    let mut carried = store.tagged["/a.wav"].clone();
+    carried.sort_unstable();
+    let mut wanted = vec![renamed, other];
+    wanted.sort_unstable();
+    assert_eq!(carried, wanted, "the item carries both, the renamed one by its new id");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // The store makes no id past the ones a file keeps: an id it made past them would be handed
 // out anew on the next load and the items carrying it would come back carrying another tag
 // ([#1254] review). Every id a make hands out round-trips as it is.

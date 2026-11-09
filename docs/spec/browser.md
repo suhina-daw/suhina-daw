@@ -505,8 +505,12 @@ next named colour (the enum behind the seven, then the CSS named colours, with n
 "Red 2" — when a name is already taken). There are seven at first and colours may repeat; two
 tags never share a name. A name is 1 to 64 bytes and never spells an id's selector: `#` over
 one or more ASCII digits and nothing else is the selectors' own shape (`#<id>`), and so are
-such ids joined with `+` (`#1+#2`, a place of several); both are refused at the make, the
-rename and the load, for tags and tag folders alike ([#1254] review). Another leading-`#`
+such ids joined with `+` (`#1+#2`, a place of several); both are refused at the make and the
+rename, for tags and tag folders alike, and a file that holds one (#1250's could) is read in
+with it renamed `Tag #1` or `Folder #2` (numbered past any name the file has), what carried
+it carrying it still ([#1254] review). A file's tags and folders keep their ids; one without
+an id takes the next past every id the file keeps, all of them within the ids the store
+makes, so a reload reads every id back ([#1254] review). Another leading-`#`
 name (`#`, `#notes`, `#+1`) is a name like any of the rest, and `tag:#notes` reads it as one,
 as the tag and folder params of the commands do.
 `library.setTag` makes at the top and, with its `folder`, in that tag folder from its first
