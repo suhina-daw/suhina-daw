@@ -172,12 +172,15 @@ impl DriverBuffers {
         (self.min > 0 && self.min <= self.max).then_some((self.min, self.max))
     }
 
-    /// Whether the driver takes `frames`: inside its range and on its granularity. With nothing
+    /// Whether the driver takes `frames`: inside its range and on its granularity. A driver
+    /// answering one size (the smallest is the largest) takes that size whatever granularity it
+    /// states: drivers fixed to their control panel's size answer -1 with it too. With nothing
     /// stated (0) it takes the size it prefers, or, when that lies outside its range, only the
     /// two ends it declared.
     fn takes(&self, frames: u32) -> bool {
         within(self.range(), frames)
             && match self.granularity {
+                _ if self.min == self.max => frames == self.min,
                 Granularity::PowersOfTwo => frames.is_power_of_two(),
                 Granularity::Unstated if within(self.range(), self.preferred) => frames == self.preferred,
                 Granularity::Unstated => frames == self.min || frames == self.max,

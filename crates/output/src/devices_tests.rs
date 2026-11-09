@@ -277,6 +277,30 @@ fn a_driver_fixed_to_its_control_panels_size_offers_that_size_by_default() {
     assert_eq!(fit_to_driver(1024, &tiny).1, None);
 }
 
+/// A driver answering one size with a granularity of -1 or a step, as real drivers fixed to their
+/// control panel's size do, takes that size even when it is no power of two or step: it is the
+/// only size the driver plays, and the engine renders in it.
+#[test]
+fn a_driver_answering_one_size_takes_it_whatever_granularity_it_states() {
+    for granularity in [-1, 0, 48, -2] {
+        let fixed = driver(480, 480, 480, granularity);
+        assert_eq!(fixed.sizes(), vec![480], "granularity {granularity}");
+        assert_eq!(fixed.default_size(), Some(480), "granularity {granularity}");
+        assert_eq!(fit_to_driver(1024, &fixed), (480, Some(480)), "granularity {granularity}");
+    }
+    let fixed = driver(480, 480, 480, -1);
+    let listed = listed_outputs([Driven(fixed)], "ASIO", None);
+    assert_eq!(listed[0].buffer_sizes, vec![480]);
+    assert_eq!(listed[0].default_buffer, Some(480));
+    let (block, asked) = fit_to_driver(256, &fixed);
+    assert_eq!(
+        driver_notice("Interface", 256, block, asked, &fixed).as_deref(),
+        Some("Interface plays only 480 frames, the size set in its control panel")
+    );
+    // Still within what the engine renders in.
+    assert!(driver(32, 32, 32, -1).sizes().is_empty());
+}
+
 #[test]
 fn powers_of_two_are_every_power_in_the_drivers_range() {
     let powers = driver(32, 8192, 256, -1);

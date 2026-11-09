@@ -64,7 +64,9 @@ the running application's settings; the native call addresses the current instan
 granularity (ASIO SDK 2.3, section 3): -1 for the powers of two from the smallest to the largest,
 a positive step for the smallest and every step after it, and 0 with the smallest equal to the
 largest for that one size. Drivers whose size is set in their own control panel commonly answer
-with that one size as smallest, largest and preferred.
+with that one size as smallest, largest and preferred, and not always with 0: a driver seen on
+Windows answers -1 with it. A driver answering one size is offered that size whatever
+granularity it states, also when it is no power of two or step.
 
 Settings › Audio offers the sizes the answer allows within what the engine renders in (64 to 4096
 frames): with powers of two every power in the range; with a step every size on it, or, when
