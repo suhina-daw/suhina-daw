@@ -150,7 +150,7 @@ fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
     let skin = crate::kit::skin::Skin {
         assets: [("knob.body".into(), svg("#12AB34")), ("button".into(), svg("#AB1234"))].into(),
         css: Some(Arc::from(
-            ".device-panel .knob { color:rgb(120 40 180); font-size:17px; } .device-panel .button {background:linear-gradient(90deg,red,blue);border-radius:6px;}",
+            "device-panel knob { color:rgb(120 40 180); font-size:17px; } device-panel button {background:linear-gradient(90deg,red,blue);border-radius:6px;}",
         )),
         ..Default::default()
     };
@@ -255,7 +255,7 @@ fn a_token_takes_the_drawings_alpha_without_rounding_its_colour_twice() {
 fn sample_markers_have_one_solid_color_without_an_outline() {
     let context = egui::Context::default();
     let mut output = context.run_ui(egui::RawInput::default(), |ui| {
-        sample_marker(&ui.ctx().layer_painter(egui::LayerId::background()), 20., 10., 80.);
+        sample_marker(&ui.ctx().layer_painter(egui::LayerId::background()), 20., 10., 80., marker_color());
     });
     let strokes: Vec<_> = output
         .shapes
@@ -265,7 +265,7 @@ fn sample_markers_have_one_solid_color_without_an_outline() {
             _ => None,
         })
         .collect();
-    assert_eq!(strokes, vec![Stroke::new(2., sample_marker_color())]);
+    assert_eq!(strokes, vec![Stroke::new(2., marker_color())]);
     output.textures_delta.clear();
 }
 
@@ -312,6 +312,7 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
             serde_json::json!(0),
             &mut Vec::new(),
             false,
+            None,
         );
     });
     output.textures_delta.clear();
@@ -1068,7 +1069,7 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     let actions = click(&canvas, &time_parameters, Pos2::new(35., 59.));
     assert!(actions.iter().any(|a| a.params["param"] == "sync_left" && a.params["value"] == 1.0));
 }
-/// A canvas dropdown has the standard popup frame, as every other dropdown, and `.popup` styles
+/// A canvas dropdown has the standard popup frame, as every other dropdown, and `popup` styles
 /// its rows (#1239).
 #[test]
 fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
@@ -1076,7 +1077,7 @@ fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
     let graph = super::delay_example::build().unwrap();
     let parameters: Vec<_> = graph.parameters.iter().map(|p| GraphParameter::new(p, p.default)).collect();
     let canvas = Arc::new(graph.ui.unwrap());
-    let skin = crate::kit::skin::Skin { css: Some(Arc::from(".popup { color: #00ff00; }")), ..Default::default() };
+    let skin = crate::kit::skin::Skin { css: Some(Arc::from("popup { color: #00ff00; }")), ..Default::default() };
     crate::kit::skin::configure(&skin);
     let mut harness =
         egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 300.)).build_ui(move |ui| {
@@ -1125,7 +1126,7 @@ fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
         }
         _ => None,
     });
-    assert_eq!(ink, Some(Color32::from_rgb(0, 0xFF, 0)), ".popup's colour reaches a row");
+    assert_eq!(ink, Some(Color32::from_rgb(0, 0xFF, 0)), "popup's colour reaches a row");
 }
 #[test]
 fn delay_menus_open_choose_and_cancel_without_spurious_edits() {
@@ -1399,7 +1400,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
     assert!(
         preview.shapes.iter().any(|s| matches!(&s.shape,
             egui::Shape::LineSegment { points, stroke }
-                if stroke.color == slice_line(sample_marker_color()) && (points[0].x - moved.x).abs() < 0.01
+                if stroke.color == slice_line(marker_color()) && (points[0].x - moved.x).abs() < 0.01
         )),
         "the marker follows the pointer before the command is committed"
     );
@@ -1662,6 +1663,7 @@ fn unknown_tempo_has_a_time_grid_under_its_times_whatever_the_grid() {
                 serde_json::json!(0),
                 &mut Vec::new(),
                 false,
+                None,
             );
         });
         let lines = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::LineSegment { points, stroke } if points[0].x == points[1].x && *stroke == Stroke::new(1., crate::kit::theme::palette().text_primary.gamma_multiply(0.09)))).count();
@@ -2474,4 +2476,9 @@ fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
     // Pressed a quarter along the 40-point line: the value starts there and moves on with the drag.
     assert!(parameters[0].value > 0.25, "the drag moves the value from the press, got {}", parameters[0].value);
     assert!(parameters[0].value <= 0.5 + 1e-6, "no further than the pointer went, got {}", parameters[0].value);
+}
+
+/// The sample markers' colour with no sheet: the palette's accent.
+fn marker_color() -> Color32 {
+    color(styled_palette(widget_palette(), None).accent)
 }

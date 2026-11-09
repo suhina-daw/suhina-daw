@@ -83,36 +83,36 @@
  * Original classic desktop / paper theme over an original meadow image.
  */
 @layer suhina-meadow {
-  .window, .session, .arrangement { background-color: transparent; color: color-mix(in oklab, white, black 79.8%); }
-  .application-bar, .menu-bar, .project-tabs {
+  window, session, arrangement { background-color: transparent; color: color-mix(in oklab, white, black 79.8%); }
+  application-bar, menu-bar, project-tabs {
     /* Intentional transparency over this theme's private background PNG. */
     background-color: transparent;
     background-image: linear-gradient(color-mix(in srgb, #4293FF 90.20%, transparent), color-mix(in srgb, #1D68E5 85.10%, transparent) 45%, color-mix(in srgb, #0752CF 87.45%, transparent));
     color: white;
     border-color: #003CA8;
   }
-  .toolbar, .status-bar { background-color: color-mix(in srgb, var(--paper), transparent var(--panel-clear)%); color: color-mix(in oklab, white, black 79.8%); }
-  .browser, .detail, .device-panel {
+  toolbar, status-bar { background-color: color-mix(in srgb, var(--paper), transparent var(--panel-clear)%); color: color-mix(in oklab, white, black 79.8%); }
+  browser, detail, device-panel {
     background-color: color-mix(in srgb, color-mix(in oklab, var(--paper), white 93.3%), transparent var(--browser-clear)%);
     color: color-mix(in oklab, white, black 79.8%);
     box-shadow: inset 0 1px 0 color-mix(in srgb, white 73.33%, transparent), inset -1px 0 0 color-mix(in srgb, white 40.00%, transparent);
   }
-  .track-header { background-color: transparent; background-image: linear-gradient(color-mix(in srgb, white 53.33%, transparent), color-mix(in srgb, var(--paper) 40.00%, transparent)); }
-  .track-name { background-color: transparent; background-image: linear-gradient(color-mix(in srgb, white 46.67%, transparent), color-mix(in srgb, white 26.67%, transparent)); }
-  .mixer {
+  track-header { background-color: transparent; background-image: linear-gradient(color-mix(in srgb, white 53.33%, transparent), color-mix(in srgb, var(--paper) 40.00%, transparent)); }
+  track-name { background-color: transparent; background-image: linear-gradient(color-mix(in srgb, white 46.67%, transparent), color-mix(in srgb, white 26.67%, transparent)); }
+  mixer {
     /* Intentional transparency over this theme's private background PNG. */
     background-color: transparent;
     background-image: linear-gradient(120deg, color-mix(in srgb, white 43.92%, transparent), color-mix(in srgb, #DCEAFF 25.10%, transparent));
     box-shadow: inset 1px 0 0 color-mix(in srgb, white 80.00%, transparent), inset -1px 0 0 color-mix(in srgb, #7F9DB9 46.67%, transparent);
   }
-  .button { color: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 79.2%), black 54.2%); background-color: var(--paper); border-color: #7F9DB9; border-radius: 2px; }
-  .button:hover { color: #003C74; background-color: #FFF4C9; border-color: #E5A629; }
-  .knob { color: var(--tint); background-color: var(--paper); }
-  .value, .dropdown, .text-input { color: color-mix(in oklab, white, black 79.8%); background-color: white; border-radius: 0px; }
-  .fader-scale { color: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 2.5%), black 48.8%); }
-  .meter { background-color: color-mix(in oklab, var(--paper), white 91.3%); }
-  .meter-vertical .meter-level { background: linear-gradient(to top, #21A92B, #7CCE3E 76%, #E3C02C 91%, #D85430); }
-  .meter-horizontal .meter-level { background: linear-gradient(to right, #21A92B, #7CCE3E 76%, #E3C02C 91%, #D85430); }
+  button { color: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 79.2%), black 54.2%); background-color: var(--paper); border-color: #7F9DB9; border-radius: 2px; }
+  button:hover { color: #003C74; background-color: #FFF4C9; border-color: #E5A629; }
+  knob { color: var(--tint); background-color: var(--paper); }
+  value, dropdown, text-input { color: color-mix(in oklab, white, black 79.8%); background-color: white; border-radius: 0px; }
+  fader-scale { color: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 2.5%), black 48.8%); }
+  meter { background-color: color-mix(in oklab, var(--paper), white 91.3%); }
+  meter-vertical meter-level { background: linear-gradient(to top, #21A92B, #7CCE3E 76%, #E3C02C 91%, #D85430); }
+  meter-horizontal meter-level { background: linear-gradient(to right, #21A92B, #7CCE3E 76%, #E3C02C 91%, #D85430); }
 }
 
 /* Control placements. */
@@ -122,7 +122,7 @@
 .control-mixer-volume { left: 18px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
 .control-mixer-volume-readout { left: -24px; top: 0px; bottom: auto; display: block; right: auto; width: 30px; height: auto; --suhina-direction: vertical; }
 .control-mixer-volume-scale { left: -40px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
-.pan { --suhina-appearance: knob; }
+pan { --suhina-appearance: knob; }
 
 /* Artwork. */
 arm { image: url("assets/arm.svg"); }

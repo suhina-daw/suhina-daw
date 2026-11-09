@@ -95,18 +95,17 @@ pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions:
             break;
         }
         let response = widgets::button_area(ui, rect, Id::unique(("add-track", kind, area.min.x as i32)), label);
-        // `.add-track` styles the three, `#add-midi-track`, `#add-audio-track` and
+        // `add-track` styles the three, `#add-midi-track`, `#add-audio-track` and
         // `#add-return-track` one of them; `button.add-track` is their artwork.
         let name = format!("add-{kind}-track");
-        let _style = crate::kit::style_class::enter_named_response("add-track", &name, &response);
+        let el = crate::kit::element::ADD_TRACK.id(&name).response(&response).enter();
         let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         let state = crate::kit::skin::State::response(&response, false);
         if !crate::kit::skin::paint(painter, rect, "add-track", state, theme::text_secondary(), 0.0) {
-            crate::kit::native_css::surface(painter, rect, 0.0, fill);
+            el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill });
         }
-        let font = crate::kit::style_class::computed()
-            .filter(|c| c.authored.font_size)
-            .map_or_else(|| font.clone(), |c| theme::ui_font(c.font_size));
+        let font =
+            el.style().filter(|c| c.authored.font_size).map_or_else(|| font.clone(), |c| theme::ui_font(c.font_size));
         widgets::text_in(
             painter,
             rect,

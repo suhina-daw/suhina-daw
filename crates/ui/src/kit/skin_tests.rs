@@ -126,8 +126,8 @@ fn svg_backgrounds_clear_native_alpha_once_and_keep_private_images_underneath() 
 }
 #[test]
 fn inherited_svg_renders_missing_roles_while_theme_artwork_overrides_one_role() {
-    assert_eq!(DEFAULT_SVGS.len(), ROLES.len());
-    for (role, svg) in DEFAULT_SVGS {
+    assert_eq!(default_svgs().count(), roles().count());
+    for (role, svg) in default_svgs() {
         assert!(parse_svg(svg).is_ok(), "{role}");
     }
     let skin = Skin {assets:BTreeMap::from([("play".into(), "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"28\" height=\"28\"><rect width=\"28\" height=\"28\" fill=\"#00ff00\"/></svg>".into())]), ..Default::default()};
@@ -197,7 +197,7 @@ fn svg_states_publish_distinct_pixels_and_reuse_cached_textures() {
 #[test]
 fn skin_round_trip_and_old_defaults() {
     let skin = Skin {
-        css: Some(Arc::from("/* preserved */ @layer test { .browser { color:var(--ink); } }")),
+        css: Some(Arc::from("/* preserved */ @layer test { browser { color:var(--ink); } }")),
         variant: None,
         background: None,
         background_opacity: 70,
