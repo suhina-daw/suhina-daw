@@ -104,6 +104,22 @@ impl FolderDrop {
     }
 }
 
+/// The gain envelope's grid steps Settings offers, in tenths of a dB.
+pub const ENVELOPE_STEPS: [u8; 5] = [5, 10, 20, 30, 60];
+
+impl ViewSettings {
+    /// What the Arrangement's gain envelopes are drawn and edited with.
+    pub fn envelope(&self) -> crate::arrangement::envelope::EnvelopeSettings {
+        crate::arrangement::envelope::EnvelopeSettings {
+            show: self.envelope_show,
+            ceiling: f64::from(self.envelope_ceiling),
+            step: f64::from(self.envelope_step) / 10.0,
+            free: self.envelope_free,
+            all: self.envelope_all,
+        }
+    }
+}
+
 /// The settings this module reads and writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewSettings {
@@ -126,6 +142,19 @@ pub struct ViewSettings {
     /// A click anywhere on an automation lane adds a point; off (the default), only a click on or
     /// near the line does, and a double-click adds one anywhere.
     pub automation_click_anywhere: bool,
+    /// Audio clips with gain envelope points show their line while not being edited (on by
+    /// default).
+    pub envelope_show: bool,
+    /// The highest gain a gain envelope point can be dragged to, in dB: 3, 6 (the default), 12
+    /// or 24.
+    pub envelope_ceiling: u8,
+    /// The gain envelope's dB grid, in tenths of a dB (10, 1 dB, by default).
+    pub envelope_step: u8,
+    /// Gain envelope points move freely by default, instead of on the dB grid.
+    pub envelope_free: bool,
+    /// Edit gain envelope opens every audio clip's envelope at once (on by default), rather than
+    /// one clip's at a time.
+    pub envelope_all: bool,
     /// Clip menus carry a name field that renames in place, instead of Rename (off by default).
     pub menu_name_field: bool,
     /// Notes placed over others of their key replace them (on by default); Settings shows it the
@@ -235,6 +264,11 @@ impl Default for ViewSettings {
             detail_layout: DetailLayout::Beside,
             double_click_clip: true,
             automation_click_anywhere: false,
+            envelope_show: true,
+            envelope_ceiling: 6,
+            envelope_step: 10,
+            envelope_free: false,
+            envelope_all: true,
             menu_name_field: false,
             notes_replace: true,
             replace_clip: false,
@@ -331,6 +365,14 @@ impl ViewSettings {
             )
             + &format!("background_tint = {}\nbackground_blur = {}\n", self.background_tint, self.background_blur)
             + &format!("arrangement_grid = {}\n", self.default_grid)
+            + &format!(
+                "gain_envelope_show = {}\ngain_envelope_ceiling = {}\ngain_envelope_step = {}\ngain_envelope_move = {}\ngain_envelope_editing = {}\n",
+                if self.envelope_show { "on" } else { "off" },
+                self.envelope_ceiling,
+                f64::from(self.envelope_step) / 10.0,
+                if self.envelope_free { "free" } else { "grid" },
+                if self.envelope_all { "all" } else { "one" },
+            )
             + &self.track_sizes.to_text()
     }
 
@@ -414,6 +456,16 @@ impl ViewSettings {
             ("detail_layout", "full_width") => self.detail_layout = DetailLayout::FullWidth,
             ("double_click_clip", "on" | "off") => self.double_click_clip = value == "on",
             ("automation_click", "anywhere" | "line") => self.automation_click_anywhere = value == "anywhere",
+            ("gain_envelope_show", "on" | "off") => self.envelope_show = value == "on",
+            ("gain_envelope_ceiling", "3" | "6" | "12" | "24") => self.envelope_ceiling = value.parse().unwrap_or(6),
+            ("gain_envelope_step", step) => match step.parse::<f64>() {
+                Ok(db) if ENVELOPE_STEPS.contains(&((db * 10.0).round() as u8)) => {
+                    self.envelope_step = (db * 10.0).round() as u8;
+                }
+                _ => return false,
+            },
+            ("gain_envelope_move", "free" | "grid") => self.envelope_free = value == "free",
+            ("gain_envelope_editing", "all" | "one") => self.envelope_all = value == "all",
             ("menu_name_field", "on" | "off") => self.menu_name_field = value == "on",
             ("notes_replace", "on" | "off") => self.notes_replace = value == "on",
             ("time_select", "ctrl_drag" | "clip_lower_half") => self.time_select_ctrl = value == "ctrl_drag",
@@ -475,6 +527,11 @@ mod tests {
             detail_layout: DetailLayout::FullWidth,
             double_click_clip: false,
             automation_click_anywhere: true,
+            envelope_show: false,
+            envelope_ceiling: 24,
+            envelope_step: 5,
+            envelope_free: true,
+            envelope_all: false,
             menu_name_field: true,
             notes_replace: false,
             time_select_ctrl: true,

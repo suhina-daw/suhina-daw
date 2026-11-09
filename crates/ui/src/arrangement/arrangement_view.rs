@@ -341,6 +341,7 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
         released.3 = released.3.saturating_sub(1);
         if released.3 == 0 {
             state.edge_released = None;
+            state.stretch_released = None;
         }
     }
     // Showing one track, the view is not scrolled down; where it was is kept for later.
@@ -655,6 +656,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     }
     if !state.grid_in_clips {
         grid_xs.clear();
+    }
+    if let Some(clip) = state.toggle_envelope.take() {
+        crate::arrangement::envelope::toggle_editing(ui.ctx(), clip);
     }
     state.clip_grid = std::sync::Arc::new(grid_xs);
     // Tempo and time-signature changes: a line in the accent colour and what changes, after
@@ -1676,6 +1680,27 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             true,
             &state.clip_look(),
         );
+        // Its gain envelope goes with it, drawn as on any clip not being edited.
+        if let Some(view) = &clip.audio_view {
+            let place = crate::arrangement::envelope::Place {
+                rect: wave_area(rect),
+                origin: x_of(start),
+                beat_width: state.beat_width,
+                ink: ink_on(motion::mix(theme::panel_background(), rgb(clip.color), 0.82)),
+            };
+            let snap = |elapsed: f64| elapsed;
+            crate::arrangement::envelope::show(
+                ui,
+                &painter.with_clip_rect(row.clip),
+                place,
+                clip.id,
+                &clip.name,
+                view,
+                false,
+                &snap,
+                actions,
+            );
+        }
     }
 
     // The empty space under the last lane: buttons that add a track, and new tracks for what

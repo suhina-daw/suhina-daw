@@ -780,6 +780,10 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   the strip's left keeps the focus on the clip picked first. Keys and selections act on the
   focused clip: with notes selected the edit keys act on them, and with none selected on the clips.
   The least height grows by 16 px for each row the strip can take.
+- **An audio clip's column** is its panel, in groups (Clip, Audio, Gain, Pitch) with a gain
+  fader, a pitch knob with cents, the clip's tempo, Set buttons and numbers to type:
+  [clip panel spec](clip-panel.md) ([#1190](https://github.com/suhina-daw/suhina-daw/issues/1190)).
+  What follows was the audio clip's column before it, and is the MIDI clip's where it applies.
 - **Built ([#699](https://github.com/suhina-daw/suhina-daw/issues/699)):** the column edits the
   clip, each change one undo step:
   - **Loop** is a switch (`clip.setLoop`). An audio clip that loops has **Loop start** and **Loop
@@ -794,15 +798,16 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
     Re-pitch, Rhythmic, Tonal, Texture, Smooth and High quality) and **Transpose** (dragged by
     semitones, -48 to +48, a double-click puts it at 0), all through `clip.setAudio`. Warp turned
     on for audio without warp markers gives it two, at its start and its end, so it plays as it did
-    and then follows the tempo. Those markers fit the tempo where the clip plays, so a clip whose
-    audio another clip plays where the tempo differs gets its own copy of it first, and the other
-    clip plays as it did ([#874](https://github.com/suhina-daw/suhina-daw/issues/874)). Warp off
+    and then follows the tempo. Those markers fit the tempo where the clip plays; they are the
+    clip's own, so another clip of the same audio keeps its own warp
+    ([#742](https://github.com/suhina-daw/suhina-daw/issues/742); before, the clip got its own copy
+    of the content, [#874](https://github.com/suhina-daw/suhina-daw/issues/874)). Warp off
     plays the file at its own speed whatever the tempo (a transpose repitches it): the clip then
     spans what its seconds take at the song's tempo, and changing the tempo makes it span more or
     fewer beats at once (a 4-beat file at 124 BPM is 1.935 s, 2.903 beats at 90 BPM; warped to
     the song it is 4 beats). Whenever warp, a repitching transpose or the tempo changes what a
-    clip's beats mean in its file, every clip that plays it keeps its start and keeps playing the
-    same part of the file: its offset, length and loop are worked out again, so the waveform, the
+    clip's beats mean in its file, the clip keeps its start and keeps playing the same part of the
+    file: its offset, length and loop are worked out again, so the waveform, the
     end and the Length row agree with what is heard, and undo puts both back (#830).
   - A drag shows its value as it goes and sends one command when it is let go.
 - **Built ([#460](https://github.com/suhina-daw/suhina-daw/issues/460)):** the **Notes** row reads

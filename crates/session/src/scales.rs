@@ -13,7 +13,7 @@ use suhina_model::{Project, Scale};
 
 use crate::commands::Args;
 use crate::note_tools::{mode_of, root_of};
-use crate::notes::{check_midi, copy_on_write, locate};
+use crate::notes::{copy_on_write, locate};
 use crate::{CommandError, Session};
 
 /// A scale as the commands return it: `{ "root": "F#", "mode": "minor" }`, or `null` for none.
@@ -26,8 +26,9 @@ pub(crate) fn scale_value(scale: Option<Scale>) -> Value {
 
 /// The scale of the MIDI clip `params` names, if it has one.
 pub(crate) fn scale_of_clip(p: &Project, params: &Value) -> Result<Option<Scale>, CommandError> {
+    // A MIDI clip's scale marks the piano roll's keys; an audio clip's says the key of its audio
+    // (`docs/spec/clip-panel.md` › Scale).
     let (_, content, _) = locate(p, params)?;
-    check_midi(p, content)?;
     Ok(p.content(content).and_then(|c| c.scale))
 }
 

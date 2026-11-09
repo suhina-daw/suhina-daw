@@ -442,6 +442,38 @@ impl App {
             // A lane dragged in the Arrangement view: the knob follows the line as it is dragged.
             let dragged = self.arrangement.automation.dragged.as_ref().filter(|_| self.shown == View::Arrangement);
             shown.follow_automation_dragged(session.project(), beat, dragged);
+            // An audio clip's panel: where the playhead is in the clip, for its Set buttons, and
+            // what each source says its tempo is while its Find menu is open
+            // (`docs/spec/clip-panel.md`).
+            if let detail_view::Detail::Clip(info, _) = &mut shown
+                && let Some(ClipRef::Arrangement(track, id)) = info.at
+                && let Some(panel) = info.panel.as_mut()
+            {
+                let placed = session
+                    .project()
+                    .arrangement
+                    .lanes
+                    .iter()
+                    .filter(|l| l.track == Some(track))
+                    .flat_map(|l| &l.clips)
+                    .find(|c| c.id == id);
+                // Only while the playhead is in the clip: before or after it, Set would put a marker
+                // at the clip's edge.
+                panel.playhead = placed
+                    .filter(|c| beat >= c.start && beat < c.start + c.length)
+                    .map(|c| detail_view::content_beat_at(c, beat));
+            }
+            if let detail_view::Detail::Clip(info, _) = &mut shown
+                && let Some(panel) = info.panel.as_mut()
+                && ui.ctx().data(|d| d.get_temp::<ClipId>(detail_view::find_tempo_key())) == Some(panel.clip)
+            {
+                let key = detail_view::tempo_candidates_key(panel.clip);
+                panel.candidates = ui.ctx().data(|d| d.get_temp::<[Option<f64>; 3]>(key)).or_else(|| {
+                    let found = suhina_session::clip_tempo_candidates(session, panel.clip)?;
+                    ui.ctx().data_mut(|d| d.insert_temp(key, found));
+                    Some(found)
+                });
+            }
         }
         // What the host hands devices' canvases: whether the panel is open, and live values (a
         // band's level and gain change) while a player runs.

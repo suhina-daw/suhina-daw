@@ -1,0 +1,134 @@
+name: Closes notice
+
+# Lists the open issues a pull request's title or description names without a closing keyword or a
+# relation phrase, so an issue the pull request settles is not left open by a wording slip: GitHub
+# closes an issue only from a closing keyword in the description (or a link made by hand in the
+# Development box), never from the title, and prose or a list ("#681 to #725") closes nothing
+# (docs/workflow.md › Closing issues). It writes one comment on the pull request and keeps
+# it up to date with each push; it never fails, and a lookup that fails only leaves its part out.
+#
+# A number is not listed when a closing keyword covers it, when it is written as a relation
+# (`Part of #N` for an epic, `Depends on #N`, `Alternative to #N`, `Follow-up: #N`), when it is
+# closed already, or when it is a pull request.
+#
+# pull_request_target runs this file as it is on main, so pull requests from forks get the comment
+# too; it never checks out or runs the pull request's code, it only reads the description and the
+# named issues through the API.
+on:
+  pull_request_target:
+    # `edited`: a new description changes which numbers are named and how.
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: closes-notice-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  notice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const MARKER = "<!-- closes-notice -->";
+            // The template's examples sit in HTML comments and do not count; one left open runs
+            // to the end of the body, as GitHub renders it.
+            const body = String(pr.body || "").replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+            const said = `${pr.title || ""}\n${body}`;
+
+            // The numbers a closing keyword covers, as GitHub reads them: from the description
+            // only, never from the title (overlap.yml reads the same way), plus the ones GitHub
+            // itself linked for a pull request into main, by hand in the Development box included.
+            const covered = new Set();
+            for (const match of body.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)\b/gi)) {
+              covered.add(Number(match[1]));
+            }
+            try {
+              const linked = await github.graphql(
+                `query ($owner: String!, $name: String!, $number: Int!) {
+                   repository(owner: $owner, name: $name) {
+                     pullRequest(number: $number) { closingIssuesReferences(first: 50) { nodes { number } } }
+                   }
+                 }`,
+                { owner: context.repo.owner, name: context.repo.repo, number: pr.number },
+              );
+              for (const node of linked.repository.pullRequest.closingIssuesReferences.nodes) {
+                covered.add(node.number);
+              }
+            } catch (error) {
+              core.warning(`Could not read the linked issues: ${error.message}`);
+            }
+            // The relations that name an issue on purpose without closing it.
+            for (const match of said.matchAll(
+              /\b(?:Part of|Depends on|Alternative to|Follow-up:?)\s+#(\d+)\b/gi,
+            )) {
+              covered.add(Number(match[1]));
+            }
+
+            // Every other number named, oldest first, at most 30 looked up.
+            const named = [...new Set([...said.matchAll(/#(\d+)\b/g)].map((match) => Number(match[1])))]
+              .filter((number) => !covered.has(number) && number !== pr.number)
+              .sort((a, b) => a - b)
+              .slice(0, 30);
+
+            const open = [];
+            let incomplete = false;
+            for (const number of named) {
+              try {
+                const { data: issue } = await github.rest.issues.get({ ...context.repo, issue_number: number });
+                if (!issue.pull_request && issue.state === "open") {
+                  open.push({ number, title: issue.title });
+                }
+              } catch (error) {
+                // A number that is not an issue here (a stray reference) is left out.
+                if (error.status !== 404 && error.status !== 410) {
+                  incomplete = true;
+                  core.warning(`Could not read #${number}: ${error.message}`);
+                }
+              }
+            }
+
+            let notice;
+            if (open.length > 0) {
+              const lines = open.slice(0, 10).map((issue) => `- #${issue.number} ${issue.title}`);
+              if (open.length > 10) lines.push(`- and ${open.length - 10} more`);
+              notice =
+                `${MARKER}\nThe title or description names open issues without a closing keyword:\n\n` +
+                `${lines.join("\n")}\n\n` +
+                `If this pull request settles one, write \`Closes #N\` on its own line in the description: ` +
+                `a title, prose or a list closes nothing. If it only relates, saying how keeps it off this list: ` +
+                `\`Part of #N\` for an epic, \`Depends on #N\`, \`Alternative to #N\`, \`Follow-up: #N\` ` +
+                `(docs/workflow.md › Closing issues). This is a notice, not a check.`;
+            } else {
+              if (incomplete) return;
+              notice = `${MARKER}\nEvery issue named is closed by a keyword, marked as related, or already closed.`;
+            }
+            if (incomplete) notice += "\n\nThe scan is incomplete because an API lookup failed; other issues may be missing.";
+
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: pr.number,
+                per_page: 100,
+              });
+              const previous = comments.find(
+                (entry) => entry.user && entry.user.type === "Bot" && (entry.body || "").startsWith(MARKER),
+              );
+              if (previous) {
+                // Preserve the last complete notice until a complete scan can replace it.
+                if (incomplete) return;
+                if (previous.body !== notice) {
+                  await github.rest.issues.updateComment({ ...context.repo, comment_id: previous.id, body: notice });
+                }
+              } else if (open.length > 0) {
+                await github.rest.issues.createComment({ ...context.repo, issue_number: pr.number, body: notice });
+              }
+            } catch (error) {
+              core.warning(`Could not write the comment: ${error.message}`);
+            }

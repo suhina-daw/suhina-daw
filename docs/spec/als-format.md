@@ -3,7 +3,7 @@ description: The Live Set (.als) format as observed: container, tracks, clips, n
 read_when: reading .als, importer, XML element, MIDI effects, MidiChord, MidiArpeggiator, clip scale, ScaleInformation, warp markers, locators, arrangement markers, time signature, tempo envelope, tempo changes, devices, plug-in state, Utility, StereoGain, device parameters, muted note, deactivated note, IsEnabled
 type: spec
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-05
 covers:
   - crates/als/src/lib.rs
   - crates/als/src/devices.rs
@@ -229,6 +229,10 @@ clips are under `DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events`**, 
 | Warp markers | `WarpMarkers/WarpMarker@SecTime`, `@BeatTime` | Pairs of (seconds in the file, beats in the clip). |
 | Clip gain | `SampleVolume@Value` | Linear, `1` = 0 dB; −6 dB is `0.5011872053` (file `36`). |
 | Transpose | `PitchCoarse@Value`, `PitchFine@Value` | Semitones, and cents **(fine: hypothesis)**. |
+
+The file and its rate and length become the content's audio region; the warp switch, mode, markers,
+gain and transpose become the clip's own audio state (`Clip::audio`, [ADR 0035](../decisions/0035-clip-gain-envelope.md)),
+as each `AudioClip` carries its own.
 
 **Warp markers.** A newly added file got markers at (0 s, beat 0) and (4 s, beat 8): Live assumed
 120 bpm. Each list ends with one more marker 1/32 beat after the last real one
