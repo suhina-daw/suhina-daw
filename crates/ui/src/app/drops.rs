@@ -905,6 +905,10 @@ impl App {
                     }
                     let skipped = result["skipped"].as_array().map_or(0, Vec::len);
                     let placed = result["clips"].as_array().map_or(0, Vec::len);
+                    // A preset whose file does not load still adds its device; the add says
+                    // so ([docs/spec/nam-amp-and-cab.md] › the file a device starts on) — the
+                    // nested track.add result carries it under its device.
+                    let missing = result["file_missing"].as_str().or_else(|| result["device"]["file_missing"].as_str());
                     self.status = match (id, skipped) {
                         ("clip.addFiles", 0) => {
                             Status::Done(format!("Added {placed} clip{}", if placed == 1 { "" } else { "s" }))
@@ -913,7 +917,10 @@ impl App {
                             "Added {placed} clips; {n} skipped: {}",
                             result["skipped"][0]["reason"].as_str().unwrap_or_default()
                         )),
-                        _ => Status::Done("Added".into()),
+                        _ => match missing {
+                            Some(missing) => Status::Hint(format!("Added; the file did not load: {missing}")),
+                            None => Status::Done("Added".into()),
+                        },
                     };
                 }
                 Err(e) => {

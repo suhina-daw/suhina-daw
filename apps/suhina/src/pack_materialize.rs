@@ -93,7 +93,8 @@ pub fn unpack_pack(sounds: &Path) -> usize {
 /// the copy ran (the user's own, or another start's) is never written over. Returns whether
 /// it published.
 fn publish(target: &Path, bytes: &[u8]) -> bool {
-    let staging = target.with_file_name(format!("{}.suhina-new", target.file_name().unwrap_or_default().to_string_lossy()));
+    let staging =
+        target.with_file_name(format!("{}.suhina-new", target.file_name().unwrap_or_default().to_string_lossy()));
     if std::fs::write(&staging, bytes).is_err() {
         let _ = std::fs::remove_file(&staging);
         return false;
@@ -342,10 +343,16 @@ mod tests {
 
         let warnings = migrate_old_folders(&dir, &dir);
         assert_eq!(std::fs::read(new_pack.join("Moved.nam")).unwrap(), b"moved bytes", "the movable file went");
-        assert_eq!(std::fs::read(new_pack.join("Clash.nam")).unwrap(), b"the new bytes", "the kept name never written over");
+        assert_eq!(
+            std::fs::read(new_pack.join("Clash.nam")).unwrap(),
+            b"the new bytes",
+            "the kept name never written over"
+        );
         assert_eq!(std::fs::read(old_pack.join("Clash.nam")).unwrap(), b"the old bytes", "the kept file stays whole");
         assert!(
-            warnings.iter().any(|line| line.contains("mostly moved") && line.contains("1 file(s)") && line.contains("1 kept")),
+            warnings
+                .iter()
+                .any(|line| line.contains("mostly moved") && line.contains("1 file(s)") && line.contains("1 kept")),
             "the partial move names both counts: {warnings:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);

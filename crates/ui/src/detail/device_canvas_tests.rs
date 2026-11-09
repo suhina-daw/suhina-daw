@@ -622,10 +622,7 @@ fn a_folder_and_its_file_read_apart_and_the_folder_carries_the_artwork() {
     // The picker stays inside its row: the icon's own margin comes out of its width, so it
     // never reaches under the stepper beside it (the stepper starts at x = 384).
     let picker = harness.get_by_label("Cab Loader: pack").rect();
-    assert!(
-        picker.right() <= 384.0,
-        "the pack picker ends inside its row, not under the stepper: {picker:?}"
-    );
+    assert!(picker.right() <= 384.0, "the pack picker ends inside its row, not under the stepper: {picker:?}");
 }
 
 #[test]

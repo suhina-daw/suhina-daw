@@ -1492,7 +1492,8 @@ impl App {
                         })
                         .collect();
                     set.files.extend(shipped.files.into_iter().filter(|(key, _)| {
-                        let name = std::path::Path::new(key).file_name().unwrap_or_default().to_string_lossy().into_owned();
+                        let name =
+                            std::path::Path::new(key).file_name().unwrap_or_default().to_string_lossy().into_owned();
                         !held.contains(&name)
                     }));
                     rows.insert(0, set);

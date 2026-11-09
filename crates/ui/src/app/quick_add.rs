@@ -521,9 +521,23 @@ impl App {
             match track {
                 Some(track) => {
                     params["track"] = json!(track.0);
-                    if self.quick_add_run(id, &params).is_some() {
+                    if let Some(added) = self.quick_add_run(id, &params) {
                         self.show_devices_of(track);
-                        self.status = Status::Done(format!("Added {} to {}", found.name, self.track_name(track)));
+                        // A preset whose file does not load still adds its device; the add
+                        // says so ([docs/spec/nam-amp-and-cab.md] › the file a device starts on).
+                        match added["file_missing"].as_str() {
+                            Some(missing) => {
+                                self.status = Status::Hint(format!(
+                                    "Added {} to {}; the file did not load: {missing}",
+                                    found.name,
+                                    self.track_name(track)
+                                ))
+                            }
+                            None => {
+                                self.status =
+                                    Status::Done(format!("Added {} to {}", found.name, self.track_name(track)))
+                            }
+                        }
                     }
                 }
                 None => {
@@ -536,7 +550,16 @@ impl App {
                         .map(TrackId);
                     if let Some(new) = new {
                         self.show_devices_of(new);
-                        self.status = Status::Done(format!("Added {} on a new track", found.name));
+                        let missing = added.as_ref().and_then(|r| r["device"]["file_missing"].as_str());
+                        match missing {
+                            Some(missing) => {
+                                self.status = Status::Hint(format!(
+                                    "Added {} on a new track; the file did not load: {missing}",
+                                    found.name
+                                ))
+                            }
+                            None => self.status = Status::Done(format!("Added {} on a new track", found.name)),
+                        }
                     }
                 }
             }

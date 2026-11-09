@@ -131,4 +131,31 @@ fn a_shipped_key_reads_the_pack_and_the_unpacked_copy_of_its_file() {
         files: vec![("builtin:nam-amp-modeler/Suhina Overdrive.nam".into(), "Suhina Overdrive".into())],
     }];
     assert_eq!(pack_of_current(key, &shipped).map(|pack| pack.name.as_str()), Some("Suhina"));
+
+    // A stock preset's key beside the unpacked copy reads its disk row: the steps and the
+    // dropdown's own row match the disk path, so Next file steps to the successor, not the
+    // pack's first.
+    let next_to = Lists {
+        models: vec![Set {
+            name: "Suhina".into(),
+            files: vec![
+                ("/library/Amp models/Suhina/Suhina Overdrive.nam".into(), "Suhina Overdrive".into()),
+                ("/library/Amp models/Suhina/Suhina Clean.nam".into(), "Suhina Clean".into()),
+            ],
+        }],
+        ..Lists::default()
+    };
+    let rows = &next_to.models;
+    let listed = listed_of_disk_row(key.to_owned(), pack_of_current(key, rows));
+    assert_eq!(listed.as_str(), "/library/Amp models/Suhina/Suhina Overdrive.nam", "the key reads its disk row");
+    assert_eq!(
+        step_through(&rows[0].files, &listed, 1).as_deref(),
+        Some("/library/Amp models/Suhina/Suhina Clean.nam"),
+        "the key's successor, not the pack's first"
+    );
+    // A key with no unpacked copy stands whole: the shipped rows are the keys.
+    let rows = &shipped;
+    assert_eq!(listed_of_disk_row(key.to_owned(), pack_of_current(key, rows)).as_str(), key);
+    // And a state that is no key stands as it is.
+    assert_eq!(listed_of_disk_row("/library/other.nam".to_owned(), None), "/library/other.nam");
 }

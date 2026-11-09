@@ -148,6 +148,22 @@ fn salt(track: TrackId, at: &DeviceAt, part: FileRowPart) -> egui::Id {
     egui::Id::unique(("device-files", track.0, &at.0, part))
 }
 
+/// A shipped key beside the unpacked copy reads its disk row: the dropdown's own row and the
+/// file steps match the disk path, not the key — a stock preset's Next file steps to the
+/// successor, not the pack's first. Without the copy the pack's rows are the keys, and the
+/// lookup finds the key's own.
+fn listed_of_disk_row(listed: String, in_pack: Option<&Set>) -> String {
+    let Some((_, file)) = listed.strip_prefix("builtin:").and_then(|rest| rest.split_once('/')) else {
+        return listed;
+    };
+    let Some(pack) = in_pack else { return listed };
+    let file_name = Path::new(file).file_name().map_or_else(|| file.to_owned(), |n| n.to_string_lossy().into_owned());
+    pack.files
+        .iter()
+        .find(|(path, _)| Path::new(path).file_name().is_some_and(|n| n.to_string_lossy() == file_name))
+        .map_or_else(|| listed, |(path, _)| path.clone())
+}
+
 /// Where `current` sits in `files`. The two texts read the same file by
 /// `canonical_paths` — the rows' whole paths and the state's joined form fold what
 /// separators their own platform made in ([ADR 0036] › 4).
@@ -293,6 +309,9 @@ pub(crate) fn files(
     // The state reads as the lists carry it, for every lookup between the rows and them.
     let listed = state_as_listed(current, lists);
     let in_pack = pack_of_current(&listed, packs);
+    // A shipped key beside the unpacked copy reads its disk row: the dropdown's own row and
+    // the file steps match the disk path, not the key.
+    let listed = listed_of_disk_row(listed, in_pack);
     let shown_pack = in_pack.map_or(String::new(), |pack| pack.name.clone());
     let files: &[(String, String)] = in_pack.map_or(&[], |pack| pack.files.as_slice());
     let packs_rows = || packs.iter().map(|pack| (pack.name.clone(), pack.name.clone())).collect::<Vec<_>>();
