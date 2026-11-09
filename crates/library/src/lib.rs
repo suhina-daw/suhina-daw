@@ -575,6 +575,19 @@ impl Library {
         )
     }
 
+    /// The library folder `path` is a folder of: `path` itself when it is one of the library's
+    /// folders, or the one whose index holds `path` as a sub-folder. `None` for anything else,
+    /// a file among them. Read from the index, no disk is asked: a pinned or tagged folder
+    /// lists as a folder by it ([#1254] review: a tagged folder was counted but not listed).
+    pub fn folder_root_of(&mut self, path: &Path) -> Option<PathBuf> {
+        self.load();
+        self.folders.iter().find_map(|folder| {
+            let rest = path.strip_prefix(&folder.path).ok()?;
+            let rel = rest.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+            (rel.is_empty() || folder.index.dirs.contains_key(&rel)).then(|| folder.path.clone())
+        })
+    }
+
     /// The files matching `query`, best first (`docs/spec/browser.md` › Results).
     pub fn search(&mut self, query: &Query) -> Vec<IndexedFile> {
         self.prepare_search(query).run(&AtomicBool::new(false))

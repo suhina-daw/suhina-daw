@@ -2977,6 +2977,52 @@ fn the_footer_reaches_the_tags_its_dots_do_not_draw() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+// A tagged folder lists in its tag's place as a folder, and a double-click opens it as the
+// place ([#1254] review: the tag's row counted it, the place said no item carried the tag).
+#[test]
+fn a_tagged_folder_lists_in_its_tags_place_and_opens_there() {
+    let (settings, folder) = (temp("tagged-folder-settings"), temp("tagged-folder"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let drums = folder.join("Drums").display().to_string();
+    let tagging = json!({ "item": drums, "tag": "Red", "on": true });
+    harness.state_mut().projects_mut().execute("library.tag", &tagging).unwrap();
+    harness.state_mut().browser.relist();
+    harness.run();
+    harness.get_by_label("Place Tag Red").click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Drums")).is_some(), "the tagged folder lists");
+    double_click(&mut harness, &row("Drums"));
+    harness.run();
+    let Some(Place::Folder(opened)) = harness.state().browser.place.clone() else {
+        panic!("the double-click opened no folder: {:?}", harness.state().browser.place);
+    };
+    assert!(opened.ends_with("Drums"), "{opened:?}");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+// A heading is no item: a right-click on it opens no menu, where it opened an empty one, and
+// an item's right-click still opens its own ([#1254] review).
+#[test]
+fn a_headings_right_click_opens_no_menu() {
+    let (settings, folder) = (temp("heading-menu-settings"), temp("heading-menu"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label(&row("Instruments")).click_secondary();
+    harness.run();
+    assert!(harness.query_by_label("Pin").is_none() && harness.query_by_label("Tag").is_none(), "no menu");
+    harness.key_press(Key::Escape);
+    harness.run();
+    harness.get_by_label(&row("Instruments")).click();
+    harness.run();
+    harness.get_by_label(&row("FM Synth")).click_secondary();
+    harness.run();
+    assert!(harness.query_by_label("Pin").is_some(), "an instrument's own menu opens");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 // The pick and the carry hold the sidebar's rows, folders among them: an agent's change keeps
 // a folder that still is, and a command closing a folder keeps the tags it hides picked
 // ([#1254] review: the reconcile kept tags alone, and the rows' prune dropped what a closed

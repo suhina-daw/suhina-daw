@@ -466,6 +466,58 @@ fn a_hash_name_made_and_reached_as_a_name_refuses_the_id_form() {
     let _ = std::fs::remove_dir_all(&settings);
 }
 
+// A folder of the library carries tags as any item does, and its tag's place lists it as a
+// folder, as Pinned lists a pinned one: a top folder and a sub-folder alike ([#1254] review:
+// the tag's row counted the folder, and its place said no item carried the tag).
+#[test]
+fn a_tagged_or_pinned_folder_lists_as_a_folder() {
+    let settings = temp("folder-tag-settings");
+    let samples = temp("folder-tag");
+    std::fs::create_dir_all(samples.join("Kicks")).unwrap();
+    wav(&samples.join("Kicks").join("Kick.wav"));
+    let mut p = projects(&settings);
+    run(&mut p, "library.addFolder", json!({ "folder": samples.display().to_string() })).unwrap();
+    let kicks = samples.join("Kicks").display().to_string();
+    let root = samples.display().to_string();
+    let root_name = samples.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    for item in [&kicks, &root] {
+        run(&mut p, "library.tag", json!({ "item": item, "tag": "Red", "on": true })).unwrap();
+    }
+    let listed = |found: &Value| -> Vec<(String, String)> {
+        found["items"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|i| {
+                        (i["name"].as_str().unwrap_or("").to_string(), i["kind"].as_str().unwrap_or("").to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let found = run(&mut p, "library.search", json!({ "place": "tag:Red" })).unwrap();
+    let mut tagged = listed(&found);
+    tagged.sort();
+    let mut wanted = vec![("Kicks".to_string(), "folder".to_string()), (root_name.clone(), "folder".to_string())];
+    wanted.sort();
+    assert_eq!(tagged, wanted, "both folders list, as folders: {found}");
+    // A file is no folder: the sample tagged too lists as a sample beside them.
+    let kick = samples.join("Kicks").join("Kick.wav").display().to_string();
+    run(&mut p, "library.tag", json!({ "item": kick, "tag": "Red", "on": true })).unwrap();
+    let found = run(&mut p, "library.search", json!({ "place": "tag:Red" })).unwrap();
+    assert!(listed(&found).contains(&("Kick.wav".to_string(), "sample".to_string())), "{found}");
+    // A category other than All lists files of its kind, not folders.
+    let samples_only = run(&mut p, "library.search", json!({ "place": "tag:Red", "category": "samples" })).unwrap();
+    assert_eq!(listed(&samples_only), [("Kick.wav".to_string(), "sample".to_string())]);
+    // Pinned lists a pinned folder the same way.
+    run(&mut p, "library.pin", json!({ "item": root })).unwrap();
+    let pinned = run(&mut p, "library.search", json!({ "place": "pinned" })).unwrap();
+    assert_eq!(listed(&pinned), [(root_name, "folder".to_string())], "{pinned}");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&samples);
+}
+
 // The selectors' grammar is checked before a number is read ([#1254] review): `#+1` is a
 // name (Rust's number parse took its sign and reached Red, the tag of id 1, so removing
 // `#+1` removed Red and what carried it), a bare `#` is a name, `#notes` names a folder as

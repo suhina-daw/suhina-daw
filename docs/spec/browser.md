@@ -550,7 +550,9 @@ only items with that tag (several: items with any of them); clicking it again st
 The **sidebar's Tags section** ([Sidebar](#sidebar)) reaches a tag's items as a place, the way
 Pinned does (#1196): a click on the tag's row shows every item that carries it, of any kind
 (samples, MIDI files, presets and presets' voices, projects, device graphs, built-in effects
-and instruments, plug-ins), named first no matter the kind, as a `library.search` place of
+and instruments, plug-ins, and the library's folders — a top folder or a sub-folder, listed as
+a folder whose double-click opens it as the place, as Pinned lists a pinned folder, [#1254]
+review), named first no matter the kind, as a `library.search` place of
 `tag:<name>` (or `tag:#<id>`, joined for several). Ctrl-click adds the tag to the place's tags
 or takes it off:
 items with any of the row's tags show; a Ctrl-click on a folder's own row puts its whole
@@ -622,7 +624,7 @@ the CLI can do the same.
 | `library.removeFolder` | `folder` | removes it and its part of the index |
 | `library.refresh` | `folder?` | reads a folder (or every folder) again |
 | `library.list` | `folder` | what is directly in a folder: sub-folders and files of the kinds above, with kind and size |
-| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); `place` takes a tag's place (`tag:<name>`, `tag:#<id>`, or the ids joined `tag:#<id>+#<id>` for a place of several, [#1254]), which lists the items carrying it or any of them of any kind no matter the folders; a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
+| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); `place` takes a tag's place (`tag:<name>`, `tag:#<id>`, or the ids joined `tag:#<id>+#<id>` for a place of several, [#1254]), which lists the items carrying it or any of them of any kind no matter the folders, a tagged library folder among them as an item of kind `folder` (as `pinned` lists a pinned one, [#1254] review); a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
 | `library.info` | `item` | a file's kind, size, duration, sample rate, channels, tempo (and where it came from) and key; a Stems file's stems and mastering; a MIDI file's tracks with their notes; a preset's voices; a built-in device's or plug-in's role (and a plug-in's vendor, format and version); the item's tags |
 | `library.pinned` | | the pinned items |
 | `library.pin`, `library.unpin` | `item` | pins or unpins an item |

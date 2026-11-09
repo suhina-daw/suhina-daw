@@ -292,7 +292,8 @@ fn flat_rows(found: Vec<Found>) -> Vec<Row> {
                     _ => None,
                 }?;
                 let below = path.strip_prefix(folder.parent().unwrap_or(folder)).ok()?;
-                Some(below.display().to_string())
+                // A library's own folder (a tagged one) sits in no folder of the library.
+                Some(below.display().to_string()).filter(|below| !below.is_empty())
             });
             let context = context.or_else(|| f.detail.clone());
             let item = BrowserItem { key: f.item.key(), name: f.name.clone(), kind: item_kind(&f), plugin: f.plugin };
@@ -499,6 +500,7 @@ fn item_kind(found: &Found) -> ItemKind {
         "effect" => ItemKind::Effect,
         "audio_effect" => ItemKind::AudioEffect,
         "midi_effect" => ItemKind::MidiEffect,
+        "folder" => ItemKind::Folder,
         _ => ItemKind::Heading,
     }
 }

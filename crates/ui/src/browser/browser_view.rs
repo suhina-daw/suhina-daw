@@ -1214,10 +1214,14 @@ fn results_view(
         }
         let item = row.item.clone();
         // Clicks inside the menu do not close it: its Tag submenu holds the field a new tag
-        // is typed into (egui's default closes a menu on a click inside it too).
-        egui::Popup::context_menu(&response)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .show(|ui| row_menu(ui, &item, &tags, state, projects, out));
+        // is typed into (egui's default closes a menu on a click inside it too). A heading
+        // (Instruments, Effects, Plug-ins) is no item and has no menu: a right-click on it
+        // opened an empty one.
+        if item.kind != ItemKind::Heading {
+            egui::Popup::context_menu(&response)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show(|ui| row_menu(ui, &item, &tags, state, projects, out));
+        }
     }
     // A row is selected (and previews) when the button goes down, not when it comes up, so a
     // preview starts at once. A row already in a selection of several waits for the release, so
@@ -1264,6 +1268,14 @@ fn results_view(
             state.toggle(row.node());
         } else if row.item.kind == ItemKind::Project {
             out.open_project = row.item.path();
+        } else if row.item.kind == ItemKind::Folder && !row.opens {
+            // A folder a flat list holds (a pinned or tagged one) opens as the place: the
+            // tree shows its contents ([#1254] review).
+            if let Some(path) = row.item.path() {
+                state.place = Some(Place::Folder(path));
+                state.category = Category::All;
+                state.scroll = 0.0;
+            }
         } else if row.item.kind != ItemKind::Heading && row.item.kind != ItemKind::Folder {
             out.add = vec![row.item.clone()];
         }

@@ -444,7 +444,8 @@ impl Category {
 pub struct Found {
     pub item: Item,
     pub name: String,
-    /// `sample`, `midi`, `preset`, `project`, `instrument`, `effect`, or `audio_effect`.
+    /// `sample`, `midi`, `preset`, `project`, `instrument`, `effect`, `audio_effect`, or `folder`
+    /// (a pinned or tagged folder of the library, [#1254] review).
     pub kind: &'static str,
     /// For a plug-in: its format and vendor.
     pub detail: Option<String>,
@@ -483,6 +484,23 @@ fn file_kind_name(kind: FileKind) -> &'static str {
 
 /// What an item key is, for a search over pins or recent items.
 fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
+    // A folder of the library, a top one or a sub-folder its index holds: a pinned or tagged
+    // folder lists as a folder ([#1254] review: a tagged folder was counted on its tag's row
+    // and left out of the tag's place).
+    if let Item::File(path) = &item
+        && let Some(root) = projects.file_library_mut().folder_root_of(path)
+    {
+        let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+        return Some(Found {
+            name,
+            kind: "folder",
+            detail: None,
+            plugin: false,
+            format: None,
+            folder: Some(root),
+            item,
+        });
+    }
     match &item {
         Item::File(path) | Item::Voice(path, _) => {
             let kind = item.file_kind()?;
