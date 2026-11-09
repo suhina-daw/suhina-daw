@@ -564,8 +564,9 @@ fn is_style_line(line: &str) -> bool {
         && !line.starts_with("gradient-")
         && !line.starts_with("session ")
         && !line.starts_with("window ")
-        // The toolbar's arrangement is `theme.json`'s, not a style.
-        && !line.starts_with("toolbar ")
+        // The toolbar's arrangement (`order`, `hidden`, `offset-*`) is `theme.json`'s, not a
+        // style; any other rule on `toolbar` is one.
+        && !line.strip_prefix("toolbar { ").is_some_and(|rest| rest.starts_with("order:") || rest.starts_with("offset-"))
 }
 
 /// `css` with each `@layer NAME { … }` block replaced by its rules, nested layers too (at most

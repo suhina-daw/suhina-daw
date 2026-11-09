@@ -55,8 +55,8 @@ fn a_drawn_item_takes_its_colour_attribute() {
     let css = "clip { background-color: attr(color type(<color>), #000000); }";
     let color = egui::Color32::from_rgb(0xff, 0x9a, 0x3c);
     let style = frames(css, || {
-        let lane = ARRANGEMENT.enter();
-        CLIP.drawn(&lane).attr(Color, color).style()
+        let _lane = ARRANGEMENT.enter();
+        CLIP.color(color).style()
     });
     assert_eq!(style.map(|s| s.background), Some(color));
 }

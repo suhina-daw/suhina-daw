@@ -92,6 +92,14 @@ fn toolbar_offsets_mirror_without_replacing_the_native_layout() {
     );
 }
 #[test]
+fn a_style_rule_on_the_toolbar_is_written_but_its_arrangement_is_not() {
+    let mut theme = Theme::default();
+    assert!(apply(&mut theme, "toolbar { background-color: #222222; offset-transport: 8px; }").is_empty());
+    let written = layout(&theme, &Theme::default());
+    assert!(written.contains("toolbar { background-color: #222222; }"), "{written}");
+    assert!(!written.contains("offset-"), "{written}");
+}
+#[test]
 fn meter_intensity_is_portable_bounded_and_defaults_to_full_strength() {
     for intensity in [0, 35, 100] {
         let mut theme = Theme::default();

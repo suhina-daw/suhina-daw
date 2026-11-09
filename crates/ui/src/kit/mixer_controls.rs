@@ -35,7 +35,7 @@ pub fn pan_field(painter: &egui::Painter, rect: Rect, pan: f64, hover: f32) {
 }
 
 /// Whether the sheet gives the element in scope a shape of its own. The level fields are drawn
-/// inside their control's own element (\`#arrangement-volume\`, \`#mixer-pan\`), which their callers
+/// inside their control's own element (`#arrangement-volume`, `#mixer-pan`), which their callers
 /// enter.
 fn authored_shape() -> bool {
     crate::kit::style_class::computed().is_some_and(|style| {

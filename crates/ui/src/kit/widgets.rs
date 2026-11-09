@@ -245,8 +245,7 @@ pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bo
 /// A track's number, `track-number`: its own `color`, `font-size` and `display: none`, and
 /// `[muted]` while the track is off.
 pub fn track_number_text(painter: &Painter, rect: Rect, number: &str, ink: Color32, muted: bool) {
-    let el = super::element::TRACK_NUMBER.enter();
-    super::native_css::mark(super::native_css::HostState::Muted, muted);
+    let el = super::element::TRACK_NUMBER.attr(super::element::Muted, muted).enter();
     let computed = el.style();
     if computed.as_ref().is_some_and(|c| !c.visible) {
         return;

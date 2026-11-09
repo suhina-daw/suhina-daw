@@ -8,19 +8,24 @@
 //! let el = KNOB.id("send").response(&response).attr(Checked, on).enter();
 //! let boxed = el.paint(&painter, rect); // background, artwork shadows, gradients, border
 //! draw_contents(boxed.content);
-//! let style = CLIP.drawn(&lane).attr(Color, clip.color).style(); // a drawn item
+//! let style = CLIP.color(clip.color).style(); // a drawn item
 //! ```
 //!
 //! An entered element stays in the style tree (and its palette scope) until the value is
 //! dropped. Its [`Entered::style`] is its own, found by its node, never the style of an element
 //! that encloses it, so a part that forgets to enter its own element cannot paint as its parent.
+//! Kit's shared painters (`mixer_controls`' level bars and pan field, `meter`, `paint`) are the
+//! exception for now: they are drawn inside an element their caller entered and read the
+//! innermost one through `style_class::computed()` until they take an [`Entered`] (#1273).
 
 use egui::{Color32, Painter, Rect, Response};
 
+use super::native_css::HostState;
+
 pub use super::native_css::Computed;
 
-/// What the app knows about an element, given to the sheet as an attribute (`[checked]`,
-/// `[color="#ff9a3c"]`).
+/// A state the app knows about an element, given to the sheet as an attribute (`[checked]`,
+/// `[selected]`). An element's colour is [`Builder::color`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Attr {
     /// A toggle that is on: a switched-on button, the chosen tool, tab or row.
@@ -35,27 +40,18 @@ pub enum Attr {
     Armed,
     /// A muted track, a clip or note that is off, a device that is off.
     Muted,
-    /// A colour of the element's own (a track's, a clip's), as `#rrggbb` or `#rrggbbaa`.
-    Color,
 }
-pub use Attr::{Armed, Checked, Color, Muted, Playing, Recording, Selected};
+pub use Attr::{Armed, Checked, Muted, Playing, Recording, Selected};
 
-/// The value an attribute takes: on or off for a state, a colour for [`Attr::Color`].
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Value {
-    On(bool),
-    Color(Color32),
-}
-impl From<bool> for Value {
-    fn from(on: bool) -> Self {
-        Self::On(on)
-    }
-}
-impl From<Color32> for Value {
-    fn from(color: Color32) -> Self {
-        Self::Color(color)
-    }
-}
+/// Every [`Attr`] with the host state that marks it.
+const STATES: [(Attr, HostState); 6] = [
+    (Checked, HostState::Checked),
+    (Selected, HostState::Selected),
+    (Playing, HostState::Playing),
+    (Recording, HostState::Recording),
+    (Armed, HostState::Armed),
+    (Muted, HostState::Muted),
+];
 
 /// What a control paints where the sheet sets nothing: today's token values, until the
 /// user-agent sheet styles every element (#1019).
@@ -91,7 +87,8 @@ impl Name {
             name: self,
             id: None,
             response: None,
-            attributes: [None; 7],
+            states: 0,
+            color: None,
             native: Native::default(),
             variables: Vec::new(),
         }
@@ -105,20 +102,18 @@ impl Name {
     pub fn response(self, response: &Response) -> Builder<'_> {
         self.builder().response(response)
     }
-    pub fn attr<'a>(self, attr: Attr, value: impl Into<Value>) -> Builder<'a> {
-        self.builder().attr(attr, value)
+    pub fn attr<'a>(self, attr: Attr, on: bool) -> Builder<'a> {
+        self.builder().attr(attr, on)
+    }
+    /// The element's own colour (a track's, a clip's), as the sheet's `[color]`.
+    pub fn color<'a>(self, color: Color32) -> Builder<'a> {
+        self.builder().color(color)
     }
     pub fn native<'a>(self, native: Native) -> Builder<'a> {
         self.builder().native(native)
     }
     pub fn enter(self) -> Entered {
         self.builder().enter()
-    }
-    /// A drawn item inside `parent` (a note in its lane, a tick on the ruler), styled by the
-    /// parent and its own identity: build it, then take its [`Builder::style`].
-    pub fn drawn<'a>(self, parent: &Entered) -> Builder<'a> {
-        let _ = parent;
-        self.builder()
     }
 }
 
@@ -128,7 +123,9 @@ pub struct Builder<'a> {
     name: Name,
     id: Option<&'a str>,
     response: Option<&'a Response>,
-    attributes: [Option<Value>; 7],
+    /// The [`Attr`]s that are on, a bit each (`1 << attr as u8`).
+    states: u8,
+    color: Option<Color32>,
     native: Native,
     variables: Vec<(&'static str, String)>,
 }
@@ -142,10 +139,19 @@ impl<'a> Builder<'a> {
         self.response = Some(response);
         self
     }
-    pub fn attr(mut self, attr: Attr, value: impl Into<Value>) -> Self {
-        if let Some(slot) = self.attributes.get_mut(attr as usize) {
-            *slot = Some(value.into());
+    /// The state `attr` is `on` or off; an off state sets nothing.
+    pub fn attr(mut self, attr: Attr, on: bool) -> Self {
+        let bit = 1 << attr as u8;
+        if on {
+            self.states |= bit;
+        } else {
+            self.states &= !bit;
         }
+        self
+    }
+    /// The element's own colour, given to the sheet as `[color="#rrggbb"]` (or `#rrggbbaa`).
+    pub fn color(mut self, color: Color32) -> Self {
+        self.color = Some(color);
         self
     }
     /// The radius and fill [`Entered::paint`] uses where the sheet sets none.
@@ -163,18 +169,13 @@ impl<'a> Builder<'a> {
     pub fn enter(self) -> Entered {
         let scope = super::style_class::enter_inner(self.name.0, self.id, self.response);
         if let Some(node) = scope.node {
-            for (index, value) in self.attributes.iter().enumerate() {
-                match (index, value) {
-                    (index, Some(Value::On(true))) => {
-                        if let Some(state) = host_state(index) {
-                            super::native_css::mark_node(node, state);
-                        }
-                    }
-                    (6, Some(Value::Color(color))) => {
-                        super::native_css::set_attribute(node, "color", super::native_css::hex(*color));
-                    }
-                    _ => {}
+            for (attr, state) in STATES {
+                if self.states & (1 << attr as u8) != 0 {
+                    super::native_css::mark_node(node, state);
                 }
+            }
+            if let Some(color) = self.color {
+                super::native_css::set_attribute(node, "color", super::native_css::hex(color));
             }
             for (name, value) in self.variables {
                 super::native_css::set_variable(name, value);
@@ -187,20 +188,6 @@ impl<'a> Builder<'a> {
     pub fn style(self) -> Option<Computed> {
         self.enter().style()
     }
-}
-
-fn host_state(index: usize) -> Option<super::native_css::HostState> {
-    use super::native_css::HostState;
-    [
-        HostState::Checked,
-        HostState::Selected,
-        HostState::Playing,
-        HostState::Recording,
-        HostState::Armed,
-        HostState::Muted,
-    ]
-    .get(index)
-    .copied()
 }
 
 /// An element in scope.

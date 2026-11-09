@@ -484,11 +484,14 @@ pub(super) fn mark_node(node: usize, state: HostState) {
     });
 }
 
-/// Gives the element of this frame's tree at `node` the attribute `name` with `value`.
+/// Gives the element of this frame's tree at `node` the attribute `name` with `value`. A
+/// duplicate name is dropped, and so is an attribute past the style tree's limit
+/// ([`suhina_style::selector::MAX_ATTRIBUTES`]) less the one each host state adds when the tree is
+/// built (`native::retained`): an element over the limit would match no rule at all.
 pub(super) fn set_attribute(node: usize, name: &str, value: String) {
     ENGINE.with(|engine| {
         if let Some(node) = engine.borrow_mut().nodes.get_mut(node)
-            && node.attributes.len() < 8
+            && node.attributes.len() < suhina_style::selector::MAX_ATTRIBUTES - HOST_STATES.len()
             && !node.attributes.iter().any(|(own, _)| own == name)
         {
             node.attributes.push((name.to_owned(), value));
