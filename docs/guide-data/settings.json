@@ -1869,31 +1869,6 @@
       "workInProgress": false
     },
     {
-      "id": "ClipEditor/Advanced/covered_notes",
-      "page": "ClipEditor",
-      "section": "Advanced",
-      "name": "Covered notes",
-      "note": "Choose what happens to a note that a note placed over it covers from its start.",
-      "keys": [
-        "covered_notes"
-      ],
-      "sourceFingerprint": "5bf26e891d1fbefa9c68fac5756e1648cb2a1a11d13b8bd4ceb361f1d79271fc",
-      "helpStatus": "reviewed",
-      "description": "With Allow stacked notes off, a note placed over others of the same pitch replaces them: a note it covers whole is removed, and one that starts before it ends where it starts. This setting decides the third case, a note whose start the placed note covers and that runs on past it. Delete them removes that note, the part after the placed note too, so the placed note simply takes its place. Keep the rest cuts only the covered part away, so the rest of the note starts where the placed note ends; lengthening a note into a line of shorter ones then pushes their starts later, which can make new rhythms. It applies to every edit that replaces (drawing, moving, copying, resizing, Shift+Right, pasting, duplicating and the note tools), and to notes that make room once they are let go. The same choice is in the piano roll toolbar's workflow menu, under Allow stacked notes.",
-      "options": [
-        {
-          "name": "Delete them",
-          "description": "A note covered from its start goes whole, its tail too. This is the default."
-        },
-        {
-          "name": "Keep the rest",
-          "description": "A note covered from its start keeps what runs on past the note placed over it, starting where that note ends."
-        }
-      ],
-      "whenToChange": "Keep Delete them for clean lines where a new note takes the old one's place. Choose Keep the rest to keep the tails of notes you draw or lengthen over, for example to find a new rhythm by stretching one note across a line of others.",
-      "workInProgress": false
-    },
-    {
       "id": "ClipEditor/Piano roll/piano_key_style",
       "page": "ClipEditor",
       "section": "Piano roll",
@@ -2000,6 +1975,31 @@
         }
       ],
       "whenToChange": "Pick the key you write in most, so a clip's scale is right the moment you switch it on.",
+      "workInProgress": false
+    },
+    {
+      "id": "ClipEditor/Advanced/covered_notes",
+      "page": "ClipEditor",
+      "section": "Advanced",
+      "name": "Covered notes",
+      "note": "Choose what happens to a note that a note placed over it covers from its start.",
+      "keys": [
+        "covered_notes"
+      ],
+      "sourceFingerprint": "5bf26e891d1fbefa9c68fac5756e1648cb2a1a11d13b8bd4ceb361f1d79271fc",
+      "helpStatus": "reviewed",
+      "description": "With Allow stacked notes off, a note placed over others of the same pitch replaces them: a note it covers whole is removed, and one that starts before it ends where it starts. This setting decides the third case, a note whose start the placed note covers and that runs on past it. Delete them removes that note, the part after the placed note too, so the placed note simply takes its place. Keep the rest cuts only the covered part away, so the rest of the note starts where the placed note ends; lengthening a note into a line of shorter ones then pushes their starts later, which can make new rhythms. It applies to every edit that replaces (drawing, moving, copying, resizing, Shift+Right, pasting, duplicating and the note tools), and to notes that make room once they are let go. The same choice is in the piano roll toolbar's workflow menu, under Allow stacked notes.",
+      "options": [
+        {
+          "name": "Delete them",
+          "description": "A note covered from its start goes whole, its tail too. This is the default."
+        },
+        {
+          "name": "Keep the rest",
+          "description": "A note covered from its start keeps what runs on past the note placed over it, starting where that note ends."
+        }
+      ],
+      "whenToChange": "Keep Delete them for clean lines where a new note takes the old one's place. Choose Keep the rest to keep the tails of notes you draw or lengthen over, for example to find a new rhythm by stretching one note across a line of others.",
       "workInProgress": false
     },
     {

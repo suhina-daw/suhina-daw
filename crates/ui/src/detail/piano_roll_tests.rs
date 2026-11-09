@@ -321,7 +321,8 @@ fn folded_up_and_down_keep_the_notes_in_the_scale() {
     c.scale = Scale::new(0, suhina_engine::model::ScaleMode::Major);
     let mut state = focused_on(&c);
     state.selected = BTreeSet::from([0, 1, 2]);
-    // The scale on folds the rows to it.
+    // The toolbar's Scale folds the rows to the clip's scale.
+    state.fold = Fold::Scale;
     state.audition = true;
     let up = state.key_action("pianoRoll.up", &c, 0.0, None).map(|a| a.params);
     assert_eq!(state.audition_pending, [62, 65, 69], "the notes sound where they go");

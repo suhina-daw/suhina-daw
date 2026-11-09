@@ -769,14 +769,6 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::ClipEditor,
-        "Advanced",
-        "Covered notes",
-        "What happens to a note whose start a note placed over it covers, where notes of one pitch do not stack: it goes whole, or keeps what runs on past",
-        &["covered_notes"],
-        |cx, r| cx.choose(r, &[("Delete them", true), ("Keep the rest", false)], |s| &mut s.view.covered_whole),
-    ),
-    row(
-        Page::ClipEditor,
         "Piano roll",
         "Piano key style",
         "How the piano roll's keys are drawn, when the theme does not set them",
@@ -815,6 +807,14 @@ pub(crate) static ROWS: &[Entry] = &[
         "The scale a clip's Scale switch turns on when the clip has none of its own",
         &["default_scale_root", "default_scale_mode"],
         |cx, r| cx.default_scale(r),
+    ),
+    row(
+        Page::ClipEditor,
+        "Advanced",
+        "Covered notes",
+        "What happens to a note whose start a note placed over it covers, where notes of one pitch do not stack: it goes whole, or keeps what runs on past",
+        &["covered_notes"],
+        |cx, r| cx.choose(r, &[("Delete them", true), ("Keep the rest", false)], |s| &mut s.view.covered_whole),
     ),
     row(
         Page::Browser,
