@@ -55,6 +55,13 @@ beside it, and controls are 6 points apart, so no two touch.
 mode as wide as both scale fields), the value they hold lit; a click on an entry sets it and closes
 the list, a click elsewhere closes it.
 
+**Theme.** To a theme the panel's buttons and switches are `button` (`:hover`, `:active`,
+`[checked]` for a switch that is on), its lists `dropdown` and its number fields `value`: a rule
+sets their background, border, radius and `color`, else they keep the panel's own look. A switch
+that is on stays lit unless `button[checked]` has a background or colour of its own (a theme that
+styles every button alike does not hide which switches are on), and a button that cannot be
+pressed keeps the panel's look.
+
 **Scale.** An audio clip's scale says the key of its audio, as a MIDI clip's says the key its notes
 are written in; it changes nothing that plays. It is the content's, as a MIDI clip's is, and a content
 other clips play is copied for this clip first.

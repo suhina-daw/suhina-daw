@@ -1000,7 +1000,7 @@ of bars, and a slider id per parameter.
   border), `browser-preview-wave` (`color` played, `border-color` ahead), the search field
   `#browser-search`.
 - **Dialogs:** `settings-nav` (`[checked]` for the page shown), `progress`, `progress-fill`.
-- **MIDI tools:** inside `midi-tools`, `--suhina-gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them.
+- **MIDI tools:** inside `midi-tools`, `--suhina-gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { --suhina-appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `--suhina-value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
 - **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
   `theme.css`.
 - **Host rules in layers:** `--suhina-*`, placement and artwork rules inside `@layer` blocks are

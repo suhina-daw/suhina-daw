@@ -8,8 +8,8 @@
 //! whole clip; `midi-tools` styles the tools part.
 
 use super::clip_panel::{
-    CLIP_PART, Change, FIELD, Field, GAP, NAME, TOGGLE, Text, bar_of, clip_part, drop_down, name_over, number_field,
-    plain_number, set_button, small_button, toggle, whole,
+    CLIP_PART, Change, FIELD, Field, GAP, NAME, TOGGLE, Text, bar_of, button_face, clip_part, disabled_face, drop_down,
+    name_over, number_field, plain_number, set_button, small_button, toggle, whole,
 };
 use super::*;
 use crate::detail::midi_tools::{Tools, ToolsTab, Transform, tools_width};
@@ -28,11 +28,16 @@ pub struct MidiTools<'a, 'b> {
 /// The tab row at the top of the tools part, the chip at the top of the figures, a row of the
 /// figures, and the bar under the velocity figures.
 const TAB_ROW: f32 = 22.0;
+/// The line under the Transform tab's list that says what the chosen transformation does.
+const HINT: f32 = 12.0;
 const CHIP: f32 = 18.0;
 const INFO_ROW: f32 = 14.0;
 const RANGE_BAR: f32 = 10.0;
 /// The space between the buttons of the Notes tab's grid.
 const BUTTON_GAP: f32 = 4.0;
+/// The quantise amount's id to the theme, and its knob's height where the theme sets none.
+const QUANTISE_AMOUNT: &str = "quantise-amount";
+const KNOB: f32 = 32.0;
 
 /// The tools part's spacing: the room between its rows, between the rows of the Notes tab's
 /// buttons, and the height of its fields and buttons and of its switches and Apply.
@@ -42,11 +47,16 @@ pub(crate) struct ToolsSpacing {
     pub button_gap: f32,
     pub field: f32,
     pub toggle: f32,
+    /// How tall the quantise amount's knob is, when the theme draws the amount as a knob
+    /// (`midi-tools slider { --suhina-appearance: knob }`, or `#quantise-amount`).
+    pub knob: Option<f32>,
 }
 
 /// The tools part's spacing as the theme sets it: `midi-tools { --suhina-gap }` the room between
 /// its rows (0 to 16 points), `midi-tools button { height }` its fields', buttons', switches' and
-/// Apply's height (10 to 40 points); else the panel's own.
+/// Apply's height (10 to 40 points); else the panel's own. `slider { --suhina-appearance: knob }`
+/// inside it (`#quantise-amount` for the one slider) draws the quantise amount as a knob, as tall
+/// as the slider's `height` (16 to 96 points, 32 by default).
 pub(crate) fn tools_spacing() -> ToolsSpacing {
     let _el = crate::kit::element::MIDI_TOOLS.enter();
     let gap = crate::kit::style_class::property("--suhina-gap")
@@ -57,18 +67,29 @@ pub(crate) fn tools_spacing() -> ToolsSpacing {
         let button = crate::kit::element::BUTTON.enter();
         button.style().and_then(|c| c.height).filter(|h| h.is_finite()).map(|h| h.clamp(10.0, 40.0))
     };
+    let knob = {
+        let slider = crate::kit::element::SLIDER.id(QUANTISE_AMOUNT).enter();
+        crate::kit::style_class::knob_preference(false).then(|| {
+            slider.style().and_then(|c| c.height).filter(|h| h.is_finite()).map_or(KNOB, |h| h.clamp(16.0, 96.0))
+        })
+    };
     ToolsSpacing {
         gap: gap.unwrap_or(GAP),
         button_gap: gap.unwrap_or(BUTTON_GAP),
         field: height.unwrap_or(FIELD),
         toggle: height.unwrap_or(TOGGLE),
+        knob,
     }
 }
 
 /// How tall the tools part is under its tab row: its taller tab, Notes (Transpose, the buttons and
-/// the Swing row; Transform's list, hint, fields, switch and Apply are a little shorter).
+/// the Swing row) or Transform (the list, the hint, a row of settings, a switch and Apply; the
+/// taller with the quantise amount's knob).
 fn tools_body(s: ToolsSpacing) -> f32 {
-    NAME + s.field + s.gap + s.field * 3.0 + s.button_gap * 2.0 + s.gap + NAME + s.field
+    let notes = NAME + s.field + s.gap + s.field * 3.0 + s.button_gap * 2.0 + s.gap + NAME + s.field;
+    let settings = s.knob.map_or(s.field, |knob| knob.max(s.field));
+    let transform = s.field + s.gap + HINT + s.gap + NAME + settings + s.gap + s.toggle + s.gap + s.toggle;
+    notes.max(transform)
 }
 
 /// A name and a field under it, twice side by side, `field` tall.
@@ -300,14 +321,15 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
 /// A button of the tools, drawn as the panel's small buttons are; returns its response.
 fn tool_button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str, enabled: bool) -> egui::Response {
     let response = widgets::button_area(ui, rect, Id::unique(("midi-tools-button", label)), label);
-    let fill = if enabled {
-        motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response))
+    // A `button` to the theme, as the column's buttons were.
+    let ink = if enabled {
+        let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+        button_face(crate::kit::element::BUTTON, painter, rect, &response, false, fill, true)
+            .unwrap_or_else(theme::text_primary)
     } else {
-        theme::panel_background()
+        disabled_face(painter, rect);
+        theme::text_hint()
     };
-    painter.fill_background(rect, 3.0, fill);
-    painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
-    let ink = if enabled { theme::text_primary() } else { theme::text_hint() };
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
     response
 }
@@ -593,7 +615,7 @@ fn transform_tab(
     }
     let mut y = body.top() + s.field + s.gap;
     // What it does, in a line.
-    let hint = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), 12.0));
+    let hint = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), HINT));
     if hint.bottom() <= body.bottom() + 0.5 {
         widgets::text_in(
             painter,
@@ -675,13 +697,25 @@ fn transform_tab(
                 {
                     quantize.grid = grid;
                 }
-                let percent = |v: f64| format!("{v} %");
-                if let Some(v) =
-                    setting_field(ui, painter, amount_field, "Quantise amount", quantize.amount, (0.0, 100.0), &percent)
-                {
-                    quantize.amount = v;
+                if let Some(size) = s.knob {
+                    let knob =
+                        Rect::from_min_size(amount_field.min, Vec2::new(amount_field.width(), size.max(s.field)));
+                    quantize.amount = amount_knob(ui, painter, knob, quantize.amount);
+                } else {
+                    let percent = |v: f64| format!("{v} %");
+                    if let Some(v) = setting_field(
+                        ui,
+                        painter,
+                        amount_field,
+                        "Quantise amount",
+                        quantize.amount,
+                        (0.0, 100.0),
+                        &percent,
+                    ) {
+                        quantize.amount = v;
+                    }
                 }
-                y += NAME + s.field + s.gap;
+                y += NAME + s.knob.map_or(s.field, |knob| knob.max(s.field)) + s.gap;
                 if y + s.toggle <= body.bottom() + 0.5 {
                     let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), s.toggle));
                     y += s.toggle + s.gap;
@@ -739,15 +773,13 @@ fn transform_tab(
     let enabled = tools.count() > 0;
     let response =
         widgets::button_area(ui, apply, Id::unique("midi-tools-apply"), &apply_text).on_hover_text(chosen.hint());
-    let (fill, ink) = if enabled {
-        widgets::toggle_colors(ui, &response, true)
+    let ink = if enabled {
+        let (fill, ink) = widgets::toggle_colors(ui, &response, true);
+        button_face(crate::kit::element::BUTTON, painter, apply, &response, false, fill, false).unwrap_or(ink)
     } else {
-        (theme::panel_background(), theme::text_hint())
+        disabled_face(painter, apply);
+        theme::text_hint()
     };
-    painter.fill_background(apply, 3.0, fill);
-    if !enabled {
-        painter.rect_stroke(apply, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
-    }
     widgets::text_in(painter, apply, Align2::CENTER_CENTER, &apply_text, theme::ui_font(theme::TEXT_SMALL), ink);
     if enabled && response.clicked() {
         // No seed for Humanise and Randomise: a fresh draw each press.
@@ -759,4 +791,37 @@ fn transform_tab(
         };
         actions.push(Action::new(id, params));
     }
+}
+
+/// The quantise amount as a knob, where the theme draws it as one (`midi-tools slider
+/// { --suhina-appearance: knob }`, or `#quantise-amount`): dragged up for more, half a percent a
+/// point, its value where `--suhina-value-position` puts it (at its right unless it says). Named
+/// "Quantise amount: `n` %" as the field is. Returns the amount.
+fn amount_knob(ui: &Ui, painter: &egui::Painter, rect: Rect, amount: f64) -> f64 {
+    let response = ui.interact(rect, Id::unique("midi-tools-quantise-amount"), Sense::drag());
+    let amount = if response.dragged() {
+        (amount - f64::from(response.drag_delta().y) * 0.5).clamp(0.0, 100.0).round()
+    } else {
+        amount
+    };
+    let text = format!("{amount} %");
+    let label = format!("Quantise amount: {text}");
+    response.widget_info(|| {
+        let mut info = egui::WidgetInfo::labeled(egui::Role::Slider, true, &label);
+        info.current_text_value = Some(text.clone());
+        info
+    });
+    let _slider = crate::kit::element::SLIDER.id(QUANTISE_AMOUNT).response(&response).enter();
+    widgets::knob_with_value(
+        painter,
+        rect,
+        (amount / 100.0) as f32,
+        theme::text_primary(),
+        Some(&response),
+        &text,
+        theme::text_secondary(),
+        widgets::ValuePosition::Right,
+        10.0,
+    );
+    amount
 }

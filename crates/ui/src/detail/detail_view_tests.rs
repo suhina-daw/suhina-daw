@@ -1754,3 +1754,51 @@ fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
     harness.run_steps(10);
     assert_eq!(gains(&harness), scrolled, "each list keeps its own scroll");
 }
+
+/// The fills a clip panel's switch paints under the theme `css`, on or off.
+fn switch_fills(css: &str, on: bool) -> Vec<egui::Color32> {
+    use egui::{Pos2, Rect, Vec2};
+    let (theme, _) = crate::kit::theme::from_css(css);
+    crate::kit::skin::configure(&theme.skin);
+    let ctx = egui::Context::default();
+    let input = || egui::RawInput {
+        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 300.0))),
+        ..Default::default()
+    };
+    ctx.run_ui(input(), |ui| crate::kit::native_css::begin_frame(ui)).textures_delta.clear();
+    let mut shapes = Vec::new();
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(input(), |ui| {
+            let _frame = crate::kit::native_css::frame(ui);
+            let _window = crate::kit::element::WINDOW.enter();
+            let painter = ui.painter().clone();
+            let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(80.0, 20.0));
+            super::clip_panel::toggle(ui, &painter, rect, "Loop", "Loop", on);
+        });
+        output.textures_delta.clear();
+        shapes = std::mem::take(&mut output.shapes);
+    }
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) => Some(rect.fill),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_clip_panel_switch_takes_the_theme_s_button_and_stays_lit_while_on() {
+    let red = egui::Color32::from_rgb(0xFF, 0, 0);
+    let green = egui::Color32::from_rgb(0, 0xFF, 0);
+    // A rule for every button paints a switch that is off.
+    let every = "button { background-color: #FF0000; }";
+    assert!(switch_fills(every, false).contains(&red), "off takes the button's background");
+    // One that is on keeps its lit fill, so it still shows it is on.
+    assert!(!switch_fills(every, true).contains(&red), "on keeps its lit fill");
+    // Unless the sheet gives `[checked]` a background of its own.
+    let checked = "button { background-color: #FF0000; } button[checked] { background-color: #00FF00; }";
+    let fills = switch_fills(checked, true);
+    assert!(fills.contains(&green) && !fills.contains(&red), "{fills:?}");
+}

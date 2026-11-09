@@ -1019,7 +1019,8 @@ button opens its clip in the editor.
   state: it is not a command, not saved with the project and not an undo step, and hiding it never
   changes the notes or the selection. `midi-tools` styles it (its background, its text, its
   width from 120 to 480 points, 128 by default, the room between its rows with `--suhina-gap`, and
-  its fields' and buttons' height with `button { height }`). The figures under the Clip part (› Clip column)
+  its fields' and buttons' height with `button { height }`); `slider { --suhina-appearance: knob }`
+  inside it draws Transform › Quantise's amount as a knob (`docs/spec/theme-skins.md`). The figures under the Clip part (› Clip column)
   say what the tools act on, and stay while the tools are hidden.
 - Its tab row has two tabs, **Notes** and **Transform** (`editor-tab`, `#tab-notes` and
   `#tab-transform`; the one shown in `text.primary` over a 2 px `accent` line). Both tabs are the

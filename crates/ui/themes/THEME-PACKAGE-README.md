@@ -475,7 +475,7 @@ only, one inside the other (`mixer pan { --suhina-appearance: knob; }`), not `:i
 | Arrangement header `arrangement track-header` | `track-name`, `track-number`, `#control-track-on`, `#control-solo`, `#control-cue`, `#control-arm`, `#control-automation`, `#control-monitor`, `fold`, `#arrangement-volume`, `#arrangement-pan`, `send`, `value-fill`, `value-handle` |
 | Timeline `arrangement` | `ruler`, `ruler-number`, `ruler-tick`, `loop-region`, `loop-line`, `playhead`, `clip`, `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle`, `add-track`, `#add-midi-track`, `#add-audio-track`, `#add-return-track` |
 | Launcher and mixer `session`, `mixer` | `track-column`, `slot`, `scene`, `scene-column`, `#mixer-volume`, `#mixer-pan`, `#mixer-send-N`, `fader`, `fader-cap`, `fader-rail`, `fader-scale`, `meter`, `#mixer-divider` |
-| Piano roll `piano-roll` | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark`, `piano-scale-strip`, `piano-range`, `piano-time-selection`, `piano-insert-mark`, `piano-note`, `velocity`, `piano-tool` with `#piano-<tool>`, `midi-tools` (`#quantise-amount`), `clip-info`, `editor-tab` |
+| Piano roll `piano-roll` | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark`, `piano-scale-strip`, `piano-range`, `piano-time-selection`, `piano-insert-mark`, `piano-note`, `velocity`, `piano-tool` with `#piano-<tool>`, `midi-tools` (with `slider#quantise-amount`), `clip-info`, `editor-tab` (`#tab-clip`, `#tab-devices`, `#tab-notes`, `#tab-transform`) |
 | Browser `browser` | `browser-place`, `browser-row`, `browser-play`, `browser-tag-dot`, `browser-preview-wave`, `#browser-search` (`text-input`) |
 | Devices `device`, `#device-<id>` | `device-header`, `device-control`, `slider`, `slider-rail`, `slider-fill`, `slider-handle`, `knob`, `value` |
 | Dialogs `settings`, `dialog`, `start-page`, `plugin-manager` | `button` (also egui's check boxes and drop-downs), `button[checked]` (a chosen item), `text-input`, `settings-nav`, `progress`, `progress-fill`, `menu`, `popup` |
@@ -525,7 +525,7 @@ Elements, by name:
 | `piano-scale-strip`, `piano-range` | the strip left of the keys that names the octaves and the row under the pointer, and the range a drag on the keys is selecting |
 | `piano-clip-strip` | the strip over the ruler that shows several picked clips (background) |
 | `piano-time-selection`, `piano-insert-mark` | what is selected in time (background over the rows, `border-color` for its edges and the bar on the ruler), and the mark a click leaves where a paste goes (background) |
-| `piano-tool`, `midi-tools`, `clip-info`, `editor-tab` | the piano roll's tool buttons, the MIDI tools column, the clip's column and the **Clip** / **Devices** tabs |
+| `piano-tool`, `midi-tools`, `clip-info`, `editor-tab` | the piano roll's tool buttons, the MIDI tools part of a MIDI clip's panel, the clip's column, and the **Clip** / **Devices** and **Notes** / **Transform** tabs |
 | `device`, `device-header` | a device's panel in the device chain, and its header row |
 
 Ids:
@@ -679,8 +679,8 @@ draws a handle where the fill ends; `volume.handle` and `pan.handle` are artwork
 ### Piano roll sizes
 
 `piano-tool { width; height }` sizes the tool buttons (8 to 96 points wide), so stretched
-artwork has room; `midi-tools { width }` (80 to 400) and `clip-info { width }` (120 to 480)
-set the MIDI tools and clip columns' widths. `loop-region { height }` above the native row
+artwork has room; `midi-tools { width }` (120 to 480) and `clip-info { width }` (120 to 480)
+set the MIDI tools part's and the clip column's widths. `loop-region { height }` above the native row
 grows the Arrangement's loop row with it (up to 40 points).
 
 ### Fader size
@@ -804,8 +804,9 @@ control with no room left is not drawn, without a notice: check narrow tracks an
   the name's).
 - **Loop lines:** `loop-line { color; width }`; the lines reach the returns and Main and
   follow the brace while it is dragged.
-- **MIDI tools:** `midi-tools slider { --suhina-appearance: knob }` (or `#quantise-amount`)
-  draws the quantise amount as a knob.
+- **MIDI tools:** `midi-tools slider { --suhina-appearance: knob }` draws the quantise amount
+  (Transform › Quantise) as a knob, dragged up for more; `#quantise-amount { height }` sizes it
+  (16 to 96 points, 32 by default) and `--suhina-value-position` places its value.
 - **Piano roll tools:** artwork roles `piano.select`, `piano.draw`, `piano.paint`,
   `piano.slice`, `piano.erase`, `piano.mute`, `piano.cut`, `piano.copy`, `piano.paste`,
   `piano.duplicate`, `piano.quantise`, `piano.midi-tools`, `piano.audition` and `piano.hide`,
@@ -820,7 +821,13 @@ control with no room left is not drawn, without a notice: check narrow tracks an
   value's control.
 - **Device panels:** `device { height }` (60–1200), `--suhina-param-label: left | top | hidden`,
   `device knob { width }`.
-- **MIDI tools:** `midi-tools { --suhina-gap: 2px }` and `midi-tools button { height }`.
+- **MIDI tools:** `midi-tools { --suhina-gap: 2px }` spaces the part's rows (0 to 16 points);
+  `midi-tools button { height }` sets its fields', buttons', switches' and Apply's height (10 to
+  40 points). Its buttons and switches are `button` (`:hover`, `:active`, `[checked]` for a
+  switch that is on), its lists `dropdown` and its number fields `value`, as in a clip's panel:
+  a rule sets their background, border, radius and `color`. A switch that is on keeps Suhina's
+  lit look unless `button[checked]` has a background or colour of its own, and a button that
+  cannot be pressed keeps Suhina's look.
 - **Low tracks:** `arrangement { --suhina-compact-below: 48px }`: a track lower than that keeps
   Suhina's own header layout instead of the placements, so nothing overlaps.
 - **Settings folder:** Settings › Projects and backups › Projects › Settings folder moves all of Suhina's
