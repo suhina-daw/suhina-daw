@@ -794,6 +794,37 @@ pub struct Dragged {
     pub at: Option<f64>,
 }
 
+/// Height of a group's heading row among a track's lanes (#1322).
+const GROUP_ROW: f32 = 20.0;
+
+/// Some of a track's lanes gathered under a heading of their own (#1322): its name, its lanes
+/// (they show one after another, in the track's order) and whether they are folded away. The
+/// view's own, as the lanes shown are.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaneGroup {
+    pub name: String,
+    pub keys: Vec<LaneKey>,
+    pub folded: bool,
+}
+
+/// A row of a track's lanes as they are drawn: a lane, or the heading of a group (its index in
+/// the track's groups).
+#[derive(Debug, Clone, PartialEq)]
+pub enum LaneRow {
+    Lane(LaneKey),
+    Group(usize),
+}
+
+/// Lane headers being dragged to another place among their track's lanes (#1322): the track,
+/// the lanes moved (in their order), whether they move as their group, and where the pointer is.
+#[derive(Debug, Clone, PartialEq)]
+struct HeaderDrag {
+    track: TrackId,
+    keys: Vec<LaneKey>,
+    group: bool,
+    pointer_y: f32,
+}
+
 /// How near the top or bottom of a lane's plot a point has to be to take the parameter's maximum
 /// or minimum exactly (#811): one point of the plot is about 3 % of a default lane, and a point
 /// a pixel short of the top looks the same as one on it.
@@ -1116,6 +1147,14 @@ pub struct LanesState {
     pub dragged: Option<Dragged>,
     /// The same, as the lanes draw it this frame.
     drawn_drag: Option<Dragged>,
+    /// The lanes picked by their headers (a click, Ctrl+click, Shift+click), on one track (#1322).
+    pub picked: Vec<(TrackId, LaneKey)>,
+    /// Each track's groups of lanes (#1322).
+    pub groups: HashMap<TrackId, Vec<LaneGroup>>,
+    /// Lane headers being dragged to another place (#1322).
+    header_drag: Option<HeaderDrag>,
+    /// A group heading whose name is being typed: its track, its index and the text.
+    renaming: Option<(TrackId, usize, String)>,
 }
 
 impl LanesState {
@@ -1141,7 +1180,167 @@ impl LanesState {
 
     /// How much taller `track`'s row is for its lanes.
     pub fn height(&self, track: TrackId, params: &Params) -> f32 {
-        self.shown(track, params).iter().map(|key| self.lane_height(track, key) + LINE).sum()
+        self.rows(track, params).iter().map(|row| self.row_height(track, row) + LINE).sum()
+    }
+
+    /// The height of one of `track`'s rows of lanes.
+    fn row_height(&self, track: TrackId, row: &LaneRow) -> f32 {
+        match row {
+            LaneRow::Lane(key) => self.lane_height(track, key),
+            LaneRow::Group(_) => GROUP_ROW,
+        }
+    }
+
+    /// `track`'s rows of lanes from the top, as they are drawn (#1322): each lane shown, and a
+    /// group's heading before its lanes, which are left out while it is folded.
+    pub fn rows(&self, track: TrackId, params: &Params) -> Vec<LaneRow> {
+        let shown = self.shown(track, params);
+        let groups = self.groups.get(&track).map_or(&[][..], Vec::as_slice);
+        let mut rows = Vec::new();
+        let mut headed: Vec<usize> = Vec::new();
+        for key in &shown {
+            match groups.iter().position(|g| g.keys.contains(key)) {
+                Some(index) => {
+                    if headed.contains(&index) {
+                        continue;
+                    }
+                    headed.push(index);
+                    rows.push(LaneRow::Group(index));
+                    if let Some(group) = groups.get(index).filter(|g| !g.folded) {
+                        rows.extend(shown.iter().filter(|k| group.keys.contains(k)).cloned().map(LaneRow::Lane));
+                    }
+                }
+                None => rows.push(LaneRow::Lane(key.clone())),
+            }
+        }
+        rows
+    }
+
+    /// Picks `track`'s lane `key` by its header (#1322): alone with a plain click, added or taken
+    /// away with Ctrl (Cmd on macOS), and every lane from the one picked last to it with Shift.
+    /// Lanes of another track are let go of.
+    pub fn pick(&mut self, track: TrackId, key: &LaneKey, modifiers: egui::Modifiers, params: &Params) {
+        self.picked.retain(|(t, _)| *t == track);
+        let this = (track, key.clone());
+        if modifiers.command {
+            match self.picked.iter().position(|p| *p == this) {
+                Some(at) => {
+                    self.picked.remove(at);
+                }
+                None => self.picked.push(this),
+            }
+        } else if modifiers.shift
+            && let Some((_, anchor)) = self.picked.last().cloned()
+        {
+            let shown = self.shown(track, params);
+            let (Some(a), Some(b)) = (shown.iter().position(|k| *k == anchor), shown.iter().position(|k| k == key))
+            else {
+                self.picked = vec![this];
+                return;
+            };
+            let (from, to) = (a.min(b), a.max(b));
+            for k in shown.get(from..=to).unwrap_or_default() {
+                let pick = (track, k.clone());
+                if !self.picked.contains(&pick) {
+                    self.picked.push(pick);
+                }
+            }
+        } else {
+            self.picked = vec![this];
+        }
+    }
+
+    /// Whether `track`'s lane `key` is picked.
+    pub fn is_picked(&self, track: TrackId, key: &LaneKey) -> bool {
+        self.picked.iter().any(|(t, k)| *t == track && k == key)
+    }
+
+    /// The lanes a drag of `key`'s header moves: the picked lanes of the track when it is one of
+    /// them, in the track's order; else the lane alone.
+    fn dragged_with(&self, track: TrackId, key: &LaneKey) -> Vec<LaneKey> {
+        if !self.is_picked(track, key) {
+            return vec![key.clone()];
+        }
+        let shown = self.shown.get(&track).map_or(&[][..], Vec::as_slice);
+        shown.iter().filter(|k| self.is_picked(track, k)).cloned().collect()
+    }
+
+    /// Moves `track`'s lanes `keys` to just before `before` among its lanes (the end for `None`),
+    /// in their order (#1322). Moved as their group's, they stay in it; moved alone, they leave
+    /// their group and join the group of the lane they land before, if it has one.
+    pub fn move_lanes(&mut self, track: TrackId, keys: &[LaneKey], before: Option<&LaneKey>, as_group: bool) {
+        let shown = self.shown.entry(track).or_default();
+        let moved: Vec<LaneKey> = shown.iter().filter(|k| keys.contains(k)).cloned().collect();
+        if moved.is_empty() || before.is_some_and(|b| moved.contains(b)) {
+            return;
+        }
+        shown.retain(|k| !moved.contains(k));
+        let at = before.and_then(|b| shown.iter().position(|k| k == b)).unwrap_or(shown.len());
+        for (offset, key) in moved.iter().enumerate() {
+            shown.insert(at + offset, key.clone());
+        }
+        if !as_group {
+            let groups = self.groups.entry(track).or_default();
+            for group in groups.iter_mut() {
+                group.keys.retain(|k| !moved.contains(k));
+            }
+            if let Some(group) = before.and_then(|b| groups.iter_mut().find(|g| g.keys.contains(b))) {
+                group.keys.extend(moved.iter().cloned());
+            }
+        }
+        self.tidy_groups(track);
+    }
+
+    /// Gathers `track`'s lanes `keys` under a new group's heading, in the place of the first of
+    /// them (#1322); they leave the groups they were in. The group is named "Group N", the first
+    /// number free on the track. Answers its index.
+    pub fn group_lanes(&mut self, track: TrackId, keys: &[LaneKey]) -> Option<usize> {
+        let shown = self.shown.get(&track).map_or(&[][..], Vec::as_slice);
+        let members: Vec<LaneKey> = shown.iter().filter(|k| keys.contains(k)).cloned().collect();
+        if members.is_empty() {
+            return None;
+        }
+        let groups = self.groups.entry(track).or_default();
+        for group in groups.iter_mut() {
+            group.keys.retain(|k| !members.contains(k));
+        }
+        let number = (1..).find(|n| !groups.iter().any(|g| g.name == format!("Group {n}"))).unwrap_or(1);
+        groups.push(LaneGroup { name: format!("Group {number}"), keys: members, folded: false });
+        self.picked.retain(|(t, _)| *t != track);
+        self.tidy_groups(track);
+        self.groups.get(&track).and_then(|g| g.iter().position(|g| g.name == format!("Group {number}")))
+    }
+
+    /// Puts the lanes of `track`'s group `index` back among the track's lanes, where they are.
+    pub fn ungroup(&mut self, track: TrackId, index: usize) {
+        if let Some(groups) = self.groups.get_mut(&track)
+            && index < groups.len()
+        {
+            groups.remove(index);
+        }
+        if self.renaming.as_ref().is_some_and(|(t, _, _)| *t == track) {
+            self.renaming = None;
+        }
+    }
+
+    /// Keeps each of `track`'s groups' lanes together, in the place of the first of them, and
+    /// drops groups left with no lane shown.
+    fn tidy_groups(&mut self, track: TrackId) {
+        let Some(groups) = self.groups.get_mut(&track) else { return };
+        let shown = self.shown.entry(track).or_default();
+        for group in groups.iter_mut() {
+            group.keys.retain(|k| shown.contains(k));
+        }
+        groups.retain(|g| !g.keys.is_empty());
+        for group in groups.iter() {
+            let Some(first) = shown.iter().position(|k| group.keys.contains(k)) else { continue };
+            let members: Vec<LaneKey> = shown.iter().filter(|k| group.keys.contains(k)).cloned().collect();
+            shown.retain(|k| !group.keys.contains(k));
+            let at = first.min(shown.len());
+            for (offset, key) in members.into_iter().enumerate() {
+                shown.insert(at + offset, key);
+            }
+        }
     }
 
     /// The height of `track`'s lane `key`.
@@ -1213,6 +1412,10 @@ impl LanesState {
         if !self.is_open(track) {
             return;
         }
+        // A lane folded away in its group comes into view with its group opened.
+        if let Some(group) = self.groups.get_mut(&track).and_then(|g| g.iter_mut().find(|g| g.keys.contains(&key))) {
+            group.folded = false;
+        }
         let shown = self.shown.entry(track).or_default();
         if !shown.contains(&key) {
             let replaced = match shown.first_mut() {
@@ -1243,6 +1446,23 @@ impl LanesState {
     fn carry_height(&mut self, track: TrackId, from: &LaneKey, to: &LaneKey) {
         let height = self.lane_height(track, from);
         self.set_lane_height(track, to, height);
+    }
+
+    /// Shows `key` in `track`'s lanes right under the lane `after`, in its group if it has one,
+    /// so it comes into view at once (the header's **+**, #1322).
+    pub fn show_lane_after(&mut self, track: TrackId, key: LaneKey, after: &LaneKey) {
+        self.open.insert(track);
+        let shown = self.shown.entry(track).or_default();
+        if shown.contains(&key) {
+            return;
+        }
+        let at = shown.iter().position(|k| k == after).map_or(shown.len(), |i| i + 1);
+        shown.insert(at.min(shown.len()), key.clone());
+        if let Some(group) = self.groups.get_mut(&track).and_then(|g| g.iter_mut().find(|g| g.keys.contains(after))) {
+            group.keys.push(key.clone());
+        }
+        self.tidy_groups(track);
+        self.last_lane = Some((track, key));
     }
 
     /// Shows `key` in `track`'s lanes (opening them), after the lanes already shown.
@@ -1548,20 +1768,179 @@ pub fn show(
     actions: &mut Vec<Action>,
 ) {
     let mut y = lanes.top;
-    for key in state.shown(lanes.track, params) {
-        let Some(param) = params.param(lanes.track, &key) else { continue };
-        let height = state.lane_height(lanes.track, &key);
+    // Where each row went, for a drag of headers to land between them.
+    let mut placed_rows: Vec<(LaneRow, f32, f32)> = Vec::new();
+    for row in state.rows(lanes.track, params) {
+        let height = state.row_height(lanes.track, &row);
         let time = Rect::from_x_y_ranges(geometry.time, egui::Rangef::new(y, y + height));
         let header = Rect::from_x_y_ranges(geometry.headers, time.y_range());
         y += height + LINE;
+        placed_rows.push((row.clone(), time.top(), time.bottom()));
         let full = Rect::from_x_y_ranges(geometry.visible.x_range(), time.y_range());
         if full.bottom() < geometry.visible.top() || full.top() > geometry.visible.bottom() {
             continue;
         }
-        lane(ui, painter, geometry, lanes, param, time, state, actions);
-        lane_header(ui, painter, geometry, lanes, param, header, state, params, actions);
-        painter.hline(geometry.visible.x_range(), time.bottom() + 0.5, theme::hairline(theme::border()));
-        resize_edge(ui, geometry, lanes, &key, full, state);
+        match row {
+            LaneRow::Group(index) => {
+                group_heading(ui, painter, geometry, lanes, index, header, time, state, params);
+                painter.hline(geometry.visible.x_range(), time.bottom() + 0.5, theme::hairline(theme::border()));
+            }
+            LaneRow::Lane(key) => {
+                let Some(param) = params.param(lanes.track, &key) else { continue };
+                lane(ui, painter, geometry, lanes, param, time, state, actions);
+                lane_header(ui, painter, geometry, lanes, param, header, state, params, actions);
+                painter.hline(geometry.visible.x_range(), time.bottom() + 0.5, theme::hairline(theme::border()));
+                resize_edge(ui, geometry, lanes, &key, full, state);
+            }
+        }
+    }
+    drop_headers(ui, painter, geometry, lanes.track, &placed_rows, state, params);
+}
+
+/// Where a drag of lane headers on `track` lands, drawn as a line, and the move once the button
+/// comes up (#1322): before the row whose middle is under the pointer, or after the last.
+fn drop_headers(
+    ui: &Ui,
+    painter: &egui::Painter,
+    geometry: &Geometry,
+    track: TrackId,
+    placed_rows: &[(LaneRow, f32, f32)],
+    state: &mut LanesState,
+    params: &Params,
+) {
+    let Some(drag) = state.header_drag.clone().filter(|d| d.track == track) else { return };
+    let landing = placed_rows.iter().find(|(_, top, bottom)| drag.pointer_y < (top + bottom) / 2.0);
+    let line_y = match landing {
+        Some((_, top, _)) => *top - LINE / 2.0,
+        None => placed_rows.last().map_or(geometry.visible.top(), |(_, _, bottom)| *bottom + LINE / 2.0),
+    };
+    let across =
+        egui::Rangef::new(geometry.headers.min.min(geometry.time.min), geometry.headers.max.max(geometry.time.max));
+    painter.hline(across, line_y, Stroke::new(2.0, theme::accent()));
+    if ui.input(|i| i.pointer.any_down()) {
+        ui.ctx().request_repaint();
+        return;
+    }
+    state.header_drag = None;
+    let before = landing.and_then(|(row, _, _)| match row {
+        LaneRow::Lane(key) => Some(key.clone()),
+        LaneRow::Group(index) => state
+            .groups
+            .get(&track)
+            .and_then(|g| g.get(*index))
+            .and_then(|g| state.shown(track, params).into_iter().find(|k| g.keys.contains(k))),
+    });
+    state.move_lanes(track, &drag.keys, before.as_ref(), drag.group);
+}
+
+/// A group's heading among `lanes`' rows (#1322): its fold arrow, its name (a double-click types
+/// a new one) and how many lanes it holds; dragged, it moves its lanes; its menu ungroups them.
+#[allow(clippy::too_many_arguments)]
+fn group_heading(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    geometry: &Geometry,
+    lanes: &TrackLanes<'_>,
+    index: usize,
+    header: Rect,
+    time: Rect,
+    state: &mut LanesState,
+    params: &Params,
+) {
+    let track = lanes.track;
+    let Some(group) = state.groups.get(&track).and_then(|g| g.get(index)).cloned() else { return };
+    let clip = header.intersect(geometry.visible);
+    if clip.width() <= 0.0 || clip.height() <= 0.0 {
+        return;
+    }
+    let painter = painter.with_clip_rect(geometry.visible);
+    painter.fill_background(header, 0.0, theme::control_background());
+    painter.rect_filled(time.intersect(geometry.visible), 0.0, theme::accent().gamma_multiply(0.06));
+    let id = Id::unique(("automation-group", track.0, index));
+    let inner = header.shrink2(Vec2::new(PAD, 2.0));
+    let arrow = Rect::from_min_size(inner.min, Vec2::new(14.0, inner.height()));
+    let name = Rect::from_min_max(Pos2::new(arrow.right() + 4.0, inner.top()), inner.max);
+    // The heading itself: dragged, it moves the group's lanes; right-clicked, its menu.
+    let background =
+        ui.interact(clip, id.with("background"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Grab);
+    if background.drag_started_by(egui::PointerButton::Primary) {
+        let keys: Vec<LaneKey> = state.shown(track, params).into_iter().filter(|k| group.keys.contains(k)).collect();
+        state.header_drag = Some(HeaderDrag { track, keys, group: true, pointer_y: header.center().y });
+    }
+    if let Some(pos) = background.interact_pointer_pos()
+        && let Some(drag) = state.header_drag.as_mut().filter(|d| d.track == track && d.group)
+    {
+        drag.pointer_y = pos.y;
+    }
+    if background.double_clicked() {
+        state.renaming = Some((track, index, group.name.clone()));
+    }
+    background.context_menu(|ui| {
+        if ui.button("Rename").clicked() {
+            state.renaming = Some((track, index, group.name.clone()));
+            ui.close();
+        }
+        if ui.button("Ungroup").clicked() {
+            state.ungroup(track, index);
+            ui.close();
+        }
+    });
+    let fold = widgets::button_area(
+        ui,
+        arrow.intersect(clip),
+        id.with("fold"),
+        format!("{} {} on {}", if group.folded { "Unfold" } else { "Fold" }, group.name, lanes.name),
+    );
+    if fold.clicked()
+        && let Some(g) = state.groups.get_mut(&track).and_then(|g| g.get_mut(index))
+    {
+        g.folded = !g.folded;
+    }
+    widgets::text_in(
+        &painter,
+        arrow,
+        Align2::CENTER_CENTER,
+        if group.folded { "▸" } else { "▾" },
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_secondary(),
+    );
+    match state.renaming.clone().filter(|(t, i, _)| *t == track && *i == index) {
+        Some((_, _, mut text)) => {
+            let edit = ui.put(
+                name,
+                egui::TextEdit::singleline(&mut text)
+                    .font(theme::ui_font(theme::TEXT_SMALL))
+                    .desired_width(name.width()),
+            );
+            edit.request_focus();
+            let done = edit.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+            if cancel {
+                state.renaming = None;
+            } else if done {
+                let text = text.trim().to_string();
+                if !text.is_empty()
+                    && let Some(g) = state.groups.get_mut(&track).and_then(|g| g.get_mut(index))
+                {
+                    g.name = text;
+                }
+                state.renaming = None;
+            } else {
+                state.renaming = Some((track, index, text));
+            }
+        }
+        None => {
+            let count = group.keys.len();
+            let text = format!("{}  ·  {count} {}", group.name, if count == 1 { "lane" } else { "lanes" });
+            widgets::text_in(
+                &painter,
+                name,
+                Align2::LEFT_CENTER,
+                &text,
+                theme::ui_font(theme::TEXT_SMALL),
+                theme::text_primary(),
+            );
+        }
     }
 }
 
@@ -3124,13 +3503,45 @@ fn lane_header(
     let painter = painter.with_clip_rect(clip);
     painter.fill_background(rect, 0.0, theme::panel_background());
     let track = lanes.track;
+    if state.is_picked(track, &param.key) {
+        painter.rect_filled(rect, 0.0, theme::accent().gamma_multiply(0.18));
+    }
     let id = Id::unique(("automation-header", track.0, param.key.device, param.key.param.as_str()));
-    // A right-click on the header's free space: the lane's height back to normal (#818).
-    let background = ui.interact(clip, id.with("background"), Sense::click());
+    // The header's free space: a click picks the lane (Ctrl adds, Shift picks a run), a drag
+    // moves it, or the picked lanes with it, among the track's lanes (#1322); a right-click opens
+    // its menu: the lane's height back to normal (#818), grouping.
+    let background = ui.interact(clip, id.with("background"), Sense::click_and_drag());
+    if background.clicked() {
+        let modifiers = ui.input(|i| i.modifiers);
+        state.pick(track, &param.key, modifiers, params);
+    }
+    if background.drag_started_by(egui::PointerButton::Primary) {
+        let keys = state.dragged_with(track, &param.key);
+        state.header_drag = Some(HeaderDrag { track, keys, group: false, pointer_y: rect.center().y });
+    }
+    if let Some(pos) = background.interact_pointer_pos()
+        && let Some(drag) = state.header_drag.as_mut().filter(|d| d.track == track && !d.group)
+    {
+        drag.pointer_y = pos.y;
+    }
+    let grouped = state.groups.get(&track).and_then(|g| g.iter().position(|g| g.keys.contains(&param.key)));
     background.context_menu(|ui| {
         let tall = state.heights.contains_key(&(track, param.key.clone()));
         if ui.add_enabled(tall, egui::Button::new("Reset height")).clicked() {
             state.set_lane_height(track, &param.key, LANE);
+            ui.close();
+        }
+        ui.separator();
+        // The picked lanes, or this one alone when it is not picked.
+        if ui.button("Group lanes").clicked() {
+            let keys = state.dragged_with(track, &param.key);
+            state.group_lanes(track, &keys);
+            ui.close();
+        }
+        if let Some(index) = grouped
+            && ui.button("Ungroup").clicked()
+        {
+            state.ungroup(track, index);
             ui.close();
         }
     });
@@ -3262,7 +3673,8 @@ fn lane_header(
             format!("Add an automation lane to {}", lanes.name),
         );
         if response.clicked() {
-            state.show_lane(track, next);
+            // Under this lane, so it comes into view at once (#1322).
+            state.show_lane_after(track, next, &param.key);
         }
         small_button(ui, &painter, add, &response, "+");
     }
@@ -3272,13 +3684,17 @@ fn lane_header(
         // A hidden lane draws no header to drop its menu's state when the menu closes.
         forget_menu(ui, filter, placed);
         state.from_automated.remove(&this_lane);
+        // A picked lane hides with the other picked lanes (#1322).
+        let hidden = state.dragged_with(track, &param.key);
         if let Some(keys) = state.shown.get_mut(&track) {
-            keys.retain(|k| *k != param.key);
+            keys.retain(|k| !hidden.contains(k));
             if keys.is_empty() {
                 state.open.remove(&track);
             }
         }
-        if state.selection.as_ref().is_some_and(|s| s.track == track && s.key == param.key) {
+        state.picked.retain(|(t, k)| !(*t == track && hidden.contains(k)));
+        state.tidy_groups(track);
+        if state.selection.as_ref().is_some_and(|s| s.track == track && hidden.contains(&s.key)) {
             state.selection = None;
         }
     }

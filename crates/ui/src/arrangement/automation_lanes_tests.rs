@@ -658,3 +658,87 @@ fn a_plug_in_parameter_moved_in_its_editor_moves_its_line_at_once() {
     // The same lists: nothing else was built again.
     assert!(params.param(track, &LaneKey { device: Some(0), param: "4".into() }).is_some());
 }
+
+/// A track with lanes open on volume, pan, mute and the lanes `keys` of the track's devices.
+fn open_lanes(keys: &[LaneKey]) -> (LanesState, TrackId, Params) {
+    let project = crate::demo::demo_project();
+    let track = project.tracks[0].id;
+    let params = Params::build(&project);
+    let mut lanes = LanesState::default();
+    lanes.open.insert(track);
+    let mut shown = vec![LaneKey::mixer(VOLUME), LaneKey::mixer(PAN), LaneKey::mixer(MUTE)];
+    shown.extend(keys.iter().cloned());
+    lanes.shown.insert(track, shown);
+    (lanes, track, params)
+}
+
+/// Lanes move by their headers to another place among the track's lanes, several picked ones
+/// together; picking takes a click, Ctrl+click and Shift+click (#1322).
+#[test]
+fn lanes_are_picked_and_moved_by_their_headers() {
+    let (mut lanes, track, params) = open_lanes(&[]);
+    let (v, p, m) = (LaneKey::mixer(VOLUME), LaneKey::mixer(PAN), LaneKey::mixer(MUTE));
+    lanes.move_lanes(track, std::slice::from_ref(&m), Some(&v), false);
+    assert_eq!(lanes.shown(track, &params), [m.clone(), v.clone(), p.clone()]);
+    lanes.move_lanes(track, std::slice::from_ref(&m), None, false);
+    assert_eq!(lanes.shown(track, &params), [v.clone(), p.clone(), m.clone()]);
+    // Picks: one, then Shift to the last, then Ctrl takes the middle away.
+    lanes.pick(track, &v, egui::Modifiers::NONE, &params);
+    lanes.pick(track, &m, egui::Modifiers::SHIFT, &params);
+    assert_eq!(lanes.picked.len(), 3);
+    lanes.pick(track, &p, egui::Modifiers::COMMAND, &params);
+    assert!(!lanes.is_picked(track, &p) && lanes.is_picked(track, &v) && lanes.is_picked(track, &m));
+    // A drag of a picked header moves the picked lanes, in their order, before the pan.
+    let moved = lanes.dragged_with(track, &m);
+    assert_eq!(moved, [v.clone(), m.clone()]);
+    lanes.move_lanes(track, &moved, None, false);
+    assert_eq!(lanes.shown(track, &params), [p.clone(), v.clone(), m.clone()]);
+    // A lane that is not picked moves alone.
+    assert_eq!(lanes.dragged_with(track, &p), [p.clone()]);
+}
+
+/// Picked lanes gather under a group's heading in the place of the first; a folded group takes
+/// one row; a lane dropped among a group's joins it, one dragged out leaves it; ungrouping puts
+/// them back (#1322).
+#[test]
+fn lanes_gather_in_groups_that_fold() {
+    let (mut lanes, track, params) = open_lanes(&[]);
+    let (v, p, m) = (LaneKey::mixer(VOLUME), LaneKey::mixer(PAN), LaneKey::mixer(MUTE));
+    let index = lanes.group_lanes(track, &[v.clone(), m.clone()]).unwrap();
+    assert_eq!(lanes.groups[&track][index].name, "Group 1");
+    assert_eq!(lanes.shown(track, &params), [v.clone(), m.clone(), p.clone()], "kept together at the first");
+    assert_eq!(
+        lanes.rows(track, &params),
+        [LaneRow::Group(index), LaneRow::Lane(v.clone()), LaneRow::Lane(m.clone()), LaneRow::Lane(p.clone())]
+    );
+    let open = lanes.height(track, &params);
+    lanes.groups.get_mut(&track).unwrap()[index].folded = true;
+    assert_eq!(lanes.rows(track, &params), [LaneRow::Group(index), LaneRow::Lane(p.clone())]);
+    assert!(lanes.height(track, &params) < open);
+    lanes.groups.get_mut(&track).unwrap()[index].folded = false;
+    // The pan dropped before the mute joins the group; dragged to the end, it leaves it.
+    lanes.move_lanes(track, std::slice::from_ref(&p), Some(&m), false);
+    assert!(lanes.groups[&track][index].keys.contains(&p));
+    lanes.move_lanes(track, std::slice::from_ref(&p), None, false);
+    assert!(!lanes.groups[&track][index].keys.contains(&p));
+    // A second group gets the next free name; a focus on a folded lane opens its group.
+    let second = lanes.group_lanes(track, std::slice::from_ref(&p)).unwrap();
+    assert_eq!(lanes.groups[&track][second].name, "Group 2");
+    lanes.groups.get_mut(&track).unwrap()[index].folded = true;
+    lanes.focus(track, m.clone());
+    assert!(!lanes.groups[&track][index].folded);
+    lanes.ungroup(track, index);
+    assert_eq!(lanes.groups[&track].len(), 1);
+    assert_eq!(lanes.rows(track, &params).len(), 4, "the pan's group heading and the three lanes");
+}
+
+/// The header's + puts the next lane right under the lane clicked, in its group (#1322).
+#[test]
+fn a_lane_added_with_plus_goes_under_the_one_clicked() {
+    let (mut lanes, track, params) = open_lanes(&[]);
+    let (v, p, m) = (LaneKey::mixer(VOLUME), LaneKey::mixer(PAN), LaneKey::mixer(MUTE));
+    lanes.shown.insert(track, vec![v.clone(), m.clone()]);
+    lanes.show_lane_after(track, p.clone(), &v);
+    assert_eq!(lanes.shown(track, &params), [v.clone(), p.clone(), m.clone()]);
+    assert_eq!(lanes.last_lane, Some((track, p)));
+}

@@ -327,6 +327,26 @@ Each lane keeps its height while the track's lanes are hidden, for as long as th
 open (#818), and when it comes to show another parameter, chosen in its dropdown or brought in
 by a control moved by hand (#1205).
 
+A track's lanes are put in an order of one's own and gathered in groups (#1322), the view's own
+like the lanes shown and their heights, kept while the project is open:
+
+- A click on a lane header's free space picks the lane (tinted in the accent colour); Ctrl+click
+  (Cmd on macOS) adds or takes one away, Shift+click picks every lane from the one picked last.
+  Picking a lane of another track lets go of the first track's.
+- Dragging a header's free space moves the lane, or all picked lanes when it is one of them, in
+  their order; a line across the lanes shows where they land, before the row under the pointer's
+  middle or after the last. A lane dropped among a group's lanes joins the group; one dropped
+  outside leaves it.
+- **Group lanes** in the header's right-click menu gathers the picked lanes (or the lane alone)
+  under a group heading in the place of the first of them, named "Group 1" (the first number free
+  on the track). The heading shows the group's name and how many lanes it holds; its arrow folds
+  the lanes away to the heading's row and back; a double-click or **Rename** in its menu types a
+  new name (Enter keeps it, Escape leaves the old one); dragging it moves the whole group;
+  **Ungroup** (its menu, or a grouped lane's) puts the lanes back where they are. A lane brought
+  into view by a control (below) opens its folded group.
+- **×** on a picked lane hides all the picked lanes; **+** adds the next parameter's lane right
+  under the lane whose **+** was clicked, in its group, so it shows at once.
+
 A control moved by hand brings its parameter into view when its track's lanes are shown
 (#1205): the track header's volume, pan or mute (Main's too), a knob of a device on the track's
 own chain in the detail view, or a parameter turned in a hosted plug-in's own editor. A lane
