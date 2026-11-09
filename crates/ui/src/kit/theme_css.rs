@@ -106,7 +106,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
             let property = property.trim();
             let value = value.trim();
             let result = match selector {
-                "session" | ".session" if super::session_geometry::SessionGeometry::limits(property).is_some() => {
+                "session" if super::session_geometry::SessionGeometry::limits(property).is_some() => {
                     theme.skin.session.set(property, value)
                 }
                 "theme" if property == "name" => {
@@ -219,9 +219,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                         _ => Err("unknown colour token or invalid hex colour"),
                     }
                 }
-                ".window" | "window"
-                    if matches!(property, "background-image" | "background-opacity" | "background-blur") =>
-                {
+                "window" if matches!(property, "background-image" | "background-opacity" | "background-blur") => {
                     match property {
                         "background-image" if value == "none" => {
                             theme.skin.background = None;
@@ -254,7 +252,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                         }
                     }
                 }
-                "meter" | ".meter" if matches!(property, "style" | "segments" | "intensity") => match property {
+                "meter" if matches!(property, "style" | "segments" | "intensity") => match property {
                     "intensity" => {
                         match value.strip_suffix('%').unwrap_or(value).parse::<u8>().ok().filter(|n| *n <= 100) {
                             Some(n) => {
@@ -292,7 +290,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                     },
                     _ => Err("unsupported meter property"),
                 },
-                "toolbar" | ".toolbar" if property.starts_with("offset-") => {
+                "toolbar" if property.starts_with("offset-") => {
                     let module = property.trim_start_matches("offset-");
                     match value.trim_end_matches("px").parse::<i32>() {
                         Ok(offset) if skin::MODULES.contains(&module) && (-16384..=16384).contains(&offset) => {
@@ -302,7 +300,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                         _ => Err("expected a known module offset from -16384 to 16384"),
                     }
                 }
-                "toolbar" | ".toolbar" if matches!(property, "order" | "hidden") => {
+                "toolbar" if matches!(property, "order" | "hidden") => {
                     let list: Vec<_> =
                         value.split(',').map(str::trim).filter(|s| !s.is_empty() && *s != "none").collect();
                     if list.len() > skin::MODULES.len() || list.iter().any(|s| !skin::MODULES.contains(s)) {
@@ -440,7 +438,7 @@ pub fn export(theme: &Theme) -> String {
     }
     if theme.skin.background.is_some() {
         css.push_str(&format!(
-            ".window {{ background-image: url(\"background.png\"); background-opacity: {}; background-blur: {}; }}\n",
+            "window {{ background-image: url(\"background.png\"); background-opacity: {}; background-blur: {}; }}\n",
             theme.skin.background_opacity, theme.skin.background_blur
         ));
     }
@@ -565,7 +563,10 @@ fn is_style_line(line: &str) -> bool {
         && !line.starts_with("liquid ")
         && !line.starts_with("gradient-")
         && !line.starts_with("session ")
-        && !line.starts_with(".window ")
+        && !line.starts_with("window ")
+        // The toolbar's arrangement (`order`, `hidden`, `offset-*`) is `theme.json`'s, not a
+        // style; any other rule on `toolbar` is one.
+        && !line.strip_prefix("toolbar { ").is_some_and(|rest| rest.starts_with("order:") || rest.starts_with("offset-"))
 }
 
 /// `css` with each `@layer NAME { … }` block replaced by its rules, nested layers too (at most
@@ -681,7 +682,6 @@ pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
                 }
                 let wanted = property == "image"
                     || match selector {
-                        "toolbar" => true,
                         _ if selector.starts_with(".control-") => true,
                         _ => super::style_class::valid_selector(selector) && property.starts_with("--suhina-"),
                     };

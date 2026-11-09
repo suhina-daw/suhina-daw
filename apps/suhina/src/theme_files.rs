@@ -1426,8 +1426,8 @@ fn write_files(folder: &Path, mut files: Vec<(String, Vec<u8>)>) -> Result<(), S
 fn portable_package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8>)>, String> {
     let mut portable = theme.clone();
     let mut assets = suhina_ui::kit::skin::inherited_assets();
-    for role in suhina_ui::kit::skin::ROLES {
-        if theme.skin.assets.contains_key(*role) {
+    for role in suhina_ui::kit::skin::roles() {
+        if theme.skin.assets.contains_key(role) {
             for suffix in [".hover", ".active", ".disabled"] {
                 assets.remove(&format!("{role}{suffix}"));
             }

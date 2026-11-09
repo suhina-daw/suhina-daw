@@ -946,7 +946,7 @@ fn a_theme_lays_a_generated_list_side_by_side() {
     project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
     let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
     let graph = chain.devices[0].graph.as_ref().unwrap();
-    let (theme, _) = crate::kit::theme::from_css(".device { --suhina-param-columns: 3; --suhina-param-row: 48px; }");
+    let (theme, _) = crate::kit::theme::from_css("device { --suhina-param-columns: 3; --suhina-param-row: 48px; }");
     crate::kit::skin::configure(&theme.skin);
     let cells = parameter_layout(&graph.parameters, 300.0, f32::INFINITY, &[]);
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());

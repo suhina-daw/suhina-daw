@@ -14,13 +14,9 @@ pub fn pan_field(painter: &egui::Painter, rect: Rect, pan: f64, hover: f32) {
         return;
     }
     // The native look: a flat field with centre ticks and a thin bar along its bottom.
-    // `.pan` and `#mixer-pan` colour it as well: the theme's background, border and text.
-    crate::kit::native_css::surface(
-        painter,
-        rect,
-        0.0,
-        motion::mix(theme::pan_background(), theme::panel_hover(), hover),
-    );
+    // `pan` and `#mixer-pan` colour it as well: the theme's background, border and text.
+    let fill = motion::mix(theme::pan_background(), theme::panel_hover(), hover);
+    super::native_css::surface_with(painter, rect, 0.0, fill, super::style_class::computed());
     let centre = rect.center().x.round() - 0.5;
     painter.vline(centre, egui::Rangef::new(rect.top(), rect.top() + 2.0), theme::hairline(theme::pan_centre()));
     painter.vline(centre, egui::Rangef::new(rect.bottom() - 2.0, rect.bottom()), theme::hairline(theme::pan_centre()));
@@ -38,7 +34,9 @@ pub fn pan_field(painter: &egui::Painter, rect: Rect, pan: f64, hover: f32) {
     );
 }
 
-/// Whether the sheet gives the element in scope a shape of its own.
+/// Whether the sheet gives the element in scope a shape of its own. The level fields are drawn
+/// inside their control's own element (`#arrangement-volume`, `#mixer-pan`), which their callers
+/// enter.
 fn authored_shape() -> bool {
     crate::kit::style_class::computed().is_some_and(|style| {
         style.authored.background || style.authored.radius || style.authored.border_width || style.height.is_some()
@@ -47,7 +45,7 @@ fn authored_shape() -> bool {
 
 /// A level as a bar in `rect`: a track, and over it a fill from `span.0` to `span.1` (fractions of
 /// the width), with `text` on top. `kind` names its artwork (`volume.track`, `volume.fill`). The
-/// shape comes from the sheet: the element in scope is the track and `.value-fill` the fill
+/// shape comes from the sheet: the element in scope is the track and `value-fill` the fill
 /// (background, border, radius, `height` for the thickness); the native look is a capsule as tall
 /// as the field. Artwork of the theme's own replaces either.
 pub fn level_bar(
@@ -75,12 +73,12 @@ pub fn level_bar(
     {
         0.0
     } else {
-        crate::kit::native_css::surface(painter, track, height * 0.5, back)
+        super::native_css::surface_with(painter, track, height * 0.5, back, super::style_class::computed())
     };
     let x = |at: f32| track.left() + track.width() * at.clamp(0.0, 1.0);
     let filled = Rect::from_min_max(Pos2::new(x(span.0), track.top()), Pos2::new(x(span.1), track.bottom()));
     let fill = {
-        let _fill = crate::kit::style_class::enter("value-fill");
+        let fill_el = super::element::VALUE_FILL.enter();
         let fill = crate::kit::style_class::background(theme::control_selected());
         if filled.width() > 0.0 {
             let fill_height = crate::kit::native_css::thickness(height).clamp(1.0, rect.height());
@@ -91,16 +89,16 @@ pub fn level_bar(
             if !(skin::has_own(&format!("{kind}.fill"))
                 && skin::paint(&clipped, bar, &format!("{kind}.fill"), state, fill, 0.0))
             {
-                crate::kit::native_css::surface(&clipped, bar, radius, fill);
+                fill_el.paint_with(&clipped, bar, super::element::Native { radius, fill });
             }
         }
         fill
     };
-    // A handle where the fill ends, when the sheet gives `.value-handle` a width (or artwork
+    // A handle where the fill ends, when the sheet gives `value-handle` a width (or artwork
     // `{kind}.handle`): its background, border and radius, as tall as the field.
     {
-        let _handle = crate::kit::style_class::enter("value-handle");
-        let width = crate::kit::style_class::computed().and_then(|style| style.width);
+        let handle_el = super::element::VALUE_HANDLE.enter();
+        let width = handle_el.style().and_then(|style| style.width);
         let role = format!("{kind}.handle");
         if let Some(width) = width.filter(|w| *w >= 1.0).or_else(|| skin::has_own(&role).then_some(8.0)) {
             // The end that moves: a volume's right end, a pan's end away from the centre.
@@ -110,7 +108,11 @@ pub fn level_bar(
                 Vec2::new(width.min(rect.width()), crate::kit::native_css::thickness(rect.height()).min(rect.height())),
             );
             if !(skin::has_own(&role) && skin::paint(painter, handle, &role, state, fill, 0.0)) {
-                crate::kit::native_css::surface(painter, handle, 2.0, theme::text_primary());
+                handle_el.paint_with(
+                    painter,
+                    handle,
+                    super::element::Native { radius: 2.0, fill: theme::text_primary() },
+                );
             }
         }
     }
@@ -138,7 +140,7 @@ pub fn level_bar(
         return;
     }
     // The sheet may move the value (`text-align`) and give the lit part's text its own colour
-    // (`.value-fill { color }`).
+    // (`value-fill { color }`).
     let align = match crate::kit::style_class::computed().and_then(|style| style.text_align) {
         Some(-1) => Align2::LEFT_CENTER,
         Some(0) => Align2::CENTER_CENTER,
@@ -146,8 +148,8 @@ pub fn level_bar(
         None => align,
     };
     let lit_ink = {
-        let _fill = crate::kit::style_class::enter("value-fill");
-        crate::kit::style_class::computed().filter(|style| style.authored.color).map(|style| style.color)
+        let fill = super::element::VALUE_FILL.enter();
+        fill.style().filter(|style| style.authored.color).map(|style| style.color)
     };
     // The value can cross the fill's edge; each part keeps the ink that reads on what is under it.
     let unfilled = Rect::from_min_max(Pos2::new(filled.right(), rect.top()), rect.max);

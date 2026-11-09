@@ -3,7 +3,7 @@ description: Version 6 of the data-only Suhina device graph format, SDK, track l
 read_when: .sd, Suhina device, device graph, device SDK, community effect, visual node, device UI
 type: spec
 status: current
-last_verified: 2026-10-25
+last_verified: 2026-11-07
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-sdk/Cargo.toml
@@ -341,13 +341,13 @@ host applies style tiers in order (ADR 0031 › Device panels use the same style
 
 1. **Default:** Suhina's own appearance.
 2. **Theme:** the application theme's style sheet, which can reach device panels through
-   `.device-panel`, `.device-control` and the widget classes (`.knob`, `.button`, …).
+   `device-panel`, `device-control` and the widget classes (`knob`, `button`, …).
 3. **Device:** this sheet, bounded to its panel: its selectors match only elements inside the panel,
-   so `.browser { … }` here changes nothing outside it.
+   so `browser { … }` here changes nothing outside it.
 4. **User:** `user.css` in the themes folder, over everything, and kept when the theme changes.
 
 A higher tier wins over a lower one even against `!important`; within a tier importance,
-`@layer`, specificity and source order apply. Each control is a `.device-control` element whose id
+`@layer`, specificity and source order apply. Each control is a `device-control` element whose id
 is the control's `id`, so `#cutoff { color: #ffd27f; accent-color: #ff8a00; }` styles the control
 `cutoff`. Built-in widgets take `color` (text and ink), `background-color` (body), `border-color`
 and `accent-color` (arc, switched-on fill) from it; what a sheet leaves out keeps the theme. A
