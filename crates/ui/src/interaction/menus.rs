@@ -162,7 +162,7 @@ pub fn midi_monitor_explanation(monitor: Monitor) -> &'static str {
 
 /// Input monitoring is independent of record arm and headphone cue.
 pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actions: &mut Vec<Action>) {
-    // `.popup` styles the menu, `button:checked` its chosen row.
+    // `popup` styles the menu, `button[checked]` its chosen row.
     let _style = crate::kit::style_class::enter("popup");
     let mut styled_ui = crate::kit::style_class::ui(ui);
     let ui = &mut *styled_ui;

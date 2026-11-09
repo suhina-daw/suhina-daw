@@ -58,6 +58,8 @@ use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerNonblockingMode, ListenerOptions, Name, NameType, Stream, ToFsName,
     ToNsName,
 };
+/// Whether a wait for a plug-in's answer failed in the operating system (#1256).
+pub use suhina_ipc::a_wait_failed;
 pub use suhina_ipc::{
     AudioSource, Event, EventKind, MAX_EVENTS, Outcome, keys_to_engine, pointer_on_screen, set_keys_to_engine,
     take_keyboard_back,
@@ -294,6 +296,18 @@ impl PluginAudio {
     /// [`PluginAudio::finish`] takes the result without waiting. Counts nothing. Real-time safe.
     pub fn poll(&self, until: Instant) -> bool {
         self.link.wait_answered(until)
+    }
+
+    /// The block sent, not answered yet, to wait for together with other plug-ins'
+    /// ([`suhina_ipc::wait_any`], #1256). Real-time safe.
+    pub fn watch(&self) -> Option<suhina_ipc::Watch<'_>> {
+        self.link.watch()
+    }
+
+    /// The block it was late with, which [`PluginAudio::ready`] waits for, to wait for together
+    /// with other plug-ins'. Real-time safe.
+    pub fn watch_ready(&self) -> Option<suhina_ipc::Watch<'_>> {
+        self.link.watch_ready()
     }
 
     /// Whether a block can go now ([`Link::ready`]), waiting at most until `until` (a time

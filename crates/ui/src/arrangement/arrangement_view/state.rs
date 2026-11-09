@@ -553,6 +553,22 @@ impl TimeSelection {
         let row = self.row.filter(|_| all == self.tracks && self.row == row);
         Self { tracks: all, start: self.start.min(start), end: self.end.max(end), row }
     }
+
+    /// Painted in one row of a stack: the ids of that row's clips under it, which the edit keys
+    /// keep to (`clips` of `range.*` and `clip.consolidate`, #701); `None` over whole tracks.
+    pub fn row_clips(&self, timeline: &Timeline) -> Option<Vec<u32>> {
+        self.row_clips_over(timeline, self.start, self.end)
+    }
+
+    /// The clips of the painted row that overlap `from..to`, which `row_clips` takes as the span
+    /// itself: a copy that lands later names the row's clips there too, so it replaces those and
+    /// no other row's (#701).
+    pub fn row_clips_over(&self, timeline: &Timeline, from: f64, to: f64) -> Option<Vec<u32>> {
+        let (row, rows) = self.row?;
+        let lanes = timeline.lanes.iter().filter(|l| self.tracks.contains(&l.track));
+        let clips = lanes.flat_map(|l| &l.clips).filter(|c| c.row == row && c.rows == rows);
+        Some(clips.filter(|c| c.start < to && c.start + c.length > from).map(|c| c.id.0).collect())
+    }
 }
 
 /// A span of beats over some tracks, the selection rectangle's.
@@ -562,7 +578,7 @@ pub struct TimeSelection {
     pub start: f64,
     pub end: f64,
     /// Painted from a clip in one row of a stack, on its track alone: that row (from 0) of how
-    /// many. Consolidate then joins that row's clips only and leaves the other rows be.
+    /// many. The edit keys then act on that row's clips only and leave the other rows be.
     pub row: Option<(usize, usize)>,
 }
 

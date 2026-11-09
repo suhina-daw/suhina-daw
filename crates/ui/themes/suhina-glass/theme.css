@@ -84,9 +84,9 @@
 /* The views paint at half the bars' strength. Menus and dialogs float over the window, in the
    panel colour, at its full strength. */
 @layer suhina-glass {
-  .window, .session, .arrangement { background-color: var(--ground-half); }
-  .workspace-panel, .browser, .detail, .clip-editor, .device-panel, .mixer, .scene-column { background-color: var(--surface-half); }
-  .application-bar, .menu-bar, .project-tabs, .toolbar, .status-bar {
+  window, session, arrangement { background-color: var(--ground-half); }
+  workspace-panel, browser, detail, clip-editor, device-panel, mixer, scene-column { background-color: var(--surface-half); }
+  application-bar, menu-bar, project-tabs, toolbar, status-bar {
     background-color: color-mix(in srgb, var(--surface), transparent var(--glassiness)%);
   }
 }

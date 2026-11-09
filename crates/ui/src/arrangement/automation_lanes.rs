@@ -1927,7 +1927,7 @@ pub fn header_button(
     if response.clicked() {
         state.toggle(track, params);
     }
-    // `#control-automation`, `:checked` while the lanes show, and `automation` artwork.
+    // `#control-automation`, `[checked]` while the lanes show, and `automation` artwork.
     let _style = crate::kit::style_class::enter_named_response("button", "automation", &response);
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, open);
     let hover = widgets::hover(ui, &response);

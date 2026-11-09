@@ -77,7 +77,7 @@ pub fn workspace(size: Vec2, browser: Option<f32>, detail: Option<(bool, f32)>) 
                 (format!("{width}px minmax(0,1fr)"), format!("minmax(0,1fr) {detail_size}px"), "grid-column:2;grid-row:2;")
             };
             let defaults = format!(
-                ".workspace {{display:grid;width:{}px;height:{}px;grid-template-columns:{columns};grid-template-rows:{rows};}} #panel-browser {{grid-column:1;grid-row:1 / -1;}} #panel-main {{grid-column:2;grid-row:1;}} #panel-detail {{{detail_position}}}",
+                "workspace {{display:grid;width:{}px;height:{}px;grid-template-columns:{columns};grid-template-rows:{rows};}} #panel-browser {{grid-column:1;grid-row:1 / -1;}} #panel-main {{grid-column:2;grid-row:1;}} #panel-detail {{{detail_position}}}",
                 size.x.min(16384.0),
                 size.y.min(16384.0)
             );

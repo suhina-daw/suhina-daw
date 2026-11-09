@@ -177,7 +177,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
             if state.current != themes.current { state.current = themes.current.clone(); state.role.clear(); state.css.clear(); }
             let old = state.role.clone();
             egui::ComboBox::from_id_salt("skin-asset-role").selected_text(if state.role.is_empty() { "Choose control" } else { &state.role }).show_ui(ui, |ui| {
-                for role in skin::ROLES { for suffix in ["", ".hover", ".active", ".disabled"] {
+                for role in skin::roles() { for suffix in ["", ".hover", ".active", ".disabled"] {
                     let role = format!("{role}{suffix}"); ui.selectable_value(&mut state.role, role.clone(), role);
                 } }
             });

@@ -3,7 +3,7 @@ description: Functional spec of the MIDI clip editor (piano roll): layout, toolb
 read_when: piano roll, clip editor, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools column, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
 type: spec
 status: draft
-last_verified: 2026-11-07
+last_verified: 2026-11-09
 covers:
   - crates/ui/src/detail/piano_roll.rs
   - crates/ui/src/detail/piano_roll_grid.rs
@@ -601,16 +601,17 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   content's start stops at it; a pitch move that does not fit for every selected note does nothing,
   so no note changes its name.
 - **Built ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** with **Ctrl** (Cmd on
-  macOS) held when a note drag starts, the drag copies the selection instead of moving it (a note
+  macOS) held when the button goes down on a note, the drag copies the selection instead of moving it (a note
   not yet selected is added to the selection first, as Ctrl+click does): the pointer shows a copy
   cursor, the notes are shown where the copies go, snapped as a move is, and letting go leaves the
   notes where they were and adds the copies there with one `note.duplicate` (`beats` and
   `semitones`), one undo step. The copies keep everything of their notes (length, velocity, mute)
-  and end up selected. Dropped where they started, nothing is copied. Ctrl only counts at the start;
-  pressing it later changes nothing.
+  and end up selected. Dropped where they started, nothing is copied. Ctrl only counts when the
+  button goes down; pressing it later changes nothing.
 - **Built:** **Alt** pressed once a move has started frees it from the grid for as long as it is
-  held (it is read every frame). Alt held when the drag starts on a note changes its velocity
-  instead (› Velocity).
+  held (it is read every frame). Alt held when the button goes down on a note changes its velocity
+  instead (› Velocity); Alt pressed after that, even before the pointer has moved far enough to
+  start the drag, frees the move (#1048). Ctrl and Shift too count as they were at the press.
 - **Later:** whether moving notes past the clip's end extends the clip is **(to decide)**.
 
 ## Resizing
@@ -720,7 +721,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   1 to 127. The lane shows the values while dragging; letting go is one `note.setVelocity`, one
   undo step.
 - **Built ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** **Alt+drag** up or down
-  on a note (Option on macOS; Alt held when the drag starts, on the note's body, with the Select or
+  on a note (Option on macOS; Alt held when the button goes down on the note's body, with the Select or
   Draw tool) changes its velocity, one step per point, up louder; with several notes selected and
   the dragged one among them, every selected note changes by the same amount, the dragged one kept
   within 1 to 127. While dragging, the note's new velocity is shown over it ("Velocity 112"), the
@@ -1006,7 +1007,7 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Drag a note's right edge | Changes the selection's length |
 | Drag a note's left edge | Moves the selection's starts, keeping their ends |
 | Ctrl+drag a note (Cmd on macOS) | Copies the selection to where it is let go |
-| Alt+drag a note up, down | Changes the selection's velocity (Alt held at the start) |
+| Alt+drag a note up, down | Changes the selection's velocity (Alt held at the press) |
 | Alt while drawing, or pressed during a drag | No snapping |
 | Ctrl+1, Ctrl+2 | Makes the grid finer, coarser (Narrow grid, Widen grid; after a click in the piano roll) |
 | Ctrl+3 | Turns the triplet grid on or off (after a click in the piano roll) |

@@ -6,10 +6,12 @@
 //! Quit). It is kept in step every frame: an item's label and whether it can be picked change in
 //! place, and the bar is built again when the items themselves change (a project added to Open
 //! recent). A pick runs the item as a click in the window's bar does. Items carry no keys of their
-//! own, so a key still reaches the window's keymap once.
+//! own, so a key still reaches the window's keymap once; only Quit has ⌘Q, which the keymap
+//! leaves alone.
 
 use std::sync::{Arc, Mutex};
 
+use muda::accelerator::{Key, KeyAccelerator, Modifiers};
 use muda::{IsMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSAppearance, NSApplication};
@@ -51,23 +53,61 @@ pub fn install(menus: &[menus::Menu], ctx: eframe::egui::Context) -> Option<MacM
     build(menus, picked)
 }
 
+/// A line of the application menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AppLine {
+    About,
+    Services,
+    Hide,
+    HideOthers,
+    ShowAll,
+    Separator,
+    /// The window's own item of this id, with this label, run by ⌘ and this key as well.
+    Window {
+        id: &'static str,
+        label: &'static str,
+        key: &'static str,
+    },
+}
+
+/// The application menu. Its Quit is the window's (`menu.quit`), which asks about unsaved changes
+/// first: AppKit's own Quit (`terminate:`) ended the process without the window hearing of it,
+/// and so did ⌘Q, its key (#1033).
+const APP_MENU: &[AppLine] = &[
+    AppLine::About,
+    AppLine::Separator,
+    AppLine::Services,
+    AppLine::Separator,
+    AppLine::Hide,
+    AppLine::HideOthers,
+    AppLine::ShowAll,
+    AppLine::Separator,
+    AppLine::Window { id: "menu.quit", label: "Quit Suhina", key: "q" },
+];
+
 fn build(menus: &[menus::Menu], picked: Arc<Mutex<Vec<MenuId>>>) -> Option<MacMenu> {
     let menu = Menu::new();
     let app = Submenu::new("Suhina", true);
-    app.append_items(&[
-        &PredefinedMenuItem::about(None, None),
-        &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::services(None),
-        &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::hide(None),
-        &PredefinedMenuItem::hide_others(None),
-        &PredefinedMenuItem::show_all(None),
-        &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::quit(None),
-    ])
-    .ok()?;
-    menu.append(&app).ok()?;
     let (mut lines, mut items) = (Vec::new(), Vec::new());
+    for line in APP_MENU {
+        let added = match *line {
+            AppLine::About => app.append(&PredefinedMenuItem::about(None, None)),
+            AppLine::Services => app.append(&PredefinedMenuItem::services(None)),
+            AppLine::Hide => app.append(&PredefinedMenuItem::hide(None)),
+            AppLine::HideOthers => app.append(&PredefinedMenuItem::hide_others(None)),
+            AppLine::ShowAll => app.append(&PredefinedMenuItem::show_all(None)),
+            AppLine::Separator => app.append(&PredefinedMenuItem::separator()),
+            AppLine::Window { id, label, key } => {
+                let item = MenuItem::new(label, true, None);
+                item.set_key_accelerator(Some(KeyAccelerator::new(Modifiers::META, Key::Character(key.into()))))
+                    .ok()?;
+                items.push((item.id().clone(), id.to_string()));
+                app.append(&item)
+            }
+        };
+        added.ok()?;
+    }
+    menu.append(&app).ok()?;
     for bar_menu in menus {
         let submenu = Submenu::new(bar_menu.title, true);
         append(&submenu, &bar_menu.entries, &mut lines, &mut items)?;
@@ -214,6 +254,15 @@ mod tests {
                 },
             ],
         }]
+    }
+
+    /// ⌘Q and the application menu's Quit run the window's Quit, which asks about unsaved
+    /// changes; nothing in the menu ends the app by itself (#1033).
+    #[test]
+    fn quit_is_the_windows_own_so_it_asks_first() {
+        let windows: Vec<_> = APP_MENU.iter().filter(|l| matches!(l, AppLine::Window { .. })).collect();
+        assert_eq!(windows, [&AppLine::Window { id: "menu.quit", label: "Quit Suhina", key: "q" }]);
+        assert_eq!(APP_MENU.last(), windows.first().copied(), "Quit ends the menu, as macOS expects");
     }
 
     #[test]

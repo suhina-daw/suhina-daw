@@ -121,6 +121,19 @@ impl<'a> Args<'a> {
     pub(crate) fn opt_name(self, name: &str) -> Result<Option<String>, CommandError> {
         Ok(self.opt_text(name)?.map(str::to_string))
     }
+
+    /// A list of ids (whole numbers, such as clip ids from `project.clips`), or `None` when it is
+    /// left out.
+    pub(crate) fn opt_ids(self, name: &str) -> Result<Option<Vec<u32>>, CommandError> {
+        let Some(v) = self.value(name) else { return Ok(None) };
+        let bad = || CommandError::from(format!("{name} must be a list of ids"));
+        v.as_array()
+            .ok_or_else(bad)?
+            .iter()
+            .map(|id| id.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(bad))
+            .collect::<Result<_, _>>()
+            .map(Some)
+    }
 }
 
 #[cfg(test)]

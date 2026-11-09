@@ -83,7 +83,7 @@ fn mixer_and_name_css_materials_override_native_tint_and_paint_gradients() {
         let body = if gradient { "linear-gradient(#102030, #304050)" } else { "#102030" };
         let name = if name_gradient { "linear-gradient(#ffffff22, #00000044)" } else { "#203040" };
         skin::configure(&skin::Skin {
-            css: Some(format!(".mixer {{ background: {body}; }} .track-name {{ background: {name}; }}").into()),
+            css: Some(format!("mixer {{ background: {body}; }} track-name {{ background: {name}; }}").into()),
             ..Default::default()
         });
         let grid = TrackGrid::build(&crate::demo::demo_project(), None);
@@ -293,8 +293,8 @@ fn a_send_takes_its_class_and_its_own_id() {
     let grid = TrackGrid::build(&crate::demo::demo_project(), None);
     let column = grid.columns.iter().find(|c| !c.sends.is_empty()).expect("the demo has a track with sends");
     for (css, colour) in [
-        (".send { background-color: #00FF00; }", Color32::from_rgb(0, 0xFF, 0)),
-        (".send { background-color: #00FF00; } #mixer-send-1 { background-color: #FF0000; }", Color32::RED),
+        ("send { background-color: #00FF00; }", Color32::from_rgb(0, 0xFF, 0)),
+        ("send { background-color: #00FF00; } #mixer-send-1 { background-color: #FF0000; }", Color32::RED),
     ] {
         let ctx = egui::Context::default();
         theme::install(&ctx);
