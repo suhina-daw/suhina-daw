@@ -111,13 +111,18 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `engine_block`, `exclusive`, `latency_ms` (engine to speaker, measured), `live` (a track is
   armed, so the engine keeps one block ahead instead of two), `live_latency_ms` (what a key on a
   MIDI controller takes to be heard: the measured latency and the fixed delay notes are placed
-  at, ADR 0017), `underruns`, `failed` and `fallback` (it plays in
+  at, ADR 0017), `underruns`, `failed`, `failure` (why, when the device said: the ASIO driver
+  asked for a reset, changed its buffer size…) and `fallback` (it plays in
   place of a chosen host or device that is not there), `channels` (opened) and `cue_pair`.
   Without `--audio`, `audio.devices` returns an error.
   `audio.openControlPanel {}` requests the active ASIO stream's own native panel
   on its owner thread and returns `requested: true`. It does not reopen the output
   or load plugins. Other hosts or a missing output return an error; close a modal
   driver panel before changing output or closing the project.
+  `audio.checkDriver {}` asks the active ASIO driver for its buffer sizes again on the same
+  thread and returns `requested: true`: when a size set in its control panel changed them
+  without the driver saying so, the output opens again at the new size. It does nothing on
+  other hosts; a missing output returns an error.
 
 - **The cue (headphones).** `output.setCuePair {pair}` plays previews and the tracks whose cue
   is on (`track.setCue {track, cue}`, an edit) on another pair of the same device's outputs

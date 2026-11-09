@@ -150,6 +150,7 @@ fn audio_commands_are_listed_with_their_kind() {
         ids,
         [
             "audio.openControlPanel",
+            "audio.checkDriver",
             "audio.devices",
             "audio.setOutput",
             "audio.setTrackInput",

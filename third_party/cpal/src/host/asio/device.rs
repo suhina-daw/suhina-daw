@@ -1,10 +1,7 @@
 use std::{
     fmt,
     hash::{Hash, Hasher},
-    sync::{
-        atomic::{AtomicI32, AtomicU32, Ordering},
-        Arc,
-    },
+    sync::{atomic::AtomicU32, Arc, Mutex},
 };
 
 use super::sys;
@@ -62,36 +59,31 @@ impl BufferSizes {
     }
 }
 
-#[derive(Debug, Default)]
-struct SharedBufferSizes {
-    min: AtomicU32,
-    max: AtomicU32,
-    preferred: AtomicU32,
-    granularity: AtomicI32,
-}
+/// The last answer, behind one lock so a reader never sees half of a new answer. It is never
+/// touched from an audio callback.
+#[derive(Debug)]
+struct SharedBufferSizes(Mutex<BufferSizes>);
 
 impl SharedBufferSizes {
     fn new(sizes: BufferSizes) -> Self {
-        let shared = Self::default();
-        shared.store(sizes);
-        shared
+        Self(Mutex::new(sizes))
     }
 
     fn store(&self, sizes: BufferSizes) {
-        self.min.store(sizes.min, Ordering::Relaxed);
-        self.max.store(sizes.max, Ordering::Relaxed);
-        self.preferred.store(sizes.preferred, Ordering::Relaxed);
-        self.granularity.store(sizes.granularity, Ordering::Relaxed);
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = sizes;
     }
 
     fn load(&self) -> BufferSizes {
-        BufferSizes {
-            min: self.min.load(Ordering::Relaxed),
-            max: self.max.load(Ordering::Relaxed),
-            preferred: self.preferred.load(Ordering::Relaxed),
-            granularity: self.granularity.load(Ordering::Relaxed),
-        }
+        *self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
+}
+
+/// Keeps an ASIO driver loaded while it lives (Suhina patch). [`Device::refresh_buffer_sizes`]
+/// hands one back so the stream built next uses the driver that answered, instead of the driver
+/// being exited and loaded again in between. Dropping the last handle exits the driver.
+#[must_use]
+pub struct LoadedDriver {
+    _driver: sys::Driver,
 }
 
 /// All available devices.
@@ -127,9 +119,11 @@ impl Device {
 
     /// Asks the driver for its buffer sizes again and keeps the answer: a size set in the
     /// driver's control panel since enumeration shows only this way. Uses the driver already
-    /// loaded when it is this one, and otherwise loads it for the call; fails while another
-    /// driver is loaded.
-    pub fn refresh_buffer_sizes(&self) -> Result<BufferSizes, Error> {
+    /// loaded when it is this one, and otherwise loads it; fails while another driver is
+    /// loaded. The driver stays loaded while the returned [`LoadedDriver`] lives, so a stream
+    /// built meanwhile uses it rather than loading it again.
+    pub fn refresh_buffer_sizes(&self) -> Result<(BufferSizes, LoadedDriver), Error> {
+        com::com_initialized();
         let asio = super::GLOBAL_ASIO.get().ok_or_else(|| {
             Error::with_message(ErrorKind::DeviceNotAvailable, "ASIO is not initialized")
         })?;
@@ -141,7 +135,7 @@ impl Device {
             .map_err(|e| Error::with_message(ErrorKind::BackendError, e.to_string()))?;
         let sizes = BufferSizes::from_range(&range);
         self.buffer_sizes.store(sizes);
-        Ok(sizes)
+        Ok((sizes, LoadedDriver { _driver: driver }))
     }
 
     /// Gets the supported input configs.

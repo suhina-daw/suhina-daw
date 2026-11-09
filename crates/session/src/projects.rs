@@ -112,6 +112,9 @@ struct Devices {
     /// When the audio system was last asked whether the chosen device is back, while the
     /// output plays in its place.
     output_watched: Option<std::time::Instant>,
+    /// How many times an output was opened: each opening asked an ASIO driver for its sizes
+    /// anew, so Settings › Audio lists the devices again when this changes.
+    outputs_opened: u64,
     /// The MIDI input ports and where they send their notes (ADR 0017).
     midi: crate::midi::MidiInputs,
     /// Projects opened read their audio wherever it is on a local disk ([`Projects::read_local_audio`]).
@@ -392,7 +395,15 @@ impl Projects {
         } else {
             session.restart_plugins();
         }
+        self.devices.outputs_opened = self.devices.outputs_opened.wrapping_add(1);
         Ok(notice)
+    }
+
+    /// How many times an output was opened in this run ([`Projects::open_output`],
+    /// [`Projects::reopen_output`]): a list of the devices made before the last opening may be
+    /// out of date.
+    pub fn outputs_opened(&self) -> u64 {
+        self.devices.outputs_opened
     }
 
     /// Moves the active project's output to the one chosen now, keeping the transport where
@@ -440,6 +451,7 @@ impl Projects {
         );
         // Plug-ins that could not carry over start again; retained instances stay alive.
         session.sync_plugins();
+        self.devices.outputs_opened = self.devices.outputs_opened.wrapping_add(1);
         Ok(notice)
     }
 
@@ -801,9 +813,11 @@ impl Projects {
                 return Vec::new();
             }
             self.devices.output_retried = Some(std::time::Instant::now());
+            let why = info.failure.unwrap_or("the audio device reported an error");
+            suhina_plugins::trace!("audio output failed: {why} ({} on {})", info.device, info.host);
             return match self.reopen_output() {
                 Ok(notice) => {
-                    let mut said = vec!["the audio device reported an error; its output was opened again".to_string()];
+                    let mut said = vec![format!("{why}; the audio output was opened again")];
                     said.extend(notice);
                     said
                 }

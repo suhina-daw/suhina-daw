@@ -179,7 +179,10 @@ interval can be distinguished from a stopped logger. While stopped, lines requir
 counter or high load. Each health line identifies the actual host, device, sample rate and
 playhead beat. `audio output:` records format changes even without a dropout, including
 whether the device is a fallback. `audio reopen begin/complete` records the requested choice,
-transport snapshot, elapsed opening time and whether plug-ins carried over.
+transport snapshot, elapsed opening time and whether plug-ins carried over. `audio output
+failed:` comes before a reopen the device caused and says why: the ASIO driver asked for a
+reset, changed its buffer size or its sample rate, its buffer sizes changed when Suhina asked
+it (`audio.checkDriver`), or the device is gone.
 
 The last late render diagnostic gives its wall time in microseconds, frames queued before
 rendering, device period and number of render frames. These are atomic diagnostic samples
