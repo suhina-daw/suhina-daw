@@ -694,7 +694,7 @@ fn lanes_are_picked_and_moved_by_their_headers() {
     lanes.move_lanes(track, &moved, None, false);
     assert_eq!(lanes.shown(track, &params), [p.clone(), v.clone(), m.clone()]);
     // A lane that is not picked moves alone.
-    assert_eq!(lanes.dragged_with(track, &p), [p.clone()]);
+    assert_eq!(lanes.dragged_with(track, &p), std::slice::from_ref(&p));
 }
 
 /// Picked lanes gather under a group's heading in the place of the first; a folded group takes
