@@ -203,14 +203,6 @@ fn everything() -> Project {
                         sample_rate: Some(44_100),
                         channels: Some(2),
                         duration_seconds: Some(7.5),
-                        warped: true,
-                        stretch: StretchMode::HighQuality,
-                        warp_markers: vec![
-                            WarpMarker { time: 0.0, audio_time: 0.0 },
-                            WarpMarker { time: 16.0, audio_time: 7.5 },
-                        ],
-                        gain: 0.8,
-                        transpose: -1.5,
                         stream: Some(3),
                         ..AudioRegion::new("Samples/loop.wav")
                     }),
@@ -232,28 +224,48 @@ fn everything() -> Project {
                     id: Default::default(),
                     name: "Free".into(),
                     track: None,
-                    clips: vec![Clip { enabled: false, loop_range: None, ..clip(2, 4.0) }],
+                    clips: vec![Clip {
+                        enabled: false,
+                        loop_range: None,
+                        audio: ClipAudio {
+                            warped: true,
+                            stretch: StretchMode::HighQuality,
+                            warp_markers: vec![
+                                WarpMarker { time: 0.0, audio_time: 0.0 },
+                                WarpMarker { time: 16.0, audio_time: 7.5 },
+                            ],
+                            gain: 0.8,
+                            transpose: -1.5,
+                            gain_envelope: vec![
+                                GainPoint { curve: Curve::bend(0.5), ..GainPoint::new(0.0, 0.0) },
+                                GainPoint::new(4.0, -12.5),
+                                GainPoint::new(4.0, 3.0),
+                            ],
+                            tempo_source: Some(TempoSource::Name),
+                        },
+                        ..clip(2, 4.0)
+                    }],
                 },
             ],
             markers: vec![Marker::new(0.0, "Intro"), Marker::new(16.0, "Verse"), Marker::new(16.0, "")].into(),
             takes: Vec::new(),
         },
+        controller_mappings: vec![
+            ControllerMapping {
+                source: MappingSource::key("Q").unwrap(),
+                target: MappingTarget::Slot { track: TrackId(2), scene: 1 },
+            },
+            ControllerMapping {
+                source: MappingSource::note(10, 36).unwrap(),
+                target: MappingTarget::Scene { scene: 0 },
+            },
+            // Its track is gone: kept, unused.
+            ControllerMapping {
+                source: MappingSource::key("Space").unwrap(),
+                target: MappingTarget::Stop { track: TrackId(99) },
+            },
+        ],
         launcher: Launcher {
-            mappings: vec![
-                LaunchMapping {
-                    source: MappingSource::key("Q").unwrap(),
-                    target: MappingTarget::Slot { track: TrackId(2), scene: 1 },
-                },
-                LaunchMapping {
-                    source: MappingSource::note(10, 36).unwrap(),
-                    target: MappingTarget::Scene { scene: 0 },
-                },
-                // Its track is gone: kept, unused.
-                LaunchMapping {
-                    source: MappingSource::key("Space").unwrap(),
-                    target: MappingTarget::Stop { track: TrackId(99) },
-                },
-            ],
             scenes: vec![
                 Scene {
                     id: Default::default(),
@@ -388,21 +400,105 @@ fn the_cue_is_written_only_when_on() {
     assert_eq!(from_json(&to_json(&quiet)), Ok(quiet));
 }
 
-/// Mappings are written under the launcher with their scenes from 0 (from version 8), and left
-/// out when there are none.
+/// Mappings are written as `controller_mappings`, each target its command and the parameters it
+/// fixes, scenes from 0 (version 9, #1162); the launcher's `mappings` is not written, and
+/// nothing is when there are none.
 #[test]
-fn launch_mappings_are_written_with_their_targets() {
+fn controller_mappings_are_written_with_their_target_commands() {
     let written: Value = serde_json::from_str(&to_json(&everything())).unwrap();
     assert_eq!(
-        written["project"]["launcher"]["mappings"],
+        written["project"]["controller_mappings"],
         json!([
-            { "source": "key:Q", "target": "slot", "track": 2, "scene": 1 },
-            { "source": "note:10:36", "target": "scene", "scene": 0 },
-            { "source": "key:Space", "target": "stop", "track": 99 },
+            { "source": "key:Q", "target": { "command": "clip.launch", "track": 2, "scene": 1 } },
+            { "source": "note:10:36", "target": { "command": "scene.launch", "scene": 0 } },
+            { "source": "key:Space", "target": { "command": "track.stop", "track": 99 } },
         ])
     );
+    assert!(written["project"]["launcher"].get("mappings").is_none(), "{written}");
     let empty: Value = serde_json::from_str(&to_json(&Project::default())).unwrap();
-    assert!(empty["project"]["launcher"].get("mappings").is_none(), "{empty}");
+    assert!(empty["project"].get("controller_mappings").is_none(), "{empty}");
+}
+
+/// An older file's launch mappings, in the launcher's `mappings`, are read into
+/// `controller_mappings` (#1162); a version 9 file's launcher `mappings` is not read.
+#[test]
+fn an_older_files_launch_keys_are_read_as_controller_mappings() {
+    let file = |version: u64| {
+        format!(
+            r#"{{ "format": "suhina", "version": {version}, "project": {{ "launcher": {{ "mappings": [
+                {{ "source": "key:Q", "target": "slot", "track": 2, "scene": 1 }},
+                {{ "source": "note:10:36", "target": "scene", "scene": 0 }},
+                {{ "source": "key:Space", "target": "stop", "track": 99 }} ] }} }} }}"#
+        )
+    };
+    let project = from_json(&file(8)).unwrap();
+    assert_eq!(project.controller_mappings, everything().controller_mappings);
+    assert_eq!(project.launcher, Launcher::default());
+    // Saved again, they are written only as controller mappings.
+    let written: Value = serde_json::from_str(&to_json(&project)).unwrap();
+    assert!(written["project"]["launcher"].get("mappings").is_none(), "{written}");
+    assert_eq!(from_json(&to_json(&project)), Ok(project));
+    assert_eq!(from_json(&file(9)).map(|p| p.controller_mappings), Ok(Vec::new()));
+}
+
+/// A controller mapping that does not parse refuses the file, naming it, as a launch mapping
+/// did; one whose track or scene is gone is kept.
+#[test]
+fn a_malformed_controller_mapping_is_refused() {
+    let read = |mappings: &str| {
+        from_json(&format!(
+            r#"{{ "format": "suhina", "version": 9, "project": {{ "controller_mappings": {mappings} }} }}"#
+        ))
+        .map(|p| p.controller_mappings)
+    };
+    let kept = read(r#"[ { "source": "key:Q", "target": { "command": "scene.launch", "scene": 7 } } ]"#);
+    assert_eq!(
+        kept,
+        Ok(vec![ControllerMapping {
+            source: MappingSource::key("Q").unwrap(),
+            target: MappingTarget::Scene { scene: 7 }
+        }])
+    );
+    for bad in [
+        r#"{}"#,
+        r#"[ 5 ]"#,
+        r#"[ { "target": { "command": "scene.launch", "scene": 0 } } ]"#,
+        r#"[ { "source": "cc:1:20", "target": { "command": "scene.launch", "scene": 0 } } ]"#,
+        r#"[ { "source": "key:Q" } ]"#,
+        r#"[ { "source": "key:Q", "target": "scene" } ]"#,
+        r#"[ { "source": "key:Q", "target": { "scene": 0 } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "track.setVolume", "track": 1 } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "clip.launch", "track": 1 } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "scene.launch", "scene": -1 } } ]"#,
+        // A parameter its command does not take, as `mapping.add` refuses it.
+        r#"[ { "source": "key:Q", "target": { "command": "track.stop", "track": 1, "scene": 3 } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "scene.launch", "track": 1, "scene": 3 } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "track.stop", "track": "Bass" } } ]"#,
+        r#"[ { "source": "key:Q", "target": { "command": "track.stop", "track": 1 } },
+             { "source": "key:Q", "target": { "command": "track.stop", "track": 2 } } ]"#,
+    ] {
+        let err = read(bad).unwrap_err().to_string();
+        assert!(err.contains("project.controller_mappings"), "{bad}: {err}");
+    }
+}
+
+/// A file keeps at most `MAX_MAPPINGS` mappings, as a project does, and reading them does not
+/// compare every pair.
+#[test]
+fn a_file_with_more_than_the_most_mappings_is_refused() {
+    let read = |count: usize| {
+        let list: Vec<Value> = (0..count)
+            .map(|i| {
+                json!({ "source": format!("note:{}:{}", i / 128 % 16 + 1, i % 128),
+                        "target": { "command": "scene.launch", "scene": 0 } })
+            })
+            .collect();
+        let file = json!({ "format": "suhina", "version": 9, "project": { "controller_mappings": list } });
+        from_json(&file.to_string()).map(|p| p.controller_mappings.len())
+    };
+    assert_eq!(read(MAX_MAPPINGS), Ok(MAX_MAPPINGS));
+    let err = read(MAX_MAPPINGS + 1).unwrap_err().to_string();
+    assert!(err.contains("at most"), "{err}");
 }
 
 /// A launch mapping's scene counts from 0 from version 8 (#763 › 1) and from 1 before, so a
@@ -413,7 +509,7 @@ fn a_launch_mappings_scene_counts_from_0_from_version_8() {
         from_json(&format!(
             r#"{{ "format": "suhina", "version": {version}, "project": {{ "launcher": {{ "mappings": [ {{ "source": "key:Q", "target": "scene", "scene": {scene} }} ] }} }} }}"#
         ))
-        .map(|p| p.launcher.mappings[0].target)
+        .map(|p| p.controller_mappings[0].target)
     };
     assert_eq!(read(8, 0), Ok(MappingTarget::Scene { scene: 0 }));
     assert_eq!(read(7, 1), Ok(MappingTarget::Scene { scene: 0 }));
@@ -1355,6 +1451,14 @@ fn a_file_of_every_version_reads() {
         if version < 5 {
             expected.channels[0].devices[0].clear_sample_edits();
         }
+        if version < 10 {
+            // Before version 10 the audio state was the region's, which had no envelope and no
+            // tempo source; each clip takes it from its content (#742).
+            for clip in expected.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+                clip.audio.gain_envelope.clear();
+                clip.audio.tempo_source = None;
+            }
+        }
         // Devices get their ids in document order when a file before version 6 is read.
         assert_eq!(from_json(&text).map(renumbered), Ok(renumbered(expected)), "version {version}");
     }
@@ -1464,4 +1568,86 @@ fn groups_nested_past_the_parsers_limit_are_an_error() {
         r#"{{ "format": "suhina", "version": 2, "project": {{ "channels": [ {{ "id": 1, "devices": [ {{ "kind": {kind} }} ] }} ] }} }}"#
     );
     assert!(from_json(&text).is_err());
+}
+
+/// Before version 10 a region held the gain, transpose and warp; every clip that plays it takes
+/// them, and a clip of another content keeps the starting state (#742).
+#[test]
+fn an_older_files_region_audio_moves_to_each_clip_that_plays_it() {
+    let text = r#"{ "format": "suhina", "version": 7, "project": {
+        "tracks": [ { "id": 1, "name": "Audio", "content": { "notes": false, "audio": true } } ],
+        "contents": [
+          { "id": 1, "name": "Loop", "length": 8.0, "lanes": [ { "audio": { "file": "loop.wav",
+            "warped": true, "stretch": "tonal", "gain": 0.5, "transpose": 2.0,
+            "warp_markers": [ { "time": 0.0, "audio_time": 0.0 }, { "time": 8.0, "audio_time": 4.0 } ] } } ] },
+          { "id": 2, "name": "Hit", "length": 1.0, "lanes": [ { "audio": { "file": "hit.wav" } } ] } ],
+        "arrangement": { "lanes": [ { "name": "Audio", "track": 1, "clips": [
+          { "content": 1, "start": 0.0, "length": 8.0 }, { "content": 1, "start": 8.0, "length": 8.0 },
+          { "content": 2, "start": 16.0, "length": 1.0 } ] } ] } } }"#;
+    let project = from_json(text).expect("a version 7 file reads");
+    let clips: Vec<&Clip> = project.arrangement.lanes[0].clips.iter().collect();
+    for clip in &clips[..2] {
+        assert_eq!((clip.audio.gain, clip.audio.transpose, clip.audio.warped), (0.5, 2.0, true));
+        assert_eq!((clip.audio.stretch, clip.audio.warp_markers.len()), (StretchMode::Tonal, 2));
+        assert_eq!(clip.audio.tempo(), Some(120.0));
+    }
+    assert_eq!(clips[2].audio, ClipAudio::default());
+    // Written again, the state is the clips' and the regions keep only the source.
+    let written = to_json(&project);
+    let again = from_json(&written).expect("it reads back");
+    assert_eq!(again, project);
+    let root: Value = serde_json::from_str(&written).unwrap();
+    let region = &root["project"]["contents"][0]["lanes"][0]["audio"];
+    assert!(region.get("warped").is_none() && region.get("gain").is_none(), "{region}");
+    assert_eq!(root["project"]["arrangement"]["lanes"][0]["clips"][1]["audio"]["gain"], 0.5);
+}
+
+/// Two clips of one content keep their own gain and envelope through a save (#742).
+#[test]
+fn two_clips_of_one_audio_content_keep_their_own_state() {
+    let mut project = every_feature();
+    let lane = &mut project.arrangement.lanes[1];
+    let mut second = lane.clips[0].clone();
+    second.id = ClipId::NONE;
+    second.start = 32.0;
+    second.audio.gain = 0.25;
+    second.audio.gain_envelope = vec![GainPoint::new(1.0, -6.0)];
+    lane.clips.push(second);
+    project.assign_ids().unwrap();
+    let again = from_json(&to_json(&project)).expect("it reads back");
+    let clips = &again.arrangement.lanes[1].clips;
+    assert_eq!((clips[0].audio.gain, clips[1].audio.gain), (0.8, 0.25));
+    assert_eq!(clips[1].audio.gain_envelope, vec![GainPoint::new(1.0, -6.0)]);
+    assert_eq!(clips[0].audio.gain_envelope.len(), 3);
+}
+
+#[test]
+fn a_bad_gain_envelope_or_tempo_source_is_an_error() {
+    let file = |audio: &str| {
+        format!(
+            r#"{{ "format": "suhina", "version": 8, "project": {{
+            "contents": [ {{ "id": 1, "name": "a", "length": 1.0, "lanes": [ {{ "audio": {{ "file": "a.wav" }} }} ] }} ],
+            "arrangement": {{ "lanes": [ {{ "name": "a", "clips": [ {{ "content": 1, "start": 0.0, "length": 1.0, "audio": {audio} }} ] }} ] }} }} }}"#
+        )
+    };
+    assert!(from_json(&file(r#"{ "tempo_source": "guess" }"#)).is_err());
+    assert!(from_json(&file(r#"{ "gain_envelope": [ { "beat": 1.0 } ] }"#)).is_err());
+    assert!(from_json(&file(r#"{ "gain_envelope": [ { "beat": 1.0, "db": 10000.0 } ] }"#)).is_err(), "dB out of range");
+    assert!(from_json(&file(r#"{ "stretch": 42 }"#)).is_err(), "a stretch that is not a name");
+    assert!(from_json(&file(r#"{ "gain": 1e300 }"#)).is_err(), "a gain past +24 dB");
+    let ok = from_json(&file(r#"{ "gain": 0.5, "tempo_source": "manual" }"#)).expect("reads");
+    let clip = &ok.arrangement.lanes[0].clips[0];
+    assert_eq!((clip.audio.gain, clip.audio.tempo_source), (0.5, Some(TempoSource::Manual)));
+}
+
+/// A version 7 content whose audio lanes played with different settings is refused: its clips
+/// take one state, which would change how a lane sounds.
+#[test]
+fn an_older_content_with_lanes_of_different_audio_is_refused() {
+    let text = r#"{ "format": "suhina", "version": 7, "project": {
+        "contents": [ { "id": 1, "name": "Two", "length": 4.0, "lanes": [
+          { "audio": { "file": "a.wav", "gain": 0.5 } }, { "audio": { "file": "b.wav", "gain": 0.25 } } ] } ],
+        "arrangement": { "lanes": [ { "name": "A", "clips": [ { "content": 1, "start": 0.0, "length": 4.0 } ] } ] } } }"#;
+    let error = from_json(text).expect_err("refused");
+    assert!(error.0.contains("different gain"), "{error}");
 }

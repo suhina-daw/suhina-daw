@@ -3,7 +3,7 @@ description: Self-contained device canvases, image assets, drawing expressions a
 read_when: custom SDK control, device background, icon, photo, texture, XY pad, drawing API, image asset
 type: spec
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-07
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs
@@ -176,7 +176,8 @@ Canvas `size: [width, height]` defaults to `[640, 240]`. Optional
 `viewport_size: [width, height]` sets the preferred scrollable device body independently of the
 canvas, including node rows and stock controls. Both dimensions use logical pixels in 24..8192.
 The host adds a 20-pixel header and 6-pixel padding on each side. Available host space clips the
-viewport; oversized contents scroll without scaling. This works in row and stacked layouts.
+viewport; oversized contents scroll without scaling. This works in row and stacked layouts. A panel's
+scroll is its device's: it stays with the device when another is added, removed or moved before it.
 Omitted or null `viewport_size` preserves automatic sizing: row width is at least 220 or canvas
 width plus 12, row height fills the detail area; stacked width fills the column (normally 272),
 and height fits node rows, canvas and stock controls. Setting `size` does not scale artwork.
@@ -230,15 +231,24 @@ input or binding (a display or a curve that must not catch drags). Drawings of a
 widget are not resolved against the theme as widgets' are; they name the theme's palette as
 `[3, 1, 1]` text, `[3, 1, 2]` panel, `[3, 1, 3]` control, `[3, 1, 4]` border and `[3, 1, 5]`
 accent (any alpha). A drawing coloured `[3, 0, 1]` … `[3, 0, 6]` (any alpha) takes a theme token: `--device-display`
-(a display's dark ground, default `#0a1117`), `--device-series-1` … `3` (a device's series, such as
-its bands; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`) `--device-highlight` (`#ffcf7a`) and `--device-spectrum` (`#3fc4e4`), from
-the theme's CSS custom property of that name or the default, with the drawing's alpha. A handle's optional `offset` moves its bounds along its travel, in canvas units, for a value that starts where another ends. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture A clicked handle takes the focus, and the arrow keys along its travel then move it 1 % of the way (0.1 % with Shift).
-`position`) draws a line where its parameter is, across its bounds (an X binding: a
-vertical line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 7 points
-of it: dragging sets the value from the pointer as `position` does, a double click resets it, and a
-drag is one undo step. `span` (optional value expressions, canvas units) limits the line and where
-it is grabbed across the other axis. With both an X and a Y binding it is a point: a dot at both
-values, dragged on both axes as one undo step, with the arrow keys along each. `"dot": true` draws a
+(a display's dark ground, default `#0a1117`) and `--device-series-1` … `5` (a device's series of
+colours, such as its bands or its operators; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`, `#ffcf7a`,
+`#3fc4e4`), from the custom property of that name as the panel's element sees it (any CSS colour:
+`#rrggbb`, `rgb()`, a named colour, `color-mix()` …), or the default.
+A rule on `:root` or `.device-panel` sets a token for every device, one on `#device-<id>` (such as
+`#device-multiband`) for one; the panel works its tokens out once a frame, in its own scope, and the
+expanded panel in the device's too. A token's colour keeps its own alpha, multiplied by the
+drawing's: a translucent theme colour stays translucent, and a drawing at half alpha shows it at
+half of that. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`,
+gesture `position`) draws a line where its parameter is, across its bounds (an X binding: a vertical
+line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 7 points of it:
+dragging sets the value from the pointer as `position` does, a double click resets it, and a drag is
+one undo step. A clicked handle takes the focus, and the arrow keys along its travel then move it
+1 % of the way (0.1 % with Shift). A handle's optional `offset` moves its bounds along its travel,
+in canvas units, for a value that starts where another ends. `span` (optional value expressions,
+canvas units) limits the line and where it is grabbed across the other axis. With both an X and a Y
+binding it is a point: a dot at both values, dragged on both axes as one undo step, with the arrow
+keys along each. `"dot": true` draws a
 one-axis handle as a dot in the middle of its line, and `"hollow": true` as a smaller ring, for a dot that shapes something rather than placing it. `"relative": true` moves the value by how far the pointer moves (its bounds for the whole range) rather than to where it is, for a dot whose `offset` follows its own value, such as one that stays on a curve it bends. A binding's negative `drag_scale` runs a handle's
 travel the other way along that axis (a rate: further along is slower). A `value` drawing (`{"kind": "value", "position": [x, y],
 "value": expression, "prefix", "suffix", "decimals", "color", "size", "align"}`) writes a number an
@@ -331,11 +341,12 @@ before a drag crosses its movement threshold. Delay numeric fields use framed Nu
 
 ## Choice menus
 
-The `menu` gesture binds only X to a Choice parameter. A click, Enter or Space opens a popup
-of its declared `ui.options`, with the current item selected. Choosing an item dispatches one
-`device.setParam` command with its zero-based option index and ends the gesture. Opening,
-cancelling with Escape, or clicking outside changes no parameter. Popups use the host overlay
-layer and remain visible above or below the authored canvas. `text.format: choice` displays
+The `menu` gesture binds only X to a Choice parameter. A click, Enter or Space opens a popup of its
+declared `ui.options`, with the current item selected. Choosing an item dispatches one
+`device.setParam` command with its zero-based option index and ends the gesture. Opening, cancelling
+with Escape, or clicking outside changes no parameter. Popups use the host overlay layer and remain
+visible above or below the authored canvas. A popup is the host's standard dropdown: its frame is
+every other menu's, and the theme's `.popup` rules style its items. `text.format: choice` displays
 the bound parameter's current option label instead of a number.
 
 `ValueMenu` uses the same menu gesture with explicit `choices: [[value, label], ...]`.

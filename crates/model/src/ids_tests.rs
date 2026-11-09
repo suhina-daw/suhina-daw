@@ -35,7 +35,6 @@ fn project() -> Project {
                 track: TrackId(1),
                 slots: vec![Slot::default(), Slot { clip: Some(clip(0.0)), has_stop: false }],
             }],
-            mappings: Vec::new(),
         },
         ..Project::default()
     }

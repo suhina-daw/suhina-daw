@@ -13,6 +13,7 @@
 //! relative to the project file; [`rebase_audio`] moves those paths when a project is saved
 //! somewhere else.
 
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -21,14 +22,15 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
-    Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, Channel, ChannelId,
-    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceId,
-    DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels,
-    LaneData, LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn,
-    LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
-    MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale,
-    ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange,
-    Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
+    Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, CLIP_GAIN_MAX_DB,
+    Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ContentId, ContentKinds, ContentLane,
+    ControllerMapping, Device, DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions, FadeCurve,
+    FadeShape, FollowAction, FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData, LaneId, LaunchMode,
+    LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_GAIN_POINTS,
+    MAX_INPUT_CHANNEL, MAX_MAPPINGS, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping, MappedDevice,
+    MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene,
+    SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track,
+    TrackId, Transport, WarpMarker, automation, max_clip_gain, valid_bpm,
 };
 
 /// The file extension, without the dot.
@@ -39,7 +41,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 8;
+pub const VERSION: u64 = 10;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -278,18 +280,19 @@ fn project_value(p: &Project) -> Value {
             .collect();
     }
     out.insert("arrangement".into(), arrangement);
-    let mut launcher = json!({
+    let launcher = json!({
         "scenes": p.launcher.scenes.iter().map(scene_value).collect::<Vec<_>>(),
         "columns": p.launcher.columns.iter().map(|c| json!({
             "track": c.track.0,
             "slots": c.slots.iter().map(|s| json!({ "clip": s.clip.as_ref().map(clip_value), "has_stop": s.has_stop })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
     });
-    // Left out when there are none, so a project without mappings is written as before.
-    if let (Some(map), false) = (launcher.as_object_mut(), p.launcher.mappings.is_empty()) {
-        map.insert("mappings".into(), p.launcher.mappings.iter().map(mapping_value).collect());
-    }
     out.insert("launcher".into(), launcher);
+    // From version 9 (#1162); left out when there are none, so a project without mappings is
+    // written as before. The launcher's `mappings` of earlier versions is never written again.
+    if !p.controller_mappings.is_empty() {
+        out.insert("controller_mappings".into(), p.controller_mappings.iter().map(mapping_value).collect());
+    }
     // Left out when there is none, so a project without one is written as before.
     if let Some(scale) = p.default_scale {
         out.insert("default_scale".into(), scale_value(scale));
@@ -567,13 +570,38 @@ fn audio_value(a: &AudioRegion) -> Value {
         "sample_rate": a.sample_rate,
         "channels": a.channels,
         "duration_seconds": a.duration_seconds.map(number),
+        "stream": a.stream,
+    })
+}
+
+/// A clip's audio state (version 10 on): gain, envelope, transpose, warp and the tempo's source.
+fn clip_audio_value(a: &ClipAudio) -> Value {
+    let mut out = json!({
+        "gain": number(a.gain),
+        "transpose": number(a.transpose),
         "warped": a.warped,
         "stretch": stretch_name(a.stretch),
         "warp_markers": a.warp_markers.iter().map(|m| json!({ "time": number(m.time), "audio_time": number(m.audio_time) })).collect::<Vec<_>>(),
-        "gain": number(a.gain),
-        "transpose": number(a.transpose),
-        "stream": a.stream,
-    })
+    });
+    if let Some(map) = out.as_object_mut() {
+        if !a.gain_envelope.is_empty() {
+            let points = a.gain_envelope.iter().map(|p| {
+                let mut point = json!({ "beat": number(p.beat), "db": number(p.db) });
+                // A bent segment's curve, as an automation point's.
+                if !p.curve.is_straight()
+                    && let Some(map) = point.as_object_mut()
+                {
+                    map.insert("curve".into(), json!(p.curve.to_array().map(number)));
+                }
+                point
+            });
+            map.insert("gain_envelope".into(), Value::Array(points.collect()));
+        }
+        if let Some(source) = a.tempo_source {
+            map.insert("tempo_source".into(), json!(source.name()));
+        }
+    }
+    out
 }
 
 /// One note as the file writes it. `muted` is written only on a muted note, so a project without
@@ -628,23 +656,28 @@ fn clip_value(c: &Clip) -> Value {
         if c.ara {
             map.insert("ara".into(), json!(true));
         }
+        // Only a clip whose audio state is not the starting one carries it: a clip of notes
+        // never does.
+        if c.audio != ClipAudio::default() {
+            map.insert("audio".into(), clip_audio_value(&c.audio));
+        }
         with_extensions(map, &c.extensions);
     }
     out
 }
 
-/// A launch mapping; its scene counts from 0, as in the commands (from version 8, #763 › 1).
-fn mapping_value(m: &LaunchMapping) -> Value {
-    let mut out = json!({ "source": m.source.name(), "target": m.target.kind() });
-    if let Some(map) = out.as_object_mut() {
-        if let Some(track) = m.target.track() {
-            map.insert("track".into(), json!(track.0));
-        }
-        if let Some(scene) = m.target.scene() {
-            map.insert("scene".into(), json!(scene));
-        }
+/// A controller mapping: its source, and its target as the command and the parameters it fixes,
+/// the scene from 0, as in the commands (version 9, #1162).
+fn mapping_value(m: &ControllerMapping) -> Value {
+    let mut target = Map::new();
+    target.insert("command".into(), json!(m.target.command()));
+    if let Some(track) = m.target.track() {
+        target.insert("track".into(), json!(track.0));
     }
-    out
+    if let Some(scene) = m.target.scene() {
+        target.insert("scene".into(), json!(scene));
+    }
+    json!({ "source": m.source.name(), "target": target })
 }
 
 fn launch_value(l: &LaunchSettings) -> Value {
@@ -921,7 +954,15 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
         .iter()
         .enumerate()
         .map(|(i, v)| read_content(v, &format!("project.contents[{i}]")))
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<Vec<_>, _>>()?;
+    // Before version 10 an audio region held the gain, transpose and warp its clips play with; each
+    // clip without an audio state of its own takes its content's (ADR 0001 › Amendment: per-clip
+    // audio).
+    let legacy = Legacy {
+        states: contents.iter().filter_map(|(c, a)| Some((c.id, a.clone()?))).collect(),
+        markers_left: std::cell::Cell::new(MAX_LEGACY_MARKERS),
+    };
+    let contents: Vec<ClipContent> = contents.into_iter().map(|(c, _)| c).collect();
     let arrangement = match p.get("arrangement") {
         None | Some(Value::Null) => Arrangement::default(),
         Some(a) => {
@@ -933,7 +974,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                 let clips = list(lane, "clips", &at)?
                     .iter()
                     .enumerate()
-                    .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]")))
+                    .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]"), &legacy))
                     .collect::<Result<_, _>>()?;
                 lanes.push(ArrangementLane {
                     id: LaneId(read_id(lane, &at)?),
@@ -959,7 +1000,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                 let clips = list(take, "clips", &at)?
                     .iter()
                     .enumerate()
-                    .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]")))
+                    .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]"), &legacy))
                     .collect::<Result<Vec<_>, _>>()?;
                 // A take's clips have no ids: commands name a take by its track and number.
                 let clips = clips.into_iter().map(|c| Clip { id: ClipId::NONE, ..c }).collect();
@@ -975,6 +1016,9 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
             arrangement
         }
     };
+    // Before version 9 a project's mappings were the launcher's launch mappings (#1162).
+    let mut older_mappings: Vec<ControllerMapping> = Vec::new();
+    let mut older_sources = HashSet::new();
     let launcher = match p.get("launcher") {
         None | Some(Value::Null) => Launcher::default(),
         Some(l) => {
@@ -1000,25 +1044,31 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                     let s = object(s, &at)?;
                     let clip = match s.get("clip") {
                         None | Some(Value::Null) => None,
-                        Some(clip) => Some(read_clip(clip, &format!("{at}.clip"))?),
+                        Some(clip) => Some(read_clip(clip, &format!("{at}.clip"), &legacy)?),
                     };
                     slots.push(Slot { clip, has_stop: flag(s, "has_stop", false, &at)? });
                 }
                 columns.push(LauncherColumn { track: TrackId(whole(c, "track", &at)?), slots });
             }
-            let mut mappings: Vec<LaunchMapping> = Vec::new();
-            for (i, v) in list(l, "mappings", "project.launcher")?.iter().enumerate() {
-                let mapping = read_mapping(v, &format!("project.launcher.mappings[{i}]"), version)?;
-                if mappings.iter().any(|m| m.source == mapping.source) {
-                    return Err(ProjectFileError(format!(
-                        "project.launcher.mappings[{i}]: {} is mapped twice",
-                        mapping.source.name()
-                    )));
+            if version < 9 {
+                for (i, v) in list(l, "mappings", "project.launcher")?.iter().enumerate() {
+                    let at = format!("project.launcher.mappings[{i}]");
+                    push_mapping(&mut older_mappings, &mut older_sources, read_launch_mapping(v, &at, version)?, &at)?;
                 }
-                mappings.push(mapping);
             }
-            Launcher { scenes, columns, mappings }
+            Launcher { scenes, columns }
         }
+    };
+    let controller_mappings = if version < 9 {
+        older_mappings
+    } else {
+        let mut mappings = Vec::new();
+        let mut sources = HashSet::new();
+        for (i, v) in list(p, "controller_mappings", "project")?.iter().enumerate() {
+            let at = format!("project.controller_mappings[{i}]");
+            push_mapping(&mut mappings, &mut sources, read_controller_mapping(v, &at)?, &at)?;
+        }
+        mappings
     };
     let mut project = Project {
         transport,
@@ -1029,6 +1079,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
         launcher,
         extensions: extensions(p, "project")?,
         default_scale: read_scale(p, "default_scale", "project")?,
+        controller_mappings,
         next_id: optional_whole(p, "next_id", "project")?.unwrap_or(0),
     };
     // A file written before ids, or an object added by hand without one: the objects without an
@@ -1345,9 +1396,11 @@ fn read_mapped_device(group: &DeviceGroup, x: &Obj, at: &str) -> Result<MappedDe
     }
 }
 
-fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError> {
+/// A content, and for one with audio written before version 10, the audio state its region held.
+fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudio>), ProjectFileError> {
     let c = object(value, at)?;
     let mut lanes = Vec::new();
+    let mut legacy = None;
     for (i, v) in list(c, "lanes", at)?.iter().enumerate() {
         let at = format!("{at}.lanes[{i}]");
         let lane = object(v, &at)?;
@@ -1376,24 +1429,67 @@ fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError
                 }
                 LaneData::Notes(notes.into())
             }
-            (None, Some(audio)) => LaneData::Audio(read_audio(audio, &format!("{at}.audio"))?),
+            (None, Some(audio)) => {
+                let (region, state) = read_audio(audio, &format!("{at}.audio"))?;
+                // The clips of a content take one state: a content whose audio lanes played with
+                // different ones cannot be read into it unchanged, so it is refused, not altered.
+                match (&legacy, state) {
+                    (None, state) => legacy = state,
+                    (Some(first), Some(state)) if *first != state => {
+                        return Err(format!(
+                            "{at}.audio: the content's audio lanes have different gain, transpose or warp; \
+                             a clip plays one, so this file of an older version cannot be read"
+                        )
+                        .into());
+                    }
+                    _ => {}
+                }
+                LaneData::Audio(region)
+            }
             _ => return Err(format!("{at}: a lane has either notes or audio").into()),
         };
         lanes.push(ContentLane { target, data });
     }
-    Ok(ClipContent {
+    let content = ClipContent {
         id: ContentId(whole(c, "id", at)?),
         name: text(c, "name", at)?,
         length: float(c, "length", at)?,
         lanes: lanes.into(),
         extensions: extensions(c, at)?,
         scale: read_scale(c, "scale", at)?,
-    })
+    };
+    Ok((content, legacy))
 }
 
-fn read_audio(value: &Value, at: &str) -> Result<AudioRegion, ProjectFileError> {
+/// An audio region, and the audio state it held when the file is older than version 10 (it has a
+/// `warped`, `stretch`, `warp_markers`, `gain` or `transpose`).
+fn read_audio(value: &Value, at: &str) -> Result<(AudioRegion, Option<ClipAudio>), ProjectFileError> {
     let a = object(value, at)?;
-    let stretch = match a.get("stretch").and_then(Value::as_str) {
+    let old = ["warped", "stretch", "warp_markers", "gain", "transpose"].iter().any(|k| a.contains_key(*k));
+    let state = if old { Some(read_clip_audio(a, at)?) } else { None };
+    let absolute_file = match a.get("absolute_file") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(required_text(a, "absolute_file", at)?),
+    };
+    let region = AudioRegion {
+        file: required_text(a, "file", at)?,
+        absolute_file,
+        sample_rate: optional_whole(a, "sample_rate", at)?,
+        channels: optional_whole(a, "channels", at)?,
+        duration_seconds: optional_float(a, "duration_seconds", at)?,
+        stream: optional_whole(a, "stream", at)?,
+    };
+    Ok((region, state))
+}
+
+/// A clip's audio state: the `audio` of a clip, or the fields of a region before version 10.
+fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, ProjectFileError> {
+    let stretch = match a.get("stretch") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(name)) => Some(name.as_str()),
+        Some(_) => return Err(format!("{at}.stretch: expected a stretch mode's name").into()),
+    };
+    let stretch = match stretch {
         Some("repitch") => StretchMode::Repitch,
         Some("rhythmic") => StretchMode::Rhythmic,
         Some("tonal") => StretchMode::Tonal,
@@ -1408,27 +1504,81 @@ fn read_audio(value: &Value, at: &str) -> Result<AudioRegion, ProjectFileError> 
         let m = object(v, &at)?;
         warp_markers.push(WarpMarker { time: float(m, "time", &at)?, audio_time: float(m, "audio_time", &at)? });
     }
-    let absolute_file = match a.get("absolute_file") {
+    let mut gain_envelope = Vec::new();
+    for (i, v) in list(a, "gain_envelope", at)?.iter().enumerate() {
+        let at = format!("{at}.gain_envelope[{i}]");
+        let p = object(v, &at)?;
+        let db = float(p, "db", &at)?;
+        if !GAIN_POINT_RANGE.contains(&db) {
+            let (low, high) = (GAIN_POINT_RANGE.start(), GAIN_POINT_RANGE.end());
+            return Err(format!("{at}.db: {db} is outside {low} to +{high} dB").into());
+        }
+        gain_envelope.push(GainPoint { beat: float(p, "beat", &at)?, db, curve: read_curve(p, &at)? });
+    }
+    if gain_envelope.len() > MAX_GAIN_POINTS {
+        return Err(format!("{at}.gain_envelope: more than {MAX_GAIN_POINTS} points").into());
+    }
+    let tempo_source = match a.get("tempo_source") {
         None | Some(Value::Null) => None,
-        Some(_) => Some(required_text(a, "absolute_file", at)?),
+        Some(Value::String(name)) => Some(
+            TempoSource::from_name(name)
+                .ok_or_else(|| ProjectFileError(format!("{at}.tempo_source: not a tempo source")))?,
+        ),
+        Some(_) => return Err(format!("{at}.tempo_source: expected a name").into()),
     };
-    Ok(AudioRegion {
-        file: required_text(a, "file", at)?,
-        absolute_file,
-        sample_rate: optional_whole(a, "sample_rate", at)?,
-        channels: optional_whole(a, "channels", at)?,
-        duration_seconds: optional_float(a, "duration_seconds", at)?,
+    let gain = float_or(a, "gain", 1.0, at)?;
+    if !(gain >= 0.0 && gain <= max_clip_gain() * (1.0 + 1e-9)) {
+        return Err(format!("{at}.gain: {gain} is outside 0 to {} (+{CLIP_GAIN_MAX_DB} dB)", max_clip_gain()).into());
+    }
+    Ok(ClipAudio {
+        gain,
+        gain_envelope,
+        transpose: float_or(a, "transpose", 0.0, at)?,
         warped: flag(a, "warped", false, at)?,
         stretch,
         warp_markers,
-        gain: float_or(a, "gain", 1.0, at)?,
-        transpose: float_or(a, "transpose", 0.0, at)?,
-        stream: optional_whole(a, "stream", at)?,
+        tempo_source,
     })
 }
 
-fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
+/// Most warp markers the clips of a file before version 10 are given in all, copied from their
+/// contents' regions: a small file of many clips on one region with many markers would otherwise
+/// copy them for every clip.
+const MAX_LEGACY_MARKERS: usize = 1_000_000;
+
+/// The audio states the regions of a file before version 10 held, by content, and how many more
+/// warp markers the clips that take them may copy.
+struct Legacy {
+    states: HashMap<ContentId, ClipAudio>,
+    markers_left: std::cell::Cell<usize>,
+}
+
+impl Legacy {
+    /// The state of `content`'s region for one more clip, within the marker budget.
+    fn for_clip(&self, content: ContentId, at: &str) -> Result<ClipAudio, ProjectFileError> {
+        let Some(state) = self.states.get(&content) else { return Ok(ClipAudio::default()) };
+        let left = self.markers_left.get().checked_sub(state.warp_markers.len()).ok_or_else(|| {
+            ProjectFileError(format!(
+                "{at}: more than {MAX_LEGACY_MARKERS} warp markers in all for the clips of this file"
+            ))
+        })?;
+        self.markers_left.set(left);
+        Ok(state.clone())
+    }
+}
+
+/// A clip; one without an `audio` state of its own (a file older than version 10) takes the one its
+/// content's region held, from `legacy`.
+fn read_clip(value: &Value, at: &str, legacy: &Legacy) -> Result<Clip, ProjectFileError> {
     let c = object(value, at)?;
+    let content = ContentId(whole(c, "content", at)?);
+    let audio = match c.get("audio") {
+        None | Some(Value::Null) => legacy.for_clip(content, at)?,
+        Some(v) => {
+            let at = format!("{at}.audio");
+            read_clip_audio(object(v, &at)?, &at)?
+        }
+    };
     let loop_range = match c.get("loop") {
         None | Some(Value::Null) => None,
         Some(Value::Array(pair)) if pair.len() == 2 => {
@@ -1442,7 +1592,7 @@ fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
     };
     Ok(Clip {
         id: ClipId(read_id(c, at)?),
-        content: ContentId(whole(c, "content", at)?),
+        content,
         start: float(c, "start", at)?,
         length: float(c, "length", at)?,
         offset: float_or(c, "offset", 0.0, at)?,
@@ -1456,6 +1606,7 @@ fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
         launch: read_launch(c, at)?,
         color: read_color(c.get("color"), at)?,
         ara: flag(c, "ara", false, at)?,
+        audio,
         extensions: extensions(c, at)?,
     })
 }
@@ -1517,17 +1668,65 @@ fn read_follow(c: &Obj, at: &str) -> Result<FollowAction, ProjectFileError> {
     Ok(follow)
 }
 
-/// A launch mapping: `source` (`key:Q`, `note:1:60`), `target` (slot, scene or stop) and the
-/// `track` and `scene` the target needs, the scene from 0 (from version 8, #763 › 1; from 1
-/// before). The track need not exist: a mapping whose track is gone is kept, unused.
-fn read_mapping(value: &Value, at: &str, version: u64) -> Result<LaunchMapping, ProjectFileError> {
-    let m = object(value, at)?;
+/// Adds `mapping` to `mappings`, refusing a source that is mapped already (a source has one
+/// target at most) and a project with more than [`MAX_MAPPINGS`], so a file cannot make opening
+/// it slow or leave a project that refuses every `mapping.add`.
+fn push_mapping(
+    mappings: &mut Vec<ControllerMapping>,
+    sources: &mut HashSet<MappingSource>,
+    mapping: ControllerMapping,
+    at: &str,
+) -> Result<(), ProjectFileError> {
+    if mappings.len() >= MAX_MAPPINGS {
+        return Err(ProjectFileError(format!("{at}: a project keeps at most {MAX_MAPPINGS} mappings")));
+    }
+    if !sources.insert(mapping.source.clone()) {
+        return Err(ProjectFileError(format!("{at}: {} is mapped twice", mapping.source.name())));
+    }
+    mappings.push(mapping);
+    Ok(())
+}
+
+/// A mapping's `source`: `key:Q`, `note:1:60`.
+fn read_source(m: &Obj, at: &str) -> Result<MappingSource, ProjectFileError> {
     let name = match m.get("source") {
         Some(Value::String(name)) => name.as_str(),
         _ => return Err(ProjectFileError(format!("{at}.source: expected a key or a note"))),
     };
-    let source = MappingSource::from_name(name)
-        .ok_or_else(|| ProjectFileError(format!("{at}.source: unknown source {name:?}")))?;
+    MappingSource::from_name(name).ok_or_else(|| ProjectFileError(format!("{at}.source: unknown source {name:?}")))
+}
+
+/// A controller mapping (version 9, #1162): `source`, and `target` with its `command` and the
+/// `track` and `scene` that command needs, the scene from 0. The track and scene need not exist:
+/// a mapping whose target is gone is kept, unused.
+fn read_controller_mapping(value: &Value, at: &str) -> Result<ControllerMapping, ProjectFileError> {
+    let m = object(value, at)?;
+    let source = read_source(m, at)?;
+    let at_target = format!("{at}.target");
+    let t = object(m.get("target").unwrap_or(&Value::Null), &at_target)?;
+    let command = required_text(t, "command", &at_target)?;
+    if let Some(takes) = MappingTarget::takes(&command)
+        && let Some(key) = t.keys().find(|k| k.as_str() != "command" && !takes.contains(&k.as_str()))
+    {
+        return Err(ProjectFileError(format!("{at_target}: {command} takes {}, not {key:?}", takes.join(" and "))));
+    }
+    let track = optional_whole(t, "track", &at_target)?.map(TrackId);
+    let scene = optional_whole(t, "scene", &at_target)?;
+    let target = MappingTarget::from_command(&command, track, scene).ok_or_else(|| {
+        ProjectFileError(format!(
+            "{at_target}: expected clip.launch with a track and a scene, scene.launch with a scene, or track.stop with a track, got {command:?}"
+        ))
+    })?;
+    Ok(ControllerMapping { source, target })
+}
+
+/// A launch mapping of a file before version 9, read as a controller mapping: `source`, `target`
+/// (slot, scene or stop) and the `track` and `scene` the target needs, the scene from 0 (from
+/// version 8, #763 › 1; from 1 before). The track need not exist: a mapping whose track is gone
+/// is kept, unused.
+fn read_launch_mapping(value: &Value, at: &str, version: u64) -> Result<ControllerMapping, ProjectFileError> {
+    let m = object(value, at)?;
+    let source = read_source(m, at)?;
     let scene = || -> Result<usize, ProjectFileError> {
         let number: usize = whole(m, "scene", at)?;
         if version >= 8 {
@@ -1542,7 +1741,7 @@ fn read_mapping(value: &Value, at: &str, version: u64) -> Result<LaunchMapping, 
         Some("stop") => MappingTarget::Stop { track: track()? },
         _ => return Err(ProjectFileError(format!("{at}.target: expected slot, scene or stop"))),
     };
-    Ok(LaunchMapping { source, target })
+    Ok(ControllerMapping { source, target })
 }
 
 /// A clip's launch settings, `launch`: the defaults when missing (files written before launch

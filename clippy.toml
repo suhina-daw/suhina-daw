@@ -2,3 +2,11 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-indexing-slicing-in-tests = true
+# Color32 is premultiplied: its r(), g() and b() are not the colour's channels once it is
+# translucent (#1235). Read them with to_srgba_unmultiplied(), or to_array() where premultiplied
+# channels are meant.
+disallowed-methods = [
+    { path = "ecolor::Color32::r", reason = "premultiplied: use to_srgba_unmultiplied(), or to_array() for premultiplied channels" },
+    { path = "ecolor::Color32::g", reason = "premultiplied: use to_srgba_unmultiplied(), or to_array() for premultiplied channels" },
+    { path = "ecolor::Color32::b", reason = "premultiplied: use to_srgba_unmultiplied(), or to_array() for premultiplied channels" },
+]

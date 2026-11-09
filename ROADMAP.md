@@ -151,7 +151,7 @@ refused or suspended, never by losing its edits.
 - Theme control shapes: buttons, the toolbar's fields and the volume and pan fields take their background, border, corner radius, thickness and shadows from the theme's CSS (`#arrangement-volume`, `.value-fill`, `volume.track` artwork and the rest); a workspace panel can float over the view; a theme can put the Arrangement track headers on a side; Settings › Themes has a search.
 - Theme presentation: native Launcher column widths and row heights come from the theme's CSS; mixer/name backgrounds consume authored materials, and stereo meter gradients retain fixed dBFS colour positions with native peak/RMS opacity and lit-region glow. Fader scales move independently of the rail/cap.
 
-- Forest Amber, the green-and-white Suhina Sheet, blue/cream glass Suhina Meadow and brown pixel-textured Suhina Blocks are available as built-in themes. Sheet and Meadow include compact Session geometry, native CSS and original editable SVG controls; Meadow embeds an original generated green-hill background and liquid settings. Blocks uses brown plank CSS without landscape wallpaper, plus colour-keyed SVG track textures.
+- The green-and-white Suhina Sheet, blue/cream glass Suhina Meadow and brown pixel-textured Suhina Blocks are available as built-in themes. Sheet and Meadow include compact Session geometry, native CSS and original editable SVG controls; Meadow embeds an original generated green-hill background and liquid settings. Blocks uses brown plank CSS without landscape wallpaper, plus colour-keyed SVG track textures.
 
 - Private image backgrounds use a cached source and display-scaled, alpha-correct blur; Settings keeps its own readable material. Native Mica has been removed.
 
@@ -418,10 +418,10 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   release of a slot's launch button; in the Launcher view a slot launches as the mouse button goes
   down, and right-clicking a clip sets its launch settings
   ([spec](docs/spec/clip-launching.md#launch-settings)).
-- Computer keys launch slots, scenes and stop buttons: Ctrl+M or **Map keys** in the title bar maps
+- Computer keys launch slots, scenes and stop buttons: Ctrl+M or **Map** in the title bar maps
   the next key to the clicked control, and a key down and up are the press and release, so gate
-  and repeat clips play from the keyboard. `launcher.addMapping` maps MIDI notes too, kept in the
-  project; playing them waits for MIDI input
+  and repeat clips play from the keyboard. `mapping.add` maps MIDI notes too, kept in the
+  project's controller mappings; playing them waits for MIDI input
   ([spec](docs/spec/clip-launching.md#launching-from-keys-and-notes)).
 - Still to do: launching from live MIDI notes, fades on launched clips
   ([#104](https://github.com/suhina-daw/suhina-daw/issues/104)), reading the global
@@ -665,9 +665,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - **Themes**: every colour comes from the theme in use, a folder with a `theme.css` in the
   `themes` folder (`theme { name: …; } :root { --accent: #A6A3FF; … }`), which Suhina never
   rewrites; themes from earlier versions are converted once, keeping the originals; track colours and the sample map's
-  kind colours are theme tokens too (`track.1`–`track.8`, `kind.*`). Nine come with Suhina (Suhina
-  Dark and Light, Editor Dark, High Contrast, Dracula, Nord, Catppuccin Mocha and Latte, Solarized
-  Dark). Settings › Appearance › Theme picks one, changes its colours, renames, duplicates, reads
+  kind colours are theme tokens too (`track.1`–`track.8`, `kind.*`). Among those that come with Suhina are Suhina
+  Studio and Suhina Light, High Contrast, Nord, Catppuccin Mocha and Latte). Settings › Appearance › Theme picks one, changes its colours, renames, duplicates, reads
   the files again, backs every theme up into a zip and exports a template zip with a README an AI
   agent can make a theme from; a theme file or backup dropped on the window is added, and a file
   saved in an editor shows within a second.
@@ -1028,4 +1027,6 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   Arrangement, a selected note has a colour of its own, and a double-click with the right button on
   a ghost note opens its clip. With several MIDI clips picked, a strip over the ruler shows them all,
   and a click on a bar or a faint note gives that clip the focus.
+
+- Audio clip panel (#1190, #742, #824): a selected audio clip's column in the detail area is laid out in groups, Clip (colour, markers and loop with Set to the playhead), Audio (warp, a stretch mode drop-down, the clip's tempo with ÷2 and ×2 and where it came from, Find to pick another source's tempo), Gain (a fader, −70 to +24 dB) and Pitch (a knob in semitones and a cents field). Every number can be typed after a double-click. Every audio clip has its own gain, pitch and warp, also two clips of the same file, and a gain envelope drawn on its waveform in the Arrangement (a double-click adds a point, a drag moves it, a double-click removes it); `clip.setTempo`, `clip.findTempo` and `clip.setEnvelope` do the same for agents.
 

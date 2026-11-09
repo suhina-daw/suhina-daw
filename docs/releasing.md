@@ -1,9 +1,9 @@
 ---
 description: How versions are numbered, how release builds, the nightly and test builds of pull requests are made, and how many pull requests are merged through the merge queue
-read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
+read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy
 type: howto
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-08
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -11,6 +11,9 @@ covers:
   - .github/workflows/test-build.yml
   - .github/workflows/test-build-links.yml
   - .github/workflows/ready-to-merge.yml
+  - .github/workflows/overlap.yml
+  - .github/workflows/pr-labels.yml
+  - .github/workflows/updater-source.yml
   - scripts/build_reuse.py
   - scripts/release_packages_check.sh
   - scripts/test_build_reuse.py
@@ -144,7 +147,8 @@ request there, and is grouped by its head repository and branch instead.
 | Pull request | Built |
 |---|---|
 | opened and pushed by a maintainer | on every push; a newer push cancels a build still running |
-| anyone else's, from a fork or a branch | when a maintainer adds `test-build`, or a trusted contributor comments `/test-build`, for the authorized commit |
+| anyone else's, from a branch in this repository | when a maintainer adds `test-build`, or a trusted contributor comments `/test-build`, for the authorized commit |
+| from a fork | when a maintainer or trusted contributor comments `/test-build`, for that commit; the label alone, a maintainer's too, is refused |
 
 A pull request with the `test-build-windows` label is built for Windows only, which keeps the
 shared runners free while only that platform is being tried; its comment lists the other two as
@@ -196,8 +200,12 @@ merge cleanly fails the run and is named in the error.
 
 The build has a read-only token and no secrets, and for a fork GitHub runs `test-build.yml` as the
 fork has it; so `test-build-links.yml`, which runs from `main` and never runs pull request code,
-links only runs a maintainer started or a `suhina-bot[bot]` run with a bot-authored authorization
-for that exact commit, written before the run started. It rechecks the original human comment
+links only a maintainer's run of a branch in this repository, or a run with a bot-authored
+authorization for that exact commit, written before the run started. A fork's run needs that
+authorization even when a maintainer started it: adding a label, *Update branch*, closing and
+reopening all start one, and the fork's own workflow files decide what it builds, so who started it
+says nothing about its code. `scripts/build_reuse.py` counts a fork's earlier build under the same
+rule. It rechecks the original human comment
 and current `TRUSTED_CONTRIBUTORS` membership. The build checks the App's proof without relying
 on repository variables, which may be unavailable in fork PR runs; the default-branch gateway
 and linker check membership. A rerun retains the original run actor's authorization, not the
@@ -206,9 +214,16 @@ a forged or stale proof, removed trusted user, edited/deleted request or another
 cannot authorize a link. All role checks read the repository variable `MAINTAINERS`, using
 comma/whitespace-separated logins, optional `@` prefixes and case-insensitive exact matching.
 An empty list grants no maintainer authority. Set it at repository level, not as an environment
-override. For fork PRs, maintainers also use `/test-build`: the build may not receive repository
-variables, so direct maintainer labels cannot reliably be authorized there. Automatic builds
+override. For fork PRs, maintainers also use `/test-build`: a label is refused there, since it
+binds no commit the maintainer read, and the build may not receive repository variables anyway. Automatic builds
 of maintainer PRs continue for branches in this repository.
+
+Suhina's updater cannot tell from an artifact's name who made it, since a fork's run names its
+artifacts as it likes. So when `test-build-links.yml` links a fork's build, it links only the
+artifacts named for that pull request (`suhina-pr<number>-<platform>`) and uploads a marker from its
+own run, an artifact named `suhina-linked-pr<number>-run<run id>` kept for 7 days like the build.
+The updater lists a fork's build only when the artifacts list holds that marker from a run of this
+repository ([updates.md › Channels](spec/updates.md#channels)).
 
 Trusted contributors use `/test-build` on an open PR, as described in
 [Trusted bot requests](claim-bot.md#trusted-bot-requests). The bot attributes the request, records
@@ -331,8 +346,11 @@ network, no AI service). A change is one commit on `main`'s first-parent line, s
 request, listed by its title with a link to the pull request: a squash merge's subject, or for a
 merge commit ("Merge pull request #N from …") the first line of its message, which is the pull
 request's title. Changes that touch only documentation, CI, scripts and tests are counted, not
-listed. Pull request titles are the release notes, so they say what changed for a user: "Clip
-fades: shapes and an adjustable curve".
+listed, and so are changes whose title's area word says they are code structure, tests,
+dependencies or repository work ("Architecture: …", "Code structure: …", "Tests: …", "Deps: …",
+"CI: …", "Docs: …", "Refactor: …"), which touch the programs without a user noticing. Pull
+request titles are the release notes, so they say what changed for a user: "Clip fades: shapes
+and an adjustable curve".
 
 - **Nightly:** the changes since the previous nightly, on its release page and in the Discord post.
 - **Draft of a tagged release:** first *New and changed*, the bullets of ROADMAP.md › What works now
@@ -421,6 +439,34 @@ messages on its own. Its commands are listed in
 settings, secrets and deployment in
 [docs/operations.md](https://github.com/suhina-daw/suhina-bot/blob/main/docs/operations.md); the
 plan is suhina-daw/suhina-bot#1. The scripts above keep using the bot token for marking threads.
+
+## The pull_request_target policy
+
+From December 2, 2026, GitHub blocks workflows triggered by `pull_request_target` in public
+repositories unless an Actions event policy allows them
+([changelog](https://github.blog/changelog/2026-11-02-pull_request_target-blocked-by-default-december-2/)).
+The repository has one such policy, *Allow pull_request_target for the safe workflows*
+(Settings › Actions › **Policies**), with enforcement **Active**. It targets these workflow files
+and no others:
+
+| Workflow | What it does on `pull_request_target` |
+|---|---|
+| [`ready-to-merge.yml`](../.github/workflows/ready-to-merge.yml) | the `ready to merge` label flow ([Merging many pull requests](#merging-many-pull-requests)) |
+| [`test-build-links.yml`](../.github/workflows/test-build-links.yml) | its `synchronize` part; the `workflow_run` and `workflow_dispatch` parts are allowed too |
+| [`overlap.yml`](../.github/workflows/overlap.yml) | the Overlap notice ([`workflow.md`](workflow.md) › Claiming) |
+| [`pr-labels.yml`](../.github/workflows/pr-labels.yml) | the kind and area labels ([`workflow.md`](workflow.md) › Branch names) |
+| [`updater-source.yml`](../.github/workflows/updater-source.yml) | the updater-source check ([`spec/updates.md`](spec/updates.md)) |
+| [`discord.yml`](../.github/workflows/discord.yml) | the pull request posts; its `issues` and `release` parts are allowed too ([Discord](#discord)) |
+
+Its *Restrict events* rule keeps every event in the list, so a trigger added to one of these files
+later is not blocked silently. Actors are not restricted, so pull requests from forks still start
+them. All six follow the safe pattern: they check out the default branch, never the pull request's
+head, with `persist-credentials: false`, and read the pull request only as data
+([Securely using pull_request_target](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target)).
+
+A new workflow on `pull_request_target` follows the same pattern and gets its path added to the
+policy; without that it never runs. A workflow that needs no write token and no secret uses
+`pull_request` instead. Settings › Actions › **Policy insights** lists runs the policy blocked.
 
 ## Packages
 

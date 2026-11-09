@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 use suhina_engine::{MAX_START_BEAT, Quantization};
 use suhina_model::{Clip, ClipContent, ContentId, ContentLane, LaneData, Note, NoteId, Notes, Project, TrackId};
 
-use crate::commands::{Args, parse_quantization, track_id};
+use crate::commands::{Args, opt_scene_at, parse_quantization, track_id};
 use crate::named::{Miss, Named};
 use crate::{CommandError, Session};
 
@@ -49,7 +49,8 @@ pub(crate) fn locate(p: &Project, params: &Value) -> Result<(ClipAt, ContentId, 
             Some(v) => v.as_u64().map(Some).ok_or_else(|| format!("{key} must be a whole number").into()),
         }
     };
-    let (at, clip) = match (whole("index")?, whole("scene")?) {
+    let scene = opt_scene_at(p, params, "scene")?;
+    let (at, clip) = match (whole("index")?, scene) {
         (Some(_), Some(_)) => return Err("give index or scene, not both".into()),
         (None, None) => return Err("give index (an arrangement clip) or scene (a launcher clip)".into()),
         (Some(index), None) => {
@@ -74,13 +75,21 @@ pub(crate) fn locate(p: &Project, params: &Value) -> Result<(ClipAt, ContentId, 
                 .find(|(_, c)| c.track == track)
                 .ok_or("the track has no clip slots")?;
             let missing = || format!("scene {scene} does not exist; the track has {} slots", column.slots.len());
-            let s = usize::try_from(scene).ok().ok_or_else(missing)?;
+            let s = scene;
             let slot = column.slots.get(s).ok_or_else(missing)?;
             let clip = slot.clip.as_ref().ok_or_else(|| format!("the slot of scene {scene} is empty"))?;
             (ClipAt::Slot(c, s), clip)
         }
     };
     Ok((at, clip.content, track))
+}
+
+/// The clip at `at`.
+pub(crate) fn clip_at(p: &Project, at: ClipAt) -> Option<&Clip> {
+    match at {
+        ClipAt::Arrangement(lane, index) => p.arrangement.lanes.get(lane)?.clips.get(index),
+        ClipAt::Slot(column, slot) => p.launcher.columns.get(column)?.slots.get(slot)?.clip.as_ref(),
+    }
 }
 
 /// The clip at `at`, to change.

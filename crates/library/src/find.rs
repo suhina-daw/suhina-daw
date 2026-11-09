@@ -45,8 +45,10 @@ impl Gather {
         }
     }
 
-    fn into_found(mut self, names: &[String]) -> Found {
-        names.iter().map(|n| (n.clone(), self.wanted.remove(&key(n)).unwrap_or_default())).collect()
+    fn into_found(self, names: &[String]) -> Found {
+        // Names are compared without case, so two names that differ only in case (two missing
+        // files, "Kick.wav" in one folder and "kick.wav" in another) share their candidates.
+        names.iter().map(|n| (n.clone(), self.wanted.get(&key(n)).cloned().unwrap_or_default())).collect()
     }
 }
 
@@ -199,9 +201,12 @@ mod tests {
         touch(&samples.join("snare.wav"));
         let mut library = Library::new(Some(settings.clone()));
         library.add_folder(&samples).unwrap();
-        let found = library.find_by_names(&["groove.WAV".to_string(), "none.wav".to_string()]);
+        let found =
+            library.find_by_names(&["groove.WAV".to_string(), "none.wav".to_string(), "Groove.wav".to_string()]);
         assert_eq!(found[0].1, vec![samples.join("Loops").join("Groove.wav")]);
         assert!(found[1].1.is_empty());
+        // A second name that differs only in case finds the same file; it was left with none.
+        assert_eq!(found[2].1, found[0].1);
         let _ = std::fs::remove_dir_all(&settings);
         let _ = std::fs::remove_dir_all(&samples);
     }

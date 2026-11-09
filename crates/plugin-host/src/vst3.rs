@@ -20,6 +20,8 @@
 //! built into the host for tests ([`crate::test_vst3`]), and `test:vst3-mix` the same gain mixing
 //! its first two channels into the first.
 
+#[cfg(target_os = "macos")]
+mod bundle;
 mod editor;
 mod events;
 mod message;
@@ -85,6 +87,17 @@ pub(crate) fn finite(value: f64, otherwise: f64) -> f64 {
     if value.is_finite() { value } else { otherwise }
 }
 
+/// The text a macOS module contract's bundle comes from, when `path` is one: a folder
+/// that reads as UTF-8. It stands here rather than in [`bundle`], which needs
+/// CoreFoundation and only ships on macOS, so the null arm's facts — folder and text
+/// both, or nothing — are tested on every system's test run: the tests of
+/// [`bundle_text`] get it built on them (`test`), and macOS's own builds through
+/// [`bundle::Bundle::open`].
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn bundle_text(path: &Path) -> Option<&str> {
+    if path.is_dir() { path.to_str() } else { None }
+}
+
 /// Text from a fixed-size UTF-16 field (`String128`), up to its first zero.
 fn utf16(field: &[TChar]) -> String {
     let units: Vec<u16> = field.iter().take_while(|c| **c != 0).copied().collect();
@@ -103,6 +116,16 @@ fn ok(result: tresult) -> bool {
 
 /// A loaded plug-in file (or the built-in test plug-in) and its factory.
 struct ModuleFile {
+    /// The plug-in bundle as the module's macOS contract takes it ([`bundle::Bundle`]):
+    /// first field, and [`Drop for ModuleFile`][Drop] runs the module out (factory
+    /// release, the module's exit where it offers one, unload) before fields drop.
+    /// Fields drop in declaration order, the first one first, so this is dropped before
+    /// the library's own field drop would unload the module — which is why the exit work
+    /// stays in [`Drop for ModuleFile`][Drop]: a refactor that moves it to a field drop
+    /// would release the bundle the module still holds before the unload. Loaded for
+    /// the process's life ([`shared_module`]), so it outlives every call either way.
+    #[cfg(target_os = "macos")]
+    _bundle: Option<bundle::Bundle>,
     factory: Option<ComPtr<IPluginFactory>>,
     library: Option<libloading::Library>,
 }
@@ -144,8 +167,36 @@ pub(crate) fn macos_binary(macos: &Path, stem: &OsStr) -> Option<PathBuf> {
     files.into_iter().next()
 }
 
+/// The factory the loaded module hands over, as [`ModuleFile::open`]'s tails need it:
+/// the two calls the module's required entry asks for, same on every system.
+fn factory_from_library(library: &libloading::Library) -> Result<ComPtr<IPluginFactory>, String> {
+    // SAFETY: `GetPluginFactory` is the module's required entry: no arguments, returning an
+    // owned reference to its factory.
+    let get = unsafe { library.get::<extern "system" fn() -> *mut IPluginFactory>(b"GetPluginFactory\0") }
+        .map_err(|_| "the file has no GetPluginFactory; not a VST3 plug-in")?;
+    // SAFETY: the pointer is the factory reference the module handed over (or null).
+    unsafe { ComPtr::from_raw(get()) }.ok_or_else(|| "the plug-in has no factory".into())
+}
+
 impl ModuleFile {
     fn open(path: &Path) -> Result<Self, String> {
+        // `bundleEntry` (macOS): the counterpart of `InitDll` on Windows and `ModuleEntry`
+        // on Linux, and optional the same way: modules built on the current SDK initialise
+        // in their own static constructors and do not export it, and those that do
+        // (DPF-built modules, such as Cardinal and plugdata) take the handle or null
+        // either way, holding their own bundle when they need it. It is what macOS hosts
+        // that load the module as a bundle pass that stands out: the bundle's handle. The
+        // SDK's own hosts make and pass one, and a module may keep it and read it later
+        // without a null check — as Xfer's Serum 2 2.1.5 did, which crashed its host's
+        // main thread (a null dereference, #1223) the first time its editor's view was
+        // built. The handle is made here for the module to keep, not left null; where
+        // there is no bundle to make (the plug-in is a bare file, the path is not UTF-8,
+        // or the folder is not one), no handle exists, and null stays the contract's
+        // other arm. The bundle is kept before the library is loaded: a local drops
+        // before anything declared before it, and a module reaching its own exit paths
+        // after `bundleEntry` failed should keep seeing the handle it was handed.
+        #[cfg(target_os = "macos")]
+        let bundle = bundle::Bundle::open(path);
         let file = binary(path)?;
         // SAFETY: loading the library runs its initialisation code, which Rust cannot check;
         // that is what this process is for (ADR 0006). The library stays loaded while `self`
@@ -174,34 +225,65 @@ impl ModuleFile {
                 return Err("the plug-in's ModuleEntry failed".into());
             }
         }
+        // `bundleEntry` (macOS): called after the library is loaded, with the handle the
+        // bundle's `CFBundle` carries, and read one. Whether the module's entry ran and
+        // read it is what its error paths' clean-ups wait on: a module that exports
+        // `bundleExit` only is entered nowhere, and its counterpart is nobody's to call.
         #[cfg(target_os = "macos")]
-        {
-            // SAFETY: `bundleEntry` is the entry the VST3 module API defines on macOS, the
-            // counterpart of `InitDll` on Windows and `ModuleEntry` on Linux: hosts that load
-            // the module as a bundle call it before the factory. It is optional: modules built
-            // on the current SDK initialise in their own static constructors and do not export
-            // it. Those that do (DPF-built modules such as Cardinal and plugdata) build the
-            // plugin their class information is read from here, and answering class queries
-            // before it runs crashes them. The old contract passes the bundle's handle; these
-            // modules find their own bundle from the loaded file, so null is fine.
+        let bundle_entry_ran = {
+            let handle = bundle.as_ref().map_or(std::ptr::null_mut(), |bundle| bundle.handle());
+            // SAFETY: `bundleEntry` takes the bundle's handle, live for the whole call
+            // and beyond (held on the module as its `_bundle`), and answers whether it
+            // read one.
             let entry = unsafe { library.get::<extern "system" fn(*mut c_void) -> bool>(b"bundleEntry\0") };
-            if let Ok(entry) = entry
-                && !entry(std::ptr::null_mut())
-            {
-                return Err("the plug-in's bundleEntry failed".into());
+            match entry {
+                Ok(entry) if entry(handle) => true,
+                Ok(_) => return Err("the plug-in's bundleEntry failed".into()),
+                Err(_) => false,
             }
-        }
-        // SAFETY: `GetPluginFactory` is the module's required entry: no arguments, returning an
-        // owned reference to its factory.
-        let get = unsafe { library.get::<extern "system" fn() -> *mut IPluginFactory>(b"GetPluginFactory\0") }
-            .map_err(|_| "the file has no GetPluginFactory; not a VST3 plug-in")?;
-        // SAFETY: the pointer is the factory reference the module handed over (or null).
-        let factory = unsafe { ComPtr::from_raw(get()) }.ok_or("the plug-in has no factory")?;
-        Ok(Self { factory: Some(factory), library: Some(library) })
+        };
+        // The factory: the module's required entry ([`factory_from_library`]), and,
+        // where the module's entry ran on this system, its exit in front of the error:
+        // the unload a `library` drop does on the way out comes too late for anyone
+        // left to run it, which is how [`Drop for ModuleFile`][Drop] handles it.
+        let factory = factory_from_library(&library);
+        #[cfg(not(target_os = "macos"))]
+        let factory = factory?;
+        #[cfg(target_os = "macos")]
+        let factory = match factory {
+            Ok(factory) => factory,
+            Err(why) => {
+                // Where the module's entry ran ([`bundleEntry`]), its counterpart runs
+                // before the unload a plain `library` drop would do on the way out, the
+                // way [`Drop for ModuleFile`][Drop] runs it for the factory that got
+                // made; entry-less modules get none.
+                if bundle_entry_ran {
+                    // SAFETY: `bundleExit` is the optional counterpart of `bundleEntry`,
+                    // searched only where the module may export it; its answer, as in
+                    // [`Drop`][Drop]'s run of it, tells the caller nothing.
+                    let exit = unsafe { library.get::<extern "system" fn() -> bool>(b"bundleExit\0") };
+                    if let Ok(exit) = exit {
+                        exit();
+                    }
+                }
+                return Err(why);
+            }
+        };
+        Ok(Self {
+            #[cfg(target_os = "macos")]
+            _bundle: bundle,
+            factory: Some(factory),
+            library: Some(library),
+        })
     }
 
     fn test(mix: bool) -> Self {
-        Self { factory: crate::test_vst3::factory(mix), library: None }
+        Self {
+            #[cfg(target_os = "macos")]
+            _bundle: None,
+            factory: crate::test_vst3::factory(mix),
+            library: None,
+        }
     }
 
     fn factory(&self) -> Result<&ComPtr<IPluginFactory>, String> {
@@ -1762,141 +1844,5 @@ impl crate::audio::Block for Vst3Block {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_trace_watch_merges_peaks_and_starts_each_interval_from_silence() {
-        let watch = Watch::default();
-        watch.merge_peak(&[0.25, -0.75, 0.5]);
-        watch.merge_peak(&[0.5, f32::NAN]);
-        watch.merge_peak(&[]);
-        assert_eq!(watch.take_peak(), 0.75);
-        assert_eq!(watch.take_peak(), 0.0);
-        watch.merge_peak(&[-0.125]);
-        assert_eq!(watch.take_peak(), 0.125);
-    }
-
-    /// The main thread resets the counters while the audio thread keeps adding to them: no
-    /// frame is lost, and a peak that was taken never comes back.
-    #[test]
-    fn resetting_the_trace_watch_loses_no_frames_and_repeats_no_peak() {
-        const BLOCKS: u32 = 200_000;
-        let watch = Arc::new(Watch::default());
-        let audio = {
-            let watch = watch.clone();
-            std::thread::spawn(move || {
-                for block in 1..=BLOCKS {
-                    watch.merge_peak(&[block as f32]);
-                    watch.frames.fetch_add(1, Ordering::Release);
-                }
-            })
-        };
-        let (mut frames, mut peaks) = (0_u64, Vec::new());
-        while !audio.is_finished() {
-            frames += watch.take_frames();
-            let peak = watch.take_peak();
-            if peak > 0.0 {
-                peaks.push(peak);
-            }
-        }
-        audio.join().unwrap();
-        frames += watch.take_frames();
-        let peak = watch.take_peak();
-        if peak > 0.0 {
-            peaks.push(peak);
-        }
-        assert_eq!(frames, u64::from(BLOCKS), "frames were erased by a reset");
-        assert_eq!(peaks.last().copied(), Some(BLOCKS as f32));
-        assert!(peaks.windows(2).all(|pair| pair[0] < pair[1]), "an old peak was written back");
-    }
-
-    #[test]
-    fn a_module_is_loaded_once_and_kept() {
-        let (first, _) = open("test:vst3").unwrap();
-        let (second, _) = open("test:vst3").unwrap();
-        assert!(Rc::ptr_eq(&first, &second));
-        let weak = Rc::downgrade(&first);
-        drop((first, second));
-        // Nothing uses it, and it stays loaded: the next open gets the same module, and its
-        // `ExitDll` never runs while the process lives.
-        let (third, _) = open("test:vst3").unwrap();
-        assert!(weak.upgrade().is_some_and(|kept| Rc::ptr_eq(&kept, &third)));
-    }
-
-    #[test]
-    fn class_ids_round_trip_as_hex() {
-        let cid: TUID = [0x12, -1, 0, 0x7f, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, -128];
-        let hex = cid_hex(&cid);
-        let expected = if cfg!(windows) { "7F00FF12020104030506070809" } else { "12FF007F01020304050607080900" };
-        assert!(hex.starts_with(&expected[..16]), "{hex}");
-        assert_eq!(cid_from_hex(&hex), Some(cid));
-        assert_eq!(cid_from_hex("12"), None);
-        assert_eq!(cid_from_hex(&"zz".repeat(16)), None);
-    }
-
-    #[test]
-    fn the_memory_stream_reads_writes_and_seeks() {
-        let stream = ComWrapper::new(MemoryStream::new(Vec::new()));
-        let raw = stream.to_com_ptr::<IBStream>().unwrap_or_else(|| panic!("stream"));
-        let mut bytes = *b"hello";
-        let mut count = 0;
-        // SAFETY: a live stream and buffers that outlive the calls.
-        unsafe {
-            assert_eq!(raw.write(bytes.as_mut_ptr().cast(), 5, &mut count), kResultOk);
-        }
-        assert_eq!((stream.bytes(), count), (b"hello".to_vec(), 5));
-        let mut at = 0;
-        // SAFETY: as above.
-        unsafe {
-            assert_eq!(raw.seek(1, IBStream_::IStreamSeekMode_::kIBSeekSet as int32, &mut at), kResultOk);
-        }
-        let mut out = [0u8; 8];
-        // SAFETY: as above.
-        unsafe {
-            assert_eq!(raw.read(out.as_mut_ptr().cast(), 8, &mut count), kResultOk);
-        }
-        assert_eq!((&out[..4], count), (&b"ello"[..], 4));
-        // SAFETY: as above.
-        let before_start = unsafe { raw.seek(-10, IBStream_::IStreamSeekMode_::kIBSeekCur as int32, &mut at) };
-        assert_eq!(before_start, kInvalidArgument);
-        // SAFETY: as above.
-        assert_eq!(unsafe { raw.tell(&mut at) }, kResultOk);
-        assert_eq!(at, 5);
-    }
-
-    #[test]
-    fn bundle_layout() {
-        let missing = binary(Path::new("no-such.vst3"));
-        assert!(missing.is_err());
-    }
-
-    #[test]
-    fn a_macos_bundles_executable_is_found() {
-        let dir = std::env::temp_dir().join(format!("suhina-vst3-bundle-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let stem = OsStr::new("Thing");
-        let macos = dir.join("Thing.vst3").join("Contents").join("MacOS");
-        std::fs::create_dir_all(&macos).unwrap();
-        // An empty folder holds no executable; the bundle is refused.
-        assert_eq!(macos_binary(&macos, stem), None);
-        // Named after the bundle without the extension, as most bundles have.
-        std::fs::write(macos.join("Thing"), "not really a Mach-O").unwrap();
-        assert_eq!(macos_binary(&macos, stem), Some(macos.join("Thing")));
-        // On macOS the bundle then loads by that file, whatever its name says.
-        if cfg!(target_os = "macos") {
-            let found = binary(&dir.join("Thing.vst3")).ok();
-            assert_eq!(found, Some(macos.join("Thing")));
-        }
-        // An executable under another name, which the bundle format allows; a hidden file
-        // such as a stray .DS_Store is not taken for it.
-        let renamed = dir.join("Other.vst3").join("Contents").join("MacOS");
-        std::fs::create_dir_all(&renamed).unwrap();
-        std::fs::write(renamed.join(".DS_Store"), "x").unwrap();
-        std::fs::write(renamed.join("Other.vst3"), "not really a Mach-O").unwrap();
-        assert_eq!(macos_binary(&renamed, stem), Some(renamed.join("Other.vst3")));
-        // A folder that is not there holds nothing.
-        assert_eq!(macos_binary(&dir.join("missing").join("MacOS"), stem), None);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-}
+#[path = "vst3_tests.rs"]
+mod tests;

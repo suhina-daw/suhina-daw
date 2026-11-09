@@ -4,7 +4,7 @@ read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taff
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-02
+last_verified: 2026-11-06
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
@@ -53,15 +53,14 @@ edge in the same container with a gap; cycle and chain-length validation; missin
 hidden targets fall back) are connected to the native placement adapter and the Edit
 interface. They are part of the layout model, not of the `skin.controls` offsets, and move
 with it to `position: overlay` and component layout.
-Theme storage follows *Amendment: theme settings and variants*: a theme's folder holds its
-`theme.css` (the author's sheet, never rewritten), `variants/*.json` (values for its settings,
-written by the settings editors) and `layout.css` (what the Edit interface sets); no JSON theme
-is written. Settings are registered custom properties (`@property`, `suhina_style::registered`):
+Theme storage follows *Amendment: theme settings and variants* and *Amendment: theme folders*:
+a theme's folder holds its `theme.json` (metadata), `theme.css` (style and layout; Suhina's
+editors change only their own declarations in it), an optional `thumbnail.svg` and
+`variants/*.json` (values for its declared controls); no JSON theme is written. Settings are registered custom properties (`@property`, `suhina_style::registered`):
 the core set in `crates/ui/src/kit/theme_vars.rs` and any a theme declares. A theme of an
 earlier version (JSON, or a `theme.css` importing `advanced.css`) is migrated once, only after
 the new files read back as the same theme; its old files are kept in `legacy/`. The built-in
-themes are in the same form (`crates/ui/themes/<id>.theme.css` and `<id>.layout.css`); their
-artwork and Meadow's background stay embedded beside them.
+themes are folders of the same form (`crates/ui/themes/<id>/`), built into the app.
 
 Device panels use the tiers: `.sd` version 6 adds an optional panel `style`, applied in the
 Device tier bounded to its panel; `#id` selects a control by its id; `user.css` in the themes
@@ -176,7 +175,7 @@ The language is CSS's core, everything in it that does not depend on HTML:
 - `transition` on colours, lengths and numbers (`transition: background 120ms ease-out`);
 - `@import "file.css"`, `@font-face`, and `@media` (section 3).
 
-The built-in default style sheet reproduces Suhina Dark exactly, so the move changes nothing on
+The built-in default style sheet reproduces Suhina Studio exactly, so the move changes nothing on
 screen until a theme does. **JSON themes are retired:** built-in themes are rewritten as `.css`. Existing user themes are converted only after a validated round trip, with their original files and artwork preserved. Legacy JSON remains readable during the staged migration. The style sheet is the theme's own source and Suhina never
 writes it: the settings a person changes in Suhina are values in a variant of the theme, and the
 Edit interface writes the theme's `layout.css`.
@@ -563,7 +562,7 @@ variables, so views move over one at a time and the snapshots must not change on
 - **Template:** Export template writes the README of every element, class, state, media feature,
   property and artwork part (from the registries), the default style sheet and the default artwork,
   for people and agents. Every exported theme carries the same README.
-- **Example themes:** besides Suhina Dark, the built-in themes include PR 841's Sheet, Meadow and
+- **Example themes:** besides Suhina Studio, the built-in themes include PR 841's Sheet, Meadow and
   Blocks, rewritten as style sheets with their original artwork, so authors start from working
   examples of artwork, density and glass.
 
@@ -736,3 +735,31 @@ written by hand. The direction agreed in
 source of truth for style and layout, and a future visual editor mirrors it, writing plain CSS
 through the source-preserving edits of `crates/style/src/edit.rs`. The removed editor is kept for
 reference on the branch `feature/placement-editor`. Toolbar order (**Edit toolbar**) stays.
+
+## Amendment: theme folders (2026-11-05)
+
+Accepted, from [issue #995](https://github.com/suhina-daw/suhina-daw/issues/995) sections 4 to 6
+([#1018](https://github.com/suhina-daw/suhina-daw/issues/1018)). The format stays experimental:
+themes written for the earlier folders are not migrated.
+
+- **A theme is a folder** of `theme.json`, `theme.css`, an optional `thumbnail.svg`, `assets/`
+  and `variants/`. `theme.json` holds the format version, name, author, description, the default
+  variant's name, the swatch colour and an optional suggested toolbar arrangement; the theme's
+  name comes from it, not from CSS.
+- **One `theme.css`.** `layout.css` is merged into it and no longer read. What Suhina's editors
+  set beyond settings is written into `theme.css` through `suhina_style::edit`, which changes
+  only the declarations it edits. The toolbar's order and offsets go to `theme.json`'s
+  `toolbar`, since CSS does not reorder toolbar items.
+- **Built-in themes have exactly this structure**, built into the app; they cannot be edited,
+  only duplicated. The `_defaults` folder of editable default artwork is gone: default artwork
+  is built in.
+- **Variants hold only values** for the theme's declared controls (and the core properties);
+  the default variant is the theme's own values and is never a file. `appearance` is dropped,
+  since Suhina does not switch variants by itself.
+- **Swatch.** Any `<color>` value, resolved per variant from the `@property` rules and `:root`
+  declarations without applying the sheet (`cascade::resolve_color`); `currentColor`, `attr()`
+  and element-relative units are refused. It is checked on import against every variant and
+  drawn as a `theme-swatch` element with a `color` attribute, styled by the theme in use.
+- **Thumbnail.** `thumbnail.svg`, 16:9, may use the theme's properties through `var()`, resolved
+  as for the swatch; the artwork checks apply. Without one, the card is filled with the swatch
+  colour. This replaces the open question of rendered thumbnails per variant above.

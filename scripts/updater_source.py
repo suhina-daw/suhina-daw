@@ -41,6 +41,12 @@ PINNED = (
     'let wanted = format!("suhina-nightly-{platform}.");',
     'let suffix = format!("-{platform}");',
     '.strip_prefix("suhina-pr")',
+    # What makes a test build trusted: a run of a branch here, or the marker test-build-links.yml
+    # uploads from a run of this repository (docs/spec/updates.md › Channels).
+    'let (pr, run) = name.strip_prefix("suhina-linked-pr")?.split_once("-run")?;',
+    'let from_fork = head_repository != repository;',
+    'linked.insert(marker);',
+    'if from_fork && !linked.contains(&(pr, run)) {',
 )
 
 # Everything in the updater that decides what is downloaded and from where. Keep in step with

@@ -8,43 +8,7 @@ use super::*;
 /// Seconds between the tempo sent while the tempo field is dragged.
 const TEMPO_SEND: f64 = 0.1;
 
-/// `bpm` on the steps of the place a drag holds, counted from where it started (`grab`: the step
-/// and the start), to a thousandth of a BPM, within the tempo's range (#829).
-pub(crate) fn snap_tempo(grab: Option<(f64, f64)>, bpm: f64) -> f64 {
-    let snapped = match grab {
-        Some((step, from)) if step > 0.0 => from + ((bpm - from) / step).round() * step,
-        _ => bpm,
-    };
-    ((snapped * 1000.0).round() / 1000.0).clamp(20.0, 999.0)
-}
-
-/// The step of the place in the tempo `text` (right-aligned at `right`, characters `width`
-/// apart) under `x`: 1 BPM for the integer part, 0.1, 0.01 or 0.001 for the decimals (#829).
-pub(crate) fn tempo_place(text: &str, right: f32, width: f32, x: f32) -> f64 {
-    let len = text.chars().count();
-    let Some(dot) = text.find('.') else { return 1.0 };
-    if width <= 0.0 {
-        return 1.0;
-    }
-    let from_right = ((right - x) / width).floor().max(0.0) as usize;
-    let index = len.saturating_sub(from_right + 1);
-    if index <= dot {
-        return 1.0;
-    }
-    let decimals = (index - dot).min(3);
-    10f64.powi(-(decimals as i32))
-}
-
-/// The characters of the tempo `text` the place of `step` covers, as a range of indices: the
-/// whole integer part for 1 BPM, one decimal otherwise.
-pub(crate) fn tempo_place_span(text: &str, step: f64) -> (usize, usize) {
-    let dot = text.find('.').unwrap_or(text.len());
-    if step >= 1.0 {
-        return (0, dot);
-    }
-    let decimals = (-step.log10()).round().max(1.0) as usize;
-    (dot + decimals, dot + decimals + 1)
-}
+pub(crate) use crate::kit::widgets::{snap_tempo, tempo_place, tempo_place_span};
 
 impl App {
     pub(super) fn control_bar(
@@ -398,7 +362,7 @@ impl App {
             native_styles.enter("mapping");
             let on = self.view.launch_keys.mode.on;
             let color = if on { theme::accent() } else { theme::text_secondary() };
-            let galley = widgets::fitted(&painter, "Map keys", theme::ui_font(theme::TEXT), color, 80.0);
+            let galley = widgets::fitted(&painter, "Map", theme::ui_font(theme::TEXT), color, 80.0);
             let size = galley.size();
             if fits(right, size.x) {
                 let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));

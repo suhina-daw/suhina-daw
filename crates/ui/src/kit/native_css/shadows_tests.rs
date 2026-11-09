@@ -171,7 +171,9 @@ fn artwork_casts_its_glow_in_its_own_shape() {
     assert_eq!(copies.len(), 9, "the centre and eight taps around the blur");
     // Every copy is the artwork's own shape, tinted, and spread around it.
     assert!(copies.iter().all(|copy| copy.vertices.len() == artwork.vertices.len()));
-    assert!(copies.iter().all(|copy| copy.vertices.iter().all(|v| v.color.b() > 0 && v.color.r() == 0)));
+    assert!(
+        copies.iter().all(|copy| copy.vertices.iter().all(|v| v.color.to_array()[2] > 0 && v.color.to_array()[0] == 0))
+    );
     let reach = copies.iter().map(|c| c.calc_bounds()).fold(Rect::NOTHING, |a, b| a.union(b));
     assert!(reach.width() > 20.0 + 6.0, "{reach:?}");
     let inset = Shadow { inset: true, ..glow };

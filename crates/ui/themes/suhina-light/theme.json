@@ -1,0 +1,7 @@
+{
+  "format": 1,
+  "name": "Suhina Light",
+  "author": "The Suhina contributors",
+  "description": "Suhina's warm greys turned light, for bright rooms.",
+  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+}

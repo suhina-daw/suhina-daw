@@ -4,10 +4,12 @@ read_when: UI toolkit, egui, look and feel, trade dress, design rights, screensh
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-06
 covers:
   - apps/suhina/Cargo.toml
   - crates/ui/Cargo.toml
+  - crates/ui-gpu/Cargo.toml
+  - apps/theme-render/Cargo.toml
   - crates/ui/src/kit/theme.rs
 ---
 
@@ -41,8 +43,10 @@ What the law protects decides how close the UI may get (summary, not legal advic
 
 ## Decision
 
-1. **The UI is built with egui** on eframe, drawing with glow (OpenGL). wgpu is used only by
-   `egui_kittest`, a development dependency, for snapshot tests. Beside egui the ui crate's
+1. **The UI is built with egui** on eframe, drawing with wgpu or glow (OpenGL), a choice in
+   Settings and `--renderer`. On wgpu, `crates/ui-gpu` draws a see-through window's background
+   fills and the liquid materials; `suhina-theme-render` uses the same crate to render a theme
+   offscreen through `egui_kittest`, which the snapshot tests use too. Beside egui the ui crate's
    dependencies are small helpers: `memory-stats` (MIT) reads the program's RAM for the
    control bar.
 2. **Same map, different paint.** The structure and behaviour of each view follow Live as closely

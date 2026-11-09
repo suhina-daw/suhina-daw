@@ -13,6 +13,7 @@ use std::fmt;
 mod audio_data;
 pub mod automation;
 mod build;
+mod clip_audio;
 mod comping;
 mod groups;
 mod id_list;
@@ -26,6 +27,10 @@ pub use tempo::{
 };
 
 pub use audio_data::{AudioData, AudioPool};
+pub use clip_audio::{
+    CLIP_GAIN_MAX_DB, CLIP_TEMPO_RANGE, ClipAudio, GAIN_POINT_RANGE, GainPoint, MAX_GAIN_POINTS, TRANSPOSE_RANGE,
+    TempoSource, db_to_gain, envelope_db_at, gain_to_db, max_clip_gain,
+};
 pub use groups::{
     Branch, DeviceGroup, MACROS, MAX_BRANCHES, MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_MACRO_MAPPINGS, Macro,
     MacroMapping, MappedDevice, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups,
@@ -55,7 +60,7 @@ mod overlap;
 mod scale;
 mod shared;
 pub use launch::{LaunchMode, LaunchQuantization, LaunchSettings};
-pub use mapping::{KEY_NAME_MAX, LaunchMapping, MappingSource, MappingTarget};
+pub use mapping::{ControllerMapping, KEY_NAME_MAX, MAX_MAPPINGS, MappingSource, MappingTarget};
 pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, TOUCH_TOLERANCE};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
 pub use shared::{Bytes, Shared};
@@ -98,6 +103,11 @@ pub struct Project {
     /// The scale a new MIDI clip takes, if any; clips made before it was set keep theirs
     /// ([ADR 0001](../../docs/decisions/0001-daw-neutral-model.md) › Amendment: clip scales).
     pub default_scale: Option<Scale>,
+    /// The project's controller mappings: keys and MIDI notes that run a command, so far the
+    /// launch commands of slots, scenes and stop buttons (ADR 0019 › Amendment: launch keys are
+    /// controller mappings). A mapping whose track is gone stays, unused, so an undo brings it back
+    /// working; deleting a scene removes the mappings on it, and undo restores them.
+    pub controller_mappings: Vec<ControllerMapping>,
     /// The next id a clip, an arrangement lane or a scene gets: the three kinds share this
     /// counter, and a value is never handed out twice, deleted objects' included
     /// ([ADR 0025](../../docs/decisions/0025-object-identity.md)). Allocate with
@@ -524,7 +534,9 @@ pub struct Note {
     pub muted: bool,
 }
 
-/// An audio file mapped onto musical time.
+/// An audio file a clip plays: only the source. How it is mapped onto musical time, its gain and
+/// its pitch belong to each clip that plays it ([`Clip::audio`], ADR 0001 › Amendment: per-clip
+/// audio).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AudioRegion {
     /// Path relative to the project, as stored in the source file.
@@ -537,16 +549,6 @@ pub struct AudioRegion {
     pub channels: Option<u16>,
     /// Length of the file in seconds, if known.
     pub duration_seconds: Option<f64>,
-    /// When false the audio plays at its original speed and `warp_markers` are kept but unused.
-    pub warped: bool,
-    /// How a warped region keeps its pitch when it plays faster or slower (ADR 0003).
-    pub stretch: StretchMode,
-    /// Empty when the audio plays at its original speed from the content start.
-    pub warp_markers: Vec<WarpMarker>,
-    /// Linear gain; 1.0 is unity.
-    pub gain: f64,
-    /// Pitch shift in semitones (fractions are cents / 100).
-    pub transpose: f64,
     /// Which audio track of a file with several plays: in a Stems file 0 is the master and 1, 2,
     /// and so on the stems. `None` for an ordinary file (its first audio track).
     pub stream: Option<u16>,
@@ -631,6 +633,9 @@ pub struct Clip {
     /// The clip plays through its channel's ARA plug-in, the clip host (ADR 0033 › 2, #990): its
     /// raw audio is edited there, then its gain and fades follow. Arrangement audio clips only.
     pub ara: bool,
+    /// What the clip does with the audio it plays: gain, envelope, transpose, warp. Its own, never
+    /// shared with another clip of the same content; a clip without audio ignores it.
+    pub audio: ClipAudio,
     pub extensions: Extensions,
 }
 
@@ -973,9 +978,6 @@ pub struct ArrangementLane {
 pub struct Launcher {
     pub scenes: Vec<Scene>,
     pub columns: Vec<LauncherColumn>,
-    /// Keys and MIDI notes that launch slots, scenes and stop buttons. A mapping whose track or
-    /// scene is gone stays, unused, so an undo brings it back working.
-    pub mappings: Vec<LaunchMapping>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -1032,6 +1034,10 @@ pub enum ValidationError {
     DuplicateLane(LaneId),
     /// Two scenes have this id.
     DuplicateScene(SceneId),
+    /// Two controller mappings have this source (its name, as the file writes it).
+    DuplicateMapping(String),
+    /// The project has more than [`MAX_MAPPINGS`] controller mappings.
+    TooManyMappings(usize),
     DuplicateDevice(DeviceId),
     /// Objects of two kinds (a clip, a lane, a scene) have this id; the kinds share one counter,
     /// so a value names at most one object.
@@ -1107,6 +1113,8 @@ impl fmt::Display for ValidationError {
             Self::DuplicateClip(id) => write!(f, "clip id {id} is used twice"),
             Self::DuplicateLane(id) => write!(f, "arrangement lane id {id} is used twice"),
             Self::DuplicateScene(id) => write!(f, "scene id {id} is used twice"),
+            Self::DuplicateMapping(source) => write!(f, "{source} is mapped twice"),
+            Self::TooManyMappings(n) => write!(f, "the project has {n} mappings, at most {MAX_MAPPINGS} are kept"),
             Self::DuplicateDevice(id) => write!(f, "device id {id} is used twice"),
             Self::SharedId(id) => write!(f, "object id {id} is used by a clip, a lane or a scene at once"),
             Self::IdAhead(id) => write!(f, "object id {id} is not below the project's next id"),
@@ -1192,6 +1200,16 @@ impl Project {
         let lane_ids = unique(lane_ids, ValidationError::DuplicateLane, &mut errors);
         let scene_ids = self.launcher.scenes.iter().map(|s| s.id).filter(|id| id.is_some());
         let scene_ids = unique(scene_ids, ValidationError::DuplicateScene, &mut errors);
+        // What the file reader refuses, so a project that validates can be saved and opened again.
+        if self.controller_mappings.len() > MAX_MAPPINGS {
+            errors.push(ValidationError::TooManyMappings(self.controller_mappings.len()));
+        }
+        let mut sources = HashSet::new();
+        for m in &self.controller_mappings {
+            if !sources.insert(&m.source) {
+                errors.push(ValidationError::DuplicateMapping(m.source.name()));
+            }
+        }
         let device_ids = self.all_devices().map(|d| d.id).filter(|id| id.is_some());
         let device_ids = unique(device_ids, ValidationError::DuplicateDevice, &mut errors);
         // The kinds the file holds share one counter, so a value names at most one object of any

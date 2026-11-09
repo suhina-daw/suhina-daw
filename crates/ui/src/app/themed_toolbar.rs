@@ -447,7 +447,7 @@ impl App {
                 theme::text_primary(),
             ),
             "mapping" => {
-                if widgets::button(ui, &painter, rect, "Map keys", "Map keys to slots and scenes") {
+                if widgets::button(ui, &painter, rect, "Map", "Map keys to slots and scenes") {
                     self.toggle_mapping_mode();
                 }
             }

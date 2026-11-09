@@ -21,7 +21,9 @@ pub struct State {
 
 /// The settings the theme declares itself (`@property` with a label), each with a control for its
 /// type: a colour, a number in its range, a choice of keywords, or text checked against its type.
-pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option<ThemeRequest> {
+/// `held` is set while the pointer is held on one of them, so the window behind stays clear for
+/// as long as the setting is being changed.
+pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held: &mut bool) -> Option<ThemeRequest> {
     use suhina_style::registered::{Component, Syntax};
     if themes.declared.is_empty() {
         return None;
@@ -57,7 +59,11 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Op
                         _ => [0, 0, 0, 255],
                     };
                     let mut color = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
-                    if ui.color_edit_button_srgba(&mut color).changed() {
+                    let popup = ui.auto_id_with("popup");
+                    let response = ui.color_edit_button_srgba(&mut color);
+                    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, label));
+                    *held |= egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
+                    if response.changed() {
                         next = Some(crate::kit::theme::hex(color));
                     }
                 }
@@ -70,7 +76,10 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Op
                     } else if integer {
                         slider = slider.step_by(1.0);
                     }
-                    if ui.add(slider).changed() {
+                    let response = ui.add(slider);
+                    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, label));
+                    *held |= response.dragged() || response.is_pointer_button_down_on();
+                    if response.changed() {
                         next = Some(if integer { format!("{}", number.round() as i64) } else { format!("{number}") });
                     }
                 }
@@ -108,6 +117,13 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Op
     request
 }
 
+impl State {
+    /// Forgets what was typed into settings' fields, which then show their values again.
+    pub fn forget_drafts(&mut self) {
+        self.drafts.clear();
+    }
+}
+
 pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option<ThemeRequest> {
     if state.current != themes.current {
         state.current = themes.current.clone();
@@ -132,7 +148,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
         if skin.meter == skin::MeterStyle::Frames { ui.label("Supply meter.frame-0, meter.frame-1, … artwork in this theme. The measured peak chooses a frame; missing sequences use the continuous meter."); }
         if ui.button("Customize default SVG controls").clicked() { skin.assets = skin::inherited_assets(); }
         if ui.button("Inherit default SVG controls").clicked() { skin.assets.clear(); }
-        ui.label("Missing artwork inherits themes/_defaults/assets/. This theme stores only its overrides.");
+        ui.label("Missing artwork uses the artwork built into Suhina. This theme stores only its own.");
         ui.label("SVGs affect appearance; control gestures and shortcuts stay the same.");
         ui.separator();
         let mut custom = skin.toolbar.is_some();
@@ -187,7 +203,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
             }
         });
         ui.collapsing("Native CSS", |ui| {
-            ui.label("Settings and layout in the form of earlier versions: :root colours, Launcher density, meter style/segments/intensity, toolbar order/hidden, .control-NAME placement, artwork frame rate. Applying it saves the settings in the variant in use and the layout in layout.css. Place connected elements by hand with .control-NAME rules for now.");
+            ui.label("Settings and layout in the form of earlier versions: :root colours, Launcher density, meter style/segments/intensity, toolbar order/hidden, .control-NAME placement, artwork frame rate. Applying it saves the settings in the variant in use and the layout in theme.css. Place connected elements by hand with .control-NAME rules for now.");
             if ui.button("Load compact Launcher geometry").clicked() { state.css = crate::kit::theme::COMPACT_SESSION_EXAMPLE.into(); }
             if ui.button("Load current style as CSS").clicked() {
                 let theme = crate::kit::theme::Theme { name: themes.name.clone(), colors: themes.colors, skin: themes.skin.clone(), transparent_rgb: themes.transparent_rgb.clone(), ..Default::default() };
@@ -214,7 +230,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
         }
         let heading = match state.notices.len() { 0 => "Theme style sheet".to_string(), 1 => "Theme style sheet (1 notice)".to_string(), n => format!("Theme style sheet ({n} notices)") };
         egui::CollapsingHeader::new(heading).id_salt("theme-style-sheet").show(ui, |ui| {
-            ui.label("The theme's look is its style sheet, theme.css, in the theme's folder: variables, selectors, @media, gradients, shadows, transitions, Flex and Grid. Edit it in any text editor; Suhina reads it again within a second and never writes it. Settings changed here are saved in a variant (variants/NAME.json), and moved controls in layout.css. A built-in theme's sheet is read-only: Duplicate it to change its CSS.");
+            ui.label("The theme's look and layout are its style sheet, theme.css, in the theme's folder: variables, selectors, @media, gradients, shadows, transitions, Flex and Grid. Its name, swatch and description are in theme.json. Edit them in any text editor; Suhina reads them again within a second. Settings changed here are saved in a variant (variants/NAME.json); moved controls are written into theme.css, changing only their own rules. A built-in theme cannot be edited: Duplicate it to change its CSS.");
             ui.label("A theme offers its own settings with @property, for example: @property --glow { syntax: \"<number>\"; initial-value: 0.6; label: \"Glow\"; range: 0 1; }. They appear under Theme settings.");
             if ui.button("Open the themes folder").clicked() { request = Some(ThemeRequest::OpenFolder); }
             if state.notices.is_empty() { ui.label("The sheet reads without notices."); }

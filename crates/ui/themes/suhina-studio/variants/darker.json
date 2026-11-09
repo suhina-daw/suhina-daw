@@ -1,0 +1,13 @@
+{
+  "name": "Darker",
+  "values": {
+    "--ground": "#181818",
+    "--surface": "#1F1F1F",
+    "--ink": "#CCCCCC",
+    "--tint": "#0078D4",
+    "--highlight": "#D29922",
+    "--recording": "#F85149",
+    "--meter-normal": "#2EA043",
+    "--meter-hot": "#D29922"
+  }
+}

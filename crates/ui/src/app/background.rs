@@ -32,6 +32,9 @@ pub(super) struct Background {
     texture: Option<TextureHandle>,
     texture_path: Arc<str>,
     visible: bool,
+    /// The palette this set last, with the palette revision it left: the window's style scope
+    /// rewrites the palette each frame, so comparing with `theme::palette()` would never settle.
+    applied: Option<(crate::kit::theme::Palette, u64)>,
 }
 
 impl Background {
@@ -39,6 +42,16 @@ impl Background {
     pub(super) fn retry_failed(&mut self) {
         if self.worker.is_none() && self.texture.is_none() {
             self.requested = None;
+        }
+    }
+
+    /// Blocks until a load in flight finishes; the next frame takes in its result.
+    pub(super) fn wait(&mut self) {
+        let Some(worker) = self.worker.take() else { return };
+        if let Ok(completed) = worker.recv() {
+            let (send, receive) = mpsc::sync_channel(1);
+            let _ = send.send(completed);
+            self.worker = Some(receive);
         }
     }
 
@@ -67,8 +80,10 @@ impl Background {
             palette.panel_background = palette.panel_background.gamma_multiply(opacity);
             palette.border = palette.border.gamma_multiply(opacity);
         }
-        if (visible || self.visible) && crate::kit::theme::palette() != palette {
+        // Set again only when the palette wanted changes or someone else set one since.
+        if (visible || self.visible) && self.applied != Some((palette, crate::kit::theme::palette_revision())) {
             crate::kit::theme::set_palette(ui.ctx(), palette);
+            self.applied = Some((palette, crate::kit::theme::palette_revision()));
         }
         self.visible = visible;
         result.map(|_| ())

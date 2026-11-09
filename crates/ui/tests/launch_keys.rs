@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Launch keys in the window (`docs/spec/ui-session-view.md` › Launch keys): the mapping mode
-//! maps a key to the picked slot, scene or stop button, and the key then launches it while the
+//! maps a key to the picked slot, scene or stop button with `mapping.add`, and the key then launches it while the
 //! Launcher view is shown, ahead of a shortcut on the same key.
 
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
@@ -40,7 +40,7 @@ fn window() -> (Harness<'static, App>, Renderer) {
 
 fn mappings(harness: &Harness<'static, App>) -> Vec<(MappingSource, MappingTarget)> {
     let session = harness.state().session().unwrap();
-    session.project().launcher.mappings.iter().map(|m| (m.source.clone(), m.target)).collect()
+    session.project().controller_mappings.iter().map(|m| (m.source.clone(), m.target)).collect()
 }
 
 fn status(harness: &Harness<'static, App>) -> String {
@@ -67,6 +67,7 @@ fn the_mapping_mode_maps_a_key_that_then_launches_the_slot() {
     press(&mut harness, Key::Q);
     let slot = MappingTarget::Slot { track: TrackId(1), scene: 0 };
     assert_eq!(mappings(&harness), [(MappingSource::key("Q").unwrap(), slot)]);
+    assert_eq!(status(&harness), "Mapped Q to track 1 scene 1");
 
     // Escape leaves the mode; Q now launches the slot.
     press(&mut harness, Key::Escape);
@@ -116,6 +117,7 @@ fn delete_in_the_mapping_mode_removes_the_keys_of_the_picked_control() {
     assert_eq!(mappings(&harness), [(MappingSource::key("S").unwrap(), MappingTarget::Stop { track: TrackId(1) })]);
     press(&mut harness, Key::Delete);
     assert!(mappings(&harness).is_empty());
+    assert_eq!(status(&harness), "Removed the keys of the stop button of track 1");
 }
 
 #[test]

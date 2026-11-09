@@ -27,6 +27,8 @@ suhina-midi.workspace = true
 suhina-plugins.workspace = true
 suhina-device-registry.workspace = true
 suhina-ui.workspace = true
+# The window's background fills and liquid backdrops (wgpu), shared with suhina-theme-render.
+suhina-ui-gpu.workspace = true
 # The build's endpoints: one instance per build, and agents working on the open projects (ADR 0028).
 suhina-automation.workspace = true
 suhina-update.workspace = true
@@ -46,6 +48,10 @@ window-vibrancy = "0.8"  # MIT OR Apache-2.0
 [target.'cfg(target_os = "macos")'.dependencies]
 # The system's menu bar on macOS (#650): AppKit's NSMenu, with no unsafe code here.
 muda = { version = "0.21", default-features = false }  # MIT OR Apache-2.0
+# The application's appearance, which the system's menus follow; these calls are safe ones.
+objc2 = "0.6"  # MIT
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAppearance", "NSApplication", "NSResponder"] }  # MIT
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }  # MIT
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 # Samples dragged out of the window as files the file manager copies (#865): OLE DoDragDrop

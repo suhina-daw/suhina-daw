@@ -298,7 +298,15 @@ after the bundle without the extension, or else the first non-hidden file in the
 the bundle format lets the executable be named anything). The module's entry is called the
 same way per system, and it is optional: `InitDll`/`ExitDll` on Windows,
 `ModuleEntry`/`ModuleExit` on Linux, `bundleEntry`/`bundleExit` on macOS, all called only
-when the module exports them. The entry matters where modules build the plugin their class
+when the module exports them. On macOS the host makes the plug-in bundle a `CFBundle`
+and passes its handle (`crates/plugin-host/src/vst3/bundle.rs`), released when the module
+is; null stays where there is nothing to give (the plug-in is a bare file, or the path
+will not read as UTF-8, or CoreFoundation will not make the bundle) and on the other
+platforms (where the entry takes nothing or the library handle). A module may keep the
+handle and read it later without a null check, so the null a bundle-less call passed has
+been seen to crash one in its editor's open: Xfer's Serum 2 2.1.5 died on the main
+thread inside its editor's first `createView`, before any callback reached the host
+(#1223). The entry matters where modules build the plugin their class
 information is read from in it, as DPF-built modules (Cardinal, plugdata) do on macOS:
 answering a class query before the entry has run crashes them (a null dereference in the
 module), which a scan would then report as a crash while loading.
@@ -482,7 +490,9 @@ editor's frame and CLAP's `posix-fd-support` give it the descriptors it waits on
 without waiting each turn) and timers; CLAP's `timer-support` serves timers on every system.
 Tested in CI under Xvfb with the VST3 test plug-in, floating and embedded in a window the
 test makes; no real Linux plug-in has been tried yet. macOS: floating editors open (the
-test VST3 through the engine's commands, a real plug-in by hand); Wayland comes later.
+test VST3 through the engine's commands; real ones by hand, among them Xfer's Serum 2
+2.1.5 once its module's `bundleEntry` was handed the bundle's `CFBundle`, which its
+editor's view creation otherwise kept and dereferenced as null, #1223); Wayland comes later.
 
 ## Plug-ins inside device groups
 

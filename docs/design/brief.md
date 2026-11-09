@@ -3,7 +3,7 @@ description: Suhina's visual language: principles, what stays familiar and what 
 read_when: UI design, colours, tokens, typography, theme, accent, track colours, browser design, squint test, reference mockups
 type: spec
 status: draft
-last_verified: 2026-11-02
+last_verified: 2026-11-06
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/settings/themes.rs
@@ -107,38 +107,38 @@ From [research](#sources) and the first design rounds:
 ## Tokens
 
 All colours, spacing, radii, stroke widths and type sizes are named tokens in one theme module.
-Widgets never contain literal colours. The colours below are the built-in theme, Suhina Dark;
+Widgets never contain literal colours. The colours below are the built-in theme, Suhina Studio;
 a theme file can change any of them (see Themes). Current values:
 
-| Token | Suhina Dark | Use |
+| Token | Suhina Studio | Use |
 |---|---|---|
 | `window.background` | `#1D1C1A` | The window behind everything: grid, empty slots, lanes, Settings |
 | `panel.background` | `#252421` | Panels and headers: menu, control and status bars, track headers, beat lines |
-| `panel.hoverBackground` | `#2A2926` | A panel or list row under the pointer |
-| `control.background` | `#2E2D2A` | Fields, buttons and stopped clips |
-| `control.hoverBackground` | `#34332F` | A field, button or clip under the pointer |
-| `control.activeBackground` | `#45433F` | Selected or pressed: a selected clip or track, a dragged field |
-| `control.playingBackground` | `#4A4843` | A playing clip or scene |
-| `control.selectedBackground` | `#C9C4BB` | The chosen option of a switch, a lit toggle, the level of a volume or pan field |
-| `border` | `#383733` | Hairlines between regions and rows |
-| `border.strong` | `#45433F` | Launcher columns and arrangement track lines |
+| `panel.hoverBackground` | `#31302C` | A panel or list row under the pointer |
+| `control.background` | `#343330` | Fields, buttons and stopped clips |
+| `control.hoverBackground` | `#3F3D3A` | A field, button or clip under the pointer |
+| `control.activeBackground` | `#4B4A46` | Selected or pressed: a selected clip or track, a dragged field |
+| `control.playingBackground` | `#545472` | A playing clip or scene |
+| `control.selectedBackground` | `#D0CCC6` | The chosen option of a switch, a lit toggle, the level of a volume or pan field |
+| `border` | `#343330` | Hairlines between regions and rows |
+| `border.strong` | `#484642` | Launcher columns and arrangement track lines |
 | `text.primary` | `#ECE8E1` | Names and values |
-| `text.secondary` | `#9A958C` | Labels and notes |
-| `text.hint` | `#66625B` | Inactive text, hints and section titles |
-| `text.value` | `#C9C4BB` | Clip names and values on fields |
+| `text.secondary` | `#B5B2AC` | Labels and notes |
+| `text.hint` | `#85837E` | Inactive text, hints and section titles |
+| `text.value` | `#DAD6D0` | Clip names and values on fields |
 | `text.inverse` | `#1D1C1A` | Text on lit fills: a switch's chosen option, a lit button |
 | `text.playing` | `#FFFFFF` | The name of a playing clip |
 | `text.onColorLight`, `text.onColorDark` | `#ECE8E1`, `#1D1C1A` | The contrast-selected text on coloured tracks, returns and clips |
-| `browser.text.primary`, `browser.text.secondary`, `browser.text.hint`, `browser.text.value` | `#ECE8E1`, `#9A958C`, `#66625B`, `#C9C4BB` | Independent browser names, labels, hints and values; older themes inherit the corresponding text tokens |
+| `browser.text.primary`, `browser.text.secondary`, `browser.text.hint`, `browser.text.value` | `#ECE8E1`, `#B5B2AC`, `#85837E`, `#DAD6D0` | Independent browser names, labels, hints and values; older themes inherit the corresponding text tokens |
 | `accent` | `#A6A3FF` | The playhead, queued clips, a key being set |
 | `recording` | `#E5484D` | Recording and errors |
-| `recording.background` | `#3A2B2A` | Behind an armed track's arm button and a recording clip |
+| `recording.background` | `#4D2F2B` | Behind an armed track's arm button and a recording clip |
 | `meter.normal` | `#8BC48A` | A level meter below the top |
 | `meter.hot` | `#E3C86A` | A level meter near the top |
-| `slot.empty` | `#4A4743` | The mark in an empty clip slot |
-| `track.mutedBackground` | `#34322F` | The fills of a muted track |
-| `pan.background` | `#232220` | Behind a track header's pan field |
-| `pan.centre` | `#55524C` | The centre mark of a pan field |
+| `slot.empty` | `#484642` | The mark in an empty clip slot |
+| `track.mutedBackground` | `#21201D` | The fills of a muted track |
+| `pan.background` | `#1F1E1C` | Behind a track header's pan field |
+| `pan.centre` | `#817F7A` | The centre mark of a pan field |
 | `track.1`–`track.8` | `#FF9A3C` `#F2D541` `#4FC3F7` `#B38BFF` `#7FDB5A` `#FF6FA8` `#5C8DFF` `#2FD9C4` | Eight colour-picker swatches, also used to resolve legacy uncoloured tracks once on opening. New tracks and clips use the MIDI/audio creation defaults; + picks any colour |
 | `track.5`–`track.8` | `#8FA87A` `#C27C8E` `#7F8FB0` `#B9B2A6` | The other colours of the track colour palette (track menu, colour areas, colour tags' menu) |
 | `kind.kick`, `kind.snare`, `kind.clap`, `kind.closedHat`, `kind.openHat`, `kind.hat`, `kind.rim`, `kind.tom`, `kind.crash`, `kind.ride`, `kind.cymbal`, `kind.percussion`, `kind.bass`, `kind.tonal`, `kind.vocal`, `kind.effect`, `kind.other` | `#D06E5E` `#73AAC0` `#5EC0B0` `#C6AC5E` `#D08F6E` `#D8C47A` `#8CA8E0` `#B074A4` `#E0A0C8` `#C8B8E8` `#A497CC` `#8FC06E` `#A84F4F` `#6EB0D0` `#E8D0A0` `#9CC49C` `#8A8680` | Sample-map points of each kind ([spec](../spec/sample-map.md)) |
@@ -148,12 +148,17 @@ a theme file can change any of them (see Themes). Current values:
 
 ## Themes
 
-A theme is a JSON file in the `themes` folder of Suhina's app-data folder, beside
-`settings.txt`; its file name without `.json` is its id, which `settings.txt` keeps as
-`theme = <id>`. It names the theme and gives colour tokens as `#RRGGBB`:
+A theme is a folder in the `themes` folder of Suhina's app-data folder, beside
+`settings.txt`; the folder's name is its id, which `settings.txt` keeps as `theme = <id>`. It holds
+a `theme.json` that names the theme and gives its swatch, and a `theme.css` that sets its colour
+tokens as `#RRGGBB` custom properties:
 
 ```json
-{ "name": "Night", "colors": { "window.background": "#14161A", "accent": "#7FD1B9" } }
+{ "format": 1, "name": "Night", "swatch": "var(--window-background)" }
+```
+
+```css
+:root { --window-background: #14161A; --accent: #7FD1B9; }
 ```
 
 Text and backgrounds never share a token: text on a lit fill is `text.inverse`, text on a track
@@ -184,7 +189,7 @@ application bar), and Linux keeps the system's.
 A displayed private background image takes precedence over desktop transparency: background
 fills blend over that image. Clearing the image restores the host's transparent fill path.
 
-A token the file leaves out keeps Suhina Dark's colour, so a file needs only the colours it
+A token the file leaves out keeps Suhina Studio's colour, so a file needs only the colours it
 changes; an unknown token or a value that is not `#RRGGBB` or `#RRGGBBAA` is skipped with a warning. Transparent RGB is preserved under canonical token names, including inherited text roles. Files with
 the first token names (`surface.0`, `line`, `text.tertiary` …) still read. Only colours belong to
 a theme: sizes, spacing and type stay the design's. A track's own colour comes from the project; tracks without one take
@@ -194,25 +199,26 @@ existing project colours never follow edits to those defaults. The theme editor
 offers these two defaults; numbered `track.1`–`track.8` remain legacy swatches for file
 compatibility and colour pickers, rather than a list of default track colours.
 
-Forest Amber is an original bundled woodland palette with warm amber accents, saved gradients
-and theme-specific liquid strengths. Its built-in id is `suhina-forest-amber`, leaving existing
-custom `forest-amber` files intact. Background images remain separately chosen local files.
 
-Themes that come with Suhina (`crates/ui/themes/`, read-only; editing one makes a copy):
-Suhina Sheet is an original playful spreadsheet-inspired light theme: green chrome,
-white cells, compact Session geometry and embedded square SVG controls. Its palette,
+Themes that come with Suhina (one folder each in `crates/ui/themes/<id>/`, of `theme.json`,
+`theme.css`, `thumbnail.svg` and artwork, built into the app; read-only, editing one makes a copy):
+Suhina Sheet is an original playful spreadsheet-inspired light theme: chrome in two shades of one
+accent colour (green by default), white cells, compact Session geometry and embedded square SVG
+controls. Its palette,
 CSS and artwork travel together when duplicated or exported.
 Suhina Meadow pairs classic blue/cream paper surfaces with an original generated
 green-hill background and translucent liquid materials. Its SVG controls and PNG are embedded and export with the theme. Suhina Blocks adds original brown plank surfaces, stone-like controls and colour-keyed pixel textures without landscape wallpaper.
-Suhina Dark (the default), Editor Dark (cool greys and blue, like a code editor), Suhina
-Light, High Contrast, and four popular open palettes mapped onto the tokens: Dracula, Nord,
-Catppuccin Mocha and Latte, Solarized Dark (all MIT, licences in `crates/ui/themes/licenses/`).
+Suhina Studio (the default, with Darker, Darkest, Light, Blue and Forest variants), Suhina
+Light, High Contrast, and popular open palettes mapped onto the tokens: Nord, with Polar Night and
+Snow Storm variants, and Catppuccin Mocha and Latte (all MIT, licences in `crates/ui/themes/licenses/`).
 
-Settings › Appearance › Themes picks a theme from preview cards. Edit current theme changes its grouped colours (writing the file); the name
+Settings › Appearance › Themes picks a theme from cards showing each theme's thumbnail (or its
+swatch colour), with a swatch per variant. Edit current theme changes its grouped colours (writing the file); the name
 of a theme file is changed there too, and its file is renamed to match. Duplicate copies the
 theme in use, Reload reads the files again, Open folder shows the themes folder, Back up writes
 every theme file into `exports/suhina-themes-<date>.zip`, and Export template writes
-`exports/suhina-theme-template.zip`: `template.json` (every token written out), `README.md`
+`exports/suhina-theme-template.zip`: a `my-theme/` folder (`theme.json`, and `theme.css` with every
+token written out), `README.md`
 (the format and every token, written so an AI agent can make a theme from it alone) and the
 built-in themes in `examples/`. A theme file or a zip of them (a backup) dropped on the window is
 added; a theme already there is not doubled, and one whose id is taken gets `-2`. A theme file

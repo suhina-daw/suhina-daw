@@ -17,9 +17,9 @@
 //! added); opens the MIDI inputs the settings leave on. On macOS `mac_menu.rs` builds the system's
 //! menu bar from the window's menus (`ui::app::menus`) and keeps it in step every frame; a pick
 //! runs the same item as the window's bar. With the GPU renderer the window is asked to be
-//! transparent; on the first frame `surface.rs` asks the GPU whether the swapchain hands alpha to
+//! transparent; on the first frame `suhina_ui_gpu::surface` asks the GPU whether the swapchain hands alpha to
 //! the compositor (macOS always, DX12 through a DirectComposition visual on Windows, a probe
-//! surface for Vulkan and OpenGL). Where it does, `surface.rs` draws `kit::surface`'s backgrounds
+//! surface for Vulkan and OpenGL). Where it does, it draws `kit::surface`'s backgrounds
 //! with a wgpu pipeline that writes their colour and alpha unblended, and the system blurs what is
 //! behind while the theme has a see-through background (winit's blur on macOS and Wayland, DWM
 //! acrylic through `window-vibrancy` on Windows); on macOS the content runs under the title bar.
@@ -34,14 +34,14 @@
 
 mod crash_log;
 mod data_folder;
-mod liquid;
 #[cfg(target_os = "macos")]
 mod mac_menu;
 mod recent;
 mod save_error;
-mod surface;
 mod theme_files;
 mod theme_io;
+
+use suhina_ui_gpu::{liquid, surface};
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -504,6 +504,7 @@ impl Window {
         #[cfg(target_os = "macos")]
         if let Some(menu) = &mut self.mac_menu {
             menu.sync(&self.app.menus());
+            menu.follow_theme(suhina_ui::kit::theme::is_light());
         }
         self.answer_agents();
         if let Some((path, how)) = self.app.take_open_request() {
@@ -846,6 +847,9 @@ impl Window {
             if let Some(css) = reply.user_css {
                 suhina_ui::kit::native_css::set_user_sheet(css);
                 ctx.request_repaint();
+            }
+            if let Some(names) = reply.reserved {
+                self.app.reserve_theme_ids(names);
             }
             if reply.replace {
                 self.app.set_themes(ctx, reply.entries, reply.folder);
