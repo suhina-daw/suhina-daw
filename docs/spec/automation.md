@@ -321,14 +321,19 @@ its row ([arrangement editing](arrangement-editing.md), #687).
 The lanes are the **top lane** and the **mounted lanes** under it (#1322):
 
 - The top lane is always there while the lanes are open. It shows the parameter being worked
-  on: one chosen in its dropdown, or one moved by hand (below); with neither, the first of the
-  track's volume, pan and mute that is not mounted. When all three are mounted it is an empty
-  row reading "Choose a parameter, or move a control, to show it here", with a dropdown to choose
-  one. Its **+** mounts its parameter: the parameter gets a lane of its own right under the top
-  lane, and the top lane shows the next parameter. Its **×** clears it, leaving the empty row:
-  the top lane never goes. Which parameter it shows is the view's own state.
+  on: one chosen in its dropdown, or one moved by hand (below). Before either, it shows the
+  parameter Settings › Arrangement › Automation › **Top lane shows** names: **Volume** (the
+  default), **Pan** or **None**, unless that parameter is mounted. Without a parameter it is an
+  empty row reading "Choose a parameter, or move a control, to show it here", with a dropdown to
+  choose one. Its circled **+** ("Pin this parameter as a lane of its own below") mounts its
+  parameter: the parameter gets a lane of its own right under the top lane, and the top lane is
+  left empty; it does not go on to another parameter. Its **×** ("Clear the top lane") clears it,
+  leaving the empty row: the top lane never goes. Which parameter it shows is the view's own
+  state.
 - A mounted lane keeps its parameter: its header shows the name, with no dropdown, and a change
-  to that parameter is made in its own lane. Its **×** unmounts it (the lane's points stay).
+  to that parameter is made in its own lane. Its circled **−** ("Hide this lane", or "Hide these
+  N lanes" when it is one of several picked) unmounts it, with the other picked lanes (the
+  lanes' points stay). The buttons' marks are drawn with lines, the same in every font.
 - Which lanes are mounted, in which order, and their groups are part of the project
   (`automation.setLayout`, the project file's `lane_layouts`): each change below is one undo
   step and is saved. A track never laid out mounts the lanes that have points when its lanes are
@@ -350,10 +355,12 @@ Mounted lanes are put in an order of one's own and gathered in groups (#1322):
   A click on a lane or a clip lets go of what is picked. Picking is the view's own state.
 - Dragging a mounted header's free space moves the lane, or all picked lanes when it is one of
   them, in their order; a line across the lanes shows where they land, before the row under the
-  pointer's middle or after the last, under the top lane at least. A lane dropped among a group's
-  lanes joins the group, one dropped outside leaves it. Over a folded group's heading the heading
-  lights up, and the lanes dropped there go into the group, at its end. Dragging the top lane's
-  header mounts its parameter where it lands.
+  pointer's middle or after the last, under the top lane at least. A lane dropped before one of a
+  group's lanes joins the group, and the line then starts further in, under the group's name; one
+  dropped on an open group's heading lands above the heading, outside the group (the group's own
+  first lane too, which so leaves the group); one dropped anywhere else leaves its group. Over a
+  folded group's heading the heading lights up, and the lanes dropped there go into the group, at
+  its end. Dragging the top lane's header mounts its parameter where it lands.
 - **Group lane** or **Group N lanes** in a mounted header's right-click menu gathers the picked
   lanes (or the lane alone) under a heading in the place of the first of them, named "Group 1"
   (the first number free on the track). The heading shows the group's name and how many lanes it
@@ -370,6 +377,8 @@ Mounted lanes are put in an order of one's own and gathered in groups (#1322):
   them: copy, cut, paste, duplicate and delete act on each in one step (`automation.copy`,
   `automation.duplicate` and `automation.deleteRange` with `lanes`; a paste of lanes copied together
   puts each back on its own lane of the track). A lane with no automation in the range is left out.
+  Ctrl+L, or **Loop selection** in the range's right-click menu, loops the range's span, as it
+  does a time selection on the clips' lanes; Ctrl+L again over the same span turns looping off.
 
 A control moved by hand brings its parameter into view when its track's lanes are shown
 (#1205): the track header's volume, pan or mute (Main's too), a knob of a device on the track's
@@ -419,7 +428,8 @@ closed lanes stay closed. The header:
 - **On/Off** (lanes with points): whether the lane plays. A manual change to the parameter turns
   it off (the envelope is drawn in `text.hint` and the header says "Off: set by hand"); a click
   turns it on again (`automation.setEnabled`), or off.
-- **+** shows the next parameter not shown in a new lane; **×** hides this lane.
+- The top lane's circled **+** pins its parameter as a lane of its own and its **×** clears it; a
+  mounted lane's circled **−** hides it (above).
 
 The envelope is drawn in the track's colour through every point, holding before the first and
 after the last, along each segment's curve; steps for mute, on/off and choices. Values are placed

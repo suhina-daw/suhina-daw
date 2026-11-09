@@ -24,6 +24,14 @@ impl App {
             "file.new" => self.open_project_dialog(false),
             // With clips selected in the Arrangement, the loop is exactly their span; with none,
             // Ctrl+L turns looping on or off as before.
+            // A range painted on automation lanes, over one lane or several, loops its span (#1322).
+            "transport.setLoopEnabled"
+                if self.shown == View::Arrangement && self.arrangement.automation.range.is_some() =>
+            {
+                if let Some(range) = &self.arrangement.automation.range {
+                    actions.push(self.loop_or_unloop(range.start, range.end));
+                }
+            }
             // A time selection loops exactly its span; a click on a clip ends it, so then the
             // clips' span is looped (below).
             "transport.setLoopEnabled"

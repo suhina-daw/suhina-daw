@@ -641,14 +641,21 @@ fn mixer(keys: &[&str]) -> Vec<LaneKey> {
     keys.iter().map(|k| LaneKey::mixer(k)).collect()
 }
 
-/// The top lane shows the parameter worked on: by default the first of volume, pan and mute
-/// that is not mounted; a control moved by hand shows there unless its lane is mounted; the top
-/// lane's x leaves it empty, never gone (#1322).
+/// The top lane shows the parameter worked on: before anything is chosen, the one the setting
+/// names (the volume by default) unless it is mounted, never the next free one; a control moved
+/// by hand shows there unless its lane is mounted; the top lane's x leaves it empty, never gone
+/// (#1322).
 #[test]
 fn the_top_lane_shows_the_parameter_worked_on() {
+    let (mut lanes, track, params) = laid_out(Some(Layout::default()));
+    assert_eq!(lanes.active(track, &params), Some(LaneKey::mixer(VOLUME)), "the setting's default");
+    lanes.top_lane = TopLane::Pan;
+    assert_eq!(lanes.active(track, &params), Some(LaneKey::mixer(PAN)));
+    lanes.top_lane = TopLane::None;
+    assert_eq!(lanes.rows(track, &params), [LaneRow::Empty]);
     let (mut lanes, track, params) = laid_out(Some(Layout { lanes: mixer(&[VOLUME]), groups: Vec::new() }));
-    assert_eq!(lanes.active(track, &params), Some(LaneKey::mixer(PAN)), "volume is mounted");
-    assert_eq!(lanes.rows(track, &params), [LaneRow::Lane(LaneKey::mixer(PAN)), LaneRow::Lane(LaneKey::mixer(VOLUME))]);
+    assert_eq!(lanes.active(track, &params), None, "volume is mounted, and the pan is not shown instead");
+    assert_eq!(lanes.rows(track, &params), [LaneRow::Empty, LaneRow::Lane(LaneKey::mixer(VOLUME))]);
     // Moved by hand: the mute shows at the top; the mounted volume stays in its own lane.
     lanes.focus(track, LaneKey::mixer(MUTE), &params);
     assert_eq!(lanes.active(track, &params), Some(LaneKey::mixer(MUTE)));
@@ -677,14 +684,18 @@ fn a_track_never_laid_out_mounts_its_automated_lanes() {
     assert_eq!(lanes.rows(track, &params)[0], LaneRow::Empty);
 }
 
-/// The top lane's plus mounts its parameter right under it, as one command; the top lane then shows
-/// the next default; the top lane's height goes with a parameter chosen in it (#1322).
+/// The top lane's plus mounts its parameter right under it, as one command; the top lane is then
+/// empty, not the next of volume, pan and mute; the top lane's height goes with a parameter
+/// chosen in it (#1322).
 #[test]
 fn the_top_lanes_plus_mounts_it() {
     let (mut lanes, track, params) = laid_out(Some(Layout::default()));
     let action = lanes.mount(track, &LaneKey::mixer(VOLUME), &params);
     assert_eq!(action.id, "automation.setLayout");
     assert_eq!(action.params["lanes"], json!([{ "param": "volume" }]));
+    assert_eq!(lanes.active(track, &params), None, "empty after the plus");
+    lanes.focus(track, LaneKey::mixer(MUTE), &params);
+    assert_eq!(lanes.active(track, &params), Some(LaneKey::mixer(MUTE)), "a control moved shows again");
     lanes.set_active(track, LaneKey::mixer(PAN), &params);
     lanes.set_lane_height(track, &LaneKey::mixer(PAN), 90.0);
     lanes.set_active(track, LaneKey::mixer(MUTE), &params);
@@ -698,17 +709,17 @@ fn the_top_lanes_plus_mounts_it() {
 fn a_layout_moves_groups_and_mounts_lanes() {
     let (v, p, m) = (LaneKey::mixer(VOLUME), LaneKey::mixer(PAN), LaneKey::mixer(MUTE));
     let mut layout = Layout { lanes: vec![v.clone(), p.clone(), m.clone()], groups: Vec::new() };
-    layout.move_lanes(std::slice::from_ref(&m), Some(&v), false, None);
+    layout.move_lanes(std::slice::from_ref(&m), &Place::Before { key: v.clone(), join: false }, false);
     assert_eq!(layout.lanes, [m.clone(), v.clone(), p.clone()]);
     let index = layout.group(&[m.clone(), p.clone()]).unwrap();
     assert_eq!(layout.groups[index].name, "Group 1");
     assert_eq!(layout.lanes, [m.clone(), p.clone(), v.clone()], "kept together at the first");
-    layout.move_lanes(std::slice::from_ref(&v), Some(&p), false, None);
+    layout.move_lanes(std::slice::from_ref(&v), &Place::Before { key: p.clone(), join: true }, false);
     assert!(layout.groups[index].keys.contains(&v));
-    layout.move_lanes(std::slice::from_ref(&v), None, false, None);
+    layout.move_lanes(std::slice::from_ref(&v), &Place::End, false);
     assert!(!layout.groups[index].keys.contains(&v));
     layout.groups[index].folded = true;
-    layout.move_lanes(std::slice::from_ref(&v), None, false, Some(index));
+    layout.move_lanes(std::slice::from_ref(&v), &Place::Into(index), false);
     assert_eq!(layout.groups[index].keys.last(), Some(&v), "dropped into the folded group");
     assert_eq!(layout.group(std::slice::from_ref(&v)).map(|i| layout.groups[i].name.clone()), Some("Group 2".into()));
     layout.ungroup(&[0]);
@@ -727,6 +738,43 @@ fn a_layout_moves_groups_and_mounts_lanes() {
     let mut plain = Layout::default();
     plain.mount(&a, None);
     assert!(plain.groups.is_empty());
+}
+
+/// A lane dropped on a group's heading lands before the group, outside it, even the group's own
+/// first lane; dropped before one of the group's lanes it joins the group (#1322).
+#[test]
+fn a_lane_dropped_on_a_groups_heading_lands_outside_the_group() {
+    let (v, p, m) = (LaneKey::mixer(VOLUME), LaneKey::mixer(PAN), LaneKey::mixer(MUTE));
+    let gain = LaneKey { device: Some(0), param: "7".into() };
+    let group = |keys: Vec<LaneKey>| LaneGroup { name: "Synth".into(), keys, folded: false, device: Some(0) };
+    // Mute, then the group: pan (its first lane) and the plug-in's lane, then volume.
+    let start = Layout {
+        lanes: vec![m.clone(), p.clone(), gain.clone(), v.clone()],
+        groups: vec![group(vec![p.clone(), gain.clone()])],
+    };
+    // The group's own first lane dropped on its heading leaves the group and stays above it.
+    let mut layout = start.clone();
+    layout.move_lanes(std::slice::from_ref(&p), &Place::BeforeGroup(0), false);
+    assert_eq!(layout.lanes, [m.clone(), p.clone(), gain.clone(), v.clone()]);
+    assert_eq!(layout.groups[0].keys, [gain.clone()]);
+    // Another lane dropped on the heading lands above it, outside the group.
+    let mut layout = start.clone();
+    layout.move_lanes(std::slice::from_ref(&v), &Place::BeforeGroup(0), false);
+    assert_eq!(layout.lanes, [m.clone(), v.clone(), p.clone(), gain.clone()]);
+    assert_eq!(layout.groups[0].keys, [p.clone(), gain.clone()]);
+    // Dropped before the group's first lane, under the heading, it joins the group.
+    let mut layout = start.clone();
+    layout.move_lanes(std::slice::from_ref(&m), &Place::Before { key: p.clone(), join: true }, false);
+    assert_eq!(layout.lanes, [m.clone(), p.clone(), gain.clone(), v.clone()]);
+    assert!(layout.groups[0].keys.contains(&m));
+    // A lane dropped where it already is changes nothing.
+    let mut layout = start.clone();
+    layout.move_lanes(std::slice::from_ref(&p), &Place::Before { key: p.clone(), join: true }, false);
+    assert_eq!(layout, start);
+    // The whole group dropped on its own heading stays as it is.
+    let mut layout = start.clone();
+    layout.move_lanes(&[p.clone(), gain.clone()], &Place::BeforeGroup(0), true);
+    assert_eq!(layout, start);
 }
 
 /// Lanes are picked by their headers, groups by their headings; Delete takes the picked out of

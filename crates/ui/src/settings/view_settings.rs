@@ -145,6 +145,9 @@ pub struct ViewSettings {
     /// A lane mounted from a hosted plug-in goes into a group of that plug-in's lanes, named after
     /// it, one group a plug-in (on by default, #1322).
     pub automation_group_plugins: bool,
+    /// What a track's top automation lane shows when its lanes are first opened: none, the
+    /// track's volume (the default) or its pan (#1322).
+    pub automation_top_lane: crate::arrangement::automation_lanes::TopLane,
     /// Audio clips with gain envelope points show their line while not being edited (on by
     /// default).
     pub envelope_show: bool,
@@ -268,6 +271,7 @@ impl Default for ViewSettings {
             double_click_clip: true,
             automation_click_anywhere: false,
             automation_group_plugins: true,
+            automation_top_lane: crate::arrangement::automation_lanes::TopLane::Volume,
             envelope_show: true,
             envelope_ceiling: 6,
             envelope_step: 10,
@@ -322,7 +326,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\nautomation_group = {}\n",
+            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\nautomation_group = {}\nautomation_top_lane = {}\n",
             if self.device_list_vertical { "vertical" } else { "horizontal" },
             self.mixer_height,
             self.strip_fader,
@@ -348,6 +352,11 @@ impl ViewSettings {
             f64::from(self.waveform_zoom) / 100.0,
             if self.automation_click_anywhere { "anywhere" } else { "line" },
             if self.automation_group_plugins { "on" } else { "off" },
+            match self.automation_top_lane {
+                crate::arrangement::automation_lanes::TopLane::None => "none",
+                crate::arrangement::automation_lanes::TopLane::Volume => "volume",
+                crate::arrangement::automation_lanes::TopLane::Pan => "pan",
+            },
         ) + &format!(
             "waveform_colour = {}\nwaveform_custom_colour = {}\naudio_clip_colour_strength = {}\ntrack_header_colour_strength = {}\n",
             self.waveform.mode.name(),
@@ -462,6 +471,15 @@ impl ViewSettings {
             ("double_click_clip", "on" | "off") => self.double_click_clip = value == "on",
             ("automation_click", "anywhere" | "line") => self.automation_click_anywhere = value == "anywhere",
             ("automation_group", "on" | "off") => self.automation_group_plugins = value == "on",
+            ("automation_top_lane", "none") => {
+                self.automation_top_lane = crate::arrangement::automation_lanes::TopLane::None
+            }
+            ("automation_top_lane", "volume") => {
+                self.automation_top_lane = crate::arrangement::automation_lanes::TopLane::Volume
+            }
+            ("automation_top_lane", "pan") => {
+                self.automation_top_lane = crate::arrangement::automation_lanes::TopLane::Pan
+            }
             ("gain_envelope_show", "on" | "off") => self.envelope_show = value == "on",
             ("gain_envelope_ceiling", "3" | "6" | "12" | "24") => self.envelope_ceiling = value.parse().unwrap_or(6),
             ("gain_envelope_step", step) => match step.parse::<f64>() {
@@ -534,6 +552,7 @@ mod tests {
             double_click_clip: false,
             automation_click_anywhere: true,
             automation_group_plugins: false,
+            automation_top_lane: crate::arrangement::automation_lanes::TopLane::Pan,
             envelope_show: false,
             envelope_ceiling: 24,
             envelope_step: 5,

@@ -1520,6 +1520,35 @@
       "workInProgress": false
     },
     {
+      "id": "Arrangement/Automation/automation_top_lane",
+      "page": "Arrangement",
+      "section": "Automation",
+      "name": "Top lane shows",
+      "note": "Choose which parameter a track's top automation lane shows when you open its lanes.",
+      "keys": [
+        "automation_top_lane"
+      ],
+      "sourceFingerprint": "7ff8ac987aa1dd352306878db59b845b727c917443c1da0eb029358364e47dc6",
+      "helpStatus": "reviewed",
+      "description": "When you open a track's automation lanes, the top lane shows the parameter you are working on: one you choose in its dropdown, or one you move by hand (a fader, a knob, a plug-in's own editor). Before you do either, it shows the parameter this setting names, unless that parameter already has a lane of its own (then the top lane starts empty). After you pin the top lane's parameter with its circled + it is left empty, whatever this setting says, until you choose a parameter in it or move a control. The setting changes what tracks show when their lanes are next opened, not lanes that are open now.",
+      "options": [
+        {
+          "name": "None",
+          "description": "The top lane starts empty, with its dropdown to choose a parameter."
+        },
+        {
+          "name": "Volume",
+          "description": "The top lane starts on the track's volume. This is the default."
+        },
+        {
+          "name": "Pan",
+          "description": "The top lane starts on the track's pan."
+        }
+      ],
+      "whenToChange": "Choose None if you mostly automate device or plug-in parameters and would rather start from an empty top lane, or Pan if you draw pan moves more often than volume.",
+      "workInProgress": false
+    },
+    {
       "id": "Arrangement/Gain envelope/gain_envelope_show",
       "page": "Arrangement",
       "section": "Gain envelope",

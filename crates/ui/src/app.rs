@@ -3269,6 +3269,7 @@ impl App {
                             self.arrangement.double_click_does_nothing = !self.settings.view.double_click_clip;
                             self.arrangement.automation.click_anywhere = self.settings.view.automation_click_anywhere;
                             self.arrangement.automation.group_plugins = self.settings.view.automation_group_plugins;
+                            self.arrangement.automation.top_lane = self.settings.view.automation_top_lane;
                             self.arrangement.knobs = self.settings.mixer_controls == MixerControls::Knob;
                             let monitor = session.player().map(|p| p.monitor());
                             // A folded group's row shows the track being worked on, so the folds
