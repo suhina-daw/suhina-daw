@@ -161,7 +161,7 @@ fn the_keys_in_the_scale_are_marked_and_named() {
     let scale = Scale::new(4, ScaleMode::Major).unwrap();
     for (label, _) in &rows {
         let name = label.trim_start_matches("Key ").trim_end_matches(" in scale");
-        let key = (0..=127u8).find(|k| suhina_ui::detail::piano_roll::key_name(*k) == name).unwrap();
+        let key = (0..=127u8).find(|k| suhina_ui::interaction::key_name::key_name(*k) == name).unwrap();
         assert_eq!(label.ends_with(" in scale"), scale.contains(key), "{label}");
     }
     assert!(rows.iter().any(|(l, _)| l.ends_with(" in scale")));
@@ -183,7 +183,7 @@ fn fold_shows_only_the_rows_with_notes_and_a_double_click_adds_on_the_rows_key()
     assert_eq!(h.state().piano_roll().fold, Fold::Notes);
     let rows = key_rows(&h);
     let names: Vec<String> =
-        keys.iter().map(|k| format!("Key {}", suhina_ui::detail::piano_roll::key_name(*k))).collect();
+        keys.iter().map(|k| format!("Key {}", suhina_ui::interaction::key_name::key_name(*k))).collect();
     assert_eq!(rows.iter().map(|(l, _)| l.clone()).collect::<Vec<_>>(), names, "one row per key with notes");
     // Every note is still drawn and found.
     assert_eq!(h.query_all_by_label_contains("Note ").count(), before.len());
@@ -232,7 +232,7 @@ fn fold_to_scale_shows_the_scales_keys_and_the_keys_with_notes() {
     // Every row is a key of C major pentatonic (C D E G A), or a key a note is on.
     for (label, _) in &rows {
         let name = label.trim_start_matches("Key ").trim_end_matches(" in scale");
-        let key = (0..=127u8).find(|k| suhina_ui::detail::piano_roll::key_name(*k) == name).unwrap();
+        let key = (0..=127u8).find(|k| suhina_ui::interaction::key_name::key_name(*k) == name).unwrap();
         assert!(scale.contains(key) || notes.iter().any(|n| n.key == key), "{label}");
     }
     // Rows sit one under the other, a key row apart, with no gaps for the folded keys.

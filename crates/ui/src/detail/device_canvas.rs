@@ -478,7 +478,7 @@ fn sample_waveform(
                 ui.label(format!(
                     "Slice {} · {} (MIDI {key})",
                     selected_index + 1,
-                    crate::detail::piano_roll::key_name(key)
+                    crate::interaction::key_name::key_name(key)
                 ));
             }
             if ui.button("Zoom to selected slice").clicked() {

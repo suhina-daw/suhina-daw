@@ -115,10 +115,10 @@ pub(super) fn clip_properties(
         }
         if let (Some(low), Some(high)) = (selection.low_key, selection.high_key) {
             let one = low == high;
-            let low_name = crate::detail::piano_roll::key_name(low);
+            let low_name = crate::interaction::key_name::key_name(low);
             rows.push((
                 "Pitch",
-                if one { low_name } else { format!("{low_name}–{}", crate::detail::piano_roll::key_name(high)) },
+                if one { low_name } else { format!("{low_name}–{}", crate::interaction::key_name::key_name(high)) },
                 ClipEdit::None,
             ));
         }

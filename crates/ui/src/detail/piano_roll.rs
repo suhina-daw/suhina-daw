@@ -15,11 +15,15 @@ use suhina_engine::model::{Clip, ClipId, LaneData, Note, NoteId, Notes, Project,
 use crate::detail::detail_view::ClipRef;
 use crate::detail::midi_tools::ToolSettings;
 use crate::detail::piano_roll_ghosts::{self as ghost_view, GhostSource, Ghosts};
-use crate::detail::piano_roll_grid::{FIXED_VALUES, GridMode, PianoGrid, Width};
+use crate::detail::piano_roll_grid::PianoGrid;
 use crate::detail::piano_roll_ruler::{self as ruler_view, ClipShape, RulerState};
 use crate::detail::piano_roll_scale::{self as scale_view, Fold, KeyRows};
 use crate::interaction::grid::track_colour;
+use crate::interaction::grid_menu::{grid_entries, grid_key_labels};
+use crate::interaction::key_name::key_name;
+use crate::interaction::scroll::most_scroll_x;
 use crate::interaction::timeline_grid::TimelineGrid;
+use crate::interaction::toolbar::{IconButton, menu_arrow};
 use crate::kit::theme;
 use crate::kit::time_axis::{PIANO_ROLL_BEAT_WIDTHS, clamp_beat_width};
 use crate::kit::widgets::{self, Action};
@@ -41,7 +45,6 @@ mod layout;
 mod span;
 mod state;
 mod toolbar;
-pub(crate) use toolbar::{grid_entries, grid_key_labels, menu_arrow};
 
 pub use self::clip::*;
 #[cfg(test)]
@@ -53,7 +56,6 @@ use self::keys::*;
 pub use self::layout::*;
 use self::span::*;
 pub use self::state::*;
-pub use self::toolbar::IconButton;
 pub(crate) use self::toolbar::*;
 
 pub use gestures::start_by;
@@ -103,14 +105,6 @@ const EPSILON: f64 = 1e-9;
 /// (› Double-click in `docs/spec/ui-clip-editor.md`).
 const DOUBLE_CLICK_TIME: f64 = 0.3;
 const DOUBLE_CLICK_DISTANCE: f32 = 6.0;
-
-const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-
-/// The name of MIDI key `key`, with 60 as C3.
-pub fn key_name(key: u8) -> String {
-    let name = NAMES.get(usize::from(key % 12)).copied().unwrap_or("?");
-    format!("{name}{}", i32::from(key / 12) - 2)
-}
 
 fn is_black(key: u8) -> bool {
     matches!(key % 12, 1 | 3 | 6 | 8 | 10)
@@ -286,7 +280,7 @@ pub fn show(
     // The view goes on past the clip over the ghost notes, so the other picked clips' notes can
     // be reached (#1054).
     let ghosts_end = clip.ghosts.notes.iter().map(|n| n.start + n.length).fold(0.0, f64::max);
-    let most = crate::arrangement::arrangement_view::most_scroll_x(
+    let most = most_scroll_x(
         clip.length.max(ghosts_end) + clip.bar_beats * 4.0,
         state.zoom_reach,
         state.beat_width,
