@@ -23,8 +23,9 @@ impl App {
     }
 
     /// Lays out the browser at the side of `area`, draws it with its handle, and returns what is
-    /// left for the view.
-    pub(super) fn browser_panel(&mut self, ui: &mut Ui, area: Rect, geometry: Option<(Rect, Rect)>) -> Rect {
+    /// left for the view. With `geometry` the theme's layout places it: its rectangle, the view's,
+    /// and whether its width follows the handle (`Workspace::browser_follows`).
+    pub(super) fn browser_panel(&mut self, ui: &mut Ui, area: Rect, geometry: Option<(Rect, Rect, bool)>) -> Rect {
         let _panel_style = crate::kit::style_class::enter_named("workspace-panel", "panel-browser");
         let (low, high) = crate::settings::BROWSER_WIDTHS;
         let widest = (high as f32).min(area.width() * crate::settings::BROWSER_SHARE).max(low as f32);
@@ -34,8 +35,16 @@ impl App {
         // squeezed, and its handle takes hold only once it is all there.
         let part = self.browser_part.clamp(0.0, 1.0);
         let (shown, handle_width) = (width * part, BROWSER_HANDLE * part);
-        let (panel, handle, rest) = if let Some((panel, rest)) = geometry {
-            (panel, Rect::NOTHING, rest)
+        // In a themed layout the panel is where the sheet puts it, which need not be the setting's
+        // side (the native grid has it on the left): its handle drags towards where it is.
+        let left = geometry.map_or(left, |(panel, rest, _)| panel.center().x <= rest.center().x);
+        let (panel, handle, rest) = if let Some((panel, rest, follows)) = geometry {
+            let handle = if follows {
+                crate::kit::native_css::splitter_between(panel, rest, handle_width)
+            } else {
+                Rect::NOTHING
+            };
+            (panel, handle, rest)
         } else if left {
             let panel = Rect::from_min_max(
                 Pos2::new(area.left() + shown - width, area.top()),
@@ -58,7 +67,7 @@ impl App {
             (panel, handle, Rect::from_min_max(area.min, Pos2::new(handle.left(), area.bottom())))
         };
         let default_width = crate::settings::Settings::default().browser_width;
-        let (resized, done) = if part >= 1.0 && geometry.is_none() {
+        let (resized, done) = if part >= 1.0 && handle.is_positive() {
             browser_view::resize_handle(ui, handle, width, left, default_width as f32)
         } else {
             (None, false)

@@ -3,7 +3,7 @@ description: The built-in FM Synth - operators, waveforms and drawn harmonics, D
 read_when: FM synth, fm-synth, operators, algorithms, FM waveforms, harmonics, time envelope, envelope loop, FM filter, spread, modulation matrix, FM panel, randomize, device.randomize, instrument randomizer
 type: spec
 status: current
-last_verified: 2026-11-04
+last_verified: 2026-11-07
 covers:
   - devices/fm-synth/**
 ---
@@ -131,8 +131,8 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
 - Algorithm pictures are computed from the engine's table. An operator heard directly is filled, one
   that modulates is outlined. A card on the Algo page takes the click anywhere on it.
 
-**A theme changes styles only:** palette, `--device-display`, `--device-series-*`,
-`--device-highlight`, `--device-spectrum` and fonts. Layout is fixed.
+**A theme changes styles only:** palette, `--device-display`, `--device-series-1` … `5` (the
+operators' colours) and fonts. Layout is fixed.
 
 The header's Close closes the larger view, and Undo is the app's own (Ctrl+Z).
 

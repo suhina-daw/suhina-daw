@@ -94,8 +94,6 @@ const JOURNAL_FORMAT: &str = "suhina-backups";
 /// The journal is read only up to this size and this many entries.
 const MAX_JOURNAL: u64 = 1024 * 1024;
 const MAX_ENTRIES: usize = 256;
-/// Files a backup folder is looked through for clean-up, at most.
-const MAX_LISTED: usize = 10_000;
 /// Failures kept for the status bar until the window takes them.
 const MAX_NOTICES: usize = 8;
 /// How long `project.autosave` with `now` waits for its backup.
@@ -438,19 +436,10 @@ fn write_backup(job: &Job) -> Result<Backup, String> {
     Ok(Backup { path, written })
 }
 
-/// Deletes all but the newest `keep` backups of the project `name` in `folder`.
+/// Deletes all but the newest `keep` backups of the project `name` in `folder`, looking through at
+/// most [`suhina_fs::MAX_LISTED`] files.
 pub(crate) fn clean_up(folder: &Path, name: &str, keep: usize) {
-    let Ok(listing) = std::fs::read_dir(folder) else { return };
-    let mut ours: Vec<(SystemTime, PathBuf)> = listing
-        .take(MAX_LISTED)
-        .filter_map(Result::ok)
-        .filter(|e| e.file_name().to_str().and_then(project_name_of_file).is_some_and(|n| n == name))
-        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
-        .collect();
-    ours.sort_by(|a, b| b.cmp(a));
-    for (_, path) in ours.into_iter().skip(keep) {
-        let _gone = std::fs::remove_file(path);
-    }
+    suhina_fs::keep_newest(folder, keep, |file| project_name_of_file(file).is_some_and(|n| n == name));
 }
 
 /// The project name in a backup's file name (`Song 2026-10-15 14-05-09 (2).suhina` is

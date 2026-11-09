@@ -188,24 +188,31 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
 
     // The sidebar alone chooses what the list shows (#711). Over the list: Recent's kinds as
     // chips while Recent is chosen and the setting says chips, and the List / Map switch while
-    // Samples is.
+    // the place can hold samples: Library › Samples, a folder, Pinned, Recent (#862).
     let mut y = search.bottom() + 4.0;
     let mut x = area.left() + PAD;
     let small = theme::ui_font(theme::TEXT_SMALL);
     let map = other_results.is_some();
     let recent = matches!(state.place, Some(Place::Recent(_)));
-    let samples = state.place.is_none() && state.category == Category::Samples;
-    let chips: Vec<(String, Chip)> = if recent && settings.view.recent_chips {
+    let samples = state.place.as_ref().map_or(state.category == Category::Samples, Place::holds_samples);
+    let mut chips: Vec<(String, Chip)> = if recent && settings.view.recent_chips {
         std::iter::once(("All".to_string(), Chip::Recent(None)))
             .chain(Group::ALL.into_iter().map(|g| (g.title().to_string(), Chip::Recent(Some(g)))))
             .collect()
-    } else if samples && map {
-        vec![("List".to_string(), Chip::List), (SAMPLE_MAP.to_string(), Chip::Map)]
     } else {
         Vec::new()
     };
+    if samples && map {
+        chips.extend([("List".to_string(), Chip::List), (SAMPLE_MAP.to_string(), Chip::Map)]);
+    }
     let showing_map = state.mode == crate::browser::ResultsMode::Other;
     for (title, chip) in &chips {
+        // The List / Sample map switch starts its own row after Recent's kinds, so it doesn't
+        // read as two more kinds.
+        if matches!(chip, Chip::List) && x > area.left() + PAD {
+            x = area.left() + PAD;
+            y += FILTER + FILTER_GAP;
+        }
         let width = widgets::text_width(ui, title, small.clone()) + FILTER_PAD * 2.0;
         if x + width > area.right() - PAD && x > area.left() + PAD {
             x = area.left() + PAD;
@@ -255,7 +262,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         x = rect.right() + FILTER_GAP;
     }
     // The map belongs to the samples: anywhere else the list shows.
-    if !samples && !recent {
+    if !samples {
         state.mode = crate::browser::ResultsMode::List;
     }
     if chips.is_empty() {
@@ -349,10 +356,10 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
 
 fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, out: &mut BrowserOut) {
     let painter = ui.painter_at(rect);
-    // `.browser-search` (or `.browser .text-input`): its background, border, radius and `color`.
-    let _search_style = crate::kit::style_class::enter_named("text-input", "browser-search");
+    // `.browser-search` (or `browser text-input`): its background, border, radius and `color`.
+    let search_style = crate::kit::element::TEXT_INPUT.id("browser-search").enter();
     paint_row(&painter, rect, theme::window_background());
-    if let Some(style) = crate::kit::style_class::computed().filter(|s| s.border_width > 0.0 && s.border.a() > 0) {
+    if let Some(style) = search_style.style().filter(|s| s.border_width > 0.0 && s.border.a() > 0) {
         painter.rect_stroke(
             rect,
             style.radius,
@@ -816,7 +823,7 @@ fn results_view(
         response
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Browser {}", row.item.name)));
         let selected = state.selected.iter().any(|s| s.key == row.item.key);
-        // `.browser-row`, with `:hover`, `:active` and `:selected`; its `color` is the name's.
+        // `browser-row`, with `:hover`, `:active` and `[selected]`; its `color` is the name's.
         let _row_style = crate::kit::style_class::enter_response("browser-row", &response);
         crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
         let drop_here = dragging_samples
@@ -847,7 +854,7 @@ fn results_view(
                 format!("Preview {}", row.item.name),
             );
             let playing = state.preview_active_for(&row.item.key);
-            // `.browser-play`, `:checked` while it plays, `color` its glyph.
+            // `browser-play`, `[checked]` while it plays, `color` its glyph.
             let _play_style = crate::kit::style_class::enter_named_response("browser-play", "browser-play", &button);
             crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, playing);
             let ink = if button.hovered() { theme::browser_text_primary() } else { theme::browser_text_secondary() };
@@ -913,9 +920,9 @@ fn results_view(
         for (i, name) in item_tags.iter().enumerate() {
             if let Some(tag) = tags.iter().find(|t| t.name == *name) {
                 let center = tag_dot_center(name_end, i, rect.center().y);
-                // `.browser-tag-dot { opacity; border-color }`; its fill stays the tag's colour.
-                let _dot = crate::kit::style_class::enter("browser-tag-dot");
-                let style = crate::kit::style_class::computed();
+                // `browser-tag-dot { opacity; border-color }`; its fill stays the tag's colour.
+                let dot = crate::kit::element::BROWSER_TAG_DOT.enter();
+                let style = dot.style();
                 let fill = tag_color(&tag.color).gamma_multiply(style.as_ref().map_or(1.0, |s| s.opacity));
                 painter.circle_filled(center, DOT / 2.0, fill);
                 if let Some(style) = style.filter(|s| s.border_width > 0.0) {
@@ -1578,9 +1585,9 @@ fn preview_strip(
             Rect::from_min_max(Pos2::new(played_x, wave.top()), wave.max),
         );
         let clipped = |part: Rect| painter.with_clip_rect(part.intersect(painter.clip_rect()));
-        // `.browser-preview-wave { color }` for the part played, `border-color` for the rest.
-        let _wave = crate::kit::style_class::enter("browser-preview-wave");
-        let style = crate::kit::style_class::computed();
+        // `browser-preview-wave { color }` for the part played, `border-color` for the rest.
+        let wave = crate::kit::element::BROWSER_PREVIEW_WAVE.enter();
+        let style = wave.style();
         let played = crate::kit::style_class::foreground(theme::browser_text_secondary());
         let ahead = style.as_ref().filter(|s| s.authored.border).map_or(theme::browser_text_hint(), |s| s.border);
         crate::kit::waveform::paint(&clipped(done), &shape, crate::kit::waveform::Colors::from(played));
@@ -1727,7 +1734,8 @@ fn tag_editor(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut 
             })
             .inner;
         if picked.changed() {
-            let hex = format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
+            let [r, g, b, _] = color.to_srgba_unmultiplied();
+            let hex = format!("#{r:02X}{g:02X}{b:02X}");
             run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
             state.tag_counts = None;
         }
@@ -1935,7 +1943,8 @@ fn footer_view(
             let mut color = tag_color(&tag.color);
             if egui::color_picker::color_edit_button_srgba(ui, &mut color, egui::color_picker::Alpha::Opaque).changed()
             {
-                let hex = format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
+                let [r, g, b, _] = color.to_srgba_unmultiplied();
+                let hex = format!("#{r:02X}{g:02X}{b:02X}");
                 run(projects, "library.setTag", json!({ "name": tag.name, "color": hex }), out);
             }
             if ui.button("Remove tag").clicked() {
@@ -2005,14 +2014,17 @@ pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32
     let response = ui
         .interact(handle, Id::unique("browser-resize"), Sense::click_and_drag())
         .on_hover_cursor(CursorIcon::ResizeHorizontal);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Browser splitter"));
     if response.double_clicked() {
         return (Some(default), true);
     }
-    ui.painter().rect_filled(
-        handle,
-        0.0,
-        if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() },
-    );
+    {
+        // `#browser-splitter` (a `divider`, with `:hover` and `:active`) takes the element's
+        // `background-color`; without one, the border colour, stronger under the pointer.
+        let _style = crate::kit::style_class::enter_named_response("divider", "browser-splitter", &response);
+        let native = if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() };
+        ui.painter().rect_filled(handle, 0.0, crate::kit::style_class::background(native));
+    }
     // The width follows the pointer from where the drag began, so it never falls behind it
     // (adding each frame's movement to the width rounded to whole points would).
     let start_id = Id::unique("browser-resize-start");
@@ -2036,8 +2048,8 @@ fn active(projects: &Projects) -> Option<&suhina_session::Session> {
     projects.active().and_then(|id| projects.get(id))
 }
 
-/// A place or kind in the browser's left column, `.browser-place`: `:hover`, `:active`, and
-/// `:checked` and `:selected` while it is the one shown.
+/// A place or kind in the browser's left column, `browser-place`: `:hover`, `:active`, and
+/// `[checked]` and `[selected]` while it is the one shown.
 fn place_style(response: &egui::Response, chosen: bool) -> crate::kit::style_class::Scope {
     let style = crate::kit::style_class::enter_response("browser-place", response);
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, chosen);

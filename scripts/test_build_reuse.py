@@ -18,10 +18,10 @@ NOW = datetime(2026, 10, 28, 12, tzinfo=timezone.utc)
 
 class FakeApi:
     def __init__(self):
-        self.pr = {"number": 960, "head": {"sha": HEAD, "ref": "feature/panel", "repo": {"full_name": "contributor/repo"}},
+        self.pr = {"number": 960, "head": {"sha": HEAD, "ref": "feature/panel", "repo": {"full_name": "owner/repo"}},
                    "labels": []}
         self.runs = [{"id": 42, "head_sha": HEAD, "head_branch": "feature/panel", "event": "pull_request",
-                      "head_repository": {"full_name": "contributor/repo"}, "actor": {"login": "Maintainer"},
+                      "head_repository": {"full_name": "owner/repo"}, "actor": {"login": "Maintainer"},
                       "created_at": "2026-10-28T11:00:00Z", "status": "completed", "conclusion": "success"}]
         self.jobs = [{"name": f"test build ({p})", "status": "completed", "conclusion": "success"} for p in br.PLATFORMS]
         self.artifacts = [{"name": f"suhina-pr960-{p}", "expired": False, "size_in_bytes": 100,
@@ -118,6 +118,24 @@ class BuildReuse(unittest.TestCase):
             other.source.update(change)
             self.assertEqual(other.find(), {})
         api.proof("2026-10-28T11:30:00Z")
+        self.assertEqual(api.find(), {})
+
+    def test_a_forks_run_needs_a_request_for_its_commit_even_when_a_maintainer_started_it(self):
+        # A fork's run builds the fork's own workflow files: a maintainer adding a label or
+        # updating the branch starts it, but has not read what it builds.
+        for actor in ["Maintainer", "suhina-bot[bot]"]:
+            api = FakeApi()
+            api.pr["head"]["repo"]["full_name"] = "contributor/repo"
+            api.runs[0].update({"head_repository": {"full_name": "contributor/repo"}, "actor": {"login": actor}})
+            self.assertEqual(api.find(), {}, actor)
+            api.proof()
+            self.assertEqual(api.find()["state"], "ready", actor)
+            api.proof("2026-10-28T11:30:00Z")
+            self.assertEqual(api.find(), {}, actor)
+        api = FakeApi()
+        api.pr["head"]["repo"]["full_name"] = "contributor/repo"
+        api.runs[0].update({"head_repository": {"full_name": "contributor/repo"}, "actor": {"login": "outsider"}})
+        api.proof()
         self.assertEqual(api.find(), {})
 
     def test_dispatch_window_coalesces_requests_before_run_is_visible(self):

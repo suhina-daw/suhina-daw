@@ -305,6 +305,37 @@ fn a_take_whose_slot_filled_meanwhile_goes_to_the_next_empty_one() {
 }
 
 #[test]
+fn two_tracks_with_one_name_record_to_two_files() {
+    let dir = std::env::temp_dir().join(format!("suhina-recording-twins-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut p = project();
+    p.tracks.push(track(3, "Mic", InputChannels::Mono(1)));
+    p.channels.push(channel(3));
+    p.launcher.columns.push(LauncherColumn {
+        track: TrackId(3),
+        slots: vec![Slot { clip: None, has_stop: true }, Slot { clip: None, has_stop: true }],
+    });
+    let mut rig = rig(p);
+    rig.session.save(&dir.join("song.suhina"), false).unwrap();
+    rig.run("track.setArm", json!({ "track": 2, "armed": true })).unwrap();
+    rig.run("track.setArm", json!({ "track": 3, "armed": true })).unwrap();
+    rig.run("transport.play", json!({})).unwrap();
+    rig.render_to(BEAT, 0.25);
+    rig.run("transport.record", json!({ "on": true })).unwrap();
+    let state = rig.run("record.state", json!({})).unwrap();
+    let files: Vec<&str> = state["takes"].as_array().unwrap().iter().map(|t| t["file"].as_str().unwrap()).collect();
+    // Both takes were given "Mic bar 1.wav": two writers on one file.
+    assert_eq!(files.len(), 2, "{state}");
+    assert_ne!(files[0], files[1]);
+    assert!(files.iter().any(|f| f.ends_with("Mic bar 1.wav")) && files.iter().any(|f| f.ends_with("Mic bar 1 2.wav")));
+    rig.run("transport.record", json!({ "on": false })).unwrap();
+    rig.render_to(BEAT * 2, 0.25);
+    rig.settle();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn an_audio_take_is_written_to_a_file_and_becomes_a_clip() {
     let dir = std::env::temp_dir().join(format!("suhina-recording-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

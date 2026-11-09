@@ -82,21 +82,16 @@ fn variant(engine: &Engine) -> Option<&Sheet> {
     engine.variant.as_ref().map(|(_, sheet)| sheet.as_ref())
 }
 
+/// `html` and under it `body`, or the `window` element when the window is laid out.
 fn roots(window: bool) -> Vec<Element> {
-    let mut body = Element::new("body", Some(0));
-    if window {
-        body.classes.push("window".into());
-    }
-    vec![Element::new("html", None), body]
+    vec![Element::new("html", None), Element::new(if window { "window" } else { "body" }, Some(0))]
 }
 
-/// A host element: a `div` with one class, an optional id and project object.
-pub(super) fn element(class: &str, id: Option<&str>, object: Option<&str>, parent: Option<usize>) -> Element {
-    let mut element = Element::new("div", parent);
+/// A host element of the registry's `name`, with an optional id and project object.
+pub(super) fn element(name: &str, id: Option<&str>, object: Option<&str>, parent: Option<usize>) -> Element {
+    let mut element = Element::new(name, parent);
     element.id = id.map(str::to_owned);
     element.object = object.map(str::to_owned);
-    element.classes.push(class.into());
-    element.classes.extend(super::super::style_class::families(class, None).iter().map(|f| (*f).to_owned()));
     element.states.push("enabled".into());
     element
 }
@@ -105,19 +100,21 @@ pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
     let paint = engine.native.as_ref()?;
     let mut elements = roots(false);
     for node in &engine.nodes {
-        let mut element = Element::new("div", Some(node.parent.map_or(1, |parent| parent + 2)));
+        let mut element = Element::new(&node.class, Some(node.parent.map_or(1, |parent| parent + 2)));
         element.id = Some(element_id(node));
         element.object = node.name.clone();
-        element.classes.push(node.class.clone());
-        let families = super::super::style_class::families(&node.class, node.name.as_deref());
-        element.classes.extend(families.iter().map(|f| (*f).to_owned()));
         element.variables.clone_from(&node.variables);
+        element.attributes.clone_from(&node.attributes);
         element.states.push(if node.state & 4 != 0 { "disabled" } else { "enabled" }.into());
-        for (bit, state) in
-            [(1, "hover"), (2, "active"), (8, "focus"), (8, "focus-visible")].into_iter().chain(super::HOST_STATES)
-        {
+        for (bit, state) in [(1, "hover"), (2, "active"), (8, "focus"), (8, "focus-visible")] {
             if node.state & bit != 0 {
                 element.states.push(state.into());
+            }
+        }
+        // What the app knows about the element is an attribute: `[checked]`, `[selected]`.
+        for (bit, attribute) in super::HOST_STATES {
+            if node.state & bit != 0 {
+                element.attributes.push((attribute.into(), String::new()));
             }
         }
         elements.push(element);
@@ -331,6 +328,7 @@ pub(super) fn computed(style: &ComputedStyle) -> Computed {
             accent: style.authored(Property::AccentColor),
             border_width: style.authored(Property::BorderWidth),
         },
+        variables: style.shared_variables(),
         gradients: match style.get(Property::BackgroundImage) {
             Value::Gradients(values) => values
                 .iter()

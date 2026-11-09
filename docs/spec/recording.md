@@ -3,7 +3,7 @@ description: How recording works: MIDI and audio takes into a clip slot or the a
 read_when: recording, record, take, record button, clip.record, transport.record, count-in, transport.setCountIn, record.state, MIDI recording, audio recording, Recorded folder, latency compensation of a take, overdub, loopback
 type: spec
 status: current
-last_verified: 2026-11-06
+last_verified: 2026-11-07
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/record_tests.rs
@@ -279,7 +279,8 @@ latency, and on a loop the later passes found nothing of themselves in the file 
 ## Audio files
 
 Audio takes are written to `Recorded/` in the folder of the project file, one WAV file per take,
-named after the track and the bar the take starts at (`Bass bar 5.wav`, then `Bass bar 5 2.wav`),
+named after the track and the bar the take starts at (`Bass bar 5.wav`, then `Bass bar 5 2.wav`;
+two tracks of one name recording at once get one each),
 as 32-bit float at the engine's sample rate, mono for a one-channel input and stereo for a pair.
 Audio recording therefore needs a saved project: `clip.record` and `transport.record` refuse
 with that reason when an armed track would record audio into an unsaved project.

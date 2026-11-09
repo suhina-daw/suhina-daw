@@ -201,7 +201,7 @@ impl Doorbell {
     /// the caller checks the word and the deadline again.
     #[cfg(windows)]
     fn sleep_windows(&self, left: Duration) {
-        use windows_sys::Win32::System::Threading::{SetWaitableTimer, WaitForMultipleObjects, WaitForSingleObject};
+        use windows_sys::Win32::System::Threading::{SetWaitableTimer, WaitForMultipleObjects};
         if let Some(timer) = self.timer
             && let Some(nap) = left.checked_sub(FINE_TAIL)
         {
@@ -216,18 +216,191 @@ impl Doorbell {
                 let backstop = millis_rounded_up(left).saturating_add(1);
                 // SAFETY: `handles` holds two valid handles and outlives the call; it returns
                 // when either is signalled (the event: rung; the timer: the nap is over).
-                unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, backstop) };
-                return;
+                let answer = unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, backstop) };
+                // A failed wait returns at once and would turn every wait into a spin (#1256):
+                // the event's own timeout below waits instead.
+                if answer != windows_sys::Win32::Foundation::WAIT_FAILED {
+                    return;
+                }
+                note_failed_wait();
             }
         }
-        match left.checked_sub(TICK) {
-            Some(nap) => {
-                let millis = u32::try_from(nap.as_millis()).unwrap_or(u32::MAX - 1).min(u32::MAX - 1);
-                // SAFETY: `self.event` is a valid event handle until `drop`.
-                unsafe { WaitForSingleObject(self.event, millis) };
-            }
-            None => std::thread::yield_now(),
+        wait_coarse(&[self.event], left, Duration::MAX);
+    }
+}
+
+/// Waits on `handles` (valid event handles) with their own millisecond timeout: at most `cap`,
+/// and never into the last [`TICK`] before the end of `left`, where it yields instead, since such
+/// a timeout can end up to a tick late. Returns whether Windows took the wait (`false`: it
+/// failed and returned at once).
+#[cfg(windows)]
+fn wait_coarse(handles: &[windows_sys::Win32::Foundation::HANDLE], left: Duration, cap: Duration) -> bool {
+    use windows_sys::Win32::System::Threading::WaitForMultipleObjects;
+    let Some(nap) = left.checked_sub(TICK) else {
+        std::thread::yield_now();
+        return true;
+    };
+    let millis = u32::try_from(nap.min(cap).as_millis()).unwrap_or(u32::MAX - 1).min(u32::MAX - 1);
+    let Ok(count) = u32::try_from(handles.len()) else {
+        return false;
+    };
+    // SAFETY: `handles` holds `count` valid event handles and outlives the call; it returns when
+    // any is signalled or the timeout passes.
+    let answer = unsafe { WaitForMultipleObjects(count, handles.as_ptr(), 0, millis) };
+    answer != windows_sys::Win32::Foundation::WAIT_FAILED
+}
+
+/// Whether a wait on the operating system has failed since the process started, so it waited
+/// on a coarser timeout instead (#1256): for a trace to say so once.
+static WAIT_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn note_failed_wait() {
+    WAIT_FAILED.store(true, Ordering::Relaxed);
+}
+
+/// Whether a wait on the operating system has failed in this process (it then waited on the
+/// event's own, coarser timeout). Real-time safe.
+pub fn a_wait_failed() -> bool {
+    WAIT_FAILED.load(Ordering::Relaxed)
+}
+
+/// What one link waits for: its answer word reaching a value, and the doorbell rung when it
+/// changes. Taken from a link ([`crate::Link::watch`]) to wait for several at once
+/// ([`wait_any`]).
+#[derive(Clone, Copy)]
+pub struct Watch<'a> {
+    word: &'a AtomicU32,
+    value: u32,
+    bell: &'a Doorbell,
+}
+
+impl<'a> Watch<'a> {
+    pub(crate) fn new(word: &'a AtomicU32, value: u32, bell: &'a Doorbell) -> Self {
+        Self { word, value, bell }
+    }
+
+    fn answered(&self) -> bool {
+        self.word.load(Ordering::Acquire) == self.value
+    }
+}
+
+/// The most links one Windows wait takes, besides the timer (`MAXIMUM_WAIT_OBJECTS` less one).
+#[cfg_attr(not(windows), allow(dead_code))]
+const MAX_WAITED: usize = 63;
+
+/// How often a Linux wait over several links looks at all of them again: it sleeps on the first
+/// link's futex, which an answer on another link does not wake, so that answer is seen at most
+/// this late (plus the scheduler's wake-up).
+#[cfg_attr(windows, allow(dead_code))]
+const RECHECK: Duration = Duration::from_micros(100);
+
+/// How often a Windows wait over more links than one wait takes ([`MAX_WAITED`]) looks at all of
+/// them again: the ones left out cannot wake it. A high-resolution timer wakes within about half
+/// a millisecond, so a shorter nap would end up yielding.
+#[cfg_attr(not(windows), allow(dead_code))]
+const RECHECK_OMITTED: Duration = Duration::from_millis(1);
+
+/// Waits until any of `watches` is answered or `until` passes (#1256): the first answered one's
+/// index, or `None` at `until`. It spins briefly first, as [`Doorbell::wait`] does, then sleeps
+/// in the operating system: on Windows on the links' events together (the first
+/// [`MAX_WAITED`]; when there are more, at most [`RECHECK_OMITTED`] at a time, so the others
+/// are looked at that often), with the first one's high-resolution timer, and yielding in the
+/// last [`FINE_TAIL`] (without that timer, or when Windows refuses the wait, as
+/// `sleep_any_windows` says); elsewhere on the first link, as long as [`Doorbell::wait`]
+/// would for one link, and on Linux at most [`RECHECK`] at a time for several (macOS looks at
+/// all of them after each nap anyway). `None` entries are passed over. Never allocates; never waits past
+/// `until`.
+pub fn wait_any(watches: &[Option<Watch>], until: Instant) -> Option<usize> {
+    let answered = || watches.iter().position(|w| w.is_some_and(|w| w.answered()));
+    for _ in 0..SPINS {
+        if let Some(i) = answered() {
+            return Some(i);
         }
+        std::hint::spin_loop();
+    }
+    loop {
+        if let Some(i) = answered() {
+            return Some(i);
+        }
+        let now = Instant::now();
+        if now >= until {
+            return None;
+        }
+        let first = watches.iter().flatten().next()?;
+        #[cfg(windows)]
+        sleep_any_windows(watches, first, until - now);
+        #[cfg(not(windows))]
+        {
+            // The answer may have come since the look above: the futex would sleep on it, and
+            // the ring it had is gone.
+            let value = first.word.load(Ordering::Acquire);
+            if value == first.value {
+                continue;
+            }
+            let left = until - now;
+            let several = watches.iter().flatten().nth(1).is_some();
+            let left = if cfg!(target_os = "linux") && several { left.min(RECHECK) } else { left };
+            first.bell.sleep(first.word, value, left);
+        }
+    }
+}
+
+/// [`wait_any`]'s sleep on Windows: the links' events and `first`'s timer together, as
+/// [`Doorbell::sleep_windows`] waits on one. Over several links every way it sleeps wakes for
+/// any of the first [`MAX_WAITED`] or ends within [`RECHECK_OMITTED`] (without a
+/// high-resolution timer, on the system timer's next tick) so the caller looks at all of them:
+/// without a timer, when it cannot be armed and in the last stretch it waits on the events with
+/// their own timeout, and when Windows refuses a wait on them it waits on the first event alone,
+/// a recheck at a time.
+#[cfg(windows)]
+fn sleep_any_windows(watches: &[Option<Watch>], first: &Watch, left: Duration) {
+    use windows_sys::Win32::Foundation::{HANDLE, WAIT_FAILED};
+    use windows_sys::Win32::System::Threading::{SetWaitableTimer, WaitForMultipleObjects};
+    if watches.iter().flatten().nth(1).is_none() {
+        // One link: as its own wait sleeps.
+        first.bell.sleep_windows(left);
+        return;
+    }
+    // Links past the first `MAX_WAITED` cannot wake the wait: it ends soon to look at them.
+    let omitted = watches.iter().flatten().nth(MAX_WAITED).is_some();
+    let mut handles: [HANDLE; MAX_WAITED + 1] = [std::ptr::null_mut(); MAX_WAITED + 1];
+    let mut events = 0;
+    for watch in watches.iter().flatten().take(MAX_WAITED) {
+        if let Some(slot) = handles.get_mut(events) {
+            *slot = watch.bell.event;
+            events += 1;
+        }
+    }
+    let failed = || {
+        // The same handles would be refused again: the first link's event, a recheck at a time.
+        note_failed_wait();
+        wait_coarse(&[first.bell.event], left, RECHECK_OMITTED);
+    };
+    if let (Some(timer), Some(nap)) = (first.bell.timer, left.checked_sub(FINE_TAIL)) {
+        let nap = if omitted { nap.min(RECHECK_OMITTED) } else { nap };
+        let due = -i64::try_from((nap.as_nanos() / 100).max(1)).unwrap_or(i64::MAX);
+        // SAFETY: `timer` is a valid waitable timer handle while its doorbell lives, which the
+        // watch borrows; `due` is a live `i64`; no completion routine.
+        let armed = unsafe { SetWaitableTimer(timer, &raw const due, 0, None, std::ptr::null(), 0) };
+        if armed != 0
+            && let Some(slot) = handles.get_mut(events)
+        {
+            *slot = timer;
+            let backstop = millis_rounded_up(left).saturating_add(1);
+            // SAFETY: the first `events + 1` handles are valid (the watched links' events and the
+            // timer) and outlive the call; it returns when any is signalled.
+            let answer = unsafe { WaitForMultipleObjects(events as u32 + 1, handles.as_ptr(), 0, backstop) };
+            if answer == WAIT_FAILED {
+                failed();
+            }
+            return;
+        }
+    }
+    // No timer, one that cannot be armed, or the last stretch: the events' own timeout.
+    let cap = if omitted { RECHECK_OMITTED } else { Duration::MAX };
+    if !wait_coarse(handles.get(..events).unwrap_or(&[]), left, cap) {
+        failed();
     }
 }
 
@@ -270,97 +443,5 @@ impl Drop for Doorbell {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A doorbell nobody rings: each wait must time out, never before its deadline.
-    #[test]
-    fn an_unanswered_wait_ends_at_its_deadline() {
-        // How late it ends is for an idle host: shared runners can deschedule this thread for
-        // arbitrarily longer than the audio deadline (`unanswered_wait_precision`).
-        unanswered_wait_lateness("deadline");
-    }
-
-    /// Measures timer precision on an idle host, outside shared-runner CI.
-    #[test]
-    #[ignore = "timing measurement; run on an idle host with --ignored --test-threads=1"]
-    fn unanswered_wait_precision() {
-        let mut late = unanswered_wait_lateness("precision");
-        late.sort();
-        let worst = late.last().copied().unwrap_or_default();
-        let median = late.get(late.len() / 2).copied().unwrap_or_default();
-        if cfg!(any(target_os = "linux", windows)) {
-            assert!(median < Duration::from_millis(1), "median {median:?}, all {late:?}");
-            assert!(worst < Duration::from_millis(40), "worst {worst:?}, all {late:?}");
-        } else {
-            assert!(worst < Duration::from_millis(500), "worst {worst:?}, all {late:?}");
-        }
-    }
-
-    /// Samples the real wait and checks timeout semantics at block-sized deadlines.
-    fn unanswered_wait_lateness(role: &str) -> Vec<Duration> {
-        let name = format!("suhina-ipc-doorbell-test-{}", std::process::id());
-        let bell = Doorbell::create(&name, role).unwrap_or_else(|e| panic!("{e}"));
-        let word = AtomicU32::new(0);
-        let mut late = Vec::new();
-        for n in 0..40u64 {
-            let timeout = Duration::from_micros(1_000 + n * 300);
-            let deadline = Instant::now() + timeout;
-            assert!(!bell.wait(&word, |v| v != 0, deadline));
-            let ended = Instant::now();
-            assert!(ended >= deadline, "ended {:?} early", deadline - ended);
-            late.push(ended - deadline);
-        }
-        late
-    }
-
-    /// A ring wakes a sleeping wait. Its deadline is an hour away, so only the ring can end it
-    /// within the minute it is given here: a wait that sleeps on reads the changed word at its
-    /// deadline and says yes all the same, so the answer alone would not show a ring that failed.
-    #[test]
-    fn a_ring_wakes_the_wait() {
-        let name = format!("suhina-ipc-doorbell-ring-{}", std::process::id());
-        let bell = Doorbell::create(&name, "test").unwrap_or_else(|e| panic!("{e}"));
-        let other = Doorbell::open(&name, "test").unwrap_or_else(|e| panic!("{e}"));
-        let word = std::sync::Arc::new(AtomicU32::new(0));
-        let (sleeping, going_to_sleep) = std::sync::mpsc::channel();
-        let (answer, answered) = std::sync::mpsc::channel();
-        let waiter = {
-            let word = word.clone();
-            std::thread::spawn(move || {
-                let looks = AtomicU32::new(0);
-                let done = |value: u32| {
-                    // The look after the spins is the last one before the wait sleeps.
-                    if looks.fetch_add(1, Ordering::Relaxed) == SPINS {
-                        let _ = sleeping.send(());
-                    }
-                    value == 1
-                };
-                let _ = answer.send(bell.wait(&word, done, Instant::now() + Duration::from_secs(3600)));
-            })
-        };
-        assert!(going_to_sleep.recv().is_ok());
-        word.store(1, Ordering::Release);
-        other.ring(&word);
-        assert_eq!(answered.recv_timeout(Duration::from_secs(60)), Ok(true), "the ring woke nothing");
-        assert!(waiter.join().is_ok());
-    }
-
-    /// The high-resolution timer exists on every Windows the project supports (10 1803 and
-    /// later), so CI checks the fine path rather than the fallback.
-    #[test]
-    fn waits_are_high_resolution() {
-        let name = format!("suhina-ipc-doorbell-hr-{}", std::process::id());
-        let bell = Doorbell::create(&name, "test").unwrap_or_else(|e| panic!("{e}"));
-        assert!(bell.is_high_resolution());
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn milliseconds_round_up_and_stay_short_of_infinite() {
-        assert_eq!(millis_rounded_up(Duration::ZERO), 0);
-        assert_eq!(millis_rounded_up(Duration::from_micros(1)), 1);
-        assert_eq!(millis_rounded_up(Duration::from_millis(10)), 10);
-        assert_eq!(millis_rounded_up(Duration::MAX), u32::MAX - 1);
-    }
-}
+#[path = "doorbell_tests.rs"]
+mod tests;

@@ -13,6 +13,7 @@ use std::fmt;
 mod audio_data;
 pub mod automation;
 mod build;
+mod clip_audio;
 mod comping;
 mod groups;
 mod id_list;
@@ -26,6 +27,10 @@ pub use tempo::{
 };
 
 pub use audio_data::{AudioData, AudioPool};
+pub use clip_audio::{
+    CLIP_GAIN_MAX_DB, CLIP_TEMPO_RANGE, ClipAudio, GAIN_POINT_RANGE, GainPoint, MAX_GAIN_POINTS, TRANSPOSE_RANGE,
+    TempoSource, db_to_gain, envelope_db_at, gain_to_db, max_clip_gain,
+};
 pub use groups::{
     Branch, DeviceGroup, MACROS, MAX_BRANCHES, MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_MACRO_MAPPINGS, Macro,
     MacroMapping, MappedDevice, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups,
@@ -529,7 +534,9 @@ pub struct Note {
     pub muted: bool,
 }
 
-/// An audio file mapped onto musical time.
+/// An audio file a clip plays: only the source. How it is mapped onto musical time, its gain and
+/// its pitch belong to each clip that plays it ([`Clip::audio`], ADR 0001 › Amendment: per-clip
+/// audio).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AudioRegion {
     /// Path relative to the project, as stored in the source file.
@@ -542,16 +549,6 @@ pub struct AudioRegion {
     pub channels: Option<u16>,
     /// Length of the file in seconds, if known.
     pub duration_seconds: Option<f64>,
-    /// When false the audio plays at its original speed and `warp_markers` are kept but unused.
-    pub warped: bool,
-    /// How a warped region keeps its pitch when it plays faster or slower (ADR 0003).
-    pub stretch: StretchMode,
-    /// Empty when the audio plays at its original speed from the content start.
-    pub warp_markers: Vec<WarpMarker>,
-    /// Linear gain; 1.0 is unity.
-    pub gain: f64,
-    /// Pitch shift in semitones (fractions are cents / 100).
-    pub transpose: f64,
     /// Which audio track of a file with several plays: in a Stems file 0 is the master and 1, 2,
     /// and so on the stems. `None` for an ordinary file (its first audio track).
     pub stream: Option<u16>,
@@ -636,6 +633,9 @@ pub struct Clip {
     /// The clip plays through its channel's ARA plug-in, the clip host (ADR 0033 › 2, #990): its
     /// raw audio is edited there, then its gain and fades follow. Arrangement audio clips only.
     pub ara: bool,
+    /// What the clip does with the audio it plays: gain, envelope, transpose, warp. Its own, never
+    /// shared with another clip of the same content; a clip without audio ignores it.
+    pub audio: ClipAudio,
     pub extensions: Extensions,
 }
 

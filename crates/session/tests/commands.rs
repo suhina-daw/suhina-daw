@@ -773,8 +773,8 @@ fn audio_project_built() -> Project {
 fn an_audio_clip_takes_a_gain_and_a_midi_clip_does_not() {
     let mut session = Session::new(audio_project());
     run(&mut session, "clip.setGain", json!({ "track": "Bass", "index": 1, "db": -6 })).unwrap();
-    let LaneData::Audio(region) = &session.project().content(ContentId(9)).unwrap().lanes[0].data else { panic!() };
-    assert!((region.gain - 0.501).abs() < 1e-3);
+    let gain = session.project().arrangement.lanes[0].clips[1].audio.gain;
+    assert!((gain - 0.501).abs() < 1e-3);
     assert!(run(&mut session, "clip.setGain", json!({ "track": "Bass", "index": 0, "db": 0 })).is_err());
     assert!(run(&mut session, "clip.setGain", json!({ "track": "Bass", "index": 1, "db": 30 })).is_err());
 }
@@ -900,8 +900,9 @@ fn slot_project_built() -> Project {
 fn a_launcher_audio_clip_takes_a_gain_by_scene() {
     let mut session = Session::new(slot_project());
     run(&mut session, "clip.setGain", json!({ "track": "Bass", "scene": 0, "db": -6 })).unwrap();
-    let LaneData::Audio(region) = &session.project().content(ContentId(9)).unwrap().lanes[0].data else { panic!() };
-    assert!((region.gain - 0.501).abs() < 1e-3);
+    let column = session.project().launcher.columns.iter().find(|c| c.slots[0].clip.is_some()).unwrap();
+    let gain = column.slots[0].clip.as_ref().unwrap().audio.gain;
+    assert!((gain - 0.501).abs() < 1e-3);
     assert!(run(&mut session, "clip.setGain", json!({ "track": "Bass", "scene": 1, "db": 0 })).is_err(), "notes");
     assert!(run(&mut session, "clip.setGain", json!({ "track": "Bass", "scene": 2, "db": 0 })).is_err(), "empty");
 }
@@ -1150,12 +1151,8 @@ fn launcher_project_built() -> Project {
     let mut channel = p.channels[0].clone();
     (channel.id, channel.name) = (ChannelId(3), "C3".into());
     p.channels.push(channel);
-    if let LaneData::Audio(region) = &mut p.contents[1].lanes[0].data {
-        region.gain = 0.5;
-        region.warped = true;
-        region.stretch = StretchMode::Tonal;
-    }
     let audio = &mut p.arrangement.lanes[0].clips[1];
+    (audio.audio.gain, audio.audio.warped, audio.audio.stretch) = (0.5, true, StretchMode::Tonal);
     (audio.fade_in, audio.fade_out, audio.offset) = (1.0, 0.5, 0.25);
     audio.fade_out_curve = FadeCurve { shape: FadeShape::EqualPower, curve: 0.5 };
     audio.loop_range = Some(LoopRange { start: 0.0, end: 2.0 });
@@ -1374,6 +1371,11 @@ fn an_empty_midi_clip_in_the_arrangement_replaces_what_it_covers_unless_stacked(
     assert_eq!(made["index"], 0);
     let lead = waltz.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(2))).unwrap();
     assert_eq!((lead.clips[0].start, lead.clips[0].length, lead.clips[0].loop_range), (0.0, 3.0, None));
+    // After a change to 7/8 at bar 3 (beat 6), a clip there is one 7/8 bar, 3.5 beats.
+    run(&mut waltz, "timeSignature.add", json!({ "bar": 3, "numerator": 7, "denominator": 8 })).unwrap();
+    run(&mut waltz, "clip.create", json!({ "track": "Lead", "start": 6 })).unwrap();
+    let lead = waltz.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(2))).unwrap();
+    assert_eq!(lead.clips.iter().map(|c| (c.start, c.length)).collect::<Vec<_>>(), [(0.0, 3.0), (6.0, 3.5)]);
 
     let made = run(&mut session, "clip.create", json!({ "track": "Bass", "start": 2, "length": 4 })).unwrap();
     assert_eq!((made["start"].as_f64(), made["index"].as_u64()), (Some(2.0), Some(1)));
@@ -1546,4 +1548,42 @@ fn a_scene_without_an_id_reports_no_id_rather_than_zero() {
     let grid = run(&mut session, "project.launcher", json!({})).unwrap();
     let scene = &grid["scenes"][grid["scenes"].as_array().unwrap().len() - 1];
     assert!(scene["scene_id"].is_null() && scene["id"].is_null(), "{scene}");
+}
+
+/// `track.delete` with `tracks` deletes several tracks as one undo step: one undo brings them all
+/// back in their places, one redo deletes them again (#1188).
+#[test]
+fn several_tracks_delete_as_one_undo_step() {
+    let built = suhina_test_support::with_ids(
+        ProjectBuilder::new()
+            .midi_track(1, "Bass")
+            .midi_track(2, "Lead")
+            .midi_track(3, "Keys")
+            .notes(1, "Riff", 4.0, vec![Note::new(0.0, 1.0, 36, 1.0)])
+            .clip(2, Clip::new(ContentId(1), 0.0, 4.0))
+            .build_without_ids(),
+    );
+    let mut session = Session::new(built.clone());
+    let deleted = run(&mut session, "track.delete", json!({ "tracks": ["Bass", 2] })).unwrap();
+    assert_eq!(deleted["deleted"], json!([1, 2]));
+    assert_eq!(order(&session), ["Keys"]);
+    assert_eq!(session.project().validate(), Ok(()));
+
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &built, "one undo brings both back, Lead's clip too");
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert_eq!(order(&session), ["Keys"], "one redo deletes both again");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+
+    for wrong in [
+        json!({ "track": "Bass", "tracks": ["Lead"] }),
+        json!({}),
+        json!({ "tracks": [] }),
+        json!({ "tracks": "Bass" }),
+        json!({ "tracks": ["Bass", "Nope"] }),
+        json!({ "tracks": [99] }),
+    ] {
+        assert!(run(&mut session, "track.delete", wrong.clone()).is_err(), "{wrong}");
+        assert_eq!(session.project(), &built, "{wrong} changes nothing");
+    }
 }

@@ -18,7 +18,7 @@
 use crate::tempo::TempoClock;
 use std::sync::Arc;
 
-use suhina_model::{AudioRegion, Clip, StretchMode, TempoMap};
+use suhina_model::{Clip, StretchMode, TempoMap};
 use suhina_stretch::Stretch;
 
 use crate::audio::{AudioData, STRETCH_SAMPLE_RATES, seconds_at, warp_markers};
@@ -99,32 +99,22 @@ impl Clock {
 }
 
 /// Works out which part of the file plays when, from the clip's offset, loop and length and the
-/// region's warp markers at `tempo_bpm`. `None` when the clip cannot be stretched (fewer than two
+/// clip's warp markers at `tempo_bpm`. `None` when the clip cannot be stretched (fewer than two
 /// usable warp markers, a speed that is not a finite positive number, or more than `MAX_PIECES`
 /// pieces without a whole loop to repeat).
 #[cfg(test)]
-fn playlist(
-    clip: &Clip,
-    region: &AudioRegion,
-    data: &AudioData,
-    tempo_bpm: f64,
-) -> Option<(Vec<Piece>, f64, Option<Repeat>)> {
+fn playlist(clip: &Clip, data: &AudioData, tempo_bpm: f64) -> Option<(Vec<Piece>, f64, Option<Repeat>)> {
     if !(tempo_bpm.is_finite() && tempo_bpm > 0.0) {
         return None;
     }
     let clock = Clock { tempo: TempoClock::constant(tempo_bpm, 1.0), start: clip.start, sample_rate: 1.0 };
-    playlist_on(clip, region, data, &clock)
+    playlist_on(clip, data, &clock)
 }
 
 /// The playlist on any [`Clock`]: at a constant tempo the pieces are exactly the ones it has
 /// always made; through a tempo map they are also cut at every tempo change and in a ramp.
-fn playlist_on(
-    clip: &Clip,
-    region: &AudioRegion,
-    data: &AudioData,
-    clock: &Clock,
-) -> Option<(Vec<Piece>, f64, Option<Repeat>)> {
-    let markers = warp_markers(region);
+fn playlist_on(clip: &Clip, data: &AudioData, clock: &Clock) -> Option<(Vec<Piece>, f64, Option<Repeat>)> {
+    let markers = warp_markers(&clip.audio);
     if markers.len() < 2 || markers.windows(2).any(|w| matches!(w, [a, b] if b.1 <= a.1)) {
         return None;
     }
@@ -273,20 +263,13 @@ pub(crate) struct StretchVoice {
 impl StretchVoice {
     /// Builds the voice for one clip placement, ready to play from the clip's start. Allocates;
     /// call it off the audio thread.
-    pub(crate) fn new(
-        clip: &Clip,
-        region: &AudioRegion,
-        data: Arc<AudioData>,
-        tempo_bpm: f64,
-        sample_rate: u32,
-    ) -> Option<Self> {
+    pub(crate) fn new(clip: &Clip, data: Arc<AudioData>, tempo_bpm: f64, sample_rate: u32) -> Option<Self> {
         if !(tempo_bpm.is_finite() && tempo_bpm > 0.0) {
             return None;
         }
         let rate = f64::from(sample_rate);
         Self::with_clock(
             clip,
-            region,
             data,
             &Clock { tempo: TempoClock::constant(tempo_bpm, rate), start: clip.start, sample_rate: rate },
             sample_rate,
@@ -296,36 +279,24 @@ impl StretchVoice {
     /// [`StretchVoice::new`] for a clip on an arrangement whose tempo follows `map` (counted in
     /// frames at `sample_rate`): its speed changes at every tempo change and through ramps, so
     /// it stays on the grid. At a constant tempo exactly [`StretchVoice::new`].
-    pub(crate) fn on_map(
-        clip: &Clip,
-        region: &AudioRegion,
-        data: Arc<AudioData>,
-        map: &Arc<TempoMap>,
-        sample_rate: u32,
-    ) -> Option<Self> {
+    pub(crate) fn on_map(clip: &Clip, data: Arc<AudioData>, map: &Arc<TempoMap>, sample_rate: u32) -> Option<Self> {
         if map.is_constant() {
-            return Self::new(clip, region, data, map.start_bpm(), sample_rate);
+            return Self::new(clip, data, map.start_bpm(), sample_rate);
         }
         let clock = Clock { tempo: TempoClock::of(map), start: clip.start, sample_rate: f64::from(sample_rate) };
-        Self::with_clock(clip, region, data, &clock, sample_rate)
+        Self::with_clock(clip, data, &clock, sample_rate)
     }
 
-    fn with_clock(
-        clip: &Clip,
-        region: &AudioRegion,
-        data: Arc<AudioData>,
-        clock: &Clock,
-        sample_rate: u32,
-    ) -> Option<Self> {
+    fn with_clock(clip: &Clip, data: Arc<AudioData>, clock: &Clock, sample_rate: u32) -> Option<Self> {
         let channels = usize::from(data.channels);
         if !(1..=8).contains(&channels) || data.frames() == 0 || !STRETCH_SAMPLE_RATES.contains(&data.sample_rate) {
             return None;
         }
-        if region.stretch == StretchMode::Repitch {
+        if clip.audio.stretch == StretchMode::Repitch {
             return None;
         }
-        let (pieces, max_rate, repeat) = playlist_on(clip, region, &data, clock)?;
-        let pitch = 2f64.powf(region.transpose / 12.0);
+        let (pieces, max_rate, repeat) = playlist_on(clip, &data, clock)?;
+        let pitch = 2f64.powf(clip.audio.transpose / 12.0);
         let pitch = if pitch.is_finite() && pitch > 0.0 { pitch } else { 1.0 };
         // Audio that already plays at its own speed and pitch needs no stretcher: the caller reads
         // it directly.

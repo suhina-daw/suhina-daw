@@ -266,6 +266,10 @@ pub struct ArrangementViewState {
     /// It is drawn there until the project has it, or the frame the button came up showed the
     /// clip as it was before the drag for an instant.
     pub(super) edge_released: Option<((TrackId, ClipId), f64, f64, u8)>,
+    /// The edge of that clip that was let go of when it stretched the audio (Ctrl and Alt): until
+    /// the project has it, the clip is drawn stretched about the other edge, as during the drag.
+    /// Drawn unstretched in its new extent, its waveform flashed at its old scale for a few frames.
+    pub(super) stretch_released: Option<super::EdgeGrab>,
     /// Clips of a selection just moved or trimmed together: each clip, the start and end it
     /// was given, whether it moved (its content with it) and the pass it is drawn there until
     /// at most. It is drawn there until the project has it, so the selection does not show
@@ -362,6 +366,8 @@ pub struct ArrangementViewState {
     /// How much larger audio clips' waveforms are drawn, 1 … 16: the display only, never the
     /// sound or the clip's gain (the slider by the ruler; Ctrl+Alt+Up and Down).
     pub waveform_zoom: f32,
+    /// Edit gain envelope asked for on this clip (Alt+E): switched on the next frame.
+    pub toggle_envelope: Option<suhina_engine::model::ClipId>,
     pub waveform_appearance: crate::settings::view_settings::WaveformAppearance,
     pub audio_colour_strength: u8,
     /// This frame's grid lines, as clips draw them through their bodies: (x, is a bar line).
@@ -441,6 +447,7 @@ impl Default for ArrangementViewState {
             painted_from: None,
             edge_drag: None,
             edge_released: None,
+            stretch_released: None,
             settling: Vec::new(),
             menu_beat: None,
             clip_drag: None,
@@ -481,6 +488,7 @@ impl Default for ArrangementViewState {
             name_bar_moves: true,
             grid_in_clips: true,
             waveform_zoom: 1.0,
+            toggle_envelope: None,
             waveform_appearance: crate::settings::view_settings::WaveformAppearance::default(),
             audio_colour_strength: 82,
             clip_grid: std::sync::Arc::default(),
@@ -545,6 +553,22 @@ impl TimeSelection {
         let row = self.row.filter(|_| all == self.tracks && self.row == row);
         Self { tracks: all, start: self.start.min(start), end: self.end.max(end), row }
     }
+
+    /// Painted in one row of a stack: the ids of that row's clips under it, which the edit keys
+    /// keep to (`clips` of `range.*` and `clip.consolidate`, #701); `None` over whole tracks.
+    pub fn row_clips(&self, timeline: &Timeline) -> Option<Vec<u32>> {
+        self.row_clips_over(timeline, self.start, self.end)
+    }
+
+    /// The clips of the painted row that overlap `from..to`, which `row_clips` takes as the span
+    /// itself: a copy that lands later names the row's clips there too, so it replaces those and
+    /// no other row's (#701).
+    pub fn row_clips_over(&self, timeline: &Timeline, from: f64, to: f64) -> Option<Vec<u32>> {
+        let (row, rows) = self.row?;
+        let lanes = timeline.lanes.iter().filter(|l| self.tracks.contains(&l.track));
+        let clips = lanes.flat_map(|l| &l.clips).filter(|c| c.row == row && c.rows == rows);
+        Some(clips.filter(|c| c.start < to && c.start + c.length > from).map(|c| c.id.0).collect())
+    }
 }
 
 /// A span of beats over some tracks, the selection rectangle's.
@@ -554,7 +578,7 @@ pub struct TimeSelection {
     pub start: f64,
     pub end: f64,
     /// Painted from a clip in one row of a stack, on its track alone: that row (from 0) of how
-    /// many. Consolidate then joins that row's clips only and leaves the other rows be.
+    /// many. The edit keys then act on that row's clips only and leave the other rows be.
     pub row: Option<(usize, usize)>,
 }
 
