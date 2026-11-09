@@ -1080,6 +1080,12 @@ impl Vst3Plugin {
     /// is also set as parameters, since not every plug-in reads one.
     pub(crate) fn set_state(&mut self, data: &[u8], controller_state: Option<&[u8]>) -> Result<(), String> {
         let (data, archive) = crate::ara::unwrap_state(data);
+        // A VST2 program chunk (an `.fxp` file's): a plug-in may answer yes to it and read nothing,
+        // so it is refused here and the caller hears so (#1167). A program of values is set as
+        // parameters below.
+        if let Some(suhina_plugins::vst2::Program::Chunk(_)) = suhina_plugins::vst2::single_program(data) {
+            return Err("a VST3 plug-in does not read a VST2 program chunk (.fxp); give it a bank (.fxb) or its own saved state".into());
+        }
         let stream = ComWrapper::new(MemoryStream::new(data.to_vec()));
         let raw = stream.to_com_ptr::<IBStream>().ok_or("stream")?;
         // SAFETY: a live component reading from a live stream.

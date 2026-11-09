@@ -9,6 +9,8 @@ rust-version.workspace = true
 autotests = false
 
 [dependencies]
+# The other Suhina processes running, for the trace (#1163).
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }  # MIT
 suhina-engine.workspace = true
 suhina-session.workspace = true
 suhina-plugins.workspace = true

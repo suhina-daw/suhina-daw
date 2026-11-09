@@ -422,6 +422,27 @@ pub fn show(
             }
         }
     }
+    // Every press says which modifiers its drag is chosen by, and one outside the grid none, so
+    // a drag never takes an earlier press's (#1048).
+    if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary)) {
+        // The modifiers the press event carries, not those of a later frame (Alt can change in
+        // between), and the press that is the latest of the frame, the one a drag comes from. Where
+        // it was pressed is the event's position too: the pointer may have moved on in the frame.
+        let press = ui.input(|i| {
+            i.events.iter().rev().find_map(|event| match event {
+                egui::Event::PointerButton { button: PointerButton::Primary, pressed: true, modifiers, pos } => {
+                    Some((*modifiers, *pos))
+                }
+                _ => None,
+            })
+        });
+        state.pressed_with = match press {
+            Some((held, pos)) => {
+                (grid_rect.contains(pos) && ui.ctx().layer_id_at(pos) == Some(ui.layer_id())).then_some(held)
+            }
+            None => widgets::pointer_over(ui, grid_rect).map(|_| ui.input(|i| i.modifiers)),
+        };
+    }
     // The audition starts on the press: a note pressed, or the note a press is about to draw, sounds
     // for as long as the button is held (› Playing the keys).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
@@ -443,6 +464,14 @@ pub fn show(
     }
     if response.drag_started_by(PointerButton::Primary) {
         let from = ui.input(|i| i.pointer.press_origin()).or(pointer).unwrap_or(grid_rect.center());
+        // Alt, Ctrl and Shift count as they were when the button went down (› Moving): Alt
+        // pressed between the press and the drag frees the move, it does not change velocity.
+        let inputs = state.pressed_with.take().map_or(inputs, |held| Inputs {
+            shift: held.shift,
+            alt: held.alt,
+            command: held.command || held.ctrl,
+            ..inputs
+        });
         state.stroke.clear();
         state.erasing.clear();
         state.muting.clear();
