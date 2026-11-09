@@ -2109,9 +2109,8 @@ pub(crate) fn show(
 ) {
     let address = at.0.iter().map(usize::to_string).collect::<Vec<_>>().join("-");
     let panel_id = format!("track-{}-device-{address}", track.0);
-    let panel = crate::kit::element::DEVICE_PANEL.id(&panel_id).enter();
     // The panel's own sheet applies inside this scope only, over the application theme.
-    crate::kit::native_css::device_sheet(ui.ctx(), canvas.style.as_deref());
+    let panel = crate::kit::element::DEVICE_PANEL.id(&panel_id).sheet(ui.ctx(), canvas.style.as_deref()).enter();
     let mut styled_ui = panel.ui(ui);
     let ui = &mut *styled_ui;
     // The Sampler's own commands name a device on the track by its index (#600); a device inside

@@ -947,10 +947,13 @@ pub fn value_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString, value
 /// Arrangement alike, so they can differ from the devices' knobs; otherwise every knob shares
 /// `knob.*`.
 pub fn knob_roles() -> (&'static str, &'static str) {
-    [("pan", "pan.knob.body", "pan.knob.pointer"), ("send", "send.knob.body", "send.knob.pointer")]
-        .into_iter()
-        .find(|(class, body, _)| super::style_class::within(class) && super::skin::has_own(body))
-        .map_or(("knob.body", "knob.pointer"), |(_, body, tip)| (body, tip))
+    [
+        (super::element::PAN, "pan.knob.body", "pan.knob.pointer"),
+        (super::element::SEND, "send.knob.body", "send.knob.pointer"),
+    ]
+    .into_iter()
+    .find(|(class, body, _)| super::style_class::within(*class) && super::skin::has_own(body))
+    .map_or(("knob.body", "knob.pointer"), |(_, body, tip)| (body, tip))
 }
 
 pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: Color32, response: Option<&Response>) {

@@ -36,6 +36,17 @@ pub use workspace::{Workspace, splitter_between, workspace};
 const MAX_CONTEXTS: usize = 128;
 const MAX_DEPTH: usize = 16;
 const MAX_NODES: usize = 4096;
+/// Most element identities whose styles are kept, and most ids the app gives elements (`track-3`,
+/// `device-compressor`) kept interned; past either the cache starts again empty.
+const MAX_IDENTITIES: usize = 4096;
+const MAX_IDS: usize = 8192;
+
+/// A computed style: as the style engine gives it, and as painters read it.
+#[derive(Clone)]
+struct Styled {
+    raw: Arc<suhina_style::cascade::ComputedStyle>,
+    computed: Computed,
+}
 
 /// Styles exposed by native painters. Only properties a painter draws are here.
 #[derive(Clone, Debug)]
@@ -237,7 +248,26 @@ struct Engine {
     palette: String,
     size: [u32; 2],
     dark: bool,
-    contexts: HashMap<Vec<String>, Computed>,
+    /// The theme's swatches by colour.
+    swatches: HashMap<String, Computed>,
+    /// Styles worked out in the frame that needs them, by the identity of an element and of every
+    /// element it is in (its chain, [`chain_of`]), as `Resolver::leaf_style` keeps a leaf's.
+    identities: HashMap<u64, Styled>,
+    /// `html` and `body` under it: the parent of the tree's outermost elements.
+    body: Option<Arc<suhina_style::cascade::ComputedStyle>>,
+    /// The ids the app gives elements, interned: a node holds an index.
+    ids: Vec<Arc<str>>,
+    id_index: HashMap<Arc<str>, u32>,
+    /// For each node of this frame: its chain, once its style was looked up (0 before).
+    chains: Vec<u64>,
+    /// For each node of this frame: the style it was painted with, to compare with the full tree's
+    /// at the frame's end.
+    served: Vec<Option<Arc<suhina_style::cascade::ComputedStyle>>>,
+    /// The chain each element key had when the whole tree was last resolved: its resolved style
+    /// still holds while its chain is the same.
+    resolved: HashMap<u64, u64>,
+    /// Whether this frame hit a limit of the tree, which the trace was told of.
+    limited: bool,
     toolbar: Option<(String, Vec<Module>)>,
     workspace: Option<(String, Option<Workspace>)>,
     /// Whether the browser and the detail area follow their splitters, by the window's size and
@@ -248,7 +278,7 @@ struct Engine {
     collecting: bool,
     nodes: Vec<StyleNode>,
     parents: Vec<usize>,
-    occurrences: HashMap<(u64, String), usize>,
+    occurrences: HashMap<(u64, u16), usize>,
     previous: Vec<StyleNode>,
     /// Resolved styles before motion, by element key.
     targets: HashMap<u64, Computed>,
@@ -264,11 +294,12 @@ struct Engine {
     variant: Option<(Arc<str>, Arc<suhina_style::sheet::Sheet>)>,
     /// Parsed device panel sheets by the hash of their text, bounded.
     device_sheets: HashMap<u64, Arc<suhina_style::sheet::Sheet>>,
-    /// Styles served this frame to a scope with no resolved style of its own.
-    approximations: usize,
-    /// Of those, the ones worked out afresh, not found among the contexts; and the theme swatches
-    /// worked out afresh.
-    context_misses: usize,
+    /// Styles asked for this frame by elements the tree had no room for, which get none.
+    unstyled: usize,
+    /// Styles worked out afresh this frame: not found among the identities (and swatches).
+    fresh: usize,
+    /// Whether the frame drawn last asked for another one.
+    asked: bool,
 }
 
 /// What the style engine did in the frame drawn last, for budget tests (`suhina-theme-render`):
@@ -277,13 +308,15 @@ struct Engine {
 pub struct Budget {
     /// Style nodes the frame entered.
     pub nodes: usize,
-    /// Distinct scope stacks kept with an approximate style.
-    pub contexts: usize,
-    /// Styles served to a scope whose node had no style resolved from the previous frame, so it
-    /// painted with an approximation from its class names.
-    pub approximations: usize,
-    /// Of those, the ones worked out afresh this frame; and the theme swatches worked out afresh.
-    pub context_misses: usize,
+    /// Element identities whose styles are kept.
+    pub identities: usize,
+    /// Styles asked for by elements past the tree's limits, which got none.
+    pub unstyled: usize,
+    /// Styles worked out afresh in the frame (and theme swatches).
+    pub fresh: usize,
+    /// Whether the style engine asked for another frame: a style it painted differed from the
+    /// whole tree's, or something moves.
+    pub asked: bool,
 }
 
 /// The counts of the frame drawn last; read them after the frame, before the next begins.
@@ -292,9 +325,10 @@ pub fn budget() -> Budget {
         let engine = engine.borrow();
         Budget {
             nodes: engine.nodes.len(),
-            contexts: engine.contexts.len(),
-            approximations: engine.approximations,
-            context_misses: engine.context_misses,
+            identities: engine.identities.len(),
+            unstyled: engine.unstyled,
+            fresh: engine.fresh,
+            asked: engine.asked,
         }
     })
 }
@@ -303,8 +337,9 @@ pub fn budget() -> Budget {
 struct StyleNode {
     key: u64,
     parent: Option<usize>,
-    class: String,
-    name: Option<String>,
+    element: super::element::Name,
+    /// The id the app gave it, interned in [`Engine::ids`].
+    id: Option<u32>,
     /// Pointer states (hover 1, active 2, disabled 4, focus 8) and the host's ([`mark`]).
     state: u16,
     /// Custom properties the host gives the element ([`set_variable`]).
@@ -332,10 +367,11 @@ pub fn set_user_sheet(source: Option<Arc<str>>) {
     USER_SHEET.with(|sheet| *sheet.borrow_mut() = source);
 }
 
-/// Gives the device panel scope just entered its own style sheet: it applies only inside that
+/// Gives the device panel element at `node` its own style sheet: it applies only inside that
 /// panel, above the application theme and below `user.css`. Unchanged text is parsed once; a
-/// sheet that does not parse is ignored and the panel keeps the theme.
-pub fn device_sheet(ctx: &egui::Context, source: Option<&str>) {
+/// sheet that does not parse is ignored and the panel keeps the theme. Given before the panel's
+/// style is looked up ([`super::element::Builder::sheet`]).
+pub(super) fn device_sheet(node: Option<usize>, ctx: &egui::Context, source: Option<&str>) {
     let Some(source) = source.filter(|s| !s.trim().is_empty() && s.len() <= 64 * 1024) else { return };
     if !DEVICE_WANTED.with(|wanted| wanted.replace(true)) && !ENGINE.with(|engine| engine.borrow().collecting) {
         // The engine was idle: start it on the next frame.
@@ -356,7 +392,7 @@ pub fn device_sheet(ctx: &egui::Context, source: Option<&str>) {
             }
             engine.device_sheets.insert(key, Arc::new(sheet));
         }
-        if let Some(node) = engine.parents.last().copied().and_then(|at| engine.nodes.get_mut(at)) {
+        if let Some(node) = node.and_then(|at| engine.nodes.get_mut(at)) {
             node.sheet = key;
         }
     });
@@ -367,6 +403,7 @@ pub struct Frame(egui::Context, f64);
 impl Drop for Frame {
     fn drop(&mut self) {
         let (changed, animating) = suhina_plugins::trace::timed("native CSS tree", || finish_tree(self.1));
+        ENGINE.with(|engine| engine.borrow_mut().asked = changed || animating);
         if animating {
             self.0.request_repaint_after(std::time::Duration::from_millis(16));
         } else if changed {
@@ -393,36 +430,45 @@ pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
         engine.nodes.clear();
         engine.parents.clear();
         engine.occurrences.clear();
-        engine.approximations = 0;
-        engine.context_misses = 0;
+        engine.chains.clear();
+        engine.served.clear();
+        engine.unstyled = 0;
+        engine.fresh = 0;
+        engine.limited = false;
     });
     Frame(ui.ctx().clone(), ui.input(|input| input.time))
 }
 
 /// Register an actual native scope. Named project roles retain identity when reordered. Returns
 /// the node's index in this frame's tree, or `None` when the engine is not collecting it.
-pub(super) fn enter(class: &str, name: Option<&str>, response: Option<&egui::Response>) -> Option<usize> {
+pub(super) fn enter(
+    element: super::element::Name,
+    name: Option<&str>,
+    response: Option<&egui::Response>,
+) -> Option<usize> {
     ENGINE.with(|engine| {
         let mut engine = engine.borrow_mut();
-        if !engine.collecting || engine.nodes.len() >= MAX_NODES || engine.parents.len() >= MAX_DEPTH {
+        if !engine.collecting {
             return None;
         }
-        if !suhina_theme_package::elements::is_element(class) {
+        if engine.nodes.len() >= MAX_NODES || engine.parents.len() >= MAX_DEPTH {
+            limit(&mut engine, "the style tree is full (4096 elements, 16 deep): the rest draw without styles");
             return None;
         }
         let name = name.filter(|name| {
             name.len() <= 96 && name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
         });
+        let id = name.and_then(|name| intern(&mut engine, name));
         let parent = engine.parents.last().copied();
         let parent_key = parent.and_then(|p| engine.nodes.get(p)).map_or(0, |n| n.key);
-        let occurrence = engine.occurrences.entry((parent_key, class.into())).or_default();
+        let occurrence = engine.occurrences.entry((parent_key, element.index())).or_default();
         let index = *occurrence;
         *occurrence += 1;
         let mut hash = std::hash::DefaultHasher::new();
-        (parent_key, class, name).hash(&mut hash);
+        (parent_key, element.index(), id).hash(&mut hash);
         if let Some(response) = response {
             response.id.hash(&mut hash);
-        } else if name.is_none() {
+        } else if id.is_none() {
             index.hash(&mut hash);
         }
         let key = hash.finish();
@@ -432,21 +478,40 @@ pub(super) fn enter(class: &str, name: Option<&str>, response: Option<&egui::Res
                 | u16::from(!r.enabled()) << 2
                 | u16::from(r.has_focus()) << 3
         });
-        let node = StyleNode {
-            key,
-            parent,
-            class: class.into(),
-            name: name.map(str::to_owned),
-            state,
-            variables: Vec::new(),
-            attributes: Vec::new(),
-            sheet: 0,
-        };
+        let node =
+            StyleNode { key, parent, element, id, state, variables: Vec::new(), attributes: Vec::new(), sheet: 0 };
         let index = engine.nodes.len();
         engine.nodes.push(node);
+        engine.chains.push(0);
+        engine.served.push(None);
         engine.parents.push(index);
         Some(index)
     })
+}
+
+/// `name` as an index into [`Engine::ids`].
+fn intern(engine: &mut Engine, name: &str) -> Option<u32> {
+    if let Some(id) = engine.id_index.get(name) {
+        return Some(*id);
+    }
+    if engine.ids.len() >= MAX_IDS {
+        // The keys of the elements change with the ids; their styles are worked out again.
+        limit(engine, "the style engine's ids are full: they start again");
+        engine.ids.clear();
+        engine.id_index.clear();
+    }
+    let id = u32::try_from(engine.ids.len()).ok()?;
+    let name: Arc<str> = Arc::from(name);
+    engine.ids.push(Arc::clone(&name));
+    engine.id_index.insert(name, id);
+    Some(id)
+}
+
+/// Tells the trace, once a frame, that the engine hit one of its limits.
+fn limit(engine: &mut Engine, what: &str) {
+    if !std::mem::replace(&mut engine.limited, true) {
+        suhina_plugins::trace::line(format_args!("native CSS: {what}"));
+    }
 }
 
 /// A state of a control or a track that only the host knows, for selectors such as `[checked]`.
@@ -503,7 +568,7 @@ pub fn hex(color: Color32) -> String {
 }
 
 /// Marks the element of this frame's tree at `node` with `state`, so the sheet's `[checked]` and
-/// the others match it from the next frame.
+/// the others match it: given before its style is looked up, in this frame.
 pub(super) fn mark_node(node: usize, state: HostState) {
     ENGINE.with(|engine| {
         if let Some(node) = engine.borrow_mut().nodes.get_mut(node) {
@@ -514,7 +579,15 @@ pub(super) fn mark_node(node: usize, state: HostState) {
 
 /// The name the app gave the element of this frame's tree at `node` (`play` for `#control-play`).
 pub(super) fn node_name(node: usize) -> Option<String> {
-    ENGINE.with(|engine| engine.borrow().nodes.get(node).and_then(|node| node.name.clone()))
+    ENGINE.with(|engine| {
+        let engine = engine.borrow();
+        engine
+            .nodes
+            .get(node)
+            .and_then(|node| node.id)
+            .and_then(|id| engine.ids.get(id as usize))
+            .map(|id| id.to_string())
+    })
 }
 
 /// Gives the element of this frame's tree at `node` the pointer states `bits` (hover 1, active 2,
@@ -553,9 +626,14 @@ pub fn leave() {
 
 /// The id a theme selects a scope by: the registry's ids keep the name the app gave
 /// (`#control-play`, `#device-compressor`); others get one derived from their key.
-fn element_id(node: &StyleNode) -> String {
-    suhina_theme_package::elements::element_id(&node.class, node.name.as_deref())
+fn element_id(engine: &Engine, node: &StyleNode) -> String {
+    suhina_theme_package::elements::element_id(node.element.name(), name_of(engine, node))
         .unwrap_or_else(|| format!("node-{}", node.key))
+}
+
+/// The id the app gave `node`.
+fn name_of<'a>(engine: &'a Engine, node: &StyleNode) -> Option<&'a str> {
+    node.id.and_then(|id| engine.ids.get(id as usize)).map(|id| id.as_ref())
 }
 
 /// Applies running transitions and keyframe animations to `target` at time `now`; returns
@@ -646,6 +724,7 @@ fn finish_tree(now: f64) -> (bool, bool) {
         {
             return (false, false);
         }
+        let mut stale = false;
         if changed || engine.styles_changed || engine.targets.is_empty() {
             let Some(resolved) = suhina_plugins::trace::timed("style paint resolve", || native::retained(&engine))
             else {
@@ -664,10 +743,25 @@ fn finish_tree(now: f64) -> (bool, bool) {
                 }
             }
             engine.motions.retain(|key, _| targets.contains_key(key));
+            // What the frame painted from its own chains, against the whole tree's: they differ only
+            // where siblings (`+`, `~`, `:nth-child`) or a hover reaching an ancestor matter, which
+            // the next frame paints.
+            stale = engine.nodes.iter().zip(&engine.served).any(|(node, served)| {
+                served.as_ref().is_some_and(|served| {
+                    targets
+                        .get(&node.key)
+                        .is_some_and(|target| !Arc::ptr_eq(&target.resolved, served) && *target.resolved != **served)
+                })
+            });
+            let Engine { nodes, chains, resolved, .. } = &mut *engine;
+            resolved.clear();
+            for (node, chain) in nodes.iter().zip(chains.iter()).filter(|(_, chain)| **chain != 0) {
+                resolved.insert(node.key, *chain);
+            }
             engine.targets = targets;
             engine.previous = engine.nodes.clone();
         }
-        let styles_changed = std::mem::take(&mut engine.styles_changed);
+        std::mem::take(&mut engine.styles_changed);
         let mut moving = false;
         let mut values = HashMap::with_capacity(engine.targets.len());
         let motion_enabled = engine.motion;
@@ -688,8 +782,9 @@ fn finish_tree(now: f64) -> (bool, bool) {
         }
         engine.values = values;
         // Publish the final sample too: once motion stops, the preceding frame still
-        // painted its penultimate values.
-        (changed || styles_changed || moving || moving_before, moving)
+        // painted its penultimate values. A changed tree whose styles the frame worked out itself
+        // needs no other frame (#1273).
+        (stale || moving || moving_before, moving)
     })
 }
 
@@ -735,10 +830,7 @@ pub fn begin_frame(ui: &egui::Ui) {
             engine.variant = variant
                 .and_then(|text| Some((Arc::clone(&text), Arc::new(suhina_style::sheet::Sheet::parse(&text).ok()?))));
             engine.styles_changed = true;
-            engine.contexts.clear();
-            engine.toolbar = None;
-            engine.workspace = None;
-            engine.workspace_follows = None;
+            engine.reset_styles();
         }
         if engine.user.as_ref().map(|(text, _)| text) != user.as_ref() {
             // A user sheet that does not parse keeps the last working one.
@@ -751,10 +843,7 @@ pub fn begin_frame(ui: &egui::Ui) {
                 None => engine.user = None,
             }
             engine.styles_changed = true;
-            engine.contexts.clear();
-            engine.toolbar = None;
-            engine.workspace = None;
-            engine.workspace_follows = None;
+            engine.reset_styles();
         }
         if engine.source != source {
             let native = suhina_plugins::trace::timed("style paint parse", || {
@@ -797,10 +886,7 @@ pub fn begin_frame(ui: &egui::Ui) {
             engine.size = size;
             engine.dark = dark;
             engine.styles_changed = true;
-            engine.contexts.clear();
-            engine.toolbar = None;
-            engine.workspace = None;
-            engine.workspace_follows = None;
+            engine.reset_styles();
         }
     });
 }
@@ -815,66 +901,131 @@ fn same_source(engine: Option<&Arc<str>>) -> bool {
     }
 }
 
+impl Engine {
+    /// Forgets every style worked out, after the sheets, the palette or the window's size changed.
+    fn reset_styles(&mut self) {
+        self.identities.clear();
+        self.swatches.clear();
+        self.body = None;
+        self.resolved.clear();
+        self.toolbar = None;
+        self.workspace = None;
+        self.workspace_follows = None;
+    }
+}
+
 /// The style a stack of elements named from the root gives the innermost, for tests.
 #[cfg(test)]
 pub(super) fn scoped(stack: &[String]) -> Option<Computed> {
-    scoped_at(None, stack)
+    ENGINE.with(|engine| {
+        let engine = engine.borrow();
+        engine.source.as_ref()?;
+        native::scoped(&engine, stack)
+    })
 }
 
-/// The style of the element at `node` in this frame's tree, whose names from the root are
-/// `stack`: the one resolved for it, else an approximation from the names alone. Without a
-/// node (the engine did not collect it) it is never another element's style.
-pub(super) fn scoped_at(node: Option<usize>, stack: &[String]) -> Option<Computed> {
-    if stack.is_empty()
-        || stack.len() > MAX_DEPTH
-        || stack.iter().any(|s| !suhina_theme_package::elements::is_element(s))
-    {
-        return None;
-    }
+/// The style of the element at `node` in this frame's tree, worked out now if this frame has not
+/// yet (its own: never an enclosing element's). `None` without a sheet, or for an element the tree
+/// had no room for.
+pub(super) fn style_of(node: Option<usize>) -> Option<Computed> {
     ENGINE.with(|engine| {
         let mut engine = engine.borrow_mut();
         engine.source.as_ref()?;
         if !same_source(engine.source.as_ref()) {
             return None;
         }
-        if let Some(values) = node.and_then(|at| engine.nodes.get(at)).and_then(|node| engine.values.get(&node.key)) {
-            return Some(values.clone());
-        }
-        // Only a style served is counted: not a lookup that finds none.
-        if let Some(values) = engine.contexts.get(stack).cloned() {
-            engine.approximations += 1;
-            return Some(values);
-        }
-        if engine.contexts.len() >= MAX_CONTEXTS {
+        let Some(node) = node else {
+            if engine.collecting {
+                engine.unstyled += 1;
+            }
             return None;
-        }
-        let values = native::scoped(&engine, stack)?;
-        engine.approximations += 1;
-        engine.context_misses += 1;
-        engine.contexts.insert(stack.to_vec(), values.clone());
-        Some(values)
+        };
+        style_at(&mut engine, node).map(|styled| styled.computed)
     })
+}
+
+/// The identity of `node` and of every element it is in: what its style depends on, apart from
+/// its siblings. Its parent's style is looked up first, if it was not yet.
+fn chain_of(engine: &mut Engine, at: usize) -> Option<u64> {
+    if let Some(chain) = engine.chains.get(at).copied().filter(|chain| *chain != 0) {
+        return Some(chain);
+    }
+    let node = engine.nodes.get(at)?;
+    let parent = node.parent;
+    let (parent_chain, parent_sheet) = match parent {
+        Some(parent) => (chain_of(engine, parent)?, engine.nodes.get(parent).map_or(0, |p| p.sheet)),
+        None => (0, 0),
+    };
+    let node = engine.nodes.get(at)?;
+    let mut hash = std::hash::DefaultHasher::new();
+    (parent_chain, parent_sheet, node.element.index(), name_of(engine, node), node.state, node.sheet).hash(&mut hash);
+    node.attributes.hash(&mut hash);
+    node.variables.hash(&mut hash);
+    let chain = hash.finish().max(1);
+    *engine.chains.get_mut(at)? = chain;
+    Some(chain)
+}
+
+/// The style of `node`, and what it was painted with recorded: the whole tree's as last resolved
+/// when its chain is the same as then (that one knows its siblings and its transitions), else
+/// the one worked out for its chain now.
+fn style_at(engine: &mut Engine, at: usize) -> Option<Styled> {
+    let chain = chain_of(engine, at)?;
+    let key = engine.nodes.get(at)?.key;
+    let resolved = engine.resolved.get(&key) == Some(&chain);
+    let previous =
+        engine.values.get(&key).map(|values| Styled { raw: Arc::clone(&values.resolved), computed: values.clone() });
+    let styled = match previous.clone().filter(|_| resolved) {
+        Some(styled) => styled,
+        None => {
+            let fresh = match engine.identities.get(&chain) {
+                Some(styled) => styled.clone(),
+                None => {
+                    let styled = native::fresh(engine, at)?;
+                    engine.fresh += 1;
+                    if engine.identities.len() >= MAX_IDENTITIES {
+                        limit(engine, "the style engine's identities are full: they start again");
+                        engine.identities.clear();
+                    }
+                    engine.identities.insert(chain, styled.clone());
+                    styled
+                }
+            };
+            // An element with transitions keeps its painted values for now: the end of the frame
+            // starts the transition from them.
+            match previous {
+                Some(previous) if engine.motion && !fresh.computed.transitions.is_empty() => previous,
+                _ => fresh,
+            }
+        }
+    };
+    if let Some(served) = engine.served.get_mut(at) {
+        *served = Some(Arc::clone(&styled.raw));
+    }
+    Some(styled)
 }
 
 /// A theme's swatch of `color`, drawn as the theme in use styles a `theme-swatch` element with
 /// that `color` attribute (`docs/spec/theme-skins.md` › Swatches); `None` without a theme sheet.
 pub fn theme_swatch(color: Color32) -> Option<Computed> {
-    let key = vec!["theme-swatch".to_owned(), hex(color)];
+    let key = ["theme-swatch".to_owned(), hex(color)];
     ENGINE.with(|engine| {
         let mut engine = engine.borrow_mut();
         engine.source.as_ref()?;
         if !same_source(engine.source.as_ref()) {
             return None;
         }
-        if let Some(values) = engine.contexts.get(&key) {
+        if let Some(values) = engine.swatches.get(&key[1]) {
             return Some(values.clone());
         }
         let values = native::theme_swatch(&engine, &key[1])?;
-        engine.context_misses += 1;
+        engine.fresh += 1;
         // Past the cache's limit a swatch is worked out each time, so that every swatch in a
         // gallery is styled alike.
-        if engine.contexts.len() < MAX_CONTEXTS {
-            engine.contexts.insert(key, values.clone());
+        if engine.swatches.len() < MAX_CONTEXTS {
+            engine.swatches.insert(key[1].clone(), values.clone());
+        } else {
+            limit(&mut engine, "the theme swatches are full: the rest are worked out each time");
         }
         Some(values)
     })

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The native style engine's adapter: sheets in, `Computed` paint values and rectangles out.
-use super::{Authored, Computed, Engine, element_id, shadows, text};
+use super::{Authored, Computed, Engine, StyleNode, Styled, element_id, name_of, shadows, text};
 use egui::{Color32, Rect, Vec2};
 use std::sync::Arc;
 use suhina_style::{
@@ -47,6 +47,17 @@ impl Paint {
         devices: &[(&Sheet, usize)],
         user: Option<&Sheet>,
     ) -> Option<Vec<ComputedStyle>> {
+        cascade::compute(tree, viewport, &self.applied(extra, variant, devices, user)).ok()
+    }
+
+    /// The sheets of [`Paint::styles`], in their order.
+    fn applied<'s>(
+        &'s self,
+        extra: Option<&'s Sheet>,
+        variant: Option<&'s Sheet>,
+        devices: &[(&'s Sheet, usize)],
+        user: Option<&'s Sheet>,
+    ) -> Vec<AppliedSheet<'s>> {
         let mut sheets = vec![AppliedSheet { sheet: &self.defaults, layer: Layer::Default, root: None }];
         if let Some(extra) = extra {
             sheets.push(AppliedSheet { sheet: extra, layer: Layer::Default, root: None });
@@ -61,7 +72,7 @@ impl Paint {
         if let Some(user) = user {
             sheets.push(AppliedSheet { sheet: user, layer: Layer::User, root: None });
         }
-        cascade::compute(tree, viewport, &sheets).ok()
+        sheets
     }
 }
 
@@ -97,28 +108,75 @@ pub(super) fn element(name: &str, id: Option<&str>, object: Option<&str>, parent
     element
 }
 
+/// The style tree's element for `node`, under the element at `parent`.
+fn element_of(engine: &Engine, node: &StyleNode, parent: usize) -> Element {
+    let mut element = Element::new(node.element.name(), Some(parent));
+    element.id = Some(element_id(engine, node));
+    element.object = name_of(engine, node).map(str::to_owned);
+    element.variables.clone_from(&node.variables);
+    element.attributes.clone_from(&node.attributes);
+    element.states.push(if node.state & 4 != 0 { "disabled" } else { "enabled" }.into());
+    for (bit, state) in [(1, "hover"), (2, "active"), (8, "focus"), (8, "focus-visible")] {
+        if node.state & bit != 0 {
+            element.states.push(state.into());
+        }
+    }
+    // What the app knows about the element is an attribute: `[checked]`, `[selected]`.
+    for (bit, attribute) in super::HOST_STATES {
+        if node.state & bit != 0 {
+            element.attributes.push((attribute.into(), String::new()));
+        }
+    }
+    element
+}
+
+/// The style of the element at `at` in this frame's tree, worked out from its parent's and the
+/// elements it is in, without its siblings: as `Resolver::leaf_style` styles a leaf.
+pub(super) fn fresh(engine: &mut Engine, at: usize) -> Option<Styled> {
+    let mut chain = vec![at];
+    while let Some(parent) = chain.last().and_then(|&node| engine.nodes.get(node)).and_then(|node| node.parent) {
+        chain.push(parent);
+    }
+    chain.reverse();
+    let parent = match chain.len().checked_sub(2).and_then(|p| chain.get(p)) {
+        Some(&parent) => engine.served.get(parent).cloned().flatten()?,
+        None => body(engine)?,
+    };
+    let mut elements = roots(false);
+    let mut devices = Vec::new();
+    for (index, &node) in chain.iter().enumerate() {
+        let node = engine.nodes.get(node)?;
+        elements.push(element_of(engine, node, index + 1));
+        if let Some(sheet) = (node.sheet != 0).then(|| engine.device_sheets.get(&node.sheet)).flatten() {
+            devices.push((sheet.as_ref(), index + 2));
+        }
+    }
+    let tree = Tree::new(elements).ok()?;
+    let paint = engine.native.as_ref()?;
+    let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
+    let sheets = paint.applied(None, variant(engine), &devices, user);
+    let raw = Arc::new(cascade::last_style(&tree, Some(&parent), viewport(engine), &sheets).ok()?);
+    Some(Styled { computed: computed_from(Arc::clone(&raw)), raw })
+}
+
+/// `html` and `body` under it, the parent of the tree's outermost elements, worked out once.
+fn body(engine: &mut Engine) -> Option<Arc<ComputedStyle>> {
+    if let Some(body) = &engine.body {
+        return Some(Arc::clone(body));
+    }
+    let tree = Tree::new(roots(false)).ok()?;
+    let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
+    let paint = engine.native.as_ref()?;
+    let body = Arc::new(paint.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.pop()?);
+    engine.body = Some(Arc::clone(&body));
+    Some(body)
+}
+
 pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
     let paint = engine.native.as_ref()?;
     let mut elements = roots(false);
     for node in &engine.nodes {
-        let mut element = Element::new(&node.class, Some(node.parent.map_or(1, |parent| parent + 2)));
-        element.id = Some(element_id(node));
-        element.object = node.name.clone();
-        element.variables.clone_from(&node.variables);
-        element.attributes.clone_from(&node.attributes);
-        element.states.push(if node.state & 4 != 0 { "disabled" } else { "enabled" }.into());
-        for (bit, state) in [(1, "hover"), (2, "active"), (8, "focus"), (8, "focus-visible")] {
-            if node.state & bit != 0 {
-                element.states.push(state.into());
-            }
-        }
-        // What the app knows about the element is an attribute: `[checked]`, `[selected]`.
-        for (bit, attribute) in super::HOST_STATES {
-            if node.state & bit != 0 {
-                element.attributes.push((attribute.into(), String::new()));
-            }
-        }
-        elements.push(element);
+        elements.push(element_of(engine, node, node.parent.map_or(1, |parent| parent + 2)));
     }
     // CSS :hover applies to the ancestors of the pointer target as well.
     for (index, node) in engine.nodes.iter().enumerate().rev() {
@@ -147,6 +205,7 @@ pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
     Some(engine.nodes.iter().zip(values.iter().skip(2)).map(|(node, value)| (node.key, computed(value))).collect())
 }
 
+#[cfg(test)]
 pub(super) fn scoped(engine: &Engine, stack: &[String]) -> Option<Computed> {
     let mut elements = roots(false);
     for (index, class) in stack.iter().enumerate() {
@@ -278,6 +337,12 @@ pub(super) fn layout(engine: &Engine, elements: Vec<Element>, defaults: &str, si
 }
 
 pub(super) fn computed(style: &ComputedStyle) -> Computed {
+    computed_from(Arc::new(style.clone()))
+}
+
+/// [`computed`], keeping `style` itself.
+fn computed_from(resolved: Arc<ComputedStyle>) -> Computed {
+    let style = resolved.as_ref();
     let color = |property| match style.get(property) {
         Value::Color(Color::Rgba([r, g, b, a])) => Color32::from_rgba_unmultiplied(r, g, b, a),
         _ => Color32::TRANSPARENT,
@@ -375,6 +440,6 @@ pub(super) fn computed(style: &ComputedStyle) -> Computed {
             _ => Vec::new().into(),
         },
         animations: style.animations().to_vec().into(),
-        resolved: Arc::new(style.clone()),
+        resolved: Arc::clone(&resolved),
     }
 }

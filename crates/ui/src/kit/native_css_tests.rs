@@ -130,8 +130,8 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
         StyleNode {
             key: 1,
             parent: None,
-            class: "toolbar".into(),
-            name: None,
+            element: crate::kit::element::TOOLBAR,
+            id: None,
             state: 0,
             variables: Vec::new(),
             attributes: Vec::new(),
@@ -140,8 +140,8 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
         StyleNode {
             key: 2,
             parent: Some(0),
-            class: "button".into(),
-            name: Some("play".into()),
+            element: crate::kit::element::BUTTON,
+            id: None,
             state: 0,
             variables: Vec::new(),
             attributes: Vec::new(),
@@ -150,11 +150,12 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
     ];
     prepare("toolbar { color:#112233; } toolbar:hover { color:#445566; } #control-play { box-shadow:0 1px; }", 800.0);
     ENGINE.with(|engine| engine.borrow_mut().nodes = nodes.clone());
-    assert_eq!(finish_tree(0.0), (true, false));
+    // Nothing was painted from a style of its own, so no other frame is needed.
+    assert_eq!(finish_tree(0.0), (false, false));
     ENGINE.with(|engine| assert_eq!(engine.borrow().values[&2].color, Color32::from_rgb(0x11, 0x22, 0x33)));
     assert_eq!(finish_tree(0.1), (false, false), "unchanged scopes must use the retained result");
     ENGINE.with(|engine| engine.borrow_mut().nodes[1].state = 1);
-    assert_eq!(finish_tree(0.2), (true, false));
+    assert_eq!(finish_tree(0.2), (false, false));
     ENGINE.with(|engine| {
         let engine = engine.borrow();
         assert_eq!(engine.values[&2].color, Color32::from_rgb(0x44, 0x55, 0x66));
@@ -166,7 +167,7 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
     ] {
         prepare(source, 800.0);
         ENGINE.with(|engine| engine.borrow_mut().nodes = nodes.clone());
-        assert_eq!(finish_tree(0.3), (true, false));
+        assert_eq!(finish_tree(0.3), (false, false));
         ENGINE.with(|engine| {
             let engine = engine.borrow();
             assert_eq!(engine.values[&2].color, Color32::from_rgb(0xab, 0xcd, 0xef), "{source}");
@@ -189,10 +190,8 @@ fn device_controls(theme: &str, device: &str, user: Option<&str>) -> (Computed, 
             let _window = test_el("window").enter();
             let mut found = Vec::new();
             for panel in ["track-1-device-0", "track-1-device-1"] {
-                let _panel = test_el("device-panel").id(panel).enter();
-                if panel.ends_with('0') {
-                    device_sheet(ui.ctx(), Some(device));
-                }
+                let sheet = panel.ends_with('0').then_some(device);
+                let _panel = test_el("device-panel").id(panel).sheet(ui.ctx(), sheet).enter();
                 let control = test_el("device-control").id("cutoff").enter();
                 found.push(control.style().unwrap());
             }
@@ -368,9 +367,9 @@ fn palette_and_resize_restyle_retained_tree_and_preserve_author_colours() {
         .clear();
         ENGINE.with(|engine| {
             let engine = engine.borrow();
-            let button = engine.nodes.iter().find(|node| node.class == "button").unwrap();
+            let button = engine.nodes.iter().find(|node| node.element.name() == "button").unwrap();
             assert_eq!(engine.values[&button.key].background, palette.text_primary);
-            let browser = engine.nodes.iter().find(|node| node.class == "browser").unwrap();
+            let browser = engine.nodes.iter().find(|node| node.element.name() == "browser").unwrap();
             let expected =
                 if width > 600.0 { Color32::from_rgb(0x12, 0x34, 0x56) } else { Color32::from_rgb(0x65, 0x43, 0x21) };
             assert_eq!(engine.values[&browser.key].color, expected);
@@ -424,7 +423,7 @@ fn unreferenced_palette_edits_keep_computed_contexts_but_variables_invalidate() 
     palette.grid_major = Color32::from_rgba_unmultiplied(120, 120, 120, 90);
     theme::local_palette(palette);
     prepare("browser { color: var(--accent); background-color: white; }", 800.0);
-    ENGINE.with(|engine| assert_eq!(engine.borrow().contexts.len(), 1, "unrelated opacity cleared style cache"));
+    ENGINE.with(|engine| assert!(!engine.borrow().styles_changed, "unrelated opacity cleared style cache"));
     assert_eq!(scoped(&stack).unwrap().color, original.color);
     palette.accent = Color32::from_rgb(10, 30, 70);
     theme::local_palette(palette);
@@ -647,7 +646,7 @@ fn keyframes_advance_with_the_clock_and_the_motion_setting_suppresses_them() {
             .clear();
             colors.push(ENGINE.with(|engine| {
                 let engine = engine.borrow();
-                let key = engine.nodes.iter().find(|n| n.class == "browser").unwrap().key;
+                let key = engine.nodes.iter().find(|n| n.element.name() == "browser").unwrap().key;
                 engine.values[&key].color
             }));
         }
@@ -686,7 +685,7 @@ fn native_state_change_starts_a_transition() {
         .clear();
         colors.push(ENGINE.with(|engine| {
             let engine = engine.borrow();
-            let key = engine.nodes.iter().find(|n| n.class == "button").unwrap().key;
+            let key = engine.nodes.iter().find(|n| n.element.name() == "button").unwrap().key;
             engine.values[&key].background
         }));
     }
@@ -746,7 +745,7 @@ fn keyframe_only_properties_are_applied_without_a_static_declaration() {
     }
     ENGINE.with(|engine| {
         let engine = engine.borrow();
-        let key = engine.nodes.iter().find(|n| n.class == "browser").unwrap().key;
+        let key = engine.nodes.iter().find(|n| n.element.name() == "browser").unwrap().key;
         assert!(engine.values[&key].authored.color);
         assert_eq!(engine.values[&key].color, Color32::BLUE);
     });
@@ -825,19 +824,20 @@ fn dragging_a_splitter_lays_the_workspace_out_once_a_frame() {
 }
 #[test]
 fn unrelated_css_preserves_native_colours_font_sizes_and_corner_defaults() {
-    prepare("browser { color:rgb(10 20 30); }", 800.0);
     let original = theme::palette();
-    {
-        let mixer = test_el("mixer").enter();
-        assert_eq!(theme::palette(), original);
-        assert_eq!(mixer.font_size_or(9.0), 9.0);
-        assert_eq!(mixer.radius_or(4.0), 4.0);
-    }
-    {
-        let _browser = test_el("browser").enter();
-        assert_eq!(theme::text_primary(), Color32::from_rgb(10, 20, 30));
-    }
-    skin::configure(&skin::Skin::default());
+    let mut seen = None;
+    painted("browser { color:rgb(10 20 30); }", |_| {
+        let mixer = {
+            let mixer = test_el("mixer").enter();
+            (theme::palette() == original, mixer.font_size_or(9.0), mixer.radius_or(4.0))
+        };
+        let browser = {
+            let _browser = test_el("browser").enter();
+            theme::text_primary()
+        };
+        seen = Some((mixer, browser));
+    });
+    assert_eq!(seen, Some(((true, 9.0, 4.0), Color32::from_rgb(10, 20, 30))));
 }
 
 /// Runs `paint` inside the window for a few frames with `css`, so element ids resolve, and

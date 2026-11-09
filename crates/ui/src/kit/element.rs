@@ -74,13 +74,27 @@ pub struct Boxed {
     pub radius: f32,
 }
 
-/// An element of the registry, by name.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Name(&'static str);
+/// An element of the registry, by name and by its index in the registry (an interned id: the
+/// style stack and tree compare and hash it, not the name).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Name(&'static str, u16);
 
 impl Name {
     pub const fn name(self) -> &'static str {
         self.0
+    }
+    /// The element's index in the registry, [`ALL`]'s too.
+    pub const fn index(self) -> u16 {
+        self.1
+    }
+    /// Whether the element is a region or a container: its background lies behind its controls.
+    pub fn is_surface(self) -> bool {
+        static SURFACES: std::sync::OnceLock<Vec<bool>> = std::sync::OnceLock::new();
+        SURFACES
+            .get_or_init(|| ALL.iter().map(|name| suhina_theme_package::elements::is_surface(name.0)).collect())
+            .get(usize::from(self.1))
+            .copied()
+            .unwrap_or(false)
     }
     fn builder<'a>(self) -> Builder<'a> {
         Builder {
@@ -90,6 +104,7 @@ impl Name {
             states: 0,
             pointer: 0,
             color: None,
+            sheet: None,
             native: Native::default(),
             variables: Vec::new(),
         }
@@ -139,6 +154,8 @@ pub struct Builder<'a> {
     states: u8,
     /// Pointer states given without a response: hover 1, active 2, disabled 4.
     pointer: u16,
+    /// A device panel's own sheet, and the context to wake when the engine was idle.
+    sheet: Option<(egui::Context, &'a str)>,
     color: Option<Color32>,
     native: Native,
     variables: Vec<(&'static str, String)>,
@@ -169,6 +186,12 @@ impl<'a> Builder<'a> {
         self.pointer = u16::from(hovered) | u16::from(pressed) << 1 | u16::from(disabled) << 2;
         self
     }
+    /// A device panel's own style sheet (`source`), which applies inside the panel only, over the
+    /// application's theme ([`super::native_css`]).
+    pub fn sheet(mut self, ctx: &egui::Context, source: Option<&'a str>) -> Self {
+        self.sheet = source.map(|source| (ctx.clone(), source));
+        self
+    }
     /// The element's own colour, given to the sheet as `[color="#rrggbb"]` (or `#rrggbbaa`).
     pub fn color(mut self, color: Color32) -> Self {
         self.color = Some(color);
@@ -187,8 +210,9 @@ impl<'a> Builder<'a> {
 
     /// Puts the element in the style tree and the palette scope until the value is dropped.
     pub fn enter(self) -> Entered {
-        let Self { name, id, response, states, pointer, color, native, variables } = self;
-        let scope = super::style_class::enter_inner(name.0, id, response, |node| {
+        let Self { name, id, response, states, pointer, color, native, variables, sheet } = self;
+        let sheet_wake = sheet.clone();
+        let scope = super::style_class::enter_inner(name, id, response, |node| {
             super::native_css::mark_node_bits(node, pointer);
             for (attr, state) in STATES {
                 if states & (1 << attr as u8) != 0 {
@@ -201,7 +225,16 @@ impl<'a> Builder<'a> {
             for (variable, value) in variables {
                 super::native_css::set_variable(node, variable, value);
             }
+            if let Some((ctx, source)) = sheet {
+                super::native_css::device_sheet(Some(node), &ctx, Some(source));
+            }
         });
+        // A sheet asked for while the engine is idle starts it on the next frame.
+        if scope.node.is_none()
+            && let Some((ctx, source)) = sheet_wake
+        {
+            super::native_css::device_sheet(None, &ctx, Some(source));
+        }
         Entered { scope, native, name }
     }
 
@@ -310,7 +343,7 @@ impl Entered {
 
     /// Whether the element is a region or a container: its background lies behind its controls.
     pub fn is_surface(&self) -> bool {
-        suhina_theme_package::elements::is_surface(self.name.0)
+        self.name.is_surface()
     }
 
     /// The id the app gave the element (`play`, `device-compressor`), when it gave one.
@@ -326,7 +359,8 @@ impl Entered {
 
 /// The registry's element named `name`, for code that has a name at run time.
 pub fn named(name: &str) -> Option<Name> {
-    ALL.iter().copied().find(|element| element.0 == name)
+    static BY_NAME: std::sync::OnceLock<std::collections::HashMap<&'static str, Name>> = std::sync::OnceLock::new();
+    BY_NAME.get_or_init(|| ALL.iter().map(|name| (name.0, *name)).collect()).get(name).copied()
 }
 
 /// The registry's element named `name`, for tests that name elements as strings.
@@ -337,9 +371,13 @@ pub(crate) fn test_el(name: &str) -> Name {
 
 macro_rules! names {
     ($($constant:ident = $name:literal;)*) => {
+        /// The elements' indices, in the registry's order.
+        #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+        #[repr(u16)]
+        enum Index { $($constant,)* }
         $(
             #[doc = concat!("The `", $name, "` element.")]
-            pub const $constant: Name = Name($name);
+            pub const $constant: Name = Name($name, Index::$constant as u16);
         )*
         /// Every element, as the registry lists them.
         pub const ALL: &[Name] = &[$($constant,)*];

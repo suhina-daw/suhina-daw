@@ -178,7 +178,7 @@ mod tests {
                 .clear();
                 samples.push(super::super::ENGINE.with(|engine| {
                     let engine = engine.borrow();
-                    let key = engine.nodes.iter().find(|node| node.class == "browser").unwrap().key;
+                    let key = engine.nodes.iter().find(|node| node.element.name() == "browser").unwrap().key;
                     engine.values[&key].text_shadows[0].clone()
                 }));
             }

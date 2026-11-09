@@ -5,7 +5,10 @@
 use super::theme;
 use std::cell::RefCell;
 
-thread_local! {static STACK: RefCell<Vec<String>> = const {RefCell::new(Vec::new())};}
+thread_local! {
+    /// The elements in scope, outermost first: interned ids, so entering one allocates nothing.
+    static STACK: RefCell<Vec<super::element::Name>> = const { RefCell::new(Vec::new()) };
+}
 
 pub struct Scope {
     palette: theme::Palette,
@@ -14,8 +17,6 @@ pub struct Scope {
     inherited: Option<super::native_css::Computed>,
     /// The element's node in this frame's style tree, when the engine collected it.
     pub(super) node: Option<usize>,
-    /// How many elements are in scope with this one, itself included.
-    pub(super) depth: usize,
 }
 
 thread_local! {
@@ -39,10 +40,7 @@ pub(super) fn with_inherited<R>(paint: impl FnOnce(Option<&super::native_css::Co
 impl Scope {
     /// This element's own style: the one resolved for its node, never an enclosing element's.
     pub(super) fn style(&self) -> Option<super::native_css::Computed> {
-        STACK.with(|stack| {
-            let stack = stack.borrow();
-            stack.get(..self.depth).and_then(|names| super::native_css::scoped_at(self.node, names))
-        })
+        super::native_css::style_of(self.node)
     }
 }
 impl Drop for Scope {
@@ -63,7 +61,7 @@ impl Drop for Scope {
 /// Puts the element `class` in the style tree and the palette scope. `prepare` gives its node what
 /// the app knows about it (its attributes, its variables) before its style is looked up.
 pub(super) fn enter_inner(
-    class: &str,
+    class: super::element::Name,
     name: Option<&str>,
     response: Option<&egui::Response>,
     prepare: impl FnOnce(usize),
@@ -73,17 +71,12 @@ pub(super) fn enter_inner(
         prepare(node);
     }
     let saved = theme::palette();
-    let depth = STACK.with(|s| {
-        let mut stack = s.borrow_mut();
-        stack.push(class.into());
-        stack.len()
-    });
+    STACK.with(|s| s.borrow_mut().push(class));
     let mut palette = saved;
-    let own =
-        STACK.with(|stack| stack.borrow().get(..depth).and_then(|names| super::native_css::scoped_at(node, names)));
+    let own = super::native_css::style_of(node);
     if let Some(values) = &own {
         if values.authored.color {
-            set_foreground(&mut palette, values.color, class);
+            set_foreground(&mut palette, values.color, Some(class));
         }
         if values.authored.border {
             palette.border = values.border;
@@ -107,15 +100,15 @@ pub(super) fn enter_inner(
             None => inherited.clone(),
         }
     });
-    Scope { palette: saved, revision: theme::palette_revision(), inherited, node, depth }
+    Scope { palette: saved, revision: theme::palette_revision(), inherited, node }
 }
 
 /// A background for `class`: a view's sets the surfaces inside it, and a control's its own fill
 /// too. So a view's background never repaints the buttons drawn on it.
-fn set_background(palette: &mut theme::Palette, color: egui::Color32, class: &str) {
+fn set_background(palette: &mut theme::Palette, color: egui::Color32, class: super::element::Name) {
     palette.window_background = color;
     palette.panel_background = color;
-    if !suhina_theme_package::elements::is_surface(class) {
+    if !class.is_surface() {
         palette.control_background = color;
     }
 }
@@ -138,12 +131,12 @@ pub(super) fn readable_on(
     let (dark, light) = (egui::Color32::from_rgb(0x1a, 0x1a, 0x1a), egui::Color32::from_rgb(0xf4, 0xf4, 0xf4));
     let ink = if theme::contrast(dark, background) >= theme::contrast(light, background) { dark } else { light };
     let mut palette = theme::palette();
-    set_foreground(&mut palette, ink, "");
+    set_foreground(&mut palette, ink, None);
     theme::local_palette(palette);
     Some(ink)
 }
 
-fn set_foreground(palette: &mut theme::Palette, color: egui::Color32, class: &str) {
+fn set_foreground(palette: &mut theme::Palette, color: egui::Color32, class: Option<super::element::Name>) {
     palette.text_primary = color;
     palette.text_inverse = color;
     palette.text_secondary = color;
@@ -154,7 +147,7 @@ fn set_foreground(palette: &mut theme::Palette, color: egui::Color32, class: &st
     palette.browser_text_value = color;
     palette.text_on_color_dark = color;
     palette.text_on_color_light = color;
-    if class == "meter" {
+    if class == Some(super::element::METER) {
         palette.meter_normal = color;
     }
 }
@@ -244,16 +237,17 @@ pub fn theme_param_label() -> Option<&'static str> {
     super::native_css::settings_of(&[DEVICE])?.keyword(Property::ParamLabel)
 }
 
-/// Whether an element of `class` encloses what is drawn now (`pan` around a pan's knob).
-pub fn within(class: &str) -> bool {
-    STACK.with(|stack| stack.borrow().iter().any(|c| c == class))
+/// Whether an element `name` encloses what is drawn now (`pan` around a pan's knob).
+pub fn within(name: super::element::Name) -> bool {
+    STACK.with(|stack| stack.borrow().contains(&name))
 }
 /// The view being drawn, for artwork of one view: `mixer` (a strip, in any view), `session` or
 /// `arrangement`.
 pub fn view() -> Option<&'static str> {
     STACK.with(|stack| {
         let stack = stack.borrow();
-        ["mixer", "session", "arrangement"].into_iter().find(|view| stack.iter().any(|class| class == view))
+        use super::element::{ARRANGEMENT, MIXER, SESSION};
+        [MIXER, SESSION, ARRANGEMENT].into_iter().find(|view| stack.contains(view)).map(super::element::Name::name)
     })
 }
 

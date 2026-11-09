@@ -1200,11 +1200,10 @@ fn column_body(
     }
 }
 
-/// What a clip's hover keeps while it lasts: the clip's background as the pointer came, and the
-/// theme's background for the hovered clip, if it gives one.
+/// What a clip's hover keeps while it fades out: the theme's background for the hovered clip, if
+/// it gives one.
 #[derive(Clone, Copy, PartialEq)]
 struct HoverFill {
-    rest: Color32,
     fill: Option<Color32>,
 }
 
@@ -1231,11 +1230,11 @@ fn hover_fill(
         return None;
     }
     let style = clip.style()?;
-    // In the frame the pointer comes the clip's style is still the one resolved without it (the
-    // pointer's state takes effect as the frame's styles resolve): its background is the rest's.
-    let rest = stored.map_or(style.background, |s| s.rest);
-    let fill = (style.authored.background && style.background != rest).then_some(style.background);
-    let now = HoverFill { rest, fill };
+    // The clip's style at rest, beside it under the same slot: a background that is the same is
+    // the clip's own, not the hover's.
+    let rest = crate::kit::element::CLIP.style().map(|rest| rest.background);
+    let fill = (style.authored.background && Some(style.background) != rest).then_some(style.background);
+    let now = HoverFill { fill };
     if stored != Some(now) {
         ui.data_mut(|d| d.insert_temp(key, now));
     }
