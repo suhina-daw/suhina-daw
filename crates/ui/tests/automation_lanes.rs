@@ -765,7 +765,8 @@ fn over_the_dropdown_the_menu_stays_open_and_in_place_as_the_lanes_device_closes
 }
 
 /// The demo project with the FM synth and the utility on the Drums channel, its volume and the
-/// utility's gain automated, and its lanes shown (those two, as they have points).
+/// utility's gain automated, and its lanes shown: those two mounted, as they have points, under
+/// the top lane, which shows the pan (#1322).
 fn with_automation() -> Harness<'static, App> {
     with_automation_of(&[])
 }
@@ -813,7 +814,7 @@ fn with_automation_of(fm: &[&str]) -> Harness<'static, App> {
 #[test]
 fn the_parameter_menu_lists_the_automated_parameters_first() {
     let mut harness = with_automation();
-    harness.get_by_label("Parameter of Volume lane on Drums").click();
+    harness.get_by_label("Parameter of Pan lane on Drums").click();
     harness.run();
     let heading = harness.get_by_label("Automated").rect();
     let volume = harness.get_by_label("Volume (automated)").rect();
@@ -832,7 +833,7 @@ fn the_parameter_menu_lists_the_automated_parameters_first() {
 #[test]
 fn a_search_narrows_the_automated_parameters() {
     let mut harness = with_automation();
-    harness.get_by_label("Parameter of Volume lane on Drums").click();
+    harness.get_by_label("Parameter of Pan lane on Drums").click();
     harness.run();
     harness.get_by_label("Search parameters").type_text("gain");
     harness.run();
@@ -849,16 +850,16 @@ fn a_search_narrows_the_automated_parameters() {
 #[test]
 fn choosing_an_automated_parameter_at_the_top_switches_the_lane() {
     let mut harness = with_automation();
-    // The gain's own lane is hidden, so the volume lane may show it.
+    // The gain's own lane is unmounted, so the top lane may show it.
     harness.get_by_label("Hide Utility: Gain lane on Drums").click();
     harness.run();
-    harness.get_by_label("Parameter of Volume lane on Drums").click();
+    harness.get_by_label("Parameter of Pan lane on Drums").click();
     harness.run();
     harness.get_by_label("Utility: Gain (automated)").click();
     harness.run();
     assert!(harness.query_by_label("Search parameters").is_none(), "the menu stayed open");
     assert!(harness.query_by_label("Utility: Gain automation on Drums").is_some());
-    assert!(harness.query_by_label("Volume automation on Drums").is_none(), "the lane kept the volume");
+    assert!(harness.query_by_label("Pan automation on Drums").is_none(), "the top lane kept the pan");
 }
 
 /// The open parameter menu's own area.
@@ -875,13 +876,13 @@ fn in_view(harness: &Harness<'static, App>, label: &str) -> bool {
     row.top() >= list_top && row.bottom() <= menu_area(harness).bottom()
 }
 
-/// The FM synth's first operator's last parameter automated, and its lane hidden, so the
-/// volume lane may show it; the volume lane's menu open.
+/// The FM synth's first operator's last parameter automated, and its lane unmounted, so the
+/// top lane may show it; the top lane's menu open.
 fn op_1_on_automated() -> Harness<'static, App> {
     let mut harness = with_automation_of(&["op1.on"]);
     harness.get_by_label("Hide FM Synth: Op 1 On lane on Drums").click();
     harness.run();
-    harness.get_by_label("Parameter of Volume lane on Drums").click();
+    harness.get_by_label("Parameter of Pan lane on Drums").click();
     harness.run();
     harness
 }
