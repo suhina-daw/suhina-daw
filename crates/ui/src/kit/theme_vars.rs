@@ -303,10 +303,10 @@ pub fn apply_core(theme: &mut Theme, values: &BTreeMap<String, String>) -> Vec<S
     warnings
 }
 
-/// The relative PNG `url("…")` names, inside the theme's folder.
+/// The relative PNG `url("…")` names, inside the theme's folder: the style engine's own check of
+/// `backdrop-image`, so a value it takes is one the theme loads.
 fn background_path(value: &str) -> Option<String> {
-    let path = value.strip_prefix("url(")?.strip_suffix(')')?.trim().trim_matches(['"', '\'']);
-    (path.ends_with(".png") && super::skin::asset_path(&path.replace(".png", ".svg"))).then(|| path.to_owned())
+    suhina_style::property::backdrop_path(value).map(str::to_owned)
 }
 
 /// `none`, or `<angle>deg, <colour> <position>%, ...` with 2 to 8 stops (0 degrees runs left to
@@ -366,19 +366,30 @@ fn root_variables(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<Str
     Ok(styles.first().map(|style| style.variables().clone()).unwrap_or_default())
 }
 
-/// The settings `sheet` gives its elements ([`SETTINGS`]), with `variant`'s sheet above it, as
-/// text, as a 1280 by 800 dark window sees them: Suhina Studio's value for a setting the sheets
-/// do not give.
-fn setting_values(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<String, String>, String> {
+/// The styles the core sheet, `sheet`, `variant`'s and `user`'s give the element at the end of
+/// each of `paths` (element names from `window` inward, each path its own line of elements under
+/// one `window`), as a 1280 by 800 dark window sees them: the settings Suhina reads outside a
+/// frame (`native_css::settings_of`) and the ones the theme editor shows ([`setting_values`]).
+pub(in crate::kit) fn element_styles(
+    sheet: &Sheet,
+    variant: Option<&Sheet>,
+    user: Option<&Sheet>,
+    paths: &[&[&str]],
+) -> Result<Vec<suhina_style::cascade::ComputedStyle>, String> {
     use suhina_style::cascade::{AppliedSheet, Layer, compute};
-    use suhina_style::property::Property;
     use suhina_style::selector::{Element, Tree};
-    use suhina_style::value::{Length, Value};
     let core = core_parsed().ok_or("the core theme properties do not parse")?;
-    let elements = ["window", "session", "meter"];
-    let mut tree = vec![Element::new("html", None), Element::new("window", Some(0))];
-    tree.extend(elements[1..].iter().map(|name| Element::new(name, Some(1))));
-    let tree = Tree::new(tree)?;
+    let mut elements = vec![Element::new("html", None), Element::new("window", Some(0))];
+    let mut ends = Vec::with_capacity(paths.len());
+    for path in paths {
+        let mut parent = 1;
+        for name in path.iter().filter(|name| **name != "window") {
+            elements.push(Element::new(name, Some(parent)));
+            parent = elements.len() - 1;
+        }
+        ends.push(parent);
+    }
+    let tree = Tree::new(elements)?;
     let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, dark: true, reduced_motion: false };
     let mut sheets = vec![
         AppliedSheet { sheet: core, layer: Layer::Default, root: None },
@@ -387,10 +398,25 @@ fn setting_values(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<Str
     if let Some(variant) = variant {
         sheets.push(AppliedSheet { sheet: variant, layer: Layer::Variant, root: None });
     }
+    if let Some(user) = user {
+        sheets.push(AppliedSheet { sheet: user, layer: Layer::User, root: None });
+    }
     let styles = compute(&tree, viewport, &sheets)?;
+    ends.iter().map(|&at| styles.get(at).cloned().ok_or_else(|| "a path's element has no style".to_owned())).collect()
+}
+
+/// The settings `sheet` gives its elements ([`SETTINGS`]), with `variant`'s sheet above it, as
+/// text, as a 1280 by 800 dark window sees them: Suhina Studio's value for a setting the sheets
+/// do not give. The user's sheet is not the theme's, and is left out.
+fn setting_values(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<String, String>, String> {
+    use suhina_style::property::Property;
+    use suhina_style::value::{Length, Value};
+    let elements = ["window", "session", "meter"];
+    let paths: Vec<&[&str]> = elements.iter().map(std::slice::from_ref).collect();
+    let styles = element_styles(sheet, variant, None, &paths)?;
     let mut values = setting_defaults();
     for (element, name) in SETTINGS {
-        let Some(style) = elements.iter().position(|e| e == element).and_then(|at| styles.get(at + 1)) else {
+        let Some(style) = elements.iter().position(|e| e == element).and_then(|at| styles.get(at)) else {
             continue;
         };
         let Some(property) = Property::from_name(name).filter(|p| style.authored(*p)) else { continue };

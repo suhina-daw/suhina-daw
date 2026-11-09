@@ -1470,3 +1470,32 @@ fn surface_now(
 ) -> f32 {
     surface_with(painter, rect, radius, fill, el.style())
 }
+#[test]
+fn a_full_id_table_keeps_the_names_of_the_elements_already_entered_and_starts_again_next_frame() {
+    prepare("button { color: red; }", 800.0);
+    let ctx = egui::Context::default();
+    let mut names = Vec::new();
+    for _ in 0..2 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = frame_with_motion(ui, false);
+            let first = test_el("button").id("first").enter();
+            // Fill what is left of the table, as a frame with thousands of named elements does.
+            ENGINE.with(|engine| {
+                let mut engine = engine.borrow_mut();
+                while engine.ids.len() < MAX_IDS {
+                    let name: Arc<str> = Arc::from(format!("filler-{}", engine.ids.len()));
+                    let id = u32::try_from(engine.ids.len()).unwrap();
+                    engine.ids.push(Arc::clone(&name));
+                    engine.id_index.insert(name, id);
+                }
+            });
+            let second = test_el("button").id("second").enter();
+            names.push((first.id(), second.id()));
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    let expected = (Some("first".to_owned()), None);
+    assert_eq!(names, [expected.clone(), expected], "an earlier element keeps its name; a new one gets none");
+}

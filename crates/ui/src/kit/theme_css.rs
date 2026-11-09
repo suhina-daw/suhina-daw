@@ -334,7 +334,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                     }
                 }
                 // The style engine reads an element's properties from the sheet itself.
-                _ if element_selector(selector) && legacy_style(property, value).is_some() => {
+                _ if element_selector(selector) && legacy_rule(selector, property, value).is_some() => {
                     if property.starts_with("--suhina-") {
                         Err("a --suhina-* property is no longer read")
                     } else {
@@ -617,7 +617,7 @@ fn unlayer(css: &str, depth: usize) -> String {
 }
 
 /// The element names that took the place of the `--suhina-*` properties (#1273); `None` for the
-/// ones a CSS layout replaced (`--suhina-param-columns`, `--suhina-param-row`).
+/// ones a CSS layout replaced ([`layout_replacement`]).
 pub fn former_property(property: &str) -> Option<&'static str> {
     Some(match property {
         "--suhina-appearance" => "appearance",
@@ -643,14 +643,37 @@ pub fn element_selector(selector: &str) -> bool {
     !parts.is_empty() && parts.len() <= 4 && parts.iter().all(|part| suhina_theme_package::elements::is_element(part))
 }
 
-/// A style of a skin of an earlier version as a declaration of today's sheet: `key` under the
-/// name that took its place, when the style engine accepts `value` for it.
-pub fn legacy_style(key: &str, value: &str) -> Option<String> {
-    let name = if key.starts_with("--suhina-") { former_property(key)? } else { key };
+/// What took the place of a `--suhina-*` property a CSS layout replaced (#1273), for a notice:
+/// `--suhina-param-columns` and `--suhina-param-row`.
+pub fn layout_replacement(property: &str) -> Option<&'static str> {
+    Some(match property {
+        "--suhina-param-columns" => "device { grid-template-columns: repeat(<columns>, 1fr) }",
+        "--suhina-param-row" => "device device-control { height: <row> }",
+        _ => return None,
+    })
+}
+
+/// A style of a skin of an earlier version as a rule of today's sheet: `key` under the name that
+/// took its place, when the style engine accepts `value` for it. `--suhina-param-columns: 3`
+/// becomes `selector { grid-template-columns: repeat(3, 1fr); }`, and `--suhina-param-row: 48px`
+/// the height of the `device-control`s inside `selector`, as a CSS layout says them now.
+pub fn legacy_rule(selector: &str, key: &str, value: &str) -> Option<String> {
+    let value = value.trim();
+    let (selector, name, value) = match key {
+        "--suhina-param-columns" => {
+            let columns = value.parse::<u8>().ok().filter(|columns| (1..=8).contains(columns))?;
+            (selector.to_owned(), "grid-template-columns", format!("repeat({columns}, 1fr)"))
+        }
+        "--suhina-param-row" => (format!("{selector} device-control"), "height", value.to_owned()),
+        _ => {
+            let name = if key.starts_with("--suhina-") { former_property(key)? } else { key };
+            (selector.to_owned(), name, value.to_owned())
+        }
+    };
     let property = suhina_style::property::Property::from_name(if name == "gap" { "row-gap" } else { name })
         .or_else(|| (name == "border-radius").then_some(suhina_style::property::Property::Radius))?;
-    property.parse(value.trim()).ok()?;
-    Some(format!("{name}: {};", value.trim()))
+    property.parse(&value).ok()?;
+    Some(format!("{selector} {{ {name}: {value}; }}"))
 }
 
 /// Reads the rules of a theme's own sheet that Suhina reads itself (its name, artwork, control
@@ -722,7 +745,12 @@ pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
                         Some(now) => {
                             format!("{selector} {{ {property} }} is no longer read: the property is now {now}")
                         }
-                        None => format!("{selector} {{ {property} }} is no longer read: a CSS layout replaces it"),
+                        None => match layout_replacement(property) {
+                            Some(now) => format!(
+                                "{selector} {{ {property} }} is no longer read: a CSS layout replaces it, {now}"
+                            ),
+                            None => format!("{selector} {{ {property} }} is no longer read"),
+                        },
                     });
                     continue;
                 }

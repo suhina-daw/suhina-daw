@@ -52,21 +52,21 @@ fn surface_gradient(text: &str) -> bool {
     text == "none" || (text.len() <= 1024 && text.contains(',') && !text.contains([';', '{', '}']))
 }
 
-/// An image of the theme's own folder: `none` or `url("<path>.png")`, inside the folder.
+/// An image of the theme's own folder: `none` or `url("<path>.png")` ([`backdrop_path`]).
 fn backdrop_image(text: &str) -> bool {
-    let text = text.trim();
-    text == "none"
-        || text
-            .strip_prefix("url(")
-            .and_then(|rest| rest.strip_suffix(')'))
-            .map(|path| path.trim().trim_matches(['"', '\'']))
-            .is_some_and(|path| {
-                path.len() <= 256
-                    && path.ends_with(".png")
-                    && !path.starts_with('/')
-                    && !path.contains('\\')
-                    && !path.split('/').any(|part| part.is_empty() || part == "..")
-            })
+    text.trim() == "none" || backdrop_path(text).is_some()
+}
+
+/// The path `url("<path>.png")` names, when it is a PNG inside the theme's folder: relative, at
+/// most 240 bytes, with no empty, `.` or `..` part and no `\`, `:` or NUL. The one check of a
+/// `backdrop-image`, for the engine and for the host that loads the picture.
+pub fn backdrop_path(text: &str) -> Option<&str> {
+    let path = text.trim().strip_prefix("url(")?.strip_suffix(')')?.trim().trim_matches(['"', '\'']);
+    (path.len() <= 240
+        && path.ends_with(".png")
+        && !path.contains(['\\', ':', '\0'])
+        && path.split('/').all(|part| !part.is_empty() && part != "." && part != ".."))
+    .then_some(path)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -330,5 +330,33 @@ impl Property {
             ));
         }
         text
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_backdrop_image_is_a_png_inside_the_theme_s_folder_and_its_one_check_is_the_engine_s() {
+        for good in [r#"url("back.png")"#, "url('art/back.png')", "url(back.png)", "none"] {
+            assert!(Property::BackdropImage.parse(good).is_ok(), "{good}");
+        }
+        assert_eq!(backdrop_path(r#" url( "art/back.png" ) "#), Some("art/back.png"));
+        let long = format!("url({}.png)", "a".repeat(240));
+        for bad in [
+            r#"url("back.svg")"#,
+            r#"url("/back.png")"#,
+            r#"url("../back.png")"#,
+            r#"url("./back.png")"#,
+            r#"url("art//back.png")"#,
+            r#"url("C:back.png")"#,
+            r#"url("art\back.png")"#,
+            "back.png",
+            long.as_str(),
+        ] {
+            assert!(Property::BackdropImage.parse(bad).is_err(), "{bad}");
+            assert_eq!(backdrop_path(bad), None, "{bad}");
+        }
     }
 }

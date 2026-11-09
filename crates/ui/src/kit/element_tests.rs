@@ -242,33 +242,89 @@ fn an_outline_is_drawn_last_and_outside_the_border() {
     assert!(stroke_of(&none, outline).is_none(), "no style, no outline");
 }
 
+/// The clips of the meshes (a glow) one frame paints when a toolbar `bar` holds a section whose
+/// painter is clipped at `section`, and in it a glowing button at `button`.
+fn glow_clips(bar: Rect, section: Rect, button: Rect) -> Vec<Rect> {
+    let css = "button { box-shadow: 0 0 6px 4px #FF00FF; background-color: #202020; }";
+    super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let _frame = super::super::native_css::frame_with_motion(ui, false);
+        let toolbar = TOOLBAR.enter();
+        toolbar.paint_background(ui.painter(), bar, 0.0);
+        let _module = TOOLBAR_MODULE.id("transport").enter();
+        let painter = ui.painter().with_clip_rect(section);
+        BUTTON.enter().paint(&painter, button);
+    });
+    output.textures_delta.clear();
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    output
+        .shapes
+        .iter()
+        .filter(|clipped| matches!(clipped.shape, egui::Shape::Mesh(_)))
+        .map(|clipped| clipped.clip_rect)
+        .collect()
+}
+
 #[test]
 fn a_toolbar_control_s_glow_passes_its_section_and_stops_at_the_toolbar() {
-    let css = "button { box-shadow: 0 0 6px 4px #FF00FF; background-color: #202020; }";
     let bar = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(300.0, 40.0));
+    // The section's painter is clipped at its edge, as the toolbar's modules are.
     let module = Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(40.0, 40.0));
     let button = Rect::from_min_size(egui::pos2(102.0, 4.0), egui::vec2(36.0, 32.0));
-    let clips: Vec<Rect> = {
-        super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
-        let ctx = egui::Context::default();
-        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            let _frame = super::super::native_css::frame_with_motion(ui, false);
-            let toolbar = TOOLBAR.enter();
-            toolbar.paint_background(ui.painter(), bar, 0.0);
-            let _module = TOOLBAR_MODULE.id("transport").enter();
-            // The section's painter is clipped at its edge, as the toolbar's modules are.
-            let painter = ui.painter().with_clip_rect(module);
-            BUTTON.enter().paint(&painter, button);
-        });
-        output.textures_delta.clear();
-        super::super::skin::configure(&super::super::skin::Skin::default());
-        output
-            .shapes
-            .iter()
-            .filter(|clipped| matches!(clipped.shape, egui::Shape::Mesh(_)))
-            .map(|clipped| clipped.clip_rect)
-            .collect()
-    };
+    let clips = glow_clips(bar, module, button);
     assert!(!clips.is_empty(), "the glow is painted");
-    assert!(clips.iter().all(|clip| *clip == bar), "clipped by the toolbar, not the section: {clips:?}");
+    for clip in &clips {
+        assert!(clip.left() < module.left() && clip.right() > module.right(), "passes the section: {clip:?}");
+        assert!(bar.contains_rect(*clip), "stops at the toolbar: {clip:?}");
+    }
+}
+
+#[test]
+fn a_glow_stops_at_a_viewport_edge_that_cuts_its_control() {
+    // A scroll area inside the toolbar, scrolled so the button's top is out of view: its
+    // viewport's clip cuts the button at the top, and the glow stays below that edge.
+    let bar = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(300.0, 200.0));
+    let viewport = Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(100.0, 100.0));
+    let button = Rect::from_min_size(egui::pos2(120.0, 40.0), egui::vec2(36.0, 32.0));
+    let clips = glow_clips(bar, viewport, button);
+    assert!(!clips.is_empty(), "the glow is painted");
+    for clip in &clips {
+        assert_eq!(clip.top(), viewport.top(), "not over what is above the viewport: {clip:?}");
+    }
+}
+
+#[test]
+fn a_child_of_a_parent_held_for_a_transition_is_not_kept_under_the_parent_s_new_chain() {
+    // The header's colour moves to blue on hover over a second; the button inherits it.
+    let css = "track-header { color: #FF0000; transition: color 1s linear; } \
+               track-header:hover { color: #0000FF; }";
+    super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let run = |time: f64, header: Option<bool>| {
+        let mut color = None;
+        ctx.run_ui(egui::RawInput { time: Some(time), ..Default::default() }, |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, true);
+            if let Some(hovered) = header {
+                let _header = TRACK_HEADER.pointer(hovered, false, false).enter();
+                color = BUTTON.style().map(|style| style.color);
+            }
+        })
+        .textures_delta
+        .clear();
+        (color, super::super::native_css::budget().asked)
+    };
+    for time in [0.0, 0.1, 0.2] {
+        run(time, Some(false));
+    }
+    // Hovered: the header holds red while its transition starts, and the button inherits that.
+    assert_eq!(run(0.3, Some(true)).0, Some(egui::Color32::from_rgb(0xFF, 0, 0)));
+    // The header goes, and comes back hovered with nothing to move from: blue at once, and the
+    // button with it, rather than the red it inherited under the same chain before.
+    run(0.4, None);
+    run(0.5, None);
+    let (color, asked) = run(0.6, Some(true));
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    assert_eq!(color, Some(egui::Color32::from_rgb(0, 0, 0xFF)));
+    assert!(!asked, "the frame painted the whole tree's styles");
 }

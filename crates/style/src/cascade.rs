@@ -31,9 +31,12 @@ pub struct AppliedSheet<'a> {
     pub root: Option<usize>,
 }
 
-/// An element's computed style. Only values that differ from their property's initial value are
-/// kept: an element's style is computed often, and most of its ninety-odd properties are never
-/// written.
+/// An element's computed style. Values are kept only for the properties it inherits (every one,
+/// whatever its value: `color`, `font-size`) and the ones a rule sets; any other reads
+/// as its property's initial value ([`ComputedStyle::get`]). An element's style is computed often,
+/// and most of its ninety-odd properties are never written. A value kept may equal the initial one,
+/// and equality compares what is kept: two styles compare equal when they were worked out alike,
+/// not whenever every property reads the same.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ComputedStyle {
     values: BTreeMap<Property, Value>,

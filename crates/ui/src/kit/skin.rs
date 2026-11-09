@@ -321,9 +321,15 @@ impl Skin {
                         continue;
                     };
                     for (key, value) in properties {
-                        match value.as_str().and_then(|value| super::theme_css::legacy_style(key, value)) {
-                            Some(declaration) => rules.push_str(&format!("{selector} {{ {declaration} }}\n")),
-                            None => warnings.push(format!("invalid style {selector} {key}")),
+                        match value.as_str().and_then(|value| super::theme_css::legacy_rule(selector, key, value)) {
+                            Some(rule) => {
+                                rules.push_str(&rule);
+                                rules.push('\n');
+                            }
+                            None => warnings.push(match super::theme_css::layout_replacement(key) {
+                                Some(now) => format!("invalid style {selector} {key}: it is now {now}"),
+                                None => format!("invalid style {selector} {key}"),
+                            }),
                         }
                     }
                 }

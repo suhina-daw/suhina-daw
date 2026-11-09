@@ -193,7 +193,8 @@ pub(in crate::kit) fn box_begin(
         }
         return radius;
     };
-    let outside = outer_painter(painter, outer);
+    let reach = style.shadows.iter().filter(|s| !s.inset).fold(rect, |reach, shadow| reach.union(shadow.bounds(rect)));
+    let outside = outer_painter(painter, outer, rect, reach);
     // A see-through surface shows only its glyph, so its shadow (a glow) is round, around the
     // glyph, rather than the square of a box no one sees, unless the sheet gives a radius.
     let glow = if fill.a() == 0 && !style.authored.radius { rect.width().min(rect.height()) / 2.0 } else { radius };
@@ -233,7 +234,12 @@ pub(in crate::kit) fn box_end(
         if around.is_positive() {
             let stroke = egui::Stroke::new(width, color.gamma_multiply(style.opacity));
             let radius = if offset > 0.0 { radius + offset } else { radius };
-            outer_painter(painter, outer).rect_stroke(around, radius, stroke, egui::StrokeKind::Outside);
+            outer_painter(painter, outer, rect, around.expand(width)).rect_stroke(
+                around,
+                radius,
+                stroke,
+                egui::StrokeKind::Outside,
+            );
         }
     }
 }
@@ -255,14 +261,38 @@ fn edge(painter: &Painter, rect: Rect, radius: f32, style: &super::Computed) {
     }
 }
 
-/// `painter` clipped by `outer`, the box that clips what is outside an element, instead of its own
-/// clip; `painter` itself where no such box is known.
-fn outer_painter(painter: &Painter, outer: Option<Rect>) -> Painter {
+/// `painter` clipped by `outer`, the box that clips what is outside an element, for what the
+/// element paints around its box `caster` as far as `reach`; `painter` itself where no such box
+/// is known.
+///
+/// `outer` lets the painting pass the painter's own clip (a toolbar section's edge), but only as
+/// far as `reach`, and only on a side where `caster` is whole inside that clip: a side that cuts
+/// the caster is a viewport's edge (a scroll area scrolled part of the element out of view), and
+/// what is beyond it is not the element's to paint over.
+fn outer_painter(painter: &Painter, outer: Option<Rect>, caster: Rect, reach: Rect) -> Painter {
     let mut outside = painter.clone();
     if let Some(outer) = outer {
-        outside.set_clip_rect(outer);
+        outside.set_clip_rect(outer.intersect(passable(painter.clip_rect(), caster, reach)));
     }
     outside
+}
+
+/// `clip` widened to `reach` on each side where `caster` is inside it.
+fn passable(clip: Rect, caster: Rect, reach: Rect) -> Rect {
+    let mut wide = clip;
+    if caster.min.x >= clip.min.x {
+        wide.min.x = clip.min.x.min(reach.min.x);
+    }
+    if caster.min.y >= clip.min.y {
+        wide.min.y = clip.min.y.min(reach.min.y);
+    }
+    if caster.max.x <= clip.max.x {
+        wide.max.x = clip.max.x.max(reach.max.x);
+    }
+    if caster.max.y <= clip.max.y {
+        wide.max.y = clip.max.y.max(reach.max.y);
+    }
+    wide
 }
 
 /// [`box_begin`] and [`box_end`] at once, for a control drawn and done in one go (tests).
