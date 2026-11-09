@@ -28,6 +28,9 @@ pub const SEARCH: f32 = 26.0;
 pub const FILTER: f32 = 16.0;
 pub const SIDEBAR: f32 = 104.0;
 pub const INDENT: f32 = 12.0;
+/// How far the Tags section's top-level rows sit in from the section's title: a folder's
+/// chevron under the title's name ([#1254] review).
+const TAGS_LEAD: f32 = 8.0;
 /// The air between two of the Tags section's rows that change level: a child level and the
 /// row it returns to sit a few points apart where a sibling is tight, so the nesting reads.
 pub const LEVEL_GAP: f32 = 4.0;
@@ -1651,8 +1654,10 @@ fn tags_section(
         let _style = place_style(&response, chosen);
         if rect.intersects(area) {
             paint_row(painter, rect.intersect(area), fill);
-            let indent = row.depth as f32 * INDENT;
-            let lead = Pos2::new(area.left() + PAD + indent, rect.center().y);
+            // The section's rows sit a step in from its title: a top-level folder's chevron
+            // under the title's name, not under the title's own chevron ([#1254] review: Tags
+            // and its first folder read as one level). Each level a step further.
+            let lead = Pos2::new(tag_row_lead(area.left(), row.depth), rect.center().y);
             if is_folder {
                 widgets::chevron(painter, Pos2::new(lead.x + 5.0, lead.y), open, theme::browser_text_hint());
             }
@@ -2179,7 +2184,12 @@ fn section_title(
         state.drag_section = Some(kind);
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{} section", kind.title())));
-    widgets::chevron(painter, Pos2::new(area.left() + PAD + 4.0, rect.center().y), open, theme::browser_text_hint());
+    widgets::chevron(
+        painter,
+        Pos2::new(title_chevron_x(area.left()), rect.center().y),
+        open,
+        theme::browser_text_hint(),
+    );
     let text_rect =
         Rect::from_min_max(Pos2::new(area.left() + PAD + 14.0, rect.top()), Pos2::new(rect.right(), rect.bottom()));
     let carried = state.drag_section == Some(kind);
@@ -2321,6 +2331,17 @@ fn section_title(
 /// review).
 fn open_tags_section(projects: &mut Projects, out: &mut BrowserOut) {
     run(projects, "library.setSectionOpen", json!({ "section": SectionKind::Tags.name(), "open": true }), out);
+}
+
+/// Where a section title's chevron is drawn, its centre's x, in a sidebar whose left is `left`.
+fn title_chevron_x(left: f32) -> f32 {
+    left + PAD + 4.0
+}
+
+/// Where a Tags section row's lead starts at `depth` (0 for the top level): a step in from the
+/// section's title, a folder's chevron 5 points after it and a tag's dot 7 ([#1254] review).
+fn tag_row_lead(left: f32, depth: usize) -> f32 {
+    left + PAD + TAGS_LEAD + depth as f32 * INDENT
 }
 
 /// A subfolder's making opens the branch from its target up ([#1254] review): the new row
@@ -3211,6 +3232,20 @@ mod tests {
         assert!(column_span(narrow, 1).is_none());
         let (left, right) = column_span(narrow, 0).unwrap();
         assert_eq!(right - left, narrow.width() - 2.0 * PAD, "the name takes the whole row");
+    }
+
+    /// The Tags section's top-level folder sits a step in from the section's title: its chevron
+    /// is not under the title's own, and each level goes a step further ([#1254] review: Tags
+    /// and its first folder read as one level).
+    #[test]
+    fn the_tags_rows_sit_a_step_in_from_their_title() {
+        let left = 0.0;
+        let top_folder_chevron = tag_row_lead(left, 0) + 5.0;
+        assert!(top_folder_chevron - title_chevron_x(left) >= 6.0, "{top_folder_chevron}");
+        assert_eq!(tag_row_lead(left, 1) - tag_row_lead(left, 0), INDENT, "a level is a step");
+        // The deepest level still leaves the name room inside the sidebar.
+        let deepest = tag_row_lead(left, suhina_library::store::MAX_TAG_DEPTH);
+        assert!(SIDEBAR - deepest >= 30.0, "{deepest}");
     }
 
     /// Two dots of a row tag the same item, so their centers are close: their hit areas must
