@@ -1065,6 +1065,9 @@ pub struct LaneRange {
     pub key: LaneKey,
     pub start: f64,
     pub end: f64,
+    /// The other lanes of the track the range was painted over, top to bottom (#1322): the
+    /// edit keys act on them too, in one step.
+    pub more: Vec<LaneKey>,
 }
 
 /// What the lanes keep between frames: which tracks show lanes and which, the selected points
@@ -1155,6 +1158,8 @@ pub struct LanesState {
     header_drag: Option<HeaderDrag>,
     /// A group heading whose name is being typed: its track, its index and the text.
     renaming: Option<(TrackId, usize, String)>,
+    /// The lanes a range being painted reaches over, on its track, top to bottom (#1322).
+    covered: Vec<LaneKey>,
 }
 
 impl LanesState {
@@ -1572,6 +1577,18 @@ impl LanesState {
         let mut params = range.key.params(range.track);
         params["start"] = json!(range.start);
         params["end"] = json!(range.end);
+        // The other lanes it was painted over, in the same step (#1322).
+        if !range.more.is_empty() {
+            let lanes: Vec<Value> = range
+                .more
+                .iter()
+                .map(|k| match k.device {
+                    Some(device) => json!({ "device": device, "param": k.param }),
+                    None => json!({ "param": k.param }),
+                })
+                .collect();
+            params["lanes"] = json!(lanes);
+        }
         let action = |id: &'static str, params: &Value| Action::new(id, params.clone());
         match edit {
             "copy" => vec![action("automation.copy", &params)],
@@ -1590,8 +1607,10 @@ impl LanesState {
                 vec![action("automation.duplicate", &params)]
             }
             "paste" => {
+                // Copied lanes go back on their own lanes; this lane says the track and the start.
                 if let Some(map) = params.as_object_mut() {
                     map.remove("end");
+                    map.remove("lanes");
                 }
                 self.selection = None;
                 vec![action("automation.paste", &params)]
@@ -1767,6 +1786,24 @@ pub fn show(
     state: &mut LanesState,
     actions: &mut Vec<Action>,
 ) {
+    // A range painted from one of the track's lanes reaches the lanes the pointer went over,
+    // up or down (#1322): worked out before the lanes are drawn, so each shows it this frame.
+    if let Some(drag) = state.box_drag.clone().filter(|d| !d.select && d.track == lanes.track) {
+        let (low, high) = (drag.from.y.min(drag.to.y), drag.from.y.max(drag.to.y));
+        let mut top = lanes.top;
+        let mut covered = Vec::new();
+        for row in state.rows(lanes.track, params) {
+            let height = state.row_height(lanes.track, &row);
+            if let LaneRow::Lane(key) = row
+                && top <= high
+                && top + height >= low
+            {
+                covered.push(key);
+            }
+            top += height + LINE;
+        }
+        state.covered = covered;
+    }
     let mut y = lanes.top;
     // Where each row went, for a drag of headers to land between them.
     let mut placed_rows: Vec<(LaneRow, f32, f32)> = Vec::new();
@@ -2393,7 +2430,10 @@ fn lane(
                 .map(|(i, _)| i)
                 .collect();
             state.selection = (!points.is_empty()).then(|| Selection { track, key: key.clone(), points });
-            state.range = (end - start > 1e-6).then(|| LaneRange { track, key: key.clone(), start, end });
+            // Painted down or up over other lanes of the track, the range is on all of them (#1322).
+            let more: Vec<LaneKey> = state.covered.iter().filter(|k| *k != key).cloned().collect();
+            state.covered.clear();
+            state.range = (end - start > 1e-6).then(|| LaneRange { track, key: key.clone(), start, end, more });
             // A range painted moves the play start marker to its start, as a time selection does
             // (#937): the parameter's controls show the value there, and Play starts there (#811).
             if state.range.is_some() {
@@ -2615,7 +2655,12 @@ fn lane(
         lane_painter.rect_filled(area, 0.0, theme::accent().gamma_multiply(0.15));
         lane_painter.rect_stroke(area, 0.0, theme::hairline(theme::accent()), StrokeKind::Inside);
     }
-    let painted = match state.box_drag.as_ref().filter(|d| !d.select && d.track == track && &d.key == key) {
+    // A range painted from another lane over this one is on this one too (#1322).
+    let painting = state
+        .box_drag
+        .as_ref()
+        .filter(|d| !d.select && d.track == track && (&d.key == key || state.covered.contains(key)));
+    let painted = match painting {
         Some(drag) => Some((
             geometry.x_of(geometry.snap(geometry.beat_of(drag.from.x), free)),
             geometry.x_of(geometry.snap(geometry.beat_of(drag.to.x), free)),
@@ -2623,7 +2668,7 @@ fn lane(
         None => state
             .range
             .as_ref()
-            .filter(|r| r.track == track && &r.key == key)
+            .filter(|r| r.track == track && (&r.key == key || r.more.contains(key)))
             .map(|r| (geometry.x_of(r.start), geometry.x_of(r.end))),
     };
     if let Some((a, b)) = painted {

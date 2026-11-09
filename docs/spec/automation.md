@@ -344,6 +344,10 @@ like the lanes shown and their heights, kept while the project is open:
   new name (Enter keeps it, Escape leaves the old one); dragging it moves the whole group;
   **Ungroup** (its menu, or a grouped lane's) puts the lanes back where they are. A lane brought
   into view by a control (below) opens its folded group.
+- A time range painted on a lane and dragged up or down over other lanes of the track is on all of
+  them: copy, cut, paste, duplicate and delete act on each in one step (`automation.copy`,
+  `automation.duplicate` and `automation.deleteRange` with `lanes`; a paste of lanes copied together
+  puts each back on its own lane of the track). A lane with no automation in the range is left out.
 - **×** on a picked lane hides all the picked lanes; **+** adds the next parameter's lane right
   under the lane whose **+** was clicked, in its group, so it shows at once.
 
