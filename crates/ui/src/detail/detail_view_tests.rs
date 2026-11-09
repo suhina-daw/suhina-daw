@@ -1570,7 +1570,7 @@ fn midi_harness(
 }
 
 /// The tools' tabs: the Notes tab's one-click tools, then the Transform tab's Humanise with its
-/// settings in milliseconds and chords kept together, applied with a button that says to what
+/// settings in milliseconds, applied with a button that says to what
 /// (#1214, #1222).
 #[test]
 fn the_midi_panels_tabs_run_the_note_tools() {
@@ -1591,13 +1591,14 @@ fn the_midi_panels_tabs_run_the_note_tools() {
     harness.get_by_label("Transform tab").click();
     harness.run();
     assert!(harness.query_by_label("Reverse").is_none(), "the Notes tab's tools are away");
-    assert!(harness.query_by_label("Keep chords together: On").is_some());
+    assert!(harness.query_by_label_contains("Keep chords").is_none(), "Humanise has no chords setting");
     harness.get_by_label("Humanise 2 notes").click();
     harness.run();
     let humanise = harness.state().0.last().cloned();
     assert_eq!(humanise.as_ref().map(|a| a.id), Some("note.humanize"));
     let params = humanise.map(|a| a.params).unwrap_or_default();
-    assert_eq!((&params["ms"], &params["velocity"], &params["chords"]), (&json!(10.0), &json!(8.0), &json!(true)));
+    assert_eq!((&params["ms"], &params["velocity"]), (&json!(10.0), &json!(8.0)));
+    assert!(params.get("chords").is_none(), "each note moves on its own: {params}");
     // Ramp velocity from the list: its own settings and its own command.
     harness.get_by_label("Transformation: Humanise").click();
     harness.run();
@@ -1808,7 +1809,7 @@ fn a_clip_panel_switch_takes_the_theme_s_button_and_stays_lit_while_on() {
 #[test]
 fn a_check_box_shows_its_short_name_where_the_whole_one_does_not_fit() {
     let width = |text: &str| text.chars().count() as f32 * 6.0;
-    let (name, short) = ("Keep chords together", "Keep chords");
-    assert_eq!(midi_panel::check_text(name, short, 120.0, width), name);
-    assert_eq!(midi_panel::check_text(name, short, 119.0, width), short);
+    let (name, short) = ("Move ends too", "Ends too");
+    assert_eq!(midi_panel::check_text(name, short, 78.0, width), name);
+    assert_eq!(midi_panel::check_text(name, short, 77.0, width), short);
 }

@@ -691,23 +691,9 @@ fn transform_tab(
                     settings.humanize_velocity = v;
                 }
                 y += NAME + s.field + s.gap;
-                if y + s.toggle <= body.bottom() + 0.5 {
-                    let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), s.toggle));
-                    y += s.toggle + s.gap;
-                    explain(
-                        ui,
-                        row,
-                        "chords",
-                        "Keep chords together: notes that start within 30 ms of each other move together, as one chord",
-                    );
-                    if check_box(ui, painter, row, "Keep chords together", "Keep chords", settings.humanize_chords) {
-                        settings.humanize_chords = !settings.humanize_chords;
-                    }
-                }
             }
             params["ms"] = json!(settings.humanize_ms.clamp(0.0, 50.0));
             params["velocity"] = json!(settings.humanize_velocity.clamp(0.0, 127.0));
-            params["chords"] = json!(settings.humanize_chords);
         }
         Transform::Quantise => {
             let mut quantize = state.quantize;

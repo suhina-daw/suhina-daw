@@ -146,8 +146,13 @@ fn quantise_in_the_transform_tab_sets_the_grid_and_ends_that_ctrl_u_keeps() {
     assert!(h.query_by_label("1/4").is_some(), "the grid menu is open");
     h.get_by_label("1/4").click_accesskit();
     h.run();
+    // A check box with its name after it, over Apply: its row takes the click and its name
+    // says the state.
+    let (row, apply) = (h.get_by_label("Move ends too: Off").rect(), h.get_by_label("Quantise clip").rect());
+    assert!(row.bottom() <= apply.top(), "above Apply: {row:?} {apply:?}");
     h.get_by_label("Move ends too: Off").click();
     h.run();
+    assert!(h.query_by_label("Move ends too: On").is_some(), "a click turns it on");
     let settings = h.state().piano_roll().quantize;
     assert_eq!((settings.grid, settings.amount, settings.ends), ("1/4", 100.0, true));
     h.get_by_label("Quantise clip").click();

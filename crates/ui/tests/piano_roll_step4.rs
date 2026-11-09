@@ -369,25 +369,6 @@ fn the_whole_clip_tools_reverse_double_and_ramp() {
     assert!(expected[0] < *expected.last().unwrap(), "{expected:?}");
 }
 
-/// A transformation's on/off setting is a check box with its name after it, not a button the
-/// part's width like Apply under it: the row takes the click and its name says the state.
-#[test]
-fn a_transformations_switch_is_a_check_box_its_row_turns_on_and_off() {
-    let mut renderer = engine();
-    let mut h = piano_app(&mut renderer, Settings::default());
-    h.get_by_label("Transform tab").click();
-    h.run();
-    let apply = h.get_by_label("Humanise clip").rect();
-    let row = h.get_by_label("Keep chords together: On").rect();
-    assert!(row.bottom() <= apply.top(), "above Apply: {row:?} {apply:?}");
-    h.get_by_label("Keep chords together: On").click();
-    h.run();
-    assert!(h.query_by_label("Keep chords together: Off").is_some(), "a click turns it off");
-    h.get_by_label("Keep chords together: Off").click();
-    h.run();
-    assert!(h.query_by_label("Keep chords together: On").is_some(), "and another on again");
-}
-
 #[test]
 fn humanise_twice_gives_two_different_results() {
     let mut renderer = engine();
@@ -395,7 +376,6 @@ fn humanise_twice_gives_two_different_results() {
     h.get_by_label("Transform tab").click();
     h.run();
     assert!(h.query_by_label("Transformation: Humanise").is_some(), "Humanise is chosen at first");
-    assert!(h.query_by_label("Keep chords together: On").is_some(), "chords are kept by default");
     h.get_by_label("Humanise clip").click_accesskit();
     h.run();
     let once = notes(&h);

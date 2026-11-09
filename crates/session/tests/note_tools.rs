@@ -440,10 +440,11 @@ fn ramping_spreads_the_velocities_evenly_in_time_order() {
     assert_eq!(*session.project(), once);
 }
 
-/// Humanise keeps a chord's notes together, keeps each note's end, and moves a start no further
-/// than its limit in milliseconds at the project's tempo (#1214).
+/// Humanise moves each note on its own and whole: a start no further than its limit in
+/// milliseconds at the project's tempo, the length kept, and a note that would run into the next
+/// one on its key cut at that one's start (#1214).
 #[test]
-fn humanize_keeps_chords_together_and_ends_in_place() {
+fn humanize_moves_each_note_on_its_own_and_keeps_its_length() {
     // A C major chord at beat 1, then a note on C at beat 2.
     let chord = vec![note(1.0, 1.0, 60), note(1.0, 1.0, 64), note(1.0, 1.0, 67), note(2.0, 1.0, 60)];
     let mut built = project_built(chord.clone());
@@ -451,47 +452,30 @@ fn humanize_keeps_chords_together_and_ends_in_place() {
     let mut session = Session::new(suhina_test_support::with_ids(built));
     run(&mut session, "note.humanize", json!({ "track": 1, "index": 0, "ms": 50, "velocity": 0, "seed": 3 })).unwrap();
     let after = notes_of(&session, 1);
-    assert!(after[0].time != 1.0, "the seed moves the chord: {after:?}");
-    assert_eq!(after[0].time, after[1].time, "the chord's notes start together");
-    assert_eq!(after[1].time, after[2].time);
+    // Each note has a draw of its own: the chord's notes no longer start at the very same beat.
+    assert!(after[0].time != after[1].time || after[1].time != after[2].time, "{after:?}");
     // 50 ms at 120 BPM is a tenth of a beat.
     for (before, after) in chord.iter().zip(&after) {
         assert!((after.time - before.time).abs() <= 0.1 + 1e-12, "{before:?} {after:?}");
     }
-    // The chord's ends stay at beat 2, unless that would run into the next C.
-    assert!((after[1].time + after[1].duration - 2.0).abs() < 1e-9, "{:?}", after[1]);
+    // A note moves whole: the ones with no other note on their key keep their length.
+    assert_eq!((after[1].duration, after[2].duration), (1.0, 1.0), "{after:?}");
     assert!(after[0].time + after[0].duration <= after[3].time + 1e-9, "no overlap on C: {after:?}");
-
-    // Without chords the notes of the chord move apart.
-    let mut apart = Session::new(project(chord.clone()));
-    run(&mut apart, "note.humanize", json!({ "track": 1, "index": 0, "ms": 50, "chords": false, "seed": 3 })).unwrap();
-    let spread = notes_of(&apart, 1);
-    assert!(spread[0].time != spread[1].time || spread[1].time != spread[2].time, "{spread:?}");
 }
 
-/// A chord whose notes do not start at the very same beat (played in, or humanised before) is
-/// still a chord: notes within 30 ms of its first move with it, keeping their places in it. A
-/// chord at the clip's start is not pulled apart by the start: it moves no earlier than 0 as a
-/// whole.
+/// A note at the clip's start moves no earlier than the start, and keeps its length there too.
 #[test]
-fn humanize_keeps_a_loose_chord_together_and_whole_at_the_start() {
-    // At 120 BPM 30 ms is 0.06 beats: the first three are a chord, the fourth (0.1 later) is not.
-    let loose = vec![note(0.0, 1.0, 64), note(0.01, 1.0, 60), note(0.05, 1.0, 57), note(0.1, 1.0, 53)];
-    let mut built = project_built(loose.clone());
+fn humanize_moves_no_note_before_the_start() {
+    let early = vec![note(0.0, 1.0, 64), note(0.01, 1.0, 60), note(0.05, 1.0, 57), note(0.1, 1.0, 53)];
+    let mut built = project_built(early.clone());
     built.transport.tempo_bpm = 120.0;
     for seed in 1..=20 {
         let mut session = Session::new(suhina_test_support::with_ids(built.clone()));
         run(&mut session, "note.humanize", json!({ "track": 1, "index": 0, "ms": 50, "velocity": 0, "seed": seed }))
             .unwrap();
         let after = notes_of(&session, 1);
-        let shift = after[0].time - loose[0].time;
-        for i in 1..3 {
-            assert!(
-                (after[i].time - loose[i].time - shift).abs() < 1e-9,
-                "seed {seed}: the chord moves as one: {after:?}"
-            );
-        }
         assert!(after.iter().all(|n| n.time >= 0.0), "seed {seed}: {after:?}");
+        assert!(after.iter().all(|n| n.duration == 1.0), "seed {seed}: {after:?}");
     }
 }
 
@@ -509,7 +493,6 @@ fn humanize_takes_ms_or_time_and_refuses_both_or_too_much() {
     assert!(run(&mut session, "note.humanize", with(json!({ "ms": 10, "time": 0.1 }))).is_err());
     assert!(run(&mut session, "note.humanize", with(json!({ "ms": 51 }))).is_err());
     assert!(run(&mut session, "note.humanize", with(json!({ "ms": -1 }))).is_err());
-    assert!(run(&mut session, "note.humanize", with(json!({ "chords": "yes" }))).is_err());
     assert_eq!(notes_of(&session, 1), scale_notes(), "a refused call changes nothing");
     assert!(run(&mut session, "note.humanize", with(json!({ "time": 0.05 }))).is_ok(), "beats still work");
     assert!(run(&mut session, "note.humanize", with(json!({ "ms": 0, "velocity": 0 }))).is_ok());

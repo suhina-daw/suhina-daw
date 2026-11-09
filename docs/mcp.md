@@ -267,12 +267,11 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   outside 0 to 100 or a note that does not exist fails and changes nothing.
 - **Swing.** `transport.setSwing {amount}` sets the project's swing in percent (0 straight, 100 the second sixteenth of each eighth half a sixteenth late, about 67 the triplet), which every MIDI clip without its own plays with; `clip.setSwing {amount?, global?}` gives a MIDI clip its own swing (`amount`) or makes it follow the project's again (`global: true`, keeping its own for later). The notes never move; the swing is applied as the clip plays ([swing spec](spec/swing.md)).
 - **MIDI tools.** The note tools of a MIDI clip's panel (its Notes and Transform tabs) run the
-  same commands an agent can: `note.humanize {notes?, ms?, time?, velocity?, chords?, seed?}` moves
+  same commands an agent can: `note.humanize {notes?, ms?, time?, velocity?, seed?}` moves
   each start and velocity a little, like a person playing: a normally distributed draw within
   `ms` milliseconds at the project's tempo (0 to 50, 10 when left out) or `time` beats (0 to 1;
-  not both), and within `velocity` steps; with `chords` (true when left out) notes that start
-  together move together, and a note's end stays put unless it would run into the next note on
-  its key, `note.fitToScale {notes?, root?, scale?}` moves each note to the nearest key of a scale
+  not both), and within `velocity` steps; each note has a draw of its own and keeps its length
+  unless it would run into the next note on its key, `note.fitToScale {notes?, root?, scale?}` moves each note to the nearest key of a scale
   (a key name such as `"C"` or `"F#"`, and `major`, `minor`, `dorian`, `blues` and the rest),
   `note.invert {notes?}` mirrors the pitches, `note.reverse {notes?}` turns them round in time,
   `note.legato {notes?}` makes each note last until the next one starts, on any key, `note.stretch {notes?,

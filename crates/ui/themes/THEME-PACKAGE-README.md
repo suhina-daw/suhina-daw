@@ -826,7 +826,7 @@ control with no room left is not drawn, without a notice: check narrow tracks an
   40 points). Its buttons and switches are `button` (`:hover`, `:active`, `[checked]` for a
   switch that is on), its lists `dropdown` and its number fields `value`, as in a clip's panel:
   a rule sets their background, border, radius and `color`. A transformation's check box
-  (**Move ends too**, **Keep chords together**) is a `button` too: the rule paints its box, not
+  (**Move ends too**) is a `button` too: the rule paints its box, not
   its name. A switch that is on keeps Suhina's
   lit look unless `button[checked]` has a background or colour of its own, and a button that
   cannot be pressed keeps Suhina's look.

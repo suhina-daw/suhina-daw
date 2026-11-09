@@ -162,8 +162,6 @@ pub struct ToolSettings {
     pub humanize_ms: f64,
     /// How far **Humanise** may move a velocity, in MIDI steps.
     pub humanize_velocity: f64,
-    /// Whether **Humanise** moves notes that start together together.
-    pub humanize_chords: bool,
     /// How far **Randomise velocity** may move a velocity, in MIDI steps.
     pub random_amount: f64,
     /// The velocity **Ramp velocity** starts from and ends on.
@@ -177,7 +175,6 @@ impl Default for ToolSettings {
             transpose: 0,
             humanize_ms: 10.0,
             humanize_velocity: 8.0,
-            humanize_chords: true,
             random_amount: 16.0,
             ramp_from: 20,
             ramp_to: 120,

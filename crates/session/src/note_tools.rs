@@ -264,64 +264,30 @@ fn humanize_beats(session: &Session, params: &Value) -> Result<f64, CommandError
     }
 }
 
-/// How close after a chord's first note another note starts and still belongs to the chord, for
-/// Humanise's `chords`: a played chord, or one humanised before, is never exactly together.
-const CHORD_MS: f64 = 30.0;
-
 /// `note.humanize`: moves each note's start by a normally distributed draw within ±`time` beats
 /// (or ±`ms` milliseconds) and its velocity by one within ±`velocity` MIDI steps, each kept within
-/// its range (#1214). With `chords` (the default) the notes of a chord, those that start within
-/// [`CHORD_MS`] of its first, move together by one draw, which keeps the chord's first note at 0 or
-/// later, so the notes keep their places in the chord. A
-/// note's end stays where it was, unless that would run into the next note on the same key. The
-/// same `seed` gives the same result, so a call can be repeated.
+/// its range (#1214). Each note has a draw of its own and moves whole, keeping its length, as a
+/// played note does; a start goes no earlier than 0, and a note that would run into the next one
+/// on the same key ends at that one's start. The same `seed` gives the same result, so a call can
+/// be repeated.
 pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let beats = humanize_beats(session, params)?;
     let steps = Args::new(params).opt_f64("velocity")?.unwrap_or(DEFAULT_HUMANIZE_STEPS);
     if !(0.0..=127.0).contains(&steps) {
         return Err(format!("velocity must be 0 to 127 MIDI steps, got {steps}").into());
     }
-    let chords = match Args::new(params).value("chords") {
-        None => true,
-        Some(value) => value.as_bool().ok_or("chords must be true or false")?,
-    };
     let seed = seed_of(params)?;
     if nothing_to_do(session, params)? {
         return Ok(json!({ "notes": [], "seed": seed }));
     }
-    let bpm = session.project.transport.tempo_bpm;
-    let bpm = if bpm.is_finite() && bpm > 0.0 { bpm } else { 120.0 };
-    let window = if chords { CHORD_MS / 1000.0 * bpm / 60.0 } else { 0.0 };
     edit_notes(&mut session.project, params, move |notes| {
         let named = chosen(params, notes)?;
         let mut rng = Rng::new(seed);
-        let chord_of = chords_of(notes, &named, window);
-        // Each chord's offset once drawn, so its other notes move with the first.
-        let mut offsets: Vec<Option<f64>> = vec![None; chord_of.len()];
         let mut moved = Vec::with_capacity(named.len());
-        for (position, &index) in named.iter().enumerate() {
+        for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
             let mut humanized = *note;
-            let drawn = rng.next_within(beats);
-            let (chord, first) = chord_of.get(position).copied().unwrap_or((position, note.time));
-            let offset = match offsets.get(chord).copied().flatten() {
-                Some(offset) => offset,
-                None => {
-                    // The chord's first note goes no earlier than 0, so the chord stays whole.
-                    let offset = drawn.max(-first);
-                    if let Some(slot) = offsets.get_mut(chord) {
-                        *slot = Some(offset);
-                    }
-                    offset
-                }
-            };
-            let time = (note.time + offset).clamp(0.0, MAX_BEAT);
-            if time != note.time {
-                // The end stays where it was: the note gets longer or shorter by what it moved.
-                let end = note.time + note.duration;
-                humanized.time = time;
-                humanized.duration = (end - time).max(MIN_LENGTH);
-            }
+            humanized.time = (note.time + rng.next_within(beats)).clamp(0.0, MAX_BEAT);
             let midi = f64::from(midi_velocity(note.velocity)) + rng.next_within(steps);
             apply_velocity(&mut humanized, midi);
             moved.push((index, humanized));
@@ -335,30 +301,6 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
         keep_off_the_next(notes, &touched);
         Ok(json!({ "notes": named, "seed": seed }))
     })
-}
-
-/// For each of `named` (by its place in it): the chord it belongs to and that chord's first start.
-/// Notes are taken in time; one that starts within `window` beats of a chord's first note joins
-/// it, any other starts a chord of its own. With a `window` of 0 (Keep chords together off) every
-/// note is its own chord, those that start at the very same beat too.
-fn chords_of(notes: &Notes, named: &[usize], window: f64) -> Vec<(usize, f64)> {
-    let time = |position: usize| named.get(position).and_then(|i| notes.get(*i)).map_or(0.0, |n| n.time);
-    let mut order: Vec<usize> = (0..named.len()).collect();
-    order.sort_by(|a, b| time(*a).total_cmp(&time(*b)));
-    let mut chord_of = vec![(0, 0.0); named.len()];
-    let mut current: Option<(usize, f64)> = None;
-    for position in order {
-        let start = time(position);
-        let chord = match current {
-            Some((chord, first)) if window > 0.0 && start - first <= window + EPSILON => (chord, first),
-            _ => (position, start),
-        };
-        current = Some(chord);
-        if let Some(slot) = chord_of.get_mut(position) {
-            *slot = chord;
-        }
-    }
-    chord_of
 }
 
 /// Shortens a note that now runs into the next note on its key, where either of the two was moved

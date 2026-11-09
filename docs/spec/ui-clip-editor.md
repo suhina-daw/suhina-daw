@@ -1045,16 +1045,16 @@ button opens its clip in the editor.
 - **Transform** tab, one under another: a list of transformations, a short line on what the
   chosen one does, its settings, and at the bottom **Apply**, the part's width, which says what it
   does and to what (**Humanise 3 notes**, **Ramp clip**); a tooltip on it says the same line.
-  A setting that is on or off (**Move ends too**, **Keep chords together**) is a check box with
+  A setting that is on or off (**Move ends too**) is a check box with
   its name after it, ticked while on, so that it does not read as a second button over Apply;
   a click anywhere on its row turns it. Where the part is too narrow for the whole name it
-  shows a short one (**Keep chords**, **Ends too**) instead of cutting it; the tooltip and the
+  shows a short one (**Ends too**) instead of cutting it; the tooltip and the
   accessible name keep the whole one.
 
   | Transformation | Settings | Command |
   |---|---|---|
   | **Quantise** | **Grid**, **Amount**, **Move ends too** (› Quantise) | `note.quantize` |
-  | **Humanise** | **Timing ±** in milliseconds (0 to 50, 10 at first), **Velocity ±** in steps (8 at first), **Keep chords together** (on at first) | `note.humanize` with `ms`, `velocity`, `chords` |
+  | **Humanise** | **Timing ±** in milliseconds (0 to 50, 10 at first), **Velocity ±** in steps (8 at first) | `note.humanize` with `ms`, `velocity` |
   | **Randomise velocity** | **Velocity ±** (16 at first) | `note.randomizeVelocity` |
   | **Ramp velocity** | **From**, **To** (20 and 120 at first) | `note.rampVelocity` |
 
@@ -1062,12 +1062,11 @@ button opens its clip in the editor.
   like a person playing: each start by a normally distributed draw (most small, a few larger, none
   past **Timing ±**) and each velocity the same way within **Velocity ±**, a fresh draw each time,
   so pressing it twice gives two different results. Milliseconds are counted at the project's
-  tempo. With **Keep chords together** the notes of a chord move together by one draw: notes that
-  start within 30 ms of a chord's first note belong to it (a played chord, or one humanised before,
-  never starts exactly together), keep their places in it, and a chord at the clip's start moves no
-  earlier than the start as a whole. A note's end
-  stays where it was (the note gets longer or shorter by what its start moved), unless that would
-  run into the next note on the same key, where it ends at that note's start. Its fields keep
+  tempo. Each note has a draw of its own, the notes of a chord too, and moves whole: it keeps
+  its length, as a played note does, unless that would run into the next note on the same key,
+  where it ends at that note's start. No start goes before the clip's start. There is no
+  setting for chords: within the small limits a person's timing has, a chord's notes land a few
+  milliseconds apart, as a played chord's do. Its fields keep
   their width while they are dragged, so the panel does not move. A tooltip on each setting says
   what it does.
 - Ctrl+U runs Quantise with its settings while the tools are hidden too, and with the detail area
