@@ -769,8 +769,11 @@ impl Window {
     /// Decodes a session's audio, starts it playing (stopped) and shows it.
     fn show_session(&mut self, mut session: Session, mut warnings: Vec<String>, how: OpenAs) -> bool {
         // The library's base is the session's before its first loads: a device's file state
-        // may say a library-relative path ([ADR 0036]), which resolves against it.
+        // may say a library-relative path ([ADR 0036]), which resolves against it. A load that
+        // ran before the base was set missed, so the files are built again with it — before
+        // the output opens, and the player hears them from the start.
         session.set_library_base(documents_base());
+        session.sync_device_files();
         if let Err(error) = self.app.projects().ensure_output_can_close() {
             self.app.set_status(Status::Error(error.to_string()));
             return false;
@@ -1076,10 +1079,7 @@ fn default_folders() -> (PathBuf, PathBuf) {
 /// `Suhina` in the user's documents folder, or the folder made under the program's old name
 /// while only that one exists; defaults are built beside it.
 fn documents_base() -> PathBuf {
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
-    let documents = home.map(|h| h.join("Documents")).unwrap_or_default();
-    let (new, old) = (documents.join("Suhina"), documents.join(OLD_APP_ID));
-    if !new.exists() && old.is_dir() { old } else { new }
+    suhina_session::documents_base()
 }
 
 /// Connects the output `choice` names to `session`, playing its audio; a device that is gone

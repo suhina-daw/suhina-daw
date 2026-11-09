@@ -536,7 +536,9 @@ fn device_json(path: &[usize], device: &Device) -> Value {
         info.params
             .iter()
             .map(|p| {
-                let value = device.params.iter().find(|v| v.id == p.id).map_or(p.default, |v| p.clamp(v.value));
+                // The engine takes the last value a duplicate parameter id carries (a project
+                // or preset file may name one twice), so the panel shows the same.
+                let value = device.params.iter().rev().find(|v| v.id == p.id).map_or(p.default, |v| p.clamp(v.value));
                 json!({ "id": p.id, "value": value })
             })
             .collect::<Vec<_>>()
@@ -1130,6 +1132,17 @@ pub(crate) fn set_enabled_many(session: &mut Session, params: &Value) -> Result<
 /// outside keeps its absolute path, recorded when it is all there is.
 pub(crate) fn device_file_state(session: &Session, path: &str) -> String {
     if path.starts_with("builtin:") {
+        return path.to_owned();
+    }
+    // A library-relative state text (a path the library's base joins to an existing file, as
+    // `device.file` reads it back) stays one: a caller that hands it back to `setNamFile` or
+    // `device.add` keeps the same reference ([ADR 0036] › 4). A relative path the library
+    // does not carry is a working-folder path: its absolute text is the state.
+    let given = std::path::Path::new(path);
+    if !given.is_absolute()
+        && let Some(base) = session.library_base()
+        && base.join(path).exists()
+    {
         return path.to_owned();
     }
     let absolute = crate::files::absolute(std::path::Path::new(path));

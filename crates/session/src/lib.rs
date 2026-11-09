@@ -127,6 +127,19 @@ pub fn devices() -> suhina_engine::Devices {
     suhina_device_registry::factory()
 }
 
+/// Where projects are saved and templates kept until the settings say otherwise: `Suhina`
+/// in the user's documents folder, or the folder made under the program's old name while only
+/// that one exists (projects there stay where recent lists and links expect them).
+pub fn documents_base() -> PathBuf {
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
+    let documents = home.map(|h| h.join("Documents")).unwrap_or_default();
+    let (new, old) = (documents.join("Suhina"), documents.join(OLD_LIBRARY_ROOT));
+    if !new.exists() && old.is_dir() { old } else { new }
+}
+
+/// The library's root made under the program's old name, while only that one exists.
+const OLD_LIBRARY_ROOT: &str = "Loopwerk"; // rename_suhina: keep
+
 /// Undo steps kept per session; the oldest are dropped first.
 const MAX_UNDO: usize = 256;
 
@@ -286,6 +299,12 @@ impl Session {
     /// the library. The library-relative device file states load against it from here on:
     /// what opening tried without the base is tried again.
     pub fn set_library_base(&mut self, base: PathBuf) {
+        // The same base again: the loads that ran with it stand (a reassignment clears the
+        // relative assets, so a project opened before the base was set keeps them from the
+        // base it was set with once).
+        if self.library_base.as_ref().is_some_and(|current| *current == base) {
+            return;
+        }
         self.library_base = Some(base);
         // A load that missed the base left its marks keyed by the relative text; those entries
         // are built again with the base set (a shipped key and an absolute path stand either
@@ -1262,7 +1281,9 @@ impl Session {
             .filter_map(|track| track.channel.and_then(|ch| self.project.channel(ch)))
             .chain(self.project.main_channel());
         for channel in channels {
-            for device in &channel.devices {
+            // Inside a group too: a file-backed device in a group runs its file the same
+            // ([ADR 0036] › it), and the sync reads it the same way it reads a top-level one.
+            for (_, device) in suhina_model::walk_devices(&channel.devices) {
                 let suhina_model::DeviceKind::Builtin(id) = &device.kind else { continue };
                 if !suhina_device_registry::is_file_device(id) {
                     continue;
@@ -1292,7 +1313,9 @@ impl Session {
         }
         let mut changed = false;
         for (path, kind) in need.iter() {
-            let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
+            // A library-relative state's file is at the library's base, not the working
+            // folder: the timestamp check sees the same resolved path the load reads.
+            let mtime = self.resolve_device_file(path).and_then(|p| std::fs::metadata(p).ok()).and_then(|m| m.modified().ok());
             if (self.device_files.assets.entries.contains_key(path.as_str())
                 || self.device_files.notes.contains_key(path.as_str()))
                 && self.device_files.modified.get(path).and_then(|seen| *seen) == mtime
@@ -1350,30 +1373,43 @@ impl Session {
             }
             return suhina_device_registry::load_builtin_file(kind, name, rate);
         }
-        // A library-relative path is resolved first ([ADR 0036]): the library's base joins it.
-        // A relative text with no base set resolves against the working folder, as an absolute
-        // one would have been there already.
-        let resolved = if std::path::Path::new(path).is_absolute() {
-            PathBuf::from(path)
-        } else {
-            self.library_base()
-                .map_or_else(|| crate::files::absolute(std::path::Path::new(path)), |base| base.join(path))
-        };
+        let resolved = self.resolve_device_file(path).ok_or("a shipped file's key is builtin:<device id>/<file name>")?;
         if resolved.exists() {
             return suhina_device_registry::load_file(kind, &resolved, rate);
         }
         // The disk does not carry it; the pack may. A file of the state's own name rides the
         // executable — the on-disk copy's stand-in, so a project that opened on a machine
         // without the file on disk still renders from the pack ([`ADR 0036`] › 7). A renamed
-        // copy is no stand-in: nothing proves it is the pack's file.
-        let state_name = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned());
-        let shipped = state_name.as_deref().and_then(|name| {
-            suhina_device_registry::pack_files(kind).into_iter().find(|(packed, _)| packed.eq_ignore_ascii_case(name))
-        });
+        // copy is no stand-in: nothing proves it is the pack's file. The stand-in is for a
+        // library-relative state only: an absolute path is the file's own, and a missing one
+        // is a missing file, not a sound of the same name.
+        let shipped = if std::path::Path::new(path).is_absolute() {
+            None
+        } else {
+            std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).as_deref().and_then(|name| {
+                suhina_device_registry::pack_files(kind).into_iter().find(|(packed, _)| packed.eq_ignore_ascii_case(name))
+            })
+        };
         if let Some((packed_name, _)) = shipped {
             return suhina_device_registry::load_builtin_file(kind, packed_name, rate);
         }
         suhina_device_registry::load_file(kind, &resolved, rate)
+    }
+
+    /// The file a state's text points at: an absolute path is itself, a relative one joins the
+    /// library's base ([ADR 0036] › 4), or without a base it resolves against the working
+    /// folder as an absolute one would have been there already. A shipped key is not a file
+    /// on the disk: `None` for it.
+    pub(crate) fn resolve_device_file(&self, path: &str) -> Option<PathBuf> {
+        if path.starts_with("builtin:") {
+            return None;
+        }
+        Some(if std::path::Path::new(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            self.library_base()
+                .map_or_else(|| crate::files::absolute(std::path::Path::new(path)), |base| base.join(path))
+        })
     }
 
     /// Lets a playing engine hear the project as it is now, with any audio added to the pool.

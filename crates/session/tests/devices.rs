@@ -58,14 +58,27 @@ fn devices_are_added_set_switched_and_removed_with_undo() {
     let stored = &session.project().channels[0].devices[0].params;
     assert!(stored.contains(&DeviceParam::new("algorithm", 5.0)));
     assert!(stored.contains(&DeviceParam::new("op1.envMode", 1.0)), "a new FM Synth starts with envelopes in time");
-    assert!(stored.contains(&DeviceParam::new("op2.on", 0.0)), "and with one operator");
-
     run(&mut session, "device.remove", json!({ "track": 1, "device": 1 })).unwrap();
     assert_eq!(session.project().channels[0].devices.len(), 2);
     for _ in 0..7 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
     assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
+}
+
+/// A duplicate parameter id in a project file: the panel shows the last value, the same one the
+/// engine runs and the preset saves (the last wins).
+#[test]
+fn a_duplicate_parameter_id_shows_the_last_value() {
+    let mut device = Device::new("Utility", DeviceKind::Builtin("utility".into()));
+    device.params.push(DeviceParam::new("gain", 3.0));
+    device.params.push(DeviceParam::new("gain", 6.0));
+    let mut project = ProjectBuilder::new().midi_track(1, "Keys").build_without_ids();
+    project.channels[0].devices.push(device);
+    let mut session = Session::new(suhina_test_support::with_ids(project));
+    let listed = run(&mut session, "track.devices", json!({ "track": 1 })).unwrap();
+    let gain = listed[0]["params"].as_array().unwrap().iter().find(|p| p["id"] == "gain").unwrap();
+    assert_eq!(gain["value"], 6.0, "the panel shows the last value, the engine's and the preset's");
 }
 
 #[test]

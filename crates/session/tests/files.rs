@@ -1032,3 +1032,122 @@ fn a_preset_file_naming_a_missing_file_adds_its_device_and_says_so() {
     assert!(error.contains("does not run"), "{error}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A library-relative state text handed back to `device.setNamFile` keeps the same reference:
+/// the state text is the file's own, so a caller (the MCP server, a user preset) that gives it
+/// back keeps the project's file ([ADR 0036] › 4). A working-folder path still resolves against
+/// it.
+#[test]
+fn a_file_state_handed_back_keeps_the_library_relative_form() {
+    let dir = temp_dir("state-handed-back");
+    let mut session = Session::new(blank_project());
+    session.set_library_base(dir.clone());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+    let file = dir.join("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, SHIPPED_OVERDRIVE).unwrap();
+    run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": text(&file) })).unwrap();
+    let relative = "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam";
+
+    // The state text handed back keeps the same reference: the state does not become an
+    // absolute path of the working folder.
+    let out = run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": relative })).unwrap();
+    assert_eq!(out["file"], relative, "the same reference is kept");
+    let device = session.project().tracks[0].channel.and_then(|c| session.project().channel(c)).unwrap();
+    assert_eq!(
+        device.devices[0].state.as_deref().and_then(|s| std::str::from_utf8(s).ok()),
+        Some(relative)
+    );
+    // A file outside the library stays absolute: its path is the state.
+    let outside = std::env::temp_dir().join(format!("suhina-library-outside-{}.nam", std::process::id()));
+    std::fs::write(&outside, SHIPPED_OVERDRIVE).unwrap();
+    let out = run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": text(&outside) })).unwrap();
+    assert_eq!(out["file"], text(&outside), "the outside file keeps its absolute path");
+    let _ = std::fs::remove_file(&outside);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A library-relative state's file is at the library's base, not the working folder: the
+/// timestamp check sees the same resolved path the load read, so a rewritten file is
+/// reloaded and the player hears it.
+#[test]
+fn a_library_relative_files_rewrite_is_reloaded_by_the_sync() {
+    let dir = temp_dir("relative-rewrite-sync");
+    let mut session = Session::new(blank_project());
+    session.set_library_base(dir.clone());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+    let file = dir.join("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, SHIPPED_OVERDRIVE).unwrap();
+    run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": text(&file) })).unwrap();
+    let relative = "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam";
+    session.sync_device_files();
+    assert_eq!(session.device_asset_name(relative).as_deref(), Some("Suhina Overdrive"), "the first sync loads the file");
+
+    // The working folder is not the library's base: the file's rewrite is seen at the
+    // library's path, not the working folder's, and the sync loads it again.
+    let model = r#"{
+        "version": "0.5.4", "architecture": "WaveNet",
+        "config": {
+            "layers": [{
+                "input_size": 1, "condition_size": 1, "channels": 1, "head_size": 1,
+                "kernel_size": 1, "dilations": [1], "activation": "ReLU",
+                "gated": false, "head_bias": false
+            }],
+            "head": null, "head_scale": 1.0
+        },
+        "weights": [1.0, 2.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+        "metadata": { "name": "Test amp 1965" }
+    }"#;
+    std::fs::write(&file, model).unwrap();
+    session.sync_device_files();
+    assert_eq!(
+        session.device_asset_name(relative).as_deref(),
+        Some("Test amp 1965"),
+        "the sync sees the rewrite at the library's path and loads it again"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A missing file outside the library keeps its missing-file note: a shipped file of the same
+/// name is no stand-in for an absolute path, for nothing proves it is the pack's file.
+#[test]
+fn a_missing_outside_file_keeps_its_missing_file_note() {
+    let dir = temp_dir("missing-outside-note");
+    let mut session = Session::new(blank_project());
+    session.set_library_base(dir.clone());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+    let outside = std::env::temp_dir().join(format!("suhina-library-outside-note-{}.nam", std::process::id()));
+    std::fs::write(&outside, SHIPPED_OVERDRIVE).unwrap();
+    run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": text(&outside) })).unwrap();
+    let absolute = text(&outside);
+    let _ = std::fs::remove_file(&outside);
+    session.sync_device_files();
+    let note = session.device_asset_note(&absolute);
+    assert!(note.is_some(), "{absolute}: the missing file keeps its note, not the pack's sound");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The library's base given again: a session's loads that ran with it stand, so the same
+/// assignment does not clear the assets a project's devices already loaded.
+#[test]
+fn the_same_base_again_keeps_the_assets() {
+    let dir = temp_dir("same-base-assets");
+    let mut session = Session::new(blank_project());
+    session.set_library_base(dir.clone());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+    let file = dir.join("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, SHIPPED_OVERDRIVE).unwrap();
+    run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": text(&file) })).unwrap();
+    session.sync_device_files();
+    let relative = "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam";
+    assert!(session.device_asset(relative).is_some());
+    session.set_library_base(dir.clone());
+    assert!(session.device_asset(relative).is_some(), "the same base again keeps the assets");
+    let _ = std::fs::remove_dir_all(&dir);
+}
