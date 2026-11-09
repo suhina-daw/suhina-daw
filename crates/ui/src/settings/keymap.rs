@@ -110,7 +110,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 88] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 89] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -202,6 +202,7 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 88] = [
     ("pianoRoll.gridSnap", "Turn snapping to the piano roll's grid on or off", PIANO_ROLL),
     ("pianoRoll.zoomSelection", "Zoom the piano roll to the selected notes, or the whole clip", PIANO_ROLL),
     ("pianoRoll.zoomClip", "Zoom the piano roll to the whole clip", PIANO_ROLL),
+    ("pianoRoll.legato", "Make the selected notes, or all the notes, last until the next one starts", PIANO_ROLL),
     ("help.about", "Show which version of Suhina this is", "Help"),
 ];
 
@@ -232,9 +233,9 @@ pub fn slot_only(action: &str) -> bool {
 
 /// Whether `action` is left alone while the piano roll has the keyboard: what edits or shows the
 /// Arrangement or the Launcher behind it (the selected slot's keys, the selected clips' edits, the
-/// Arrangement's tools, grid, lanes and markers), even when the piano roll has no key of its own on
-/// it, so a key pressed while editing notes never acts on the view behind them. The window's own
-/// keys (play, save, undo, the views, Settings) go on working.
+/// Arrangement's tools, grid, lanes, markers and loop), even when the piano roll has no key of its
+/// own on it, so a key pressed while editing notes never acts on the view behind them. The
+/// window's own keys (play, save, undo, the views, Settings) go on working.
 pub fn not_in_piano_roll(action: &str) -> bool {
     slot_only(action)
         || arrangement_only(action)
@@ -254,6 +255,7 @@ pub fn not_in_piano_roll(action: &str) -> bool {
                 | "view.waveformZoomIn"
                 | "view.waveformZoomOut"
                 | "marker.addAtPlayhead"
+                | "transport.setLoopEnabled"
                 | "clip.insertMidi"
         )
 }
@@ -473,7 +475,7 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 89] = [
+const DEFAULTS: [(&str, &[&str]); 90] = [
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
@@ -563,6 +565,7 @@ const DEFAULTS: [(&str, &[&str]); 89] = [
     ("pianoRoll.gridSnap", &["Ctrl+4"]),
     ("pianoRoll.zoomSelection", &["Z"]),
     ("pianoRoll.zoomClip", &["Shift+Z"]),
+    ("pianoRoll.legato", &["Alt+L"]),
 ];
 
 impl Default for Keymap {

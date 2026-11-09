@@ -3,7 +3,7 @@
     "description": "Opens the start panel for creating a project or opening an existing one. If the start panel is already open, it stays open.",
     "context": "Available without an open project.",
     "whenToUse": "Start another idea without closing the application.",
-    "sourceFingerprint": "c68e6c634549f7ca403911ebaac8aaa615dc991a682832836316d70fdcbc1e1e",
+    "sourceFingerprint": "8fc3ff30116ff45f77f0808f32832b57d91e1ec763fe952c2901f0d0620c3996",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -15,7 +15,7 @@
     "description": "Opens the project picker with its open-project action selected.",
     "context": "Available without an open project; opening behavior also depends on the General project-opening setting.",
     "whenToUse": "Return to a saved project.",
-    "sourceFingerprint": "61d6f7603e5c37b769fbcfb44e14b718da491643ae321e6a89e690ca78e8a846",
+    "sourceFingerprint": "6aeebe2b77fa84aa52f8804c1d21cf15bf4c87a748cd4fe502970dc51f716e18",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -27,7 +27,7 @@
     "description": "Saves the active project. A project that does not yet have a file opens the save prompt.",
     "context": "Requires an open project.",
     "whenToUse": "Keep the edits you have just made.",
-    "sourceFingerprint": "403a608ebfd385a4ca900399ff35d11b4dca73ed605b9dc988a408327cd0f483",
+    "sourceFingerprint": "c90845adb7e3604ee61a1e009ab1d3b21426907a10b2b75127ad9b6b20d8e129",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -39,7 +39,7 @@
     "description": "Opens the save prompt to save the active project under another name or location.",
     "context": "Requires an open project.",
     "whenToUse": "Keep a separate version before trying a different arrangement.",
-    "sourceFingerprint": "1c9f845b5034ab840126dd2a359b2f3564cf862c177f3ba153bc3c4d96cdcf0b",
+    "sourceFingerprint": "1226b1628369052e886c7f98d90366efea0ae1f411655e247275b56d8983387e",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -51,7 +51,7 @@
     "description": "Saves the active project as a reusable starting template through the template-save prompt.",
     "context": "Requires an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
     "whenToUse": "Reuse your track and device setup in another project.",
-    "sourceFingerprint": "4398a0881a86a2a0a32720daa454bb60566eac619f5e75ce4266d64e9126c319",
+    "sourceFingerprint": "756299bc619e42a39978ce9992615014571a25eb01f1e2fa6a510a57f118a160",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -63,7 +63,7 @@
     "description": "Starts playback when stopped and stops it when running. The Transport settings choose where Play starts and whether Stop returns to the play start marker.",
     "context": "Requires an open project; the playhead is the position moving through the song.",
     "whenToUse": "Listen to an edit, then stop without reaching for the transport controls.",
-    "sourceFingerprint": "2d471095960d99df072873ea2e1ff4b81f1595623b2ca6be325947f4eea117d5",
+    "sourceFingerprint": "f6056c99462ffcd99b0e448f44fbd81932c15831789941ad730d76ff7107dc41",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -75,7 +75,7 @@
     "description": "Turns the computer keyboard's notes on or off. While on, A W S E D F T G Y H U J K (and O L P ;) play the armed tracks like a piano's keys, Z and X move the octave and C and V the velocity, and those keys run no shortcut. The control bar's Keys button does the same.",
     "context": "Available whenever a project is open; the notes go to the armed tracks.",
     "whenToUse": "Play or record notes without a MIDI keyboard.",
-    "sourceFingerprint": "9b8d30214101612bcc013764ced3698b359280f3690f785f8efc648d5193a676",
+    "sourceFingerprint": "21ea164301c5c06067e364ff74f6c495d575b18e006be73b15aab4da456998ef",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -87,7 +87,7 @@
     "description": "Switches the main work area between Session, the clip-slot grid, and Arrangement, the song timeline.",
     "context": "Requires an open project; text fields keep Tab while they accept keyboard input.",
     "whenToUse": "Move between launching clips and editing the song timeline.",
-    "sourceFingerprint": "3920a53140b7559a13b718aa4d2dd1eafbc653bed2d2c86baf1afd58e84fce61",
+    "sourceFingerprint": "d9b910d37d1423aa44569bd1158ab4e8d75833cf2e647adca2d13eeb6123e1c9",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -99,7 +99,7 @@
     "description": "Shows Session and closes the large sample map so the clip-slot grid is visible.",
     "context": "Requires an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
     "whenToUse": "Go directly to the clip grid instead of toggling views.",
-    "sourceFingerprint": "670d6daa53fa3fb967309f69e0ca986bd61f296f6723d6a9d5fb36a08cc75096",
+    "sourceFingerprint": "131e7c136b4364f31b4507e63deb4c87de4a74022d342f04fd3d66da855f63b6",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -111,7 +111,7 @@
     "description": "Shows Arrangement and closes the large sample map so the song timeline is visible.",
     "context": "Requires an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
     "whenToUse": "Go directly to the timeline from another main view.",
-    "sourceFingerprint": "24488584666e0c4c29ffa8eb073bc51648cda0308a7bc8a72fe4f9cb43b1a929",
+    "sourceFingerprint": "b48b8a971a0f979854899d0a91ff26b23cd12a7ccd4a65192cf975bb1d12dae0",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -123,7 +123,7 @@
     "description": "Opens Settings, or closes Settings if it is already open.",
     "context": "Available without an open project; key capture and text editing can temporarily keep the keyboard.",
     "whenToUse": "Change your audio device or find a preference.",
-    "sourceFingerprint": "72b78d833088a8493f4f88ccab7d1fe4b45a5fe4dd038b24f97190dd96293c0a",
+    "sourceFingerprint": "0160cdb00709a58fabb783e2ae8ed76f4308a971bb1478c0694c88a45541d6ac",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -135,7 +135,7 @@
     "description": "Hides or shows the detail area used for clip editing and devices. Toggling also clears the clip-editor-closed state.",
     "context": "Requires an open project.",
     "whenToUse": "Make more room for the main view, then bring the detail area back.",
-    "sourceFingerprint": "887f4ad22f9178d1220487f7bfd5129ddfa9983ae84198edc5715eb6efc5a405",
+    "sourceFingerprint": "da8be303f4d829cd7090d49892d53292c636f70b9824e201e3ff3d5b4a0611a1",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -147,7 +147,7 @@
     "description": "Hides the selected clip's editor or shows it again.",
     "context": "Requires an open project with a shown clip; without one this action does nothing.",
     "whenToUse": "Temporarily hide the clip editor while keeping the main view visible.",
-    "sourceFingerprint": "ad3c0c877ed790aa370e2c839691c5c0f26e1d6d0210026eb94052e40a1e7e2b",
+    "sourceFingerprint": "b4edaa6cff62dd8cf7dddd4a5a9254dec594491f39c730158f26f04d8b6c40ea",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -159,7 +159,7 @@
     "description": "Turns Session key mapping on or off. Entering mapping mode shows Session; click a clip slot, scene or stop button and press the key to assign.",
     "context": "Requires an open project. In mapping mode Delete removes an assignment and Escape leaves mapping mode.",
     "whenToUse": "Assign a convenient key to a frequently launched clip or scene.",
-    "sourceFingerprint": "27b38e7b206edb8fdc51a8879c42201fcf2059a8a0a90020cdeb2b1c6662e1b7",
+    "sourceFingerprint": "5d5290fccc55c364b46ad4aabff252839e940338feb8aca92cd6066bbec74133",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -171,7 +171,7 @@
     "description": "Hides or shows the browser panel for samples, devices and other library items.",
     "context": "Draw-first changes this binding to Ctrl+Shift+B on Windows/Linux or Cmd+Shift+B on macOS, leaving Ctrl/Cmd+B for Duplicate.",
     "whenToUse": "Make room for editing, then reopen the browser to find a sound.",
-    "sourceFingerprint": "142476dbe68d1351a8306d9330c84a463658007c1588ac350b1a8c6e17ddafd2",
+    "sourceFingerprint": "4cec8a2c499dcf65f152f326709d247bf999525ec7fc7a8bad5e916e78b6f276",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -183,7 +183,7 @@
     "description": "Opens the browser if needed, selects its All category and focuses the search field with the existing search selected.",
     "context": "Available without an open project. It closes Settings and replaces the current search when you type.",
     "whenToUse": "Find a sample across the library without first choosing a browser category.",
-    "sourceFingerprint": "d3c416f10ae2a80b09b4d3d30381b7dabaabeb0ddfa3baafb1ba033f64ece0b7",
+    "sourceFingerprint": "052d71b2fa61c30f487f5b5bbf875471a07eeb0c20d299feb68bc1f06e7334d8",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -195,7 +195,7 @@
     "description": "Opens the quick-add palette in the middle of the window: a search field over one list of the built-in instruments, effects and MIDI effects, the installed plug-ins, the samples and MIDI files in the browser's folders, and presets. Each plug-in row shows its format (VST2, VST3, CLAP) at the right. Buttons along the bottom (Instruments, Effects, Samples, Presets) narrow the list to those kinds; with Instruments or Effects on, format buttons under the field narrow plug-ins to VST2, VST3 or CLAP. Up and Down move through the list; Enter or a click adds the lit item and closes the palette; Escape or a click outside closes it without changing anything. An effect goes on the selected track only (with no track selected, effects are not listed); an instrument or preset goes on the selected track, or on a new track that then becomes selected; closed without adding, the palette keeps what was typed for next time; a sample or MIDI file becomes a clip on the selected track, as a drop on its lane (on a new track right after it when the track cannot hold the file, or with no track selected), starting at the beat under the pointer (snapped to the grid) when the key is pressed over the Arrangement, at the play start marker otherwise.",
     "context": "Needs an open project. The header above the field names the target track (or New track) and the bar where a sample would start. On a track that plays no notes, such as an audio track, instruments and MIDI effects are not listed.",
     "whenToUse": "Add an effect, an instrument or a sample you know by name without opening the browser, finding it and dragging it.",
-    "sourceFingerprint": "a4057b961828170afa77777458a3aaf2af6721fb63ede31bda853d04f9f3da49",
+    "sourceFingerprint": "624e43dfc3cb8f2c885983ae2878b2a3d216e39ec6569700547112edb3e2135e",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -207,7 +207,7 @@
     "description": "Shows or hides the sample map in the main work area. The sample map places samples in a visual layout for browsing by sound.",
     "context": "Available without an open project; opening it closes Settings.",
     "whenToUse": "Explore samples visually instead of searching by file name.",
-    "sourceFingerprint": "a11ddb4b5e49607a4c8c51f7e68b1466677fb204bbe2a9545d1166774329b72d",
+    "sourceFingerprint": "1c3b34e012eb61b2261bf35bf6db82d921cd8df4f80620abd8b158b7505716cc",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -219,7 +219,7 @@
     "description": "Moves the sample map into a separate window, or returns it from that window.",
     "context": "Available without an open project.",
     "whenToUse": "Keep the sample map available while working in the main song view.",
-    "sourceFingerprint": "3eddcd1a8117884536b45f05200caf1c93841431f3eb541d34b3457ace5d94af",
+    "sourceFingerprint": "17771298c5930929616af6339d3943dd05bbc10225cfb8558919fa95cd489770",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -231,7 +231,7 @@
     "description": "Enlarges the application's interface: panels, text and controls grow together. This is separate from zooming the song timeline.",
     "context": "Available without an open project. On macOS use Cmd+=; the alternate Ctrl+Plus binding is not delivered as Plus while Cmd is held.",
     "whenToUse": "Make controls easier to read on a high-resolution display.",
-    "sourceFingerprint": "45cb5e29406bc5834f7662016ff837f99ea96529198fef16280dfd30e7317e8a",
+    "sourceFingerprint": "10ff8192315ca6714b6998a2cd973bd9455de736ca934ee24f198019c4069f58",
     "platformNotes": "On macOS use Cmd+=. Cmd+Plus is not emitted as Plus by the window. Windows and Linux also accept Ctrl+Plus as well as Ctrl+=.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -243,7 +243,7 @@
     "description": "Reduces the scale of the application's interface, showing more controls in the same window.",
     "context": "Available without an open project; the zoom choice is saved in Settings.",
     "whenToUse": "Fit more interface content on a smaller screen.",
-    "sourceFingerprint": "3176ac24e4abdd7f9dc8a9d4aea858a3a90ee5e70e4ff826d2ed9fc99a4f636c",
+    "sourceFingerprint": "c07b55749dcc1510918c8e6de49e426c87445b10647b149ad4872c74f08110ca",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -255,7 +255,7 @@
     "description": "Restores the application's normal interface scale using its default zoom setting.",
     "context": "Available without an open project.",
     "whenToUse": "Return to the normal interface size after experimenting with zoom.",
-    "sourceFingerprint": "cedd421e991c65a22428eabd31460c42aaaab1ea6df05e87b4f5ec3d0fcfccec",
+    "sourceFingerprint": "f090ee3e1c1c86d6e32ab6b30a6b13f718b68b25da4959dee3cb4ae3e0a350ad",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -267,7 +267,7 @@
     "description": "Draws Arrangement audio waveforms taller without changing the audio signal or clip volume.",
     "context": "Available without an open project, but the visible effect is on Arrangement audio clips. While the piano roll has the keyboard (after a click in it) this key does nothing there, so it never acts on the clips behind the notes.",
     "whenToUse": "Inspect a quiet recording's waveform without turning up its sound.",
-    "sourceFingerprint": "70ac712372205256a62d3671d4f8d2eed97df2baab09f6ade0363381630c35ed",
+    "sourceFingerprint": "361fc05061770a946a9ec58b00c50c450a078ea0dc9e3b814e6c7a4417f24e19",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -279,7 +279,7 @@
     "description": "Reduces Arrangement waveform display magnification, down to the waveform's own size. Audio volume is unchanged.",
     "context": "Visible on audio clips in Arrangement; this changes the drawing, not the recorded samples. While the piano roll has the keyboard (after a click in it) this key does nothing there, so it never acts on the clips behind the notes.",
     "whenToUse": "Undo waveform magnification after inspecting a quiet passage.",
-    "sourceFingerprint": "0c6e407aa55c3e45734ab54fa439699c03fd718338518cd2f126e9a20c1b858f",
+    "sourceFingerprint": "b74725cb3cdefa3d566c449528a7f64e4efaef9b8880fa097f2e9b8a40c5c72f",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -291,7 +291,7 @@
     "description": "Copies the relevant selection: piano-roll notes first when that editor handles the key, then focused devices, the selected Session slot, or Arrangement clips or a time selection. Copy leaves the originals in place.",
     "context": "Click the intended editor or device panel first. If the piano roll cannot act on notes, copying may fall through to a clip selection.",
     "whenToUse": "Reuse a phrase, clip or device setup elsewhere.",
-    "sourceFingerprint": "5e0921f641f2e206ccbf96972179bcf6d3588d2d2472a073f3bf1ea6c89a19b9",
+    "sourceFingerprint": "d84497619f114690eecf785e240d5f21e6274b3b32c7711c0db3ba81ff11c4cb",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same. System clipboard events, including Windows Ctrl+Insert, Shift+Delete and Shift+Insert when delivered by the window, are normalized to Copy, Cut and Paste.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -305,7 +305,7 @@
     "description": "Copies and removes selected piano-roll notes, focused devices, or Arrangement material. An Arrangement time selection cuts only its span.",
     "context": "Click the intended editor or device panel first. Cutting a Session slot's clip is not supported; copy and paste it instead.",
     "whenToUse": "Move a passage or device rather than leave a second copy.",
-    "sourceFingerprint": "0e583e3afc0f910727ab0f8b392024ae134df68502af86678369af67cd187594",
+    "sourceFingerprint": "ca999033cb447cd1b6f51cf4b4603238b2a2332d307ae6ce4214088f02dc0f37",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same. System clipboard events, including Windows Ctrl+Insert, Shift+Delete and Shift+Insert when delivered by the window, are normalized to Copy, Cut and Paste.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -319,7 +319,7 @@
     "description": "Pastes into the focused context. Notes go after selected notes, otherwise at a playhead inside the clip or after their copied position. Devices go after picked devices; Session paste replaces the selected slot. Arrangement paste goes after the selected clip or at the playhead on the selected track; multi-track copies return to their tracks.",
     "context": "Requires copied material and a suitable target. Arrangement overlap follows audio/MIDI stacking settings. Suhina also puts text on the system clipboard because the window delivers Paste only for text clipboard content.",
     "whenToUse": "Place copied material at a chosen clip slot, track, note position or device position.",
-    "sourceFingerprint": "c306a81ce412e591e7faaf0f17a323d8682a75ac822d099580c89696991322ee",
+    "sourceFingerprint": "825b0caf015bdf53973895c4f6f197764a2e60776ce8f065088ae8f2214725f3",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same. System clipboard events, including Windows Ctrl+Insert, Shift+Delete and Shift+Insert when delivered by the window, are normalized to Copy, Cut and Paste.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -333,7 +333,7 @@
     "description": "Copies selected notes, devices or Arrangement material directly after the selection. A duplicated Arrangement time selection moves onto the copy so another press repeats it.",
     "context": "Click the intended editor or device panel first. Session slot duplication is not supported. Arrangement overlaps follow stacking settings. Draw-first uses Ctrl/Cmd+B instead of Ctrl/Cmd+D.",
     "whenToUse": "Repeat a musical phrase or an effects chain without a separate paste step.",
-    "sourceFingerprint": "ac6a08e363e4a82242257428fbd891d7761ee15e792bb0f709ad7a85f3f276d3",
+    "sourceFingerprint": "f931eae28943e49d1a2bbe464c6a853b1f53147324eef7ac46193e8d2934c8c2",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -347,7 +347,7 @@
     "description": "Deletes the selection handled first: selected piano-roll notes, Arrangement automation points, picked devices, focused tracks, a Session slot's clip, or Arrangement material. A time selection removes the material inside its span.",
     "context": "Click the intended area first: the focused panel and selection decide what is removed.",
     "whenToUse": "Remove selected notes or an unwanted passage after confirming the correct area is focused.",
-    "sourceFingerprint": "8c3e42a5a0bb5380f18f237a7e8914e313fd2661414683796021f6e8009c57cc",
+    "sourceFingerprint": "aaf593de9fd180308eb91e0567001be09882e7851fb1693495e81fb739d70725",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -361,7 +361,7 @@
     "description": "Turns selected Arrangement clips off, or back on if all are off. When a device is selected and the device panel has focus or is shown, it toggles that device instead.",
     "context": "The clip action uses the Arrangement clip selection. It is separate from the piano roll's Mute tool.",
     "whenToUse": "Compare the song with and without a clip or selected device.",
-    "sourceFingerprint": "9d393bc693c6c21702264a579e3def8a9a1a565920bb7bf98acb7c4631364022",
+    "sourceFingerprint": "9462b74b4769b9cbaa0c018df1b1de790072e62ba411c67acb7a2530b740fb38",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -375,7 +375,7 @@
     "description": "Opens name editing for a focused track header, otherwise the selected Arrangement clip or Session slot clip. Multiple Arrangement clips can be renamed together when Rename selected clips is enabled.",
     "context": "Click the track header or clip to choose the target; an empty Session slot has no clip to rename.",
     "whenToUse": "Give tracks and clips meaningful names before the project grows.",
-    "sourceFingerprint": "1db03cdc2847ba966f95d016eb27a90d63022d4b0a26bffe14a5abd717005691",
+    "sourceFingerprint": "95c2f19f2caae5a354a131d5e5c7de89e49203b13fe588e056974385b56fcdb6",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -389,7 +389,7 @@
     "description": "Selects every clip in the Arrangement.",
     "context": "Requires an open project. With piano-roll focus the same key selects notes instead.",
     "whenToUse": "Select the Arrangement's clips before moving or copying them together.",
-    "sourceFingerprint": "5f8e5f6942d9c34a03d8eb8df0bd015d6bc4ae9d1a353dedd5e5239a0ba70a8e",
+    "sourceFingerprint": "c2741751bd55b9791e98c2fb8a66080c082eef2284f5299b74a7baffda2767b5",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -403,7 +403,7 @@
     "description": "Splits the selected Arrangement clip where its body was clicked, playing or stopped; it never splits at the playhead. With a time selection it splits material at the selection boundaries.",
     "context": "Requires Arrangement material; click inside the clip where it should be split, or make a time selection first.",
     "whenToUse": "Separate a passage so you can edit or remove it independently.",
-    "sourceFingerprint": "01a6fec170e55d6cb3f1dbbdcf7df53f10412017e80ba9fd3aad8efe94b56ebd",
+    "sourceFingerprint": "17ab3ab9d638a2ce0c2e53b11f7014b1aa9491830062bd9fca5fb92796a49246",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -417,7 +417,7 @@
     "description": "Creates a new clip covering the selected clips' span on the active clip's track. A time selection consolidates each selected track with material over that span, with empty parts silent.",
     "context": "Requires Arrangement clips or a time selection with material. A selected stack row limits the time selection to that row.",
     "whenToUse": "Turn several small edits into a single clip over a chosen passage.",
-    "sourceFingerprint": "7f9a4b608ab2002562215e3c3d5520db0b88fa5bf2d752a9bd4f2c06683b1a2b",
+    "sourceFingerprint": "611e489ab7dcf6d33ec7a617f52cc1115b31d8ce96f2acb81a02a40a3e5d9089",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -431,7 +431,7 @@
     "description": "Groups picked adjacent devices on one track when the device panel has focus; otherwise groups selected Arrangement tracks.",
     "context": "Device picks must sit next to each other on the same track. Without selected tracks or devices there is nothing to group. While the piano roll has the keyboard (after a click in it) this key does nothing there, so it never acts on the clips behind the notes.",
     "whenToUse": "Organize related tracks or package a sequence of devices together.",
-    "sourceFingerprint": "76f3f8f1093937f3074fd820a58d43b64b3ab4762b15000f604a68d7e01a78f9",
+    "sourceFingerprint": "744aa391b42949edfdfa840e81baa3396b6be5e5491bc7d4c7032ee1f5cd0b69",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -445,7 +445,7 @@
     "description": "Takes apart the selected device group when it contains one branch, returning its devices to the parent chain.",
     "context": "Click the device group first; this shortcut does not ungroup tracks. While the piano roll has the keyboard (after a click in it) this key does nothing there, so it never acts on the clips behind the notes.",
     "whenToUse": "Return a simple device group to individual devices in the chain.",
-    "sourceFingerprint": "2de9ed376c83123af89c107eac095570c9c15c01728ded3b4edea44609741bbf",
+    "sourceFingerprint": "c59a6a66396490705d38f09aa89e00fe638e790c8471ae964c9439a016a6b2c7",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -459,7 +459,7 @@
     "description": "Adds an audio track for audio clips. It is inserted after the selected track and inside that track's group when applicable.",
     "context": "Requires an open project; the selected track determines the insertion position.",
     "whenToUse": "Add a lane for a recording or imported audio.",
-    "sourceFingerprint": "579fcda595f031b0c77260ef091024e7992f4d5b0b50f963560e51fa1451c07a",
+    "sourceFingerprint": "fdf4e77f3cc3c01c2068b798f299b0bb3c4b3c195c0b642c793e8cb3dc0e9f4a",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -471,7 +471,7 @@
     "description": "Adds a MIDI track for note clips and instruments, after the selected track and inside its group when applicable.",
     "context": "Requires an open project; MIDI notes describe what to play rather than containing recorded sound.",
     "whenToUse": "Create another instrument part.",
-    "sourceFingerprint": "1421151d937c6a5a37de220c8ed483d67b45ba68e33d141336ce7d16b01bde7e",
+    "sourceFingerprint": "625e2e43505021252d261ca27ce82a51134fb45f6f085b849a6964cb8bd95f2d",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -483,7 +483,7 @@
     "description": "Creates an empty MIDI clip over the Arrangement time selection on each selected MIDI track.",
     "context": "Make a time selection that includes a MIDI track first. Audio tracks in the selection do not receive MIDI clips. While the piano roll has the keyboard (after a click in it) this key does nothing there, so it never acts on the clips behind the notes.",
     "whenToUse": "Prepare a blank note clip exactly over the passage you want to write.",
-    "sourceFingerprint": "75fe58e2104d32ad784079c0f60f0ecf172861d6f020dc2936d6fa4f468a6a1d",
+    "sourceFingerprint": "b11080173b6a4797696973f7b3423e55016079a8a9dd79cb434fbd37a76322c1",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -495,7 +495,7 @@
     "description": "Shows or hides automation lanes across the Arrangement tracks. Automation is a sequence of changes to a parameter over time.",
     "context": "Requires an open project with an Arrangement timeline. While the piano roll has the keyboard (after a click in it) this key does nothing there, so it never acts on the clips behind the notes.",
     "whenToUse": "Reveal volume or device-parameter changes while editing the song.",
-    "sourceFingerprint": "90ca0ce97b4883145d3a3949ae19a35c616b4ae87cba58335921dc56c8579883",
+    "sourceFingerprint": "2035b2caf19ed61c4689a51fa724f1f14c3ec19ca24e3341e186a716ba089a96",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -507,7 +507,7 @@
     "description": "Launches the selected Session clip slot using the launcher's scheduling rules.",
     "context": "Requires Session and a selected clip slot. Piano-roll focus keeps its keys separate from slot navigation.",
     "whenToUse": "Start the slot selected with the arrow keys.",
-    "sourceFingerprint": "a6e9956291052755e45dff3c52584805a9314490190ef4a3fded71a3c5f371b6",
+    "sourceFingerprint": "b9ab2048019e8a07f108d54d29adac178bb1246ae0e0f72fe9fc6518c75605cc",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -521,7 +521,7 @@
     "description": "Selects the clip slot in the Session row above the current slot.",
     "context": "Click a Session slot first; with piano-roll focus Up moves selected notes instead.",
     "whenToUse": "Navigate vertically through clip choices without launching them.",
-    "sourceFingerprint": "cc4582b5517ac693e6c8eb1c074dd1481bb7db3691ad5655df00c828c9be748a",
+    "sourceFingerprint": "668cfcaeea1d655554621fc08274048bd4da02663cdae726cff6ddf58ccc051c",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -535,7 +535,7 @@
     "description": "Selects the clip slot in the Session row below the current slot.",
     "context": "Click a Session slot first; with piano-roll focus Down moves selected notes instead.",
     "whenToUse": "Move to the next Session row before launching its clip.",
-    "sourceFingerprint": "2558289525af0a4ad1d0407eed7efa6e9bcba420704f94247f5569bedc499784",
+    "sourceFingerprint": "36cd21bcffac0337f2c537c20b11c719c975bdc861da95ba2419edc650e4aadd",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -549,7 +549,7 @@
     "description": "Selects the Session clip slot on the track to the left.",
     "context": "Click a Session slot first; with piano-roll focus Left moves selected notes instead.",
     "whenToUse": "Choose a slot on the neighboring track.",
-    "sourceFingerprint": "80e59f4f9bea3790a5dba70881b2bb049f21d36f4991a9a225864d3422a60bb2",
+    "sourceFingerprint": "713dddfcca9c7b9bfaa699ec4f9393a1b78ce6e491a183f78ed9d11384b2529f",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -563,7 +563,7 @@
     "description": "Selects the Session clip slot on the track to the right.",
     "context": "Click a Session slot first; with piano-roll focus Right moves selected notes instead.",
     "whenToUse": "Move across the Session grid to another track.",
-    "sourceFingerprint": "8af92da46c50e1d0679d026f5e6a1ff5e96520c715d62fb32fb6f7925dac1dda",
+    "sourceFingerprint": "ccdc14c2d8815fe280be0bc66b362ef6db33322fc2c6a2f1ab18d062d1ea6192",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -577,7 +577,7 @@
     "description": "Moves the selected notes toward a rhythmic grid using the piano roll's last quantise grid, amount and note-end settings. With no selected notes it processes the notes that start in a time selection, or else every note in the shown clip.",
     "context": "The detail area must show a MIDI clip in the piano roll. Unlike the other piano-roll keys, a click to focus that editor is not required.",
     "whenToUse": "Tighten a recorded phrase using the quantise settings you last chose.",
-    "sourceFingerprint": "8cf10a70e9228ad84e5613992112253c7c66d2f54f3d9179f3e8b988fc1b2138",
+    "sourceFingerprint": "56374446f6130bd2da74bb29cf678d3d708b83fd39054915ba335a6a7efbe83d",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -591,7 +591,7 @@
     "description": "Selects every note in the MIDI clip shown in the piano roll.",
     "context": "Click the piano-roll note grid first. The same key outside that editor selects Arrangement clips.",
     "whenToUse": "Transpose or copy a whole note phrase.",
-    "sourceFingerprint": "768f10f7de143770d99df3e9c8b833a39e38292f72300dbc8701816995350270",
+    "sourceFingerprint": "40c9294131168ae308838cf2b0f7474d2f63df7de9af429dec963744a32eb08e",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -605,7 +605,7 @@
     "description": "Clears the piano roll's note selection without deleting notes.",
     "context": "Click the piano-roll note grid first; Escape has other uses elsewhere.",
     "whenToUse": "Clear a note selection before drawing or selecting another phrase.",
-    "sourceFingerprint": "0975c42a77cbfdedf921db258e585ae10818fc8dd4b7b8f806dfc0ba2f07c061",
+    "sourceFingerprint": "f44e11a38215bd33727c1e4fe7bacad518b14d99ab41088369075097871b5e8b",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -619,7 +619,7 @@
     "description": "Moves selected notes so the first lands on the previous note-grid line, preserving their relative spacing.",
     "context": "Click the piano roll and select notes first. Movement near the clip start is constrained so notes do not move before the start.",
     "whenToUse": "Shift a phrase earlier while keeping its rhythm together.",
-    "sourceFingerprint": "6d14571742c241bf7a38ffaa74469f8c1f5faad7ef6bd20514fd624aedb577a0",
+    "sourceFingerprint": "0808eef1db928122a3309afc31484d856e312574f3ed43a5cb4ca5f2ccaaaf94",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -633,7 +633,7 @@
     "description": "Moves selected notes so the first lands on the next note-grid line, preserving their relative spacing.",
     "context": "Click the piano roll and select notes first; the current grid determines the step.",
     "whenToUse": "Delay a phrase by a rhythmic step.",
-    "sourceFingerprint": "e29b139c767d98bfd1486754a1cea02b942176e8e7f4679433cac7b960b38a9e",
+    "sourceFingerprint": "55548b773d4263c596df6cbac9cdefc14ef2ded0879c3892b933efc96742c434",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -647,7 +647,7 @@
     "description": "Raises selected notes by one semitone, the interval between neighboring piano keys.",
     "context": "Click the piano roll and select notes first. A pitch move outside the valid note range leaves pitches unchanged.",
     "whenToUse": "Try a phrase one piano key higher.",
-    "sourceFingerprint": "a6784d2b5ed43676ebf8d5acde5223658988a195fc0797b1ee239f0b1517f251",
+    "sourceFingerprint": "216a70c81dca56da6c778eca783b8dfb33267284d8025b9b1161cc1669a6b220",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -661,7 +661,7 @@
     "description": "Lowers selected notes by one semitone, the interval between neighboring piano keys.",
     "context": "Click the piano roll and select notes first. A pitch move outside the valid note range leaves pitches unchanged.",
     "whenToUse": "Try a phrase one piano key lower.",
-    "sourceFingerprint": "982f34560e9658b954df7f9b4699afe7e7e19d1d5bf631e9fa85294774fb0988",
+    "sourceFingerprint": "d32d72c72147ea1a643affe77b4ae6064cc8729aeb50320ff29d63e92f5176dd",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -675,7 +675,7 @@
     "description": "Raises selected notes by an octave, or twelve semitones, while keeping their timing.",
     "context": "Click the piano roll and select notes first; a move outside the valid note range leaves pitches unchanged.",
     "whenToUse": "Move a melody into a higher register.",
-    "sourceFingerprint": "c0ae4b47e87c22a598c21687a02bb70ade1f0b1b4bb1d8012704a03111920a5c",
+    "sourceFingerprint": "3c74a03fed178317118a04d19c57aaa8849707088b1d4a369574780cfb341f81",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -689,7 +689,7 @@
     "description": "Lowers selected notes by an octave, or twelve semitones, while keeping their timing.",
     "context": "Click the piano roll and select notes first; a move outside the valid note range leaves pitches unchanged.",
     "whenToUse": "Try the same melody in a lower register.",
-    "sourceFingerprint": "40370900b9f509da2585ce4512b860f18568bab37c921cac6653b6a7a22c95e3",
+    "sourceFingerprint": "9bcc4311ebecc00529fdca438a2ece8b8bf1569dc49c8ca6e474088e1ba6810c",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -703,7 +703,7 @@
     "description": "Takes each selected note's end to the previous grid line without moving its start. No note gets shorter than one grid step.",
     "context": "Click the piano roll and select notes first.",
     "whenToUse": "Make a phrase more detached without moving note starts.",
-    "sourceFingerprint": "3cff3f1fed959779208ff0bb3a6d5f5ac18d6dce165c4b0d8f928cc50c6cdda4",
+    "sourceFingerprint": "86a31560227aaf798c7a92cb51b773234b66b26f1569c5b7280f07ad74f98780",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -717,7 +717,7 @@
     "description": "Takes each selected note's end to the next grid line, without moving its start, over the start of the next note of its pitch too. With stacked notes off, that note makes room once the selection is let go (Covered notes says whether it goes whole or keeps what runs on past).",
     "context": "Click the piano roll and select notes first.",
     "whenToUse": "Let a set of notes sustain longer.",
-    "sourceFingerprint": "557cb7f2999abef99695f2dcca0d49a3c8a25866c07b9adb90b72e510e52e631",
+    "sourceFingerprint": "8a1040a7f7fa5ddeb449665c71c4b9b8905f715dbc44e7f8b911b2a280e24c1e",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -731,7 +731,7 @@
     "description": "Switches from Draw to Select, or from another tool to Draw.",
     "context": "Click the piano-roll note grid first.",
     "whenToUse": "Alternate between adding notes and selecting them.",
-    "sourceFingerprint": "3917c153865ab37bd84fa289e441bd7757fc0c034f2a2267886b992d210b85e8",
+    "sourceFingerprint": "ae67c224f9b347555c69cf35f7dfb7310b5009db7ed2c1b029e921bee32bce7c",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -745,7 +745,7 @@
     "description": "Chooses Select, the piano-roll tool for picking and moving notes.",
     "context": "Click the piano-roll note grid first. Workflow settings can also make a left-click on empty space draw a note.",
     "whenToUse": "Return to selecting notes after using another tool.",
-    "sourceFingerprint": "13030b2880e1d78b3c7b73e75ae82ed438618d4b0976e74ec96de58dc905a1f2",
+    "sourceFingerprint": "2e9d9a7e92ed984b94daf2ab0c098b22e593c75fd3f3a19991ec96e3b4df7a29",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -759,7 +759,7 @@
     "description": "Chooses Draw for adding notes in the piano-roll grid.",
     "context": "Click the piano-roll note grid first; note placement follows the grid and workflow settings.",
     "whenToUse": "Enter a melody one note at a time.",
-    "sourceFingerprint": "78e53cbf0c549e3ced5ee0f2d8cb733591a25b1e70057a9e43756eedea388826",
+    "sourceFingerprint": "105d01f94c38e57dd875040b9ca99b477f6fd055dfdb5ef39ec5a897d4823508",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -773,7 +773,7 @@
     "description": "Chooses Paint for drawing notes along a drag through the piano-roll grid.",
     "context": "Click the piano-roll note grid first; note placement follows the grid and workflow settings.",
     "whenToUse": "Write a run of repeated notes with a drag.",
-    "sourceFingerprint": "a024be4e577a4ab18e34190b124038f30816908cf35edd1c1aceaab897543807",
+    "sourceFingerprint": "4d81dc06d1c560836ada96b96fe3d2ae3458872edaed3b5e7e4e6351da3e9f43",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -787,7 +787,7 @@
     "description": "Chooses Erase for removing notes with the pointer in the piano roll.",
     "context": "Click the piano-roll note grid first.",
     "whenToUse": "Remove notes by pointing at them instead of making a selection first.",
-    "sourceFingerprint": "d2a3ecbd4ef26c7632f32538e2d984ecbf94e3ec9d3ac07f8be90565bfebd00f",
+    "sourceFingerprint": "8b7ae4883708feb69f001ef200d9ee922d81fa8f3a524b48b475021e0a28afdf",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -801,7 +801,7 @@
     "description": "Chooses Slice for cutting notes at a position in the piano roll.",
     "context": "Click the piano-roll note grid first; slicing follows the grid unless snapping is bypassed.",
     "whenToUse": "Break a sustained note into shorter parts.",
-    "sourceFingerprint": "53e40aded423f5cb6216b6230d5577ddd397ed1634b94ebd57505621366d9e2b",
+    "sourceFingerprint": "1611e429d24f68547aa0af9a9611e4a5a607b21309d7b19d08729f129acef041",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -815,7 +815,7 @@
     "description": "Adds an Arrangement marker at the current playback position, or at the play start marker when stopped. A marker labels a position in the song.",
     "context": "Requires an open project. While the piano roll has the keyboard (after a click in it) this key does nothing there, so it never acts on the clips behind the notes.",
     "whenToUse": "Mark a verse or another useful song position while listening.",
-    "sourceFingerprint": "aee712ce0ea1ee858f8bae4943d183dde1ffc871b81a644a2fd51b2ba20b61ec",
+    "sourceFingerprint": "dae5649ef4c718db469958bc896cf5386012eb626b972fca154b7279bc31f5f1",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -827,7 +827,7 @@
     "description": "Swaps each selected part of a comp (a part put on the track from a take lane) for the same span of the take above it, going round the takes.",
     "context": "Works in the Arrangement with comped parts selected on a track that has take lanes.",
     "whenToUse": "Audition the take above for the same phrase without opening the take lanes.",
-    "sourceFingerprint": "ddd4f0712b92c6dd372e7d6f553b1ebeeeed05c03fa12c7c82f961728e11b24b",
+    "sourceFingerprint": "09343d52c614fe19c690e4c78f808b480b81bb7027038ad49352e5f5586aa0ba",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -839,7 +839,7 @@
     "description": "Swaps each selected part of a comp (a part put on the track from a take lane) for the same span of the take below it, going round the takes.",
     "context": "Works in the Arrangement with comped parts selected on a track that has take lanes.",
     "whenToUse": "Audition the take below for the same phrase without opening the take lanes.",
-    "sourceFingerprint": "a28817df81ac6811b84284cb5bb4a9b3efc698e0118466ad426863bfb3a54410",
+    "sourceFingerprint": "86c5dfcb3205eb648a2d8b2f9166311a560f4bd6f460dcadf7e007dc8a3b2b54",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -851,7 +851,7 @@
     "description": "Chooses the Arrangement's Select tool: click a clip to select it, drag to move it or draw a selection box.",
     "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
     "whenToUse": "Switch to the Select tool without moving the pointer to the toolbar.",
-    "sourceFingerprint": "4edb58fe0ac13cf6f30740b9f6aa6f2c0ec6317a5293ed74ac379cf3479e8ff3",
+    "sourceFingerprint": "fe0d5c71b17f96d630d53425ccf7f1f6e5861b4b7298cf62ce61234c1c4b1933",
     "platformNotes": "The number keys are the same on every platform.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -863,7 +863,7 @@
     "description": "Chooses the Arrangement's Range tool: drag across tracks to select a span of time on them.",
     "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
     "whenToUse": "Switch to the Range tool without moving the pointer to the toolbar.",
-    "sourceFingerprint": "46c022a7d670d4ce63d83ff7dfc582e7820238ac9d6bb28e8791e375402939be",
+    "sourceFingerprint": "dc32e57df17cc8f27b3d91c3faeac696c2b65d6f536b169615d94fd1f8633a6f",
     "platformNotes": "The number keys are the same on every platform.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -875,7 +875,7 @@
     "description": "Chooses the Arrangement's Split tool: click a clip to split it at that point.",
     "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
     "whenToUse": "Switch to the Split tool without moving the pointer to the toolbar.",
-    "sourceFingerprint": "2327519556ef7d9fe3996c41509b8884dd6338ab64c629236c107782d6a23139",
+    "sourceFingerprint": "d24aa9a3c993515bb739744c9dbfd014f78b28958ea8df552516363f69bde09a",
     "platformNotes": "The number keys are the same on every platform.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -887,7 +887,7 @@
     "description": "Chooses the Arrangement's Erase tool: click or drag over clips to delete them.",
     "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
     "whenToUse": "Switch to the Erase tool without moving the pointer to the toolbar.",
-    "sourceFingerprint": "fc2673f852a50b30a9590cf5825f30ce3bfed835ead69c9e1e84ea902dcb5a3e",
+    "sourceFingerprint": "1cd18549bfc6d4fe1153de619862e3ad208131a69d74a3257e25de981b57f580",
     "platformNotes": "The number keys are the same on every platform.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -899,7 +899,7 @@
     "description": "Chooses the Arrangement's Draw tool: drag on an empty lane to draw a new clip.",
     "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
     "whenToUse": "Switch to the Draw tool without moving the pointer to the toolbar.",
-    "sourceFingerprint": "20ea073105d5f9e5d5bbd9c391f9503c0a8ad537ea255d49a78949b6bf3a3f33",
+    "sourceFingerprint": "f52fa810c554d9f53298a97850e2ccd4ab5e18df8830dd40c1c14510c3e0c5eb",
     "platformNotes": "The number keys are the same on every platform.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -911,7 +911,7 @@
     "description": "Chooses the Arrangement's Mute tool: click a clip to mute or unmute it.",
     "context": "Works while the Arrangement's toolbar is on (Settings › Arrangement › Toolbar) and the Arrangement was clicked last; with the piano roll clicked last the same key chooses its tool.",
     "whenToUse": "Switch to the Mute tool without moving the pointer to the toolbar.",
-    "sourceFingerprint": "50cfcd67251e55b6573f282828fcd5a039e76c375483b8eabf34dd72e872fd10",
+    "sourceFingerprint": "5d32061378a9ccc444443c0b113a768eeb5b90c015d4c7f1e1af258fa127d411",
     "platformNotes": "The number keys are the same on every platform.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -923,7 +923,7 @@
     "description": "Makes the Arrangement's grid one step finer: the next fixed value, or the next narrower adaptive width.",
     "context": "Works while the Arrangement has the keyboard (it was clicked last); with the piano roll clicked last the same keys change the piano roll's grid.",
     "whenToUse": "Cut or place clips on finer divisions without opening the grid menu.",
-    "sourceFingerprint": "d1b256d3aa55d58354680e878b247561df1d8fdf3ad91580feefbf83660dfddc",
+    "sourceFingerprint": "cfb645bc270188368d737ca0e5918a781ff034466e42a39818587ed85b25fd3b",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -935,7 +935,7 @@
     "description": "Makes the Arrangement's grid one step coarser: the previous fixed value, or the next wider adaptive width.",
     "context": "Works while the Arrangement has the keyboard (it was clicked last); with the piano roll clicked last the same keys change the piano roll's grid.",
     "whenToUse": "Move clips by bars rather than beats.",
-    "sourceFingerprint": "fc584c8f59bc9e5d8bbbe9c79fa3e3cf4a89b52d78a588aaeeb1542a14935b16",
+    "sourceFingerprint": "a0845bda4ca137c43b687f2a8a7593f9b6927a5d1e726b11a26e0e66c877995e",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -947,7 +947,7 @@
     "description": "Turns the Arrangement's triplet grid on or off: note values become two thirds as long.",
     "context": "Works while the Arrangement has the keyboard (it was clicked last); with the piano roll clicked last the same keys change the piano roll's grid.",
     "whenToUse": "Place clips on triplet divisions.",
-    "sourceFingerprint": "9a0596fc6d596c9559da848657491e3814e799188dd32ca7af2bf291c2d57b9d",
+    "sourceFingerprint": "306216ac18585afb75ecc8be8da0bcbfca8639ab8533c4454817af67c8bf1783",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -959,7 +959,7 @@
     "description": "Turns snapping to the Arrangement's grid on or off; the lines stay drawn.",
     "context": "Works while the Arrangement has the keyboard (it was clicked last); with the piano roll clicked last the same keys change the piano roll's grid.",
     "whenToUse": "Place clips anywhere for a while, as Alt does for one drag.",
-    "sourceFingerprint": "05f5edc17bcb9e998a6a07f9eb9d008c5eeea64fabdf2cf5d1158288ea4ab776",
+    "sourceFingerprint": "d497ad855468bcf6eb34c15f9787cc55f82bb89bf663326dd50fd1937a471ca9",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -971,7 +971,7 @@
     "description": "Chooses Mute for turning notes off or back on with the pointer, while keeping the notes in the clip.",
     "context": "Click the piano-roll note grid first. This is separate from muting an Arrangement clip or device.",
     "whenToUse": "Try leaving individual notes out of a phrase without deleting them.",
-    "sourceFingerprint": "aaaa8bda7c14cbe3d41f37e65fc4635051c9e3b608717ab02a628136b5f028b3",
+    "sourceFingerprint": "bd3183e4c9cc3944cfa416ca87726a84dab0cda02a6018d3233eaa399ceaa7aa",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -985,7 +985,7 @@
     "description": "Chooses one finer fixed grid value or one narrower adaptive width. Adaptive grids change spacing with zoom; fixed grids keep a chosen musical value.",
     "context": "Click the piano roll first. It changes the piano roll's own grid only; the control bar's Quantize box is not affected. At the finest value the grid stays unchanged.",
     "whenToUse": "Place or move notes in smaller rhythmic steps.",
-    "sourceFingerprint": "cd657c365290d67f558377fcad2ab3560a54ff605b196e14659e47791d60816a",
+    "sourceFingerprint": "b95f1ad8e8bbb2ca5bd974ebb102a210e5b0905751f65e78d4e35bbbf4d9dbe9",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -999,7 +999,7 @@
     "description": "Chooses one coarser fixed grid value or one wider adaptive width, which spaces editing positions farther apart.",
     "context": "Click the piano roll first. With the Control bar grid setting it changes the control bar; at the coarsest value the grid stays unchanged.",
     "whenToUse": "Use larger rhythmic steps for a broad edit.",
-    "sourceFingerprint": "b635f0c34b1fd088716f3255840f212918547eba4f3cc9d3084e387b35636389",
+    "sourceFingerprint": "04946d81c41659713945616547a2115d0ad82c9accde1f8cdca6c5d64b6be1dc",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1013,7 +1013,7 @@
     "description": "Toggles triplet spacing: note-value steps become two thirds of their straight-grid length, dividing time into groups of three. Bar-sized grid values stay unchanged.",
     "context": "Click the piano roll first. It changes the piano roll's own grid only; the control bar's Quantize box is not affected.",
     "whenToUse": "Write a triplet rhythm instead of evenly paired subdivisions.",
-    "sourceFingerprint": "48c088d2b5ca9d3df40f96c047ce946818cf27e4859e55d7249565e3a5792beb",
+    "sourceFingerprint": "65a3a781163545da07a8daead95bbe726774358afb1046b42749233843bcfff8",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1027,7 +1027,7 @@
     "description": "Turns snapping to the piano-roll grid on or off. With snapping off the grid remains drawn but pointer edits can place notes freely.",
     "context": "Click the piano roll first. It changes snapping in the piano roll only; the control bar's Quantize box is not affected.",
     "whenToUse": "Adjust note timing freely without changing the visible grid.",
-    "sourceFingerprint": "43cc9aac82cf6b592ba62d2936d5a0762d8a717333c415e128453ffab8fb05e6",
+    "sourceFingerprint": "48649a0ac8629655eae851f1af6c1a52524dae49c3bf7314bfc1a88cb80438d4",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1041,7 +1041,7 @@
     "description": "Fits the selected notes' time span across the piano roll's width. If no notes are selected, it fits the whole clip instead.",
     "context": "Click the piano-roll note grid first; pitch positions are unchanged.",
     "whenToUse": "Inspect a short phrase without changing the rest of the clip.",
-    "sourceFingerprint": "2a2634096a878f5a8589683b86454061ac92c761ab4bbbc3c3876d469e1c10e3",
+    "sourceFingerprint": "bde277ff1f267be278842f6ffae3fac5ab8104b0835e9e4c1bc7b6e4e59db38c",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1055,7 +1055,7 @@
     "description": "Fits the whole MIDI clip's time span across the piano roll's width, leaving pitch positions unchanged.",
     "context": "Click the piano-roll note grid first.",
     "whenToUse": "Return to the full phrase after zooming into selected notes.",
-    "sourceFingerprint": "4c6192674a94c147620242312eb655cf231df9326a2431b0bba6caf21bc34bec",
+    "sourceFingerprint": "a7ab96ddd65754d21e40522e3df06e4532d9596a89afc2f1744aa3782df588c3",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1069,7 +1069,7 @@
     "description": "Opens or closes About Suhina, which identifies the running application version.",
     "context": "Available without an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
     "whenToUse": "Check which build you are using before reporting a problem.",
-    "sourceFingerprint": "996b5057344310376de22e798cf4393c1b1ed3cf6c4940b0bc26e88d51954fdd",
+    "sourceFingerprint": "338884ac1a617cc13a9f36bb6320ae076e7866e16ac71c947ba8faa235fd4b5d",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1081,7 +1081,7 @@
     "description": "Switches the detail area between the clip and its track's devices. If the detail area is hidden, it opens showing devices.",
     "context": "Requires a selected MIDI clip or an audio clip with a compatible clip-editing plug-in; without an editable clip it does nothing.",
     "whenToUse": "Move from note or clip editing to the track's instrument and effects.",
-    "sourceFingerprint": "43256f42f884ccd01437d41524ffa36c62bb205ea2430ebe58a325cf10e0ec9c",
+    "sourceFingerprint": "3bdaf2ccbcfbaab2289dbd601cf124d78edca54a123903f4cba84d01af271a15",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1093,7 +1093,7 @@
     "description": "Opens the selected Arrangement audio clip in a compatible clip-editing plug-in. ARA is the interface that gives such plug-ins access to the clip. If needed, Suhina adds an installed compatible plug-in to the track.",
     "context": "Select an audio clip in Arrangement first and scan/install a compatible ARA plug-in. MIDI clips use the piano roll instead.",
     "whenToUse": "Edit an audio clip using a compatible pitch or timing editor.",
-    "sourceFingerprint": "53ca6e74ed88716ccaff978997c3723c31adfb423cf2aac3a62bf04183b44b7e",
+    "sourceFingerprint": "7db0c994facd60df41e7d94bcc4c9b08bf6aa2c24dfc75f0ab0ff5d7dbf3ca3e",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1105,7 +1105,7 @@
     "description": "Opens or closes the first running plug-in's editor on the selected track.",
     "context": "Select a track first; without a running plug-in there is no editor to toggle. This main implementation targets the first running plug-in, rather than a device-panel pick.",
     "whenToUse": "Bring an instrument or effect's own editor into view.",
-    "sourceFingerprint": "aa0955fbf76f498b41929e35b7fb8d39a200b2fc018a35d71218bde719dede05",
+    "sourceFingerprint": "cf6a5f3a98cd333e7817f8d44b9030a0a8ecb7a620779d5a99d3f5ed40e87b7e",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1117,7 +1117,7 @@
     "description": "Reapplies the next edit that was undone in the active project.",
     "context": "Requires an open project with a redo step available.",
     "whenToUse": "Restore an edit after trying Undo.",
-    "sourceFingerprint": "159f21a245dd14ce7dbb17591a6c83f706f5a3072a8dd2514f191ee66ce5b472",
+    "sourceFingerprint": "c37871b41db1557a2d3274eb92fd56cb7fa690c22e127073a30b30fa0930ed86",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1131,7 +1131,7 @@
     "description": "Reverses the last undoable edit in the active project.",
     "context": "Requires an open project and an edit in its undo history; an empty history has nothing to undo.",
     "whenToUse": "Compare an edit with the state before it.",
-    "sourceFingerprint": "c1bac809a09e960fb5b5d552b510e30e745fb58e2c909084e38b958f99d2aa61",
+    "sourceFingerprint": "41bfaa25d4a4b198a79e72b2588ccd7a5f41c827bde635bb36dbf8fb167a0aed",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1145,7 +1145,7 @@
     "description": "Moves forward in the open-project switcher while the modifier stays held. Releasing Ctrl on Windows/Linux or Cmd on macOS activates the chosen project.",
     "context": "Requires at least two open projects; with fewer projects this action does nothing.",
     "whenToUse": "Switch to the next idea without closing the current project.",
-    "sourceFingerprint": "8fe1e07be2727a1838b839f96da918da3e441f25dee07377c079a953c91fdabe",
+    "sourceFingerprint": "8f54ebb6480a85f2844ca24f62e5395616dd29fccd3851b89ff3f6a43faefc45",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1158,7 +1158,7 @@
     "description": "Moves backward in the open-project switcher while the modifier stays held. Releasing Ctrl on Windows/Linux or Cmd on macOS activates the chosen project.",
     "context": "Requires at least two open projects; with fewer projects this action does nothing.",
     "whenToUse": "Return to the previous open project.",
-    "sourceFingerprint": "304b144d7ab329423ef3d0cdc70636c9f66c8ea011f51b53a52df367794117fd",
+    "sourceFingerprint": "97fb57458b1bbd3aff4d8f5f9c128fd4226516767b5fe6359ab2bc105b50332a",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1169,9 +1169,9 @@
   },
   "transport.setLoopEnabled": {
     "description": "Loops an Arrangement time selection, otherwise the selected clips' span. Repeating for an already enabled matching region turns looping off. Without a selection it toggles the existing loop; enabling without a region creates one over the first four bars.",
-    "context": "Requires an open project. A time selection takes precedence over selected clips.",
+    "context": "Requires an open project. A time selection takes precedence over selected clips. Does nothing while the piano roll has the keyboard (after a click in it), so it never changes the loop behind the notes being edited.",
     "whenToUse": "Repeat a selected passage while adjusting it.",
-    "sourceFingerprint": "96979d61568b02695ad9508cb88464f612532f1a49341bf01ff190d0be7ffdb5",
+    "sourceFingerprint": "8a2546d24d4c0c7c079925b61deb9aedee2b65d37f4553deebe728c980a38409",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1185,7 +1185,7 @@
     "description": "Moves the selected notes a 1/128 note earlier, without snapping to the grid.",
     "context": "Click the piano roll and select notes first.",
     "whenToUse": "Nudge notes a little ahead of the beat.",
-    "sourceFingerprint": "7db7aa46a47f4d9587f90cc63419061405ff9c6a0e6b4431530e0447d52c1670",
+    "sourceFingerprint": "07d0f4ea19fa44ce9db22622d7ed10e1b2886f63bce7af37a60535c33f9901aa",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1199,7 +1199,7 @@
     "description": "Moves the selected notes a 1/128 note later, without snapping to the grid.",
     "context": "Click the piano roll and select notes first.",
     "whenToUse": "Nudge notes a little behind the beat.",
-    "sourceFingerprint": "7b36c42154613e589e89e4cf6f9b51db216ccea79da14d357face628b2a41812",
+    "sourceFingerprint": "def2ed2279b0247fd32af61c473ff7990648a8741a2bce0987ff8dde9272027f",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1213,7 +1213,7 @@
     "description": "Makes the selected notes a 1/128 note shorter, without snapping to the grid. A note never gets shorter than that step.",
     "context": "Click the piano roll and select notes first.",
     "whenToUse": "Leave a small gap after a note.",
-    "sourceFingerprint": "e78c70e250f5c5e6a37cbec600798c5c66bef3918d3dd08733bc55b8af539cac",
+    "sourceFingerprint": "e41b2a24acae88b2d3d6eb904c5f8dc1438d806e774eebc438294fe70fd4744e",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1227,7 +1227,7 @@
     "description": "Makes the selected notes a 1/128 note longer, without snapping to the grid, over the next note of the same pitch too; with stacked notes off, that note makes room once the selection is let go.",
     "context": "Click the piano roll and select notes first.",
     "whenToUse": "Let a note ring a little longer.",
-    "sourceFingerprint": "2704b6aef7696cc657c345a10c303564cf37b0538e84cc6863d4e75e27f49de5",
+    "sourceFingerprint": "86697b48de499871ecd825ac662de02e7a8c40dcac03852d436b5ba561b2be5c",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1247,6 +1247,19 @@
       "crates/ui/src/arrangement/envelope.rs",
       "docs/spec/clip-panel.md"
     ],
-    "sourceFingerprint": "dbc49e160dc9468a9519bf5e8447f83b3f6e0ccc831cbe1089980d48c9a44008"
+    "sourceFingerprint": "ed0949b56cf650ac92ea154545baec60945bb4cfdcb236e853c4cfbc59ef3e7d"
+  },
+  "pianoRoll.legato": {
+    "description": "Legato: makes each selected note last until the next one starts, on any key, so no gap is left between them. With no note selected it acts on every note of the clip. The last notes end at the end of a time selection, else where the next note after them starts, else at the clip's end.",
+    "context": "Click the piano-roll note grid first. It is the same as Legato in the Notes tab of the clip panel's note tools.",
+    "whenToUse": "Close the gaps in a line or a chord progression without dragging each note's end.",
+    "sourceFingerprint": "f2d3d0f2c52d01ed273c8a01998430653581ebefdc8dfa64382348f098b3610f",
+    "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+    "references": [
+      "crates/ui/src/settings/keymap.rs",
+      "crates/ui/src/detail/piano_roll/state.rs",
+      "docs/shortcuts.md",
+      "docs/spec/ui-clip-editor.md"
+    ]
   }
 }

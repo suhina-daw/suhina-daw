@@ -96,6 +96,19 @@ fn the_grid_keys_are_ctrl_and_one_to_four_in_the_piano_roll() {
     assert!(Keymap::default().conflicts().is_empty());
 }
 
+/// Legato has a key of its own in the piano roll, and Ctrl+L, which loops the clips selected in
+/// the Arrangement, is left alone while the notes have the keyboard.
+#[test]
+fn alt_l_is_legato_and_the_loop_key_is_left_alone_in_the_piano_roll() {
+    let known = actions();
+    let action = known.iter().find(|a| a.id == "pianoRoll.legato").expect("pianoRoll.legato");
+    assert_eq!(action.group, PIANO_ROLL);
+    assert!(piano_roll_only("pianoRoll.legato"));
+    assert_eq!(Keymap::default().binding_text("pianoRoll.legato").as_deref(), Some("Alt+L"));
+    assert!(not_in_piano_roll("transport.setLoopEnabled"));
+    assert!(Keymap::default().conflicts().is_empty());
+}
+
 #[test]
 fn z_and_shift_z_zoom_the_piano_roll() {
     let known = actions();

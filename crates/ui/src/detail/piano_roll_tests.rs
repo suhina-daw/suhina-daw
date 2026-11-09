@@ -993,3 +993,23 @@ fn a_selected_note_stands_out_from_its_colour() {
     assert_eq!(selected_note_color(Color32::from_rgb(0xE0, 0x30, 0x30), accent, plain), accent);
     assert_eq!(selected_note_color(Color32::from_rgb(0x90, 0x90, 0xF0), accent, plain), plain);
 }
+
+/// Alt+L is the Notes tab's Legato: the selected notes until the next note after them, or every
+/// note of the clip with none selected, the last until the clip's end.
+#[test]
+fn the_legato_key_acts_on_the_selection_or_the_whole_clip() {
+    let two = clip_of_two();
+    let mut state = focused_on(&two);
+    state.selected = BTreeSet::from([0]);
+    let legato = state.key_action("pianoRoll.legato", &two, 0.0, None).expect("a command");
+    assert_eq!(legato.id, "note.legato");
+    assert_eq!((&legato.params["notes"], &legato.params["until"]), (&json!([0]), &json!(5.0)));
+    state.selected.clear();
+    let whole = state.key_action("pianoRoll.legato", &two, 0.0, None).expect("a command");
+    assert!(whole.params.get("notes").is_none(), "the whole clip: {}", whole.params);
+    assert_eq!(whole.params["until"], json!(8.0));
+    // An empty clip gives it nothing to do.
+    let empty = clip(Vec::new());
+    let mut state = focused_on(&empty);
+    assert!(state.key_action("pianoRoll.legato", &empty, 0.0, None).is_none());
+}

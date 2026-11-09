@@ -1132,13 +1132,14 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Drag a loop handle, the loop bar, a marker on the ruler | Moves the loop's end, the loop, the clip's start or end (on the grid; Alt free; › Layout › Ruler) |
 | Drag the ruler up, down; sideways | Zooms time out, in; scrolls time |
 | Z, Shift+Z | Zooms to the selected notes (the whole clip when none is selected); to the whole clip (after a click in the piano roll) |
+| Alt+L | Legato, as the Notes tab's button: the selected notes, or every note when none is selected (after a click in the piano roll; › Other note tools) |
 | Ctrl+Shift+E | Hides the editor (the detail area), or shows it again (`view.editor`, › Least height and closing) |
 
 The keys after a click in the piano roll are keymap actions ([`docs/shortcuts.md`](../shortcuts.md)):
 the `selection.*` ones the window has anyway, and `pianoRoll.selectAll`, `.deselect`, `.earlier`,
 `.later`, `.up`, `.down`, `.octaveUp`, `.octaveDown`, `.shorter`, `.longer`, `.draw`,
-`.tool1` … `.tool6`, `.gridNarrow`, `.gridWiden`, `.gridTriplet`, `.gridSnap`, `.zoomSelection` and
-`.zoomClip`, which are read only
+`.tool1` … `.tool6`, `.gridNarrow`, `.gridWiden`, `.gridTriplet`, `.gridSnap`, `.zoomSelection`,
+`.zoomClip` and `.legato`, which are read only
 while the piano roll has the keyboard, so they can be changed like the rest. `pianoRoll.quantize`
 (Ctrl+U) means nothing elsewhere, so it works whenever the piano roll shows a clip.
 
@@ -1146,7 +1147,8 @@ While the piano roll has the keyboard, a key that edits or shows the Arrangement
 behind it does nothing, even where the piano roll has no key of its own on it: the selected slot's
 keys, the selected clips' Mute, Rename, Split, Consolidate, Group, Ungroup and take keys, Select all
 clips, the Arrangement's tools and grid keys, its automation lanes (**A**), the gain envelope, the
-waveform zoom, a marker at the playhead (**M**) and Insert MIDI clip. So a key pressed while
+waveform zoom, a marker at the playhead (**M**), the loop over the selected clips (**Ctrl+L**)
+and Insert MIDI clip. So a key pressed while
 editing notes never acts on the clips behind them. The window's own keys (play and stop, save,
 undo and redo, the views, the browser, Settings) go on working.
 

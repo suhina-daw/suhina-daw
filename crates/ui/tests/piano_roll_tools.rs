@@ -474,7 +474,7 @@ fn a_drag_from_a_note_outside_the_selection_takes_that_note_alone() {
 }
 
 /// While the piano roll has the keyboard, a key of the Arrangement it has no use for does nothing:
-/// M adds no marker.
+/// M adds no marker, and Ctrl+L does not loop the clip selected behind the notes.
 #[test]
 fn arrangement_keys_do_nothing_while_the_piano_roll_has_the_keyboard() {
     let mut renderer = engine();
@@ -487,6 +487,14 @@ fn arrangement_keys_do_nothing_while_the_piano_roll_has_the_keyboard() {
     h.key_press(Key::M);
     h.run();
     assert_eq!(markers(&h), before, "M adds no marker while the notes have the keys");
+    let looped = |h: &Harness<'static, App>| {
+        let transport = &h.state().session().unwrap().project().transport;
+        (transport.loop_enabled, transport.loop_range.map(|r| (r.start, r.end)))
+    };
+    let before = looped(&h);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::L);
+    h.run();
+    assert_eq!(looped(&h), before, "Ctrl+L leaves the Arrangement's loop alone");
 }
 
 /// Draw, Paint, Erase, Slice and Mute hide the pointer over the grid and draw their toolbar icon in its

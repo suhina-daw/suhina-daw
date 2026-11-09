@@ -588,6 +588,25 @@ impl PianoRollState {
                 self.zoom_to(0.0, clip.length);
                 return None;
             }
+            // Legato, as the Notes tab's button: the selected notes, or the whole clip with none
+            // selected, and nothing where a time selection holds no note.
+            "pianoRoll.legato" => {
+                let nothing = acting.is_empty() && self.span_end().is_some();
+                if nothing || clip.notes.is_empty() {
+                    return None;
+                }
+                let tools = crate::detail::midi_tools::Tools {
+                    address: &clip.address,
+                    notes: &clip.notes,
+                    selected: &acting,
+                    length: clip.length,
+                    nothing,
+                };
+                let mut params = tools.params();
+                params["until"] = json!(tools.legato_until(self.span_end()));
+                self.replacing(&mut params);
+                return Some(Action::new("note.legato", params));
+            }
             _ if chosen.is_empty() => return None,
             _ => {}
         }

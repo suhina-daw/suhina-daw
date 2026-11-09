@@ -67,7 +67,7 @@ The project you leave stops playing.
 | Key | Action | Where | What it does |
 |---|---|---|---|
 | Space | `transport.toggle` | Anywhere | Starts playback, or stops it when it is playing. Where playback starts and where the playhead goes when it stops are set in Settings › Arrangement › Time and play › **Play from** and **Stop**. |
-| Ctrl+L | `transport.setLoopEnabled` | Anywhere | Turns looping on or off. While looping is on, the arrangement plays the loop region over and over. If there is no loop region yet, turning it on makes one over the first 4 bars. |
+| Ctrl+L | `transport.setLoopEnabled` | Anywhere but the piano roll | Turns looping on or off. While looping is on, the arrangement plays the loop region over and over. If there is no loop region yet, turning it on makes one over the first 4 bars. After a click in the piano roll the key does nothing, so it never changes the loop behind the notes you are editing. |
 | M | `marker.addAtPlayhead` | Anywhere | Adds a marker (a named point in the arrangement) where the playhead is. While stopped, it adds the marker at the play start marker. |
 
 ## Views and windows
@@ -180,6 +180,7 @@ of one square of the grid, which follows the zoom and the grid setting.
 | Shift+Right | `pianoRoll.longer` | Piano roll | Takes each selected note's end to the next grid line, or to the start of the next note of its key when that comes first (unless stacked notes are allowed). |
 | Alt+Shift+Left | `pianoRoll.shorterFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) shorter, off the grid. |
 | Alt+Shift+Right | `pianoRoll.longerFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) longer, off the grid, stopping at the next note of their key unless stacked notes are allowed. |
+| Alt+L | `pianoRoll.legato` | Piano roll | Legato: makes each selected note last until the next one starts, so there are no gaps between them. With no note selected it does this to every note in the clip. The same as **Legato** in the Notes tab of the clip panel's note tools. |
 | Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings of Quantise in the Transform tab of the clip panel's note tools. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
 
 Copy, cut, paste, duplicate and delete in the piano roll use the [Editing](#editing) keys. With no
