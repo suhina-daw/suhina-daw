@@ -262,6 +262,41 @@ fn the_toolbar_scale_is_the_clip_panels_switch() {
     assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Dorian));
 }
 
+/// A click on the scale's root or mode gives it the arrow keys: with its list closed again (a second
+/// click), Down and Up pick the next and the previous entry without the list, each a
+/// `clip.setScale`; the piano roll's notes stay where they are.
+#[test]
+fn the_arrow_keys_step_the_scale_root_and_mode_once_clicked() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let (notes, scale) = edited(&h);
+    assert_eq!(scale, None);
+    // Opened and closed again: the field keeps the keys.
+    press(&mut h, "Scale root: C");
+    press(&mut h, "Scale root: C");
+    h.key_press(Key::ArrowDown);
+    h.run();
+    assert_eq!(edited(&h).1, Scale::new(1, ScaleMode::Major), "Down: the next root, the scale on");
+    h.key_press(Key::ArrowDown);
+    h.run();
+    h.key_press(Key::ArrowUp);
+    h.run();
+    assert_eq!(edited(&h).1, Scale::new(1, ScaleMode::Major), "Down, then Up: back one");
+    assert_eq!(edited(&h).0, notes, "the arrows moved no note");
+    // The mode the same way.
+    let mode_label = h
+        .query_all_by_label_contains("Scale mode: ")
+        .find_map(|n| n.accesskit_node().label())
+        .unwrap();
+    press(&mut h, &mode_label);
+    press(&mut h, &mode_label);
+    h.key_press(Key::ArrowDown);
+    h.run();
+    let after = edited(&h).1.unwrap();
+    assert_eq!(after.root(), 1, "the root stays");
+    assert_ne!(after.mode, ScaleMode::Major, "Down: the next mode");
+}
+
 /// Switching the scale on from the toolbar centres the notes in the rows it shows, wherever the
 /// rows were scrolled: the view never lands on rows without notes.
 #[test]

@@ -735,6 +735,58 @@ pub fn value_active(ctx: &egui::Context) -> bool {
         })
 }
 
+/// The keys a drop-down field takes this frame once it is clicked (as a value control does, until a
+/// click elsewhere, or Escape with its list closed): the arrow steps through its entries (down is
+/// +1, the next entry), and Enter while its list is `open`. Escape with the list open is left to
+/// the list, which it closes; the field keeps the keys, so the arrows then step the value itself.
+pub(crate) fn chooser_keys(ui: &Ui, response: &Response, open: bool) -> (i32, bool) {
+    let ctx = ui.ctx();
+    let key = egui::Id::unique(ACTIVE_VALUE);
+    let pass = ctx.cumulative_pass_nr();
+    if response.clicked() {
+        ctx.data_mut(|d| d.insert_temp(key, (response.id, pass)));
+    }
+    let active = ctx.data(|d| d.get_temp::<(egui::Id, u64)>(key)).is_some_and(|(id, _)| id == response.id);
+    if !active {
+        return (0, false);
+    }
+    // A press anywhere else lets it go; one in its own open list does not.
+    if ui.input(|i| i.pointer.any_pressed()) && !response.hovered() && !open {
+        ctx.data_mut(|d| d.remove::<(egui::Id, u64)>(key));
+        return (0, false);
+    }
+    ctx.data_mut(|d| d.insert_temp(key, (response.id, pass)));
+    let (mut steps, mut enter, mut escape) = (0i32, false, false);
+    ctx.input_mut(|i| {
+        i.events.retain(|event| match event {
+            egui::Event::Key { key: egui::Key::ArrowUp, pressed: true, modifiers, .. } if !modifiers.command => {
+                steps -= 1;
+                false
+            }
+            egui::Event::Key { key: egui::Key::ArrowDown, pressed: true, modifiers, .. } if !modifiers.command => {
+                steps += 1;
+                false
+            }
+            egui::Event::Key { key: egui::Key::Enter, pressed: true, modifiers, .. } if open && !modifiers.command => {
+                enter = true;
+                false
+            }
+            egui::Event::Key { key: egui::Key::Escape, pressed: true, modifiers, .. }
+                if !open && !modifiers.command =>
+            {
+                escape = true;
+                false
+            }
+            _ => true,
+        });
+    });
+    if escape {
+        ctx.data_mut(|d| d.remove::<(egui::Id, u64)>(key));
+        return (0, false);
+    }
+    (steps, enter)
+}
+
 /// The keys an active value control takes this frame: arrow steps (up is +1), and Enter with
 /// the number typed into it. Ctrl (Cmd) with a key leaves it to the window's shortcuts, as
 /// [`value_active`] says.

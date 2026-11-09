@@ -898,7 +898,13 @@ clip scales) and is saved with the project; a clip has none until one is set.
   clip had when it was switched off (kept while Suhina is open), or Settings › Clip editor ›
   **Default scale** (C major unless changed). The switch, a root and a mode each run
   `clip.setScale`, one undo step (Ctrl+Z takes it back); a root or a mode picked while off turns
-  the scale on with it.
+  the scale on with it. A click on the root or the mode gives it the arrow keys until a click
+  elsewhere (or Escape with its list closed): with its list closed (a second click, or Escape)
+  **Up** and **Down** pick the previous and the next root or mode at once, without the list, each
+  its own `clip.setScale`; with the list open they move a highlight through it and **Enter** picks
+  it. The panel's other lists (the Transform tab's transformation, Quantise's grid, the clip being
+  edited) take the arrows the same way, and while one has them the window's arrow keys (the piano
+  roll's, the Launcher's) wait.
 - **The toolbar's Rows group** (› Layout): **Fold** (› Zoom and scroll), **Scale** and
   **Highlight** (Highlight scale), each lit while on. **Scale** is the clip panel's switch in the
   toolbar: the same switch, so either turns the clip's scale on (the scale the clip had, or the

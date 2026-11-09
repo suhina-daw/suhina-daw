@@ -490,7 +490,10 @@ pub(super) fn name_over(painter: &egui::Painter, rect: Rect, text: &str, align: 
 
 /// A drop-down field: its value and a chevron; a click opens its list right under it, as wide as
 /// the field, the value in it lit. The list's entries are buttons named as they read; `None` is a
-/// line between entries. Returns the index of the entry picked.
+/// line between entries. Once clicked the field has the arrow keys (`widgets::chooser_keys`): with
+/// its list closed (another click, or Escape) Up and Down pick the entry before or after the one
+/// chosen, without the list; with it open they move a highlight through it and Enter picks that.
+/// Returns the index of the entry picked.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn drop_down(
     ui: &Ui,
@@ -509,8 +512,38 @@ pub(super) fn drop_down(
     widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, theme::ui_font(theme::TEXT_SMALL), theme::text_value());
     widgets::chevron(painter, Pos2::new(rect.right() - 8.0, rect.center().y), false, theme::text_secondary());
     let mut picked = None;
+    // The arrow keys, once the field was clicked: the entries they step through (no lines), the
+    // one chosen, and the one lit in the open list.
+    let open = egui::Popup::menu(&response).is_open();
+    let (steps, enter) = widgets::chooser_keys(ui, &response, open);
+    let choices: Vec<usize> = entries.iter().enumerate().filter_map(|(i, e)| e.map(|_| i)).collect();
+    let current = entries.iter().position(|e| e.is_some_and(|(_, selected)| selected));
+    let stepped = |from: Option<usize>| {
+        let at = from.and_then(|f| choices.iter().position(|i| *i == f));
+        let last = choices.len().saturating_sub(1) as i32;
+        let next = at.map_or(0, |at| (at as i32 + steps).clamp(0, last) as usize);
+        choices.get(next).copied()
+    };
+    let lit_id = id.with("lit");
+    if !open {
+        ui.ctx().data_mut(|d| d.remove::<usize>(lit_id));
+        if steps != 0 {
+            picked = stepped(current).filter(|index| Some(*index) != current);
+        }
+    }
+    let mut lit_entry = open.then(|| ui.ctx().data(|d| d.get_temp::<usize>(lit_id)).or(current)).flatten();
+    if open && steps != 0 {
+        lit_entry = stepped(lit_entry);
+        if let Some(lit) = lit_entry {
+            ui.ctx().data_mut(|d| d.insert_temp(lit_id, lit));
+        }
+    }
     egui::Popup::menu(&response).width(list_width).gap(2.0).align(egui::RectAlign::BOTTOM_START).show(|ui| {
         ui.spacing_mut().item_spacing = Vec2::new(0.0, 1.0);
+        if enter && let Some(lit) = lit_entry {
+            picked = Some(lit);
+            ui.close();
+        }
         for (index, entry) in entries.iter().enumerate() {
             let Some((label, selected)) = entry else {
                 let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 5.0), Sense::hover());
@@ -519,7 +552,7 @@ pub(super) fn drop_down(
             };
             let (row, item) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::click());
             item.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, *selected, *label));
-            let lit = *selected || item.hovered();
+            let lit = *selected || item.hovered() || lit_entry == Some(index);
             if lit {
                 let fill = if *selected { theme::control_selected() } else { theme::control_hover() };
                 ui.painter().rect_filled(row, 2.0, fill);
