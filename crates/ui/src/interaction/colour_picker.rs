@@ -22,8 +22,8 @@ const SWATCH_GAP: f32 = 3.0;
 /// How much of its colour a muted track's colour area keeps over `control.background`.
 const MUTED: f32 = 0.55;
 
-/// The palette: the theme's eight track colours (`track.1` to `track.8`; the first four are the
-/// colours new tracks take in turn).
+/// The palette: the theme's eight track colours (`track.1` to `track.8`). New tracks do not take
+/// theirs from it: they take the MIDI or audio creation default (#709).
 pub fn swatches() -> [Rgb; 8] {
     [
         theme::track_color_1(),
@@ -58,6 +58,24 @@ pub fn set_colour(track: TrackId, colour: Rgb) -> Action {
     Action::new("track.setColor", json!({ "track": track.0, "color": hex(colour) }))
 }
 
+/// A colour picked in [`swatch_row`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pick {
+    pub colour: Rgb,
+    /// Whether a swatch was clicked. A colour taken from the field when the button was let go
+    /// is not: the menu stays open for the next drag.
+    pub swatch: bool,
+}
+
+impl Pick {
+    /// Closes the menu the row is in after a swatch; a colour from the field keeps it open.
+    pub fn close_menu(self, ui: &Ui) {
+        if self.swatch {
+            ui.close();
+        }
+    }
+}
+
 /// The palette's swatches in one row, `current` outlined: the swatch clicked, if any. Each
 /// swatch is a button named "Colour #rrggbb".
 fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
@@ -84,9 +102,11 @@ fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
 
 /// The palette as a row of swatches, `current` outlined, and after it "+" for any colour: a
 /// colour field and hue strip as the theme editor's, the colour taken when the button is let
-/// go. Gives the colour picked. Each swatch is a button named "Colour #rrggbb".
-pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
-    let mut picked = swatch_strip(ui, current);
+/// go. Gives the colour picked — a swatch's click and the field's drag's end alike, the field's
+/// keeps a menu open ([#1254] review; the steps' menus with it, and the track's menu closes
+/// only for a swatch, as main asks).
+pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Pick> {
+    let mut picked = swatch_strip(ui, current).map(|colour| Pick { colour, swatch: true });
     let any_id = ui.scope_id().with("any-colour");
     // A row that was not drawn in the pass before was closed with the palette around it (a
     // menu's or a colour area's): it opens as new, "Any colour" shut and its field holding
@@ -122,12 +142,12 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
         // pending colour too, and an unfinished adjustment won over the swatch ([#1254]
         // review).
         let field = stepped_color_field(ui, any_id.with("value"), current.map_or(Color32::GRAY, color32));
-        picked = picked.or(field);
+        picked = picked.or(field.map(|colour| Pick { colour, swatch: false }));
     }
     if let Some(picked) = picked {
         // The field follows the pick: the next adjustment starts from it ([#1254] review).
         ui.data_mut(|d| {
-            d.insert_temp(any_id.with("value"), color32(picked));
+            d.insert_temp(any_id.with("value"), color32(picked.colour));
             d.remove::<bool>(any_id.with("value").with("moved"));
         });
     } else if !any_open {
@@ -269,11 +289,11 @@ pub fn area(
         .id(id.with("palette"))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            if let Some(colour) = swatch_row(ui, Some(current)) {
-                if colour != current {
-                    actions.push(set_colour(track, colour));
+            if let Some(pick) = swatch_row(ui, Some(current)) {
+                if pick.colour != current {
+                    actions.push(set_colour(track, pick.colour));
                 }
-                ui.close();
+                pick.close_menu(ui);
             }
         });
     response
@@ -366,7 +386,7 @@ mod tests {
             |ui, (current, any_id): &mut (Rgb, Option<Id>)| {
                 *any_id = Some(ui.scope_id().with("any-colour"));
                 if let Some(picked) = swatch_row(ui, Some(*current)) {
-                    *current = picked;
+                    *current = picked.colour;
                 }
             },
             (Rgb(10, 20, 30), None),

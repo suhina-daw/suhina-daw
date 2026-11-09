@@ -629,44 +629,41 @@ fn output_row(
     }
 }
 
-/// The main channel's devices in its strip, at the same height as every track's list (#683).
-pub fn main_devices(painter: &egui::Painter, rect: Rect, devices: &[crate::interaction::grid::StripDevice]) {
-    painter.fill_background(rect, 0.0, theme::window_background());
-    let list_painter = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
-    if devices.is_empty() {
-        widgets::text_in(
-            &list_painter,
-            rect.shrink2(Vec2::new(4.0, 0.0)),
-            Align2::LEFT_TOP,
-            "No devices",
-            theme::ui_font(theme::TEXT_SMALL),
-            theme::text_hint(),
-        );
-        return;
-    }
-    for (index, device) in devices.iter().enumerate() {
-        let row = Rect::from_min_size(
-            Pos2::new(rect.left(), rect.top() + index as f32 * DEVICE_ROW),
-            Vec2::new(rect.width(), DEVICE_ROW),
-        );
-        let color = if device.enabled { theme::text_secondary() } else { theme::text_hint() };
-        widgets::text_in(
-            &list_painter,
-            row.shrink2(Vec2::new(4.0, 0.0)),
-            Align2::LEFT_CENTER,
-            &device.name,
-            theme::ui_font(theme::TEXT_SMALL),
-            color,
-        );
-    }
+/// The main channel's devices in its strip, at the same height as every track's list, and with
+/// the same wheel, clicks and drags as a track's (#683). Main has no track: its devices go by
+/// [`TrackId::MAIN`], which the device commands take.
+pub fn main_devices(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    devices: &[crate::interaction::grid::StripDevice],
+    state: &mut SessionViewState,
+) {
+    let id = Id::unique("session-main-devices");
+    device_list(ui, painter, rect, TrackId::MAIN, "Main", devices, state, id);
 }
 
 /// The track's devices and plug-ins, one row each; the wheel scrolls them, a click shows the
 /// track's chain in the detail area.
 fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state: &mut SessionViewState, id: Id) {
+    device_list(ui, painter, rect, column.track, &column.name, &column.devices, state, id);
+}
+
+/// A strip's device list, a track's or Main's: one row a device, which the wheel scrolls, a click
+/// picks, a double-click opens and a drag carries to another track or place.
+#[allow(clippy::too_many_arguments)]
+fn device_list(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    track: TrackId,
+    name: &str,
+    devices: &[crate::interaction::grid::StripDevice],
+    state: &mut SessionViewState,
+    id: Id,
+) {
     painter.fill_background(rect, 0.0, theme::window_background());
-    let track = column.track;
-    if column.devices.is_empty() {
+    if devices.is_empty() {
         widgets::text_in(
             painter,
             rect.shrink2(Vec2::new(4.0, 0.0)),
@@ -681,7 +678,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
     let list_painter = painter.with_clip_rect(clip);
     // The wheel over the list scrolls it, not the view.
     state.scroll_areas.push(rect);
-    let most = (column.devices.len() as f32 * DEVICE_ROW - rect.height()).max(0.0);
+    let most = (devices.len() as f32 * DEVICE_ROW - rect.height()).max(0.0);
     let mut scroll = state.device_scroll.get(&track).copied().unwrap_or(0.0);
     if ui.rect_contains_pointer(clip) {
         scroll -= ui.input(|i| i.smooth_scroll_delta().y);
@@ -693,7 +690,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
         state.device_scroll.remove(&track);
     }
     let mut slots = Vec::new();
-    for (row_index, device) in column.devices.iter().enumerate() {
+    for (row_index, device) in devices.iter().enumerate() {
         let index = device.at;
         let top = rect.top() - scroll + row_index as f32 * DEVICE_ROW;
         let row = Rect::from_min_size(Pos2::new(rect.left(), top), Vec2::new(rect.width(), DEVICE_ROW));
@@ -702,7 +699,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
             continue;
         }
         let response = ui.interact(row.intersect(clip), id.with(("device", index)), Sense::click_and_drag());
-        let label = format!("Show {} on {}", device.name, column.name);
+        let label = format!("Show {} on {name}", device.name);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         // Dragged onto another track: moved there, Ctrl copies it (#688).
         if response.drag_started_by(egui::PointerButton::Primary) {

@@ -404,8 +404,7 @@ impl App {
         let device = session
             .and_then(|s| {
                 let p = s.project();
-                let channel = p.track(from)?.channel?;
-                p.channel(channel)?.devices.get(index).map(|d| d.name.clone())
+                p.channel_of_track(from)?.devices.get(index).map(|d| d.name.clone())
             })
             .unwrap_or_default();
         // Over its own chain: the place under the pointer along it.
