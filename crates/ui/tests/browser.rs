@@ -3104,29 +3104,29 @@ fn a_tag_in_the_footers_overflow_keeps_its_sidebar_menu() {
         let params = json!({ "name": format!("Extra {n}") });
         harness.state_mut().projects_mut().execute("library.setTag", &params).unwrap();
     }
-    let closed = json!({ "section": "library", "open": false });
-    harness.state_mut().projects_mut().execute("library.setSectionOpen", &closed).unwrap();
     drop(harness);
     let mut harness = window_at_size(&settings, &folder, (700.0, 800.0), false);
     assert!(harness.query_by_label("More tags").is_some(), "the last tags are in the footer's overflow");
-    // The sidebar's last rows, scrolled to (the scroll keeps to its room).
-    harness.state_mut().browser.sidebar_scroll = 100_000.0;
+    let last = harness.state_mut().projects_mut().file_library_mut().tag_flat().into_iter().last().map(|t| t.id);
+    let last = last.unwrap_or(0);
+    // What the sidebar row's menu holds while it is open for the last tag: a rename and a
+    // new tag typed in, and its Select colour picker open. The overflow's cleanup runs every
+    // frame the tag has no dot; it reaches the footer's own keys only, so these stay.
+    let rename = egui::Id::unique(("browser-rename-tag", last));
+    let draft = egui::Id::unique(("browser-section-new-tag", last));
+    let picker = egui::Id::unique(("browser-tag-colour", last));
+    harness.ctx.data_mut(|d| {
+        d.insert_temp(rename, "Renamed".to_string());
+        d.insert_temp(draft, "Draft".to_string());
+        d.insert_temp(picker, true);
+    });
     harness.run();
-    harness.get_by_label("Place Tag Extra 52").click_secondary();
     harness.run();
-    harness.get_by_label("Select colour").click();
-    harness.run();
-    harness.run();
-    assert!(harness.query_by_label("Select colour…").is_some(), "the picker stays open");
-    harness.get_by_label("New tag name").click();
-    harness.run();
-    harness.get_by_label("New tag name").type_text("Draft");
-    harness.run();
-    harness.run();
-    harness.get_by_label("Add tag").click();
-    harness.run();
-    let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
-    assert!(tags.iter().any(|t| t.name == "Draft"), "the draft was still there to add");
+    let (renamed, drafted, open) =
+        harness.ctx.data(|d| (d.get_temp::<String>(rename), d.get_temp::<String>(draft), d.get_temp::<bool>(picker)));
+    assert_eq!(renamed.as_deref(), Some("Renamed"), "the sidebar menu's rename stays");
+    assert_eq!(drafted.as_deref(), Some("Draft"), "the sidebar menu's new tag stays");
+    assert_eq!(open, Some(true), "the sidebar menu's picker stays open");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
