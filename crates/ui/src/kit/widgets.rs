@@ -928,7 +928,8 @@ pub fn drag_value_axis(
     Drag::None
 }
 
-/// Makes `rect` a draggable value with a label for screen readers and tests.
+/// Makes `rect` a draggable value with a label for screen readers and tests, dragged up or down
+/// (the up-down pointer over it); [`value_area_axis`] for one dragged across.
 pub fn value_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString, value: impl ToString) -> Response {
     value_area_axis(ui, rect, id, label, value, false)
 }

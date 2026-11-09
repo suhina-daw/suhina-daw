@@ -108,6 +108,9 @@ pub(super) fn send_knob(
     }
 }
 
+/// A header's volume or pan field: dragged across while it is drawn as a bar (right raises it),
+/// up or down as a knob; the wheel with Ctrl or Cmd, the arrow keys and a typed number set it, a
+/// double-click resets it. On a track of a selection it moves every selected track.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn value_control(
     ui: &Ui,
