@@ -826,3 +826,60 @@ forgot its own scope painted as its parent.
   the user-agent sheet (#1019) styles every element. A drawn item is entered and left at once:
   its style comes from its parent and its own identity, as `Resolver::leaf_style` will give it
   (#1273).
+
+### Extended: one paint order, `padding`, `overflow` and `outline`, settings as properties, same-frame styles (2026-11-09)
+
+From [#1273](https://github.com/suhina-daw/suhina-daw/issues/1273), which this amendment left
+open.
+
+- **No painter reads the innermost scope.** The shared painters take the `Element` their caller
+  entered: `mixer_controls::level_bar` and `pan_field`, `widgets::button_surface`,
+  `track_button_face` and `knob_with_value`, `liquid::paint` and `skin::button` (artwork that
+  casts its element's shadows is `skin::paint_as`). What was read from the innermost scope is a
+  method of `Entered`: `color_or`, `background_or`, `radius_or`, `font_size_or`, `thickness_or`,
+  `paint_background`, `paint_gradients`, `level_fill`, `level_glow`, `readable_on` and `ui`. An
+  element's attributes (`.attr(Checked, on)`), pointer states and variables are given to its
+  builder before it is entered, so its style is known as it is entered. Properties CSS inherits
+  (`font-size`, `text-shadow`, `color` through the palette) still reach the text drawn inside an
+  element without an argument: that is inheritance, not a read of another element's own
+  properties.
+- **The app's settings are registered properties of their elements.** In place of the
+  `--suhina-*` custom properties and the core set's settings (`--meter-style`, `--liquid`,
+  `--session-*`, …), the style engine's registry has `appearance`, `value-position`,
+  `value-decimals`, `value-unit` (inherited, on a value and the elements around it),
+  `track-artwork` (inherited), `track-headers`, `track-height`, `header-min-width`,
+  `header-tint`, `compact-below` (on `arrangement`), `param-label` (on `device`),
+  `meter-style`, `meter-segments`, `meter-intensity` (on `meter`), `artwork-fps`, `liquid`,
+  `panel-gradient`, `track-gradient`, `clip-gradient`, `backdrop-image`, `backdrop-opacity`,
+  `backdrop-blur` (on `window`) and `track-width`, `return-width`, `scene-width`,
+  `slot-height`, `header-height` (on `session`). Each is read from its element's computed style,
+  so selectors, `:is()`, `@media`, layers and `var()` work for settings as for any property.
+  The core set is the palette only; a variant may hold settings too, written as rules of their
+  elements. A theme still offers quick controls through its own `@property`
+  (`window { liquid: var(--glassiness) 24 12; }`). Settings that a CSS layout replaces are
+  removed: `--suhina-param-columns` and `--suhina-param-row` are the columns of
+  `device { grid-template-columns }` and the `height` of `device-control`; `--suhina-gap` is
+  `gap`. A control placement's `--suhina-direction` and `--suhina-anchor-*` are `direction` and
+  `anchor-*`. A sheet that still sets an old name gets a notice naming its replacement, and the
+  value is not read. The legacy `skin.styles` map is gone: a JSON skin of an earlier version
+  has its styles appended to its sheet under the new names.
+- **The hot path.** An element is a registry index (`Name` carries it), so the style stack and the
+  tree hold small ids: entering an element allocates no string and scans no list. The ids the
+  app gives elements (`track-3`) are interned per engine. The legacy `skin.styles` path is gone.
+  A computed style keeps only the values that differ from their property's initial value.
+  Hitting `MAX_NODES` or `MAX_DEPTH`, or filling the identities, the ids or the swatches, writes a
+  line to the trace (`suhina --trace`) instead of dropping styles silently.
+- **Styles in the same frame.** An element's style is worked out in the frame that enters it,
+  from its parent's style and its full identity: its name, id, pointer states, attributes,
+  variables, the device sheet over it, and those of every element it is in (its *chain*). It is
+  cached by that chain, as `Resolver::leaf_style` caches a leaf's, so elements that share an
+  identity share one computation; a theme, palette or window-size change empties the cache. When
+  an element's chain is the one the whole tree was last resolved with, that resolved style is
+  used, which knows its siblings and carries its transitions and animations. At the end of the
+  frame the whole tree is resolved as before, and another frame is asked for only when a style
+  painted differs from the tree's: sibling-dependent selectors (`+`, `~`, `:nth-child`) and a
+  hover that reaches an ancestor, which still wait a frame. The approximation from class names
+  is gone. A theme change or a hover change needs no frame of the style engine's own (the budget
+  test holds `*_style_frames` at zero); the frame left after a theme change is egui's after a
+  new palette. An element with a transition keeps its painted values in the frame its target
+  changes, and the transition runs from them.
