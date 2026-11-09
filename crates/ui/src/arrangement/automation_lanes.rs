@@ -60,7 +60,7 @@ const HEADER_ROW: f32 = 15.0;
 /// Width of the header's on/off toggle.
 const TOGGLE: f32 = 30.0;
 /// Side of the header's small square buttons (**+**, **×**).
-const SMALL_BUTTON: f32 = 16.0;
+const SMALL_BUTTON: f32 = 18.0;
 /// Width of the lane header's parameter menu: its rows and search field fill it, no wider.
 const MENU_WIDTH: f32 = 240.0;
 /// Space the parameter menu leaves between itself and the window's edge.
@@ -4052,15 +4052,15 @@ fn lane_header(
     });
     let inner = rect.shrink2(Vec2::new(PAD, 5.0));
     let row = Rect::from_min_size(inner.min, Vec2::new(inner.width(), HEADER_ROW));
-    let hide =
+    // The pin at the left, before the parameter; the top lane's x on its own at the right.
+    let pin = Rect::from_min_size(row.min, Vec2::new(SMALL_BUTTON, HEADER_ROW));
+    let clear =
         Rect::from_min_size(Pos2::new(row.right() - SMALL_BUTTON, row.top()), Vec2::new(SMALL_BUTTON, HEADER_ROW));
-    let add = Rect::from_min_size(
-        Pos2::new(hide.left() - 2.0 - SMALL_BUTTON, row.top()),
-        Vec2::new(SMALL_BUTTON, HEADER_ROW),
-    );
     let has_lane = !param.points.is_empty();
-    let toggle = Rect::from_min_size(Pos2::new(add.left() - 4.0 - TOGGLE, row.top()), Vec2::new(TOGGLE, HEADER_ROW));
-    let chooser = Rect::from_min_max(row.min, Pos2::new(toggle.left() - 4.0, row.bottom()));
+    let toggle_right = if top { clear.left() - 4.0 } else { row.right() };
+    let toggle = Rect::from_min_size(Pos2::new(toggle_right - TOGGLE, row.top()), Vec2::new(TOGGLE, HEADER_ROW));
+    let chooser_right = if has_lane { toggle.left() - 4.0 } else { toggle_right };
+    let chooser = Rect::from_min_max(Pos2::new(pin.right() + 4.0, row.top()), Pos2::new(chooser_right, row.bottom()));
     let label = param.label();
 
     if top {
@@ -4115,11 +4115,12 @@ fn lane_header(
         widgets::text_in(&painter, toggle, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
     }
 
-    // The top lane's circled +: mounts its parameter under it.
+    // The pin: on the top lane an outline that pins its parameter as a lane of its own; on a
+    // mounted lane filled, in the accent colour, and a click unpins it with the picked lanes.
     if top {
         let response = widgets::button_area(
             ui,
-            add.intersect(clip),
+            pin.intersect(clip),
             id.with("add"),
             format!("Mount {label} lane on {}", lanes.name),
         )
@@ -4127,23 +4128,32 @@ fn lane_header(
         if response.clicked() {
             actions.push(state.mount(track, &param.key, params));
         }
-        small_button(ui, &painter, add, &response, Glyph::Plus);
-    }
-    // The top lane's x empties it; a mounted lane's circled − hides it, with the picked lanes.
-    let (hide_label, hint, glyph) = if top {
-        (format!("Clear the top lane on {}", lanes.name), "Clear the top lane".to_string(), Glyph::Cross)
+        small_button(ui, &painter, pin, &response, Glyph::Pin);
+        // The top lane's x empties it.
+        let response = widgets::button_area(
+            ui,
+            clear.intersect(clip),
+            id.with("hide"),
+            format!("Clear the top lane on {}", lanes.name),
+        )
+        .on_hover_text("Clear the top lane");
+        if response.clicked() {
+            state.from_automated.remove(&(track, param.key.clone()));
+            state.clear_active(track);
+        }
+        small_button(ui, &painter, clear, &response, Glyph::Cross);
     } else {
         let count = state.dragged_with(track, &param.key, params).len();
-        let hint = if count > 1 { format!("Hide these {count} lanes") } else { "Hide this lane".to_string() };
-        (format!("Hide {label} lane on {}", lanes.name), hint, Glyph::Minus)
-    };
-    let response = widgets::button_area(ui, hide.intersect(clip), id.with("hide"), hide_label).on_hover_text(hint);
-    if response.clicked() {
-        state.from_automated.remove(&(track, param.key.clone()));
-        if top {
-            state.clear_active(track);
-        } else {
-            // A picked lane hides with the other picked lanes.
+        let hint = if count > 1 { format!("Unpin these {count} lanes") } else { "Unpin this lane".to_string() };
+        let response = widgets::button_area(
+            ui,
+            pin.intersect(clip),
+            id.with("hide"),
+            format!("Hide {label} lane on {}", lanes.name),
+        )
+        .on_hover_text(hint);
+        if response.clicked() {
+            state.from_automated.remove(&(track, param.key.clone()));
             let hidden = state.dragged_with(track, &param.key, params);
             let mut changed = layout.clone();
             changed.remove(&hidden, &[]);
@@ -4153,8 +4163,8 @@ fn lane_header(
                 state.selection = None;
             }
         }
+        small_button(ui, &painter, pin, &response, Glyph::Pinned);
     }
-    small_button(ui, &painter, hide, &response, glyph);
 
     // Second row: the value at the playhead's side of things, the lane's first point, or a hint.
     let second = Rect::from_min_size(Pos2::new(inner.left(), row.bottom() + 3.0), Vec2::new(inner.width(), HEADER_ROW));
@@ -4175,36 +4185,52 @@ fn forget_menu(ui: &Ui, filter: Id, placed: Id) {
     });
 }
 
-/// The mark on one of a lane header's small buttons (#1322): a circled plus (pin), a circled
-/// minus (hide) or a cross (clear).
+/// The mark on one of a lane header's small buttons (#1322): a pin's outline (pin it), a filled
+/// pin (pinned; a click unpins) or a cross (clear).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Glyph {
-    Plus,
-    Minus,
+    Pin,
+    Pinned,
     Cross,
 }
 
-/// Draws one of a lane header's small buttons: its background, lighter under the pointer, and
-/// `glyph` in its middle, drawn with lines so it is the same in every font.
+/// A pin's head and shoulders, drawn in a 16-point square: the top, down to the shoulders, out
+/// to the base and back; its needle goes from the base's middle down.
+const PIN_HEAD: [(f32, f32); 6] = [(6.0, 2.5), (10.0, 2.5), (9.4, 6.5), (11.5, 8.7), (4.5, 8.7), (6.6, 6.5)];
+const PIN_NEEDLE: [(f32, f32); 2] = [(8.0, 8.7), (8.0, 13.5)];
+
+/// Draws one of a lane header's small buttons: no box, a faint background under the pointer,
+/// and `glyph` in its middle, drawn with lines so it is the same in every font; dim until the
+/// pointer is on it, a filled pin in the accent colour.
 fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response, glyph: Glyph) {
     let hover = widgets::hover(ui, response);
-    let fill = crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover);
-    painter.fill_background(rect, 0.0, fill);
-    let ink = crate::kit::motion::mix(theme::text_secondary(), theme::text_primary(), hover);
+    if hover > 0.0 {
+        painter.rect_filled(rect, 3.0, theme::control_hover().gamma_multiply(hover));
+    }
+    let ink = match glyph {
+        Glyph::Pinned => theme::accent(),
+        _ => crate::kit::motion::mix(theme::text_hint(), theme::text_primary(), hover),
+    };
     let stroke = Stroke::new(1.25, ink);
-    let center = rect.center();
-    let radius = (rect.width().min(rect.height()) / 2.0 - 2.5).max(2.0);
-    let arm = radius * 0.5;
+    let side = (rect.width().min(rect.height()) - 1.0).max(4.0);
+    let origin = rect.center() - Vec2::splat(side / 2.0);
+    let at = |(x, y): (f32, f32)| origin + Vec2::new(x, y) * (side / 16.0);
     match glyph {
-        Glyph::Plus | Glyph::Minus => {
-            painter.circle_stroke(center, radius, stroke);
-            painter.hline(egui::Rangef::new(center.x - arm, center.x + arm), center.y, stroke);
-            if glyph == Glyph::Plus {
-                painter.vline(center.x, egui::Rangef::new(center.y - arm, center.y + arm), stroke);
+        Glyph::Pin | Glyph::Pinned => {
+            let head: Vec<Pos2> = PIN_HEAD.iter().copied().map(at).collect();
+            if glyph == Glyph::Pinned {
+                // The head is not convex: filled as its body and its base.
+                let body = [0, 1, 2, 5].iter().filter_map(|i| head.get(*i).copied()).collect();
+                let base = [5, 2, 3, 4].iter().filter_map(|i| head.get(*i).copied()).collect();
+                painter.add(Shape::convex_polygon(body, ink, Stroke::NONE));
+                painter.add(Shape::convex_polygon(base, ink, Stroke::NONE));
             }
+            painter.add(Shape::closed_line(head, stroke));
+            painter.line_segment([at(PIN_NEEDLE[0]), at(PIN_NEEDLE[1])], stroke);
         }
         Glyph::Cross => {
-            let arm = radius * 0.6;
+            let arm = side * 0.22;
+            let center = rect.center();
             painter.line_segment([center + Vec2::new(-arm, -arm), center + Vec2::new(arm, arm)], stroke);
             painter.line_segment([center + Vec2::new(-arm, arm), center + Vec2::new(arm, -arm)], stroke);
         }

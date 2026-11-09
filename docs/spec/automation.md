@@ -325,15 +325,17 @@ The lanes are the **top lane** and the **mounted lanes** under it (#1322):
   parameter Settings › Arrangement › Automation › **Top lane shows** names: **Volume** (the
   default), **Pan** or **None**, unless that parameter is mounted. Without a parameter it is an
   empty row reading "Choose a parameter, or move a control, to show it here", with a dropdown to
-  choose one. Its circled **+** ("Pin this parameter as a lane of its own below") mounts its
+  choose one. The pin outline left of its dropdown ("Pin this parameter as a lane of its own below") mounts its
   parameter: the parameter gets a lane of its own right under the top lane, and the top lane is
-  left empty; it does not go on to another parameter. Its **×** ("Clear the top lane") clears it,
+  left empty; it does not go on to another parameter. Its **×** at the header's right end ("Clear the top lane") clears it,
   leaving the empty row: the top lane never goes. Which parameter it shows is the view's own
   state.
 - A mounted lane keeps its parameter: its header shows the name, with no dropdown, and a change
-  to that parameter is made in its own lane. Its circled **−** ("Hide this lane", or "Hide these
-  N lanes" when it is one of several picked) unmounts it, with the other picked lanes (the
-  lanes' points stay). The buttons' marks are drawn with lines, the same in every font.
+  to that parameter is made in its own lane. A filled pin in the accent colour
+  stands left of the name; a click on it ("Unpin this lane", or "Unpin these N lanes" when it is
+  one of several picked) unmounts it, with the other picked lanes (the lanes' points stay). The
+  buttons have no box: their marks, drawn with lines so they are the same in every font, are dim
+  until the pointer is on them.
 - Which lanes are mounted, in which order, and their groups are part of the project
   (`automation.setLayout`, the project file's `lane_layouts`): each change below is one undo
   step and is saved. A track never laid out mounts the lanes that have points when its lanes are
@@ -428,8 +430,8 @@ closed lanes stay closed. The header:
 - **On/Off** (lanes with points): whether the lane plays. A manual change to the parameter turns
   it off (the envelope is drawn in `text.hint` and the header says "Off: set by hand"); a click
   turns it on again (`automation.setEnabled`), or off.
-- The top lane's circled **+** pins its parameter as a lane of its own and its **×** clears it; a
-  mounted lane's circled **−** hides it (above).
+- The top lane's pin outline pins its parameter as a lane of its own and its **×** clears it; a
+  mounted lane's filled pin unpins it (above).
 
 The envelope is drawn in the track's colour through every point, holding before the first and
 after the last, along each segment's curve; steps for mute, on/off and choices. Values are placed
