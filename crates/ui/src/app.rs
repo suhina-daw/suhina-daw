@@ -376,6 +376,9 @@ pub struct App {
     /// The Arrangement view's data, the revision it was built from and the folds it was built
     /// with: folding a group changes what the lanes are, without changing the project.
     timeline: Option<(u64, Folds, Timeline)>,
+    /// The value a dragged plug-in lane last sent its plug-in (track, device, parameter id, the
+    /// value's bits), so a drag that holds still sends nothing more (#1205).
+    lane_preview: Option<(TrackId, usize, u32, u64)>,
     /// Waveforms of the open project's audio files.
     waveforms: std::sync::Arc<crate::kit::waveform::Waveforms>,
     /// The plug-in library as Settings shows it, and a scan running in the background.
@@ -647,6 +650,7 @@ impl App {
             open_request: None,
             revision: 0,
             timeline: None,
+            lane_preview: None,
             waveforms: std::sync::Arc::default(),
             plugins: PluginsView::default(),
             plugins_read: false,
@@ -3611,7 +3615,31 @@ impl App {
         let lanes = &self.arrangement.automation;
         // The texts the lanes wanted last frame and did not know are asked for now.
         let asked = self.timeline.as_ref().map(|(_, _, t)| t.automation.asked_texts()).unwrap_or_default();
+        // A plug-in lane whose point is dragged: the plug-in and its editor follow the line where
+        // the transport stands, before the point is let go of (#1205). A range being painted
+        // sends nothing.
+        let dragged = lanes.dragged.clone().filter(|d| d.at.is_none());
         let Ok(session) = self.projects.session_mut(None) else { return lists };
+        let preview = dragged.and_then(|d| {
+            let device = d.key.device?;
+            let id = suhina_engine::param_id(&d.key.param)?;
+            let beat = session.player().map_or(0.0, |p| p.monitor().beat());
+            let value = suhina_engine::model::automation::value_at(
+                &d.points,
+                beat,
+                false,
+                &suhina_engine::model::automation::Plain,
+            )?;
+            Some((d.track, device, id, value))
+        });
+        match preview {
+            Some((track, device, id, value)) if self.lane_preview != Some((track, device, id, value.to_bits())) => {
+                session.preview_plugin_param(track, device, id, value);
+                self.lane_preview = Some((track, device, id, value.to_bits()));
+            }
+            Some(_) => {}
+            None => self.lane_preview = None,
+        }
         for (track, index, id, values) in asked {
             session.ask_plugin_texts_at(track, &[index], id, &values);
         }

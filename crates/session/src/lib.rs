@@ -883,6 +883,29 @@ impl Session {
         self.plugins.report(key)
     }
 
+    /// Sets parameter `id` of the hosted plug-in at `device` on `track`'s chain to `value` for
+    /// now, from the next audio block, leaving the project and its lanes alone (#1205): while a
+    /// point of the parameter's lane is dragged, the plug-in and its editor follow the line where
+    /// the transport stands. The command that lets go of the point puts the lane in for good. Does
+    /// nothing for a device that is not a hosted plug-in or without a player.
+    pub fn preview_plugin_param(&mut self, track: suhina_model::TrackId, device: usize, id: u32, value: f64) {
+        let hosted = self.project.channel_of_track(track).and_then(|c| c.devices.get(device)).is_some_and(|d| {
+            matches!(
+                d.kind,
+                suhina_model::DeviceKind::Clap { .. }
+                    | suhina_model::DeviceKind::Vst3 { .. }
+                    | suhina_model::DeviceKind::Vst2 { .. }
+            )
+        });
+        let Ok(param) = usize::try_from(id) else { return };
+        if hosted
+            && value.is_finite()
+            && let Some(player) = self.sync.player.as_mut()
+        {
+            let _ = player.set_device_param(ParamEdit { track, device, param, value });
+        }
+    }
+
     /// The plug-in parameters the user moved in a plug-in's own editor since the last call
     /// (track, device on the track's own chain, parameter id), each once, for the window to show
     /// them in the track's lanes (#1205). A value a lane sent there and the plug-in reported back

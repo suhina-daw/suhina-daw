@@ -183,6 +183,10 @@ strip's, the returns' and Main's, a device's knob) shows the lane's value at the
 whether the transport runs, is paused or is stopped, and follows the playhead when it is moved
 while stopped (#706, #811). A lane turned off shows the value set by hand.
 
+While a point of a hosted plug-in's enabled lane is dragged, the plug-in itself takes the dragged
+line's value where the transport stands, from the next audio block, so its own editor's knob moves
+with the point (#1205); the project and the lane change only when the point is let go of.
+
 While an enabled lane's points or curves are dragged in the Arrangement view, the track header's
 volume or pan, Main's volume and a device's knob in the detail view show the value of the line as
 it is dragged at the playhead, so a control moves while the drag changes the line where the
