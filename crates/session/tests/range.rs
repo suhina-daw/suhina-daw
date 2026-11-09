@@ -368,3 +368,37 @@ fn a_row_duplicate_landing_on_another_row_leaves_that_row() {
     run(&mut session, "range.duplicate", json!({ "tracks": [1], "start": 0.0, "end": 2.0 })).unwrap();
     assert_eq!(spans(&session, 1), [(0.0, 2.0), (2.0, 2.0), (4.0, 2.0)]);
 }
+
+/// A copy kept to one row's clips replaces that row's clips it lands on (the window names them in
+/// `clips` too), not only the ones it was taken from, and no other row's; stacked, it replaces
+/// nothing (#701).
+#[test]
+fn a_row_duplicate_replaces_its_own_rows_clips_in_the_landing_span() {
+    let build = || {
+        let project = ProjectBuilder::from(blank_project())
+            .notes(1, "Riff 1", 4.0, vec![Note::new(0.0, 4.0, 60, 0.8)])
+            .clip(1, Clip::new(ContentId(1), 0.0, 2.0))
+            .clip(1, Clip::new(ContentId(1), 1.0, 5.0))
+            .clip(1, Clip::new(ContentId(1), 3.0, 2.0))
+            .build_without_ids();
+        let session = Session::new(project);
+        let lane = session.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap();
+        let ids: Vec<u32> = lane.clips.iter().map(|c| c.id.0).collect();
+        (session, ids)
+    };
+    // The first row holds the clips from 0 and from 3; the clip from 1 is the other row's.
+    let (mut session, ids) = build();
+    let params = json!({ "tracks": [1], "start": 0.0, "end": 2.0, "clips": [ids[0], ids[2]] });
+    run(&mut session, "range.duplicate", params.clone()).unwrap();
+    let mut all = spans(&session, 1);
+    all.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    assert_eq!(all, [(0.0, 2.0), (1.0, 5.0), (2.0, 2.0), (4.0, 1.0)], "its own row's clip gave way");
+
+    let (mut session, ids) = build();
+    let mut stacked = json!({ "tracks": [1], "start": 0.0, "end": 2.0, "clips": [ids[0], ids[2]] });
+    stacked["stack"] = json!(true);
+    run(&mut session, "range.duplicate", stacked).unwrap();
+    let mut all = spans(&session, 1);
+    all.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    assert_eq!(all, [(0.0, 2.0), (1.0, 5.0), (2.0, 2.0), (3.0, 2.0)], "stacked, nothing gave way");
+}

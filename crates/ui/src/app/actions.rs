@@ -350,6 +350,18 @@ impl App {
                     "selection.copy" => actions.push(Action::new("range.copy", params)),
                     "selection.split" => actions.push(Action::new("range.split", params)),
                     "selection.duplicate" => {
+                        // The copy replaces what it lands on: in one row of a stack, that row's
+                        // clips there, which `clips` names too; and it stacks when the stacking
+                        // setting covers every clip it copies, as a copied clip does.
+                        let length = span.end - span.start;
+                        if let Some(clips) =
+                            timeline.and_then(|t| span.row_clips_over(t, span.start, span.end + length))
+                        {
+                            params["clips"] = json!(clips);
+                        }
+                        if self.stacks_every_clip_in(&span, in_row.as_deref()) {
+                            params["stack"] = json!(true);
+                        }
                         actions.push(Action::new("range.duplicate", params));
                         // The selection moves onto the copy, so Ctrl+D again goes on.
                         let length = span.end - span.start;
@@ -935,6 +947,26 @@ impl App {
                 .and_then(|l| l.clips.iter().find(|c| c.id == *id))
                 .is_none_or(|c| self.stacks(c.audio))
         })
+    }
+
+    /// Whether the stacking setting covers every clip a copy of the time selection `span` takes
+    /// (those of the row, when `row` names them): with clips of both kinds, only when both
+    /// settings are on does the copy leave what it lands on alone. None to copy: no.
+    fn stacks_every_clip_in(
+        &self,
+        span: &crate::arrangement::arrangement_view::TimeSelection,
+        row: Option<&[u32]>,
+    ) -> bool {
+        let Some((_, _, timeline)) = self.timeline.as_ref() else { return false };
+        let mut copied = timeline
+            .lanes
+            .iter()
+            .filter(|l| span.tracks.contains(&l.track))
+            .flat_map(|l| &l.clips)
+            .filter(|c| c.start < span.end && c.start + c.length > span.start)
+            .filter(|c| row.is_none_or(|ids| ids.contains(&c.id.0)))
+            .peekable();
+        copied.peek().is_some() && copied.all(|c| self.stacks(c.audio))
     }
 
     /// Makes the whole window `steps` zoom steps larger or smaller and keeps that in the settings.
