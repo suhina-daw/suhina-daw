@@ -756,7 +756,7 @@ impl SoundMap {
         }
         let path = dir.join(layout_file_name(key));
         let _unkept = suhina_fs::write_atomic(&path, layout_to_bytes(positions));
-        suhina_fs::keep_newest(&dir, KEPT_LAYOUTS, |name| name.starts_with("layout-"));
+        suhina_fs::keep_newest(&dir, KEPT_LAYOUTS, |name| name.starts_with("layout-") && name.ends_with(".bin"));
     }
 }
 
