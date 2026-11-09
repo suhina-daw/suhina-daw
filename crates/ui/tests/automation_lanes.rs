@@ -285,15 +285,16 @@ fn a_lane_turned_off_by_a_manual_change_turns_on_again_from_its_header() {
     assert!(harness.query_by_label("Turn off Volume automation on Drums").is_some());
 }
 
-/// **+** adds a lane of the next parameter and **×** hides it again.
+/// The top lane's **+** mounts its parameter (the volume) under it, the top lane then shows the
+/// next parameter (the pan), and its **×** clears it while the mounted lane stays (#1322).
 #[test]
 fn a_lane_shows_another_parameter_and_more_lanes_are_added() {
     let mut harness = with_lanes();
-    harness.get_by_label("Add an automation lane to Drums").click();
+    harness.get_by_label("Mount Volume lane on Drums").click();
     harness.run();
-    // The next parameter not shown: the pan.
+    // The volume mounted, the top lane shows the next parameter: the pan.
     assert!(harness.query_by_label("Pan automation on Drums").is_some());
-    harness.get_by_label("Hide Pan lane on Drums").click();
+    harness.get_by_label("Clear the top lane on Drums").click();
     harness.run();
     assert!(harness.query_by_label("Pan automation on Drums").is_none());
     assert!(harness.query_by_label("Volume automation on Drums").is_some());
@@ -304,7 +305,7 @@ fn a_lane_shows_another_parameter_and_more_lanes_are_added() {
 fn dragging_a_segment_up_bends_its_curve() {
     let mut harness = with_lanes();
     // The pan's lane: its values are spread evenly up the lane.
-    harness.get_by_label("Add an automation lane to Drums").click();
+    harness.get_by_label("Mount Volume lane on Drums").click();
     harness.run();
     let rect = harness.get_by_label("Pan automation on Drums").rect();
     click_at(&mut harness, Pos2::new(rect.left() + 100.0, rect.bottom() - 8.0));
@@ -403,7 +404,7 @@ fn envelope_y_at(harness: &Harness<'static, App>, lane: egui::Rect, x: f32) -> O
 #[test]
 fn a_bent_segment_keeps_its_new_shape_when_the_mouse_is_let_go() {
     let mut harness = with_lanes();
-    harness.get_by_label("Add an automation lane to Drums").click();
+    harness.get_by_label("Mount Volume lane on Drums").click();
     harness.run();
     let rect = harness.get_by_label("Pan automation on Drums").rect();
     click_at(&mut harness, Pos2::new(rect.left() + 100.0, rect.bottom() - 8.0));
@@ -965,7 +966,7 @@ fn render_the_lanes() {
     harness.get_by_label("Show automation of Drums").click();
     harness.run();
     // A lane without points: the mute's faint line.
-    if let Some(add) = harness.get_all_by_label("Add an automation lane to Drums").last() {
+    if let Some(add) = harness.get_all_by_label("Mount Volume lane on Drums").last() {
         add.click();
     }
     harness.run();
@@ -1006,7 +1007,7 @@ fn a_click_near_the_envelope_adds_a_point_on_it() {
 #[test]
 fn a_lane_without_points_adds_one_on_the_parameters_value() {
     let mut harness = with_lanes();
-    harness.get_by_label("Add an automation lane to Drums").click();
+    harness.get_by_label("Mount Volume lane on Drums").click();
     harness.run();
     let set = {
         let project = harness.state().session().map(|s| s.project().clone());

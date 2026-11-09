@@ -51,6 +51,7 @@ mod export;
 mod files;
 mod follow;
 mod history;
+mod lane_layout;
 mod launch;
 mod library;
 mod live_input;

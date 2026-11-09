@@ -314,10 +314,25 @@ clip came from, whose devices they name. All of it is part of the clip's command
 ## In the Arrangement view
 
 Each track header has an envelope button at the end of its first row ("Show automation of
-Drums"); a click shows the track's automation lanes under it, and another hides them. Shown the
-first time, they are the lanes that have points, or the volume's. Which lanes are shown is the
-view's own state, like a lane's height: it is not saved and needs no command. Return tracks have
-no lanes yet; Main's are under its row ([arrangement editing](arrangement-editing.md), #687).
+Drums"); a click shows the track's automation lanes under it, and another hides them. Whether a
+track's lanes are open is the view's own state. Return tracks have no lanes yet; Main's are under
+its row ([arrangement editing](arrangement-editing.md), #687).
+
+The lanes are the **top lane** and the **mounted lanes** under it (#1322):
+
+- The top lane is always there while the lanes are open. It shows the parameter being worked
+  on: one chosen in its dropdown, or one moved by hand (below); with neither, the first of the
+  track's volume, pan and mute that is not mounted. When all three are mounted it is an empty
+  row reading "Choose a parameter, or move a control, to show it here", with a dropdown to choose
+  one. Its **+** mounts its parameter: the parameter gets a lane of its own right under the top
+  lane, and the top lane shows the next parameter. Its **×** clears it, leaving the empty row:
+  the top lane never goes. Which parameter it shows is the view's own state.
+- A mounted lane keeps its parameter: its header shows the name, with no dropdown, and a change
+  to that parameter is made in its own lane. Its **×** unmounts it (the lane's points stay).
+- Which lanes are mounted, in which order, and their groups are part of the project
+  (`automation.setLayout`, the project file's `lane_layouts`): each change below is one undo
+  step and is saved. A track never laid out mounts the lanes that have points when its lanes are
+  opened, until its layout is first changed.
 
 A lane is 40 px tall across the timeline until it is given another height, with a header under
 the track's. Dragging the line under a lane makes it taller or shorter (24 to 240 px) and moves
@@ -327,41 +342,47 @@ Each lane keeps its height while the track's lanes are hidden, for as long as th
 open (#818), and when it comes to show another parameter, chosen in its dropdown or brought in
 by a control moved by hand (#1205).
 
-A track's lanes are put in an order of one's own and gathered in groups (#1322), the view's own
-like the lanes shown and their heights, kept while the project is open:
+Mounted lanes are put in an order of one's own and gathered in groups (#1322):
 
-- A click on a lane header's free space picks the lane (tinted in the accent colour); Ctrl+click
-  (Cmd on macOS) adds or takes one away, Shift+click picks every lane from the one picked last.
-  Picking a lane of another track lets go of the first track's.
-- Dragging a header's free space moves the lane, or all picked lanes when it is one of them, in
-  their order; a line across the lanes shows where they land, before the row under the pointer's
-  middle or after the last. A lane dropped among a group's lanes joins the group; one dropped
-  outside leaves it.
-- **Group lanes** in the header's right-click menu gathers the picked lanes (or the lane alone)
-  under a group heading in the place of the first of them, named "Group 1" (the first number free
-  on the track). The heading shows the group's name and how many lanes it holds; its arrow folds
-  the lanes away to the heading's row and back; a double-click or **Rename** in its menu types a
-  new name (Enter keeps it, Escape leaves the old one); dragging it moves the whole group;
-  **Ungroup** (its menu, or a grouped lane's) puts the lanes back where they are. A lane brought
-  into view by a control (below) opens its folded group.
+- A click on a mounted lane header's free space picks the lane (tinted in the accent colour);
+  Ctrl+click (Cmd on macOS) adds or takes one away, Shift+click picks every mounted lane from the
+  one picked last. A click on a group heading picks the group; Ctrl+click adds or takes one away.
+  A click on a lane or a clip lets go of what is picked. Picking is the view's own state.
+- Dragging a mounted header's free space moves the lane, or all picked lanes when it is one of
+  them, in their order; a line across the lanes shows where they land, before the row under the
+  pointer's middle or after the last, under the top lane at least. A lane dropped among a group's
+  lanes joins the group, one dropped outside leaves it. Over a folded group's heading the heading
+  lights up, and the lanes dropped there go into the group, at its end. Dragging the top lane's
+  header mounts its parameter where it lands.
+- **Group lane** or **Group N lanes** in a mounted header's right-click menu gathers the picked
+  lanes (or the lane alone) under a heading in the place of the first of them, named "Group 1"
+  (the first number free on the track). The heading shows the group's name and how many lanes it
+  holds; its arrow folds the lanes away to the heading's row and back; a double-click or
+  **Rename** types a new name (Enter keeps it, Escape leaves the old one); dragging it moves the
+  whole group. **Ungroup** (or **Ungroup N groups** with several picked) puts the lanes back where
+  they are; **Delete group** (**Delete N groups**) unmounts the groups' lanes.
+- Delete with lanes or group headings picked unmounts them; Ctrl+Z brings them back.
+- With Settings › Arrangement › Automation › **Group plug-in lanes** on (the default), a lane
+  mounted from a hosted plug-in goes into a group of that plug-in's lanes, named after the
+  device: made the first time, used again for its next lanes; another device of the same name
+  gets its own group with a number after the name.
 - A time range painted on a lane and dragged up or down over other lanes of the track is on all of
   them: copy, cut, paste, duplicate and delete act on each in one step (`automation.copy`,
   `automation.duplicate` and `automation.deleteRange` with `lanes`; a paste of lanes copied together
   puts each back on its own lane of the track). A lane with no automation in the range is left out.
-- **×** on a picked lane hides all the picked lanes; **+** adds the next parameter's lane right
-  under the lane whose **+** was clicked, in its group, so it shows at once.
 
 A control moved by hand brings its parameter into view when its track's lanes are shown
 (#1205): the track header's volume, pan or mute (Main's too), a knob of a device on the track's
-own chain in the detail view, or a parameter turned in a hosted plug-in's own editor. A lane
-that shows it already stays where it is; otherwise the top lane shows it, ready to be drawn on,
-and it is the lane clicked last (Ctrl+V pastes onto it). A value set on several tracks at once,
+own chain in the detail view, or a parameter turned in a hosted plug-in's own editor. The top
+lane shows it, ready to be drawn on, unless it is mounted: then it is edited in its own lane and
+the top lane stays as it is. Either way it is the lane clicked last (Ctrl+V pastes onto it). A value set on several tracks at once,
 or a value a lane sent a plug-in and the plug-in reported back, brings nothing forward, and
 closed lanes stay closed. The header:
 
-- **The parameter**, a dropdown of the track's volume, pan and mute and each built-in or `.sd`
-  device's parameters, grouped by device; a parameter with points is marked " •". Choosing one
-  shows it in this lane.
+- **The parameter**, on the top lane a dropdown of the track's volume, pan and mute and each
+  built-in, `.sd` and plug-in device's parameters, grouped by device; a parameter with points is
+  marked " •". Choosing one shows it in the top lane. A mounted lane shows its parameter's name
+  instead, which does not change.
   The parameters with points come first, under a heading "Automated" that does not fold: a
   shortcut to them while their devices are closed, each named with its device ("Utility: Gain")
   and in the order of the list below, where it is listed as well. A search narrows it like the

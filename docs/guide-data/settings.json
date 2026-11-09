@@ -1495,6 +1495,31 @@
       "workInProgress": false
     },
     {
+      "id": "Arrangement/Automation/automation_group",
+      "page": "Arrangement",
+      "section": "Automation",
+      "name": "Group plug-in lanes",
+      "note": "Choose whether lanes you mount from a plug-in go into a group of that plug-in's lanes.",
+      "keys": [
+        "automation_group"
+      ],
+      "sourceFingerprint": "e33edcdbda8f3219c07d1da5e74f492b27ffa7086420d75f8acbfac6e8137911",
+      "helpStatus": "reviewed",
+      "description": "When you click + on a track's top automation lane, its parameter is mounted as a lane of its own under the top lane. With this on (the default), a lane mounted from a hosted plug-in (CLAP, VST3, VST2) goes into a group named after the plug-in, made the first time and used again for the next lane of the same plug-in; each plug-in on the track gets its own group, a second one of the same name with a number after it. The group heading folds its lanes away and can be renamed, moved or ungrouped like any group. Lanes of the track's own volume, pan and mute and of built-in devices are not grouped. With it off, mounted lanes go under the top lane on their own and you group them yourself.",
+      "options": [
+        {
+          "name": "On",
+          "description": "Each plug-in's mounted lanes gather in a group of their own. This is the default."
+        },
+        {
+          "name": "Off",
+          "description": "Mounted lanes stand on their own; group them yourself from a lane header's menu."
+        }
+      ],
+      "whenToChange": "Turn it off if you prefer to arrange plug-in lanes yourself, or mix lanes of several plug-ins in one group.",
+      "workInProgress": false
+    },
+    {
       "id": "Arrangement/Gain envelope/gain_envelope_show",
       "page": "Arrangement",
       "section": "Gain envelope",

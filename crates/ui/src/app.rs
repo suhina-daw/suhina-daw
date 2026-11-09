@@ -3250,6 +3250,7 @@ impl App {
                             self.arrangement.stack_midi = self.settings.midi_stacking;
                             self.arrangement.double_click_does_nothing = !self.settings.view.double_click_clip;
                             self.arrangement.automation.click_anywhere = self.settings.view.automation_click_anywhere;
+                            self.arrangement.automation.group_plugins = self.settings.view.automation_group_plugins;
                             self.arrangement.knobs = self.settings.mixer_controls == MixerControls::Knob;
                             let monitor = session.player().map(|p| p.monitor());
                             // A folded group's row shows the track being worked on, so the folds
@@ -3678,9 +3679,11 @@ impl App {
                 lists.texts.insert((track, index), texts);
             }
         }
-        for (track, index, id) in touched {
-            let key = crate::arrangement::automation_lanes::LaneKey { device: Some(index), param: id.to_string() };
-            self.arrangement.automation.focus(track, key);
+        if let Some((_, _, timeline)) = self.timeline.as_ref() {
+            for (track, index, id) in touched {
+                let key = crate::arrangement::automation_lanes::LaneKey { device: Some(index), param: id.to_string() };
+                self.arrangement.automation.focus(track, key, &timeline.automation);
+            }
         }
         lists
     }

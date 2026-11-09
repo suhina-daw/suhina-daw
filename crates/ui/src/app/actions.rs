@@ -209,6 +209,15 @@ impl App {
             | "selection.takeDown"
                 if self.piano_has_keyboard() => {}
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
+            // Lane headers or group headings picked: Delete takes them out of the track's layout,
+            // one undo step (#1322).
+            "selection.delete" if self.shown == View::Arrangement && self.arrangement.automation.has_picks() => {
+                if let Some((_, _, timeline)) = self.timeline.as_ref()
+                    && let Some(action) = self.arrangement.automation.delete_picked(&timeline.automation)
+                {
+                    actions.push(action);
+                }
+            }
             // A range painted on an automation lane: copy, cut, paste (from its start), duplicate
             // (right after it) and delete act on it (#916).
             "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate" | "selection.delete"
@@ -1137,8 +1146,9 @@ impl App {
             }
             _ => return,
         };
+        let Some((_, _, timeline)) = self.timeline.as_ref() else { return };
         for (track, key) in touched {
-            self.arrangement.automation.focus(track, key);
+            self.arrangement.automation.focus(track, key, &timeline.automation);
         }
     }
 

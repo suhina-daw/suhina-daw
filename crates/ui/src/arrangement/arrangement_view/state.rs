@@ -847,7 +847,7 @@ impl ArrangementViewState {
         }
         if !self.zoom_one {
             self.zoom_lanes(&timeline.lanes, factor, offset);
-            self.automation.zoom_all(factor);
+            self.automation.zoom_all(factor, &timeline.automation);
             return;
         }
         let y = offset + self.scroll.y;
@@ -871,13 +871,16 @@ impl ArrangementViewState {
                     top += row + 1.0;
                 }
             }
-            for key in self.automation.shown(lane.track, &timeline.automation) {
-                let lane_height = self.automation.lane_height(lane.track, &key);
-                if y < top + lane_height {
-                    self.automation.set_lane_height(lane.track, &key, lane_height * factor);
+            // The rows as they are drawn: a group's heading and the empty top lane keep their height.
+            for row in self.automation.rows(lane.track, &timeline.automation) {
+                let row_height = self.automation.row_height(lane.track, &row);
+                if y < top + row_height {
+                    if let crate::arrangement::automation_lanes::LaneRow::Lane(key) = row {
+                        self.automation.set_lane_height(lane.track, &key, row_height * factor);
+                    }
                     return;
                 }
-                top += lane_height + 1.0;
+                top += row_height + 1.0;
             }
         }
     }

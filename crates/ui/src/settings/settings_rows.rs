@@ -640,6 +640,14 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Automation",
+        "Group plug-in lanes",
+        "Whether a lane mounted from a plug-in goes into a group of that plug-in's lanes, one group a plug-in",
+        &["automation_group"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.automation_group_plugins),
+    ),
+    row(
+        Page::Arrangement,
         "Gain envelope",
         "Show gain envelope",
         "Audio clips with gain envelope points show the line on their waveform when you are not editing it",

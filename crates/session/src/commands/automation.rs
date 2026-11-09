@@ -303,4 +303,24 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         run: crate::automation::list,
         policy: Policy::DEFAULT,
     },
+    CommandSpec {
+        id: "automation.setLayout",
+        label: "Set how a track's automation lanes are laid out in the Arrangement view, whole: the lanes mounted under its top lane, top to bottom, and groups of them under a heading of their own (folded or open); one undo step, saved with the project",
+        params: &[
+            DEVICE_TRACK,
+            optional(
+                "lanes",
+                ParamType::Items,
+                "the mounted lanes, top to bottom: [{\"param\": \"volume\"}, {\"device\": n, \"param\": id}], a device by its index on the track",
+            ),
+            optional(
+                "groups",
+                ParamType::Items,
+                "groups of those lanes: [{\"name\": \"Synth\", \"lanes\": [...], \"folded\": false, \"device\": n}], each lane in one group at most",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::lane_layout::set_layout,
+        policy: Policy::UNHEARD,
+    },
 ];

@@ -285,6 +285,16 @@ fn everything() -> Project {
         },
         extensions: ext("LiveSet"),
         default_scale: None,
+        lane_layouts: vec![LaneLayout {
+            channel: ChannelId(1),
+            lanes: vec![LaneRef::mixer("pan"), LaneRef { device: Some(DeviceId(5)), param: "7".into() }],
+            groups: vec![LaneGroup {
+                name: "Synth".into(),
+                lanes: vec![LaneRef { device: Some(DeviceId(5)), param: "7".into() }],
+                folded: true,
+                device: Some(DeviceId(5)),
+            }],
+        }],
         next_id: 0,
     };
     // Every lane, clip and scene gets an id, as a project in the app has.
