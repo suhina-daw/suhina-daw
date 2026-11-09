@@ -1130,10 +1130,11 @@ fn ctrl_l_loops_a_painted_range() {
             (transport.loop_enabled, transport.loop_range.map(|r| (r.start, r.end)))
         })
     };
-    // Bars 3 to 8 (beats 8 to 32), on the grid, painted low on the lane, away from the faint
-    // line of the volume at 0 dB, which a drag near it would move instead.
+    // Bars 3 to 8 (beats 8 to 32), on the grid, painted from the lane's upper half (the lower half
+    // draws a selection box), just above its middle, away from the faint line of the volume at
+    // 0 dB near the top, which a drag on it would move instead.
     let rect = lane(&harness);
-    drag(&mut harness, Pos2::new(rect.left() + 60.0, rect.bottom() - 6.0), vec2(180.0, 0.0));
+    drag(&mut harness, Pos2::new(rect.left() + 60.0, rect.top() + rect.height() * 0.45), vec2(180.0, 0.0));
     assert!(harness.state().arrangement().automation.range.is_some(), "a range is painted");
     harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
     harness.run();
