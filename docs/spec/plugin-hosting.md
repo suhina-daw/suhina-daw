@@ -223,13 +223,17 @@ the render thread sleeps until any of the plug-ins it waits for answers, or the 
 their deadlines (`suhina_ipc::wait_any`, #1256): on Windows on their links' events together
 (63 at a time; with more, a millisecond at a time, so the others are looked at that often)
 and a high-resolution timer, yielding only in the last millisecond, so a late plug-in no
-longer keeps the render thread spinning for the whole wait; on Linux and macOS on the first
+longer keeps the render thread spinning for the whole wait (without that timer, on Windows 10
+before 1803, on the events with their own timeout, cut a tick short, and with more than 63
+links a millisecond at a time, which may end on the system timer's next tick); on Linux and macOS on the first
 link still out, as a single link waits, which an answer on another link does not wake: on
 Linux, with several links out, it sleeps at most 100 µs at a time (`RECHECK`) and looks at
 all of them again, and on macOS each nap of at most 250 µs ends with a look at all of them. A plug-in the engine cannot watch (a
 stand-in in tests) is waited on for at most 50 µs at a time (`ANSWER_SLICE`), and the others
 looked at again. A wait that Windows refuses (`WAIT_FAILED`) falls back to the event's own,
-coarser timeout instead of returning at once, and `suhina_ipc::a_wait_failed` says it happened. A chain whose plug-in has not answered by the deadline misses that block, as before;
+coarser timeout instead of returning at once (a wait over several links on the first link's
+event, a millisecond at a time, so the others are still looked at), and
+`suhina_ipc::a_wait_failed` says it happened. A chain whose plug-in has not answered by the deadline misses that block, as before;
 the others are not held up by it. An offline render gives each block out `OFFLINE_TIMEOUT`
 from when it went. `longest_us` is each plug-in's longest round trip, timed from the block's
 hand-over, since the engine may look at other chains before it takes an answer. A plug-in still at a block it was late with (one whose answer

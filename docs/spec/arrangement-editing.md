@@ -305,7 +305,9 @@ With a time selection:
 Each takes `{tracks, start, end}` and is one undo step. A span painted in one row of a stack lights
 that row only, and every key above acts on that row's clips alone, the other rows left as they are
 (#701): the window names them in `clips` (clip ids), which each `range.*` command and
-`clip.consolidate` take. Closing the gap (deleting the time
+`clip.consolidate` take. Ctrl+D's copy there replaces only that row's clips it covers, landing
+over the other rows' clips without changing them (over a take it replaces what it covers, as
+anywhere). Closing the gap (deleting the time
 itself) is not built yet.
 
 ## Duplicating and deleting

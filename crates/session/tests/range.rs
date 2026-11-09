@@ -345,3 +345,26 @@ fn a_range_kept_to_some_clips_leaves_the_other_rows_of_a_stack() {
         run(&mut session, "range.delete", json!({ "tracks": [1], "start": 2.0, "end": 4.0, "clips": "x" })).is_err()
     );
 }
+
+/// Duplicating a span painted in one row of a stack, without `stack`: the copy replaces what it
+/// covers in that row only, and a clip of another row under it stays as it was (#701). Without
+/// `clips` the copy replaces what it covers on every row, as ever.
+#[test]
+fn a_row_duplicate_landing_on_another_row_leaves_that_row() {
+    let (mut session, lower, upper) = stacked();
+    let span = json!({ "tracks": [1], "start": 0.0, "end": 2.0, "clips": [lower.0] });
+    let copies = run(&mut session, "range.duplicate", span).unwrap();
+    assert_eq!(copies["clips"].as_array().unwrap().len(), 1, "{copies}");
+    let p = session.project();
+    let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap();
+    assert!(lane.clips.iter().any(|c| c.id == upper && c.start == 2.0 && c.length == 4.0), "{:?}", spans(&session, 1));
+    // The lower row's own clip gives way to the copy.
+    assert!(lane.clips.iter().any(|c| c.id == lower && c.start == 0.0 && c.length == 2.0), "{:?}", spans(&session, 1));
+    let mut all = spans(&session, 1);
+    all.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    assert_eq!(all, [(0.0, 2.0), (2.0, 2.0), (2.0, 4.0)]);
+
+    let (mut session, _, _) = stacked();
+    run(&mut session, "range.duplicate", json!({ "tracks": [1], "start": 0.0, "end": 2.0 })).unwrap();
+    assert_eq!(spans(&session, 1), [(0.0, 2.0), (2.0, 2.0), (4.0, 2.0)]);
+}

@@ -363,9 +363,11 @@ fn a_wait_over_several_links_returns_the_one_answered() {
     assert!(second.watch().is_none(), "answered");
     // A link given up on is watched for the answer it still owes.
     assert_eq!(first.wait(&mut output, Instant::now()), Outcome::Missed);
-    assert!(first.watch().is_none() && first.watch_ready().is_some());
+    // Taken before its host is let go, as above: once answered there is no watch to take.
+    let ready_watches = [None, first.watch_ready()];
+    assert!(first.watch().is_none() && ready_watches[1].is_some());
     assert!(go_first.send(()).is_ok());
-    assert_eq!(wait_any(&[None, first.watch_ready()], Instant::now() + LONG), Some(1));
+    assert_eq!(wait_any(&ready_watches, Instant::now() + LONG), Some(1));
     assert_eq!(second.wait(&mut output, Instant::now()), Outcome::Done);
     for host in hosts {
         assert_eq!(host.join().ok(), Some(1));
