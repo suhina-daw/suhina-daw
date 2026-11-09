@@ -239,8 +239,8 @@ impl DriverBuffers {
         }
     }
 
-    /// The answer as the trace writes it, with what Suhina makes of it: "min=128 max=128
-    /// preferred=128 granularity=Unstated; sizes [128], default Some(128)".
+    /// The answer as the trace writes it, with what Suhina makes of it: `min=128 max=128
+    /// preferred=128 granularity=Unstated; sizes [128], default Some(128)`.
     pub fn trace_text(&self) -> String {
         format!(
             "min={} max={} preferred={} granularity={:?}; sizes {:?}, default {:?}",
