@@ -388,7 +388,7 @@ struct StyleNode {
     element: super::element::Name,
     /// The id the app gave it, interned in [`Engine::ids`].
     id: Option<u32>,
-    /// Pointer states (hover 1, active 2, disabled 4, focus 8) and the host's ([`mark`]).
+    /// Pointer states (hover 1, active 2, disabled 4, focus 8) and the host's ([`mark_node`]).
     state: u16,
     /// Custom properties the host gives the element ([`set_variable`]).
     variables: Vec<(String, String)>,
