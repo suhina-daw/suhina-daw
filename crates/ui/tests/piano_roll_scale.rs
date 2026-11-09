@@ -284,10 +284,7 @@ fn the_arrow_keys_step_the_scale_root_and_mode_once_clicked() {
     assert_eq!(edited(&h).1, Scale::new(1, ScaleMode::Major), "Down, then Up: back one");
     assert_eq!(edited(&h).0, notes, "the arrows moved no note");
     // The mode the same way.
-    let mode_label = h
-        .query_all_by_label_contains("Scale mode: ")
-        .find_map(|n| n.accesskit_node().label())
-        .unwrap();
+    let mode_label = h.query_all_by_label_contains("Scale mode: ").find_map(|n| n.accesskit_node().label()).unwrap();
     press(&mut h, &mode_label);
     press(&mut h, &mode_label);
     h.key_press(Key::ArrowDown);

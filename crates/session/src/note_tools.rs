@@ -339,8 +339,8 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
 
 /// For each of `named` (by its place in it): the chord it belongs to and that chord's first start.
 /// Notes are taken in time; one that starts within `window` beats of a chord's first note joins
-/// it, any other starts a chord of its own. With a `window` of 0 every note is its own chord, but
-/// notes that start at the very same beat still move together.
+/// it, any other starts a chord of its own. With a `window` of 0 (Keep chords together off) every
+/// note is its own chord, those that start at the very same beat too.
 fn chords_of(notes: &Notes, named: &[usize], window: f64) -> Vec<(usize, f64)> {
     let time = |position: usize| named.get(position).and_then(|i| notes.get(*i)).map_or(0.0, |n| n.time);
     let mut order: Vec<usize> = (0..named.len()).collect();
@@ -350,7 +350,7 @@ fn chords_of(notes: &Notes, named: &[usize], window: f64) -> Vec<(usize, f64)> {
     for position in order {
         let start = time(position);
         let chord = match current {
-            Some((chord, first)) if start - first <= window + EPSILON => (chord, first),
+            Some((chord, first)) if window > 0.0 && start - first <= window + EPSILON => (chord, first),
             _ => (position, start),
         };
         current = Some(chord);
@@ -409,7 +409,7 @@ pub(crate) fn fit_to_scale(session: &mut Session, params: &Value) -> Result<Valu
         }
         let replaced =
             if replaces(params) && moved > 0 { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
-        Ok(json!({ "notes": after_removal(&named, &replaced), "moved": moved, "replaced": replaced }))
+        Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced), "moved": moved }), &replaced))
     })
 }
 
@@ -440,7 +440,7 @@ pub(crate) fn invert(session: &mut Session, params: &Value) -> Result<Value, Com
             }
         }
         let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
-        Ok(json!({ "notes": after_removal(&named, &replaced), "replaced": replaced }))
+        Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced) }), &replaced))
     })
 }
 
@@ -471,7 +471,7 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
             }
         }
         let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
-        Ok(json!({ "notes": after_removal(&named, &replaced), "replaced": replaced }))
+        Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced) }), &replaced))
     })
 }
 
@@ -557,7 +557,7 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
             }
         }
         let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
-        Ok(json!({ "notes": after_removal(&named, &replaced), "replaced": replaced }))
+        Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced) }), &replaced))
     })
 }
 
