@@ -695,7 +695,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   before it ends where it starts, and one whose start it covers and that runs on past it is removed
   too (**Covered notes** › **Delete them**, the default) or starts where it ends (**Keep the
   rest**, which keeps the tails of notes lengthened over, for new rhythms). Covered notes is in
-  Settings › Clip editor › Piano roll and in the toolbar's workflow menu under Allow stacked notes;
+  Settings › Clip editor › Advanced and in the toolbar's workflow menu under Allow stacked notes;
   the commands take it as `covered` (`"delete"` or `"cut"`, the default for the CLI and MCP). A paint stroke
   paints only the gaps: it adds nothing that would start inside a note. On, notes of a key may overlap. The commands take this as `replace`, so the CLI and MCP choose too; left out,
   notes may overlap.
