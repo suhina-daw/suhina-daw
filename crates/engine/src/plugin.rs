@@ -171,6 +171,20 @@ pub trait PluginProcessor: Send {
         true
     }
 
+    /// The block handed over with [`PluginProcessor::send`], to wait for together with other
+    /// plug-ins' ([`suhina_ipc::wait_any`]), while it is out and not answered. `None` (the
+    /// default) for a processor that cannot tell, which is then looked at in turn as
+    /// [`PluginProcessor::poll`] allows (#1256). Never allocates.
+    fn watch(&self) -> Option<suhina_ipc::Watch<'_>> {
+        None
+    }
+
+    /// Like [`PluginProcessor::watch`], for the block it was late with that
+    /// [`PluginProcessor::ready`] waits for. Never allocates.
+    fn watch_ready(&self) -> Option<suhina_ipc::Watch<'_>> {
+        None
+    }
+
     /// Parameter values for the block that [`PluginProcessor::process`] or
     /// [`PluginProcessor::send`] hands over next, at frames counted from the start of its
     /// buffer, in frame order (#109). The engine calls it before every block (with none, too);
@@ -495,6 +509,13 @@ impl PluginSlot {
     /// nothing to wait for. Never allocates.
     pub(crate) fn poll(&mut self, until: Instant) -> bool {
         self.processor.as_mut().is_none_or(|processor| processor.poll(until))
+    }
+
+    /// Its block out, or with `behind` the block it was late with, to wait for together with
+    /// others' ([`PluginProcessor::watch`]). Never allocates.
+    pub(crate) fn watch(&self, behind: bool) -> Option<suhina_ipc::Watch<'_>> {
+        let processor = self.processor.as_ref()?;
+        if behind { processor.watch_ready() } else { processor.watch() }
     }
 
     /// Whether a block can go to the plug-in now, waiting at most until `until` for one it was

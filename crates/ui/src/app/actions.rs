@@ -117,6 +117,19 @@ impl App {
             "view.editor" => {}
             "view.devices" => self.toggle_devices(),
             "view.araEditor" => self.open_ara_editor(),
+            "view.gainEnvelope" => match self.shown_clip() {
+                Some(ClipRef::Arrangement(track, clip))
+                    if self.piano_clip(Some(ClipRef::Arrangement(track, clip))).is_none() =>
+                {
+                    self.arrangement.toggle_envelope = Some(clip);
+                }
+                // Editing every clip's envelope is a mode: Alt+E turns it on or off without a clip
+                // picked (the clip given is not used then).
+                _ if self.settings.view.envelope_all => {
+                    self.arrangement.toggle_envelope = Some(suhina_engine::model::ClipId(0));
+                }
+                _ => self.status = Status::Hint("Select an audio clip in the Arrangement first".into()),
+            },
             "view.plugin" => self.toggle_plugin_editor(),
             "view.mappingMode" => self.toggle_mapping_mode(),
             "view.quickAdd" if self.quick_add_open() => {}
@@ -337,13 +350,31 @@ impl App {
             {
                 let Some(span) = self.arrangement.time_selection().cloned() else { return };
                 let tracks: Vec<u32> = span.tracks.iter().map(|t| t.0).collect();
-                let params = json!({ "tracks": tracks, "start": span.start, "end": span.end });
+                let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
+                // In one row of a stack: that row's clips only, the other rows left be (#701).
+                let in_row = timeline.and_then(|t| span.row_clips(t));
+                let mut params = json!({ "tracks": tracks, "start": span.start, "end": span.end });
+                if let Some(clips) = &in_row {
+                    params["clips"] = json!(clips);
+                }
                 match action {
                     "selection.delete" => actions.push(Action::new("range.delete", params)),
                     "selection.cut" => actions.push(Action::new("range.cut", params)),
                     "selection.copy" => actions.push(Action::new("range.copy", params)),
                     "selection.split" => actions.push(Action::new("range.split", params)),
                     "selection.duplicate" => {
+                        // The copy replaces what it lands on: in one row of a stack, that row's
+                        // clips there, which `clips` names too; and it stacks when the stacking
+                        // setting covers every clip it copies, as a copied clip does.
+                        let length = span.end - span.start;
+                        if let Some(clips) =
+                            timeline.and_then(|t| span.row_clips_over(t, span.start, span.end + length))
+                        {
+                            params["clips"] = json!(clips);
+                        }
+                        if self.stacks_every_clip_in(&span, in_row.as_deref()) {
+                            params["stack"] = json!(true);
+                        }
                         actions.push(Action::new("range.duplicate", params));
                         // The selection moves onto the copy, so Ctrl+D again goes on.
                         let length = span.end - span.start;
@@ -358,28 +389,14 @@ impl App {
                     _ => {
                         // Each track of the span with something in it: the new clip runs over the
                         // whole span, its empty part silent.
-                        let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
                         let playing = |track: u32| {
                             timeline.and_then(|t| t.lanes.iter().find(|l| l.track.0 == track)).is_some_and(|l| {
                                 l.clips.iter().any(|c| c.start < span.end && c.start + c.length > span.start)
                             })
                         };
-                        // In one row of a stack: that row's clips only, the other rows left be.
-                        let in_row = |track: u32| -> Option<Vec<serde_json::Value>> {
-                            let (row, rows) = span.row?;
-                            let lane = timeline?.lanes.iter().find(|l| l.track.0 == track)?;
-                            Some(
-                                lane.clips
-                                    .iter()
-                                    .filter(|c| c.row == row && c.rows == rows)
-                                    .filter(|c| c.start < span.end && c.start + c.length > span.start)
-                                    .map(|c| json!(c.id.0))
-                                    .collect(),
-                            )
-                        };
                         for track in tracks.into_iter().filter(|t| playing(*t)) {
                             let mut params = json!({ "track": track, "start": span.start, "end": span.end });
-                            if let Some(clips) = in_row(track) {
+                            if let Some(clips) = &in_row {
                                 params["clips"] = json!(clips);
                             }
                             actions.push(Action::new("clip.consolidate", params));
@@ -400,13 +417,10 @@ impl App {
                 if action == "selection.delete"
                     && (self.detail_shows_devices() || self.device_focus)
                     && let Some((track, at)) = self.selected_device.clone()
+                    // Main's chain too, which has no track of its own (#690).
                     && self.session().is_some_and(|s| {
-                        let p = s.project();
-                        p.tracks
-                            .iter()
-                            .find(|t| t.id == track)
-                            .and_then(|t| t.channel)
-                            .and_then(|c| p.channels.iter().find(|ch| ch.id == c))
+                        s.project()
+                            .channel_of_track(track)
                             .is_some_and(|ch| suhina_engine::model::device_at(&ch.devices, &at.0).is_some())
                     })
                 {
@@ -586,9 +600,9 @@ impl App {
                 if (self.detail_shows_devices() || self.device_focus)
                     && let Some((track, at)) = self.selected_device.clone()
                     && let Some(enabled) = self.session().and_then(|s| {
-                        let p = s.project();
-                        let channel = p.track(track).and_then(|t| t.channel)?;
-                        suhina_engine::model::device_at(&p.channel(channel)?.devices, &at.0).map(|d| d.enabled)
+                        // Main's chain too (#690).
+                        let devices = &s.project().channel_of_track(track)?.devices;
+                        suhina_engine::model::device_at(devices, &at.0).map(|d| d.enabled)
                     })
                 {
                     // Every picked device follows the one clicked last (#948).
@@ -662,8 +676,7 @@ impl App {
                 let siblings: Vec<usize> = self
                     .session()
                     .and_then(|s| {
-                        let p = s.project();
-                        let devices = &p.channel(p.track(track)?.channel?)?.devices;
+                        let devices = &s.project().channel_of_track(track)?.devices;
                         let list = match parent.split_last() {
                             None => devices.as_slice(),
                             Some((branch, group)) => {
@@ -943,6 +956,26 @@ impl App {
                 .and_then(|l| l.clips.iter().find(|c| c.id == *id))
                 .is_none_or(|c| self.stacks(c.audio))
         })
+    }
+
+    /// Whether the stacking setting covers every clip a copy of the time selection `span` takes
+    /// (those of the row, when `row` names them): with clips of both kinds, only when both
+    /// settings are on does the copy leave what it lands on alone. None to copy: no.
+    fn stacks_every_clip_in(
+        &self,
+        span: &crate::arrangement::arrangement_view::TimeSelection,
+        row: Option<&[u32]>,
+    ) -> bool {
+        let Some((_, _, timeline)) = self.timeline.as_ref() else { return false };
+        let mut copied = timeline
+            .lanes
+            .iter()
+            .filter(|l| span.tracks.contains(&l.track))
+            .flat_map(|l| &l.clips)
+            .filter(|c| c.start < span.end && c.start + c.length > span.start)
+            .filter(|c| row.is_none_or(|ids| ids.contains(&c.id.0)))
+            .peekable();
+        copied.peek().is_some() && copied.all(|c| self.stacks(c.audio))
     }
 
     /// Makes the whole window `steps` zoom steps larger or smaller and keeps that in the settings.

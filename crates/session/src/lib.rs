@@ -35,6 +35,7 @@ mod automation_range;
 pub mod backup;
 mod blank;
 mod clip_ara;
+mod clip_audio;
 mod clip_color;
 mod clip_edges;
 mod clip_shape;
@@ -90,6 +91,7 @@ pub use ara::ClipNotes;
 pub use audio::{AudioSystem, InputChoice, LiveOutput, OutputChoice, OutputInfo, audio_commands};
 pub use automation_range::{SHAPES as AUTOMATION_SHAPES, shape_points as automation_shape};
 pub use blank::{blank_project, blank_project_with};
+pub use clip_audio::clip_tempo_candidates;
 pub use commands::{
     After, Agents, CommandKind, CommandSpec, Effect, Param, ParamType, PathKind, Policy, Recent, Run, Target, commands,
     parse_quantization,
@@ -1085,8 +1087,9 @@ impl Session {
     }
 
     /// The colours a track without one of its own shows, by its place among the tracks (the
-    /// window's palette, which follows the theme), and `fixed`, the colour a new track gets
-    /// instead of the palette's, when set. Without a palette, tracks keep no colour of their own.
+    /// window's palette, which follows the theme), and `fixed`, the one colour every new track
+    /// gets, when set. Without a palette, tracks keep no colour of their own. Clears the MIDI and
+    /// audio defaults, so call [`Session::set_track_type_colours`] after it.
     pub fn set_track_colours(&mut self, palette: Vec<suhina_model::Rgb>, fixed: Option<suhina_model::Rgb>) {
         // Resolve legacy inherited colours once, before a later theme/default edit can change them.
         // This is display normalisation, not an undoable project edit.
@@ -1115,8 +1118,9 @@ impl Session {
 
     /// After an edit that adds, removes or moves tracks: every track keeps the colour it showed
     /// (#690, #709). A track without a colour of its own showed its place's colour from the
-    /// palette, so it is given that colour now, before the places shift; a new track gets the
-    /// colour of its place, or the fixed one. Part of the same undo step.
+    /// palette, so it is given that colour now, before the places shift. A new track gets the
+    /// fixed colour, or else the MIDI or audio default for its kind, and only without those its
+    /// place's palette colour. Part of the same undo step.
     fn keep_track_colours(&mut self, before: &Project) {
         let (palette, fixed) = &self.track_colours;
         if palette.is_empty() && self.track_type_colours.is_none() {

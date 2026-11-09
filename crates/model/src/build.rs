@@ -9,8 +9,8 @@
 //! (issue #462). They are not serialisation defaults: a reader that misses a field still says so.
 
 use crate::{
-    AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipId, ContentId, ContentKinds, Device, DeviceId,
-    DeviceKind, Extensions, FadeCurve, FollowAction, LaunchSettings, MidiInput, Note, StretchMode, Track, TrackId,
+    AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipId, ContentId, ContentKinds, Device,
+    DeviceId, DeviceKind, Extensions, FadeCurve, FollowAction, LaunchSettings, MidiInput, Note, Track, TrackId,
 };
 
 impl Note {
@@ -90,14 +90,14 @@ impl Clip {
             launch: LaunchSettings::default(),
             color: None,
             ara: false,
+            audio: ClipAudio::default(),
             extensions: Extensions::default(),
         }
     }
 }
 
 impl AudioRegion {
-    /// A region of `file` that plays at its original speed and pitch, at unity gain, nothing
-    /// known about the file yet.
+    /// A region of `file`, nothing known about the file yet.
     pub fn new(file: impl Into<String>) -> Self {
         Self {
             file: file.into(),
@@ -105,11 +105,6 @@ impl AudioRegion {
             sample_rate: None,
             channels: None,
             duration_seconds: None,
-            warped: false,
-            stretch: StretchMode::default(),
-            warp_markers: Default::default(),
-            gain: 1.0,
-            transpose: 0.0,
             stream: None,
         }
     }
@@ -156,7 +151,7 @@ mod tests {
 
         let region = AudioRegion::new("drums.wav");
         assert_eq!(region.pool_key(), "drums.wav");
-        assert_eq!((region.gain, region.transpose, region.warped), (1.0, 0.0, false));
+        assert_eq!((clip.audio.gain, clip.audio.transpose, clip.audio.warped), (1.0, 0.0, false));
 
         let device = Device::new("EQ", DeviceKind::Builtin("dj-eq".into()));
         assert!(device.enabled && device.state.is_none() && device.params.is_empty());

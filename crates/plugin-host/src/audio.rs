@@ -42,11 +42,16 @@ pub(crate) trait Block: Send {
 ///
 /// `input` is the link's interleaved block of `link_channels` channels; the main input bus's
 /// channels `bus` get its first `frames` frames. Does nothing without link channels.
-pub(crate) fn feed_main<B: AsMut<[f32]>>(input: &[f32], link_channels: usize, frames: usize, bus: &mut [B]) {
+pub(crate) fn feed_main<B: AsMut<[f32]>>(
+    input: &[f32],
+    link_channels: usize,
+    frames: usize,
+    bus: impl IntoIterator<Item = B>,
+) {
     if link_channels == 0 {
         return;
     }
-    for (index, channel) in bus.iter_mut().enumerate() {
+    for (index, mut channel) in bus.into_iter().enumerate() {
         let source = index.min(link_channels - 1);
         for (frame, sample) in channel.as_mut().iter_mut().take(frames).enumerate() {
             *sample = input.get(frame * link_channels + source).copied().unwrap_or(0.0);
@@ -56,13 +61,22 @@ pub(crate) fn feed_main<B: AsMut<[f32]>>(input: &[f32], link_channels: usize, fr
 
 /// The main output bus's channels `bus` into the link's interleaved `output` of `link_channels`
 /// channels, `frames` frames (see [`feed_main`]). An empty bus leaves `output` as it is.
-pub(crate) fn collect_main<B: AsRef<[f32]>>(bus: &[B], link_channels: usize, frames: usize, output: &mut [f32]) {
+pub(crate) fn collect_main<B: AsRef<[f32]>>(
+    bus: impl IntoIterator<Item = B, IntoIter: ExactSizeIterator>,
+    link_channels: usize,
+    frames: usize,
+    output: &mut [f32],
+) {
+    let bus = bus.into_iter();
     let Some(last) = bus.len().checked_sub(1) else { return };
-    for channel in 0..link_channels {
-        let Some(source) = bus.get(channel.min(last)) else { continue };
-        for (frame, sample) in source.as_ref().iter().take(frames).enumerate() {
-            if let Some(out) = output.get_mut(frame * link_channels + channel) {
-                *out = *sample;
+    for (index, source) in bus.enumerate() {
+        // The last channel also fills every link channel past it.
+        let to = if index == last { link_channels } else { (index + 1).min(link_channels) };
+        for channel in index..to {
+            for (frame, sample) in source.as_ref().iter().take(frames).enumerate() {
+                if let Some(out) = output.get_mut(frame * link_channels + channel) {
+                    *out = *sample;
+                }
             }
         }
     }
@@ -213,7 +227,7 @@ mod tests {
         assert_eq!(mono, vec![vec![1.0, 2.0]]);
         // No link channels, no input bus, nothing to read: nothing happens, and nothing panics.
         feed_main(&stereo, 0, 2, &mut mono);
-        feed_main::<Vec<f32>>(&stereo, 2, 2, &mut []);
+        feed_main::<&mut Vec<f32>>(&stereo, 2, 2, &mut []);
         feed_main(&[], 2, 2, &mut mono);
         assert_eq!(mono, vec![vec![0.0, 0.0]]);
     }
@@ -237,7 +251,7 @@ mod tests {
         assert_eq!(wide, [1.0, -1.0, -1.0, -1.0, 2.0, -2.0, -2.0, -2.0]);
         // No output bus leaves the link's block as it was.
         let mut kept = vec![7.0f32; 4];
-        collect_main::<Vec<f32>>(&[], 2, 2, &mut kept);
+        collect_main::<&Vec<f32>>(&[], 2, 2, &mut kept);
         assert_eq!(kept, [7.0; 4]);
     }
 

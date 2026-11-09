@@ -1,7 +1,11 @@
 ## What and why
 
-<!-- A few lines. Link the issue it closes: "Closes #123"; a bug or small change without an issue
-     says what it fixes. A small fix found along the way in the same code goes under "Also fixed".
+<!-- A few lines. One "Closes #N" line for each issue this settles — an issue named in the title,
+     in prose or in a list is not closed by the merge; a bug or small change without an issue
+     says what it fixes. Check every point of each closed issue: a point left undone gets a
+     follow-up issue ("Follow-up: #N …"), opened before the merge and named here
+     (docs/workflow.md › Closing issues). A small fix found along the way in the same code goes
+     under "Also fixed".
      One pull request per issue: when the
      issue already has an open one, push to it or offer your change there instead
      (CONTRIBUTING.md › Working on an issue). When it builds on another open pull request that it

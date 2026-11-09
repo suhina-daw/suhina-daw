@@ -58,6 +58,24 @@ pub fn set_colour(track: TrackId, colour: Rgb) -> Action {
     Action::new("track.setColor", json!({ "track": track.0, "color": hex(colour) }))
 }
 
+/// A colour picked in [`swatch_row`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pick {
+    pub colour: Rgb,
+    /// Whether a swatch was clicked. A colour taken from the field when the button was let go
+    /// is not: the menu stays open for the next drag.
+    pub swatch: bool,
+}
+
+impl Pick {
+    /// Closes the menu the row is in after a swatch; a colour from the field keeps it open.
+    pub fn close_menu(self, ui: &Ui) {
+        if self.swatch {
+            ui.close();
+        }
+    }
+}
+
 /// The palette's swatches in one row, `current` outlined: the swatch clicked, if any. Each
 /// swatch is a button named "Colour #rrggbb".
 fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
@@ -84,9 +102,10 @@ fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
 
 /// The palette as a row of swatches, `current` outlined, and after it "+" for any colour: a
 /// colour field and hue strip as the theme editor's, the colour taken when the button is let
-/// go. Gives the colour picked. Each swatch is a button named "Colour #rrggbb".
-pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
-    let mut picked = swatch_strip(ui, current);
+/// go. Gives the colour picked — a swatch's click, or the field's drag's end, which keeps a
+/// menu open where a swatch's click closes it. Each swatch is a button named "Colour #rrggbb".
+pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Pick> {
+    let mut picked = swatch_strip(ui, current).map(|colour| Pick { colour, swatch: true });
     let any_id = ui.scope_id().with("any-colour");
     let mut any_open = ui.data(|d| d.get_temp::<bool>(any_id)).unwrap_or(false);
     // "+": any colour.
@@ -106,7 +125,9 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
         any_open = !any_open;
     }
     if any_open {
-        picked = stepped_color_field(ui, any_id.with("value"), current.map_or(Color32::GRAY, color32)).or(picked);
+        picked = stepped_color_field(ui, any_id.with("value"), current.map_or(Color32::GRAY, color32))
+            .map(|colour| Pick { colour, swatch: false })
+            .or(picked);
     }
     ui.data_mut(|d| d.insert_temp(any_id, any_open));
     picked
@@ -200,11 +221,11 @@ pub fn area(
         .id(id.with("palette"))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            if let Some(colour) = swatch_row(ui, Some(current)) {
-                if colour != current {
-                    actions.push(set_colour(track, colour));
+            if let Some(pick) = swatch_row(ui, Some(current)) {
+                if pick.colour != current {
+                    actions.push(set_colour(track, pick.colour));
                 }
-                ui.close();
+                pick.close_menu(ui);
             }
         });
     response

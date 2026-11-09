@@ -67,9 +67,9 @@ fn old_clip_defaults_migrate_and_explicit_defaults_and_materials_round_trip() {
 fn example_themes_embed_their_paint_and_all_editable_artwork() {
     for (id, width) in [("suhina-sheet", 88), ("suhina-meadow", 92), ("suhina-blocks", 92)] {
         let (_, sheet) = built_in_themes().into_iter().find(|(key, _)| *key == id).unwrap();
-        assert!(sheet.skin.assets.len() >= super::super::skin::ROLES.len());
-        for role in super::super::skin::ROLES {
-            let svg = &sheet.skin.assets[*role];
+        assert!(sheet.skin.assets.len() >= super::super::skin::roles().count());
+        for role in super::super::skin::roles() {
+            let svg = &sheet.skin.assets[role];
             assert!(super::super::skin::validate_artwork(svg).is_ok(), "{role}");
         }
         for (role, svg) in &sheet.skin.assets {
@@ -285,7 +285,7 @@ fn suhina_sheet_takes_its_colours_from_its_two_accent_shades() {
     // Nothing in its rules or its artwork is a fixed colour of its own, the green panel included.
     let css = include_str!("../../themes/suhina-sheet/theme.css");
     let rules = &css[css.find("@layer").unwrap()..];
-    let browser = rules.lines().skip_while(|line| !line.contains(".browser")).take(3).collect::<String>();
+    let browser = rules.lines().skip_while(|line| !line.contains("browser")).take(3).collect::<String>();
     assert!(browser.contains("var(--tint-light)") && !browser.contains('#'), "{browser}");
     for (path, bytes) in built_in_files("suhina-sheet").unwrap() {
         if path.starts_with("assets/") {

@@ -300,7 +300,9 @@ either works like a drop on the empty area.
 project's tempo, stretched with the stretch mode in Settings › Importing › Warp mode (Rhythmic by
 default, the `rhythmic` stretch mode), and its length in beats comes from its own tempo. A
 sample without a known tempo is not warped: it plays at its own speed, and its length in beats
-is its duration at the project's tempo when it is dropped.
+is its duration at the project's tempo when it is dropped. The clip remembers where its tempo came
+from (metadata, the file name or detection); the clip panel shows it beside the clip's tempo, which
+can be set again, halved or doubled there ([clip panel](clip-panel.md) › Tempo).
 
 **Suhina: in a slot, every sample loops.** A sample (or a Stems file's part) dropped into a clip
 slot loops over its whole length, whether its tempo is known or not, like a MIDI file's clip does;

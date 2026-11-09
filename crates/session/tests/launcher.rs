@@ -85,6 +85,7 @@ fn project_built() -> Project {
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
     };
     let slot = |clip: Option<Clip>, has_stop: bool| Slot { clip, has_stop };
@@ -377,6 +378,7 @@ fn a_drag_that_the_engine_cannot_build_is_an_error() {
         follow_action: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     };
@@ -580,6 +582,7 @@ fn playing_with_clips() -> (Session, Renderer) {
         follow_action: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     };

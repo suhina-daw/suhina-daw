@@ -23,17 +23,20 @@ fn sine(pool: &mut AudioPool, file: &str, hz: f64) {
     pool.files.insert(file.into(), Arc::new(AudioData { sample_rate: SR, channels: 1, samples: samples.collect() }));
 }
 
-/// Content `id`: `file` warped so that two beats play `seconds` of it.
-fn warped(id: u32, file: &str, seconds: f64) -> ClipContent {
-    let region = AudioRegion {
-        sample_rate: Some(SR),
-        channels: Some(1),
-        duration_seconds: Some(2.0),
+/// Warped so that two beats play `seconds` of the file.
+fn warped_audio(seconds: f64) -> ClipAudio {
+    ClipAudio {
         warped: true,
         stretch: StretchMode::Smooth,
         warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 2.0, audio_time: seconds }],
-        ..AudioRegion::new(file)
-    };
+        ..ClipAudio::default()
+    }
+}
+
+/// Content `id`: `file`, played by a clip with [`warped_audio`].
+fn warped(id: u32, file: &str) -> ClipContent {
+    let region =
+        AudioRegion { sample_rate: Some(SR), channels: Some(1), duration_seconds: Some(2.0), ..AudioRegion::new(file) };
     ClipContent {
         id: ContentId(id),
         name: file.into(),
@@ -50,11 +53,13 @@ pub(super) fn two_stretched() -> (Project, AudioPool) {
     let mut pool = AudioPool::new();
     sine(&mut pool, "a.wav", 440.0);
     sine(&mut pool, "b.wav", 330.0);
-    let legato = Clip { launch: LaunchSettings { legato: true, ..LaunchSettings::default() }, ..clip(2, 2.0, true) };
-    let mut p = project(
-        vec![warped(1, "a.wav", 0.45), warped(2, "b.wav", 0.625)],
-        vec![vec![with(clip(1, 2.0, true)), with(legato)]],
-    );
+    let legato = Clip {
+        launch: LaunchSettings { legato: true, ..LaunchSettings::default() },
+        audio: warped_audio(0.625),
+        ..clip(2, 2.0, true)
+    };
+    let first = Clip { audio: warped_audio(0.45), ..clip(1, 2.0, true) };
+    let mut p = project(vec![warped(1, "a.wav"), warped(2, "b.wav")], vec![vec![with(first), with(legato)]]);
     p.transport.tempo_bpm = 240.0;
     (p, pool)
 }
@@ -119,10 +124,8 @@ fn prepared(renderer: &Renderer) -> Vec<bool> {
 /// `two_stretched` with slot 2's audio warped differently: an edit that changes one slot only.
 fn second_slot_edited(p: &Project) -> Project {
     let mut edited = p.clone();
-    if let Some(LaneData::Audio(region)) =
-        edited.contents.get_mut(1).and_then(|c| c.lanes.first_mut()).map(|l| &mut l.data)
-    {
-        region.warp_markers[1].audio_time = 0.6;
+    if let Some(clip) = edited.launcher.columns[0].slots[1].clip.as_mut() {
+        clip.audio.warp_markers[1].audio_time = 0.6;
     }
     edited
 }

@@ -536,7 +536,13 @@ pub fn show(
         crate::session::mixer_strip::Shared { reserve_input: state.reserve_input, fader: state.strip_fader_shown() };
     let parts = crate::session::mixer_strip::layout_main(main_mixer, shared);
     if let Some(list) = parts.devices {
-        crate::session::mixer_strip::main_devices(&painter.with_clip_rect(main_mixer), list, &grid.main_devices);
+        crate::session::mixer_strip::main_devices(
+            ui,
+            &painter.with_clip_rect(main_mixer),
+            list,
+            &grid.main_devices,
+            state,
+        );
     }
     if let Some(fader) = parts.fader {
         let main_painter = painter.with_clip_rect(main_mixer);
@@ -786,7 +792,7 @@ fn column_header(
     actions: &mut Vec<Action>,
 ) {
     let _artwork = crate::kit::artwork::track_color(rgb(column.color));
-    let _style_class = crate::kit::style_class::enter_named("track-header", &format!("track-{}", column.track.0));
+    let own = crate::kit::element::TRACK_HEADER.id(&format!("track-{}", column.track.0)).enter();
     crate::kit::native_css::set_variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)));
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, state.selected == Some(column.track));
     crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, column.mute);
@@ -828,10 +834,10 @@ fn column_header(
         painter.fill_background(rect, 0.0, fill);
     }
     crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Track);
-    // The sheet's own background for the header (`.track-header:selected`) over the native one;
+    // The sheet's own background for the header (`track-header[selected]`) over the native one;
     // the name's ink reads on whichever is shown.
     let shown = crate::kit::style_class::background(fill);
-    crate::kit::native_css::surface(painter, rect, 0.0, egui::Color32::TRANSPARENT);
+    own.paint(painter, rect);
     let _name_style =
         crate::kit::style_class::enter_named_response("track-name", &format!("track-{}", column.track.0), &response);
     crate::kit::native_css::set_variable("--track-fill", crate::kit::native_css::hex(fill));
@@ -923,8 +929,8 @@ fn column_body(
         }
         let number = scene + 1;
         let _slot_style = crate::kit::style_class::enter_named("slot", &format!("slot-{}-{number}", column.track.0));
-        let clip_style = (!matches!(slot.state, SlotState::Empty | SlotState::EmptyStop))
-            .then(|| crate::kit::style_class::enter("clip"));
+        let clip_style =
+            (!matches!(slot.state, SlotState::Empty | SlotState::EmptyStop)).then(|| crate::kit::element::CLIP.enter());
         let target = MappingTarget::Slot { track: column.track, scene };
         if mapping {
             // The mapping mode: a click picks the slot, empty or not, and launches nothing.
@@ -1005,11 +1011,11 @@ fn column_body(
         }
         let hover = [&launch, &select].into_iter().flatten().map(|r| widgets::hover(ui, r)).fold(0.0, f32::max);
         // The clip's element is entered before its responses exist: it takes their hover now, so
-        // `.clip:hover` matches it (#1241).
-        let hover_fill = clip_style.as_ref().and_then(|_| {
+        // `clip:hover` matches it (#1241).
+        let hover_fill = clip_style.as_ref().and_then(|clip| {
             let hovered = [&launch, &select].into_iter().flatten().any(egui::Response::hovered);
             crate::kit::native_css::mark_pointer(hovered, false, false);
-            hover_fill(ui, id.with(("hover-fill", scene)), hovered, hover)
+            hover_fill(ui, clip, id.with(("hover-fill", scene)), hovered, hover)
         });
         let pulse = if slot.state == SlotState::Queued { motion::pulse(ui.ctx()) } else { 1.0 };
         // The launch button launches as the pointer goes down, and releases a gate or repeat
@@ -1193,11 +1199,17 @@ struct HoverFill {
     fill: Option<Color32>,
 }
 
-/// The background a theme gives a hovered clip (`.clip:hover { background-color }`), kept while
+/// The background a theme gives a hovered clip (`clip:hover { background-color }`), kept while
 /// the clip's hover fades out after the pointer leaves; `None` leaves the lighter mix. Only a
-/// background that differs from the clip's own counts: a `.clip { background-color }` alone is
+/// background that differs from the clip's own counts: a `clip { background-color }` alone is
 /// not a hover's, and the clip's own fill is its colour.
-fn hover_fill(ui: &Ui, key: egui::Id, hovered: bool, hover: f32) -> Option<Color32> {
+fn hover_fill(
+    ui: &Ui,
+    clip: &crate::kit::element::Entered,
+    key: egui::Id,
+    hovered: bool,
+    hover: f32,
+) -> Option<Color32> {
     // Read, not written, in the frames nothing changes: this runs for every clip in every frame.
     let stored = ui.data(|d| d.get_temp::<HoverFill>(key));
     if !hovered {
@@ -1209,7 +1221,7 @@ fn hover_fill(ui: &Ui, key: egui::Id, hovered: bool, hover: f32) -> Option<Color
         }
         return None;
     }
-    let style = crate::kit::style_class::computed()?;
+    let style = clip.style()?;
     // In the frame the pointer comes the clip's style is still the one resolved without it (the
     // pointer's state takes effect as the frame's styles resolve): its background is the rest's.
     let rest = stored.map_or(style.background, |s| s.rest);
@@ -1239,7 +1251,7 @@ fn slot_cell(
     let clip_color = slot.color.map_or(track_color, rgb);
     let textured = crate::kit::style_class::property("--suhina-track-artwork").as_deref() == Some("on");
     // An empty slot is tinted with its track's colour, unless the sheet gives it a background
-    // (`.slot { background-color }`).
+    // (`slot { background-color }`).
     let empty = crate::kit::style_class::background(motion::mix(
         theme::window_background(),
         track_color,

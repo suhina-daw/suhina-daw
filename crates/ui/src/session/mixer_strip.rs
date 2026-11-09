@@ -66,20 +66,20 @@ const SEND_HEIGHT: f32 = 22.0;
 pub const METER_WIDTH: f32 = 14.0;
 const CAP: Vec2 = Vec2::new(20.0, 26.0);
 
-/// The fader cap's size: `.fader-cap { width; height }` in the theme, else [`CAP`].
+/// The fader cap's size: `fader-cap { width; height }` in the theme, else [`CAP`].
 pub(crate) fn cap_size() -> Vec2 {
-    let _style = crate::kit::style_class::enter("fader-cap");
-    let computed = crate::kit::style_class::computed();
+    let el = crate::kit::element::FADER_CAP.enter();
+    let computed = el.style();
     Vec2::new(
         computed.as_ref().and_then(|c| c.width).filter(|w| *w >= 4.0).unwrap_or(CAP.x).min(64.0),
         computed.as_ref().and_then(|c| c.height).filter(|h| *h >= 4.0).unwrap_or(CAP.y).min(96.0),
     )
 }
 
-/// The fader rail's thickness: `.fader-rail { width }` in the theme, else 5 points.
+/// The fader rail's thickness: `fader-rail { width }` in the theme, else 5 points.
 pub(crate) fn rail_width() -> f32 {
-    let _style = crate::kit::style_class::enter("fader-rail");
-    crate::kit::style_class::computed().and_then(|c| c.width).filter(|w| *w >= 1.0).unwrap_or(5.0).min(32.0)
+    let el = crate::kit::element::FADER_RAIL.enter();
+    el.style().and_then(|c| c.width).filter(|w| *w >= 1.0).unwrap_or(5.0).min(32.0)
 }
 const LEAST_FADER: f32 = 48.0;
 const TALLEST_FADER_WITH_DEVICES: f32 = 140.0;
@@ -548,8 +548,8 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, rect: Rect, fader: f32
 /// The track's name at the top of a tall strip; screen readers and tests find it as a label.
 fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: Id, selected: bool) {
     let response = ui.interact(rect.intersect(painter.clip_rect()), id.with("strip-name"), Sense::hover());
-    let _name_style =
-        crate::kit::style_class::enter_named_response("track-name", &format!("track-{}", column.track.0), &response);
+    let track_id = format!("track-{}", column.track.0);
+    let name_style = crate::kit::element::TRACK_NAME.id(&track_id).response(&response).enter();
     crate::kit::native_css::set_variable(
         "--track-fill",
         crate::kit::native_css::hex(colour_picker::fill(column.color, column.mute)),
@@ -560,12 +560,11 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
     let native_fill = colour_picker::fill(column.color, column.mute);
     // An alpha material layers over the track colour. An explicitly authored
     // transparent solid background can still remove that colour completely.
-    let fill =
-        if crate::kit::style_class::computed().is_some_and(|style| style.has_gradient() && style.background.a() == 0) {
-            native_fill
-        } else {
-            crate::kit::style_class::background(native_fill)
-        };
+    let fill = if name_style.style().is_some_and(|style| style.has_gradient() && style.background.a() == 0) {
+        native_fill
+    } else {
+        crate::kit::style_class::background(native_fill)
+    };
     if !crate::kit::skin::paint_colored(
         painter,
         rect,
@@ -630,44 +629,41 @@ fn output_row(
     }
 }
 
-/// The main channel's devices in its strip, at the same height as every track's list (#683).
-pub fn main_devices(painter: &egui::Painter, rect: Rect, devices: &[crate::interaction::grid::StripDevice]) {
-    painter.fill_background(rect, 0.0, theme::window_background());
-    let list_painter = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
-    if devices.is_empty() {
-        widgets::text_in(
-            &list_painter,
-            rect.shrink2(Vec2::new(4.0, 0.0)),
-            Align2::LEFT_TOP,
-            "No devices",
-            theme::ui_font(theme::TEXT_SMALL),
-            theme::text_hint(),
-        );
-        return;
-    }
-    for (index, device) in devices.iter().enumerate() {
-        let row = Rect::from_min_size(
-            Pos2::new(rect.left(), rect.top() + index as f32 * DEVICE_ROW),
-            Vec2::new(rect.width(), DEVICE_ROW),
-        );
-        let color = if device.enabled { theme::text_secondary() } else { theme::text_hint() };
-        widgets::text_in(
-            &list_painter,
-            row.shrink2(Vec2::new(4.0, 0.0)),
-            Align2::LEFT_CENTER,
-            &device.name,
-            theme::ui_font(theme::TEXT_SMALL),
-            color,
-        );
-    }
+/// The main channel's devices in its strip, at the same height as every track's list, and with
+/// the same wheel, clicks and drags as a track's (#683). Main has no track: its devices go by
+/// [`TrackId::MAIN`], which the device commands take.
+pub fn main_devices(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    devices: &[crate::interaction::grid::StripDevice],
+    state: &mut SessionViewState,
+) {
+    let id = Id::unique("session-main-devices");
+    device_list(ui, painter, rect, TrackId::MAIN, "Main", devices, state, id);
 }
 
 /// The track's devices and plug-ins, one row each; the wheel scrolls them, a click shows the
 /// track's chain in the detail area.
 fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state: &mut SessionViewState, id: Id) {
+    device_list(ui, painter, rect, column.track, &column.name, &column.devices, state, id);
+}
+
+/// A strip's device list, a track's or Main's: one row a device, which the wheel scrolls, a click
+/// picks, a double-click opens and a drag carries to another track or place.
+#[allow(clippy::too_many_arguments)]
+fn device_list(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    track: TrackId,
+    name: &str,
+    devices: &[crate::interaction::grid::StripDevice],
+    state: &mut SessionViewState,
+    id: Id,
+) {
     painter.fill_background(rect, 0.0, theme::window_background());
-    let track = column.track;
-    if column.devices.is_empty() {
+    if devices.is_empty() {
         widgets::text_in(
             painter,
             rect.shrink2(Vec2::new(4.0, 0.0)),
@@ -682,7 +678,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
     let list_painter = painter.with_clip_rect(clip);
     // The wheel over the list scrolls it, not the view.
     state.scroll_areas.push(rect);
-    let most = (column.devices.len() as f32 * DEVICE_ROW - rect.height()).max(0.0);
+    let most = (devices.len() as f32 * DEVICE_ROW - rect.height()).max(0.0);
     let mut scroll = state.device_scroll.get(&track).copied().unwrap_or(0.0);
     if ui.rect_contains_pointer(clip) {
         scroll -= ui.input(|i| i.smooth_scroll_delta().y);
@@ -694,7 +690,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
         state.device_scroll.remove(&track);
     }
     let mut slots = Vec::new();
-    for (row_index, device) in column.devices.iter().enumerate() {
+    for (row_index, device) in devices.iter().enumerate() {
         let index = device.at;
         let top = rect.top() - scroll + row_index as f32 * DEVICE_ROW;
         let row = Rect::from_min_size(Pos2::new(rect.left(), top), Vec2::new(rect.width(), DEVICE_ROW));
@@ -703,7 +699,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
             continue;
         }
         let response = ui.interact(row.intersect(clip), id.with(("device", index)), Sense::click_and_drag());
-        let label = format!("Show {} on {}", device.name, column.name);
+        let label = format!("Show {} on {name}", device.name);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         // Dragged onto another track: moved there, Ctrl copies it (#688).
         if response.drag_started_by(egui::PointerButton::Primary) {
@@ -1106,8 +1102,8 @@ fn paint_fader(
             )
         };
         // `#mixer-volume-readout`: its own background, corners, `font-size`, `color` and number format.
-        let _readout = crate::kit::style_class::enter_named("value", "mixer-volume-readout");
-        crate::kit::native_css::surface(painter, area, 0.0, egui::Color32::TRANSPARENT);
+        let readout = crate::kit::element::VALUE.id("mixer-volume-readout").enter();
+        readout.paint(painter, area);
         let size = crate::kit::style_class::font_size(9.0);
         let ink = crate::kit::style_class::foreground(value_color);
         let text = widgets::formatted_value(&widgets::format_db(db));
@@ -1370,10 +1366,10 @@ fn send_knobs(
     let painter = painter.with_clip_rect(clip);
     state.scroll_areas.push(row);
     let count = column.sends.len();
-    // `.send { width; height }` sizes every send, within the row.
+    // `send { width; height }` sizes every send, within the row.
     let sheet = {
-        let _send = crate::kit::style_class::enter("send");
-        crate::kit::style_class::computed()
+        let send = crate::kit::element::SEND.enter();
+        send.style()
     };
     let width =
         sheet.as_ref().and_then(|s| s.width).map_or((row.width() - SEND_GAP) / 2.0, |w| w.clamp(8.0, row.width()));
@@ -1466,9 +1462,9 @@ fn send_knobs(
         };
         let (low, high) = widgets::SEND_RANGE;
         let position = ((shown - low) / (high - low)) as f32;
-        // `.send` styles every send, `#mixer-send-N` one of them; `--suhina-appearance: knob`
+        // `send` styles every send, `#mixer-send-N` one of them; `--suhina-appearance: knob`
         // draws it as a knob.
-        let _style = crate::kit::style_class::enter_named_response("send", &name, &response);
+        let el = crate::kit::element::SEND.id(&name).response(&response).enter();
         let pointer = crate::kit::style_class::foreground(motion::mix(
             theme::text_value(),
             theme::text_primary(),
@@ -1481,7 +1477,11 @@ fn send_knobs(
             widgets::knob_with_value(&painter, rect, position, pointer, Some(&response), &text, pointer, under, 7.0);
         } else {
             let state = crate::kit::skin::State::response(&response, false);
-            crate::kit::native_css::surface(&painter, rect, 2.0, egui::Color32::TRANSPARENT);
+            el.paint_with(
+                &painter,
+                rect,
+                crate::kit::element::Native { radius: 2.0, fill: egui::Color32::TRANSPARENT },
+            );
             crate::kit::skin::paint(&painter, rect, "send", state, pointer, 0.0);
             crate::kit::mixer_controls::send_field(&painter, rect, &letter, shown, send.pre_fader, pointer, position);
         }

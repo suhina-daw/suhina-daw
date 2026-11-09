@@ -3,7 +3,7 @@ description: User guide to the keyboard shortcuts, one entry per action with its
 read_when: user guide, keyboard shortcuts, what does this key do, list of keys, every shortcut explained, keybindings, hotkeys, action ids, which action a key runs, back up keys, share keymap, keymap.json, rebind a key, keys for agents
 type: howto
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-09
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -45,6 +45,7 @@ A key does nothing while you type in a text field, such as the browser's search 
 | Ctrl+Shift+T | `track.addMidi` | A project | Adds a MIDI track. |
 | Ctrl+Shift+M | `clip.insertMidi` | Arrangement, a time selection | Puts an empty MIDI clip over the time selection on each of its MIDI tracks. |
 | A | `view.automation` | Arrangement | Shows every track's automation lanes, or hides them all when they all show. |
+| Alt+E | `view.gainEnvelope` | Arrangement, an audio clip selected | Opens the clip's gain envelope for editing on its waveform, or closes it: a click on the line adds a point, a drag moves one. |
 | Ctrl+O | `file.open` | Anywhere | Opens the same project dialog with the cursor in its file path field, ready to open a project file. The project opens in a tab of its own. |
 | Ctrl+S | `file.save` | Anywhere | Saves the project in the file it came from. A project that has never been saved asks for a name and a place first. |
 | Ctrl+Shift+S | `file.saveAs` | Anywhere | Saves the project under a new name or in a new place. From then on, Ctrl+S saves into the new file. |
@@ -108,7 +109,7 @@ The zoom level is remembered the next time Suhina starts.
 | 0 | `selection.mute` | Selection | Mutes the selected clips, or unmutes them if they are muted. A muted clip stays in place but makes no sound. |
 | Ctrl+A | `selection.selectAll` | Anywhere | Selects every clip in the arrangement. In the piano roll, after a click in it, selects every note instead. |
 | Ctrl+E | `selection.split` | Selection | Splits the selected clip in two where you clicked inside it, while playing too. It never splits at the playhead. |
-| Ctrl+J | `selection.consolidate` | Selection | Joins the selected clips, and the space between them, into one new clip. |
+| Ctrl+J | `selection.consolidate` | Selection | Joins the selected clips on the track of the clip clicked last, and the space between them, into one new clip. With a time selection, consolidates the selected time on each of its tracks. |
 
 Every key that acts on clips acts on the whole selection, and all of it is one undo step.
 

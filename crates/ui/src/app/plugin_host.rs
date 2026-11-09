@@ -23,14 +23,7 @@ impl App {
         // with the device selection (#554).)
         let target = {
             let Ok(session) = self.projects.session_mut(None) else { return };
-            let chain = session
-                .project()
-                .tracks
-                .iter()
-                .find(|t| t.id == track)
-                .and_then(|t| t.channel)
-                .and_then(|c| session.project().channel(c))
-                .map_or(0, |c| c.devices.len());
+            let chain = session.project().channel_of_track(track).map_or(0, |c| c.devices.len());
             (0..chain)
                 .filter_map(|index| Some((index, session.plugin_report(track, index)?)))
                 .find(|(_, report)| report.status == PluginStatus::Running)
@@ -44,17 +37,10 @@ impl App {
         self.run(&Action::new(command, json!({ "track": track.0, "device": index })));
     }
 
-    /// How many devices `track`'s chain holds, if the track is in the project.
+    /// How many devices `track`'s chain holds (Main's for [`TrackId::MAIN`]), if the track is in
+    /// the project.
     pub(super) fn device_count(&self, track: TrackId) -> Option<usize> {
-        self.session().and_then(|s| {
-            s.project()
-                .tracks
-                .iter()
-                .find(|t| t.id == track)
-                .and_then(|t| t.channel)
-                .and_then(|c| s.project().channel(c))
-                .map(|ch| ch.devices.len())
-        })
+        self.session().and_then(|s| s.project().channel_of_track(track).map(|ch| ch.devices.len()))
     }
 
     /// Keeps the active project's plug-ins in line with it (ADR 0006) and shows what the user
@@ -145,12 +131,18 @@ impl App {
             || !self.agent_asks.is_empty()
     }
 
+    /// The embedded editors that show this frame out of those the panel `places`: none while
+    /// something is over the window, all of them again once it has closed (#723).
+    pub(super) fn editors_shown<'a>(&self, places: &'a [detail_view::EditorPlace]) -> &'a [detail_view::EditorPlace] {
+        if self.over_the_window() { &[] } else { places }
+    }
+
     /// Tells the active project where the panel shows its embedded plug-in editors this frame
     /// (none: they are hidden).
     pub(super) fn place_editors(&mut self, places: &[detail_view::EditorPlace]) {
         // One placement a frame: with something over the window the editors are told to hide,
         // never shown first and hidden after (which left them over Settings).
-        let places = if self.over_the_window() { &[][..] } else { places };
+        let places = self.editors_shown(places);
         let Ok(session) = self.projects.session_mut(None) else { return };
         let shown: Vec<_> = places.iter().map(|p| (p.track, p.device, p.placement)).collect();
         session.place_editors(&shown);

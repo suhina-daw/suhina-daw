@@ -4,7 +4,7 @@ read_when: changing the model, track, channel, clip content, lane, pattern, impo
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-06
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/scale.rs
@@ -148,7 +148,8 @@ consequences below ask for, done without asking. A content with a lane that targ
 shared pattern) is not copied: its placements are one pattern on purpose. Copying on duplicate
 instead was rejected because it would leave nothing for a linked copy to share and doubles the
 contents of a set full of repeats that are never edited. `clip.paste` already gives the pasted
-clip its own content. Audio content edits (`clip.setGain`) still act on the shared content.
+clip its own content. Audio edits (`clip.setGain`, `clip.setAudio`) act on the clip, not the
+content: see Amendment: per-clip audio.
 
 ## Amendment: muted notes (2026-10-15)
 
@@ -188,6 +189,10 @@ two clips that play the same notes play them in the same key, and a content copi
 whose content other clips also play is an edit like a note edit: that clip gets its own copy of the
 content first, and a shared pattern stays one content. On the `Project` it would be one key for a
 whole set, which a song that changes key does not have; on each `Note` it would repeat itself.
+
+An audio clip's content may have a scale too, set through `clip.setScale`: it says the key of its
+audio and changes nothing that plays; it is shown and set in the clip panel
+([clip panel](../spec/clip-panel.md) › Layout, #1190). The default scale still goes to new MIDI clips only.
 
 A scale is something the editor shows and the note tools use (`note.fitToScale` fits to it when
 given none); the engine never reads it and it changes nothing that sounds. The modes are the
@@ -233,6 +238,19 @@ that a take's track and its clips' contents exist; deleting a track deletes its 
 
 The project file writes them under `arrangement.takes`, left out when there are none; files with
 them are version 4 ([`.suhina` format](../spec/suhina-format.md) › Versions).
+
+## Amendment: per-clip audio (2026-11-05)
+
+An audio clip's gain, gain envelope, transpose, warp switch, warp mode, warp markers and the source
+of its tempo are the clip's (`Clip::audio`), not its content's: two clips that play one file never
+share them ([ADR 0035](0035-clip-gain-envelope.md),
+[#742](https://github.com/suhina-daw/suhina-daw/issues/742)). `AudioRegion` keeps the source only:
+the file, its stream, sample rate, channels and length. A content may still be played by several
+clips (a duplicate, a take and the part comped from it), each with its own state; nothing is copied
+to make an audio clip independent. Formats map their clip-level audio settings (a Live Set's
+`AudioClip` warp, gain and pitch) onto the clip. The project file writes the state on the clip from
+version 9 and reads an older file's region state into every clip of that content
+([`.suhina` format](../spec/suhina-format.md) › Versions).
 
 ## Consequences
 

@@ -30,7 +30,7 @@ fn cached_snapshot_invalidates_on_dimensions_state_and_source() {
 fn note(colour: &str, selected: bool) -> Element {
     let mut note = Element::new("note", None).with_attribute("color", colour);
     if selected {
-        note.states.push("selected".into());
+        note.attributes.push(("selected".into(), String::new()));
     }
     note
 }
@@ -43,7 +43,7 @@ fn notes_of_one_identity_share_a_style_until_the_snapshot_changes() {
     };
     let css = "piano-roll { --lane: #202020; } \
                    note { background-color: color-mix(in srgb, attr(color type(<color>)), var(--lane)); } \
-                   note:selected { border-color: contrast-color(attr(color type(<color>))); } \
+                   note[selected] { border-color: contrast-color(attr(color type(<color>))); } \
                    piano-roll:hover note { opacity: 0.5; }";
     let tree = Tree::new(vec![Element::new("window", None), Element::new("piano-roll", Some(0))]).unwrap();
     let viewport = Viewport { width: 800.0, height: 600.0, dark: true, reduced_motion: false };

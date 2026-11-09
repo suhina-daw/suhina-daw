@@ -221,10 +221,13 @@ pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, response: &Res
 
 /// CSS paint remains above the SVG body, below the control's glyph and label.
 pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bool, fill: Color32, radius: f32) {
-    let _style = super::style_class::control("button", response);
+    // The button's own element: the caller's when it entered one, else one entered here.
+    let own = super::style_class::control("button", response);
     super::native_css::mark(super::native_css::HostState::Checked, on);
+    let style = own.as_ref().map_or_else(super::style_class::computed, super::style_class::Scope::style);
     // A shape the sheet gives the button wins over the artwork Suhina ships, not over the theme's own.
-    let shaped = super::style_class::computed()
+    let shaped = style
+        .as_ref()
         .is_some_and(|style| style.authored.background || style.authored.radius || style.authored.border_width);
     let role = super::skin::button_role();
     if !shaped || role != "button" || super::skin::has_own("button") {
@@ -236,15 +239,14 @@ pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bo
             return;
         }
     }
-    super::native_css::surface(painter, rect, radius, fill);
+    super::native_css::surface_with(painter, rect, radius, fill, style);
 }
 
-/// A track's number, `.track-number`: its own `color`, `font-size` and `display: none`, and
-/// `:muted` while the track is off.
+/// A track's number, `track-number`: its own `color`, `font-size` and `display: none`, and
+/// `[muted]` while the track is off.
 pub fn track_number_text(painter: &Painter, rect: Rect, number: &str, ink: Color32, muted: bool) {
-    let _style = super::style_class::enter("track-number");
-    super::native_css::mark(super::native_css::HostState::Muted, muted);
-    let computed = super::style_class::computed();
+    let el = super::element::TRACK_NUMBER.attr(super::element::Muted, muted).enter();
+    let computed = el.style();
     if computed.as_ref().is_some_and(|c| !c.visible) {
         return;
     }
@@ -976,7 +978,7 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
 
 /// A dial as an `.sd` control's dial draws it, the built-in canvases' wheels (the reverb's and
 /// the delay's): the rim arc, the ring's disc, the inner disc, the pointer line to 72 % of the
-/// radius, 270° with the gap under. The colours are the tokens the `.knob` scope gives — the
+/// radius, 270° with the gap under. The colours are the tokens the `knob` scope gives — the
 /// same scope the canvases' dials take theirs from, so a theme's own colouring applies — and
 /// no artwork stands for the face, as a canvas has none.
 pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response: Option<&Response>) {
@@ -1002,6 +1004,44 @@ pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response:
         [center + dir * (radius * 0.25), center + dir * (radius * 0.72)],
         Stroke::new(2.0, theme::accent()),
     );
+}
+
+/// `bpm` on the steps of the place a drag holds, counted from where it started (`grab`: the step
+/// and the start), to a thousandth of a BPM, within the tempo's range (#829).
+pub fn snap_tempo(grab: Option<(f64, f64)>, bpm: f64) -> f64 {
+    let snapped = match grab {
+        Some((step, from)) if step > 0.0 => from + ((bpm - from) / step).round() * step,
+        _ => bpm,
+    };
+    ((snapped * 1000.0).round() / 1000.0).clamp(20.0, 999.0)
+}
+
+/// The step of the place in the tempo `text` (right-aligned at `right`, characters `width`
+/// apart) under `x`: 1 BPM for the integer part, 0.1, 0.01 or 0.001 for the decimals (#829).
+pub fn tempo_place(text: &str, right: f32, width: f32, x: f32) -> f64 {
+    let len = text.chars().count();
+    let Some(dot) = text.find('.') else { return 1.0 };
+    if width <= 0.0 {
+        return 1.0;
+    }
+    let from_right = ((right - x) / width).floor().max(0.0) as usize;
+    let index = len.saturating_sub(from_right + 1);
+    if index <= dot {
+        return 1.0;
+    }
+    let decimals = (index - dot).min(3);
+    10f64.powi(-(decimals as i32))
+}
+
+/// The characters of the tempo `text` the place of `step` covers, as a range of indices: the
+/// whole integer part for 1 BPM, one decimal otherwise.
+pub fn tempo_place_span(text: &str, step: f64) -> (usize, usize) {
+    let dot = text.find('.').unwrap_or(text.len());
+    if step >= 1.0 {
+        return (0, dot);
+    }
+    let decimals = (-step.log10()).round().max(1.0) as usize;
+    (dot + decimals, dot + decimals + 1)
 }
 
 /// A volume in dB as the mixer shows it.

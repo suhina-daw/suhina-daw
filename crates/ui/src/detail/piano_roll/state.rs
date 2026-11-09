@@ -225,6 +225,9 @@ pub struct PianoRollState {
     pub(super) swept: BTreeSet<usize>,
     /// A press in the grid holds what it sounds until it is let go.
     pub(super) audition_press: bool,
+    /// The modifiers held when the button went down in the grid: a drag that starts from there
+    /// is chosen by them, not by keys pressed before the pointer moved far enough (#1048).
+    pub(super) pressed_with: Option<egui::Modifiers>,
     /// Which other clips show as ghost notes, picked in the toolbar's ghost menu; kept until
     /// Suhina closes (› Ghost notes).
     pub ghost_source: GhostSource,
@@ -294,6 +297,7 @@ impl Default for PianoRollState {
             audition_sounding: Vec::new(),
             swept: BTreeSet::new(),
             audition_press: false,
+            pressed_with: None,
             ghost_source: GhostSource::default(),
             fold: Fold::default(),
         }
