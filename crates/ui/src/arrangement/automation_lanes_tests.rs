@@ -756,7 +756,7 @@ fn a_lane_dropped_on_a_groups_heading_lands_outside_the_group() {
     let mut layout = start.clone();
     layout.move_lanes(std::slice::from_ref(&p), &Place::BeforeGroup(0), false);
     assert_eq!(layout.lanes, [m.clone(), p.clone(), gain.clone(), v.clone()]);
-    assert_eq!(layout.groups[0].keys, [gain.clone()]);
+    assert_eq!(layout.groups[0].keys, std::slice::from_ref(&gain));
     // Another lane dropped on the heading lands above it, outside the group.
     let mut layout = start.clone();
     layout.move_lanes(std::slice::from_ref(&v), &Place::BeforeGroup(0), false);
