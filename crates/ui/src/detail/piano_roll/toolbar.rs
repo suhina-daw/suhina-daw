@@ -647,13 +647,15 @@ fn rows_group(
     let total = widths.iter().map(|w| w + 2.0).sum::<f32>() + 2.0;
     let group = Rect::from_min_max(Pos2::new(left, row.top()), Pos2::new(left + total, row.bottom()));
     painter.rect_stroke(group, 4.0, theme::hairline(theme::border_strong()), StrokeKind::Inside);
-    let folded = state.fold != Fold::Off;
+    // Fold folds to the notes, Scale to the clip's scale: each lit while the rows are folded its way.
+    let folded = state.fold == Fold::Notes;
+    let scaled = state.fold == Fold::Scale && clip.scale.is_some();
     let hints = [
         "Fold: shows only the rows that have notes",
-        "Scale: turns the clip's scale on, showing only its rows and those with notes, or off; the clip panel's switch is the same",
+        "Scale: shows only the rows of the clip's scale and those with notes, turning the clip's scale on when it has none; again, every row",
         "Highlight scale: tints the rows of the clip's scale and marks its keys",
     ];
-    let ons = [folded, clip.scale.is_some(), state.highlight_scale];
+    let ons = [folded, scaled, state.highlight_scale];
     let mut x = group.left() + 2.0;
     for (index, ((button, word), width)) in ROWS.iter().zip(&widths).enumerate() {
         let rect = Rect::from_min_size(Pos2::new(x, group.top() + 1.0), Vec2::new(*width, group.height() - 2.0));
@@ -673,11 +675,16 @@ fn rows_group(
         match button {
             IconButton::Fold => state.fold = if folded { Fold::Off } else { Fold::Notes },
             IconButton::Scale => {
-                let mut params = crate::detail::piano_roll::scale_switch_params(ui.ctx(), &clip.address, clip.scale);
-                if let (Some(params), Some(address)) = (params.as_object_mut(), clip.address.as_object()) {
-                    params.extend(address.clone());
+                state.fold = if scaled { Fold::Off } else { Fold::Scale };
+                // A clip with no scale gets one to fold to: the switch's (› Scale and key). Unfolding
+                // keeps the clip's scale, so its rows stay highlighted on the whole keyboard.
+                if !scaled && clip.scale.is_none() {
+                    let mut params = crate::detail::piano_roll::scale_switch_params(ui.ctx(), &clip.address, None);
+                    if let (Some(params), Some(address)) = (params.as_object_mut(), clip.address.as_object()) {
+                        params.extend(address.clone());
+                    }
+                    actions.push(Action::new("clip.setScale", params));
                 }
-                actions.push(Action::new("clip.setScale", params));
             }
             _ => {
                 state.highlight_scale = !on;

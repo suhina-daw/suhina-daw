@@ -180,16 +180,23 @@ fn the_keys_in_the_scale_are_marked_and_named() {
     pick(&mut h, "Scale root: C", "E");
     let rows = key_rows(&h);
     assert!(rows.len() > 5, "the rows in view are named: {rows:?}");
-    // E major: E F# G# A B C# D#. Every row in view says whether it is in the scale; with the
-    // scale on only its rows show, and those with notes.
+    // E major: E F# G# A B C# D#. Every row in view says whether it is in the scale; a scale picked
+    // folds nothing, so the whole keyboard shows with the scale's rows marked (and highlighted).
     let scale = Scale::new(4, ScaleMode::Major).unwrap();
     for (label, _) in &rows {
         let name = label.trim_start_matches("Key ").trim_end_matches(" in scale");
         let key = (0..=127u8).find(|k| suhina_ui::detail::piano_roll::key_name(*k) == name).unwrap();
         assert_eq!(label.ends_with(" in scale"), scale.contains(key), "{label}");
-        assert!(scale.contains(key) || notes.iter().any(|n| n.key == key), "{label}");
     }
     assert!(rows.iter().any(|(l, _)| l.ends_with(" in scale")));
+    let outside = |key: u8| !scale.contains(key) && notes.iter().all(|n| n.key != key);
+    assert!(
+        rows.iter().any(|(label, _)| {
+            let name = label.trim_start_matches("Key ");
+            (0..=127u8).any(|k| suhina_ui::detail::piano_roll::key_name(k) == name && outside(k))
+        }),
+        "a key outside the scale, with no notes, shows: {rows:?}"
+    );
     assert_eq!(h.state().piano_roll().fold, Fold::Off, "Fold stays off");
     // Highlight turns the tint off and on again, kept in Settings; the scale stays the clip's.
     assert!(h.state().piano_roll().highlight_scale);
@@ -241,10 +248,12 @@ fn fold_shows_only_the_rows_with_notes_and_a_double_click_adds_on_the_rows_key()
     assert!(key_rows(&h).is_empty());
 }
 
-/// The toolbar's Scale and the clip panel's switch are one switch: either turns the clip's scale
-/// on and off, and both show it.
+/// The toolbar's Scale folds the rows to the clip's scale, turning the scale on when the clip has
+/// none (the switch's scale); pressed again it shows every row, and the clip keeps its scale,
+/// highlighted on the whole keyboard. The clip panel's switch turns the scale off, and Scale then
+/// lights no more.
 #[test]
-fn the_toolbar_scale_is_the_clip_panels_switch() {
+fn the_toolbar_scale_folds_to_the_clips_scale() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     let lit = |h: &Harness<'static, App>| h.get_by_label("Scale").accesskit_node().is_selected();
@@ -253,6 +262,13 @@ fn the_toolbar_scale_is_the_clip_panels_switch() {
     assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Major), "the default scale");
     assert!(h.query_by_label("Scale switch: On").is_some(), "the panel's switch is on too");
     assert_eq!(lit(&h), Some(true));
+    assert_eq!(h.state().piano_roll().fold, Fold::Scale);
+    // Again: every row, the clip's scale kept.
+    press(&mut h, "Scale");
+    assert_eq!(lit(&h), Some(false));
+    assert_eq!(h.state().piano_roll().fold, Fold::Off);
+    assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Major), "the clip keeps its scale");
+    press(&mut h, "Scale");
     pick(&mut h, "Scale mode: Major", "Dorian");
     press(&mut h, "Scale switch: On");
     assert_eq!(edited(&h).1, None);
@@ -310,12 +326,16 @@ fn the_toolbar_scale_centres_the_notes_in_its_rows() {
     assert_eq!(h.query_all_by_label_contains("Note ").count(), notes.len(), "the notes are in view again");
 }
 
-/// The scale on shows the scale's keys and the keys with notes; Fold, the keys with notes alone.
+/// A scale picked folds nothing; the toolbar's Scale shows the scale's keys and the keys with
+/// notes; Fold, the keys with notes alone.
 #[test]
 fn the_scale_shows_its_keys_and_fold_the_keys_with_notes() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     pick(&mut h, "Scale mode: Major", "Major pentatonic");
+    assert_eq!(h.state().piano_roll().fold, Fold::Off, "the scale picked, every row still shows");
+    press(&mut h, "Scale");
+    assert_eq!(h.state().piano_roll().fold, Fold::Scale);
     let (notes, scale) = edited(&h);
     let scale = scale.unwrap();
     let rows = key_rows(&h);

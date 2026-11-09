@@ -334,11 +334,12 @@ pub fn show(
     // A newly shown clip fits the width with its notes in the middle; until the rows are scrolled
     // by hand, a change in height centres the notes again, so they are in view at any height.
     let rows = scale_view::rows(clip, state.fold_for(clip));
-    // Another set of rows (Fold, or the clip's scale switched or changed here, in the clip panel or
-    // by a command) centres the notes in them, so they stay in view: the scroll of the last rows
-    // means nothing in the new ones. Scale's rows change a frame after its click, once the
-    // command has run.
-    let rows_for = (state.fold_for(clip), clip.scale);
+    // Another set of rows (Fold, Scale, or another scale while the rows fold to it) centres the
+    // notes in them, so they stay in view: the scroll of the last rows means nothing in the new
+    // ones. A scale the clip gets as Scale is clicked comes a frame later, once its command has
+    // run. Unfolded, the rows stay as they are whatever the scale.
+    let fold = state.fold_for(clip);
+    let rows_for = (fold, clip.scale.filter(|_| fold == Fold::Scale));
     let rows_changed = state.rows_for.is_some_and(|was| was != rows_for);
     state.rows_for = Some(rows_for);
     if fresh {

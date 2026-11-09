@@ -425,9 +425,12 @@ pull up.
 - **Built ([#347](https://github.com/suhina-daw/suhina-daw/issues/347)):** the toolbar's Rows
   group (› Layout, › Scale and key) shows fewer key rows. **Fold**, lit while on, shows only the
   keys that have notes in the clip (every key while it has none), whether or not the clip has a
-  scale. **Scale**, the clip's scale switch, shows while it is on the keys of the scale and any
-  key that has a note, so no note is ever hidden; Fold on goes before it. A click on the lit one
-  shows the rows again. The rows sit one under the other with no gap for the keys left out, and
+  scale. **Scale**, lit while on, shows only the keys of the clip's scale and any key that has a
+  note, so no note is ever hidden; a clip with no scale gets one as it is turned on (the scale
+  the clip had, or Settings' Default scale). The clip's scale alone folds nothing: picked or
+  switched on in the clip panel, it is highlighted on the whole keyboard (› Scale and key), so
+  the scale can be seen without leaving the other keys. The two are one choice: one on turns the
+  other off, and a click on the lit one shows every row again, the clip keeping its scale. The rows sit one under the other with no gap for the keys left out, and
   every row of the key column is named while folded, since the keys beside each other are no
   longer neighbours. Everything that turns a height into a key goes through the rows shown: a
   click or double-click lands on the row's key, painting and the key column play and select that
@@ -435,9 +438,9 @@ pull up.
   key of the row under the pointer, and the other selected notes move by as many semitones, which
   may put one on a key that was not shown: its row appears, as Fold shows every key with notes).
   The arrow keys still move notes by a semitone or an octave. Ghost notes on a key that is not
-  shown are not drawn. Picking a fold, or switching the clip's scale on, off or to another (the
-  toolbar's **Scale**, the clip panel, a command), centres the notes again in the rows that show
-  then, so they stay in view wherever the rows were scrolled. It is window state, kept until
+  shown are not drawn. Picking a fold (**Fold** or **Scale**), or another scale while the rows
+  fold to it, centres the notes again in the rows that show then, so they stay in view wherever
+  the rows were scrolled. It is window state, kept until
   Suhina closes and the same for every clip: not a command, not saved, not an undo step.
 - **Built:** a drag in the scale strip left of the keys changes the row height sideways (to the right,
   taller) and scrolls the rows up and down, the row where it began staying under the pointer: the
@@ -906,10 +909,11 @@ clip scales) and is saved with the project; a clip has none until one is set.
   edited) take the arrows the same way, and while one has them the window's arrow keys (the piano
   roll's, the Launcher's) wait.
 - **The toolbar's Rows group** (› Layout): **Fold** (› Zoom and scroll), **Scale** and
-  **Highlight** (Highlight scale), each lit while on. **Scale** is the clip panel's switch in the
-  toolbar: the same switch, so either turns the clip's scale on (the scale the clip had, or the
-  Default scale) and off, and both are lit together; while it is on the rows fold to the scale
-  (› Zoom and scroll). Highlight, on unless turned off, tints the
+  **Highlight** (Highlight scale), each lit while on. **Scale** folds the rows to the clip's
+  scale (› Zoom and scroll), turning the scale on first when the clip has none (as the clip
+  panel's switch does); off again, every row shows and the clip keeps its scale. The clip panel's
+  switch, root and mode set the scale without folding a row, and the switch off leaves Scale
+  unlit, as there is no scale to fold to. Highlight, on unless turned off, tints the
   rows of the scale and marks its keys as below; off, the rows look as without a scale, while the
   scale still folds rows, fits notes and names the key column's rows. It is kept in Settings.
 - **The rows of the keys in the scale are tinted with the clip's colour** (8 % of it over the
