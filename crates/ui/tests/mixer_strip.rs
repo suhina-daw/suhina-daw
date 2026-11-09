@@ -813,3 +813,86 @@ fn a_branch_volume_drag_from_its_limit_is_its_own_undo_step() {
     harness.run();
     assert_eq!(volume(&harness), top, "the second drag was an undo step of its own");
 }
+
+/// The window with Utility and Limiter on Main as well as on Drums.
+fn with_main_devices() -> Harness<'static, App> {
+    let mut project = project();
+    let devices = project.channels[0].devices.clone();
+    let main = project.channels.iter_mut().find(|c| c.role == suhina_engine::model::ChannelRole::Master).unwrap();
+    main.devices = devices;
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    harness.state_mut().set_session(Session::new(project), &[]);
+    harness.run();
+    harness
+}
+
+fn main_chain(harness: &Harness<'static, App>) -> Vec<String> {
+    let project = harness.state().session().unwrap().project();
+    project.main_channel().unwrap().devices.iter().map(|d| d.name.clone()).collect()
+}
+
+/// Main's device list takes the clicks, keys and drags a track's does (#683), and Delete
+/// removes the device picked there (#690).
+#[test]
+fn mains_device_list_picks_deletes_and_drags_as_a_tracks_does() {
+    let mut harness = with_main_devices();
+    assert_eq!(main_chain(&harness), ["Utility", "Limiter"]);
+    harness.get_by_label("Show Utility on Main").click();
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(main_chain(&harness), ["Limiter"], "Delete removes the device picked on Main");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(main_chain(&harness), ["Utility", "Limiter"]);
+
+    // Ctrl adds a pick on Main's list too, and Delete takes both in one step.
+    harness.get_by_label("Show Utility on Main").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Main").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert!(main_chain(&harness).is_empty());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(main_chain(&harness), ["Utility", "Limiter"], "one undo brings both back");
+
+    // Dragged onto a track's strip, a device of Main moves there.
+    let bass = chain_of(&harness, "Bass");
+    let from = harness.get_by_label("Show Limiter on Main").rect().center();
+    let to = harness.get_by_label("Bass channel strip").rect().center();
+    drag_device(&mut harness, from, to);
+    assert_eq!(main_chain(&harness), ["Utility"]);
+    assert_eq!(chain_of(&harness, "Bass").len(), bass.len() + 1);
+    assert_eq!(chain_of(&harness, "Bass").last().map(String::as_str), Some("Limiter"));
+}
+
+/// With several devices picked, a panel's X on one of them removes them all, in one undo step
+/// (#686). Picks are always on one track: a Ctrl-click on another track's device starts them
+/// over there, so X never reaches a device on a track other than its own.
+#[test]
+fn x_on_one_of_several_picked_devices_removes_them_all() {
+    let mut harness = with_main_devices();
+    let before = chain_of(&harness, "Drums");
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.get_by_label("Remove Limiter").click();
+    harness.run();
+    assert_eq!(chain_of(&harness, "Drums").len(), before.len() - 2, "both picks went");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(chain_of(&harness, "Drums"), before, "one undo brings both back");
+
+    // A pick on Drums, then Ctrl on Main's Limiter: the picks start over on Main.
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Main").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.get_by_label("Remove Limiter").click();
+    harness.run();
+    assert_eq!(main_chain(&harness), ["Utility"]);
+    assert_eq!(chain_of(&harness, "Drums"), before, "Drums keeps its devices");
+}
