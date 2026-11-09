@@ -5,11 +5,19 @@
 
 use super::*;
 
+/// The clips a range command keeps to: one row of a stack, the others in the range left as they
+/// are (#701).
+const ONLY_CLIPS: Param = optional(
+    "clips",
+    ParamType::Integers,
+    "only these clips (ids from project.clips), the others in the range left as they are: one row of a stack",
+);
+
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "range.split",
         label: "Split the clips of some tracks at both edges of a time selection, so the span is clips of its own; answers with the clips inside it",
-        params: &[TRACKS, RANGE_START, RANGE_END],
+        params: &[TRACKS, RANGE_START, RANGE_END, ONLY_CLIPS],
         kind: CommandKind::EDIT,
         run: crate::range::split_range,
         policy: Policy::DEFAULT,
@@ -25,7 +33,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "range.delete",
         label: "Delete what plays inside a time selection on some tracks: clips crossing an edge keep their parts outside it, and the gap stays",
-        params: &[TRACKS, RANGE_START, RANGE_END],
+        params: &[TRACKS, RANGE_START, RANGE_END, ONLY_CLIPS],
         kind: CommandKind::EDIT,
         run: crate::range::delete_range,
         policy: Policy::DEFAULT,
@@ -33,7 +41,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "range.copy",
         label: "Copy what plays inside a time selection on some tracks, cut to it, for clip.paste; a paste with no track puts each part back on its own track",
-        params: &[TRACKS, RANGE_START, RANGE_END],
+        params: &[TRACKS, RANGE_START, RANGE_END, ONLY_CLIPS],
         kind: CommandKind::READ,
         run: crate::range::copy_range,
         policy: Policy { after: After::Copies, ..Policy::DEFAULT },
@@ -41,7 +49,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "range.cut",
         label: "Copy what plays inside a time selection for clip.paste and delete it, as one undo step",
-        params: &[TRACKS, RANGE_START, RANGE_END],
+        params: &[TRACKS, RANGE_START, RANGE_END, ONLY_CLIPS],
         kind: CommandKind::EDIT,
         run: crate::range::cut_range,
         policy: Policy { after: After::Copies, ..Policy::DEFAULT },
@@ -53,6 +61,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             TRACKS,
             RANGE_START,
             RANGE_END,
+            ONLY_CLIPS,
             optional(
                 "stack",
                 ParamType::Bool,

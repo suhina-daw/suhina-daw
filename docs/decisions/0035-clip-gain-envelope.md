@@ -4,7 +4,7 @@ read_when: clip gain envelope, gain envelope, per-clip audio, independent audio 
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-05
+last_verified: 2026-11-06
 covers:
   - crates/model/src/clip_audio.rs
   - crates/engine/src/audio.rs

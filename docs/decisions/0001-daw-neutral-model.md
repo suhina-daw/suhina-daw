@@ -4,7 +4,7 @@ read_when: changing the model, track, channel, clip content, lane, pattern, impo
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-06
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/scale.rs

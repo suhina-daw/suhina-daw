@@ -1184,10 +1184,10 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
         }
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), Some(page) == shown, motion::VALUE);
         let hover = widgets::hover(ui, &response);
-        // `.settings-nav`, one row per page: `:hover`, and `:checked` for the page shown.
-        let _nav = crate::kit::style_class::enter_response("settings-nav", &response);
+        // `settings-nav`, one row per page: `:hover`, and `[checked]` for the page shown.
+        let nav = crate::kit::element::SETTINGS_NAV.response(&response).enter();
         crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, Some(page) == shown);
-        let own = crate::kit::style_class::computed().filter(|c| c.authored.background);
+        let own = nav.style().filter(|c| c.authored.background);
         if let Some(own) = &own {
             painter.rect_filled(row, own.radius, own.background);
         } else {
@@ -3016,13 +3016,17 @@ fn segmented<T: Copy + PartialEq>(
         if response.clicked() && *value != current {
             picked = Some(*value);
         }
-        // A part is a `.button` (`:checked` when chosen), as the sheet's generic rules say.
-        let _style = crate::kit::style_class::enter_response("button", &response);
+        // A part is a `button` (`[checked]` when chosen), as the sheet's generic rules say.
+        let el = crate::kit::element::BUTTON.response(&response).enter();
         crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, *value == current);
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), *value == current, motion::VALUE);
         let hover = widgets::hover(ui, &response);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), hover);
-        crate::kit::native_css::surface(painter, cell, 0.0, motion::mix(idle, theme::control_selected(), selected));
+        el.paint_with(
+            painter,
+            cell,
+            crate::kit::element::Native { radius: 0.0, fill: motion::mix(idle, theme::control_selected(), selected) },
+        );
         let color =
             crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), selected));
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);

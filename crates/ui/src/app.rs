@@ -28,6 +28,7 @@ pub mod name_clash_dialog;
 mod plugin_host;
 pub mod project_dialog;
 mod quick_add;
+mod running_copies;
 pub mod splash;
 pub mod start_panel;
 mod tabs;
@@ -549,6 +550,9 @@ pub struct App {
     /// The NAM folders' files, read again when either folder's writes change
     /// ([docs/spec/nam-amp-and-cab.md] › Folders).
     nam_cache: NamCache,
+    /// The audio output as the trace last said it, so the other running apps are listed once
+    /// each time it opens (#1163).
+    traced_output: Option<String>,
     /// The window's title as last set: the active project, marked when it has unsaved changes.
     window_title: String,
     /// The browser panel (`docs/spec/browser.md`), the same for every project.
@@ -628,6 +632,7 @@ impl App {
             stashes: HashMap::new(),
             open_prompt: None,
             unsaved_prompt: None,
+            traced_output: None,
             ara_prompt: None,
             folder_drop: None,
             name_clash: None,
@@ -1224,23 +1229,31 @@ impl App {
         if !suhina_plugins::trace::on() {
             return;
         }
-        let Some(player) = self.session().and_then(Session::player) else { return };
-        let info = player.output_info();
-        if let Some(info) = &info {
-            suhina_plugins::trace::state(
-                "audio output",
-                format!(
-                    "host={:?}, device={:?}, sample_rate={}, device_buffer={}, engine_block={}, fallback={}, exclusive={}",
-                    info.host,
-                    info.device,
-                    info.sample_rate,
-                    info.buffer_frames,
-                    info.engine_block,
-                    info.fallback,
-                    info.exclusive
-                ),
-            );
+        // Once: the render thread then waits for plug-ins on a coarser timeout (#1256).
+        if suhina_plugins::a_wait_failed() {
+            suhina_plugins::trace::state("plug-in waits", "a wait failed; waiting on the event's own timeout".into());
         }
+        let Some(info) = self.session().and_then(Session::player).map(|player| player.output_info()) else { return };
+        if let Some(info) = &info {
+            let output = format!(
+                "host={:?}, device={:?}, sample_rate={}, device_buffer={}, engine_block={}, fallback={}, exclusive={}",
+                info.host,
+                info.device,
+                info.sample_rate,
+                info.buffer_frames,
+                info.engine_block,
+                info.fallback,
+                info.exclusive
+            );
+            // As the device opens: the other Suhina apps running, which can make playback
+            // scratch on the same device with no counter showing it (#1163).
+            if self.traced_output.as_deref() != Some(output.as_str()) {
+                suhina_plugins::trace::state("other Suhina apps running", running_copies::describe());
+                self.traced_output = Some(output.clone());
+            }
+            suhina_plugins::trace::state("audio output", output);
+        }
+        let Some(player) = self.session().and_then(Session::player) else { return };
         let device = info.as_ref().map_or(0, |i| i.underruns);
         let stretched = player.stretch_underruns();
         let moves = player.stretch_moves();
@@ -3663,8 +3676,8 @@ pub(crate) fn clipboard_line(command: &str) -> Option<String> {
 /// border-color }`), else the theme's border.
 fn with_bar_line<R>(ui: &mut Ui, class: &str, show: impl FnOnce(&mut Ui) -> R) -> R {
     let line = {
-        let _bar = crate::kit::style_class::enter(class);
-        let own = crate::kit::style_class::computed();
+        let bar = crate::kit::element::named(class).map(crate::kit::element::Name::enter);
+        let own = bar.as_ref().and_then(crate::kit::element::Entered::style);
         // A bar with no line (`border-width: 0`, or a transparent border) fills the line's pixel
         // with its own background, so no gap shows the window behind it.
         let lineless = own.as_ref().is_some_and(|c| {

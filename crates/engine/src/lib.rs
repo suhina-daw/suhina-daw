@@ -21,6 +21,8 @@
 mod ahead;
 pub use assets::DeviceAssets;
 pub use control_error::ControlError;
+/// What a plug-in's link waits for, handed to the engine to wait for several at once (#1256).
+pub use suhina_ipc::Watch;
 mod control_error;
 pub use suhina_device_sdk::{DeviceAsset, DeviceFactory, Devices};
 mod assets;
@@ -108,7 +110,7 @@ use ahead::AheadReader;
 pub use ahead::StretchWorker;
 pub use audio::{AudioData, AudioPool};
 use audio::{AudioEvent, Fades};
-use chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK, run_as_answered};
+use chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK};
 pub use cpu::CpuMonitor;
 pub use cue::MAX_CUE_GAIN;
 pub use group::{GROUP_PARAMS, SILENT_DB, group_param_index, group_param_values};
@@ -1093,8 +1095,12 @@ impl Renderer {
             }
             self.observed_deadlines.0 = self.observed_deadlines.0.saturating_add(1);
         }
+        // A chain with buses with plug-ins after it has less of the deadline, so they have the
+        // rest when one of its plug-ins is late (#1261).
+        let start = crate::clock::now();
         for chain in &mut self.graph.chains {
-            chain.begin(frames, deadline);
+            let limit = deadline.map(|deadline| chain.turn.limit(start, deadline));
+            chain.begin(frames, limit);
         }
         self.block_frame = 0;
         // Preview commands apply once the chains have begun the block, so a stopped preview's
@@ -1307,25 +1313,16 @@ impl Renderer {
         {
             self.graph.click_delay.run(click);
         }
-        // The chains no chain plays into run their plug-ins at the same time, so the block's
-        // deadline is shared by the slowest chain rather than by all of them in turn: each
-        // chain runs until it hands a block to a plug-in, and goes on as soon as that plug-in
-        // answers, while the others are still out (#151). A bus runs after the chains that play
-        // into it, in order below.
-        let chains = &mut self.graph.chains;
-        for chain in chains.iter_mut().filter(|c| !c.is_bus) {
-            chain.advance(frames, &context);
-        }
-        run_as_answered(chains, frames, &context);
-        // In order, so a bus or a return has every chain that plays into it before it runs.
-        // With a source render's capture, the source chain's output is mixed into the capture
-        // buffer instead of where it plays.
+        // Every chain runs as soon as the chains that play into it are done, its plug-ins' blocks
+        // out together with the others', and goes on as soon as its own plug-in answers (#151,
+        // #1261). With a source render's capture, the source chain's output is mixed into the
+        // capture buffer instead of where it plays.
         let capture = self.graph.capture.as_mut().map(|capture| sends::Capture {
             chain: capture.chain,
             keep: &capture.keep,
             buffer: &mut capture.buffer,
         });
-        sends::finish(&mut self.graph.chains, out, &mut self.cue.bus, frames, &context, capture);
+        sends::run(&mut self.graph.chains, out, &mut self.cue.bus, frames, &context, capture);
         // The main fader's move since the graph was built, then the click it leaves alone. With
         // the fader still, the click is in the mix already and this changes nothing.
         if let Some((_, fader)) = self.graph.main_fader.as_ref()
