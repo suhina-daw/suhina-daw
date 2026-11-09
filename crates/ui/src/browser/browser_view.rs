@@ -1312,8 +1312,9 @@ fn results_view(
         } else {
             vec![row.item.clone()]
         };
-        let items: Vec<BrowserItem> =
-            items.into_iter().filter(|i| i.kind != ItemKind::Heading && i.kind != ItemKind::Folder).collect();
+        // A folder is carried too: a tag row it is dropped on tags the folder as a whole; the
+        // project and the file manager take only the files ([#1254] review).
+        let items: Vec<BrowserItem> = items.into_iter().filter(|i| i.kind != ItemKind::Heading).collect();
         if !items.is_empty() {
             // The preview goes on while dragging (a press held still also starts a drag); it
             // stops when the items are dropped into the project.

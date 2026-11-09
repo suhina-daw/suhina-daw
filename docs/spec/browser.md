@@ -566,8 +566,9 @@ A ctrl-click on the place's last tag shows the tree again.
 As
 any chosen place, the row shows a **×** that lets the place go. While items are dragged, a tag
 row lights up under the pointer — the same highlight as its hover says the tag a drop will go
-to ([#1254] review) — and the drop tags every dragged item with the tag (folders and
-headings left out); the drag stops the preview as any drop does not. The other way round, a
+to ([#1254] review) — and the drop tags every dragged item with the tag, a dragged folder
+as a whole (a sub-folder or a library folder of the tree, [#1254] review; headings left
+out); a folder lands on a tag only, never in the project; the drag stops the preview as any drop does not. The other way round, a
 tag row dragged out of the section carries the tag to the results, the item row it is over
 lights up, and a drop tags that item — or every selected item when the row is one of them, as
 a row's Tag menu applies to one and the section's drops apply to every dragged one; a drop

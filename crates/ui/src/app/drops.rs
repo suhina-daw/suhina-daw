@@ -156,13 +156,11 @@ impl App {
             }
             return;
         }
-        // Items over a tag of the sidebar's Tags section carry it when dropped (#1196).
+        // Items over a tag of the sidebar's Tags section carry it when dropped (#1196); a folder
+        // carries it as a whole ([#1254] review).
         if let Some(tag) = self.browser.drop_tag.take() {
-            let items: Vec<String> = items
-                .iter()
-                .filter(|i| i.kind != drop::ItemKind::Heading && i.kind != drop::ItemKind::Folder)
-                .map(|i| i.key.clone())
-                .collect();
+            let items: Vec<String> =
+                items.iter().filter(|i| i.kind != drop::ItemKind::Heading).map(|i| i.key.clone()).collect();
             if !released {
                 self.status = if items.is_empty() {
                     Status::Hint(format!("{tag} tags items of the results"))
@@ -176,7 +174,7 @@ impl App {
                 // The pill beside the pointer says what a drop here does (#1196).
                 if let Some(pointer) = pointer {
                     let what = if items.is_empty() {
-                        format!("{tag} tags items, not folders")
+                        format!("{tag} tags items, not headings")
                     } else {
                         format!("Tag {} item{} with {tag}", items.len(), if items.len() == 1 { "" } else { "s" })
                     };
@@ -202,6 +200,18 @@ impl App {
                 ))
             });
             self.browser.relist();
+            return;
+        }
+        // A folder lands on a tag only: the project takes the files of a drag, and a drag of
+        // folders alone lands nowhere else ([#1254] review).
+        let items: Vec<BrowserItem> = items.into_iter().filter(|i| i.kind != drop::ItemKind::Folder).collect();
+        if items.is_empty() {
+            if released {
+                self.browser.drag = None;
+                self.map_window.drag = None;
+            } else if let Some(pointer) = pointer {
+                drag_pill(ui, pointer, "Drop on a tag in the sidebar to tag the folder", false);
+            }
             return;
         }
         // Carried out of every Suhina window, samples become a drag of files that the system's

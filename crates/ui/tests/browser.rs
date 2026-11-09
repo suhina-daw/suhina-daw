@@ -1769,6 +1769,33 @@ fn items_dropped_on_a_tag_carry_it() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// A folder of the results dragged onto a tag row carries the tag as a whole, a sub-folder and
+/// the library's own folder alike ([#1254] review: a folder was tagged only from its menu).
+#[test]
+fn a_folder_dropped_on_a_tag_carries_it() {
+    let (settings, folder) = (temp("folder-drop-settings"), temp("folder-drop"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    double_click(&mut harness, &row(&name));
+    harness.run();
+    let drums = folder.join("Drums").display().to_string();
+    let root = folder.display().to_string();
+    for (label, tag, item) in [(row("Drums"), "Red", &drums), (row(&name), "Orange", &root)] {
+        let from = harness.get_by_label(&label).rect().center();
+        let to = harness.get_by_label(&format!("Place Tag {tag}")).rect().center();
+        drag(&mut harness, from, to);
+        harness.run();
+        let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(item);
+        let names: Vec<Option<String>> =
+            tags.iter().map(|id| harness.state_mut().projects_mut().file_library_mut().tag_name_of(*id)).collect();
+        assert_eq!(names, [Some(tag.to_string())], "{label} carries {tag}");
+        assert!(harness.state().browser.drag.is_none(), "the drop ended the drag");
+    }
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 /// The tagging the other way round: a tag row dragged onto an item of the results carries the
 /// tag there, the row lit under it, and a drop on one of a selection tags them all (#1196).
 #[test]
