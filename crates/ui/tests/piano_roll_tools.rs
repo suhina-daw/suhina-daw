@@ -582,7 +582,7 @@ fn the_toolbar_menus_line_up_with_the_rows_toggles() {
     assert!(ghosts.width() < 72.0, "the ghost menu is as wide as its word: {ghosts:?}");
     assert!(fold.right() < workflow.left(), "the Rows group comes first: {fold:?} {workflow:?}");
     // The Rows group is at the left, right after Quantise and the note tools' toggle.
-    let quantise = h.get_by_label_contains("Quantise (").rect();
+    let quantise = h.get_by_label("Quantise").rect();
     assert!(
         quantise.right() < fold.left() && fold.left() - quantise.right() < 60.0,
         "the Rows group follows the tools' buttons: {quantise:?} {fold:?}"
@@ -905,6 +905,9 @@ fn clipboard(h: &mut Harness<'static, App>, name: &str) {
 fn the_toolbar_cuts_copies_pastes_and_duplicates_the_selection() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
+    // Wide enough that the clipboard's four buttons show rather than the Edit menu.
+    h.set_size(vec2(1600.0, 800.0));
+    h.run();
     let start = notes(&h).len();
     // The buttons show the key they run.
     assert!(h.query_by_label(&format!("Copy ({})", shown("Ctrl+C"))).is_some(), "Copy names its key");

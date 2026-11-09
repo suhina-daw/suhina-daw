@@ -739,6 +739,8 @@ pub fn value_active(ctx: &egui::Context) -> bool {
 /// click elsewhere, or Escape with its list closed): the arrow steps through its entries (down is
 /// +1, the next entry), and Enter while its list is `open`. Escape with the list open is left to
 /// the list, which it closes; the field keeps the keys, so the arrows then step the value itself.
+/// Escape with the list closed lets the keys go and is left to the rest of the window too (the
+/// panel's Escape, which leaves Quantise, still sees it).
 pub(crate) fn chooser_keys(ui: &Ui, response: &Response, open: bool) -> (i32, bool) {
     let ctx = ui.ctx();
     let key = egui::Id::unique(ACTIVE_VALUE);
@@ -751,7 +753,9 @@ pub(crate) fn chooser_keys(ui: &Ui, response: &Response, open: bool) -> (i32, bo
         return (0, false);
     }
     // A press anywhere else lets it go; one in its own open list does not.
-    if ui.input(|i| i.pointer.any_pressed()) && !response.hovered() && !open {
+    let pressed_elsewhere =
+        ui.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_none_or(|at| !response.rect.contains(at)));
+    if pressed_elsewhere && !response.hovered() && !open {
         ctx.data_mut(|d| d.remove::<(egui::Id, u64)>(key));
         return (0, false);
     }
@@ -775,7 +779,7 @@ pub(crate) fn chooser_keys(ui: &Ui, response: &Response, open: bool) -> (i32, bo
                 if !open && !modifiers.command =>
             {
                 escape = true;
-                false
+                true
             }
             _ => true,
         });

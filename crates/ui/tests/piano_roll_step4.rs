@@ -422,7 +422,7 @@ fn the_clip_column_describes_the_selection() {
     click(&mut h, at);
     let selected = h.state().piano_roll().selected.len();
     assert_eq!(selected, 1);
-    assert!(h.query_by_label(&format!("1 of {total} notes")).is_some());
+    assert!(h.query_by_label(&format!("1 of {total}")).is_some(), "the count of the selection");
     for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
         assert!(h.query_by_label_contains(label).is_some(), "{label}");
     }

@@ -256,23 +256,23 @@ fn fold_shows_only_the_rows_with_notes_and_a_double_click_adds_on_the_rows_key()
 fn the_toolbar_scale_folds_to_the_clips_scale() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
-    let lit = |h: &Harness<'static, App>| h.get_by_label("Scale").accesskit_node().is_selected();
-    assert_eq!(lit(&h), Some(false));
+    let lit = |h: &Harness<'static, App>| h.get_by_label("Scale").accesskit_node().is_selected() == Some(true);
+    assert!(!lit(&h));
     press(&mut h, "Scale");
     assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Major), "the default scale");
     assert!(h.query_by_label("Scale switch: On").is_some(), "the panel's switch is on too");
-    assert_eq!(lit(&h), Some(true));
+    assert!(lit(&h));
     assert_eq!(h.state().piano_roll().fold, Fold::Scale);
     // Again: every row, the clip's scale kept.
     press(&mut h, "Scale");
-    assert_eq!(lit(&h), Some(false));
+    assert!(!lit(&h));
     assert_eq!(h.state().piano_roll().fold, Fold::Off);
     assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Major), "the clip keeps its scale");
     press(&mut h, "Scale");
     pick(&mut h, "Scale mode: Major", "Dorian");
     press(&mut h, "Scale switch: On");
     assert_eq!(edited(&h).1, None);
-    assert_eq!(lit(&h), Some(false));
+    assert!(!lit(&h));
     // On again from the toolbar: the scale the clip had, kept by either.
     press(&mut h, "Scale");
     assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Dorian));

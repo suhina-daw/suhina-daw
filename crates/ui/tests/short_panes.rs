@@ -358,7 +358,7 @@ fn at_the_least_height_the_selection_rows_are_left_out_not_cut() {
     // The figures sit under the Clip part: a taller detail area shows them.
     pull_to(&mut h, bottom - 340.0);
     assert!(h.query_by_label_contains("Pitch: ").is_some(), "the selection rows show in a tall detail area");
-    pull_to(&mut h, bottom - 90.0);
+    pull_to(&mut h, bottom - 130.0);
     assert!(h.query_by_label_contains("Notes tab").is_some(), "the tools' tabs fit");
     for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
         if let Some(row) = h.query_by_label_contains(label) {

@@ -507,7 +507,7 @@ const MENU_SPACE: f32 = 4.0;
 
 /// The room between a toolbar menu's word and its chevron, in points: enough that the chevron reads
 /// as the button's sign, not as part of the value.
-const CHEVRON_GAP: f32 = 7.0;
+const CHEVRON_GAP: f32 = 6.0;
 
 /// How wide a toolbar menu's chevron is, in points.
 const CHEVRON: f32 = 7.0;
@@ -602,7 +602,7 @@ fn layout_step(ui: &Ui, row: Rect, (size, gap, side): (Vec2, f32, f32), widths: 
         let grid = if step == Step::Full { widths.grids.0 } else { widths.grids.1 };
         let menus = if step >= Step::Arrows { widths.arrows } else { widths.named };
         // The tools, the clipboard, Quantise and the tools' toggle, the Rows group after a third
-        // divider, some room, then the menus, the grid value and the × from the right.
+        // divider, then the menus, the grid value and the × from the right: what is drawn.
         TOOLBAR_INSET
             + 8.0 * button
             + clipboard
@@ -610,7 +610,6 @@ fn layout_step(ui: &Ui, row: Rect, (size, gap, side): (Vec2, f32, f32), widths: 
             + 7.0
             + rows(step < Step::Icons)
             + gap
-            + 8.0
             + menus
             + 2.0
             + 10.0

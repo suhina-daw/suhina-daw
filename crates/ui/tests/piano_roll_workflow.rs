@@ -416,6 +416,9 @@ fn the_toolbar_menu_switches_the_workflow_and_a_setting_makes_it_custom() {
 fn the_duplicate_setting_in_the_menu_moves_the_key() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
+    // Wide enough that the clipboard's Duplicate button shows rather than the Edit menu.
+    h.set_size(egui::vec2(1600.0, 800.0));
+    h.run();
     h.get_by_label("Workflow Select-first").click();
     h.run();
     h.get_by_label_contains("Duplicate key: Ctrl+D").click();
