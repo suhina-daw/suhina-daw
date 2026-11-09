@@ -1469,6 +1469,10 @@ fn a_file_of_every_version_reads() {
                 clip.audio.tempo_source = None;
             }
         }
+        if version < 11 {
+            // Lane layouts came with version 11 (#1322).
+            expected.lane_layouts.clear();
+        }
         // Devices get their ids in document order when a file before version 6 is read.
         assert_eq!(from_json(&text).map(renumbered), Ok(renumbered(expected)), "version {version}");
     }
