@@ -9,7 +9,7 @@
 
 use super::clip_panel::{
     CLIP_PART, Change, FIELD, Field, GAP, NAME, TOGGLE, Text, bar_of, clip_part, drop_down, name_over, number_field,
-    pair, plain_number, set_button, small_button, toggle, whole,
+    plain_number, set_button, small_button, toggle, whole,
 };
 use super::*;
 use crate::detail::midi_tools::{Tools, ToolsTab, Transform, tools_width};
@@ -33,9 +33,54 @@ const INFO_ROW: f32 = 14.0;
 const RANGE_BAR: f32 = 10.0;
 /// The space between the buttons of the Notes tab's grid.
 const BUTTON_GAP: f32 = 4.0;
+
+/// The tools part's spacing: the room between its rows, between the rows of the Notes tab's
+/// buttons, and the height of its fields and buttons and of its switches and Apply.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ToolsSpacing {
+    pub gap: f32,
+    pub button_gap: f32,
+    pub field: f32,
+    pub toggle: f32,
+}
+
+/// The tools part's spacing as the theme sets it: `midi-tools { --suhina-gap }` the room between
+/// its rows (0 to 16 points), `midi-tools button { height }` its fields', buttons', switches' and
+/// Apply's height (10 to 40 points); else the panel's own.
+pub(crate) fn tools_spacing() -> ToolsSpacing {
+    let _el = crate::kit::element::MIDI_TOOLS.enter();
+    let gap = crate::kit::style_class::property("--suhina-gap")
+        .and_then(|v| v.trim().strip_suffix("px").and_then(|v| v.trim().parse::<f32>().ok()))
+        .filter(|v| v.is_finite())
+        .map(|v| v.clamp(0.0, 16.0));
+    let height = {
+        let button = crate::kit::element::BUTTON.enter();
+        button.style().and_then(|c| c.height).filter(|h| h.is_finite()).map(|h| h.clamp(10.0, 40.0))
+    };
+    ToolsSpacing {
+        gap: gap.unwrap_or(GAP),
+        button_gap: gap.unwrap_or(BUTTON_GAP),
+        field: height.unwrap_or(FIELD),
+        toggle: height.unwrap_or(TOGGLE),
+    }
+}
+
 /// How tall the tools part is under its tab row: its taller tab, Notes (Transpose, the buttons and
 /// the Swing row; Transform's list, hint, fields, switch and Apply are a little shorter).
-const TOOLS_BODY: f32 = NAME + FIELD + GAP + FIELD * 3.0 + BUTTON_GAP * 2.0 + GAP + NAME + FIELD;
+fn tools_body(s: ToolsSpacing) -> f32 {
+    NAME + s.field + s.gap + s.field * 3.0 + s.button_gap * 2.0 + s.gap + NAME + s.field
+}
+
+/// A name and a field under it, twice side by side, `field` tall.
+fn pair(part: Rect, top: f32, field: f32) -> [(Rect, Rect); 2] {
+    let half = (part.width() - GAP) / 2.0;
+    [0.0, 1.0].map(|i| {
+        let left = part.left() + i * (half + GAP);
+        let name = Rect::from_min_size(Pos2::new(left, top), Vec2::new(half, NAME));
+        let field = Rect::from_min_size(Pos2::new(left, top + NAME), Vec2::new(half, field));
+        (name, field)
+    })
+}
 /// How tall the figures are at most: the chip, Pitch, From, To, Muted, Velocity and its bar.
 const FIGURES: f32 = CHIP + GAP + INFO_ROW * 4.0 + 4.0 + INFO_ROW + RANGE_BAR;
 /// The room between the Clip part and the figures under it.
@@ -58,7 +103,12 @@ const TOOLS_GAP: f32 = 8.0;
 pub(super) fn stacked_height(midi: bool, tools: bool) -> f32 {
     let clip = (NAME + FIELD) * 3.0 + TOGGLE + GAP * 3.0;
     let figures = if midi { FIGURES_GAP + FIGURES } else { 0.0 };
-    let tools = if midi && tools { 14.0 + TAB_ROW + GAP + TOOLS_BODY } else { 0.0 };
+    let tools = if midi && tools {
+        let s = tools_spacing();
+        14.0 + TAB_ROW + s.gap + tools_body(s)
+    } else {
+        0.0
+    };
     clip + figures + tools + 16.0
 }
 
@@ -111,6 +161,7 @@ pub(super) fn midi_panel(
 /// the slider sets the swing it plays: the project's while it follows it (so every clip that
 /// follows changes with it), else its own. Left out whole when it does not fit. Returns where it
 /// ends.
+#[allow(clippy::too_many_arguments)]
 fn swing_row(
     ui: &Ui,
     painter: &egui::Painter,
@@ -118,9 +169,10 @@ fn swing_row(
     top: f32,
     address: &serde_json::Value,
     panel: &AudioPanel,
+    field: f32,
     actions: &mut Vec<Action>,
 ) {
-    if top + NAME + FIELD > part.bottom() + 0.5 {
+    if top + NAME + field > part.bottom() + 0.5 {
         return;
     }
     let on_clip = |more: serde_json::Value| {
@@ -142,7 +194,7 @@ fn swing_row(
         theme::mono_font(theme::TEXT_TINY),
         theme::text_value(),
     );
-    let switch = Rect::from_min_size(Pos2::new(part.left(), top + NAME), Vec2::new(52.0, FIELD));
+    let switch = Rect::from_min_size(Pos2::new(part.left(), top + NAME), Vec2::new(52.0, field));
     if toggle(ui, painter, switch, "Use global swing", "Global", global) {
         actions.push(Action::new("clip.setSwing", on_clip(json!({ "global": !global }))));
     }
@@ -178,18 +230,19 @@ fn tools_part(
         return;
     }
     let MidiTools { tools, state, .. } = midi;
+    let spacing = tools_spacing();
     // `midi-tools` styles the part: its background and, through the scope, its controls' text.
     let el = crate::kit::element::MIDI_TOOLS.enter();
     el.paint_with(painter, part, crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() });
     let tab_row = Rect::from_min_size(part.min, Vec2::new(part.width(), TAB_ROW));
     tab_row_of(ui, painter, tab_row, state);
-    let body = Rect::from_min_max(Pos2::new(part.left(), tab_row.bottom() + GAP), part.max);
+    let body = Rect::from_min_max(Pos2::new(part.left(), tab_row.bottom() + spacing.gap), part.max);
     // A time selection with no note in it gives the tools nothing to act on.
     let before = actions.len();
     let notes_end = match state.tools_tab {
-        ToolsTab::Notes => Some(notes_tab(ui, painter, body, panel, tools, state, actions)),
+        ToolsTab::Notes => Some(notes_tab(ui, painter, body, panel, tools, state, spacing, actions)),
         ToolsTab::Transform => {
-            transform_tab(ui, painter, body, tools, state, actions);
+            transform_tab(ui, painter, body, tools, state, spacing, actions);
             None
         }
     };
@@ -199,7 +252,7 @@ fn tools_part(
     // The clip's swing, under the Notes tab's tools: the clip's own, so it works whatever the
     // tools act on.
     if let Some(end) = notes_end {
-        swing_row(ui, painter, body, end + GAP, tools.address, panel, actions);
+        swing_row(ui, painter, body, end + spacing.gap, tools.address, panel, spacing.field, actions);
     }
     // Escape leaves Quantise for the Notes tab, as it closed the quantise block before (Escape also
     // clears the note selection in the piano roll; both happen, as both are what the key means).
@@ -297,6 +350,7 @@ fn notes_tab(
     panel: &AudioPanel,
     tools: &Tools<'_>,
     state: &mut PianoRollState,
+    s: ToolsSpacing,
     actions: &mut Vec<Action>,
 ) -> f32 {
     let left = body;
@@ -305,7 +359,7 @@ fn notes_tab(
     let fits = |y: f32, height: f32| y + height <= body.bottom() + 0.5;
     // Transpose: its semitones (0 until chosen), and Apply at the right of its name, greyed out
     // while they are 0, as there is nothing to move.
-    if fits(y, NAME + FIELD) {
+    if fits(y, NAME + s.field) {
         let name = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), NAME));
         name_over(painter, name, "Transpose", Align2::LEFT_BOTTOM);
         let moves = enabled && state.tools.transpose.clamp(-24, 24) != 0;
@@ -315,25 +369,25 @@ fn notes_tab(
             state.replacing(&mut params);
             actions.push(Action::new("note.move", params));
         }
-        let field = Rect::from_min_size(Pos2::new(left.left(), y + NAME), Vec2::new(left.width(), FIELD));
+        let field = Rect::from_min_size(Pos2::new(left.left(), y + NAME), Vec2::new(left.width(), s.field));
         let shown = |v: f64| format!("{} st", signed(v));
         let value = f64::from(state.tools.transpose);
         if let Some(v) = setting_field(ui, painter, field, "Transpose by", value, (-24.0, 24.0), &shown) {
             state.tools.transpose = v.round() as i32;
         }
-        y += NAME + FIELD + GAP;
+        y += NAME + s.field + s.gap;
     }
     // The one-click tools, two to a row.
     let cell = (left.width() - BUTTON_GAP) / 2.0;
     let rows: [[&str; 2]; 3] = [["Fit to scale", "Invert"], ["Reverse", "Legato"], ["×2", "÷2"]];
     for pair_of in rows {
-        if !fits(y, FIELD) {
+        if !fits(y, s.field) {
             break;
         }
         for (column, name) in pair_of.into_iter().enumerate() {
             let rect = Rect::from_min_size(
                 Pos2::new(left.left() + column as f32 * (cell + BUTTON_GAP), y),
-                Vec2::new(cell, FIELD),
+                Vec2::new(cell, s.field),
             );
             let response = tool_button(ui, painter, rect, name, name, enabled);
             if name == "Fit to scale" && enabled && panel.scale.is_none() {
@@ -368,9 +422,9 @@ fn notes_tab(
             };
             actions.push(Action::new(id, params));
         }
-        y += FIELD + BUTTON_GAP;
+        y += s.field + s.button_gap;
     }
-    y - BUTTON_GAP
+    y - s.button_gap
 }
 
 /// Fit to scale for a clip with no scale: a list of the scales, each with its roots; picking one
@@ -506,19 +560,21 @@ fn figure(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, value: &str) 
 
 /// The Transform tab, one under another: the list of transformations, a line on what the chosen one
 /// does, its settings, and Apply, which says what it does and to what ("Humanise 3 notes").
+#[allow(clippy::too_many_arguments)]
 fn transform_tab(
     ui: &mut Ui,
     painter: &egui::Painter,
     body: Rect,
     tools: &Tools<'_>,
     state: &mut PianoRollState,
+    s: ToolsSpacing,
     actions: &mut Vec<Action>,
 ) {
-    if body.height() < FIELD {
+    if body.height() < s.field {
         return;
     }
     let chosen = state.transform;
-    let list = Rect::from_min_size(body.min, Vec2::new(body.width(), FIELD));
+    let list = Rect::from_min_size(body.min, Vec2::new(body.width(), s.field));
     let entries: Vec<Option<(&str, bool)>> = Transform::ALL
         .iter()
         .flat_map(|t| {
@@ -535,7 +591,7 @@ fn transform_tab(
             state.transform = *t;
         }
     }
-    let mut y = body.top() + FIELD + GAP;
+    let mut y = body.top() + s.field + s.gap;
     // What it does, in a line.
     let hint = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), 12.0));
     if hint.bottom() <= body.bottom() + 0.5 {
@@ -547,15 +603,15 @@ fn transform_tab(
             theme::ui_font(theme::TEXT_TINY),
             theme::text_hint(),
         );
-        y = hint.bottom() + GAP;
+        y = hint.bottom() + s.gap;
     }
-    let settings_fit = y + NAME + FIELD <= body.bottom() + 0.5;
+    let settings_fit = y + NAME + s.field <= body.bottom() + 0.5;
     let settings = &mut state.tools;
     let mut params = tools.params();
     match chosen {
         Transform::Humanise => {
             if settings_fit {
-                let [(time_name, time_field), (velocity_name, velocity_field)] = pair(body, y);
+                let [(time_name, time_field), (velocity_name, velocity_field)] = pair(body, y, s.field);
                 name_over(painter, time_name, "Timing ±", Align2::LEFT_BOTTOM);
                 name_over(painter, velocity_name, "Velocity ±", Align2::LEFT_BOTTOM);
                 explain(ui, time_name, "timing", "How far a note may start earlier or later, in milliseconds");
@@ -578,10 +634,10 @@ fn transform_tab(
                 ) {
                     settings.humanize_velocity = v;
                 }
-                y += NAME + FIELD + GAP;
-                if y + TOGGLE <= body.bottom() + 0.5 {
-                    let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), TOGGLE));
-                    y += TOGGLE + GAP;
+                y += NAME + s.field + s.gap;
+                if y + s.toggle <= body.bottom() + 0.5 {
+                    let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), s.toggle));
+                    y += s.toggle + s.gap;
                     explain(
                         ui,
                         row,
@@ -607,7 +663,7 @@ fn transform_tab(
         Transform::Quantise => {
             let mut quantize = state.quantize;
             if settings_fit {
-                let [(grid_name, grid_field), (amount_name, amount_field)] = pair(body, y);
+                let [(grid_name, grid_field), (amount_name, amount_field)] = pair(body, y, s.field);
                 name_over(painter, grid_name, "Grid", Align2::LEFT_BOTTOM);
                 name_over(painter, amount_name, "Amount", Align2::LEFT_BOTTOM);
                 let grids: Vec<Option<(&str, bool)>> =
@@ -625,10 +681,10 @@ fn transform_tab(
                 {
                     quantize.amount = v;
                 }
-                y += NAME + FIELD + GAP;
-                if y + TOGGLE <= body.bottom() + 0.5 {
-                    let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), TOGGLE));
-                    y += TOGGLE + GAP;
+                y += NAME + s.field + s.gap;
+                if y + s.toggle <= body.bottom() + 0.5 {
+                    let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), s.toggle));
+                    y += s.toggle + s.gap;
                     if toggle(ui, painter, row, "Move ends too", "Move ends too", quantize.ends) {
                         quantize.ends = !quantize.ends;
                     }
@@ -642,7 +698,7 @@ fn transform_tab(
         }
         Transform::RandomiseVelocity => {
             if settings_fit {
-                let [(name, field), _] = pair(body, y);
+                let [(name, field), _] = pair(body, y, s.field);
                 name_over(painter, name, "Velocity ±", Align2::LEFT_BOTTOM);
                 let steps = |v: f64| format!("{v}");
                 if let Some(v) =
@@ -650,13 +706,13 @@ fn transform_tab(
                 {
                     settings.random_amount = v;
                 }
-                y += NAME + FIELD + GAP;
+                y += NAME + s.field + s.gap;
             }
             params["amount"] = json!(settings.random_amount.clamp(0.0, 127.0));
         }
         Transform::RampVelocity => {
             if settings_fit {
-                let [(from_name, from_field), (to_name, to_field)] = pair(body, y);
+                let [(from_name, from_field), (to_name, to_field)] = pair(body, y, s.field);
                 name_over(painter, from_name, "From", Align2::LEFT_BOTTOM);
                 name_over(painter, to_name, "To", Align2::LEFT_BOTTOM);
                 let steps = |v: f64| format!("{v}");
@@ -668,18 +724,18 @@ fn transform_tab(
                 if let Some(v) = setting_field(ui, painter, to_field, "Ramp to", to, (1.0, 127.0), &steps) {
                     settings.ramp_to = v.round() as i32;
                 }
-                y += NAME + FIELD + GAP;
+                y += NAME + s.field + s.gap;
             }
             params["from"] = json!(settings.ramp_from.clamp(1, 127));
             params["to"] = json!(settings.ramp_to.clamp(1, 127));
         }
     }
     // Apply, at the bottom, says what it does and to what: "Humanise 3 notes", "Quantise clip".
-    if y + TOGGLE > body.bottom() + 0.5 {
+    if y + s.toggle > body.bottom() + 0.5 {
         return;
     }
     let apply_text = format!("{} {}", chosen.verb(), tools.target());
-    let apply = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), TOGGLE));
+    let apply = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), s.toggle));
     let enabled = tools.count() > 0;
     let response =
         widgets::button_area(ui, apply, Id::unique("midi-tools-apply"), &apply_text).on_hover_text(chosen.hint());

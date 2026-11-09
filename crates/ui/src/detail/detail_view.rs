@@ -38,6 +38,8 @@ use self::clip_properties::*;
 pub use self::expanded::*;
 use self::group_panel::*;
 pub use self::midi_panel::MidiTools;
+#[cfg(test)]
+pub(crate) use self::midi_panel::{ToolsSpacing, tools_spacing};
 pub use self::model::*;
 use self::parameters::*;
 #[cfg(test)]

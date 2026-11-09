@@ -1308,6 +1308,29 @@ fn the_midi_tools_column_takes_its_width_from_the_sheet() {
 }
 
 #[test]
+fn the_midi_tools_part_takes_its_gap_and_button_height_from_the_sheet() {
+    use crate::detail::detail_view::{ToolsSpacing, tools_spacing};
+    let mut plain = None;
+    painted("", |_| plain = Some(tools_spacing()));
+    assert_eq!(plain, Some(ToolsSpacing { gap: 6.0, button_gap: 4.0, field: 18.0, toggle: 20.0 }));
+    // `button { height }` inside `midi-tools` sets its fields', buttons', switches' and Apply's height,
+    // within 10 to 40 points.
+    let mut tall = None;
+    painted("midi-tools button { height: 26px; }", |_| tall = Some(tools_spacing()));
+    assert_eq!(tall, Some(ToolsSpacing { gap: 6.0, button_gap: 4.0, field: 26.0, toggle: 26.0 }));
+    let mut huge = None;
+    painted("midi-tools button { height: 90px; }", |_| huge = Some(tools_spacing()));
+    assert_eq!(huge.map(|s| (s.field, s.toggle)), Some((40.0, 40.0)));
+    // The gap is a host rule, read from the theme's sheet as the app reads it: the room between
+    // the part's rows and between the rows of its buttons.
+    let (theme, _) = super::super::theme::from_css("midi-tools { --suhina-gap: 2px; }");
+    skin::configure(&theme.skin);
+    let packed = tools_spacing();
+    skin::configure(&skin::Skin::default());
+    assert_eq!((packed.gap, packed.button_gap), (2.0, 2.0));
+}
+
+#[test]
 fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_colour_spares_them() {
     use crate::detail::detail_view::{slider_as_knob, themed_slider};
     let mut seen = (true, true);
