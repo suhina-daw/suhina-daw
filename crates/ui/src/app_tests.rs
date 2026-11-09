@@ -1093,6 +1093,13 @@ fn a_grouped_collection_lists_its_capture_packs_and_a_new_capture_lists_again() 
     let mut app = App::new();
     app.set_session(Session::new(project), &[]);
     app.set_nam_default_folders(models.clone(), irs.clone());
+    // The collection's stamp is set to a known past instant: the freshness check reads the
+    // folders' own mtimes, and on a filesystem whose stamps tie between the two writes the
+    // capture dropped in later must still change them (a test never depends on how busy the
+    // machine was between the writes).
+    let group = models.join("Live Amp Modeler");
+    filetime::set_file_mtime(&group, filetime::FileTime::from_unix_time(0, 0))
+        .expect("the collection's stamp is set");
     let lists = app.nam_lists();
     assert_eq!(
         lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)"),

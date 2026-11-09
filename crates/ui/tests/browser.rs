@@ -919,8 +919,10 @@ fn the_librarys_presets_list_beside_the_stock_ones() {
     let to = harness.get_by_label("Track Bass").rect().center();
     let from = harness.get_by_label(&row("Home Squeeze")).rect().center();
     drag(&mut harness, from, to);
+    // A user preset's row plans a plain device add with no samples, so it runs in the drop's
+    // own frame: the value is there the moment the drag ends, with no deadline to race.
     assert!(
-        until(&mut harness, |app| value_on_bass(app, "volume") == Some(-3.0)),
+        value_on_bass(harness.state(), "volume") == Some(-3.0),
         "the user preset's row brings its values"
     );
     let _ = std::fs::remove_dir_all(&settings);
