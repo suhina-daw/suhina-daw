@@ -29,6 +29,10 @@ const BUSY_AFTER_SECONDS: f64 = 0.3;
 /// How far the view's aspect ratio may drift from the grid's (as a fraction) before the grid is
 /// made again.
 const GRID_ASPECT_SLACK: f32 = 0.05;
+/// How many let-go layout or grid workers may still be running when a new one starts: past
+/// it the new one waits for them ([#1254] review: the computations have no point to stop at,
+/// so obsolete ones finish, and only this many at a time).
+const MAX_RETIRED_RUNNING: usize = 2;
 
 /// What a layout was made from, to know when it is out of date. A tag place's scope follows
 /// the tag assignments too: anything tagged in or out of a chosen tag re-lays it
@@ -140,6 +144,32 @@ impl Panel {
         self.reap();
     }
 
+    /// Lets go the layout being made for a scope that is no longer asked for, before it is
+    /// waited for: its map is never shown, and the asked one starts at once ([#1254] review:
+    /// the old job's map was waited for and shown before the new one started).
+    fn end_stale_layout(&mut self, place: Option<&str>, max_seconds: u32, tags_revision: u64) {
+        let stale = self.job.as_ref().is_some_and(|job| {
+            job.key.place.as_deref() != place
+                || job.key.max_seconds != max_seconds
+                || job.key.tags_revision != tags_revision
+        });
+        if stale {
+            self.end_layout_job();
+        }
+    }
+
+    /// Whether as many let-go workers are still running as may run beside a new one: a new
+    /// layout or grid waits, the frame asking again soon, so obsolete work never piles up
+    /// past [`MAX_RETIRED_RUNNING`] ([#1254] review).
+    fn busy_retiring(&mut self, ui: &Ui) -> bool {
+        self.reap();
+        let busy = self.retired.len() >= MAX_RETIRED_RUNNING;
+        if busy {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        busy
+    }
+
     /// Joins the retired workers that have finished; the others are left running, their
     /// answers going nowhere.
     fn reap(&mut self) {
@@ -226,6 +256,14 @@ impl Panel {
     fn refresh(&mut self, ui: &Ui, state: &BrowserState, projects: &mut Projects, settings: &Settings) {
         let analysed = projects.poll_sound_map();
         self.reap();
+        let place = Self::place(state);
+        // A tag place's map follows the tag assignments as well: anything tagged in or out
+        // of a chosen tag re-lays it ([#1254] review). The revision read once, and only for
+        // the places it matters to; the rest of the tags' doings are none of the map's.
+        let tags_revision = matches!(&state.place, Some(Place::Tag(_)))
+            .then(|| projects.file_library_mut().tag_revision())
+            .unwrap_or_default();
+        self.end_stale_layout(place.as_deref(), settings.map_max_seconds, tags_revision);
         if let Some(job) = &self.job {
             match job.receiver.try_recv() {
                 Ok((map, grid, aspect)) => {
@@ -252,13 +290,6 @@ impl Panel {
             }
         }
         let now = ui.input(|i| i.time);
-        let place = Self::place(state);
-        // A tag place's map follows the tag assignments as well: anything tagged in or out
-        // of a chosen tag re-lays it ([#1254] review). The revision read once, and only for
-        // the places it matters to; the rest of the tags' doings are none of the map's.
-        let tags_revision = matches!(&state.place, Some(Place::Tag(_)))
-            .then(|| projects.file_library_mut().tag_revision())
-            .unwrap_or_default();
         let scope_changed = self.stale
             || self.shown.as_ref().is_none_or(|s| {
                 s.place != place || s.max_seconds != settings.map_max_seconds || s.tags_revision != tags_revision
@@ -267,6 +298,12 @@ impl Panel {
             if analysed {
                 ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(RELAYOUT_SECONDS));
             }
+            return;
+        }
+        // Too many let-go workers still running: the next layout waits for them to finish,
+        // a frame at a time, never on the window's thread ([#1254] review: replacing scopes
+        // fast piled workers up beside the new one).
+        if self.busy_retiring(ui) {
             return;
         }
         let Ok(files) = suhina_session::scope_files(projects, place.as_deref()) else { return };
@@ -324,6 +361,9 @@ impl Panel {
             || self.grid.is_none()
             || (aspect / self.grid_aspect - 1.0).abs() <= GRID_ASPECT_SLACK
         {
+            return;
+        }
+        if self.busy_retiring(ui) {
             return;
         }
         let Some(map) = &self.map else { return };

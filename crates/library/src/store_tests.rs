@@ -299,6 +299,31 @@ fn a_files_ids_are_kept_once_and_the_handed_out_ones_take_none_of_them() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// The store makes no id past the ones a file keeps: an id it made past them would be handed
+// out anew on the next load and the items carrying it would come back carrying another tag
+// ([#1254] review). Every id a make hands out round-trips as it is.
+#[test]
+fn the_store_makes_no_id_a_reload_would_hand_out_anew() {
+    let dir = temp("id-cap");
+    let file = dir.join("browser.json");
+    let text = json!({
+        "tags": [{ "tag": { "id": MAX_FILE_TAG_ID - 1, "name": "High", "color": "#112233" } }],
+    })
+    .to_string();
+    std::fs::write(&file, text).unwrap();
+    let (mut store, _) = Store::load(&file);
+    let last = set_tag_then_id_of(&mut store, "Last", None);
+    assert_eq!(last, MAX_FILE_TAG_ID, "the last id a file keeps is made");
+    assert!(store.set_tag("Past", None, None, None).is_err(), "no tag past it");
+    assert!(store.add_tag_folder(Some("Past"), None).is_err(), "nor a folder");
+    store.tag("/a.wav", last, true).unwrap();
+    store.save(&file).unwrap();
+    let (again, _) = Store::load(&file);
+    assert_eq!(tags_iter(&again.tags).find(|t| t.name == "Last").map(|t| t.id), Some(MAX_FILE_TAG_ID));
+    assert_eq!(again.tagged["/a.wav"], [MAX_FILE_TAG_ID], "the item keeps its tag");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // The selectors' shape is `#` over digits, alone or joined with `+`: that much is reserved,
 // and a bare `#`, a sign or other text after `#` stays a name ([#1254] review: `#` was
 // refused and `#+1` read as the id 1).

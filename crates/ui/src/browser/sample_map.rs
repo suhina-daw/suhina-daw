@@ -320,7 +320,7 @@ impl MapView {
     /// The map was laid out again, its points in a new order: the point-index states follow
     /// their items to `moved(old index)`, and one whose item is not on the new map goes
     /// ([#1254] review: Show similar's list kept the old indices and showed, and previewed,
-    /// unrelated samples). Show similar ends when the point it was asked for is gone; a
+    /// unrelated samples). The hovered point's waveform follows it too. Show similar ends when the point it was asked for is gone; a
     /// rubber band ends, as the points under it moved.
     pub fn rebind_points(&mut self, moved: impl Fn(usize) -> Option<usize>) {
         self.similar = self.similar.take().and_then(|(of, items)| {
@@ -330,6 +330,9 @@ impl MapView {
         self.hovered = self.hovered.and_then(|(i, since)| Some((moved(i)?, since)));
         self.previewed = self.previewed.and_then(&moved);
         self.pressed = self.pressed.and_then(&moved);
+        // The waveform read for the hovered point goes with it: a caller that keeps it a frame
+        // longer shows it for the same sample, or not at all ([#1254] review).
+        self.hover_waveform = self.hover_waveform.take().and_then(|(i, peaks)| Some((moved(i)?, peaks)));
         self.rubber_band = None;
     }
 

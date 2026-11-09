@@ -377,7 +377,19 @@ pub fn folder_carried(entries: &[TagEntry], id: u32) -> usize {
 pub fn next_free_id(entries: &[TagEntry]) -> u32 {
     let mut ids = tag_ids(entries);
     ids.extend(folders_iter(entries).map(|f| f.id));
-    ids.iter().copied().max().map_or(FIRST_TAG_ID, |high| high + 1)
+    ids.iter().copied().max().map_or(FIRST_TAG_ID, |high| high.saturating_add(1))
+}
+
+/// The id a new tag or folder takes: the next free one, while it stays within the ids a file
+/// keeps ([`MAX_FILE_TAG_ID`]). Past it the make is refused: an id the store made past it
+/// would be handed out anew on the next load, in file order, and the items carrying it would
+/// come back carrying another tag ([#1254] review).
+fn new_id(entries: &[TagEntry]) -> Result<u32, String> {
+    let id = next_free_id(entries);
+    if id > MAX_FILE_TAG_ID {
+        return Err("the library has handed out every tag id it keeps; no tag or folder can be made".into());
+    }
+    Ok(id)
 }
 
 /// The tag with `id`, wherever it is in the forest.
@@ -1221,7 +1233,7 @@ impl Store {
     }
 
     fn push_tag(&mut self, name: String, color: String, folder: Option<u32>) -> Result<(), String> {
-        let id = next_free_id(&self.tags);
+        let id = new_id(&self.tags)?;
         let tag = TagEntry::Tag(Tag { id, name, color });
         match level_mut(&mut self.tags, folder) {
             Some(level) => {
@@ -1360,7 +1372,7 @@ impl Store {
         if folders_iter(&self.tags).count() >= MAX_TAG_FOLDERS {
             return Err(format!("there are {MAX_TAG_FOLDERS} tag folders already, the limit"));
         }
-        let id = next_free_id(&self.tags);
+        let id = new_id(&self.tags)?;
         match level_mut(&mut self.tags, parent) {
             Some(level) => {
                 level.push(TagEntry::Folder { folder: TagFolder { id, name, open: true }, tags: Vec::new() });

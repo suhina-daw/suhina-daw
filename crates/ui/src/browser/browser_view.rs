@@ -1379,7 +1379,10 @@ fn tag_folder_menu(
     out: &mut BrowserOut,
 ) {
     let my = format!("#{folder_id}");
-    let rename_id = Id::unique(("browser-tag-folder", folder_id));
+    // The tag menus' state keys on the library's epoch too: a replaced library's tag of the
+    // same id opens none of the old one's menus or drafts ([#1254] review).
+    let epoch = state.tag_epoch;
+    let rename_id = Id::unique(("browser-tag-folder", epoch, folder_id));
     // Its name, typed in, applied as it is typed: the folder command's to own ([#1254]).
     let store_name = {
         let library = projects.file_library_mut();
@@ -1404,7 +1407,7 @@ fn tag_folder_menu(
     // colour comes from the palette beside the field — the same pick a tag's menu makes,
     // but for a tag the folder is making ([#1254] review › color options in a folder's
     // menu); a pick is remembered for the menu, a non-pick takes the named colours' next.
-    let pick_id = Id::unique(("browser-folder-tag-color", folder_id));
+    let pick_id = Id::unique(("browser-folder-tag-color", epoch, folder_id));
     let picked_now = {
         let stored: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
         let current = stored.as_deref().and_then(theme::parse_hex).map(crate::interaction::grid::to_rgb);
@@ -1414,7 +1417,7 @@ fn tag_folder_menu(
     if let Some(hex) = picked_now.as_ref() {
         ui.ctx().data_mut(|d| d.insert_temp(pick_id, hex.clone()));
     }
-    let new_id = Id::unique(("browser-folder-new-tag", folder_id));
+    let new_id = Id::unique(("browser-folder-new-tag", epoch, folder_id));
     let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
     let field = crate::kit::widgets::text_input(
         ui,
@@ -1490,6 +1493,9 @@ fn tags_section(
     projects: &mut Projects,
     out: &mut BrowserOut,
 ) {
+    // The tag menus' state keys on the library's epoch too: a replaced library's tag of the
+    // same id opens none of the old one's menus or drafts ([#1254] review).
+    let epoch = state.tag_epoch;
     let item_font = theme::ui_font(theme::TEXT_SMALL);
     let mut y = *py;
     let tag_list = projects.file_library_mut().tags();
@@ -1595,7 +1601,7 @@ fn tags_section(
         // folder, to move it among its cortège); a click selects the tag's place and a
         // folder's row opens or closes it.
         let response =
-            ui.interact(rect.intersect(area), Id::unique(("browser-tag-place", id)), Sense::click_and_drag());
+            ui.interact(rect.intersect(area), Id::unique(("browser-tag-place", epoch, id)), Sense::click_and_drag());
         response.widget_info(|| {
             egui::WidgetInfo::labeled(
                 egui::Role::Button,
@@ -1732,7 +1738,7 @@ fn tags_section(
             let cleared = widgets::button_area(
                 ui,
                 clear.intersect(area),
-                Id::unique(("browser-tag-clear", id)),
+                Id::unique(("browser-tag-clear", epoch, id)),
                 "Show everything",
             );
             let color =
@@ -1846,7 +1852,7 @@ fn tags_section(
         // Right-click: rename (as it is typed), recolour, add inside, remove — asking first
         // while a remove empties a folder ([#1254] › Tag folders).
         let was_open =
-            ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-row-menu-open", id)))).unwrap_or(false);
+            ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-row-menu-open", epoch, id)))).unwrap_or(false);
         let popup = egui::Popup::context_menu(&response)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
@@ -1854,7 +1860,7 @@ fn tags_section(
                     tag_folder_menu(ui, row.entry.id(), state, projects, out);
                     return;
                 }
-                let field_id = Id::unique(("browser-rename-tag", id));
+                let field_id = Id::unique(("browser-rename-tag", epoch, id));
                 let mut name: String = ui.ctx().data(|d| d.get_temp(field_id)).unwrap_or_else(|| name.clone());
                 let rename_field = crate::kit::widgets::text_input(
                     ui,
@@ -1888,7 +1894,7 @@ fn tags_section(
                 // the colour one command a pick.
                 if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
                     ui,
-                    Id::unique(("browser-tag-colour", row.entry.id())),
+                    Id::unique(("browser-tag-colour", epoch, row.entry.id())),
                     current,
                     "Select colour",
                 ) {
@@ -1899,7 +1905,7 @@ fn tags_section(
                 // A new tag from here: a typed name, added with Enter or the Add tag button, in
                 // the colour this menu shows outlined, shown dimmed until something carries it
                 // (#1196).
-                let new_id = Id::unique(("browser-section-new-tag", row.entry.id()));
+                let new_id = Id::unique(("browser-section-new-tag", epoch, row.entry.id()));
                 let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
                 let field = crate::kit::widgets::text_input(
                     ui,
@@ -1976,21 +1982,24 @@ fn tags_section(
         // draft would replay a refused rename every open, and save an old name over an
         // external one — one command resets the field to what the store has).
         let open = popup.is_some();
-        let open_key = Id::unique(("browser-row-menu-open", id));
+        let open_key = Id::unique(("browser-row-menu-open", epoch, id));
         if was_open && !open {
             ui.ctx().data_mut(|d| {
                 if is_folder {
-                    d.remove::<String>(Id::unique(("browser-tag-folder", id)));
-                    d.remove::<String>(Id::unique(("browser-folder-new-tag", id)));
+                    d.remove::<String>(Id::unique(("browser-tag-folder", epoch, id)));
+                    d.remove::<String>(Id::unique(("browser-folder-new-tag", epoch, id)));
                     // The pick held for the tag it was to colour: a menu that closes
                     // without its add leaves no colour for the next one to inherit
                     // ([#1254] review).
-                    d.remove::<String>(Id::unique(("browser-folder-tag-color", id)));
-                    crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-folder-tag-color", id)));
+                    d.remove::<String>(Id::unique(("browser-folder-tag-color", epoch, id)));
+                    crate::interaction::colour_picker::forget_state(
+                        d,
+                        Id::unique(("browser-folder-tag-color", epoch, id)),
+                    );
                 } else {
-                    d.remove::<String>(Id::unique(("browser-rename-tag", id)));
-                    d.remove::<String>(Id::unique(("browser-section-new-tag", id)));
-                    crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-tag-colour", id)));
+                    d.remove::<String>(Id::unique(("browser-rename-tag", epoch, id)));
+                    d.remove::<String>(Id::unique(("browser-section-new-tag", epoch, id)));
+                    crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-tag-colour", epoch, id)));
                 }
             });
         }
@@ -2884,6 +2893,9 @@ fn preview_strip(
 }
 
 fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut Projects, out: &mut BrowserOut) {
+    // The tag menus' state keys on the library's epoch too: a replaced library's tag of the
+    // same id opens none of the old one's menus or drafts ([#1254] review).
+    let epoch = state.tag_epoch;
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::panel_background());
     painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(theme::border()));
@@ -2905,8 +2917,9 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             break;
         }
         x = rect.right() + 2.0;
-        let response = widgets::button_area(ui, rect, Id::unique(("browser-tag", tag.id)), format!("Tag {}", tag.name))
-            .on_hover_text(&tag.name);
+        let response =
+            widgets::button_area(ui, rect, Id::unique(("browser-tag", epoch, tag.id)), format!("Tag {}", tag.name))
+                .on_hover_text(&tag.name);
         if response.hovered() {
             // The tag's name and how many items carry it, in the status bar. The count is
             // read where the tags are kept, so it costs no copy of a list.
@@ -2927,8 +2940,10 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
         // closes a menu on a click inside it). The drafts key on the tag's id; when the menu
         // closes they go with it, and a refused rename resets the field, so a dead draft
         // does not run again by itself ([#1254] › Tag model; [#1196]).
-        let was_open =
-            ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-footer-menu-open", tag.id)))).unwrap_or(false);
+        let was_open = ui
+            .ctx()
+            .data(|d| d.get_temp::<bool>(Id::unique(("browser-footer-menu-open", epoch, tag.id))))
+            .unwrap_or(false);
         // A click on the dot while its own menu stood: the menu closes for it, but the click
         // reaches the widget this frame — the typed rename commits now, before the close
         // can drop its draft ([#1254] review).
@@ -2936,7 +2951,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| rect.intersect(area).contains(p))
         });
         if was_open && dot_click {
-            let commit_id = Id::unique(("browser-footer-rename-tag", tag.id));
+            let commit_id = Id::unique(("browser-footer-rename-tag", epoch, tag.id));
             let draft: Option<String> = ui.ctx().data(|d| d.get_temp(commit_id));
             if let Some(name) = draft
                 && name.trim() != tag.name
@@ -2953,7 +2968,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
         let popup = egui::Popup::context_menu(&response)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
-                let id = Id::unique(("browser-footer-rename-tag", tag.id));
+                let id = Id::unique(("browser-footer-rename-tag", epoch, tag.id));
                 let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| tag.name.clone());
                 let field = crate::kit::widgets::text_input(
                     ui,
@@ -2988,7 +3003,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
                 if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
                     ui,
-                    Id::unique(("browser-footer-tag-colour", tag.id)),
+                    Id::unique(("browser-footer-tag-colour", epoch, tag.id)),
                     current,
                     "Select colour",
                 ) {
@@ -2996,7 +3011,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                     run(projects, "library.setTag", json!({ "id": format!("#{0}", tag.id), "color": hex }), out);
                 }
                 ui.separator();
-                let new_id = Id::unique(("browser-footer-new-tag", tag.id));
+                let new_id = Id::unique(("browser-footer-new-tag", epoch, tag.id));
                 let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
                 let field = crate::kit::widgets::text_input(
                     ui,
@@ -3045,12 +3060,15 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             });
         // Closed: the drafts go with it ([#1196] › keep the name with its tag).
         let open = popup.is_some();
-        let open_key = Id::unique(("browser-footer-menu-open", tag.id));
+        let open_key = Id::unique(("browser-footer-menu-open", epoch, tag.id));
         if was_open && !open {
             ui.ctx().data_mut(|d| {
-                d.remove::<String>(Id::unique(("browser-footer-rename-tag", tag.id)));
-                d.remove::<String>(Id::unique(("browser-footer-new-tag", tag.id)));
-                crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-footer-tag-colour", tag.id)));
+                d.remove::<String>(Id::unique(("browser-footer-rename-tag", epoch, tag.id)));
+                d.remove::<String>(Id::unique(("browser-footer-new-tag", epoch, tag.id)));
+                crate::interaction::colour_picker::forget_state(
+                    d,
+                    Id::unique(("browser-footer-tag-colour", epoch, tag.id)),
+                );
             });
         }
         ui.ctx().data_mut(|d| d.insert_temp(open_key, open));
@@ -3092,6 +3110,9 @@ fn footer_overflow(
     tags: &[suhina_library::Tag],
     state: &mut BrowserState,
 ) {
+    // The tag menus' state keys on the library's epoch too: a replaced library's tag of the
+    // same id opens none of the old one's menus or drafts ([#1254] review).
+    let epoch = state.tag_epoch;
     let clipped = rect.intersect(area);
     // A dot the footer has no room for drops its own menu's drafts: its menu is not drawn,
     // so it cannot close by itself and clear them, and a dot coming back opens clean. The
@@ -3100,10 +3121,13 @@ fn footer_overflow(
     // frame its tag spent in the overflow).
     ui.ctx().data_mut(|d| {
         for tag in tags {
-            d.remove::<String>(Id::unique(("browser-footer-rename-tag", tag.id)));
-            d.remove::<bool>(Id::unique(("browser-footer-menu-open", tag.id)));
-            d.remove::<String>(Id::unique(("browser-footer-new-tag", tag.id)));
-            crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-footer-tag-colour", tag.id)));
+            d.remove::<String>(Id::unique(("browser-footer-rename-tag", epoch, tag.id)));
+            d.remove::<bool>(Id::unique(("browser-footer-menu-open", epoch, tag.id)));
+            d.remove::<String>(Id::unique(("browser-footer-new-tag", epoch, tag.id)));
+            crate::interaction::colour_picker::forget_state(
+                d,
+                Id::unique(("browser-footer-tag-colour", epoch, tag.id)),
+            );
         }
     });
     let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");

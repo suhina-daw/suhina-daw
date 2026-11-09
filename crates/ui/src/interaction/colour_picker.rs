@@ -130,6 +130,13 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
             d.insert_temp(any_id.with("value"), color32(picked));
             d.remove::<bool>(any_id.with("value").with("moved"));
         });
+    } else if !any_open {
+        // Shut, the field keeps nothing of its own: it opens on `current`, whatever changed
+        // the colour since a pick in a palette that stays shown ([#1254] review).
+        ui.data_mut(|d| {
+            d.remove::<Color32>(any_id.with("value"));
+            d.remove::<bool>(any_id.with("value").with("moved"));
+        });
     }
     // A closing "Any colour" leaves no stale colour behind, as the rows' field does
     // ([#1254] review).
@@ -347,6 +354,36 @@ mod tests {
         assert_eq!(harness.ctx.data(|d| d.get_temp::<bool>(any_id)), Some(false), "Any colour shut");
         assert_eq!(harness.ctx.data(|d| d.get_temp::<Color32>(any_id.with("value"))), None, "no old colour kept");
         assert_eq!(harness.ctx.data(|d| d.get_temp::<bool>(any_id.with("value").with("moved"))), None);
+    }
+
+    /// A palette that stays shown after a swatch pick opens its Any colour on the colour it
+    /// edits now, not on the swatch picked before an outer change ([#1254] review).
+    #[test]
+    fn a_shown_palettes_any_colour_opens_on_the_current_colour() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable as _;
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(400.0, 400.0)).build_ui_state(
+            |ui, (current, any_id): &mut (Rgb, Option<Id>)| {
+                *any_id = Some(ui.scope_id().with("any-colour"));
+                if let Some(picked) = swatch_row(ui, Some(*current)) {
+                    *current = picked;
+                }
+            },
+            (Rgb(10, 20, 30), None),
+        );
+        harness.run();
+        let swatch = swatches()[1];
+        harness.get_by_label(&format!("Colour {}", hex(swatch))).click();
+        harness.run();
+        assert_eq!(harness.state().0, swatch);
+        // The colour changes elsewhere, the palette still shown; Any colour opens.
+        let outer = Rgb(200, 100, 50);
+        harness.state_mut().0 = outer;
+        harness.run();
+        harness.get_by_label("Any colour").click();
+        harness.run();
+        let any_id = harness.state().1.unwrap_or(Id::NULL);
+        assert_eq!(harness.ctx.data(|d| d.get_temp::<Color32>(any_id.with("value"))), Some(color32(outer)));
     }
 
     #[test]

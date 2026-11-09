@@ -175,3 +175,28 @@ fn ending_a_job_never_waits_for_its_worker() {
         worker.join().unwrap();
     }
 }
+
+/// A layout for a scope no longer asked for is let go, not waited for and shown: a tag
+/// dropped or another place chosen mid-layout starts the asked one at once ([#1254] review).
+#[test]
+fn a_layout_for_a_scope_no_longer_asked_for_is_let_go() {
+    let mut panel = Panel::default();
+    let (release, wait) = std::sync::mpsc::channel::<()>();
+    let (_answer, receiver) = std::sync::mpsc::channel::<Laid>();
+    let worker = std::thread::spawn(move || {
+        let _ = wait.recv();
+    });
+    let key = ScopeKey { place: Some("tag:#1".into()), max_seconds: 10, layout_key: 7, tags_revision: 3 };
+    panel.job = Some(Job { key, receiver, progress: Progress::new(), started: 0.0, worker });
+    // The same scope keeps its layout coming.
+    panel.end_stale_layout(Some("tag:#1"), 10, 3);
+    assert!(panel.job.is_some(), "the asked scope's layout goes on");
+    // A tag assignment changed: the layout is let go, its worker retired, not joined.
+    panel.end_stale_layout(Some("tag:#1"), 10, 4);
+    assert!(panel.job.is_none(), "the stale layout is let go");
+    assert_eq!(panel.retired.len(), 1, "its worker runs on, retired");
+    release.send(()).unwrap();
+    for worker in std::mem::take(&mut panel.retired) {
+        worker.join().unwrap();
+    }
+}

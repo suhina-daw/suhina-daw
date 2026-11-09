@@ -460,4 +460,12 @@ fn a_new_layout_rebinds_the_point_states_to_their_items() {
     view.show_similar(1, vec![0, 2, 3]);
     view.rebind_points(moved);
     assert_eq!(view.similar(), Some(&(2, vec![3, 0])), "the list follows its items, the gone one dropped");
+    // The hovered point's waveform follows its point, and goes with a point that is gone.
+    let peaks = std::sync::Arc::new(crate::kit::waveform::Peaks::default());
+    view.hover_waveform = Some((3, std::sync::Arc::clone(&peaks)));
+    view.rebind_points(moved);
+    assert_eq!(view.hover_waveform.as_ref().map(|(i, _)| *i), Some(0));
+    view.hover_waveform = Some((2, peaks));
+    view.rebind_points(moved);
+    assert!(view.hover_waveform.is_none(), "the gone point's waveform goes");
 }

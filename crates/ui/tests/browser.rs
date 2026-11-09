@@ -3085,6 +3085,32 @@ fn a_replaced_library_takes_the_tag_place_filter_and_pick_with_it() {
     let _ = std::fs::remove_dir_all(&other);
 }
 
+// A tag menu open when the library is replaced goes with the old library: its typed rename
+// does not run on the replacement's tag of the same id ([#1254] review).
+#[test]
+fn a_replaced_library_leaves_an_open_tag_menu_behind() {
+    let (settings, folder, other) =
+        (temp("menu-replaced-settings"), temp("menu-replaced"), temp("menu-replaced-other"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Place Tag Red").click_secondary();
+    harness.run();
+    harness.get_by_label("Rename tag Red").click();
+    harness.run();
+    harness.get_by_label("Rename tag Red").type_text("dish");
+    harness.run();
+    let old = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    assert!(old.iter().any(|t| t.name == "Reddish"), "the rename runs as it is typed: {old:?}");
+    harness.state_mut().set_file_library(Library::new(Some(other.clone())));
+    harness.run();
+    harness.run();
+    let new = harness.state_mut().projects_mut().file_library_mut().tag_flat();
+    assert_eq!(new.first().map(|t| t.name.as_str()), Some("Red"), "the replacement's tag keeps its name: {new:?}");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+    let _ = std::fs::remove_dir_all(&other);
+}
+
 // The Tags title's New folder shows its folder as Add tag shows its tag: a closed section
 // opens for it ([#1254] review).
 #[test]
@@ -3132,8 +3158,9 @@ fn an_added_tag_scrolls_into_view() {
     harness.get_by_label("Add tag").click();
     harness.run();
     assert!(harness.state().browser.sidebar_scroll > 0.0, "the sidebar scrolled to the new row");
+    // The whole row shows, not a sliver of it at the edge ([#1254] review).
     let row = harness.get_by_label("Place Tag Newest").rect();
-    assert!(row.height() > 0.0 && row.bottom() <= 600.0, "the new row shows: {row:?}");
+    assert!(row.height() >= theme::BROWSER_ROW - 0.5 && row.bottom() <= 600.0, "the new row shows: {row:?}");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -3158,9 +3185,10 @@ fn a_tag_in_the_footers_overflow_keeps_its_sidebar_menu() {
     // What the sidebar row's menu holds while it is open for the last tag: a rename and a
     // new tag typed in, and its Select colour picker open. The overflow's cleanup runs every
     // frame the tag has no dot; it reaches the footer's own keys only, so these stay.
-    let rename = egui::Id::unique(("browser-rename-tag", last));
-    let draft = egui::Id::unique(("browser-section-new-tag", last));
-    let picker = egui::Id::unique(("browser-tag-colour", last));
+    let epoch = harness.state().browser.tag_epoch;
+    let rename = egui::Id::unique(("browser-rename-tag", epoch, last));
+    let draft = egui::Id::unique(("browser-section-new-tag", epoch, last));
+    let picker = egui::Id::unique(("browser-tag-colour", epoch, last));
     harness.ctx.data_mut(|d| {
         d.insert_temp(rename, "Renamed".to_string());
         d.insert_temp(draft, "Draft".to_string());

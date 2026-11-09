@@ -393,6 +393,11 @@ pub struct BrowserState {
     /// once it has laid the row out ([#1254] review: a tag added below many others stayed
     /// under the bottom edge). Gone once shown, or when the Tags section draws without it.
     pub reveal_tag_row: Option<u32>,
+    /// Counts the libraries the browser has shown: the tag menus' state (open menus, typed
+    /// names, pickers) keys on it with the tag's id, so a replaced library's tag that has an
+    /// old one's id finds none of the old one's state ([#1254] review: an open rename draft
+    /// renamed the replacement's tag).
+    pub tag_epoch: u64,
     /// How far the sidebar's scroll moves at the end of this frame to show
     /// [`BrowserState::reveal_tag_row`]; added after the frame's room is measured.
     pub(crate) sidebar_reveal_by: Option<f32>,
@@ -465,6 +470,7 @@ impl Default for BrowserState {
             drop_item: None,
             sidebar_scroll: 0.0,
             reveal_tag_row: None,
+            tag_epoch: 0,
             sidebar_reveal_by: None,
             drag: None,
             drop_folder: None,
@@ -566,8 +572,9 @@ impl BrowserState {
 
     /// The library went under a replacement: its tag ids are another library's, and the
     /// same number can name another tag there, so nothing kept by id stays — the place of
-    /// tags, the filter, the pick, a carry, an asked-first removal and a row to show
-    /// ([#1254] review: a kept id selected the replacement's tag of that number).
+    /// tags, the filter, the pick, a carry, an asked-first removal, a row to show, and the tag
+    /// menus' state, by a new epoch ([#1254] review: a kept id selected the replacement's tag
+    /// of that number, and an open menu's draft renamed it).
     pub fn forget_tags(&mut self) {
         self.tag_filter.clear();
         self.tag_selection.clear();
@@ -577,6 +584,7 @@ impl BrowserState {
         self.end_tag_carry();
         self.tag_remove_confirm = None;
         self.reveal_tag_row = None;
+        self.tag_epoch = self.tag_epoch.wrapping_add(1);
         self.relist();
     }
 
