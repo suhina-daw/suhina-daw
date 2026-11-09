@@ -67,19 +67,7 @@ fn write(folder: &Path, text: &str) -> std::io::Result<PathBuf> {
         n += 1;
     }
     std::fs::write(&path, text)?;
-    let mut files: Vec<_> = std::fs::read_dir(folder)?
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("crash-") && n.ends_with(".txt"))
-        })
-        .collect();
-    if files.len() > KEPT {
-        files.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
-        for old in &files[..files.len() - KEPT] {
-            let _removed = std::fs::remove_file(old);
-        }
-    }
+    suhina_fs::keep_newest(folder, KEPT, |name| name.starts_with("crash-") && name.ends_with(".txt"));
     Ok(path)
 }
 

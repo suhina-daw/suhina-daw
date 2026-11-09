@@ -7,7 +7,6 @@
 //! disk as tab-separated lines.
 
 use std::collections::BTreeMap;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -244,14 +243,10 @@ impl FolderIndex {
         *self != snapshot
     }
 
-    /// Writes the index for `root` to `file`, through a file beside it that is moved over it.
+    /// Writes the index for `root` to `file` whole or not at all, through `suhina-fs`: a save
+    /// that fails leaves the old index as it was, with nothing beside it.
     pub fn save(&self, root: &Path, file: &Path) -> std::io::Result<()> {
-        if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let temp = file.with_extension("tsv.part");
-        {
-            let mut out = std::io::BufWriter::new(std::fs::File::create(&temp)?);
+        suhina_fs::write_atomic_with(file, |out| {
             writeln!(out, "{HEADER}")?;
             writeln!(out, "root\t{}", root.display())?;
             if let Some(note) = &self.note {
@@ -263,9 +258,8 @@ impl FolderIndex {
             for (rel, e) in &self.files {
                 writeln!(out, "f\t{rel}\t{}\t{}\t{}", e.kind.name(), e.size, e.modified)?;
             }
-            out.flush()?;
-        }
-        std::fs::rename(&temp, file)
+            Ok(())
+        })
     }
 
     /// Reads an index saved for `root`; `None` when the file is missing, too large, of another
@@ -384,6 +378,31 @@ mod tests {
         let saved = std::fs::read_to_string(&file).unwrap();
         std::fs::write(&file, saved.replacen(HEADER, OLD_HEADER, 1)).unwrap();
         assert_eq!(FolderIndex::load(&root, &file), Some(loaded), "an index from before the rename");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A save that cannot write (its folder made read-only) leaves the old index whole and no
+    /// partial file beside it.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_save_keeps_the_old_index_and_leaves_nothing_beside_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp("failed-save");
+        touch(&root.join("a.wav"));
+        let index = FolderIndex::scan(&root);
+        let folder = root.join("indexes");
+        let file = folder.join("index.tsv");
+        index.save(&root, &file).unwrap();
+        let old = std::fs::read(&file).unwrap();
+        let mut grown = index.clone();
+        grown.note = Some("a new note".into());
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let failed = grown.save(&root, &file);
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(failed.is_err());
+        assert_eq!(std::fs::read(&file).unwrap(), old, "the old index is whole");
+        let names: Vec<_> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, ["index.tsv"], "nothing is left beside it");
         let _ = std::fs::remove_dir_all(&root);
     }
 
