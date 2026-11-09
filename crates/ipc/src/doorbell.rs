@@ -307,7 +307,7 @@ const RECHECK_OMITTED: Duration = Duration::from_millis(1);
 /// [`MAX_WAITED`]; when there are more, at most [`RECHECK_OMITTED`] at a time, so the others
 /// are looked at that often), with the first one's high-resolution timer, and yielding in the
 /// last [`FINE_TAIL`] (without that timer, or when Windows refuses the wait, as
-/// [`sleep_any_windows`] says); elsewhere on the first link, as long as [`Doorbell::wait`]
+/// `sleep_any_windows` says); elsewhere on the first link, as long as [`Doorbell::wait`]
 /// would for one link, and on Linux at most [`RECHECK`] at a time for several (macOS looks at
 /// all of them after each nap anyway). `None` entries are passed over. Never allocates; never waits past
 /// `until`.
