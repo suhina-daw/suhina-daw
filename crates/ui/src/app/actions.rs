@@ -417,13 +417,10 @@ impl App {
                 if action == "selection.delete"
                     && (self.detail_shows_devices() || self.device_focus)
                     && let Some((track, at)) = self.selected_device.clone()
+                    // Main's chain too, which has no track of its own (#690).
                     && self.session().is_some_and(|s| {
-                        let p = s.project();
-                        p.tracks
-                            .iter()
-                            .find(|t| t.id == track)
-                            .and_then(|t| t.channel)
-                            .and_then(|c| p.channels.iter().find(|ch| ch.id == c))
+                        s.project()
+                            .channel_of_track(track)
                             .is_some_and(|ch| suhina_engine::model::device_at(&ch.devices, &at.0).is_some())
                     })
                 {
@@ -603,9 +600,9 @@ impl App {
                 if (self.detail_shows_devices() || self.device_focus)
                     && let Some((track, at)) = self.selected_device.clone()
                     && let Some(enabled) = self.session().and_then(|s| {
-                        let p = s.project();
-                        let channel = p.track(track).and_then(|t| t.channel)?;
-                        suhina_engine::model::device_at(&p.channel(channel)?.devices, &at.0).map(|d| d.enabled)
+                        // Main's chain too (#690).
+                        let devices = &s.project().channel_of_track(track)?.devices;
+                        suhina_engine::model::device_at(devices, &at.0).map(|d| d.enabled)
                     })
                 {
                     // Every picked device follows the one clicked last (#948).
@@ -679,8 +676,7 @@ impl App {
                 let siblings: Vec<usize> = self
                     .session()
                     .and_then(|s| {
-                        let p = s.project();
-                        let devices = &p.channel(p.track(track)?.channel?)?.devices;
+                        let devices = &s.project().channel_of_track(track)?.devices;
                         let list = match parent.split_last() {
                             None => devices.as_slice(),
                             Some((branch, group)) => {

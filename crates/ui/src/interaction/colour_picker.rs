@@ -22,8 +22,8 @@ const SWATCH_GAP: f32 = 3.0;
 /// How much of its colour a muted track's colour area keeps over `control.background`.
 const MUTED: f32 = 0.55;
 
-/// The palette: the theme's eight track colours (`track.1` to `track.8`; the first four are the
-/// colours new tracks take in turn).
+/// The palette: the theme's eight track colours (`track.1` to `track.8`). New tracks do not take
+/// theirs from it: they take the MIDI or audio creation default (#709).
 pub fn swatches() -> [Rgb; 8] {
     [
         theme::track_color_1(),
@@ -58,10 +58,28 @@ pub fn set_colour(track: TrackId, colour: Rgb) -> Action {
     Action::new("track.setColor", json!({ "track": track.0, "color": hex(colour) }))
 }
 
+/// A colour picked in [`swatch_row`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pick {
+    pub colour: Rgb,
+    /// Whether a swatch was clicked. A colour taken from the field when the button was let go
+    /// is not: the menu stays open for the next drag.
+    pub swatch: bool,
+}
+
+impl Pick {
+    /// Closes the menu the row is in after a swatch; a colour from the field keeps it open.
+    pub fn close_menu(self, ui: &Ui) {
+        if self.swatch {
+            ui.close();
+        }
+    }
+}
+
 /// The palette as a row of swatches, `current` outlined, and after it "+" for any colour: a
 /// colour field and hue strip as the theme editor's, the colour taken when the button is let
 /// go. Gives the colour picked. Each swatch is a button named "Colour #rrggbb".
-pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
+pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Pick> {
     let mut picked = None;
     let any_id = ui.scope_id().with("any-colour");
     let mut any_open = ui.data(|d| d.get_temp::<bool>(any_id)).unwrap_or(false);
@@ -78,7 +96,7 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
                 ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, theme::text_primary()), StrokeKind::Inside);
             }
             if response.clicked() {
-                picked = Some(colour);
+                picked = Some(Pick { colour, swatch: true });
             }
         }
         // "+": any colour.
@@ -109,7 +127,7 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
             && ui.input(|i| i.pointer.any_released())
         {
             ui.data_mut(|d| d.remove::<bool>(value_id.with("moved")));
-            picked = Some(to_rgb(value));
+            picked = Some(Pick { colour: to_rgb(value), swatch: false });
         } else if changed {
             ui.data_mut(|d| d.insert_temp(value_id.with("moved"), true));
         }
@@ -135,11 +153,11 @@ pub fn area(
         .id(id.with("palette"))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            if let Some(colour) = swatch_row(ui, Some(current)) {
-                if colour != current {
-                    actions.push(set_colour(track, colour));
+            if let Some(pick) = swatch_row(ui, Some(current)) {
+                if pick.colour != current {
+                    actions.push(set_colour(track, pick.colour));
                 }
-                ui.close();
+                pick.close_menu(ui);
             }
         });
     response

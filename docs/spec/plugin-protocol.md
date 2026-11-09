@@ -67,7 +67,11 @@ Messages go over a local socket or pipe, one JSON object per message with an `op
   total; `transport_key` when Space is pressed in a plug-in's window, so the engine starts or
   stops playback; `ara_playback` when an ARA plug-in asks the transport to play, stop, move or
   loop (`cycle`, `cycle_on`); `ara_notes` when the notes it found in a region change; and
-  `param_changed` (below).
+  `param_changed` (below). The lines the window shows (`transport_key`, a typed key,
+  `ara_playback`, `ara_notes`, the ARA analysis and `editor_closed`) wake Suhina's window as
+  they are read, so it answers at once even while it is in the background (`set_waker`, #714).
+  A `transport_key`, a typed key or an `ara_playback` is taken in on the reading thread before
+  the wake, so the frame it wakes already plays, stops or moves.
 
 **Parameters.** `get_params` lists each with its id, name, group, range, default,
 current value, the plug-in's own text for it, steps and flags; `set_param` sets one in its

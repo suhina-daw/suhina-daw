@@ -1651,6 +1651,36 @@ mod tests {
         });
     }
 
+    /// Space in a plug-in's window: the host's unasked `transport_key` line is counted and wakes
+    /// the window, in that order, so the frame it wakes plays at once (#714). It is not left in
+    /// the replies for a request to find.
+    #[test]
+    fn a_transport_key_from_a_host_is_counted_then_wakes_the_window() {
+        let (address, name) = control_name().unwrap();
+        let listener = ListenerOptions::new().name(name).create_sync().unwrap();
+        let mut remote = connect(&address).unwrap();
+        let control = listener.accept().unwrap();
+        let replies = read_lines(control);
+        // The waker says how many keys were counted when it was called.
+        let (woken, wakes) = mpsc::channel();
+        set_waker(move || {
+            let _ = woken.send(TRANSPORT_KEYS.load(Ordering::Relaxed));
+        });
+        let line = format!("{}\n", Message::TransportKey.encode());
+        remote.write_all(line.as_bytes()).unwrap();
+        remote.flush().unwrap();
+        // Another test's host may wake the window too; this key's wake is the one with it counted.
+        let counted = loop {
+            let keys = wakes.recv_timeout(Duration::from_secs(60)).expect("the window was not woken");
+            if keys > 0 {
+                break keys;
+            }
+        };
+        assert!(counted >= 1);
+        assert!(take_transport_keys() >= 1);
+        assert!(matches!(replies.try_recv(), Err(mpsc::TryRecvError::Empty)), "not queued as a reply");
+    }
+
     /// A host process that is alive but runs nothing: a real child and a control socket, with
     /// what the test `feed`s a group, so `host_memory` can be tried without the executable.
     fn living_process() -> (HostProcess, Sender<Message>) {
