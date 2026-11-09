@@ -59,11 +59,16 @@ impl Planar {
         self.buses.get(bus).map_or(0, Range::len)
     }
 
+    /// Where bus `bus`'s channels are in `samples` (empty for a bus it does not have): the one
+    /// place that knows the layout.
+    fn sample_range(&self, bus: usize) -> Range<usize> {
+        self.buses.get(bus).map_or(0..0, |r| r.start * self.frames..r.end * self.frames)
+    }
+
     /// Bus `bus`'s samples, every channel's run one after another (empty for a bus it does not
     /// have).
     fn samples_of(&self, bus: usize) -> &[f32] {
-        let range = self.buses.get(bus).map_or(0..0, |r| r.start * self.frames..r.end * self.frames);
-        self.samples.get(range).unwrap_or_default()
+        self.samples.get(self.sample_range(bus)).unwrap_or_default()
     }
 
     /// Bus `bus`'s channels, each its full length.
@@ -73,7 +78,7 @@ impl Planar {
 
     /// Bus `bus`'s channels to write, each its full length.
     pub(crate) fn bus_mut(&mut self, bus: usize) -> std::slice::ChunksExactMut<'_, f32> {
-        let range = self.buses.get(bus).map_or(0..0, |r| r.start * self.frames..r.end * self.frames);
+        let range = self.sample_range(bus);
         self.samples.get_mut(range).unwrap_or_default().chunks_exact_mut(self.frames.max(1))
     }
 

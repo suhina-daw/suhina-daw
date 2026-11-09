@@ -1767,7 +1767,7 @@ impl crate::audio::Block for Vst3Block {
         let link_channels = self.link_channels;
         let frames = (input.len() / link_channels.max(1)).min(self.max_frames);
         for bus in 0..self.in_buffers.bus_count() {
-            self.in_buffers.silence(bus, usize::MAX);
+            self.in_buffers.silence(bus, frames);
         }
         crate::audio::feed_main(input, link_channels, frames, self.in_buffers.bus_mut(0));
         follow_song(&mut self.context, events);

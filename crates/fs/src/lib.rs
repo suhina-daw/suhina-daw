@@ -54,10 +54,12 @@ pub fn beside(path: &Path) -> PathBuf {
 pub const MAX_LISTED: usize = 10_000;
 
 /// Deletes all but the newest `keep` files in `folder` whose names `matches` accepts, newest by
-/// the time they were modified (the name breaks a tie). A missing folder, or one with `keep` or
-/// fewer such files, is left alone; files `matches` refuses, folders and names that are not
-/// text are never touched. Reads at most [`MAX_LISTED`] entries. Deleting is best effort: a file
-/// that cannot be deleted stays, and the rest are still deleted.
+/// the time they were modified. Files with the same modified time (a coarse clock: FAT, some
+/// network shares) are ordered by name, which says nothing about their age, so which of them
+/// is kept is unspecified. A missing folder, or one with `keep` or fewer such files, is left
+/// alone; files `matches` refuses, folders and names that are not text are never touched. Reads
+/// at most [`MAX_LISTED`] entries. Deleting is best effort: a file that cannot be deleted stays,
+/// and the rest are still deleted.
 pub fn keep_newest(folder: &Path, keep: usize, matches: impl Fn(&str) -> bool) {
     let Ok(listing) = std::fs::read_dir(folder) else { return };
     let mut ours: Vec<(SystemTime, PathBuf)> = listing
