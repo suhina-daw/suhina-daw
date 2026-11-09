@@ -169,11 +169,12 @@ pub(super) fn value_control(
             Control::Volume => state.knobs,
             Control::Pan => crate::kit::style_class::knob_preference(el, state.knobs),
         };
-        let horizontal = !knob
-            || crate::kit::control_layout::placement(name).direction
-                == crate::kit::control_layout::Direction::Horizontal;
-        let response =
-            widgets::value_area_axis(ui, rect.intersect(clip), id.with(label.as_str()), &label, text, horizontal);
+        let axis = if knob {
+            crate::kit::control_layout::placement(name).direction.into()
+        } else {
+            widgets::DragAxis::Horizontal
+        };
+        let response = widgets::value_area_axis(ui, rect.intersect(clip), id.with(label.as_str()), &label, text, axis);
         control_response = Some(response.clone());
         hover = widgets::hover(ui, &response);
         // One track hears every frame of a drag: each sets the value, all in one gesture, so the
@@ -185,17 +186,7 @@ pub(super) fn value_control(
             Control::Pan => commands::ChannelControl::Pan,
         };
         let set = |v: f64| commands::ChannelControlDrag { track, control: channel }.action(v, true);
-        match widgets::drag_value_axis(
-            ui,
-            &response,
-            &mut preview,
-            value,
-            per_point,
-            per_tick,
-            range,
-            default,
-            horizontal,
-        ) {
+        match widgets::drag_value_axis(ui, &response, &mut preview, value, per_point, per_tick, range, default, axis) {
             Drag::Moving(v) => {
                 state.value_drag = Some(ValueDrag { track, control, start: value, now: v, tracks: tracks.clone() });
                 if one {

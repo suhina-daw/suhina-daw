@@ -974,7 +974,8 @@ fn volume_gesture(ui: &Ui, response: &egui::Response, preview: &mut Option<f64>,
     if !response.dragged() && !response.drag_stopped() {
         *preview = None;
     }
-    widgets::drag_value_axis(ui, response, preview, value, 0.25, 1.0, VOLUME_RANGE, 0.0, horizontal_volume())
+    let axis = control_layout::placement("mixer-volume").direction.into();
+    widgets::drag_value_axis(ui, response, preview, value, 0.25, 1.0, VOLUME_RANGE, 0.0, axis)
 }
 
 /// The fader with its dB value over it: the column takes the drag, the wheel and the double-click.

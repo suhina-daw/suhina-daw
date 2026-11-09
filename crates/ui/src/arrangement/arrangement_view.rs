@@ -1557,12 +1557,22 @@ fn show_lanes(
             Id::unique("arrangement-main-volume"),
             "Main volume",
             widgets::format_db(state.main_drag.unwrap_or(db)),
-            true,
+            widgets::DragAxis::Horizontal,
         );
         state.value_areas.push(field.intersect(fixed));
         let mut preview = state.main_drag;
         // Dragged across, along the bar: right raises it.
-        match widgets::drag_value_axis(ui, &response, &mut preview, db, 0.25, 1.0, VOLUME_RANGE, 0.0, true) {
+        match widgets::drag_value_axis(
+            ui,
+            &response,
+            &mut preview,
+            db,
+            0.25,
+            1.0,
+            VOLUME_RANGE,
+            0.0,
+            widgets::DragAxis::Horizontal,
+        ) {
             Drag::Moving(v) => {
                 state.main_drag = Some(v);
                 let gesture = crate::interaction::commands::gesture("main-volume");

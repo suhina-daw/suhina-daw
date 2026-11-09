@@ -835,6 +835,44 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
     (steps, fine, None)
 }
 
+/// The way a value control is dragged: up or down (up raises it), or across (right raises it).
+/// Each control picks the one that matches how it is drawn: a knob or an upright fader up or down,
+/// a bar lying across a header across.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DragAxis {
+    #[default]
+    Vertical,
+    Horizontal,
+}
+
+impl DragAxis {
+    /// How far a drag moved the value, in points: right or up is positive.
+    fn along(self, moved: Vec2) -> f32 {
+        match self {
+            Self::Vertical => -moved.y,
+            Self::Horizontal => moved.x,
+        }
+    }
+
+    /// The pointer shown over a control dragged this way.
+    fn cursor(self) -> egui::CursorIcon {
+        match self {
+            Self::Vertical => egui::CursorIcon::ResizeVertical,
+            Self::Horizontal => egui::CursorIcon::ResizeHorizontal,
+        }
+    }
+}
+
+impl From<crate::kit::control_layout::Direction> for DragAxis {
+    /// A theme's `--suhina-direction` for a control.
+    fn from(direction: crate::kit::control_layout::Direction) -> Self {
+        match direction {
+            crate::kit::control_layout::Direction::Vertical => Self::Vertical,
+            crate::kit::control_layout::Direction::Horizontal => Self::Horizontal,
+        }
+    }
+}
+
 /// A number changed by dragging vertically (up raises it), by the wheel over it and by a
 /// double-click; clicked, the arrow keys step it (Shift: ten times finer) and a number typed and
 /// Enter set it (#707). `per_point` is the change per point of drag and `per_tick` the change
@@ -850,7 +888,7 @@ pub fn drag_value(
     range: (f64, f64),
     default: f64,
 ) -> Drag {
-    drag_value_axis(ui, response, preview, value, per_point, per_tick, range, default, false)
+    drag_value_axis(ui, response, preview, value, per_point, per_tick, range, default, DragAxis::Vertical)
 }
 
 /// A number typed into a value control, in the control's range. A pan (-1 to 1) shows and is
@@ -862,7 +900,7 @@ fn typed_value(number: f64, range: (f64, f64)) -> f64 {
     number.clamp(range.0, range.1)
 }
 
-/// The same keyboard, wheel, reset and undo protocol with an explicit drag axis.
+/// [`drag_value`] dragged along `axis`.
 #[allow(clippy::too_many_arguments)]
 pub fn drag_value_axis(
     ui: &Ui,
@@ -873,7 +911,7 @@ pub fn drag_value_axis(
     per_tick: f64,
     range: (f64, f64),
     default: f64,
-    horizontal: bool,
+    axis: DragAxis,
 ) -> Drag {
     let _el = VALUE.response(response).enter();
     // Keys to the control clicked last: the arrows step it, Enter sets what was typed.
@@ -914,7 +952,7 @@ pub fn drag_value_axis(
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
         let start = preview.unwrap_or(value);
         let moved = value_drag_delta(ui, response);
-        let delta = if horizontal { moved.x } else { -moved.y };
+        let delta = axis.along(moved);
         let next = (start + f64::from(delta) * per_point * fine).clamp(range.0, range.1);
         *preview = Some(next);
         return Drag::Moving(next);
@@ -929,22 +967,21 @@ pub fn drag_value_axis(
 }
 
 /// Makes `rect` a draggable value with a label for screen readers and tests, dragged up or down
-/// (the up-down pointer over it); [`value_area_axis`] for one dragged across.
+/// (the up-down pointer over it); [`value_area_axis`] for another [`DragAxis`].
 pub fn value_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString, value: impl ToString) -> Response {
-    value_area_axis(ui, rect, id, label, value, false)
+    value_area_axis(ui, rect, id, label, value, DragAxis::Vertical)
 }
 
-/// A [`value_area`] dragged along `horizontal` or vertical, with the pointer that says so.
+/// A [`value_area`] dragged along `axis`, with the pointer that says so.
 pub fn value_area_axis(
     ui: &Ui,
     rect: Rect,
     id: egui::Id,
     label: impl ToString,
     value: impl ToString,
-    horizontal: bool,
+    axis: DragAxis,
 ) -> Response {
-    let cursor = if horizontal { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
-    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(cursor);
+    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(axis.cursor());
     let (label, value) = (label.to_string(), value.to_string());
     response.widget_info(|| {
         let mut info = WidgetInfo::labeled(Role::SpinButton, true, &label);
