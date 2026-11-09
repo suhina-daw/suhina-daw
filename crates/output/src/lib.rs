@@ -514,6 +514,9 @@ pub struct Output {
     driver: Option<devices::DriverBuffers>,
     /// Keeps the ASIO driver loaded from the answer to the stream, so it is not loaded twice.
     _driver_hold: Option<devices::DriverHold>,
+    /// Whether [`Output::driver_changed`] wrote an unchanged answer to the trace already: once
+    /// per output, since Settings › Audio asks on every focus.
+    driver_checked: AtomicBool,
 }
 
 impl Output {
@@ -593,6 +596,7 @@ impl Output {
                 asked: None,
                 driver: None,
                 _driver_hold: None,
+                driver_checked: AtomicBool::new(false),
             });
         }
 
@@ -688,6 +692,16 @@ impl Output {
         }
         let buffer = fitted.map(|(block, _)| block);
         let asked = fitted.and_then(|(_, asked)| asked);
+        if let Some(driver) = &driver {
+            // Without a hold the driver could not be asked, and the answer is the one kept from
+            // when it was asked last.
+            let source = if driver_hold.is_some() { "answers" } else { "could not be asked; kept answer" };
+            suhina_plugins::trace!(
+                "audio driver: {device_name} {source} {}; chosen {chosen:?}, asked {asked:?}, block {}",
+                driver.trace_text(),
+                engine_block(buffer)
+            );
+        }
         let format = supported.sample_format();
         let mut config: cpal::StreamConfig = supported.into();
         if config.channels == 0 {
@@ -711,6 +725,7 @@ impl Output {
             asked,
             driver,
             _driver_hold: driver_hold,
+            driver_checked: AtomicBool::new(false),
         })
     }
 
@@ -725,9 +740,21 @@ impl Output {
             #[cfg(windows)]
             Backend::Exclusive { .. } => return false,
         };
-        let (Some(before), Some((now, _hold))) = (self.driver, devices::ask_driver(device)) else {
+        let (Some(before), Some((now, hold))) = (self.driver, devices::ask_driver(device)) else {
             return false;
         };
+        if hold.is_none() {
+            suhina_plugins::trace!("audio driver check: {} could not be asked", self.device_name);
+        } else if now != before {
+            suhina_plugins::trace!(
+                "audio driver check: {} answers differently; before {}; now {}",
+                self.device_name,
+                before.trace_text(),
+                now.trace_text()
+            );
+        } else if !self.driver_checked.swap(true, Ordering::Relaxed) {
+            suhina_plugins::trace!("audio driver check: {} answers as when opened", self.device_name);
+        }
         now != before
     }
 

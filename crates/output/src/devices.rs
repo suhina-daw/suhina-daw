@@ -239,6 +239,20 @@ impl DriverBuffers {
         }
     }
 
+    /// The answer as the trace writes it, with what Suhina makes of it: "min=128 max=128
+    /// preferred=128 granularity=Unstated; sizes [128], default Some(128)".
+    pub fn trace_text(&self) -> String {
+        format!(
+            "min={} max={} preferred={} granularity={:?}; sizes {:?}, default {:?}",
+            self.min,
+            self.max,
+            self.preferred,
+            self.granularity,
+            self.sizes(),
+            self.default_size()
+        )
+    }
+
     /// What it takes, in words for a notice: "only 128 frames", "64 to 2048 frames in powers of
     /// two", "48 to 480 frames in steps of 48".
     pub fn describe(&self) -> String {

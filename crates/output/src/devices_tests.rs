@@ -421,3 +421,17 @@ fn a_broken_driver_is_listed_with_the_engines_sizes() {
     assert_eq!(listed[0].buffer_range, None);
     assert_eq!(listed[0].default_buffer, None);
 }
+
+/// The trace line names the driver's raw answer and what Suhina makes of it, so a log from a
+/// driver that answers oddly says why a size played.
+#[test]
+fn the_trace_text_names_the_answer_and_the_sizes_made_from_it() {
+    assert_eq!(
+        driver(2048, 2048, 2048, 0).trace_text(),
+        "min=2048 max=2048 preferred=2048 granularity=Unstated; sizes [2048], default Some(2048)"
+    );
+    assert_eq!(
+        driver(64, 256, 128, -1).trace_text(),
+        "min=64 max=256 preferred=128 granularity=PowersOfTwo; sizes [64, 128, 256], default Some(128)"
+    );
+}

@@ -98,7 +98,10 @@ closes and when the window gets the focus back while it shows, as after using th
 control panel; when the answer differs from the one the output opened with, the output opens
 again. Settings › Audio lists the devices again each time an output opens. The trace says
 why an output opened again (`audio output failed: the driver asked for a reset`, … `the
-driver's buffer sizes changed`), and `audio.info` reports it as `failure`.
+driver's buffer sizes changed`), and `audio.info` reports it as `failure`. Each opening writes
+the driver's answer, the sizes made from it and the size asked to the trace (`audio driver:`),
+and `audio.checkDriver` writes a changed answer before and after (`audio driver check:`),
+so a log shows why Suhina plays the size it plays ([debugging](../debugging.md)).
 
 A size chosen is remembered whatever the driver says: while the driver does not take it, the
 nearest size it takes plays with a notice saying what the driver takes, and the list keeps the

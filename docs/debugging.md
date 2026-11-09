@@ -182,7 +182,14 @@ whether the device is a fallback. `audio reopen begin/complete` records the requ
 transport snapshot, elapsed opening time and whether plug-ins carried over. `audio output
 failed:` comes before a reopen the device caused and says why: the ASIO driver asked for a
 reset, changed its buffer size or its sample rate, its buffer sizes changed when Suhina asked
-it (`audio.checkDriver`), or the device is gone.
+it (`audio.checkDriver`), or the device is gone. `audio driver:` is written each time an ASIO
+output opens: what the driver answered about its buffer sizes (`min`, `max`, `preferred`,
+`granularity`), the sizes Suhina lists from that answer and the one that plays by default, the
+size chosen, the size asked of the driver and the engine's block. When the driver could not be
+asked it says `could not be asked; kept answer`, the answer from the last time it was asked.
+`audio driver check:` is written when `audio.checkDriver` asks: the answer before and now when
+it differs (the output then opens again), `answers as when opened` once per opened output when
+it does not, or `could not be asked`.
 
 The last late render diagnostic gives its wall time in microseconds, frames queued before
 rendering, device period and number of render frames. These are atomic diagnostic samples
