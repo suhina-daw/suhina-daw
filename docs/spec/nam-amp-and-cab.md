@@ -222,18 +222,26 @@ are two levels deep, the same for both devices:
 
 ```text
 NAM models/
-├── British Plexi (Slammin Captures)/   ← a pack: one subfolder
-│   ├── Bright Cranked.nam
-│   ├── Crunch.nam
+├── Live Amp Modeler/                        ← a collection grouped by source
+│   ├── Albion Chime (Slammin Captures)/     ← its captures list as their own packs
+│   │   ├── Bright Cranked.nam
+│   │   └── …
+│   └── British Classic (Slammin Captures)/
+├── Suhina/                                  ← a pack-sized folder, files right in it
 │   └── …
-├── Fender Super Reverb 1965/
-│   └── …
-└── Loose capture.nam                  ← files beside the packs
+└── Loose capture.nam                        ← files beside the packs
 ```
 
-- A **pack** is a subfolder of the folder in Settings. Its name is the subfolder's
-  (case-insensitive sorted). The pack's files are its `.nam` or `.wav` files, name-sorted,
-  same 2000 cap per pack.
+- A **pack** is a folder directly under the folder in Settings whose `.nam` or `.wav` files
+  sit right in it (a pack-sized capture, like the shipped pack's unpacked folders), its name
+  the subfolder's (case-insensitive sorted); or a **capture folder** one level deeper, inside
+  a group a collection was fetched with, its name the group's ending in the capture's, joined
+  ` / ` (`Live Amp Modeler / Albion Chime (Slammin Captures)`), name-sorted inside its group.
+  Each pack's files are its `.nam` or `.wav` files, name-sorted, same 2000 cap per pack.
+- The check reads the listing again when the folder in Settings, its top-level folders or a
+  pack folder changed. A capture folder made inside a collection lists with the next read; a
+  file added inside an existing capture folder lists after any other folder change (a start,
+  the next capture dropped anywhere), not before.
 - Files that sit beside the packs form a pack of their own, shown as **(entered directly)**.
 - The panels show the pack and the file at the two dropdown rows:
   - **The pack row** (the name row): a folder icon before it (the design system's folder

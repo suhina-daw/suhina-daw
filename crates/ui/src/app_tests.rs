@@ -1035,6 +1035,56 @@ fn a_new_device_starts_on_a_file_in_the_library_the_unpacked_or_else_the_pack() 
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A collection arrives grouped by source: its capture folders sit one level under the folder
+/// the setting names and list as their own packs, named with their group
+/// ([docs/spec/nam-amp-and-cab.md] › Folders › Packs). A capture dropped into a collection
+/// after a read lists again with the next read: the check watches the collection's own
+/// folder, no restart asked ([ADR 0036] › 5, the library's folders are the users').
+#[test]
+fn a_grouped_collection_lists_its_capture_packs_and_a_new_capture_lists_again() {
+    use suhina_engine::model::*;
+
+    let dir = std::env::temp_dir().join(format!("suhina-app-grouped-packs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("Amp models"), dir.join("Cabinets"));
+    let capture = models.join("Live Amp Modeler").join("Albion Chime (Slammin Captures)");
+    std::fs::create_dir_all(&capture).unwrap();
+    std::fs::write(capture.join("Chime Low.nam"), b"capture").unwrap();
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    let lists = app.nam_lists();
+    assert_eq!(
+        lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)"),
+        Some(&crate::detail::device_widgets::Set {
+            name: "Live Amp Modeler / Albion Chime (Slammin Captures)".into(),
+            files: vec![(capture.join("Chime Low.nam").display().to_string(), "Chime Low.nam".into())],
+        }),
+        "the capture pack lists with its group and its file whole"
+    );
+    // A new capture dropped into the collection later: the collection's own folder changed,
+    // so the check reads anew and the pack lists beside the first.
+    let capture_3 = models.join("Live Amp Modeler").join("British Classic (Slammin Captures)");
+    std::fs::create_dir_all(&capture_3).unwrap();
+    std::fs::write(capture_3.join("Classic Bass.nam"), b"capture").unwrap();
+    let lists = app.nam_lists();
+    assert!(
+        lists.models.iter().any(|set| set.name == "Live Amp Modeler / British Classic (Slammin Captures)"),
+        "a capture added after a read lists again: {:?}",
+        lists.models
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A stock preset that names no file — the trims — lands *loaded* too: the placed Cab Loader
 /// runs the folder's first impulse response with the trim's values beside it, and the undo
 /// takes the whole add back (docs/spec/nam-amp-and-cab.md › The file a device starts on).

@@ -216,12 +216,21 @@ enum AfterLeaving {
 /// with its `extension` files name-sorted (the pack is skipped when it holds none), then the
 /// files beside the packs as `(entered directly)`. At most 2000 files a pack. The folder is
 /// re-read only when `folder_writes` changed; a pack, when its own writes changed.
+/// The folder's packs, the two shapes the everyday library carries
+/// ([docs/spec/nam-amp-and-cab.md] › Folders › Packs): a pack-sized folder directly under the
+/// folder in Settings, files right in it (the unpacked shipped pack); or a collection that
+/// arrives grouped by source, whose capture folders sit one level deeper and list as their
+/// own packs, named with their group (`Live Amp Modeler / Albion Chime (Slammin Captures)`)
+/// — no rearranging for the tool. The files beside the packs at the top form the loose pack.
+/// Also returns the folder and its top-level folders, each with their write time at the read:
+/// the check below reads them again, so a capture added inside a collection lists again
+/// ([ADR 0036] › 5, the library's folders are the users').
 fn scan_sets(
     folder: &std::path::Path,
     extension: &str,
     previous: &[crate::detail::device_widgets::Set],
     pack_writes: &mut HashMap<String, Option<std::time::SystemTime>>,
-) -> Vec<crate::detail::device_widgets::Set> {
+) -> (Vec<crate::detail::device_widgets::Set>, Vec<(String, Option<std::time::SystemTime>)>) {
     const CAP: usize = 2000;
     let files_of = |dir: &std::path::Path| -> Vec<(String, String)> {
         let mut entries =
@@ -242,32 +251,50 @@ fn scan_sets(
             .take(CAP)
             .collect()
     };
-    let mut packs: Vec<(String, Vec<(String, String)>)> = Vec::new();
-    let mut folders_here: Vec<std::path::PathBuf> = std::fs::read_dir(folder)
-        .map(|entries| entries.flatten().map(|entry| entry.path()).filter(|path| path.is_dir()).collect())
-        .unwrap_or_default();
-    folders_here
-        .sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default());
-    for pack_folder in folders_here {
-        let name = pack_folder.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-        let writes = std::fs::metadata(&pack_folder).ok().and_then(|m| m.modified().ok());
-        let key = pack_folder.display().to_string();
+    let mut pack_of = |dir: &std::path::Path, name: String| -> Option<crate::detail::device_widgets::Set> {
+        let writes = std::fs::metadata(dir).ok().and_then(|m| m.modified().ok());
+        let key = dir.display().to_string();
         let scan = pack_writes.get(&key) != Some(&writes);
         pack_writes.insert(key, writes);
         let files = if scan {
-            files_of(&pack_folder)
+            files_of(dir)
         } else {
-            previous.iter().find(|pack| pack.name == name).map(|pack| pack.files.clone()).unwrap_or_default()
+            previous.iter().find(|pack| pack.name == name).map_or_else(Vec::new, |pack| pack.files.clone())
         };
-        if let Some(files) = (!files.is_empty()).then_some(files) {
-            packs.push((name, files));
+        (!files.is_empty()).then_some(crate::detail::device_widgets::Set { name, files })
+    };
+    let mut watch =
+        vec![(folder.display().to_string(), std::fs::metadata(folder).ok().and_then(|m| m.modified().ok()))];
+    let mut packs: Vec<crate::detail::device_widgets::Set> = Vec::new();
+    let mut groups: Vec<std::path::PathBuf> = std::fs::read_dir(folder)
+        .map(|entries| entries.flatten().map(|entry| entry.path()).filter(|path| path.is_dir()).collect())
+        .unwrap_or_default();
+    groups.sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default());
+    for group in groups {
+        let group_name = group.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        watch.push((group.display().to_string(), std::fs::metadata(&group).ok().and_then(|m| m.modified().ok())));
+        if let Some(pack) = pack_of(&group, group_name.clone()) {
+            packs.push(pack);
+        }
+        let mut here: Vec<std::path::PathBuf> = std::fs::read_dir(&group)
+            .map(|entries| entries.flatten().map(|entry| entry.path()).filter(|path| path.is_dir()).collect())
+            .unwrap_or_default();
+        here.sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default());
+        for capture in here {
+            let capture_name = capture.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+            if let Some(pack) = pack_of(&capture, format!("{group_name} / {capture_name}")) {
+                packs.push(pack);
+            }
         }
     }
     let loose = files_of(folder);
     if !loose.is_empty() {
-        packs.push((crate::detail::device_widgets::LOOSE_PACK.to_owned(), loose));
+        packs.push(crate::detail::device_widgets::Set {
+            name: crate::detail::device_widgets::LOOSE_PACK.to_owned(),
+            files: loose,
+        });
     }
-    packs.into_iter().map(|(name, files)| crate::detail::device_widgets::Set { name, files }).collect()
+    (packs, watch)
 }
 
 /// The shipped pack's name, what the panels always list first ([ADR 0036]).
@@ -311,16 +338,20 @@ fn device_file_path(device: &suhina_engine::model::Device) -> Option<String> {
 const METERS_SETTLE_SECONDS: f64 = 0.3;
 
 /// The NAM folders' packs the panels list ([docs/spec/nam-amp-and-cab.md] › Folders › Packs),
-/// with each folder's writes when they were read and each pack's files keyed by the pack's
-/// path with its writes.
+/// and, per folder, the directories the last walk visited with their write times at the
+/// visit: the check below reads each again, so a change inside any of them (a capture
+/// dropped in a group's folder, a pack rename) lists again.
 #[derive(Default)]
 struct NamCache {
     models: Vec<crate::detail::device_widgets::Set>,
     irs: Vec<crate::detail::device_widgets::Set>,
-    models_writes: Option<std::time::SystemTime>,
-    irs_writes: Option<std::time::SystemTime>,
-    /// A pack's write time by its folder's path, so a new capture in one pack re-reads only
-    /// that pack.
+    /// The listing folders the last read saw, each with its write time then: the folder in
+    /// Settings and its top-level folders. The next check reads them again; a change inside
+    /// any of them (a capture dropped into a collection, a pack folder made) reads again.
+    models_watch: Vec<(String, Option<std::time::SystemTime>)>,
+    irs_watch: Vec<(String, Option<std::time::SystemTime>)>,
+    /// A pack folder's write time by its path, so a scan re-reads only the packs that
+    /// changed.
     pack_writes: HashMap<String, Option<std::time::SystemTime>>,
 }
 
@@ -1400,16 +1431,26 @@ impl App {
         let (models_folder, irs_folder) = (self.nam_models_folder(), self.ir_folder());
         let mut cache = std::mem::take(&mut self.nam_cache);
         let mut folders = [
-            (&models_folder, "nam", &mut cache.models, &mut cache.models_writes),
-            (&irs_folder, "wav", &mut cache.irs, &mut cache.irs_writes),
+            (&models_folder, "nam", &mut cache.models, &mut cache.models_watch),
+            (&irs_folder, "wav", &mut cache.irs, &mut cache.irs_watch),
         ];
-        for (folder, extension, sets, cache_writes) in folders.iter_mut() {
-            let writes = std::fs::metadata(&**folder).ok().and_then(|m| m.modified().ok());
-            let scan = writes != **cache_writes || (**sets).is_empty();
-            **cache_writes = writes;
+        for (folder, extension, sets, watch) in folders.iter_mut() {
+            // The watch holds the folder and its top-level folders with their write times at
+            // the last read; a change inside any of them (a new pack, a capture in a
+            // collection) reads the listing anew. A pack's files re-read only when the pack's
+            // own folder changed ([docs/spec/nam-amp-and-cab.md] › Folders › Packs).
+            let reading = (**watch)
+                .iter()
+                .map(|(path, _)| (path.clone(), std::fs::metadata(path).ok().and_then(|m| m.modified().ok())))
+                .collect::<Vec<_>>();
+            let scan = (**sets).is_empty() || reading != **watch;
+            let previous = std::mem::take(&mut **sets);
             if scan {
-                let previous = std::mem::take(&mut **sets);
-                **sets = scan_sets(folder, extension, &previous, &mut cache.pack_writes);
+                let (fresh, seen) = scan_sets(folder, extension, &previous, &mut cache.pack_writes);
+                **sets = fresh;
+                **watch = seen;
+            } else {
+                **sets = previous;
             }
         }
         // The shipped pack lists first, before every folder's own, whatever the settings say
