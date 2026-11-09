@@ -998,3 +998,33 @@ fn ctrl_d_on_a_row_of_a_stack_names_its_clips_where_the_copy_lands_and_follows_s
     app.settings.midi_stacking = true;
     assert_eq!(sent(app)["stack"], json!(true), "MIDI stacking is on");
 }
+
+/// A parameter moved in a plug-in's own editor changes the project, so the timeline is built
+/// again in that frame: its lane is still brought into view, against the timeline built then
+/// (#1205), not lost with the one that was cached.
+#[test]
+fn a_parameter_moved_in_an_editor_shows_in_its_lanes_when_the_timeline_is_rebuilt() {
+    use egui_kittest::kittest::Queryable;
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.get_by_label("Show automation of Drums").click();
+    harness.run();
+    let track = harness.state().session().unwrap().project().tracks.iter().find(|t| t.name == "Drums").unwrap().id;
+    let key = crate::arrangement::automation_lanes::LaneKey::mixer("mute");
+    // As a frame in which an editor's edit came in: the moved parameter waits, and the cached
+    // timeline is gone.
+    harness.state_mut().touched_lanes.push((track, key.clone()));
+    harness.state_mut().timeline = None;
+    harness.run();
+    assert_eq!(harness.state().arrangement.automation.last_lane, Some((track, key)));
+    assert!(harness.state().touched_lanes.is_empty(), "focused once");
+}

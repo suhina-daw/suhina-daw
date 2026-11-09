@@ -380,6 +380,10 @@ pub struct App {
     /// The value a dragged plug-in lane last sent its plug-in (track, device, parameter id, the
     /// value's bits), so a drag that holds still sends nothing more (#1205).
     lane_preview: Option<(TrackId, usize, u32, u64)>,
+    /// Parameters moved in plug-ins' own editors this frame, for their tracks' lanes to show
+    /// once the timeline is built: such an edit changes the project, so the timeline is
+    /// rebuilt in the same frame (#1205).
+    touched_lanes: Vec<(TrackId, crate::arrangement::automation_lanes::LaneKey)>,
     /// Waveforms of the open project's audio files.
     waveforms: std::sync::Arc<crate::kit::waveform::Waveforms>,
     /// The plug-in library as Settings shows it, and a scan running in the background.
@@ -656,6 +660,7 @@ impl App {
             revision: 0,
             timeline: None,
             lane_preview: None,
+            touched_lanes: Vec::new(),
             waveforms: std::sync::Arc::default(),
             plugins: PluginsView::default(),
             plugins_read: false,
@@ -3316,6 +3321,11 @@ impl App {
                             };
                             let mut timeline = timeline;
                             timeline.automation.take_plugins(session.project(), plugin_lists);
+                            // A parameter moved in a plug-in's own editor shows in its track's
+                            // lanes, against the parameters just built (#1205).
+                            for (track, key) in std::mem::take(&mut self.touched_lanes) {
+                                self.arrangement.automation.focus(track, key, &timeline.automation);
+                            }
                             timeline.follow_automation(session.project());
                             timeline.follow_drag(self.arrangement.automation.dragged.as_ref());
                             timeline.recording_spans = session.arrangement_recording_spans();
@@ -3692,10 +3702,12 @@ impl App {
                 lists.texts.insert((track, index), texts);
             }
         }
-        if let Some((_, _, timeline)) = self.timeline.as_ref() {
-            for (track, index, id) in touched {
-                let key = crate::arrangement::automation_lanes::LaneKey { device: Some(index), param: id.to_string() };
-                self.arrangement.automation.focus(track, key, &timeline.automation);
+        // Focused once the timeline is built: the edit changed the project, so the timeline
+        // this frame is a new one, not the one cached (that is gone).
+        for (track, index, id) in touched {
+            let key = crate::arrangement::automation_lanes::LaneKey { device: Some(index), param: id.to_string() };
+            if !self.touched_lanes.contains(&(track, key.clone())) {
+                self.touched_lanes.push((track, key));
             }
         }
         lists
