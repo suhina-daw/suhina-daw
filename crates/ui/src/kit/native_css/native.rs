@@ -77,8 +77,19 @@ impl Paint {
 }
 
 fn defaults(palette: &str) -> Option<Sheet> {
-    Sheet::parse(&format!("{palette}\nhtml, body {{ color:var(--text-primary); font-size:{}px; }}", super::theme::TEXT))
-        .ok()
+    // Regions keep what their children paint inside them (`overflow: hidden`); other elements let
+    // it pass, as CSS's elements do.
+    let regions: Vec<&str> = suhina_theme_package::elements::ELEMENTS
+        .iter()
+        .filter(|element| matches!(element.kind, suhina_theme_package::elements::Kind::Region))
+        .map(|element| element.name)
+        .collect();
+    Sheet::parse(&format!(
+        "{palette}\nhtml, body {{ color:var(--text-primary); font-size:{}px; }}\n{} {{ overflow: hidden; }}",
+        super::theme::TEXT,
+        regions.join(", ")
+    ))
+    .ok()
 }
 
 fn viewport(engine: &Engine) -> Viewport {

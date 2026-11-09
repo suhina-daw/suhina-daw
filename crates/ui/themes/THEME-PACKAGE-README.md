@@ -742,6 +742,28 @@ button[checked] { background-color: var(--accent); color: #000; }
 text-input { background-color: #15171A; }
 ```
 
+### How an element is painted: padding, overflow and outline
+
+Every element with a box paints in one order, as CSS does: its outer `box-shadow`, its
+`background-color`, its `background-image` gradients (or its artwork), then
+
+- for a **control** (a button, a field, a knob), its `border` and inset shadows, then its
+  contents;
+- for a **region or container** (a panel, a view, a track header, a device), its contents, then
+  its `border` and inset shadows, so a row inside a panel never covers the panel's border;
+
+and last its `outline` (`outline: 2px solid #FFFFFF; outline-offset: 1px;`, or `outline-width`,
+`outline-style`, `outline-color` and `outline-offset`), outside its border, over everything.
+
+`padding` (`padding: 4px 8px;` or `padding-top` and the others) keeps an element's contents
+that far inside its box.
+
+`overflow: hidden` (or `clip`) keeps what an element's children paint inside its box, their
+outer shadows and outlines included; `overflow: visible`, the default for every element but a
+region, lets them pass. Regions (the bars, the panels, the views, dialogs) are `hidden`. A
+toolbar control's glow therefore passes the edge of its section (`toolbar-module`) and stops at
+the toolbar's.
+
 ### Bars and lines
 
 The line under each bar is that bar's `border-color` (`menu-bar`, `application-bar`,

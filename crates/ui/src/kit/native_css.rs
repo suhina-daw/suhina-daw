@@ -28,8 +28,10 @@ mod text;
 mod workspace;
 pub use diagnostics::{Notice, inspect};
 pub use paint::background_with;
+#[cfg(test)]
 pub(in crate::kit) use paint::surface_with;
 pub(in crate::kit) use paint::{artwork_shadows, background_rounded, gradients_rounded, level_fill, level_glow};
+pub(in crate::kit) use paint::{box_begin, box_end, has_end};
 pub use text::paint_text;
 pub use workspace::{Workspace, splitter_between, workspace};
 
@@ -81,6 +83,50 @@ pub struct Computed {
     resolved: Arc<suhina_style::cascade::ComputedStyle>,
 }
 impl Computed {
+    /// The computed value of `property`, written or not (a host default, an initial value).
+    pub fn value(&self, property: Property) -> Value {
+        self.resolved.get(property)
+    }
+
+    /// Whether the element keeps what its children paint inside its box (`overflow: hidden` or
+    /// `clip`; regions by default).
+    pub fn hides_overflow(&self) -> bool {
+        matches!(self.value(Property::Overflow), Value::Keyword("hidden" | "clip"))
+    }
+
+    /// The element's `padding` in points: top, right, bottom, left.
+    pub fn padding(&self) -> [f32; 4] {
+        [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft].map(|side| {
+            match self.value(side) {
+                Value::Length(suhina_style::value::Length::Px(points)) if points.is_finite() => {
+                    points.clamp(0.0, 512.0)
+                }
+                _ => 0.0,
+            }
+        })
+    }
+
+    /// The element's outline, when it has one: its width, colour and offset in points.
+    pub fn outline(&self) -> Option<(f32, Color32, f32)> {
+        use suhina_style::value::{Color, Length};
+        if self.value(Property::OutlineStyle) != Value::Keyword("solid") {
+            return None;
+        }
+        let width = match self.value(Property::OutlineWidth) {
+            Value::Length(Length::Px(width)) if width.is_finite() && width > 0.0 => width.min(16.0),
+            _ => return None,
+        };
+        let color = match self.value(Property::OutlineColor) {
+            Value::Color(Color::Rgba([r, g, b, a])) => Color32::from_rgba_unmultiplied(r, g, b, a),
+            _ => self.color,
+        };
+        let offset = match self.value(Property::OutlineOffset) {
+            Value::Length(Length::Px(offset)) if offset.is_finite() => offset.clamp(-64.0, 64.0),
+            _ => 0.0,
+        };
+        (color.a() > 0).then_some((width, color, offset))
+    }
+
     /// The computed value of `property`, when a sheet wrote it for the element or one it inherits from.
     pub fn authored_value(&self, property: Property) -> Option<Value> {
         self.resolved.authored(property).then(|| self.resolved.get(property))
@@ -260,6 +306,8 @@ struct Engine {
     id_index: HashMap<Arc<str>, u32>,
     /// For each node of this frame: its chain, once its style was looked up (0 before).
     chains: Vec<u64>,
+    /// For each node of this frame: the box it takes on screen, once it painted or gave one.
+    boxes: Vec<Option<Rect>>,
     /// For each node of this frame: the style it was painted with, to compare with the full tree's
     /// at the frame's end.
     served: Vec<Option<Arc<suhina_style::cascade::ComputedStyle>>>,
@@ -431,6 +479,7 @@ pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
         engine.parents.clear();
         engine.occurrences.clear();
         engine.chains.clear();
+        engine.boxes.clear();
         engine.served.clear();
         engine.unstyled = 0;
         engine.fresh = 0;
@@ -483,6 +532,7 @@ pub(super) fn enter(
         let index = engine.nodes.len();
         engine.nodes.push(node);
         engine.chains.push(0);
+        engine.boxes.push(None);
         engine.served.push(None);
         engine.parents.push(index);
         Some(index)
@@ -587,6 +637,40 @@ pub(super) fn node_name(node: usize) -> Option<String> {
             .and_then(|node| node.id)
             .and_then(|id| engine.ids.get(id as usize))
             .map(|id| id.to_string())
+    })
+}
+
+/// The box the element at `node` takes on screen this frame (`rect`, as far as `clip` shows it),
+/// for the elements inside it that it clips (`overflow`).
+pub(super) fn set_box(node: Option<usize>, rect: Rect, clip: Rect) {
+    let Some(node) = node else { return };
+    ENGINE.with(|engine| {
+        if let Some(slot) = engine.borrow_mut().boxes.get_mut(node) {
+            *slot = Some(rect.intersect(clip));
+        }
+    });
+}
+
+/// The box of the nearest element around `node` that hides its overflow and whose box is known:
+/// what clips the element's outer shadows and outline. `None` leaves the painter's own clip.
+pub(super) fn outer_clip(node: Option<usize>) -> Option<Rect> {
+    let node = node?;
+    ENGINE.with(|engine| {
+        let engine = engine.borrow();
+        let mut at = engine.nodes.get(node)?.parent;
+        while let Some(parent) = at {
+            let hides = engine
+                .served
+                .get(parent)
+                .cloned()
+                .flatten()
+                .is_some_and(|style| matches!(style.get(Property::Overflow), Value::Keyword("hidden" | "clip")));
+            if hides && let Some(Some(rect)) = engine.boxes.get(parent) {
+                return Some(*rect);
+            }
+            at = engine.nodes.get(parent)?.parent;
+        }
+        None
     })
 }
 

@@ -380,6 +380,18 @@ shapes (background, radius or border width) is not covered by the artwork Suhina
 a theme's own `button` artwork still wins. The toolbar's tempo, position and RAM/CPU
 fields paint the same way.
 
+**Paint order.** Every element `Entered::paint` draws paints in CSS's order: its outer
+`box-shadow`, its `background-color`, its `background-image` (or the artwork its caller draws),
+then for a control (or a part, or a drawn item) its border and inset shadows before its
+contents, and for a region or a container (the registry's kinds) its border and inset shadows
+after its contents, when the element leaves scope; then its `outline` (`outline-width`,
+`outline-style: solid`, `outline-color`, `outline-offset`, or the `outline` shorthand) outside
+its border, last. `Boxed::content` is the box less its `padding`. The outer shadows and the
+outline are clipped by the box of the nearest element with `overflow: hidden` (or `clip`)
+around the element, not by the painter in use, so a toolbar control's glow passes its
+section's edge and stops at the toolbar's; regions are `hidden` by the host's own sheet, other
+elements `visible`. Without such an element the painter's clip holds.
+
 **Views and controls.** A background on a view or bar (`window`, `toolbar`, `session`,
 `arrangement`, `browser`, `mixer`, `detail` and the other regions and containers of the element
 registry, `suhina_theme_package::elements`)
@@ -402,11 +414,11 @@ artwork leaves a pixel uncovered.
 the side of the Arrangement view's track headers while the user's Track headers setting
 is *Theme* (the default); Left and Right are the user's own and win.
 
-**Host states and variables.** The host marks elements with states the sheet matches
-(`native_css::mark`): `[checked]` on a toggle that is on, `[playing]` and `[recording]` on the
+**Host states and variables.** The host marks elements with states the sheet matches, on the
+element's builder before it is entered (`kit::element`, `.attr(Checked, on)`): `[checked]` on a toggle that is on, `[playing]` and `[recording]` on the
 transport's buttons, `[selected]` on the selected track's header, column, strip and name,
 `[armed]` and `[muted]`. It gives elements custom properties below every rule
-(`native_css::set_variable`): a track's header, column and strip `--track-colour`, its name
+(`.variable("--track-colour", …)`): a track's header, column and strip `--track-colour`, its name
 `--track-fill`. A track name's text takes the sheet's `color` when one applies. Artwork has an
 `.on` state (`solo:on`), falling back to `.active`, and per-view track roles
 (`track.name.mixer` and the others) over `track.name` and `track.body`.

@@ -6,17 +6,18 @@
 //!
 //! ```ignore
 //! let el = KNOB.id("send").response(&response).attr(Checked, on).enter();
-//! let boxed = el.paint(&painter, rect); // background, artwork shadows, gradients, border
+//! let boxed = el.paint(&painter, rect); // shadows, background, gradients, then border and outline
 //! draw_contents(boxed.content);
 //! let style = CLIP.color(clip.color).style(); // a drawn item
 //! ```
 //!
 //! An entered element stays in the style tree (and its palette scope) until the value is
-//! dropped. Its [`Entered::style`] is its own, found by its node, never the style of an element
-//! that encloses it, so a part that forgets to enter its own element cannot paint as its parent.
-//! Kit's shared painters (`mixer_controls`' level bars and pan field, `meter`, `paint`) are the
-//! exception for now: they are drawn inside an element their caller entered and read the
-//! innermost one through `style_class::computed()` until they take an [`Entered`] (#1273).
+//! dropped. Its [`Entered::style`] is its own, worked out in the frame that enters it from its
+//! parent's and its own identity, never the style of an element that encloses it, so a part that
+//! forgets to enter its own element cannot paint as its parent. Kit's shared painters
+//! (`mixer_controls`' level bars and pan field, `widgets::button_surface`) take the element their
+//! caller entered. [`Entered::paint`] paints in CSS's order; what a region or container paints
+//! after its contents (its border, its outline) comes when it is dropped.
 
 use egui::{Color32, Painter, Rect, Response};
 
@@ -67,7 +68,7 @@ impl Default for Native {
 }
 
 /// What [`Entered::paint`] painted: the radius it used, and the rectangle left for the
-/// element's contents (the rectangle given, until `padding` exists).
+/// element's contents: the rectangle given, less the element's `padding`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Boxed {
     pub content: Rect,
@@ -235,7 +236,7 @@ impl<'a> Builder<'a> {
         {
             super::native_css::device_sheet(None, &ctx, Some(source));
         }
-        Entered { scope, native, name }
+        Entered { scope, native, name, rest: std::cell::RefCell::new(None) }
     }
 
     /// The style of a drawn item: the element entered and left at once.
@@ -250,6 +251,32 @@ pub struct Entered {
     scope: super::style_class::Scope,
     native: Native,
     name: Name,
+    /// What the element paints once its contents are ([`Entered::paint`]).
+    rest: std::cell::RefCell<Option<Rest>>,
+}
+
+/// The part of an element's box painted after its contents: where, and how.
+struct Rest {
+    painter: Painter,
+    rect: Rect,
+    radius: f32,
+    style: Computed,
+    outer: Option<Rect>,
+    control: bool,
+}
+
+impl Rest {
+    fn paint(self) {
+        super::native_css::box_end(&self.painter, self.rect, self.radius, &self.style, self.outer, self.control);
+    }
+}
+
+impl Drop for Entered {
+    fn drop(&mut self) {
+        if let Some(rest) = self.rest.get_mut().take() {
+            rest.paint();
+        }
+    }
 }
 
 impl Entered {
@@ -258,19 +285,46 @@ impl Entered {
         self.scope.style()
     }
 
-    /// The element's surface in `rect`: its shadows, background, gradients and border, with
-    /// its [`Native`] fallbacks where the sheet sets none. Painted in the order controls have
-    /// always painted (#1273 orders paint as CSS does).
+    /// The element's box in `rect`, in CSS's order: its outer shadows, its background and
+    /// gradients, then for a control its inset shadows and border; for a region or container
+    /// those come when it leaves scope, after its contents, and so does any element's outline.
+    /// Its [`Native`] fallbacks stand where the sheet sets none. Its contents go in
+    /// [`Boxed::content`], the box less its `padding`.
     pub fn paint(&self, painter: &Painter, rect: Rect) -> Boxed {
-        let radius = super::native_css::surface_with(painter, rect, self.native.radius, self.native.fill, self.style());
-        Boxed { content: rect, radius }
+        self.paint_with(painter, rect, self.native)
     }
 
     /// [`Entered::paint`] with `native` as the fallbacks, for a fill worked out once the element is
     /// in scope (its hover).
     pub fn paint_with(&self, painter: &Painter, rect: Rect, native: Native) -> Boxed {
-        let radius = super::native_css::surface_with(painter, rect, native.radius, native.fill, self.style());
-        Boxed { content: rect, radius }
+        // A box painted before by this element is finished first.
+        if let Some(rest) = self.rest.borrow_mut().take() {
+            rest.paint();
+        }
+        let style = self.style();
+        let control = !self.name.is_surface();
+        let outer = super::native_css::outer_clip(self.scope.node);
+        super::native_css::set_box(self.scope.node, rect, painter.clip_rect());
+        let radius =
+            super::native_css::box_begin(painter, rect, native.radius, native.fill, style.as_ref(), outer, control);
+        let content = match &style {
+            Some(style) => {
+                let [top, right, bottom, left] = style.padding();
+                let inner = Rect::from_min_max(rect.min + egui::vec2(left, top), rect.max - egui::vec2(right, bottom));
+                if inner.is_positive() { inner } else { Rect::from_center_size(inner.center(), egui::Vec2::ZERO) }
+            }
+            None => rect,
+        };
+        if let Some(style) = style.filter(|style| super::native_css::has_end(style, control)) {
+            *self.rest.borrow_mut() = Some(Rest { painter: painter.clone(), rect, radius, style, outer, control });
+        }
+        Boxed { content, radius }
+    }
+
+    /// Says where the element is on screen without painting it (a panel, the toolbar): the box
+    /// that clips its children's outer shadows when it hides its overflow.
+    pub fn occupies(&self, rect: Rect, clip: Rect) {
+        super::native_css::set_box(self.scope.node, rect, clip);
     }
 
     /// The element's `color`, or `fallback` where the sheet sets none.
@@ -301,6 +355,7 @@ impl Entered {
     /// The element's shadows, gradients and inset shadows in `rect`, with `radius` where the sheet
     /// gives none: for a surface whose fill its caller paints. Whether it painted anything.
     pub fn paint_background(&self, painter: &Painter, rect: Rect, radius: f32) -> bool {
+        self.occupies(rect, painter.clip_rect());
         self.style().is_some_and(|style| super::native_css::background_rounded(painter, rect, radius, style))
     }
 

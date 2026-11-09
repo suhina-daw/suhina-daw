@@ -3101,6 +3101,8 @@ impl App {
             }
             self.frame_trace.mark("browser");
             let main_style = crate::kit::element::WORKSPACE_PANEL.id("panel-main").enter();
+            // The panel clips its children's shadows (`overflow`).
+            main_style.occupies(view_area, ui.clip_rect());
             // A clip whose drag or held press the view switch carried becomes the carry first,
             // so the probe below reads it on the switch's first frame.
             self.begin_clip_carry(ui.ctx());

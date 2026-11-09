@@ -340,3 +340,26 @@ fn a_nine_slice_too_big_for_its_rect_shrinks_its_corners_evenly() {
     // The top-left corner is 3 by 3, not 4 wide and 3 high.
     assert_eq!(mesh.vertices[3].pos, egui::pos2(3.0, 3.0));
 }
+
+#[test]
+fn a_legacy_skin_s_styles_join_its_sheet_under_today_s_names() {
+    let mut warnings = Vec::new();
+    let skin = Skin::from_json(
+        &serde_json::json!({
+            "css": "browser { color: #123456; }",
+            "styles": {
+                "mixer pan": { "--suhina-appearance": "knob", "color": "#ABCDEF" },
+                "device": { "--suhina-param-columns": "3" },
+                "nowhere": { "color": "#000000" }
+            }
+        }),
+        &mut warnings,
+    );
+    let css = skin.css.as_deref().unwrap_or_default();
+    assert!(css.starts_with("browser { color: #123456; }"), "{css}");
+    assert!(css.contains("mixer pan { appearance: knob; }") && css.contains("mixer pan { color: #ABCDEF; }"), "{css}");
+    assert!(!css.contains("param-columns"), "{css}");
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.contains("device --suhina-param-columns")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.contains("nowhere")), "{warnings:?}");
+}

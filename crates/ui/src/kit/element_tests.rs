@@ -149,3 +149,126 @@ fn elements_past_the_tree_s_depth_get_no_style_and_are_counted() {
     assert!(super::super::native_css::budget().unstyled > 0, "the lookups it made are counted");
     super::super::skin::configure(&super::super::skin::Skin::default());
 }
+
+/// The shapes one settled frame of `draw` paints, with `css` as the theme's sheet.
+fn shapes(css: &str, mut draw: impl FnMut(&egui::Ui)) -> Vec<egui::Shape> {
+    super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let input = || egui::RawInput {
+        screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0))),
+        ..Default::default()
+    };
+    let mut output = ctx.run_ui(input(), |ui| {
+        let _frame = super::super::native_css::frame_with_motion(ui, false);
+        draw(ui);
+    });
+    output.textures_delta.clear();
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    fn flat(shape: egui::Shape, out: &mut Vec<egui::Shape>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.into_iter().for_each(|s| flat(s, out)),
+            shape => out.push(shape),
+        }
+    }
+    let mut all = Vec::new();
+    output.shapes.into_iter().for_each(|clipped| flat(clipped.shape, &mut all));
+    all
+}
+
+use egui::Rect;
+
+/// Where in `shapes` a rectangle stroked with `color` is, and its rectangle.
+fn stroke_of(shapes: &[egui::Shape], color: egui::Color32) -> Option<(usize, Rect)> {
+    shapes.iter().enumerate().find_map(|(at, shape)| match shape {
+        egui::Shape::Rect(rect) if rect.stroke.width > 0.0 && rect.stroke.color == color => Some((at, rect.rect)),
+        _ => None,
+    })
+}
+
+/// Where in `shapes` a rectangle filled with `color` is.
+fn fill_of(shapes: &[egui::Shape], color: egui::Color32) -> Option<usize> {
+    shapes.iter().position(|shape| matches!(shape, egui::Shape::Rect(rect) if rect.fill == color))
+}
+
+#[test]
+fn a_container_s_border_comes_after_its_contents_and_a_control_s_before() {
+    let border = egui::Color32::from_rgb(0xFF, 0, 0);
+    let row = egui::Color32::from_rgb(0, 0xFF, 0);
+    let css = "track-header, button { border-width: 1px; border-color: #FF0000; }";
+    let area = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 40.0));
+    for (element, after) in [(TRACK_HEADER, true), (BUTTON, false)] {
+        let painted = shapes(css, |ui| {
+            let el = element.enter();
+            let boxed = el.paint(ui.painter(), area);
+            // A row as wide as the box, as a panel's rows are.
+            ui.painter().rect_filled(boxed.content, 0.0, row);
+        });
+        let (border_at, _) = stroke_of(&painted, border).expect("the border");
+        let row_at = fill_of(&painted, row).expect("the row");
+        assert_eq!(border_at > row_at, after, "{}: {painted:?}", element.name());
+    }
+}
+
+#[test]
+fn padding_keeps_the_contents_inside_the_box() {
+    let area = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 40.0));
+    let mut content = None;
+    shapes("track-header { padding: 4px 8px 2px; }", |ui| {
+        content = Some(TRACK_HEADER.enter().paint(ui.painter(), area).content);
+    });
+    assert_eq!(content, Some(Rect::from_min_max(egui::pos2(18.0, 14.0), egui::pos2(102.0, 48.0))));
+    shapes("track-header { padding: 40px; }", |ui| {
+        content = Some(TRACK_HEADER.enter().paint(ui.painter(), area).content);
+    });
+    assert_eq!(content.map(|c| c.area()), Some(0.0), "padding larger than the box leaves no room");
+}
+
+#[test]
+fn an_outline_is_drawn_last_and_outside_the_border() {
+    let outline = egui::Color32::from_rgb(0, 0, 0xFF);
+    let css = "button { outline: 2px solid #0000FF; outline-offset: 3px; }";
+    let area = Rect::from_min_size(egui::pos2(50.0, 50.0), egui::vec2(60.0, 20.0));
+    let painted = shapes(css, |ui| {
+        let el = BUTTON.enter();
+        el.paint(ui.painter(), area);
+        ui.painter().rect_filled(area, 0.0, egui::Color32::WHITE);
+    });
+    let (at, rect) = stroke_of(&painted, outline).expect("the outline");
+    assert_eq!(rect, area.expand(3.0));
+    assert!(at > fill_of(&painted, egui::Color32::WHITE).unwrap(), "after the contents");
+    let none = shapes("button { outline-width: 2px; outline-color: #0000FF; }", |ui| {
+        BUTTON.enter().paint(ui.painter(), area);
+    });
+    assert!(stroke_of(&none, outline).is_none(), "no style, no outline");
+}
+
+#[test]
+fn a_toolbar_control_s_glow_passes_its_section_and_stops_at_the_toolbar() {
+    let css = "button { box-shadow: 0 0 6px 4px #FF00FF; background-color: #202020; }";
+    let bar = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(300.0, 40.0));
+    let module = Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(40.0, 40.0));
+    let button = Rect::from_min_size(egui::pos2(102.0, 4.0), egui::vec2(36.0, 32.0));
+    let clips: Vec<Rect> = {
+        super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, false);
+            let toolbar = TOOLBAR.enter();
+            toolbar.paint_background(ui.painter(), bar, 0.0);
+            let _module = TOOLBAR_MODULE.id("transport").enter();
+            // The section's painter is clipped at its edge, as the toolbar's modules are.
+            let painter = ui.painter().with_clip_rect(module);
+            BUTTON.enter().paint(&painter, button);
+        });
+        output.textures_delta.clear();
+        super::super::skin::configure(&super::super::skin::Skin::default());
+        output
+            .shapes
+            .iter()
+            .filter(|clipped| matches!(clipped.shape, egui::Shape::Mesh(_)))
+            .map(|clipped| clipped.clip_rect)
+            .collect()
+    };
+    assert!(!clips.is_empty(), "the glow is painted");
+    assert!(clips.iter().all(|clip| *clip == bar), "clipped by the toolbar, not the section: {clips:?}");
+}
