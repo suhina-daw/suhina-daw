@@ -266,7 +266,8 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
 
     // Colour: the palette every colour choice offers.
     // A colour picked with several tracks selected colours them all.
-    if let Some(colour) = colour_picker::swatch_row(ui, Some(menu.colour)) {
+    if let Some(pick) = colour_picker::swatch_row(ui, Some(menu.colour)) {
+        let colour = pick.colour;
         let several = menu.selection.contains(&menu.track) && menu.selection.len() > 1;
         if several {
             for track in menu.selection {
@@ -275,7 +276,7 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         } else if colour != menu.colour {
             actions.push(colour_picker::set_colour(menu.track, colour));
         }
-        ui.close();
+        pick.close_menu(ui);
     }
     // A group's tracks, at any depth, and their clips: its colour, so the group reads as one in
     // every view.
@@ -419,12 +420,12 @@ pub fn clip_menu(
     ui.set_min_width(140.0);
     // The clips' colour: a swatch or any colour, or back to their tracks' colour.
     // One command for them all: one undo step, and a large selection takes it at once.
-    if let Some(colour) = colour_picker::swatch_row(ui, None) {
+    if let Some(pick) = colour_picker::swatch_row(ui, None) {
         actions.push(Action::new(
             "clip.setColorMany",
-            json!({ "clips": list.clone(), "color": colour_picker::hex(colour) }),
+            json!({ "clips": list.clone(), "color": colour_picker::hex(pick.colour) }),
         ));
-        ui.close();
+        pick.close_menu(ui);
     }
     if ui.button("Track colour").clicked() {
         actions.push(Action::new("clip.setColorMany", json!({ "clips": list.clone(), "color": "none" })));

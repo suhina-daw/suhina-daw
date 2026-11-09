@@ -551,9 +551,9 @@ pub(super) fn title_row(
     let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-colour", panel.clip.0)), "Clip colour");
     egui::Popup::menu(&response).show(|ui| {
         if let Some(picked) = colour_picker::swatch_row(ui, panel.color) {
-            let params = json!({ "clip": panel.clip.0, "color": colour_picker::hex(picked) });
+            let params = json!({ "clip": panel.clip.0, "color": colour_picker::hex(picked.colour) });
             actions.push(Action::new("clip.setColor", params));
-            ui.close();
+            picked.close_menu(ui);
         }
         if ui.button("Track colour").clicked() {
             actions.push(Action::new("clip.setColor", json!({ "clip": panel.clip.0, "color": "none" })));

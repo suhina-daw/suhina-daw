@@ -187,7 +187,8 @@ After the swatches, a 14 px **+** button named "Any colour" (`control.background
 `text.primary`, lit while open) opens a colour picker under the row: a saturation and value
 field, a hue strip and the colour's values, starting from the track's colour. A drag in it keeps
 the menu or popup open, and the colour is taken once, when the button comes up, so a whole drag
-is one `track.setColor` and one undo step (#712). A click on + again closes it. The palette is
+is one `track.setColor` and one undo step (#712). The menu or popup stays open after the button
+comes up too, for the next drag; only a swatch closes it. A click on + again closes it. The palette is
 the theme's for now; #1025 decides the user's own palette and the theme's.
 
 The colour areas, each a button named "<track> colour" that opens the popup on a click:

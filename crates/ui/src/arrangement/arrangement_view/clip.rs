@@ -1885,12 +1885,12 @@ pub(super) fn take_lanes(
             painter.rect_filled(colour_button.shrink(3.0), 2.0, swatch);
             egui::Popup::menu(&r).show(|ui| {
                 if let Some(picked) = crate::interaction::colour_picker::swatch_row(ui, Some(colour)) {
-                    let hex = crate::interaction::colour_picker::hex(picked);
+                    let hex = crate::interaction::colour_picker::hex(picked.colour);
                     actions.push(Action::new(
                         "take.setColor",
                         json!({ "track": lane.track.0, "take": take.number, "color": hex }),
                     ));
-                    ui.close();
+                    picked.close_menu(ui);
                 }
             });
             let r = clicked(promote, "Put the whole take on the track", format!("Put {} on the track", take.name));
@@ -2404,20 +2404,20 @@ fn take_menu(
     actions: &mut Vec<Action>,
 ) {
     ui.menu_button("Recolor lane", |ui| {
-        if let Some(colour) = crate::interaction::colour_picker::swatch_row(ui, Some(take.color)) {
-            let hex = crate::interaction::colour_picker::hex(colour);
+        if let Some(picked) = crate::interaction::colour_picker::swatch_row(ui, Some(take.color)) {
+            let hex = crate::interaction::colour_picker::hex(picked.colour);
             actions.push(Action::new("take.setColor", json!({ "track": track.0, "take": take.number, "color": hex })));
-            ui.close();
+            picked.close_menu(ui);
         }
     });
     ui.add_enabled_ui(piece.is_some(), |ui| {
         ui.menu_button("Recolor", |ui| {
             let current = piece.and_then(|p| take.clips.get(p)).map(|c| c.color);
-            if let (Some(colour), Some(piece)) = (crate::interaction::colour_picker::swatch_row(ui, current), piece) {
-                let hex = crate::interaction::colour_picker::hex(colour);
+            if let (Some(picked), Some(piece)) = (crate::interaction::colour_picker::swatch_row(ui, current), piece) {
+                let hex = crate::interaction::colour_picker::hex(picked.colour);
                 let params = json!({ "track": track.0, "take": take.number, "color": hex, "piece": piece });
                 actions.push(Action::new("take.setColor", params));
-                ui.close();
+                picked.close_menu(ui);
             }
         });
     });
