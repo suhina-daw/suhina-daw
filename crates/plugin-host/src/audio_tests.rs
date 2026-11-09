@@ -123,7 +123,7 @@ fn a_stereo_link_feeds_each_channel_and_repeats_its_last_into_the_rest() {
     assert_eq!(mono, vec![vec![1.0, 2.0]]);
     // No link channels, no input bus, nothing to read: nothing happens, and nothing panics.
     feed_main(&stereo, 0, 2, &mut mono);
-    feed_main::<Vec<f32>>(&stereo, 2, 2, &mut []);
+    feed_main::<&mut Vec<f32>>(&stereo, 2, 2, &mut []);
     feed_main(&[], 2, 2, &mut mono);
     assert_eq!(mono, vec![vec![0.0, 0.0]]);
 }
@@ -147,7 +147,7 @@ fn a_wider_output_gives_the_link_its_first_channels_and_a_stereo_one_each_its_ow
     assert_eq!(wide, [1.0, -1.0, -1.0, -1.0, 2.0, -2.0, -2.0, -2.0]);
     // No output bus leaves the link's block as it was.
     let mut kept = vec![7.0f32; 4];
-    collect_main::<Vec<f32>>(&[], 2, 2, &mut kept);
+    collect_main::<&Vec<f32>>(&[], 2, 2, &mut kept);
     assert_eq!(kept, [7.0; 4]);
 }
 

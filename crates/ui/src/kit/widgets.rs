@@ -221,10 +221,13 @@ pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, response: &Res
 
 /// CSS paint remains above the SVG body, below the control's glyph and label.
 pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bool, fill: Color32, radius: f32) {
-    let _style = super::style_class::control("button", response);
+    // The button's own element: the caller's when it entered one, else one entered here.
+    let own = super::style_class::control("button", response);
     super::native_css::mark(super::native_css::HostState::Checked, on);
+    let style = own.as_ref().map_or_else(super::style_class::computed, super::style_class::Scope::style);
     // A shape the sheet gives the button wins over the artwork Suhina ships, not over the theme's own.
-    let shaped = super::style_class::computed()
+    let shaped = style
+        .as_ref()
         .is_some_and(|style| style.authored.background || style.authored.radius || style.authored.border_width);
     let role = super::skin::button_role();
     if !shaped || role != "button" || super::skin::has_own("button") {
@@ -236,15 +239,14 @@ pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bo
             return;
         }
     }
-    super::native_css::surface(painter, rect, radius, fill);
+    super::native_css::surface_with(painter, rect, radius, fill, style);
 }
 
-/// A track's number, `.track-number`: its own `color`, `font-size` and `display: none`, and
-/// `:muted` while the track is off.
+/// A track's number, `track-number`: its own `color`, `font-size` and `display: none`, and
+/// `[muted]` while the track is off.
 pub fn track_number_text(painter: &Painter, rect: Rect, number: &str, ink: Color32, muted: bool) {
-    let _style = super::style_class::enter("track-number");
-    super::native_css::mark(super::native_css::HostState::Muted, muted);
-    let computed = super::style_class::computed();
+    let el = super::element::TRACK_NUMBER.attr(super::element::Muted, muted).enter();
+    let computed = el.style();
     if computed.as_ref().is_some_and(|c| !c.visible) {
         return;
     }
@@ -357,8 +359,9 @@ pub fn toggle_colors(ui: &Ui, response: &Response, on: bool) -> (Color32, Color3
     let off_fill = motion::mix(theme::control_background(), theme::control_hover(), hover);
     let off_text = motion::mix(theme::text_hint(), theme::text_secondary(), hover);
     let on_fill = motion::mix(theme::control_selected(), Color32::WHITE, 0.2 * hover);
-    // The inverse ink, unless a variant's lit fill leaves it unreadable (white on a light fill).
-    let on_text = if theme::contrast(on_fill, theme::text_inverse()) < 3.0 {
+    // The inverse ink, unless a variant's lit fill leaves it unreadable (white on a light fill,
+    // or ink so translucent it fades into the fill).
+    let on_text = if theme::text_contrast(theme::text_inverse(), on_fill) < 3.0 {
         theme::text_on(on_fill)
     } else {
         theme::text_inverse()
@@ -669,6 +672,18 @@ const WHEEL_TICK: f64 = 50.0;
 
 /// How far the wheel turned this frame, in points, read from the events themselves rather than
 /// from egui's smoothed scroll, so one tick of a wheel is one step and not a run of them.
+/// `value` moved by `step` within `range`. A value off the scale (a volume at -inf) moves from the
+/// scale's end for a step up, as a drag does, and stays where it is for a step down.
+fn stepped(value: f64, range: (f64, f64), step: f64) -> f64 {
+    if value.is_finite() {
+        (value + step).clamp(range.0, range.1)
+    } else if step > 0.0 {
+        (range.0 + step).clamp(range.0, range.1)
+    } else {
+        value
+    }
+}
+
 fn wheel_points(ui: &Ui) -> f32 {
     ui.input(|i| {
         i.raw
@@ -872,10 +887,9 @@ pub fn drag_value_axis(
         return Drag::Set(typed_value(number, range));
     }
     if steps != 0 {
-        let from = if value.is_finite() { value } else { range.0 };
         let step = f64::from(steps) * per_tick * if fine { 0.1 } else { 1.0 };
         *preview = None;
-        return Drag::Done((from + step).clamp(range.0, range.1));
+        return Drag::Done(stepped(value, range, step));
     }
     // Ctrl/Cmd and the wheel over the control move it, as a drag would; the caller commits what it is
     // given. The wheel alone scrolls the view, so scrolling past a field never changes it.
@@ -887,7 +901,7 @@ pub fn drag_value_axis(
             // A positive delta moves the content down: the wheel turned up, which raises it.
             let step = f64::from(points) / WHEEL_TICK * per_tick * fine;
             *preview = None;
-            return Drag::Done((value + step).clamp(range.0, range.1));
+            return Drag::Done(stepped(value, range, step));
         }
     }
     if response.double_clicked() {
@@ -964,7 +978,7 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
 
 /// A dial as an `.sd` control's dial draws it, the built-in canvases' wheels (the reverb's and
 /// the delay's): the rim arc, the ring's disc, the inner disc, the pointer line to 72 % of the
-/// radius, 270° with the gap under. The colours are the tokens the `.knob` scope gives — the
+/// radius, 270° with the gap under. The colours are the tokens the `knob` scope gives — the
 /// same scope the canvases' dials take theirs from, so a theme's own colouring applies — and
 /// no artwork stands for the face, as a canvas has none.
 pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response: Option<&Response>) {
@@ -990,6 +1004,44 @@ pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response:
         [center + dir * (radius * 0.25), center + dir * (radius * 0.72)],
         Stroke::new(2.0, theme::accent()),
     );
+}
+
+/// `bpm` on the steps of the place a drag holds, counted from where it started (`grab`: the step
+/// and the start), to a thousandth of a BPM, within the tempo's range (#829).
+pub fn snap_tempo(grab: Option<(f64, f64)>, bpm: f64) -> f64 {
+    let snapped = match grab {
+        Some((step, from)) if step > 0.0 => from + ((bpm - from) / step).round() * step,
+        _ => bpm,
+    };
+    ((snapped * 1000.0).round() / 1000.0).clamp(20.0, 999.0)
+}
+
+/// The step of the place in the tempo `text` (right-aligned at `right`, characters `width`
+/// apart) under `x`: 1 BPM for the integer part, 0.1, 0.01 or 0.001 for the decimals (#829).
+pub fn tempo_place(text: &str, right: f32, width: f32, x: f32) -> f64 {
+    let len = text.chars().count();
+    let Some(dot) = text.find('.') else { return 1.0 };
+    if width <= 0.0 {
+        return 1.0;
+    }
+    let from_right = ((right - x) / width).floor().max(0.0) as usize;
+    let index = len.saturating_sub(from_right + 1);
+    if index <= dot {
+        return 1.0;
+    }
+    let decimals = (index - dot).min(3);
+    10f64.powi(-(decimals as i32))
+}
+
+/// The characters of the tempo `text` the place of `step` covers, as a range of indices: the
+/// whole integer part for 1 BPM, one decimal otherwise.
+pub fn tempo_place_span(text: &str, step: f64) -> (usize, usize) {
+    let dot = text.find('.').unwrap_or(text.len());
+    if step >= 1.0 {
+        return (0, dot);
+    }
+    let decimals = (-step.log10()).round().max(1.0) as usize;
+    (dot + decimals, dot + decimals + 1)
 }
 
 /// A volume in dB as the mixer shows it.

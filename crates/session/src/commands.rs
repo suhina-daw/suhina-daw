@@ -110,6 +110,7 @@ impl ParamType {
             Self::Decibels => "decibels",
             Self::AutomationValue => "automation value",
             Self::Curve => "curve",
+            Self::Curves => "curves",
             Self::Text => "text",
             Self::Tracks => "tracks",
             Self::Texts => "texts",
@@ -146,6 +147,7 @@ impl ParamType {
             Self::Decibels => "a number of decibels or \"-inf\"",
             Self::AutomationValue => "a number, \"-inf\", or true or false",
             Self::Curve => "four numbers from -0.5 to 1.5 or one number from -1 to 1",
+            Self::Curves => "a list of curves, each like curve or null",
             Self::Text => "a text",
             Self::Tracks => "a list of track ids or names",
             Self::Texts | Self::Path(PathKind::Files) => "a list of texts",
@@ -186,6 +188,7 @@ impl ParamType {
             | Self::Path(PathKind::File | PathKind::Folder | PathKind::WriteFile)
             | Self::Path(PathKind::WriteFolder | PathKind::LibraryItem | PathKind::Place) => value.is_string(),
             Self::Tracks | Self::Texts | Self::Integers | Self::Notes | Self::Numbers | Self::Clips => value.is_array(),
+            Self::Curves => value.is_array(),
             Self::Items => value.is_array(),
             Self::Path(PathKind::Files) => value.is_array(),
             Self::Range | Self::MappingTarget => value.is_object(),
@@ -234,6 +237,8 @@ pub enum ParamType {
     AutomationValue,
     /// A segment's curve: four numbers (two control points) or one bend.
     Curve,
+    /// A list of curves, one for each point of a list (`clip.setEnvelope`), each as [`ParamType::Curve`] or null.
+    Curves,
     Text,
     /// A list of tracks, each an id or a name.
     Tracks,
@@ -597,6 +602,7 @@ impl<T> CommandSpec<T> {
                 | ParamType::Numbers
                 | ParamType::Clips
                 | ParamType::Items
+                | ParamType::Curves
                 | ParamType::Path(PathKind::Files) => json!("array"),
                 ParamType::Number => json!("number"),
                 ParamType::Integer => json!("integer"),

@@ -805,12 +805,23 @@ pub fn contrast(a: Color32, b: Color32) -> f32 {
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
+/// The contrast ratio of `text` drawn over `fill`, 1 … 21: like [`contrast`], but translucent
+/// text is first blended over the fill, so faint text counts as faint.
+pub fn text_contrast(text: Color32, fill: Color32) -> f32 {
+    let [r, g, b, a] = text.to_srgba_unmultiplied();
+    let [fr, fg, fb, _] = fill.to_srgba_unmultiplied();
+    let a = f32::from(a) / 255.0;
+    let blend = |t: u8, f: u8| (f32::from(t) * a + f32::from(f) * (1.0 - a)).round() as u8;
+    contrast(Color32::from_rgb(blend(r, fr), blend(g, fg), blend(b, fb)), fill)
+}
+
 fn luminance(color: Color32) -> f32 {
     let linear = |v: u8| {
         let s = f32::from(v) / 255.0;
         if s <= 0.040_45 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
     };
-    0.2126 * linear(color.r()) + 0.7152 * linear(color.g()) + 0.0722 * linear(color.b())
+    let [r, g, b, _] = color.to_srgba_unmultiplied();
+    0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
 }
 
 /// Grid rows, headers, fields.

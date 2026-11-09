@@ -117,6 +117,17 @@ impl Player {
             .map_err(CommandError::from)
     }
 
+    /// Puts a clip's gain envelope, the clip at `index` on arrangement lane `lane`, in place on
+    /// what plays, without building a new graph.
+    pub fn set_clip_envelope(
+        &mut self,
+        lane: usize,
+        index: usize,
+        clip: &suhina_model::Clip,
+    ) -> Result<(), CommandError> {
+        self.controller.set_clip_envelope(lane, index, clip).map_err(CommandError::from)
+    }
+
     /// Builds the engine's graphs from now on with the project's file-backed devices' parsed
     /// models and IRs ([docs/spec/nam-amp-and-cab.md]).
     pub fn set_device_assets(&mut self, assets: std::sync::Arc<suhina_engine::DeviceAssets>) {

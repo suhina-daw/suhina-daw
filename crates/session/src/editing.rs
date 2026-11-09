@@ -7,9 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use suhina_model::{
-    AudioRegion, Clip, ClipContent, ContentId, ContentLane, LaneData, Note, Project, StretchMode, TrackId,
-};
+use suhina_model::{AudioRegion, Clip, ClipContent, ContentId, ContentLane, LaneData, Note, Project, TrackId};
 
 use crate::commands::{Args, content_at, make_room, track_id};
 use crate::{CommandError, Session};
@@ -86,15 +84,10 @@ pub(crate) fn split(clip: &Clip, at: f64, rate: f64) -> (Clip, Clip) {
 /// Content beats a clip moves through per song beat: a transposed audio clip that is not warped
 /// plays faster or slower, as the engine plays it; everything else 1.
 pub(crate) fn content_rate(p: &Project, clip: &Clip) -> f64 {
-    let region = p.content(clip.content).and_then(|c| {
-        c.lanes.iter().find_map(|l| match &l.data {
-            LaneData::Audio(region) => Some(region),
-            LaneData::Notes(_) => None,
-        })
-    });
-    match region {
-        Some(r) if !r.warped => {
-            let rate = 2f64.powf(r.transpose / 12.0);
+    let audio = p.content(clip.content).is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))));
+    match &clip.audio {
+        a if audio && !a.warped => {
+            let rate = 2f64.powf(a.transpose / 12.0);
             if rate.is_finite() && rate > 0.0 { rate } else { 1.0 }
         }
         _ => 1.0,
@@ -114,16 +107,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         return Err(format!("end must be after start, got start {start} and end {end}").into());
     }
     let track = track_id(&session.project, params)?;
-    let only: Option<Vec<u32>> = match Args::new(params).value("clips") {
-        None => None,
-        Some(v) => Some(
-            v.as_array()
-                .ok_or("clips must be a list of clip ids")?
-                .iter()
-                .map(|id| id.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("clips must be a list of clip ids"))
-                .collect::<Result<_, _>>()?,
-        ),
-    };
+    let only = Args::new(params).opt_ids("clips")?;
     let chosen = |c: &Clip| only.as_ref().is_none_or(|ids| ids.contains(&c.id.0));
     let p = &session.project;
     let lane =
@@ -196,6 +180,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
         extensions: Default::default(),
     };
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
@@ -332,11 +317,6 @@ fn render_audio(
         sample_rate: Some(rate),
         channels: Some(2),
         duration_seconds: Some(seconds),
-        warped: false,
-        stretch: StretchMode::default(),
-        warp_markers: Default::default(),
-        gain: 1.0,
-        transpose: 0.0,
         stream: None,
     })
 }

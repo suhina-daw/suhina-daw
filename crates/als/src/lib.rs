@@ -18,8 +18,8 @@ use std::path::Path;
 
 use roxmltree::Node;
 use suhina_model::{
-    Arrangement, ArrangementLane, AudioRegion, Branch, Channel, ChannelId, ChannelRole, Clip, ClipContent, ClipId,
-    ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceKind, DeviceParam, Extension, Extensions,
+    Arrangement, ArrangementLane, AudioRegion, Branch, Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent,
+    ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceGroup, DeviceKind, DeviceParam, Extension, Extensions,
     LaneData, LaneId, Launcher, LauncherColumn, LoopRange, MACROS, MAX_BRANCHES, MAX_CHANGE_BEAT, MAX_DENOMINATOR,
     MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_GROUP_DEPTH, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Marker, Note,
     Project, Scene, SceneId, Send, Slot, StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId,
@@ -794,6 +794,7 @@ impl Reader {
     fn clip(&mut self, node: Node, arrangement: bool, track: &str) -> Option<Clip> {
         let name = value(node, &["Name"]).unwrap_or_default().to_string();
         let mut scale = None;
+        let mut audio = ClipAudio::default();
         let data = match node.tag_name().name() {
             "MidiClip" => {
                 scale = scale::clip_scale(node).unwrap_or_else(|reason| {
@@ -802,14 +803,18 @@ impl Reader {
                 });
                 LaneData::Notes(self.notes(node, &name, track).into())
             }
-            "AudioClip" => LaneData::Audio(self.audio(node, &name, track)?),
+            "AudioClip" => {
+                let (region, state) = self.audio(node, &name, track)?;
+                audio = state;
+                LaneData::Audio(region)
+            }
             other => {
                 self.warn(format!("track {track}: {other} is not imported yet"));
                 return None;
             }
         };
         // An unwarped audio clip keeps its loop region in seconds (docs/spec/als-format.md).
-        let unwarped = matches!(&data, LaneData::Audio(audio) if !audio.warped);
+        let unwarped = matches!(&data, LaneData::Audio(_)) && !audio.warped;
         let beats_per_second = self.tempo_bpm / 60.0;
         let loop_time = |names: &[&str]| number(node, names).map(|t| if unwarped { t * beats_per_second } else { t });
 
@@ -864,11 +869,13 @@ impl Reader {
             launch: Default::default(),
             color: None,
             ara: false,
+            audio,
             extensions: Extensions::default(),
         })
     }
 
-    fn audio(&mut self, clip: Node, clip_name: &str, track: &str) -> Option<AudioRegion> {
+    /// An audio clip's source, and how the clip plays it.
+    fn audio(&mut self, clip: Node, clip_name: &str, track: &str) -> Option<(AudioRegion, ClipAudio)> {
         let file_ref = path(clip, &["SampleRef", "FileRef"]);
         let relative = file_ref.and_then(|f| value(f, &["RelativePath"])).filter(|p| !p.is_empty());
         let absolute = file_ref.and_then(|f| value(f, &["Path"])).filter(|p| !p.is_empty());
@@ -912,19 +919,23 @@ impl Reader {
                 StretchMode::Smooth
             }
         };
-        Some(AudioRegion {
+        let region = AudioRegion {
             file: file.to_string(),
             absolute_file: absolute.map(str::to_string),
             sample_rate,
             channels: None,
             duration_seconds,
+            stream: None,
+        };
+        let state = ClipAudio {
             warped: boolean(clip, &["IsWarped"]).unwrap_or(true),
             stretch,
             warp_markers,
             gain: number(clip, &["SampleVolume"]).filter(|g| *g >= 0.0).unwrap_or(1.0),
             transpose: coarse + fine / 100.0,
-            stream: None,
-        })
+            ..ClipAudio::default()
+        };
+        Some((region, state))
     }
 
     fn notes(&mut self, clip: Node, clip_name: &str, track: &str) -> Vec<Note> {

@@ -62,6 +62,7 @@ mod clap;
 mod denormals;
 mod hosted;
 mod param_notes;
+mod planar;
 mod processors;
 mod run_loop;
 mod test_clap;

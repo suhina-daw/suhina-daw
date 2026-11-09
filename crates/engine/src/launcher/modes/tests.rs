@@ -202,7 +202,7 @@ fn legato_audio_continues_from_the_replaced_clips_position() {
     let samples = (0..sr).map(|i| i as f32 / sr as f32).collect();
     let mut audio = AudioPool::new();
     audio.files.insert("ramp.wav".into(), Arc::new(AudioData { sample_rate: sr, channels: 1, samples }));
-    let content = |id: u32, gain: f64| ClipContent {
+    let content = |id: u32| ClipContent {
         id: ContentId(id),
         name: "ramp".into(),
         length: 2.0,
@@ -212,7 +212,6 @@ fn legato_audio_continues_from_the_replaced_clips_position() {
                 sample_rate: Some(sr),
                 channels: Some(1),
                 duration_seconds: Some(1.0),
-                gain,
                 ..AudioRegion::new("ramp.wav")
             }),
         }]
@@ -223,7 +222,8 @@ fn legato_audio_continues_from_the_replaced_clips_position() {
     let render_with = |legato: bool| {
         let mut second = clip(2, 2.0, true);
         second.launch = LaunchSettings { legato, quantization: LaunchQuantization::None, ..LaunchSettings::default() };
-        let p = project(vec![content(1, 1.0), content(2, 0.5)], vec![vec![with(clip(1, 2.0, true)), with(second)]]);
+        second.audio.gain = 0.5;
+        let p = project(vec![content(1), content(2)], vec![vec![with(clip(1, 2.0, true)), with(second)]]);
         let commands = [(0.0, PRESS), (0.3, LaunchCommand::LaunchClip { column: 0, slot: 1 })];
         render_launches(&p, &audio, sr, &commands, 0.5, suhina_device_registry::factory()).unwrap()
     };

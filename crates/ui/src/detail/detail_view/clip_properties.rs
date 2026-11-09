@@ -57,7 +57,7 @@ pub(super) fn beats_text(beats: f64) -> String {
 /// of [`CLIP_WIDTH`] at the left of `area`, stacked the rows it needs at the top; returns the
 /// space it took.
 pub(super) fn clip_properties(
-    ui: &Ui,
+    ui: &mut Ui,
     painter: &egui::Painter,
     area: Rect,
     info: &ClipInfo,
@@ -138,25 +138,47 @@ pub(super) fn clip_properties(
             rows.push((label, name.clone(), ClipEdit::Focus(index)));
         }
     }
+    // An audio clip's column is its panel (`docs/spec/clip-panel.md`): groups instead of rows.
+    let panel = info.at.filter(|_| info.audio).map(|at| {
+        let clip = match at {
+            ClipRef::Arrangement(_, clip) => clip,
+            ClipRef::Slot(..) => ClipId::NONE,
+        };
+        (at, info.panel.clone().unwrap_or(AudioPanel { clip, ..AudioPanel::default() }))
+    });
     let column = if stacked {
-        let height = ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW;
+        let height = match &panel {
+            Some(_) => 26.0 + super::clip_panel::stacked_height(info),
+            None => ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW,
+        };
         Rect::from_min_size(area.min, Vec2::new(area.width(), height))
     } else {
-        // `.clip-info { width }` in the theme (120 to 480 points).
+        // `clip-info { width }` in the theme (120 to 480 points); an audio clip's panel has three
+        // parts side by side (`docs/spec/clip-panel.md` › Layout).
         let width = {
-            let _style = crate::kit::style_class::enter("clip-info");
-            crate::kit::style_class::computed().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0))
+            let el = crate::kit::element::CLIP_INFO.enter();
+            el.style().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0))
         };
+        let width = if panel.is_some() { super::clip_panel::ROW_WIDTH } else { width };
         Rect::from_min_max(area.min, Pos2::new(area.left() + width, area.bottom()))
     }
     .intersect(area);
-    // `.clip-info` styles the clip's column: its background and its text.
-    let _style = crate::kit::style_class::enter("clip-info");
-    crate::kit::native_css::surface(painter, column, 0.0, theme::panel_background());
+    // `clip-info` styles the clip's column: its background and its text.
+    let el = crate::kit::element::CLIP_INFO.enter();
+    el.paint_with(painter, column, crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() });
     // Rows that do not fit under the column's bottom are left out rather than cut in half, the
     // title last; text never wraps (› Clip column in `docs/spec/ui-clip-editor.md`).
     let title = Rect::from_min_size(column.min, Vec2::new(column.width(), ROW));
     if title.bottom() > column.bottom() + 0.5 {
+        return (column, None);
+    }
+    // An audio clip's panel has a title row of its own: colour, name, length, a line under it.
+    if let Some((at, panel)) = &panel {
+        let title = Rect::from_min_size(column.min, Vec2::new(column.width(), 26.0));
+        super::clip_panel::title_row(ui, painter, title, info, *at, panel, actions);
+        painter.hline(title.x_range(), title.bottom() - 0.5, theme::hairline(theme::border()));
+        let body = Rect::from_min_max(Pos2::new(column.left(), title.bottom()), column.max);
+        super::clip_panel::audio_panel(ui, painter, body, info, *at, panel, stacked, actions);
         return (column, None);
     }
     // The Clip / Devices switch ends the title row; the name keeps clear of it.
@@ -172,11 +194,13 @@ pub(super) fn clip_properties(
         }
         None => (title, None),
     };
+    let title_text =
+        if info.others.is_empty() { info.name.clone() } else { format!("{} selected", info.others.len() + 1) };
     widgets::text_in(
         painter,
         name.shrink2(Vec2::new(PAD, 0.0)),
         Align2::LEFT_CENTER,
-        &if info.others.is_empty() { info.name.clone() } else { format!("{} selected", info.others.len() + 1) },
+        &title_text,
         theme::ui_font(theme::TEXT),
         theme::text_primary(),
     );

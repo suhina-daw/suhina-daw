@@ -36,7 +36,7 @@ fn is_audio(p: &Project, content: ContentId) -> bool {
 
 /// Puts `clip` back on lane `lane` (it was taken out), replacing what it covers unless `stack`;
 /// answers with its index there.
-fn put_back(p: &mut Project, lane: usize, clip: Clip, stack: bool) -> Result<usize, CommandError> {
+pub(crate) fn put_back(p: &mut Project, lane: usize, clip: Clip, stack: bool) -> Result<usize, CommandError> {
     let stack = stack && !p.lane_takes_cover(lane, clip.start, clip.start + clip.length);
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
     if !stack {
@@ -210,6 +210,63 @@ pub(crate) fn trim_clip(session: &mut Session, params: &Value) -> Result<Value, 
     Ok(json!({ "track": track, "index": index, "start": clip.start, "end": clip.start + clip.length, "loop": looped }))
 }
 
+/// Stretches `clip`'s audio by `factor` (its content's beats, not its place): its warp markers,
+/// gain envelope, offset, loop and fades are scaled, and warp is turned on. A clip whose content
+/// another clip plays gets a content of its own first, as the content's length in beats follows.
+/// The clip's start and length are the caller's.
+pub(crate) fn scale_audio(p: &mut Project, clip: &mut Clip, factor: f64) -> Result<(), CommandError> {
+    if !(factor.is_finite() && factor > 0.0) {
+        return Err("the stretch must be a positive number".into());
+    }
+    // Played by another clip too: this one gets a copy, so the other keeps its speed.
+    let shared = p.arrangement.lanes.iter().flat_map(|l| &l.clips).filter(|c| c.content == clip.content).count()
+        + p.launcher
+            .columns
+            .iter()
+            .flat_map(|c| &c.slots)
+            .filter_map(|s| s.clip.as_ref())
+            .filter(|c| c.content == clip.content)
+            .count()
+        > 1;
+    if shared {
+        let id = new_content_id(p)?;
+        let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
+        p.contents.push(suhina_model::ClipContent { id, ..content });
+        clip.content = id;
+    }
+    let content = p.contents.iter_mut().find(|c| c.id == clip.content).ok_or("the clip's content is missing")?;
+    let old_length = content.length;
+    let seconds = content.lanes.iter().find_map(|l| match &l.data {
+        LaneData::Audio(region) => Some(region.duration_seconds),
+        LaneData::Notes(_) => None,
+    });
+    if let Some(seconds) = seconds {
+        let audio = &mut clip.audio;
+        if audio.warp_markers.is_empty() {
+            let seconds = seconds.ok_or("the audio's length is not known, so it cannot stretch")?;
+            audio.warp_markers =
+                vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: old_length, audio_time: seconds }];
+        }
+        if !audio.warped {
+            audio.warped = true;
+            audio.stretch = suhina_model::StretchMode::default();
+        }
+        for marker in &mut audio.warp_markers {
+            marker.time *= factor;
+        }
+        // The envelope is on the content's beats too: it stretches with the audio.
+        for point in &mut audio.gain_envelope {
+            point.beat *= factor;
+        }
+    }
+    content.length = old_length * factor;
+    clip.offset *= factor;
+    clip.loop_range = clip.loop_range.map(|r| LoopRange { start: r.start * factor, end: r.end * factor });
+    clip.fade_in *= factor;
+    clip.fade_out *= factor;
+    Ok(())
+}
+
 /// `clip.stretch {track, index, start?, end?, stack?}`: an audio clip's edges moved with its
 /// audio stretched to fill the new length (time-stretched, so its pitch stays): the content's
 /// warp markers are scaled, and a clip whose content others play gets a content of its own first.
@@ -231,47 +288,7 @@ pub(crate) fn stretch_clip(session: &mut Session, params: &Value) -> Result<Valu
         return Err(format!("the clip would be shorter than {MIN_LENGTH} beats").into());
     }
     let factor = (new_end - new_start) / clip.length;
-    // Played by another clip too: this one gets a copy, so the other keeps its speed.
-    let shared = p.arrangement.lanes.iter().flat_map(|l| &l.clips).filter(|c| c.content == clip.content).count()
-        + p.launcher
-            .columns
-            .iter()
-            .flat_map(|c| &c.slots)
-            .filter_map(|s| s.clip.as_ref())
-            .filter(|c| c.content == clip.content)
-            .count()
-        > 1;
-    if shared {
-        let id = new_content_id(p)?;
-        let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
-        p.contents.push(suhina_model::ClipContent { id, ..content });
-        clip.content = id;
-    }
-    let content = p.contents.iter_mut().find(|c| c.id == clip.content).ok_or("the clip's content is missing")?;
-    let old_length = content.length;
-    for lane in &mut content.lanes {
-        if let LaneData::Audio(region) = &mut lane.data {
-            if region.warp_markers.is_empty() {
-                let seconds = region.duration_seconds.ok_or("the audio's length is not known, so it cannot stretch")?;
-                region.warp_markers = vec![
-                    WarpMarker { time: 0.0, audio_time: 0.0 },
-                    WarpMarker { time: old_length, audio_time: seconds },
-                ];
-            }
-            if !region.warped {
-                region.warped = true;
-                region.stretch = suhina_model::StretchMode::default();
-            }
-            for marker in &mut region.warp_markers {
-                marker.time *= factor;
-            }
-        }
-    }
-    content.length = old_length * factor;
-    clip.offset *= factor;
-    clip.loop_range = clip.loop_range.map(|r| LoopRange { start: r.start * factor, end: r.end * factor });
-    clip.fade_in *= factor;
-    clip.fade_out *= factor;
+    scale_audio(p, &mut clip, factor)?;
     clip.start = new_start;
     clip.length = new_end - new_start;
     clip.fit_fades();

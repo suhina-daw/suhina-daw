@@ -640,7 +640,7 @@ fn a_bar_draws_its_separator_in_its_own_border_colour() {
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
     app.settings.animations = false;
     app.use_test_skin(crate::kit::skin::Skin {
-        css: Some(std::sync::Arc::from(".menu-bar { border-color: #FF0000; }")),
+        css: Some(std::sync::Arc::from("menu-bar { border-color: #FF0000; }")),
         ..Default::default()
     });
     let red = egui::Color32::from_rgb(0xFF, 0, 0);
@@ -674,7 +674,7 @@ fn a_bar_without_a_line_fills_the_line_with_its_background() {
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
     app.settings.animations = false;
     app.use_test_skin(crate::kit::skin::Skin {
-        css: Some(std::sync::Arc::from(".menu-bar { background-color: #00FF00; border-width: 0; }")),
+        css: Some(std::sync::Arc::from("menu-bar { background-color: #00FF00; border-width: 0; }")),
         ..Default::default()
     });
     let green = egui::Color32::from_rgb(0, 0xFF, 0);
@@ -708,7 +708,7 @@ fn a_theme_keeps_the_header_column_at_its_least_width() {
     app.settings.animations = false;
     app.shown = View::Arrangement;
     // As a theme file is read: the sheet's --suhina-* values are the app's.
-    let css = ".arrangement { --suhina-header-min-width: 330px; }";
+    let css = "arrangement { --suhina-header-min-width: 330px; }";
     let mut theme = crate::kit::theme::Theme::default();
     assert!(crate::kit::theme_css::read_host_rules(&mut theme, css).is_empty());
     theme.skin.css = Some(std::sync::Arc::from(css));
@@ -737,8 +737,8 @@ fn an_arrangement_header_and_name_draw_the_sheet_s_backgrounds() {
     app.shown = View::Arrangement;
     app.use_test_skin(crate::kit::skin::Skin {
         css: Some(std::sync::Arc::from(
-            ".arrangement .track-header { background-color: #102030; } \
-             .arrangement .track-name { background-color: #FF0000; }",
+            "arrangement track-header { background-color: #102030; } \
+             arrangement track-name { background-color: #FF0000; }",
         )),
         ..Default::default()
     });
@@ -772,8 +772,8 @@ fn a_clip_takes_its_radius_opacity_and_name_colour_from_the_sheet() {
     app.shown = View::Arrangement;
     app.use_test_skin(crate::kit::skin::Skin {
         css: Some(std::sync::Arc::from(
-            ".clip { border-radius: 9px; opacity: 0.5; background-color: #2040FF; } \
-             .clip-name { color: #FF0000; }",
+            "clip { border-radius: 9px; opacity: 0.5; background-color: #2040FF; } \
+             clip-name { color: #FF0000; }",
         )),
         ..Default::default()
     });
@@ -796,7 +796,7 @@ fn a_clip_takes_its_radius_opacity_and_name_colour_from_the_sheet() {
                 egui::Shape::Text(text) => {
                     red_name |= text.galley.job.sections.iter().any(|s| {
                         let c = s.format.color;
-                        c.r() > 0 && c.g() == 0 && c.b() == 0
+                        c.to_array()[0] > 0 && c.to_array()[1] == 0 && c.to_array()[2] == 0
                     });
                 }
                 _ => {}
@@ -911,4 +911,90 @@ fn copies_put_a_line_on_the_system_clipboard() {
         assert!(clipboard_line(command).is_some_and(|line| line.starts_with("Suhina: ")), "{command}");
     }
     assert_eq!(clipboard_line("automation.paste"), None);
+}
+
+/// A time selection painted in one row of a stack: the edit keys name that row's clips, so
+/// Delete, Cut, Copy, Split, Duplicate and Consolidate leave the other rows be (#701).
+#[test]
+fn the_edit_keys_on_a_row_of_a_stack_keep_to_its_clips() {
+    use suhina_engine::model::{Clip, ContentId, Note};
+    let project = suhina_test_support::ProjectBuilder::from(suhina_session::blank_project())
+        .notes(1, "Riff", 4.0, vec![Note::new(0.0, 4.0, 60, 0.8)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .clip(1, Clip::new(ContentId(1), 2.0, 4.0))
+        .build_without_ids();
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(project), &[]);
+    app.shown = View::Arrangement;
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    let app = harness.state_mut();
+    let lane = app.timeline.as_ref().unwrap().2.lanes.iter().find(|l| l.track == TrackId(1)).unwrap().clone();
+    let upper = lane.clips.iter().find(|c| c.row == 1).expect("a stack of two rows");
+    assert_eq!(upper.rows, 2);
+    use crate::arrangement::arrangement_view::TimeSelection;
+    let span = TimeSelection { tracks: vec![TrackId(1)], start: 2.0, end: 4.0, row: Some((1, 2)) };
+    for (key, command) in [
+        ("selection.delete", "range.delete"),
+        ("selection.cut", "range.cut"),
+        ("selection.copy", "range.copy"),
+        ("selection.split", "range.split"),
+        ("selection.duplicate", "range.duplicate"),
+        ("selection.consolidate", "clip.consolidate"),
+    ] {
+        app.arrangement.set_time_selection(Some(span.clone()));
+        let mut actions = Vec::new();
+        app.do_action(key, &mut actions);
+        let sent = actions.iter().find(|a| a.id == command).unwrap_or_else(|| panic!("{key}: {actions:?}"));
+        assert_eq!(sent.params["clips"], json!([upper.id.0]), "{key}");
+    }
+    // Over the whole track, no clips are named: every row.
+    app.arrangement.set_time_selection(Some(TimeSelection { row: None, ..span }));
+    let mut actions = Vec::new();
+    app.do_action("selection.delete", &mut actions);
+    assert!(actions.iter().any(|a| a.id == "range.delete" && a.params.get("clips").is_none()), "{actions:?}");
+}
+
+/// Ctrl+D on a row of a stack names that row's clips under the copy too, so it replaces the
+/// row's clips where it lands and no other row's, and it stacks when the stacking setting for
+/// the clips it copies is on, as a copied clip does (#701).
+#[test]
+fn ctrl_d_on_a_row_of_a_stack_names_its_clips_where_the_copy_lands_and_follows_stacking() {
+    use crate::arrangement::arrangement_view::TimeSelection;
+    use suhina_engine::model::{Clip, ContentId, Note};
+    let project = suhina_test_support::ProjectBuilder::from(suhina_session::blank_project())
+        .notes(1, "Riff", 4.0, vec![Note::new(0.0, 4.0, 60, 0.8)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .clip(1, Clip::new(ContentId(1), 2.0, 4.0))
+        .clip(1, Clip::new(ContentId(1), 5.0, 3.0))
+        .build_without_ids();
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(project), &[]);
+    app.shown = View::Arrangement;
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    let app = harness.state_mut();
+    let lane = app.timeline.as_ref().unwrap().2.lanes.iter().find(|l| l.track == TrackId(1)).unwrap().clone();
+    let first = lane.clips.iter().find(|c| c.start == 0.0).unwrap();
+    let later = lane.clips.iter().find(|c| c.start == 5.0).unwrap();
+    assert_eq!((first.row, later.row), (0, 0), "the clips from 0 and from 5 share a row");
+    // Beats 2 to 4 of that row: the copy lands on 4 to 6, over the clip from 5.
+    let span = TimeSelection { tracks: vec![TrackId(1)], start: 2.0, end: 4.0, row: Some((0, 2)) };
+    let sent = |app: &mut App| {
+        app.arrangement.set_time_selection(Some(span.clone()));
+        let mut actions = Vec::new();
+        app.do_action("selection.duplicate", &mut actions);
+        actions.into_iter().find(|a| a.id == "range.duplicate").expect("range.duplicate").params
+    };
+    let params = sent(app);
+    assert_eq!(params["clips"], json!([first.id.0, later.id.0]));
+    assert!(params.get("stack").is_none(), "stacking is off by default");
+    app.settings.midi_stacking = true;
+    assert_eq!(sent(app)["stack"], json!(true), "MIDI stacking is on");
 }
