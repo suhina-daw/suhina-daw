@@ -500,4 +500,6 @@ fn ctrl_alone_at_the_press_copies_the_dragged_note() {
     let after = notes(&h);
     assert_eq!(after.len(), before.len() + 1, "a copy was added");
     assert!(after.contains(&before[2]), "the note stayed where it was");
+    let copy = after.iter().find(|n| !before.contains(n)).expect("the copy");
+    assert!((copy.time - (before[2].time + 1.0)).abs() < 0.05, "one beat on: {copy:?}");
 }

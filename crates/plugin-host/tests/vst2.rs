@@ -433,6 +433,9 @@ fn a_program_for_another_plug_in_or_other_parameters_is_refused() {
     let before = value(&mut plugin);
     let other = fxp_for(MOCK_ID + 1, b"FxCk", 1, &0.875f32.to_be_bytes());
     assert!(plugin.load_state(other).is_err(), "another plug-in's program");
+    // A chunk program too: the plug-in's own state, not for any other.
+    let chunk = fxp_for(MOCK_ID + 1, b"FPCh", 1, &[&4u32.to_be_bytes()[..], &0.25f32.to_le_bytes()].concat());
+    assert!(plugin.load_state(chunk).is_err(), "another plug-in's chunk program");
     let two = fxp(b"FxCk", 2, &[&0.875f32.to_be_bytes()[..], &0.5f32.to_be_bytes()].concat());
     assert!(plugin.load_state(two).is_err(), "a program of two parameters");
     assert_eq!(value(&mut plugin), before);

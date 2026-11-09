@@ -568,6 +568,7 @@ fn a_bus_whose_plug_ins_are_off_keeps_no_share_of_the_deadline() {
     assert_eq!(levels, Some(0), "no bus level with a plug-in switched on after the track");
     play(&mut renderer, 1);
     let log = log.lock().unwrap().clone();
+    assert!(log.iter().any(|hand| hand.name == "track"), "the track's plug-in was sent no block: {log:?}");
     assert!(log.iter().all(|hand| hand.name != "off"), "the switched-off plug-in was sent a block: {log:?}");
     assert_eq!(missed_on(&mut renderer, 1), 0, "the track's plug-in had the whole deadline");
 }

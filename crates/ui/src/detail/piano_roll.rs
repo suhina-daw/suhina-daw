@@ -426,17 +426,22 @@ pub fn show(
     // a drag never takes an earlier press's (#1048).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary)) {
         // The modifiers the press event carries, not those of a later frame (Alt can change in
-        // between).
-        let held = ui.input(|i| {
-            i.events.iter().find_map(|event| match event {
-                egui::Event::PointerButton { button: PointerButton::Primary, pressed: true, modifiers, .. } => {
-                    Some(*modifiers)
+        // between), and the press that is the latest of the frame, the one a drag comes from. Where
+        // it was pressed is the event's position too: the pointer may have moved on in the frame.
+        let press = ui.input(|i| {
+            i.events.iter().rev().find_map(|event| match event {
+                egui::Event::PointerButton { button: PointerButton::Primary, pressed: true, modifiers, pos } => {
+                    Some((*modifiers, *pos))
                 }
                 _ => None,
             })
         });
-        state.pressed_with =
-            widgets::pointer_over(ui, grid_rect).map(|_| held.unwrap_or_else(|| ui.input(|i| i.modifiers)));
+        state.pressed_with = match press {
+            Some((held, pos)) => {
+                (grid_rect.contains(pos) && ui.ctx().layer_id_at(pos) == Some(ui.layer_id())).then_some(held)
+            }
+            None => widgets::pointer_over(ui, grid_rect).map(|_| ui.input(|i| i.modifiers)),
+        };
     }
     // The audition starts on the press: a note pressed, or the note a press is about to draw, sounds
     // for as long as the button is held (› Playing the keys).

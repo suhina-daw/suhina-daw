@@ -890,6 +890,16 @@ impl Vst2Plugin {
         // values as parameters.
         match suhina_plugins::vst2::single_program(data) {
             Some(suhina_plugins::vst2::Program::Chunk(chunk)) => {
+                // A chunk is the plug-in's own: one made for another plug-in would be read as
+                // unrelated state, with the render none the wiser.
+                if let Some((id, _)) = suhina_plugins::vst2::program_header(data)
+                    && id != self.shared.unique_id
+                {
+                    return Err(format!(
+                        "the program is for plug-in {id:08X}, not this one ({:08X})",
+                        self.shared.unique_id
+                    ));
+                }
                 let size = isize::try_from(chunk.len()).unwrap_or(0);
                 let answer = self.send(EffectOp::SetChunk, 1, size, chunk.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
                 suhina_plugins::trace!("vst2 {}: effSetChunk (program) answered {answer}", self.instance);
