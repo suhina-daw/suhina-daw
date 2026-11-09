@@ -756,17 +756,7 @@ impl SoundMap {
         }
         let path = dir.join(layout_file_name(key));
         let _unkept = suhina_fs::write_atomic(&path, layout_to_bytes(positions));
-        // Keep only the newest layouts.
-        let Ok(entries) = std::fs::read_dir(&dir) else { return };
-        let mut layouts: Vec<(std::time::SystemTime, PathBuf)> = entries
-            .filter_map(Result::ok)
-            .filter(|e| e.file_name().to_string_lossy().starts_with("layout-"))
-            .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
-            .collect();
-        layouts.sort_by_key(|l| std::cmp::Reverse(l.0));
-        for (_, old) in layouts.into_iter().skip(KEPT_LAYOUTS) {
-            let _ = std::fs::remove_file(old);
-        }
+        suhina_fs::keep_newest(&dir, KEPT_LAYOUTS, |name| name.starts_with("layout-") && name.ends_with(".bin"));
     }
 }
 

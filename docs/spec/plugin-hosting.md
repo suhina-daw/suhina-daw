@@ -295,7 +295,12 @@ rule for both formats (`audio::feed_main` and `audio::collect_main` in
 `crates/plugin-host/src/audio.rs`, #767): a channel of the main input the link has none for
 repeats the link's last channel, so a mono source reaches both sides of a stereo input; a
 channel of the link the main output has none for repeats the output's last, so a mono output
-reaches both sides of a stereo link. A
+reaches both sides of a stereo link. Every format keeps a block's buffers in one
+`planar::Planar` (buses × channels × the most frames a block has, allocated once, with the
+channel pointer arrays VST3 and VST2 pass). CLAP and VST3 keep the parameter values waiting
+for the next block in one `planar::ParamQueue`, which the audio thread takes from without
+waiting for its lock, up to each format's limit per block; VST2 calls `setParameter` as the
+value is set (`crates/plugin-host/src/planar.rs`, #764 › 10). A
 plug-in is named `clap:<file>` or
 `clap:<file>#<id>`; the only `unsafe` the host needs for it is opening the file. A CLAP gain
 built into the host (`test:clap`, made with `clack-plugin`) lets the tests run the whole path
