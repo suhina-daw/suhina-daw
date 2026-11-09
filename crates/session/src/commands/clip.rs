@@ -919,6 +919,7 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     session.clipboards.clips = copied;
     session.clipboards.tracks = from;
     session.clipboards.under = under;
+    session.clipboards.span = None;
     Ok(json!({ "copied": names }))
 }
 
@@ -936,7 +937,9 @@ enum PasteAt {
 }
 
 fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    if session.clipboards.clips.is_empty() {
+    // A time selection copied with only automation in it pastes onto its own tracks.
+    let span_only = session.clipboards.clips.is_empty() && session.clipboards.span.is_some();
+    if session.clipboards.clips.is_empty() && !span_only {
         return Err("nothing has been copied".into());
     }
     let at = match (Args::new(params).value("start"), Args::new(params).value("scene")) {
@@ -963,8 +966,9 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     if replace.is_some() && (!Args::new(params).has("track") || !matches!(at, PasteAt::Beat(_))) {
         return Err("replace requires an arrangement track and start".into());
     }
-    // No track: each copied clip goes back to the track it came from.
-    if !Args::new(params).has("track")
+    // No track: each copied clip goes back to the track it came from; so does a time
+    // selection's automation, with or without clips.
+    if (!Args::new(params).has("track") || span_only)
         && let PasteAt::Beat(start) = at
     {
         return crate::range::paste_to_sources(session, start, stack);

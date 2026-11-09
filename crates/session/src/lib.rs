@@ -406,8 +406,10 @@ impl Session {
     }
 
     pub fn copied_from_tracks(&self) -> bool {
-        self.clipboards.tracks.len() == self.clipboards.clips.len()
-            && self.clipboards.tracks.iter().any(|t| Some(t) != self.clipboards.tracks.first())
+        // A time selection's copy, its automation with it, goes back to its own tracks (#1205).
+        self.clipboards.span.is_some()
+            || (self.clipboards.tracks.len() == self.clipboards.clips.len()
+                && self.clipboards.tracks.iter().any(|t| Some(t) != self.clipboards.tracks.first()))
     }
 
     /// The project's decoded audio, which players are started with (ADR 0011).

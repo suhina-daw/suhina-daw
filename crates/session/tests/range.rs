@@ -280,3 +280,58 @@ fn keeping_ara_edits_moves_plain_clips_as_ever() {
             .is_err()
     );
 }
+
+/// The blank project's clips, with track 1's volume automated from beat 8 to 12 where no clip
+/// plays: up to full at beat 10 and down again.
+fn with_volume_lane() -> Session {
+    let mut p = project();
+    let channel = p.track(TrackId(1)).and_then(|t| t.channel).unwrap();
+    p.channel_mut(channel).unwrap().automation.push(AutomationLane {
+        param: "volume".into(),
+        points: vec![
+            AutomationPoint::new(8.0, 0.25),
+            AutomationPoint::new(10.0, 1.0),
+            AutomationPoint::new(12.0, 0.25),
+        ]
+        .into(),
+        enabled: true,
+    });
+    Session::new(p)
+}
+
+/// Track 1's volume at `beat`.
+fn volume_at(session: &Session, beat: f64) -> f64 {
+    let lane = session.project().channel_of_track(TrackId(1)).unwrap().lane("volume").unwrap();
+    lane.value_at(beat, false, &automation::VolumeTaper).unwrap()
+}
+
+/// A time selection carries its tracks' automation over its whole span, where no clip plays too:
+/// Ctrl+D puts it right after, Ctrl+C and Ctrl+V on its own track from the paste's start, and
+/// Delete clears it, the values at its edges kept (#1205).
+#[test]
+fn a_range_carries_its_automation_with_or_without_clips() {
+    let mut session = with_volume_lane();
+    run(&mut session, "range.duplicate", json!({ "tracks": [1], "start": 8.0, "end": 12.0 })).unwrap();
+    assert!((volume_at(&session, 14.0) - 1.0).abs() < 1e-9, "the peak copied to beat 14");
+    assert_eq!(spans(&session, 1), [(0.0, 4.0)], "no clip was made");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+
+    run(&mut session, "range.copy", json!({ "tracks": [1], "start": 8.0, "end": 12.0 })).unwrap();
+    assert!(session.copied_from_tracks(), "back onto its own track");
+    run(&mut session, "clip.paste", json!({ "start": 20.0 })).unwrap();
+    assert!((volume_at(&session, 22.0) - 1.0).abs() < 1e-9, "the peak pasted at beat 22");
+    assert!((volume_at(&session, 10.0) - 1.0).abs() < 1e-9, "the original stays");
+
+    run(&mut session, "range.delete", json!({ "tracks": [1], "start": 8.0, "end": 12.0 })).unwrap();
+    assert!((volume_at(&session, 10.0) - 0.25).abs() < 1e-9, "the peak inside is gone");
+    assert!((volume_at(&session, 22.0) - 1.0).abs() < 1e-9, "outside the span stays");
+}
+
+/// A range copied with a clip in it lays the automation once, not again under the clip (#1205).
+#[test]
+fn a_range_with_a_clip_lays_its_automation_once() {
+    let mut session = with_volume_lane();
+    run(&mut session, "range.duplicate", json!({ "tracks": [1], "start": 0.0, "end": 12.0 })).unwrap();
+    assert_eq!(spans(&session, 1), [(0.0, 4.0), (12.0, 4.0)]);
+    assert!((volume_at(&session, 22.0) - 1.0).abs() < 1e-9, "the peak at 10 copied to 22");
+}

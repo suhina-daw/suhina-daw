@@ -295,6 +295,12 @@ relative to the clip:
   with it, and `clip.paste` lays it under the clip's copy, on the track pasted to.
 - **Duplicated** (`clip.duplicate`, `range.duplicate`): each copy gets the envelope under the clip
   it copies.
+- **A time selection** (`range.copy`, `range.cut`, `range.duplicate`, `range.delete`) carries its
+  tracks' automation over its whole span, under clips and where no clip plays alike (#1205): every
+  lane of the tracks' mixers and devices with a point inside it, from the span's start to its end
+  with the values at its edges. A copy pastes back on its own tracks with `clip.paste` and no track,
+  the span's start where the paste starts; a duplicate lays it right after the span; a delete clears
+  it and keeps the values at its edges. A selection with automation and no clip is no error.
 
 In the Arrangement view a time selection painted over tracks lights their take and automation
 lanes under them too, and a selection box begun on a track over no clip picks the automation points
