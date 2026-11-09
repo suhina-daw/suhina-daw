@@ -163,8 +163,8 @@ pub fn midi_monitor_explanation(monitor: Monitor) -> &'static str {
 /// Input monitoring is independent of record arm and headphone cue.
 pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actions: &mut Vec<Action>) {
     // `popup` styles the menu, `button[checked]` its chosen row.
-    let _style = crate::kit::style_class::enter("popup");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let style = crate::kit::element::POPUP.enter();
+    let mut styled_ui = style.ui(ui);
     let ui = &mut *styled_ui;
     ui.set_min_width(280.0);
     ui.set_max_width(280.0);
@@ -200,8 +200,8 @@ pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actio
 /// chosen, if it is not there now), none; then every channel or one. A pick runs
 /// `track.setMidiInput`.
 pub fn midi_input_choices(ui: &mut Ui, track: TrackId, input: &MidiInput, ports: &[String], actions: &mut Vec<Action>) {
-    let _style = crate::kit::style_class::enter("popup");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let style = crate::kit::element::POPUP.enter();
+    let mut styled_ui = style.ui(ui);
     let ui = &mut *styled_ui;
     let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
     let mut pick = |ui: &mut Ui, label: &str, on: bool, params: serde_json::Value| {

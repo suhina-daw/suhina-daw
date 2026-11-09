@@ -9,10 +9,10 @@ use crate::settings::view_settings::ViewSettings;
 use egui::{Align2, Rect, Sense, Ui, Vec2};
 
 pub(super) fn show(ui: &mut Ui, settings: ViewSettings, project: &str, timing: &str) {
-    let _style_class = crate::kit::style_class::enter("application-bar");
+    let style_class = crate::kit::element::APPLICATION_BAR.enter();
     ui.painter().fill_background(ui.max_rect(), 0.0, theme::panel_background());
-    crate::kit::native_css::background(ui.painter(), ui.max_rect());
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    style_class.paint_background(ui.painter(), ui.max_rect(), 0.0);
+    let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let row = ui.available_rect_before_wrap();
     let custom_controls = cfg!(target_os = "windows");

@@ -4,6 +4,7 @@
 //! The native style engine's adapter: sheets in, `Computed` paint values and rectangles out.
 use super::{Authored, Computed, Engine, element_id, shadows, text};
 use egui::{Color32, Rect, Vec2};
+use std::sync::Arc;
 use suhina_style::{
     cascade::{self, AppliedSheet, ComputedStyle, Layer},
     media::Viewport,
@@ -154,6 +155,28 @@ pub(super) fn scoped(engine: &Engine, stack: &[String]) -> Option<Computed> {
     let tree = Tree::new(elements).ok()?;
     let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
     engine.native.as_ref()?.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.last().map(computed)
+}
+
+/// The style of the last of `path` (element names from `window` inward) under `css`, the
+/// variant's and the user's sheets, at the window's usual size.
+pub(super) fn settings_of(css: &str, variant: Option<&str>, user: Option<&str>, path: &[&str]) -> Option<Computed> {
+    let sheet = Sheet::parse(css).ok()?;
+    let variant = variant.and_then(|text| Sheet::parse(text).ok());
+    let user = user.and_then(|text| Sheet::parse(text).ok());
+    let mut elements = vec![Element::new("html", None), Element::new("window", Some(0))];
+    for name in path.iter().filter(|name| **name != "window") {
+        elements.push(Element::new(name, Some(elements.len() - 1)));
+    }
+    let tree = Tree::new(elements).ok()?;
+    let mut sheets = vec![AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+    if let Some(variant) = &variant {
+        sheets.push(AppliedSheet { sheet: variant, layer: Layer::Variant, root: None });
+    }
+    if let Some(user) = &user {
+        sheets.push(AppliedSheet { sheet: user, layer: Layer::User, root: None });
+    }
+    let viewport = Viewport { width: 1280.0, height: 800.0, dark: true, reduced_motion: false };
+    cascade::compute(&tree, viewport, &sheets).ok()?.last().map(computed)
 }
 
 /// What the host gives a theme's swatch before any theme styles it.
@@ -352,5 +375,6 @@ pub(super) fn computed(style: &ComputedStyle) -> Computed {
             _ => Vec::new().into(),
         },
         animations: style.animations().to_vec().into(),
+        resolved: Arc::new(style.clone()),
     }
 }

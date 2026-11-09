@@ -883,3 +883,19 @@ open.
   test holds `*_style_frames` at zero); the frame left after a theme change is egui's after a
   new palette. An element with a transition keeps its painted values in the frame its target
   changes, and the transition runs from them.
+- **One paint order.** `Entered::paint` paints an element's box as CSS does: its outer
+  `box-shadow`, its `background-color`, its `background-image` (or the artwork its caller draws),
+  then for a control, a part or a drawn item its inset shadows and border before its contents,
+  and for a region or a container the same after its contents, when the element leaves scope;
+  last its `outline`. So a row no longer covers its panel's border. `Boxed::content` is the box
+  less its `padding`.
+- **`padding`, `overflow` and `outline-*`.** `padding` (already a layout property) shrinks the
+  content box. `overflow: hidden | clip` makes an element's box clip the outer shadows and
+  outlines of the elements inside it; `visible` lets them pass. The host's own sheet makes the
+  regions `hidden`. An element records its box when it paints it, its background, or says where
+  it is (`Entered::occupies`, for the workspace panels); the nearest element around that hides
+  its overflow and has a box clips the outer shadows and outline, in place of the painter's
+  clip, which holds where none is known. A toolbar control's glow thus passes its section's edge
+  and stops at the toolbar's, with no exception for the toolbar. `outline-width`,
+  `outline-style` (`none` or `solid`), `outline-color` (the foreground by default),
+  `outline-offset` and the `outline` shorthand are registered properties.

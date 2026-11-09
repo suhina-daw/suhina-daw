@@ -128,14 +128,14 @@ fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> 
             .style()
             .filter(|style| style.authored.background)
             .map_or(ui.visuals().window_fill, |style| style.background);
-        let ink = crate::kit::style_class::readable_on(background);
+        let ink = menu.readable_on(background);
         // The background covers the menu as it was laid out last frame: its own rect, never the
         // layer's clip, which is the whole window.
         let id = ui.scope_id().with("menu-rect");
         if let Some(rect) = ui.ctx().data(|d| d.get_temp::<egui::Rect>(id)) {
             menu.paint(ui.painter(), rect);
         }
-        let mut styled = crate::kit::style_class::ui(ui);
+        let mut styled = menu.ui(ui);
         if let Some(ink) = ink {
             styled.visuals_mut().override_text_color = Some(ink);
         }

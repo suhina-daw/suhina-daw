@@ -333,16 +333,13 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                         Err("image requires url(relative.svg) or none")
                     }
                 }
-                _ if super::style_class::valid_selector(selector)
-                    && super::style_class::valid_property(property, value) =>
-                {
-                    theme
-                        .skin
-                        .styles
-                        .entry(selector.to_string())
-                        .or_default()
-                        .insert(property.to_string(), value.to_string());
-                    Ok(())
+                // The style engine reads an element's properties from the sheet itself.
+                _ if element_selector(selector) && legacy_style(property, value).is_some() => {
+                    if property.starts_with("--suhina-") {
+                        Err("a --suhina-* property is no longer read")
+                    } else {
+                        Ok(())
+                    }
                 }
                 _ => Err("unsupported selector or property"),
             };
@@ -418,7 +415,7 @@ pub fn export(theme: &Theme) -> String {
             css.push_str(&format!(" {key}: {};", value.map_or("auto".into(), |v| format!("{v}px"))));
         }
         css.push_str(&format!(
-            " --suhina-direction: {};",
+            " direction: {};",
             if placement.direction == super::control_layout::Direction::Horizontal { "horizontal" } else { "vertical" }
         ));
         for (edge, anchor) in placement.anchors.iter() {
@@ -442,13 +439,6 @@ pub fn export(theme: &Theme) -> String {
             theme.skin.background_opacity, theme.skin.background_blur
         ));
     }
-    for (selector, properties) in &theme.skin.styles {
-        css.push_str(&format!("{selector} {{"));
-        for (key, value) in properties {
-            css.push_str(&format!(" {key}: {value};"));
-        }
-        css.push_str(" }\n");
-    }
     for (role, asset) in &theme.skin.assets {
         // Package export writes each inline SVG under this stable relative name.
         let path = if asset.trim_start().starts_with('<') || skin::png_artwork(asset) {
@@ -468,13 +458,22 @@ pub fn export(theme: &Theme) -> String {
 }
 
 /// A theme's own style sheet (`theme.css`) written from the model, for a theme that has none
-/// yet (one migrated from an earlier version, or a copy of Suhina Studio): its core property values
-/// in a `:root` rule, its artwork, then `advanced`, the free-form CSS it carried. Its name is in
+/// yet (one migrated from an earlier version, or a copy of Suhina Studio): its colours in a `:root`
+/// rule and its settings in rules of their elements, its artwork, then `advanced`, the free-form CSS it carried. Its name is in
 /// `theme.json`.
 pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
-    let mut css = String::from("/* Suhina theme. Settings are custom properties; see README.md. */\n:root {\n");
+    let mut css = String::from(
+        "/* Suhina theme. Colours are custom properties, settings properties of their elements; see README.md. */\n:root {\n",
+    );
     let defaults = super::theme_vars::core_values(&Theme::default());
+    let mut settings = std::collections::BTreeMap::new();
     for (name, value) in super::theme_vars::core_values(theme) {
+        if super::theme_vars::is_setting(&name) {
+            if defaults.get(&name) != Some(&value) {
+                settings.insert(name, value);
+            }
+            continue;
+        }
         // Palette tokens are always written, so a theme shows every colour it uses.
         let palette = theme.colors.tokens().iter().any(|(key, _, _)| super::theme_vars::token_property(key) == name);
         if palette || defaults.get(&name) != Some(&value) {
@@ -482,6 +481,7 @@ pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
         }
     }
     css.push_str("}\n");
+    css.push_str(&super::theme_vars::setting_rules(&settings));
     for (role, asset) in &theme.skin.assets {
         css.push_str(&artwork_rule(role, asset));
     }
@@ -555,7 +555,7 @@ pub fn edit_sheet(source: &str, before: &str, after: &str) -> Result<String, Str
 
 fn is_style_line(line: &str) -> bool {
     line.split_once(" {").is_some_and(|(selector, rest)| {
-        !rest.contains("image:") && super::style_class::valid_selector(selector) && !selector.starts_with(".control-")
+        !rest.contains("image:") && element_selector(selector) && !selector.starts_with(".control-")
     }) && !line.starts_with(":root")
         && !line.starts_with("meter ")
         && !line.starts_with("artwork ")
@@ -616,8 +616,45 @@ fn unlayer(css: &str, depth: usize) -> String {
     out
 }
 
+/// The element names that took the place of the `--suhina-*` properties (#1273); `None` for the
+/// ones a CSS layout replaced (`--suhina-param-columns`, `--suhina-param-row`).
+pub fn former_property(property: &str) -> Option<&'static str> {
+    Some(match property {
+        "--suhina-appearance" => "appearance",
+        "--suhina-value-position" => "value-position",
+        "--suhina-value-decimals" => "value-decimals",
+        "--suhina-value-unit" => "value-unit",
+        "--suhina-track-artwork" => "track-artwork",
+        "--suhina-track-headers" => "track-headers",
+        "--suhina-track-height" => "track-height",
+        "--suhina-header-min-width" => "header-min-width",
+        "--suhina-header-tint" => "header-tint",
+        "--suhina-compact-below" => "compact-below",
+        "--suhina-param-label" => "param-label",
+        "--suhina-gap" => "gap",
+        _ => return None,
+    })
+}
+
+/// Whether `selector` is one to four element names, each inside the one before (`mixer pan`):
+/// the selectors of the styles of a skin of an earlier version.
+pub fn element_selector(selector: &str) -> bool {
+    let parts: Vec<_> = selector.split_whitespace().collect();
+    !parts.is_empty() && parts.len() <= 4 && parts.iter().all(|part| suhina_theme_package::elements::is_element(part))
+}
+
+/// A style of a skin of an earlier version as a declaration of today's sheet: `key` under the
+/// name that took its place, when the style engine accepts `value` for it.
+pub fn legacy_style(key: &str, value: &str) -> Option<String> {
+    let name = if key.starts_with("--suhina-") { former_property(key)? } else { key };
+    let property = suhina_style::property::Property::from_name(if name == "gap" { "row-gap" } else { name })
+        .or_else(|| (name == "border-radius").then_some(suhina_style::property::Property::Radius))?;
+    property.parse(value.trim()).ok()?;
+    Some(format!("{name}: {};", value.trim()))
+}
+
 /// Reads the rules of a theme's own sheet that Suhina reads itself (its name, artwork, control
-/// placements, the toolbar and `--suhina-*` styles); everything else is for the style engine
+/// placements and the toolbar); everything else is for the style engine
 /// and is left alone. Rules inside `@layer` blocks count like the rest (a layer orders rules, it
 /// does not make them conditional); conditional groups (`@media`, `@supports`) are skipped.
 pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
@@ -680,11 +717,16 @@ pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
                     }
                     continue;
                 }
-                let wanted = property == "image"
-                    || match selector {
-                        _ if selector.starts_with(".control-") => true,
-                        _ => super::style_class::valid_selector(selector) && property.starts_with("--suhina-"),
-                    };
+                if property.starts_with("--suhina-") && element_selector(selector) {
+                    warnings.push(match former_property(property) {
+                        Some(now) => {
+                            format!("{selector} {{ {property} }} is no longer read: the property is now {now}")
+                        }
+                        None => format!("{selector} {{ {property} }} is no longer read: a CSS layout replaces it"),
+                    });
+                    continue;
+                }
+                let wanted = property == "image" || selector.starts_with(".control-");
                 if wanted {
                     host.push_str(&format!("{selector} {{ {declaration}; }}\n"));
                 }

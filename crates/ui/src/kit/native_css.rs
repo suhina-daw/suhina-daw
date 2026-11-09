@@ -27,11 +27,9 @@ mod shadows;
 mod text;
 mod workspace;
 pub use diagnostics::{Notice, inspect};
+pub use paint::background_with;
 pub(in crate::kit) use paint::surface_with;
-pub use paint::{
-    artwork_shadows, background, background_rounded, background_with, gradients_rounded, level_fill, level_glow,
-    thickness,
-};
+pub(in crate::kit) use paint::{artwork_shadows, background_rounded, gradients_rounded, level_fill, level_glow};
 pub use text::paint_text;
 pub use workspace::{Workspace, splitter_between, workspace};
 
@@ -67,8 +65,48 @@ pub struct Computed {
     text_shadows: Arc<[text::Shadow]>,
     transitions: Arc<[Transition]>,
     animations: Arc<[(Animation, Arc<Frames>)]>,
+    /// Everything the engine computed for the element, for the properties read rarely (the
+    /// host's settings, the layout).
+    resolved: Arc<suhina_style::cascade::ComputedStyle>,
 }
 impl Computed {
+    /// The computed value of `property`, when a sheet wrote it for the element or one it inherits from.
+    pub fn authored_value(&self, property: Property) -> Option<Value> {
+        self.resolved.authored(property).then(|| self.resolved.get(property))
+    }
+
+    /// The keyword a sheet gives `property` (`appearance: knob`), when it gives one.
+    pub fn keyword(&self, property: Property) -> Option<&'static str> {
+        match self.authored_value(property) {
+            Some(Value::Keyword(word)) if !word.is_empty() => Some(word),
+            _ => None,
+        }
+    }
+
+    /// The length in points a sheet gives `property`, when it gives one (not `auto`).
+    pub fn points(&self, property: Property) -> Option<f32> {
+        match self.authored_value(property) {
+            Some(Value::Length(suhina_style::value::Length::Px(points))) if points.is_finite() => Some(points),
+            _ => None,
+        }
+    }
+
+    /// The integer a sheet gives `property`, when it gives one.
+    pub fn integer(&self, property: Property) -> Option<i32> {
+        match self.authored_value(property) {
+            Some(Value::Integer(n)) => Some(n),
+            _ => None,
+        }
+    }
+
+    /// The text a sheet gives a setting read as text (`value-unit`, `liquid`), when it gives one.
+    pub fn text(&self, property: Property) -> Option<String> {
+        match self.authored_value(property) {
+            Some(Value::Text(text)) if !text.is_empty() => Some(text),
+            _ => None,
+        }
+    }
+
     /// The custom property `name` (with its `--`) as the element sees it.
     pub fn variable(&self, name: &str) -> Option<&str> {
         self.variables.get(name).map(String::as_str)
@@ -432,21 +470,11 @@ pub enum HostState {
 pub(crate) const HOST_STATES: [(u16, &str); 6] =
     [(16, "checked"), (32, "selected"), (64, "playing"), (128, "recording"), (256, "armed"), (512, "muted")];
 
-/// The name of the element now in scope (`play` for `#control-play`), when it has one.
-pub fn current_name() -> Option<String> {
+/// Gives the element of this frame's tree at `node` the custom property `name` (`--track-colour`)
+/// as `value`, which it and its descendants see below every rule of the sheet.
+pub(super) fn set_variable(node: usize, name: &str, value: String) {
     ENGINE.with(|engine| {
-        let engine = engine.borrow();
-        engine.parents.last().and_then(|&at| engine.nodes.get(at)).and_then(|node| node.name.clone())
-    })
-}
-
-/// Gives the element now in scope the custom property `name` (`--track-colour`) as `value`, which
-/// it and its descendants see below every rule of the sheet.
-pub fn set_variable(name: &str, value: String) {
-    ENGINE.with(|engine| {
-        let mut engine = engine.borrow_mut();
-        if let Some(&at) = engine.parents.last()
-            && let Some(node) = engine.nodes.get_mut(at)
+        if let Some(node) = engine.borrow_mut().nodes.get_mut(node)
             && node.variables.len() < 16
         {
             node.variables.push((name.to_owned(), value));
@@ -484,6 +512,24 @@ pub(super) fn mark_node(node: usize, state: HostState) {
     });
 }
 
+/// The name the app gave the element of this frame's tree at `node` (`play` for `#control-play`).
+pub(super) fn node_name(node: usize) -> Option<String> {
+    ENGINE.with(|engine| engine.borrow().nodes.get(node).and_then(|node| node.name.clone()))
+}
+
+/// Gives the element of this frame's tree at `node` the pointer states `bits` (hover 1, active 2,
+/// disabled 4).
+pub(super) fn mark_node_bits(node: usize, bits: u16) {
+    if bits == 0 {
+        return;
+    }
+    ENGINE.with(|engine| {
+        if let Some(node) = engine.borrow_mut().nodes.get_mut(node) {
+            node.state |= bits;
+        }
+    });
+}
+
 /// Gives the element of this frame's tree at `node` the attribute `name` with `value`. A
 /// duplicate name is dropped, and so is an attribute past the style tree's limit
 /// ([`suhina_style::selector::MAX_ATTRIBUTES`]) less the one each host state adds when the tree is
@@ -499,42 +545,9 @@ pub(super) fn set_attribute(node: usize, name: &str, value: String) {
     });
 }
 
-/// Marks the element now in scope with `state` when `on`, so the sheet's `[checked]`,
-/// `[selected]` and the others match it from the next frame.
-pub fn mark(state: HostState, on: bool) {
-    if !on {
-        return;
-    }
-    ENGINE.with(|engine| {
-        let mut engine = engine.borrow_mut();
-        if let Some(&at) = engine.parents.last()
-            && let Some(node) = engine.nodes.get_mut(at)
-        {
-            node.state |= state as u16;
-        }
-    });
-}
-
 pub fn leave() {
     ENGINE.with(|engine| {
         engine.borrow_mut().parents.pop();
-    });
-}
-
-/// Marks the element in scope as the pointer leaves it: `hovered` (`:hover`), `pressed`
-/// (`:active`) or `disabled` (`:disabled`), for a style looked up before any widget exists.
-pub fn mark_pointer(hovered: bool, pressed: bool, disabled: bool) {
-    let bits = u16::from(hovered) | u16::from(pressed) << 1 | u16::from(disabled) << 2;
-    if bits == 0 {
-        return;
-    }
-    ENGINE.with(|engine| {
-        let mut engine = engine.borrow_mut();
-        if let Some(&at) = engine.parents.last()
-            && let Some(node) = engine.nodes.get_mut(at)
-        {
-            node.state |= bits;
-        }
     });
 }
 
@@ -802,11 +815,10 @@ fn same_source(engine: Option<&Arc<str>>) -> bool {
     }
 }
 
-/// Compute inherited colours and native typography for the active class ancestry.
-/// Sibling/object selectors require the host's complete retained component tree.
+/// The style a stack of elements named from the root gives the innermost, for tests.
+#[cfg(test)]
 pub(super) fn scoped(stack: &[String]) -> Option<Computed> {
-    let innermost = ENGINE.with(|engine| engine.borrow().parents.last().copied());
-    scoped_at(innermost, stack)
+    scoped_at(None, stack)
 }
 
 /// The style of the element at `node` in this frame's tree, whose names from the root are
@@ -865,6 +877,39 @@ pub fn theme_swatch(color: Color32) -> Option<Computed> {
             engine.contexts.insert(key, values.clone());
         }
         Some(values)
+    })
+}
+
+/// The settings looked up by element path, for one set of sheets.
+type Settings = HashMap<Vec<&'static str>, Option<Computed>>;
+
+/// The style the theme's sheets give the elements named by `path` (from `window` inward), for the
+/// settings Suhina reads outside a frame: the Arrangement view's track height, a device's
+/// parameter labels. Worked out once per sheet and path; `None` without a sheet.
+pub fn settings_of(path: &[super::element::Name]) -> Option<Computed> {
+    thread_local! {
+        static CACHE: RefCell<(u64, Settings)> = RefCell::new((0, HashMap::new()));
+    }
+    let skin = skin::current();
+    let css = skin.css.clone()?;
+    let user = USER_SHEET.with(|sheet| sheet.borrow().clone());
+    let mut hash = std::hash::DefaultHasher::new();
+    (css.as_ref(), skin.variant.as_deref(), user.as_deref()).hash(&mut hash);
+    let sources = hash.finish();
+    let key: Vec<&'static str> = path.iter().map(|name| name.name()).collect();
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.0 != sources {
+            *cache = (sources, HashMap::new());
+        }
+        if let Some(found) = cache.1.get(&key) {
+            return found.clone();
+        }
+        let found = native::settings_of(&css, skin.variant.as_deref(), user.as_deref(), &key);
+        if cache.1.len() < MAX_CONTEXTS {
+            cache.1.insert(key, found.clone());
+        }
+        found
     })
 }
 

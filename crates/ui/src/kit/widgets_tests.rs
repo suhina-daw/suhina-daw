@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+use crate::kit::element::test_el;
 
 #[test]
 fn a_pan_and_a_send_take_their_own_knob_artwork_and_other_knobs_do_not() {
@@ -12,15 +13,15 @@ fn a_pan_and_a_send_take_their_own_knob_artwork_and_other_knobs_do_not() {
     super::super::skin::configure(&skin);
     assert_eq!(knob_roles().0, "knob.body", "a device's knob");
     {
-        let _pan = super::super::style_class::enter("pan");
+        let _pan = test_el("pan").enter();
         assert_eq!(knob_roles(), ("pan.knob.body", "pan.knob.pointer"));
     }
     {
-        let _send = super::super::style_class::enter("send");
+        let _send = test_el("send").enter();
         assert_eq!(knob_roles(), ("send.knob.body", "send.knob.pointer"));
     }
     super::super::skin::configure(&super::super::skin::Skin::default());
-    let _pan = super::super::style_class::enter("pan");
+    let _pan = test_el("pan").enter();
     assert_eq!(knob_roles().0, "knob.body", "without the theme's own artwork");
 }
 

@@ -24,13 +24,13 @@ const BUTTON: Vec2 = Vec2::new(150.0, 18.0);
 /// Draws the dialog over `area` for `project`, above everything else, and returns whether the
 /// user sent it to the background (its button, or Escape).
 pub fn show(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("plugin-loading"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
             // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw(ui, area, project, progress)
@@ -71,14 +71,11 @@ fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     );
     let bar = Rect::from_min_size(inner.min, Vec2::new(inner.width(), BAR));
     // `progress` (its background and radius) and `progress-fill` (its background) style the bar.
-    let progress_style = crate::kit::style_class::enter("progress");
-    let radius = crate::kit::style_class::radius(0.0);
-    painter.fill_background(bar, radius, crate::kit::style_class::background(theme::control_background()));
+    let progress_style = crate::kit::element::PROGRESS.enter();
+    let radius = progress_style.radius_or(0.0);
+    painter.fill_background(bar, radius, progress_style.background_or(theme::control_background()));
     let share = if progress.total == 0 { 1.0 } else { progress.ready as f32 / progress.total as f32 };
-    let fill = {
-        let _fill = crate::kit::style_class::enter("progress-fill");
-        crate::kit::style_class::background(theme::accent())
-    };
+    let fill = crate::kit::element::PROGRESS_FILL.enter().background_or(theme::accent());
     painter.rect_filled(
         Rect::from_min_size(bar.min, Vec2::new(bar.width() * share.clamp(0.0, 1.0), BAR)),
         radius,

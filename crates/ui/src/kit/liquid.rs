@@ -354,7 +354,9 @@ pub fn prepare(ctx: &Context) {
 /// Paint the base first, then this material, then the surface's text, waveform and controls.
 /// Content lenses resolve against a shared foreground-free substrate at finish_surfaces.
 /// Floating panels use the complete current UI backdrop. Tiny surfaces stay solid.
-pub fn paint(painter: &Painter, rect: Rect, base: Color32, surface: Surface) {
+/// `el` is the element whose surface this is (a panel, a track's header, a clip): its own CSS
+/// background, when the sheet gives one, stands in for the material.
+pub fn paint(painter: &Painter, rect: Rect, el: &super::element::Entered, base: Color32, surface: Surface) {
     if !rect.is_finite()
         || rect.width() < 12.0
         || rect.height() < 12.0
@@ -363,7 +365,7 @@ pub fn paint(painter: &Painter, rect: Rect, base: Color32, surface: Surface) {
     {
         return;
     }
-    if super::native_css::background(painter, rect) {
+    if el.paint_background(painter, rect, 0.0) {
         return;
     }
     let gradient = painter

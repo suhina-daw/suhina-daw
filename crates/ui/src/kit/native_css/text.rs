@@ -60,19 +60,21 @@ pub fn paint_text(painter: &Painter, pos: Pos2, galley: Arc<Galley>, fallback_co
     if !pos.is_finite() || galley.is_empty() {
         return;
     }
-    if let Some(style) = super::super::style_class::computed() {
+    // `text-shadow` is inherited: the text takes the shadows of the element it is drawn in.
+    super::super::style_class::with_inherited(|style| {
         // CSS lists the frontmost text shadow first, like background/shadow layers.
-        for shadow in style.text_shadows.iter().rev() {
+        for shadow in style.iter().flat_map(|style| style.text_shadows.iter().rev()) {
             shadow.paint(painter, pos, &galley);
         }
-    }
+    });
     painter.galley(pos, galley, fallback_color);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kit::{skin, style_class};
+    use crate::kit::element::test_el;
+    use crate::kit::skin;
 
     fn draw(css: &str) -> Vec<egui::epaint::TextShape> {
         skin::configure(&skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
@@ -90,8 +92,8 @@ mod tests {
                 },
                 |ui| {
                     let _frame = super::super::frame(ui);
-                    let _parent = style_class::enter("browser");
-                    let _control = style_class::enter("button");
+                    let _parent = test_el("browser").enter();
+                    let _control = test_el("button").enter();
                     let galley =
                         ui.painter().layout_no_wrap("Native".into(), egui::FontId::proportional(12.0), Color32::WHITE);
                     paint_text(ui.painter(), Pos2::new(40.0, 40.0), galley, Color32::WHITE);
@@ -169,7 +171,7 @@ mod tests {
                     },
                     |ui| {
                         let _frame = super::super::frame_with_motion(ui, motion);
-                        let _scope = style_class::enter("browser");
+                        let _scope = test_el("browser").enter();
                     },
                 )
                 .textures_delta

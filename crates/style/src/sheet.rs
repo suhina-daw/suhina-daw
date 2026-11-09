@@ -30,6 +30,7 @@ pub(crate) enum Shorthand {
     Padding,
     Margin,
     Flex,
+    Outline,
 }
 
 impl Shorthand {
@@ -40,6 +41,7 @@ impl Shorthand {
             "padding" => Self::Padding,
             "margin" => Self::Margin,
             "flex" => Self::Flex,
+            "outline" => Self::Outline,
             _ => return None,
         })
     }
@@ -53,6 +55,7 @@ impl Shorthand {
             }
             Self::Margin => &[Property::MarginTop, Property::MarginRight, Property::MarginBottom, Property::MarginLeft],
             Self::Flex => &[Property::FlexGrow, Property::FlexShrink, Property::FlexBasis],
+            Self::Outline => &[Property::OutlineWidth, Property::OutlineStyle, Property::OutlineColor],
         }
     }
 
@@ -60,6 +63,9 @@ impl Shorthand {
     pub(crate) fn part(self, property: Property, value: &str) -> Result<String, String> {
         if self == Self::Background {
             return background_part(property, value);
+        }
+        if self == Self::Outline {
+            return outline_part(property, value);
         }
         let words: Vec<&str> = value.split_whitespace().collect();
         let index = self.longhands().iter().position(|p| *p == property).ok_or("Not a longhand of this shorthand")?;
@@ -96,7 +102,39 @@ impl Shorthand {
             Self::Padding => "padding",
             Self::Margin => "margin",
             Self::Flex => "flex",
+            Self::Outline => "outline",
         }
+    }
+}
+
+/// The part of an `outline` shorthand (`2px solid #fff`, in any order) that sets `property`. As in
+/// CSS an omitted width is `medium` (3 points), style `none` and colour the current foreground.
+pub(crate) fn outline_part(property: Property, value: &str) -> Result<String, String> {
+    crate::syntax::validate(value)?;
+    let mut parser = Parser::new(value);
+    let (mut width, mut style, mut color) = (None, None, None);
+    while !parser.is_exhausted() {
+        let start = parser.position();
+        let token = parser.next().map_err(|_| "Invalid outline")?.clone();
+        if matches!(token, Token::Function(_)) {
+            nested(&mut parser, consume)?;
+        }
+        let text = parser.slice_from(start).trim().to_owned();
+        if width.is_none() && crate::value::Length::parse(&text).is_ok() {
+            width = Some(text);
+        } else if style.is_none() && Property::OutlineStyle.parse(&text).is_ok() {
+            style = Some(text);
+        } else if color.is_none() && crate::value::Color::parse(&text).is_ok() {
+            color = Some(text);
+        } else {
+            return Err("An outline is a width, a style and a colour".into());
+        }
+    }
+    match property {
+        Property::OutlineWidth => Ok(width.unwrap_or_else(|| "3px".into())),
+        Property::OutlineStyle => Ok(style.unwrap_or_else(|| "none".into())),
+        Property::OutlineColor => Ok(color.unwrap_or_else(|| "currentcolor".into())),
+        _ => Err("Not an outline longhand".into()),
     }
 }
 
@@ -210,8 +248,22 @@ pub const MAX_GROUP_CLASSES: usize = 64;
 /// Properties the host application reads from a theme's rules itself; the engine leaves them
 /// alone without a notice. Read by the app, not the engine: artwork, the name, the background material, and the
 /// placement offsets `layout.css` writes (`left`, `top`, `right`, `bottom`).
-pub const HOST_PROPERTIES: &[&str] =
-    &["image", "name", "background-opacity", "background-blur", "left", "top", "right", "bottom"];
+pub const HOST_PROPERTIES: &[&str] = &[
+    "image",
+    "name",
+    "background-opacity",
+    "background-blur",
+    "left",
+    "top",
+    "right",
+    "bottom",
+    // A control placement's (`.control-*`) own.
+    "direction",
+    "anchor-left",
+    "anchor-top",
+    "anchor-right",
+    "anchor-bottom",
+];
 
 /// The frames of one `@keyframes` rule: offsets from 0 to 1 and their declarations.
 pub(crate) type KeyframeRule = Vec<(f32, Vec<Declaration>)>;

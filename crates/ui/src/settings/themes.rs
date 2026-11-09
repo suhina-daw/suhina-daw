@@ -511,15 +511,14 @@ pub fn slug(name: &str) -> String {
     if id.is_empty() { "theme".into() } else { id.to_string() }
 }
 
-/// What of a skin is its structure rather than settings: artwork, the toolbar, placements and
-/// styles, and the background image itself.
+/// What of a skin is its structure rather than settings: artwork, the toolbar, placements, and
+/// the background image itself.
 fn structure(skin: &crate::kit::skin::Skin) -> impl PartialEq + use<> {
     (
         skin.assets.clone(),
         skin.toolbar.clone(),
         skin.toolbar_offsets.clone(),
         skin.controls.clone(),
-        skin.styles.clone(),
         skin.background.clone(),
     )
 }

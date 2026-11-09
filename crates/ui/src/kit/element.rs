@@ -88,6 +88,7 @@ impl Name {
             id: None,
             response: None,
             states: 0,
+            pointer: 0,
             color: None,
             native: Native::default(),
             variables: Vec::new(),
@@ -112,6 +113,17 @@ impl Name {
     pub fn native<'a>(self, native: Native) -> Builder<'a> {
         self.builder().native(native)
     }
+    pub fn pointer<'a>(self, hovered: bool, pressed: bool, disabled: bool) -> Builder<'a> {
+        self.builder().pointer(hovered, pressed, disabled)
+    }
+    /// The element with the custom property `name` (`--track-colour`) for the sheet.
+    pub fn variable<'a>(self, name: &'static str, value: String) -> Builder<'a> {
+        self.builder().variable(name, value)
+    }
+    /// The style of a drawn item of this element, with nothing more said about it.
+    pub fn style(self) -> Option<Computed> {
+        self.builder().style()
+    }
     pub fn enter(self) -> Entered {
         self.builder().enter()
     }
@@ -125,6 +137,8 @@ pub struct Builder<'a> {
     response: Option<&'a Response>,
     /// The [`Attr`]s that are on, a bit each (`1 << attr as u8`).
     states: u8,
+    /// Pointer states given without a response: hover 1, active 2, disabled 4.
+    pointer: u16,
     color: Option<Color32>,
     native: Native,
     variables: Vec<(&'static str, String)>,
@@ -149,6 +163,12 @@ impl<'a> Builder<'a> {
         }
         self
     }
+    /// The pointer's states for an element drawn without a response: `hovered` (`:hover`),
+    /// `pressed` (`:active`), `disabled` (`:disabled`).
+    pub fn pointer(mut self, hovered: bool, pressed: bool, disabled: bool) -> Self {
+        self.pointer = u16::from(hovered) | u16::from(pressed) << 1 | u16::from(disabled) << 2;
+        self
+    }
     /// The element's own colour, given to the sheet as `[color="#rrggbb"]` (or `#rrggbbaa`).
     pub fn color(mut self, color: Color32) -> Self {
         self.color = Some(color);
@@ -167,21 +187,22 @@ impl<'a> Builder<'a> {
 
     /// Puts the element in the style tree and the palette scope until the value is dropped.
     pub fn enter(self) -> Entered {
-        let scope = super::style_class::enter_inner(self.name.0, self.id, self.response);
-        if let Some(node) = scope.node {
+        let Self { name, id, response, states, pointer, color, native, variables } = self;
+        let scope = super::style_class::enter_inner(name.0, id, response, |node| {
+            super::native_css::mark_node_bits(node, pointer);
             for (attr, state) in STATES {
-                if self.states & (1 << attr as u8) != 0 {
+                if states & (1 << attr as u8) != 0 {
                     super::native_css::mark_node(node, state);
                 }
             }
-            if let Some(color) = self.color {
+            if let Some(color) = color {
                 super::native_css::set_attribute(node, "color", super::native_css::hex(color));
             }
-            for (name, value) in self.variables {
-                super::native_css::set_variable(name, value);
+            for (variable, value) in variables {
+                super::native_css::set_variable(node, variable, value);
             }
-        }
-        Entered { scope, native: self.native }
+        });
+        Entered { scope, native, name }
     }
 
     /// The style of a drawn item: the element entered and left at once.
@@ -195,6 +216,7 @@ impl<'a> Builder<'a> {
 pub struct Entered {
     scope: super::style_class::Scope,
     native: Native,
+    name: Name,
 }
 
 impl Entered {
@@ -217,11 +239,100 @@ impl Entered {
         let radius = super::native_css::surface_with(painter, rect, native.radius, native.fill, self.style());
         Boxed { content: rect, radius }
     }
+
+    /// The element's `color`, or `fallback` where the sheet sets none.
+    pub fn color_or(&self, fallback: Color32) -> Color32 {
+        self.style().filter(|s| s.authored.color).map_or(fallback, |s| s.color)
+    }
+
+    /// The element's `background-color`, or `fallback` where the sheet sets none.
+    pub fn background_or(&self, fallback: Color32) -> Color32 {
+        self.style().filter(|s| s.authored.background).map_or(fallback, |s| s.background)
+    }
+
+    /// The element's corner radius, or `fallback` where the sheet sets none.
+    pub fn radius_or(&self, fallback: f32) -> f32 {
+        self.style().filter(|s| s.authored.radius).map_or(fallback, |s| s.radius)
+    }
+
+    /// The element's `font-size`, or `fallback` where the sheet sets none.
+    pub fn font_size_or(&self, fallback: f32) -> f32 {
+        self.style().filter(|s| s.authored.font_size).map_or(fallback, |s| s.font_size)
+    }
+
+    /// The thickness the sheet gives the element (`height`), or `fallback`.
+    pub fn thickness_or(&self, fallback: f32) -> f32 {
+        self.style().and_then(|style| style.height).unwrap_or(fallback)
+    }
+
+    /// The element's shadows, gradients and inset shadows in `rect`, with `radius` where the sheet
+    /// gives none: for a surface whose fill its caller paints. Whether it painted anything.
+    pub fn paint_background(&self, painter: &Painter, rect: Rect, radius: f32) -> bool {
+        self.style().is_some_and(|style| super::native_css::background_rounded(painter, rect, radius, style))
+    }
+
+    /// The element's gradients and inset shadows without its outer shadows: for a surface whose
+    /// artwork casts them itself ([`Entered::artwork_shadows`]).
+    pub fn paint_gradients(&self, painter: &Painter, rect: Rect, radius: f32) -> bool {
+        self.style().is_some_and(|style| super::native_css::gradients_rounded(painter, rect, radius, style))
+    }
+
+    /// The element's shadows cast by artwork: drawn into `slot`, a place reserved under the
+    /// artwork, as tinted copies of its `mesh`. Whether there were any.
+    pub fn artwork_shadows(&self, painter: &Painter, slot: egui::layers::ShapeIdx, mesh: &egui::Mesh) -> bool {
+        self.style().is_some_and(|style| super::native_css::artwork_shadows(painter, slot, mesh, &style))
+    }
+
+    /// A level's fill (`meter-level`, `value-fill`) over the whole `scale`, which the caller clips
+    /// to the measured part. Whether the sheet gave one.
+    pub fn level_fill(&self, painter: &Painter, scale: Rect) -> bool {
+        self.style().is_some_and(|style| super::native_css::level_fill(painter, scale, &style))
+    }
+
+    /// A level's outer shadows around the part that is lit.
+    pub fn level_glow(&self, painter: &Painter, lit: Rect) {
+        if let Some(style) = self.style() {
+            super::native_css::level_glow(painter, lit, &style);
+        }
+    }
+
+    /// Keeps the element's text readable on `background` while it is in scope (see
+    /// [`super::style_class::readable_on`]); the ink, when it changed the text.
+    pub fn readable_on(&self, background: Color32) -> Option<Color32> {
+        super::style_class::readable_on(self.style(), background)
+    }
+
+    /// egui's own widgets in `ui` styled as this element: its colour, font size, radius, border and
+    /// fill, and the sheet's `button` and `text-input` rules for the widgets inside it.
+    pub fn ui<'u>(&self, ui: &'u mut egui::Ui) -> super::style_class::UiStyle<'u> {
+        super::style_class::ui_for(ui, self.style(), self.is_surface())
+    }
+
+    /// Whether the element is a region or a container: its background lies behind its controls.
+    pub fn is_surface(&self) -> bool {
+        suhina_theme_package::elements::is_surface(self.name.0)
+    }
+
+    /// The id the app gave the element (`play`, `device-compressor`), when it gave one.
+    pub fn id(&self) -> Option<String> {
+        self.scope.node.and_then(super::native_css::node_name)
+    }
+
+    /// The element's registry name.
+    pub fn name(&self) -> Name {
+        self.name
+    }
 }
 
 /// The registry's element named `name`, for code that has a name at run time.
 pub fn named(name: &str) -> Option<Name> {
     ALL.iter().copied().find(|element| element.0 == name)
+}
+
+/// The registry's element named `name`, for tests that name elements as strings.
+#[cfg(test)]
+pub(crate) fn test_el(name: &str) -> Name {
+    named(name).unwrap_or_else(|| panic!("no element {name}"))
 }
 
 macro_rules! names {

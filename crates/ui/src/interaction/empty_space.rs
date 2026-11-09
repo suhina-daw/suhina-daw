@@ -101,19 +101,12 @@ pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions:
         let el = crate::kit::element::ADD_TRACK.id(&name).response(&response).enter();
         let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         let state = crate::kit::skin::State::response(&response, false);
-        if !crate::kit::skin::paint(painter, rect, "add-track", state, theme::text_secondary(), 0.0) {
+        if !crate::kit::skin::paint_as(&el, painter, rect, "add-track", state, theme::text_secondary()) {
             el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill });
         }
         let font =
             el.style().filter(|c| c.authored.font_size).map_or_else(|| font.clone(), |c| theme::ui_font(c.font_size));
-        widgets::text_in(
-            painter,
-            rect,
-            Align2::CENTER_CENTER,
-            label,
-            font,
-            crate::kit::style_class::foreground(theme::text_secondary()),
-        );
+        widgets::text_in(painter, rect, Align2::CENTER_CENTER, label, font, el.color_or(theme::text_secondary()));
         if response.clicked() {
             if kind == "return" {
                 actions.push(Action::new("return.add", json!({})));

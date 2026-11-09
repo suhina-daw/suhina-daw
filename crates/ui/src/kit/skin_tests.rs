@@ -33,6 +33,7 @@ fn png_roles_reuse_pixels_until_a_live_edit_changes_the_source() {
             assert!(button(
                 ui.painter(),
                 Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(20.0)),
+                &super::super::element::BUTTON.enter(),
                 State::Normal,
                 Color32::RED,
                 0.0
@@ -82,6 +83,7 @@ fn svg_backgrounds_clear_native_alpha_once_and_keep_private_images_underneath() 
             assert!(button(
                 &painter,
                 Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0)),
+                &super::super::element::BUTTON.enter(),
                 State::Normal,
                 Color32::from_rgba_unmultiplied(50, 60, 70, 128),
                 3.0
@@ -104,7 +106,14 @@ fn svg_backgrounds_clear_native_alpha_once_and_keep_private_images_underneath() 
         super::super::surface::begin_frame(ui.ctx());
         let painter = ui.ctx().layer_painter(egui::LayerId::background());
         let rect = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0));
-        assert!(button(&painter, rect, State::Normal, Color32::from_rgb(50, 60, 70), 3.0));
+        assert!(button(
+            &painter,
+            rect,
+            &super::super::element::BUTTON.enter(),
+            State::Normal,
+            Color32::from_rgb(50, 60, 70),
+            3.0
+        ));
         super::super::surface::finish_frame(ui.ctx());
     });
     output.textures_delta.clear();
@@ -117,7 +126,14 @@ fn svg_backgrounds_clear_native_alpha_once_and_keep_private_images_underneath() 
         super::super::surface::begin_frame(ui.ctx());
         let painter = ui.ctx().layer_painter(egui::LayerId::background());
         let rect = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0));
-        assert!(button(&painter, rect, State::Normal, Color32::from_rgb(50, 60, 70), 3.0));
+        assert!(button(
+            &painter,
+            rect,
+            &super::super::element::BUTTON.enter(),
+            State::Normal,
+            Color32::from_rgb(50, 60, 70),
+            3.0
+        ));
         super::super::surface::finish_frame(ui.ctx());
     });
     output.textures_delta.clear();
@@ -202,7 +218,6 @@ fn skin_round_trip_and_old_defaults() {
         background: None,
         background_opacity: 70,
         background_blur: 0,
-        styles: Default::default(),
         assets: example_assets(),
         session: Default::default(),
         meter: MeterStyle::Segmented,

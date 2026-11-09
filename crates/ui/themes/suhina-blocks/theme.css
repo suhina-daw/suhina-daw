@@ -41,8 +41,6 @@
   --kind-vocal: #E8D0A0;
   --meter-hot: #D9D52E;
   --meter-normal: #66DF19;
-  --meter-segments: 32;
-  --meter-style: segmented;
   --pan-background: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--tint) 2.5%), black 16.3%);
   --pan-centre: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--ink) 29.7%), var(--highlight) 26.6%);
   --panel-background: var(--surface);
@@ -50,11 +48,6 @@
   --recording: #D65139;
   --recording-background: #5A2E22;
   --selection: var(--highlight);
-  --session-header-height: 24px;
-  --session-return-width: 80px;
-  --session-scene-width: 84px;
-  --session-slot-height: 24px;
-  --session-track-width: 92px;
   --slot-empty: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--highlight) 45.7%), white 26.8%);
   --text-hint: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--highlight) 42.8%), white 28.1%);
   --text-inverse: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--tint) 2.6%), black 29.8%);
@@ -77,6 +70,8 @@
   --track-mutedBackground: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--stone) 29.7%), black 21.3%);
   --window-background: var(--ground);
 }
+meter { meter-segments: 32; meter-style: segmented; }
+session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-height: 24px; track-width: 92px; }
 
 /* Copyright (C) 2026 The Suhina contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -112,14 +107,14 @@
 }
 
 /* Control placements. */
-.control-mixer-color { left: 0px; top: 0px; bottom: auto; display: none; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
-.control-mixer-meter { left: -48px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
-.control-mixer-pan { left: 25px; top: 0px; bottom: auto; display: block; right: auto; width: 24px; height: 24px; --suhina-direction: vertical; }
-.control-mixer-volume { left: 18px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
-.control-mixer-volume-readout { left: -24px; top: 0px; bottom: auto; display: block; right: auto; width: 30px; height: auto; --suhina-direction: vertical; }
-.control-mixer-volume-scale { left: -40px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
-pan { --suhina-appearance: knob; }
-track-column { --suhina-track-artwork: on; }
+.control-mixer-color { left: 0px; top: 0px; bottom: auto; display: none; right: auto; width: auto; height: auto; direction: vertical; }
+.control-mixer-meter { left: -48px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; direction: vertical; }
+.control-mixer-pan { left: 25px; top: 0px; bottom: auto; display: block; right: auto; width: 24px; height: 24px; direction: vertical; }
+.control-mixer-volume { left: 18px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; direction: vertical; }
+.control-mixer-volume-readout { left: -24px; top: 0px; bottom: auto; display: block; right: auto; width: 30px; height: auto; direction: vertical; }
+.control-mixer-volume-scale { left: -40px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; direction: vertical; }
+pan { appearance: knob; }
+track-column { track-artwork: on; }
 
 /* Artwork. */
 arm { image: url("assets/arm.svg"); }

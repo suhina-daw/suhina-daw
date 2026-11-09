@@ -22,11 +22,59 @@ const ALIGN: &[&str] = &[
 ];
 const VISIBILITY: &[&str] = &["visible", "hidden", "collapse"];
 const TEXT_ALIGN: &[&str] = &["left", "center", "right", "start", "end"];
+const OVERFLOW: &[&str] = &["visible", "hidden", "clip"];
+const OUTLINE_STYLE: &[&str] = &["none", "solid"];
+const APPEARANCE: &[&str] = &["native", "knob", "field"];
+const VALUE_POSITION: &[&str] = &["right", "left", "top", "bottom", "inside", "center", "centre", "none", "hidden"];
+const DECIMALS: &[&str] = &["0", "1", "2"];
+const ON_OFF: &[&str] = &["on", "off"];
+const SIDE: &[&str] = &["left", "right"];
+const PARAM_LABEL: &[&str] = &["left", "top", "hidden"];
+const METER_STYLE: &[&str] = &["continuous", "segmented", "needle", "frames"];
+
+/// A value's unit (`" dB"`): a quoted string of at most ten characters.
+fn quoted_unit(text: &str) -> bool {
+    let text = text.trim();
+    text.len() >= 2
+        && (text.starts_with('"') && text.ends_with('"') || text.starts_with('\'') && text.ends_with('\''))
+        && text.chars().count() <= 10
+}
+
+/// Glass strengths: `auto`, or three integers from 0 to 100 (panels, tracks, clips).
+fn liquid(text: &str) -> bool {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    words == ["auto"] || words.len() == 3 && words.iter().all(|w| w.parse::<u8>().is_ok_and(|n| n <= 100))
+}
+
+/// A surface gradient: `none`, or an angle and colour stops (`90deg, #fff2 0%, #0002 100%`).
+fn surface_gradient(text: &str) -> bool {
+    let text = text.trim();
+    text == "none" || (text.len() <= 1024 && text.contains(',') && !text.contains([';', '{', '}']))
+}
+
+/// An image of the theme's own folder: `none` or `url("<path>.png")`, inside the folder.
+fn backdrop_image(text: &str) -> bool {
+    let text = text.trim();
+    text == "none"
+        || text
+            .strip_prefix("url(")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .map(|path| path.trim().trim_matches(['"', '\'']))
+            .is_some_and(|path| {
+                path.len() <= 256
+                    && path.ends_with(".png")
+                    && !path.starts_with('/')
+                    && !path.contains('\\')
+                    && !path.split('/').any(|part| part.is_empty() || part == "..")
+            })
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Kind {
     /// One keyword of a fixed list.
     Keyword(&'static [&'static str]),
+    /// Text the host reads itself, checked by the function given.
+    Text(fn(&str) -> bool),
     /// A nonnegative number, such as a flex factor.
     Factor,
     /// Grid template tracks: lengths, `fr`, `auto`, `minmax()` and `repeat()`.
@@ -120,6 +168,38 @@ properties! {
     Area, "area", Name, Value::Name(String::new()), false, "The named grid area occupied by this element.";
     BoxShadow, "box-shadow", BoxShadows, Value::Shadows(Vec::new()), false, "Up to four inset/outset surface shadows.";
     TextShadow, "text-shadow", TextShadows, Value::Shadows(Vec::new()), true, "Up to four shadows behind native glyphs.";
+    Overflow, "overflow", Keyword(OVERFLOW), Value::Keyword("visible"), false, "hidden (or clip) keeps what the element's children paint, their shadows too, inside its box; regions are hidden.";
+    OutlineWidth, "outline-width", Length, Value::Length(Length::Px(0.0)), false, "Width of a line drawn around the element, outside its border; `outline` sets width, style and colour.";
+    OutlineStyle, "outline-style", Keyword(OUTLINE_STYLE), Value::Keyword("none"), false, "solid draws the outline; none (the default) draws none.";
+    OutlineColor, "outline-color", Color, Value::Color(Color::Current), false, "Ink of the outline, defaulting to the current foreground.";
+    OutlineOffset, "outline-offset", Length, Value::Length(Length::Px(0.0)), false, "Space between the border and the outline; negative draws it inside.";
+    Appearance, "appearance", Keyword(APPEARANCE), Value::Keyword(""), true, "A value control drawn as a knob or a field, over the user's choice; native keeps it.";
+    ValuePosition, "value-position", Keyword(VALUE_POSITION), Value::Keyword(""), true, "Where a knob's value goes: right, left, top, bottom, inside or none.";
+    ValueDecimals, "value-decimals", Keyword(DECIMALS), Value::Keyword(""), true, "Decimals a level's value shows: 0, 1 or 2.";
+    ValueUnit, "value-unit", Text(quoted_unit), Value::Text(String::new()), true, "A unit after a level's value, quoted: \" dB\".";
+    TrackArtwork, "track-artwork", Keyword(ON_OFF), Value::Keyword(""), true, "on draws a track's artwork behind its Launcher column and clips.";
+    TrackHeaders, "track-headers", Keyword(SIDE), Value::Keyword(""), false, "The side of the Arrangement view its track headers are on.";
+    TrackHeight, "track-height", Length, Value::Length(Length::Auto), false, "The height of an Arrangement track that has none of its own, 20 to 400 points.";
+    HeaderMinWidth, "header-min-width", Length, Value::Length(Length::Auto), false, "The least width of the Arrangement view's header column, 160 to 520 points.";
+    HeaderTint, "header-tint", Integer, Value::Integer(-1), false, "How strongly a track's colour tints its Arrangement header, 0 to 100.";
+    CompactBelow, "compact-below", Length, Value::Length(Length::Auto), false, "A track lower than this keeps Suhina's own header layout, up to 200 points.";
+    ParamLabel, "param-label", Keyword(PARAM_LABEL), Value::Keyword(""), true, "Where a device's generated parameters show their names: left, top or hidden.";
+    MeterStyle, "meter-style", Keyword(METER_STYLE), Value::Keyword(""), false, "How level meters draw: continuous, segmented, needle or frames (artwork).";
+    MeterSegments, "meter-segments", Integer, Value::Integer(0), false, "Segments of a segmented meter, 4 to 64.";
+    MeterIntensity, "meter-intensity", Integer, Value::Integer(-1), false, "How strongly a meter's level shows, 0 to 100.";
+    ArtworkFps, "artwork-fps", Integer, Value::Integer(0), false, "Frames per second of animated artwork, 1 to 30.";
+    Liquid, "liquid", Text(liquid), Value::Text(String::new()), false, "Glass strengths: auto, or three integers from 0 to 100 for panels, tracks and clips.";
+    PanelGradient, "panel-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the panels: none, or an angle and colour stops.";
+    TrackGradient, "track-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the tracks: none, or an angle and colour stops.";
+    ClipGradient, "clip-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the clips: none, or an angle and colour stops.";
+    BackdropImage, "backdrop-image", Text(backdrop_image), Value::Text(String::new()), false, "The theme's picture behind the window: none or url(\"<file>.png\").";
+    BackdropOpacity, "backdrop-opacity", Integer, Value::Integer(-1), false, "How much the backdrop picture shows, 0 to 100.";
+    BackdropBlur, "backdrop-blur", Integer, Value::Integer(-1), false, "How much the backdrop picture is blurred, 0 to 100.";
+    SessionTrackWidth, "track-width", Length, Value::Length(Length::Auto), false, "The width of a track's column in the Launcher view; auto is Suhina's.";
+    SessionReturnWidth, "return-width", Length, Value::Length(Length::Auto), false, "The width of a return track's column in the Launcher view.";
+    SessionSceneWidth, "scene-width", Length, Value::Length(Length::Auto), false, "The width of the Launcher view's scene column.";
+    SessionSlotHeight, "slot-height", Length, Value::Length(Length::Auto), false, "The height of a clip slot in the Launcher view.";
+    SessionHeaderHeight, "header-height", Length, Value::Length(Length::Auto), false, "The height of the Launcher view's track headers.";
 }
 
 impl Property {
@@ -163,6 +243,12 @@ impl Property {
             Kind::TextShadows => Value::Shadows(crate::paint::shadows(source, true)?),
             Kind::Tracks => Value::Tracks(crate::layout::tracks(source)?),
             Kind::Areas => Value::Areas(crate::layout::Areas::parse(source)?),
+            Kind::Text(valid) => {
+                if !valid(source) {
+                    return Err("Invalid value".into());
+                }
+                Value::Text(source.trim().into())
+            }
             Kind::Name => {
                 if !crate::layout::valid_area(source) {
                     return Err("Invalid area name".into());
@@ -200,7 +286,15 @@ impl Property {
             let auto = fr
                 || matches!(
                     self,
-                    Self::MinWidth
+                    Self::TrackHeight
+                        | Self::HeaderMinWidth
+                        | Self::CompactBelow
+                        | Self::SessionTrackWidth
+                        | Self::SessionReturnWidth
+                        | Self::SessionSceneWidth
+                        | Self::SessionSlotHeight
+                        | Self::SessionHeaderHeight
+                        | Self::MinWidth
                         | Self::MinHeight
                         | Self::MaxWidth
                         | Self::MaxHeight
@@ -210,7 +304,10 @@ impl Property {
                         | Self::MarginBottom
                         | Self::MarginLeft
                 );
-            let negative = matches!(self, Self::MarginTop | Self::MarginRight | Self::MarginBottom | Self::MarginLeft);
+            let negative = matches!(
+                self,
+                Self::MarginTop | Self::MarginRight | Self::MarginBottom | Self::MarginLeft | Self::OutlineOffset
+            );
             if (!auto && length == Length::Auto)
                 || (!fr && matches!(length, Length::Fr(_)))
                 || (!negative && matches!(length, Length::Px(n) | Length::Em(n) | Length::Percent(n) if n < 0.0))

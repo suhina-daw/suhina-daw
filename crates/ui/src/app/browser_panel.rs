@@ -26,7 +26,7 @@ impl App {
     /// left for the view. With `geometry` the theme's layout places it: its rectangle, the view's,
     /// and whether its width follows the handle (`Workspace::browser_follows`).
     pub(super) fn browser_panel(&mut self, ui: &mut Ui, area: Rect, geometry: Option<(Rect, Rect, bool)>) -> Rect {
-        let _panel_style = crate::kit::style_class::enter_named("workspace-panel", "panel-browser");
+        let _panel_style = crate::kit::element::WORKSPACE_PANEL.id("panel-browser").enter();
         let (low, high) = crate::settings::BROWSER_WIDTHS;
         let widest = (high as f32).min(area.width() * crate::settings::BROWSER_SHARE).max(low as f32);
         let width = (self.settings.browser_width as f32).clamp(low as f32, widest);

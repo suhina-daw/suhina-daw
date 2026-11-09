@@ -207,16 +207,15 @@ pub(in crate::kit) fn surface_with(
     radius
 }
 
-/// The thickness the sheet gives the element in scope (`height`), or `fallback`.
-pub fn thickness(fallback: f32) -> f32 {
-    super::super::style_class::computed().and_then(|style| style.height).unwrap_or(fallback)
-}
-
-/// The shadows (a glow is a shadow without an offset) of the element in scope, cast by artwork:
-/// drawn into `slot`, a place reserved under the artwork, as tinted copies of its `mesh`.
-/// Returns whether there were any.
-pub fn artwork_shadows(painter: &Painter, slot: egui::layers::ShapeIdx, mesh: &egui::Mesh) -> bool {
-    let Some(style) = super::super::style_class::computed() else { return false };
+/// The shadows (a glow is a shadow without an offset) of `style`, cast by artwork: drawn into
+/// `slot`, a place reserved under the artwork, as tinted copies of its `mesh`. Returns whether
+/// there were any.
+pub fn artwork_shadows(
+    painter: &Painter,
+    slot: egui::layers::ShapeIdx,
+    mesh: &egui::Mesh,
+    style: &super::Computed,
+) -> bool {
     let copies: Vec<egui::Shape> = style
         .shadows
         .iter()
@@ -231,32 +230,26 @@ pub fn artwork_shadows(painter: &Painter, slot: egui::layers::ShapeIdx, mesh: &e
     true
 }
 
-/// The element in scope's gradients without its outer shadows: for a surface whose artwork
-/// casts them itself ([`artwork_shadows`]).
-pub fn gradients_rounded(painter: &Painter, rect: Rect, radius: f32) -> bool {
-    super::super::style_class::computed().is_some_and(|mut style| {
-        if !style.authored.radius {
-            style.radius = radius;
-        }
-        style.radius = style.radius.min(rect.width().min(rect.height()) / 2.0).max(0.0);
-        let shadows: Vec<_> = style.shadows.iter().filter(|s| s.inset).cloned().collect();
-        style.shadows = shadows.into();
-        background_with(painter, rect, &style)
-    })
+/// `style`'s gradients without its outer shadows: for a surface whose artwork casts them itself
+/// ([`artwork_shadows`]).
+pub fn gradients_rounded(painter: &Painter, rect: Rect, radius: f32, mut style: super::Computed) -> bool {
+    if !style.authored.radius {
+        style.radius = radius;
+    }
+    style.radius = style.radius.min(rect.width().min(rect.height()) / 2.0).max(0.0);
+    let shadows: Vec<_> = style.shadows.iter().filter(|s| s.inset).cloned().collect();
+    style.shadows = shadows.into();
+    background_with(painter, rect, &style)
 }
 
-pub fn background(painter: &Painter, rect: Rect) -> bool {
-    background_rounded(painter, rect, 0.0)
-}
-pub fn background_rounded(painter: &Painter, rect: Rect, radius: f32) -> bool {
-    super::super::style_class::computed().is_some_and(|mut style| {
-        if !style.authored.radius {
-            style.radius = radius;
-        }
-        // A shadow follows the surface's corners, never rounder than the surface can be.
-        style.radius = style.radius.min(rect.width().min(rect.height()) / 2.0).max(0.0);
-        background_with(painter, rect, &style)
-    })
+/// `style`'s shadows and gradients in `rect`, with `radius` where the sheet gives none.
+pub fn background_rounded(painter: &Painter, rect: Rect, radius: f32, mut style: super::Computed) -> bool {
+    if !style.authored.radius {
+        style.radius = radius;
+    }
+    // A shadow follows the surface's corners, never rounder than the surface can be.
+    style.radius = style.radius.min(rect.width().min(rect.height()) / 2.0).max(0.0);
+    background_with(painter, rect, &style)
 }
 
 pub fn background_with(painter: &Painter, rect: Rect, style: &super::Computed) -> bool {
@@ -275,8 +268,7 @@ pub fn background_with(painter: &Painter, rect: Rect, style: &super::Computed) -
 
 /// Meter fills keep their material anchored to the entire scale. The caller clips
 /// the painter to the measured portion; shadows are drawn separately around it.
-pub fn level_fill(painter: &Painter, scale: Rect) -> bool {
-    let Some(style) = super::super::style_class::computed() else { return false };
+pub fn level_fill(painter: &Painter, scale: Rect, style: &super::Computed) -> bool {
     let mut painted = false;
     if style.authored.background {
         painter.rect_filled(scale, 0.0, style.background.gamma_multiply(style.opacity));
@@ -288,10 +280,8 @@ pub fn level_fill(painter: &Painter, scale: Rect) -> bool {
     painted
 }
 
-pub fn level_glow(painter: &Painter, lit: Rect) {
-    if let Some(style) = super::super::style_class::computed() {
-        for shadow in style.shadows.iter().rev().filter(|shadow| !shadow.inset) {
-            shadow.paint(painter, lit, style.radius, style.opacity);
-        }
+pub fn level_glow(painter: &Painter, lit: Rect, style: &super::Computed) {
+    for shadow in style.shadows.iter().rev().filter(|shadow| !shadow.inset) {
+        shadow.paint(painter, lit, style.radius, style.opacity);
     }
 }

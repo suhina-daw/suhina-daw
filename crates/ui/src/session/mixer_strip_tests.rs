@@ -152,7 +152,7 @@ fn theme_repositions_name_pan_and_meter_and_rotates_the_volume_layout() {
     let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::TRACK_COLUMN, 340.0));
     let original = layout(bounds, true, false);
     let mut theme = theme::Theme::default();
-    assert!(theme_css::apply(&mut theme, ".control-mixer-volume { --suhina-direction: horizontal; } .control-mixer-name { bottom: 0px; } .control-mixer-meter { width: 80px; height: 10px; } .control-mixer-pan { left: 5px; width: 80px; }").is_empty());
+    assert!(theme_css::apply(&mut theme, ".control-mixer-volume { direction: horizontal; } .control-mixer-name { bottom: 0px; } .control-mixer-meter { width: 80px; height: 10px; } .control-mixer-pan { left: 5px; width: 80px; }").is_empty());
     skin::configure(&theme.skin);
     let moved = layout(bounds, true, false);
     let fader = moved.fader.unwrap();
@@ -342,8 +342,8 @@ fn the_divider_is_a_control_a_theme_places_and_others_anchor_to() {
         theme_css::apply(
             &mut theme,
             ".control-mixer-divider { top: -10px; } \
-             .control-mixer-devices { --suhina-anchor-top: mixer-output bottom 4px; \
-                                      --suhina-anchor-bottom: mixer-divider top 0px; }"
+             .control-mixer-devices { anchor-top: mixer-output bottom 4px; \
+                                      anchor-bottom: mixer-divider top 0px; }"
         )
         .is_empty()
     );
@@ -361,7 +361,7 @@ fn the_divider_is_a_control_a_theme_places_and_others_anchor_to() {
 fn an_anchored_part_with_no_room_left_draws_nothing() {
     use crate::kit::{skin, theme_css};
     let mut theme = theme::Theme::default();
-    assert!(theme_css::apply(&mut theme, ".control-mixer-pan { --suhina-anchor-top: mixer-name top 0px; }").is_empty());
+    assert!(theme_css::apply(&mut theme, ".control-mixer-pan { anchor-top: mixer-name top 0px; }").is_empty());
     skin::configure(&theme.skin);
     let ctx = egui::Context::default();
     let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::TRACK_COLUMN, NAME_AT + 40.0));
