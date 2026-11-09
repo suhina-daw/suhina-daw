@@ -2382,29 +2382,42 @@ fn row_menu(
     if item.kind == ItemKind::Heading {
         return;
     }
+    // The row's own item, or every selected one when the row is among them: Pin, Unpin and Tag
+    // act on the selection as Copy to folder does ([#1254] review: unpinning six selected
+    // samples unpinned the one right-clicked).
+    let targets = menu_targets(item, state.selected());
+    let several = targets.len() > 1;
     let pinned = projects.file_library_mut().pinned().contains(&item.key);
-    if ui.button(if pinned { "Unpin" } else { "Pin" }).clicked() {
-        run(projects, if pinned { "library.unpin" } else { "library.pin" }, json!({ "item": item.key }), out);
+    let pin_label = match (pinned, several) {
+        (true, false) => "Unpin".to_string(),
+        (false, false) => "Pin".to_string(),
+        (true, true) => format!("Unpin {} items", targets.len()),
+        (false, true) => format!("Pin {} items", targets.len()),
+    };
+    if ui.button(pin_label).clicked() {
+        let command = if pinned { "library.unpin" } else { "library.pin" };
+        for key in &targets {
+            run(projects, command, json!({ "item": key }), out);
+        }
         state.relist();
         ui.close();
     }
-    let carried = projects.file_library_mut().item_tags(&item.key);
+    // A tag shows ticked when every target carries it; a click sets it on all of them, or
+    // clears it from all when all carry it.
+    let carried: Vec<Vec<u32>> = targets.iter().map(|key| projects.file_library_mut().item_tags(key)).collect();
     ui.menu_button("Tag", |ui| {
         for tag in tags {
-            let on = carried.contains(&tag.id);
+            let on = carried.iter().all(|tags| tags.contains(&tag.id));
             if tag_entry(ui, tag, on).clicked() {
-                run(
-                    projects,
-                    "library.tag",
-                    json!({ "item": item.key, "tag": format!("#{}", tag.id), "on": !on }),
-                    out,
-                );
+                for key in &targets {
+                    run(projects, "library.tag", json!({ "item": key, "tag": format!("#{}", tag.id), "on": !on }), out);
+                }
                 state.relist();
                 ui.close();
             }
         }
         ui.separator();
-        // A new tag, set on the item at once.
+        // A new tag, set on the targets at once.
         let id = Id::unique("browser-new-tag");
         let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
         let response = crate::kit::widgets::text_input(
@@ -2417,7 +2430,9 @@ fn row_menu(
             // colour out when the command is asked without one).
             let name = name.trim().to_string();
             if run(projects, "library.setTag", json!({ "name": name }), out) {
-                run(projects, "library.tag", json!({ "item": item.key, "tag": name, "on": true }), out);
+                for key in &targets {
+                    run(projects, "library.tag", json!({ "item": key, "tag": name, "on": true }), out);
+                }
             }
             ui.ctx().data_mut(|d| d.remove::<String>(id));
             state.relist();
@@ -2448,6 +2463,16 @@ fn row_menu(
 
 /// The files Copy to folder… copies from `item`'s menu: every selected sample when `item` is one
 /// of the selection, else `item` alone, when it is a sample.
+/// The items a row's Pin, Unpin and Tag act on: every selected item (headings aside) when the
+/// row is one of them, else the row's own ([#1254] review).
+fn menu_targets(item: &BrowserItem, selected: &[BrowserItem]) -> Vec<String> {
+    if selected.iter().any(|s| s.key == item.key) {
+        selected.iter().filter(|s| s.kind != ItemKind::Heading).map(|s| s.key.clone()).collect()
+    } else {
+        vec![item.key.clone()]
+    }
+}
+
 pub fn copy_files(item: &BrowserItem, selected: &[BrowserItem]) -> Vec<PathBuf> {
     let sample = |i: &BrowserItem| (i.kind == ItemKind::Sample).then(|| i.path()).flatten();
     // Only a sample's menu copies: a MIDI file's would otherwise copy the samples picked with it.

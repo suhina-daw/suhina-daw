@@ -1769,6 +1769,54 @@ fn items_dropped_on_a_tag_carry_it() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// A row's Pin, Unpin and Tag act on the selection when the row is one of it, as Copy to folder
+/// does ([#1254] review: unpinning six selected samples unpinned the one right-clicked).
+#[test]
+fn a_rows_pin_and_tag_act_on_the_selection() {
+    let (settings, folder) = (temp("menu-selection-settings"), temp("menu-selection"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    double_click(&mut harness, &row(&name));
+    harness.run();
+    let looped = folder.join("Loop 120bpm.wav").display().to_string();
+    let groove = folder.join("Groove.mid").display().to_string();
+    for item in [&looped, &groove] {
+        harness.state_mut().projects_mut().execute("library.pin", &json!({ "item": item })).unwrap();
+    }
+    harness.state_mut().browser.relist();
+    harness.run();
+    harness.get_by_label(&row("Loop 120bpm.wav")).click();
+    harness.run();
+    harness.get_by_label(&row("Groove.mid")).click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    assert_eq!(harness.state().browser.selected().len(), 2, "both are selected");
+    // Unpin from either row's menu takes both off.
+    harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
+    harness.run();
+    harness.get_by_label("Unpin 2 items").click();
+    harness.run();
+    assert!(harness.state_mut().projects_mut().file_library_mut().pinned().is_empty(), "both unpinned");
+    // Tag sets the tag on both.
+    harness.get_by_label(&row("Groove.mid")).click_secondary();
+    harness.run();
+    let at = harness.get_by_label("Tag").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.get_by_label("Red").click();
+    harness.run();
+    for item in [&looped, &groove] {
+        let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(item);
+        assert_eq!(tags, [1], "{item} carries Red");
+    }
+    // A row outside the selection keeps its menu to itself.
+    harness.get_by_label(&row("Drums")).click_secondary();
+    harness.run();
+    assert!(harness.query_by_label("Pin").is_some(), "the row's own Pin");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 /// A folder of the results dragged onto a tag row carries the tag as a whole, a sub-folder and
 /// the library's own folder alike ([#1254] review: a folder was tagged only from its menu).
 #[test]

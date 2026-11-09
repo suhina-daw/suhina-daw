@@ -188,7 +188,7 @@ selected or under the pointer; clicking it previews the sample (a second click s
 *Adding without dragging*); on a project file it opens the project as a project dropped on the
 window does (Settings › Projects and backups › Open projects in).
 
-**Right-click menu:** Pin or Unpin; Tag ▸ (each tag as a painted checkbox, ticked when set, its colour's swatch and its name; a
+**Right-click menu:** Pin or Unpin; Tag ▸ — both act on every selected item when the row is one of the selection, as Copy to folder… does, the label then counting them ("Unpin 6 items") and a tag ticked when every one carries it ([#1254] review) — (each tag as a painted checkbox, ticked when set, its colour's swatch and its name; a
 click anywhere on the entry sets or clears it; a *New tag…* field that
 makes a tag in the next default colour and sets it at once — clicks inside the menu, in the
 field included, do not close it; a click outside does, and every button closes it by its
@@ -571,7 +571,7 @@ as a whole (a sub-folder or a library folder of the tree, [#1254] review; headin
 out); a folder lands on a tag only, never in the project; the drag stops the preview as any drop does not. The other way round, a
 tag row dragged out of the section carries the tag to the results, the item row it is over
 lights up, and a drop tags that item — or every selected item when the row is one of them, as
-a row's Tag menu applies to one and the section's drops apply to every dragged one; a drop
+a row's Tag menu applies to the selection it is one of and the section's drops apply to every dragged one; a drop
 elsewhere changes nothing. While either is carried, a
 pill beside the pointer says what a drop does, and the status bar says so: *Tag 3 items with
 Blue*, *Drop to tag Kick.wav with Blue*. The row's right-click
