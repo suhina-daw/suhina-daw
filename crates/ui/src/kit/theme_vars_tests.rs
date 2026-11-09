@@ -46,7 +46,7 @@ fn every_built_in_theme_reads_back_from_its_own_sheet() {
 fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     let text = "@property --glow { syntax: \"<number>\"; initial-value: 0.6; label: \"Glow\"; range: 0 1; }\n\
                 :root { --nord-blue: #88C0D0; --accent: #5E81AC; }\n\
-                .button:hover { opacity: var(--glow); }";
+                button:hover { opacity: var(--glow); }";
     let (theme, warnings) = from_sheet(text);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(theme.vars.declared.len(), 1);
@@ -147,11 +147,11 @@ fn variant_files_round_trip_and_bad_ones_are_named() {
 fn host_rules_are_read_from_a_sheet_and_the_rest_is_left_to_the_engine() {
     let text = "/* notes */ theme { name: \"Night\"; }\n\
                 @media (width < 600px) { .control-mixer-pan { display: none; } }\n\
-                @layer x { .browser { color: red; } }\n\
+                @layer x { browser { color: red; } }\n\
                 knob.body { image: url(\"assets/knob.body.svg\"); }\n\
                 .control-mixer-pan { left: 4px; top: 0px; }\n\
-                .pan { --suhina-appearance: knob; color: #123456; }\n\
-                .button:hover { opacity: .8; }";
+                pan { --suhina-appearance: knob; color: #123456; }\n\
+                button:hover { opacity: .8; }";
     let mut theme = Theme::default();
     let warnings = theme_css::read_host_rules(&mut theme, text);
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -159,7 +159,7 @@ fn host_rules_are_read_from_a_sheet_and_the_rest_is_left_to_the_engine() {
     assert_eq!(theme.skin.assets.get("knob.body").map(String::as_str), Some("assets/knob.body.svg"));
     assert_eq!(theme.skin.controls["mixer-pan"].offset().x, 4.0);
     assert!(!theme.skin.controls["mixer-pan"].hidden, "a rule in @media is not a placement");
-    assert_eq!(theme.skin.styles[".pan"].len(), 1, "only --suhina-* styles are the app's");
+    assert_eq!(theme.skin.styles["pan"].len(), 1, "only --suhina-* styles are the app's");
 }
 
 #[test]
@@ -199,7 +199,7 @@ fn the_swatch_and_thumbnail_follow_the_variant() {
 #[test]
 fn a_theme_may_put_the_track_headers_on_a_side() {
     let mut theme = Theme::default();
-    assert!(theme_css::read_host_rules(&mut theme, ".arrangement { --suhina-track-headers: left; }").is_empty());
+    assert!(theme_css::read_host_rules(&mut theme, "arrangement { --suhina-track-headers: left; }").is_empty());
     crate::kit::skin::configure(&theme.skin);
     assert_eq!(crate::kit::style_class::theme_track_headers_left(), Some(true));
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
@@ -239,14 +239,13 @@ fn track_artwork_of_one_view_is_a_role_of_its_own() {
 #[test]
 fn a_theme_may_keep_the_header_column_wide_enough_for_its_placements() {
     let mut theme = Theme::default();
-    let css = ".arrangement { --suhina-header-min-width: 330px; }";
+    let css = "arrangement { --suhina-header-min-width: 330px; }";
     assert!(theme_css::read_host_rules(&mut theme, css).is_empty());
     crate::kit::skin::configure(&theme.skin);
     assert_eq!(crate::kit::style_class::theme_header_min_width(), Some(330.0));
     let mut out_of_range = Theme::default();
     assert!(
-        !theme_css::read_host_rules(&mut out_of_range, ".arrangement { --suhina-header-min-width: 9000px; }")
-            .is_empty()
+        !theme_css::read_host_rules(&mut out_of_range, "arrangement { --suhina-header-min-width: 9000px; }").is_empty()
     );
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
     assert_eq!(crate::kit::style_class::theme_header_min_width(), None);

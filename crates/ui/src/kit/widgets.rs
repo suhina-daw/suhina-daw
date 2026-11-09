@@ -221,10 +221,13 @@ pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, response: &Res
 
 /// CSS paint remains above the SVG body, below the control's glyph and label.
 pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bool, fill: Color32, radius: f32) {
-    let _style = super::style_class::control("button", response);
+    // The button's own element: the caller's when it entered one, else one entered here.
+    let own = super::style_class::control("button", response);
     super::native_css::mark(super::native_css::HostState::Checked, on);
+    let style = own.as_ref().map_or_else(super::style_class::computed, super::style_class::Scope::style);
     // A shape the sheet gives the button wins over the artwork Suhina ships, not over the theme's own.
-    let shaped = super::style_class::computed()
+    let shaped = style
+        .as_ref()
         .is_some_and(|style| style.authored.background || style.authored.radius || style.authored.border_width);
     let role = super::skin::button_role();
     if !shaped || role != "button" || super::skin::has_own("button") {
@@ -236,15 +239,14 @@ pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bo
             return;
         }
     }
-    super::native_css::surface(painter, rect, radius, fill);
+    super::native_css::surface_with(painter, rect, radius, fill, style);
 }
 
-/// A track's number, `.track-number`: its own `color`, `font-size` and `display: none`, and
-/// `:muted` while the track is off.
+/// A track's number, `track-number`: its own `color`, `font-size` and `display: none`, and
+/// `[muted]` while the track is off.
 pub fn track_number_text(painter: &Painter, rect: Rect, number: &str, ink: Color32, muted: bool) {
-    let _style = super::style_class::enter("track-number");
-    super::native_css::mark(super::native_css::HostState::Muted, muted);
-    let computed = super::style_class::computed();
+    let el = super::element::TRACK_NUMBER.attr(super::element::Muted, muted).enter();
+    let computed = el.style();
     if computed.as_ref().is_some_and(|c| !c.visible) {
         return;
     }
@@ -976,7 +978,7 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
 
 /// A dial as an `.sd` control's dial draws it, the built-in canvases' wheels (the reverb's and
 /// the delay's): the rim arc, the ring's disc, the inner disc, the pointer line to 72 % of the
-/// radius, 270° with the gap under. The colours are the tokens the `.knob` scope gives — the
+/// radius, 270° with the gap under. The colours are the tokens the `knob` scope gives — the
 /// same scope the canvases' dials take theirs from, so a theme's own colouring applies — and
 /// no artwork stands for the face, as a canvas has none.
 pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response: Option<&Response>) {

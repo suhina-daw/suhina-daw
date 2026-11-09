@@ -51,6 +51,8 @@ pub(crate) struct SendOut {
     /// a fader ([`Chain::set_live_send`]).
     pub(crate) level: f64,
     pub(crate) live: LiveVolume,
+    /// What it adds to its return this block, staged when its chain is done ([`Chain::stage`]).
+    pub(crate) staged: Vec<f32>,
 }
 
 impl SendOut {
@@ -63,7 +65,16 @@ impl SendOut {
         post_fader: bool,
         delay: usize,
     ) -> Self {
-        Self { target, track, gains, post_fader, delay: Delay::new(delay), level, live: LiveVolume::default() }
+        Self {
+            target,
+            track,
+            gains,
+            post_fader,
+            delay: Delay::new(delay),
+            level,
+            live: LiveVolume::default(),
+            staged: vec![0.0; MAX_BLOCK * 2],
+        }
     }
 }
 
@@ -193,14 +204,110 @@ pub(crate) struct Capture<'a> {
     pub(crate) buffer: &'a mut [f32],
 }
 
-/// Runs every chain over the rest of a block of `frames` frames, in order, so a bus or a
-/// return has everything that plays into it before it runs: each chain adds its sound to its
-/// returns, then to its bus or `out`, and, when its cue is on, to the cue bus. With `capture`,
-/// a source render: the named chain's output is mixed into the capture buffer instead of where
-/// it plays, and a chain outside the source node's subtree adds nothing into a chain inside
-/// it (a return routed into the node's bus plays into the mix, not into the node's file).
-/// Never allocates.
-pub(crate) fn finish(
+impl Capture<'_> {
+    /// Whether chain `i` is inside the source node's subtree.
+    fn inside(&self, i: usize) -> bool {
+        self.keep.get(i).copied().unwrap_or(true)
+    }
+}
+
+/// The most bus levels with plug-ins a chain's deadline is shortened for: its plug-ins keep at
+/// least a quarter of the block's time.
+const MAX_LEVELS: u32 = 3;
+
+/// When a chain runs in a block (#1261). Built with the graph: how many chains play into it and
+/// how many bus levels with plug-ins come after it; and this block's progress.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct Turn {
+    /// Chains that play into it, through their output or a send. It starts once they are done.
+    pub(crate) feeders: usize,
+    /// Buses with plug-ins switched on, on the longest way from it to the output, at most [`MAX_LEVELS`]:
+    /// its plug-ins are waited for that many shares of the deadline sooner, so those buses
+    /// still have time when one of its plug-ins is late.
+    pub(crate) levels_after: u32,
+    /// This block: feeders not done yet; whether it has started and whether it is done.
+    left: usize,
+    started: bool,
+    done: bool,
+}
+
+impl Turn {
+    /// The time its plug-ins have in a block that began at `start`, with plug-in blocks due by
+    /// `deadline`: a quarter of that time less for each bus level with plug-ins after it.
+    pub(crate) fn limit(&self, start: std::time::Instant, deadline: std::time::Instant) -> std::time::Instant {
+        let levels = self.levels_after.min(MAX_LEVELS);
+        let time = deadline.saturating_duration_since(start);
+        deadline.checked_sub(time / 4 * levels).unwrap_or(deadline)
+    }
+}
+
+/// What a done chain adds where it plays, before it is added (see [`Chain::stage`]).
+pub(crate) struct Staged {
+    post: Vec<f32>,
+    cue: Vec<f32>,
+}
+
+impl Staged {
+    /// Room for a block. Allocates.
+    pub(crate) fn new() -> Self {
+        Self { post: vec![0.0; MAX_BLOCK * 2], cue: vec![0.0; MAX_BLOCK * 2] }
+    }
+}
+
+/// Counts every chain's feeders and its bus levels after it, for [`run`]: Main's chain, when
+/// there is one, is what every chain without a bus plays into. Allocates.
+pub(crate) fn plan_turns(chains: &mut [Chain]) {
+    let main = chains.iter().position(|c| c.track == suhina_model::TrackId::MAIN);
+    let targets = |c: &Chain| -> Vec<usize> {
+        let mut t: Vec<usize> = c.sends.iter().map(|s| s.target).chain(c.target).collect();
+        if c.target.is_none()
+            && let Some(main) = main
+            && c.track != suhina_model::TrackId::MAIN
+        {
+            t.push(main);
+        }
+        t.sort_unstable();
+        t.dedup();
+        t
+    };
+    let all: Vec<Vec<usize>> = chains.iter().map(targets).collect();
+    // A switched-off plug-in passes the sound and sends no block, so it needs no time.
+    let plugins: Vec<bool> = chains.iter_mut().map(|c| c.plugin_slots().any(|s| s.enabled)).collect();
+    let mut levels = vec![0u32; chains.len()];
+    for i in (0..chains.len()).rev() {
+        let after = all.get(i).map_or(&[][..], Vec::as_slice);
+        let level = after
+            .iter()
+            .filter(|&&t| t > i)
+            .map(|&t| levels.get(t).copied().unwrap_or(0) + u32::from(plugins.get(t).copied().unwrap_or(false)))
+            .max()
+            .unwrap_or(0);
+        if let Some(slot) = levels.get_mut(i) {
+            *slot = level;
+        }
+    }
+    for (i, chain) in chains.iter_mut().enumerate() {
+        // Main is fed by what reaches the output; it starts once every other chain is done.
+        let feeders = if Some(i) == main { 0 } else { all.iter().filter(|t| t.contains(&i)).count() };
+        chain.turn =
+            Turn { feeders, levels_after: levels.get(i).copied().unwrap_or(0).min(MAX_LEVELS), ..Turn::default() };
+    }
+}
+
+/// Runs every chain over the rest of a block of `frames` frames, each as soon as the chains that
+/// play into it are done (#1261): the chains no chain plays into start at once, a bus or a
+/// return once its last feeder is done, and Main, last, once every other chain is. Plug-ins'
+/// blocks are out together: a chain goes on as soon as its own plug-in answers and waits for no
+/// other chain's (#151), only until its deadline ([`Turn::limit`]).
+///
+/// What a done chain adds to its bus, its returns, the output and the cue bus is staged first,
+/// then added in chain order, as when the chains ran one after another: which plug-in answered
+/// first never changes a sum, so offline renders stay the engine's oracle. With `capture`, a
+/// source render: the named chain's output is mixed into the capture buffer instead of where it
+/// plays, and a chain outside the source node's subtree adds nothing into a chain inside it (a
+/// return routed into the node's bus plays into the mix, not into the node's file). Never
+/// allocates; in real time it returns by the deadline.
+pub(crate) fn run(
     chains: &mut [Chain],
     out: &mut [f32],
     cue: &mut [f32],
@@ -214,55 +321,214 @@ pub(crate) fn finish(
     {
         buffer.fill(0.0);
     }
+    let main = chains.iter().position(|c| c.track == suhina_model::TrackId::MAIN);
+    for chain in chains.iter_mut() {
+        chain.turn.left = chain.turn.feeders;
+        chain.turn.started = false;
+        chain.turn.done = false;
+    }
     for i in 0..chains.len() {
-        let (done, later) = chains.split_at_mut(i + 1);
-        let Some(chain) = done.last_mut() else { continue };
-        // The main channel's chain, last: what reached the main output so far is its input,
-        // and its output is the main output (#687).
-        if chain.track == suhina_model::TrackId::MAIN {
-            let input = chain.input(frames);
-            for (to, from) in input.iter_mut().zip(out.iter_mut()) {
-                *to += *from;
-                *from = 0.0;
+        if Some(i) != main && chains.get(i).is_some_and(|c| c.turn.feeders == 0) {
+            start(chains, i, frames, context, capture.as_ref());
+        }
+    }
+    loop {
+        let now = crate::clock::now();
+        let mut moved = false;
+        for i in 0..chains.len() {
+            let Some(chain) = chains.get_mut(i).filter(|c| c.turn.started && !c.turn.done) else { continue };
+            if chain.is_waiting() && chain.answered(now) {
+                chain.collect(frames);
+                chain.advance(frames, context);
+                moved = true;
+            }
+            if !chain.is_waiting() {
+                done(chains, i, frames, context, capture.as_ref());
+                moved = true;
             }
         }
-        chain.complete(frames, context);
-        // Whether chain `i` is inside the source node's subtree; every chain is, when there is
-        // no capture (a normal render).
-        let inside = capture.as_ref().is_none_or(|c| c.keep.get(i).copied().unwrap_or(true));
-        for k in 0..chain.sends.len() {
-            let target = chain.sends.get(k).and_then(|s| s.target.checked_sub(i + 1));
-            let Some(ret) = target.and_then(|t| later.get_mut(t)) else { continue };
-            if !inside
-                && target
-                    .is_some_and(|t| capture.as_ref().is_some_and(|c| c.keep.get(i + 1 + t).copied().unwrap_or(true)))
-            {
-                continue;
+        let others_done = chains.iter().enumerate().all(|(i, c)| Some(i) == main || c.turn.done);
+        if others_done {
+            match main.and_then(|m| chains.get(m).map(|c| (m, c.turn))) {
+                Some((m, turn)) if !turn.started => {
+                    to_output(chains, out, cue, Some(m), false, capture.as_mut());
+                    // What reached the output so far is Main's input, and its output is the
+                    // main output (#687).
+                    if let Some(chain) = chains.get_mut(m) {
+                        for (to, from) in chain.input(frames).iter_mut().zip(out.iter_mut()) {
+                            *to += *from;
+                            *from = 0.0;
+                        }
+                    }
+                    start(chains, m, frames, context, capture.as_ref());
+                    continue;
+                }
+                Some((_, turn)) if !turn.done => {}
+                _ => break,
             }
-            chain.send(k, ret.input(frames), frames);
         }
-        // The source chain's output goes into the capture buffer instead of where it plays; its
-        // latency compensation, gains and mixer lanes are the same `mix` applies.
-        if let Some(cap) = capture.as_mut()
-            && cap.chain == i
-        {
-            chain.mix(&mut *cap.buffer, cue, frames);
+        if moved {
             continue;
         }
-        let target = chain.target.and_then(|t| t.checked_sub(i + 1));
-        if !inside
-            && target.is_some_and(|t| capture.as_ref().is_some_and(|c| c.keep.get(i + 1 + t).copied().unwrap_or(true)))
+        // A chain whose feeders can never all be done (a loop the graph should not have) starts
+        // anyway, in order, rather than holding up the block.
+        if !chains.iter().any(|c| c.turn.started && !c.turn.done)
+            && let Some(i) =
+                (0..chains.len()).find(|&i| Some(i) != main && chains.get(i).is_some_and(|c| !c.turn.started))
         {
+            start(chains, i, frames, context, capture.as_ref());
             continue;
         }
-        match target.and_then(|t| later.get_mut(t)) {
-            Some(bus) => chain.mix(bus.input(frames), cue, frames),
-            None => chain.mix(out, cue, frames),
+        wait_for_answers(chains, now);
+    }
+    match main {
+        Some(m) => to_output(chains, out, cue, Some(m), true, capture.as_mut()),
+        None => to_output(chains, out, cue, None, false, capture.as_mut()),
+    }
+}
+
+/// The most chains' plug-ins one wait watches; more chains wait in turn.
+const MAX_WATCHED: usize = 64;
+
+/// While no plug-in has answered: sleeps in the operating system until one of the waiting
+/// chains' plug-ins answers or the earliest of their limits passes (#1256). When one of them
+/// cannot be watched, it waits on the first chain still out for at most
+/// [`crate::chain::ANSWER_SLICE`] instead, and the loop looks at all of them again. Never
+/// allocates.
+fn wait_for_answers(chains: &mut [Chain], now: std::time::Instant) {
+    let waiting = |c: &&Chain| c.turn.started && !c.turn.done && c.is_waiting();
+    let all = chains.iter().filter(waiting).count();
+    let mut watches: [Option<suhina_ipc::Watch>; MAX_WATCHED] = [None; MAX_WATCHED];
+    let mut until: Option<std::time::Instant> = None;
+    let mut watched = 0;
+    for chain in chains.iter().filter(waiting).take(MAX_WATCHED) {
+        if let (Some(watch), Some(slot)) = (chain.watch(), watches.get_mut(watched)) {
+            *slot = Some(watch);
+            watched += 1;
+        }
+        until = match (until, chain.limit()) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+    if watched > 0
+        && watched == all
+        && let Some(until) = until
+    {
+        suhina_ipc::wait_any(watches.get(..watched).unwrap_or_default(), until);
+        return;
+    }
+    if let Some(chain) = chains.iter_mut().find(|c| c.turn.started && !c.turn.done && c.is_waiting()) {
+        chain.answered(now + crate::chain::ANSWER_SLICE);
+    }
+}
+
+/// Starts chain `i`'s block: what its feeders staged for it goes into its input, in their order,
+/// and its devices run as far as they can without waiting ([`Chain::advance`]).
+fn start(chains: &mut [Chain], i: usize, frames: usize, context: &ProcessContext, capture: Option<&Capture>) {
+    let (before, rest) = chains.split_at_mut(i.min(chains.len()));
+    let Some(chain) = rest.first_mut() else { return };
+    let inside = |j: usize| capture.is_none_or(|c| c.inside(j));
+    // Nothing from outside the source node's subtree goes into a chain inside it.
+    let shut = |j: usize| !inside(j) && capture.is_some_and(|c| c.inside(i));
+    for (j, feeder) in before.iter().enumerate() {
+        if shut(j) {
+            continue;
+        }
+        for send in feeder.sends.iter().filter(|s| s.target == i) {
+            add(chain.input(frames), &send.staged);
+        }
+        let captured = capture.is_some_and(|c| c.chain == j);
+        if feeder.target == Some(i) && !captured {
+            add(chain.input(frames), &feeder.staged.post);
+        }
+    }
+    chain.turn.started = true;
+    chain.advance(frames, context);
+}
+
+/// Chain `i` has run its devices: the rest of its block runs, what it adds where it plays is
+/// staged, and every chain it plays into that has all its feeders done now starts.
+fn done(chains: &mut [Chain], i: usize, frames: usize, context: &ProcessContext, capture: Option<&Capture>) {
+    let Some(chain) = chains.get_mut(i) else { return };
+    chain.complete(frames, context);
+    chain.stage(frames);
+    chain.turn.done = true;
+    let (target, sends) = (chain.target, chain.sends.len());
+    for k in 0..=sends {
+        let to = if k < sends { chains.get(i).and_then(|c| c.sends.get(k)).map(|s| s.target) } else { target };
+        // A send and the output into the same chain count once, as `plan_turns` counts them.
+        let repeated = (0..k).any(|e| chains.get(i).and_then(|c| c.sends.get(e)).map(|s| s.target) == to);
+        let Some(t) = to.filter(|_| !repeated) else { continue };
+        let Some(next) = chains.get_mut(t) else { continue };
+        next.turn.left = next.turn.left.saturating_sub(1);
+        if next.turn.left == 0 && !next.turn.started && next.track != suhina_model::TrackId::MAIN {
+            start(chains, t, frames, context, capture);
         }
     }
 }
 
+/// Adds what the chains staged for the output and the cue bus, in their order: every chain but
+/// Main when `main` names it and `last` is false, Main alone when `last` is true, every chain
+/// without `main`. The capture chain's output goes to the capture buffer instead.
+fn to_output(
+    chains: &mut [Chain],
+    out: &mut [f32],
+    cue: &mut [f32],
+    main: Option<usize>,
+    last: bool,
+    mut capture: Option<&mut Capture>,
+) {
+    for (i, chain) in chains.iter().enumerate() {
+        if main.is_some() && (Some(i) == main) != last {
+            continue;
+        }
+        match capture.as_mut().filter(|c| c.chain == i) {
+            Some(cap) => add(cap.buffer, &chain.staged.post),
+            None if chain.target.is_none() => add(out, &chain.staged.post),
+            None => {}
+        }
+        if chain.cue.is_some() {
+            add(cue, &chain.staged.cue);
+        }
+    }
+}
+
+/// `to += from`, sample by sample, over the shorter of the two.
+fn add(to: &mut [f32], from: &[f32]) {
+    for (to, from) in to.iter_mut().zip(from) {
+        *to += *from;
+    }
+}
+
 impl Chain {
+    /// Stages what the chain adds where it plays, once its devices have run the block: each
+    /// send's share for its return, then its output for its bus or the output and its cue, as
+    /// [`Chain::send`] and [`Chain::mix`] would add them. Each starts at -0.0, which adding
+    /// leaves every value as it is, so adding the staged sound later gives the same samples, bit
+    /// for bit. Never allocates.
+    pub(crate) fn stage(&mut self, frames: usize) {
+        let end = frames.min(MAX_BLOCK) * 2;
+        for k in 0..self.sends.len() {
+            let Some(send) = self.sends.get_mut(k) else { continue };
+            let mut staged = std::mem::take(&mut send.staged);
+            let part = staged.get_mut(..end).unwrap_or_default();
+            part.fill(-0.0);
+            self.send(k, part, frames);
+            if let Some(send) = self.sends.get_mut(k) {
+                send.staged = staged;
+            }
+        }
+        let mut staged = std::mem::replace(&mut self.staged, Staged { post: Vec::new(), cue: Vec::new() });
+        for buffer in [&mut staged.post, &mut staged.cue] {
+            buffer.get_mut(..end).unwrap_or_default().fill(-0.0);
+        }
+        let (post, cue) =
+            (staged.post.get_mut(..end).unwrap_or_default(), staged.cue.get_mut(..end).unwrap_or_default());
+        self.mix(post, cue, frames);
+        self.staged = staged;
+    }
+
     /// Adds the chain's sound, as its devices left it, through send `index`'s delay and at its
     /// gains, to `input` (the return's). Never allocates.
     pub(crate) fn send(&mut self, index: usize, input: &mut [f32], frames: usize) {

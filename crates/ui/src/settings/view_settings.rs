@@ -12,7 +12,7 @@ pub const MIXER_HEIGHTS: (u32, u32, u32) = (46, 166, 2000);
 /// How Arrangement waveforms and note previews choose their ink, independently of clip names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WaveformColour {
-    /// The theme's colour (`.clip-waveform`, `.clip-notes`), or Dark where it gives none.
+    /// The theme's colour (`clip-waveform`, `clip-notes`), or Dark where it gives none.
     #[default]
     Theme,
     Auto,

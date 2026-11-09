@@ -193,16 +193,17 @@ fn a_click_adds_and_down_moves_the_lit_row() {
     select(&mut harness, "3 Audio");
     open(&mut harness);
     type_text(&mut harness, "e");
-    // Down moves the lit row; the list still offers rows to click. The query matches more
-    // rows than the palette's twelve show, so the row scrolls in before its click
-    // (the access tree lists the rows the viewport hides; a real user scrolls to them).
+    // Down moves the lit row; the list still offers rows to click. A row is clicked by
+    // position, so it must be one of the palette's twelve: "Add Reverb" is far enough down
+    // that, with a machine's plug-in catalog counted in, its row lies past the window and a
+    // click there lands outside the palette, closing it as a click outside does. The lit row
+    // the Down moves to is the palette's second ("EQ" alone starts with the letter), on
+    // every machine.
     press(&mut harness, Key::ArrowDown);
-    harness.get_by_label("Add Reverb").scroll_to_me();
-    harness.run();
-    harness.get_by_label("Add Reverb").click();
+    harness.get_by_label("Add DJ EQ").click();
     harness.run();
     assert!(!harness.state().quick_add_open());
-    assert_eq!(devices(&harness, TrackId(3)), ["Reverb"]);
+    assert_eq!(devices(&harness, TrackId(3)), ["DJ EQ"]);
     let _ = std::fs::remove_dir_all(&settings);
 }
 
