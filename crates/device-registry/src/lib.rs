@@ -758,6 +758,15 @@ fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
     if file.is_some() && !is_file_device(&info.id) {
         return Err(format!("the preset names a file, which {} does not run", info.name));
     }
+    // A shipped file's key is the preset's own device's, refused at the read as at the write
+    // ([ADR 0014] › Amendment: a preset may name a file); the loader would refuse it later,
+    // but then the device is added without its file instead of the preset being refused here.
+    if let Some((packed_id, _)) =
+        file.as_deref().and_then(|f| f.strip_prefix("builtin:")).and_then(|rest| rest.split_once('/'))
+        && packed_id != info.id.as_ref()
+    {
+        return Err(format!("{} runs a shipped file of its own kind, not {packed_id:?}", info.name));
+    }
     Ok((Preset { device: &info.id, name: name.to_string(), params, file }, tags))
 }
 

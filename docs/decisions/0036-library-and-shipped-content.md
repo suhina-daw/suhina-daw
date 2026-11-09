@@ -113,8 +113,10 @@ and store absolute paths in projects.
 
 ## Consequences
 
-- The executable grows by the starter pack's size; the estimated 2–5 MB is the pack's ceiling
-  and the download window is the growth valve.
+- The executable grows by the starter pack's size; the pack's ceiling is 16 MiB
+  (the registry's test enforces it, and CONTRIBUTING names it) and the download window is the
+  growth valve. The first estimate was 2–5 MB; the shipped pack outgrew it and the ceiling
+  moved with it.
 - A project is portable across machines that share the pack (any machine with Suhina, for the
   factory pack's files) and reads the files a user carried beside the packs.
 - `[ADR 0014]`'s "user-saved presets in the settings folder" is replaced by the library's

@@ -386,8 +386,7 @@ pub const ELEMENTS: &[Element] = &[
     element("meter-level", Part, "A meter's lit part."),
     element("meter-vertical", Part, "A meter standing up, around its level."),
     element("meter-horizontal", Part, "A meter lying down, around its level."),
-    element("dropdown", Control, "A drop-down menu's button.")
-        .artwork(&[default_svg!("folder")]),
+    element("dropdown", Control, "A drop-down menu's button.").artwork(&[default_svg!("folder")]),
     element("text-input", Control, "A text field."),
     element("label", Drawn, "A label."),
     element("separator", Drawn, "A rule between parts."),

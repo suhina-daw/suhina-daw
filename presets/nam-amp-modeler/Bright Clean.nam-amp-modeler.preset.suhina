@@ -19,7 +19,7 @@
     "eqOn": 1.0,
     "delay": 0.0,
     "hq": 1.0,
-    "outputVolume": 1.5
+    "outputVolume": 0.5
   },
   "file": "builtin:nam-amp-modeler/Tim R Fender TwinVerb Vibrato Bright.nam"
 }

@@ -188,8 +188,11 @@ fn a_preset_may_name_a_file() {
     let named = file(r#""file": "builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam", "params": {}"#);
     let read = preset(named.as_bytes(), 1).unwrap();
     assert_eq!(read.file.as_deref(), Some("builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam"));
-    // A file another device's pack is keyed to is refused by the loader, not here; a blank is
-    // no file at all.
+    // A file another device's pack is keyed to is refused here as at the write, before the
+    // device is added without its file ([ADR 0014] › Amendment: a preset may name a file);
+    // a blank is no file at all.
+    let cross = file(r#""file": "builtin:nam-cab-loader/x.wav", "params": {}"#);
+    assert!(preset(cross.as_bytes(), 1).is_err(), "the amp modeler runs no cab loader file");
     let blank = file(r#""file": "  ", "params": {}"#);
     assert_eq!(preset(blank.as_bytes(), 1).unwrap().file, None);
     // Where the device runs no file, a named one is refused: the preset could never be kept.
