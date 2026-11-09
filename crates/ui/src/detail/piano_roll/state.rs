@@ -546,6 +546,9 @@ impl PianoRollState {
             "pianoRoll.deselect" => {
                 self.selected.clear();
                 self.clear_span();
+                // Escape also leaves Quantise for the Notes tab: a press in the clip panel keeps
+                // the keys with the piano roll, so its Escape is this one (› Note tools).
+                self.set_quantize_open(false);
                 return None;
             }
             "pianoRoll.draw" => {

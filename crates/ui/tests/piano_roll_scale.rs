@@ -256,7 +256,9 @@ fn fold_shows_only_the_rows_with_notes_and_a_double_click_adds_on_the_rows_key()
 fn the_toolbar_scale_folds_to_the_clips_scale() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
-    let lit = |h: &Harness<'static, App>| h.get_by_label("Scale").accesskit_node().is_selected() == Some(true);
+    let lit = |h: &Harness<'static, App>| {
+        h.query_by_label("Scale").is_some() && h.state().piano_roll().fold == Fold::Scale && edited(h).1.is_some()
+    };
     assert!(!lit(&h));
     press(&mut h, "Scale");
     assert_eq!(edited(&h).1, Scale::new(0, ScaleMode::Major), "the default scale");

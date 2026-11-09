@@ -923,9 +923,12 @@ fn the_toolbar_cuts_copies_pastes_and_duplicates_the_selection() {
     clipboard(&mut h, "Copy");
     clipboard(&mut h, "Paste");
     assert!(notes(&h).len() > start, "the toolbar's Paste added the copied notes");
-    let pasted = notes(&h).len();
+    let pasted = notes(&h);
     clipboard(&mut h, "Duplicate");
-    assert!(notes(&h).len() > pasted);
+    // With stacked notes off the copy replaces what it lands on, so the count may stay; the copy is
+    // there and selected.
+    assert_ne!(notes(&h), pasted, "the toolbar's Duplicate made a copy");
+    assert_eq!(h.state().piano_roll().selected.len(), 1, "the copy is selected");
     let before_cut = notes(&h).len();
     clipboard(&mut h, "Cut");
     assert!(notes(&h).len() < before_cut, "the toolbar's Cut deleted the selection");
