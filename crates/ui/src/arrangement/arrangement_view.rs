@@ -1551,16 +1551,18 @@ fn show_lanes(
         // An element of its own, `#main-volume`, as the tracks' are `#arrangement-volume`: without
         // it the field paints `arrangement`'s style as its own (#1237).
         let volume_style = crate::kit::element::VALUE.id("main-volume").enter();
-        let response = widgets::value_area(
+        let response = widgets::value_area_axis(
             ui,
             field.intersect(fixed),
             Id::unique("arrangement-main-volume"),
             "Main volume",
             widgets::format_db(state.main_drag.unwrap_or(db)),
+            true,
         );
         state.value_areas.push(field.intersect(fixed));
         let mut preview = state.main_drag;
-        match widgets::drag_value(ui, &response, &mut preview, db, 0.25, 1.0, VOLUME_RANGE, 0.0) {
+        // Dragged across, along the bar: right raises it.
+        match widgets::drag_value_axis(ui, &response, &mut preview, db, 0.25, 1.0, VOLUME_RANGE, 0.0, true) {
             Drag::Moving(v) => {
                 state.main_drag = Some(v);
                 let gesture = crate::interaction::commands::gesture("main-volume");

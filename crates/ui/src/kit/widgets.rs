@@ -930,7 +930,20 @@ pub fn drag_value_axis(
 
 /// Makes `rect` a draggable value with a label for screen readers and tests.
 pub fn value_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString, value: impl ToString) -> Response {
-    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
+    value_area_axis(ui, rect, id, label, value, false)
+}
+
+/// A [`value_area`] dragged along `horizontal` or vertical, with the pointer that says so.
+pub fn value_area_axis(
+    ui: &Ui,
+    rect: Rect,
+    id: egui::Id,
+    label: impl ToString,
+    value: impl ToString,
+    horizontal: bool,
+) -> Response {
+    let cursor = if horizontal { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
+    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(cursor);
     let (label, value) = (label.to_string(), value.to_string());
     response.widget_info(|| {
         let mut info = WidgetInfo::labeled(Role::SpinButton, true, &label);

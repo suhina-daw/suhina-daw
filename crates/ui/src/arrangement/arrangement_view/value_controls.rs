@@ -160,7 +160,17 @@ pub(super) fn value_control(
             Control::Volume => (format!("{} volume", lane.name), widgets::format_db(shown)),
             Control::Pan => (format!("{} pan", lane.name), widgets::format_pan(shown)),
         };
-        let response = widgets::value_area(ui, rect.intersect(clip), id.with(label.as_str()), &label, text);
+        // A field drawn as a bar lies across the header, so it is dragged across: right raises it.
+        // A knob turns with an up or down drag, unless the theme lays it out horizontally.
+        let knob = match control {
+            Control::Volume => state.knobs,
+            Control::Pan => crate::kit::style_class::knob_preference(el, state.knobs),
+        };
+        let horizontal = !knob
+            || crate::kit::control_layout::placement(name).direction
+                == crate::kit::control_layout::Direction::Horizontal;
+        let response =
+            widgets::value_area_axis(ui, rect.intersect(clip), id.with(label.as_str()), &label, text, horizontal);
         control_response = Some(response.clone());
         hover = widgets::hover(ui, &response);
         // One track hears every frame of a drag: each sets the value, all in one gesture, so the
@@ -181,7 +191,7 @@ pub(super) fn value_control(
             per_tick,
             range,
             default,
-            crate::kit::control_layout::placement(name).direction == crate::kit::control_layout::Direction::Horizontal,
+            horizontal,
         ) {
             Drag::Moving(v) => {
                 state.value_drag = Some(ValueDrag { track, control, start: value, now: v, tracks: tracks.clone() });
