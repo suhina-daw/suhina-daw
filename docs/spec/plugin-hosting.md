@@ -111,7 +111,7 @@ events a block. A parameter value that reaches the processor from the engine (a 
 set, an automation lane) also goes to the edit controller on the main thread
 (`setParamNormalized`: the same call a MIDI controller's mapped parameter gets, #812),
 so the plug-in's editor follows the sound; and the host reports what was changed in its
-editor back (`param_changed`, #828), so the session keeps
+editor back (`param_changed`, #828; each one wakes the window, so its lane and panel follow at once, #1205), so the session keeps
 the project's values in step with it — no undo step of its own, and a change since the
 last save. A change there of a parameter an enabled lane plays turns the lane off as one undo
 step, unless it is a value the lane sent (#1205, [automation](automation.md#a-manual-change-turns-the-lane-off)).

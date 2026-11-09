@@ -1606,6 +1606,8 @@ pub fn read_lines(stream: Stream) -> Receiver<Message> {
                 Ok(0) | Err(_) => return,
                 Ok(_) => {
                     if let Some(message) = Message::decode(line.trim_end()) {
+                        // A parameter moved in the plug-in's own editor too: its lane and its
+                        // panel follow it at once, not at the window's next look (#1205).
                         let shown = matches!(
                             message,
                             Message::TransportKey
@@ -1614,6 +1616,7 @@ pub fn read_lines(stream: Stream) -> Receiver<Message> {
                                 | Message::AraNotes { .. }
                                 | Message::AraAnalysis { .. }
                                 | Message::EditorClosed { .. }
+                                | Message::ParamChanged { .. }
                         );
                         if matches!(message, Message::TransportKey | Message::TypedKey { .. } | Message::AraPlayback(_))
                         {
