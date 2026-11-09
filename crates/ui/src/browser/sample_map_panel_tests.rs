@@ -219,7 +219,9 @@ fn a_layout_asked_while_workers_are_busy_stays_asked() {
     let state = BrowserState::default();
     let settings = Settings::default();
     let ctx = egui::Context::default();
-    let _ = ctx.run_ui(egui::RawInput::default(), |ui| panel.refresh(ui, &state, &mut projects, &settings));
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| panel.refresh(ui, &state, &mut projects, &settings));
+    // The frame's textures go nowhere in a test, as the other frames here do.
+    output.textures_delta.clear();
     assert!(panel.stale, "the asked layout is kept for a later frame");
     assert!(panel.job.is_none(), "no layout starts beside the busy workers");
     for release in releases {
