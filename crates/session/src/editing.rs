@@ -107,16 +107,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         return Err(format!("end must be after start, got start {start} and end {end}").into());
     }
     let track = track_id(&session.project, params)?;
-    let only: Option<Vec<u32>> = match Args::new(params).value("clips") {
-        None => None,
-        Some(v) => Some(
-            v.as_array()
-                .ok_or("clips must be a list of clip ids")?
-                .iter()
-                .map(|id| id.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("clips must be a list of clip ids"))
-                .collect::<Result<_, _>>()?,
-        ),
-    };
+    let only = Args::new(params).opt_ids("clips")?;
     let chosen = |c: &Clip| only.as_ref().is_none_or(|ids| ids.contains(&c.id.0));
     let p = &session.project;
     let lane =

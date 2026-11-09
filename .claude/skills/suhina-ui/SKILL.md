@@ -23,6 +23,11 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
 - **Theme colours are tokens** (`palette!` in `crates/ui/src/kit/theme.rs`), never a raw
   `Color32` for a semantic colour. A new token gets a value in every theme in
   `crates/ui/themes/`; the theme tests check that.
+- **What a theme styles is an element** of the registry (`suhina_theme_package::elements`):
+  enter it with `kit::element` (`KNOB.id("send").response(&response).attr(Checked, on).enter()`)
+  and read its style with `el.style()` or paint its surface with `el.paint(&painter, rect)`.
+  That is the only way to a computed style outside `kit`; a part drawn without its own element
+  would paint with its parent's. A new element goes in the registry first.
 - `motion::mix`/`toward`/`pulse` for hovers and fills, `widgets::button_area` for clickable
   rects, `Status::Hint` for status-bar hints.
 - **A menu with a text field** (a rename): egui's context menu closes on a click inside it, which

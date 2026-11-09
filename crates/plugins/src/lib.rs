@@ -58,6 +58,8 @@ use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerNonblockingMode, ListenerOptions, Name, NameType, Stream, ToFsName,
     ToNsName,
 };
+/// Whether a wait for a plug-in's answer failed in the operating system (#1256).
+pub use suhina_ipc::a_wait_failed;
 pub use suhina_ipc::{
     AudioSource, Event, EventKind, MAX_EVENTS, Outcome, keys_to_engine, pointer_on_screen, set_keys_to_engine,
     take_keyboard_back,
@@ -294,6 +296,18 @@ impl PluginAudio {
     /// [`PluginAudio::finish`] takes the result without waiting. Counts nothing. Real-time safe.
     pub fn poll(&self, until: Instant) -> bool {
         self.link.wait_answered(until)
+    }
+
+    /// The block sent, not answered yet, to wait for together with other plug-ins'
+    /// ([`suhina_ipc::wait_any`], #1256). Real-time safe.
+    pub fn watch(&self) -> Option<suhina_ipc::Watch<'_>> {
+        self.link.watch()
+    }
+
+    /// The block it was late with, which [`PluginAudio::ready`] waits for, to wait for together
+    /// with other plug-ins'. Real-time safe.
+    pub fn watch_ready(&self) -> Option<suhina_ipc::Watch<'_>> {
+        self.link.watch_ready()
     }
 
     /// Whether a block can go now ([`Link::ready`]), waiting at most until `until` (a time
@@ -1635,6 +1649,36 @@ mod tests {
             drop(held);
             assert!(waiting.join().unwrap());
         });
+    }
+
+    /// Space in a plug-in's window: the host's unasked `transport_key` line is counted and wakes
+    /// the window, in that order, so the frame it wakes plays at once (#714). It is not left in
+    /// the replies for a request to find.
+    #[test]
+    fn a_transport_key_from_a_host_is_counted_then_wakes_the_window() {
+        let (address, name) = control_name().unwrap();
+        let listener = ListenerOptions::new().name(name).create_sync().unwrap();
+        let mut remote = connect(&address).unwrap();
+        let control = listener.accept().unwrap();
+        let replies = read_lines(control);
+        // The waker says how many keys were counted when it was called.
+        let (woken, wakes) = mpsc::channel();
+        set_waker(move || {
+            let _ = woken.send(TRANSPORT_KEYS.load(Ordering::Relaxed));
+        });
+        let line = format!("{}\n", Message::TransportKey.encode());
+        remote.write_all(line.as_bytes()).unwrap();
+        remote.flush().unwrap();
+        // Another test's host may wake the window too; this key's wake is the one with it counted.
+        let counted = loop {
+            let keys = wakes.recv_timeout(Duration::from_secs(60)).expect("the window was not woken");
+            if keys > 0 {
+                break keys;
+            }
+        };
+        assert!(counted >= 1);
+        assert!(take_transport_keys() >= 1);
+        assert!(matches!(replies.try_recv(), Err(mpsc::TryRecvError::Empty)), "not queued as a reply");
     }
 
     /// A host process that is alive but runs nothing: a real child and a control socket, with

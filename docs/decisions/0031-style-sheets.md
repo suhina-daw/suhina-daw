@@ -4,7 +4,7 @@ read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taff
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-06
+last_verified: 2026-11-07
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
@@ -763,3 +763,66 @@ themes written for the earlier folders are not migrated.
 - **Thumbnail.** `thumbnail.svg`, 16:9, may use the theme's properties through `var()`, resolved
   as for the swatch; the artwork checks apply. Without one, the card is filled with the swatch
   colour. This replaces the open question of rendered thumbnails per variant above.
+
+## Amendment: the element registry, elements by name, attributes and `Element` (2026-11-07)
+
+Accepted, from [issue #995](https://github.com/suhina-daw/suhina-daw/issues/995) sections 1, 10
+and 12 ([#1232](https://github.com/suhina-daw/suhina-daw/issues/1232)). The paint order,
+`padding`, `overflow`, `outline-*`, the style engine's hot path and same-frame styles follow in
+[#1273](https://github.com/suhina-daw/suhina-daw/issues/1273), and so do the app's settings as
+registered properties.
+
+What the UI knew about its elements was spread over several lists in `suhina-ui` (the class
+list, its families, the surfaces, the ids of buttons and level fields, the chain that gave an
+element its id, the artwork roles) and the theme README, so nothing could list the elements a
+theme can style. And any code could paint with whatever style was innermost, so a control that
+forgot its own scope painted as its parent.
+
+- **One registry**, `suhina_theme_package::elements`. Each element has a name, a kind (*region*:
+  a window, view, bar, panel or dialog; *container*: a part that holds controls, such as a track
+  header or a device; *control*; *part* of a control; *drawn item*, such as a note or a ruler
+  tick), a sentence on what it is, its parts, the ids it may have, the attributes the app gives
+  it, its settings and its artwork roles (with whether Suhina ships default artwork for each).
+  The names the style tree accepts, the surfaces (regions and containers: their background is
+  what lies behind their controls, not the controls' fill, for Suhina's painters and egui's
+  widgets alike), the ids of buttons and level fields,
+  an element's id and the artwork roles are derived from it. The element reference (#1024) is
+  generated from it.
+- **Elements by name.** A node of the style tree is an element of its name with no classes:
+  themes write `knob { … }` and `mixer pan { … }`, not `.knob`. The families (`.value-control`,
+  `.track-button`, `.transport-button`, `.list-row`, `.timeline-part`) are gone;
+  `:is(knob, fader, slider)` does their job. A type selector weighs less than a class
+  (specificity 0,0,1 instead of 0,1,0), so a rule that relied on `.toolbar .button` (0,2,0)
+  tying with `.button:hover` (0,2,0) now loses to `button:hover` (0,1,1). The bundled themes were
+  checked against their renders. Classes stay for the toolbar's group classes (section 7 of
+  #995); a toolbar module no longer has a class of its id, which its id already names.
+- **The app's states are attributes:** `[selected]`, `[checked]`, `[playing]`, `[recording]`,
+  `[armed]` and `[muted]`, without a value. They are no longer pseudo-classes: a selector with
+  `:checked` does not parse, and its rule is skipped with a notice. Pointer and focus states
+  stay pseudo-classes (`:hover`, `:active`, `:focus`, `:focus-visible`, `:disabled`), and so do
+  `:open`, `:queued`, `:dragged` and `:drop-target`, which nothing sets yet.
+- **Settings stay as they are for now.** The registry lists the settings each element would
+  carry (`meter-style` on `meter`, `track-height` on `arrangement`), as names only, and nothing
+  reads them yet. Making them registered properties on their elements, in place of the
+  `--suhina-*` custom properties and the core set's settings, is
+  [#1273](https://github.com/suhina-daw/suhina-daw/issues/1273)'s. Until then a host rule
+  (`mixer pan { --suhina-appearance: knob; }`) takes element names, one inside the other.
+- **`kit::element` is the only way to a computed style.** Each element has a constant (`KNOB`,
+  `CLIP`); a builder gives it an id, the egui response, attributes and the native fallbacks, and
+  `enter()` puts it in the tree for as long as the value lives:
+
+  ```rust
+  let el = KNOB.id("send").response(&response).attr(Checked, on).enter();
+  let boxed = el.paint(&painter, rect); // background, artwork shadows, gradients, border
+  draw_contents(boxed.content);
+  let style = CLIP.drawn(&lane).attr(Color, clip.color).style(); // a drawn item
+  ```
+
+  `el.style()` is that element's own style, found by its key, never the innermost one, so a part
+  drawn without a scope of its own cannot paint with its parent's. `style_class::computed()` is
+  private to `kit`. In this amendment `paint` keeps the order the controls painted in before,
+  `boxed.content` is the rectangle given (there is no `padding` yet), and the native fallbacks
+  (`Native`: today's token values for radius and fill) stand where the sheet sets nothing, until
+  the user-agent sheet (#1019) styles every element. A drawn item is entered and left at once:
+  its style comes from its parent and its own identity, as `Resolver::leaf_style` will give it
+  (#1273).
