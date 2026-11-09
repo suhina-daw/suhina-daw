@@ -593,6 +593,12 @@ fn set_tag_makes_into_the_folder_the_params_ask() {
     assert_eq!(tops, 0, "{tags:?}: the makes landed in the folder, not at the top");
     // A folder the params do not name refuses the same make.
     assert!(run(&mut p, "library.setTag", json!({ "name": "Rim", "folder": "#76543" })).is_err());
+    // The folder that has the wanted name is named as the folder it is ([#1254] review:
+    // the message said tag, and named the destination's own name).
+    let kicked = run(&mut p, "library.addTagFolder", json!({ "name": "Kick", "parent": format!("#{box_id}") }));
+    assert!(kicked.is_ok(), "{kicked:?}");
+    let refused = run(&mut p, "library.setTag", json!({ "name": "Kick", "folder": format!("#{box_id}") }));
+    assert!(matches!(&refused, Err(e) if e.to_string().contains("there is a tag folder")), "{refused:?}");
     // A tag the library has takes no `folder`: its `id` change runs plain, the moves go
     // through `library.moveTag`.
     let made = run(&mut p, "library.setTag", json!({ "name": "Belt" })).unwrap();

@@ -539,7 +539,11 @@ chevron, no mark before it ([#1254] review). Dragging a tag or folder row (a fol
 it: before another row, into a folder — a closed one too —, or to the
 empty space of the section for the top level. Before a folder splits in two: the folder row's
 top half orders the carried row before it ([#1254] review), its lower half into it, the closed
-folder's row into it only, as the hint says ([#1254]). While it drags, the pill by the pointer (and
+folder's row into it only, as the hint says ([#1254]). A level displays its folders first and its
+tags after ([#1254] review), so a drop before a row of the other kind lands the carried row
+before the first row of its own kind at that level instead — the position the display can
+show ([#1254] review) — and the pill says so: *Put Red above the tags*, *Put Drums above the
+folders*. While it drags, the pill by the pointer (and
 the status bar) says what the drop does, for folders and subfolders alike: *Move Red into
 Drums*, *Put Purple before Yellow*, *Move Red to the top of the tags* ([#1254] review). Several tags move as one: a Shift-click picks a
 tag (a ring marks it; the place keeps doing its own work), a drag of any picked one lands them
@@ -640,7 +644,7 @@ the CLI can do the same.
 | `library.pin`, `library.unpin` | `item` | pins or unpins an item |
 | `library.recent` | `group?` | the recent items of one group or all |
 | `library.tags` | | flat lists of tags and tag folders with their ids; each tag's `folder` and each folder's `parent` is the containing folder's id, or `null` at the top level; also the sections' order and open state, tagged items by id, and the limit |
-| `library.setTag` | `id?`, `name?`, `color?`, `rename?`, `limit?` | adds a tag (a name no tag has, coloured from the named colours when asked without one), or changes one's colour or name — by id (`#<id>`) or by name; `limit` sets the most tags there may be |
+| `library.setTag` | `id?`, `name?`, `color?`, `rename?`, `folder?`, `limit?` | adds a tag (a name no tag has, coloured from the named colours when asked without one), or changes one's colour or name — by id (`#<id>`) or by name; `folder` (a tag folder by id `#<id>` or name) makes the new tag directly in it, the top when left out ([#1254] review; a tag the library already has takes no `folder` — its moves go to `library.moveTag`); `limit` sets the most tags there may be |
 | `library.removeTag` | `id?`, `name?` | removes a tag (by id or name) from the list and every item |
 | `library.tag` | `item`, `tag`, `on` | sets or clears a tag on an item (`tag` by id or name) |
 | `library.addTagFolder` | `name?`, `parent?` | adds a tag folder under `parent` (by id or name) or at the top; the name is unique among its own level's, named "Folder" when left out ([#1254]) |

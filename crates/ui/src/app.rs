@@ -612,13 +612,6 @@ impl Default for App {
     }
 }
 
-fn uiui_probe() {
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open("/tmp/suhina-dbg-app.txt") {
-        let _ = writeln!(f, "app frame");
-    }
-}
-
 impl App {
     pub fn new() -> Self {
         // The window opens the person's own projects: their audio is read wherever it is on a
@@ -2651,7 +2644,6 @@ impl App {
 
     /// Draws the window into `ui` and runs what the user asked for.
     pub fn ui(&mut self, ui: &mut Ui) {
-        uiui_probe();
         // Following the theme, the headers move when the theme does.
         if self.settings.track_headers.is_none() {
             self.arrangement.headers_left = headers_left(None);

@@ -93,6 +93,11 @@ pub struct Panel {
     /// A kind was set by hand since the layout was made: the next refresh lays the scope out
     /// again, so the item moves to its kind's region.
     stale: bool,
+    /// The library generation the shown state belongs to ([`Projects::library_generation`]):
+    /// a replacement through any path — the window's or a caller's `projects_mut` — is
+    /// detected here, where matching scopes and revisions could keep the old map ([#1254]
+    /// review).
+    library_gen: u64,
 }
 
 impl Default for Panel {
@@ -104,6 +109,7 @@ impl Default for Panel {
             grid_aspect: 1.0,
             shown: None,
             job: None,
+            library_gen: 0,
             grid_job: None,
             retired: Vec::new(),
             laid_changes: 0,
@@ -258,6 +264,13 @@ impl Panel {
     /// Keeps the layout in line with the place, the analysis and the settings: takes in a
     /// finished layout and starts a new one when it is out of date.
     fn refresh(&mut self, ui: &Ui, state: &BrowserState, projects: &mut Projects, settings: &Settings) {
+        // A replaced library first, before any of the kept state is read: its scopes and
+        // revisions can read as the new library's own ([#1254] review).
+        let library_gen = projects.library_generation();
+        if self.library_gen != library_gen {
+            self.library_gen = library_gen;
+            self.library_replaced();
+        }
         projects.poll_sound_map();
         // Samples analysed since the layout shown was made, whoever polled first: the
         // window polls every frame too, and the notice that poll took is still seen here
@@ -318,7 +331,19 @@ impl Panel {
             self.stale = true;
             return;
         }
-        let Ok(files) = suhina_session::scope_files(projects, place.as_deref()) else { return };
+        let Ok(files) = suhina_session::scope_files(projects, place.as_deref()) else {
+            // The place names a tag or folder the library no longer holds — a caller that
+            // never ran the browser's reconcile (a `projects_mut` removal, [#1254] review).
+            // The map on the wall is none of this place's, so it goes with the jobs; the
+            // next scope that reads lays its own.
+            if self.map.is_some() || self.shown.is_some() {
+                self.map = None;
+                self.end_jobs();
+                self.shown = None;
+            }
+            self.stale = false;
+            return;
+        };
         let prepared = projects.sound_map_mut().prepare(&files, settings.map_max_seconds as f32);
         self.stale = false;
         self.laid_changes = changes;

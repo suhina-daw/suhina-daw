@@ -567,6 +567,11 @@ impl BrowserState {
         if self.drag_tag_id.is_some_and(|id| !live_rows.contains(&id)) {
             self.end_tag_carry();
         }
+        // A section drag mid-flight would land the old library's order on the
+        // replacement's titles: it ends with the library it belonged to ([#1254]
+        // review).
+        self.drag_section = None;
+        self.drop_section = None;
         // A carried tag or folder renamed meanwhile carries its new name: the pill and the
         // status say what will land ([#1254] review).
         if let Some(id) = self.drag_tag_id {
@@ -592,6 +597,10 @@ impl BrowserState {
             self.place = None;
         }
         self.end_tag_carry();
+        // A section drag mid-flight lands the old library's order on the replacement's
+        // titles: it ends with the library it belonged to ([#1254] review).
+        self.drag_section = None;
+        self.drop_section = None;
         self.tag_remove_confirm = None;
         self.reveal_tag_row = None;
         self.tag_epoch = self.tag_epoch.wrapping_add(1);

@@ -3009,6 +3009,78 @@ fn the_footer_renames_when_its_own_dot_is_clicked_again() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+// The footer's rename survives another menu opening over it: the right-click that opened
+// that menu closed the footer's before its body could run, and commits the typed name as
+// the outside click it is ([#1254] review).
+#[test]
+fn the_footers_rename_survives_another_menu_opening_over_it() {
+    let (settings, folder) = (temp("footer-rename-row-settings"), temp("footer-rename-row"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Tag Red").click_secondary();
+    harness.run();
+    harness.get_by_label("Rename tag Red").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.get_by_label("Rename tag Red").type_text("Rose");
+    harness.run();
+    // A right-click on another row: its menu takes the footer's place, and the rename
+    // goes with the click all the same.
+    harness.get_by_label("Place Tag Orange").click_secondary();
+    harness.run();
+    let library = harness.state_mut().projects_mut().file_library_mut();
+    let names: Vec<String> = library.tag_flat().into_iter().map(|t| t.name).collect();
+    assert!(names.contains(&"Rose".to_string()) && !names.contains(&"Red".to_string()), "{names:?}");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+// The display leads a level with its folders, tags under them: a tag dropped on an open
+// folder's top half cannot show before the folder, so it lands above the tags instead, and
+// the status says where it landed ([#1254] review).
+#[test]
+fn a_tag_dropped_on_a_folders_top_half_lands_above_the_tags() {
+    let (settings, folder) = (temp("tag-above-tags-settings"), temp("tag-above-tags"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Box" })).unwrap();
+    harness.run();
+    harness.state_mut().projects_mut().execute("library.setTag", &json!({ "name": "Alpha" })).unwrap();
+    harness.run();
+    harness.state_mut().projects_mut().execute("library.setTag", &json!({ "name": "Beta" })).unwrap();
+    harness.run();
+    let top = |harness: &mut Harness<'static, App>| {
+        let library = harness.state_mut().projects_mut().file_library_mut();
+        library.tags().iter().map(|e| e.name().to_string()).collect::<Vec<String>>()
+    };
+    // The seven named colours lead the top level; the folder comes after them, the tags
+    // after it.
+    assert_eq!(&top(&mut harness)[7..], ["Box", "Alpha", "Beta"], "the folder leads, the tags follow");
+    let from = harness.get_by_label("Place Tag Beta").rect().center();
+    let to = harness.get_by_label("Folder Box (0 tags)").rect();
+    let above = egui::pos2(to.left() + 30.0, to.top() + 3.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    for share in [0.3, 0.6, 1.0] {
+        harness.hover_at(from + (above - from) * share);
+        harness.step();
+    }
+    harness.drop_at(above);
+    harness.run();
+    // "Above the tags" is the tags block's head: Red's slot at the level's first tag,
+    // with the seven named colours before nothing — Beta goes before Red, and the
+    // folder stays first of the level.
+    assert_eq!(
+        top(&mut harness),
+        ["Beta", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Grey", "Box", "Alpha"],
+        "Beta above the tags, the folder still first",
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 /// The footer's dot menu adds a tag of its own, and the add shows itself: the tags section
 /// closed stays reachable from the footer, which opens with the tag it made ([#1254] review).
 #[test]
@@ -3171,11 +3243,19 @@ fn a_replaced_library_takes_the_tag_place_filter_and_pick_with_it() {
     harness.state_mut().browser.place = Some(Place::Tag(vec![1]));
     harness.state_mut().browser.tag_filter = vec![2];
     harness.state_mut().browser.tag_selection = vec![3];
+    // A section drag mid-flight ends with its library too: its order was the old one's
+    // ([#1254] review).
+    harness.state_mut().browser.drag_section = Some(SectionKind::Tags);
+    harness.state_mut().browser.drop_section = Some(SectionKind::Library);
     harness.state_mut().set_file_library(Library::new(Some(other.clone())));
     harness.run();
     let browser = &harness.state().browser;
     assert_eq!(browser.place, None, "the tag place went with its library");
     assert!(browser.tag_filter.is_empty() && browser.tag_selection.is_empty(), "the filter and the pick too");
+    assert!(
+        browser.drag_section.is_none() && browser.drop_section.is_none(),
+        "the section carry went with its library",
+    );
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
     let _ = std::fs::remove_dir_all(&other);

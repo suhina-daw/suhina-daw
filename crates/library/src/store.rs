@@ -1387,12 +1387,13 @@ impl Store {
                     return Err(format!("there is no tag folder #{:?}", folder.unwrap_or(0)));
                 }
                 if level_names(&self.tags, folder).contains(&named) {
-                    let folder =
-                        folder.map(|id| folder_by_id(&self.tags, id).map(|f| f.name.clone()).unwrap_or_default());
-                    return match folder {
-                        Some(named_folder) => Err(format!("there is a tag {named_folder:?} there already")),
-                        None => Err(format!("there is a tag folder {named:?} at the top already")),
-                    };
+                    // The conflicting entry is the folder that has the wanted name, wherever
+                    // the make was headed ([#1254] review: the message said tag and named
+                    // the destination's own name).
+                    return Err(match folder {
+                        Some(_) => format!("there is a tag folder {named:?} there already"),
+                        None => format!("there is a tag folder {named:?} at the top already"),
+                    });
                 }
                 let color = match color {
                     // The colour as it was asked; else the named colours' turn from the

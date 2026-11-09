@@ -1555,6 +1555,9 @@ fn tags_section(
     // arms its carry in the painting pass; the carry made there is derived again after the
     // rows ([#1254] review: a drag's arm frame says its drop as any frame does).
     let pointer = ui.input(|i| i.pointer.latest_pos());
+    // The carried row's kind: a drop before a row of the other kind cannot show in the
+    // folder-first display, and the pill says where it lands instead ([#1254] review).
+    let carried_folder = state.drag_tag_id.is_some_and(|carried| folder_row_is_folder(&rows, carried));
     if state.drag_tag_id.is_some() {
         state.drop_tag_row = None;
         state.drop_folder_before = None;
@@ -1575,6 +1578,12 @@ fn tags_section(
                 state.drop_folder_before = if *is_folder && top_half { Some(*rid) } else { None };
                 state.drop_pill = Some(if *is_folder && !top_half {
                     format!("Move {} into {name}", state.drag_tag.clone().unwrap_or_default())
+                } else if carried_folder != *is_folder {
+                    if carried_folder {
+                        format!("Put {} above the folders", state.drag_tag.clone().unwrap_or_default())
+                    } else {
+                        format!("Put {} above the tags", state.drag_tag.clone().unwrap_or_default())
+                    }
                 } else {
                     format!("Put {} before {name}", state.drag_tag.clone().unwrap_or_default())
                 });
@@ -1967,11 +1976,12 @@ fn tags_section(
                     if !armed && suhina_library::store::tag_count(std::slice::from_ref(&row.entry)) > 0 {
                         state.tag_remove_confirm = Some(row.entry.name().to_string());
                     } else {
-                        if run(projects, "library.removeTag", json!({ "id": format!("#{}", row.entry.id()) }), out) {
-                            // The removal's purge is the reconcile's: the pick, the place and
-                            // the filter lose the id the library dropped ([#1254] review).
-                            state.reconcile(projects);
-                        }
+                        run(projects, "library.removeTag", json!({ "id": format!("#{}", row.entry.id()) }), out);
+                        // The removal's purge is the reconcile's: the pick, the place and the
+                        // filter lose the id the library dropped — a save that failed leaves
+                        // the memory changed all the same, so the reconcile runs whatever the
+                        // command said ([#1254] review).
+                        state.reconcile(projects);
                         state.tag_remove_confirm = None;
                         state.relist();
                         ui.close();
@@ -2027,6 +2037,12 @@ fn tags_section(
                 state.drop_folder_before = if *is_folder && top_half { Some(*rid) } else { None };
                 state.drop_pill = Some(if *is_folder && !top_half {
                     format!("Move {} into {name}", state.drag_tag.clone().unwrap_or_default())
+                } else if carried_folder != *is_folder {
+                    if carried_folder {
+                        format!("Put {} above the folders", state.drag_tag.clone().unwrap_or_default())
+                    } else {
+                        format!("Put {} above the tags", state.drag_tag.clone().unwrap_or_default())
+                    }
                 } else {
                     format!("Put {} before {name}", state.drag_tag.clone().unwrap_or_default())
                 });
@@ -2100,18 +2116,48 @@ fn tags_section(
                         // The carried one comes out before the insert: where it sat in the
                         // same level ahead of the target, that target steps left one when
                         // it is taken, so the before-position follows it ([#1254] review).
+                        let carried_folder = folder_row_is_folder(&rows, entry_id);
+                        let target_folder = folder_row_is_folder(&rows, target);
                         let others = projects.file_library_mut().tags();
                         if let Some((t_parent, t_at)) = suhina_library::store::find_entry_parent(&others, target) {
                             if let Some(p) = t_parent {
                                 params["folder"] = json!(format!("#{p}"));
                             }
-                            let position = match suhina_library::store::find_entry_parent(&others, entry_id) {
-                                Some((parent, at)) if parent == t_parent && at < t_at => t_at.saturating_sub(1),
-                                _ => t_at,
+                            // The display leads a level with its folders and the tags follow
+                            // ([#1254] review): a row of the other kind cannot show between
+                            // the target and what stands above it, so it lands before the
+                            // first row of its own kind at the level instead — the position
+                            // the folder-first order can show. Rows of one kind keep the
+                            // true before-position.
+                            let position = if carried_folder == target_folder {
+                                match suhina_library::store::find_entry_parent(&others, entry_id) {
+                                    Some((parent, at)) if parent == t_parent && at < t_at => t_at.saturating_sub(1),
+                                    _ => t_at,
+                                }
+                            } else {
+                                let level: &[suhina_library::TagEntry] = match t_parent {
+                                    Some(p) => suhina_library::store::folder_children(&others, p).unwrap_or(&[]),
+                                    None => &others,
+                                };
+                                match level.iter().position(|e| {
+                                    matches!(e, suhina_library::TagEntry::Folder { .. }) == carried_folder
+                                }) {
+                                    Some(head) => match suhina_library::store::find_entry_parent(&others, entry_id) {
+                                        Some((parent, at)) if parent == t_parent && at < head => head.saturating_sub(1),
+                                        _ => head,
+                                    },
+                                    None => t_at,
+                                }
                             };
                             params["position"] = json!(position);
                         }
-                        format!("Moved {} before {}", carried_name, folder_of(target).unwrap_or_default())
+                        if carried_folder == target_folder {
+                            format!("Moved {} before {}", carried_name, folder_of(target).unwrap_or_default())
+                        } else if carried_folder {
+                            format!("Moved {} above the folders", carried_name)
+                        } else {
+                            format!("Moved {} above the tags", carried_name)
+                        }
                     }
                     _ => format!("Moved {} to the top of the tags", carried_name),
                 };
@@ -2417,16 +2463,26 @@ fn row_menu(
     // clears it from all when all carry it.
     let carried: Vec<Vec<u32>> = targets.iter().map(|key| projects.file_library_mut().item_tags(key)).collect();
     ui.menu_button("Tag", |ui| {
-        for tag in tags {
-            let on = carried.iter().all(|tags| tags.contains(&tag.id));
-            if tag_entry(ui, tag, on).clicked() {
-                for key in &targets {
-                    run(projects, "library.tag", json!({ "item": key, "tag": format!("#{}", tag.id), "on": !on }), out);
+        // A library wide in tags hides rows past the window: the rows scroll inside their
+        // own room, as the footer's overflow does ([#1254] review), and the field below
+        // stays fixed at the menu's end.
+        egui::ScrollArea::vertical().max_height(OVERFLOW_ROWS * OVERFLOW_ROW).show(ui, |ui| {
+            for tag in tags {
+                let on = carried.iter().all(|tags| tags.contains(&tag.id));
+                if tag_entry(ui, tag, on).clicked() {
+                    for key in &targets {
+                        run(
+                            projects,
+                            "library.tag",
+                            json!({ "item": key, "tag": format!("#{}", tag.id), "on": !on }),
+                            out,
+                        );
+                    }
+                    state.relist();
+                    ui.close();
                 }
-                state.relist();
-                ui.close();
             }
-        }
+        });
         ui.separator();
         // A new tag, set on the targets at once.
         // Keyed on the library's epoch: a replaced library's menu starts with no draft of the
@@ -3088,18 +3144,35 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 }
 
                 if ui.button("Remove tag").clicked() {
-                    if run(projects, "library.removeTag", json!({ "id": format!("#{0}", tag.id) }), out) {
-                        // The removal's purge is the reconcile's: the pick among them, the
-                        // place and the filter too ([#1254] review).
-                        state.reconcile(projects);
-                    }
+                    run(projects, "library.removeTag", json!({ "id": format!("#{0}", tag.id) }), out);
+                    // The removal's purge is the reconcile's: the pick among them, the place
+                    // and the filter too — a save that failed leaves the memory changed all
+                    // the same ([#1254] review).
+                    state.reconcile(projects);
                     state.relist();
                     ui.close();
                 }
             });
-        // Closed: the drafts go with it ([#1196] › keep the name with its tag).
+        // Closed: the drafts go with it ([#1196] › keep the name with its tag). A rename
+        // the field held commits first when the frame had a click: a click outside that
+        // opened another menu closed this one before its body could run, and the click
+        // commits as it would have ([#1254] review). The dot's own click committed its
+        // way already (the draft is gone or reset), and a close without a click — Escape,
+        // an add — is no commit.
         let open = popup.is_some();
         let open_key = Id::unique(("browser-footer-menu-open", epoch, tag.id));
+        if was_open && !open && ui.input(|i| i.pointer.any_click()) {
+            let commit_id = Id::unique(("browser-footer-rename-tag", epoch, tag.id));
+            let draft: Option<String> = ui.ctx().data(|d| d.get_temp(commit_id));
+            if let Some(name) = draft.as_deref().map(str::trim).filter(|n| !n.is_empty() && *n != tag.name) {
+                if run(projects, "library.setTag", json!({ "id": format!("#{0}", tag.id), "rename": name }), out) {
+                    ui.ctx().data_mut(|d| d.remove::<String>(commit_id));
+                    state.relist();
+                } else {
+                    ui.ctx().data_mut(|d| d.insert_temp(commit_id, tag.name.clone()));
+                }
+            }
+        }
         if was_open && !open {
             ui.ctx().data_mut(|d| {
                 d.remove::<String>(Id::unique(("browser-footer-rename-tag", epoch, tag.id)));

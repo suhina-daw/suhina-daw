@@ -70,6 +70,10 @@ pub(crate) struct Browser {
     pub(crate) sound_map_revision: Option<u64>,
     /// Counts the polls that found the analysis changed ([`Projects::sound_map_changes`]).
     pub(crate) sound_map_changes: u64,
+    /// Raised by every [`Projects::set_file_library`]: a view's kept state keys on this
+    /// when a replaced library could read as the same place and revisions ([#1254]
+    /// review).
+    pub(crate) library_generation: u64,
 }
 
 /// How many audio devices keep an input and a default track input of their own.
@@ -689,6 +693,13 @@ impl Projects {
         // The sound map keeps its caches beside the library's indexes.
         self.browser.sound_map = None;
         self.browser.sound_map_revision = None;
+        self.browser.library_generation = self.browser.library_generation.wrapping_add(1);
+    }
+
+    /// Raised at every library replacement, whoever asked for it ([#1254] review): a view
+    /// whose kept state could read as the new library's own keys on this instead.
+    pub fn library_generation(&self) -> u64 {
+        self.browser.library_generation
     }
 
     /// The browser's library.
