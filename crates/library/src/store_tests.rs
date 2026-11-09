@@ -360,6 +360,43 @@ fn a_legacy_selector_name_is_renamed_not_dropped() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// A legacy name that both spells a selector and sits at the limit: `#` over 63 digits is 64
+// bytes, and `Tag ` over it kept nothing within the limit, so the tag went with its
+// assignments and the next save made the loss for good ([#1254] review). As much of the
+// name as fits is kept instead, numbered past what is taken, and a reload holds it.
+#[test]
+fn an_overlong_legacy_selector_name_keeps_what_fits() {
+    let dir = temp("legacy-selector-long");
+    let file = dir.join("browser.json");
+    let name = format!("#{}", "1".repeat(63));
+    let text = json!({
+        "tags": [
+            { "name": name, "color": "#112233" },
+            { "name": "Tag #1", "color": "#223344" },
+        ],
+        "tagged": { "/a.wav": [name] },
+    })
+    .to_string();
+    std::fs::write(&file, text).unwrap();
+    let (store, warnings) = Store::load(&file);
+    // `Tag ` is 4 bytes, the limit 64: the name keeps 60 of its own — the `#` and 59 digits.
+    let renamed = format!("Tag #{}", "1".repeat(59));
+    assert!(
+        tags_iter(&store.tags).any(|t| t.name == renamed),
+        "the tag kept as much of its name as the limit holds: {:?} {warnings:?}",
+        tags_iter(&store.tags).map(|t| t.name.clone()).collect::<Vec<_>>(),
+    );
+    // The assignment carried the rename: the item is tagged by the id, under the new name.
+    let id = tags_iter(&store.tags).find(|t| t.name == renamed).map(|t| t.id).unwrap_or(0);
+    assert_eq!(store.tagged["/a.wav"], vec![id], "the item carries the renamed tag: {warnings:?}");
+    // The save writes it, the reload keeps it: no load-and-save cycle loses the entry.
+    store.save(&file).unwrap();
+    let (again, _) = Store::load(&file);
+    assert!(tags_iter(&again.tags).any(|t| t.name == renamed), "the reload keeps the tag");
+    assert_eq!(again.tagged["/a.wav"], vec![id], "and its assignment");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // The store makes no id past the ones a file keeps: an id it made past them would be handed
 // out anew on the next load and the items carrying it would come back carrying another tag
 // ([#1254] review). Every id a make hands out round-trips as it is.

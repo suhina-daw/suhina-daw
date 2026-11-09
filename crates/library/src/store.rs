@@ -600,11 +600,34 @@ impl FileIds {
 
 /// A name for an entry whose own spells an id's selector (`#1`, a file from before the
 /// selectors were reserved): `Tag #1`, numbered when that is taken as well, within `max`
-/// bytes. The entry and what carries it are kept under it ([#1254] review: the entry was
-/// dropped with its assignments). `None` when no such name fits.
+/// bytes. An overlong name keeps as much of it as that number's room leaves, cut at a
+/// character's edge ([#1254] review: `Tag ` over 63 digits had nothing to keep, and the
+/// entry went with its assignments). The entry and what carries it are kept under it.
+/// `None` when the numbers run out.
 fn unreserved_name(kind: &str, name: &str, max: usize, taken: impl Fn(&str) -> bool) -> Option<String> {
-    let base = format!("{kind} {name}");
-    std::iter::once(base.clone()).chain((2..100).map(|n| format!("{base} {n}"))).find(|c| c.len() <= max && !taken(c))
+    let room = max.saturating_sub(kind.len() + 1);
+    if room == 0 {
+        return None;
+    }
+    (1..100)
+        .map(|n| match n {
+            1 => format!("{kind} {}", head_at_boundary(name, room)),
+            n => {
+                let number = n.to_string();
+                let kept = number.len().saturating_add(1);
+                format!("{kind} {} {n}", head_at_boundary(name, room.saturating_sub(kept)))
+            }
+        })
+        .find(|c| !taken(c))
+}
+
+/// The first `keep` bytes of `s`, cut at a character's edge: the selectors' names read here
+/// are ASCII digits, but a file's need not be, and a cut that splits a character panics.
+/// Fewer bytes than asked when the edge asks for it ([#1254] review).
+fn head_at_boundary(s: &str, keep: usize) -> &str {
+    let end = keep.min(s.len());
+    let end = if s.is_char_boundary(end) { end } else { (1..end).rev().find(|k| s.is_char_boundary(*k)).unwrap_or(0) };
+    &s[..end]
 }
 
 /// Reads one level of the file's tag forest into `entries` under `parent` (None for the

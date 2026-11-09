@@ -508,7 +508,9 @@ one or more ASCII digits and nothing else is the selectors' own shape (`#<id>`),
 such ids joined with `+` (`#1+#2`, a place of several); both are refused at the make and the
 rename, for tags and tag folders alike, and a file that holds one (#1250's could) is read in
 with it renamed `Tag #1` or `Folder #2` (numbered past any name the file has), what carried
-it carrying it still ([#1254] review). A file's tags and folders keep their ids; one without
+it carrying it still. A name at the limit keeps as much of it as the new one's room holds,
+cut at a character's edge: no entry is dropped for being both a selector and overlong
+([#1254] review). A file's tags and folders keep their ids; one without
 an id takes the next past every id the file keeps, all of them within the ids the store
 makes, so a reload reads every id back ([#1254] review). Another leading-`#`
 name (`#`, `#notes`, `#+1`) is a name like any of the rest, and `tag:#notes` reads it as one,
