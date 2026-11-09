@@ -257,7 +257,9 @@ pub(super) fn clip_box<'a>(
         ui.ctx().set_cursor_icon(if copy_key { egui::CursorIcon::Copy } else { egui::CursorIcon::Grab });
     }
     let label = format!("Clip {name} on {} at bar {bar}", lane.name);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+    // Selected or not, as it is drawn: a screen reader and the tests read it (#695).
+    let picked = state.is_selected(key);
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, picked, &label));
     let stack = if clip.audio { state.stack_audio } else { state.stack_midi };
     // A right-click remembers the beat under the pointer, for the menu's Split here.
     if response.secondary_clicked()

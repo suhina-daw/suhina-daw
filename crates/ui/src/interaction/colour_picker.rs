@@ -22,8 +22,8 @@ const SWATCH_GAP: f32 = 3.0;
 /// How much of its colour a muted track's colour area keeps over `control.background`.
 const MUTED: f32 = 0.55;
 
-/// The palette: the theme's eight track colours (`track.1` to `track.8`; the first four are the
-/// colours new tracks take in turn).
+/// The palette: the theme's eight track colours (`track.1` to `track.8`). New tracks do not take
+/// theirs from it: they take the MIDI or audio creation default (#709).
 pub fn swatches() -> [Rgb; 8] {
     [
         theme::track_color_1(),

@@ -439,6 +439,37 @@ fn the_ara_prompt_and_the_missing_files_panel_hold_the_keys_and_hide_the_editors
     assert_eq!(count(&harness), tracks, "Delete waits for the prompt");
 }
 
+/// Settings opened over an embedded plug-in editor hides it, and the editor shows again where it
+/// was when Settings closes (#723). Settings in a window of its own covers nothing.
+#[test]
+fn settings_over_an_embedded_editor_hides_it_until_settings_closes() {
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    let placement = suhina_plugins::Placement { x: 10, y: 20, clip_x: 0, clip_y: 0, clip_width: 300, clip_height: 200 };
+    let places = [detail_view::EditorPlace { track: TrackId(1), device: 0, placement, fit: None }];
+    assert_eq!(harness.state().editors_shown(&places), &places[..], "nothing over the window");
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
+    harness.run();
+    assert!(harness.state().settings_open);
+    assert!(harness.state().editors_shown(&places).is_empty(), "hidden under Settings");
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
+    harness.run();
+    assert!(!harness.state().settings_open);
+    assert_eq!(harness.state().editors_shown(&places), &places[..], "shown again where it was");
+
+    // Settings in a window of its own leaves the editor where it is.
+    harness.state_mut().page.window = true;
+    harness.state_mut().settings_open = true;
+    assert_eq!(harness.state().editors_shown(&places), &places[..]);
+}
+
 #[test]
 fn a_device_dropped_on_a_return_column_goes_on_the_return() {
     use egui_kittest::kittest::Queryable;
