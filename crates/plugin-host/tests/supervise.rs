@@ -332,6 +332,31 @@ fn a_bank_of_programs_is_set_as_parameters() {
     assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125));
 }
 
+/// An `.fxp` file of `kind` for plug-in 7: the header, the name, then `rest`.
+fn fxp(kind: &[u8; 4], count: u32, rest: &[u8]) -> Vec<u8> {
+    let mut out = b"CcnK".to_vec();
+    out.extend_from_slice(&u32::try_from(4 * 5 + 28 + rest.len()).unwrap().to_be_bytes());
+    out.extend_from_slice(kind);
+    for value in [1, 7, 1, count] {
+        out.extend_from_slice(&u32::to_be_bytes(value));
+    }
+    out.extend_from_slice(&[0; 28]);
+    out.extend_from_slice(rest);
+    out
+}
+
+/// A single program of values (`FxCk`) is set as parameters, as a bank's program is; a
+/// program chunk (`FPCh`) is refused, so the caller hears it ran with its defaults (#1167).
+#[test]
+fn a_vst3_plugin_takes_a_single_programs_values_and_refuses_its_chunk() {
+    let (mut plugin, mut audio) = start("test:vst3");
+    plugin.load_state(fxp(b"FxCk", 1, &0.125f32.to_be_bytes())).unwrap();
+    assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125));
+    let chunk = fxp(b"FPCh", 1, &[&4u32.to_be_bytes()[..], &0.5f32.to_le_bytes()].concat());
+    assert!(matches!(plugin.load_state(chunk), Err(PluginError::Host(_))));
+    assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125), "left as it was");
+}
+
 #[test]
 fn vst3_files_that_are_missing_or_not_plugins_are_errors() {
     let missing = std::env::temp_dir().join("suhina-no-such-plugin.vst3");

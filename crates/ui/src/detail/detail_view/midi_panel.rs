@@ -5,7 +5,7 @@
 //! tools): the Clip part it shares with an audio clip's panel with what the tools act on in
 //! figures under it, and beside them (under them when the detail area is stacked) the tools part
 //! with its Notes and Transform tabs. Every tool is one `note.*` command over the selection or the
-//! whole clip; `.midi-tools` styles the tools part.
+//! whole clip; `midi-tools` styles the tools part.
 
 use super::clip_panel::{
     CLIP_PART, Change, FIELD, Field, GAP, NAME, TOGGLE, Text, bar_of, clip_part, drop_down, name_over, number_field,
@@ -178,9 +178,9 @@ fn tools_part(
         return;
     }
     let MidiTools { tools, state, .. } = midi;
-    // `.midi-tools` styles the part: its background and, through the scope, its controls' text.
-    let _style = crate::kit::style_class::enter("midi-tools");
-    crate::kit::native_css::surface(painter, part, 0.0, theme::panel_background());
+    // `midi-tools` styles the part: its background and, through the scope, its controls' text.
+    let el = crate::kit::element::MIDI_TOOLS.enter();
+    el.paint_with(painter, part, crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() });
     let tab_row = Rect::from_min_size(part.min, Vec2::new(part.width(), TAB_ROW));
     tab_row_of(ui, painter, tab_row, state);
     let body = Rect::from_min_max(Pos2::new(part.left(), tab_row.bottom() + GAP), part.max);
@@ -219,14 +219,11 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
         let cell = Rect::from_min_max(Pos2::new(x, row.top()), Pos2::new(x + width, row.bottom()));
         x = cell.right() + 2.0;
         let response = widgets::button_area(ui, cell, Id::unique(("midi-tools-tab", text)), format!("{text} tab"));
-        // `.editor-tab` (`:checked` for the one shown), `#tab-notes` and `#tab-transform`.
-        let _style = crate::kit::style_class::enter_named_response(
-            "editor-tab",
-            &format!("tab-{}", text.to_ascii_lowercase()),
-            &response,
-        );
+        // `editor-tab` (`[checked]` for the one shown), `#tab-notes` and `#tab-transform`.
         let on = state.tools_tab == tab;
-        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, on);
+        let id = format!("tab-{}", text.to_ascii_lowercase());
+        let _el =
+            crate::kit::element::EDITOR_TAB.id(&id).response(&response).attr(crate::kit::element::Checked, on).enter();
         let ink = if on {
             theme::text_primary()
         } else {

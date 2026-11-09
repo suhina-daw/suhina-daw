@@ -3,7 +3,7 @@ description: How to review pull requests for requirements, correctness, performa
 read_when: code review, reviewing a pull request, review feedback, contributor changes, security review, performance review, approval readiness, Codex review
 type: howto
 status: current
-last_verified: 2026-11-04
+last_verified: 2026-11-08
 covers:
   - AGENTS.md
   - CONTRIBUTING.md
@@ -74,7 +74,10 @@ behaviour; and the applicable specs, ADRs and architecture documents. Find docum
 Identify acceptance criteria, compatibility requirements, explicit exclusions and staged work.
 When sources disagree, describe the disagreement instead of choosing silently. Do not demand a
 deferred feature because a broader issue mentions it, or accept reduced scope without checking
-the recorded decisions. Check that `Closes #N` matches the work delivered.
+the recorded decisions. Check that `Closes #N` matches the work delivered. It is a finding when
+a pull request settles an issue it names without a `Closes #N` line of its own, and when it
+closes an issue while a point of the issue is undone with no follow-up issue named for it
+(`docs/workflow.md` › Closing issues).
 
 Check whether an open pull request, or one merged since this one's base, already solves the same
 problem, so that one of them would be left with nothing to do once the other merges. Start from

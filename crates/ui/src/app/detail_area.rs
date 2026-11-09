@@ -1022,7 +1022,7 @@ fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
 }
 
 /// The detail area's splitter: a strip with a grip across its middle, `#detail-splitter` (a
-/// `.divider`, with `:hover` and `:active`). The strip takes the element's `background-color` and
+/// `divider`, with `:hover` and `:active`). The strip takes the element's `background-color` and
 /// the grip its `color`; without them, the control background and the hint colour.
 fn paint_splitter(ui: &Ui, splitter: Rect, response: &egui::Response, stacked: bool) {
     let _style = crate::kit::style_class::enter_named_response("divider", "detail-splitter", response);

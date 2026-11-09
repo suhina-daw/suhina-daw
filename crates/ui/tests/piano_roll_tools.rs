@@ -93,12 +93,15 @@ fn empty_key(h: &Harness<'static, App>) -> u8 {
     (low..=high).find(|k| n.iter().all(|n| n.key != *k)).unwrap_or(low - 1)
 }
 
+/// A press or release of the primary button, carrying the modifiers held now, as a window's own
+/// events do.
 fn button(h: &mut Harness<'static, App>, pos: Pos2, pressed: bool) {
+    let modifiers = h.ctx.input(|i| i.modifiers);
     h.input_mut().events.push(egui::Event::PointerButton {
         pos,
         button: egui::PointerButton::Primary,
         pressed,
-        modifiers: Modifiers::NONE,
+        modifiers,
     });
     h.step();
 }

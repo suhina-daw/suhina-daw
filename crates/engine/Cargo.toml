@@ -11,6 +11,8 @@ suhina-stretch.workspace = true
 suhina-device-api.workspace = true
 suhina-device-sdk.workspace = true
 suhina-dsp.workspace = true
+# Waiting for several plug-ins' answers at once (#1256).
+suhina-ipc.workspace = true
 rtrb.workspace = true
 
 [lints]

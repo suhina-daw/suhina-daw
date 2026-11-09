@@ -472,3 +472,63 @@ fn audition_sounds_the_notes_the_selecting_rectangle_reaches() {
     h.step();
     assert!(h.state().piano_roll().auditioning().is_empty(), "nothing new as it is let go");
 }
+
+/// Alt pressed after the button went down on a note, before the pointer moved far enough for a
+/// drag, frees the move from the grid: velocity is Alt held at the press only (#1048).
+#[test]
+fn alt_pressed_after_the_button_moves_the_note_off_the_grid_not_its_velocity() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let before = notes(&h);
+    let start = velocities(&h)[2];
+    let (beat, _) = scale(&h);
+    let from = note_rect(&h, &before[2]).center();
+    let to = from + vec2(beat * 0.3, 0.0);
+    h.hover_at(from);
+    h.step();
+    button(&mut h, from, true, Modifiers::NONE);
+    // Alt down while the pointer is still where it was pressed.
+    h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::ALT));
+    h.step();
+    for step in 1..=4 {
+        h.hover_at(from + (to - from) * (step as f32 / 4.0));
+        h.step();
+    }
+    button(&mut h, to, false, Modifiers::ALT);
+    h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
+    h.run();
+    let after = notes(&h);
+    assert_eq!(midi_velocity(after[2].velocity), start, "the velocity stays");
+    let moved = after[2].time - before[2].time;
+    assert!((moved - 0.3).abs() < 0.05, "moved off the grid by about 0.3 beats, got {moved}");
+}
+
+/// Ctrl held at the press, with or without Cmd (macOS reports Ctrl alone), copies the notes of a
+/// drag instead of moving them (#351).
+#[test]
+fn ctrl_alone_at_the_press_copies_the_dragged_note() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let before = notes(&h);
+    let (beat, _) = scale(&h);
+    let from = note_rect(&h, &before[2]).center();
+    let to = from + vec2(beat, 0.0);
+    // Ctrl as macOS reports it for the Control key: `ctrl` set, `command` not.
+    let ctrl = Modifiers { ctrl: true, ..Modifiers::NONE };
+    h.input_mut().events.push(egui::Event::ModifiersChanged(ctrl));
+    h.hover_at(from);
+    h.step();
+    button(&mut h, from, true, ctrl);
+    for step in 1..=4 {
+        h.hover_at(from + (to - from) * (step as f32 / 4.0));
+        h.step();
+    }
+    button(&mut h, to, false, ctrl);
+    h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
+    h.run();
+    let after = notes(&h);
+    assert_eq!(after.len(), before.len() + 1, "a copy was added");
+    assert!(after.contains(&before[2]), "the note stayed where it was");
+    let copy = after.iter().find(|n| !before.contains(n)).expect("the copy");
+    assert!((copy.time - (before[2].time + 1.0)).abs() < 0.05, "one beat on: {copy:?}");
+}

@@ -223,11 +223,11 @@ pub(crate) struct PartStyle {
 }
 
 pub(crate) fn part_style(class: &str, states: &[crate::kit::native_css::HostState]) -> PartStyle {
-    let _style = crate::kit::style_class::enter(class);
+    let part = crate::kit::element::named(class).map(crate::kit::element::Name::enter);
     for state in states {
         crate::kit::native_css::mark(*state, true);
     }
-    crate::kit::style_class::computed().map_or_else(PartStyle::default, |c| PartStyle {
+    part.and_then(|part| part.style()).map_or_else(PartStyle::default, |c| PartStyle {
         background: c.authored.background.then_some(c.background),
         border: c.authored.border.then_some(c.border),
         color: c.authored.color.then_some(c.color),
@@ -254,9 +254,9 @@ pub(super) fn draw(
     let last_key = layout.key_at(layout.grid.top() + 0.5).unwrap_or(127);
 
     use crate::kit::native_css::HostState;
-    // The theme's parts: `.piano-grid` (its border-color for the lines), `.piano-row` and
-    // `.piano-row-black`, `.piano-key` and `.piano-key-black`, `.piano-note` (`:selected`,
-    // `:muted`; `--clip-colour` is the clip's colour), `.velocity`.
+    // The theme's parts: `piano-grid` (its border-color for the lines), `piano-row` and
+    // `piano-row-black`, `piano-key` and `piano-key-black`, `piano-note` (`[selected]`,
+    // `[muted]`; `--clip-colour` is the clip's colour), `velocity`.
     let grid_style = part_style("piano-grid", &[]);
     let row_style = part_style("piano-row", &[]);
     let black_row_style = part_style("piano-row-black", &[]);

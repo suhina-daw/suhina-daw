@@ -1,9 +1,9 @@
 ---
 description: How versions are numbered, how release builds, the nightly and test builds of pull requests are made, and how many pull requests are merged through the merge queue
-read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
+read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy
 type: howto
 status: current
-last_verified: 2026-11-07
+last_verified: 2026-11-08
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -11,6 +11,9 @@ covers:
   - .github/workflows/test-build.yml
   - .github/workflows/test-build-links.yml
   - .github/workflows/ready-to-merge.yml
+  - .github/workflows/overlap.yml
+  - .github/workflows/pr-labels.yml
+  - .github/workflows/updater-source.yml
   - scripts/build_reuse.py
   - scripts/release_packages_check.sh
   - scripts/test_build_reuse.py
@@ -436,6 +439,34 @@ messages on its own. Its commands are listed in
 settings, secrets and deployment in
 [docs/operations.md](https://github.com/suhina-daw/suhina-bot/blob/main/docs/operations.md); the
 plan is suhina-daw/suhina-bot#1. The scripts above keep using the bot token for marking threads.
+
+## The pull_request_target policy
+
+From December 2, 2026, GitHub blocks workflows triggered by `pull_request_target` in public
+repositories unless an Actions event policy allows them
+([changelog](https://github.blog/changelog/2026-11-02-pull_request_target-blocked-by-default-december-2/)).
+The repository has one such policy, *Allow pull_request_target for the safe workflows*
+(Settings › Actions › **Policies**), with enforcement **Active**. It targets these workflow files
+and no others:
+
+| Workflow | What it does on `pull_request_target` |
+|---|---|
+| [`ready-to-merge.yml`](../.github/workflows/ready-to-merge.yml) | the `ready to merge` label flow ([Merging many pull requests](#merging-many-pull-requests)) |
+| [`test-build-links.yml`](../.github/workflows/test-build-links.yml) | its `synchronize` part; the `workflow_run` and `workflow_dispatch` parts are allowed too |
+| [`overlap.yml`](../.github/workflows/overlap.yml) | the Overlap notice ([`workflow.md`](workflow.md) › Claiming) |
+| [`pr-labels.yml`](../.github/workflows/pr-labels.yml) | the kind and area labels ([`workflow.md`](workflow.md) › Branch names) |
+| [`updater-source.yml`](../.github/workflows/updater-source.yml) | the updater-source check ([`spec/updates.md`](spec/updates.md)) |
+| [`discord.yml`](../.github/workflows/discord.yml) | the pull request posts; its `issues` and `release` parts are allowed too ([Discord](#discord)) |
+
+Its *Restrict events* rule keeps every event in the list, so a trigger added to one of these files
+later is not blocked silently. Actors are not restricted, so pull requests from forks still start
+them. All six follow the safe pattern: they check out the default branch, never the pull request's
+head, with `persist-credentials: false`, and read the pull request only as data
+([Securely using pull_request_target](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target)).
+
+A new workflow on `pull_request_target` follows the same pattern and gets its path added to the
+policy; without that it never runs. A workflow that needs no write token and no secret uses
+`pull_request` instead. Settings › Actions › **Policy insights** lists runs the policy blocked.
 
 ## Packages
 

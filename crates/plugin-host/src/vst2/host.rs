@@ -33,6 +33,7 @@ use suhina_plugins::ParamInfo;
 
 use super::vestige::{self, AEffect, VstEvents, VstMidiEvent};
 use super::{EffectOp, HOST_VERSION, HostOp, automation_state, c_str_is, can_do, effect_flags, process_level};
+use crate::planar::Planar;
 
 /// Most channels a plug-in may declare before it is refused. An installed instrument declares
 /// 130 outputs (observed); the link carries its first ones.
@@ -603,10 +604,8 @@ impl Vst2Plugin {
             link_channels: 0,
             buses: self.buses,
             params: self.params,
-            in_buffers: Vec::new(),
-            out_buffers: Vec::new(),
-            in_pointers: Vec::new(),
-            out_pointers: Vec::new(),
+            in_buffers: Planar::default(),
+            out_buffers: Planar::default(),
             midis: Vec::new(),
             events: EventBuffer::new(suhina_ipc::MAX_EVENTS.min(1024)),
             time: Told::default(),
@@ -886,12 +885,53 @@ impl Vst2Plugin {
             restored?;
             return Ok(());
         }
-        // Not a bank: a bare chunk, as a plug-in's own file would hold. A standard bank's
-        // shape first — `CcnK` and a bank kind in their places — is refused when neither
-        // reader took it: it stands for a bank that is cut short or lies, and the plug-in
-        // would run with whatever raw bytes remain, saved as the state.
-        if bank_shaped(data) {
-            return Err("the state's bank is not complete".into());
+        // A single program, an `.fxp` file's (#1167): its chunk as the current program's, or its
+        // values as parameters.
+        match suhina_plugins::vst2::single_program(data) {
+            Some(suhina_plugins::vst2::Program::Chunk(chunk)) => {
+                // A chunk is the plug-in's own: one made for another plug-in would be read as
+                // unrelated state, with the render none the wiser.
+                if let Some((id, _)) = suhina_plugins::vst2::program_header(data)
+                    && id != self.shared.unique_id
+                {
+                    return Err(format!(
+                        "the program is for plug-in {id:08X}, not this one ({:08X})",
+                        self.shared.unique_id
+                    ));
+                }
+                let size = isize::try_from(chunk.len()).unwrap_or(0);
+                let answer = self.send(EffectOp::SetChunk, 1, size, chunk.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
+                suhina_plugins::trace!("vst2 {}: effSetChunk (program) answered {answer}", self.instance);
+                return Ok(());
+            }
+            Some(suhina_plugins::vst2::Program::Values(values)) => {
+                // A program made for another plug-in, or for one with other parameters, would set
+                // unrelated values or only a prefix of them: it sets none, and says so.
+                if let Some((id, count)) = suhina_plugins::vst2::program_header(data) {
+                    if id != self.shared.unique_id {
+                        return Err(format!(
+                            "the program is for plug-in {id:08X}, not this one ({:08X})",
+                            self.shared.unique_id
+                        ));
+                    }
+                    if usize::try_from(count).ok() != Some(self.params) {
+                        return Err(format!("the program has {count} parameters; this plug-in has {}", self.params));
+                    }
+                }
+                return values
+                    .into_iter()
+                    .enumerate()
+                    .take(self.params)
+                    .try_for_each(|(index, value)| self.set_value(i32::try_from(index).unwrap_or(0), value));
+            }
+            None => {}
+        }
+        // Not a bank: a bare chunk, as a plug-in's own file would hold. A standard bank's or a
+        // single program's shape first — `CcnK` and a kind in their places — is refused when no
+        // reader took it: it stands for one that is cut short or lies, and the plug-in would run
+        // with whatever raw bytes remain, saved as the state.
+        if bank_shaped(data) || suhina_plugins::vst2::program_shaped(data) {
+            return Err("the state's bank or program is not complete".into());
         }
         if !data.is_empty() {
             let size = isize::try_from(data.len()).unwrap_or(0);
@@ -1240,11 +1280,10 @@ struct Vst2Block {
     buses: (usize, usize),
     /// How many parameters the plug-in declared: a block's event names no other.
     params: usize,
-    in_buffers: Vec<Vec<f32>>,
-    out_buffers: Vec<Vec<f32>>,
-    /// The channel pointer arrays, built once and refilled per block without allocating.
-    in_pointers: Vec<*mut f32>,
-    out_pointers: Vec<*mut f32>,
+    /// The plug-in's one input and one output bus, with the channel pointer arrays its audio
+    /// call takes ([`Planar`]).
+    in_buffers: Planar,
+    out_buffers: Planar,
     /// The block's MIDI events, gathered before the audio call; room for a block's worth.
     midis: Vec<(u32, [u8; 4])>,
     events: EventBuffer,
@@ -1255,10 +1294,8 @@ impl Vst2Block {
     /// Sizes the buffers for the link and fills in the event pointers' targets, once.
     fn ready(mut self, served: &Served) -> Self {
         self.link_channels = served.channels() as usize;
-        self.in_buffers = vec![vec![0.0; self.max_frames]; self.buses.0];
-        self.out_buffers = vec![vec![0.0; self.max_frames]; self.buses.1];
-        self.in_pointers = vec![std::ptr::null_mut(); self.buses.0];
-        self.out_pointers = vec![std::ptr::null_mut(); self.buses.1];
+        self.in_buffers = Planar::new([self.buses.0], self.max_frames);
+        self.out_buffers = Planar::new([self.buses.1], self.max_frames);
         self.midis = Vec::with_capacity(1024);
         self
     }
@@ -1271,7 +1308,8 @@ unsafe impl Send for Vst2Block {}
 
 impl crate::audio::Block for Vst2Block {
     fn process(&mut self, input: &[f32], events: &[Event], output: &mut [f32]) {
-        let frames = input.len().checked_div(self.link_channels).unwrap_or(0);
+        // Never more than the buffers hold, whatever the link sends.
+        let frames = input.len().checked_div(self.link_channels).unwrap_or(0).min(self.max_frames);
         // Say which instance this thread serves, for every call of the block: a plug-in may ask
         // its host from `setParameter` and `effProcessEvents` as from its audio call, and the
         // answer never takes the lock of the instance table.
@@ -1392,16 +1430,8 @@ impl crate::audio::Block for Vst2Block {
             }
         }
         // The link's channels into the plug-in's inputs, and its outputs back.
-        crate::audio::feed_main(input, self.link_channels, frames, &mut self.in_buffers);
-        for channel in &mut self.out_buffers {
-            channel.iter_mut().take(frames).for_each(|sample| *sample = 0.0);
-        }
-        for (slot, channel) in self.in_pointers.iter_mut().zip(&mut self.in_buffers) {
-            *slot = channel.as_mut_ptr();
-        }
-        for (slot, channel) in self.out_pointers.iter_mut().zip(&mut self.out_buffers) {
-            *slot = channel.as_mut_ptr();
-        }
+        crate::audio::feed_main(input, self.link_channels, frames, self.in_buffers.bus_mut(0));
+        self.out_buffers.silence(0, frames);
         // `processReplacing` where the flag says so, the deprecated `process` otherwise (its
         // outputs add, so they were zeroed). A plug-in that declares the flag and gives no
         // replacing call falls back to `process` too: the zeroed outputs make it the same.
@@ -1411,15 +1441,18 @@ impl crate::audio::Block for Vst2Block {
             self.process
         };
         if let Some(run) = run {
-            let inputs = if self.in_pointers.is_empty() { std::ptr::null_mut() } else { self.in_pointers.as_mut_ptr() };
+            let inputs =
+                if self.in_buffers.channels(0) == 0 { std::ptr::null_mut() } else { self.in_buffers.pointers(0) };
+            let outputs = self.out_buffers.pointers(0);
             // SAFETY: the plug-in's own call, with this block's buffers and frames, on this
-            // audio thread.
-            unsafe { run(self.effect, inputs, self.out_pointers.as_mut_ptr(), i32::try_from(frames).unwrap_or(0)) };
+            // audio thread; each array has a pointer per channel the plug-in declared, each at
+            // `max_frames` samples, and nothing else holds the buffers during the call.
+            unsafe { run(self.effect, inputs, outputs, i32::try_from(frames).unwrap_or(0)) };
         }
         SERVING.with(|serving| {
             *serving.borrow_mut() = None;
         });
-        crate::audio::collect_main(&self.out_buffers, self.link_channels, frames, output);
+        crate::audio::collect_main(self.out_buffers.bus(0), self.link_channels, frames, output);
     }
 }
 

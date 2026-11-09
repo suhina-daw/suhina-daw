@@ -13,122 +13,25 @@ use serde_json::{Value, json};
 pub const MAX_SVG: usize = 128 * 1024;
 pub const MAX_ASSETS: usize = 64;
 /// Base roles plus bounded variants; portable exports can always add missing base artwork.
-pub const MAX_PACKAGE_ASSETS: usize = MAX_ASSETS + ROLES.len();
+pub const MAX_PACKAGE_ASSETS: usize = MAX_ASSETS + suhina_theme_package::elements::DEFAULT_ARTWORK;
 pub const MAX_PNG: usize = 8 * 1024 * 1024;
 pub const MAX_ARTWORK_BYTES: usize = 16 * 1024 * 1024;
-pub const MODULES: &[&str] = &[
-    "browser",
-    "tempo",
-    "signature",
-    "grid",
-    "count-in",
-    "metronome",
-    "transport",
-    "position",
-    "mapping",
-    "performance",
-    "views",
-    "agents",
-];
-pub const ROLES: &[&str] = &[
-    "fader.cap",
-    "fader.rail",
-    "knob.body",
-    "knob.pointer",
-    "button",
-    "play",
-    "stop",
-    "record",
-    "solo",
-    "arm",
-    "cue",
-    "track.midi",
-    "track.audio",
-    "track.name",
-    "track.body",
-    "meter",
-];
+/// The toolbar's areas, by id (the element registry's).
+pub const MODULES: &[&str] = suhina_theme_package::elements::TOOLBAR_MODULES;
 
-/// Roles only a theme's own artwork fills: without it the control is drawn natively, so Suhina
-/// ships none for them.
-pub const OWN_ROLES: &[&str] = &[
-    "volume.track",
-    "volume.fill",
-    "pan.track",
-    "pan.fill",
-    "volume.handle",
-    "pan.handle",
-    // A pan drawn as a knob (`.pan { --suhina-appearance: knob }`), apart from every other knob.
-    "pan.knob.body",
-    "pan.knob.pointer",
-    // A send's knob (a return's level), apart from every other knob.
-    "send.knob.body",
-    "send.knob.pointer",
-    // A send's tile and its level rail.
-    "send",
-    "send.fill",
-    // The buttons that add a track, after the last one.
-    "add-track",
-    // The Arrangement view's ruler and its loop region.
-    "ruler",
-    "loop-region",
-    // An arrangement clip's fade handles.
-    "clip.fade-handle",
-    // A device parameter's slider: its rail, the fill up to its value and its handle.
-    "slider.rail",
-    "slider.fill",
-    "slider.handle",
-    // The piano roll's tool buttons, by the id after `#piano-`.
-    "piano.select",
-    "piano.draw",
-    "piano.paint",
-    "piano.erase",
-    "piano.slice",
-    "piano.mute",
-    "piano.cut",
-    "piano.copy",
-    "piano.paste",
-    "piano.duplicate",
-    "piano.quantise",
-    "piano.midi-tools",
-    "piano.audition",
-    "piano.hide",
-    // A track's artwork in one view only, over `track.name` and `track.body`.
-    "track.name.session",
-    "track.name.mixer",
-    "track.name.arrangement",
-    "track.body.session",
-    "track.body.arrangement",
-    // An Arrangement header's own buttons: the track-on toggle (over its number), automation,
-    // the fold triangle and the MIDI monitoring chip.
-    "track-on",
-    "automation",
-    "fold",
-    "monitor",
-];
+/// The roles Suhina ships artwork for (the element registry's), in the registry's order.
+pub fn roles() -> impl Iterator<Item = &'static str> {
+    suhina_theme_package::elements::default_artwork().map(|(role, _)| role)
+}
 
-/// The very same original SVG sources are embedded and distributed as editable files.
-pub const DEFAULT_SVGS: &[(&str, &str)] = &[
-    ("fader.cap", include_str!("../../../../assets/themes/default/fader.cap.svg")),
-    ("fader.rail", include_str!("../../../../assets/themes/default/fader.rail.svg")),
-    ("knob.body", include_str!("../../../../assets/themes/default/knob.body.svg")),
-    ("knob.pointer", include_str!("../../../../assets/themes/default/knob.pointer.svg")),
-    ("button", include_str!("../../../../assets/themes/default/button.svg")),
-    ("play", include_str!("../../../../assets/themes/default/play.svg")),
-    ("stop", include_str!("../../../../assets/themes/default/stop.svg")),
-    ("record", include_str!("../../../../assets/themes/default/record.svg")),
-    ("solo", include_str!("../../../../assets/themes/default/solo.svg")),
-    ("arm", include_str!("../../../../assets/themes/default/arm.svg")),
-    ("cue", include_str!("../../../../assets/themes/default/cue.svg")),
-    ("track.midi", include_str!("../../../../assets/themes/default/track.midi.svg")),
-    ("track.audio", include_str!("../../../../assets/themes/default/track.audio.svg")),
-    ("track.name", include_str!("../../../../assets/themes/default/track.name.svg")),
-    ("track.body", include_str!("../../../../assets/themes/default/track.body.svg")),
-    ("meter", include_str!("../../../../assets/themes/default/meter.svg")),
-];
+/// Suhina's own artwork for each of [`roles`]: the very same SVG sources are embedded and
+/// distributed as editable files.
+pub fn default_svgs() -> impl Iterator<Item = (&'static str, &'static str)> {
+    suhina_theme_package::elements::default_artwork()
+}
 
 pub fn default_assets() -> BTreeMap<String, String> {
-    DEFAULT_SVGS.iter().map(|(role, svg)| ((*role).into(), (*svg).into())).collect()
+    default_svgs().map(|(role, svg)| (role.into(), svg.into())).collect()
 }
 
 pub fn inherited_assets() -> BTreeMap<String, String> {
@@ -243,12 +146,12 @@ pub fn valid_role(role: &str) -> bool {
     // One button's own artwork: `button.play`, `button.record:on`.
     if let Some(rest) = role.strip_prefix("button.") {
         let name = rest.split('.').next().unwrap_or_default();
-        if super::native_css::CONTROL_IDS.contains(&name) {
+        if suhina_theme_package::elements::control_ids().contains(&name) {
             return valid_role(&format!("button{}", &rest[name.len()..]));
         }
     }
-    ROLES.iter().chain(OWN_ROLES).any(|base| {
-        if role == *base {
+    suhina_theme_package::elements::artwork().map(|art| art.role).any(|base| {
+        if role == base {
             return true;
         }
         let Some(rest) = role.strip_prefix(&format!("{base}.")) else {
@@ -430,7 +333,7 @@ impl Skin {
         if let Some(value) = root.get("assets") {
             if let Some(assets) = value.as_object().filter(|a| {
                 a.len() <= MAX_PACKAGE_ASSETS
-                    && a.keys().filter(|role| !ROLES.contains(&role.as_str())).count() <= MAX_ASSETS
+                    && a.keys().filter(|role| !roles().any(|base| base == role.as_str())).count() <= MAX_ASSETS
                     && a.values()
                         .filter_map(Value::as_str)
                         .try_fold(0usize, |total, value| total.checked_add(value.len()))
@@ -753,7 +656,7 @@ fn raster_artwork(source: &str, ink: Color32, width: u32, height: u32, contain: 
 pub fn has_own(role: &str) -> bool {
     let skin = current();
     let Some(own) = skin.assets.get(role) else { return false };
-    !DEFAULT_SVGS.iter().any(|(default, svg)| *default == role && *svg == own.as_str())
+    !default_svgs().any(|(default, svg)| default == role && svg == own.as_str())
 }
 
 pub fn paint(painter: &Painter, rect: Rect, role: &str, state: State, ink: Color32, angle: f32) -> bool {
@@ -771,7 +674,7 @@ pub fn button(painter: &Painter, rect: Rect, state: State, fill: Color32, radius
 /// when the theme has one, else every button's.
 pub fn button_role() -> String {
     super::native_css::current_name()
-        .filter(|name| super::native_css::CONTROL_IDS.contains(&name.as_str()))
+        .filter(|name| suhina_theme_package::elements::control_ids().contains(&name.as_str()))
         .map(|name| format!("button.{name}"))
         .filter(|role| {
             let skin = current();
