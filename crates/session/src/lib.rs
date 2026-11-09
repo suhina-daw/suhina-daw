@@ -1315,7 +1315,8 @@ impl Session {
         for (path, kind) in need.iter() {
             // A library-relative state's file is at the library's base, not the working
             // folder: the timestamp check sees the same resolved path the load reads.
-            let mtime = self.resolve_device_file(path).and_then(|p| std::fs::metadata(p).ok()).and_then(|m| m.modified().ok());
+            let mtime =
+                self.resolve_device_file(path).and_then(|p| std::fs::metadata(p).ok()).and_then(|m| m.modified().ok());
             if (self.device_files.assets.entries.contains_key(path.as_str())
                 || self.device_files.notes.contains_key(path.as_str()))
                 && self.device_files.modified.get(path).and_then(|seen| *seen) == mtime
@@ -1373,9 +1374,20 @@ impl Session {
             }
             return suhina_device_registry::load_builtin_file(kind, name, rate);
         }
-        let resolved = self.resolve_device_file(path).ok_or("a shipped file's key is builtin:<device id>/<file name>")?;
+        let resolved =
+            self.resolve_device_file(path).ok_or("a shipped file's key is builtin:<device id>/<file name>")?;
         if resolved.exists() {
             return suhina_device_registry::load_file(kind, &resolved, rate);
+        }
+        // A project that opened before the library's move carries its file by the old place —
+        // the old defaults' folder emptied into the library's device folders at start, and the
+        // project's state still names it there ([ADR 0036] › 4). The old form reads the file's
+        // new place, so the project keeps its sound across the move.
+        if let Some(legacy) = self.legacy_device_file(kind, path)
+            && legacy != resolved
+            && legacy.exists()
+        {
+            return suhina_device_registry::load_file(kind, &legacy, rate);
         }
         // The disk does not carry it; the pack may. A file of the state's own name rides the
         // executable — the on-disk copy's stand-in, so a project that opened on a machine
@@ -1386,14 +1398,40 @@ impl Session {
         let shipped = if std::path::Path::new(path).is_absolute() {
             None
         } else {
-            std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).as_deref().and_then(|name| {
-                suhina_device_registry::pack_files(kind).into_iter().find(|(packed, _)| packed.eq_ignore_ascii_case(name))
-            })
+            std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).as_deref().and_then(
+                |name| {
+                    suhina_device_registry::pack_files(kind)
+                        .into_iter()
+                        .find(|(packed, _)| packed.eq_ignore_ascii_case(name))
+                },
+            )
         };
         if let Some((packed_name, _)) = shipped {
             return suhina_device_registry::load_builtin_file(kind, packed_name, rate);
         }
         suhina_device_registry::load_file(kind, &resolved, rate)
+    }
+
+    /// The file a state's old-form text points at since the library's move: the old defaults
+    /// (`NAM models`, `IRs`) emptied into the library's device folders at start, and a project
+    /// that opened before it carries its file by the old place. The old form — the old
+    /// folder's name as a relative text, or an absolute path inside the base's old folder —
+    /// reads the same tail under the library's device folder, so the project keeps its sound
+    /// ([ADR 0036] › 4). `None` when the state is no old form or the device ran no files then.
+    fn legacy_device_file(&self, kind: &str, path: &str) -> Option<PathBuf> {
+        let old = suhina_device_registry::legacy_folder(kind)?;
+        let new = suhina_device_registry::library_folder(kind)?;
+        let base = self.library_base()?;
+        let old_prefix = format!("{old}/");
+        let tail = if let Some(rest) = path.strip_prefix(&old_prefix) {
+            rest.to_owned()
+        } else if std::path::Path::new(path).is_absolute() {
+            let under = base.join(old).display().to_string();
+            path.strip_prefix(&format!("{under}/"))?.to_owned()
+        } else {
+            return None;
+        };
+        (!tail.is_empty()).then(|| base.join("Sounds").join("NAM").join(new).join(tail))
     }
 
     /// The file a state's text points at: an absolute path is itself, a relative one joins the

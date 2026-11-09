@@ -702,6 +702,11 @@ impl Projects {
     /// The library's root (`Documents/Suhina`, [ADR 0036]): where the user's own presets are
     /// saved, and where the library's folders sit. Given to every project open now and from
     /// now on, like the default track input is.
+    /// The library's root, when it was set ([`Projects::set_library_base`], ADR 0036).
+    pub fn library_base(&self) -> Option<&Path> {
+        self.devices.library_base.as_deref()
+    }
+
     pub fn set_library_base(&mut self, base: PathBuf) {
         self.devices.library_base = Some(base.clone());
         for open in &mut self.tabs.open {

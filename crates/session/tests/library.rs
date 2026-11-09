@@ -42,6 +42,30 @@ fn names(result: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// A preset the user saved into the library's Presets folder finds a search like the stock
+/// ones do, so search and quick-add find what the browser's tree lists ([ADR 0036] › 5).
+#[test]
+fn a_saved_preset_finds_a_search() {
+    let settings = temp("preset-search-settings");
+    let mut p = projects(&settings);
+    p.set_library_base(settings.clone());
+    let device = settings.join("Presets").join("utility");
+    std::fs::create_dir_all(&device).unwrap();
+    std::fs::write(
+        device.join("Home Squeeze.utility.preset.suhina"),
+        r#"{ "format": "suhina-preset", "version": 1, "device": "utility", "role": "effect", "name": "Home Squeeze", "params": {} }"#,
+    )
+    .unwrap();
+    let found = run(&mut p, "library.search", json!({ "text": "squeeze", "category": "presets" })).unwrap();
+    assert!(names(&found).iter().any(|n| n == "Home Squeeze"), "the saved preset finds a search: {:?}", names(&found));
+    // An unknown device's folder lists nothing: only a device this version knows.
+    let stray = settings.join("Presets").join("not-a-device");
+    std::fs::create_dir_all(&stray).unwrap();
+    std::fs::write(stray.join("Ghost.not-a-device.preset.suhina"), b"{}").unwrap();
+    let found = run(&mut p, "library.search", json!({ "text": "ghost", "category": "presets" })).unwrap();
+    assert_eq!(names(&found), Vec::<String>::new(), "an unknown device's preset lists nowhere");
+}
+
 #[test]
 fn folders_are_added_listed_searched_and_removed() {
     let settings = temp("folders-settings");

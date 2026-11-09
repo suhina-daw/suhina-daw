@@ -600,6 +600,46 @@ pub fn prepare_search(
                 ranked.push((rank, found));
             }
         }
+        // The library's own presets (`device.savePreset` wrote them) find a search like the
+        // stock ones do, so search and quick-add find what the browser's tree lists
+        // ([ADR 0036] › 5): the tree reads the Presets folder directly, the search does too.
+        if let Some(base) = projects.library_base() {
+            let mut user_presets: Vec<Found> = Vec::new();
+            let devices =
+                std::fs::read_dir(base.join("Presets")).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default();
+            for device in devices.into_iter().filter(|d| d.path().is_dir()) {
+                let id = device.file_name().to_string_lossy().into_owned();
+                if suhina_device_registry::info(&id).is_none() {
+                    continue;
+                }
+                let ends = format!(".{id}.preset.suhina");
+                let mut files =
+                    std::fs::read_dir(device.path()).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default();
+                files.sort_by_key(|file| file.file_name().to_string_lossy().to_lowercase());
+                for file in files {
+                    let name = file.file_name().to_string_lossy().into_owned();
+                    let Some(stem) = name.strip_suffix(&ends) else { continue };
+                    user_presets.push(Found {
+                        item: Item::File(file.path()),
+                        name: stem.trim().to_owned(),
+                        kind: "preset",
+                        detail: None,
+                        plugin: false,
+                        format: None,
+                        folder: None,
+                    });
+                }
+            }
+            for found in user_presets {
+                let haystack = found.item.key();
+                if let Some(rank) = suhina_library::rank(&words, &found.name, &haystack)
+                    && fits(&found, category)
+                    && tagged(projects.file_library_mut(), &found.item.key())
+                {
+                    ranked.push((rank, found));
+                }
+            }
+        }
         let env = projects.plugin_env();
         for plugin in env.catalog.plugins() {
             let kind = if crate::is_instrument(plugin) { "instrument" } else { "effect" };

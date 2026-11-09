@@ -44,6 +44,10 @@ pub struct FileKind {
     /// The library folder the pack unpacks beside ([ADR 0036] › the library): "Amp models" for
     /// the Amp Modeler, "Cabinets" for the Cab Loader.
     pub library_folder: &'static str,
+    /// The old defaults' folder the device's files may still be named by, before the library's
+    /// move emptied it into `library_folder` ([ADR 0036] › 4): "NAM models" for the Amp
+    /// Modeler, "IRs" for the Cab Loader, none for a device that ran no files then.
+    pub legacy_folder: Option<&'static str>,
     /// What a panel calls the loaded file at `path`.
     name: fn(&Path, &AssetData) -> Option<String>,
     /// A new device at its defaults, running the file.
@@ -143,6 +147,7 @@ pub const ENTRIES: [Entry; 17] = [
             read: read_nam,
             read_bytes: read_nam_bytes,
             library_folder: "Amp models",
+            legacy_folder: Some("NAM models"),
             name: nam_name,
             make: make_nam,
         }),
@@ -156,6 +161,7 @@ pub const ENTRIES: [Entry; 17] = [
             read: read_ir,
             read_bytes: read_ir_bytes,
             library_folder: "Cabinets",
+            legacy_folder: Some("IRs"),
             name: ir_name,
             make: make_cab,
         }),
@@ -334,6 +340,19 @@ fn file_kind(id: &str) -> Option<&'static FileKind> {
 }
 
 /// The extension of the file the device `id` runs, or `None` for a device that runs no file.
+/// The old defaults' folder a file device's files may still be named by, before the library's
+/// move emptied it into the device's library folder ([ADR 0036] › 4): `None` for a device
+/// that ran no files then.
+pub fn legacy_folder(id: &str) -> Option<&'static str> {
+    file_kind(id).and_then(|file| file.legacy_folder)
+}
+
+/// The library folder a file device's pack unpacks beside ([ADR 0036] › the library):
+/// "Amp models" for the Amp Modeler, "Cabinets" for the Cab Loader.
+pub fn library_folder(id: &str) -> Option<&'static str> {
+    file_kind(id).map(|file| file.library_folder)
+}
+
 pub fn file_extension(id: &str) -> Option<&'static str> {
     file_kind(id).map(|file| file.extension)
 }
