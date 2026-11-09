@@ -78,7 +78,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
             optional(
                 "place",
                 ParamType::Path(PathKind::Place),
-                "pinned, recent:all, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), tag:<name> (the items carrying that tag), or a folder",
+                "pinned, recent:all, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), tag:<name> (the items carrying that tag; several joined tag:<name>+<name>…, the whole string naming its tag first), or a folder",
             ),
             optional("tags", ParamType::Texts, "only items carrying any of these tags"),
             optional("limit", ParamType::Integer, "at most this many (default and most 500)"),
@@ -464,13 +464,30 @@ pub(crate) fn listed_keys(projects: &mut Projects, place: Option<&str>) -> Resul
             Some(projects.file_library_mut().recent(group))
         }
         Some(p) if p.starts_with("tag:") => {
-            let tag = &p["tag:".len()..];
+            let given = &p["tag:".len()..];
             let library = projects.file_library_mut();
-            if library.tags().iter().all(|t| t.name != tag) {
-                Err(format!("there is no tag {tag:?}; library.tags lists them"))?;
+            // A place of one tag by its name, or of several joined with `+`
+            // (`tag:Red+Hot`, [#1250] review): the join keeps the place on the store's
+            // keys, which list an item whatever folder it sits in or whether it still
+            // exists — the plain `tags` filter would drop the voices, the outside files
+            // and the missing ones. The whole string names its tag first, so a tag named
+            // with a `+` in it is still found; past that, every part names its tag, and
+            // a part that is no tag refuses rather than quietly searching the rest.
+            let whole = library.tags().iter().any(|t| t.name == given);
+            let parts: Vec<&str> = if whole || !given.contains('+') { vec![given] } else { given.split('+').collect() };
+            let mut keys: Vec<String> = Vec::new();
+            for part in parts {
+                if library.tags().iter().all(|t| t.name != part) {
+                    Err(format!("there is no tag {part:?}; library.tags lists them"))?;
+                }
+                // An item once: the store keeps its key with the tags next to it.
+                for key in library.items_tagged(part) {
+                    if !keys.contains(&key) {
+                        keys.push(key);
+                    }
+                }
             }
-            // An item once: the store keeps its key with the tags next to it.
-            Some(library.items_tagged(tag))
+            Some(keys)
         }
         _ => None,
     })
@@ -566,6 +583,13 @@ pub fn prepare_search(
                 && tagged(projects.file_library_mut(), &key)
             {
                 out.push(found);
+            }
+            // A place that does not sort before the cut can stop at it: the order is the
+            // keys' own, so the first `limit` that fit are the answer ([#1250] review). A
+            // tag's place sorts first, and a cut before the sort would rank `/a/Zebra`
+            // over `/z/Apple` (#1196).
+            if !sorted_by_name && out.len() >= limit {
+                break;
             }
         }
         // A place that sorts by name sorts before the limit: a cut in key order would

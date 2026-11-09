@@ -647,12 +647,12 @@ fn sidebar_view(
     title(&mut y, "Tags");
     state.drop_tag = None;
     let tag_list = projects.file_library_mut().tags();
-    let counts = state.tag_counts(projects.file_library_mut());
     // The rows' ids ride the tag's position in the list, not its name: a name typed follows
     // the field through the store per key, and a widget keyed by the changing name would
-    // lose its caret, menu and popups mid-typing.
+    // lose its caret, menu and popups mid-typing. (The count cache is counted once, when
+    // the tags changed; a frame reads one entry out of it.)
     for (tag_index, tag) in tag_list.into_iter().enumerate() {
-        let count = counts.get(&tag.name).copied().unwrap_or(0);
+        let count = state.tag_count(projects.file_library_mut(), &tag.name);
         let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), ROW));
         y += ROW;
         // A press carries the tag to an item of the results as well (#1196): click selects
@@ -808,26 +808,34 @@ fn sidebar_view(
                     egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename tag {}", tag.name))
                 });
                 ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
-                // The name follows the field while it is typed into: every key renames, where
-                // the section, the footer dots and a tag's place read the live name. Erasing
-                // the field changes nothing in the store, and a name another tag has is
-                // refused where it stands (the status bar says why). A refusal resets the
-                // field, so a dead draft does not run again by itself ([#1196]).
-                if !name.trim().is_empty() && name.trim() != tag.name {
+                // Enter commits, and so does a click outside the menu. The field is keyed on
+                // the tag's name, which only a commit changes, so typing keeps its focus and
+                // its caret ([#1250] review: a rename under every key made the field a
+                // widget of another id each frame, and saved the library a save a key, and a
+                // name that was another tag's prefix was refused before it could be typed).
+                // An erased field commits nothing, and a name another tag has is refused
+                // where it stands (the status bar says why). A refusal resets the field, so
+                // a dead draft does not run again by itself ([#1196]).
+                let committed = (field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
+                    || ui.input(|i| {
+                        i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !ui.max_rect().contains(p))
+                    });
+                if committed && !name.trim().is_empty() && name.trim() != tag.name {
                     let renamed =
                         run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out);
                     if renamed {
                         for filter in state.tag_filter.iter_mut().filter(|f| **f == tag.name) {
                             *filter = name.trim().to_string();
                         }
-                        // The tags the place is made of go with the live name, so the place
+                        // The tags the place is made of go with the name, so the place
                         // holds.
                         if let Some(Place::Tag(tags)) = &mut state.place {
                             for t in tags.iter_mut().filter(|t| **t == tag.name) {
                                 *t = name.trim().to_string();
                             }
                         }
-                        ui.ctx().data_mut(|d| d.insert_temp(id, name.trim().to_string()));
+                        ui.ctx().data_mut(|d| d.remove::<String>(id));
+                        state.relist();
                     } else {
                         // A refusal resets the field, so a dead draft does not run again by
                         // itself every frame ([#1196]).
@@ -915,7 +923,9 @@ fn sidebar_view(
                 }
             });
         // The menu is closed: its drafts go with it, so a stale name does not run a command
-        // by itself when it opens again ([#1196]).
+        // by itself when it opens again ([#1196]). The remove's asking too: armed for this
+        // tag and let go with, the next opening would delete on a click that never asked
+        // ([#1250] review).
         let open = popup.is_some();
         let open_key = Id::unique(("browser-menu-open", tag_index));
         if was_open && !open {
@@ -923,6 +933,7 @@ fn sidebar_view(
                 d.remove::<String>(Id::unique(("browser-rename-tag", (&tag.name, "menu"))));
                 d.remove::<String>(Id::unique(("browser-section-new-tag", (&tag.name, "menu"))));
             });
+            state.tag_remove_confirm = None;
         }
         ui.ctx().data_mut(|d| d.insert_temp(open_key, open));
     }
@@ -2015,6 +2026,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                         i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !ui.max_rect().contains(p))
                     });
                 if committed
+                    && !name.trim().is_empty()
                     && name.trim() != tag.name
                     && run(projects, "library.setTag", json!({ "name": tag.name, "rename": name.trim() }), out)
                 {
@@ -2083,22 +2095,43 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                     }
                 }
 
-                if ui.button("Remove tag").clicked() {
-                    if run(projects, "library.removeTag", json!({ "name": tag.name }), out) {
-                        state.tag_filter.retain(|t| *t != tag.name);
-                        // The place went with the tag ([#1196] › update the active place).
-                        if let Some(Place::Tag(tags)) = &mut state.place {
-                            tags.retain(|t| *t != tag.name);
-                            if tags.is_empty() {
-                                state.place = None;
+                // The asking is the section's row menu's: the first click on Remove says
+                // what will go and how many items carry it, and only the next removes
+                // ([#1250] review: the two menus had drifted apart, the footer's one click
+                // deleting what the section's asked about first).
+                let armed = state.tag_remove_confirm.as_deref() == Some(tag.name.as_str());
+                let count = projects.file_library_mut().tagged_count(&tag.name);
+                let label = if armed {
+                    format!("Remove {}? ({count} items)", tag.name)
+                } else {
+                    format!("Remove tag {}", tag.name)
+                };
+                if ui.button(label).clicked() {
+                    if !armed && count > 0 {
+                        state.tag_remove_confirm = Some(tag.name.clone());
+                    } else {
+                        if run(projects, "library.removeTag", json!({ "name": tag.name }), out) {
+                            state.tag_filter.retain(|t| *t != tag.name);
+                            // The place went with the tag ([#1196] › update the active place).
+                            if let Some(Place::Tag(tags)) = &mut state.place {
+                                tags.retain(|t| *t != tag.name);
+                                if tags.is_empty() {
+                                    state.place = None;
+                                }
                             }
                         }
+                        state.tag_remove_confirm = None;
+                        state.relist();
+                        ui.close();
                     }
-                    state.relist();
-                    ui.close();
+                }
+                if armed && ui.button("Keep").clicked() {
+                    state.tag_remove_confirm = None;
                 }
             });
-        // Closed: the drafts go with it ([#1196] › keep the name with its tag).
+        // Closed: the drafts go with it ([#1196] › keep the name with its tag), and the
+        // remove's asking with them — armed and let go with, the next opening would delete
+        // on a click that never asked ([#1250] review).
         let open = popup.is_some();
         let open_key = Id::unique(("browser-footer-menu-open", tag_index));
         if was_open && !open {
@@ -2106,6 +2139,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 d.remove::<String>(Id::unique(("browser-rename-tag", (&tag.name, "footer"))));
                 d.remove::<String>(Id::unique(("browser-section-new-tag", (&tag.name, "footer"))));
             });
+            state.tag_remove_confirm = None;
         }
         ui.ctx().data_mut(|d| d.insert_temp(open_key, open));
         painter.circle_filled(rect.center(), DOT / 2.0, tag_color(&tag.color));

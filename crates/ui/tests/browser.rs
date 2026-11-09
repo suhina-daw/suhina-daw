@@ -1459,8 +1459,13 @@ fn the_tags_section_renames_and_removes_a_tag_asking_first() {
     harness.run();
     harness.get_by_label("Rename tag Red").type_text("Hot");
     harness.run();
-    // The name follows the field as it is typed: no Enter, no click off.
-    assert!(harness.query_by_label("Place Tag Hot").is_some(), "the name follows the field");
+    // The field holds its typing until Enter commits it: nothing has renamed yet, so the
+    // section still reads the old name ([#1250] review — the rename under every key made
+    // the field a widget of another id each frame and lost the typing).
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "typing alone renames nothing");
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Hot").is_some(), "Enter renames the tag");
     assert!(harness.query_by_label("Place Tag Red").is_none(), "the old name is gone");
     // The menu is still open; a click off closes it.
     let at = Pos2::new(SIZE.0 - 20.0, SIZE.1 - 10.0);
@@ -1489,6 +1494,213 @@ fn the_tags_section_renames_and_removes_a_tag_asking_first() {
     assert!(harness.query_by_label("Place Tag Hot").is_none(), "the tag is gone from the section");
     assert_eq!(harness.state().browser.place, None, "the place went with the tag");
     assert!(harness.state_mut().projects_mut().file_library_mut().item_tags(&item).is_empty());
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A name another tag has can be typed to its end and Enter refuses it: the field holds its
+/// typing until it commits, so the refusal comes once, with the tag as it was ([#1250]
+/// review — the rename under every key was refused before the name could be typed).
+#[test]
+fn a_taken_name_is_typed_to_its_end_and_enter_refuses_it_once() {
+    let (settings, folder) = (temp("tags-taken-settings"), temp("tags-taken"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Place Tag Red").click_secondary();
+    harness.run();
+    harness.get_by_label("Rename tag Red").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.get_by_label("Rename tag Red").type_text("Orange");
+    harness.run();
+    // Typed to its end, nothing has renamed yet.
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "typing alone renames nothing");
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "the taken name refused");
+    assert!(
+        matches!(harness.state().status(), Status::Error(text) if text.contains("Orange")),
+        "{:?}",
+        harness.state().status()
+    );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The remove's asking goes with the menu that asked: armed and let go with, the next
+/// opening asks again — a click that never asked deletes nothing ([#1250] review).
+#[test]
+fn the_remove_asks_again_after_the_menu_was_let_go() {
+    let (settings, folder) = (temp("tags-arm-settings"), temp("tags-arm"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let item = folder.join("Loop 120bpm.wav").display().to_string();
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.tag", &json!({ "item": item, "tag": "Red", "on": true }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label("Place Tag Red").click_secondary();
+    harness.run();
+    harness.get_by_label("Remove tag Red").click();
+    harness.run();
+    assert!(harness.query_by_label_contains("Remove Red?").is_some(), "the first click arms");
+    // A click away: the menu closes, and the asking with it.
+    click_at(&mut harness, Pos2::new(SIZE.0 - 20.0, SIZE.1 - 10.0));
+    harness.run();
+    harness.get_by_label("Place Tag Red").click_secondary();
+    harness.run();
+    assert!(
+        harness.query_by_label("Remove tag Red").is_some() && harness.query_by_label_contains("Remove Red?").is_none(),
+        "the next opening asks from the start",
+    );
+    harness.get_by_label("Remove tag Red").click();
+    harness.run();
+    assert!(harness.query_by_label_contains("Remove Red?").is_some(), "it asks again");
+    harness.get_by_label("Keep").click();
+    harness.run();
+    assert!(harness.query_by_label("Place Tag Red").is_some(), "the tag stands");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The footer's remove asks like the section's row menu does, the two menus in step: the
+/// first click says what will go, and only the next removes ([#1250] review).
+#[test]
+fn the_footers_remove_asks_like_the_sections() {
+    let (settings, folder) = (temp("tags-footer-arm-settings"), temp("tags-footer-arm"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let item = folder.join("Loop 120bpm.wav").display().to_string();
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.tag", &json!({ "item": item, "tag": "Red", "on": true }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label("Tag Red").click_secondary();
+    harness.run();
+    harness.get_by_label("Remove tag Red").click();
+    harness.run();
+    assert!(harness.query_by_label_contains("Remove Red?").is_some(), "the footer asks first");
+    harness.get_by_label_contains("Remove Red?").click();
+    harness.run();
+    assert!(harness.query_by_label("Tag Red").is_none(), "the second click removes");
+    assert!(harness.state_mut().projects_mut().file_library_mut().item_tags(&item).is_empty());
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The footer's rename commits nothing with the field erased: a click off with an empty
+/// field is no rename, and no error ([#1250] review).
+#[test]
+fn the_footers_erased_rename_commits_nothing() {
+    let (settings, folder) = (temp("tags-footer-erase-settings"), temp("tags-footer-erase"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Tag Red").click_secondary();
+    harness.run();
+    harness.get_by_label("Rename tag Red").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.key_press(Key::Delete);
+    harness.run();
+    click_at(&mut harness, Pos2::new(SIZE.0 - 20.0, SIZE.1 - 10.0));
+    harness.run();
+    assert!(!matches!(harness.state().status(), Status::Error(_)), "{:?}", harness.state().status());
+    assert!(harness.query_by_label("Tag Red").is_some(), "the tag stays as it was");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A place of several tags keeps every carrier the one-tag places list, and the footer's
+/// dots narrow it — a filtered tag that a place's item does not carry brings nothing in
+/// ([#1250] review: the dots' tags went into one any-of list and widened the place).
+#[test]
+fn a_place_of_several_tags_keeps_every_carrier_and_the_dots_narrow_it() {
+    let (settings, folder) = (temp("tags-place-settings"), temp("tags-place"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let loop_file = folder.join("Loop 120bpm.wav").display().to_string();
+    let groove = folder.join("Groove.mid").display().to_string();
+    let hit = folder.join("Hit 00.wav").display().to_string();
+    for (item, tag) in [(&loop_file, "Red"), (&groove, "Blue"), (&hit, "Green")] {
+        harness
+            .state_mut()
+            .projects_mut()
+            .execute("library.tag", &json!({ "item": item, "tag": tag, "on": true }))
+            .unwrap();
+    }
+    harness.run();
+    harness.get_by_label("Place Tag Red").click();
+    harness.run();
+    harness.get_by_label("Place Tag Blue").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    assert!(harness.query_by_label(&row("Loop 120bpm.wav")).is_some());
+    assert!(harness.query_by_label(&row("Groove.mid")).is_some());
+    assert!(harness.query_by_label(&row("Hit 00.wav")).is_none(), "the place is Red and Blue, not Green");
+    // A dot the place's items do not carry: the place narrows to nothing, and nothing
+    // comes in.
+    harness.get_by_label("Tag Green").click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Hit 00.wav")).is_none(), "the dot never widens the place");
+    assert!(harness.query_by_label(&row("Loop 120bpm.wav")).is_none(), "the loop carries no Green");
+    assert!(harness.query_by_label(&row("Groove.mid")).is_none(), "the groove carries no Green");
+    // A dot the place's items do carry narrows it to those.
+    harness.get_by_label("Tag Green").click();
+    harness.run();
+    harness.get_by_label("Tag Red").click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Loop 120bpm.wav")).is_some(), "the loop carries Red");
+    assert!(harness.query_by_label(&row("Groove.mid")).is_none(), "the groove does not");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A drag that carries folders only — as the results' own drag start never lets one begin,
+/// but a drag source that grows one could — says on the release what the pill said mid-drag:
+/// a done "tagged 0 items" is neither ([#1250] review).
+#[test]
+fn a_folders_drop_on_a_tag_says_so_instead_of_tagging_zero() {
+    let (settings, folder) = (temp("tags-folder-drop-settings"), temp("tags-folder-drop"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    harness.state_mut().browser.drag = Some(vec![suhina_ui::interaction::drop::BrowserItem {
+        key: folder.display().to_string(),
+        name,
+        kind: suhina_ui::interaction::drop::ItemKind::Folder,
+        plugin: false,
+    }]);
+    // The pointer goes down on the empty corner — no row's drag competes with the folder's —
+    // and flies to the tag's row while it is down, as a drag of its own would.
+    harness.drag_at(Pos2::new(SIZE.0 - 20.0, SIZE.1 - 10.0));
+    harness.step();
+    let to = harness.get_by_label("Place Tag Red").rect().center();
+    harness.hover_at(to);
+    harness.step();
+    // Mid-drag the status holds back: nothing is tagged yet (the pill beside the pointer
+    // says what a folder's drop does not do).
+    assert!(
+        matches!(harness.state().status(), Status::Hint(text) if text.contains("tags items")),
+        "the flight promises no tagging: {:?}",
+        harness.state().status(),
+    );
+    harness.drop_at(to);
+    harness.run();
+    // Nothing came of the drop: no done tagging (the release's own word, where "tagged 0
+    // items" was neither), and the tag carries nothing.
+    assert!(
+        !matches!(harness.state().status(), Status::Done(_)),
+        "no done tagging came of it: {:?}",
+        harness.state().status(),
+    );
+    assert_eq!(
+        harness.state_mut().projects_mut().file_library_mut().tagged_count("Red"),
+        0,
+        "the folder was never tagged",
+    );
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

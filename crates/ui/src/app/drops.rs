@@ -186,6 +186,13 @@ impl App {
             }
             self.browser.drag = None;
             self.map_window.drag = None;
+            if items.is_empty() {
+                // The drag carried folders and headings only, which no tag goes on: the
+                // pill said so while it flew, and the release says it again — a done
+                // "tagged 0 items" would be neither done nor a tagging ([#1250] review).
+                self.status = Status::Hint(format!("{tag} tags items, not folders"));
+                return;
+            }
             let mut error: Option<Status> = None;
             for item in &items {
                 if let Err(e) = self.projects.execute("library.tag", &json!({ "item": item, "tag": tag, "on": true }))

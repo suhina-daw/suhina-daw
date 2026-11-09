@@ -327,8 +327,11 @@ pub struct BrowserState {
     /// it.
     pub(crate) tag_remove_confirm: Option<String>,
     /// How many items carry each tag, counted when the library's tags last changed (the
-    /// sidebar's rows share the cache).
-    pub(crate) tag_counts: Option<(u64, HashMap<String, usize>)>,
+    /// sidebar's rows share the cache); the revision the count was made at, `None` when
+    /// there is none yet ([#1250] review: the count stays, its revision says when it is
+    /// old).
+    pub(crate) tag_counts: HashMap<String, usize>,
+    pub(crate) tag_counts_revision: Option<u64>,
     /// The Plug-ins category's list sorts by this column (0 name, 1 format), `true`
     /// descending. The window's own, not kept between runs.
     pub plugin_sort: (u8, bool),
@@ -405,7 +408,8 @@ impl Default for BrowserState {
             anchor: None,
             tag_filter: Vec::new(),
             tag_remove_confirm: None,
-            tag_counts: None,
+            tag_counts: HashMap::new(),
+            tag_counts_revision: None,
             plugin_sort: (0, false),
             focus_search: false,
             select_search: false,
@@ -481,7 +485,7 @@ impl BrowserState {
     pub fn relist(&mut self) {
         self.listings.clear();
         self.voices.clear();
-        self.tag_counts = None;
+        self.tag_counts_revision = None;
         self.generation = self.generation.wrapping_add(1);
         self.rows_key = None;
     }
@@ -501,22 +505,23 @@ impl BrowserState {
         self.selection_changed = true;
     }
 
-    /// How many items carry each tag: counted once, when the library's tags changed since the
-    /// last count (a frame over a large library costs nothing more). The sidebar's Tags rows
-    /// share the cache.
-    pub fn tag_counts(&mut self, library: &mut suhina_library::Library) -> HashMap<String, usize> {
+    /// How many items carry the tag `name`: counted once, when the library's tags changed
+    /// since the last count — the rows read it every frame, and the frame's own cost is the
+    /// revision's compare and one map read, where a copy of the whole map was a copy a frame
+    /// ([#1250] review). The sidebar's Tags rows share the cache.
+    pub fn tag_count(&mut self, library: &mut suhina_library::Library, name: &str) -> usize {
         let revision = library.tag_revision();
-        let stale = self.tag_counts.as_ref().is_none_or(|(r, _)| *r != revision);
-        if stale {
+        if self.tag_counts_revision != Some(revision) {
             let mut counts = HashMap::new();
             for (_, names) in library.tagged() {
                 for name in names {
                     *counts.entry(name).or_default() += 1;
                 }
             }
-            self.tag_counts = Some((revision, counts));
+            self.tag_counts = counts;
+            self.tag_counts_revision = Some(revision);
         }
-        self.tag_counts.as_ref().map_or_else(HashMap::new, |(_, counts)| counts.clone())
+        self.tag_counts.get(name).copied().unwrap_or(0)
     }
 
     /// The selected items.
@@ -556,17 +561,19 @@ impl BrowserState {
         if let Some(stale) = self.search_job.take() {
             stale.cancel.store(true, Ordering::Relaxed);
         }
-        // A tag's place is a list of the items carrying its tags: a place of one tag goes as
-        // `library.search` takes the place (`tag:<name>`), so the footer's dots filter that
-        // list; a place of several goes through the tags param, the dots' own way, since two
-        // names cannot join into one param unambiguously.
-        let (place, place_tags) = match &self.place {
-            Some(Place::Tag(tags)) if tags.len() == 1 => (Some(format!("tag:{}", tags[0])), Vec::new()),
-            Some(Place::Tag(tags)) => (None, tags.clone()),
-            other => (other.as_ref().map(Place::param), Vec::new()),
+        // A tag's place is a list of the items carrying its tags: the place goes as
+        // `library.search` takes it, one tag as `tag:<name>` and several joined with `+`
+        // ([#1250] review) — the joined place keeps the store's own list, which an item is
+        // on whatever folder it sits in or whether it still exists, where the plain `tags`
+        // filter would drop the voices, the outside files and the missing ones. The
+        // footer's dots filter the place the same way they filter a one-tag place: a list
+        // of the place's items that carry a filtered tag, not a widening of it.
+        let place = match &self.place {
+            Some(Place::Tag(tags)) if !tags.is_empty() => Some(format!("tag:{}", tags.join("+"))),
+            Some(Place::Tag(_)) => None,
+            other => other.as_ref().map(Place::param),
         };
-        let mut query_tags = self.tag_filter.clone();
-        query_tags.extend(place_tags);
+        let query_tags = self.tag_filter.clone();
         let flat = !self.search.trim().is_empty()
             || !query_tags.is_empty()
             || matches!(self.place, Some(Place::Pinned | Place::Recent(_) | Place::Tag(_)));
