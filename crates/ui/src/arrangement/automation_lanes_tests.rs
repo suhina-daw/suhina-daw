@@ -96,7 +96,8 @@ fn a_shift_keeps_values_in_range_and_moves_silence_from_the_bottom() {
     assert_eq!(Scale::Mute.shift(1.0, -0.4), 1.0);
 }
 
-/// A track's lanes, opened the first time, are those with points, or the volume's when none has.
+/// A track's lanes, opened the first time, are the top lane (the volume) and those with points
+/// mounted under it (#1322).
 #[test]
 fn the_first_open_shows_the_lanes_with_points_or_the_volume() {
     let mut project = crate::demo::demo_project();
@@ -117,8 +118,9 @@ fn the_first_open_shows_the_lanes_with_points_or_the_volume() {
     let params = Params::build(&project);
     let track = project.tracks[1].id;
     state.toggle(track, &params);
-    assert_eq!(state.shown(track, &params), [LaneKey::mixer(PAN)]);
-    assert_eq!(state.height(track, &params), LANE + LINE);
+    // The top lane shows the volume, the pan with its points is mounted under it (#1322).
+    assert_eq!(state.shown(track, &params), [LaneKey::mixer(VOLUME), LaneKey::mixer(PAN)]);
+    assert_eq!(state.height(track, &params), 2.0 * (LANE + LINE));
 }
 
 /// A built-in device's parameters are listed under its name, with their lanes' points.
@@ -147,7 +149,11 @@ fn a_built_in_devices_parameters_can_be_shown_with_its_lanes() {
     assert_eq!(gain.map(|p| p.points.len()), Some(1));
     let mut state = LanesState::default();
     state.toggle(track, &params);
-    assert_eq!(state.shown(track, &params), [LaneKey { device: Some(0), param: "gain".into() }]);
+    // Under the top lane's volume, as a lane with points (#1322).
+    assert_eq!(
+        state.shown(track, &params),
+        [LaneKey::mixer(VOLUME), LaneKey { device: Some(0), param: "gain".into() }]
+    );
 }
 
 /// A data-only device's parameters are listed and placed as their controls place them.
