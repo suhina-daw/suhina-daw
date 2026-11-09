@@ -552,6 +552,26 @@ fn a_bus_after_a_late_chain_keeps_part_of_the_deadline() {
     assert!(longest <= deadline + QUICK, "{longest:?}");
 }
 
+/// A return whose only plug-in is switched off sends no block, so it takes no share of the
+/// deadline from the track that feeds it: that track's plug-in, answering after the share a
+/// return with a plug-in switched on would keep, is still in time.
+#[test]
+fn a_bus_whose_plug_ins_are_off_keeps_no_share_of_the_deadline() {
+    let deadline = Duration::from_secs_f64(FRAMES as f64 / f64::from(SR) * crate::plugin::DEADLINE_SHARE);
+    let mut off = plug();
+    off.enabled = false;
+    let p = with_return(tracks(vec![vec![plug()]]), &[1], vec![off]);
+    let log = Arc::default();
+    let stands = vec![Timed::new("track", 0.5, deadline * 9 / 10, &log), Timed::new("off", 0.5, QUICK, &log)];
+    let mut renderer = playing(&p, stands);
+    let levels = renderer.graph.chains.iter().find(|c| c.track == TrackId(1)).map(|c| c.turn.levels_after);
+    assert_eq!(levels, Some(0), "no bus level with a plug-in switched on after the track");
+    play(&mut renderer, 1);
+    let log = log.lock().unwrap().clone();
+    assert!(log.iter().all(|hand| hand.name != "off"), "the switched-off plug-in was sent a block: {log:?}");
+    assert_eq!(missed_on(&mut renderer, 1), 0, "the track's plug-in had the whole deadline");
+}
+
 /// Two returns, each fed by a track of its own: their plug-ins have their blocks out at the same
 /// time, so neither waits for the other's (#1261).
 #[test]

@@ -353,10 +353,13 @@ fn a_wait_over_several_links_returns_the_one_answered() {
     assert!(first.watch().is_none(), "nothing out, nothing to watch");
     assert!(first.send_with_events(&input, &[], output.len()));
     assert!(second.send_with_events(&input, &[], output.len()));
+    // Taken before either host is let go: a link already answered has no watch to take.
+    let watches = [first.watch(), second.watch()];
+    assert!(watches.iter().all(Option::is_some));
     // Neither answered: a wait already past its time finds none.
-    assert_eq!(wait_any(&[first.watch(), second.watch()], Instant::now()), None);
+    assert_eq!(wait_any(&watches, Instant::now()), None);
     assert!(go_second.send(()).is_ok());
-    assert_eq!(wait_any(&[first.watch(), second.watch()], Instant::now() + LONG), Some(1));
+    assert_eq!(wait_any(&watches, Instant::now() + LONG), Some(1));
     assert!(second.watch().is_none(), "answered");
     // A link given up on is watched for the answer it still owes.
     assert_eq!(first.wait(&mut output, Instant::now()), Outcome::Missed);
@@ -367,4 +370,53 @@ fn a_wait_over_several_links_returns_the_one_answered() {
     for host in hosts {
         assert_eq!(host.join().ok(), Some(1));
     }
+}
+
+/// A wait over `count` links, the first of them never answered while it waits and the last let
+/// go once its watch is taken: the last one's answer ends the wait, however long the first is
+/// out (#1256). Its `until` is an hour away, and a watchdog lets the first host go after a
+/// minute, so a wait that only the first link could wake returns the first link instead.
+fn a_wait_wakes_for_the_last_of(count: usize) {
+    let mut links: Vec<Link> =
+        (0..count).map(|_| Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"))).collect();
+    let (go, holds): (Vec<_>, Vec<_>) = (0..count).map(|_| mpsc::channel()).unzip();
+    let hosts: Vec<_> =
+        links.iter().zip(holds).map(|(link, hold)| halving_host(link.address(), 1, Some((0, hold)))).collect();
+    let input = ramp(BLOCK * 2, 1.0);
+    for link in &mut links {
+        assert!(link.send_with_events(&input, &[], BLOCK * 2));
+    }
+    let mut go = go.into_iter();
+    let go_first = go.next().unwrap_or_else(|| panic!("no links"));
+    let (waited, watchdog) = mpsc::channel::<()>();
+    let watchdog = thread::spawn(move || {
+        let _ = watchdog.recv_timeout(Duration::from_secs(60));
+        let _ = go_first.send(());
+    });
+    let watches: Vec<Option<Watch>> = links.iter().map(Link::watch).collect();
+    assert!(watches.iter().all(Option::is_some), "every block is out");
+    let mut rest: Vec<_> = go.collect();
+    assert!(rest.pop().is_some_and(|go_last| go_last.send(()).is_ok()));
+    let answered = wait_any(&watches, Instant::now() + Duration::from_secs(3600));
+    let _ = waited.send(());
+    assert_eq!(answered, Some(count - 1), "only the first link's answer woke the wait");
+    drop(watches);
+    for go in rest {
+        assert!(go.send(()).is_ok());
+    }
+    assert!(watchdog.join().is_ok());
+    for host in hosts {
+        assert_eq!(host.join().ok(), Some(1));
+    }
+}
+
+#[test]
+fn a_wait_over_two_links_wakes_for_the_second() {
+    a_wait_wakes_for_the_last_of(2);
+}
+
+/// One more link than a Windows wait takes: the one left out is looked at all the same.
+#[test]
+fn a_wait_over_more_links_than_one_wait_takes_wakes_for_the_last() {
+    a_wait_wakes_for_the_last_of(64);
 }

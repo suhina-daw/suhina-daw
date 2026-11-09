@@ -212,6 +212,7 @@ chain order, so which plug-in answered first never changes a sum and offline ren
 for bit as before. A chain with buses with plug-ins after it has its plug-ins waited for a
 quarter of the block's time (from its start to the deadline) sooner per bus level, at most
 three, so those buses have the rest when one of its plug-ins is late; without bus plug-ins
+(a bus whose plug-ins are all switched off counts as one without, since it sends no block)
 the deadline is as before. The quarter is a first value, to be set by measurement. The budget is then set by the slowest chain,
 not the sum: the same project went from 30 to 50 % of blocks late to none, the longest
 wait 6 ms. (Until #151 the chains went a stage at a time, every chain waiting for every
@@ -220,9 +221,12 @@ plug-in of that stage elsewhere: measured with three chains of three plug-ins wh
 one, 3 ms a block, is at another place in each, see *Measurements*.) While no answer is in,
 the render thread sleeps until any of the plug-ins it waits for answers, or the earliest of
 their deadlines (`suhina_ipc::wait_any`, #1256): on Windows on their links' events together
-(63 at a time) and a high-resolution timer, yielding only in the last millisecond, so a late
-plug-in no longer keeps the render thread spinning for the whole wait; on Linux and macOS on
-the first link still out, as a single link waits. A plug-in the engine cannot watch (a
+(63 at a time; with more, a millisecond at a time, so the others are looked at that often)
+and a high-resolution timer, yielding only in the last millisecond, so a late plug-in no
+longer keeps the render thread spinning for the whole wait; on Linux and macOS on the first
+link still out, as a single link waits, which an answer on another link does not wake: on
+Linux, with several links out, it sleeps at most 100 µs at a time (`RECHECK`) and looks at
+all of them again, and on macOS each nap of at most 250 µs ends with a look at all of them. A plug-in the engine cannot watch (a
 stand-in in tests) is waited on for at most 50 µs at a time (`ANSWER_SLICE`), and the others
 looked at again. A wait that Windows refuses (`WAIT_FAILED`) falls back to the event's own,
 coarser timeout instead of returning at once, and `suhina_ipc::a_wait_failed` says it happened. A chain whose plug-in has not answered by the deadline misses that block, as before;

@@ -275,13 +275,27 @@ impl<'a> Watch<'a> {
 #[cfg_attr(not(windows), allow(dead_code))]
 const MAX_WAITED: usize = 63;
 
+/// How often a Linux wait over several links looks at all of them again: it sleeps on the first
+/// link's futex, which an answer on another link does not wake, so that answer is seen at most
+/// this late (plus the scheduler's wake-up).
+#[cfg_attr(windows, allow(dead_code))]
+const RECHECK: Duration = Duration::from_micros(100);
+
+/// How often a Windows wait over more links than one wait takes ([`MAX_WAITED`]) looks at all of
+/// them again: the ones left out cannot wake it. A high-resolution timer wakes within about half
+/// a millisecond, so a shorter nap would end up yielding.
+#[cfg_attr(not(windows), allow(dead_code))]
+const RECHECK_OMITTED: Duration = Duration::from_millis(1);
+
 /// Waits until any of `watches` is answered or `until` passes (#1256): the first answered one's
 /// index, or `None` at `until`. It spins briefly first, as [`Doorbell::wait`] does, then sleeps
 /// in the operating system: on Windows on the links' events together (the first
-/// [`MAX_WAITED`]; the others are looked at each time it wakes), with the first one's
-/// high-resolution timer, and yielding in the last [`FINE_TAIL`]; elsewhere on the first link
-/// not answered, as long as [`Doorbell::wait`] would. `None` entries are passed over. Never
-/// allocates; never waits past `until`.
+/// [`MAX_WAITED`]; when there are more, at most [`RECHECK_OMITTED`] at a time, so the others
+/// are looked at that often), with the first one's high-resolution timer, and yielding in the
+/// last [`FINE_TAIL`]; elsewhere on the first link, as long as [`Doorbell::wait`] would for one
+/// link, and on Linux at most [`RECHECK`] at a time for several (macOS looks at all of them
+/// after each nap anyway). `None` entries are passed over. Never allocates; never waits past
+/// `until`.
 pub fn wait_any(watches: &[Option<Watch>], until: Instant) -> Option<usize> {
     let answered = || watches.iter().position(|w| w.is_some_and(|w| w.answered()));
     for _ in 0..SPINS {
@@ -302,7 +316,18 @@ pub fn wait_any(watches: &[Option<Watch>], until: Instant) -> Option<usize> {
         #[cfg(windows)]
         sleep_any_windows(watches, first, until - now);
         #[cfg(not(windows))]
-        first.bell.sleep(first.word, first.word.load(Ordering::Acquire), until - now);
+        {
+            // The answer may have come since the look above: the futex would sleep on it, and
+            // the ring it had is gone.
+            let value = first.word.load(Ordering::Acquire);
+            if value == first.value {
+                continue;
+            }
+            let left = until - now;
+            let several = watches.iter().flatten().nth(1).is_some();
+            let left = if cfg!(target_os = "linux") && several { left.min(RECHECK) } else { left };
+            first.bell.sleep(first.word, value, left);
+        }
     }
 }
 
@@ -329,6 +354,8 @@ fn sleep_any_windows(watches: &[Option<Watch>], first: &Watch, left: Duration) {
         *slot = timer;
         count += 1;
     }
+    // Links past the first `MAX_WAITED` cannot wake the wait: it ends soon to look at them.
+    let nap = if watches.iter().flatten().nth(MAX_WAITED).is_some() { nap.min(RECHECK_OMITTED) } else { nap };
     let due = -i64::try_from((nap.as_nanos() / 100).max(1)).unwrap_or(i64::MAX);
     // SAFETY: `timer` is a valid waitable timer handle while its doorbell lives, which the watch
     // borrows; `due` is a live `i64`; no completion routine.

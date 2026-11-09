@@ -221,7 +221,7 @@ const MAX_LEVELS: u32 = 3;
 pub(crate) struct Turn {
     /// Chains that play into it, through their output or a send. It starts once they are done.
     pub(crate) feeders: usize,
-    /// Buses with plug-ins on the longest way from it to the output, at most [`MAX_LEVELS`]:
+    /// Buses with plug-ins switched on, on the longest way from it to the output, at most [`MAX_LEVELS`]:
     /// its plug-ins are waited for that many shares of the deadline sooner, so those buses
     /// still have time when one of its plug-ins is late.
     pub(crate) levels_after: u32,
@@ -271,7 +271,8 @@ pub(crate) fn plan_turns(chains: &mut [Chain]) {
         t
     };
     let all: Vec<Vec<usize>> = chains.iter().map(targets).collect();
-    let plugins: Vec<bool> = chains.iter_mut().map(|c| c.plugin_slots().next().is_some()).collect();
+    // A switched-off plug-in passes the sound and sends no block, so it needs no time.
+    let plugins: Vec<bool> = chains.iter_mut().map(|c| c.plugin_slots().any(|s| s.enabled)).collect();
     let mut levels = vec![0u32; chains.len()];
     for i in (0..chains.len()).rev() {
         let after = all.get(i).map_or(&[][..], Vec::as_slice);
