@@ -78,7 +78,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "index",
                 ParamType::Integer,
-                "clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+                "clip index on the track, from project.clips (deprecated, use clip; to be removed, ADR 0025 › 4)",
             ),
             CLIP_SCENE,
             param("db", ParamType::Decibels, "gain in dB, at most +24; \"-inf\" or below -150 is silence"),
@@ -97,7 +97,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "index",
                 ParamType::Integer,
-                "arrangement clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+                "arrangement clip index on the track, from project.clips (deprecated, use clip; to be removed, ADR 0025 › 4)",
             ),
             optional(
                 "scene",
@@ -341,7 +341,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "index",
                 ParamType::Integer,
-                "clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+                "clip index on the track, from project.clips (deprecated, use clip; to be removed, ADR 0025 › 4)",
             ),
             param("at", ParamType::Number, "where to cut, in beats from the beginning of the song, inside the clip"),
         ],
@@ -375,7 +375,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "index",
                 ParamType::Integer,
-                "clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+                "clip index on the track, from project.clips (deprecated, use clip; to be removed, ADR 0025 › 4)",
             ),
             param("start", ParamType::Number, "new start in beats from the beginning, at least 0"),
             optional(
@@ -753,9 +753,15 @@ fn audio_overlaps(session: &mut Session, params: &Value) -> Result<Value, Comman
     Ok(json!({ "overlaps": overlaps, "truncated": found.truncated }))
 }
 
-/// The clip `params` names: an arrangement clip by `index`, or the clip in a launcher slot by
-/// `scene`.
+/// The clip `params` names: by `clip`, or an arrangement clip by `index`, or the clip in a
+/// launcher slot by `scene`.
 fn clip_at(p: &Project, params: &Value) -> Result<ClipAt, CommandError> {
+    if let Some(named) = named_clip(p, params)? {
+        return Ok(match named.at {
+            crate::notes::ClipAt::Arrangement(lane, index) => ClipAt::Arrangement { lane, index },
+            crate::notes::ClipAt::Slot(column, scene) => ClipAt::Slot { column, scene },
+        });
+    }
     match (Args::new(params).value("index"), Args::new(params).value("scene")) {
         (Some(_), Some(_)) => Err("give index or scene, not both".into()),
         (None, Some(_)) => {
@@ -880,12 +886,24 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     let p = &session.project;
     let mut copied: Vec<(Clip, ClipContent)> = Vec::new();
     let mut from: Vec<TrackId> = Vec::new();
-    match (Args::new(params).value("clips"), Args::new(params).value("scene")) {
-        (Some(_), None) => {
+    let named = named_clip(p, params)?;
+    let source = match (named, Args::new(params).value("clips"), Args::new(params).value("scene")) {
+        (Some(NamedClip { track, at: crate::notes::ClipAt::Arrangement(_, index), .. }), ..) => {
+            Copied::Clips(vec![(track, index)])
+        }
+        (Some(NamedClip { at: crate::notes::ClipAt::Slot(column, scene), .. }), ..) => Copied::Slot(column, scene),
+        (None, Some(_), None) => {
             if Args::new(params).has("track") {
                 return Err("track goes with scene (a clip slot); clips names arrangement clips".into());
             }
-            for (track, index) in clip_list(p, params)? {
+            Copied::Clips(clip_list(p, params)?)
+        }
+        (None, None, Some(_)) => Copied::Slot(column_index(p, params)?, scene_index(p, params)?),
+        _ => return Err("give either clips (arrangement clips) or track and scene (a clip slot)".into()),
+    };
+    match source {
+        Copied::Clips(clips) => {
+            for (track, index) in clips {
                 let clip = p
                     .arrangement
                     .lanes
@@ -899,15 +917,13 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
                 from.push(track);
             }
         }
-        (None, Some(_)) => {
-            let (column, scene) = (column_index(p, params)?, scene_index(p, params)?);
+        Copied::Slot(column, scene) => {
             let slot = p.launcher.columns.get(column).and_then(|c| c.slots.get(scene));
             let clip =
                 slot.and_then(|s| s.clip.clone()).ok_or_else(|| format!("the slot in scene {} is empty", scene))?;
             let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
             copied.push((clip, content));
         }
-        _ => return Err("give either clips (arrangement clips) or track and scene (a clip slot)".into()),
     }
     let names: Vec<String> = copied.iter().map(|(_, content)| content.name.clone()).collect();
     // The automation under each arrangement clip goes with it.
@@ -920,6 +936,13 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     session.clipboards.tracks = from;
     session.clipboards.under = under;
     Ok(json!({ "copied": names }))
+}
+
+/// What `clip.copy` copies: arrangement clips by track and index, or a slot's clip by column and
+/// scene.
+enum Copied {
+    Clips(Vec<(TrackId, usize)>),
+    Slot(usize, usize),
 }
 
 fn cut_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -1088,7 +1111,28 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
 
 fn delete_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     // A list of arrangement clips goes as one; otherwise a launcher slot's clip is named by
-    // `scene`, an arrangement clip by `index`, the way the note commands name the clip they edit.
+    // `scene`, an arrangement clip by `index`, the way the note commands name the clip they edit;
+    // any one clip by `clip`.
+    match named_clip(&session.project, params)?.map(|named| named.at) {
+        Some(crate::notes::ClipAt::Arrangement(lane, index)) => {
+            if let Some(lane) = session.project.arrangement.lanes.get_mut(lane) {
+                lane.clips.remove(index);
+            }
+            return Ok(json!({ "deleted": index }));
+        }
+        Some(crate::notes::ClipAt::Slot(column, scene)) => {
+            let slot = session
+                .project
+                .launcher
+                .columns
+                .get_mut(column)
+                .and_then(|c| c.slots.get_mut(scene))
+                .ok_or("the slot is missing")?;
+            slot.clip = None;
+            return Ok(json!({ "deleted": scene }));
+        }
+        None => {}
+    }
     if Args::new(params).has("clips") {
         if ["track", "index", "scene"].iter().any(|k| Args::new(params).has(k)) {
             return Err("give clips, or track with index or scene, not both".into());
@@ -1344,11 +1388,16 @@ fn set_clip_enabled(session: &mut Session, params: &Value) -> Result<Value, Comm
 }
 
 fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let track = track_id(&session.project, params)?;
-    let index = Args::new(params)
-        .value("index")
-        .and_then(Value::as_u64)
-        .ok_or("index must be a whole number from project.clips")?;
+    let (track, index) = match named_arrangement_clip(&session.project, params)? {
+        Some((track, _, index)) => (track, u64::try_from(index).map_err(|_| "the clip index is too large")?),
+        None => (
+            track_id(&session.project, params)?,
+            Args::new(params)
+                .value("index")
+                .and_then(Value::as_u64)
+                .ok_or("index must be a whole number from project.clips")?,
+        ),
+    };
     let start = Args::new(params).f64("start")?;
     if start < 0.0 {
         return Err(format!("start must be at least 0, got {start}").into());
