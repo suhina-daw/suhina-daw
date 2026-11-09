@@ -896,6 +896,19 @@ impl Vst2Plugin {
                 return Ok(());
             }
             Some(suhina_plugins::vst2::Program::Values(values)) => {
+                // A program made for another plug-in, or for one with other parameters, would set
+                // unrelated values or only a prefix of them: it sets none, and says so.
+                if let Some((id, count)) = suhina_plugins::vst2::program_header(data) {
+                    if id != self.shared.unique_id {
+                        return Err(format!(
+                            "the program is for plug-in {id:08X}, not this one ({:08X})",
+                            self.shared.unique_id
+                        ));
+                    }
+                    if usize::try_from(count).ok() != Some(self.params) {
+                        return Err(format!("the program has {count} parameters; this plug-in has {}", self.params));
+                    }
+                }
                 return values
                     .into_iter()
                     .enumerate()

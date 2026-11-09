@@ -28,6 +28,8 @@ const NAME: usize = 28;
 const MAX_COUNT: usize = 1 << 16;
 /// Size of a bank's header, before its programs or chunk.
 const BANK_HEADER: usize = 156;
+/// Offset of a program's plug-in id.
+const PROGRAM_ID: usize = 16;
 /// Offset of a program's parameter count, and of its values.
 const PROGRAM_COUNT: usize = 24;
 const PROGRAM_VALUES: usize = 56;
@@ -160,12 +162,7 @@ pub fn program(bank: &[u8]) -> Option<(u32, Vec<f32>)> {
             if program.get(8..12)? != b"FxCk" {
                 return None;
             }
-            let count = (word(program, PROGRAM_COUNT)? as usize).min(MAX_COUNT);
-            let values = program.get(PROGRAM_VALUES..PROGRAM_VALUES.checked_add(count.checked_mul(4)?)?)?;
-            return Some((
-                wanted as u32,
-                values.as_chunks::<4>().0.iter().map(|v| f32::from_bits(u32::from_be_bytes(*v))).collect(),
-            ));
+            return Some((wanted as u32, program_values_of(program)?));
         }
         at = at.checked_add(8)?.checked_add(size)?;
     }
@@ -200,6 +197,30 @@ const CHUNK_PROGRAM: &[u8; 4] = b"FPCh";
 /// Offset of a program chunk's size, and of the chunk.
 const PROGRAM_CHUNK: usize = 56;
 
+/// The values of the `FxCk` program that starts `program`: `None` when it declares more than
+/// [`MAX_COUNT`] parameters, or more values than its declared size (the word after `CcnK`) or the
+/// bytes there hold; bytes past the declared size are not read.
+fn program_values_of(program: &[u8]) -> Option<Vec<f32>> {
+    let count = word(program, PROGRAM_COUNT)? as usize;
+    if count > MAX_COUNT {
+        return None;
+    }
+    let end = PROGRAM_VALUES.checked_add(count.checked_mul(4)?)?;
+    if (word(program, 4)? as usize).checked_add(8)? < end {
+        return None;
+    }
+    let values = program.get(PROGRAM_VALUES..end)?;
+    Some(values.as_chunks::<4>().0.iter().map(|v| f32::from_bits(u32::from_be_bytes(*v))).collect())
+}
+
+/// The plug-in id and the number of parameters that the single program `file` declares (#1167):
+/// the plug-in it was made for, and how many values it holds; `None` for anything that is not
+/// [shaped as one](program_shaped).
+pub fn program_header(file: &[u8]) -> Option<(u32, u32)> {
+    program_shaped(file).then_some(())?;
+    Some((word(file, PROGRAM_ID)?, word(file, PROGRAM_COUNT)?))
+}
+
 /// The single program `file` holds (#1167); `None` for a bank, a program cut short or anything
 /// else.
 pub fn single_program(file: &[u8]) -> Option<Program<'_>> {
@@ -207,13 +228,7 @@ pub fn single_program(file: &[u8]) -> Option<Program<'_>> {
         return None;
     }
     match file.get(8..12)? {
-        kind if kind == VALUES_PROGRAM => {
-            let count = (word(file, PROGRAM_COUNT)? as usize).min(MAX_COUNT);
-            let values = file.get(PROGRAM_VALUES..PROGRAM_VALUES.checked_add(count.checked_mul(4)?)?)?;
-            Some(Program::Values(
-                values.as_chunks::<4>().0.iter().map(|v| f32::from_bits(u32::from_be_bytes(*v))).collect(),
-            ))
-        }
+        kind if kind == VALUES_PROGRAM => program_values_of(file).map(Program::Values),
         _ => {
             let size = word(file, PROGRAM_CHUNK)? as usize;
             let from = PROGRAM_CHUNK + 4;
@@ -358,5 +373,30 @@ mod tests {
         );
         assert!(program_shaped(&chunk[..20]), "a cut-short program still has its shape");
         assert!(!program_shaped(b"gain"));
+    }
+
+    /// A program of values that declares more than the most parameters, or more values than its
+    /// declared size covers, is not read, even when the bytes follow.
+    #[test]
+    fn a_program_of_values_that_lies_about_its_size_is_not_read() {
+        let program = |count: u32, declared: u32, values: usize| {
+            let mut out = b"CcnK".to_vec();
+            out.extend_from_slice(&declared.to_be_bytes());
+            out.extend_from_slice(b"FxCk");
+            for word in [1, 9, 1, count] {
+                out.extend_from_slice(&u32::to_be_bytes(word));
+            }
+            out.extend_from_slice(&[0; 28]);
+            out.extend(std::iter::repeat_n(0u8, values * 4));
+            out
+        };
+        let honest = |count: u32| 48 + 4 * count;
+        assert_eq!(single_program(&program(2, honest(2), 2)), Some(Program::Values(vec![0.0, 0.0])));
+        assert_eq!(program_header(&program(2, honest(2), 2)), Some((9, 2)));
+        // Past the most, though all its bytes follow.
+        let over = u32::try_from(MAX_COUNT).unwrap() + 1;
+        assert_eq!(single_program(&program(over, honest(over), MAX_COUNT + 1)), None);
+        // A declared size that holds fewer values than the count.
+        assert_eq!(single_program(&program(2, honest(1), 2)), None);
     }
 }

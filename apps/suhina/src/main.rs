@@ -469,18 +469,21 @@ impl eframe::App for Window {
         // Each step of the end, with its time, so a trace says which one a slow quit waits on
         // (#823).
         suhina_plugins::trace!("quit: on_exit");
-        self.themes.finish();
         let finished_in_time = self.app.finish_backups();
         suhina_plugins::trace!("quit: backups written ({finished_in_time}) at {:?}", started.elapsed());
         let let_go_in_time = self.app.let_go_of_projects();
         suhina_plugins::trace!("quit: projects let go ({let_go_in_time}) at {:?}", started.elapsed());
+        // The limit runs from here, so it also covers the theme worker: a theme file that stalls on
+        // disk must not keep the process running past it.
+        end_by(EXIT_LIMIT, || std::process::exit(0));
+        self.themes.finish();
+        suhina_plugins::trace!("quit: theme files written at {:?}", started.elapsed());
         // Restart now, after an update: the new build starts as this one closes.
         if self.app.restart_wanted()
             && let Err(e) = suhina_update::relaunch()
         {
             eprintln!("error: {e}");
         }
-        end_by(EXIT_LIMIT, || std::process::exit(0));
     }
 }
 

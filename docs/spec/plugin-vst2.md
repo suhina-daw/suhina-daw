@@ -229,7 +229,10 @@ from the same `vst2persistence.h`: `FxCk` for a program of values (version, the 
 version, the number of parameters, the 28-byte name, then each value as a big-endian 32-bit
 float, as a program inside an `FxBk` bank), or `FPCh` for a program chunk (the same fields up to
 the name, then the chunk's size and the chunk). A project never saves one; the CLI's `--state`
-takes one (#1167). Loading a single program sets an `FxCk` program's values as parameters, and
+takes one (#1167). Loading a single program sets an `FxCk` program's values as parameters (a program that declares
+more than 65,536 parameters, or more values than its size covers, is cut short and not read; one
+made for another plug-in id, or for another number of parameters than the plug-in has, sets
+nothing and is refused, since its values would be unrelated or only a prefix), and
 hands an `FPCh` program's chunk to `effSetChunk` with `index` 1, the current program (assumed,
 above). A VST3 plug-in that stands in for a VST2 one reads banks (ADR 0006, decision 8), not
 program chunks: an `FPCh` given to one is refused before it reaches `setState`, so the caller

@@ -601,13 +601,13 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   content's start stops at it; a pitch move that does not fit for every selected note does nothing,
   so no note changes its name.
 - **Built ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** with **Ctrl** (Cmd on
-  macOS) held when a note drag starts, the drag copies the selection instead of moving it (a note
+  macOS) held when the button goes down on a note, the drag copies the selection instead of moving it (a note
   not yet selected is added to the selection first, as Ctrl+click does): the pointer shows a copy
   cursor, the notes are shown where the copies go, snapped as a move is, and letting go leaves the
   notes where they were and adds the copies there with one `note.duplicate` (`beats` and
   `semitones`), one undo step. The copies keep everything of their notes (length, velocity, mute)
-  and end up selected. Dropped where they started, nothing is copied. Ctrl only counts at the start;
-  pressing it later changes nothing.
+  and end up selected. Dropped where they started, nothing is copied. Ctrl only counts when the
+  button goes down; pressing it later changes nothing.
 - **Built:** **Alt** pressed once a move has started frees it from the grid for as long as it is
   held (it is read every frame). Alt held when the button goes down on a note changes its velocity
   instead (› Velocity); Alt pressed after that, even before the pointer has moved far enough to

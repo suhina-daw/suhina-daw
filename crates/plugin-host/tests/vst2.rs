@@ -388,17 +388,25 @@ fn the_mock_s_embedded_editor_opens_and_takes_its_placement() {
     plugin.close_editor().unwrap_or_else(|e| panic!("{e}"));
 }
 
-/// An `.fxp` file of `kind` for plug-in 7: the header, the name, then `rest`.
-fn fxp(kind: &[u8; 4], count: u32, rest: &[u8]) -> Vec<u8> {
+/// The mock plug-in's id, `ShTG`.
+const MOCK_ID: u32 = u32::from_be_bytes(*b"ShTG");
+
+/// An `.fxp` file of `kind` for plug-in `id`: the header, the name, then `rest`.
+fn fxp_for(id: u32, kind: &[u8; 4], count: u32, rest: &[u8]) -> Vec<u8> {
     let mut out = b"CcnK".to_vec();
     out.extend_from_slice(&u32::try_from(4 * 5 + 28 + rest.len()).unwrap().to_be_bytes());
     out.extend_from_slice(kind);
-    for value in [1, 7, 1, count] {
+    for value in [1, id, 1, count] {
         out.extend_from_slice(&u32::to_be_bytes(value));
     }
     out.extend_from_slice(&[0; 28]);
     out.extend_from_slice(rest);
     out
+}
+
+/// An `.fxp` file of `kind` for the mock plug-in.
+fn fxp(kind: &[u8; 4], count: u32, rest: &[u8]) -> Vec<u8> {
+    fxp_for(MOCK_ID, kind, count, rest)
 }
 
 /// A single program, as an `.fxp` file holds it, loads: a program chunk (`FPCh`) through
@@ -414,4 +422,18 @@ fn a_single_program_loads_as_a_chunk_or_as_values() {
     assert_eq!(plugin.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.625);
     assert!(plugin.load_state(chunk[..chunk.len() - 2].to_vec()).is_err(), "cut short");
     assert_eq!(plugin.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.625);
+}
+
+/// A program of values made for another plug-in, or for one with other parameters, sets nothing
+/// and is refused (#1167).
+#[test]
+fn a_program_for_another_plug_in_or_other_parameters_is_refused() {
+    let (mut plugin, _audio) = start();
+    let value = |plugin: &mut Plugin| plugin.params().unwrap_or_else(|e| panic!("{e}"))[0].value;
+    let before = value(&mut plugin);
+    let other = fxp_for(MOCK_ID + 1, b"FxCk", 1, &0.875f32.to_be_bytes());
+    assert!(plugin.load_state(other).is_err(), "another plug-in's program");
+    let two = fxp(b"FxCk", 2, &[&0.875f32.to_be_bytes()[..], &0.5f32.to_be_bytes()].concat());
+    assert!(plugin.load_state(two).is_err(), "a program of two parameters");
+    assert_eq!(value(&mut plugin), before);
 }

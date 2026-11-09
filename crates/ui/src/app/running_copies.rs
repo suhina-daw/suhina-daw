@@ -16,12 +16,18 @@ pub(crate) fn describe() -> String {
     let Ok(mut system) = System::new() else { return "unknown".into() };
     let kind = ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet);
     system.refresh_processes_specifics(ProcessesToUpdate::All, true, kind);
-    let me = std::process::id();
-    let others: Vec<(u32, Option<&Path>)> = system
-        .processes()
+    let all: Vec<(u32, &OsStr, Option<&Path>)> =
+        system.processes().iter().map(|(pid, process)| (pid.as_u32(), process.name(), process.exe())).collect();
+    others_of(&all, std::process::id())
+}
+
+/// The trace's text for the apps among `processes` (process id, name, executable), this process
+/// `me` left out.
+fn others_of(processes: &[(u32, &OsStr, Option<&Path>)], me: u32) -> String {
+    let others: Vec<(u32, Option<&Path>)> = processes
         .iter()
-        .filter(|(pid, process)| pid.as_u32() != me && is_app(process.name()))
-        .map(|(pid, process)| (pid.as_u32(), process.exe()))
+        .filter(|(pid, name, _)| *pid != me && is_app(name))
+        .map(|(pid, _, exe)| (*pid, *exe))
         .collect();
     listed(&others)
 }
@@ -59,9 +65,17 @@ mod tests {
         assert_eq!(listed(&[(20, Some(b)), (7, Some(a)), (9, None)]), "7 /a/suhina; 9 ?; 20 /b/suhina");
     }
 
-    /// This test's own process is not the app, and is never listed.
+    /// This process is not listed even when it is the app, and a process whose id only ends like its
+    /// own is.
     #[test]
     fn this_process_is_not_listed() {
-        assert!(!describe().contains(&format!("{} ", std::process::id())));
+        let app = Path::new("/a/suhina");
+        let processes = [
+            (42, OsStr::new("suhina"), Some(app)),
+            (142, OsStr::new("suhina"), Some(app)),
+            (43, OsStr::new("suhina-plugin-host"), None),
+        ];
+        assert_eq!(others_of(&processes, 42), "142 /a/suhina");
+        assert_eq!(others_of(&processes[..1], 42), "none");
     }
 }
