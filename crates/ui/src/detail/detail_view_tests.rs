@@ -1802,3 +1802,13 @@ fn a_clip_panel_switch_takes_the_theme_s_button_and_stays_lit_while_on() {
     let fills = switch_fills(checked, true);
     assert!(fills.contains(&green) && !fills.contains(&red), "{fills:?}");
 }
+
+/// A check box shows its whole name where it fits and its short one where it does not, so a
+/// narrow tools part never cuts the name with an ellipsis.
+#[test]
+fn a_check_box_shows_its_short_name_where_the_whole_one_does_not_fit() {
+    let width = |text: &str| text.chars().count() as f32 * 6.0;
+    let (name, short) = ("Keep chords together", "Keep chords");
+    assert_eq!(midi_panel::check_text(name, short, 120.0, width), name);
+    assert_eq!(midi_panel::check_text(name, short, 119.0, width), short);
+}

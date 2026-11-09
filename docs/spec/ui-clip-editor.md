@@ -1047,7 +1047,9 @@ button opens its clip in the editor.
   does and to what (**Humanise 3 notes**, **Ramp clip**); a tooltip on it says the same line.
   A setting that is on or off (**Move ends too**, **Keep chords together**) is a check box with
   its name after it, ticked while on, so that it does not read as a second button over Apply;
-  a click anywhere on its row turns it.
+  a click anywhere on its row turns it. Where the part is too narrow for the whole name it
+  shows a short one (**Keep chords**, **Ends too**) instead of cutting it; the tooltip and the
+  accessible name keep the whole one.
 
   | Transformation | Settings | Command |
   |---|---|---|

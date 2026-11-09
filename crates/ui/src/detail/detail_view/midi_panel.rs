@@ -367,9 +367,10 @@ fn explain(ui: &Ui, rect: Rect, id: &str, text: &str) {
 
 /// A setting of a transformation that is on or off: a check box and its name after it, so it
 /// does not read as a button beside Apply under it. The box is a `button` to the theme
-/// (`[checked]` while on); the whole row takes the click. Named "`name`: On" or "Off". Returns
-/// whether it was clicked.
-fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> bool {
+/// (`[checked]` while on); the whole row takes the click. Named "`name`: On" or "Off", and
+/// showing `name`, or `short` where the part is too narrow for it, so the name is not cut.
+/// Returns whether it was clicked.
+fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, short: &str, on: bool) -> bool {
     let state = if on { "On" } else { "Off" };
     let response = widgets::button_area(ui, row, Id::unique(("midi-tools-check", name)), format!("{name}: {state}"));
     let side = CHECK.min(row.height());
@@ -384,8 +385,16 @@ fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) 
     }
     let text = Rect::from_min_max(Pos2::new(mark.right() + 6.0, row.top()), row.max);
     let colour = motion::mix(theme::text_secondary(), theme::text_primary(), widgets::hover(ui, &response));
-    widgets::text_in(painter, text, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT_SMALL), colour);
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let shown = check_text(name, short, text.width(), |t| widgets::text_width(ui, t, font.clone()));
+    widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, font, colour);
     response.clicked()
+}
+
+/// The text a check box shows in `room` points: its name, or the short one where the name is
+/// wider than that.
+pub(super) fn check_text<'a>(name: &'a str, short: &'a str, room: f32, width: impl Fn(&str) -> f32) -> &'a str {
+    if width(name) <= room { name } else { short }
 }
 
 /// The Notes tab: Transpose and the one-click tools, two to a row.
@@ -689,9 +698,9 @@ fn transform_tab(
                         ui,
                         row,
                         "chords",
-                        "Notes that start within 30 ms of each other move together, as one chord",
+                        "Keep chords together: notes that start within 30 ms of each other move together, as one chord",
                     );
-                    if check_box(ui, painter, row, "Keep chords together", settings.humanize_chords) {
+                    if check_box(ui, painter, row, "Keep chords together", "Keep chords", settings.humanize_chords) {
                         settings.humanize_chords = !settings.humanize_chords;
                     }
                 }
@@ -737,7 +746,8 @@ fn transform_tab(
                 if y + s.toggle <= body.bottom() + 0.5 {
                     let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), s.toggle));
                     y += s.toggle + s.gap;
-                    if check_box(ui, painter, row, "Move ends too", quantize.ends) {
+                    explain(ui, row, "ends", "Move ends too: each note's end goes to the grid as its start does");
+                    if check_box(ui, painter, row, "Move ends too", "Ends too", quantize.ends) {
                         quantize.ends = !quantize.ends;
                     }
                 }
