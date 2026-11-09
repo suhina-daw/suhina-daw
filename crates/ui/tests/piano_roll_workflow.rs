@@ -193,9 +193,13 @@ fn a_double_click_held_and_dragged_draws_the_note_as_long_as_the_drag() {
     pointer(&mut h, at, true);
     pointer(&mut h, at, false);
     pointer(&mut h, at, true);
+    // The pointer stays the ordinary one while the note is drawn: a cursor of its own flashed
+    // on every double-click.
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Default, "as the press goes down");
     for step in 1..=6 {
         h.hover_at(at + (to - at) * (step as f32 / 6.0));
         h.step();
+        assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Default, "during the drag");
     }
     pointer(&mut h, to, false);
     h.run();

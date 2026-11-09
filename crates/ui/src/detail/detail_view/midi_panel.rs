@@ -38,6 +38,8 @@ const BUTTON_GAP: f32 = 4.0;
 /// The quantise amount's id to the theme, and its knob's height where the theme sets none.
 const QUANTISE_AMOUNT: &str = "quantise-amount";
 const KNOB: f32 = 32.0;
+/// A check box's side.
+const CHECK: f32 = 12.0;
 
 /// The tools part's spacing: the room between its rows, between the rows of the Notes tab's
 /// buttons, and the height of its fields and buttons and of its switches and Apply.
@@ -363,6 +365,29 @@ fn explain(ui: &Ui, rect: Rect, id: &str, text: &str) {
     let _ = ui.interact(rect, Id::unique(("midi-tools-hint", id)), Sense::hover()).on_hover_text(text);
 }
 
+/// A setting of a transformation that is on or off: a check box and its name after it, so it
+/// does not read as a button beside Apply under it. The box is a `button` to the theme
+/// (`[checked]` while on); the whole row takes the click. Named "`name`: On" or "Off". Returns
+/// whether it was clicked.
+fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> bool {
+    let state = if on { "On" } else { "Off" };
+    let response = widgets::button_area(ui, row, Id::unique(("midi-tools-check", name)), format!("{name}: {state}"));
+    let side = CHECK.min(row.height());
+    let mark = Rect::from_min_size(Pos2::new(row.left(), row.center().y - side / 2.0), Vec2::splat(side));
+    let (fill, ink) = widgets::toggle_colors(ui, &response, on);
+    let ink = button_face(crate::kit::element::BUTTON, painter, mark, &response, on, fill, !on).unwrap_or(ink);
+    if on {
+        let at = |x: f32, y: f32| Pos2::new(mark.left() + side * x, mark.top() + side * y);
+        let line = egui::Stroke::new(1.5, ink);
+        painter.line_segment([at(0.24, 0.52), at(0.42, 0.7)], line);
+        painter.line_segment([at(0.42, 0.7), at(0.76, 0.3)], line);
+    }
+    let text = Rect::from_min_max(Pos2::new(mark.right() + 6.0, row.top()), row.max);
+    let colour = motion::mix(theme::text_secondary(), theme::text_primary(), widgets::hover(ui, &response));
+    widgets::text_in(painter, text, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT_SMALL), colour);
+    response.clicked()
+}
+
 /// The Notes tab: Transpose and the one-click tools, two to a row.
 #[allow(clippy::too_many_arguments)]
 fn notes_tab(
@@ -666,14 +691,7 @@ fn transform_tab(
                         "chords",
                         "Notes that start within 30 ms of each other move together, as one chord",
                     );
-                    if toggle(
-                        ui,
-                        painter,
-                        row,
-                        "Keep chords together",
-                        "Keep chords together",
-                        settings.humanize_chords,
-                    ) {
+                    if check_box(ui, painter, row, "Keep chords together", settings.humanize_chords) {
                         settings.humanize_chords = !settings.humanize_chords;
                     }
                 }
@@ -719,7 +737,7 @@ fn transform_tab(
                 if y + s.toggle <= body.bottom() + 0.5 {
                     let row = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), s.toggle));
                     y += s.toggle + s.gap;
-                    if toggle(ui, painter, row, "Move ends too", "Move ends too", quantize.ends) {
+                    if check_box(ui, painter, row, "Move ends too", quantize.ends) {
                         quantize.ends = !quantize.ends;
                     }
                 }

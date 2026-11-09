@@ -427,8 +427,9 @@ pub fn show(
             (Some(Gesture::Mute), _, _) | (None, _, Tool::Mute) => drawn(Tool::Mute),
             (Some(Gesture::Paint), _, _) | (None, _, Tool::Paint) => drawn(Tool::Paint),
             (Some(Gesture::Draw { .. } | Gesture::DrawRun), _, Tool::Draw) => drawn(Tool::Draw),
-            // A note drawn with the Select tool (Left click draws).
-            (Some(Gesture::Draw { .. } | Gesture::DrawRun), _, _) => Some(CursorIcon::Crosshair),
+            // A note drawn with the Select tool (a double-click, or Left click draws) keeps the
+            // ordinary pointer: a cursor of its own only flashed for as long as the press lasted.
+            (Some(Gesture::Draw { .. } | Gesture::DrawRun), _, _) => None,
             // Draw resizes and moves a note it presses on, as Select does.
             (None, Some((_, Part::Start | Part::End)), _) => Some(CursorIcon::ResizeHorizontal),
             (None, Some((_, Part::Body)), Tool::Select | Tool::Draw) if ui.input(|i| i.modifiers.command) => {

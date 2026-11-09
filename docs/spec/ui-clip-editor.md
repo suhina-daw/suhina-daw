@@ -1045,6 +1045,9 @@ button opens its clip in the editor.
 - **Transform** tab, one under another: a list of transformations, a short line on what the
   chosen one does, its settings, and at the bottom **Apply**, the part's width, which says what it
   does and to what (**Humanise 3 notes**, **Ramp clip**); a tooltip on it says the same line.
+  A setting that is on or off (**Move ends too**, **Keep chords together**) is a check box with
+  its name after it, ticked while on, so that it does not read as a second button over Apply;
+  a click anywhere on its row turns it.
 
   | Transformation | Settings | Command |
   |---|---|---|
