@@ -671,7 +671,7 @@ fn a_track_never_laid_out_mounts_its_automated_lanes() {
     assert_eq!(lanes.rows(track, &params)[0], LaneRow::Empty);
 }
 
-/// + on the top lane mounts its parameter right under it, as one command; the top lane then shows
+/// The top lane's plus mounts its parameter right under it, as one command; the top lane then shows
 /// the next default; the top lane's height goes with a parameter chosen in it (#1322).
 #[test]
 fn the_top_lanes_plus_mounts_it() {
