@@ -542,6 +542,30 @@ pub fn pack_bytes() -> usize {
     PACK_FILES.iter().map(|(_, _, bytes)| bytes.len()).sum()
 }
 
+/// The pack's provenance and licence records, `(library folder, pack folder, file name,
+/// bytes)`, written beside the installed files at unpack: the README that says where every
+/// file came from and under what licence, and the licence texts the collected IRs were
+/// published under — a redistribution keeps them beside the files ([ADR 0036] › 6). A record
+/// the user already carries is never overwritten, like a pack file's.
+pub fn pack_records() -> Vec<(&'static str, &'static str, &'static str, &'static [u8])> {
+    vec![
+        ("Amp models", SHIPPED_PACK, "README.md", include_bytes!("../../../packs/README.md")),
+        ("Cabinets", SHIPPED_PACK, "README.md", include_bytes!("../../../packs/README.md")),
+        (
+            "Cabinets",
+            SHIPPED_PACK,
+            "LICENSE.BestPlugins-Amps.txt",
+            include_bytes!("../../../packs/nam-cab-loader/LICENSE.BestPlugins-Amps.txt"),
+        ),
+        (
+            "Cabinets",
+            SHIPPED_PACK,
+            "LICENSE.BestPlugins-Bands.txt",
+            include_bytes!("../../../packs/nam-cab-loader/LICENSE.BestPlugins-Bands.txt"),
+        ),
+    ]
+}
+
 /// Runs the device `id` over the shipped file named `name`, for an engine at `rate` Hz — the
 /// same readers, gates and failure messages as [`load_file`] gave a path, at the pack's bytes
 /// ([ADR 0036]). Reads and allocates: call it off the audio thread.

@@ -383,11 +383,13 @@ fn dropdown(
         shown.to_owned()
     };
     let mut choice: Option<String> = None;
-    // Cut short to the row, never drawn under the steppers beside it.
+    // Cut short to the row, never drawn under the steppers beside it: the icon's own margin,
+    // when the row draws one, comes out of the same bounds.
+    let width = rect.width() - 16.0 - if icon.is_some() { 24.0 } else { 0.0 };
     let response = crate::kit::widgets::combo_box(
         &mut row,
         egui::ComboBox::from_id_salt(id_salt)
-            .width((rect.width() - 16.0).max(24.0))
+            .width(width.max(24.0))
             .truncate()
             .selected_text(egui::RichText::new(current_name).font(theme::ui_font(theme::TEXT_SMALL))),
         |ui| {

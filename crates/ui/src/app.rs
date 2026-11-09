@@ -1451,12 +1451,16 @@ impl App {
             // The watch holds the folder and its top-level folders with their write times at
             // the last read; a change inside any of them (a new pack, a capture in a
             // collection) reads the listing anew. A pack's files re-read only when the pack's
-            // own folder changed ([docs/spec/nam-amp-and-cab.md] › Folders › Packs).
+            // own folder changed ([docs/spec/nam-amp-and-cab.md] › Folders › Packs). The
+            // folder itself changed since the last read (the setting moved, or the default
+            // folder went): the listing reads again, not the last read's folder's files.
             let reading = (**watch)
                 .iter()
                 .map(|(path, _)| (path.clone(), std::fs::metadata(path).ok().and_then(|m| m.modified().ok())))
                 .collect::<Vec<_>>();
-            let scan = (**sets).is_empty() || reading != **watch;
+            let scan = (**sets).is_empty()
+                || reading != **watch
+                || (**watch).first().is_some_and(|w| w.0 != folder.display().to_string());
             let previous = std::mem::take(&mut **sets);
             if scan {
                 let (fresh, seen) = scan_sets(folder, extension, &previous, &mut cache.pack_writes);
@@ -1467,16 +1471,37 @@ impl App {
             }
         }
         // The shipped pack lists first, before every folder's own, whatever the settings say
-        // ([ADR 0036] › the starter pack). Its key is what the file command takes. A folder
-        // that already holds the pack's files (the unpack did, or the user carried them)
-        // supplies its own "Suhina" rows, so the embedded listing stands down beside it.
+        // ([ADR 0036] › the starter pack). Its key is what the file command takes. A folder that
+        // already holds part of it (the unpack did, or the user carried them) gives its own
+        // "Suhina" rows: those stand for the files the folder holds, and every factory file it
+        // does not hold joins them after, keyed so the embedded copy runs it.
         let shipped_first = |rows: &mut Vec<crate::detail::device_widgets::Set>, id: &str| {
-            if !rows.iter().any(|set| set.name == suhina_device_registry::SHIPPED_PACK)
-                && let Some(shipped) = shipped_set(id)
-            {
-                let mut ahead = vec![shipped];
-                ahead.extend(std::mem::take(rows));
-                *rows = ahead;
+            let Some(shipped) = shipped_set(id) else { return };
+            match rows.iter().position(|set| set.name == suhina_device_registry::SHIPPED_PACK) {
+                Some(at) => {
+                    let mut set = rows.remove(at);
+                    // The disk rows keep their names; a factory file the folder does not carry
+                    // goes after them under its `builtin:` key.
+                    let held: Vec<String> = set
+                        .files
+                        .iter()
+                        .map(|(path, _)| {
+                            std::path::Path::new(path)
+                                .file_name()
+                                .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned())
+                        })
+                        .collect();
+                    set.files.extend(shipped.files.into_iter().filter(|(key, _)| {
+                        let name = std::path::Path::new(key).file_name().unwrap_or_default().to_string_lossy().into_owned();
+                        !held.contains(&name)
+                    }));
+                    rows.insert(0, set);
+                }
+                None => {
+                    let mut ahead = vec![shipped];
+                    ahead.extend(std::mem::take(rows));
+                    *rows = ahead;
+                }
             }
         };
         shipped_first(&mut cache.models, "nam-amp-modeler");

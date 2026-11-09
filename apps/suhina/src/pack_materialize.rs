@@ -43,24 +43,72 @@ pub fn unpack_pack(sounds: &Path) -> usize {
             }
             continue;
         }
-        match std::fs::write(&target, bytes) {
-            Ok(()) => {
-                if debug {
-                    eprintln!("pack unpack: wrote {} bytes to {target:?}", bytes.len());
-                }
-                written += 1;
+        if publish(&target, bytes) {
+            if debug {
+                eprintln!("pack unpack: wrote {} bytes to {target:?}", bytes.len());
             }
-            Err(error) => {
-                if debug {
-                    eprintln!("pack unpack: {target:?} did not write ({error:?}); the pack stays in the executable");
-                }
+            written += 1;
+        } else if debug {
+            eprintln!("pack unpack: {target:?} did not write; the pack stays in the executable");
+        }
+    }
+    // The pack's provenance and licence records go beside the files: the README that says
+    // where every file came from and under what licence, and the licence texts the collected
+    // IRs were published under — a redistribution keeps them beside the files
+    // ([ADR 0036] › 6). A record the user carries is never overwritten, like a pack file's.
+    for (library_folder, pack_folder, name, bytes) in suhina_device_registry::pack_records() {
+        let pack_over = sounds.join(library_folder).join(pack_folder);
+        let target = pack_over.join(name);
+        if target.exists() {
+            if debug {
+                eprintln!("pack unpack: {name} is already carried in {pack_over:?}, skipping");
             }
+            continue;
+        }
+        if std::fs::create_dir_all(&pack_over).is_err() {
+            if debug {
+                eprintln!("pack unpack: {pack_over:?} could not be made, skipping");
+            }
+            continue;
+        }
+        if publish(&target, bytes) {
+            if debug {
+                eprintln!("pack unpack: wrote {} bytes to {target:?}", bytes.len());
+            }
+            written += 1;
+        } else if debug {
+            eprintln!("pack unpack: {target:?} did not write; the record stays in the executable");
         }
     }
     if debug {
         eprintln!("pack unpack: {written} file(s) written");
     }
     written
+}
+
+/// Writes `bytes` to `target` beside it first, then renames the completed file into place —
+/// a write that fails (or an app that ends mid-write) leaves no partial file at the target,
+/// and the rename publishes the completed bytes only
+/// ([docs/spec/nam-amp-and-cab.md] › the unpack). A file that appeared at the target while
+/// the copy ran (the user's own, or another start's) is never written over. Returns whether
+/// it published.
+fn publish(target: &Path, bytes: &[u8]) -> bool {
+    let staging = target.with_file_name(format!("{}.suhina-new", target.file_name().unwrap_or_default().to_string_lossy()));
+    if std::fs::write(&staging, bytes).is_err() {
+        let _ = std::fs::remove_file(&staging);
+        return false;
+    }
+    if target.exists() {
+        let _ = std::fs::remove_file(&staging);
+        return false;
+    }
+    match std::fs::rename(&staging, target) {
+        Ok(()) => true,
+        Err(_) => {
+            let _ = std::fs::remove_file(&staging);
+            false
+        }
+    }
 }
 
 /// The old default folders each device's files may still carry
@@ -101,16 +149,18 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
         for entry in entries {
             let target = fresh.join(entry.file_name());
             let source = entry.path();
-            if move_entry(&source, &target) {
+            let (entry_moved, entry_kept) = move_entry(&source, &target);
+            if entry_moved > 0 {
                 if debug {
                     eprintln!("pack migrate: moved {:?}", entry.file_name());
                 }
-                moved += 1;
-            } else {
+                moved += entry_moved;
+            }
+            if entry_kept > 0 {
                 if debug {
                     eprintln!("pack migrate: kept {:?} where it is (its name is in the new tree)", entry.file_name());
                 }
-                kept += 1;
+                kept += entry_kept;
             }
         }
         if old.is_dir() && is_empty(&old) {
@@ -147,28 +197,48 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
 
 /// Moves one file or folder into `target` when it is missing there. Folders move recursively,
 /// their own names carried; a folder that lands only in part stays whole beside its moved
-/// files. A `target` that exists is never written over.
-fn move_entry(source: &Path, target: &Path) -> bool {
+/// files. A `target` that exists is never written over. Returns `(moved, kept)` — the files
+/// that landed in the new tree and the ones kept in place — so a folder that lands only in
+/// part is reported as the partial move it is, not a complete one.
+fn move_entry(source: &Path, target: &Path) -> (usize, usize) {
     if target.exists() {
         if !source.is_dir() {
-            return false;
+            return (0, 1);
         }
+        let (mut moved, mut kept) = (0, 0);
         let entries =
             std::fs::read_dir(source).map(|entries| entries.flatten().collect::<Vec<_>>()).unwrap_or_default();
-        let mut moved = 0;
         for entry in entries {
-            let inner = target.join(entry.file_name());
-            if move_entry(&entry.path(), &inner) {
-                moved += 1;
-            }
+            let (inner_moved, inner_kept) = move_entry(&entry.path(), &target.join(entry.file_name()));
+            moved += inner_moved;
+            kept += inner_kept;
         }
-        if source.is_dir() && is_empty(source) {
+        if is_empty(source) {
             let _ = std::fs::remove_dir(source);
         }
-        moved > 0
+        (moved, kept)
     } else {
-        std::fs::rename(source, target).is_ok()
+        // The whole folder renames where its name is missing: the files it carries are the
+        // move the warning reports, not the folder as one entry.
+        let count = if source.is_dir() { files_in(source) } else { 1 };
+        (if std::fs::rename(source, target).is_ok() { count } else { 0 }, 0)
     }
+}
+
+/// Counts the files inside `folder`, its subfolders included, so a whole folder's move
+/// reports the files it carried.
+fn files_in(folder: &Path) -> usize {
+    std::fs::read_dir(folder)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| {
+                    let path = entry.path();
+                    usize::from(path.is_file()) + if path.is_dir() { files_in(&path) } else { 0 }
+                })
+                .sum()
+        })
+        .unwrap_or(0)
 }
 
 fn is_empty(folder: &Path) -> bool {
@@ -194,6 +264,13 @@ mod tests {
             let target = dir.join(library_folder).join(pack_folder).join(name);
             assert!(target.is_file(), "{target:?} is not there after unpack_pack");
             assert_eq!(std::fs::read(&target).unwrap(), bytes, "{name}'s copy is not the pack's bytes");
+        }
+        // The provenance and licence records land beside the files ([ADR 0036] › 6): the
+        // README in both Suhina folders, the two licence texts beside the IRs they cover.
+        for (library_folder, pack_folder, name, bytes) in suhina_device_registry::pack_records() {
+            let target = dir.join(library_folder).join(pack_folder).join(name);
+            assert!(target.is_file(), "{target:?} is not there after unpack_pack");
+            assert_eq!(std::fs::read(&target).unwrap(), bytes, "{name}'s copy is not the record's bytes");
         }
         let again = unpack_pack(&dir);
         assert_eq!(again, 0, "a second start overwrote or rewrote the user's files");
@@ -248,6 +325,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A folder that lands only in part is reported as the partial move it is: the warning
+    /// counts the files that moved and the ones kept, and a kept file stays whole in the old
+    /// tree ([ADR 0036] › 4, the old folder left whole when a name would be written over).
+    #[test]
+    fn a_partial_folder_move_is_reported_with_its_kept_files() {
+        let dir = std::env::temp_dir().join(format!("suhina-pack-partial-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let old_pack = dir.join("NAM models").join("My Amps");
+        std::fs::create_dir_all(&old_pack).unwrap();
+        std::fs::write(old_pack.join("Moved.nam"), b"moved bytes").unwrap();
+        std::fs::write(old_pack.join("Clash.nam"), b"the old bytes").unwrap();
+        let new_pack = dir.join("Amp models").join("My Amps");
+        std::fs::create_dir_all(&new_pack).unwrap();
+        std::fs::write(new_pack.join("Clash.nam"), b"the new bytes").unwrap();
+
+        let warnings = migrate_old_folders(&dir, &dir);
+        assert_eq!(std::fs::read(new_pack.join("Moved.nam")).unwrap(), b"moved bytes", "the movable file went");
+        assert_eq!(std::fs::read(new_pack.join("Clash.nam")).unwrap(), b"the new bytes", "the kept name never written over");
+        assert_eq!(std::fs::read(old_pack.join("Clash.nam")).unwrap(), b"the old bytes", "the kept file stays whole");
+        assert!(
+            warnings.iter().any(|line| line.contains("mostly moved") && line.contains("1 file(s)") && line.contains("1 kept")),
+            "the partial move names both counts: {warnings:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// After the move the unpack sees the carried files: a pack carried over from the old
     /// folders skips, and only what is still missing (the own model) writes.
     #[test]
@@ -261,6 +364,13 @@ mod tests {
             std::fs::write(folder.join(name), bytes).unwrap();
         }
         migrate_old_folders(&dir, &dir);
+        // The records the move does not carry (they ride the unpack alone) are carried here
+        // too, so the count below says nothing over the carried pack was written.
+        for (library_folder, pack_folder, name, bytes) in suhina_device_registry::pack_records() {
+            let pack_over = dir.join(library_folder).join(pack_folder);
+            std::fs::create_dir_all(&pack_over).unwrap();
+            std::fs::write(pack_over.join(name), bytes).unwrap();
+        }
         let written = unpack_pack(&dir);
         assert_eq!(written, 0, "the move carries the pack: the unpack writes nothing over it");
         let _ = std::fs::remove_dir_all(&dir);
@@ -276,6 +386,12 @@ mod tests {
             std::fs::create_dir_all(&pack_over).unwrap();
             let target = pack_over.join(name);
             std::fs::write(&target, b"the user's own bytes").unwrap();
+        }
+        // The records the user carries are theirs too: the unpack writes none of them over.
+        for (library_folder, pack_folder, name, _) in suhina_device_registry::pack_records() {
+            let pack_over = dir.join(library_folder).join(pack_folder);
+            std::fs::create_dir_all(&pack_over).unwrap();
+            std::fs::write(pack_over.join(name), b"the user's own bytes").unwrap();
         }
         let written = unpack_pack(&dir);
         assert_eq!(written, 0, "the unpack wrote over a file the user carries");
