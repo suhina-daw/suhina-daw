@@ -1143,14 +1143,26 @@ the `selection.*` ones the window has anyway, and `pianoRoll.selectAll`, `.desel
 while the piano roll has the keyboard, so they can be changed like the rest. `pianoRoll.quantize`
 (Ctrl+U) means nothing elsewhere, so it works whenever the piano roll shows a clip.
 
-While the piano roll has the keyboard, a key that edits or shows the Arrangement or the Launcher
-behind it does nothing, even where the piano roll has no key of its own on it: the selected slot's
-keys, the selected clips' Mute, Rename, Split, Consolidate, Group, Ungroup and take keys, Select all
-clips, the Arrangement's tools and grid keys, its automation lanes (**A**), the gain envelope, the
-waveform zoom, a marker at the playhead (**M**), the loop over the selected clips (**Ctrl+L**)
-and Insert MIDI clip. So a key pressed while
-editing notes never acts on the clips behind them. The window's own keys (play and stop, save,
-undo and redo, the views, the browser, Settings) go on working.
+While the piano roll has the keyboard, only the keys listed for it run, and every other key does
+nothing, even where the piano roll has no key of its own on it. The ones that run:
+
+- the piano roll's own (`pianoRoll.*`) and the edit keys, which act on its notes there (copy,
+  cut, paste, duplicate, delete);
+- undo and redo, and the file and project keys (new, open, save, the next and the previous
+  project);
+- playback: play or stop, the metronome, following the tempo map, and playing notes from the
+  computer keyboard;
+- the window's views and panes: Launcher and Arrangement, the detail area and the editor, the
+  devices and the plug-in editor, the browser and its search, quick add, the sample map, the
+  window's zoom, Settings and About.
+
+Everything else is left alone: the selected slot's keys, the selected clips' Mute, Rename, Split,
+Consolidate, Group, Ungroup and take keys, Select all clips, adding a track, the Arrangement's
+tools and grid keys, its automation lanes (**A**), the gain envelope, the waveform zoom, a marker
+at the playhead (**M**), the loop (**Ctrl+L**), Insert MIDI clip and key mapping. So a key
+pressed while editing notes never acts on the view behind them. The rule is a list of what runs,
+not of what is left alone, so an action added later does nothing in the piano roll until it is
+listed (`in_piano_roll` in `crates/ui/src/settings/keymap.rs`).
 
 Later: Ctrl+G (glue), added to the keymap when built.
 

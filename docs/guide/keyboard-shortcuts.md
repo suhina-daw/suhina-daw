@@ -157,6 +157,12 @@ The piano roll is the editor that shows a MIDI clip's notes, with pitch from low
 from left to right. Its keys work only after you have clicked inside it. A grid step is the length
 of one square of the grid, which follows the zoom and the grid setting.
 
+After a click inside the piano roll, the keys of the Arrangement and the Launcher behind it do
+nothing, also the ones listed as **Anywhere**: adding a track, a marker, the loop (Ctrl+L), key
+mapping and the selected clips' keys. So a key pressed while you edit notes never changes
+something else by accident. Play and stop, undo and redo, save, the views, the browser and
+Settings go on working. Click in the Arrangement or the Launcher to give the keys back to it.
+
 | Key | Action | Where | What it does |
 |---|---|---|---|
 | 1 | `pianoRoll.tool1` | Piano roll | Chooses the **Select** tool: click a note to select it, drag to move it or to draw a selection box. |

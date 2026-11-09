@@ -231,33 +231,54 @@ pub fn slot_only(action: &str) -> bool {
     matches!(action, "selection.launch" | "selection.up" | "selection.down" | "selection.left" | "selection.right")
 }
 
-/// Whether `action` is left alone while the piano roll has the keyboard: what edits or shows the
-/// Arrangement or the Launcher behind it (the selected slot's keys, the selected clips' edits, the
-/// Arrangement's tools, grid, lanes, markers and loop), even when the piano roll has no key of its
-/// own on it, so a key pressed while editing notes never acts on the view behind them. The
-/// window's own keys (play, save, undo, the views, Settings) go on working.
+/// The actions whose every id runs while the piano roll has the keyboard: its own, and the window's
+/// that have nothing to do with what a view shows or has selected.
+const IN_PIANO_ROLL_NAMESPACES: [&str; 6] = ["pianoRoll.", "file.", "edit.", "project.", "help.", "settings."];
+
+/// The other actions that run while the piano roll has the keyboard: the edit keys, which act on
+/// its notes there, playback, and the window's views and panes.
+const IN_PIANO_ROLL: [&str; 26] = [
+    "selection.copy",
+    "selection.cut",
+    "selection.paste",
+    "selection.duplicate",
+    "selection.delete",
+    "transport.toggle",
+    "transport.play",
+    "transport.stop",
+    "transport.setMetronome",
+    "transport.followTempoMap",
+    "view.computerKeyboard",
+    "view.toggle",
+    "view.session",
+    "view.arrangement",
+    "view.detail",
+    "view.editor",
+    "view.devices",
+    "view.plugin",
+    "view.browser",
+    "browser.search",
+    "view.quickAdd",
+    "view.sampleMap",
+    "view.sampleMapWindow",
+    "view.zoomIn",
+    "view.zoomOut",
+    "view.zoomReset",
+];
+
+/// Whether `action` runs while the piano roll has the keyboard. The lists above name what does,
+/// and everything else is left alone there: whatever edits or shows the Arrangement or the
+/// Launcher behind the notes (the selected slot's and clips' keys, tracks, markers, the loop, the
+/// Arrangement's tools, grid and lanes), and any action added later until it is listed. So a key
+/// pressed while editing notes never acts on the view behind them, and a new action cannot do so
+/// by being forgotten (the loop key was, with a list of what to leave alone).
+pub fn in_piano_roll(action: &str) -> bool {
+    IN_PIANO_ROLL_NAMESPACES.iter().any(|namespace| action.starts_with(namespace)) || IN_PIANO_ROLL.contains(&action)
+}
+
+/// Whether `action` is left alone while the piano roll has the keyboard ([`in_piano_roll`]).
 pub fn not_in_piano_roll(action: &str) -> bool {
-    slot_only(action)
-        || arrangement_only(action)
-        || matches!(
-            action,
-            "selection.selectAll"
-                | "selection.mute"
-                | "selection.rename"
-                | "selection.split"
-                | "selection.consolidate"
-                | "selection.group"
-                | "selection.ungroup"
-                | "selection.takeUp"
-                | "selection.takeDown"
-                | "view.automation"
-                | "view.gainEnvelope"
-                | "view.waveformZoomIn"
-                | "view.waveformZoomOut"
-                | "marker.addAtPlayhead"
-                | "transport.setLoopEnabled"
-                | "clip.insertMidi"
-        )
+    !in_piano_roll(action)
 }
 
 /// Whether `a` and `b` can both run on the same key press, so one key for both is a conflict.
