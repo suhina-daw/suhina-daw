@@ -397,6 +397,103 @@ fn an_overlong_legacy_selector_name_keeps_what_fits() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// A second tag of a selector's name is the duplicate a second of any name is: skipped, not
+// renamed beside the first, and the legacy assignments naming it carry the first ([#1254]
+// review). A second folder of such a name in a level is skipped the same way.
+#[test]
+fn a_second_selector_name_is_a_duplicate_not_a_second_rename() {
+    let dir = temp("selector-twice");
+    let file = dir.join("browser.json");
+    let text = json!({
+        "tags": [
+            { "name": "#1", "color": "#112233" },
+            { "name": "#1", "color": "#223344" },
+            { "folder": { "name": "#2" }, "tags": [] },
+            { "folder": { "name": "#2" }, "tags": [] },
+        ],
+        "tagged": { "/a.wav": ["#1"] },
+    })
+    .to_string();
+    std::fs::write(&file, text).unwrap();
+    let (store, _) = Store::load(&file);
+    let renamed: Vec<&Tag> = tags_iter(&store.tags).filter(|t| t.name.starts_with("Tag #1")).collect();
+    assert_eq!(renamed.len(), 1, "one tag of the name: {renamed:?}");
+    assert_eq!(renamed.first().map(|t| t.color.as_str()), Some("#112233"), "the first is kept");
+    assert_eq!(store.tagged["/a.wav"], [renamed[0].id]);
+    assert_eq!(folders_iter(&store.tags).filter(|f| f.name.starts_with("Folder #2")).count(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// A tag whose id the reader replaced (one past the cap) keeps what carried it: the
+// assignments by that number follow it to its new id ([#1254] review).
+#[test]
+fn a_replaced_id_keeps_the_items_that_carried_it() {
+    let dir = temp("replaced-id");
+    let file = dir.join("browser.json");
+    let text = json!({
+        "tags": [{ "tag": { "id": u32::MAX, "name": "Huge", "color": "#112233" } }],
+        "tagged": { "/a.wav": [u32::MAX] },
+    })
+    .to_string();
+    std::fs::write(&file, text).unwrap();
+    let (store, _) = Store::load(&file);
+    let huge = tags_iter(&store.tags).find(|t| t.name == "Huge").map(|t| t.id).unwrap_or(0);
+    assert!((FIRST_TAG_ID..=MAX_FILE_TAG_ID).contains(&huge), "{huge}");
+    assert_eq!(store.tagged["/a.wav"], [huge], "the item carries it under its new id");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// An entry the reader leaves out reserves no id: a broken tag naming an id near the cap
+// does not push the ids handed out to the cap, and the store can make tags after the load
+// ([#1254] review).
+#[test]
+fn a_skipped_entry_reserves_no_id() {
+    let dir = temp("skipped-id");
+    let file = dir.join("browser.json");
+    let text = json!({
+        "tags": [
+            { "tag": { "id": MAX_FILE_TAG_ID - 1, "name": "Broken", "color": "not a colour" } },
+            { "name": "Legacy", "color": "#223344" },
+        ],
+    })
+    .to_string();
+    std::fs::write(&file, text).unwrap();
+    let (mut store, _) = Store::load(&file);
+    let legacy = tags_iter(&store.tags).find(|t| t.name == "Legacy").map(|t| t.id);
+    assert_eq!(legacy, Some(FIRST_TAG_ID), "the broken tag's id held nothing back");
+    assert!(store.set_tag("Made", None, None, None).is_ok(), "the store still makes tags");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// Thousands of id-less tags after a file's highest id each take a free id of their own;
+// the reader keeps its own count of what it gave, never scanning the forest per id
+// ([#1254] review: the scan stalled the start).
+#[test]
+fn many_idless_tags_after_the_highest_id_read_in_with_ids_of_their_own() {
+    let mut tags = vec![json!({ "tag": { "id": MAX_FILE_TAG_ID, "name": "Top", "color": "#112233" } })];
+    tags.extend((0..3000).map(|n| json!({ "name": format!("T{n}"), "color": "#223344" })));
+    let dir = temp("many-idless");
+    let file = dir.join("browser.json");
+    std::fs::write(&file, json!({ "tags": tags, "tag_limit": MAX_TAG_LIMIT }).to_string()).unwrap();
+    let (store, _) = Store::load(&file);
+    let mut ids = tag_ids(&store.tags);
+    assert_eq!(ids.len(), MAX_TAG_LIMIT, "read up to the limit");
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), MAX_TAG_LIMIT, "every id its own");
+    assert!(ids.iter().all(|id| (FIRST_TAG_ID..=MAX_FILE_TAG_ID).contains(id)));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// A selector's new name is numbered on past 99 while one is taken ([#1254] review: the
+// search stopped there and the tag was dropped with its assignments).
+#[test]
+fn a_selectors_new_name_numbers_on_past_ninety_nine() {
+    let taken: std::collections::HashSet<String> =
+        std::iter::once("Tag #1".to_string()).chain((2..=150).map(|n| format!("Tag #1 {n}"))).collect();
+    assert_eq!(unreserved_name("Tag", "#1", MAX_TAG_NAME, |n| taken.contains(n)).as_deref(), Some("Tag #1 151"));
+}
+
 // The store makes no id past the ones a file keeps: an id it made past them would be handed
 // out anew on the next load and the items carrying it would come back carrying another tag
 // ([#1254] review). Every id a make hands out round-trips as it is.

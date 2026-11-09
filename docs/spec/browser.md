@@ -511,8 +511,11 @@ with it renamed `Tag #1` or `Folder #2` (numbered past any name the file has), w
 it carrying it still. A name at the limit keeps as much of it as the new one's room holds,
 cut at a character's edge: no entry is dropped for being both a selector and overlong
 ([#1254] review). A file's tags and folders keep their ids; one without
-an id takes the next past every id the file keeps, all of them within the ids the store
-makes, so a reload reads every id back ([#1254] review). Another leading-`#`
+a usable id takes the next past every id the file's readable entries keep, or, once that
+would pass the highest id the store makes, the lowest id neither kept nor given, so a reload
+reads every id back; an entry left out reserves no id, and a tag whose id was replaced keeps
+the items that carried it by number ([#1254] review). A second entry of a selector's name
+is the duplicate a second of any name is, skipped rather than renamed beside the first. Another leading-`#`
 name (`#`, `#notes`, `#+1`) is a name like any of the rest, and `tag:#notes` reads it as one,
 as the tag and folder params of the commands do.
 `library.setTag` makes at the top and, with its `folder`, in that tag folder from its first

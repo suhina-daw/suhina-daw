@@ -292,13 +292,15 @@ impl App {
             self.browser.drag_tag = None;
             self.browser.drag_tag_id = None;
             let Some(row) = self.browser.drop_item.take() else { return };
+            // The selection the row is one of, folders among them, as the row's Tag menu
+            // takes it ([#1254] review: a selected folder was left out of the drop).
             let group = self.browser.selected.iter().any(|s| s.key == row.key && s.kind == row.kind)
-                && !matches!(row.kind, drop::ItemKind::Heading | drop::ItemKind::Folder);
+                && row.kind != drop::ItemKind::Heading;
             let items: Vec<String> = if group {
                 self.browser
                     .selected
                     .iter()
-                    .filter(|s| !matches!(s.kind, drop::ItemKind::Heading | drop::ItemKind::Folder))
+                    .filter(|s| s.kind != drop::ItemKind::Heading)
                     .map(|s| s.key.clone())
                     .collect()
             } else {

@@ -1844,6 +1844,27 @@ fn a_folder_dropped_on_a_tag_carries_it() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// A tag row dragged onto a folder of the results tags the folder as a whole, as a folder
+/// dragged onto the tag does ([#1254] review: a folder row took no tag's drop).
+#[test]
+fn a_tag_dragged_onto_a_folder_tags_it() {
+    let (settings, folder) = (temp("tag-on-folder-settings"), temp("tag-on-folder"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    double_click(&mut harness, &row(&name));
+    harness.run();
+    let drums = folder.join("Drums").display().to_string();
+    let from = harness.get_by_label("Place Tag Red").rect().center();
+    let to = harness.get_by_label(&row("Drums")).rect().center();
+    drag(&mut harness, from, to);
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&drums);
+    assert_eq!(tags, [1], "the folder carries Red");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 /// The tagging the other way round: a tag row dragged onto an item of the results carries the
 /// tag there, the row lit under it, and a drop on one of a selection tags them all (#1196).
 #[test]

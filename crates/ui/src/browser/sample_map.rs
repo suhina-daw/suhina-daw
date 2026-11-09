@@ -147,6 +147,9 @@ pub struct MapView {
     /// Shift-drag rectangle, from where it started.
     rubber_band: Option<Pos2>,
     similar: Option<(usize, Vec<usize>)>,
+    /// The point a right-click opened the menu for: the menu acts on it alone, never on a
+    /// point the pointer passes over later, and closes when it is gone ([#1254] review).
+    menu_point: Option<usize>,
     /// Where the points were drawn last frame.
     area: Rect,
     /// The area the density was last asked for, and since when it has had that size.
@@ -262,6 +265,7 @@ impl Default for MapView {
             legend: HashSet::new(),
             rubber_band: None,
             similar: None,
+            menu_point: None,
             area: Rect::NOTHING,
             resized: (Rect::NOTHING, 0.0),
             revision: 0,
@@ -311,6 +315,10 @@ impl MapView {
         self.hovered = None;
         self.previewed = None;
         self.pressed = None;
+        self.menu_point = None;
+        // The waveform read for the hovered point goes with it ([#1254] review: a caller
+        // drawing new points directly showed it on another point of that index).
+        self.hover_waveform = None;
         // A rubber band held over the old layout selects nothing of the new one's: the
         // gesture ends here before a stretched release can pick by the old indices
         // ([#1254] review).
@@ -330,6 +338,7 @@ impl MapView {
         self.hovered = self.hovered.and_then(|(i, since)| Some((moved(i)?, since)));
         self.previewed = self.previewed.and_then(&moved);
         self.pressed = self.pressed.and_then(&moved);
+        self.menu_point = self.menu_point.and_then(&moved);
         // The waveform read for the hovered point goes with it: a caller that keeps it a frame
         // longer shows it for the same sample, or not at all ([#1254] review).
         self.hover_waveform = self.hover_waveform.take().and_then(|(i, peaks)| Some((moved(i)?, peaks)));
@@ -851,10 +860,17 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
     }
     if response.secondary_clicked() {
         view.hovered = under.map(|i| (i, 0.0));
+        view.menu_point = under;
     }
-    let menu_item = view.hovered.map(|(i, _)| i).or(under);
+    let menu_item = view.menu_point;
     response.context_menu(|ui| {
-        if let Some(i) = menu_item {
+        // The menu's own point, gone with a new layout: the menu closes rather than act on
+        // whatever point is under the pointer then ([#1254] review).
+        let Some(i) = menu_item else {
+            ui.close();
+            return;
+        };
+        {
             if ui.button("Show similar").clicked() {
                 events.push(MapEvent::Similar(i));
                 ui.close();

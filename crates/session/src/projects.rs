@@ -68,6 +68,8 @@ pub(crate) struct Browser {
     pub(crate) sound_map_started: bool,
     /// The library revision the sound map was last brought in line with.
     pub(crate) sound_map_revision: Option<u64>,
+    /// Counts the polls that found the analysis changed ([`Projects::sound_map_changes`]).
+    pub(crate) sound_map_changes: u64,
 }
 
 /// How many audio devices keep an input and a default track input of their own.

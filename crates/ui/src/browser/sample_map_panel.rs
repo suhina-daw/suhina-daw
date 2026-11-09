@@ -77,6 +77,9 @@ pub struct Panel {
     /// Workers whose answers nobody waits for any more, joined as each one finishes: the
     /// window's thread never waits on one ([#1254] review).
     retired: Vec<std::thread::JoinHandle<()>>,
+    /// The analysis changes counted when the layout shown was asked for
+    /// ([`Projects::sound_map_changes`]): a count past it lays the map out again.
+    laid_changes: u64,
     last_layout: f64,
     points: Vec<MapPoint>,
     /// What the points' flags were made from: search, tags, selection, pins, project.
@@ -103,6 +106,7 @@ impl Default for Panel {
             job: None,
             grid_job: None,
             retired: Vec::new(),
+            laid_changes: 0,
             last_layout: f64::NEG_INFINITY,
             points: Vec::new(),
             flags_key: None,
@@ -254,7 +258,12 @@ impl Panel {
     /// Keeps the layout in line with the place, the analysis and the settings: takes in a
     /// finished layout and starts a new one when it is out of date.
     fn refresh(&mut self, ui: &Ui, state: &BrowserState, projects: &mut Projects, settings: &Settings) {
-        let analysed = projects.poll_sound_map();
+        projects.poll_sound_map();
+        // Samples analysed since the layout shown was made, whoever polled first: the
+        // window polls every frame too, and the notice that poll took is still seen here
+        // ([#1254] review: the map kept a sample out until something else re-laid it).
+        let changes = projects.sound_map_changes();
+        let analysed = changes != self.laid_changes;
         self.reap();
         let place = Self::place(state);
         // A tag place's map follows the tag assignments as well: anything tagged in or out
@@ -312,6 +321,7 @@ impl Panel {
         let Ok(files) = suhina_session::scope_files(projects, place.as_deref()) else { return };
         let prepared = projects.sound_map_mut().prepare(&files, settings.map_max_seconds as f32);
         self.stale = false;
+        self.laid_changes = changes;
         let key = ScopeKey { place, max_seconds: settings.map_max_seconds, layout_key: prepared.key(), tags_revision };
         self.last_layout = now;
         if self.shown.as_ref() == Some(&key) {
@@ -330,11 +340,19 @@ impl Panel {
             let _ = sender.send((map, grid, aspect));
             ctx.request_repaint();
         });
-        if let Ok(worker) = spawned {
-            // The job it replaces is obsolete from here on: its thread is retired, its answer
-            // read by nobody, and the window does not wait for it ([#1254] review).
-            self.end_layout_job();
-            self.job = Some(Job { key, receiver, progress, started: now, worker });
+        match spawned {
+            Ok(worker) => {
+                // The job it replaces is obsolete from here on: its thread is retired, its
+                // answer read by nobody, and the window does not wait for it ([#1254] review).
+                self.end_layout_job();
+                self.job = Some(Job { key, receiver, progress, started: now, worker });
+            }
+            Err(_) => {
+                // No thread to lay it out on now: the layout stays asked and is tried again
+                // ([#1254] review: the request was cleared and the old map kept for good).
+                self.stale = true;
+                ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(RELAYOUT_SECONDS));
+            }
         }
     }
 

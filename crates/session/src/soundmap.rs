@@ -155,7 +155,18 @@ impl Projects {
         if let Some(map) = &mut self.browser.sound_map {
             changed |= suhina_plugins::trace::timed("sound map: results", || map.poll());
         }
+        if changed {
+            self.browser.sound_map_changes = self.browser.sound_map_changes.wrapping_add(1);
+        }
         changed
+    }
+
+    /// Counts every poll that found the analysis changed, whoever polled: a view compares it
+    /// with the count its layout was made at, so a change another poll saw first is not lost
+    /// to it ([#1254] review: the window's own poll each frame took the notice the map's
+    /// relayout waited for).
+    pub fn sound_map_changes(&self) -> u64 {
+        self.browser.sound_map_changes
     }
 }
 

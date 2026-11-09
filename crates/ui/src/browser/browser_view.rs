@@ -998,6 +998,11 @@ fn results_view(
     }
     let painter = ui.painter_at(area);
     let rows: Vec<Row> = state.rows().to_vec();
+    // The drop targets are this frame's own, cleared before an empty list returns: a target
+    // an outside change emptied the list under would otherwise still take the drop
+    // ([#1254] review).
+    state.drop_folder = None;
+    state.drop_item = None;
     if rows.is_empty() {
         let folders = projects.file_library_mut().folders().len();
         let tags = matches!(&state.place, Some(Place::Tag(_)));
@@ -1045,8 +1050,6 @@ fn results_view(
     // Samples dragged over a folder row go into that folder when dropped (#943).
     let dragging_samples = state.drag.as_ref().is_some_and(|items| items.iter().any(|i| i.kind == ItemKind::Sample));
     let pointer = ui.input(|i| i.pointer.latest_pos());
-    state.drop_folder = None;
-    state.drop_item = None;
     for index in first..(first + visible).min(rows.len()) {
         let Some(row) = rows.get(index) else { continue };
         let top = area.top() + index as f32 * ROW - state.scroll;
@@ -1070,12 +1073,11 @@ fn results_view(
             state.drop_folder = row.item.path();
         }
         // A tag carried from the Tags section highlights the item it is dropped on to tag it:
-        // anything but a heading or a folder, as a row's Tag menu does (#1196). A drag owns
-        // the pointer, so the row is found by position, the folder drops below in the same
-        // way.
+        // anything but a heading, a folder as a whole among them, as a row's Tag menu does
+        // (#1196, [#1254] review). A drag owns the pointer, so the row is found by position,
+        // the folder drops below in the same way.
         let tag_here = state.drag_tag.is_some()
             && row.item.kind != ItemKind::Heading
-            && row.item.kind != ItemKind::Folder
             && pointer.is_some_and(|p| shown.contains(p));
         if tag_here {
             state.drop_item = Some(row.item.clone());
@@ -2390,6 +2392,7 @@ fn row_menu(
     if item.kind == ItemKind::Heading {
         return;
     }
+    let epoch = state.tag_epoch;
     // The row's own item, or every selected one when the row is among them: Pin, Unpin and Tag
     // act on the selection as Copy to folder does ([#1254] review: unpinning six selected
     // samples unpinned the one right-clicked).
@@ -2426,7 +2429,9 @@ fn row_menu(
         }
         ui.separator();
         // A new tag, set on the targets at once.
-        let id = Id::unique("browser-new-tag");
+        // Keyed on the library's epoch: a replaced library's menu starts with no draft of the
+        // old one's to make there ([#1254] review).
+        let id = Id::unique(("browser-new-tag", epoch));
         let mut name: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
         let response = crate::kit::widgets::text_input(
             ui,
