@@ -660,7 +660,7 @@ fn read_tag_entries(
             };
             if tag_name_taken(entries, &name) {
                 warnings.push(format!("browser.json: tag {name:?} twice; the second skipped"));
-            } else if level_names(entries, parent).iter().any(|shown| *shown == name) {
+            } else if level_names(entries, parent).contains(&name) {
                 // A name the level's own folder has: the shape the moves refuse, skipped on
                 // load ([#1254] review), so a reload keeps the same turns.
                 warnings.push(format!("browser.json: tag {name:?} conflicts with a sibling folder; skipped"));
@@ -709,7 +709,7 @@ fn read_tag_entries(
             } else {
                 name.to_string()
             };
-            if level_names(entries, parent).iter().any(|shown| *shown == name) {
+            if level_names(entries, parent).contains(&name) {
                 warnings.push(format!("browser.json: tag folder {name:?} twice in a level; the second skipped"));
             } else if folders_iter(entries).count() >= MAX_TAG_FOLDERS {
                 warnings.push(format!("browser.json: more than {MAX_TAG_FOLDERS} tag folders; the rest skipped"));
