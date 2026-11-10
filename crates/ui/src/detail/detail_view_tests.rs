@@ -1734,8 +1734,11 @@ fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
             build(&project, Some(TrackId(1)), None),
         );
     harness.run_steps(10);
-    let gains =
-        |harness: &Harness<'_, Detail>| harness.query_all_by_label("Gain").map(|n| n.rect().top()).collect::<Vec<_>>();
+    let gains = |harness: &Harness<'_, Detail>| {
+        // Each Gain from the top of its own panel: the panels move up when one before them goes.
+        let panels: Vec<f32> = harness.query_all_by_label("Device Utility").map(|n| n.rect().top()).collect();
+        harness.query_all_by_label("Gain").zip(panels).map(|(n, top)| n.rect().top() - top).collect::<Vec<_>>()
+    };
     let start = gains(&harness);
     // The second Utility's list, scrolled down.
     let second = harness.query_all_by_label("Device Utility").nth(1).unwrap().rect().center();
