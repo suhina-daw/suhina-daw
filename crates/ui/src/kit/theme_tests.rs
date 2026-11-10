@@ -437,6 +437,21 @@ fn text_on_a_colour_is_the_text_token_that_stands_out_more() {
 }
 
 #[test]
+fn the_automation_pin_is_the_accent_unless_a_theme_sets_it() {
+    let (theme, warnings) = Theme::from_json(r##"{"colors":{"accent":"#123456"}}"##);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(theme.colors.automation_pin, rgb(0x123456));
+    let (theme, _) = Theme::from_json(r##"{"colors":{"accent":"#123456","automation.pin":"#ABCDEF"}}"##);
+    assert_eq!(theme.colors.automation_pin, rgb(0xABCDEF));
+
+    let night = || ThemeMeta::new("Night", DEFAULT_SWATCH);
+    let (theme, _) = from_folder(night(), ":root { --accent: #123456; }\n");
+    assert_eq!(theme.colors.automation_pin, rgb(0x123456), "a style sheet's accent");
+    let (theme, _) = from_folder(night(), ":root { --accent: #123456; --automation-pin: #ABCDEF; }\n");
+    assert_eq!(theme.colors.automation_pin, rgb(0xABCDEF), "a style sheet's own pin");
+}
+
+#[test]
 fn independent_text_roles_round_trip_and_old_themes_keep_their_colours() {
     let (mut theme, warnings) = Theme::from_json(
         r##"{"colors":{"text.primary":"#EEDDAA","text.secondary":"#998877","window.background":"#112233"}}"##,

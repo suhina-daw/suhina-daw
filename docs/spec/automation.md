@@ -331,8 +331,8 @@ The lanes are the **top lane** and the **mounted lanes** under it (#1322):
   leaving the empty row: the top lane never goes. Which parameter it shows is the view's own
   state.
 - A mounted lane keeps its parameter: its header shows the name, with no dropdown, and a change
-  to that parameter is made in its own lane. A filled pin in the accent colour
-  stands left of the name; a click on it ("Unpin this lane", or "Unpin these N lanes" when it is
+  to that parameter is made in its own lane. A filled pin in the theme's
+  `automation.pin` colour (its accent unless the theme sets it) stands left of the name; a click on it ("Unpin this lane", or "Unpin these N lanes" when it is
   one of several picked) unmounts it, with the other picked lanes (the lanes' points stay). The
   buttons have no box: their marks, drawn with lines so they are the same in every font, are dim
   until the pointer is on them.
@@ -386,7 +386,9 @@ A control moved by hand brings its parameter into view when its track's lanes ar
 (#1205): the track header's volume, pan or mute (Main's too), a knob of a device on the track's
 own chain in the detail view, or a parameter turned in a hosted plug-in's own editor. The top
 lane shows it, ready to be drawn on, unless it is mounted: then it is edited in its own lane and
-the top lane stays as it is. Either way it is the lane clicked last (Ctrl+V pastes onto it). A value set on several tracks at once,
+the top lane stays as it is. Either way it is the lane clicked last (Ctrl+V pastes onto it). A
+plug-in editor's moves come in as they happen, also while Suhina is asking that plug-in something
+(listing its parameters, a value's text), so the lane follows the knob without pauses. A value set on several tracks at once,
 or a value a lane sent a plug-in and the plug-in reported back, brings nothing forward, and
 closed lanes stay closed. The header:
 

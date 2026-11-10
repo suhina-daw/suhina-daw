@@ -26,6 +26,7 @@
 @property --browser-text-hint { syntax: "<color>"; initial-value: #85837E; }
 @property --browser-text-value { syntax: "<color>"; initial-value: #DAD6D0; }
 @property --accent { syntax: "<color>"; initial-value: #A6A3FF; }
+@property --automation-pin { syntax: "<color>"; initial-value: #A6A3FF; }
 @property --selection { syntax: "<color>"; initial-value: #E3C86A; }
 @property --recording { syntax: "<color>"; initial-value: #E5484D; }
 @property --recording-background { syntax: "<color>"; initial-value: #4D2F2B; }
@@ -78,3 +79,4 @@
 @property --session-scene-width { syntax: "auto | <length>"; initial-value: auto; }
 @property --session-slot-height { syntax: "auto | <length>"; initial-value: auto; }
 @property --session-header-height { syntax: "auto | <length>"; initial-value: auto; }
+:root { --automation-pin: var(--accent); }

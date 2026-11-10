@@ -4208,7 +4208,7 @@ fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::R
         painter.rect_filled(rect, 3.0, theme::control_hover().gamma_multiply(hover));
     }
     let ink = match glyph {
-        Glyph::Pinned => theme::accent(),
+        Glyph::Pinned => theme::automation_pin(),
         _ => crate::kit::motion::mix(theme::text_hint(), theme::text_primary(), hover),
     };
     let stroke = Stroke::new(1.25, ink);

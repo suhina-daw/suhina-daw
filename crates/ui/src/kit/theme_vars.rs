@@ -94,6 +94,8 @@ pub fn core_sheet() -> &'static str {
             }
             css.push_str(" }\n");
         }
+        // A token that follows another unless the theme sets it: the theme's rules come after.
+        css.push_str(":root { --automation-pin: var(--accent); }\n");
         css
     })
 }

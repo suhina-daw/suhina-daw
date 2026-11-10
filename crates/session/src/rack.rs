@@ -337,6 +337,10 @@ struct Instance {
     /// Sends the embedded editor's placement and size even while the control half is lent out
     /// (an ARA edit, an editor opening), so the editor never lags behind the window.
     placer: Option<suhina_plugins::EditorPlacer>,
+    /// Takes what the user moved in the plug-in's editor while the control half is lent out
+    /// (a listing of its parameters, a value's text asked for), so its lane follows the editor
+    /// without a pause (#1205). Taken from the control half every time it is lent.
+    edits: Option<suhina_plugins::EditWatch>,
     /// An editor asked open (`true`) or closed while the control half was out: done when it is
     /// back, rather than refused as busy.
     editor_wanted: Option<bool>,
@@ -448,6 +452,7 @@ impl Instance {
             placement_wanted: None,
             placement_sent: None,
             placer: None,
+            edits: None,
             editor_wanted: None,
             fit_wanted: None,
             fit_sent: None,
@@ -940,6 +945,7 @@ impl Rack {
     fn lend(&mut self, key: u64, work: impl FnOnce(&mut Plugin) -> Done + Send + 'static) -> Result<(), CommandError> {
         let instance = self.instances.get_mut(&key).ok_or("the device's plug-in is not running")?;
         let mut control = instance.control.take().ok_or("the plug-in is busy; try again in a moment")?;
+        instance.edits = Some(control.edit_watch());
         let (sender, generation) = (self.returned_sender.clone(), instance.generation);
         let spawned = std::thread::Builder::new().name("suhina-plugin-control".into()).spawn(move || {
             let done = work(&mut control);
@@ -1620,8 +1626,12 @@ impl Rack {
             if instance.status != PluginStatus::Running {
                 continue;
             }
-            let Some(control) = instance.control.as_mut() else { continue };
-            for (id, value) in control.take_param_edits() {
+            let taken = match (instance.control.as_mut(), instance.edits.as_ref()) {
+                (Some(control), _) => control.take_param_edits(),
+                (None, Some(watch)) => watch.take_param_edits(),
+                (None, None) => continue,
+            };
+            for (id, value) in taken {
                 edits.push((*key, id, value));
             }
         }
