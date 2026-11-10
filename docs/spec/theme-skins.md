@@ -443,7 +443,8 @@ the same for the theme in use, adding only the roles it has no artwork for in an
 built-in theme is copied first; with a variant of a theme of the user's in use, the artwork goes to
 the theme and each of its variants, since artwork is the theme's); when nothing is missing it says
 so and changes nothing. *New theme* starts from a
-`theme.css` that holds only a comment, so the user-agent sheet styles everything.
+`theme.css` that holds only a comment, so the user-agent sheet styles everything; it is named
+*New theme*, then *New theme 2* and so on, numbered as its id is.
 
 ## Native CSS: controls and the toolbar
 

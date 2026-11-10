@@ -344,8 +344,15 @@ impl Themes {
                 Some(id)
             }
             ThemeRequest::NewTheme { artwork } => {
-                let id = self.free_id("New theme");
-                let mut theme = Theme::new_blank("New theme");
+                // Numbered as its id is, so two new themes are told apart by name too.
+                let (id, name) = (1..=1024)
+                    .map(|n| if n == 1 { "New theme".to_owned() } else { format!("New theme {n}") })
+                    .map(|name| (self.free_id(&name), name))
+                    .find(|(id, name)| {
+                        *id == slug(name) && !self.entries.iter().any(|e| e.theme.name.eq_ignore_ascii_case(name))
+                    })
+                    .unwrap_or_else(|| (self.free_id("New theme"), "New theme".to_owned()));
+                let mut theme = Theme::new_blank(&name);
                 if artwork {
                     theme.skin.assets.extend(crate::kit::skin::missing_defaults(&theme.skin.assets));
                 }

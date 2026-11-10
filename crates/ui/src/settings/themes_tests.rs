@@ -364,6 +364,7 @@ fn new_theme_starts_from_the_user_agent_sheet() {
     );
     let with = themes.request("nord", ThemeRequest::NewTheme { artwork: true }).unwrap();
     assert_eq!(with, "new-theme-2");
+    assert_eq!(themes.get(&with).unwrap().name, "New theme 2", "named as its id is numbered");
     assert_eq!(themes.get(&with).unwrap().skin.assets.len(), crate::kit::skin::roles().count());
 }
 
