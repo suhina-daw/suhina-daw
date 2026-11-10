@@ -2484,11 +2484,11 @@ impl App {
             }
             _ => None,
         };
-        let depth = session.undo_depth();
+        let depth = session.undo_steps();
         let ran = session.execute(action.id, params);
         // A range a duplicate moved onto its copy goes back with its undo (#1322).
         if ran.is_ok() {
-            let after = session.undo_depth();
+            let after = session.undo_steps();
             self.arrangement.automation.follow_history(action.id, depth, after);
         }
         match ran {

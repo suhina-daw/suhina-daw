@@ -1313,12 +1313,10 @@ pub struct LaneRange {
     pub more: Vec<LaneKey>,
 }
 
-/// A range a duplicate moved onto its copy (#1322): where it was and where it went, and the
-/// undo depth the duplicate's step left, so its undo brings the range back and a redo takes it on
-/// again.
+/// A range a duplicate moved onto its copy (#1322): where it was and where it went, so its undo
+/// brings the range back and a redo takes it on again.
 #[derive(Debug, Clone)]
 struct RangeStep {
-    depth: usize,
     before: LaneRange,
     after: LaneRange,
 }
@@ -1350,8 +1348,10 @@ pub struct LanesState {
     /// its edge went past, for the view to scroll by on its next frame so the edge stays in view.
     follow_resize: Option<(Rect, f32)>,
     /// The range's moves an undo can take back, and those a redo can make again, newest last.
-    range_undo: Vec<RangeStep>,
-    range_redo: Vec<RangeStep>,
+    /// One for each of the session's undo steps, oldest first, and each of its redo steps, newest
+    /// last: the range's move a step made, if it made one.
+    range_undo: Vec<Option<RangeStep>>,
+    range_redo: Vec<Option<RangeStep>>,
     /// A click anywhere on a lane adds a point (Settings › Arrangement › Automation); off, only a
     /// click on or near the line does, and a double-click adds one anywhere.
     pub click_anywhere: bool,
@@ -1886,42 +1886,55 @@ impl LanesState {
         }
     }
 
-    /// A command ran, leaving the undo depth at `after` (it was `before`): a duplicate's move of
-    /// the range becomes a step of its own, and an undo of that step puts the range back where it
-    /// was, a redo onto the copy again (#1322), as long as the range is still where the step left
-    /// it. A new step ends what a redo could make again.
-    pub fn follow_history(&mut self, command: &str, before: usize, after: usize) {
+    /// A command ran, the session's undo steps `before` and `after` it (how many an undo can go
+    /// back, how many were ever made, [`suhina_session::Session::undo_steps`]): the lanes keep a
+    /// step beside each of the session's, a duplicate's move of the range in its own. An undo of
+    /// that step puts the range back where it was, a redo onto the copy again (#1322), as long as
+    /// the range is still where the step left it.
+    pub fn follow_history(&mut self, command: &str, before: (usize, u64), after: (usize, u64)) {
         let moved = self.range_moved.take();
+        // Steps of another history (another project's) or made without the lanes knowing: none of
+        // them moved the range.
+        if self.range_undo.len() != before.0 {
+            self.range_undo = vec![None; before.0];
+            self.range_redo.clear();
+        }
         match command {
-            "edit.undo" => {
-                if let Some(step) = self.range_undo.pop_if(|step| step.depth == before) {
-                    if self.range.as_ref() == Some(&step.after) {
-                        self.range = Some(step.before.clone());
-                    }
-                    self.range_redo.push(step);
-                }
-            }
-            "edit.redo" => {
-                if let Some(step) = self.range_redo.pop_if(|step| step.depth == after) {
-                    if self.range.as_ref() == Some(&step.before) {
-                        self.range = Some(step.after.clone());
-                    }
-                    self.range_undo.push(step);
-                }
-            }
-            _ if after > before => {
-                self.range_redo.clear();
-                if command == "automation.duplicate"
-                    && let Some((from, to)) = moved
+            "edit.undo" if after.0 < before.0 => {
+                let step = self.range_undo.pop().flatten();
+                if let Some(step) = &step
+                    && self.range.as_ref() == Some(&step.after)
                 {
-                    self.range_undo.push(RangeStep { depth: after, before: from, after: to });
+                    self.range = Some(step.before.clone());
                 }
+                self.range_redo.push(step);
+            }
+            "edit.redo" if after.0 > before.0 => {
+                let step = self.range_redo.pop().flatten();
+                if let Some(step) = &step
+                    && self.range.as_ref() == Some(&step.before)
+                {
+                    self.range = Some(step.after.clone());
+                }
+                self.range_undo.push(step);
+            }
+            _ if after.1 != before.1 => {
+                // A new step: the oldest went if the depth did not grow (the limit).
+                self.range_redo.clear();
+                while !self.range_undo.is_empty() && self.range_undo.len() >= after.0 {
+                    self.range_undo.remove(0);
+                }
+                let step = moved
+                    .filter(|_| command == "automation.duplicate")
+                    .map(|(before, after)| RangeStep { before, after });
+                self.range_undo.push(step);
             }
             _ => {}
         }
-        // Steps undone some other way (another project's history, a step dropped at the limit).
-        self.range_undo.retain(|step| step.depth <= after);
-        self.range_redo.retain(|step| step.depth > after);
+        if self.range_undo.len() != after.0 {
+            self.range_undo = vec![None; after.0];
+            self.range_redo.clear();
+        }
     }
 
     /// Where a range painted on a lane began, when it was dragged out of its track's lanes this

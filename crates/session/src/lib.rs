@@ -1138,11 +1138,12 @@ impl Session {
         !self.history.redo.is_empty()
     }
 
-    /// How many steps an undo can go back now: a step is told apart by the depth it leaves, so
-    /// the window can bring back with an undo what a step changed in the view (a range moved
-    /// onto its copy, #1322). At [`MAX_UNDO`] the oldest step goes as a new one comes.
-    pub fn undo_depth(&self) -> usize {
-        self.history.undo.len()
+    /// How many steps an undo can go back now, and how many undo steps were ever made: with both,
+    /// the window keeps a step of its own beside each of the session's, to bring back with an
+    /// undo what a step changed in the view (a range moved onto its copy, #1322). At
+    /// [`MAX_UNDO`] the oldest step goes as a new one comes, and the depth stays.
+    pub fn undo_steps(&self) -> (usize, u64) {
+        (self.history.undo.len(), self.history.made)
     }
 
     /// The colours a track without one of its own shows, by its place among the tracks (the
@@ -1387,6 +1388,7 @@ impl Session {
         }
         self.history.undo.push(before);
         self.history.redo.clear();
+        self.history.made = self.history.made.wrapping_add(1);
     }
 
     fn undo(&mut self) -> bool {

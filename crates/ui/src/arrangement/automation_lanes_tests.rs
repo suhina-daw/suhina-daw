@@ -816,3 +816,31 @@ fn a_plug_in_parameter_moved_in_its_editor_moves_its_line_at_once() {
     // The same lists: nothing else was built again.
     assert!(params.param(track, &LaneKey { device: Some(0), param: "4".into() }).is_some());
 }
+
+/// The range a duplicate moved goes back with that duplicate's undo and on again with its redo,
+/// also once the session's history is full and its oldest step goes as each new one comes; an
+/// undo of another step leaves it (#1322).
+#[test]
+fn a_duplicates_undo_brings_the_range_back_with_a_full_history() {
+    let track = TrackId(1);
+    let painted = LaneRange { track, key: LaneKey::mixer(VOLUME), start: 0.0, end: 4.0, more: Vec::new() };
+    let mut lanes = LanesState { range: Some(painted.clone()), ..LanesState::default() };
+    let full = 256;
+    // The duplicate: a new step, the depth staying at the limit.
+    assert_eq!(lanes.range_actions("duplicate").len(), 1);
+    lanes.follow_history("automation.duplicate", (full, 10), (full, 11));
+    let moved = lanes.range.clone();
+    assert_eq!(moved.as_ref().map(|r| (r.start, r.end)), Some((4.0, 8.0)));
+    // Another edit after it, at the limit too.
+    lanes.follow_history("automation.addPoint", (full, 11), (full, 12));
+    // Its undo leaves the range; the next undo, the duplicate's, brings it back.
+    lanes.follow_history("edit.undo", (full, 12), (full - 1, 12));
+    assert_eq!(lanes.range, moved, "the point's undo");
+    lanes.follow_history("edit.undo", (full - 1, 12), (full - 2, 12));
+    assert_eq!(lanes.range, Some(painted.clone()), "the duplicate's undo");
+    lanes.follow_history("edit.redo", (full - 2, 12), (full - 1, 12));
+    assert_eq!(lanes.range, moved, "its redo");
+    // A step another project made (a depth the lanes did not follow) moves nothing.
+    lanes.follow_history("edit.undo", (3, 40), (2, 40));
+    assert_eq!(lanes.range, moved);
+}
