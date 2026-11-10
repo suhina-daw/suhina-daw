@@ -156,6 +156,71 @@ impl App {
             }
             return;
         }
+        // Items over a tag of the sidebar's Tags section carry it when dropped (#1196); a folder
+        // carries it as a whole ([#1254] review).
+        if let Some(tag) = self.browser.drop_tag.take() {
+            let items: Vec<String> =
+                items.iter().filter(|i| i.kind != drop::ItemKind::Heading).map(|i| i.key.clone()).collect();
+            if !released {
+                self.status = if items.is_empty() {
+                    Status::Hint(format!("{tag} tags items of the results"))
+                } else {
+                    Status::Hint(format!(
+                        "Drop to tag {} item{} with {tag}",
+                        items.len(),
+                        if items.len() == 1 { "" } else { "s" }
+                    ))
+                };
+                // The pill beside the pointer says what a drop here does (#1196).
+                if let Some(pointer) = pointer {
+                    let what = if items.is_empty() {
+                        format!("{tag} tags items, not headings")
+                    } else {
+                        format!("Tag {} item{} with {tag}", items.len(), if items.len() == 1 { "" } else { "s" })
+                    };
+                    drag_pill(ui, pointer, &what, !items.is_empty());
+                }
+                return;
+            }
+            self.browser.drag = None;
+            self.map_window.drag = None;
+            if items.is_empty() {
+                // The drag carried headings only, which no tag goes on: the pill said so
+                // while it flew, and the release says it again — a done "tagged 0 items"
+                // would be neither done nor a tagging ([#1250] review).
+                self.status = Status::Hint(format!("{tag} tags items, not headings"));
+                return;
+            }
+            let mut error: Option<Status> = None;
+            for item in &items {
+                if let Err(e) = self.projects.execute("library.tag", &json!({ "item": item, "tag": tag, "on": true }))
+                    && error.is_none()
+                {
+                    error = Some(Status::Error(e.message().to_owned()));
+                }
+            }
+            self.status = error.unwrap_or_else(|| {
+                Status::Done(format!(
+                    "Tagged {} item{} with {tag}",
+                    items.len(),
+                    if items.len() == 1 { "" } else { "s" }
+                ))
+            });
+            self.browser.relist();
+            return;
+        }
+        // A folder lands on a tag only: the project takes the files of a drag, and a drag of
+        // folders alone lands nowhere else ([#1254] review).
+        let items: Vec<BrowserItem> = items.into_iter().filter(|i| i.kind != drop::ItemKind::Folder).collect();
+        if items.is_empty() {
+            if released {
+                self.browser.drag = None;
+                self.map_window.drag = None;
+            } else if let Some(pointer) = pointer {
+                drag_pill(ui, pointer, "Drop on a tag in the sidebar to tag the folder", false);
+            }
+            return;
+        }
         // Carried out of every Suhina window, samples become a drag of files that the system's
         // file manager copies where they are dropped; the originals stay (#865).
         if !released && self.outside_suhina(ui.ctx(), pointer) {
@@ -192,6 +257,79 @@ impl App {
                 browser_view::stop_preview(&mut self.browser, &mut self.projects);
                 self.drop_items(&items, target, separate);
             }
+        }
+    }
+
+    /// While a tag is carried from the sidebar's Tags section: the item row under the pointer
+    /// lights, and a drop tags that item — or every selected item when the row is one of
+    /// them, as the tag editor's checkbox does (#1196).
+    pub(super) fn tag_drag(&mut self, ui: &Ui) {
+        let Some(tag) = self.browser.drag_tag.clone() else { return };
+        // The drop names the tag by its id: a rename while it is carried (an agent's) leaves
+        // the id the tag's, where the name could reach another tag or none ([#1254] review).
+        let selector = self.browser.drag_tag_id.map_or_else(|| tag.clone(), |id| format!("#{id}"));
+        let (released, escape) = ui.input(|i| (!i.pointer.primary_down(), i.key_pressed(Key::Escape)));
+        if escape {
+            // Both of the carry's own: the id with the name, or a release over the sidebar
+            // would still move what was cancelled ([#1254] review).
+            self.browser.drag_tag = None;
+            self.browser.drag_tag_id = None;
+            return;
+        }
+        if let Some(item) = self.browser.drop_item.as_ref().filter(|_| !released) {
+            self.status = Status::Hint(format!("Drop to tag {} with {tag}", item.name));
+        } else if let Some(move_to) = self.browser.drop_pill.as_ref().filter(|_| !released) {
+            // Over the sidebar, the carried tag's drop is a move: the rows word where it
+            // lands ([#1254] review: hints into folders and subfolders).
+            self.status = Status::Hint(move_to.clone());
+        }
+        // The pill beside the pointer says what the drop tags, or what is carried (#1196).
+        if !released && let Some(pointer) = ui.input(|i| i.pointer.latest_pos()) {
+            let (over_item, move_to) = (self.browser.drop_item.clone(), self.browser.drop_pill.clone());
+            let (what, accent) = if let Some(item) = over_item {
+                (format!("Tag {} with {tag}", item.name), true)
+            } else if let Some(move_to) = move_to {
+                (move_to, true)
+            } else {
+                (tag.clone(), false)
+            };
+            drag_pill(ui, pointer, &what, accent);
+        }
+        if released {
+            self.browser.drag_tag = None;
+            self.browser.drag_tag_id = None;
+            let Some(row) = self.browser.drop_item.take() else { return };
+            // The selection the row is one of, folders among them, as the row's Tag menu
+            // takes it ([#1254] review: a selected folder was left out of the drop).
+            let group = self.browser.selected.iter().any(|s| s.key == row.key && s.kind == row.kind)
+                && row.kind != drop::ItemKind::Heading;
+            let items: Vec<String> = if group {
+                self.browser
+                    .selected
+                    .iter()
+                    .filter(|s| s.kind != drop::ItemKind::Heading)
+                    .map(|s| s.key.clone())
+                    .collect()
+            } else {
+                vec![row.key.clone()]
+            };
+            let mut error: Option<Status> = None;
+            for item in &items {
+                if let Err(e) =
+                    self.projects.execute("library.tag", &json!({ "item": item, "tag": selector, "on": true }))
+                    && error.is_none()
+                {
+                    error = Some(Status::Error(e.message().to_owned()));
+                }
+            }
+            self.status = error.unwrap_or_else(|| {
+                Status::Done(format!(
+                    "Tagged {} item{} with {tag}",
+                    items.len(),
+                    if items.len() == 1 { "" } else { "s" }
+                ))
+            });
+            self.browser.relist();
         }
     }
 
@@ -368,6 +506,8 @@ impl App {
     }
 
     /// The label beside the pointer while dragging: what a drop there does, or what is dragged.
+    /// The pill beside the pointer that says what a drag does, accent-edged while what is
+    /// under the pointer accepts the drop.
     pub(super) fn drag_label(
         &self,
         ui: &Ui,
@@ -377,24 +517,11 @@ impl App {
         separate: bool,
     ) {
         let label = target.and_then(|t| self.plan_drop(items, t, separate)).map(|p| p.label);
-        let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("browser-drag"));
-        let painter = ui.ctx().layer_painter(layer);
         let text = label.clone().unwrap_or_else(|| match items {
             [one] => one.name.clone(),
             many => format!("{} items", many.len()),
         });
-        let font = theme::ui_font(theme::TEXT_SMALL);
-        let galley = widgets::fitted(&painter, &text, font, theme::text_primary(), 280.0);
-        let rect = Rect::from_min_size(pointer + Vec2::new(14.0, 10.0), galley.size() + Vec2::new(PAD * 2.0, 6.0));
-        painter.fill_background(rect, 0.0, theme::control_active());
-        painter.rect_stroke(
-            rect,
-            0.0,
-            theme::hairline(if label.is_some() { theme::accent() } else { theme::border_strong() }),
-            egui::StrokeKind::Inside,
-        );
-        widgets::paint_text(&painter, rect.min + Vec2::new(PAD, 3.0), galley, theme::text_primary());
-        ui.ctx().request_repaint();
+        drag_pill(ui, pointer, &text, label.is_some());
     }
 
     /// Whether a clip is dragged or carried, so that hovering over the other view's name
@@ -963,4 +1090,24 @@ pub(super) fn name_taken(file: &Path, folder: &Path) -> bool {
     let Some(name) = file.file_name() else { return false };
     let there = folder.join(name);
     there.exists() && std::fs::canonicalize(&there).ok() != std::fs::canonicalize(file).ok()
+}
+
+/// A pill beside the pointer that says what a drag does, accent-edged when what is under the
+/// pointer takes the drop. The browser's item drags, a tag carry and the tags section's
+/// drops share it.
+fn drag_pill(ui: &Ui, pointer: Pos2, text: &str, accent: bool) {
+    let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("browser-drag"));
+    let painter = ui.ctx().layer_painter(layer);
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);
+    let rect = Rect::from_min_size(pointer + Vec2::new(14.0, 10.0), galley.size() + Vec2::new(PAD * 2.0, 6.0));
+    painter.fill_background(rect, 0.0, theme::control_active());
+    painter.rect_stroke(
+        rect,
+        0.0,
+        theme::hairline(if accent { theme::accent() } else { theme::border_strong() }),
+        egui::StrokeKind::Inside,
+    );
+    widgets::paint_text(&painter, rect.min + Vec2::new(PAD, 3.0), galley, theme::text_primary());
+    ui.ctx().request_repaint();
 }

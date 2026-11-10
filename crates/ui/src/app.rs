@@ -801,13 +801,19 @@ impl App {
     /// views keep from them is read again.
     pub fn note_outside_change(&mut self) {
         self.revision += 1;
+        self.browser.reconcile(&mut self.projects);
     }
 
     /// Uses `library` for the browser and the `library.*` commands (ADR 0012); the app gives
     /// it Suhina's settings folder and starts it.
     pub fn set_file_library(&mut self, library: suhina_library::Library) {
         self.projects.set_file_library(library);
-        self.browser.relist();
+        // The map's kept layouts key on the old library's files; a replacement can read the
+        // same place and the same revisions, so they are dropped with it ([#1254] review).
+        self.sample_map.library_replaced();
+        // Its tag ids are the new library's own: a number the old one used can name another
+        // tag there, so the browser keeps nothing by id ([#1254] review).
+        self.browser.forget_tags();
     }
 
     /// The open projects, to change (the browser's library, for the app).
@@ -3436,6 +3442,7 @@ impl App {
             drop_overlay(ui, view_area);
         });
         self.browser_drag(ui);
+        self.tag_drag(ui);
         self.device_drag(ui);
         if let Some((items, dropped)) = system {
             self.system_drag(ui, items, dropped);

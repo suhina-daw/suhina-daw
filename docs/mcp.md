@@ -55,7 +55,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   render's own output is the only file a script writes, at the path the render was given.
   Commands that read files take the same paths and are checked the same way before they run:
   `clip.addFiles` (`paths`), `preview.play` (`path`), `device.add` and `track.add` (`preset`),
-  `library.list` (`folder`), `library.search` (a folder `place`), and a file `item` of
+  `library.list` (`folder`), `library.search` (`place`, kept as the library's own when it says
+  `pinned`, `recent:…` or `tag:…`, and kept below the read root when it is a folder), and a
+  file `item` of
   `library.info`, `library.pin`, `library.unpin` and `library.tag`; `soundmap.analyse`
   (`folder`), `soundmap.layout` (a folder `place`), and `soundmap.similar` (`item`, a folder `place`) and
   `soundmap.info` (`item`); `soundmap.setKind` (`item`); `library.findFiles` (`folder`) and `project.relinkFiles` (every

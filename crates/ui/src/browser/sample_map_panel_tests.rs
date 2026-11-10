@@ -153,3 +153,81 @@ fn the_map_shows_the_place_and_acts_on_the_browser() {
     let _ = std::fs::remove_dir_all(settings_dir);
     let _ = std::fs::remove_dir_all(samples);
 }
+
+/// An obsolete job is let go, never waited for: a worker still running when its job ends
+/// leaves the window's thread free ([#1254] review: joining an unfinished snap held the
+/// window for seconds). The worker here runs until the test lets it go, after the end has
+/// returned; a regression that joins it waits forever instead.
+#[test]
+fn ending_a_job_never_waits_for_its_worker() {
+    let mut panel = Panel::default();
+    let (release, wait) = std::sync::mpsc::channel::<()>();
+    let (_answer, receiver) = std::sync::mpsc::channel::<Grid>();
+    let worker = std::thread::spawn(move || {
+        let _ = wait.recv();
+    });
+    panel.grid_job = Some((1.0, receiver, worker));
+    panel.end_jobs();
+    assert!(panel.grid_job.is_none(), "the job ended");
+    assert_eq!(panel.retired.len(), 1, "its running worker is retired, not joined");
+    release.send(()).unwrap();
+    for worker in std::mem::take(&mut panel.retired) {
+        worker.join().unwrap();
+    }
+}
+
+/// A layout for a scope no longer asked for is let go, not waited for and shown: a tag
+/// dropped or another place chosen mid-layout starts the asked one at once ([#1254] review).
+#[test]
+fn a_layout_for_a_scope_no_longer_asked_for_is_let_go() {
+    let mut panel = Panel::default();
+    let (release, wait) = std::sync::mpsc::channel::<()>();
+    let (_answer, receiver) = std::sync::mpsc::channel::<Laid>();
+    let worker = std::thread::spawn(move || {
+        let _ = wait.recv();
+    });
+    let key = ScopeKey { place: Some("tag:#1".into()), max_seconds: 10, layout_key: 7, tags_revision: 3 };
+    panel.job = Some(Job { key, receiver, progress: Progress::new(), started: 0.0, worker });
+    // The same scope keeps its layout coming.
+    panel.end_stale_layout(Some("tag:#1"), 10, 3);
+    assert!(panel.job.is_some(), "the asked scope's layout goes on");
+    // A tag assignment changed: the layout is let go, its worker retired, not joined.
+    panel.end_stale_layout(Some("tag:#1"), 10, 4);
+    assert!(panel.job.is_none(), "the stale layout is let go");
+    assert_eq!(panel.retired.len(), 1, "its worker runs on, retired");
+    release.send(()).unwrap();
+    for worker in std::mem::take(&mut panel.retired) {
+        worker.join().unwrap();
+    }
+}
+
+/// A layout asked for while let-go workers are still busy stays asked: the frame that waits
+/// marks it, so a notification of analysed samples that comes once is not lost
+/// ([#1254] review).
+#[test]
+fn a_layout_asked_while_workers_are_busy_stays_asked() {
+    let mut panel = Panel::default();
+    let mut releases = Vec::new();
+    for _ in 0..MAX_RETIRED_RUNNING {
+        let (release, wait) = std::sync::mpsc::channel::<()>();
+        releases.push(release);
+        panel.retired.push(std::thread::spawn(move || {
+            let _ = wait.recv();
+        }));
+    }
+    let mut projects = Projects::new();
+    let state = BrowserState::default();
+    let settings = Settings::default();
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| panel.refresh(ui, &state, &mut projects, &settings));
+    // The frame's textures go nowhere in a test, as the other frames here do.
+    output.textures_delta.clear();
+    assert!(panel.stale, "the asked layout is kept for a later frame");
+    assert!(panel.job.is_none(), "no layout starts beside the busy workers");
+    for release in releases {
+        release.send(()).unwrap();
+    }
+    for worker in std::mem::take(&mut panel.retired) {
+        worker.join().unwrap();
+    }
+}

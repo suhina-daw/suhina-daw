@@ -17,7 +17,7 @@ use suhina_soundmap::{DEFAULT_MAX_SECONDS, MAX_SECONDS_RANGE, MAX_SIMILAR, Map, 
 use crate::commands::{Args, CommandKind, CommandSpec, ParamType, optional, param};
 use crate::{Agents, CommandError, PathKind, Policy, Projects};
 
-const PLACE: &str = "pinned, recent:all, recent:samples, or a folder (default: every folder)";
+const PLACE: &str = "pinned, recent:all, recent:samples, tag:<name> or tag:#<id> (the samples carrying that tag; joined tag:#<id>+#<id> for those carrying any of them), or a folder (default: every folder)";
 
 static SOUND_MAP_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
@@ -155,7 +155,18 @@ impl Projects {
         if let Some(map) = &mut self.browser.sound_map {
             changed |= suhina_plugins::trace::timed("sound map: results", || map.poll());
         }
+        if changed {
+            self.browser.sound_map_changes = self.browser.sound_map_changes.wrapping_add(1);
+        }
         changed
+    }
+
+    /// Counts every poll that found the analysis changed, whoever polled: a view compares it
+    /// with the count its layout was made at, so a change another poll saw first is not lost
+    /// to it ([#1254] review: the window's own poll each frame took the notice the map's
+    /// relayout waited for).
+    pub fn sound_map_changes(&self) -> u64 {
+        self.browser.sound_map_changes
     }
 }
 
@@ -254,14 +265,19 @@ fn max_seconds(params: &Value) -> Result<f32, CommandError> {
     }
 }
 
-fn tags(params: &Value) -> Result<Vec<String>, CommandError> {
+fn tags(projects: &mut Projects, params: &Value) -> Result<Vec<u32>, CommandError> {
+    // A match by the tag's name or its `#<id>`, like a search's tags are ([#1254]).
     match Args::new(params).value("tags") {
         None => Ok(Vec::new()),
         Some(v) => v
             .as_array()
-            .ok_or("tags must be a list of tag names")?
+            .ok_or("tags must be a list of tag names or ids")?
             .iter()
-            .map(|t| t.as_str().map(str::to_string).ok_or_else(|| "tags must be a list of tag names".into()))
+            .map(|t| match t.as_str().map(str::to_string) {
+                Some(given) => crate::library::resolve_tag_param(projects, &given)
+                    .ok_or_else(|| format!("there is no tag {given:?}; library.tags lists them").into()),
+                None => Err("tags must be a list of tag names or ids".into()),
+            })
             .collect(),
     }
 }
@@ -274,7 +290,7 @@ fn map_of(projects: &mut Projects, place: Option<&str>, max_seconds: f32) -> Res
 }
 
 /// Whether a sample matches search words and tags, as the browser's search decides.
-pub fn matches(projects: &mut Projects, path: &Path, words: &[String], tags: &[String]) -> bool {
+pub fn matches(projects: &mut Projects, path: &Path, words: &[String], tags: &[u32]) -> bool {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let key = path.display().to_string();
     (words.is_empty() || suhina_library::rank(words, &name, &key).is_some())
@@ -284,7 +300,7 @@ pub fn matches(projects: &mut Projects, path: &Path, words: &[String], tags: &[S
 fn layout(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let place = optional_text(params, "place")?;
     let words = suhina_library::words(optional_text(params, "text")?.unwrap_or(""));
-    let tags = tags(params)?;
+    let tags = tags(projects, params)?;
     let grid = match Args::new(params).value("grid") {
         None => false,
         Some(v) => v.as_bool().ok_or("grid must be true or false")?,
