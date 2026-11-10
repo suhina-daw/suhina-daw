@@ -230,8 +230,12 @@ fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
     let run = |hold: bool, after: bool| {
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             if hold {
-                ui.ctx()
-                    .data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { raw: true, back: None, released: false }));
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(
+                        value_drag_id(),
+                        ValueDrag { raw: true, back: None, released: false, icon: egui::CursorIcon::None },
+                    )
+                });
             }
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
             if after {
@@ -250,7 +254,7 @@ fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
 #[test]
 fn the_frame_a_value_drag_lets_go_the_icon_shows_the_pointer() {
     let ctx = egui::Context::default();
-    let held = |released| ValueDrag { raw: true, back: None, released };
+    let held = |released| ValueDrag { raw: true, back: None, released, icon: egui::CursorIcon::None };
     let icon = |drag: Option<ValueDrag>| {
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             if let Some(drag) = drag {

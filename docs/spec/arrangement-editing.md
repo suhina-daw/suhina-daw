@@ -893,9 +893,12 @@ and the send knobs at its end, as many as leave the name its room. A shorter lan
 the buttons, the name and the automation button at its end. Taller still, the routing and the
 input lines follow below.
 
-A header's volume and pan fields, and the main row's volume bar, lie across the header and are
-dragged across it, along the bar: right raises the value (pans it right), left lowers it, a
-quarter of a decibel (or 0.01 of pan) a point, ten times finer with Shift. Shown as knobs
+A header's volume and pan fields, and the main row's volume bar, are dragged either up and down
+or across: up or right raises the value (pans it right), down or left lowers it, a quarter of a
+decibel (or 0.01 of pan) a point, ten times finer with Shift. The first few points a drag moves
+choose its direction, which it keeps until it is let go, so a drag across that wavers up or down
+does not change the value twice. The pointer over the field stays as it is; while it is dragged
+the pointer shows the arrow of the direction chosen (left-right or up-down). Shown as knobs
 (Settings › Launcher and mixer › **Mixer controls** on Knob) they turn with an up or down drag instead, unless the theme
 lays the control out horizontally (`--suhina-direction: horizontal`).
 

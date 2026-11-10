@@ -230,8 +230,7 @@ fn a_volume_drag_in_the_arrangement_is_heard_while_dragging_and_is_one_undo_step
     press_while_playing(&mut harness, &mut renderer, "Drums volume");
     let (before, _) = sides(&mut renderer);
     let field = harness.get_by_label("Drums volume").rect().center();
-    // The bar lies across the header, so left lowers the volume, 0.25 dB a point: 24 points is
-    // about -6 dB, 48 about -12 dB.
+    // Left lowers the volume, 0.25 dB a point: 24 points is about -6 dB, 48 about -12 dB.
     let mut heard = Vec::new();
     for left in [24.0, 48.0] {
         harness.hover_at(field - egui::vec2(left, 0.0));
@@ -653,36 +652,51 @@ fn a_return_in_the_arrangement_has_a_tracks_controls_and_main_a_volume_bar_and_t
     // A track's header has a send knob to the return, as its strip has.
     assert!(harness.query_by_label("Drums send to A Reverb").is_some(), "a track's send knob");
     assert!(harness.query_by_label("A Reverb send to A Reverb").is_none(), "no send on a return");
-    // Main: a bar a drag across sets, one undo step.
+    // Main: a bar a drag sets, up or across, one undo step.
     let main = |h: &Harness<'static, App>| {
         let p = h.state().session().unwrap().project();
         p.channels.iter().find(|c| c.role == suhina_engine::model::ChannelRole::Master).map(|c| c.volume).unwrap()
     };
     let bar = harness.get_by_label("Main volume").rect().center();
-    let drag = |harness: &mut Harness<'static, App>, by: egui::Vec2| {
+    // A drag through `path`, each point a frame, then undone: the volume it left and the pointer
+    // while it was dragged.
+    let drag = |harness: &mut Harness<'static, App>, path: &[egui::Vec2]| {
         harness.hover_at(bar);
         harness.step();
         harness.drag_at(bar);
         harness.step();
-        for part in [0.25, 0.5, 1.0] {
-            harness.hover_at(bar + by * part);
+        for by in path {
+            harness.hover_at(bar + *by);
             harness.step();
         }
-        harness.drop_at(bar + by);
+        let icon = harness.output().platform_output.cursor_icon;
+        harness.drop_at(bar + path.last().copied().unwrap_or_default());
         harness.run_steps(3);
+        let dragged = main(harness);
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run_steps(3);
+        assert!((main(harness) - 1.0).abs() < 1e-9, "one undo step");
+        (dragged, icon)
     };
-    // The pointer over it says so: a left-right arrow.
+    // The pointer over it stays as it is; a drag shows the arrow of the way it goes.
     harness.hover_at(bar);
     harness.step();
-    assert_eq!(harness.output().platform_output.cursor_icon, egui::CursorIcon::ResizeHorizontal);
-    drag(&mut harness, egui::vec2(-40.0, 0.0));
-    assert!(main(&harness) < 1.0, "dragged left, quieter: {}", main(&harness));
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
-    harness.run_steps(3);
-    assert!((main(&harness) - 1.0).abs() < 1e-9, "one undo step");
-    // The bar lies across the row, so a drag down it leaves the volume where it is.
-    drag(&mut harness, egui::vec2(0.0, 40.0));
-    assert!((main(&harness) - 1.0).abs() < 1e-9, "dragged down, unchanged: {}", main(&harness));
+    assert_eq!(harness.output().platform_output.cursor_icon, egui::CursorIcon::Default);
+    let (left, icon) = drag(&mut harness, &[egui::vec2(-10.0, 0.0), egui::vec2(-20.0, 0.0), egui::vec2(-40.0, 0.0)]);
+    assert!(left < 1.0, "dragged left, quieter: {left}");
+    assert_eq!(icon, egui::CursorIcon::ResizeHorizontal);
+    let (down, icon) = drag(&mut harness, &[egui::vec2(0.0, 10.0), egui::vec2(0.0, 20.0), egui::vec2(0.0, 40.0)]);
+    assert!((down - left).abs() < 1e-9, "dragged down as far, as quiet: {down} and {left}");
+    assert_eq!(icon, egui::CursorIcon::ResizeVertical);
+    // The axis the drag moves along first stays the drag's: 20 points right is 5 dB louder, and
+    // the 40 points down after it move nothing.
+    let (right, icon) = drag(&mut harness, &[egui::vec2(10.0, 0.0), egui::vec2(20.0, 0.0), egui::vec2(20.0, 40.0)]);
+    assert!((right - 10f64.powf(5.0 / 20.0)).abs() < 1e-3, "right, then down: {right}");
+    assert_eq!(icon, egui::CursorIcon::ResizeHorizontal, "the arrow of the axis it chose");
+    // Let go of, the pointer is as it was.
+    harness.hover_at(bar);
+    harness.run_steps(2);
+    assert_eq!(harness.output().platform_output.cursor_icon, egui::CursorIcon::Default);
 
     // The fixed rows grow upward: Main's top edge dragged up 30 points takes its bar and the
     // return above it up as far.

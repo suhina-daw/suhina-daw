@@ -1557,11 +1557,11 @@ fn show_lanes(
             Id::unique("arrangement-main-volume"),
             "Main volume",
             widgets::format_db(state.main_drag.unwrap_or(db)),
-            widgets::DragAxis::Horizontal,
+            widgets::DragAxis::Both,
         );
         state.value_areas.push(field.intersect(fixed));
         let mut preview = state.main_drag;
-        // Dragged across, along the bar: right raises it.
+        // Dragged up or across: up or right raises it, whichever the drag moves along first.
         match widgets::drag_value_axis(
             ui,
             &response,
@@ -1571,7 +1571,7 @@ fn show_lanes(
             1.0,
             VOLUME_RANGE,
             0.0,
-            widgets::DragAxis::Horizontal,
+            widgets::DragAxis::Both,
         ) {
             Drag::Moving(v) => {
                 state.main_drag = Some(v);

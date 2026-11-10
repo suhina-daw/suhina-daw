@@ -108,8 +108,8 @@ pub(super) fn send_knob(
     }
 }
 
-/// A header's volume or pan field: dragged across while it is drawn as a bar (right raises it),
-/// up or down as a knob; the wheel with Ctrl or Cmd, the arrow keys and a typed number set it, a
+/// A header's volume or pan field: dragged up or across while it is drawn as a bar (up or right
+/// raises it), up or down as a knob; the wheel with Ctrl or Cmd, the arrow keys and a typed number set it, a
 /// double-click resets it. On a track of a selection it moves every selected track.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn value_control(
@@ -163,17 +163,15 @@ pub(super) fn value_control(
             Control::Volume => (format!("{} volume", lane.name), widgets::format_db(shown)),
             Control::Pan => (format!("{} pan", lane.name), widgets::format_pan(shown)),
         };
-        // A field drawn as a bar lies across the header, so it is dragged across: right raises it.
-        // A knob turns with an up or down drag, unless the theme lays it out horizontally.
+        // A field drawn as a bar is dragged either way: up or right raises it, whichever the drag
+        // moves along first. A knob turns with an up or down drag, unless the theme lays it out
+        // horizontally.
         let knob = match control {
             Control::Volume => state.knobs,
             Control::Pan => crate::kit::style_class::knob_preference(el, state.knobs),
         };
-        let axis = if knob {
-            crate::kit::control_layout::placement(name).direction.into()
-        } else {
-            widgets::DragAxis::Horizontal
-        };
+        let axis =
+            if knob { crate::kit::control_layout::placement(name).direction.into() } else { widgets::DragAxis::Both };
         let response = widgets::value_area_axis(ui, rect.intersect(clip), id.with(label.as_str()), &label, text, axis);
         control_response = Some(response.clone());
         hover = widgets::hover(ui, &response);
