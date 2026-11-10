@@ -30,6 +30,7 @@ pub(crate) enum Shorthand {
     Padding,
     Margin,
     Flex,
+    Outline,
 }
 
 impl Shorthand {
@@ -40,6 +41,7 @@ impl Shorthand {
             "padding" => Self::Padding,
             "margin" => Self::Margin,
             "flex" => Self::Flex,
+            "outline" => Self::Outline,
             _ => return None,
         })
     }
@@ -53,6 +55,7 @@ impl Shorthand {
             }
             Self::Margin => &[Property::MarginTop, Property::MarginRight, Property::MarginBottom, Property::MarginLeft],
             Self::Flex => &[Property::FlexGrow, Property::FlexShrink, Property::FlexBasis],
+            Self::Outline => &[Property::OutlineWidth, Property::OutlineStyle, Property::OutlineColor],
         }
     }
 
@@ -60,6 +63,9 @@ impl Shorthand {
     pub(crate) fn part(self, property: Property, value: &str) -> Result<String, String> {
         if self == Self::Background {
             return background_part(property, value);
+        }
+        if self == Self::Outline {
+            return outline_part(property, value);
         }
         let words: Vec<&str> = value.split_whitespace().collect();
         let index = self.longhands().iter().position(|p| *p == property).ok_or("Not a longhand of this shorthand")?;
@@ -96,7 +102,39 @@ impl Shorthand {
             Self::Padding => "padding",
             Self::Margin => "margin",
             Self::Flex => "flex",
+            Self::Outline => "outline",
         }
+    }
+}
+
+/// The part of an `outline` shorthand (`2px solid #fff`, in any order) that sets `property`. As in
+/// CSS an omitted width is `medium` (3 points), style `none` and colour the current foreground.
+pub(crate) fn outline_part(property: Property, value: &str) -> Result<String, String> {
+    crate::syntax::validate(value)?;
+    let mut parser = Parser::new(value);
+    let (mut width, mut style, mut color) = (None, None, None);
+    while !parser.is_exhausted() {
+        let start = parser.position();
+        let token = parser.next().map_err(|_| "Invalid outline")?.clone();
+        if matches!(token, Token::Function(_)) {
+            nested(&mut parser, consume)?;
+        }
+        let text = parser.slice_from(start).trim().to_owned();
+        if width.is_none() && crate::value::Length::parse(&text).is_ok() {
+            width = Some(text);
+        } else if style.is_none() && Property::OutlineStyle.parse(&text).is_ok() {
+            style = Some(text);
+        } else if color.is_none() && crate::value::Color::parse(&text).is_ok() {
+            color = Some(text);
+        } else {
+            return Err("An outline is a width, a style and a colour".into());
+        }
+    }
+    match property {
+        Property::OutlineWidth => Ok(width.unwrap_or_else(|| "3px".into())),
+        Property::OutlineStyle => Ok(style.unwrap_or_else(|| "none".into())),
+        Property::OutlineColor => Ok(color.unwrap_or_else(|| "currentcolor".into())),
+        _ => Err("Not an outline longhand".into()),
     }
 }
 
@@ -208,10 +246,21 @@ pub struct GroupClass {
 pub const MAX_GROUP_CLASSES: usize = 64;
 
 /// Properties the host application reads from a theme's rules itself; the engine leaves them
-/// alone without a notice. Read by the app, not the engine: artwork, the name, the background material, and the
-/// placement offsets `layout.css` writes (`left`, `top`, `right`, `bottom`).
-pub const HOST_PROPERTIES: &[&str] =
-    &["image", "name", "background-opacity", "background-blur", "left", "top", "right", "bottom"];
+/// alone without a notice. Read by the app, not the engine: artwork, the name and the background
+/// material.
+pub const HOST_PROPERTIES: &[&str] = &["image", "name", "background-opacity", "background-blur"];
+
+/// Properties the host reads only from a control placement's rules (`.control-*`): the placement
+/// offsets `layout.css` writes (`left`, `top`, `right`, `bottom`), the direction and the anchors.
+/// The engine leaves them alone there; anywhere else nothing reads them, and they get a notice.
+pub const PLACEMENT_PROPERTIES: &[&str] =
+    &["left", "top", "right", "bottom", "direction", "anchor-left", "anchor-top", "anchor-right", "anchor-bottom"];
+
+/// Whether a rule's selector list (`header`) holds a control placement (`.control-play`), whose
+/// [`PLACEMENT_PROPERTIES`] the host reads.
+fn placement(header: &str) -> bool {
+    header.split(',').any(|selector| selector.trim().starts_with(".control-"))
+}
 
 /// The frames of one `@keyframes` rule: offsets from 0 to 1 and their declarations.
 pub(crate) type KeyframeRule = Vec<(f32, Vec<Declaration>)>;
@@ -536,7 +585,8 @@ fn rules(parser: &mut Parser<'_>, source: &str, scope: &Scope, sheet: &mut Sheet
                 } else {
                     match Selector::parse_list(header) {
                         Ok(selectors) => {
-                            let declarations = nested(parser, |parser| declarations(parser, source, sheet))?;
+                            let placement = placement(header);
+                            let declarations = nested(parser, |parser| declarations(parser, source, sheet, placement))?;
                             if sheet.rules.len() >= 1024 {
                                 return Err("Style sheet exceeds 1024 rules".into());
                             }
@@ -589,7 +639,7 @@ fn frames(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Ve
             Token::CurlyBracketBlock => {
                 let header = source.get(start.unwrap_or(at)..at).ok_or("Invalid keyframe span")?.trim().to_owned();
                 start = None;
-                let declarations = nested(parser, |parser| declarations(parser, source, sheet))?;
+                let declarations = nested(parser, |parser| declarations(parser, source, sheet, false))?;
                 let mut offsets = Vec::new();
                 for offset in header.split(',').map(str::trim) {
                     let value = match offset {
@@ -624,7 +674,14 @@ fn frames(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Ve
     Ok(result)
 }
 
-fn declarations(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Vec<Declaration>, String> {
+/// The declarations of one rule; `placement` when the rule is a control placement's
+/// ([`placement`]).
+fn declarations(
+    parser: &mut Parser<'_>,
+    source: &str,
+    sheet: &mut Sheet,
+    placement: bool,
+) -> Result<Vec<Declaration>, String> {
     let mut declarations = Vec::new();
     while !parser.is_exhausted() {
         parser.skip_whitespace();
@@ -707,6 +764,12 @@ fn declarations(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Res
         if HOST_PROPERTIES.contains(&name.as_str()) {
             continue;
         }
+        if PLACEMENT_PROPERTIES.contains(&name.as_str()) {
+            if !placement {
+                sheet.notice(at, format!("{name} is read only in a control placement's rule (.control-*)"));
+            }
+            continue;
+        }
         if !name.starts_with("--") && Property::from_name(&name).is_none() {
             sheet.notice(at, format!("Unknown native property {name}"));
             continue;
@@ -759,5 +822,25 @@ mod tests {
         );
         assert_eq!(sheet.notices.len(), 2, "{:?}", sheet.notices);
         assert_eq!(sheet.unstyled_group_classes(), ["typo"]);
+    }
+
+    #[test]
+    fn a_placement_s_properties_are_left_to_the_host_only_in_a_placement_s_rule() {
+        let sheet = Sheet::parse(
+            ".control-play { direction: vertical; anchor-left: 4px; left: 2px; } \
+             arrangement, .control-stop { anchor-top: 1px; } \
+             button { image: url(\"b.svg\"); }",
+        )
+        .unwrap();
+        assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+        let sheet =
+            Sheet::parse("arrangement { direction: vertical; } button { anchor-left: 4px; top: 1px; }").unwrap();
+        assert_eq!(sheet.notices.len(), 3, "{:?}", sheet.notices);
+        assert!(
+            sheet.notices[0].message.contains("direction is read only in a control placement"),
+            "{:?}",
+            sheet.notices
+        );
+        assert!(sheet.rules.iter().all(|rule| rule.declarations.is_empty()), "the engine keeps none of them");
     }
 }

@@ -33,6 +33,7 @@ fn png_roles_reuse_pixels_until_a_live_edit_changes_the_source() {
             assert!(button(
                 ui.painter(),
                 Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(20.0)),
+                &super::super::element::BUTTON.enter(),
                 State::Normal,
                 Color32::RED,
                 0.0
@@ -82,6 +83,7 @@ fn svg_backgrounds_clear_native_alpha_once_and_keep_private_images_underneath() 
             assert!(button(
                 &painter,
                 Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0)),
+                &super::super::element::BUTTON.enter(),
                 State::Normal,
                 Color32::from_rgba_unmultiplied(50, 60, 70, 128),
                 3.0
@@ -104,7 +106,14 @@ fn svg_backgrounds_clear_native_alpha_once_and_keep_private_images_underneath() 
         super::super::surface::begin_frame(ui.ctx());
         let painter = ui.ctx().layer_painter(egui::LayerId::background());
         let rect = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0));
-        assert!(button(&painter, rect, State::Normal, Color32::from_rgb(50, 60, 70), 3.0));
+        assert!(button(
+            &painter,
+            rect,
+            &super::super::element::BUTTON.enter(),
+            State::Normal,
+            Color32::from_rgb(50, 60, 70),
+            3.0
+        ));
         super::super::surface::finish_frame(ui.ctx());
     });
     output.textures_delta.clear();
@@ -117,7 +126,14 @@ fn svg_backgrounds_clear_native_alpha_once_and_keep_private_images_underneath() 
         super::super::surface::begin_frame(ui.ctx());
         let painter = ui.ctx().layer_painter(egui::LayerId::background());
         let rect = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0));
-        assert!(button(&painter, rect, State::Normal, Color32::from_rgb(50, 60, 70), 3.0));
+        assert!(button(
+            &painter,
+            rect,
+            &super::super::element::BUTTON.enter(),
+            State::Normal,
+            Color32::from_rgb(50, 60, 70),
+            3.0
+        ));
         super::super::surface::finish_frame(ui.ctx());
     });
     output.textures_delta.clear();
@@ -202,7 +218,6 @@ fn skin_round_trip_and_old_defaults() {
         background: None,
         background_opacity: 70,
         background_blur: 0,
-        styles: Default::default(),
         assets: example_assets(),
         session: Default::default(),
         meter: MeterStyle::Segmented,
@@ -324,4 +339,53 @@ fn a_nine_slice_too_big_for_its_rect_shrinks_its_corners_evenly() {
     super::nine_slice(&mut mesh, Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(100.0, 6.0)), slice, [0.0, 0.0]);
     // The top-left corner is 3 by 3, not 4 wide and 3 high.
     assert_eq!(mesh.vertices[3].pos, egui::pos2(3.0, 3.0));
+}
+
+#[test]
+fn a_legacy_skin_s_styles_join_its_sheet_under_today_s_names() {
+    let mut warnings = Vec::new();
+    let skin = Skin::from_json(
+        &serde_json::json!({
+            "css": "browser { color: #123456; }",
+            "styles": {
+                "mixer pan": { "--suhina-appearance": "knob", "color": "#ABCDEF" },
+                "device": { "--suhina-param-columns": "3", "--suhina-param-row": "48px" },
+                "arrangement": { "--suhina-param-columns": "12" },
+                "nowhere": { "color": "#000000" }
+            }
+        }),
+        &mut warnings,
+    );
+    let css = skin.css.as_deref().unwrap_or_default();
+    assert!(css.starts_with("browser { color: #123456; }"), "{css}");
+    assert!(css.contains("mixer pan { appearance: knob; }") && css.contains("mixer pan { color: #ABCDEF; }"), "{css}");
+    // The device grid's styles become the CSS layout that took their place.
+    assert!(css.contains("device { grid-template-columns: repeat(3, 1fr); }"), "{css}");
+    assert!(css.contains("device device-control { height: 48px; }"), "{css}");
+    assert!(!css.contains("param-columns") && !css.contains("param-row"), "{css}");
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("arrangement --suhina-param-columns") && w.contains("grid-template-columns")),
+        "a value out of range names what replaced the style: {warnings:?}"
+    );
+    assert!(warnings.iter().any(|w| w.contains("nowhere")), "{warnings:?}");
+}
+
+#[test]
+fn a_legacy_skin_s_device_grid_lays_its_parameters_out_as_before() {
+    let mut warnings = Vec::new();
+    let skin = Skin::from_json(
+        &serde_json::json!({
+            "css": "",
+            "styles": { "device": { "--suhina-param-columns": "3", "--suhina-param-row": "48px" } }
+        }),
+        &mut warnings,
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+    configure(&skin);
+    let grid = super::super::style_class::theme_param_grid();
+    configure(&Skin::default());
+    assert_eq!(grid, (3, Some(48.0)));
 }

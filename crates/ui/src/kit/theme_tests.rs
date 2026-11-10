@@ -83,13 +83,12 @@ fn example_themes_embed_their_paint_and_all_editable_artwork() {
         assert!(warnings.is_empty(), "{warnings:?}");
         let values = super::super::theme_vars::core_values;
         assert_eq!(values(&restored), values(&sheet));
-        assert_eq!((&restored.skin.controls, &restored.skin.styles), (&sheet.skin.controls, &sheet.skin.styles));
+        assert_eq!(restored.skin.controls, sheet.skin.controls);
         let mut native = sheet.clone();
         assert!(super::super::theme_css::apply(&mut native, &super::super::theme_css::export(&sheet)).is_empty());
         assert_eq!(native.skin.session, sheet.skin.session);
         assert_eq!(native.skin.controls, sheet.skin.controls);
         assert_eq!(native.skin.meter_intensity, sheet.skin.meter_intensity);
-        assert_eq!(native.skin.styles, sheet.skin.styles);
     }
     let meadow = || built_in_themes().into_iter().find(|(id, _)| *id == "suhina-meadow").unwrap().1;
     let first = meadow().skin.background.unwrap();

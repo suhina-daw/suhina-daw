@@ -101,7 +101,7 @@ pub fn show(
     let page = crate::kit::element::START_PAGE
         .native(crate::kit::element::Native { radius: 0.0, fill: theme::window_background() })
         .enter();
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let mut styled_ui = page.ui(ui);
     let ui = &mut *styled_ui;
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);

@@ -207,7 +207,8 @@ fn an_authors_sheet_is_read_verbatim_and_survives_backups() {
     std::fs::create_dir_all(themes.join("ink")).unwrap();
     let source = "/* Keep my comment */\n\
                   @property --glow { syntax: \"<number>\"; initial-value: 0.5; label: \"Glow\"; range: 0 1; }\n\
-                  :root { --accent: #12AB34; --meter-segments: 32; }\n\
+                  :root { --accent: #12AB34; }\n\
+                  meter { meter-segments: 32; }\n\
                   @layer custom { browser { color: var(--accent); opacity: var(--glow); } }\n\
                   @media (width < 800px) { #performance { display: none; } }\n";
     std::fs::write(themes.join("ink/theme.css"), source).unwrap();
@@ -326,7 +327,7 @@ fn a_json_theme_migrates_keeping_its_comments_and_its_originals() {
     assert!(same_look(&entries[0].theme, &theme));
     let css = std::fs::read_to_string(themes.join("old/theme.css")).unwrap();
     assert!(css.starts_with("/* Revontuli notes */\n"), "{css}");
-    assert!(css.contains("--liquid: 30 0 10;") && css.contains("browser { color: #abcdef; }"), "{css}");
+    assert!(css.contains("window { liquid: 30 0 10; }") && css.contains("browser { color: #abcdef; }"), "{css}");
     assert!(!themes.join("old.json").exists() && !themes.join("old/style.css").exists());
     assert_eq!(std::fs::read(themes.join("old/legacy/old.json")).unwrap(), json);
     assert_eq!(std::fs::read_to_string(themes.join("old/legacy/style.css")).unwrap(), style);

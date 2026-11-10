@@ -203,17 +203,24 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
     theme::set_palette(&h.ctx, blocks.colors);
     h.run_steps(3);
     let slot = h.get_by_label("Launch Root on Bass (scene 1)").rect();
+    // The artwork is a rectangle or a nine-slice (at most 16 corners), not the fan of a CSS
+    // gradient the sheet gives the column.
     let has_body = |h: &Harness<'static, SessionHarness>| {
-        h.output().shapes.iter().any(|shape| matches!(&shape.shape,
-        egui::Shape::Mesh(mesh) if mesh.calc_bounds().contains(slot.center()) && mesh.calc_bounds().height() > slot.height() * 3.0
-    ))
+        h.output().shapes.iter().any(|shape| {
+            matches!(&shape.shape,
+                egui::Shape::Mesh(mesh) if mesh.vertices.len() <= 16
+                    && mesh.calc_bounds().contains(slot.center())
+                    && mesh.calc_bounds().height() > slot.height() * 3.0
+            )
+        })
     };
     assert!(has_body(&h), "colour-keyed body artwork spans the slot column");
     assert_eq!(
         clicked(&mut h, "Launch Walk on Bass (scene 2)"),
         [Action::new("clip.launch", json!({"track":2,"scene":1}))]
     );
-    blocks.skin.styles.get_mut("track-column").unwrap().insert("--suhina-track-artwork".into(), "off".into());
+    let css = blocks.skin.css.as_deref().unwrap_or("").replace("track-artwork: on", "track-artwork: off");
+    blocks.skin.css = Some(css.into());
     skin::configure(&blocks.skin);
     h.run_steps(3);
     assert!(!has_body(&h), "opting out restores native column fills");
@@ -226,7 +233,7 @@ fn a_horizontal_session_fader_drags_on_its_drawn_axis_and_keeps_the_native_comma
     use suhina_ui::kit::{skin, theme_css};
     let mut harness = view();
     let mut theme = theme::Theme::default();
-    assert!(theme_css::apply(&mut theme, ".control-mixer-volume { --suhina-direction: horizontal; }").is_empty());
+    assert!(theme_css::apply(&mut theme, ".control-mixer-volume { direction: horizontal; }").is_empty());
     skin::configure(&theme.skin);
     harness.run_steps(3);
     let rect = harness.get_by_label("Drums volume").rect();
@@ -312,7 +319,7 @@ fn session_pan_knob_keeps_the_native_drag_command_and_value() {
     let mut harness = view();
     assert!(!harness.state().state.knobs);
     let mut theme = theme::Theme::default();
-    assert!(theme_css::apply(&mut theme, "pan { --suhina-appearance: knob; }").is_empty());
+    assert!(theme_css::apply(&mut theme, "pan { appearance: knob; }").is_empty());
     skin::configure(&theme.skin);
     harness.run_steps(3);
     let start = harness.get_by_label("Bass pan").rect().center();

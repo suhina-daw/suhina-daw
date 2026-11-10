@@ -2,102 +2,45 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Stable native CSS classes. A scoped palette lets existing painter code inherit styles.
-use super::{skin, theme};
+use super::theme;
 use std::cell::RefCell;
 
-thread_local! {static STACK: RefCell<Vec<String>> = const {RefCell::new(Vec::new())};}
-
-/// A rule of a legacy skin's `styles`: one to four element names, each inside the one before
-/// (`mixer pan`).
-pub fn valid_selector(selector: &str) -> bool {
-    let parts: Vec<_> = selector.split_whitespace().collect();
-    !parts.is_empty() && parts.len() <= 4 && parts.iter().all(|part| suhina_theme_package::elements::is_element(part))
-}
-pub fn valid_property(key: &str, value: &str) -> bool {
-    match key {
-        "--suhina-track-artwork" => matches!(value, "on" | "off"),
-        "--suhina-appearance" => matches!(value, "native" | "knob" | "field"),
-        "--suhina-value-position" => {
-            matches!(value, "right" | "left" | "top" | "bottom" | "inside" | "center" | "centre" | "none" | "hidden")
-        }
-        "--suhina-track-headers" => matches!(value, "left" | "right"),
-        "--suhina-header-tint" => value.trim().parse::<u8>().is_ok_and(|v| v <= 100),
-        "--suhina-param-columns" => value.trim().parse::<u8>().is_ok_and(|v| (1..=8).contains(&v)),
-        "--suhina-value-decimals" => matches!(value.trim(), "0" | "1" | "2"),
-        "--suhina-value-unit" => {
-            let unit = value.trim();
-            unit.len() >= 2
-                && unit.starts_with(['"', '\''])
-                && unit.ends_with(['"', '\''])
-                && unit.chars().count() <= 10
-        }
-        "--suhina-gap" => px(value).is_some_and(|v| v <= 16),
-        "--suhina-param-label" => matches!(value, "left" | "top" | "hidden"),
-        "--suhina-param-row" => px(value).is_some_and(|v| (16..=160).contains(&v)),
-        "--suhina-compact-below" => px(value).is_some_and(|v| v <= 200),
-        "--suhina-track-height" => px(value).is_some_and(|v| (MIN_TRACK_HEIGHT..=MAX_TRACK_HEIGHT).contains(&v)),
-        "--suhina-header-min-width" => value
-            .strip_suffix("px")
-            .and_then(|v| v.trim().parse::<u16>().ok())
-            .is_some_and(|v| (160..=520).contains(&v)),
-        "color" | "background-color" | "border-color" => theme::parse_hex(value).is_some(),
-        "border-radius" => value.strip_suffix("px").and_then(|v| v.parse::<u8>().ok()).is_some_and(|v| v <= 32),
-        "font-size" => {
-            value.strip_suffix("px").and_then(|v| v.parse::<u8>().ok()).is_some_and(|v| (7..=32).contains(&v))
-        }
-        _ => false,
-    }
-}
-fn matches(selector: &str, stack: &[String]) -> bool {
-    let parts: Vec<_> = selector.split_whitespace().collect();
-    if !parts.last().copied().zip(stack.last()).is_some_and(|(part, name)| name == part) {
-        return false;
-    }
-    let mut at = 0;
-    for part in parts {
-        let Some(index) = stack.get(at..).and_then(|s| s.iter().position(|name| name == part)) else {
-            return false;
-        };
-        at += index + 1;
-    }
-    true
-}
-pub fn property(key: &str) -> Option<String> {
-    let skin = skin::current();
-    STACK.with(|stack| {
-        let stack = stack.borrow();
-        // Native custom properties inherit from the nearest authored ancestor.
-        // Ordinary paint properties inherit through the scoped palette instead.
-        let first = if key.starts_with("--") { 1 } else { stack.len() };
-        (first..=stack.len()).rev().find_map(|end| {
-            skin.styles
-                .iter()
-                .filter(|(selector, _)| matches(selector, &stack[..end]))
-                .filter_map(|(selector, properties)| {
-                    properties.get(key).map(|value| (selector.split_whitespace().count(), value))
-                })
-                .max_by_key(|(specificity, _)| *specificity)
-                .map(|(_, value)| value.clone())
-        })
-    })
+thread_local! {
+    /// The elements in scope, outermost first: interned ids, so entering one allocates nothing.
+    static STACK: RefCell<Vec<super::element::Name>> = const { RefCell::new(Vec::new()) };
 }
 
 pub struct Scope {
     palette: theme::Palette,
     revision: u64,
+    /// What the elements in scope inherited before this one was entered.
+    inherited: Option<super::native_css::Computed>,
     /// The element's node in this frame's style tree, when the engine collected it.
     pub(super) node: Option<usize>,
-    /// How many elements are in scope with this one, itself included.
-    pub(super) depth: usize,
+}
+
+thread_local! {
+    /// The style of the innermost element that has one, for the properties CSS inherits: the font
+    /// size [`theme::ui_font`] and the text shadows [`super::native_css::paint_text`] draw with.
+    static INHERITED: RefCell<Option<super::native_css::Computed>> = const { RefCell::new(None) };
+}
+
+/// The `font-size` the text drawn now inherits, or `fallback` where no sheet sets one.
+pub(super) fn inherited_font_size(fallback: f32) -> f32 {
+    INHERITED.with(|inherited| {
+        inherited.borrow().as_ref().filter(|style| style.authored.font_size).map_or(fallback, |style| style.font_size)
+    })
+}
+
+/// Calls `paint` with the style the text drawn now inherits its `text-shadow` from, if any.
+pub(super) fn with_inherited<R>(paint: impl FnOnce(Option<&super::native_css::Computed>) -> R) -> R {
+    INHERITED.with(|inherited| paint(inherited.borrow().as_ref()))
 }
 
 impl Scope {
     /// This element's own style: the one resolved for its node, never an enclosing element's.
     pub(super) fn style(&self) -> Option<super::native_css::Computed> {
-        STACK.with(|stack| {
-            let stack = stack.borrow();
-            stack.get(..self.depth).and_then(|names| super::native_css::scoped_at(self.node, names))
-        })
+        super::native_css::style_of(self.node)
     }
 }
 impl Drop for Scope {
@@ -105,6 +48,7 @@ impl Drop for Scope {
         if theme::palette_revision() == self.revision {
             theme::local_palette(self.palette);
         }
+        INHERITED.with(|inherited| *inherited.borrow_mut() = self.inherited.take());
         if self.node.is_some() {
             super::native_css::leave();
         }
@@ -113,46 +57,26 @@ impl Drop for Scope {
         });
     }
 }
-pub fn enter(class: &str) -> Scope {
-    enter_inner(class, None, None)
-}
-pub fn enter_named(class: &str, name: &str) -> Scope {
-    enter_inner(class, Some(name), None)
-}
-pub fn enter_response(class: &str, response: &egui::Response) -> Scope {
-    enter_inner(class, None, Some(response))
-}
-pub fn enter_named_response(class: &str, name: &str, response: &egui::Response) -> Scope {
-    enter_inner(class, Some(name), Some(response))
-}
 
-/// A shared surface may be called inside a complete control scope or on its own.
-pub fn control(class: &str, response: &egui::Response) -> Option<Scope> {
-    (!STACK.with(|stack| stack.borrow().last().is_some_and(|current| current == class)))
-        .then(|| enter_response(class, response))
-}
-pub(super) fn enter_inner(class: &str, name: Option<&str>, response: Option<&egui::Response>) -> Scope {
+/// Puts the element `class` in the style tree and the palette scope. `prepare` gives its node what
+/// the app knows about it (its attributes, its variables) before its style is looked up.
+pub(super) fn enter_inner(
+    class: super::element::Name,
+    name: Option<&str>,
+    response: Option<&egui::Response>,
+    prepare: impl FnOnce(usize),
+) -> Scope {
     let node = super::native_css::enter(class, name, response);
+    if let Some(node) = node {
+        prepare(node);
+    }
     let saved = theme::palette();
-    let depth = STACK.with(|s| {
-        let mut stack = s.borrow_mut();
-        stack.push(class.into());
-        stack.len()
-    });
+    STACK.with(|s| s.borrow_mut().push(class));
     let mut palette = saved;
-    if let Some(color) = property("color").as_deref().and_then(theme::parse_hex) {
-        set_foreground(&mut palette, color, class);
-    }
-    if let Some(color) = property("background-color").as_deref().and_then(theme::parse_hex) {
-        set_background(&mut palette, color, class);
-    }
-    if let Some(color) = property("border-color").as_deref().and_then(theme::parse_hex) {
-        palette.border = color;
-        palette.border_strong = color;
-    }
-    if let Some(values) = STACK.with(|stack| super::native_css::scoped(&stack.borrow())) {
+    let own = super::native_css::style_of(node);
+    if let Some(values) = &own {
         if values.authored.color {
-            set_foreground(&mut palette, values.color, class);
+            set_foreground(&mut palette, values.color, Some(class));
         }
         if values.authored.border {
             palette.border = values.border;
@@ -168,25 +92,37 @@ pub(super) fn enter_inner(class: &str, name: Option<&str>, response: Option<&egu
         }
     }
     theme::local_palette(palette);
-    Scope { palette: saved, revision: theme::palette_revision(), node, depth }
+    // An element without a style of its own (not collected) inherits what its parent did.
+    let inherited = INHERITED.with(|inherited| {
+        let mut inherited = inherited.borrow_mut();
+        match own {
+            Some(own) => inherited.replace(own),
+            None => inherited.clone(),
+        }
+    });
+    Scope { palette: saved, revision: theme::palette_revision(), inherited, node }
 }
 
 /// A background for `class`: a view's sets the surfaces inside it, and a control's its own fill
 /// too. So a view's background never repaints the buttons drawn on it.
-fn set_background(palette: &mut theme::Palette, color: egui::Color32, class: &str) {
+fn set_background(palette: &mut theme::Palette, color: egui::Color32, class: super::element::Name) {
     palette.window_background = color;
     palette.panel_background = color;
-    if !suhina_theme_package::elements::is_surface(class) {
+    if !class.is_surface() {
         palette.control_background = color;
     }
 }
 
-/// Keeps the text of the element in scope readable on `background`: when the colour it inherited
-/// (a bar's light text in a menu that opens over a light window) has too little contrast, its
-/// text takes the ink that reads on `background`. Lasts until the scope ends. Returns that ink
-/// when it changed the text, for widgets styled from the inherited colour.
-pub(crate) fn readable_on(background: egui::Color32) -> Option<egui::Color32> {
-    let inherited = computed().filter(|style| style.authored.color).map_or_else(theme::text_primary, |s| s.color);
+/// Keeps the text of the element whose style is `style` readable on `background`: when the
+/// colour it inherited (a bar's light text in a menu that opens over a light window) has too
+/// little contrast, its text takes the ink that reads on `background`. Lasts until the element's
+/// scope ends. Returns that ink when it changed the text, for widgets styled from the inherited
+/// colour.
+pub(super) fn readable_on(
+    style: Option<super::native_css::Computed>,
+    background: egui::Color32,
+) -> Option<egui::Color32> {
+    let inherited = style.filter(|style| style.authored.color).map_or_else(theme::text_primary, |s| s.color);
     if theme::contrast(inherited, background) >= 3.0 {
         return None;
     }
@@ -195,12 +131,12 @@ pub(crate) fn readable_on(background: egui::Color32) -> Option<egui::Color32> {
     let (dark, light) = (egui::Color32::from_rgb(0x1a, 0x1a, 0x1a), egui::Color32::from_rgb(0xf4, 0xf4, 0xf4));
     let ink = if theme::contrast(dark, background) >= theme::contrast(light, background) { dark } else { light };
     let mut palette = theme::palette();
-    set_foreground(&mut palette, ink, "");
+    set_foreground(&mut palette, ink, None);
     theme::local_palette(palette);
     Some(ink)
 }
 
-fn set_foreground(palette: &mut theme::Palette, color: egui::Color32, class: &str) {
+fn set_foreground(palette: &mut theme::Palette, color: egui::Color32, class: Option<super::element::Name>) {
     palette.text_primary = color;
     palette.text_inverse = color;
     palette.text_secondary = color;
@@ -211,149 +147,108 @@ fn set_foreground(palette: &mut theme::Palette, color: egui::Color32, class: &st
     palette.browser_text_value = color;
     palette.text_on_color_dark = color;
     palette.text_on_color_light = color;
-    if class == "meter" {
+    if class == Some(super::element::METER) {
         palette.meter_normal = color;
     }
 }
-pub fn foreground(fallback: egui::Color32) -> egui::Color32 {
-    if let Some(style) = computed()
-        && style.authored.color
-    {
-        return style.color;
-    }
-    property("color").as_deref().and_then(theme::parse_hex).unwrap_or(fallback)
-}
+use super::element::{ARRANGEMENT, DEVICE, DEVICE_CONTROL, Entered};
+use suhina_style::property::Property;
 
-/// Native widget presentation is portable theme data; absence preserves the user's preference.
-/// The side the theme puts the Arrangement view's track headers on (`.arrangement {
-/// --suhina-track-headers: left }`), when it says one: `Some(true)` for the left.
-pub fn theme_track_headers_left() -> Option<bool> {
-    let skin = skin::current();
-    skin.styles.iter().filter(|(selector, _)| selector.as_str() == "arrangement").find_map(|(_, properties)| {
-        match properties.get("--suhina-track-headers").map(String::as_str) {
-            Some("left") => Some(true),
-            Some("right") => Some(false),
-            _ => None,
-        }
-    })
-}
-
-/// The narrowest the theme lets the Arrangement view's header column be (`.arrangement {
-/// --suhina-header-min-width: 330px }`): the width its placements were made for, which the
-/// header's narrower layouts would break.
-/// How strongly the theme lets the track's colour tint its Arrangement header (`.arrangement {
-/// --suhina-header-tint: 0 }` for none, up to 100), over the user's header colour strength; a
-/// see-through theme takes the native tint away with 0.
-/// The least and most a theme's row height for tracks may be, in points.
-const MIN_TRACK_HEIGHT: u16 = 20;
-const MAX_TRACK_HEIGHT: u16 = 400;
-
-fn px(value: &str) -> Option<u16> {
-    value.trim().strip_suffix("px").and_then(|v| v.trim().parse::<u16>().ok())
-}
-
-/// The height a theme gives an Arrangement track that has none of its own (`.arrangement {
-/// --suhina-track-height: 96px }`), in place of Settings › Arrangement's default size.
-pub fn theme_track_height() -> Option<f32> {
-    let skin = skin::current();
-    let value = skin.styles.get("arrangement")?.get("--suhina-track-height")?;
-    px(value).filter(|v| (MIN_TRACK_HEIGHT..=MAX_TRACK_HEIGHT).contains(v)).map(f32::from)
-}
-
-/// How a device panel's generated parameter list is laid out (`.device { --suhina-param-columns:
-/// 3; --suhina-param-row: 48px }`): parameters side by side in that many columns, each that tall.
-pub fn theme_param_grid() -> (usize, Option<f32>) {
-    let skin = skin::current();
-    let Some(device) = skin.styles.get("device") else { return (1, None) };
-    let columns =
-        device.get("--suhina-param-columns").and_then(|v| v.trim().parse::<u8>().ok()).map_or(1, |v| v.clamp(1, 8));
-    let row = device.get("--suhina-param-row").and_then(|v| px(v)).filter(|v| (16..=160).contains(v)).map(f32::from);
-    (usize::from(columns), row)
-}
-
-/// Where a device panel's generated parameters show their names (`.device { --suhina-param-label:
-/// top }`): `left`, `top` or `hidden`, over what each device says.
-pub fn theme_param_label() -> Option<&'static str> {
-    let skin = skin::current();
-    match skin.styles.get("device")?.get("--suhina-param-label")?.trim() {
-        "left" => Some("left"),
-        "top" => Some("top"),
-        "hidden" => Some("hidden"),
-        _ => None,
-    }
-}
-
-/// The height under which an Arrangement header keeps Suhina's own layout instead of the theme's
-/// placements (`arrangement { --suhina-compact-below: 48px }`), so a low track does not overlap.
-pub fn theme_compact_below() -> Option<f32> {
-    let skin = skin::current();
-    px(skin.styles.get("arrangement")?.get("--suhina-compact-below")?).filter(|v| *v <= 200).map(f32::from)
-}
-
-pub fn theme_header_tint() -> Option<u8> {
-    let skin = skin::current();
-    skin.styles.get("arrangement")?.get("--suhina-header-tint")?.trim().parse::<u8>().ok().map(|v| v.min(100))
-}
-
-pub fn theme_header_min_width() -> Option<f32> {
-    let skin = skin::current();
-    skin.styles.get("arrangement")?.get("--suhina-header-min-width")?.strip_suffix("px")?.trim().parse::<f32>().ok()
-}
-
-pub fn knob_preference(fallback: bool) -> bool {
-    match property("--suhina-appearance").as_deref() {
+/// Whether `el`, a value control, is drawn as a knob: the sheet's `appearance: knob` or `field`
+/// on it or an element it is in (`mixer pan { appearance: knob; }`), else the user's preference.
+pub fn knob_preference(el: &Entered, fallback: bool) -> bool {
+    match el.style().and_then(|style| style.keyword(Property::Appearance)) {
         Some("knob") => true,
         Some("field") => false,
         _ => fallback,
     }
 }
-/// Whether an element of `class` encloses what is drawn now (`pan` around a pan's knob).
-pub fn within(class: &str) -> bool {
-    STACK.with(|stack| stack.borrow().iter().any(|c| c == class))
+
+/// Whether the sheet draws a track's artwork behind `el` (`track-column { track-artwork: on; }`).
+pub fn track_artwork(el: &Entered) -> bool {
+    el.style().and_then(|style| style.keyword(Property::TrackArtwork)) == Some("on")
+}
+
+/// The Arrangement view's settings as the theme gives them (`arrangement { track-height: 96px; }`).
+fn arrangement() -> Option<super::native_css::Computed> {
+    super::native_css::settings_of(&[ARRANGEMENT])
+}
+
+/// The side the theme puts the Arrangement view's track headers on (`arrangement {
+/// track-headers: left }`), when it says one: `Some(true)` for the left.
+pub fn theme_track_headers_left() -> Option<bool> {
+    match arrangement()?.keyword(Property::TrackHeaders)? {
+        "left" => Some(true),
+        "right" => Some(false),
+        _ => None,
+    }
+}
+
+/// The least and most a theme's row height for tracks may be, in points.
+const MIN_TRACK_HEIGHT: f32 = 20.0;
+const MAX_TRACK_HEIGHT: f32 = 400.0;
+
+/// The height a theme gives an Arrangement track that has none of its own (`arrangement {
+/// track-height: 96px }`), in place of Settings › Arrangement's default size.
+pub fn theme_track_height() -> Option<f32> {
+    arrangement()?.points(Property::TrackHeight).filter(|v| (MIN_TRACK_HEIGHT..=MAX_TRACK_HEIGHT).contains(v))
+}
+
+/// The narrowest the theme lets the Arrangement view's header column be (`arrangement {
+/// header-min-width: 330px }`): the width its placements were made for, which the header's
+/// narrower layouts would break. From 160 to 520 points.
+pub fn theme_header_min_width() -> Option<f32> {
+    arrangement()?.points(Property::HeaderMinWidth).filter(|v| (160.0..=520.0).contains(v))
+}
+
+/// How strongly the theme lets the track's colour tint its Arrangement header (`arrangement {
+/// header-tint: 0 }` for none, up to 100), over the user's header colour strength; a see-through
+/// theme takes the native tint away with 0.
+pub fn theme_header_tint() -> Option<u8> {
+    arrangement()?.integer(Property::HeaderTint).and_then(|v| u8::try_from(v).ok()).filter(|v| *v <= 100)
+}
+
+/// The height under which an Arrangement header keeps Suhina's own layout instead of the theme's
+/// placements (`arrangement { compact-below: 48px }`), so a low track does not overlap.
+pub fn theme_compact_below() -> Option<f32> {
+    arrangement()?.points(Property::CompactBelow).filter(|v| (0.0..=200.0).contains(v))
+}
+
+/// How a device panel's generated parameter list is laid out: the columns of the device's grid
+/// (`device { grid-template-columns: repeat(3, 1fr); }`, at most 8) side by side, each cell as
+/// tall as `device-control`'s `height` (16 to 160 points).
+pub fn theme_param_grid() -> (usize, Option<f32>) {
+    use suhina_style::value::Value;
+    let columns = match super::native_css::settings_of(&[DEVICE])
+        .and_then(|style| style.authored_value(Property::GridTemplateColumns))
+    {
+        Some(Value::TrackList(tracks)) => tracks.len().clamp(1, 8),
+        _ => 1,
+    };
+    let row = super::native_css::settings_of(&[DEVICE, DEVICE_CONTROL])
+        .and_then(|style| style.height)
+        .filter(|v| (16.0..=160.0).contains(v));
+    (columns, row)
+}
+
+/// Where a device panel's generated parameters show their names (`device { param-label: top }`):
+/// `left`, `top` or `hidden`, over what each device says.
+pub fn theme_param_label() -> Option<&'static str> {
+    super::native_css::settings_of(&[DEVICE])?.keyword(Property::ParamLabel)
+}
+
+/// Whether an element `name` encloses what is drawn now (`pan` around a pan's knob).
+pub fn within(name: super::element::Name) -> bool {
+    STACK.with(|stack| stack.borrow().contains(&name))
 }
 /// The view being drawn, for artwork of one view: `mixer` (a strip, in any view), `session` or
 /// `arrangement`.
 pub fn view() -> Option<&'static str> {
     STACK.with(|stack| {
         let stack = stack.borrow();
-        ["mixer", "session", "arrangement"].into_iter().find(|view| stack.iter().any(|class| class == view))
+        use super::element::{ARRANGEMENT, MIXER, SESSION};
+        [MIXER, SESSION, ARRANGEMENT].into_iter().find(|view| stack.contains(view)).map(super::element::Name::name)
     })
-}
-
-/// The style of the element innermost in scope. Private to `kit`: code that draws asks its own
-/// element for its style (`kit::element`), so it never paints with an enclosing one's.
-pub(super) fn computed() -> Option<super::native_css::Computed> {
-    STACK.with(|stack| super::native_css::scoped(&stack.borrow()))
-}
-pub fn radius(fallback: f32) -> f32 {
-    if let Some(values) = STACK.with(|stack| super::native_css::scoped(&stack.borrow()))
-        && values.authored.radius
-    {
-        return values.radius;
-    }
-    property("border-radius")
-        .and_then(|v| v.strip_suffix("px").and_then(|n| n.parse::<u8>().ok()))
-        .map_or(fallback, f32::from)
-}
-pub fn font_size(fallback: f32) -> f32 {
-    if let Some(values) = STACK.with(|stack| super::native_css::scoped(&stack.borrow()))
-        && values.authored.font_size
-    {
-        return values.font_size;
-    }
-    property("font-size")
-        .and_then(|v| v.strip_suffix("px").and_then(|n| n.parse::<u8>().ok()))
-        .map_or(fallback, f32::from)
-}
-
-/// Background override for surfaces whose fallback colour is supplied by their caller.
-pub fn background(fallback: egui::Color32) -> egui::Color32 {
-    if let Some(values) = STACK.with(|stack| super::native_css::scoped(&stack.borrow()))
-        && values.authored.background
-    {
-        return values.background;
-    }
-    property("background-color").as_deref().and_then(theme::parse_hex).unwrap_or(fallback)
 }
 
 /// Applies authored values to ordinary egui widgets as well as native painters.
@@ -395,23 +290,12 @@ impl Drop for UiStyle<'_> {
         }
     }
 }
-pub fn ui(ui: &mut egui::Ui) -> UiStyle<'_> {
-    let values = computed();
-    let color = values
-        .as_ref()
-        .filter(|style| style.authored.color)
-        .map(|style| style.color)
-        .or_else(|| property("color").as_deref().and_then(theme::parse_hex));
-    let font = values
-        .as_ref()
-        .filter(|style| style.authored.font_size)
-        .map(|style| style.font_size)
-        .or_else(|| property("font-size").map(|_| font_size(theme::TEXT)));
-    let radius = values
-        .as_ref()
-        .filter(|style| style.authored.radius)
-        .map(|style| style.radius)
-        .or_else(|| property("border-radius").map(|_| self::radius(0.0)));
+/// egui's own widgets in `ui` styled as the element whose style is `values` (`surface` for a
+/// region or container, whose background lies behind its widgets rather than filling them).
+pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Computed>, surface: bool) -> UiStyle<'_> {
+    let color = values.as_ref().filter(|style| style.authored.color).map(|style| style.color);
+    let font = values.as_ref().filter(|style| style.authored.font_size).map(|style| style.font_size);
+    let radius = values.as_ref().filter(|style| style.authored.radius).map(|style| style.radius);
     // A border the sheet gives (a width, 0 for none) is the ordinary widgets' outline too, in
     // every state: without it they keep egui's own.
     let border = values
@@ -420,18 +304,16 @@ pub fn ui(ui: &mut egui::Ui) -> UiStyle<'_> {
         .map(|style| egui::Stroke::new(style.border_width, style.border));
     // A panel's or view's background is the surface behind its widgets, not their fill: a
     // device panel's colour would otherwise hide its sliders' rails.
-    let container = STACK
-        .with(|stack| stack.borrow().last().is_some_and(|class| suhina_theme_package::elements::is_surface(class)));
-
-    let fill = values.as_ref().filter(|style| style.authored.background && !container).map(|style| style.background);
+    let fill = values.as_ref().filter(|style| style.authored.background && !surface).map(|style| style.background);
     // egui's own widgets in the scope (Settings, dialogs, the start page, the browser) take the
     // sheet's generic control rules: `button`, `button:hover`, `button:active`,
     // `button:disabled` for buttons, check boxes and drop-downs, `button[checked]` for a
     // chosen row, and `text-input` for text fields.
     let control = |hovered: bool, pressed: bool, disabled: bool| {
-        let _button = enter("button");
-        super::native_css::mark_pointer(hovered, pressed, disabled);
-        computed().filter(|c| c.authored.background || c.authored.border || c.authored.color || c.authored.radius)
+        super::element::BUTTON
+            .pointer(hovered, pressed, disabled)
+            .style()
+            .filter(|c| c.authored.background || c.authored.border || c.authored.color || c.authored.radius)
     };
     let controls = [
         control(false, false, false),
@@ -440,15 +322,12 @@ pub fn ui(ui: &mut egui::Ui) -> UiStyle<'_> {
         control(false, false, true),
     ];
     // `button[checked]`: a chosen item in a list or a menu (egui's selection).
-    let chosen = {
-        let _button = enter("button");
-        super::native_css::mark(super::native_css::HostState::Checked, true);
-        computed().filter(|c| c.authored.background || c.authored.color)
-    };
-    let input = {
-        let _input = enter("text-input");
-        computed().filter(|c| c.authored.background || c.authored.border || c.authored.color)
-    };
+    let chosen = super::element::BUTTON
+        .attr(super::element::Checked, true)
+        .style()
+        .filter(|c| c.authored.background || c.authored.color);
+    let input =
+        super::element::TEXT_INPUT.style().filter(|c| c.authored.background || c.authored.border || c.authored.color);
     let has_controls = controls.iter().any(Option::is_some) || input.is_some() || chosen.is_some();
     let previous = if color.is_some()
         || font.is_some()
@@ -547,96 +426,90 @@ pub fn ui(ui: &mut egui::Ui) -> UiStyle<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn native_custom_properties_inherit_and_nearest_scope_overrides() {
-        let mut theme = theme::Theme::default();
-        assert!(
-            super::super::theme_css::apply(
-                &mut theme,
-                "track-column { --suhina-track-artwork: on; } track-column clip { --suhina-track-artwork: off; }"
-            )
-            .is_empty()
-        );
-        skin::configure(&theme.skin);
-        {
-            let _column = enter("track-column");
-            assert_eq!(property("--suhina-track-artwork").as_deref(), Some("on"));
-            {
-                let _slot = enter("slot");
-                assert_eq!(property("--suhina-track-artwork").as_deref(), Some("on"));
-                let _clip = enter("clip");
-                assert_eq!(property("--suhina-track-artwork").as_deref(), Some("off"));
-            }
-            assert_eq!(property("--suhina-track-artwork").as_deref(), Some("on"));
+    use crate::kit::element::{MIXER, PAN, SEND, test_el};
+    use crate::kit::skin;
+
+    /// What `draw` sees once the frames it takes for the tree to resolve have passed, with `css` as
+    /// the theme's sheet.
+    fn frames<R>(css: &str, mut draw: impl FnMut() -> R) -> R {
+        skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
+        let ctx = egui::Context::default();
+        let mut result = None;
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let _frame = super::super::native_css::frame_with_motion(ui, false);
+                result = Some(draw());
+            })
+            .textures_delta
+            .clear();
         }
-        assert!(property("--suhina-track-artwork").is_none());
         skin::configure(&skin::Skin::default());
+        result.unwrap()
     }
 
     #[test]
-    fn portable_pan_appearance_survives_json_css_and_does_not_leak_out_of_its_scope() {
-        for (value, forced) in [("knob", Some(true)), ("field", Some(false)), ("native", None)] {
-            let mut source = theme::Theme::default();
-            assert!(
-                super::super::theme_css::apply(&mut source, &format!("mixer pan {{ --suhina-appearance: {value}; }}"))
-                    .is_empty()
-            );
-            let (restored, warnings) = theme::Theme::from_json(&source.to_json());
-            assert!(warnings.is_empty(), "{warnings:?}");
-            let mut css = theme::Theme::default();
-            assert!(super::super::theme_css::apply(&mut css, &super::super::theme_css::export(&restored)).is_empty());
-            assert_eq!(source, css);
-            skin::configure(&restored.skin);
-            let _mixer = enter("mixer");
-            {
-                let _pan = enter("pan");
-                for preference in [false, true] {
-                    assert_eq!(knob_preference(preference), forced.unwrap_or(preference));
-                }
-            }
-            assert!(!knob_preference(false));
-            assert!(knob_preference(true));
-        }
-        skin::configure(&skin::Skin::default());
+    fn settings_inherit_and_the_nearest_element_s_wins() {
+        let css = "track-column { track-artwork: on; } track-column clip { track-artwork: off; }";
+        let seen = frames(css, || {
+            let column = test_el("track-column").enter();
+            let slot = test_el("slot").enter();
+            let clip = test_el("clip").enter();
+            (track_artwork(&column), track_artwork(&slot), track_artwork(&clip))
+        });
+        assert_eq!(seen, (true, true, false));
     }
+
+    #[test]
+    fn a_pan_s_appearance_is_its_own_and_reaches_no_other_control() {
+        for (value, forced) in [("knob", Some(true)), ("field", Some(false)), ("native", None)] {
+            let css = format!("mixer pan {{ appearance: {value}; }}");
+            let seen = frames(&css, || {
+                let _mixer = MIXER.enter();
+                let pan = PAN.enter();
+                let own = [false, true].map(|preference| knob_preference(&pan, preference));
+                drop(pan);
+                let send = SEND.enter();
+                (own, [false, true].map(|preference| knob_preference(&send, preference)))
+            });
+            assert_eq!(seen.0, [false, true].map(|preference| forced.unwrap_or(preference)), "{value}");
+            assert_eq!(seen.1, [false, true], "a send keeps the user's choice");
+        }
+    }
+
     #[test]
     fn a_live_theme_change_survives_all_enclosing_style_scopes() {
         let original = theme::palette();
-        let mut skin = skin::Skin::default();
-        skin.styles.insert("browser".into(), [("color".into(), "#123456".into())].into());
-        skin::configure(&skin);
         let mut changed = original;
         changed.text_primary = egui::Color32::from_rgb(40, 50, 60);
         changed.grid_major = egui::Color32::from_rgba_unmultiplied(80, 90, 100, 120);
         let ctx = egui::Context::default();
-        {
-            let _window = enter("window");
-            let _browser = enter("browser");
-            assert_eq!(theme::text_primary(), theme::parse_hex("#123456").unwrap());
+        let inside = frames("browser { color: #123456; }", || {
+            let _window = test_el("window").enter();
+            let _browser = test_el("browser").enter();
+            let inside = theme::text_primary();
             theme::set_palette(&ctx, changed);
-        }
+            inside
+        });
+        assert_eq!(inside, theme::parse_hex("#123456").unwrap());
         assert_eq!(theme::palette(), changed);
         theme::set_palette(&ctx, original);
-        skin::configure(&skin::Skin::default());
     }
+
     #[test]
     fn ordinary_widget_style_preserves_ui_identity_and_restores_caller() {
-        let mut skin = skin::Skin::default();
-        skin.styles.insert(
-            "settings".into(),
-            [("color".into(), "#123456".into()), ("font-size".into(), "19px".into())].into(),
-        );
-        skin::configure(&skin);
+        let css = "settings { color: #123456; font-size: 19px; }";
+        skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
         let context = egui::Context::default();
         context
             .run_ui(egui::RawInput::default(), |ui| {
+                let _frame = super::super::native_css::frame_with_motion(ui, false);
                 let original = ui.style().clone();
                 let original_clip = ui.clip_rect();
                 let id = ui.scope_id();
                 {
-                    let _scope = enter("settings");
+                    let scope = crate::kit::element::test_el("settings").enter();
                     let limited = egui::Rect::from_min_size(ui.max_rect().min, egui::Vec2::splat(16.0));
-                    let styled = self::ui(ui).clipped_to(limited);
+                    let styled = scope.ui(ui).clipped_to(limited);
                     assert_eq!(styled.scope_id(), id);
                     assert_eq!(styled.clip_rect(), original_clip.intersect(limited));
                     assert_eq!(styled.visuals().override_text_color, theme::parse_hex("#123456"));
@@ -651,21 +524,21 @@ mod tests {
     }
     #[test]
     fn descendant_styles_are_scoped_and_restore_palette() {
-        let mut s = skin::Skin::default();
-        s.styles.insert("browser".into(), [("color".into(), "#123456".into())].into());
-        s.styles.insert("browser button".into(), [("color".into(), "#ABCDEF".into())].into());
-        skin::configure(&s);
         let original = theme::palette();
-        {
-            let _browser = enter("browser");
-            assert_eq!(theme::text_primary(), theme::parse_hex("#123456").unwrap());
-            {
-                let _button = enter("button");
-                assert_eq!(theme::text_primary(), theme::parse_hex("#ABCDEF").unwrap());
-            }
-            assert_eq!(theme::text_primary(), theme::parse_hex("#123456").unwrap());
-        }
-        assert_eq!(theme::palette(), original);
-        skin::configure(&skin::Skin::default());
+        let seen = frames("browser { color: #123456; } browser button { color: #ABCDEF; }", || {
+            let browser = test_el("browser").enter();
+            let in_browser = theme::text_primary();
+            let in_button = {
+                let _button = test_el("button").enter();
+                theme::text_primary()
+            };
+            let after = theme::text_primary();
+            drop(browser);
+            (in_browser, in_button, after, theme::palette())
+        });
+        assert_eq!(seen.0, theme::parse_hex("#123456").unwrap());
+        assert_eq!(seen.1, theme::parse_hex("#ABCDEF").unwrap());
+        assert_eq!(seen.2, seen.0);
+        assert_eq!(seen.3, original);
     }
 }

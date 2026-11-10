@@ -148,7 +148,7 @@ fn content_lenses_share_one_current_substrate_and_do_not_poison_panel_capture() 
                 let rect = Rect::from_min_size(pos2(x, 20.0), egui::vec2(200.0, 80.0));
                 let base = if frame == 0 { Color32::RED } else { Color32::BLUE };
                 painter.rect_filled(rect, 0.0, base);
-                paint(painter, rect, base, surface);
+                paint(painter, rect, &super::super::element::WORKSPACE_PANEL.enter(), base, surface);
                 painter.text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -276,20 +276,26 @@ fn default_reduced_effects_and_tiny_surfaces_remain_solid() {
         let count =
             || ctx.graphics(|graphics| graphics.get(painter.layer_id()).map_or(0, |list| list.all_entries().len()));
         let before = count();
-        paint(&painter, area, Color32::GRAY, Surface::Track);
+        paint(&painter, area, &super::super::element::WORKSPACE_PANEL.enter(), Color32::GRAY, Surface::Track);
         assert_eq!(count(), before);
         ctx.data_mut(|data| data.insert_temp(Id::unique(OPTIONS), Options { tracks: 50, ..Default::default() }));
-        paint(&painter, area, Color32::GRAY, Surface::Track);
+        paint(&painter, area, &super::super::element::WORKSPACE_PANEL.enter(), Color32::GRAY, Surface::Track);
         assert!(count() > before);
         let coated = count();
         // The track's slider does not switch on the clip material.
-        paint(&painter, area, Color32::GRAY, Surface::Clip);
+        paint(&painter, area, &super::super::element::WORKSPACE_PANEL.enter(), Color32::GRAY, Surface::Clip);
         assert_eq!(count(), coated);
         set_effects_allowed(ctx, false);
-        paint(&painter, area, Color32::GRAY, Surface::Track);
+        paint(&painter, area, &super::super::element::WORKSPACE_PANEL.enter(), Color32::GRAY, Surface::Track);
         assert_eq!(count(), coated);
         set_effects_allowed(ctx, true);
-        paint(&painter, Rect::from_min_size(area.min, egui::vec2(10.0, 10.0)), Color32::GRAY, Surface::Track);
+        paint(
+            &painter,
+            Rect::from_min_size(area.min, egui::vec2(10.0, 10.0)),
+            &super::super::element::WORKSPACE_PANEL.enter(),
+            Color32::GRAY,
+            Surface::Track,
+        );
         assert_eq!(count(), coated);
     });
     output.textures_delta.clear();

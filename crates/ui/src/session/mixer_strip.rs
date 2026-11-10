@@ -16,6 +16,7 @@ use crate::interaction::commands;
 use crate::interaction::grid::{Column, ColumnKind};
 use crate::interaction::menus;
 use crate::kit::control_layout::{self, Direction};
+use crate::kit::element::{Checked, Muted, Selected};
 use crate::kit::meter;
 use crate::kit::motion;
 use crate::kit::theme::{self, PAD};
@@ -412,15 +413,18 @@ pub fn show(
     let painter = &clipped_painter;
     let _artwork =
         crate::kit::artwork::track_color(egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2));
-    let _style_class = crate::kit::style_class::enter_named("mixer", &format!("track-{}", column.track.0));
-    crate::kit::native_css::set_variable(
-        "--track-colour",
-        crate::kit::native_css::hex(egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2)),
-    );
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, state.selected == Some(column.track));
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, column.mute);
+    let strip_id = format!("track-{}", column.track.0);
+    let style_class = crate::kit::element::MIXER
+        .id(&strip_id)
+        .variable(
+            "--track-colour",
+            crate::kit::native_css::hex(egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2)),
+        )
+        .attr(Selected, state.selected == Some(column.track))
+        .attr(Muted, column.mute)
+        .enter();
     // The strip in a shade of its track's colour, as the column above it.
-    let tint = crate::kit::style_class::background(motion::mix(
+    let tint = style_class.background_or(motion::mix(
         theme::panel_background(),
         egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
         0.16,
@@ -436,8 +440,8 @@ pub fn show(
     ) {
         painter.fill_background(rect, 0.0, tint);
     }
-    crate::kit::liquid::paint(painter, rect, tint, crate::kit::liquid::Surface::Track);
-    crate::kit::native_css::background(painter, rect);
+    crate::kit::liquid::paint(painter, rect, &style_class, tint, crate::kit::liquid::Surface::Track);
+    style_class.paint_background(painter, rect, 0.0);
     // The strip's own background, under its controls: a double-click shows the track's devices.
     strip
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("{} channel strip", column.name)));
@@ -536,12 +540,8 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, rect: Rect, fader: f32
         state.strip_fader = fader.round();
     }
     if response.hovered() || response.dragged() {
-        let _style = crate::kit::style_class::enter_named_response("divider", "mixer-divider", &response);
-        painter.hline(
-            rect.x_range(),
-            line,
-            egui::Stroke::new(2.0, crate::kit::style_class::foreground(theme::accent())),
-        );
+        let style = crate::kit::element::DIVIDER.id("mixer-divider").response(&response).enter();
+        painter.hline(rect.x_range(), line, egui::Stroke::new(2.0, style.color_or(theme::accent())));
     }
 }
 
@@ -549,12 +549,12 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, rect: Rect, fader: f32
 fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: Id, selected: bool) {
     let response = ui.interact(rect.intersect(painter.clip_rect()), id.with("strip-name"), Sense::hover());
     let track_id = format!("track-{}", column.track.0);
-    let name_style = crate::kit::element::TRACK_NAME.id(&track_id).response(&response).enter();
-    crate::kit::native_css::set_variable(
-        "--track-fill",
-        crate::kit::native_css::hex(colour_picker::fill(column.color, column.mute)),
-    );
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
+    let name_style = crate::kit::element::TRACK_NAME
+        .id(&track_id)
+        .response(&response)
+        .variable("--track-fill", crate::kit::native_css::hex(colour_picker::fill(column.color, column.mute)))
+        .attr(Selected, selected)
+        .enter();
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{} strip", column.name)));
     // The name stands on the track's colour, as in the column's header.
     let native_fill = colour_picker::fill(column.color, column.mute);
@@ -563,7 +563,7 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
     let fill = if name_style.style().is_some_and(|style| style.has_gradient() && style.background.a() == 0) {
         native_fill
     } else {
-        crate::kit::style_class::background(native_fill)
+        name_style.background_or(native_fill)
     };
     if !crate::kit::skin::paint_colored(
         painter,
@@ -575,8 +575,8 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
     ) {
         painter.fill_background(rect, 0.0, fill);
     }
-    crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Track);
-    crate::kit::native_css::background(painter, rect);
+    crate::kit::liquid::paint(painter, rect, &name_style, fill, crate::kit::liquid::Surface::Track);
+    name_style.paint_background(painter, rect, 0.0);
     let text = rect.shrink2(Vec2::new(4.0, 0.0));
     widgets::text_in(
         painter,
@@ -585,7 +585,7 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
         &column.name,
         theme::ui_font(theme::TEXT),
         // Ink that reads on the fill, unless the sheet gives the name a colour.
-        crate::kit::style_class::foreground(theme::text_on(fill)),
+        name_style.color_or(theme::text_on(fill)),
     );
 }
 
@@ -1087,8 +1087,8 @@ fn paint_fader(
     response: &egui::Response,
     centred: bool,
 ) {
-    let _style = crate::kit::style_class::enter_named_response("fader", "mixer-volume", response);
-    crate::kit::native_css::background(painter, fader);
+    let style = crate::kit::element::FADER.id("mixer-volume").response(response).enter();
+    style.paint_background(painter, fader, 0.0);
     let hover = widgets::hover(ui, response);
     let value_color = motion::mix(theme::text_value(), theme::text_primary(), hover);
     if readout.is_positive() {
@@ -1104,9 +1104,9 @@ fn paint_fader(
         // `#mixer-volume-readout`: its own background, corners, `font-size`, `color` and number format.
         let readout = crate::kit::element::VALUE.id("mixer-volume-readout").enter();
         readout.paint(painter, area);
-        let size = crate::kit::style_class::font_size(9.0);
-        let ink = crate::kit::style_class::foreground(value_color);
-        let text = widgets::formatted_value(&widgets::format_db(db));
+        let size = readout.font_size_or(9.0);
+        let ink = readout.color_or(value_color);
+        let text = widgets::formatted_value(&readout, &widgets::format_db(db));
         painter.text(area.center(), Align2::CENTER_CENTER, text, theme::mono_font(size), ink);
     }
     if horizontal_volume() {
@@ -1134,7 +1134,7 @@ fn paint_fader(
     ) {
         painter.fill_background(rail, 2.0, recess);
     }
-    let _scale_style = crate::kit::style_class::enter("fader-scale");
+    let _scale_style = crate::kit::element::FADER_SCALE.enter();
     let native_scale = Rect::from_min_size(
         egui::pos2(if centred { fader.left() - SCALE_WIDTH - 2.0 } else { fader.right() }, fader.top()),
         egui::vec2(SCALE_WIDTH, fader.height()),
@@ -1192,7 +1192,7 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
     let mut previous = f32::NEG_INFINITY;
     let native_scale = Rect::from_min_size(egui::pos2(fader.left(), fader.bottom()), egui::vec2(fader.width(), 12.0));
     let scale = control_layout::place("mixer-volume-scale", native_scale, painter.clip_rect());
-    let _scale_style = crate::kit::style_class::enter("fader-scale");
+    let _scale_style = crate::kit::element::FADER_SCALE.enter();
     for value in
         [-70.0, -24.0, -12.0, -6.0, 0.0].into_iter().filter(|_| !control_layout::placement("mixer-volume-scale").hidden)
     {
@@ -1221,12 +1221,8 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
     drop(_scale_style);
     let centre = egui::pos2(at(widgets::volume_position(db)), fader.center().y);
     let cap = Rect::from_center_size(centre, Vec2::new(thickness, length));
-    let _cap_style = crate::kit::style_class::enter("fader-cap");
-    crate::kit::native_css::background_rounded(
-        painter,
-        Rect::from_center_size(centre, Vec2::new(length, thickness)),
-        2.0,
-    );
+    let cap_style = crate::kit::element::FADER_CAP.enter();
+    cap_style.paint_background(painter, Rect::from_center_size(centre, Vec2::new(length, thickness)), 2.0);
     if !crate::kit::skin::paint(painter, cap, "fader.cap", state, theme::text_value(), std::f32::consts::FRAC_PI_2) {
         let cap = Rect::from_center_size(centre, Vec2::new(length, thickness));
         painter.fill_background(cap, 2.0, motion::mix(theme::control_background(), theme::text_value(), hover * 0.3));
@@ -1294,7 +1290,7 @@ fn pan_row(
     id: Id,
     actions: &mut Vec<Action>,
 ) {
-    let _style = crate::kit::style_class::enter_named("pan", "mixer-pan");
+    let style = crate::kit::element::PAN.id("mixer-pan").enter();
     let track = column.track;
     let knob_rect = row;
     state.value_areas.push(knob_rect);
@@ -1324,7 +1320,7 @@ fn pan_row(
         Some((t, Control::Pan, v)) if t == track => v,
         _ => committed.unwrap_or(column.pan),
     };
-    if crate::kit::style_class::knob_preference(state.knobs) {
+    if crate::kit::style_class::knob_preference(&style, state.knobs) {
         let size = row.height().min(row.width());
         widgets::knob(
             painter,
@@ -1345,7 +1341,7 @@ fn pan_row(
             );
         }
     } else {
-        crate::kit::mixer_controls::pan_field(painter, row, pan, widgets::hover(ui, &pan_response));
+        crate::kit::mixer_controls::pan_field(painter, row, &style, pan, widgets::hover(ui, &pan_response));
     }
 }
 
@@ -1462,19 +1458,27 @@ fn send_knobs(
         };
         let (low, high) = widgets::SEND_RANGE;
         let position = ((shown - low) / (high - low)) as f32;
-        // `send` styles every send, `#mixer-send-N` one of them; `--suhina-appearance: knob`
-        // draws it as a knob.
+        // `send` styles every send, `#mixer-send-N` one of them; `appearance: knob` draws it as a
+        // knob.
         let el = crate::kit::element::SEND.id(&name).response(&response).enter();
-        let pointer = crate::kit::style_class::foreground(motion::mix(
-            theme::text_value(),
-            theme::text_primary(),
-            widgets::hover(ui, &response),
-        ));
-        if crate::kit::style_class::knob_preference(false) {
-            // The value under the knob unless `--suhina-value-position` says otherwise.
+        let pointer =
+            el.color_or(motion::mix(theme::text_value(), theme::text_primary(), widgets::hover(ui, &response)));
+        if crate::kit::style_class::knob_preference(&el, false) {
+            // The value under the knob unless `value-position` says otherwise.
             let text = format!("{letter} {}", widgets::format_db(shown));
             let under = widgets::ValuePosition::Bottom;
-            widgets::knob_with_value(&painter, rect, position, pointer, Some(&response), &text, pointer, under, 7.0);
+            widgets::knob_with_value(
+                &painter,
+                rect,
+                &el,
+                position,
+                pointer,
+                Some(&response),
+                &text,
+                pointer,
+                under,
+                7.0,
+            );
         } else {
             let state = crate::kit::skin::State::response(&response, false);
             el.paint_with(
@@ -1482,7 +1486,7 @@ fn send_knobs(
                 rect,
                 crate::kit::element::Native { radius: 2.0, fill: egui::Color32::TRANSPARENT },
             );
-            crate::kit::skin::paint(&painter, rect, "send", state, pointer, 0.0);
+            crate::kit::skin::paint_as(&el, &painter, rect, "send", state, pointer);
             crate::kit::mixer_controls::send_field(&painter, rect, &letter, shown, send.pre_fader, pointer, position);
         }
     }
@@ -1534,14 +1538,18 @@ fn toggles(
     }
     let toggle = control_layout::place("mixer-enable", toggle, painter.clip_rect());
     let response = widgets::button_area(ui, toggle, id.with("on"), label);
-    let _style = crate::kit::style_class::enter_named_response("button", "track-on", &response);
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, column.mute);
+    let style = crate::kit::element::BUTTON
+        .id("track-on")
+        .response(&response)
+        .attr(Muted, column.mute)
+        .attr(Checked, !column.mute)
+        .enter();
     if response.clicked() {
         actions.push(Action::new("track.setMute", json!({ "tracks": [track.0], "mute": !column.mute })));
     }
     let (fill, text) = widgets::toggle_colors(ui, &response, !column.mute);
-    widgets::button_surface(painter, toggle, &response, !column.mute, fill, 0.0);
-    let text = crate::kit::style_class::foreground(text);
+    widgets::button_surface(painter, toggle, &style, &response, !column.mute, fill, 0.0);
+    let text = style.color_or(text);
     let number = if column.kind == ColumnKind::Return {
         column.name.chars().next().map(String::from).unwrap_or_default()
     } else {
