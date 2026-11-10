@@ -848,12 +848,12 @@ pub const TEXT_SMALL: f32 = 11.0;
 pub const TEXT_TINY: f32 = 9.0;
 
 pub fn ui_font(size: f32) -> FontId {
-    FontId::new(super::style_class::font_size(size), FontFamily::Proportional)
+    FontId::new(super::style_class::inherited_font_size(size), FontFamily::Proportional)
 }
 
 /// Every number, time and position is monospaced.
 pub fn mono_font(size: f32) -> FontId {
-    FontId::new(super::style_class::font_size(size), FontFamily::Monospace)
+    FontId::new(super::style_class::inherited_font_size(size), FontFamily::Monospace)
 }
 
 pub fn hairline(color: Color32) -> Stroke {

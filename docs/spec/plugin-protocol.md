@@ -3,7 +3,7 @@ description: The plug-in host protocol - the control messages, the shared-memory
 read_when: plug-in protocol, protocol version, hello, load, unload, get_params, set_param, get_param_texts, param_texts, param_changed, open_editor, place_editor, latency_changed, ara_update, reconfigure, shared memory, region version, memfd, OpenFileMappingW, sweep, catalog format
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-09
 covers:
   - crates/plugins/src/protocol.rs
   - crates/ipc/**
@@ -68,7 +68,11 @@ Messages go over a local socket or pipe, one JSON object per message with an `op
   total; `transport_key` when Space is pressed in a plug-in's window, so the engine starts or
   stops playback; `ara_playback` when an ARA plug-in asks the transport to play, stop, move or
   loop (`cycle`, `cycle_on`); `ara_notes` when the notes it found in a region change; and
-  `param_changed` (below).
+  `param_changed` (below). The lines the window shows (`transport_key`, a typed key,
+  `ara_playback`, `ara_notes`, the ARA analysis and `editor_closed`) wake Suhina's window as
+  they are read, so it answers at once even while it is in the background (`set_waker`, #714).
+  A `transport_key`, a typed key or an `ara_playback` is taken in on the reading thread before
+  the wake, so the frame it wakes already plays, stops or moves.
 
 **Parameters.** `get_params` lists each with its id, name, group, range, default,
 current value, the plug-in's own text for it, steps and flags; `set_param` sets one in its

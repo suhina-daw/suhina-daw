@@ -40,17 +40,15 @@ fn name_liquid_and_surface_gradients_round_trip_through_canonical_css() {
 #[test]
 fn control_anchors_round_trip_through_css_and_cycles_warn() {
     let mut theme = Theme::default();
-    let warnings = apply(
-        &mut theme,
-        ".control-arrangement-meter { height: 100%; --suhina-anchor-bottom: arrangement-volume top 4px; }",
-    );
+    let warnings =
+        apply(&mut theme, ".control-arrangement-meter { height: 100%; anchor-bottom: arrangement-volume top 4px; }");
     assert!(warnings.is_empty(), "{warnings:?}");
     let css = export(&theme);
-    assert!(css.contains("--suhina-anchor-bottom: arrangement-volume top 4px;"), "{css}");
+    assert!(css.contains("anchor-bottom: arrangement-volume top 4px;"), "{css}");
     let mut again = Theme::default();
     assert!(apply(&mut again, &css).is_empty());
     assert_eq!(again.skin.controls, theme.skin.controls);
-    let warnings = apply(&mut theme, ".control-arrangement-volume { --suhina-anchor-top: arrangement-meter bottom; }");
+    let warnings = apply(&mut theme, ".control-arrangement-volume { anchor-top: arrangement-meter bottom; }");
     assert!(warnings.iter().any(|w| w.contains("cycle")), "{warnings:?}");
     assert!(theme.skin.controls["arrangement-volume"].anchors.is_empty());
     assert!(theme.skin.controls["arrangement-meter"].anchors.is_empty());
@@ -59,7 +57,7 @@ fn control_anchors_round_trip_through_css_and_cycles_warn() {
 #[test]
 fn control_geometry_round_trips_between_css_and_json_with_hostile_values_bounded() {
     let mut theme = Theme::default();
-    let css = ".control-mixer-volume { left: 8.25px; width: 90px; height: 20px; --suhina-direction: horizontal; } .control-mixer-name { bottom: 0px; } .control-mixer-color { display: none; }";
+    let css = ".control-mixer-volume { left: 8.25px; width: 90px; height: 20px; direction: horizontal; } .control-mixer-name { bottom: 0px; } .control-mixer-color { display: none; }";
     assert!(apply(&mut theme, css).is_empty());
     assert_eq!(theme.skin.controls["mixer-volume"].direction, super::super::control_layout::Direction::Horizontal);
     assert_eq!(theme.skin.controls["mixer-name"].bottom, Some(0));
@@ -72,7 +70,7 @@ fn control_geometry_round_trips_between_css_and_json_with_hostile_values_bounded
     assert!(warnings.is_empty());
     let before = theme.skin.controls.clone();
     assert_eq!(
-        apply(&mut theme, ".control-mixer-volume { width: 999999px; top: NaNpx; --suhina-direction: sideways; }").len(),
+        apply(&mut theme, ".control-mixer-volume { width: 999999px; top: NaNpx; direction: sideways; }").len(),
         3
     );
     assert_eq!(theme.skin.controls, before);
@@ -92,11 +90,11 @@ fn toolbar_offsets_mirror_without_replacing_the_native_layout() {
     );
 }
 #[test]
-fn a_style_rule_on_the_toolbar_is_written_but_its_arrangement_is_not() {
+fn a_style_rule_on_the_toolbar_is_the_style_engine_s_and_its_arrangement_is_not_written() {
     let mut theme = Theme::default();
     assert!(apply(&mut theme, "toolbar { background-color: #222222; offset-transport: 8px; }").is_empty());
     let written = layout(&theme, &Theme::default());
-    assert!(written.contains("toolbar { background-color: #222222; }"), "{written}");
+    assert!(!written.contains("background-color"), "the sheet keeps its own styles: {written}");
     assert!(!written.contains("offset-"), "{written}");
 }
 #[test]
@@ -180,11 +178,22 @@ fn malformed_css_does_not_panic_or_load_resources() {
 #[test]
 fn host_rules_inside_a_layer_count_and_media_rules_do_not() {
     let mut theme = Theme::default();
-    let css = "@layer base, theme;\n@layer theme { pan { --suhina-appearance: knob; } @layer inner { knob { --suhina-value-position: none; } } }\n@media (max-width: 400px) { slider { --suhina-appearance: knob; } }";
+    let css = "@layer base, theme;\n@layer theme { .control-mixer-pan { left: 4px; } @layer inner { .control-arm { top: 2px; } } }\n@media (max-width: 400px) { .control-cue { left: 9px; } }";
     let warnings = read_host_rules(&mut theme, css);
     assert!(warnings.is_empty(), "{warnings:?}");
-    let get = |selector: &str, key: &str| theme.skin.styles.get(selector).and_then(|p| p.get(key)).cloned();
-    assert_eq!(get("pan", "--suhina-appearance").as_deref(), Some("knob"));
-    assert_eq!(get("knob", "--suhina-value-position").as_deref(), Some("none"));
-    assert_eq!(get("slider", "--suhina-appearance"), None, "a conditional rule is the style engine's");
+    assert_eq!(theme.skin.controls["mixer-pan"].offset().x, 4.0);
+    assert_eq!(theme.skin.controls["arm"].offset().y, 2.0);
+    assert!(!theme.skin.controls.contains_key("cue"), "a conditional rule is the style engine's");
+}
+
+#[test]
+fn a_former_suhina_property_is_not_read_and_its_notice_names_what_took_its_place() {
+    let mut theme = Theme::default();
+    let css = "pan { --suhina-appearance: knob; } device { --suhina-param-columns: 3; } \
+               .control-mixer-pan { --suhina-direction: horizontal; } meter { meter-style: needle; }";
+    let warnings = read_host_rules(&mut theme, css);
+    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    assert!(warnings[0].contains("now appearance"), "{warnings:?}");
+    assert!(warnings[1].contains("a CSS layout replaces it, device { grid-template-columns"), "{warnings:?}");
+    assert!(warnings[2].contains("now direction"), "{warnings:?}");
 }

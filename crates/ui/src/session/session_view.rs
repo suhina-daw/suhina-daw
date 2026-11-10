@@ -18,6 +18,7 @@ use crate::interaction::empty_space::empty_space;
 use crate::interaction::grid::{Column, ColumnKind, SlotState, TrackGrid};
 use crate::interaction::menus::{self, TrackMenu};
 use crate::interaction::nesting::{self, Place};
+use crate::kit::element::{Muted, Selected};
 use crate::kit::meter::{self, Meters};
 use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
@@ -243,14 +244,14 @@ pub fn show(
     state: &mut SessionViewState,
     actions: &mut Vec<Action>,
 ) {
-    let _style_class = crate::kit::style_class::enter("session");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let style_class = crate::kit::element::SESSION.enter();
+    let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::window_background());
-    crate::kit::native_css::background(&painter, area);
+    style_class.paint_background(&painter, area, 0.0);
 
     // Fixed bands: header on top, mixer at the bottom, scene column on the right.
     let header = Rect::from_min_size(area.min, Vec2::new(area.width(), header_height()));
@@ -525,7 +526,13 @@ pub fn show(
         probe.offer(header_rect.union(main_mixer), DropTarget::Track(TrackId::MAIN));
     }
     painter.fill_background(main_mixer, 0.0, theme::panel_background());
-    crate::kit::liquid::paint(&painter, main_mixer, theme::panel_background(), crate::kit::liquid::Surface::Track);
+    crate::kit::liquid::paint(
+        &painter,
+        main_mixer,
+        &style_class,
+        theme::panel_background(),
+        crate::kit::liquid::Surface::Track,
+    );
     if main_selected {
         painter.rect_stroke(header_rect.shrink(0.5), 0.0, egui::Stroke::new(1.0, theme::accent()), StrokeKind::Inside);
     }
@@ -536,7 +543,13 @@ pub fn show(
         crate::session::mixer_strip::Shared { reserve_input: state.reserve_input, fader: state.strip_fader_shown() };
     let parts = crate::session::mixer_strip::layout_main(main_mixer, shared);
     if let Some(list) = parts.devices {
-        crate::session::mixer_strip::main_devices(&painter.with_clip_rect(main_mixer), list, &grid.main_devices);
+        crate::session::mixer_strip::main_devices(
+            ui,
+            &painter.with_clip_rect(main_mixer),
+            list,
+            &grid.main_devices,
+            state,
+        );
     }
     if let Some(fader) = parts.fader {
         let main_painter = painter.with_clip_rect(main_mixer);
@@ -786,10 +799,13 @@ fn column_header(
     actions: &mut Vec<Action>,
 ) {
     let _artwork = crate::kit::artwork::track_color(rgb(column.color));
-    let own = crate::kit::element::TRACK_HEADER.id(&format!("track-{}", column.track.0)).enter();
-    crate::kit::native_css::set_variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)));
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, state.selected == Some(column.track));
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, column.mute);
+    let track_id = format!("track-{}", column.track.0);
+    let own = crate::kit::element::TRACK_HEADER
+        .id(&track_id)
+        .variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)))
+        .attr(Selected, state.selected == Some(column.track))
+        .attr(Muted, column.mute)
+        .enter();
     if rect.width() <= 0.0 {
         return;
     }
@@ -827,17 +843,19 @@ fn column_header(
     ) {
         painter.fill_background(rect, 0.0, fill);
     }
-    crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Track);
+    crate::kit::liquid::paint(painter, rect, &own, fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`track-header[selected]`) over the native one;
     // the name's ink reads on whichever is shown.
-    let shown = crate::kit::style_class::background(fill);
+    let shown = own.background_or(fill);
     own.paint(painter, rect);
-    let _name_style =
-        crate::kit::style_class::enter_named_response("track-name", &format!("track-{}", column.track.0), &response);
-    crate::kit::native_css::set_variable("--track-fill", crate::kit::native_css::hex(fill));
-    crate::kit::native_css::background(painter, rect);
+    let name_style = crate::kit::element::TRACK_NAME
+        .id(&track_id)
+        .response(&response)
+        .variable("--track-fill", crate::kit::native_css::hex(fill))
+        .enter();
+    name_style.paint_background(painter, rect, 0.0);
     // Ink that reads on the fill, unless the sheet gives the name a colour.
-    let color = crate::kit::style_class::foreground(theme::text_on(shown));
+    let color = name_style.color_or(theme::text_on(shown));
     if state.selected == Some(column.track) || state.selected_tracks.contains(&column.track) {
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.5, color), StrokeKind::Inside);
     }
@@ -890,12 +908,15 @@ fn column_body(
     // A track's slots can be selected, copied, pasted into and dragged; a group's only launch.
     let editable = column.kind == ColumnKind::Track;
     let can_paste = state.can_paste;
-    let _column_style = crate::kit::style_class::enter_named("track-column", &format!("track-{}", column.track.0));
-    crate::kit::native_css::set_variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)));
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, state.selected == Some(column.track));
+    let track_id = format!("track-{}", column.track.0);
+    let column_style = crate::kit::element::TRACK_COLUMN
+        .id(&track_id)
+        .variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)))
+        .attr(Selected, state.selected == Some(column.track))
+        .enter();
     // The column's own background from the sheet, under its slots.
-    crate::kit::native_css::background(painter, Rect::from_x_y_ranges(span, bands.body.y_range()).intersect(clip));
-    if crate::kit::style_class::property("--suhina-track-artwork").as_deref() == Some("on") {
+    column_style.paint_background(painter, Rect::from_x_y_ranges(span, bands.body.y_range()).intersect(clip), 0.0);
+    if crate::kit::style_class::track_artwork(&column_style) {
         let body = Rect::from_x_y_ranges(span, bands.body.y_range());
         crate::kit::skin::paint_colored(
             painter,
@@ -922,9 +943,8 @@ fn column_body(
             continue;
         }
         let number = scene + 1;
-        let _slot_style = crate::kit::style_class::enter_named("slot", &format!("slot-{}-{number}", column.track.0));
-        let clip_style =
-            (!matches!(slot.state, SlotState::Empty | SlotState::EmptyStop)).then(|| crate::kit::element::CLIP.enter());
+        let slot_style = crate::kit::element::SLOT.id(&format!("slot-{}-{number}", column.track.0)).enter();
+        let has_clip = !matches!(slot.state, SlotState::Empty | SlotState::EmptyStop);
         let target = MappingTarget::Slot { track: column.track, scene };
         if mapping {
             // The mapping mode: a click picks the slot, empty or not, and launches nothing.
@@ -937,7 +957,9 @@ fn column_body(
             if response.clicked() {
                 state.launch_keys.pick(target);
             }
-            slot_cell(painter, rect, column, slot, (0.0, None), 1.0, progress, false);
+            let clip_style = has_clip.then(|| crate::kit::element::CLIP.enter());
+            let el = clip_style.as_ref().unwrap_or(&slot_style);
+            slot_cell(painter, rect, el, column, slot, (0.0, None), 1.0, progress, false);
             crate::session::launch_keys::overlay(
                 painter,
                 rect,
@@ -948,7 +970,6 @@ fn column_body(
             painter.hline(span, rect.bottom() + 0.5, theme::hairline(theme::border()));
             continue;
         }
-        let has_clip = !matches!(slot.state, SlotState::Empty | SlotState::EmptyStop);
         let key = (column.track, scene);
         // A clip on a track: its mark launches it, its name selects it. A group's slot launches
         // the tracks inside it from anywhere.
@@ -1004,13 +1025,12 @@ fn column_body(
             state.select_slot(column.track, scene);
         }
         let hover = [&launch, &select].into_iter().flatten().map(|r| widgets::hover(ui, r)).fold(0.0, f32::max);
-        // The clip's element is entered before its responses exist: it takes their hover now, so
+        // The clip's element is entered once its responses exist, with their hover, so
         // `clip:hover` matches it (#1241).
-        let hover_fill = clip_style.as_ref().and_then(|clip| {
-            let hovered = [&launch, &select].into_iter().flatten().any(egui::Response::hovered);
-            crate::kit::native_css::mark_pointer(hovered, false, false);
-            hover_fill(ui, clip, id.with(("hover-fill", scene)), hovered, hover)
-        });
+        let hovered = [&launch, &select].into_iter().flatten().any(egui::Response::hovered);
+        let clip_style = has_clip.then(|| crate::kit::element::CLIP.pointer(hovered, false, false).enter());
+        let hover_fill =
+            clip_style.as_ref().and_then(|clip| hover_fill(ui, clip, id.with(("hover-fill", scene)), hovered, hover));
         let pulse = if slot.state == SlotState::Queued { motion::pulse(ui.ctx()) } else { 1.0 };
         // The launch button launches as the pointer goes down, and releases a gate or repeat
         // clip as it goes up. A playing trigger clip's press stops it instead.
@@ -1120,7 +1140,8 @@ fn column_body(
                 },
             );
         });
-        slot_cell(painter, rect, column, slot, (hover, hover_fill), pulse, progress, selectable && selected);
+        let el = clip_style.as_ref().unwrap_or(&slot_style);
+        slot_cell(painter, rect, el, column, slot, (hover, hover_fill), pulse, progress, selectable && selected);
         if column.armed && !has_clip && column.kind == ColumnKind::Track {
             let recording = column.recording == Some(scene);
             let (track, name) = (column.track.0, column.name.as_str());
@@ -1185,11 +1206,10 @@ fn column_body(
     }
 }
 
-/// What a clip's hover keeps while it lasts: the clip's background as the pointer came, and the
-/// theme's background for the hovered clip, if it gives one.
+/// What a clip's hover keeps while it fades out: the theme's background for the hovered clip, if
+/// it gives one.
 #[derive(Clone, Copy, PartialEq)]
 struct HoverFill {
-    rest: Color32,
     fill: Option<Color32>,
 }
 
@@ -1216,11 +1236,11 @@ fn hover_fill(
         return None;
     }
     let style = clip.style()?;
-    // In the frame the pointer comes the clip's style is still the one resolved without it (the
-    // pointer's state takes effect as the frame's styles resolve): its background is the rest's.
-    let rest = stored.map_or(style.background, |s| s.rest);
-    let fill = (style.authored.background && style.background != rest).then_some(style.background);
-    let now = HoverFill { rest, fill };
+    // The clip's style at rest, beside it under the same slot: a background that is the same is
+    // the clip's own, not the hover's.
+    let rest = crate::kit::element::CLIP.style().map(|rest| rest.background);
+    let fill = (style.authored.background && Some(style.background) != rest).then_some(style.background);
+    let now = HoverFill { fill };
     if stored != Some(now) {
         ui.data_mut(|d| d.insert_temp(key, now));
     }
@@ -1228,11 +1248,12 @@ fn hover_fill(
 }
 
 /// `hover` is how far the pointer's hover has come (0 to 1), with the theme's hovered background
-/// if it gives one.
+/// if it gives one. `el` is the slot's clip, or the slot where it has none.
 #[allow(clippy::too_many_arguments)]
 fn slot_cell(
     painter: &egui::Painter,
     rect: Rect,
+    el: &crate::kit::element::Entered,
     column: &Column,
     slot: &crate::interaction::grid::Slot,
     (hover, hover_fill): (f32, Option<Color32>),
@@ -1243,10 +1264,10 @@ fn slot_cell(
     let track_color = rgb(column.color);
     // A clip slot is filled with the clip's colour (its track's unless it has its own).
     let clip_color = slot.color.map_or(track_color, rgb);
-    let textured = crate::kit::style_class::property("--suhina-track-artwork").as_deref() == Some("on");
+    let textured = crate::kit::style_class::track_artwork(el);
     // An empty slot is tinted with its track's colour, unless the sheet gives it a background
     // (`slot { background-color }`).
-    let empty = crate::kit::style_class::background(motion::mix(
+    let empty = el.background_or(motion::mix(
         theme::window_background(),
         track_color,
         if column.mute { EMPTY_TINT / 2.0 } else { EMPTY_TINT },
@@ -1285,7 +1306,7 @@ fn slot_cell(
             let fill = lit(base, 0.0);
             let fill = if column.mute { motion::mix(theme::control_background(), fill, 0.45) } else { fill };
             painter.fill_background(rect, 0.0, fill);
-            crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Clip);
+            crate::kit::liquid::paint(painter, rect, el, fill, crate::kit::liquid::Surface::Clip);
             let (mark, text) = if slot.enabled {
                 (theme::text_on(fill), theme::text_on(fill))
             } else {
@@ -1317,7 +1338,7 @@ fn slot_cell(
             let fill = lit(clip_color, 0.10);
             let fill = if column.mute { motion::mix(theme::control_background(), fill, 0.45) } else { fill };
             painter.fill_background(rect, 0.0, fill);
-            crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Clip);
+            crate::kit::liquid::paint(painter, rect, el, fill, crate::kit::liquid::Surface::Clip);
             let ink = theme::text_on(fill);
             // The mark is the shape its click does: a stop square while playing. A stopped
             // clip's mark is the play triangle the same way, for its click's launch.
@@ -1349,7 +1370,7 @@ fn scene_column(
     keys: &mut crate::session::launch_keys::LaunchKeys,
     actions: &mut Vec<Action>,
 ) {
-    let _style_class = crate::kit::style_class::enter("scene-column");
+    let _style_class = crate::kit::element::SCENE_COLUMN.enter();
     let clip = painter.clip_rect();
     for scene in &grid.scenes {
         let y = top + (scene.number - 1) as f32 * slot_pitch();
@@ -1357,7 +1378,7 @@ fn scene_column(
         if !rect.intersects(clip) {
             continue;
         }
-        let _scene_style = crate::kit::style_class::enter_named("scene", &format!("scene-{}", scene.number));
+        let _scene_style = crate::kit::element::SCENE.id(&format!("scene-{}", scene.number)).enter();
         let label = if scene.name.is_empty() {
             format!("{} scene {}", if scene.playing { "Stop" } else { "Launch" }, scene.number)
         } else {

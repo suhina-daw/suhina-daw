@@ -2660,7 +2660,7 @@ impl App {
         if self.settings.track_headers.is_none() {
             self.arrangement.headers_left = headers_left(None);
         }
-        // The frame's placed controls, for anchors between them (`--suhina-anchor-*`).
+        // The frame's placed controls, for anchors between them (`anchor-*`).
         let _capture = crate::kit::control_layout::Capture::begin(ui.ctx());
         self.ui_content(ui);
         crate::kit::widgets::hide_pointer_during_value_drag(ui.ctx());
@@ -2677,8 +2677,8 @@ impl App {
             ui,
             self.settings.animations && self.settings.theme != "high-contrast",
         );
-        let _window_style = crate::kit::style_class::enter("window");
-        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let window_style = crate::kit::element::WINDOW.enter();
+        let mut styled_ui = window_style.ui(ui);
         let ui = &mut *styled_ui;
         if let Err(error) = self.background.update(ui, &self.settings, self.themes.palette(&self.settings.theme)) {
             self.status = Status::Error(error);
@@ -2888,7 +2888,7 @@ impl App {
         if self.title_bar > 0.0 && !full_screen {
             egui::Panel::top("title-bar").exact_size(self.title_bar).frame(egui::Frame::NONE).show(ui, |ui| {
                 // The strip reads as the top of the toolbar under it, in the toolbar's colour.
-                let _style_class = crate::kit::style_class::enter("toolbar");
+                let _style_class = crate::kit::element::TOOLBAR.enter();
                 let top = egui::CornerRadius { nw: corner, ne: corner, sw: 0, se: 0 };
                 ui.painter().fill_background(ui.max_rect(), top, theme::panel_background());
             });
@@ -2930,11 +2930,11 @@ impl App {
                     .exact_size(theme::MENU_BAR)
                     .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(4, 0)))
                     .show(ui, |ui| {
-                        let _style_class = crate::kit::style_class::enter("menu-bar");
+                        let style_class = crate::kit::element::MENU_BAR.enter();
                         let bar = ui.max_rect().expand2(Vec2::new(4.0, 0.0));
                         ui.painter().fill_background(bar, 0.0, theme::panel_background());
-                        crate::kit::native_css::background(ui.painter(), bar);
-                        self.menu_bar(ui, &mut actions)
+                        style_class.paint_background(ui.painter(), bar, 0.0);
+                        self.menu_bar(ui, &style_class, &mut actions)
                     })
             });
         }
@@ -2947,17 +2947,17 @@ impl App {
         }
         with_bar_line(ui, "toolbar", |ui| {
             egui::Panel::top("control-bar").exact_size(theme::CONTROL_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
-                let _style_class = crate::kit::style_class::enter("toolbar");
+                let style_class = crate::kit::element::TOOLBAR.enter();
                 ui.painter().fill_background(ui.max_rect(), 0.0, theme::panel_background());
-                crate::kit::native_css::background(ui.painter(), ui.max_rect());
-                self.control_bar(ui, grid.as_ref(), cpu, ram, &mut actions)
+                style_class.paint_background(ui.painter(), ui.max_rect(), 0.0);
+                self.control_bar(ui, &style_class, grid.as_ref(), cpu, ram, &mut actions)
             })
         });
         self.frame_trace.mark("control bar");
         egui::Panel::bottom("status-bar").exact_size(theme::STATUS_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
             let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
             {
-                let _style_class = crate::kit::style_class::enter("status-bar");
+                let _style_class = crate::kit::element::STATUS_BAR.enter();
                 ui.painter().fill_background(ui.max_rect(), bottom, theme::panel_background());
             }
             self.status_bar(ui, grid.as_ref())
@@ -2975,11 +2975,11 @@ impl App {
             egui::Color32::TRANSPARENT
         } else {
             // `#workspace { border-color }` is this line's own colour.
-            let _workspace = crate::kit::style_class::enter_named("workspace", "workspace");
+            let _workspace = crate::kit::element::WORKSPACE.id("workspace").enter();
             theme::border()
         };
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(workspace_base)).show(ui, |ui| {
-            let _workspace_style = crate::kit::style_class::enter_named("workspace", "workspace");
+            let _workspace_style = crate::kit::element::WORKSPACE.id("workspace").enter();
             let area = ui.available_rect_before_wrap();
             // A 1 px gap shows the line colour between the bars and the view.
             let inner = Rect::from_min_max(area.min + Vec2::new(0.0, 1.0), area.max - Vec2::new(0.0, 1.0));
@@ -3118,7 +3118,9 @@ impl App {
                 view_area = inner;
             }
             self.frame_trace.mark("browser");
-            let _main_style = crate::kit::style_class::enter_named("workspace-panel", "panel-main");
+            let main_style = crate::kit::element::WORKSPACE_PANEL.id("panel-main").enter();
+            // The panel clips its children's shadows (`overflow`).
+            main_style.occupies(view_area, ui.clip_rect());
             // A clip whose drag or held press the view switch carried becomes the carry first,
             // so the probe below reads it on the switch's first frame.
             self.begin_clip_carry(ui.ctx());
@@ -3170,7 +3172,7 @@ impl App {
             self.arrangement.meters = meters;
             // The large sample map takes the main area, except while something is dragged, so
             // the drop can land on a track.
-            let styled_ui = crate::kit::style_class::ui(ui);
+            let styled_ui = main_style.ui(ui);
             let mut styled_ui = if css_workspace.is_some() { styled_ui.clipped_to(inner) } else { styled_ui };
             let ui = &mut *styled_ui;
             if self.sample_map.view.large && dragged.is_none() && inner.is_positive() {

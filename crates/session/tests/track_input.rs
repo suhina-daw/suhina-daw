@@ -330,3 +330,45 @@ fn a_new_project_nothing_has_changed_follows_the_default_track_input() {
     assert_eq!(input_of(&mut projects, &json!(tracks[2].0)), "5");
     assert_eq!(input_of(&mut projects, &json!(tracks[3].0)), "2");
 }
+
+/// An output whose input device has `channels` channels.
+struct Inputs(u16);
+
+impl suhina_session::LiveOutput for Inputs {
+    fn info(&self) -> suhina_session::OutputInfo {
+        suhina_session::OutputInfo { input: Some("Stand".into()), input_channels: self.0, ..Default::default() }
+    }
+}
+
+/// The blank project on a player whose input device has `channels` channels, with no default
+/// track input chosen, and the renderer the player drives.
+fn on_inputs(channels: u16) -> (Session, suhina_engine::Renderer) {
+    let project = suhina_session::blank_project();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
+    let mut session = Session::new(project);
+    let output: std::sync::Arc<dyn suhina_session::LiveOutput> = std::sync::Arc::new(Inputs(channels));
+    session.attach_player(suhina_session::Player::with_output(renderer.controller(), None, output));
+    (session, renderer)
+}
+
+/// With no default track input, an armed track that hears nothing gets the input device's
+/// first channels: a stereo pair where there are two or more, else the one channel (#682).
+#[test]
+fn without_a_default_an_armed_track_gets_the_devices_first_channels() {
+    for (channels, given) in [(8, "1/2"), (2, "1/2"), (1, "1")] {
+        let (mut session, _renderer) = on_inputs(channels);
+        assert_eq!(session.default_input(), None);
+        let audio = run(&mut session, "project.tracks", json!({})).unwrap()[2]["id"].clone();
+        let armed = run(&mut session, "track.setArm", json!({ "track": audio, "armed": true })).unwrap();
+        assert_eq!(armed["input_given"], json!(given), "{channels} channels: {armed}");
+        let tracks = run(&mut session, "project.tracks", json!({})).unwrap();
+        assert_eq!(tracks[2]["audio_input"]["input"], json!(given));
+    }
+    // An input device with no channels has none to give.
+    let (mut session, _renderer) = on_inputs(0);
+    let audio = run(&mut session, "project.tracks", json!({})).unwrap()[2]["id"].clone();
+    let armed = run(&mut session, "track.setArm", json!({ "track": audio, "armed": true })).unwrap();
+    assert_eq!(armed["no_input"], json!(true), "{armed}");
+}

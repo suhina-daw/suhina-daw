@@ -504,8 +504,8 @@ pub fn show(
     tags: &[String],
     events: &mut Vec<MapEvent>,
 ) {
-    let _style_class = crate::kit::style_class::enter("sample-map");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let style_class = crate::kit::element::SAMPLE_MAP.enter();
+    let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let full = ui.available_rect_before_wrap();
     ui.allocate_rect(full, Sense::hover());

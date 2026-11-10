@@ -13,6 +13,7 @@ use egui::{
 };
 use serde_json::Value;
 
+use crate::kit::element::{Armed, BUTTON, Checked, DROPDOWN, Entered, KNOB, TEXT_INPUT, VALUE};
 use crate::kit::{motion, theme};
 
 /// The arrow of a row that opens: pointing right while closed, down while open.
@@ -209,37 +210,43 @@ pub fn hover(ui: &Ui, response: &Response) -> f32 {
 
 /// Shared track-button surface. Colors and focus outlines follow the active theme.
 /// Geometry stays inside the caller's hit target, including compact mixer strips.
-pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, response: &Response, fill: Color32) {
-    let _style = crate::kit::style_class::control("button", response);
-    let radius = super::style_class::radius((rect.height() * 0.25).min(5.0));
-    button_surface(painter, rect, response, false, fill, radius);
+/// `el` is the button its caller entered (`button#solo`).
+pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, el: &Entered, response: &Response, fill: Color32) {
+    let radius = el.radius_or((rect.height() * 0.25).min(5.0));
+    button_surface(painter, rect, el, response, false, fill, radius);
     if response.has_focus() || response.hovered() {
         let edge = if response.has_focus() { theme::accent() } else { theme::border_strong() };
         painter.rect_stroke(rect, radius, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     }
 }
 
-/// CSS paint remains above the SVG body, below the control's glyph and label.
-pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bool, fill: Color32, radius: f32) {
-    // The button's own element: the caller's when it entered one, else one entered here.
-    let own = super::style_class::control("button", response);
-    super::native_css::mark(super::native_css::HostState::Checked, on);
-    let style = own.as_ref().map_or_else(super::style_class::computed, super::style_class::Scope::style);
+/// CSS paint remains above the SVG body, below the control's glyph and label. `el` is the button
+/// its caller entered, with `[checked]` when `on`.
+pub fn button_surface(
+    painter: &Painter,
+    rect: Rect,
+    el: &Entered,
+    response: &Response,
+    on: bool,
+    fill: Color32,
+    radius: f32,
+) {
+    let style = el.style();
     // A shape the sheet gives the button wins over the artwork Suhina ships, not over the theme's own.
     let shaped = style
         .as_ref()
         .is_some_and(|style| style.authored.background || style.authored.radius || style.authored.border_width);
-    let role = super::skin::button_role();
+    let role = super::skin::button_role(el);
     if !shaped || role != "button" || super::skin::has_own("button") {
-        let fill = super::style_class::background(fill);
-        let radius = super::style_class::radius(radius);
-        if super::skin::button(painter, rect, super::skin::State::response(response, on), fill, radius) {
+        let fill = el.background_or(fill);
+        let radius = el.radius_or(radius);
+        if super::skin::button(painter, rect, el, super::skin::State::response(response, on), fill, radius) {
             // The artwork cast the shadows already, in its own shape.
-            super::native_css::gradients_rounded(painter, rect, radius);
+            el.paint_gradients(painter, rect, radius);
             return;
         }
     }
-    super::native_css::surface_with(painter, rect, radius, fill, style);
+    el.paint_with(painter, rect, super::element::Native { radius, fill });
 }
 
 /// A track's number, `track-number`: its own `color`, `font-size` and `display: none`, and
@@ -251,12 +258,12 @@ pub fn track_number_text(painter: &Painter, rect: Rect, number: &str, ink: Color
         return;
     }
     let size = computed.as_ref().filter(|c| c.authored.font_size).map_or(theme::TEXT_SMALL, |c| c.font_size);
-    let ink = super::style_class::foreground(ink);
+    let ink = el.color_or(ink);
     text_in(painter, rect, Align2::CENTER_CENTER, number, theme::mono_font(size), ink);
 }
 
-/// Where a knob's value goes, from `--suhina-value-position` on the control in scope: `right`
-/// (beside it, the default), `left`, `top`, `bottom`, `inside` (over its middle) or `none`.
+/// Where a knob's value goes, from `value-position` on the control or an element it is in:
+/// `right` (beside it, the default), `left`, `top`, `bottom`, `inside` (over its middle) or `none`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValuePosition {
     Right,
@@ -268,14 +275,9 @@ pub enum ValuePosition {
 }
 
 impl ValuePosition {
-    /// The position the sheet gives the control in scope.
-    pub fn current() -> Self {
-        Self::or(Self::Right)
-    }
-
-    /// The position the sheet gives the control in scope, or `default`.
-    pub fn or(default: Self) -> Self {
-        match super::style_class::property("--suhina-value-position").as_deref().map(str::trim) {
+    /// The position the sheet gives `el`, or `default`.
+    pub fn of(el: &Entered, default: Self) -> Self {
+        match el.style().and_then(|style| style.keyword(suhina_style::property::Property::ValuePosition)) {
             Some("right") => Self::Right,
             Some("left") => Self::Left,
             Some("top") => Self::Top,
@@ -292,11 +294,13 @@ const MIN_STACKED_KNOB: f32 = 10.0;
 
 /// A knob in `rect` at `position` (0 to 1) with its value `text` where the sheet puts it
 /// ([`ValuePosition`], `default` where it says nothing), in `ink` unless the sheet's `color` says
-/// otherwise, at its `font-size` (`font_size` where it says none).
+/// otherwise, at its `font-size` (`font_size` where it says none). `el` is the control its caller
+/// entered (`pan`, `send`).
 #[allow(clippy::too_many_arguments)]
 pub fn knob_with_value(
     painter: &Painter,
     rect: Rect,
+    el: &Entered,
     position: f32,
     pointer: Color32,
     response: Option<&Response>,
@@ -305,17 +309,16 @@ pub fn knob_with_value(
     default: ValuePosition,
     font_size: f32,
 ) {
-    let computed = super::style_class::computed();
-    let size_text = computed.as_ref().filter(|c| c.authored.font_size).map_or(font_size, |c| c.font_size);
-    let ink = super::style_class::foreground(ink);
+    let size_text = el.font_size_or(font_size);
+    let ink = el.color_or(ink);
     let line = size_text + 3.0;
-    let place = match ValuePosition::or(default) {
+    let place = match ValuePosition::of(el, default) {
         // A row too low for a knob with its value above or below it keeps the value beside it,
         // so the knob stays big enough to see and use (a pan in a track's header).
         ValuePosition::Top | ValuePosition::Bottom if rect.height() - line < MIN_STACKED_KNOB => ValuePosition::Right,
         place => place,
     };
-    let text = &formatted_value(text);
+    let text = &formatted_value(el, text);
     let (knob_area, text_area, align) = match place {
         ValuePosition::Right | ValuePosition::Left => {
             let size = rect.height().min(theme::KNOB);
@@ -387,12 +390,11 @@ pub fn solo_button(
     let rect = super::control_layout::place("solo", rect, painter.clip_rect());
     let label = if solo { format!("End solo on {name}") } else { format!("Solo {name}") };
     let response = button_area(ui, rect, id, label);
-    let _style = super::style_class::enter_named_response("button", "solo", &response);
-    super::native_css::mark(super::native_css::HostState::Checked, solo);
+    let el = BUTTON.id("solo").response(&response).attr(Checked, solo).enter();
     let lit = motion::toward(ui.ctx(), response.id.with("on"), solo, motion::VALUE);
     let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
-    track_button_face(ui, painter, rect, &response, motion::mix(off, theme::accent(), lit));
-    let text = super::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), lit));
+    track_button_face(ui, painter, rect, &el, &response, motion::mix(off, theme::accent(), lit));
+    let text = el.color_or(motion::mix(theme::text_secondary(), theme::text_inverse(), lit));
     if !super::skin::paint(painter, rect, "solo", super::skin::State::response(&response, solo), text, 0.0) {
         text_in(painter, rect, Align2::CENTER_CENTER, "S", theme::ui_font(theme::TEXT_SMALL), text);
     }
@@ -424,11 +426,10 @@ pub fn cue_button(
     let rect = super::control_layout::place("cue", rect, painter.clip_rect());
     let label = if cue { format!("Stop cueing {name}") } else { format!("Cue {name} on the headphones") };
     let response = button_area(ui, rect, id, label);
-    let _style = super::style_class::enter_named_response("button", "cue", &response);
-    super::native_css::mark(super::native_css::HostState::Checked, cue);
+    let el = BUTTON.id("cue").response(&response).attr(Checked, cue).enter();
     let (fill, text) = toggle_colors(ui, &response, cue);
-    let text = super::style_class::foreground(text);
-    track_button_face(ui, painter, rect, &response, fill);
+    let text = el.color_or(text);
+    track_button_face(ui, painter, rect, &el, &response, fill);
     if !super::skin::paint(painter, rect, "cue", super::skin::State::response(&response, cue), text, 0.0) {
         headphones(painter, rect, text);
     }
@@ -474,14 +475,12 @@ pub fn arm_button(
     let rect = super::control_layout::place("arm", rect, painter.clip_rect());
     let label = if armed { format!("Disarm {name}") } else { format!("Arm {name} for recording") };
     let response = button_area(ui, rect, id, label).on_hover_text("Make this track ready to record");
-    let _style = super::style_class::enter_named_response("button", "arm", &response);
-    super::native_css::mark(super::native_css::HostState::Checked, armed);
-    super::native_css::mark(super::native_css::HostState::Armed, armed);
+    let el = BUTTON.id("arm").response(&response).attr(Checked, armed).attr(Armed, armed).enter();
     let lit = motion::toward(ui.ctx(), response.id.with("on"), armed, motion::VALUE);
     let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
-    track_button_face(ui, painter, rect, &response, motion::mix(off, theme::recording_background(), lit));
+    track_button_face(ui, painter, rect, &el, &response, motion::mix(off, theme::recording_background(), lit));
     let radius = (rect.height().min(rect.width()) * 0.22).clamp(2.5, 4.0);
-    let ring = super::style_class::foreground(motion::mix(theme::text_secondary(), theme::recording(), lit));
+    let ring = el.color_or(motion::mix(theme::text_secondary(), theme::recording(), lit));
     if !super::skin::paint(painter, rect, "arm", super::skin::State::response(&response, armed), ring, 0.0) {
         painter.circle_stroke(rect.center(), radius, Stroke::new(1.2, ring));
         if lit > 0.0 {
@@ -511,8 +510,8 @@ pub fn input_frame() -> egui::Frame {
 
 /// A text edit with the same transparent surface and focus underline in every view.
 pub fn text_input(ui: &mut Ui, edit: egui::TextEdit<'_>) -> Response {
-    let _style_class = crate::kit::style_class::enter("text-input");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let el = TEXT_INPUT.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let response = ui.add(edit.frame(input_frame()));
     input_line(ui, &response);
@@ -521,8 +520,8 @@ pub fn text_input(ui: &mut Ui, edit: egui::TextEdit<'_>) -> Response {
 
 /// The fixed-rectangle counterpart used by browser rows and project dialogs.
 pub fn text_input_at(ui: &mut Ui, rect: Rect, edit: egui::TextEdit<'_>) -> Response {
-    let _style_class = crate::kit::style_class::enter("text-input");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let el = TEXT_INPUT.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let response = ui.put(rect, edit.frame(input_frame()));
     input_line(ui, &response);
@@ -538,8 +537,8 @@ pub fn combo_box<R>(
     combo: egui::ComboBox,
     contents: impl FnOnce(&mut Ui) -> R,
 ) -> egui::InnerResponse<Option<R>> {
-    let _style_class = super::style_class::enter("dropdown");
-    let mut styled_ui = super::style_class::ui(ui);
+    let el = DROPDOWN.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let menu_style = ui.style().clone();
     ui.scope(|ui| {
@@ -571,8 +570,8 @@ fn transparent_control(ui: &mut Ui) {
 
 /// Draggable/typed numeric fields share the form underline without changing interaction.
 pub fn number_input(ui: &mut Ui, size: Option<egui::Vec2>, number: egui::DragValue<'_>) -> Response {
-    let _style_class = super::style_class::enter("value");
-    let mut styled_ui = super::style_class::ui(ui);
+    let el = VALUE.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     ui.scope(|ui| {
         transparent_control(ui);
@@ -584,8 +583,8 @@ pub fn number_input(ui: &mut Ui, size: Option<egui::Vec2>, number: egui::DragVal
 }
 
 pub fn number_input_at(ui: &mut Ui, rect: Rect, number: egui::DragValue<'_>) -> Response {
-    let _style_class = super::style_class::enter("value");
-    let mut styled_ui = super::style_class::ui(ui);
+    let el = VALUE.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     ui.scope(|ui| {
         transparent_control(ui);
@@ -609,7 +608,7 @@ pub fn input_line(ui: &Ui, response: &Response) {
 
 /// A form field whose surrounding surface shows through, with only an underline.
 pub fn form_dropdown(ui: &Ui, painter: &Painter, rect: Rect, response: &Response, text: &str) {
-    let _style_class = crate::kit::style_class::enter_response("dropdown", response);
+    let _el = DROPDOWN.response(response).enter();
     let hover = hover(ui, response);
     let border = if response.has_focus() {
         theme::accent()
@@ -876,7 +875,7 @@ pub fn drag_value_axis(
     default: f64,
     horizontal: bool,
 ) -> Drag {
-    let _style_class = crate::kit::style_class::enter_response("value", response);
+    let _el = VALUE.response(response).enter();
     // Keys to the control clicked last: the arrows step it, Enter sets what was typed.
     let (steps, fine, typed) = value_keys(ui, response);
     if let Some(typed) = typed
@@ -948,19 +947,20 @@ pub fn value_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString, value
 /// Arrangement alike, so they can differ from the devices' knobs; otherwise every knob shares
 /// `knob.*`.
 pub fn knob_roles() -> (&'static str, &'static str) {
-    [("pan", "pan.knob.body", "pan.knob.pointer"), ("send", "send.knob.body", "send.knob.pointer")]
-        .into_iter()
-        .find(|(class, body, _)| super::style_class::within(class) && super::skin::has_own(body))
-        .map_or(("knob.body", "knob.pointer"), |(_, body, tip)| (body, tip))
+    [
+        (super::element::PAN, "pan.knob.body", "pan.knob.pointer"),
+        (super::element::SEND, "send.knob.body", "send.knob.pointer"),
+    ]
+    .into_iter()
+    .find(|(class, body, _)| super::style_class::within(*class) && super::skin::has_own(body))
+    .map_or(("knob.body", "knob.pointer"), |(_, body, tip)| (body, tip))
 }
 
 pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: Color32, response: Option<&Response>) {
-    let _style = response
-        .map(|response| crate::kit::style_class::enter_response("knob", response))
-        .unwrap_or_else(|| crate::kit::style_class::enter("knob"));
+    let el = response.map_or_else(|| KNOB.enter(), |response| KNOB.response(response).enter());
     let state =
         response.map(|response| super::skin::State::response(response, false)).unwrap_or(super::skin::State::Normal);
-    let pointer = super::style_class::foreground(pointer);
+    let pointer = el.color_or(pointer);
     let radius = size * 9.0 / 22.0;
     let rect = Rect::from_center_size(center, Vec2::splat(size));
     let (body, tip_role) = knob_roles();
@@ -968,7 +968,7 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
         painter.circle_filled(center, radius, theme::control_background());
         painter.circle_stroke(center, radius, theme::hairline(theme::text_hint()));
     }
-    super::native_css::background_rounded(painter, rect, size * 0.5);
+    el.paint_background(painter, rect, size * 0.5);
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
     let tip = center + Vec2::new(angle.sin(), -angle.cos()) * (radius - 1.0);
     if !super::skin::paint(painter, rect, tip_role, state, pointer, angle) {
@@ -982,9 +982,7 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
 /// same scope the canvases' dials take theirs from, so a theme's own colouring applies — and
 /// no artwork stands for the face, as a canvas has none.
 pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response: Option<&Response>) {
-    let _style = response
-        .map(|response| crate::kit::style_class::enter_response("knob", response))
-        .unwrap_or_else(|| crate::kit::style_class::enter("knob"));
+    let _el = response.map_or_else(|| KNOB.enter(), |response| KNOB.response(response).enter());
     let radius = (size * 0.5).max(1.0);
     // The face: the rim arc (2.35 to 7.05 rad as an `.sd` dial's is, i.e. 135° past each side
     // over the top), the ring disc inside it, the inner disc — the theme's tokens.
@@ -1049,14 +1047,20 @@ pub fn format_db(db: f64) -> String {
     if db.is_finite() && db > -70.0 { format!("{db:.1}") } else { "-inf".into() }
 }
 
-/// A value's text as the sheet formats it: `--suhina-value-decimals: 0 | 1 | 2` rounds its
-/// number, and `--suhina-value-unit: " dB"` follows it (quoted; at most 8 characters). Text
-/// with no number (`-inf`, `C`) only takes the unit when it ends in a digit.
-pub fn formatted_value(text: &str) -> String {
-    let decimals = super::style_class::property("--suhina-value-decimals")
-        .and_then(|v| v.trim().parse::<usize>().ok())
+/// A value's text as the sheet formats it for `el`: `value-decimals: 0 | 1 | 2` rounds its
+/// number, and `value-unit: " dB"` follows it (quoted; at most 8 characters). Text with no number
+/// (`-inf`, `C`) only takes the unit when it ends in a digit.
+pub fn formatted_value(el: &Entered, text: &str) -> String {
+    use suhina_style::property::Property;
+    let style = el.style();
+    let decimals = style
+        .as_ref()
+        .and_then(|style| style.keyword(Property::ValueDecimals))
+        .and_then(|v| v.parse::<usize>().ok())
         .filter(|d| *d <= 2);
-    let unit = super::style_class::property("--suhina-value-unit")
+    let unit = style
+        .as_ref()
+        .and_then(|style| style.text(Property::ValueUnit))
         .map(|v| v.trim().trim_matches(['"', '\'']).chars().take(8).collect::<String>());
     let mut out = match (decimals, text.trim().parse::<f64>()) {
         (Some(decimals), Ok(number)) if number.is_finite() => format!("{number:.decimals$}"),
@@ -1110,10 +1114,10 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
 
 pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str) -> bool {
     let response = button_area(ui, rect, Id::unique(("dialog-button", label)), label);
-    let _style = super::style_class::enter_response("button", &response);
+    let el = BUTTON.response(&response).enter();
     let fill = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
-    let radius = super::style_class::radius(0.0);
-    button_surface(painter, rect, &response, false, fill, radius);
+    let radius = el.radius_or(0.0);
+    button_surface(painter, rect, &el, &response, false, fill, radius);
     painter.rect_stroke(rect, radius, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     let small = theme::ui_font(theme::TEXT_SMALL);
     text_in(painter, rect, Align2::CENTER_CENTER, text, small, theme::text_primary());

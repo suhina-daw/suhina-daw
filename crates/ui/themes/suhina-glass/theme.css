@@ -49,10 +49,6 @@
   --recording-background: color-mix(in oklab, var(--surface), var(--recording) 22%);
   --meter-normal: #70E0BC;
   --meter-hot: #FFD779;
-  --liquid: var(--glassiness) 0 0;
-  --gradient-panels: 90deg, #FFFFFF2E 0%, #FFFFFF12 38%, #00000008 53%, #0000001C 100%;
-  --gradient-tracks: 90deg, #FFFFFF18 0%, #00000012 100%;
-  --gradient-clips: 90deg, #FFFFFF14 0%, #0000000A 100%;
   --clip-audioDefault: #F5BD72;
   --clip-midiDefault: #74C7ED;
   --track-1: #C99070;
@@ -81,6 +77,7 @@
   --kind-tonal: #6EB0D0;
   --kind-vocal: #E8D0A0;
 }
+window { liquid: var(--glassiness) 0 0; panel-gradient: 90deg, #FFFFFF2E 0%, #FFFFFF12 38%, #00000008 53%, #0000001C 100%; track-gradient: 90deg, #FFFFFF18 0%, #00000012 100%; clip-gradient: 90deg, #FFFFFF14 0%, #0000000A 100%; }
 
 /* The views paint at half the bars' strength. Menus and dialogs float over the window, in the
    panel colour, at its full strength. */

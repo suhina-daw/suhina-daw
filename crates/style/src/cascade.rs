@@ -31,7 +31,13 @@ pub struct AppliedSheet<'a> {
     pub root: Option<usize>,
 }
 
-#[derive(Clone, Debug)]
+/// An element's computed style. Values are kept only for the properties it inherits (every one,
+/// whatever its value: `color`, `font-size`) and the ones a rule sets; any other reads
+/// as its property's initial value ([`ComputedStyle::get`]). An element's style is computed often,
+/// and most of its ninety-odd properties are never written. A value kept may equal the initial one,
+/// and equality compares what is kept: two styles compare equal when they were worked out alike,
+/// not whenever every property reads the same.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ComputedStyle {
     values: BTreeMap<Property, Value>,
     variables: Arc<BTreeMap<String, String>>,
@@ -40,20 +46,16 @@ pub struct ComputedStyle {
     keyframes: Vec<(crate::motion::Animation, Arc<crate::motion::Frames>)>,
 }
 
-impl Default for ComputedStyle {
-    fn default() -> Self {
-        Self {
-            values: Property::ALL.iter().map(|p| (*p, p.initial())).collect(),
-            variables: Arc::default(),
-            authored: BTreeSet::new(),
-            keyframes: Vec::new(),
-        }
-    }
-}
-
 impl ComputedStyle {
     pub fn get(&self, property: Property) -> Value {
-        self.values.get(&property).cloned().unwrap_or_else(|| property.initial())
+        match self.values.get(&property) {
+            Some(value) => value.clone(),
+            // An initial `currentcolor` (a border's, an accent's) is the element's foreground.
+            None => match property.initial() {
+                Value::Color(Color::Current) if property != Property::Color => self.get(Property::Color),
+                initial => initial,
+            },
+        }
     }
     /// Every custom property the element sees, resolved.
     pub fn variables(&self) -> &BTreeMap<String, String> {
@@ -92,6 +94,19 @@ fn priority(layer: Layer, important: bool, cascade: Option<u16>, specificity: Sp
 /// never from the audio callback. Malformed declarations fall back to inherited/default values.
 pub fn compute(tree: &Tree, viewport: Viewport, sheets: &[AppliedSheet<'_>]) -> Result<Vec<ComputedStyle>, String> {
     compute_inner(tree, viewport, sheets, false)
+}
+
+/// The style of the last element of `tree`, whose parent's style is `parent` (`None` for a root):
+/// one element's style worked out without the rest of the tree's, for a host that styles each
+/// element as it is drawn. Selectors see its ancestors in `tree`; siblings it does not have.
+pub fn last_style(
+    tree: &Tree,
+    parent: Option<&ComputedStyle>,
+    viewport: Viewport,
+    sheets: &[AppliedSheet<'_>],
+) -> Result<ComputedStyle, String> {
+    let node = tree.elements().len().checked_sub(1).ok_or("An empty style tree")?;
+    element_style(tree, node, parent, viewport, sheets, false, &mut Budget::default())
 }
 
 /// Migration adapters require every substituted value to be supported before
