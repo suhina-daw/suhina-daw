@@ -21,6 +21,7 @@ use crate::interaction::drop::{DropProbe, DropTarget};
 use crate::interaction::grid::ColumnKind;
 use crate::interaction::menus::{self, TrackMenu};
 use crate::interaction::nesting::{self, Place};
+use crate::interaction::scroll::most_scroll_x;
 use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::meter::{self, Meters};
 use crate::kit::motion;
@@ -257,12 +258,6 @@ fn zoom_at(beat_width: f32, scroll_x: f32, offset: f32, factor: f32) -> (f32, f3
     let beat = (offset + scroll_x) / beat_width;
     let width = zoomed(beat_width, factor);
     (width, beat * width - offset)
-}
-
-/// How far the timeline scrolls sideways: to the end of `content_beats`, or as far as a zoom
-/// at the pointer reached (`reach` beats at the right edge), in a view `view_width` wide.
-pub(crate) fn most_scroll_x(content_beats: f64, reach: f64, beat_width: f32, view_width: f32) -> f32 {
-    ((content_beats.max(reach) as f32) * beat_width - view_width).max(0.0)
 }
 
 /// The Arrangement's grid keys: snap, narrower, wider, triplets (Ctrl+4, 1, 2, 3 by default).

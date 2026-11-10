@@ -12,8 +12,11 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
 - *What is on screen, in code*, at the top of `crates/ui/src/lib.rs`: the function that draws
   each part of the window and the one that handles its result.
 - The views live in `crates/ui/src/<view>/` (`app/`, `arrangement/`, `browser/`, `detail/`,
-  `session/`, `settings/`; `interaction/` has menus, drops and the keymap; `kit/` the theme,
-  widgets and motion), with a module file beside each folder (`app.rs`, `browser.rs`, ...).
+  `session/`, `settings/`; `interaction/` has menus, drops and the keymap, and what several
+  views share: the grid menu, the toolbars' icon buttons, a key's name and how far a timeline
+  scrolls; `kit/` the theme, widgets and motion), with a module file beside each folder
+  (`app.rs`, `browser.rs`, ...). A helper two views use goes in `interaction/`, not in one
+  view's module for the other to reach into.
 
 ## The house style
 

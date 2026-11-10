@@ -13,7 +13,8 @@ use egui::{Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::{ROOT_NAMES, Scale, ScaleMode};
 
-use crate::detail::piano_roll::{PianoClip, key_name};
+use crate::detail::piano_roll::PianoClip;
+use crate::interaction::key_name::key_name;
 use crate::kit::theme;
 use crate::kit::widgets::Action;
 
@@ -263,7 +264,7 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, clip: &PianoClip, fold: &mut Fold, a
             }
         });
         let label = menu_label(scale);
-        crate::detail::piano_roll::menu_arrow(ui, menu.response.rect, color);
+        crate::interaction::toolbar::menu_arrow(ui, menu.response.rect, color);
         menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         shown = menu.response.rect;
         let named = scale.map_or_else(|| "none".to_string(), Scale::describe);
