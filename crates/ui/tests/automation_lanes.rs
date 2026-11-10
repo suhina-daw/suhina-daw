@@ -1058,12 +1058,36 @@ fn alt_drags_a_point_off_the_grid() {
 /// lane stays in sight and the edge stays under the pointer to drag it back up (#1322).
 #[test]
 fn a_lane_dragged_taller_past_the_bottom_scrolls_the_view_with_it() {
-    let mut harness = arrangement_sized(demo_project(), (1280.0, 360.0));
-    click_anywhere(&mut harness, true);
-    harness.get_by_label("Show automation of Drums").click();
+    let mut harness = arrangement(demo_project());
+    // More tracks than the view holds, the last with its lanes open, scrolled to the end: its
+    // lane's bottom edge is the bottom of the view.
+    for params in
+        [serde_json::json!({ "kind": "midi", "count": 12 }), serde_json::json!({ "kind": "midi", "name": "Last" })]
+    {
+        harness.state_mut().run(&suhina_ui::kit::widgets::Action::new("track.add", params));
+        harness.run();
+    }
+    let to_the_end = |h: &mut Harness<'static, App>| {
+        h.hover_at(Pos2::new(640.0, 300.0));
+        h.step();
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, -100_000.0),
+            modifiers: Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+        });
+        h.run();
+    };
+    to_the_end(&mut harness);
+    harness.get_by_label("Show automation of Last").click();
     harness.run();
+    to_the_end(&mut harness);
+    let lane = |h: &Harness<'static, App>| h.get_by_label("Volume automation on Last").rect();
+    let scrolled = harness.state().arrangement().scroll.y;
+    assert!(scrolled > 0.0, "the tracks fill more than the view");
     let before = lane(&harness).height();
-    let mut at = Pos2::new(lane(&harness).center().x, lane(&harness).bottom());
+    let mut at = Pos2::new(lane(&harness).center().x, lane(&harness).bottom() - 1.0);
     harness.hover_at(at);
     harness.run();
     harness.drag_at(at);
@@ -1073,7 +1097,8 @@ fn a_lane_dragged_taller_past_the_bottom_scrolls_the_view_with_it() {
         harness.hover_at(at);
         harness.run();
     }
-    assert!(harness.state().arrangement().scroll.y > 0.0, "the view followed the edge");
+    let followed = harness.state().arrangement().scroll.y;
+    assert!(followed > scrolled + 100.0, "the view followed the edge: {scrolled} -> {followed}");
     // The edge stayed under the pointer: dragged back up, the lane gets shorter again.
     for _ in 0..5 {
         at.y -= 20.0;
