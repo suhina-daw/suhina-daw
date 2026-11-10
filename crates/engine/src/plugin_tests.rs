@@ -913,7 +913,7 @@ fn the_notes_at_the_loop_start_play_on_every_pass_with_no_all_notes_off() {
     .unwrap();
     // Three passes of four beats exactly (the fourth starts on the next frame), in blocks of 576
     // frames: three passes are 500 blocks, and the first two wraps fall inside a block.
-    assert_eq!((3 * 4 * BEAT % 576, 4 * BEAT % 576 != 0), (0, true));
+    assert!((3 * 4 * BEAT).is_multiple_of(576) && !(4 * BEAT).is_multiple_of(576));
     blocks(&mut renderer, 3 * 4 * BEAT / 576, 576);
     let seen = seen.lock().unwrap();
     let starts = seen.iter().filter(|(_, e)| matches!(e, NoteEvent::On { key: 60, .. })).count();
