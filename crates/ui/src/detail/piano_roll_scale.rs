@@ -150,10 +150,23 @@ pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool) -> egui::Colo
     match scale {
         Some(scale) if scale.contains(key) && key % 12 == scale.root() => theme::control_hover(),
         Some(scale) if scale.contains(key) => theme::control_background(),
-        Some(_) => crate::kit::style_class::surface_or(theme::window_background()),
-        None if black => crate::kit::style_class::surface_or(theme::window_background()),
-        None => crate::kit::style_class::surface_or(theme::panel_background()),
+        Some(_) => dark_row(),
+        None if black => dark_row(),
+        None => light_row(),
     }
+}
+
+/// The lighter plain row: the surface it is drawn on, else the panel colour.
+fn light_row() -> egui::Color32 {
+    crate::kit::style_class::surface_or(theme::panel_background())
+}
+
+/// The darker plain row. Under an authored surface both plain rows would take that one colour, so
+/// the dark row is the surface pulled toward the window colour, and still blends over it.
+fn dark_row() -> egui::Color32 {
+    let dark = crate::kit::style_class::surface_or(theme::window_background());
+    let light = light_row();
+    if dark == light { light.lerp_to_gamma(theme::window_background(), 0.5) } else { dark }
 }
 
 /// The 2 px mark at the right of the key column on a key in the scale (the root's brighter).
@@ -341,6 +354,17 @@ mod tests {
         );
         assert_eq!(row_fill(None, 61, true), crate::kit::style_class::surface_or(theme::window_background()));
         assert_eq!(row_fill(None, 60, false), crate::kit::style_class::surface_or(theme::panel_background()));
+    }
+
+    #[test]
+    fn plain_rows_stay_distinct_under_an_authored_surface() {
+        let surface = egui::Color32::from_rgba_unmultiplied(20, 30, 40, 100);
+        crate::kit::style_class::with_surface(surface, || {
+            let (white, black) = (row_fill(None, 60, false), row_fill(None, 61, true));
+            assert_eq!(white, surface, "the light row is the surface");
+            assert_ne!(white, black, "the dark row is not");
+            assert_eq!(row_fill(Some(scale(0, ScaleMode::Major)), 61, true), black, "outside a scale too");
+        });
     }
 
     #[test]

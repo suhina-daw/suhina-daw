@@ -35,6 +35,15 @@ pub fn surface_or(fallback: egui::Color32) -> egui::Color32 {
     SURFACE.with(std::cell::Cell::get).unwrap_or(fallback)
 }
 
+/// Runs `body` as if drawn inside a region whose sheet gives it `surface`.
+#[cfg(test)]
+pub(crate) fn with_surface<R>(surface: egui::Color32, body: impl FnOnce() -> R) -> R {
+    let before = SURFACE.with(|s| s.replace(Some(surface)));
+    let result = body();
+    SURFACE.with(|s| s.set(before));
+    result
+}
+
 thread_local! {
     /// The style of the innermost element that has one, for the properties CSS inherits: the font
     /// size [`theme::ui_font`] and the text shadows [`super::native_css::paint_text`] draw with.

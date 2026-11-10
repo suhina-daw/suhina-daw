@@ -276,7 +276,6 @@ fn sample_waveform(
     });
     let source = ui.ctx().data(|data| data.get_temp::<Arc<suhina_engine::AudioData>>(sample_source_id(track, device)));
     let painter = ui.painter_at(visible);
-    painter.rect_filled(bounds, 0., crate::kit::theme::control_background());
     let mut colors = crate::kit::theme::palette();
     let scoped = styled_palette(widget_palette(), style);
     colors.accent = color(scoped.accent);

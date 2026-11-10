@@ -349,9 +349,8 @@ or 4 megapixels (a 4K wallpaper) is scaled down to fit 2560 by 1600 when the the
 `window { backdrop-opacity }`, is how much it darkens the picture; `backdrop-opacity: 100` with
 an opaque colour hides it.
 
-A theme whose surfaces show the desktop through them (a window, panel or header colour with
-alpha) has the area under button, fader and track artwork cleared first; on an opaque theme
-the artwork is drawn over the surface, so its transparent parts show the strip under them.
+Button, fader and track artwork is drawn over the surface under it, on a see-through theme
+and an opaque one alike, so its transparent parts show what is under them.
 
 ## Theme packages
 
@@ -1017,9 +1016,10 @@ Use `text.primary` contrast of at least 7:1 and hints of at least 3:1 where poss
 
 ## For AI-assisted edits
 
-Before editing, read the three authoring rules above: preserve an opaque native base
-with `background-color` plus `background-image`, collapse absent-panel Grid tracks,
-and contrast value/inverse text against selected fills. Report those checks explicitly.
+Before editing, read the three authoring rules above: check each background's intended
+alpha (every background blends over what is under it, see "Backgrounds on the see-through
+window"), collapse absent-panel Grid tracks, and contrast value/inverse text against
+selected fills. Report those checks explicitly.
 
 
 Describe the requested visual change and choose the smallest supported change.
