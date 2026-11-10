@@ -956,20 +956,26 @@ pub fn knob_roles() -> (&'static str, &'static str) {
 }
 
 pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: Color32, response: Option<&Response>) {
-    let el = response.map_or_else(|| KNOB.enter(), |response| KNOB.response(response).enter());
+    let el = KNOB.response_if(response).enter();
     let state =
         response.map(|response| super::skin::State::response(response, false)).unwrap_or(super::skin::State::Normal);
     let pointer = el.color_or(pointer);
     let radius = size * 9.0 / 22.0;
     let rect = Rect::from_center_size(center, Vec2::splat(size));
     let (body, tip_role) = knob_roles();
-    if !super::skin::paint(painter, rect, body, state, pointer, 0.0) {
+    // A knob is two elements, each colouring its own artwork (`currentColor`), with the knob's
+    // pointer states. The body's colour is its own (the palette's tier gives it one), never one
+    // inherited from the knob; the pointer takes the knob's.
+    let body_ink =
+        super::element::KNOB_BODY.response_if(response).enter().computed_color_or(theme::control_background());
+    if !super::skin::paint(painter, rect, body, state, body_ink, 0.0) {
         painter.circle_filled(center, radius, theme::control_background());
         painter.circle_stroke(center, radius, theme::hairline(theme::text_hint()));
     }
     el.paint_background(painter, rect, size * 0.5);
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
     let tip = center + Vec2::new(angle.sin(), -angle.cos()) * (radius - 1.0);
+    let pointer = super::element::KNOB_POINTER.response_if(response).enter().color_or(pointer);
     if !super::skin::paint(painter, rect, tip_role, state, pointer, angle) {
         painter.line_segment([center, tip], Stroke::new(1.5, pointer));
     }

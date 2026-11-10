@@ -1082,7 +1082,7 @@ fn gain_part(
     );
     let cap = Rect::from_center_size(Pos2::new(track.center().x, y_of(shown_db)), Vec2::new(FADER_WIDTH, 8.0));
     let hover = widgets::hover(ui, &response);
-    crate::kit::mixer_controls::fader_cap(painter, cap, hover, crate::kit::skin::State::response(&response, false));
+    crate::kit::mixer_controls::fader_cap(painter, cap, hover, &response);
     // Under it the readout, typed.
     let gain_field = Field {
         range: GAIN_RANGE,

@@ -197,3 +197,69 @@ fn a_former_suhina_property_is_not_read_and_its_notice_names_what_took_its_place
     assert!(warnings[1].contains("a CSS layout replaces it, device { grid-template-columns"), "{warnings:?}");
     assert!(warnings[2].contains("now direction"), "{warnings:?}");
 }
+
+/// Artwork rules name the element that draws a role's default artwork (`knob-body`,
+/// `icon[kind="play"]`, `button[checked]`); the earlier role form still reads, and Suhina writes
+/// the element form.
+#[test]
+fn artwork_rules_name_elements_and_read_the_earlier_role_form() {
+    let mut theme = Theme::default();
+    let css = "knob-body { image: url(\"assets/body.svg\"); }\n\
+               knob-pointer:hover { image: url(\"assets/tip.svg\"); }\n\
+               icon[kind=\"play\"] { image: url(\"assets/play.svg\"); }\n\
+               button[checked] { image: url(\"assets/on.svg\"); }\n\
+               fader.cap { image: url(\"assets/cap.svg\"); }\n\
+               solo:on { image: url(\"assets/solo.on.svg\"); }";
+    assert!(apply(&mut theme, css).is_empty());
+    for (role, path) in [
+        ("knob.body", "assets/body.svg"),
+        ("knob.pointer.hover", "assets/tip.svg"),
+        ("play", "assets/play.svg"),
+        ("button.on", "assets/on.svg"),
+        ("fader.cap", "assets/cap.svg"),
+        ("solo.on", "assets/solo.on.svg"),
+    ] {
+        assert_eq!(theme.skin.assets.get(role).map(String::as_str), Some(path), "{role}");
+    }
+    let written = export(&theme);
+    for rule in [
+        "knob-body { image: url(\"assets/body.svg\"); }",
+        "knob-pointer:hover { image: url(\"assets/tip.svg\"); }",
+        "icon[kind=\"play\"] { image: url(\"assets/play.svg\"); }",
+        "button[checked] { image: url(\"assets/on.svg\"); }",
+        "fader-cap { image: url(\"assets/cap.svg\"); }",
+        "icon[kind=\"solo\"][checked] { image: url(\"assets/solo.on.svg\"); }",
+    ] {
+        assert!(written.contains(rule), "{rule} in\n{written}");
+    }
+    let mut restored = Theme::default();
+    assert!(apply(&mut restored, &written).is_empty());
+    assert_eq!(restored.skin.assets, theme.skin.assets);
+}
+
+/// `url("suhina:…")` names artwork built into Suhina, as the user-agent sheet does; a name it
+/// does not ship is refused.
+#[test]
+fn a_suhina_url_names_built_in_artwork() {
+    let mut theme = Theme::default();
+    assert!(apply(&mut theme, "knob-pointer:hover { image: url(\"suhina:knob.body.svg\"); }").is_empty());
+    let body = suhina_theme_package::elements::default_artwork().find(|(role, _)| *role == "knob.body").unwrap().1;
+    assert_eq!(theme.skin.assets.get("knob.pointer.hover").map(String::as_str), Some(body));
+    let warnings = apply(&mut Theme::default(), "knob-body { image: url(\"suhina:nothing.svg\"); }");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+}
+
+/// An artwork rule's attribute may be written without quotes, in single quotes or with spaces,
+/// as CSS allows: each names the same role and gets no notice.
+#[test]
+fn an_artwork_rules_attribute_reads_in_any_form_css_allows() {
+    let mut theme = Theme::default();
+    let css = "icon[kind=play] { image: url(\"assets/play.svg\"); }\n\
+               icon[kind='stop']:hover { image: url(\"assets/stop.svg\"); }\n\
+               icon[ kind = \"solo\" ][checked] { image: url(\"assets/solo.svg\"); }";
+    assert_eq!(apply(&mut theme, css), Vec::<String>::new());
+    for (role, path) in [("play", "assets/play.svg"), ("stop.hover", "assets/stop.svg"), ("solo.on", "assets/solo.svg")]
+    {
+        assert_eq!(theme.skin.assets.get(role).map(String::as_str), Some(path), "{role}");
+    }
+}

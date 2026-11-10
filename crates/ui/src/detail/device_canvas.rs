@@ -1918,8 +1918,13 @@ fn paint_control(
         if let Some((center, radius)) = circle {
             let rect = Rect::from_center_size(center, Vec2::splat(radius * 2.0));
             if matches!(draw, Draw::Circle { .. }) {
-                let replaced = *body
-                    .get_or_insert_with(|| crate::kit::skin::paint_as(&scope, painter, rect, "knob.body", state, ink));
+                let replaced = *body.get_or_insert_with(|| {
+                    let body_ink = crate::kit::element::KNOB_BODY
+                        .response_if(response)
+                        .enter()
+                        .computed_color_or(crate::kit::theme::control_background());
+                    crate::kit::skin::paint_as(&scope, painter, rect, "knob.body", state, body_ink)
+                });
                 if replaced {
                     if !knob_effects {
                         scope.paint_background(effects, rect, radius);
@@ -1933,7 +1938,8 @@ fn paint_control(
             {
                 let direction = point(to) - center;
                 let angle = direction.x.atan2(-direction.y);
-                if crate::kit::skin::paint_turned_as(&scope, painter, rect, "knob.pointer", state, ink, angle) {
+                let pointer_ink = crate::kit::element::KNOB_POINTER.response_if(response).enter().color_or(ink);
+                if crate::kit::skin::paint_turned_as(&scope, painter, rect, "knob.pointer", state, pointer_ink, angle) {
                     continue;
                 }
             }

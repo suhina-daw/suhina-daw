@@ -38,7 +38,7 @@ const PALETTE: [&str; 16] = [
 ];
 
 fn viewport() -> Viewport {
-    Viewport { width: 1600.0, height: 1000.0, dark: true, reduced_motion: false }
+    Viewport { width: 1600.0, height: 1000.0, reduced_motion: false }
 }
 
 fn time(label: &str, frames: u32, mut frame: impl FnMut()) -> Duration {

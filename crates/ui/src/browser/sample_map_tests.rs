@@ -434,3 +434,13 @@ fn the_wheel_zooms_only_when_no_dialog_is_on_top() {
     harness.run();
     assert!(wheel(&mut harness) > 1.0, "without it the map zooms");
 }
+
+/// Without a theme sheet each kind takes the colour the user-agent sheet's own cascade gives it,
+/// whatever form its rules are written in; no kind falls back to grey.
+#[test]
+fn every_kind_has_the_user_agent_sheets_colour() {
+    let colours = user_agent_kind_colours();
+    assert_eq!(colours[kind_index(Kind::Kick)], Color32::from_rgb(0xD0, 0x6E, 0x5E));
+    assert_eq!(colours[kind_index(Kind::Other)], Color32::from_rgb(0x8A, 0x86, 0x80));
+    assert!(colours.iter().all(|colour| *colour != Color32::GRAY), "{colours:?}");
+}

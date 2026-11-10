@@ -8,7 +8,6 @@ use crate::value::Length;
 pub struct Viewport {
     pub width: f32,
     pub height: f32,
-    pub dark: bool,
     pub reduced_motion: bool,
 }
 
@@ -25,7 +24,6 @@ impl Viewport {
 enum Feature {
     Width(f32, bool),
     Height(f32, bool),
-    Dark(bool),
     Motion(bool),
     /// A range comparison of the width (axis 0) or height (axis 1): `size op dimension`.
     Range {
@@ -153,11 +151,12 @@ impl Media {
                 let name = name.trim();
                 let value = value.trim();
                 let feature = match name {
-                    "prefers-color-scheme" => Feature::Dark(match value {
-                        "dark" => true,
-                        "light" => false,
-                        _ => return Err("Unknown colour scheme".into()),
-                    }),
+                    // A theme with light and dark looks ships them as variants (#1019).
+                    "prefers-color-scheme" => {
+                        return Err("prefers-color-scheme is not supported: give a theme's light and dark looks as \
+                                    variants"
+                            .into());
+                    }
                     "prefers-reduced-motion" => Feature::Motion(match value {
                         "reduce" => true,
                         "no-preference" => false,
@@ -217,7 +216,6 @@ impl Media {
                             viewport.height <= *size
                         }
                     }
-                    Feature::Dark(dark) => viewport.dark == *dark,
                     Feature::Range { axis, op, size } => {
                         op.holds(if *axis == 0 { viewport.width } else { viewport.height }, *size)
                     }
@@ -232,7 +230,7 @@ impl Media {
 mod tests {
     use super::*;
     fn at(width: f32, height: f32) -> Viewport {
-        Viewport { width, height, dark: true, reduced_motion: false }
+        Viewport { width, height, reduced_motion: false }
     }
     #[test]
     fn ranges_orientation_and_classic_forms_agree() {
@@ -244,7 +242,9 @@ mod tests {
         assert!(reversed.matches(at(1.0, 700.0)) && !reversed.matches(at(1.0, 800.0)));
         assert!(Media::parse("(orientation: portrait)").unwrap().matches(at(400.0, 800.0)));
         assert!(Media::parse("(max-width: 500px) and (orientation: landscape)").unwrap().matches(at(500.0, 400.0)));
-        for bad in ["(depth > 1px)", "(width >)", "(1px < width = 2px)", "(width > 1em)"] {
+        for bad in
+            ["(depth > 1px)", "(width >)", "(1px < width = 2px)", "(width > 1em)", "(prefers-color-scheme: dark)"]
+        {
             assert!(Media::parse(bad).is_err(), "{bad}");
         }
     }
