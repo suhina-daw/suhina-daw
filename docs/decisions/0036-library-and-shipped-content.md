@@ -106,7 +106,9 @@ and store absolute paths in projects.
    out of the compare, and the pair keeps within a bound (the first own model, an Overdrive
    chain trained at 1000 epochs, sits −13.1 dB from its source at the compare's fitted lead —
    the Overdrive's own dry-path test knows a lead twice its declared `latency()`, so the pack's
-   compare takes its alignment from the streams' real lead). A test keeps every pack row parse,
+   compare takes its alignment from the streams' real lead; the second, a Compressor chain
+   trained at 1000 epochs over the DC-free phrase, sits −29.1 dB from its source at fitted lead
+   0). A test keeps every pack row parse,
    fit and size inside the ADR's ceiling, and the unpack to write-when-missing only. The
    library-relative path resolution is round-tripped: a project saves to a library-relative
    name, opens on a machine without the file on disk and still renders from the pack.

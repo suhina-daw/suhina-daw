@@ -21,13 +21,19 @@ const RATE: u32 = 48_000;
 /// 90 s of 16-bit mono. The compare is at distribution only on the content the model
 /// learned from, so the whole phrase is the ground.
 fn phrase() -> Vec<f32> {
-    let mut reader = hound::WavReader::open(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/suhina-overdrive-train-phrase.wav"),
-    )
-    .unwrap_or_else(|e| panic!("the pack test's phrase wav does not read: {e}"));
+    phrase_from("suhina-overdrive-train-phrase.wav")
+}
+
+/// The phrase a model trained from, from the fixture named `file`: the wav is mono, so each
+/// sample lands in both channels of the interleaved stereo the devices process — read as flat
+/// samples, a mono phrase would halve to 45 s and scramble its spectrum across the channels.
+fn phrase_from(file: &str) -> Vec<f32> {
+    let mut reader = hound::WavReader::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data").join(file))
+        .unwrap_or_else(|e| panic!("the pack test's phrase wav does not read: {e}"));
     let mut out = Vec::new();
     for sample in reader.samples::<i16>() {
-        out.push(f32::from(sample.unwrap_or_default()) / 32768.0);
+        let sample = f32::from(sample.unwrap_or_default()) / 32768.0;
+        out.extend([sample, sample]);
     }
     out
 }
@@ -111,6 +117,71 @@ fn the_own_model_renders_within_a_bound_of_its_source_chain() {
     );
 }
 
+/// The second own model (`Suhina Clean`). The same bound as the Overdrive's, against the device
+/// chain its training signal came from ([ADR 0036] › the starter pack).
+#[test]
+fn the_clean_model_renders_within_a_bound_of_its_source_chain() {
+    let Some((name, _)) = pack_files("nam-amp-modeler").iter().find(|(name, _)| *name == "Suhina Clean.nam").copied()
+    else {
+        panic!("the pack has no second own model to prove");
+    };
+    let asset = load_builtin_file("nam-amp-modeler", name, RATE).unwrap();
+    let mut model = create_with("nam-amp-modeler", Some(&asset)).unwrap();
+
+    let mut chain = create("compressor").unwrap();
+    let mut phrase = phrase_from("suhina-clean-train-phrase.wav");
+    let model_out = rendered(model.as_mut(), &mut phrase.clone());
+    let gold_out = rendered(chain.as_mut(), &mut phrase);
+    let n = gold_out.len().min(model_out.len());
+    let (mut best_lag, mut best_corr) = (0i64, -2.0f64);
+    for lag in -256i64..=256 {
+        let (mut num, mut da2, mut db2, mut taken) = (0.0, 0.0, 0.0, 0usize);
+        for (k, value) in gold_out.iter().take(n).enumerate() {
+            let bi = k as i64 + lag;
+            if !(0..n as i64).contains(&bi) {
+                continue;
+            }
+            let x = f64::from(*value);
+            let y = f64::from(model_out[bi as usize]);
+            num += x * y;
+            da2 += x * x;
+            db2 += y * y;
+            taken += 1;
+        }
+        if taken < n / 10 {
+            continue;
+        }
+        let score = num / (da2.sqrt() * db2.sqrt()).max(1e-30);
+        if score > best_corr {
+            (best_lag, best_corr) = (lag, score);
+        }
+    }
+    let mut bound = f64::INFINITY;
+    for lag in [-best_lag, best_lag] {
+        let (mut error, mut energy, mut taken) = (0.0, 0.0, 0usize);
+        for (k, value) in gold_out.iter().take(n).enumerate() {
+            let bi = k as i64 - lag;
+            if !(0..n as i64).contains(&bi) {
+                continue;
+            }
+            let (a, b) = (f64::from(*value), f64::from(model_out[bi as usize]));
+            let d = a - b;
+            error += d * d;
+            energy += a * a;
+            taken += 1;
+        }
+        if taken > n / 10 && energy > 1e-30 {
+            bound = bound.min(10.0 * (error / energy).log10());
+        }
+    }
+    let _ = best_corr;
+    assert!(
+        bound < -6.0,
+        "the shipped clean model renders {bound:+.2} dB from its source chain at its own fitted \
+         lead ({best_lag:+} frames) — retrain it or re-pair it with the chain"
+    );
+}
+
 /// Every shipped IR runs the device: a Cab Loader made from a pack's bytes renders nonzero on
 /// a loud bed.
 #[test]
@@ -122,6 +193,22 @@ fn every_pack_ir_runs_stereo() {
         cab.process(&ProcessContext::default(), &mut frames);
         let passive = frames.as_chunks::<2>().0.iter().any(|[l, _]| l.abs() > 1e-3);
         assert!(passive, "{name} renders silence");
+    }
+}
+
+/// Every shipped amp model runs the device: each pack model renders the phrase through the
+/// normal device path, and its output stays finite and off silence ([ADR 0036] › 7, the
+/// offline render is the oracle).
+#[test]
+fn every_pack_amp_model_runs_the_device() {
+    let phrase = phrase();
+    for (name, _) in pack_files("nam-amp-modeler") {
+        let asset = load_builtin_file("nam-amp-modeler", name, RATE).unwrap();
+        let mut device = create_with("nam-amp-modeler", Some(&asset)).unwrap();
+        let out = rendered(device.as_mut(), &mut phrase.clone());
+        assert!(out.iter().all(|s| s.is_finite()), "{name} renders a non-finite sample");
+        let peak = out.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        assert!(peak > 1e-3, "{name} renders silence (peak {peak:.2e}) — the pack must not ship an unusable model");
     }
 }
 

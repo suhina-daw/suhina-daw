@@ -1059,7 +1059,7 @@ fn a_new_device_starts_on_a_file_in_the_library_the_unpacked_or_else_the_pack() 
     let lists = app.nam_lists();
     assert_eq!(
         lists.models.first().map(|set| (set.name.clone(), set.files.len())),
-        Some(("Suhina".to_owned(), 17)),
+        Some(("Suhina".to_owned(), 18)),
         "the unpacked pack lists first either way"
     );
     assert_eq!(lists.irs.first().map(|set| (set.name.clone(), set.files.len())), Some(("Suhina".to_owned(), 26)));
@@ -1098,8 +1098,7 @@ fn a_grouped_collection_lists_its_capture_packs_and_a_new_capture_lists_again() 
     // capture dropped in later must still change them (a test never depends on how busy the
     // machine was between the writes).
     let group = models.join("Live Amp Modeler");
-    filetime::set_file_mtime(&group, filetime::FileTime::from_unix_time(0, 0))
-        .expect("the collection's stamp is set");
+    filetime::set_file_mtime(&group, filetime::FileTime::from_unix_time(0, 0)).expect("the collection's stamp is set");
     let lists = app.nam_lists();
     assert_eq!(
         lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)"),

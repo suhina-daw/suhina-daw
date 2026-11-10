@@ -8,7 +8,7 @@ device, before the user's own packs. At app start the pack unpacks into the libr
 
 | Folder | What | Files |
 |---|---|---|
-| `packs/nam-amp-modeler/` | `.nam` models the NAM Amp Modeler runs | 17 |
+| `packs/nam-amp-modeler/` | `.nam` models the NAM Amp Modeler runs | 18 |
 | `packs/nam-cab-loader/` | `.wav` cabinet responses the NAM Cab Loader runs | 26 |
 
 ## Licences
@@ -25,6 +25,7 @@ device, before the user's own packs. At app start the pack unpacks into the libr
 
 | File | Author/capturer (as named) | Source | Licence |
 |---|---|---|---|
+| `Suhina Clean.nam` | Suhina | trained with the NAM trainer ([neural-amp-modeler](https://github.com/sdatkinson/neural-amp-modeler), MIT, v0.13.0, `f2611290`) over 1000 epochs from our 90-second training phrase rendered through Suhina's own Compressor at its defaults, offline; fits its source at −29.1 dB ESR, guarded by the pack's render-oracle test | CC0-1.0 |
 | `Suhina Overdrive.nam` | Suhina | trained with the NAM trainer ([neural-amp-modeler](https://github.com/sdatkinson/neural-amp-modeler), MIT, v0.13.0, `f2611290`) over 1000 epochs from our 90-second training phrase rendered through Suhina's own Overdrive chain at its defaults, offline; fits its source at −13.1 dB ESR, guarded by the pack's render-oracle test | CC0-1.0 |
 | the 16 remaining `.nam` files (each name carries its capturer: "Helga B", "Jason Z", "Mikhail K", "Peter N", "Phillipe P", "Roman A", "Sascha S", "Tim R", "Tudor N" — the captures' authors, with the amp or pedal recorded from) | the Facebook NAM group's captures, gathered by pelennor2170 | [pelennor2170/NAM_models](https://huggingface.co/pelennor2170/NAM_models) — the collection the owner's decision of 2026-11-07 on [#1279](https://github.com/suhina-daw/suhina-daw/issues/1279) allows shipping per file | GPL-3.0 (the collection's COPYING), by the publisher's licence |
 

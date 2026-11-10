@@ -432,6 +432,7 @@ const PACK_FILES: &[(&str, &str, &[u8])] = &[
         include_bytes!("../../../packs/nam-amp-modeler/Sascha S DirtyShirleyMini_crunch_G6.nam"),
     ),
     ("nam-amp-modeler", "Suhina Overdrive.nam", include_bytes!("../../../packs/nam-amp-modeler/Suhina Overdrive.nam")),
+    ("nam-amp-modeler", "Suhina Clean.nam", include_bytes!("../../../packs/nam-amp-modeler/Suhina Clean.nam")),
     (
         "nam-amp-modeler",
         "Tim R Fender TwinVerb Vibrato Bright.nam",
