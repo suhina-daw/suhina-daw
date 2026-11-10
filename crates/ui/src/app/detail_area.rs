@@ -831,6 +831,14 @@ impl App {
         view
     }
 
+    /// Whether the detail area lies along the bottom: in a row, or with the devices stacked
+    /// while the shown clip has an editor (the piano roll, an ARA plug-in's), which stays there.
+    pub(super) fn editor_along_bottom(&self) -> bool {
+        self.settings.device_layout != DeviceLayout::Stack
+            || self.piano_clip(self.shown_clip()).is_some()
+            || matches!(self.shown_clip(), Some(ClipRef::Arrangement(t, c)) if self.clip_uses_ara(t, c))
+    }
+
     /// The splitter along the bottom while the detail area is hidden: dragged up past half the
     /// least height, the detail area opens at the height the drag reaches. Returns the room left
     /// above it for the view.

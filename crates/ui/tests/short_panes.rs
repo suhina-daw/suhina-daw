@@ -336,7 +336,8 @@ fn the_clip_column_never_wraps_and_leaves_out_rows_that_do_not_fit() {
         for size in [(1280.0, 800.0), (900.0, 500.0), (640.0, 360.0), (420.0, 260.0)] {
             h.set_size(vec2(size.0, size.1));
             h.run();
-            // Stacked devices leave the piano roll along the bottom too, at the height dragged.
+            // Stacked devices leave the piano roll along the bottom too, at the height dragged;
+            // a drag that closes it leaves its splitter there to open it again.
             let c = splitter(&h).center();
             drag(&mut h, c, pos2(c.x, size.1 - 90.0));
             let whole = Rect::from_min_size(Pos2::ZERO, vec2(size.0, size.1));

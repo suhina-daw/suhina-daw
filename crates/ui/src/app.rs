@@ -3093,7 +3093,7 @@ impl App {
                 // In a row under the view, the splitter stays along the bottom, to drag it open.
                 if let Some(layout) = &css_workspace {
                     layout.main
-                } else if grid.is_some() && self.settings.device_layout != DeviceLayout::Stack {
+                } else if grid.is_some() && self.editor_along_bottom() {
                     self.collapsed_splitter(ui, inner)
                 } else {
                     inner
