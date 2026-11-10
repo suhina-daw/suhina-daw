@@ -126,7 +126,7 @@ fn a_part_entered_with_its_controls_response_takes_its_hover_rule() {
         ctx.run_ui(input, |ui| {
             let _frame = super::super::native_css::frame_with_motion(ui, false);
             let rect = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(20.0, 20.0));
-            let response = ui.interact(rect, egui::Id::new("knob"), egui::Sense::click_and_drag());
+            let response = ui.interact(rect, egui::Id::unique("knob"), egui::Sense::click_and_drag());
             colours.push((
                 KNOB_BODY.response_if(Some(&response)).enter().computed_color_or(egui::Color32::RED),
                 KNOB_BODY.response_if(None).enter().computed_color_or(egui::Color32::RED),
