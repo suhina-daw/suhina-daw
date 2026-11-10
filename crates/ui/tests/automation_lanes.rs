@@ -1211,6 +1211,30 @@ fn undoing_a_duplicate_brings_the_range_back() {
     assert_eq!(span(&harness), Some((8.0, 32.0)), "an undo of a point leaves the range");
 }
 
+/// A range painted on a lane and dragged out of the track's lanes goes on as one time selection:
+/// up onto the track's clips it is on the track, down onto the next track on both, the lanes'
+/// own range let go (#1322).
+#[test]
+fn a_range_dragged_off_the_lanes_becomes_a_time_selection_over_the_tracks() {
+    let mut harness = with_lanes();
+    let selection = |h: &Harness<'static, App>| {
+        let time = h.state().arrangement().time_selection().map(|s| s.tracks.iter().map(|t| t.0).collect::<Vec<_>>());
+        (time, h.state().arrangement().automation.range.is_some())
+    };
+    let rect = lane(&harness);
+    let from = Pos2::new(rect.left() + 60.0, rect.top() + rect.height() * 0.25);
+    // Up onto the track's own clips.
+    drag(&mut harness, from, vec2(180.0, rect.top() - 20.0 - from.y));
+    assert_eq!(selection(&harness), (Some(vec![1]), false));
+    // Down onto the next track.
+    let rect = lane(&harness);
+    drag(&mut harness, from, vec2(180.0, rect.bottom() + 40.0 - from.y));
+    assert_eq!(selection(&harness), (Some(vec![1, 2]), false));
+    // Kept within the lane, it is the lane's own range again.
+    drag(&mut harness, from, vec2(180.0, 0.0));
+    assert_eq!(selection(&harness), (None, true));
+}
+
 /// Ctrl+L loops a range painted on the lanes, its span exactly, and turns the loop off again
 /// (#1322).
 #[test]

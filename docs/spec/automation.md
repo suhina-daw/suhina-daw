@@ -383,7 +383,10 @@ Mounted lanes are put in an order of one's own and gathered in groups (#1322):
   puts each back on its own lane of the track). A lane with no automation in the range is left out.
   It is drawn as one area over those lanes, with no gap where one lane meets the next. It is the
   one selection: painting it lets go of the time selection and the clips picked on the tracks, and
-  a time selection or a clip picked after it lets go of it.
+  a time selection or a clip picked after it lets go of it. Dragged out of the track's lanes, up
+  onto its clips or onto another track, it goes on as a time selection over every track it
+  crosses, lit over their clips and lanes as one area; a time selection painted on the clips takes
+  in a track whose take or automation lanes it crosses, too.
   Ctrl+L, or **Loop selection** in the range's right-click menu, loops the range's span, as it
   does a time selection on the clips' lanes; Ctrl+L again over the same span turns looping off.
 

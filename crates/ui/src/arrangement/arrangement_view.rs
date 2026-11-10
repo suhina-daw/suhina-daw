@@ -200,6 +200,9 @@ struct Row {
     clips: TrackId,
     time: Rect,
     clip: Rect,
+    /// The row with its take and automation lanes under it, down to the next row: a time
+    /// selection painted over any of it is on the track (#1322).
+    span: egui::Rangef,
 }
 
 /// One lane the view draws: the lane that owns its header and the lane whose clips it shows. A
@@ -995,8 +998,10 @@ fn show_lanes(
         let height = state.height(lane);
         let lane_time = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(y, y + height));
         let clips = timeline.lanes.get(shown.clips).map_or(lane.track, |l| l.track);
-        rows.push(Row { track: lane.track, clips, time: lane_time, clip: lane_time.intersect(lanes_area) });
-        y += height + 1.0 + state.below(lane.track, timeline);
+        let next = y + height + 1.0 + state.below(lane.track, timeline);
+        let span = egui::Rangef::new(y, next);
+        rows.push(Row { track: lane.track, clips, time: lane_time, clip: lane_time.intersect(lanes_area), span });
+        y = next;
     }
     // Where the lanes end, scrolled as they are: how far a drag past the bottom may scroll.
     let lanes_end = y;
@@ -1004,8 +1009,16 @@ fn show_lanes(
     for lane in &returns {
         let height = state.return_height(lane.track);
         let lane_time = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(y, y + height));
-        rows.push(Row { track: lane.track, clips: lane.track, time: lane_time, clip: lane_time.intersect(fixed) });
-        y += height + 1.0 + state.below(lane.track, timeline);
+        let next = y + height + 1.0 + state.below(lane.track, timeline);
+        let span = egui::Rangef::new(y, next);
+        rows.push(Row {
+            track: lane.track,
+            clips: lane.track,
+            time: lane_time,
+            clip: lane_time.intersect(fixed),
+            span,
+        });
+        y = next;
     }
     let row_of = |track: TrackId| rows.iter().find(|r| r.track == track).copied();
     let row_of_clips = |track: TrackId| rows.iter().find(|r| r.clips == track).copied();
@@ -1330,7 +1343,7 @@ fn show_lanes(
     if let Some(selection) = &state.time_selection {
         // Within the timeline: the track headers beside it are not lit.
         let span = egui::Rangef::new(x_of(selection.start), x_of(selection.end)).intersection(time.x_range());
-        for (track, row) in rows_seen.iter().filter(|(t, _)| selection.tracks.contains(t)) {
+        for (at, (track, row)) in rows_seen.iter().enumerate().filter(|(_, (t, _))| selection.tracks.contains(t)) {
             if span.span() <= 0.0 {
                 break;
             }
@@ -1338,9 +1351,11 @@ fn show_lanes(
             // stack, over that row. The track's take and automation lanes under it are lit too:
             // their automation goes with the clips (#916).
             let under = state.takes_height(*track, timeline) + state.automation.height(*track, &timeline.automation);
+            // Over the line to the next track when that one is selected too: one area, no gaps.
+            let joined = rows_seen.get(at + 1).is_some_and(|(next, _)| selection.tracks.contains(next));
             let band = match selection.row {
                 Some((at, of)) => sub_row(*row, at, of).y_range(),
-                None => egui::Rangef::new(row.top(), row.bottom() + under),
+                None => egui::Rangef::new(row.top(), row.bottom() + under + if joined { 1.0 } else { 0.0 }),
             };
             let lit = Rect::from_x_y_ranges(span, band);
             lanes_painter.rect_filled(lit, 0.0, theme::accent().gamma_multiply(0.38));
@@ -1348,6 +1363,15 @@ fn show_lanes(
             lanes_painter.vline(lit.left(), lit.y_range(), edge);
             lanes_painter.vline(lit.right(), lit.y_range(), edge);
         }
+    }
+    // A range painted on automation lanes and dragged out of its track's lanes, onto the clips
+    // or another track, goes on as a time selection over the tracks it crosses (#1322).
+    if let Some(origin) = state.automation.take_time_from() {
+        state.marquee = Some(origin);
+        state.marquee_scroll = state.scroll;
+        state.marquee_time = true;
+        state.marquee_row = None;
+        state.painted_from = None;
     }
     if let Some(origin) = state.marquee.as_mut() {
         *origin += state.marquee_scroll - state.scroll;
@@ -1369,8 +1393,9 @@ fn show_lanes(
             let free = ui.input(|i| i.modifiers.alt);
             let beat_of =
                 |x: f32| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free, false);
+            // Over a track's row or the take and automation lanes under it.
             let tracks: Vec<TrackId> =
-                rows.iter().filter(|r| r.time.y_range().intersects(whole.y_range())).map(|r| r.clips).collect();
+                rows.iter().filter(|r| r.span.intersects(whole.y_range())).map(|r| r.clips).collect();
             let (start, end) = (beat_of(rect.left()), beat_of(rect.right()));
             // Begun in a row of a stack and kept to its track: that row alone.
             let row = state.marquee_row.filter(|(track, _, _)| tracks == [*track]).map(|(_, row, rows)| (row, rows));

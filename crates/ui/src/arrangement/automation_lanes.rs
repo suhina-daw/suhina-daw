@@ -1435,6 +1435,9 @@ pub struct LanesState {
     /// The lanes of the track being drawn that the range (painted or being painted) is on, top to
     /// bottom: it is drawn as one area over them, with no gaps between the lanes.
     range_lanes: Vec<LaneKey>,
+    /// Where a range being painted began, once it was dragged out of its track's lanes: the
+    /// Arrangement view goes on with it as a time selection ([`LanesState::take_time_from`]).
+    time_from: Option<Pos2>,
 }
 
 impl LanesState {
@@ -1921,6 +1924,12 @@ impl LanesState {
         self.range_redo.retain(|step| step.depth > after);
     }
 
+    /// Where a range painted on a lane began, when it was dragged out of its track's lanes this
+    /// frame: the view goes on with the drag as a time selection over the tracks (#1322).
+    pub fn take_time_from(&mut self) -> Option<Pos2> {
+        self.time_from.take()
+    }
+
     /// How far the view that scrolls `area` moves down so a lane made taller past its bottom stays
     /// in sight (`0` without one); asked once a frame.
     pub fn take_follow_resize(&mut self, area: Rect) -> f32 {
@@ -2102,6 +2111,17 @@ pub fn show(
 ) {
     // A range painted from one of the track's lanes reaches the lanes the pointer went over,
     // up or down (#1322): worked out before the lanes are drawn, so each shows it this frame.
+    // Dragged out of the track's lanes, onto its clips or another track, the range becomes a time
+    // selection over the tracks, as one painted on the clips would be (#1322).
+    if let Some(drag) = state.box_drag.clone().filter(|d| !d.select && d.track == lanes.track) {
+        let bottom = lanes.top + state.height(lanes.track, params);
+        if drag.to.y < lanes.top || drag.to.y > bottom {
+            state.box_drag = None;
+            state.covered.clear();
+            state.range = None;
+            state.time_from = Some(drag.from);
+        }
+    }
     if let Some(drag) = state.box_drag.clone().filter(|d| !d.select && d.track == lanes.track) {
         let (low, high) = (drag.from.y.min(drag.to.y), drag.from.y.max(drag.to.y));
         let mut top = lanes.top;
