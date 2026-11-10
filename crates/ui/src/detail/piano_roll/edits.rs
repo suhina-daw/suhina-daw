@@ -49,11 +49,19 @@ pub(super) fn single_click(
         (None, Tool::Draw | Tool::Paint) => click_adds(gesture, state, actions, pos, inputs),
         (None, Tool::Select) if workflow.empty_click_draws => click_adds(gesture, state, actions, pos, inputs),
         (None, Tool::Slice) => {}
-        // A click on an empty spot leaves the mark a paste goes to.
+        // A click on an empty spot leaves the mark a paste goes to, and for an arrangement clip
+        // moves the play start marker there, as a click on an empty spot of a lane does: stopped,
+        // the playhead goes there; while playing, the next start begins there (#657).
         (None, Tool::Select) => {
             state.selected.clear();
             state.clear_span();
-            state.insert_at = Some(gesture.grid.place(gesture.layout.beat_at(pos.x), inputs.alt, true));
+            let beat = gesture.grid.place(gesture.layout.beat_at(pos.x), inputs.alt, true);
+            state.insert_at = Some(beat);
+            if clip.address.get("clip").is_some_and(serde_json::Value::is_number)
+                && let Some(at) = clip.placement.arrangement_beat(beat)
+            {
+                actions.push(Action::new("transport.setStart", json!({ "beats": round_beat(at) })));
+            }
         }
     }
 }

@@ -688,7 +688,7 @@ fn title_rest(
             Pos2::new(right_edge - width / 2.0, rect.center().y),
             Vec2::new(width, SWITCH_HEIGHT),
         );
-        picked = switch(ui, painter, at, showing);
+        picked = switch(ui, painter, at, showing, info.switch_both);
         right_edge = at.left() - 8.0;
     }
     let length = format!("{} beats", (panel.length_beats * 100.0).round() / 100.0);

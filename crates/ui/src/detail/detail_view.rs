@@ -427,6 +427,9 @@ fn list_right(device: &DeviceBox, graph: &GraphBox) -> f32 {
 /// taller canvas beside it. A list in a panel the theme sizes (`device { width }`) keeps one
 /// column that follows that width and scrolls.
 fn list_height(device: &DeviceBox, graph: &GraphBox) -> f32 {
+    if graph.canvas.is_none() && ONE_COLUMN.with(std::cell::Cell::get) {
+        return f32::INFINITY;
+    }
     if graph.canvas.is_none() {
         let el = crate::kit::element::DEVICE.id(&format!("device-{}", device.theme_id)).enter();
         if el.style().is_some_and(|c| c.width.is_some()) {
@@ -512,8 +515,31 @@ pub fn show_clip_column(
     (rest, Picked { showing: picked, ..Picked::default() })
 }
 
-/// A chain's devices one under another in `area`; one with an embedded editor is as tall as
-/// it needs (the editor is cut off at the column's right edge when it is wider).
+thread_local! {
+    /// While the stacked chain is drawn: a list keeps one column, so a panel fits the column's
+    /// width, and scrolls as a themed width's does.
+    static ONE_COLUMN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Sets [`ONE_COLUMN`] until it is dropped.
+struct OneColumn;
+
+impl OneColumn {
+    fn new() -> Self {
+        ONE_COLUMN.with(|c| c.set(true));
+        Self
+    }
+}
+
+impl Drop for OneColumn {
+    fn drop(&mut self) {
+        ONE_COLUMN.with(|c| c.set(false));
+    }
+}
+
+/// A chain's devices one under another in `area`, each list in one column so the panel fits the
+/// column; one with an embedded editor is as tall as it needs (the editor is cut off at the
+/// column's right edge when it is wider).
 fn chain_stack(
     ui: &mut Ui,
     painter: &egui::Painter,
@@ -527,6 +553,7 @@ fn chain_stack(
         hint(painter, area, &format!("No devices on {} yet", chain.name));
         return Picked::default();
     }
+    let _one_column = OneColumn::new();
     let scale = ui.ctx().pixels_per_point();
     let mut picked = Picked::default();
     let mut y = area.top();

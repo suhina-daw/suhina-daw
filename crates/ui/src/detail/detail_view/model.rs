@@ -316,6 +316,8 @@ pub struct ClipInfo {
     /// The Clip / Devices switch at the end of the title row, and which part is on: only for a
     /// clip with an editor (› Where it opens in `docs/spec/ui-clip-editor.md`).
     pub switch: Option<Showing>,
+    /// Both parts are on: the devices are stacked beside the clip's editor, which stays open.
+    pub switch_both: bool,
     /// The other arrangement clips selected with it, by id: the title says how many are
     /// selected, and a switch (Loop) turns all of them as it turns this one.
     pub others: Vec<u32>,
@@ -690,6 +692,7 @@ pub fn build_with(
                 notes,
                 selection: SelectionInfo::default(),
                 switch: None,
+                switch_both: false,
                 others: Vec::new(),
                 picked: Vec::new(),
                 panel: Some(AudioPanel {

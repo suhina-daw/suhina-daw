@@ -363,7 +363,7 @@ impl App {
         let (view, splitter, detail) = if let Some((view, detail, _)) = geometry {
             (view, css_splitter.unwrap_or(Rect::NOTHING), detail)
         } else if stacked {
-            self.detail_width = detail_width_in(self.detail_width, area.width());
+            self.detail_width = detail_width_in(detail_view::STACK_WIDTH, area.width());
             let x = area.right() - self.detail_width;
             (
                 Rect::from_min_max(area.min, Pos2::new(x - SPLITTER, area.bottom())),
@@ -396,18 +396,28 @@ impl App {
                 Rect::from_min_max(Pos2::new(area.left(), y), area.max),
             )
         };
-        // The stacked devices beside a clip's editor: a column at the view's right, as wide as
-        // the stacked area is, with its own splitter.
+        // The stacked devices beside a clip's editor: a column at the view's right, a stacked
+        // panel wide, with its own splitter. As a track's devices in a row, it is open whole or
+        // closed: a drag past half its width or a double-click closes it.
         let (view, side) = if side_devices {
-            self.detail_width = detail_width_in(self.detail_width, view.width());
-            let x = view.right() - self.detail_width;
+            let width = detail_width_in(detail_view::STACK_WIDTH, view.width());
+            let x = view.right() - width;
             let side_splitter = Rect::from_min_max(Pos2::new(x - SPLITTER, view.top()), Pos2::new(x, view.bottom()));
             let response = ui
                 .interact(side_splitter, Id::unique("detail-side-splitter"), Sense::click_and_drag())
                 .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Devices column splitter"));
+            if response.double_clicked() {
+                self.detail_showing = detail_view::Showing::Clip;
+            }
             if response.dragged_by(egui::PointerButton::Primary) {
-                self.detail_width -= response.drag_delta().x;
+                let dragged = self.side_drag.unwrap_or(width) - response.drag_delta().x;
+                self.side_drag = Some(dragged);
+                if dragged < width / 2.0 {
+                    self.detail_showing = detail_view::Showing::Clip;
+                }
+            } else {
+                self.side_drag = None;
             }
             paint_splitter(ui, side_splitter, &response, true);
             (
@@ -436,7 +446,13 @@ impl App {
             if response.dragged_by(egui::PointerButton::Primary) {
                 let delta = response.drag_delta();
                 if stacked {
-                    self.detail_width -= delta.x;
+                    // Stacked, the area is open a panel wide or closed, as a track's devices in
+                    // a row are: past half that width a drag closes it.
+                    let width = self.detail_drag.unwrap_or(detail.width()) - delta.x;
+                    self.detail_drag = Some(width);
+                    if width < detail_view::STACK_WIDTH / 2.0 {
+                        self.hide_editor();
+                    }
                 } else {
                     let height = self.detail_drag.unwrap_or(detail.height()) - delta.y;
                     self.detail_drag = Some(height);
@@ -621,6 +637,7 @@ impl App {
         }
         if let detail_view::Detail::Clip(info, _) = &mut shown {
             info.switch = switch;
+            info.switch_both = side_devices;
             // Several arrangement clips picked: the column says how many, and its switches turn
             // them all.
             if self.shown == View::Arrangement && self.arrangement.selected_clips().len() > 1 {

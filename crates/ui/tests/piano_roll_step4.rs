@@ -592,6 +592,13 @@ fn with_the_devices_stacked_the_piano_roll_stays_along_the_bottom_and_ctrl_u_sti
     h.get_by_label("Show Clip").click();
     h.run();
     assert!(h.query_by_label("Devices column splitter").is_none(), "Clip shows the piano roll alone");
+    // Both parts are on while the column shows, and Devices clicked again closes it too.
+    h.get_by_label("Show Devices").click();
+    h.run();
+    assert!(h.query_by_label("Devices column splitter").is_some());
+    h.get_by_label("Show Devices").click();
+    h.run();
+    assert!(h.query_by_label("Devices column splitter").is_none(), "Devices again closes the column");
     // The quantise settings and Ctrl+U work whether the tools show or not.
     h.key_press_modifiers(Modifiers::COMMAND, Key::U);
     h.run();
@@ -601,4 +608,18 @@ fn with_the_devices_stacked_the_piano_roll_stays_along_the_bottom_and_ctrl_u_sti
         "Ctrl+U quantised: {quantised:?}"
     );
     assert_eq!(h.state().piano_roll().quantize.amount, 100.0, "the settings it keeps are intact");
+}
+
+/// A click on an empty spot of the note grid moves the play start marker there, as a click on an
+/// empty spot of a lane does: stopped, the playhead goes where the click was (on the grid).
+#[test]
+fn a_click_on_an_empty_spot_moves_the_play_start_marker_there() {
+    let mut renderer = engine();
+    let monitor = renderer.monitor();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let key = empty_key(&h);
+    let at = spot(&h, 2.0, key);
+    click(&mut h, at);
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    assert_eq!(monitor.start_beat(), CLIP_START + 2.0, "beat 2 of the clip, which starts at beat 64");
 }

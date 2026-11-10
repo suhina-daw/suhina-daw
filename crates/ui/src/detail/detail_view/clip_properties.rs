@@ -209,7 +209,7 @@ pub(super) fn clip_properties(
                 Pos2::new(title.right() - PAD - width / 2.0, title.center().y),
                 Vec2::new(width, SWITCH_HEIGHT),
             );
-            let picked = switch(ui, painter, at, showing);
+            let picked = switch(ui, painter, at, showing, info.switch_both);
             (Rect::from_min_max(title.min, Pos2::new(at.left() - PAD, title.bottom())), picked)
         }
         None => (title, None),

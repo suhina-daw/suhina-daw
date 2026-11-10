@@ -59,7 +59,11 @@ lane, the grid and zoom, and the `note.*` commands.
   column stays on the left with the switch in it, and the chain fills the rest. With the devices
   stacked, **Devices** opens them in a column at the right of the view, above the detail area as the
   browser is beside it, and the piano roll (or an ARA plug-in's editor) stays open under it with
-  its keys; **Clip** shows the editor alone. The column has a splitter of its own for its width. The MIDI clip retains its resizable detail area in both tabs. A device row alone has
+  its keys; both parts of the switch are lit then, and **Clip** or **Devices** clicked again shows
+  the editor alone. The column is a stacked panel wide (one column of parameters per device, so a
+  panel fits it), open whole or closed, as a track's devices in a row are: a drag of its splitter
+  past half its width or a double-click on it closes it. The stacked detail area itself is open
+  whole or closed the same way. The MIDI clip retains its resizable detail area in both tabs. A device row alone has
   two states: open at 200 logical pixels or closed. Dragging the splitter down past half that(
   )height closes it, dragging it up opens it whole; no height in between cuts its panels.
   The panels in the row are one height, the tallest's, at least a compact panel's and at most the
@@ -633,6 +637,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   end stays on it, and the stretch grows to keep them all in, so the bar goes on showing them. A
   stretch with no notes selected stays where it is when the notes that start in it change length.
   It always holds the notes selected with it: one that misses them all takes their extent.
+- **Built:** a click on an empty spot of the note grid (the Select tool) also moves the play start
+  marker there for an arrangement clip, as a click on an empty spot of a lane does: stopped, the
+  playhead goes there; while playing, the next start begins there (`transport.setStart`).
 - **Built:** a stretch selected in time is lit on the clip in the Arrangement too, under its name bar,
   where those beats of the content play from the clip's start (the content's beats less the clip's
   offset), cut to the clip's length, while the piano roll shows that clip. A rectangle being drawn
