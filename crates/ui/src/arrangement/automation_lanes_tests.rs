@@ -791,7 +791,8 @@ fn picked_lanes_and_groups_are_deleted_in_one_command() {
     lanes.pick(track, &p, egui::Modifiers::COMMAND, &params);
     assert!(!lanes.is_picked(track, &p));
     assert_eq!(lanes.dragged_with(track, &m, &params), [v.clone(), m.clone()]);
-    lanes.pick_group(track, 0, egui::Modifiers::NONE);
+    let layout = lanes.layout(track, &params);
+    lanes.pick_group(track, 0, egui::Modifiers::NONE, &layout);
     assert!(lanes.picked.is_empty() && lanes.has_picks());
     let action = lanes.delete_picked(&params).unwrap();
     assert_eq!(action.params["lanes"], json!([{ "param": "volume" }]));
@@ -843,4 +844,27 @@ fn a_duplicates_undo_brings_the_range_back_with_a_full_history() {
     // A step another project made (a depth the lanes did not follow) moves nothing.
     lanes.follow_history("edit.undo", (3, 40), (2, 40));
     assert_eq!(lanes.range, moved);
+}
+
+/// A group heading picked in one layout is let go of once the track's layout changes (an undo
+/// adds or takes away a group before it), so Delete never acts on another group (#1322).
+#[test]
+fn picked_groups_are_let_go_of_when_the_layout_changes() {
+    let track = TrackId(1);
+    let (v, p) = (LaneKey::mixer(VOLUME), LaneKey::mixer(PAN));
+    let group = |name: &str, key: &LaneKey| LaneGroup {
+        name: name.into(),
+        keys: vec![key.clone()],
+        folded: false,
+        device: None,
+    };
+    let two = Layout { lanes: vec![v.clone(), p.clone()], groups: vec![group("A", &v), group("B", &p)] };
+    let mut lanes = LanesState::default();
+    lanes.pick_group(track, 1, egui::Modifiers::NONE, &two);
+    lanes.keep_picks(track, &two);
+    assert_eq!(lanes.picked_groups, [(track, 1)], "the same layout keeps the pick");
+    // An undo took group A away: index 1 is no group now, and B is index 0.
+    let one = Layout { lanes: vec![v.clone(), p.clone()], groups: vec![group("B", &p)] };
+    lanes.keep_picks(track, &one);
+    assert!(lanes.picked_groups.is_empty());
 }

@@ -1423,6 +1423,9 @@ pub struct LanesState {
     implied: HashMap<TrackId, Layout>,
     /// The group headings picked (a click, Ctrl+click), by track and index (#1322).
     pub picked_groups: Vec<(TrackId, usize)>,
+    /// Each track's layout as it was when its groups were picked: an index stands for the same
+    /// group only while the layout stays as it was ([`LanesState::keep_picks`]).
+    picked_layouts: Vec<(TrackId, Layout)>,
     /// A lane mounted from a device goes into the device's group (Settings › Arrangement ›
     /// Automation › Group plug-in lanes, #1322).
     pub group_plugins: bool,
@@ -1567,10 +1570,12 @@ impl LanesState {
         }
     }
 
-    /// Picks `track`'s group heading `index` (#1322): alone, or added or taken away with Ctrl.
-    pub fn pick_group(&mut self, track: TrackId, index: usize, modifiers: egui::Modifiers) {
+    /// Picks `track`'s group heading `index` (#1322), its layout `layout` as it is now: alone, or
+    /// added or taken away with Ctrl.
+    pub fn pick_group(&mut self, track: TrackId, index: usize, modifiers: egui::Modifiers, layout: &Layout) {
         self.picked.retain(|(t, _)| *t == track);
         self.picked_groups.retain(|(t, _)| *t == track);
+        self.picked_layouts = vec![(track, layout.clone())];
         let this = (track, index);
         if modifiers.command || modifiers.shift {
             match self.picked_groups.iter().position(|p| *p == this) {
@@ -1582,6 +1587,21 @@ impl LanesState {
         } else {
             self.picked_groups = vec![this];
             self.picked.clear();
+        }
+    }
+
+    /// Lets go of `track`'s picked group headings when its layout `now` is not the one they were
+    /// picked in (an undo, a redo, an agent's command): their indices may stand for other groups
+    /// now, and Delete or Ungroup would act on those (#1322). A group folded or opened is the same.
+    pub fn keep_picks(&mut self, track: TrackId, now: &Layout) {
+        let same = |a: &Layout| {
+            a.groups.len() == now.groups.len()
+                && a.groups.iter().zip(&now.groups).all(|(x, y)| x.name == y.name && x.keys == y.keys)
+        };
+        let changed = self.picked_layouts.iter().any(|(t, layout)| *t == track && !same(layout));
+        if changed {
+            self.picked_groups.retain(|(t, _)| *t != track);
+            self.picked_layouts.retain(|(t, _)| *t != track);
         }
     }
 
@@ -2122,6 +2142,9 @@ pub fn show(
     state: &mut LanesState,
     actions: &mut Vec<Action>,
 ) {
+    // Group headings picked in another layout than the track's now are let go of.
+    let layout = state.layout(lanes.track, params);
+    state.keep_picks(lanes.track, &layout);
     // A range painted from one of the track's lanes reaches the lanes the pointer went over,
     // up or down (#1322): worked out before the lanes are drawn, so each shows it this frame.
     // Dragged out of the track's lanes, onto its clips or another track, the range becomes a time
@@ -2365,7 +2388,7 @@ fn group_heading(
         ui.interact(clip, id.with("background"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Grab);
     if background.clicked() {
         let modifiers = ui.input(|i| i.modifiers);
-        state.pick_group(track, index, modifiers);
+        state.pick_group(track, index, modifiers, &layout);
     }
     if background.drag_started_by(egui::PointerButton::Primary) {
         let keys: Vec<LaneKey> = layout.lanes.iter().filter(|k| group.keys.contains(k)).cloned().collect();
