@@ -1407,6 +1407,10 @@ impl Plugin {
                 locked.end();
             }
         }
+        // What the old instance's editor sent last, its unload's report among it, is set again
+        // after the restart with the other values set since its state was read; none of it
+        // stays in the inbox, where no instance would ever take it.
+        let _ = self.edit_watch().take_param_edits();
         let instance = next_instance();
         let (generation, latency, edits_clips, link) = locked.load(&self.launch, instance)?;
         self.edits = locked.edit_inbox();
@@ -1443,6 +1447,7 @@ impl Plugin {
 impl Drop for Plugin {
     /// Lets go of the instance; the process quits when its last instance is gone.
     fn drop(&mut self) {
+        let _forgotten = Forget { edits: Arc::clone(&self.edits), instance: self.instance };
         let mut group = lock(&self.group);
         if self.launch.group.is_none() || group.generation != self.generation || !group.alive() {
             return;
@@ -1628,6 +1633,20 @@ fn take_in_transport(message: &Message) {
     }
 }
 
+/// Takes an instance's edits out of its process's inbox when dropped: once the instance is gone,
+/// what its editor reported, its unload's report among it, would stay there for good, and a full
+/// inbox drops the edits of the instances still running.
+struct Forget {
+    edits: EditInbox,
+    instance: u32,
+}
+
+impl Drop for Forget {
+    fn drop(&mut self) {
+        lock(&self.edits).retain(|(i, _, _)| *i != self.instance);
+    }
+}
+
 /// Keeps a parameter the user moved in an editor until it is taken: the last value of a
 /// parameter wins, one that already moved a step keeps its latest.
 fn take_in_edit(edits: &EditInbox, instance: u32, id: u32, value: f64) {
@@ -1781,6 +1800,16 @@ mod tests {
         let child = child.stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
         let (feed, replies) = mpsc::channel();
         (HostProcess { child, control: std::sync::Arc::new(Mutex::new(control)), replies, edits: Arc::default() }, feed)
+    }
+
+    /// An instance let go of takes its edits out of the inbox, the others' stay (#1205).
+    #[test]
+    fn an_instance_let_go_of_leaves_no_edits_in_the_inbox() {
+        let inbox = EditInbox::default();
+        take_in_edit(&inbox, 4, 1, 0.25);
+        take_in_edit(&inbox, 7, 1, 0.75);
+        drop(Forget { edits: Arc::clone(&inbox), instance: 4 });
+        assert_eq!(*lock(&inbox), vec![(7, 1, 0.75)]);
     }
 
     /// What the user moved in an editor is taken while the group is busy with a request (its
