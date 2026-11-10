@@ -77,10 +77,15 @@ and is deleted with its device. One lane per parameter.
   played.
 - A hosted plug-in's parameter (#1205) moves evenly over the plug-in's own range (a VST3 plug-in's
   normalized 0 to 1, a CLAP plug-in's plain values) and, for a stepped one, holds each point's
-  value on its nearest step. The header, the point's tooltip, Edit value and the value beside the
-  pointer while dragging show the plug-in's own text for the value ("-3.2 dB"), asked from the
-  plug-in in the background (`get_param_texts`, [the plug-in protocol](plugin-protocol.md)); until
-  it answers, and for a plug-in that names no values (VST2), they show the number.
+  value on its nearest step until the next point, as drawn: the engine learns which parameters
+  take steps from the plug-in's own list of them, read once it runs, for playing and for an
+  offline render alike (the project file does not keep it). The header, the point's tooltip,
+  Edit value and the value beside the pointer while dragging show the plug-in's own text for the
+  value ("-3.2 dB"), asked from the plug-in in the background (`get_param_texts`, [the plug-in
+  protocol](plugin-protocol.md)), at most ten times a second; until it answers, for a plug-in that
+  names no values (VST2) and for 30 seconds after a request it did not answer, they show the
+  number. While a point is dragged the plug-in follows the line where the transport stands; when
+  the drag ends, given up or not, it goes back to what the lane plays there.
 - The movement follows the first point's **curve** (`automation::Curve`): a cubic Bezier from
   (0, 0) to (1, 1) in (share of the segment's time, share of the way in position) through two
   inner control points (x1, y1) and (x2, y2). Bending and dragging keep each anywhere from 0 to 1;
