@@ -582,12 +582,20 @@ fn notes_copied_last_paste_into_the_next_clip_picked_in_the_view() {
     key(&mut h, Modifiers::COMMAND, Key::V);
     assert_eq!(clips_and_notes(&h), (clips, notes + 1), "a note pasted, no clip");
     assert!(h.state().piano_roll().focused, "the keys stay with the pasted notes");
-    // A clip copied after the notes: Ctrl+V in the view pastes the clip.
+    // A clip copied after the notes: Ctrl+V in the view pastes the clip (after the selected one,
+    // where it may take the place of a clip that was there), not notes.
     h.get_by_label(CLIP).click();
     h.run();
     key(&mut h, Modifiers::COMMAND, Key::C);
+    let before = clip_ids(&h);
     key(&mut h, Modifiers::COMMAND, Key::V);
-    assert_eq!(clips_and_notes(&h).0, clips + 1, "the copied clip pasted");
+    assert!(clip_ids(&h).iter().any(|id| !before.contains(id)), "the copied clip pasted");
+}
+
+/// The ids of every arrangement clip.
+fn clip_ids(h: &Harness<'static, App>) -> Vec<u64> {
+    let project = h.state().session().unwrap().project();
+    project.arrangement.lanes.iter().flat_map(|l| &l.clips).map(|c| u64::from(c.id.0)).collect()
 }
 
 /// With two clips picked the strip shows both, a click on a bar gives its clip the focus, and the keys
