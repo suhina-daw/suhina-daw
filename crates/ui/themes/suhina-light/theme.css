@@ -1,5 +1,5 @@
 /* Suhina's warm greys turned light, for bright rooms. */
-/* Suhina theme. Settings are custom properties; see README.md. */
+/* Suhina theme. Colours are custom properties and the other settings are element properties; see README.md. */
 :root {
   --accent: #5A54D6;
   --border: #D3CEC6;

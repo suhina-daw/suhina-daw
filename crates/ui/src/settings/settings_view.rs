@@ -880,8 +880,8 @@ pub(crate) fn input_style(ui: &mut Ui) {
 
 /// Draws the page into the space left in `ui`.
 pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &mut PageState) -> Outcome {
-    let _style_class = crate::kit::style_class::enter("settings");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let style_class = crate::kit::element::SETTINGS.enter();
+    let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let mut outcome = Outcome::default();
     let area = ui.available_rect_before_wrap();
@@ -890,7 +890,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     let panel_base = crate::kit::liquid::panel_base(ui.ctx());
     painter.fill_background(area, 0.0, panel_base);
     if !state.window {
-        crate::kit::liquid::paint(&painter, area, panel_base, crate::kit::liquid::Surface::Panel);
+        crate::kit::liquid::paint(&painter, area, &style_class, panel_base, crate::kit::liquid::Surface::Panel);
     }
     input_style(ui);
 
@@ -1212,8 +1212,10 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), Some(page) == shown, motion::VALUE);
         let hover = widgets::hover(ui, &response);
         // `settings-nav`, one row per page: `:hover`, and `[checked]` for the page shown.
-        let nav = crate::kit::element::SETTINGS_NAV.response(&response).enter();
-        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, Some(page) == shown);
+        let nav = crate::kit::element::SETTINGS_NAV
+            .response(&response)
+            .attr(crate::kit::element::Checked, Some(page) == shown)
+            .enter();
         let own = nav.style().filter(|c| c.authored.background);
         if let Some(own) = &own {
             painter.rect_filled(row, own.radius, own.background);
@@ -1224,8 +1226,7 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
         // A page under another (Themes under Appearance) is stepped in.
         let indent = if page == Page::Theme { PAD * 2.0 } else { 0.0 };
         let text = Rect::from_min_max(Pos2::new(row.left() + PAD + indent, row.top()), row.max);
-        let color =
-            crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_primary(), selected));
+        let color = nav.color_or(motion::mix(theme::text_secondary(), theme::text_primary(), selected));
         widgets::text_in(painter, text, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), color);
     }
     picked
@@ -3039,8 +3040,10 @@ fn segmented<T: Copy + PartialEq>(
             picked = Some(*value);
         }
         // A part is a `button` (`[checked]` when chosen), as the sheet's generic rules say.
-        let el = crate::kit::element::BUTTON.response(&response).enter();
-        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, *value == current);
+        let el = crate::kit::element::BUTTON
+            .response(&response)
+            .attr(crate::kit::element::Checked, *value == current)
+            .enter();
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), *value == current, motion::VALUE);
         let hover = widgets::hover(ui, &response);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), hover);
@@ -3049,8 +3052,7 @@ fn segmented<T: Copy + PartialEq>(
             cell,
             crate::kit::element::Native { radius: 0.0, fill: motion::mix(idle, theme::control_selected(), selected) },
         );
-        let color =
-            crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), selected));
+        let color = el.color_or(motion::mix(theme::text_secondary(), theme::text_inverse(), selected));
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked

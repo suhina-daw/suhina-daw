@@ -1195,19 +1195,22 @@ pub fn header_button(
         state.toggle(track, params);
     }
     // `#control-automation`, `[checked]` while the lanes show, and `automation` artwork.
-    let _style = crate::kit::style_class::enter_named_response("button", "automation", &response);
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, open);
+    let el = crate::kit::element::BUTTON
+        .id("automation")
+        .response(&response)
+        .attr(crate::kit::element::Checked, open)
+        .enter();
     let hover = widgets::hover(ui, &response);
     let off = crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover);
-    widgets::track_button_face(ui, painter, rect, &response, if open { theme::control_active() } else { off });
-    let ink = crate::kit::style_class::foreground(if open { theme::text_primary() } else { theme::text_secondary() });
-    if crate::kit::skin::paint(
+    widgets::track_button_face(ui, painter, rect, &el, &response, if open { theme::control_active() } else { off });
+    let ink = el.color_or(if open { theme::text_primary() } else { theme::text_secondary() });
+    if crate::kit::skin::paint_as(
+        &el,
         painter,
         rect,
         "automation",
         crate::kit::skin::State::response(&response, open),
         ink,
-        0.0,
     ) {
         return;
     }

@@ -9,36 +9,43 @@
 use suhina_theme_render::budget::{Counts, count};
 use suhina_theme_render::{Subject, scenes};
 
-/// The counts recorded for each scene. `approximations` and `context_misses` are those of a
-/// settled frame; the `*_approximations` are summed over the frames a change takes to settle.
+/// The counts recorded for each scene. `fresh` is that of a settled frame; the `*_fresh` are
+/// summed over the frames a change takes to settle. The style engine works out an element's style
+/// in the frame that draws it (#1273), so it asks for no frame of its own after a change
+/// (`*_style_frames`); the frame left after a theme change is egui's own after a new palette, and
+/// those after a hover are its tooltip's.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
             nodes: 319,
-            contexts: 65,
-            approximations: 0,
-            context_misses: 0,
+            identities: 293,
+            unstyled: 0,
+            fresh: 0,
             paint_callbacks: 138,
-            theme_change_frames: 3,
-            theme_change_approximations: 1043,
+            theme_change_frames: 2,
+            theme_change_style_frames: 0,
+            theme_change_fresh: 293,
             hover_frames: 3,
-            hover_approximations: 0,
+            hover_style_frames: 0,
+            hover_fresh: 0,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
             nodes: 543,
-            contexts: 84,
-            approximations: 0,
-            context_misses: 0,
+            identities: 516,
+            unstyled: 0,
+            fresh: 0,
             paint_callbacks: 163,
-            theme_change_frames: 3,
-            theme_change_approximations: 2163,
+            theme_change_frames: 2,
+            theme_change_style_frames: 0,
+            theme_change_fresh: 516,
             hover_frames: 4,
-            hover_approximations: 0,
+            hover_style_frames: 0,
+            hover_fresh: 0,
         },
     ),
 ];
@@ -51,28 +58,32 @@ const RECORDED: [(&str, Counts); 2] = [
         "launcher",
         Counts {
             nodes: 327,
-            contexts: 68,
-            approximations: 0,
-            context_misses: 0,
+            identities: 301,
+            unstyled: 0,
+            fresh: 0,
             paint_callbacks: 139,
-            theme_change_frames: 3,
-            theme_change_approximations: 1100,
+            theme_change_frames: 2,
+            theme_change_style_frames: 0,
+            theme_change_fresh: 301,
             hover_frames: 4,
-            hover_approximations: 0,
+            hover_style_frames: 0,
+            hover_fresh: 0,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
             nodes: 551,
-            contexts: 87,
-            approximations: 0,
-            context_misses: 0,
+            identities: 524,
+            unstyled: 0,
+            fresh: 0,
             paint_callbacks: 164,
-            theme_change_frames: 3,
-            theme_change_approximations: 2220,
+            theme_change_frames: 2,
+            theme_change_style_frames: 0,
+            theme_change_fresh: 524,
             hover_frames: 4,
-            hover_approximations: 0,
+            hover_style_frames: 0,
+            hover_fresh: 0,
         },
     ),
 ];
@@ -80,18 +91,16 @@ const RECORDED: [(&str, Counts); 2] = [
 fn within(name: &str, theme: &str, counts: Counts, budget: Counts) -> Vec<String> {
     let fields = [
         ("nodes", counts.nodes as u64, budget.nodes as u64),
-        ("contexts", counts.contexts as u64, budget.contexts as u64),
-        ("approximations", counts.approximations as u64, budget.approximations as u64),
-        ("context misses", counts.context_misses as u64, budget.context_misses as u64),
+        ("identities", counts.identities as u64, budget.identities as u64),
+        ("unstyled", counts.unstyled as u64, budget.unstyled as u64),
+        ("fresh styles", counts.fresh as u64, budget.fresh as u64),
         ("paint callbacks", counts.paint_callbacks as u64, budget.paint_callbacks as u64),
         ("frames after a theme change", counts.theme_change_frames, budget.theme_change_frames),
-        (
-            "approximations after a theme change",
-            counts.theme_change_approximations as u64,
-            budget.theme_change_approximations as u64,
-        ),
+        ("style frames after a theme change", counts.theme_change_style_frames, budget.theme_change_style_frames),
+        ("fresh styles after a theme change", counts.theme_change_fresh as u64, budget.theme_change_fresh as u64),
         ("frames after a hover", counts.hover_frames, budget.hover_frames),
-        ("approximations after a hover", counts.hover_approximations as u64, budget.hover_approximations as u64),
+        ("style frames after a hover", counts.hover_style_frames, budget.hover_style_frames),
+        ("fresh styles after a hover", counts.hover_fresh as u64, budget.hover_fresh as u64),
     ];
     fields
         .into_iter()

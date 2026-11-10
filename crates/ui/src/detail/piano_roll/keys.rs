@@ -7,7 +7,7 @@
 //! menu.
 
 use super::*;
-use crate::kit::native_css::HostState;
+use crate::kit::element::Attr;
 use crate::settings::{PianoKeyNames, PianoKeyStyle};
 
 /// How wide a black key is, as a share of the key column.
@@ -166,7 +166,7 @@ fn has_gradient(class: &str) -> bool {
 
 /// A state's colour from the sheet, when it differs from the base rule's: a rule for `piano-key`
 /// alone also answers for `piano-key[selected]`, and must not hide the state.
-fn state_colour(class: &str, state: HostState, base: Option<Color32>) -> Option<Color32> {
+fn state_colour(class: &str, state: Attr, base: Option<Color32>) -> Option<Color32> {
     part_style(class, &[state]).background.filter(|c| Some(*c) != base)
 }
 
@@ -194,10 +194,10 @@ pub(super) fn key_colours(style: PianoKeyStyle) -> KeyColours {
     set(&mut c.white_c, part_style("piano-key-c", &[]).background);
     set(&mut c.white_hover, part_style("piano-key-hover", &[]).background);
     set(&mut c.black_hover, part_style("piano-key-black-hover", &[]).background);
-    set(&mut c.white_selected, state_colour("piano-key", HostState::Selected, key.background));
-    set(&mut c.black_selected, state_colour("piano-key-black", HostState::Selected, black.background));
-    set(&mut c.white_playing, state_colour("piano-key", HostState::Playing, key.background));
-    set(&mut c.black_playing, state_colour("piano-key-black", HostState::Playing, black.background));
+    set(&mut c.white_selected, state_colour("piano-key", Attr::Selected, key.background));
+    set(&mut c.black_selected, state_colour("piano-key-black", Attr::Selected, black.background));
+    set(&mut c.white_playing, state_colour("piano-key", Attr::Playing, key.background));
+    set(&mut c.black_playing, state_colour("piano-key-black", Attr::Playing, black.background));
     set(&mut c.line, part_style("piano-key-line", &[]).background);
     set(&mut c.scale, part_style("piano-scale-mark", &[]).background);
     c
@@ -216,9 +216,8 @@ fn shade(painter: &egui::Painter, rect: Rect, left: Color32, right: Color32) {
 }
 
 /// Paints what the sheet's gradient for `class` gives `rect`.
-fn sheet_gradient(painter: &egui::Painter, class: &str, rect: Rect) {
-    let _style = crate::kit::style_class::enter(class);
-    crate::kit::native_css::background(painter, rect);
+fn sheet_gradient(painter: &egui::Painter, element: crate::kit::element::Name, rect: Rect) {
+    element.enter().paint_background(painter, rect, 0.0);
 }
 
 /// What state each key is in this frame.
@@ -330,21 +329,21 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
             key_painter.rect_filled(below, 0.0, states.white(key.saturating_sub(1)));
             let tip = Rect::from_min_max(Pos2::new(black_right, row.top()), row.max);
             if white_gradient {
-                sheet_gradient(&key_painter, "piano-key", tip);
+                sheet_gradient(&key_painter, crate::kit::element::PIANO_KEY, tip);
             } else {
                 shade(&key_painter, tip, Color32::TRANSPARENT, colours.sheen_right);
             }
             let cap = Rect::from_min_max(row.min, Pos2::new(black_right, row.bottom()));
             key_painter.rect_filled(cap, 0.0, states.black(key));
             if black_gradient {
-                sheet_gradient(&key_painter, "piano-key-black", cap);
+                sheet_gradient(&key_painter, crate::kit::element::PIANO_KEY_BLACK, cap);
             } else {
                 shade(&key_painter, cap, Color32::TRANSPARENT, colours.black_sheen);
             }
         } else {
             key_painter.rect_filled(row, 0.0, states.white(key));
             if white_gradient {
-                sheet_gradient(&key_painter, "piano-key", row);
+                sheet_gradient(&key_painter, crate::kit::element::PIANO_KEY, row);
             } else {
                 let split = row.left() + row.width() * edge;
                 shade(

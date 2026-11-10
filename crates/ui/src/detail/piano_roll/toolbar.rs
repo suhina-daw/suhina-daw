@@ -1027,7 +1027,7 @@ impl ButtonPaint<'_> {
             .response(&response)
             .attr(crate::kit::element::Checked, chosen)
             .enter();
-        let color = crate::kit::style_class::foreground(if !active {
+        let color = el.color_or(if !active {
             theme::text_hint()
         } else if chosen {
             theme::text_primary()
@@ -1046,7 +1046,7 @@ impl ButtonPaint<'_> {
             let fill = crate::kit::motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response));
             el.paint_with(painter, area, crate::kit::element::Native { radius: 3.0, fill });
         }
-        if !(crate::kit::skin::has_own(&role) && crate::kit::skin::paint(painter, area, &role, state, color, 0.0)) {
+        if !(crate::kit::skin::has_own(&role) && crate::kit::skin::paint_as(&el, painter, area, &role, state, color)) {
             button.draw(painter, area, color, self.scale * ICON_IN_BUTTON);
         }
         active && response.clicked()

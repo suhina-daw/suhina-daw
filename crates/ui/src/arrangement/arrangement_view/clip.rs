@@ -1203,7 +1203,7 @@ pub(super) fn clip_box<'a>(
             Align2::RIGHT_CENTER,
             &text,
             font,
-            crate::kit::style_class::foreground(theme::text_value()),
+            el.color_or(theme::text_value()),
         );
     }
     // The handles sit on top of everything on the clip, where the fades now end.
@@ -1237,7 +1237,7 @@ fn paint_fade_handle(painter: &egui::Painter, handle: Rect, hover: f32) {
     let el = crate::kit::element::CLIP_FADE_HANDLE.enter();
     let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
     let state = if hover > 0.5 { crate::kit::skin::State::Hover } else { crate::kit::skin::State::Normal };
-    if crate::kit::skin::paint(painter, handle, "clip.fade-handle", state, fill, 0.0) {
+    if crate::kit::skin::paint_as(&el, painter, handle, "clip.fade-handle", state, fill) {
         return;
     }
     let authored = el.style();
@@ -1336,24 +1336,27 @@ pub(super) fn paint_clip(
     look: &super::state::ClipLook,
 ) {
     let _work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement clip");
-    let own = crate::kit::element::CLIP.id(&format!("clip-{}", clip.id.0)).enter();
-    let view = painter.clip_rect();
-    if !rect.intersects(view) {
-        return;
-    }
     let off = lane.mute || !clip.enabled;
-    crate::kit::native_css::set_variable("--clip-colour", crate::kit::native_css::hex(rgb(clip.color)));
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, off);
     // `[playing]` while the play position is inside it, `[recording]` while a take records over it.
     let end = clip.start + clip.length;
     let playing = timeline.running && !off && (clip.start..end).contains(&timeline.beat);
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Playing, playing);
     let recording = timeline
         .recording_spans
         .iter()
         .any(|(track, from, to)| *track == lane.track && *from < end && *to > clip.start);
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Recording, recording);
+    let id = format!("clip-{}", clip.id.0);
+    let own = crate::kit::element::CLIP
+        .id(&id)
+        .variable("--clip-colour", crate::kit::native_css::hex(rgb(clip.color)))
+        .attr(crate::kit::element::Selected, selected)
+        .attr(crate::kit::element::Muted, off)
+        .attr(crate::kit::element::Playing, playing)
+        .attr(crate::kit::element::Recording, recording)
+        .enter();
+    let view = painter.clip_rect();
+    if !rect.intersects(view) {
+        return;
+    }
     // The sheet's opacity fades the whole clip, its waveform, notes and name too.
     let faded;
     let painter = match own.style().map(|style| style.opacity).filter(|o| *o < 1.0) {
@@ -1373,17 +1376,16 @@ pub(super) fn paint_clip(
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
     let strength = if clip.audio { look.audio_colour_strength } else { 82 };
     let strength = if selected { strength.saturating_add(12).min(100) } else { strength };
-    let body =
-        crate::kit::style_class::background(colour_surface(theme::panel_background(), rgb(clip.color), strength, off));
-    let radius = crate::kit::style_class::radius(2.0);
+    let body = own.background_or(colour_surface(theme::panel_background(), rgb(clip.color), strength, off));
+    let radius = own.radius_or(2.0);
     // A clip is content, not a background: it blends with the lane under it, so its alpha never
     // reaches the window and the desktop never shows through it.
     painter.rect_filled(rect, radius, body);
-    crate::kit::native_css::background_rounded(painter, rect, radius);
+    own.paint_background(painter, rect, radius);
     let bar = clip_name_bar(rect);
     if let Some(bar) = bar {
-        let _name_bar = crate::kit::style_class::enter("clip-name");
-        let fill = crate::kit::style_class::background(motion::mix(body, ink_on(body), 0.045));
+        let name_bar = crate::kit::element::CLIP_NAME.enter();
+        let fill = name_bar.background_or(motion::mix(body, ink_on(body), 0.045));
         // The bar keeps the clip's rounded top corners.
         let top = radius.min(bar.height()).clamp(0.0, 255.0) as u8;
         painter.rect_filled(
@@ -1394,7 +1396,7 @@ pub(super) fn paint_clip(
     } else {
         painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, body);
     }
-    crate::kit::liquid::paint(painter, rect.shrink(1.0), body, crate::kit::liquid::Surface::Clip);
+    crate::kit::liquid::paint(painter, rect.shrink(1.0), &own, body, crate::kit::liquid::Surface::Clip);
     let ink = ink_on(body);
     let edge_width = if selected { 4.0 } else { 3.0 };
     let edge_ink = motion::mix(body, ink, 0.5);
@@ -1434,12 +1436,9 @@ pub(super) fn paint_clip(
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
     let appearance = look.waveform_appearance;
     // Theme: the sheet's `clip-waveform` and `clip-notes` colours, else Dark.
-    let themed = |class: &str| {
-        let _part = crate::kit::style_class::enter(class);
-        crate::kit::style_class::foreground(appearance.ink(ink))
-    };
+    let themed = |part: crate::kit::element::Name| part.enter().color_or(appearance.ink(ink));
     let content_ink = if appearance.mode == crate::settings::view_settings::WaveformColour::Theme {
-        themed(if clip.audio { "clip-waveform" } else { "clip-notes" })
+        themed(if clip.audio { crate::kit::element::CLIP_WAVEFORM } else { crate::kit::element::CLIP_NOTES })
     } else {
         appearance.ink(ink)
     };
@@ -1456,7 +1455,7 @@ pub(super) fn paint_clip(
     painter.ctx().data_mut(|d| {
         // The name bar's colour, as it is drawn above (a hair lighter or darker than the body).
         let fill = if bar.is_some() { motion::mix(body, ink_on(body), 0.045) } else { body };
-        let size = crate::kit::style_class::font_size(theme::TEXT);
+        let size = own.font_size_or(theme::TEXT);
         let spot = crate::app::NameSpot { rect: strip, pass, fill, text: text_color, size };
         d.insert_temp(Id::unique((crate::app::NAME_RECT_CLIP, u64::from(clip.id.0))), spot);
     });
@@ -1474,9 +1473,9 @@ pub(super) fn paint_clip(
             Pos2::new(left, rect.top() + 3.0),
             Pos2::new(rect.right() - 5.0, bar.map_or(rect.top(), |bar| bar.bottom()) - 3.0),
         );
-        let _name = crate::kit::style_class::enter("clip-name");
-        let font = theme::ui_font(crate::kit::style_class::font_size(theme::TEXT));
-        let text_color = crate::kit::style_class::foreground(text_color);
+        let name = crate::kit::element::CLIP_NAME.enter();
+        let font = theme::ui_font(name.font_size_or(theme::TEXT));
+        let text_color = name.color_or(text_color);
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &clip.name, font, text_color);
     }
     let marks = wave_area(rect);

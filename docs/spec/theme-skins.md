@@ -123,11 +123,12 @@ adapter in an isolated X11 session; it does not establish physical-GPU timing.
 
 **Suhina Blocks** uses original brown plank/grain CSS, stone-like beveled controls
 and colour-keyed pixel SVG textures. It has no landscape or background PNG. Native
-`track-column { --suhina-track-artwork: on; }` opts Launcher slot columns into the
+`track-column { track-artwork: on; }` opts Launcher slot columns into the
 existing `track.body` artwork (including raw colour/state variants). The body stays
 behind clip cells; empty cells preserve it while hover/stop marks remain native.
-`off` or omission retains the original slot fills. JSON/CSS/export preserve this
-native style property, and it does not change launch/drop geometry or commands.
+`off` or omission retains the original slot fills. `track-artwork` is a property of the
+style engine, inherited (a clip inside the column can turn it `off`), and it does not change
+launch/drop geometry or commands.
 
 ![Suhina Blocks with brown plank workspace, colour-keyed pixel track textures and native meters](../design/reference/theme-blocks-session.png)
 
@@ -142,13 +143,13 @@ a combined view or the separately planned mixer view.
 Optional `skin.session` dimensions change the native Launcher layout: `track-width`
 and `return-width` (64–512 points), `scene-width` (64–512), `slot-height` (16–64),
 `header-height` (20–64). Omitted values use native
-geometry/preferences. Canonical CSS mirrors these as `session { track-width: 80px; }`
-and the other named properties; `auto` removes an override. Mixer height continues
+geometry/preferences. A theme sets them as properties of `session` (`session { track-width:
+80px; }` and the other named properties); `auto` removes an override. Mixer height continues
 to use its existing native preference and divider.
 Column widths affect scrolling, rendering, file/clip drop targets and hit testing
 together. Individual control placement remains relative to these native anchors.
-Canonical `pan { --suhina-appearance: knob; }` stores a portable pan-face override
-in `skin.styles` for both Launcher and Arrangement. `field` forces a value field;
+`pan { appearance: knob; }` is a portable pan-face override for both Launcher and
+Arrangement, read from the pan's own computed style. `field` forces a value field;
 `native` or no override retains the existing global preference. The compact example
 includes the knob override; themes do not need to change the user's preference.
 The fader's dB labels/ticks expose `mixer-volume-scale` separately from the rail/cap
@@ -231,7 +232,7 @@ uses `left` and `right` insets; `right` can also anchor a fixed-width control.
 Arrangement meter placement uses the whole track header, never its visible intersection;
 scroll clipping affects painting and hit testing without changing the meter scale. The canonical CSS projection uses
 `.control-NAME { left: 8px; top: 0px; width: 80px; height: 20px;
---suhina-direction: horizontal; }`. Offsets are bounded to ±16384, sizes to 1–4096.
+direction: horizontal; }`. Offsets are bounded to ±16384, sizes to 1–4096.
 Each adapter must resolve the rectangle before interaction and paint, preserve the native
 widget ID/command, and contain it in its panel. Removing an override restores native geometry.
 These are explicit native relative offsets, not a claim of general CSS positioning support.
@@ -240,7 +241,7 @@ a format of its own beside the CSS, and placing controls with it broke layouts i
 Placements are written by hand; a future editor will write plain CSS
 ([issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)).
 Fractional offsets survive CSS and JSON storage at 1/1024 logical pixel resolution.
-A persistent anchor is explicit: `--suhina-anchor-left|top|right|bottom:
+A persistent anchor is explicit: `anchor-left|top|right|bottom:
 <control> <edge> [<gap>px]` (JSON `anchors: { "bottom": "arrangement-volume top 4px" }`)
 makes that edge follow the target's edge on the same axis. Opposite edges keep the gap
 between the controls; matching edges inset by it. With one anchored edge a full-width or
@@ -379,6 +380,21 @@ shapes (background, radius or border width) is not covered by the artwork Suhina
 a theme's own `button` artwork still wins. The toolbar's tempo, position and RAM/CPU
 fields paint the same way.
 
+**Paint order.** Every element `Entered::paint` draws paints in CSS's order: its outer
+`box-shadow`, its `background-color`, its `background-image` (or the artwork its caller draws),
+then for a control (or a part, or a drawn item) its border and inset shadows before its
+contents, and for a region or a container (the registry's kinds) its border and inset shadows
+after its contents, when the element leaves scope; then its `outline` (`outline-width`,
+`outline-style: solid`, `outline-color`, `outline-offset`, or the `outline` shorthand) outside
+its border, last. `Boxed::content` is the box less its `padding`. The outer shadows and the
+outline are clipped by the box of the nearest element with `overflow: hidden` (or `clip`)
+around the element, not by the painter in use, so a toolbar control's glow passes its
+section's edge and stops at the toolbar's; regions are `hidden` by the host's own sheet, other
+elements `visible`. They pass the painter's clip only as far as they reach, and only on a side
+where the element is whole inside that clip: a side that cuts the element is a viewport's edge (a
+scroll area scrolled part of it out of view), which they do not pass. Without such an element
+the painter's clip holds.
+
 **Views and controls.** A background on a view or bar (`window`, `toolbar`, `session`,
 `arrangement`, `browser`, `mixer`, `detail` and the other regions and containers of the element
 registry, `suhina_theme_package::elements`)
@@ -397,15 +413,15 @@ volume field is the native capsule and the pan field the native flat field.
 the theme's surfaces are see-through; over opaque ones the desktop would show wherever the
 artwork leaves a pixel uncovered.
 
-**Theme-given presentation.** `arrangement { --suhina-track-headers: left | right; }` is
+**Theme-given presentation.** `arrangement { track-headers: left | right; }` is
 the side of the Arrangement view's track headers while the user's Track headers setting
 is *Theme* (the default); Left and Right are the user's own and win.
 
-**Host states and variables.** The host marks elements with states the sheet matches
-(`native_css::mark`): `[checked]` on a toggle that is on, `[playing]` and `[recording]` on the
+**Host states and variables.** The host marks elements with states the sheet matches, on the
+element's builder before it is entered (`kit::element`, `.attr(Checked, on)`): `[checked]` on a toggle that is on, `[playing]` and `[recording]` on the
 transport's buttons, `[selected]` on the selected track's header, column, strip and name,
 `[armed]` and `[muted]`. It gives elements custom properties below every rule
-(`native_css::set_variable`): a track's header, column and strip `--track-colour`, its name
+(`.variable("--track-colour", …)`): a track's header, column and strip `--track-colour`, its name
 `--track-fill`. A track name's text takes the sheet's `color` when one applies. Artwork has an
 `.on` state (`solo:on`), falling back to `.active`, and per-view track roles
 (`track.name.mixer` and the others) over `track.name` and `track.body`.
@@ -416,7 +432,7 @@ slider is `popup#metronome-level`, outside the toggle's scope.
 **Bar lines.** The separator under a bar uses that bar's `border-color`, and the line above the
 view `#workspace`'s; `--border` stays every other line.
 
-**Header width.** `arrangement { --suhina-header-min-width }` (160 to 520 points) is the least
+**Header width.** `arrangement { header-min-width }` (160 to 520 points) is the least
 width of the Arrangement header column, so the header's narrower layouts do not break a theme's
 placements.
 
@@ -486,8 +502,7 @@ my-theme/
 - `theme.css`: the theme's style and layout, as its author wrote it (rules, variables,
   `@media`, gradients, artwork `image` rules, `.control-NAME` placements). There is no
   `layout.css`: a folder that still has one gets a warning on import and the file is not read.
-  What Suhina's editors set beyond settings (moved controls, `--suhina-*` styles, artwork chosen
-  in the app) is written into `theme.css` through the source-preserving editor
+  What Suhina's editors set beyond settings (moved controls, artwork chosen in the app) is written into `theme.css` through the source-preserving editor
   (`suhina_style::edit`): only the declarations that changed are edited or appended, and
   comments, `@media` rules and the rest of the author's text stay as they are.
 - `thumbnail.svg` (optional): see *Swatches and thumbnails*.
@@ -539,17 +554,24 @@ each theme.
   card filled with its swatch colour. The built-in themes share one thumbnail, a small
   arrangement drawn from their palette properties.
 
-**Settings are custom properties.** The core set every theme has is registered with
-`@property` and Suhina Studio's values (`crates/ui/src/kit/theme_vars.rs`): each palette token
-(`--accent`, `--track-headerBackground`), `--meter-style`, `--meter-segments`,
-`--meter-intensity`, `--artwork-fps`, `--liquid` (`auto` or three strengths),
-`--gradient-panels|tracks|clips` (`none` or `<angle>deg, <colour> <position>%, ...`),
-`--background-image` (`none` or `url("background.png")`), `--background-opacity`,
-`--background-blur` and `--session-track-width|return-width|scene-width|slot-height|header-height`
-(`auto` or a length). A theme sets them in `:root` and may declare its own with `@property`
+**Colours are custom properties; settings are properties of their elements.** The core set
+every theme has is each palette token (`--accent`, `--track-headerBackground`), registered with
+`@property` and Suhina Studio's values (`crates/ui/src/kit/theme_vars.rs`); a theme sets them in
+`:root`. Its settings are registered properties of the style engine (`suhina_style::property`),
+set on the element they belong to and read from its computed style (`SETTINGS` in
+`theme_vars.rs`): `meter { meter-style; meter-segments; meter-intensity; }`, `window {
+artwork-fps; liquid; panel-gradient; track-gradient; clip-gradient; backdrop-image;
+backdrop-opacity; backdrop-blur; }` (`liquid` is `auto` or three strengths, a gradient `none` or
+`<angle>deg, <colour> <position>%, ...`, `backdrop-image` `none` or `url("<file>.png")`) and
+`session { track-width; return-width; scene-width; slot-height; header-height; }` (`auto` or a
+length). The custom properties that held them before (`--meter-style`, `--session-track-width`,
+…) are not read; a sheet that sets one gets a notice naming the rule that replaces it. A theme
+may declare properties of its own with `@property`
 (`syntax`, `initial-value`, and Suhina's `label`, `group`, `range`, `step`); a declared property
 with a label is listed under *Theme settings* with a control for its type. The theme's values
-are read at the root of a 1280 by 800 dark window. A variant's values apply in the Variant tier,
+are read at the root of a 1280 by 800 dark window (the settings on `window`, `session` and
+`meter` under it). A variant holds values for declared properties and for settings
+(`"meter-style": "needle"`, written as a rule of the setting's element); they apply in the Variant tier,
 above the theme's rules, including its conditional ones.
 
 **Editing.** A setting changed in Suhina is written to the variant in use; on a theme's own values
@@ -861,7 +883,7 @@ opaque theme it is composited normally.
 These native parts take the sheet (the theme package README lists every selector):
 
 - **Sends:** `send` in the mixer and the Arrangement header; `#mixer-send-N` by place from
-  the left; `--suhina-appearance: knob` draws mixer sends as knobs; artwork `send` and
+  the left; `appearance: knob` draws mixer sends as knobs; artwork `send` and
   `send.fill`.
 - **Add-track buttons:** `add-track`, `#add-midi-track`, `#add-audio-track`,
   `#add-return-track`, artwork `add-track`.
@@ -930,10 +952,10 @@ audio track while the audio device has no input says so in the status bar.
   background (a device panel, Settings, a dialog, a view) is not mapped onto egui's widget
   fills. Parameter sliders draw from `slider-rail` (`height`), `slider-fill` and
   `slider-handle` (`width`) with artwork `slider.rail`, `slider.fill`, `slider.handle` once one
-  part is themed; `slider { --suhina-appearance: knob }` draws them as knobs.
+  part is themed; `slider { appearance: knob }` draws them as knobs.
 - **Radius in percent:** a percentage is that share of 256 points, clamped to half the shorter
   side when painted (so 50 % is round); a shadow's radius is clamped the same way.
-- **Header tint:** `arrangement { --suhina-header-tint: 0–100 }` overrides the user's header
+- **Header tint:** `arrangement { header-tint: 0–100 }` overrides the user's header
   colour strength for the track's tint.
 - **Bars:** a bar with `border-width: 0` or a transparent border fills its separator line with
   its own background.
@@ -963,14 +985,15 @@ of bars, and a slider id per parameter.
 - **Artwork variables:** before rasterising, the variables Suhina sets in scope
   (`--track-colour`, `--track-fill`, `--clip-colour`) are laid over the theme's root variables;
   the texture cache keys on them.
-- **Knob values:** `--suhina-value-position` (`right` by default, `left`, `top`, `bottom`,
+- **Knob values:** `value-position` (`right` by default, `left`, `top`, `bottom`,
   `inside`, `none`); `none` hides a level bar's value. Mixer sends default to `bottom`.
-- **Sizes:** `send { width; height }` within the sends row; `--suhina-track-height` (20–400
+- **Sizes:** `send { width; height }` within the sends row; `track-height` (20–400
   points) on `arrangement` for tracks without a height of their own; `piano-tool { height }`
   grows the toolbar band to the height plus 6 points.
 - **Device panels:** a themed panel's generated list keeps one column that follows its width and scrolls; `device value
-  { width }`; `--suhina-param-columns` (1–8) and `--suhina-param-row` (16–160 points) on
-  `device` lay parameters a device places nowhere itself in columns. A plug-in's list is
+  { width }`; the columns of `device { grid-template-columns }` (1–8) and the `height` of
+  `device device-control` (16–160 points) lay parameters a device places nowhere itself in
+  columns, as a CSS grid would. A plug-in's list is
   clipped below its header and buttons.
 - **Browser:** `browser-place` and `browser-row` with their states.
 - **Loop lines:** `loop-line` (`color`, `width` 0.5–6), from the top of the lanes to the bottom
@@ -987,12 +1010,12 @@ of bars, and a slider id per parameter.
 - **Shadows from artwork:** a surface drawn with artwork casts its outer shadows as tinted
   copies of the artwork's mesh (the centre and eight taps at half the blur), drawn under it; a
   surface with a transparent background and no authored radius casts them round.
-- **Value text:** `--suhina-value-decimals` (0–2) and `--suhina-value-unit` (quoted, at most 8
+- **Value text:** `value-decimals` (0–2) and `value-unit` (quoted, at most 8
   characters) format a level bar's and a knob's value.
 - **Device panels:** `height` on `device` or `#device-<id>` (60–1200, not with an embedded
-  editor); `--suhina-param-label` over each parameter's own; `knob { width | height }` within
+  editor); `param-label` over each parameter's own; `knob { width | height }` within
   its cell.
-- **Low tracks:** `--suhina-compact-below` on `arrangement` (at most 200 points): a header
+- **Low tracks:** `compact-below` on `arrangement` (at most 200 points): a header
   lower than it resolves every placement natively (`control_layout::native_only`).
 - **Ruler:** `ruler-number` (`color`, `font-size`, `display`) and `ruler-tick` (`color`, `width`
   0–4).
@@ -1000,10 +1023,10 @@ of bars, and a slider id per parameter.
   border), `browser-preview-wave` (`color` played, `border-color` ahead), the search field
   `#browser-search`.
 - **Dialogs:** `settings-nav` (`[checked]` for the page shown), `progress`, `progress-fill`.
-- **MIDI tools:** inside `midi-tools`, `--suhina-gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { --suhina-appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `--suhina-value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
+- **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
 - **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
   `theme.css`.
-- **Host rules in layers:** `--suhina-*`, placement and artwork rules inside `@layer` blocks are
+- **Host rules in layers:** placement and artwork rules inside `@layer` blocks are
   read like the rest (nested layers too, eight deep); rules in `@media` and `@supports` are left
   to the style engine.
 - **Selected header:** `track-header[selected] { background-color }` paints the header in both
@@ -1016,7 +1039,7 @@ of bars, and a slider id per parameter.
   the pointer in a slot; the clip fades toward it and back as the pointer comes and goes.
 - **Knob artwork per part:** `pan.knob.body|pointer` and `send.knob.body|pointer` for a pan's and
   a send's knob, in the Launcher and the Arrangement; without them they use `knob.*`. An
-  Arrangement send is a knob with `send { --suhina-appearance: knob }`, as in the mixer.
+  Arrangement send is a knob with `send { appearance: knob }`, as in the mixer.
 - **Mixer colour strip:** `.control-mixer-color` (`display: none` hides it; `top`, `height` and
   `width` move and size it).
 - **`accent-color`** reaches every control in its scope, the built-in effects' parameter knobs too.

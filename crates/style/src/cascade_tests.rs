@@ -304,3 +304,65 @@ fn a_swatch_colour_resolves_for_each_variant_without_applying_the_sheet() {
     assert_eq!(variables.get("--background").map(String::as_str), Some("#000000"));
     assert!(!variables.contains_key("--tag"));
 }
+
+#[test]
+fn outline_shorthand_sets_width_style_and_colour_in_any_order() {
+    let style = |css: &str| {
+        let sheet = Sheet::parse(css).unwrap_or_else(|e| panic!("{e}"));
+        let styles =
+            compute(&tree(), viewport(800.0), &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }])
+                .unwrap_or_else(|e| panic!("{e}"));
+        (sheet.notices.len(), styles[2].clone())
+    };
+    let (notices, knob) = style("knob { outline: solid #ff0000 2px; outline-offset: -1px; }");
+    assert_eq!(notices, 0);
+    assert_eq!(knob.get(Property::OutlineWidth), Value::Length(crate::value::Length::Px(2.0)));
+    assert_eq!(knob.get(Property::OutlineStyle), Value::Keyword("solid"));
+    assert_eq!(knob.get(Property::OutlineColor), Value::Color(Color::Rgba([255, 0, 0, 255])));
+    assert_eq!(knob.get(Property::OutlineOffset), Value::Length(crate::value::Length::Px(-1.0)));
+    // As in CSS, what the shorthand omits is reset: no style draws no outline.
+    let (_, knob) = style("knob { outline-style: solid; outline: 1px red; }");
+    assert_eq!(knob.get(Property::OutlineStyle), Value::Keyword("none"));
+    assert_eq!(knob.get(Property::OutlineColor), Value::Color(Color::Rgba([255, 0, 0, 255])));
+    let (_, knob) = style("knob { outline: 2px solid; }");
+    assert_eq!(knob.get(Property::OutlineColor), knob.get(Property::Color), "the foreground");
+    for bad in ["2px 3px", "dotted red", "url(a.png)"] {
+        assert_eq!(style(&format!("knob {{ outline: {bad}; }}")).0, 1, "{bad}");
+    }
+}
+
+#[test]
+fn overflow_and_the_host_settings_are_properties_with_their_own_syntax() {
+    let style = |css: &str| {
+        let sheet = Sheet::parse(css).unwrap_or_else(|e| panic!("{e}"));
+        let styles =
+            compute(&tree(), viewport(800.0), &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }])
+                .unwrap_or_else(|e| panic!("{e}"));
+        (sheet.notices.len(), styles[2].clone())
+    };
+    let (_, knob) = style("knob { overflow: hidden; value-unit: \" dB\"; liquid: 48 24 12; }");
+    assert_eq!(knob.get(Property::Overflow), Value::Keyword("hidden"));
+    assert_eq!(knob.get(Property::ValueUnit), Value::Text("\" dB\"".into()));
+    assert_eq!(knob.get(Property::Liquid), Value::Text("48 24 12".into()));
+    assert!(knob.authored(Property::ValueUnit));
+    // A value the setting's syntax refuses is skipped with a notice, as an invalid declaration is.
+    for bad in [
+        "value-unit: dB",
+        "value-unit: \"far too long a unit\"",
+        "liquid: 48 24",
+        "liquid: 200 0 0",
+        "backdrop-image: url(\"../up.png\")",
+        "backdrop-image: url(\"/etc/up.png\")",
+        "appearance: dial",
+        "overflow: scroll",
+    ] {
+        assert_eq!(style(&format!("knob {{ {bad}; }}")).0, 1, "{bad}");
+    }
+    // The settings of a value inherit, as the registry says.
+    let (_, knob) = style("window { appearance: knob; value-position: top; }");
+    assert_eq!(knob.get(Property::Appearance), Value::Keyword("knob"));
+    assert_eq!(knob.get(Property::ValuePosition), Value::Keyword("top"));
+    let (_, knob) = style("window { meter-style: needle; overflow: hidden; }");
+    assert_eq!(knob.get(Property::MeterStyle), Value::Keyword(""), "a meter's style is its own");
+    assert_eq!(knob.get(Property::Overflow), Value::Keyword("visible"));
+}

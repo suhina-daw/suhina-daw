@@ -222,11 +222,11 @@ pub(crate) struct PartStyle {
     pub(crate) radius: Option<f32>,
 }
 
-pub(crate) fn part_style(class: &str, states: &[crate::kit::native_css::HostState]) -> PartStyle {
-    let part = crate::kit::element::named(class).map(crate::kit::element::Name::enter);
-    for state in states {
-        crate::kit::native_css::mark(*state, true);
-    }
+pub(crate) fn part_style(class: &str, states: &[crate::kit::element::Attr]) -> PartStyle {
+    let part = crate::kit::element::named(class).map(|name| {
+        let builder = name.native(crate::kit::element::Native::default());
+        states.iter().fold(builder, |builder, state| builder.attr(*state, true)).enter()
+    });
     part.and_then(|part| part.style()).map_or_else(PartStyle::default, |c| PartStyle {
         background: c.authored.background.then_some(c.background),
         border: c.authored.border.then_some(c.border),
@@ -238,8 +238,11 @@ pub(crate) fn part_style(class: &str, states: &[crate::kit::native_css::HostStat
 /// Draws the grid, the notes, the velocity lane, the key column and the ruler's bar numbers;
 /// `played` is the part of the content the clip plays (› Ruler): the grid and the notes outside
 /// it are shaded.
+/// `el` is the piano roll, whose background lies over the grid.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn draw(
     ui: &Ui,
+    el: &crate::kit::element::Entered,
     layout: &Layout,
     clip: &PianoClip,
     state: &PianoRollState,
@@ -253,17 +256,16 @@ pub(super) fn draw(
     let first_key = layout.key_at(layout.grid.bottom() - 0.5).unwrap_or(0);
     let last_key = layout.key_at(layout.grid.top() + 0.5).unwrap_or(127);
 
-    use crate::kit::native_css::HostState;
+    use crate::kit::element::Attr;
     // The theme's parts: `piano-grid` (its border-color for the lines), `piano-row` and
     // `piano-row-black`, `piano-key` and `piano-key-black`, `piano-note` (`[selected]`,
     // `[muted]`; `--clip-colour` is the clip's colour), `velocity`.
     let grid_style = part_style("piano-grid", &[]);
     let row_style = part_style("piano-row", &[]);
     let black_row_style = part_style("piano-row-black", &[]);
-    crate::kit::native_css::set_variable("--clip-colour", crate::kit::native_css::hex(clip.color));
     let note_style = part_style("piano-note", &[]);
-    let selected_style = part_style("piano-note", &[HostState::Selected]);
-    let muted_style = part_style("piano-note", &[HostState::Muted]);
+    let selected_style = part_style("piano-note", &[Attr::Selected]);
+    let muted_style = part_style("piano-note", &[Attr::Muted]);
     let velocity_style = part_style("velocity", &[]);
     let line_colour = |strong: bool| {
         grid_style.border.map_or_else(
@@ -275,7 +277,7 @@ pub(super) fn draw(
     };
     // Rows: black keys darker, a stronger line under each C.
     painter.fill_background(layout.grid, 0.0, grid_style.background.unwrap_or_else(theme::window_background));
-    crate::kit::native_css::background(&painter, layout.grid);
+    el.paint_background(&painter, layout.grid, 0.0);
     for key in (first_key..=last_key).filter(|k| layout.rows.shows(*k)) {
         let top = layout.y_of(key);
         let row = Rect::from_min_max(

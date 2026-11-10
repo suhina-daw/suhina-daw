@@ -173,7 +173,7 @@ sliders then apply live and save with the theme; turning inheritance back on rem
 the override. Settings edits are saved in a variant of the theme (Custom, made the first time
 on the theme's own values), so a built-in theme is not copied for them. The renderer uses theme
 values when present, otherwise global settings; GPU support, reduced effects and high contrast
-remain final gates. A theme's `--liquid` property is `auto` or three integers from 0 to 100
+remain final gates. A theme's `window { liquid }` setting is `auto` or three integers from 0 to 100
 (panels, tracks, clips); `auto` preserves global inheritance. Copies
 and exports retain these values; Reset changes restores entry colours, inheritance and the theme's own settings.
 Colours are grouped into Surfaces, Text, Tracks & clips, Controls, Meters and Sample map.

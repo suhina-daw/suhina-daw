@@ -189,7 +189,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     let page = crate::kit::element::PLUGIN_MANAGER
         .native(crate::kit::element::Native { radius: 0.0, fill: theme::window_background() })
         .enter();
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let mut styled_ui = page.ui(ui);
     let ui = &mut *styled_ui;
     let mut out = ManagerOut::default();
     let painter = ui.painter_at(area);

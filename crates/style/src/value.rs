@@ -571,6 +571,8 @@ pub enum Value {
     Tracks(Vec<Length>),
     Areas(crate::layout::Areas),
     Name(String),
+    /// Text a host property checks and reads itself ([`crate::property::Kind::Text`]).
+    Text(String),
     Shadows(Vec<crate::paint::Shadow>),
     Gradients(Vec<crate::gradient::Linear>),
     /// One keyword of a property's fixed list; empty when the property was never written.

@@ -62,19 +62,3 @@
 @property --kind-vocal { syntax: "<color>"; initial-value: #E8D0A0; }
 @property --kind-effect { syntax: "<color>"; initial-value: #9CC49C; }
 @property --kind-other { syntax: "<color>"; initial-value: #8A8680; }
-@property --meter-style { syntax: "continuous | segmented | needle | frames"; initial-value: continuous; }
-@property --meter-segments { syntax: "<integer>"; initial-value: 24; range: 4 64; }
-@property --meter-intensity { syntax: "<integer>"; initial-value: 100; range: 0 100; }
-@property --artwork-fps { syntax: "<integer>"; initial-value: 12; range: 1 30; }
-@property --liquid { syntax: "auto | <integer>+"; initial-value: auto; }
-@property --gradient-panels { syntax: "*"; initial-value: none; }
-@property --gradient-tracks { syntax: "*"; initial-value: none; }
-@property --gradient-clips { syntax: "*"; initial-value: none; }
-@property --background-image { syntax: "*"; initial-value: none; }
-@property --background-opacity { syntax: "<integer>"; initial-value: 70; range: 0 100; }
-@property --background-blur { syntax: "<integer>"; initial-value: 0; range: 0 100; }
-@property --session-track-width { syntax: "auto | <length>"; initial-value: auto; }
-@property --session-return-width { syntax: "auto | <length>"; initial-value: auto; }
-@property --session-scene-width { syntax: "auto | <length>"; initial-value: auto; }
-@property --session-slot-height { syntax: "auto | <length>"; initial-value: auto; }
-@property --session-header-height { syntax: "auto | <length>"; initial-value: auto; }

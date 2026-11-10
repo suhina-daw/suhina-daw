@@ -20,10 +20,10 @@ const LISTED: usize = 6;
 
 /// Draws the dialog over `area`, above everything else, for the projects still being let go of.
 pub fn show(ui: &Ui, area: Rect, waiting: &[String]) {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("closing")).order(egui::Order::Foreground).fixed_pos(area.min).show(ui.ctx(), |ui| {
         // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
-        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let mut styled_ui = style_class.ui(ui);
         let ui = &mut *styled_ui;
         ui.set_min_size(area.size());
         draw(ui, area, waiting);

@@ -267,8 +267,12 @@ pub fn show(
     cx: Context<'_>,
     actions: &mut Vec<Action>,
 ) {
-    let _style_class = crate::kit::style_class::enter("piano-roll");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    // `--clip-colour`, the clip's colour, for the notes drawn inside it.
+    let el = crate::kit::element::PIANO_ROLL
+        .native(crate::kit::element::Native::default())
+        .variable("--clip-colour", crate::kit::native_css::hex(clip.color))
+        .enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let Context { options, keymap, copied, playhead, start_marker, seeks } = cx;
     let scale = options.toolbar_size.scale();
@@ -824,7 +828,7 @@ pub fn show(
     }
 
     let shape = shape.unwrap_or(clip.shape);
-    draw(ui, &layout, clip, state, grid, preview, shape.played());
+    draw(ui, &el, &layout, clip, state, grid, preview, shape.played());
     // A stroke let go this frame is drawn as it ends once more: its command runs after this frame,
     // so the notes it deletes, mutes or adds change from the next one, and no frame between shows
     // them as they were.

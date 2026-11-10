@@ -50,19 +50,20 @@ pub(crate) struct ToolsSpacing {
     pub field: f32,
     pub toggle: f32,
     /// How tall the quantise amount's knob is, when the theme draws the amount as a knob
-    /// (`midi-tools slider { --suhina-appearance: knob }`, or `#quantise-amount`).
+    /// (`midi-tools slider { appearance: knob }`, or `#quantise-amount`).
     pub knob: Option<f32>,
 }
 
-/// The tools part's spacing as the theme sets it: `midi-tools { --suhina-gap }` the room between
+/// The tools part's spacing as the theme sets it: `midi-tools { gap }` the room between
 /// its rows (0 to 16 points), `midi-tools button { height }` its fields', buttons', switches' and
-/// Apply's height (10 to 40 points); else the panel's own. `slider { --suhina-appearance: knob }`
+/// Apply's height (10 to 40 points); else the panel's own. `slider { appearance: knob }`
 /// inside it (`#quantise-amount` for the one slider) draws the quantise amount as a knob, as tall
 /// as the slider's `height` (16 to 96 points, 32 by default).
 pub(crate) fn tools_spacing() -> ToolsSpacing {
-    let _el = crate::kit::element::MIDI_TOOLS.enter();
-    let gap = crate::kit::style_class::property("--suhina-gap")
-        .and_then(|v| v.trim().strip_suffix("px").and_then(|v| v.trim().parse::<f32>().ok()))
+    let el = crate::kit::element::MIDI_TOOLS.enter();
+    let gap = el
+        .style()
+        .and_then(|style| style.points(suhina_style::property::Property::RowGap))
         .filter(|v| v.is_finite())
         .map(|v| v.clamp(0.0, 16.0));
     let height = {
@@ -71,7 +72,7 @@ pub(crate) fn tools_spacing() -> ToolsSpacing {
     };
     let knob = {
         let slider = crate::kit::element::SLIDER.id(QUANTISE_AMOUNT).enter();
-        crate::kit::style_class::knob_preference(false).then(|| {
+        crate::kit::style_class::knob_preference(&slider, false).then(|| {
             slider.style().and_then(|c| c.height).filter(|h| h.is_finite()).map_or(KNOB, |h| h.clamp(16.0, 96.0))
         })
     };
@@ -298,14 +299,14 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
         // `editor-tab` (`[checked]` for the one shown), `#tab-notes` and `#tab-transform`.
         let on = state.tools_tab == tab;
         let id = format!("tab-{}", text.to_ascii_lowercase());
-        let _el =
+        let el =
             crate::kit::element::EDITOR_TAB.id(&id).response(&response).attr(crate::kit::element::Checked, on).enter();
         let ink = if on {
             theme::text_primary()
         } else {
             motion::mix(theme::text_hint(), theme::text_secondary(), widgets::hover(ui, &response))
         };
-        let ink = crate::kit::style_class::foreground(ink);
+        let ink = el.color_or(ink);
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, font.clone(), ink);
         if on {
             let line = Rect::from_min_max(
@@ -808,8 +809,8 @@ fn transform_tab(
 }
 
 /// The quantise amount as a knob, where the theme draws it as one (`midi-tools slider
-/// { --suhina-appearance: knob }`, or `#quantise-amount`): dragged up for more, half a percent a
-/// point, its value where `--suhina-value-position` puts it (at its right unless it says). Named
+/// { appearance: knob }`, or `#quantise-amount`): dragged up for more, half a percent a
+/// point, its value where `value-position` puts it (at its right unless it says). Named
 /// "Quantise amount: `n` %" as the field is. Returns the amount.
 fn amount_knob(ui: &Ui, painter: &egui::Painter, rect: Rect, amount: f64) -> f64 {
     let response = ui.interact(rect, Id::unique("midi-tools-quantise-amount"), Sense::drag());
@@ -825,10 +826,11 @@ fn amount_knob(ui: &Ui, painter: &egui::Painter, rect: Rect, amount: f64) -> f64
         info.current_text_value = Some(text.clone());
         info
     });
-    let _slider = crate::kit::element::SLIDER.id(QUANTISE_AMOUNT).response(&response).enter();
+    let slider = crate::kit::element::SLIDER.id(QUANTISE_AMOUNT).response(&response).enter();
     widgets::knob_with_value(
         painter,
         rect,
+        &slider,
         (amount / 100.0) as f32,
         theme::text_primary(),
         Some(&response),

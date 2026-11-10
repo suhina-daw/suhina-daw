@@ -158,8 +158,8 @@ impl App {
         actions: &mut Vec<Action>,
         geometry: Option<(Rect, Rect, bool)>,
     ) -> Rect {
-        let _panel_style = crate::kit::style_class::enter_named("workspace-panel", "panel-detail");
-        let styled_ui = crate::kit::style_class::ui(ui);
+        let panel_style = crate::kit::element::WORKSPACE_PANEL.id("panel-detail").enter();
+        let styled_ui = panel_style.ui(ui);
         // The splitter a theme's layout keeps lies in the gap beside the area: drawn and taking the
         // pointer there too (#1240).
         let css_splitter = geometry.map(|(view, detail, follows)| {
@@ -1078,13 +1078,9 @@ fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
 /// `divider`, with `:hover` and `:active`). The strip takes the element's `background-color` and
 /// the grip its `color`; without them, the control background and the hint colour.
 fn paint_splitter(ui: &Ui, splitter: Rect, response: &egui::Response, stacked: bool) {
-    let _style = crate::kit::style_class::enter_named_response("divider", "detail-splitter", response);
+    let style = crate::kit::element::DIVIDER.id("detail-splitter").response(response).enter();
     let painter = ui.painter_at(splitter);
-    painter.fill_background(splitter, 0.0, crate::kit::style_class::background(theme::control_background()));
+    painter.fill_background(splitter, 0.0, style.background_or(theme::control_background()));
     let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
-    painter.rect_filled(
-        Rect::from_center_size(splitter.center(), grip),
-        0.0,
-        crate::kit::style_class::foreground(theme::text_hint()),
-    );
+    painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, style.color_or(theme::text_hint()));
 }
