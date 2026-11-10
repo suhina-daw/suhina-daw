@@ -1331,14 +1331,20 @@ pub(crate) fn keep_plugin_params_in_step(session: &mut Session) -> bool {
         let monitor = p.monitor();
         (monitor.running(), monitor.beat())
     });
-    let before = turns_lanes_off(&session.project, &edits, at).then(|| session.project.clone());
+    // The parameters that take steps: their lanes hold each value, and so do the echoes of it.
+    let stepped: Vec<(u64, u32)> = edits
+        .iter()
+        .filter(|(key, id, _)| session.plugins.stepped(*key, *id))
+        .map(|(key, id, _)| (*key, *id))
+        .collect();
+    let before = turns_lanes_off(&session.project, &edits, at, &stepped).then(|| session.project.clone());
     // The parameters moved by hand, for the window to show in their tracks' lanes.
-    for touched in touched_by_hand(&session.project, &edits, at) {
+    for touched in touched_by_hand(&session.project, &edits, at, &stepped) {
         if !session.touched.contains(&touched) && session.touched.len() < MAX_TOUCHED {
             session.touched.push(touched);
         }
     }
-    let (changed, off) = take_in_param_edits(&mut session.project, &edits, at);
+    let (changed, off) = take_in_param_edits(&mut session.project, &edits, at, &stepped);
     if changed || off {
         session.history.changes = session.history.changes.wrapping_add(1);
     }
@@ -1363,6 +1369,7 @@ pub(crate) fn touched_by_hand(
     project: &Project,
     edits: &[(u64, u32, f64)],
     at: Option<(bool, f64)>,
+    stepped: &[(u64, u32)],
 ) -> Vec<(suhina_model::TrackId, usize, u32)> {
     let devices = suhina_engine::plugin_devices(project);
     let mut touched = Vec::new();
@@ -1371,7 +1378,7 @@ pub(crate) fn touched_by_hand(
         let (Some(track), [index]) = (found.track, found.path.as_slice()) else { continue };
         let echo = plugin_device(project, &devices, *key)
             .and_then(|device| playing_lane(device, *id))
-            .is_some_and(|lane| lane_sent(lane, *value, at));
+            .is_some_and(|lane| lane_sent(lane, *value, at, stepped.contains(&(*key, *id))));
         if !echo && !touched.contains(&(track, *index, *id)) {
             touched.push((track, *index, *id));
         }
@@ -1387,10 +1394,11 @@ fn playing_lane(device: &Device, id: u32) -> Option<&AutomationLane> {
 /// Whether `value` is one the lane sent the plug-in around the playhead `at` (whether the
 /// transport runs, and the beat), reported back rather than moved by hand (#1205). Stopped, the
 /// lane sends its value at the playhead; running, a report may come a little after the value it
-/// echoes, so anything the lane went through in the last two beats counts.
-fn lane_sent(lane: &AutomationLane, value: f64, at: Option<(bool, f64)>) -> bool {
+/// echoes, so anything the lane went through in the last two beats counts. A `stepped`
+/// parameter's lane holds each value until the next point, as the engine plays it.
+fn lane_sent(lane: &AutomationLane, value: f64, at: Option<(bool, f64)>, stepped: bool) -> bool {
     let Some((running, beat)) = at.filter(|(_, b)| b.is_finite()) else { return false };
-    let played = |b: f64| lane.value_at(b.max(0.0), false, &suhina_model::automation::Plain);
+    let played = |b: f64| lane.value_at(b.max(0.0), stepped, &suhina_model::automation::Plain);
     let near = |a: f64| (a - value).abs() <= 1e-6f64.max(a.abs() * 1e-4);
     if !running {
         return played(beat).is_some_and(near);
@@ -1414,23 +1422,30 @@ fn plugin_device<'a>(project: &'a Project, devices: &[suhina_engine::PluginDevic
 }
 
 /// Whether any of `edits` would turn a lane off ([`take_in_param_edits`]).
-fn turns_lanes_off(project: &Project, edits: &[(u64, u32, f64)], at: Option<(bool, f64)>) -> bool {
+fn turns_lanes_off(
+    project: &Project,
+    edits: &[(u64, u32, f64)],
+    at: Option<(bool, f64)>,
+    stepped: &[(u64, u32)],
+) -> bool {
     let devices = suhina_engine::plugin_devices(project);
     edits.iter().any(|(key, id, value)| {
         plugin_device(project, &devices, *key)
             .and_then(|device| playing_lane(device, *id))
-            .is_some_and(|lane| !lane_sent(lane, *value, at))
+            .is_some_and(|lane| !lane_sent(lane, *value, at, stepped.contains(&(*key, *id))))
     })
 }
 
 /// Takes the editors' `edits` (device key, parameter id, value) into `project`: each becomes
 /// the device's value, and one of a parameter a lane plays turns the lane off unless the lane
-/// sent it around the playhead `at` (#1205). Returns whether a value changed and whether a lane
-/// went off.
+/// sent it around the playhead `at` (#1205), holding each value until the next point for the
+/// parameters in `stepped` (device key, parameter id). Returns whether a value changed and
+/// whether a lane went off.
 pub(crate) fn take_in_param_edits(
     project: &mut Project,
     edits: &[(u64, u32, f64)],
     at: Option<(bool, f64)>,
+    stepped: &[(u64, u32)],
 ) -> (bool, bool) {
     let devices = suhina_engine::plugin_devices(project);
     let mut changed = false;
@@ -1441,7 +1456,8 @@ pub(crate) fn take_in_param_edits(
             continue;
         };
         let Some(device) = suhina_model::device_at_mut(&mut channel.devices, &device.path) else { continue };
-        let by_hand = playing_lane(device, *id).is_some_and(|lane| !lane_sent(lane, *value, at));
+        let held = stepped.contains(&(*key, *id));
+        let by_hand = playing_lane(device, *id).is_some_and(|lane| !lane_sent(lane, *value, at, held));
         if by_hand {
             off |= crate::automation::override_lane(&mut device.automation, |l| param_id(&l.param) == Some(*id));
         }

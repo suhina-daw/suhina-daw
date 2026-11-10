@@ -3653,6 +3653,13 @@ impl App {
         // the transport stands, before the point is let go of (#1205). A range being painted
         // sends nothing.
         let dragged = lanes.dragged.clone().filter(|d| d.at.is_none());
+        // A parameter that takes steps holds each value until the next point, as the engine plays it.
+        let stepped = dragged.as_ref().is_some_and(|d| {
+            self.timeline
+                .as_ref()
+                .and_then(|(_, _, t)| t.automation.param(d.track, &d.key))
+                .is_some_and(|p| p.scale.stepped())
+        });
         let Ok(session) = self.projects.session_mut(None) else { return lists };
         let preview = dragged.and_then(|d| {
             let device = d.key.device?;
@@ -3661,7 +3668,7 @@ impl App {
             let value = suhina_engine::model::automation::value_at(
                 &d.points,
                 beat,
-                false,
+                stepped,
                 &suhina_engine::model::automation::Plain,
             )?;
             Some((d.track, device, id, value))

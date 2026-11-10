@@ -250,6 +250,12 @@ pub type ParamTexts = std::collections::HashMap<(u32, u64), String>;
 /// Most texts kept for one plug-in; past this the texts are forgotten and asked for again.
 const MAX_TEXTS: usize = 8192;
 
+/// The ids of a parameter list's parameters that take steps (a switch, a choice), as
+/// [`Instance::steps`] keeps them.
+fn steps(list: &[suhina_plugins::ParamInfo]) -> std::sync::Arc<[u32]> {
+    list.iter().filter(|p| p.steps > 0).map(|p| p.id).collect()
+}
+
 /// A parameter list's ids and ranges (lowest, highest), as [`Instance::ranges`] keeps them.
 fn ranges(list: &[suhina_plugins::ParamInfo]) -> Vec<(u32, f64, f64)> {
     list.iter().map(|p| (p.id, p.min.min(p.max), p.max.max(p.min))).collect()
@@ -363,6 +369,9 @@ struct Instance {
     counts: Option<Arc<BlockCounts>>,
     /// Its parameters' ids and ranges (lowest, highest), once listed ([`Rack::params`]).
     ranges: Option<Vec<(u32, f64, f64)>>,
+    /// The ids of its parameters that take steps, once listed: the engine holds their lanes'
+    /// values until the next point, as the lanes draw them (#1205).
+    steps: Option<std::sync::Arc<[u32]>>,
     /// Its parameters as last listed in the background for its generated panel, and when.
     listed: Option<(Arc<[suhina_plugins::ParamInfo]>, Instant)>,
     /// A listing for the panel is under way.
@@ -409,6 +418,7 @@ impl Instance {
         self.list_tried = Some(now);
         if let Some(list) = list {
             self.ranges = Some(ranges(&list));
+            self.steps = Some(steps(&list));
             self.listed = Some((list.into(), now));
         }
     }
@@ -435,6 +445,7 @@ impl Instance {
             spec: String::new(),
             info: PluginSlotInfo::default(),
             ranges: None,
+            steps: None,
             listed: None,
             listing: false,
             texts: Arc::default(),
@@ -586,6 +597,8 @@ pub struct Rack {
     /// Clips' edits on their way to another track's plug-in ([`Rack::carry`]).
     carries: Vec<Carry>,
     next_carry: u64,
+    /// The stepped parameters the player was last told of ([`Rack::step_map`]).
+    steps_sent: suhina_engine::PluginSteps,
 }
 
 impl Default for Rack {
@@ -622,6 +635,7 @@ impl Default for Rack {
             ara_learned: Vec::new(),
             carries: Vec::new(),
             next_carry: 0,
+            steps_sent: Default::default(),
         }
     }
 }
@@ -1194,6 +1208,16 @@ impl Rack {
         progress
     }
 
+    /// The parameters of each listed plug-in device that take steps, for the engine's graphs.
+    fn step_map(&self) -> suhina_engine::PluginSteps {
+        self.instances.iter().filter_map(|(key, i)| Some((*key, std::sync::Arc::clone(i.steps.as_ref()?)))).collect()
+    }
+
+    /// Whether parameter `id` of the plug-in device `key` takes steps, as its plug-in listed it.
+    pub(crate) fn stepped(&self, key: u64, id: u32) -> bool {
+        self.instances.get(&key).and_then(|i| i.steps.as_ref()).is_some_and(|steps| steps.contains(&id))
+    }
+
     /// The slots the engine's graphs are built with.
     fn slot_info(&self) -> HashMap<u64, PluginSlotInfo> {
         self.instances
@@ -1305,6 +1329,23 @@ impl Rack {
         self.follow_notes(project, &devices);
         self.send_placements();
         self.watch(&mut notices);
+        // A plug-in's parameters are listed once it runs, so the engine knows which take steps
+        // even when no panel or lane asks for them (#1205).
+        let unlisted: Vec<u64> = self
+            .instances
+            .iter()
+            .filter(|(_, i)| i.status == PluginStatus::Running && i.steps.is_none() && i.list_tried.is_none())
+            .map(|(key, _)| *key)
+            .collect();
+        for key in unlisted {
+            self.list_params(key);
+        }
+        let steps = self.step_map();
+        if steps != self.steps_sent {
+            player.set_plugin_steps(steps.clone());
+            self.steps_sent = steps;
+            changed = true;
+        }
         if changed {
             player.set_plugin_info(self.slot_info());
             if let Err(e) = player.update(project) {
@@ -1866,6 +1907,7 @@ impl Rack {
         let list = self.running(key)?.params().map_err(|e| CommandError(e.to_string()))?;
         if let Some(instance) = self.instances.get_mut(&key) {
             instance.ranges = Some(ranges(&list));
+            instance.steps = Some(steps(&list));
         }
         Ok(list)
     }
