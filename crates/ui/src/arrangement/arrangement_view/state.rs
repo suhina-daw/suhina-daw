@@ -256,6 +256,9 @@ pub struct ArrangementViewState {
     pub(super) marquee_scroll: Vec2,
     /// The span the last selection rectangle covered: its tracks and its beats.
     pub(super) time_selection: Option<TimeSelection>,
+    /// The stretch selected in time in the piano roll, for the clip it shows: that clip and the
+    /// stretch in its content's beats. The clip lights it as the piano roll does.
+    pub editor_span: Option<(ClipId, f64, f64)>,
     /// Where a drag on the ruler started, in beats: it selects time over every track.
     pub(super) ruler_select: Option<f64>,
     /// While time is being painted: what a drag with Shift goes on from, known once it has begun.
@@ -443,6 +446,7 @@ impl Default for ArrangementViewState {
             marquee_row: None,
             marquee_scroll: Vec2::ZERO,
             time_selection: None,
+            editor_span: None,
             ruler_select: None,
             painted_from: None,
             edge_drag: None,
@@ -1065,6 +1069,8 @@ pub(crate) struct ClipLook {
     pub(crate) waveform_zoom: f32,
     pub(crate) waveform_appearance: crate::settings::view_settings::WaveformAppearance,
     pub(crate) audio_colour_strength: u8,
+    /// The piano roll's time selection and the clip it is on ([`ArrangementViewState::editor_span`]).
+    pub(crate) editor_span: Option<(ClipId, f64, f64)>,
 }
 
 impl ArrangementViewState {
@@ -1075,6 +1081,7 @@ impl ArrangementViewState {
             waveform_zoom: self.waveform_zoom,
             waveform_appearance: self.waveform_appearance,
             audio_colour_strength: self.audio_colour_strength,
+            editor_span: self.editor_span,
         }
     }
 }

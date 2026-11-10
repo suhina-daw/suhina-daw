@@ -720,3 +720,56 @@ fn a_narrow_clip_draws_no_name_and_nothing_outside_itself() {
     let (_, shapes) = draw(240.0);
     assert!(shapes.iter().any(|s| matches!(s.shape, egui::Shape::Text(_))), "a wide clip shows its name");
 }
+
+/// The piano roll's time selection is lit on the clip it edits, where those beats of the content
+/// play from the clip's start, within the clip, and on no other clip.
+#[test]
+fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let mut clip = timeline.lanes.iter().flat_map(|l| l.clips.iter()).find(|c| !c.audio).cloned().unwrap();
+    clip.offset = 1.0;
+    clip.length = 8.0;
+    assert_eq!(editor_span_in(Some((clip.id, 2.0, 4.0)), &clip), Some((1.0, 3.0)), "from where it plays");
+    assert_eq!(editor_span_in(Some((clip.id, 0.0, 20.0)), &clip), Some((0.0, 8.0)), "within the clip");
+    assert_eq!(editor_span_in(Some((clip.id, 0.0, 1.0)), &clip), None, "before it plays");
+    assert_eq!(editor_span_in(Some((ClipId(clip.id.0 + 1), 2.0, 4.0)), &clip), None, "another clip");
+    assert_eq!(editor_span_in(None, &clip), None);
+
+    let lane = timeline.lanes.iter().find(|l| l.clips.iter().any(|c| c.id == clip.id)).unwrap();
+    let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(160.0, 60.0));
+    let tint = theme::accent().gamma_multiply(0.45);
+    let lit = |span: Option<(ClipId, f64, f64)>| {
+        let ctx = egui::Context::default();
+        let mut found = Vec::new();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * 20.0;
+            let look = ClipLook { editor_span: span, ..ArrangementViewState::default().clip_look() };
+            paint_clip(
+                ui.painter(),
+                rect,
+                lane,
+                &clip,
+                Shown::of(&clip),
+                clip.start,
+                &x_of,
+                20.0,
+                &timeline,
+                true,
+                &look,
+            );
+        });
+        output.textures_delta.clear();
+        for shape in output.shapes {
+            if let egui::Shape::Rect(r) = shape.shape
+                && r.fill == tint
+            {
+                found.push(r.rect);
+            }
+        }
+        found
+    };
+    let shown = lit(Some((clip.id, 2.0, 4.0)));
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!((shown[0].left(), shown[0].right()), (120.0, 160.0), "beats 1 to 3 of the clip");
+    assert!(lit(None).is_empty());
+}

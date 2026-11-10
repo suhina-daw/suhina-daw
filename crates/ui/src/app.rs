@@ -3348,6 +3348,13 @@ impl App {
                                 .and_then(suhina_session::Player::output_info)
                                 .map_or(0, |i| i.input_channels);
                             self.frame_trace.mark("timeline");
+                            // The piano roll's time selection, lit on the clip it edits.
+                            self.arrangement.editor_span = match self.shown_clip() {
+                                Some(ClipRef::Arrangement(_, clip)) if self.detail_open => {
+                                    self.piano_roll.time_span().map(|(from, to)| (clip, from, to))
+                                }
+                                _ => None,
+                            };
                             arrangement_view::show(ui, &timeline, &mut self.arrangement, &mut actions);
                             self.frame_trace.mark("arrangement view");
                             self.frame_trace.note(|| {

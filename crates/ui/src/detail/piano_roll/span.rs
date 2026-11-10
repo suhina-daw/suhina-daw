@@ -179,6 +179,12 @@ impl PianoRollState {
         self.span.as_ref().map(|span| round_beat(span.end))
     }
 
+    /// The stretch selected in time, from its start to its end in the clip's beats: the
+    /// Arrangement lights it on the clip too.
+    pub fn time_span(&self) -> Option<(f64, f64)> {
+        self.span.as_ref().map(|span| (round_beat(span.start), round_beat(span.end))).filter(|(s, e)| e > s)
+    }
+
     /// Forgets everything selected in time.
     pub(super) fn clear_span(&mut self) {
         self.span = None;

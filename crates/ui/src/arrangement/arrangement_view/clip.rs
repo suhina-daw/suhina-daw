@@ -1557,6 +1557,16 @@ pub(super) fn paint_clip(
     {
         paint_ara_activity(painter, marks, body, ink, name, *progress);
     }
+    // The stretch selected in time in the piano roll, lit on the clip it edits, under its name
+    // bar: where those beats of the content play from the clip's start.
+    if let Some((from, to)) = editor_span_in(look.editor_span, clip) {
+        let x = egui::Rangef::new(x_of(start + from), x_of(start + to)).intersection(rect.x_range());
+        if x.span() > 0.0 {
+            let top = bar.map_or(rect.top(), |bar| bar.bottom());
+            let lit = Rect::from_x_y_ranges(x, egui::Rangef::new(top, rect.bottom()));
+            painter.rect_filled(lit, 0.0, theme::accent().gamma_multiply(EDITOR_SPAN_TINT));
+        }
+    }
     // Loop boundaries share the leading edge's contrast, with a small top notch so they
     // remain distinct from the grid and playhead at every lane height.
     let span = f64::from((rect.right() - x_of(start)) / beat_width);
@@ -1601,6 +1611,20 @@ pub(super) fn paint_clip(
     if clip.take.is_some() {
         paint_take_marker(painter, rect, ink);
     }
+}
+
+/// How strongly the piano roll's time selection tints the clip it edits.
+const EDITOR_SPAN_TINT: f32 = 0.45;
+
+/// The piano roll's time selection on `clip`, in beats from the clip's start and within it:
+/// the content's beats less where the clip starts playing them. `None` on any other clip.
+pub(super) fn editor_span_in(span: Option<(ClipId, f64, f64)>, clip: &ClipBox) -> Option<(f64, f64)> {
+    let (id, from, to) = span?;
+    if id != clip.id || clip.audio || !from.is_finite() || !to.is_finite() {
+        return None;
+    }
+    let (from, to) = ((from - clip.offset).max(0.0), (to - clip.offset).min(clip.length));
+    (to > from).then_some((from, to))
 }
 
 /// The small mark in a clip's lower left corner that says it holds takes: three stacked lines, as

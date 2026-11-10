@@ -629,6 +629,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   end stays on it, and the stretch grows to keep them all in, so the bar goes on showing them. A
   stretch with no notes selected stays where it is when the notes that start in it change length.
   It always holds the notes selected with it: one that misses them all takes their extent.
+- **Built:** a stretch selected in time is lit on the clip in the Arrangement too, under its name bar,
+  where those beats of the content play from the clip's start (the content's beats less the clip's
+  offset), cut to the clip's length, while the piano roll shows that clip.
 - **Built:** the selection lives in the window only; it is not part of the project and is not an
   undo step. It is cleared when another clip is shown.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344)):** while the piano roll has
