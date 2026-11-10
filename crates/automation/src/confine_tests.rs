@@ -51,6 +51,10 @@ fn paths_agents_give_must_be_inside_the_read_root() {
     let place = json!({ "place": "recent:samples" });
     assert_eq!(confine(&workspace, "library.search", place.clone(), None).unwrap(), place);
     assert_eq!(confine(&workspace, "soundmap.layout", place.clone(), None).unwrap(), place);
+    // A tag's place is the library's own name, kept as it came.
+    let tagged = json!({ "place": "tag:Red" });
+    assert_eq!(confine(&workspace, "library.search", tagged.clone(), None).unwrap(), tagged);
+    assert_eq!(confine(&workspace, "soundmap.layout", tagged.clone(), None).unwrap(), tagged);
     let voice = confine(&workspace, "library.info", json!({ "item": "bank.syx#4" }), None).unwrap();
     assert!(voice["item"].as_str().unwrap().ends_with("bank.syx#4"));
     let _ = std::fs::remove_dir_all(&dir);
