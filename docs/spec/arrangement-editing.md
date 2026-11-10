@@ -893,6 +893,17 @@ and the send knobs at its end, as many as leave the name its room. A shorter lan
 the buttons, the name and the automation button at its end. Taller still, the routing and the
 input lines follow below.
 
+A header's volume and pan fields, and the main row's volume bar, are dragged either up and down
+or across: up or right raises the value (pans it right), down or left lowers it, a quarter of a
+decibel (or 0.01 of pan) a point, ten times finer with Shift. The first few points a drag moves
+choose its direction, which it keeps until it is let go, so a drag across that wavers up or down
+does not change the value twice. The pointer over the field stays as it is. While it is dragged
+the pointer hides, as on every value control (Settings › Appearance › **Hide pointer while
+dragging**, on by default, or a theme's `drag-pointer: hidden`); with the setting off or
+`drag-pointer: visible` it shows the arrow of the direction chosen (left-right or up-down). Shown as knobs
+(Settings › Launcher and mixer › **Mixer controls** on Knob) they turn with an up or down drag instead, unless the theme
+lays the control out horizontally (`direction: horizontal`).
+
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging
 one field moves every selected track's by the same amount (the others follow it as it is dragged,

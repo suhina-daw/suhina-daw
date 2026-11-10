@@ -1868,6 +1868,28 @@
       "docs/design/components.md"
     ]
   },
+  "Appearance/Window/drag_hides_pointer": {
+    "sourceFingerprint": "a3b8ecc7e249dbedb3a2fdaeeaeba1ac7f12286882428066d1a5d3e8359eca5f",
+    "summary": "Hide the pointer while you drag a knob, fader or value.",
+    "description": "When you drag a knob, a fader, a slider or a value such as a track's volume, the pointer disappears for as long as the drag lasts and comes back where you pressed. With the mouse the drag also holds the pointer in place, so a long drag never stops at the edge of the screen. Turned off, the pointer stays visible during the drag and shows an arrow for the direction the value moves in; on a bar that can be dragged either way, the arrow appears once the drag has chosen its direction. A theme can choose for its own controls with drag-pointer, which then wins over this setting. It changes nothing in the project or the sound.",
+    "options": [
+      {
+        "name": "On",
+        "description": "Hide the pointer while dragging. This is the default."
+      },
+      {
+        "name": "Off",
+        "description": "Keep the pointer visible and show the arrow of the drag's direction."
+      }
+    ],
+    "whenToChange": "Turn it off if you prefer to see the pointer while dragging, or if your system does not hide or hold the pointer reliably.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/kit/widgets.rs",
+      "docs/spec/arrangement-editing.md"
+    ]
+  },
   "Appearance/Window/menu_bar": {
     "sourceFingerprint": "a93b7f2b10e7c500cc5b4216cbae4e1bd486a93e602d2523928af896e71b07a2",
     "description": "Shows File, Edit, View, Projects, Options and Help at the top of the window. On macOS the menu bar at the top of the screen has the same menus and items, so the window's own bar is off by default there; on Windows and Linux it is the only menu bar and is on by default. Keys work either way.",

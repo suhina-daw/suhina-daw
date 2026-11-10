@@ -55,14 +55,56 @@ struct ValueDrag {
     /// Let go of: the pointer has been moved back and shows at the next frame, so it never flashes
     /// where it was held.
     released: bool,
+    /// The pointer is hidden while the drag holds it ([`set_drag_hides_pointer`],
+    /// [`value_drag_pointer`]); otherwise it shows `icon`.
+    hides: bool,
+    /// What the pointer shows while the drag holds it: nothing while it hides, else the arrow of
+    /// the drag's axis ([`value_drag_shows`]).
+    icon: egui::CursorIcon,
 }
 
 fn value_drag_id() -> Id {
     Id::unique("value-drag-holds-pointer")
 }
 
+fn drag_hides_pointer_id() -> Id {
+    Id::unique("value-drag-hides-pointer")
+}
+
+/// Where a control's own answer to whether its next drag hides the pointer waits
+/// ([`value_drag_pointer`]).
+fn drag_pointer_id(response: &Response) -> Id {
+    response.id.with("drag-pointer")
+}
+
+/// Settings › Appearance › Hide pointer while dragging: whether a value drag hides the pointer
+/// (on by default) where its control's element says nothing of its own.
+pub fn set_drag_hides_pointer(ctx: &egui::Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(drag_hides_pointer_id(), on));
+}
+
+/// The setting [`set_drag_hides_pointer`] gave; on unless turned off.
+pub fn drag_hides_pointer(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp(drag_hides_pointer_id())).unwrap_or(true)
+}
+
+/// Gives a drag that `response` starts the pointer `el` asks for: the sheet's `drag-pointer` on
+/// it, else the setting. Called each frame by a control that has an element, before or after its
+/// drag reads its movement: a drag starts with what its control said in the frame before, as the
+/// pointer is over it before it is pressed. A control that never says follows the setting.
+pub fn value_drag_pointer(ctx: &egui::Context, response: &Response, el: &crate::kit::element::Entered) {
+    value_drag_hides(ctx, response, crate::kit::style_class::drag_hides_pointer(el, drag_hides_pointer(ctx)));
+}
+
+/// [`value_drag_pointer`] for a control that worked out its element's answer itself.
+pub fn value_drag_hides(ctx: &egui::Context, response: &Response, hides: bool) {
+    ctx.data_mut(|d| d.insert_temp(drag_pointer_id(response), hides));
+}
+
 /// How far a drag on a value control (knob, value field) moved this frame, called while it is
-/// dragged. The pointer hides while the drag lasts. A mouse sends raw motion, which is read and
+/// dragged. The pointer hides while the drag lasts, unless the setting or the control's element
+/// shows it ([`value_drag_pointer`]): then it keeps its icon, or the arrow of the drag's axis
+/// ([`value_drag_shows`]). A mouse sends raw motion, which is read and
 /// the pointer locked, so a long drag never stops at the screen's edge (X11 refuses the lock, and
 /// the pointer moves on hidden). A device with no relative motion (a pen in absolute mode, a remote
 /// session) sends none, so it keeps the pointer's own movement, which a lock would stop.
@@ -73,14 +115,23 @@ pub fn value_drag_delta(ui: &Ui, response: &Response) -> Vec2 {
     let ctx = ui.ctx();
     let mut drag = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id()));
     if drag.is_none() && response.drag_started() && ctx.input(|i| i.focused) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
-        drag = Some(ValueDrag { raw: false, back: None, released: false });
+        let hides =
+            ctx.data(|d| d.get_temp::<bool>(drag_pointer_id(response))).unwrap_or_else(|| drag_hides_pointer(ctx));
+        let icon = if hides {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
+            egui::CursorIcon::None
+        } else {
+            // The pointer the control shows, until the drag gives it an arrow of its own.
+            ctx.output(|o| o.cursor_icon)
+        };
+        drag = Some(ValueDrag { raw: false, back: None, released: false, hides, icon });
     }
     let Some(mut drag) = drag.filter(|d| !d.released) else {
         return Vec2::ZERO;
     };
-    // egui shows the pointer again whenever the icon changes, so the icon stays hidden too.
-    ctx.set_cursor_icon(egui::CursorIcon::None);
+    // egui shows the pointer again whenever the icon changes, so the icon stays hidden too, unless
+    // the drag shows one of its own.
+    ctx.set_cursor_icon(drag.icon);
     let (motion, per_point) = ui.input(|i| (i.pointer.motion(), i.pixels_per_point));
     if motion.is_some() && !drag.raw {
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::Locked));
@@ -111,11 +162,12 @@ pub fn release_value_drag(ctx: &egui::Context) {
         // own (a magnifier).
         ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
     } else if !ctx.input(|i| i.pointer.any_down() && i.focused) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
-        // Only in a window with focus: a pointer gone to another window stays there.
+        // Only in a window with focus: a pointer gone to another window stays there. Moved while
+        // the drag still locks it, as Wayland moves a pointer only while it is locked.
         if let Some(at) = drag.back.filter(|_| ctx.input(|i| i.focused)) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(at));
         }
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
         ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { released: true, ..drag }));
         ctx.request_repaint();
     }
@@ -128,11 +180,21 @@ pub fn value_drag_returns_to(ctx: &egui::Context, at: Pos2) {
     }
 }
 
-/// Keeps the pointer hidden while a value drag holds it, called after the views: the last icon set
-/// in a frame wins, and egui shows the pointer again for any other icon.
+/// The pointer shows `icon` for the rest of this value drag, unless the drag hides it: where it
+/// was pressed, as the drag holds it there.
+pub fn value_drag_shows(ctx: &egui::Context, icon: egui::CursorIcon) {
+    if let Some(drag) = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).filter(|d| !d.hides) {
+        ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { icon, ..drag }));
+        ctx.set_cursor_icon(icon);
+    }
+}
+
+/// Keeps the pointer hidden (or showing the drag's icon) while a value drag holds it, called
+/// after the views: the last icon set in a frame wins, and egui shows the pointer again for any
+/// other icon.
 pub fn hide_pointer_during_value_drag(ctx: &egui::Context) {
-    if ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_some() {
-        ctx.set_cursor_icon(egui::CursorIcon::None);
+    if let Some(drag) = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())) {
+        ctx.set_cursor_icon(drag.icon);
     }
 }
 
@@ -835,6 +897,90 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
     (steps, fine, None)
 }
 
+/// The way a value control is dragged: up or down (up raises it), across (right raises it), or
+/// either, the drag's first few points choosing which. Each control picks the one that matches
+/// how it is drawn: a knob or an upright fader up or down, a bar lying across a header either way.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DragAxis {
+    #[default]
+    Vertical,
+    Horizontal,
+    /// Up or down, or across: whichever the drag moves along first, for the rest of that drag.
+    Both,
+}
+
+impl DragAxis {
+    /// How far a drag moved the value, in points: right or up is positive. [`DragAxis::Both`]
+    /// takes the larger of the two; [`drag_value_axis`] keeps one axis for a whole drag instead.
+    fn along(self, moved: Vec2) -> f32 {
+        match self {
+            Self::Vertical => -moved.y,
+            Self::Horizontal => moved.x,
+            Self::Both if moved.x.abs() > moved.y.abs() => moved.x,
+            Self::Both => -moved.y,
+        }
+    }
+
+    /// The pointer shown over a control dragged this way: none of its own for one dragged either
+    /// way, as neither arrow would say how.
+    fn cursor(self) -> Option<egui::CursorIcon> {
+        match self {
+            Self::Vertical => Some(egui::CursorIcon::ResizeVertical),
+            Self::Horizontal => Some(egui::CursorIcon::ResizeHorizontal),
+            Self::Both => None,
+        }
+    }
+}
+
+/// How far a [`DragAxis::Both`] drag moves, in points, before it chooses its axis.
+const AXIS_CHOICE_POINTS: f32 = 3.0;
+
+/// A [`DragAxis::Both`] drag's axis: the movement so far until it is far enough to choose, then
+/// the axis chosen, kept until the drag ends.
+#[derive(Debug, Clone, Copy)]
+enum AxisChoice {
+    Undecided(Vec2),
+    Chosen(DragAxis),
+}
+
+/// How far a [`DragAxis::Both`] drag moved the value this frame: nothing until it has moved
+/// [`AXIS_CHOICE_POINTS`], then the movement so far along the axis it moved along more, and from
+/// then on that axis alone, so a drag that wavers never switches. Once chosen, the pointer shows
+/// that axis's arrow.
+fn along_chosen_axis(ui: &Ui, id: egui::Id, moved: Vec2) -> f32 {
+    let key = id.with("drag-axis");
+    let choice = ui.ctx().data(|d| d.get_temp::<AxisChoice>(key)).unwrap_or(AxisChoice::Undecided(Vec2::ZERO));
+    let (choice, along) = match choice {
+        AxisChoice::Chosen(axis) => (choice, axis.along(moved)),
+        AxisChoice::Undecided(so_far) => {
+            let so_far = so_far + moved;
+            if so_far.length() < AXIS_CHOICE_POINTS {
+                (AxisChoice::Undecided(so_far), 0.0)
+            } else {
+                let axis = if so_far.x.abs() > so_far.y.abs() { DragAxis::Horizontal } else { DragAxis::Vertical };
+                (AxisChoice::Chosen(axis), axis.along(so_far))
+            }
+        }
+    };
+    ui.ctx().data_mut(|d| d.insert_temp(key, choice));
+    if let AxisChoice::Chosen(axis) = choice
+        && let Some(icon) = axis.cursor()
+    {
+        value_drag_shows(ui.ctx(), icon);
+    }
+    along
+}
+
+impl From<crate::kit::control_layout::Direction> for DragAxis {
+    /// A theme's `direction` for a control.
+    fn from(direction: crate::kit::control_layout::Direction) -> Self {
+        match direction {
+            crate::kit::control_layout::Direction::Vertical => Self::Vertical,
+            crate::kit::control_layout::Direction::Horizontal => Self::Horizontal,
+        }
+    }
+}
+
 /// A number changed by dragging vertically (up raises it), by the wheel over it and by a
 /// double-click; clicked, the arrow keys step it (Shift: ten times finer) and a number typed and
 /// Enter set it (#707). `per_point` is the change per point of drag and `per_tick` the change
@@ -850,7 +996,7 @@ pub fn drag_value(
     range: (f64, f64),
     default: f64,
 ) -> Drag {
-    drag_value_axis(ui, response, preview, value, per_point, per_tick, range, default, false)
+    drag_value_axis(ui, response, preview, value, per_point, per_tick, range, default, DragAxis::Vertical)
 }
 
 /// A number typed into a value control, in the control's range. A pan (-1 to 1) shows and is
@@ -862,7 +1008,7 @@ fn typed_value(number: f64, range: (f64, f64)) -> f64 {
     number.clamp(range.0, range.1)
 }
 
-/// The same keyboard, wheel, reset and undo protocol with an explicit drag axis.
+/// [`drag_value`] dragged along `axis`.
 #[allow(clippy::too_many_arguments)]
 pub fn drag_value_axis(
     ui: &Ui,
@@ -873,7 +1019,7 @@ pub fn drag_value_axis(
     per_tick: f64,
     range: (f64, f64),
     default: f64,
-    horizontal: bool,
+    axis: DragAxis,
 ) -> Drag {
     let _el = VALUE.response(response).enter();
     // Keys to the control clicked last: the arrows step it, Enter sets what was typed.
@@ -909,12 +1055,22 @@ pub fn drag_value_axis(
     }
     if response.drag_started_by(egui::PointerButton::Primary) {
         *preview = Some(if value.is_finite() { value } else { range.0 });
+        // A new drag chooses its own axis.
+        ui.ctx().data_mut(|d| d.remove::<AxisChoice>(response.id.with("drag-axis")));
     }
     if response.dragged_by(egui::PointerButton::Primary) {
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
         let start = preview.unwrap_or(value);
         let moved = value_drag_delta(ui, response);
-        let delta = if horizontal { moved.x } else { -moved.y };
+        // A drag that shows the pointer shows the arrow of its axis; one that may go either way
+        // shows it once it has chosen (`along_chosen_axis`).
+        if let Some(icon) = axis.cursor() {
+            value_drag_shows(ui.ctx(), icon);
+        }
+        let delta = match axis {
+            DragAxis::Both => along_chosen_axis(ui, response.id, moved),
+            axis => axis.along(moved),
+        };
         let next = (start + f64::from(delta) * per_point * fine).clamp(range.0, range.1);
         *preview = Some(next);
         return Drag::Moving(next);
@@ -928,9 +1084,25 @@ pub fn drag_value_axis(
     Drag::None
 }
 
-/// Makes `rect` a draggable value with a label for screen readers and tests.
+/// Makes `rect` a draggable value with a label for screen readers and tests, dragged up or down
+/// (the up-down pointer over it); [`value_area_axis`] for another [`DragAxis`].
 pub fn value_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString, value: impl ToString) -> Response {
-    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
+    value_area_axis(ui, rect, id, label, value, DragAxis::Vertical)
+}
+
+/// A [`value_area`] dragged along `axis`, with the pointer that says so.
+pub fn value_area_axis(
+    ui: &Ui,
+    rect: Rect,
+    id: egui::Id,
+    label: impl ToString,
+    value: impl ToString,
+    axis: DragAxis,
+) -> Response {
+    let mut response = ui.interact(rect, id, Sense::click_and_drag());
+    if let Some(cursor) = axis.cursor() {
+        response = response.on_hover_cursor(cursor);
+    }
     let (label, value) = (label.to_string(), value.to_string());
     response.widget_info(|| {
         let mut info = WidgetInfo::labeled(Role::SpinButton, true, &label);

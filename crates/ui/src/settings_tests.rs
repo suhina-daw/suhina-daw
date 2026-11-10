@@ -134,6 +134,7 @@ fn settings_survive_a_round_trip() {
         piano_key_style: PianoKeyStyle::Night,
         piano_key_names: PianoKeyNames::All,
         animations: false,
+        drag_hides_pointer: false,
         setting_descriptions: crate::settings::Descriptions::Icon,
         track_headers: Some(Side::Left),
         graphics: Graphics::OpenGl,
