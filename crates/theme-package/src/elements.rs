@@ -483,9 +483,11 @@ pub const DEFAULT_ARTWORK: usize = {
 /// The role a sheet's `image` rule gives artwork to, by its selector: an element of a role's
 /// (`knob-body`, `icon[kind="play"]`) or a role as written (`knob.body`, `piano.draw`), with a
 /// state after it (`knob-body:hover` is `knob.body.hover`, `button[checked]` and `button:on`
-/// are `button.on`). `None` for a selector that gives no role its artwork.
-pub fn role_of_selector(selector: &str) -> Option<String> {
-    let selector = selector.trim();
+/// are `button.on`). An attribute's value may be written with or without quotes and with spaces
+/// (`icon[kind=play]`, `icon[ kind = 'play' ]`). A selector that names no role of Suhina's is
+/// returned as it is, for the caller to refuse.
+pub fn role_of_selector(selector: &str) -> String {
+    let selector = canonical_attributes(selector.trim());
     let (base, state) = [
         (":hover", ".hover"),
         (":active", ".active"),
@@ -495,11 +497,40 @@ pub fn role_of_selector(selector: &str) -> Option<String> {
     ]
     .iter()
     .find_map(|(written, state)| selector.strip_suffix(written).map(|base| (base, *state)))
-    .unwrap_or((selector, ""));
+    .unwrap_or((selector.as_str(), ""));
     let role = artwork()
         .find(|art| art.default.is_some() && art.selector == base)
         .map_or_else(|| base.to_owned(), |art| art.role.to_owned());
-    Some(format!("{role}{state}"))
+    format!("{role}{state}")
+}
+
+/// `selector` with each attribute selector written as Suhina writes it: `[kind="play"]` for
+/// `[kind=play]`, `[kind='play']` or `[ kind = "play" ]`, and `[checked]` for `[ checked ]`.
+fn canonical_attributes(selector: &str) -> String {
+    let mut canonical = String::with_capacity(selector.len() + 4);
+    let mut rest = selector;
+    while let Some(open) = rest.find('[') {
+        canonical.push_str(&rest[..open]);
+        let Some(close) = rest[open..].find(']').map(|close| open + close) else {
+            canonical.push_str(&rest[open..]);
+            return canonical;
+        };
+        let inner = rest[open + 1..close].trim();
+        match inner.split_once('=') {
+            Some((name, value)) => {
+                let value = value.trim();
+                let unquoted = ['"', '\'']
+                    .iter()
+                    .find_map(|quote| value.strip_prefix(*quote).and_then(|v| v.strip_suffix(*quote)))
+                    .unwrap_or(value);
+                canonical.push_str(&format!("[{}=\"{unquoted}\"]", name.trim()));
+            }
+            None => canonical.push_str(&format!("[{inner}]")),
+        }
+        rest = &rest[close + 1..];
+    }
+    canonical.push_str(rest);
+    canonical
 }
 
 /// The selector a sheet writes for `role`'s artwork, with its state (`knob.body.hover` is
@@ -570,13 +601,19 @@ mod tests {
             ("fader-cap:active", "fader.cap.active"),
             ("track-header", "track.body"),
         ] {
-            assert_eq!(role_of_selector(selector).as_deref(), Some(role), "{selector}");
+            assert_eq!(role_of_selector(selector), role, "{selector}");
             assert_eq!(selector_of_role(role), selector, "{role}");
         }
         // Roles of an earlier form and roles without default artwork stay as they are written.
-        assert_eq!(role_of_selector("knob.body:hover").as_deref(), Some("knob.body.hover"));
-        assert_eq!(role_of_selector("solo:on").as_deref(), Some("solo.on"));
-        assert_eq!(role_of_selector("piano.draw").as_deref(), Some("piano.draw"));
+        assert_eq!(role_of_selector("knob.body:hover"), "knob.body.hover");
+        assert_eq!(role_of_selector("solo:on"), "solo.on");
+        assert_eq!(role_of_selector("piano.draw"), "piano.draw");
+        // An attribute's value without quotes, in single quotes or with spaces names the same role.
+        for selector in ["icon[kind=play]", "icon[kind='play']", "icon[ kind = \"play\" ]"] {
+            assert_eq!(role_of_selector(selector), "play", "{selector}");
+        }
+        assert_eq!(role_of_selector("icon[kind=solo][ checked ]"), "solo.on");
+        assert_eq!(role_of_selector("icon[kind=stop]:hover"), "stop.hover");
         assert_eq!(selector_of_role("piano.draw:on"), "piano.draw:on");
         assert_eq!(selector_of_role("piano.draw.on"), "piano.draw:on");
         assert_eq!(selector_of_role("track.body.color-ff9a3c"), "track.body.color-ff9a3c");

@@ -511,7 +511,7 @@ fn artwork_rule(role: &str, asset: &str) -> String {
 /// the earlier form (`knob.body:hover`, `solo:on`, `button .record`).
 pub fn artwork_role(selector: &str) -> String {
     let selector = selector.trim().trim_start_matches('.').replace(" .", ".");
-    suhina_theme_package::elements::role_of_selector(&selector).unwrap_or(selector)
+    suhina_theme_package::elements::role_of_selector(&selector)
 }
 
 /// The selector Suhina writes for `role`'s artwork: its element's where Suhina ships artwork for

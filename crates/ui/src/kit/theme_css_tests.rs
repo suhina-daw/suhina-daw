@@ -248,3 +248,18 @@ fn a_suhina_url_names_built_in_artwork() {
     let warnings = apply(&mut Theme::default(), "knob-body { image: url(\"suhina:nothing.svg\"); }");
     assert_eq!(warnings.len(), 1, "{warnings:?}");
 }
+
+/// An artwork rule's attribute may be written without quotes, in single quotes or with spaces,
+/// as CSS allows: each names the same role and gets no notice.
+#[test]
+fn an_artwork_rules_attribute_reads_in_any_form_css_allows() {
+    let mut theme = Theme::default();
+    let css = "icon[kind=play] { image: url(\"assets/play.svg\"); }\n\
+               icon[kind='stop']:hover { image: url(\"assets/stop.svg\"); }\n\
+               icon[ kind = \"solo\" ][checked] { image: url(\"assets/solo.svg\"); }";
+    assert_eq!(apply(&mut theme, css), Vec::<String>::new());
+    for (role, path) in [("play", "assets/play.svg"), ("stop.hover", "assets/stop.svg"), ("solo.on", "assets/solo.svg")]
+    {
+        assert_eq!(theme.skin.assets.get(role).map(String::as_str), Some(path), "{role}");
+    }
+}

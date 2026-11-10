@@ -66,7 +66,7 @@ pub fn user_agent_artwork() -> Vec<(&'static str, &'static str)> {
     let mut artwork = Vec::new();
     for (selector, url) in image_rules(USER_AGENT_SHEET) {
         let Some(file) = url.strip_prefix(BUILT_IN_SCHEME) else { continue };
-        let Some(role) = elements::role_of_selector(&selector) else { continue };
+        let role = elements::role_of_selector(&selector);
         if let Some((role, svg)) = built_in_artwork(file).filter(|(own, _)| *own == role) {
             artwork.push((role, svg));
         }
