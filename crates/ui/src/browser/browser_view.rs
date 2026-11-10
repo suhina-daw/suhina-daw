@@ -2883,7 +2883,12 @@ fn preview_strip(
     out: &mut BrowserOut,
 ) {
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
+    // Without an authored surface the strip is the window's colour under the browser's panel; with
+    // one, the surface `show` painted already is its background, and painting it again would
+    // stack its alpha.
+    if !crate::kit::style_class::has_surface() {
+        painter.rect_filled(area, 0.0, theme::window_background());
+    }
     painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(theme::border()));
     // The Auto switch at the top right: a selected sample plays by itself while it is lit
     // (Settings › Browser › the same setting).

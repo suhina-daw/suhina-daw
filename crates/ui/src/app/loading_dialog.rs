@@ -53,7 +53,7 @@ fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     let height = ROW + PAD * 3.0 + BAR + lines as f32 * LINE + BUTTON.y + PAD;
     let rect = Rect::from_center_size(area.center(), Vec2::new(WIDTH.min(area.width() - 2.0 * PAD), height));
     crate::kit::liquid::backdrop(&painter, rect);
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::opaque_surface_or(theme::panel_background()));
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::own_background_or(theme::panel_background()));
     painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
 
     let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));

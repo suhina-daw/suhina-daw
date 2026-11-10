@@ -2978,7 +2978,11 @@ fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> 
     painter.rect_filled(
         knob,
         0.0,
-        motion::mix(theme::text_secondary(), crate::kit::style_class::surface_or(theme::window_background()), lit),
+        motion::mix(
+            theme::text_secondary(),
+            crate::kit::style_class::opaque_surface_or(theme::window_background()),
+            lit,
+        ),
     );
     response.clicked().then_some(!on)
 }

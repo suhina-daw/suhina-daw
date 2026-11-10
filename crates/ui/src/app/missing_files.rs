@@ -272,7 +272,7 @@ impl MissingFiles {
         let size = Vec2::new(WIDTH.min(area.width() - 2.0 * PAD), height.min(area.height() - 2.0 * PAD));
         let rect = Rect::from_center_size(area.center(), size);
         crate::kit::liquid::backdrop(&painter, rect);
-        painter.rect_filled(rect, 0.0, crate::kit::style_class::opaque_surface_or(theme::panel_background()));
+        painter.rect_filled(rect, 0.0, crate::kit::style_class::own_background_or(theme::panel_background()));
         painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
         let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
         painter.rect_filled(bar, 0.0, theme::control_background());

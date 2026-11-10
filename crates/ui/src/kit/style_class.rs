@@ -18,6 +18,8 @@ pub struct Scope {
     /// The region's background in scope before this one was entered, when this is a region with
     /// a background of its own.
     surface: Option<Option<egui::Color32>>,
+    /// The innermost element's own background before this one was entered ([`own_background_or`]).
+    own_before: Option<egui::Color32>,
     /// The element's node in this frame's style tree, when the engine collected it.
     pub(super) node: Option<usize>,
 }
@@ -35,12 +37,29 @@ pub fn surface_or(fallback: egui::Color32) -> egui::Color32 {
     SURFACE.with(std::cell::Cell::get).unwrap_or(fallback)
 }
 
+/// Whether a region or container in scope gives itself a background.
+pub fn has_surface() -> bool {
+    SURFACE.with(std::cell::Cell::get).is_some()
+}
+
 /// [`surface_or`] for something that must hide what is under it, a modal dialog's panel or the
 /// dim behind it: the region's background only while it is opaque, else `fallback`. On a
 /// see-through window the region's background is clear, which would leave the dialog with no
 /// fill and its text over the project.
 pub fn opaque_surface_or(fallback: egui::Color32) -> egui::Color32 {
     SURFACE.with(std::cell::Cell::get).filter(|surface| surface.a() == u8::MAX).unwrap_or(fallback)
+}
+
+thread_local! {
+    /// The `background-color` the innermost element in scope gives itself, if its sheet does.
+    static OWN: std::cell::Cell<Option<egui::Color32>> = const { std::cell::Cell::new(None) };
+}
+
+/// The innermost element's own `background-color` where its sheet sets one, else `fallback` (a
+/// token): for the panel of a dialog, which a theme may style on `dialog` but which must not take
+/// the enclosing window's colour, as [`surface_or`] would.
+pub fn own_background_or(fallback: egui::Color32) -> egui::Color32 {
+    OWN.with(std::cell::Cell::get).unwrap_or(fallback)
 }
 
 /// Runs `body` as if drawn inside a region whose sheet gives it `surface`.
@@ -85,6 +104,7 @@ impl Drop for Scope {
         if let Some(surface) = self.surface {
             SURFACE.with(|s| s.set(surface));
         }
+        OWN.with(|o| o.set(self.own_before));
         if self.node.is_some() {
             super::native_css::leave();
         }
@@ -110,6 +130,7 @@ pub(super) fn enter_inner(
     STACK.with(|s| s.borrow_mut().push(class));
     let mut palette = saved;
     let own = super::native_css::style_of(node);
+    let own_before = OWN.with(|o| o.replace(own.as_ref().filter(|v| v.authored.background).map(|v| v.background)));
     let surface = own
         .as_ref()
         .filter(|values| values.authored.background && class.is_surface())
@@ -140,7 +161,7 @@ pub(super) fn enter_inner(
             None => inherited.clone(),
         }
     });
-    Scope { palette: saved, revision: theme::palette_revision(), inherited, surface, node }
+    Scope { palette: saved, revision: theme::palette_revision(), inherited, surface, own_before, node }
 }
 
 /// A background for `class`. A region's or container's is its own, painted once where it is
@@ -476,6 +497,15 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_dialog_panel_takes_only_its_own_background() {
+        let token = egui::Color32::from_rgb(1, 2, 3);
+        assert_eq!(own_background_or(token), token);
+        let window = egui::Color32::from_rgb(200, 200, 200);
+        // An enclosing window's colour is not the dialog's own.
+        assert_eq!(with_surface(window, || own_background_or(token)), token);
+    }
 
     #[test]
     fn a_modal_takes_its_regions_surface_only_when_it_is_opaque() {
