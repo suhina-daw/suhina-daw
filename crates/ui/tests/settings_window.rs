@@ -1129,3 +1129,21 @@ fn the_variant_editor_shows_only_the_themes_quick_controls() {
     }
     assert!(harness.query_by_label_contains("This theme offers no quick controls").is_none());
 }
+
+/// A quick control's colour picker offers normal blending only: an additive colour is kept by egui
+/// with an alpha of 0, so choosing it saved the colour as transparent.
+#[test]
+fn a_quick_controls_colour_picker_has_no_additive_blending() {
+    let mut harness = short_window();
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().use_theme(&ctx, "nord");
+    settle(&mut harness);
+    wheel_to(&mut harness, "Edit current theme…", 40);
+    harness.get_by_label("Edit current theme…").click();
+    settle(&mut harness);
+    harness.query_all_by_role(egui::accesskit::Role::ColorWell).next().expect("a colour control").click();
+    settle(&mut harness);
+    assert!(harness.query_by_label("Normal").is_none() && harness.query_by_label("Additive").is_none());
+}

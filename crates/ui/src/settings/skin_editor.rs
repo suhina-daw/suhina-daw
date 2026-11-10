@@ -58,13 +58,15 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
                         Ok(suhina_style::value::Color::Rgba(rgba)) => rgba,
                         _ => [0, 0, 0, 255],
                     };
-                    let mut color = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
+                    let mut rgba = rgba;
                     let popup = ui.auto_id_with("popup");
-                    let response = ui.color_edit_button_srgba(&mut color);
+                    // Normal blending only: CSS has no additive colours, and egui keeps an
+                    // additive one with an alpha of 0, which would save the colour as transparent.
+                    let response = ui.color_edit_button_srgba_unmultiplied(&mut rgba);
                     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, label));
                     *held |= egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
                     if response.changed() {
-                        next = Some(crate::kit::theme::hex(color));
+                        next = Some(crate::kit::theme::hex_rgba(rgba));
                     }
                 }
                 (Some(Component::Number | Component::Integer), _, Some((min, max))) => {
