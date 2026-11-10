@@ -406,7 +406,7 @@
     ]
   },
   "Devices/Device panels/stack_in_piano_roll": {
-    "sourceFingerprint": "90abee48db6bdf2961fa031ce8c5934182e1a7f5452b1271066889eed588466a",
+    "sourceFingerprint": "c5ce9912d17ae5b5afc6f9779e624be025037b0a9f993847f1575bb5c279271b",
     "summary": "Keep the piano roll open and show a track's devices in a column beside it.",
     "description": "With Device chain set to Row, the Devices tab of a MIDI clip normally puts the track's devices where the piano roll was. With this setting on, the piano roll stays open along the bottom and the devices open in a column at the right of the view, one under another, as with the Stack layout. Both tabs are lit while the column shows; Clip, Devices again, a double-click on the column's edge or dragging it narrow closes the column. It changes only where the devices are shown, not the sound.",
     "options": [

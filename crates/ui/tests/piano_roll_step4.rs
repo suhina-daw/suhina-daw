@@ -624,7 +624,7 @@ fn a_click_on_an_empty_spot_moves_the_play_start_marker_there() {
     assert_eq!(monitor.start_beat(), CLIP_START + 2.0, "beat 2 of the clip, which starts at beat 64");
 }
 
-/// With the devices in a row, Stack device panel only in piano roll opens them in a column beside
+/// With the devices in a row, Devices beside piano roll opens them in a column beside
 /// the piano roll, which stays open; off, Devices puts them in its place.
 #[test]
 fn stack_device_panel_only_in_piano_roll_keeps_the_piano_roll_open() {

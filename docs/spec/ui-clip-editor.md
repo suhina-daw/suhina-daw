@@ -63,8 +63,8 @@ lane, the grid and zoom, and the `note.*` commands.
   the editor alone. The column is a stacked panel wide (one column of parameters per device, so a
   panel fits it), open whole or closed, as a track's devices in a row are: a drag of its splitter
   past half its width or a double-click on it closes it. The stacked detail area itself is open
-  whole or closed the same way. With the devices in a row, Settings › Devices › **Stack device panel only in
-  piano roll** (off by default, `stack_in_piano_roll`) does the same: **Devices** opens the column
+  whole or closed the same way. With the devices in a row, Settings › Devices › **Devices beside piano
+  roll** (off by default, `stack_in_piano_roll`) does the same: **Devices** opens the column
   beside the editor instead of putting the chain in its place. The MIDI clip retains its resizable detail area in both tabs. A device row alone has
   two states: open at 200 logical pixels or closed. Dragging the splitter down past half that(
   )height closes it, dragging it up opens it whole; no height in between cuts its panels.

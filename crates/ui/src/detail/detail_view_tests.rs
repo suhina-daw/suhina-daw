@@ -1715,7 +1715,7 @@ fn the_panels_in_a_row_are_one_height() {
 }
 
 /// Stacked lists each keep their own scroll, also when a device before them goes: the scroll is
-/// the device's, not its place's (#826).
+/// the device's, not its place's (#826). Stacked, a list keeps one column and scrolls down.
 #[test]
 fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
     use egui_kittest::Harness;
@@ -1735,21 +1735,21 @@ fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
         );
     harness.run_steps(10);
     let gains =
-        |harness: &Harness<'_, Detail>| harness.query_all_by_label("Gain").map(|n| n.rect().left()).collect::<Vec<_>>();
+        |harness: &Harness<'_, Detail>| harness.query_all_by_label("Gain").map(|n| n.rect().top()).collect::<Vec<_>>();
     let start = gains(&harness);
-    // The second Utility's list, scrolled sideways.
+    // The second Utility's list, scrolled down.
     let second = harness.query_all_by_label("Device Utility").nth(1).unwrap().rect().center();
     harness.hover_at(second);
     harness.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(-150.0, 0.0),
+        delta: egui::vec2(0.0, -150.0),
         modifiers: egui::Modifiers::NONE,
         phase: egui::TouchPhase::Move,
         source: egui::MouseWheelSource::Unknown,
     });
     harness.run_steps(10);
     let scrolled = gains(&harness);
-    assert!(scrolled[1] < start[1] - 50.0 && scrolled[0] == start[0], "only the second list scrolls: {scrolled:?}");
+    assert!(scrolled[1] < start[1] - 10.0 && scrolled[0] == start[0], "only the second list scrolls: {start:?} {scrolled:?}");
     // Pitch goes: the Utilities move up a place each and keep their own scroll.
     project.channels[0].devices.remove(0);
     *harness.state_mut() = build(&project, Some(TrackId(1)), None);

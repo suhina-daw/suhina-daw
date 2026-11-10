@@ -316,7 +316,7 @@ impl App {
         // still lies along the bottom as in a row: only the devices stack, in a column of their
         // own beside the view, shown with Devices while the editor stays open (› Stacked in
         // `docs/spec/ui-clip-editor.md`).
-        // Settings › Devices › Stack device panel only in piano roll does the same in a row.
+        // Settings › Devices › Devices beside piano roll does the same in a row.
         let split = (stacked || self.settings.view.stack_in_piano_roll)
             && geometry.is_none()
             && (piano.is_some() || ara.is_some());
