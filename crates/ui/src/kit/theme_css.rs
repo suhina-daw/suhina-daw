@@ -315,7 +315,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                     }
                 }
                 _ if property == "image" => {
-                    let role = control_selector.replace(':', ".").replace(" .", ".");
+                    let role = artwork_role(control_selector);
                     if !skin::valid_role(&role) {
                         Err("unsupported control selector")
                     } else if value == "none" {
@@ -323,7 +323,16 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                         Ok(())
                     } else if let Some(path) = value.strip_prefix("url(").and_then(|v| v.strip_suffix(')')) {
                         let path = path.trim().trim_matches(['\'', '"']);
-                        if skin::asset_path(path) {
+                        if let Some(file) = path.strip_prefix(suhina_theme_package::BUILT_IN_SCHEME) {
+                            // Suhina's own artwork, by its file (`suhina:knob.body.svg`).
+                            match suhina_theme_package::built_in_artwork(file) {
+                                Some((_, svg)) => {
+                                    theme.skin.assets.insert(role, svg.into());
+                                    Ok(())
+                                }
+                                None => Err("suhina: names no artwork built into Suhina"),
+                            }
+                        } else if skin::asset_path(path) {
                             theme.skin.assets.insert(role, path.into());
                             Ok(())
                         } else {
@@ -446,13 +455,7 @@ pub fn export(theme: &Theme) -> String {
         } else {
             asset.clone()
         };
-        css.push_str(&format!(
-            "{} {{ image: url(\"{path}\"); }}\n",
-            role.replace(".hover", ":hover")
-                .replace(".active", ":active")
-                .replace(".disabled", ":disabled")
-                .replace(".on", ":on"),
-        ));
+        css.push_str(&format!("{} {{ image: url(\"{path}\"); }}\n", artwork_selector(role)));
     }
     css
 }
@@ -500,13 +503,22 @@ fn artwork_rule(role: &str, asset: &str) -> String {
     } else {
         asset.to_owned()
     };
-    format!(
-        "{} {{ image: url(\"{path}\"); }}\n",
-        role.replace(".hover", ":hover")
-            .replace(".active", ":active")
-            .replace(".disabled", ":disabled")
-            .replace(".on", ":on"),
-    )
+    format!("{} {{ image: url(\"{path}\"); }}\n", artwork_selector(role))
+}
+
+/// The artwork role an `image` rule's selector names: the element that draws a role's default
+/// artwork (`knob-body:hover`, `icon[kind="play"]`, `button[checked]`) or the role as written in
+/// the earlier form (`knob.body:hover`, `solo:on`, `button .record`).
+pub fn artwork_role(selector: &str) -> String {
+    let selector = selector.trim().trim_start_matches('.').replace(" .", ".");
+    suhina_theme_package::elements::role_of_selector(&selector).unwrap_or(selector)
+}
+
+/// The selector Suhina writes for `role`'s artwork: its element's where Suhina ships artwork for
+/// it (`knob-body`, `icon[kind="play"]:hover`), otherwise the role with its state as a
+/// pseudo-class (`piano.draw:hover`).
+pub fn artwork_selector(role: &str) -> String {
+    suhina_theme_package::elements::selector_of_role(role)
 }
 
 /// What Suhina's own editors set beyond settings and `sheet_theme` does not say: control

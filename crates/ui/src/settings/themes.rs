@@ -325,9 +325,12 @@ impl Themes {
                 self.actions.push(Pending::Save(old));
                 None
             }
-            ThemeRequest::Duplicate => {
+            ThemeRequest::Duplicate { artwork } => {
                 let name = format!("{} copy", self.get(current).map_or("Suhina Studio", |t| t.name.as_str()));
                 let id = self.copy(current, &name);
+                if artwork {
+                    self.add_default_artwork(&id);
+                }
                 // The copy keeps the controls placed in the theme it came from: say so, as they
                 // can look out of place in a theme made from it.
                 let placed = self.get(&id).map_or(0, |t| t.skin.controls.len());
@@ -339,6 +342,28 @@ impl Themes {
                 }
                 self.actions.push(Pending::Save(id.clone()));
                 Some(id)
+            }
+            ThemeRequest::NewTheme { artwork } => {
+                let id = self.free_id("New theme");
+                let mut theme = Theme::new_blank("New theme");
+                if artwork {
+                    theme.skin.assets.extend(crate::kit::skin::missing_defaults(&theme.skin.assets));
+                }
+                self.entries.push(ThemeEntry { id: id.clone(), theme });
+                self.actions.push(Pending::Save(id.clone()));
+                Some(id)
+            }
+            ThemeRequest::AddDefaultArtwork => {
+                let missing = self.get(current).map(|theme| crate::kit::skin::missing_defaults(&theme.skin.assets))?;
+                if missing.is_empty() {
+                    self.notice = Some("This theme already has all of the default artwork".into());
+                    return None;
+                }
+                let count = missing.len();
+                let switched = self.edit(current, true, false, |theme| theme.skin.assets.extend(missing));
+                let images = if count == 1 { "image" } else { "images" };
+                self.notice = Some(format!("Added {count} default {images} to the theme's assets folder"));
+                switched
             }
             ThemeRequest::RestoreBuiltIn { id, save_copy } => {
                 if !theme::is_built_in(&id) || self.get(&id).is_none() {
@@ -479,6 +504,15 @@ impl Themes {
         let id = self.free_id(name);
         self.entries.push(ThemeEntry { id: id.clone(), theme: Theme { name: name.to_string(), ..original } });
         id
+    }
+
+    /// Copies the default artwork the theme `id` lacks into it, to be written to its `assets/` with
+    /// a rule for each in its `theme.css` when it is saved.
+    fn add_default_artwork(&mut self, id: &str) {
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.id == id) {
+            let missing = crate::kit::skin::missing_defaults(&entry.theme.skin.assets);
+            entry.theme.skin.assets.extend(missing);
+        }
     }
 
     /// An id made from `name` that no theme has yet.

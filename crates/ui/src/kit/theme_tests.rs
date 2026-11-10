@@ -101,7 +101,7 @@ fn example_themes_embed_their_paint_and_all_editable_artwork() {
 }
 
 #[test]
-fn track_and_kind_colours_keep_their_values_in_suhina_studio() {
+fn track_colours_keep_their_values_in_suhina_studio() {
     let dark = Palette::DARK;
     let tracks = [
         dark.track_color_1,
@@ -115,11 +115,10 @@ fn track_and_kind_colours_keep_their_values_in_suhina_studio() {
     ];
     let expected = [0xFF9A3C, 0xF2D541, 0x4FC3F7, 0xB38BFF, 0x7FDB5A, 0xFF6FA8, 0x5C8DFF, 0x2FD9C4].map(rgb);
     assert_eq!(tracks, expected);
-    assert_eq!((dark.kind_kick, dark.kind_other), (rgb(0xD06E5E), rgb(0x8A8680)));
     // A theme can change them like any other token.
-    let (theme, warnings) = Theme::from_json(r##"{ "colors": { "track.1": "#010203", "kind.snare": "#040506" } }"##);
+    let (theme, warnings) = Theme::from_json(r##"{ "colors": { "track.1": "#010203" } }"##);
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!((theme.colors.track_color_1, theme.colors.kind_snare), (rgb(0x010203), rgb(0x040506)));
+    assert_eq!(theme.colors.track_color_1, rgb(0x010203));
 }
 
 #[test]
@@ -265,7 +264,6 @@ fn suhina_sheet_takes_its_colours_from_its_two_accent_shades() {
     // Colours that say what something is or holds stay, and the paper stays white.
     let fixed = [
         "track.",
-        "kind.",
         "clip.",
         "recording",
         "meter.",

@@ -25,10 +25,22 @@ pub fn roles() -> impl Iterator<Item = &'static str> {
     suhina_theme_package::elements::default_artwork().map(|(role, _)| role)
 }
 
-/// Suhina's own artwork for each of [`roles`]: the very same SVG sources are embedded and
-/// distributed as editable files.
+/// The default artwork, as the user-agent sheet gives it (`knob-body { image:
+/// url("suhina:knob.body.svg"); }`): the very same SVG sources are embedded and distributed as
+/// editable files. Each takes its colour only from `currentColor`, its element's `color`.
 pub fn default_svgs() -> impl Iterator<Item = (&'static str, &'static str)> {
-    suhina_theme_package::elements::default_artwork()
+    static ARTWORK: std::sync::OnceLock<Vec<(&'static str, &'static str)>> = std::sync::OnceLock::new();
+    ARTWORK.get_or_init(suhina_theme_package::user_agent_artwork).iter().copied()
+}
+
+/// The default artwork that `theme` lacks, by role: what *Include the default artwork* and *Add
+/// default artwork* copy into the theme's `assets/`, with a rule for each in its `theme.css`. A role
+/// the theme has artwork for (in any state) keeps it.
+pub fn missing_defaults(assets: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    default_svgs()
+        .filter(|(role, _)| !assets.contains_key(*role))
+        .map(|(role, svg)| (role.to_owned(), svg.to_owned()))
+        .collect()
 }
 
 pub fn default_assets() -> BTreeMap<String, String> {
@@ -839,28 +851,9 @@ fn paint_variant(
     if matches!(role, "track.name" | "track.body") && defaults.get(role).map(String::as_str) == Some(source) {
         return false;
     }
-    // Semantic ink travels with the SVG, so exported inherited artwork retains its colour.
+    // `currentColor` is the element's colour, which its caller gives as `ink`; a PNG has none.
     let png = png_artwork(source);
-    let ink = if png {
-        Color32::WHITE
-    } else if source.contains(&format!("data-suhina-ink=\"{role}\"")) {
-        match role {
-            "knob.body" => super::theme::control_background(),
-            "fader.rail" => super::motion::mix(super::theme::control_background(), Color32::BLACK, 0.65),
-            "fader.cap" => super::motion::mix(
-                if matches!(state, State::Hover | State::Active | State::On) {
-                    super::theme::control_hover()
-                } else {
-                    super::theme::control_background()
-                },
-                ink,
-                0.28,
-            ),
-            _ => ink,
-        }
-    } else {
-        ink
-    };
+    let ink = if png { Color32::WHITE } else { ink };
     let scale = painter.ctx().pixels_per_point();
     let w = (rect.width() * scale).ceil().clamp(1.0, 1024.0) as u32;
     let h = (rect.height() * scale).ceil().clamp(1.0, 1024.0) as u32;

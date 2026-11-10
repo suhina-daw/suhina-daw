@@ -1,0 +1,75 @@
+/* Copyright (C) 2026 The Suhina contributors; SPDX-License-Identifier: GPL-3.0-or-later */
+/*
+ * Suhina's user-agent style sheet: what every element looks like before a theme styles it, as a
+ * browser's own sheet is for a web page. It is the first sheet of the cascade, under the theme,
+ * its variant, device panel sheets and the user's sheet.
+ *
+ * It selects elements by name, state and attribute only: no classes, no ids and no variables, so
+ * nothing in it depends on a theme. The element reference lists every element it names.
+ */
+
+/* Regions keep what their children paint inside them; other elements let it pass. */
+window,
+application-bar,
+menu-bar,
+menu,
+project-tabs,
+toolbar,
+status-bar,
+workspace,
+workspace-panel,
+browser,
+session,
+arrangement,
+mixer,
+detail,
+clip-editor,
+piano-roll,
+sample-map,
+popup,
+settings,
+dialog,
+start-page,
+plugin-manager,
+export { overflow: hidden; }
+
+/* Default artwork. Each image takes its colour only from its element's `color` (currentColor), so a
+   copy of it works in any theme. A theme replaces one with its own rule for the same element. */
+icon[kind="midi"] { image: url("suhina:track.midi.svg"); }
+icon[kind="audio"] { image: url("suhina:track.audio.svg"); }
+track-header { image: url("suhina:track.body.svg"); }
+track-name { image: url("suhina:track.name.svg"); }
+button { image: url("suhina:button.svg"); }
+icon[kind="play"] { image: url("suhina:play.svg"); }
+icon[kind="stop"] { image: url("suhina:stop.svg"); }
+icon[kind="record"] { image: url("suhina:record.svg"); }
+icon[kind="solo"] { image: url("suhina:solo.svg"); }
+icon[kind="arm"] { image: url("suhina:arm.svg"); }
+icon[kind="cue"] { image: url("suhina:cue.svg"); }
+fader-cap { image: url("suhina:fader.cap.svg"); }
+fader-rail { image: url("suhina:fader.rail.svg"); }
+knob-body { image: url("suhina:knob.body.svg"); }
+knob-pointer { image: url("suhina:knob.pointer.svg"); }
+meter { image: url("suhina:meter.svg"); }
+
+/* The sounds of the sample map, by kind. */
+sample-point[kind="kick"] { color: #D06E5E; }
+sample-point[kind="snare"] { color: #73AAC0; }
+sample-point[kind="clap"] { color: #5EC0B0; }
+sample-point[kind="closedHat"] { color: #C6AC5E; }
+sample-point[kind="openHat"] { color: #D08F6E; }
+sample-point[kind="hat"] { color: #D8C47A; }
+sample-point[kind="rim"] { color: #8CA8E0; }
+sample-point[kind="tom"] { color: #B074A4; }
+sample-point[kind="crash"] { color: #E0A0C8; }
+sample-point[kind="ride"] { color: #C8B8E8; }
+sample-point[kind="cymbal"] { color: #A497CC; }
+sample-point[kind="percussion"] { color: #8FC06E; }
+sample-point[kind="bass"] { color: #A84F4F; }
+sample-point[kind="tonal"] { color: #6EB0D0; }
+sample-point[kind="vocal"] { color: #E8D0A0; }
+sample-point[kind="effect"] { color: #9CC49C; }
+sample-point[kind="other"] { color: #8A8680; }
+
+/* A theme's swatch in the theme picker: a rounded square of its colour. */
+theme-swatch { background-color: attr(color type(<color>)); border-radius: 6px; }

@@ -105,6 +105,7 @@ impl Name {
             states: 0,
             pointer: 0,
             color: None,
+            attributes: Vec::new(),
             sheet: None,
             native: Native::default(),
             variables: Vec::new(),
@@ -125,6 +126,10 @@ impl Name {
     /// The element's own colour (a track's, a clip's), as the sheet's `[color]`.
     pub fn color<'a>(self, color: Color32) -> Builder<'a> {
         self.builder().color(color)
+    }
+    /// The element with the attribute `name` set to `value` (`[kind="kick"]`).
+    pub fn attribute<'a>(self, name: &'static str, value: &'a str) -> Builder<'a> {
+        self.builder().attribute(name, value)
     }
     pub fn native<'a>(self, native: Native) -> Builder<'a> {
         self.builder().native(native)
@@ -158,6 +163,8 @@ pub struct Builder<'a> {
     /// A device panel's own sheet, and the context to wake when the engine was idle.
     sheet: Option<(egui::Context, &'a str)>,
     color: Option<Color32>,
+    /// Attributes with a value the app gives the element besides its colour (`kind`).
+    attributes: Vec<(&'static str, &'a str)>,
     native: Native,
     variables: Vec<(&'static str, String)>,
 }
@@ -198,6 +205,11 @@ impl<'a> Builder<'a> {
         self.color = Some(color);
         self
     }
+    /// The attribute `name` with `value`, for the sheet (`sample-point[kind="kick"]`).
+    pub fn attribute(mut self, name: &'static str, value: &'a str) -> Self {
+        self.attributes.push((name, value));
+        self
+    }
     /// The radius and fill [`Entered::paint`] uses where the sheet sets none.
     pub fn native(mut self, native: Native) -> Self {
         self.native = native;
@@ -211,7 +223,7 @@ impl<'a> Builder<'a> {
 
     /// Puts the element in the style tree and the palette scope until the value is dropped.
     pub fn enter(self) -> Entered {
-        let Self { name, id, response, states, pointer, color, native, variables, sheet } = self;
+        let Self { name, id, response, states, pointer, color, attributes, native, variables, sheet } = self;
         let sheet_wake = sheet.clone();
         let scope = super::style_class::enter_inner(name, id, response, |node| {
             super::native_css::mark_node_bits(node, pointer);
@@ -222,6 +234,9 @@ impl<'a> Builder<'a> {
             }
             if let Some(color) = color {
                 super::native_css::set_attribute(node, "color", super::native_css::hex(color));
+            }
+            for (attribute, value) in attributes {
+                super::native_css::set_attribute(node, attribute, value.to_owned());
             }
             for (variable, value) in variables {
                 super::native_css::set_variable(node, variable, value);
@@ -506,6 +521,7 @@ names! {
     MIDI_TOOLS = "midi-tools";
     CLIP_INFO = "clip-info";
     SAMPLE_MAP = "sample-map";
+    SAMPLE_POINT = "sample-point";
     DEVICE_PANEL = "device-panel";
     DEVICE = "device";
     DEVICE_HEADER = "device-header";
@@ -529,6 +545,9 @@ names! {
     FADER_SCALE = "fader-scale";
     SEND = "send";
     KNOB = "knob";
+    KNOB_BODY = "knob-body";
+    KNOB_POINTER = "knob-pointer";
+    ICON = "icon";
     METER = "meter";
     METER_LEVEL = "meter-level";
     METER_VERTICAL = "meter-vertical";

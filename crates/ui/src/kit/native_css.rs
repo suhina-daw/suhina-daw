@@ -293,7 +293,6 @@ struct Engine {
     source: Option<Arc<str>>,
     palette: String,
     size: [u32; 2],
-    dark: bool,
     /// The theme's swatches by colour.
     swatches: HashMap<String, Computed>,
     /// Styles worked out in the frame that needs them, by the identity of an element and of every
@@ -904,8 +903,6 @@ pub fn begin_frame(ui: &egui::Ui) {
         variables.push_str(&format!("--{variable}:{};", theme::hex(color)));
     }
     variables.push_str("}\n");
-    let dark = theme::contrast(palette.window_background, Color32::WHITE)
-        > theme::contrast(palette.window_background, Color32::BLACK);
     let user = USER_SHEET.with(|sheet| sheet.borrow().clone());
     let variant = skin::current().variant.clone();
     ENGINE.with(|engine| {
@@ -943,7 +940,6 @@ pub fn begin_frame(ui: &egui::Ui) {
                         source,
                         palette: variables,
                         size,
-                        dark,
                         native: Some(native),
                         motion,
                         user,
@@ -958,7 +954,7 @@ pub fn begin_frame(ui: &egui::Ui) {
                     engine.source = source;
                 }
             }
-        } else if engine.size != size || engine.dark != dark || engine.palette != variables {
+        } else if engine.size != size || engine.palette != variables {
             // Palette drags and native resizing do not change the scope tree or
             // authored CSS. Keep the last computed snapshot and resolve the new inputs
             // once at the end of this pass.
@@ -968,7 +964,6 @@ pub fn begin_frame(ui: &egui::Ui) {
                 let _ = paint.palette(&palette);
             }
             engine.size = size;
-            engine.dark = dark;
             engine.styles_changed = true;
             engine.reset_styles();
         }

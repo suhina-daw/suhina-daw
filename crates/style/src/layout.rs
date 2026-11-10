@@ -566,7 +566,7 @@ mod tests {
         let tree = Tree::new(elements).unwrap();
         let styles = cascade::compute(
             &tree,
-            Viewport { width, height: 600.0, dark: true, reduced_motion: false },
+            Viewport { width, height: 600.0, reduced_motion: false },
             &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }],
         )
         .unwrap();

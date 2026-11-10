@@ -70,115 +70,6 @@ fn compact_session_css_applies_to_a_png_skin_without_changing_artwork_or_project
 }
 
 #[test]
-fn gradient_editor_enables_saves_and_resets_without_editing_the_project() {
-    let mut app = App::new();
-    app.set_session(Session::new(demo_project()), &[]);
-    let mut harness = Harness::builder()
-        .allow_missing_glyphs()
-        .allow_missing_glyphs()
-        .with_size((1200.0, 1200.0))
-        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
-    theme::install(&harness.ctx);
-    harness.run();
-    let before = harness.state().session().unwrap().project().clone();
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
-    harness.run();
-    harness.get_by_label("Settings page: Themes").click();
-    harness.run();
-    harness.get_by_label("Edit current theme…").click();
-    harness.run();
-    wheel_to(&mut harness, "Track gradient", 40);
-    harness.get_by_label("Track gradient").click();
-    harness.run();
-    wheel_to(&mut harness, "Enable Track gradient", 40);
-    harness.get_by_label("Enable Track gradient").click();
-    harness.run();
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(actions.iter().any(|action| matches!(action, suhina_ui::settings::themes::FileAction::Save { theme, .. } if theme.gradients.tracks.is_some() && theme::Theme::from_json(&theme.to_json()).0.gradients == theme.gradients)));
-    assert_eq!(harness.state().session().unwrap().project(), &before);
-    harness.get_by_label("Add Track colour stop").focus();
-    harness.run();
-    harness.get_by_label("Add Track colour stop").click();
-    harness.run();
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(actions.iter().any(|action| matches!(action, suhina_ui::settings::themes::FileAction::Save { theme, .. } if theme.gradients.tracks.as_ref().is_some_and(|gradient| gradient.stops.len() == 3))));
-    assert!(harness.query_by_label("Track stop 1 position").is_none());
-    let stop = harness.get_by_label("Select Track stop 2").rect().center();
-    harness.drag_at(stop);
-    harness.hover_at(stop + Vec2::new(35.0, 0.0));
-    harness.run();
-    harness.drop_at(stop + Vec2::new(35.0, 0.0));
-    harness.run();
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(actions.iter().any(|action| matches!(action, suhina_ui::settings::themes::FileAction::Save { theme, .. } if theme.gradients.tracks.as_ref().is_some_and(|gradient| gradient.stops.get(1).is_some_and(|stop| stop.position > 50)))));
-    harness.get_by_label("Select Track stop 1").click();
-    harness.run();
-    assert!(harness.query_by_label("Track stop 2 position").is_none());
-    assert!(harness.query_all_by_label("Track stop 1 position").next().is_some());
-    harness.get_by_label("Select Track stop 2").click();
-    harness.run();
-    harness.get_by_label("Remove stop 2").focus();
-    harness.run();
-    harness.get_by_label("Remove stop 2").click();
-    harness.run();
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(actions.iter().any(|action| matches!(action, suhina_ui::settings::themes::FileAction::Save { theme, .. } if theme.gradients.tracks.as_ref().is_some_and(|gradient| gradient.stops.len() == 2))));
-    harness.get_by_label("Reset changes").focus();
-    harness.run();
-    harness.get_by_label("Reset changes").click();
-    harness.run();
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(actions.iter().any(|action| matches!(action, suhina_ui::settings::themes::FileAction::Save { theme, .. } if theme.gradients == Default::default())));
-    assert_eq!(harness.state().session().unwrap().project(), &before);
-}
-
-#[test]
-fn theme_default_edits_preserve_existing_project_colours_and_opacity_saves() {
-    let mut app = App::new();
-    app.set_session(Session::new(demo_project()), &[]);
-    let mut harness = Harness::builder()
-        .allow_missing_glyphs()
-        .allow_missing_glyphs()
-        .with_size((1200.0, 900.0))
-        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
-    theme::install(&harness.ctx);
-    harness.run();
-    let before = harness.state().session().unwrap().project().clone();
-    let mut custom = theme::Theme { name: "New defaults".into(), ..Default::default() };
-    custom.colors.midi_clip_default = egui::Color32::from_rgb(20, 30, 40);
-    custom.colors.audio_clip_default = egui::Color32::from_rgb(50, 60, 70);
-    let context = harness.ctx.clone();
-    harness
-        .state_mut()
-        .put_theme(&context, suhina_ui::settings::themes::ThemeEntry { id: "new-defaults".into(), theme: custom });
-    harness.state_mut().use_theme(&context, "new-defaults");
-    harness.run();
-    assert_eq!(harness.state().session().unwrap().project(), &before);
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
-    harness.run();
-    harness.get_by_label("Settings page: Themes").click();
-    harness.run();
-    harness.get_by_label("Edit current theme…").click();
-    harness.run();
-    harness.state_mut().take_theme_actions();
-    let opacity = harness.get_by_label("Opacity grid.major").rect();
-    let pointer = opacity.left_center() + Vec2::new(48.0, 0.0);
-    harness.hover_at(pointer);
-    harness.step();
-    harness.input_mut().events.push(egui::Event::PointerButton {
-        pos: pointer,
-        button: egui::PointerButton::Primary,
-        pressed: true,
-        modifiers: Modifiers::NONE,
-    });
-    harness.step();
-    assert!(theme::palette().grid_major.a() < 255);
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(actions.iter().any(|action| matches!(action, suhina_ui::settings::themes::FileAction::Save { theme, .. } if theme.colors.grid_major.a() < 255 && theme::Theme::from_json(&theme.to_json()).0.colors == theme.colors)));
-    assert_eq!(harness.state().session().unwrap().project(), &before);
-}
-
-#[test]
 #[ignore = "renders GPU review images; run explicitly after changing the theme UI"]
 fn render_themes_gallery_and_editor_for_review() {
     let mut app = App::new();
@@ -446,53 +337,6 @@ fn restoring_a_built_in_waits_for_the_save_choice_and_can_be_cancelled() {
 }
 
 #[test]
-fn theme_liquid_overrides_save_without_changing_global_settings() {
-    let mut harness = short_window();
-    harness.get_by_label("Settings page: Themes").click();
-    settle(&mut harness);
-    harness.get_by_label("Edit current theme…").click();
-    settle(&mut harness);
-    let global = harness.state().settings().view.liquid;
-    wheel_to(&mut harness, "Use global liquid settings", 40);
-    harness.get_by_label("Use global liquid settings").click();
-    settle(&mut harness);
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(actions.iter().any(|action| matches!(action, suhina_ui::settings::themes::FileAction::Save { theme, .. } if theme.liquid == Some(global))));
-    assert_eq!(harness.state().settings().view.liquid, global);
-    harness.query_all_by_label("Theme panel liquid").next().unwrap().click();
-    settle(&mut harness);
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(actions.iter().any(|action| matches!(action, suhina_ui::settings::themes::FileAction::Save { theme, .. } if theme.liquid.is_some_and(|value| value.panels > global.panels))));
-    wheel_to(&mut harness, "Use global liquid settings", 40);
-    harness.get_by_label("Use global liquid settings").click();
-    settle(&mut harness);
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(actions.iter().any(
-        |action| matches!(action, suhina_ui::settings::themes::FileAction::Save { theme, .. } if theme.liquid.is_none())
-    ));
-    assert_eq!(harness.state().settings().view.liquid, global);
-    assert!(harness.query_by_label("Colour track.1").is_none());
-    wheel_to(&mut harness, "Colour clip.midiDefault", 40);
-    harness.get_by_label("Colour clip.midiDefault");
-    harness.get_by_label("Colour clip.audioDefault");
-}
-
-#[test]
-fn colour_explanations_wrap_below_the_token_instead_of_overlapping_it() {
-    let mut harness = short_window();
-    harness.get_by_label("Settings page: Themes").click();
-    settle(&mut harness);
-    harness.get_by_label("Edit current theme…").click();
-    settle(&mut harness);
-    let purpose = theme::palette().tokens().into_iter().find(|(key, _, _)| *key == "window.background").unwrap().1;
-    wheel_to(&mut harness, purpose, 40);
-    let token = harness.get_by_label("window.background").rect();
-    let description = harness.get_by_label(purpose).rect();
-    assert!(description.top() >= token.bottom(), "{token:?} overlaps {description:?}");
-    assert!(description.width() <= 560.0, "description escapes the editor width");
-}
-
-#[test]
 fn themes_gallery_switches_immediately_and_opens_a_separate_editor() {
     let mut harness = short_window();
     harness.get_by_label("Settings page: Themes").click();
@@ -508,77 +352,15 @@ fn themes_gallery_switches_immediately_and_opens_a_separate_editor() {
     wheel_to(&mut harness, "Edit current theme…", 40);
     harness.get_by_label("Edit current theme…").click();
     settle(&mut harness);
-    harness.get_by_label("Colour grid.major");
+    // The variant editor shows only the theme's own quick controls, and Suhina Light declares none.
+    assert!(harness.query_by_label_contains("This theme offers no quick controls").is_some());
+    assert!(harness.query_by_label("Colour grid.major").is_none());
+    assert!(harness.query_by_label("Theme panel liquid").is_none());
     assert!(harness.query_by_label("Theme: Suhina Light").is_none());
     assert_eq!(theme::palette(), palette, "opening the editor must not change the theme");
     harness.get_by_label("Back to themes").click();
     settle(&mut harness);
     harness.get_by_label("Theme: Suhina Light");
-}
-
-#[test]
-fn colour_picker_keeps_preview_clear_while_held_and_reset_restores_the_palette() {
-    let mut harness = short_window();
-    harness.get_by_label("Settings page: Themes").click();
-    settle(&mut harness);
-    harness.get_by_label("Edit current theme…").click();
-    settle(&mut harness);
-    let ctx = harness.ctx.clone();
-    harness.state_mut().use_theme(&ctx, theme::BUILT_IN);
-    settle(&mut harness);
-    let original = theme::palette();
-    wheel_to(&mut harness, "Colour grid.major", 40);
-    harness.get_by_label("Colour grid.major").click();
-    settle(&mut harness);
-    let square = harness
-        .output()
-        .shapes
-        .iter()
-        // egui paints the square as a rectangle filled with a gradient texture.
-        .find_map(|shape| match &shape.shape {
-            egui::Shape::Rect(square) if square.brush.is_some() => {
-                let rect = square.rect;
-                (rect.width() > 250.0 && rect.width() < 300.0 && (rect.width() - rect.height()).abs() < 1.0)
-                    .then_some(rect)
-            }
-            _ => None,
-        })
-        .expect("the actual colour picker's saturation/value square");
-    assert!(
-        harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
-        egui::Shape::Rect(background) if background.fill.is_opaque()
-            && background.rect.contains_rect(square)
-            && background.rect.top() < square.top() - 20.0)),
-        "colour picker needs an opaque frame covering its header and colour square"
-    );
-    let pointer = square.center();
-    harness.hover_at(pointer);
-    harness.step();
-    harness.input_mut().events.push(egui::Event::PointerButton {
-        pos: pointer,
-        button: egui::PointerButton::Primary,
-        pressed: true,
-        modifiers: Modifiers::NONE,
-    });
-    for _ in 0..6 {
-        harness.step();
-    }
-    assert_ne!(theme::palette().grid_major, original.grid_major);
-    assert!(!dimmed(&harness), "stationary held colour picker must keep the background clear");
-    harness.input_mut().events.push(egui::Event::PointerButton {
-        pos: pointer,
-        button: egui::PointerButton::Primary,
-        pressed: false,
-        modifiers: Modifiers::NONE,
-    });
-    harness.step();
-    assert!(dimmed(&harness), "releasing the colour picker must restore the dimmer immediately");
-    egui::Popup::close_all(&harness.ctx);
-    harness.step();
-    wheel_to(&mut harness, "Reset changes", 40);
-    harness.get_by_label("Reset changes").click();
-    settle(&mut harness);
-    assert_eq!(theme::palette(), original);
 }
 
 fn dimmed(harness: &Harness<'static, App>) -> bool {
@@ -1250,40 +1032,6 @@ fn holding_background_blur_keeps_the_live_preview_visible() {
     assert!(dimmed(&harness), "dimmer must return on the release frame without a delay");
 }
 
-#[test]
-fn theme_override_disables_global_liquid_sliders_until_inheritance_returns() {
-    let mut harness = short_window();
-    harness.get_by_label("Settings page: Themes").click();
-    settle(&mut harness);
-    harness.get_by_label("Edit current theme…").click();
-    settle(&mut harness);
-    wheel_to(&mut harness, "Use global liquid settings", 40);
-    harness.get_by_label("Use global liquid settings").click();
-    settle(&mut harness);
-    let global = harness.state().settings().view.liquid;
-    harness.get_by_label("Search settings").focus();
-    settle(&mut harness);
-    harness.get_by_label("Search settings").type_text("Panel liquid");
-    settle(&mut harness);
-    assert!(harness.get_by_label("Panel liquid").accesskit_node().is_disabled());
-    assert_eq!(harness.state().settings().view.liquid, global);
-    harness.get_by_label("Search settings").focus();
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
-    harness.key_press(Key::Backspace);
-    settle(&mut harness);
-    harness.get_by_label("Settings page: Themes").click();
-    settle(&mut harness);
-    wheel_to(&mut harness, "Use global liquid settings", 40);
-    harness.get_by_label("Use global liquid settings").click();
-    settle(&mut harness);
-    harness.get_by_label("Search settings").focus();
-    settle(&mut harness);
-    harness.get_by_label("Search settings").type_text("Panel liquid");
-    settle(&mut harness);
-    assert!(!harness.get_by_label("Panel liquid").accesskit_node().is_disabled());
-    assert_eq!(harness.state().settings().view.liquid, global);
-}
-
 /// A real pointer click on Cancel in *Move the folder?* leaves the themes where they are: the
 /// themes folder keeps its value and no move is asked for (round 6, step 63).
 #[test]
@@ -1358,4 +1106,26 @@ fn the_theme_in_use_is_marked_as_selected_in_the_list() {
     assert!(selected(&harness, "Theme: Suhina Light"));
     assert!(!selected(&harness, "Theme: Suhina Studio"));
     theme::set_palette(&harness.ctx, theme::Palette::DARK);
+}
+
+/// The variant editor shows the quick controls the theme declares with `@property` and a label,
+/// and only those (#1019).
+#[test]
+fn the_variant_editor_shows_only_the_themes_quick_controls() {
+    let mut harness = short_window();
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().use_theme(&ctx, "nord");
+    settle(&mut harness);
+    wheel_to(&mut harness, "Edit current theme…", 40);
+    harness.get_by_label("Edit current theme…").click();
+    settle(&mut harness);
+    for control in ["Background", "Panels", "Text", "Accent", "Selection"] {
+        assert!(harness.query_all_by_label(control).next().is_some(), "{control} is one of Nord's quick controls");
+    }
+    for gone in ["Colour accent", "Colour grid.major", "Theme panel liquid", "Use global liquid settings"] {
+        assert!(harness.query_by_label(gone).is_none(), "{gone} is not a quick control of the theme");
+    }
+    assert!(harness.query_by_label_contains("This theme offers no quick controls").is_none());
 }

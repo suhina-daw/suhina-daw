@@ -452,27 +452,47 @@ fn step(positions: &[[f32; 2]], from: usize, direction: [f32; 2]) -> Option<usiz
         .map(|(i, _)| i)
 }
 
-/// A kind's colour: Suhina's muted palette, extended, with neighbouring kinds told apart.
+/// A kind's colour: its `sample-point[kind="…"]` element's `color`, which the user-agent sheet
+/// gives (Suhina's muted palette, extended, with neighbouring kinds told apart) and a theme may
+/// change. Worked out once a frame, when the map is drawn ([`refresh_kind_colours`]).
 pub fn kind_colour(kind: Kind) -> Color32 {
-    match kind {
-        Kind::Kick => theme::kind_kick(),
-        Kind::Snare => theme::kind_snare(),
-        Kind::Clap => theme::kind_clap(),
-        Kind::ClosedHat => theme::kind_closed_hat(),
-        Kind::OpenHat => theme::kind_open_hat(),
-        Kind::Hat => theme::kind_hat(),
-        Kind::Rim => theme::kind_rim(),
-        Kind::Tom => theme::kind_tom(),
-        Kind::Crash => theme::kind_crash(),
-        Kind::Ride => theme::kind_ride(),
-        Kind::Cymbal => theme::kind_cymbal(),
-        Kind::Percussion => theme::kind_percussion(),
-        Kind::Bass => theme::kind_bass(),
-        Kind::Tonal => theme::kind_tonal(),
-        Kind::Vocal => theme::kind_vocal(),
-        Kind::Effect => theme::kind_effect(),
-        Kind::Other => theme::kind_other(),
-    }
+    KIND_COLOURS.with(|colours| colours.get()[kind_index(kind)])
+}
+
+fn kind_index(kind: Kind) -> usize {
+    Kind::ALL.iter().position(|k| *k == kind).unwrap_or(Kind::ALL.len() - 1)
+}
+
+thread_local! {
+    static KIND_COLOURS: std::cell::Cell<[Color32; Kind::ALL.len()]> =
+        std::cell::Cell::new(user_agent_kind_colours());
+}
+
+/// Each kind's colour as the user-agent sheet gives it, for when no theme sheet styles the map.
+fn user_agent_kind_colours() -> [Color32; Kind::ALL.len()] {
+    static COLOURS: std::sync::OnceLock<[Color32; Kind::ALL.len()]> = std::sync::OnceLock::new();
+    *COLOURS.get_or_init(|| {
+        let sheet = suhina_theme_package::USER_AGENT_SHEET;
+        Kind::ALL.map(|kind| {
+            let rule = format!("sample-point[kind=\"{}\"] {{ color: ", kind.id());
+            sheet
+                .find(&rule)
+                .and_then(|at| sheet[at + rule.len()..].split(';').next())
+                .and_then(theme::parse_rgba)
+                .map_or(Color32::GRAY, |[r, g, b, a]| Color32::from_rgba_unmultiplied(r, g, b, a))
+        })
+    })
+}
+
+/// Works out each kind's colour for this frame, inside the map's element: one `sample-point`
+/// element per kind, styled by the sheets in use.
+fn refresh_kind_colours() {
+    let defaults = user_agent_kind_colours();
+    let colours = std::array::from_fn(|at| {
+        let kind = Kind::ALL[at];
+        crate::kit::element::SAMPLE_POINT.attribute("kind", kind.id()).enter().color_or(defaults[at])
+    });
+    KIND_COLOURS.with(|cell| cell.set(colours));
 }
 
 /// One part of the status's tooltip: a heading ("4 955 could not be read") and lines under it.
@@ -505,6 +525,7 @@ pub fn show(
     events: &mut Vec<MapEvent>,
 ) {
     let style_class = crate::kit::element::SAMPLE_MAP.enter();
+    refresh_kind_colours();
     let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let full = ui.available_rect_before_wrap();

@@ -36,7 +36,7 @@ impl Paint {
         Some(())
     }
 
-    /// The cascade of host defaults, the theme, the chosen variant's values, device panel sheets (each bounded to its
+    /// The cascade of the user-agent sheet (and the palette's defaults beside it), the theme, the chosen variant's values, device panel sheets (each bounded to its
     /// panel's element) and the user's sheet, in that order of precedence.
     fn styles(
         &self,
@@ -58,9 +58,13 @@ impl Paint {
         devices: &[(&'s Sheet, usize)],
         user: Option<&'s Sheet>,
     ) -> Vec<AppliedSheet<'s>> {
-        let mut sheets = vec![AppliedSheet { sheet: &self.defaults, layer: Layer::Default, root: None }];
+        let mut sheets = Vec::with_capacity(5 + devices.len().min(16));
+        if let Some(agent) = user_agent() {
+            sheets.push(AppliedSheet { sheet: agent, layer: Layer::UserAgent, root: None });
+        }
+        sheets.push(AppliedSheet { sheet: &self.defaults, layer: Layer::UserAgent, root: None });
         if let Some(extra) = extra {
-            sheets.push(AppliedSheet { sheet: extra, layer: Layer::Default, root: None });
+            sheets.push(AppliedSheet { sheet: extra, layer: Layer::UserAgent, root: None });
         }
         sheets.push(AppliedSheet { sheet: &self.sheet, layer: Layer::Theme, root: None });
         if let Some(variant) = variant {
@@ -76,29 +80,21 @@ impl Paint {
     }
 }
 
+/// Suhina's user-agent sheet, parsed once: the first tier of every cascade.
+pub(super) fn user_agent() -> Option<&'static Sheet> {
+    static SHEET: std::sync::OnceLock<Option<Sheet>> = std::sync::OnceLock::new();
+    SHEET.get_or_init(|| Sheet::parse(suhina_theme_package::USER_AGENT_SHEET).ok()).as_ref()
+}
+
+/// The palette's values and the text they colour, beside the user-agent sheet in its tier. Not
+/// part of the user-agent sheet, which has no variables: it goes with the palette (#995 § 10).
 fn defaults(palette: &str) -> Option<Sheet> {
-    // Regions keep what their children paint inside them (`overflow: hidden`); other elements let
-    // it pass, as CSS's elements do.
-    let regions: Vec<&str> = suhina_theme_package::elements::ELEMENTS
-        .iter()
-        .filter(|element| matches!(element.kind, suhina_theme_package::elements::Kind::Region))
-        .map(|element| element.name)
-        .collect();
-    Sheet::parse(&format!(
-        "{palette}\nhtml, body {{ color:var(--text-primary); font-size:{}px; }}\n{} {{ overflow: hidden; }}",
-        super::theme::TEXT,
-        regions.join(", ")
-    ))
-    .ok()
+    Sheet::parse(&format!("{palette}\nhtml, body {{ color:var(--text-primary); font-size:{}px; }}", super::theme::TEXT))
+        .ok()
 }
 
 fn viewport(engine: &Engine) -> Viewport {
-    Viewport {
-        width: engine.size[0] as f32,
-        height: engine.size[1] as f32,
-        dark: engine.dark,
-        reduced_motion: !engine.motion,
-    }
+    Viewport { width: engine.size[0] as f32, height: engine.size[1] as f32, reduced_motion: !engine.motion }
 }
 
 fn variant(engine: &Engine) -> Option<&Sheet> {
@@ -238,34 +234,27 @@ pub(super) fn settings_of(css: &str, variant: Option<&str>, user: Option<&str>, 
         elements.push(Element::new(name, Some(elements.len() - 1)));
     }
     let tree = Tree::new(elements).ok()?;
-    let mut sheets = vec![AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+    let mut sheets: Vec<AppliedSheet<'_>> =
+        user_agent().map(|sheet| AppliedSheet { sheet, layer: Layer::UserAgent, root: None }).into_iter().collect();
+    sheets.push(AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None });
     if let Some(variant) = &variant {
         sheets.push(AppliedSheet { sheet: variant, layer: Layer::Variant, root: None });
     }
     if let Some(user) = &user {
         sheets.push(AppliedSheet { sheet: user, layer: Layer::User, root: None });
     }
-    let viewport = Viewport { width: 1280.0, height: 800.0, dark: true, reduced_motion: false };
+    let viewport = Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
     cascade::compute(&tree, viewport, &sheets).ok()?.last().map(computed)
 }
 
-/// What the host gives a theme's swatch before any theme styles it.
-const SWATCH_DEFAULTS: &str = "theme-swatch { background-color: attr(color type(<color>)); border-radius: 6px; }";
-
-/// A `theme-swatch` element whose `color` attribute is `color`, as the theme in use styles it.
+/// A `theme-swatch` element whose `color` attribute is `color`, as the theme in use styles it
+/// over the user-agent sheet's rounded square.
 pub(super) fn theme_swatch(engine: &Engine, color: &str) -> Option<Computed> {
-    static DEFAULTS: std::sync::OnceLock<Option<Sheet>> = std::sync::OnceLock::new();
-    let defaults = DEFAULTS.get_or_init(|| Sheet::parse(SWATCH_DEFAULTS).ok()).as_ref()?;
     let mut elements = roots(false);
     elements.push(Element::new("theme-swatch", Some(1)).with_attribute("color", color));
     let tree = Tree::new(elements).ok()?;
     let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
-    engine
-        .native
-        .as_ref()?
-        .styles(&tree, viewport(engine), Some(defaults), variant(engine), &[], user)?
-        .last()
-        .map(computed)
+    engine.native.as_ref()?.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.last().map(computed)
 }
 
 /// Properties that ask for theme layout when a theme writes them on a laid-out element.

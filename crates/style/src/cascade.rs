@@ -14,10 +14,14 @@ use std::{
     sync::Arc,
 };
 
-/// Layers are an explicit host policy; a device cannot choose a higher layer.
+/// The tiers of the cascade, lowest first: Suhina's user-agent sheet, the theme, its variant,
+/// device panel sheets and the user's sheet. Layers are an explicit host policy; a device cannot
+/// choose a higher layer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Layer {
-    Default,
+    /// Suhina's user-agent sheet (`suhina_theme_package::USER_AGENT_SHEET`), and the host's
+    /// palette defaults beside it until the palette goes (#995 § 10).
+    UserAgent,
     Theme,
     /// A theme variant's chosen values, above the theme's own rules.
     Variant,
@@ -258,7 +262,7 @@ pub(crate) fn element_style(
             },
         };
         computed.values.insert(property, value);
-        if priority.0 > Layer::Default as u8 {
+        if priority.0 > Layer::UserAgent as u8 {
             computed.authored.insert(property);
         }
     }
