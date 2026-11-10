@@ -1150,8 +1150,8 @@ nothing, even where the piano roll has no key of its own on it. The ones that ru
   cut, paste, duplicate, delete);
 - undo and redo, and the file and project keys (new, open, save, the next and the previous
   project);
-- playback: play or stop, the metronome, following the tempo map, and playing notes from the
-  computer keyboard;
+- playback: play or stop, following the tempo map, and playing notes from the computer
+  keyboard;
 - the window's views and panes: Launcher and Arrangement, the detail area and the editor, the
   devices and the plug-in editor, the browser and its search, quick add, the sample map, the
   window's zoom, Settings and About.

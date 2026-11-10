@@ -237,7 +237,7 @@ const IN_PIANO_ROLL_NAMESPACES: [&str; 6] = ["pianoRoll.", "file.", "edit.", "pr
 
 /// The other actions that run while the piano roll has the keyboard: the edit keys, which act on
 /// its notes there, playback, and the window's views and panes.
-const IN_PIANO_ROLL: [&str; 26] = [
+const IN_PIANO_ROLL: [&str; 25] = [
     "selection.copy",
     "selection.cut",
     "selection.paste",
@@ -246,7 +246,6 @@ const IN_PIANO_ROLL: [&str; 26] = [
     "transport.toggle",
     "transport.play",
     "transport.stop",
-    "transport.setMetronome",
     "transport.followTempoMap",
     "view.computerKeyboard",
     "view.toggle",
