@@ -1138,6 +1138,13 @@ impl Session {
         !self.history.redo.is_empty()
     }
 
+    /// How many steps an undo can go back now: a step is told apart by the depth it leaves, so
+    /// the window can bring back with an undo what a step changed in the view (a range moved
+    /// onto its copy, #1322). At [`MAX_UNDO`] the oldest step goes as a new one comes.
+    pub fn undo_depth(&self) -> usize {
+        self.history.undo.len()
+    }
+
     /// The colours a track without one of its own shows, by its place among the tracks (the
     /// window's palette, which follows the theme), and `fixed`, the colour a new track gets
     /// instead of the palette's, when set. Without a palette, tracks keep no colour of their own.

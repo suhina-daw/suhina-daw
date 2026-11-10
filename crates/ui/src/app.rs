@@ -2484,7 +2484,14 @@ impl App {
             }
             _ => None,
         };
-        match session.execute(action.id, params) {
+        let depth = session.undo_depth();
+        let ran = session.execute(action.id, params);
+        // A range a duplicate moved onto its copy goes back with its undo (#1322).
+        if ran.is_ok() {
+            let after = session.undo_depth();
+            self.arrangement.automation.follow_history(action.id, depth, after);
+        }
+        match ran {
             Ok(result) if result["no_input"].as_bool() == Some(true) => {
                 self.revision += 1;
                 self.status = Status::Hint(

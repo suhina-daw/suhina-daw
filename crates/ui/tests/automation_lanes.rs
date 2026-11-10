@@ -1119,6 +1119,41 @@ fn a_painted_range_copies_duplicates_and_pastes() {
     assert_eq!(beats(&harness), pasted);
 }
 
+/// Ctrl+D moves the range onto its copy, and Ctrl+Z brings it back with each copy it takes back,
+/// one at a time; Ctrl+Y takes it on again (#1322). An undo of another edit leaves it.
+#[test]
+fn undoing_a_duplicate_brings_the_range_back() {
+    let mut harness = with_lanes();
+    for x in [100.0, 200.0] {
+        add_point(&mut harness, x);
+    }
+    let span = |h: &Harness<'static, App>| h.state().arrangement().automation.range.as_ref().map(|r| (r.start, r.end));
+    // Bars 3 to 8 (beats 8 to 32), on the grid, painted from the lane's upper half.
+    let rect = lane(&harness);
+    drag(&mut harness, Pos2::new(rect.left() + 60.0, rect.top() + rect.height() * 0.25), vec2(180.0, 0.0));
+    assert_eq!(span(&harness), Some((8.0, 32.0)));
+    for _ in 0..2 {
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::D);
+        harness.run();
+    }
+    assert_eq!(span(&harness), Some((56.0, 80.0)), "on the second copy");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(span(&harness), Some((32.0, 56.0)), "back on the first copy");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(span(&harness), Some((8.0, 32.0)), "back where it was painted");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Y);
+    harness.run();
+    assert_eq!(span(&harness), Some((32.0, 56.0)), "a redo takes it on again");
+    // The copy taken back again, then the undo of a point added before the range: it stays.
+    for _ in 0..2 {
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run();
+    }
+    assert_eq!(span(&harness), Some((8.0, 32.0)), "an undo of a point leaves the range");
+}
+
 /// Ctrl+L loops a range painted on the lanes, its span exactly, and turns the loop off again
 /// (#1322).
 #[test]

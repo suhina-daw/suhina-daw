@@ -1313,6 +1313,16 @@ pub struct LaneRange {
     pub more: Vec<LaneKey>,
 }
 
+/// A range a duplicate moved onto its copy (#1322): where it was and where it went, and the
+/// undo depth the duplicate's step left, so its undo brings the range back and a redo takes it on
+/// again.
+#[derive(Debug, Clone)]
+struct RangeStep {
+    depth: usize,
+    before: LaneRange,
+    after: LaneRange,
+}
+
 /// What the lanes keep between frames: which tracks show lanes and which, the selected points
 /// and a drag in progress.
 #[derive(Debug, Default)]
@@ -1334,6 +1344,11 @@ pub struct LanesState {
     box_drag: Option<BoxDrag>,
     /// The time range painted last on a lane, which the edit keys act on.
     pub range: Option<LaneRange>,
+    /// A duplicate's move of the range, until its command has run ([`LanesState::follow_history`]).
+    range_moved: Option<(LaneRange, LaneRange)>,
+    /// The range's moves an undo can take back, and those a redo can make again, newest last.
+    range_undo: Vec<RangeStep>,
+    range_redo: Vec<RangeStep>,
     /// A click anywhere on a lane adds a point (Settings › Arrangement › Automation); off, only a
     /// click on or near the line does, and a double-click adds one anywhere.
     pub click_anywhere: bool,
@@ -1844,7 +1859,9 @@ impl LanesState {
             "duplicate" => {
                 let length = range.end - range.start;
                 self.selection = None;
-                self.range = Some(LaneRange { start: range.end, end: range.end + length, ..range });
+                let moved = LaneRange { start: range.end, end: range.end + length, ..range.clone() };
+                self.range = Some(moved.clone());
+                self.range_moved = Some((range, moved));
                 vec![action("automation.duplicate", &params)]
             }
             "paste" => {
@@ -1858,6 +1875,44 @@ impl LanesState {
             }
             _ => Vec::new(),
         }
+    }
+
+    /// A command ran, leaving the undo depth at `after` (it was `before`): a duplicate's move of
+    /// the range becomes a step of its own, and an undo of that step puts the range back where it
+    /// was, a redo onto the copy again (#1322), as long as the range is still where the step left
+    /// it. A new step ends what a redo could make again.
+    pub fn follow_history(&mut self, command: &str, before: usize, after: usize) {
+        let moved = self.range_moved.take();
+        match command {
+            "edit.undo" => {
+                if let Some(step) = self.range_undo.pop_if(|step| step.depth == before) {
+                    if self.range.as_ref() == Some(&step.after) {
+                        self.range = Some(step.before.clone());
+                    }
+                    self.range_redo.push(step);
+                }
+            }
+            "edit.redo" => {
+                if let Some(step) = self.range_redo.pop_if(|step| step.depth == after) {
+                    if self.range.as_ref() == Some(&step.before) {
+                        self.range = Some(step.after.clone());
+                    }
+                    self.range_undo.push(step);
+                }
+            }
+            _ if after > before => {
+                self.range_redo.clear();
+                if command == "automation.duplicate"
+                    && let Some((from, to)) = moved
+                {
+                    self.range_undo.push(RangeStep { depth: after, before: from, after: to });
+                }
+            }
+            _ => {}
+        }
+        // Steps undone some other way (another project's history, a step dropped at the limit).
+        self.range_undo.retain(|step| step.depth <= after);
+        self.range_redo.retain(|step| step.depth > after);
     }
 
     /// Picks the points a selection box begun on a track covers: on the lane where it covers the
