@@ -3,7 +3,7 @@ description: ASIO host initialization and native panels, plus audio output start
 read_when: ASIO, audio driver initialization, native control panel, output startup and shutdown, ASIOInit, sysRef
 type: spec
 status: current
-last_verified: 2026-11-03
+last_verified: 2026-11-10
 covers:
   - third_party/asio-sys/
   - third_party/cpal/
