@@ -78,8 +78,14 @@ pub(crate) fn cap_size() -> Vec2 {
 }
 
 /// The fader rail's thickness: `fader-rail { width }` in the theme, else 5 points.
+#[cfg(test)]
 pub(crate) fn rail_width() -> f32 {
-    let el = crate::kit::element::FADER_RAIL.enter();
+    rail_width_of(&crate::kit::element::FADER_RAIL.enter())
+}
+
+/// The thickness of `el`, a `fader-rail` already entered: `fader-rail { width }` in the theme,
+/// else 5 points. A fader enters one rail element for both its thickness and its artwork's colour.
+fn rail_width_of(el: &crate::kit::element::Entered) -> f32 {
     el.style().and_then(|c| c.width).filter(|w| *w >= 1.0).unwrap_or(5.0).min(32.0)
 }
 const LEAST_FADER: f32 = 48.0;
@@ -1122,8 +1128,9 @@ fn paint_fader(
     let at = |position: f32| travel.min + (travel.max - travel.min) * position;
     let x = fader.center().x;
     // An unfilled recessed rail: volume is the cap's position, not a bright background bar.
-    let rail = Rect::from_center_size(Pos2::new(x, fader.center().y), Vec2::new(rail_width(), fader.height()));
     let rail_el = crate::kit::element::FADER_RAIL.response(response).enter();
+    let rail =
+        Rect::from_center_size(Pos2::new(x, fader.center().y), Vec2::new(rail_width_of(&rail_el), fader.height()));
     if !crate::kit::skin::paint(
         painter,
         rail,
@@ -1182,8 +1189,8 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
     let at = |position: f32| fader.left() + length / 2.0 + (fader.width() - length) * position;
     let state = crate::kit::skin::State::response(response, false);
     // Rasterize the same vertical artwork, then rotate its geometry and texture together.
-    let rail = Rect::from_center_size(fader.center(), Vec2::new(rail_width(), fader.width()));
     let rail_el = crate::kit::element::FADER_RAIL.response(response).enter();
+    let rail = Rect::from_center_size(fader.center(), Vec2::new(rail_width_of(&rail_el), fader.width()));
     let rail_ink = crate::kit::mixer_controls::rail_ink(&rail_el);
     if !crate::kit::skin::paint(painter, rail, "fader.rail", state, rail_ink, std::f32::consts::FRAC_PI_2) {
         painter.fill_background(
