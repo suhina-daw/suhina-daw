@@ -1037,3 +1037,18 @@ fn the_loop_key_loops_the_clip_over_the_time_selection_or_switches_its_loop() {
     assert_eq!(again.params["loop"], json!(false), "the same stretch again takes the loop away");
     assert!(again.params.get("start").is_none());
 }
+
+/// What the Arrangement lights on the clip: a rectangle still being drawn as it covers now, else
+/// the time selection; nothing without either.
+#[test]
+fn the_time_span_is_the_rectangle_while_it_is_drawn() {
+    let one = clip(vec![note(1.0, 0.5, 60)]);
+    let mut state = focused_on(&one);
+    assert_eq!(state.time_span(), None);
+    state.live_span = Some((0.5, 1.5));
+    assert_eq!(state.time_span(), Some((0.5, 1.5)), "as the rectangle grows");
+    let mut state = span_state(&one, 2.0, 4.0);
+    assert_eq!(state.time_span(), Some((2.0, 4.0)), "let go: the time selection");
+    state.live_span = Some((0.0, 1.0));
+    assert_eq!(state.time_span(), Some((0.0, 1.0)), "a new rectangle over it");
+}

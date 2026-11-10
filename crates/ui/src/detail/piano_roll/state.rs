@@ -169,6 +169,9 @@ pub struct PianoRollState {
     /// What is selected in time, the notes that start in it, and what the copies in a row left
     /// behind, for an undo to come back to (› Selecting).
     pub(super) span: Option<TimeSpan>,
+    /// What a selecting rectangle covers in time while it is drawn, as the ruler's bar shows it,
+    /// so the Arrangement lights it on the clip as it grows.
+    pub(super) live_span: Option<(f64, f64)>,
     pub(super) span_notes: BTreeSet<usize>,
     pub(super) span_undo: Vec<SpanStep>,
     /// An undo ran since the selection was last settled.
@@ -321,6 +324,7 @@ impl Default for PianoRollState {
             selected: BTreeSet::new(),
             selected_ids: None,
             span: None,
+            live_span: None,
             span_notes: BTreeSet::new(),
             span_undo: Vec::new(),
             undone: false,

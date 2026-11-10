@@ -846,7 +846,7 @@ pub fn show(
     }
     let axis = ruler_view::Axis { origin: grid_rect.left() - state.scroll.x, beat_width: state.beat_width };
     ruler_view::draw(ui, ruler, &axis, &shape);
-    draw_span_bar(ui, &layout, clip, state, selecting);
+    state.live_span = draw_span_bar(ui, &layout, clip, state, selecting);
     if let Some(((icon, hotspot), pos)) = tool_icon {
         draw_tool_pointer(&ui.painter_at(whole), icon, tool_pointer_rect(pos, hotspot, TOOL_POINTER));
     }

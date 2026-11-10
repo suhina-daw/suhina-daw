@@ -179,10 +179,13 @@ impl PianoRollState {
         self.span.as_ref().map(|span| round_beat(span.end))
     }
 
-    /// The stretch selected in time, from its start to its end in the clip's beats: the
-    /// Arrangement lights it on the clip too.
+    /// The stretch selected in time, from its start to its end in the clip's beats, or what a
+    /// selecting rectangle covers while it is drawn: the Arrangement lights it on the clip too.
     pub fn time_span(&self) -> Option<(f64, f64)> {
-        self.span.as_ref().map(|span| (round_beat(span.start), round_beat(span.end))).filter(|(s, e)| e > s)
+        self.live_span
+            .or_else(|| self.span.as_ref().map(|span| (span.start, span.end)))
+            .map(|(start, end)| (round_beat(start), round_beat(end)))
+            .filter(|(s, e)| e > s)
     }
 
     /// Forgets everything selected in time.
@@ -276,15 +279,21 @@ pub(super) fn draw_time_span(painter: &egui::Painter, layout: &Layout, state: &P
 
 /// Along the ruler's lower edge, what is selected in time: while a rectangle is being drawn what it
 /// covers, else the time selection or the selected notes' extent. The insert mark's flag beside it.
-pub(super) fn draw_span_bar(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRollState, live: Option<Rect>) {
+/// Returns what the rectangle covers while it is drawn.
+pub(super) fn draw_span_bar(
+    ui: &Ui,
+    layout: &Layout,
+    clip: &PianoClip,
+    state: &PianoRollState,
+    live: Option<Rect>,
+) -> Option<(f64, f64)> {
     let grid = note_grid(clip, layout.beat_width);
     let kept = state.span_shown(clip).filter(|_| matches!(state.gesture, Some(Gesture::Select { add: true, .. })));
-    let shown = live
-        .map(|rect| {
-            let (start, end) = swept_span(grid, layout, &clip.notes, rect);
-            kept.map_or((start, end), |k| (k.0.min(start), k.1.max(end)))
-        })
-        .or_else(|| state.span_shown(clip));
+    let swept = live.map(|rect| {
+        let (start, end) = swept_span(grid, layout, &clip.notes, rect);
+        kept.map_or((start, end), |k| (k.0.min(start), k.1.max(end)))
+    });
+    let shown = swept.or_else(|| state.span_shown(clip));
     let painter = ui.painter_at(layout.ruler);
     if let Some((start, end)) = shown {
         let color = part_style("piano-time-selection", &[]).border.unwrap_or_else(theme::accent);
@@ -323,4 +332,5 @@ pub(super) fn draw_span_bar(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &
             egui::WidgetInfo::labeled(egui::Role::Unknown, true, label)
         });
     }
+    swept
 }
