@@ -29,6 +29,15 @@ pub(crate) struct InputStream {
     pub(crate) channels: usize,
     /// Blocks the engine found too little input for (the engine counts them).
     pub(crate) underruns: Arc<AtomicU64>,
+    /// The output's progress, whose render thread this input wakes on ASIO.
+    progress: Arc<Progress>,
+}
+
+impl Drop for InputStream {
+    /// The output wakes the render thread again once the input is gone.
+    fn drop(&mut self) {
+        self.progress.set_input_wakes_render(false);
+    }
 }
 
 /// Opens the input `choice` names on the host `host_name` at `sample_rate`, playing into a ring
@@ -84,15 +93,20 @@ pub(crate) fn open(
     let channels = device_channels.min(MAX_INPUT_CHANNELS);
     let (producer, consumer) = rtrb::RingBuffer::new(MAX_DEVICE_FRAMES * RING_BUFFERS * channels);
     let underruns = Arc::new(AtomicU64::new(0));
+    // On ASIO the input and the output are called back by one driver, the output first: the
+    // input wakes the render thread once its frames are in the ring.
+    let wakes = devices::same_name(host_name, "ASIO");
+    let on_data = Arc::clone(&progress);
     let stream = match format {
-        cpal::SampleFormat::F32 => build::<f32>(&device, &config, producer, progress),
-        cpal::SampleFormat::I16 => build::<i16>(&device, &config, producer, progress),
-        cpal::SampleFormat::I32 => build::<i32>(&device, &config, producer, progress),
-        cpal::SampleFormat::U16 => build::<u16>(&device, &config, producer, progress),
+        cpal::SampleFormat::F32 => build::<f32>(&device, &config, producer, on_data, wakes),
+        cpal::SampleFormat::I16 => build::<i16>(&device, &config, producer, on_data, wakes),
+        cpal::SampleFormat::I32 => build::<i32>(&device, &config, producer, on_data, wakes),
+        cpal::SampleFormat::U16 => build::<u16>(&device, &config, producer, on_data, wakes),
         other => return Err(format!("audio input {name} uses sample format {other}, which is not supported yet")),
     }?;
     stream.play().map_err(|e| format!("could not start audio input {name}: {e}"))?;
-    Ok(Some((InputStream { _stream: stream, name, channels, underruns }, consumer)))
+    progress.set_input_wakes_render(wakes);
+    Ok(Some((InputStream { _stream: stream, name, channels, underruns, progress }, consumer)))
 }
 
 fn build<T>(
@@ -100,6 +114,7 @@ fn build<T>(
     config: &cpal::StreamConfig,
     mut ring: rtrb::Producer<f32>,
     progress: Arc<Progress>,
+    wakes: bool,
 ) -> Result<cpal::Stream, String>
 where
     T: SizedSample,
@@ -107,6 +122,7 @@ where
 {
     let device_channels = usize::from(config.channels).max(1);
     let sample_rate = config.sample_rate;
+    let on_error = Arc::clone(&progress);
     device
         .build_input_stream(
             *config,
@@ -115,10 +131,13 @@ where
                 let since_capture = stamp.callback.duration_since(stamp.capture);
                 progress.set_input_latency(input_latency(since_capture, data.len() / device_channels, sample_rate));
                 write_frames(data, device_channels, &mut ring);
+                if wakes {
+                    progress.wake_render();
+                }
             },
-            // A device unplugged ends its input; the output plays on, and the next reopen finds it
-            // gone.
-            |_: cpal::Error| {},
+            // A device unplugged ends its input; the output plays on, waking the render thread
+            // again itself, and the next reopen finds the input gone.
+            move |_: cpal::Error| on_error.set_input_wakes_render(false),
             None,
         )
         .map_err(|e| format!("could not open audio input {device}: {e}"))

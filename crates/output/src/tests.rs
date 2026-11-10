@@ -160,6 +160,28 @@ fn a_keys_latency_is_the_measured_latency_and_the_fixed_delay() {
     assert!(!progress.live());
 }
 
+/// An input on the output's ASIO driver takes over waking the render thread, and gives it back:
+/// the output's callback, which the driver calls first in each cycle, then leaves the render
+/// thread asleep until the input's frames are in, and reading the ring still counts as before.
+#[test]
+fn an_input_on_the_asio_driver_takes_over_waking_the_render_thread() {
+    let progress = Progress::default();
+    assert!(!progress.input_wakes_render(), "the output wakes it by default");
+    progress.set_input_wakes_render(true);
+    assert!(progress.input_wakes_render());
+    let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(8);
+    for sample in [0.1, 0.2, 0.3, 0.4] {
+        producer.push(sample).unwrap();
+    }
+    let mut out = [9.0f32; 8];
+    read_ring(&mut consumer, &mut out, &progress);
+    assert_eq!(out, [0.1, 0.2, 0.3, 0.4, 0.0, 0.0, 0.0, 0.0]);
+    assert_eq!(progress.underruns(), 1);
+    // The input closed or failed: the output wakes it again.
+    progress.set_input_wakes_render(false);
+    assert!(!progress.input_wakes_render());
+}
+
 #[test]
 fn reading_the_ring_counts_what_was_missing() {
     let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(16);

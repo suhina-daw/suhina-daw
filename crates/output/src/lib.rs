@@ -125,6 +125,9 @@ pub struct Progress {
     block: AtomicUsize,
     /// The render thread, woken when the device has taken from the ring.
     render: std::sync::OnceLock<std::thread::Thread>,
+    /// An input on the output's ASIO driver wakes the render thread instead of the output
+    /// ([`Progress::input_wakes_render`]).
+    input_wakes: AtomicBool,
 }
 
 impl Progress {
@@ -269,6 +272,24 @@ impl Progress {
         self.frames.fetch_add(frames as u64, Ordering::Relaxed);
     }
 
+    /// Whether an input on the same ASIO driver wakes the render thread, and the output's
+    /// callback leaves it alone ([`Progress::set_input_wakes_render`]).
+    pub(crate) fn input_wakes_render(&self) -> bool {
+        self.input_wakes.load(Ordering::Acquire)
+    }
+
+    /// From now on, with `wakes`, the input's callback wakes the render thread and the output's
+    /// does not. An ASIO driver calls the output's callback and the input's one after the other
+    /// in each cycle, the output's first (its stream is made first): woken by the output, the
+    /// render thread read the input before that cycle's frames were written, found too little
+    /// and filled the block's input with silence, an input underrun in every cycle it won the
+    /// race, more often the smaller the buffer. Woken after the input has written, it reads
+    /// that cycle's frames. The render thread still looks every millisecond by itself, so an
+    /// input that stops does not stop the output.
+    pub(crate) fn set_input_wakes_render(&self, wakes: bool) {
+        self.input_wakes.store(wakes, Ordering::Release);
+    }
+
     /// Wakes the render thread, if there is one, to fill what the device took: no waiting for
     /// its next look, which a coarse system timer can make late. Lock-free, never allocates.
     pub(crate) fn wake_render(&self) {
@@ -296,7 +317,9 @@ pub(crate) fn read_ring(ring: &mut Ring, out: &mut [f32], progress: &Progress) {
         }
         progress.underruns.fetch_add(1, Ordering::Relaxed);
     }
-    progress.wake_render();
+    if !progress.input_wakes_render() {
+        progress.wake_render();
+    }
 }
 
 fn read_device_ring(

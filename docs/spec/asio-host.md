@@ -87,7 +87,13 @@ size. Should a driver refuse the size it is asked for, the output opens once mor
 (the driver plays its preferred size), and a notice says it keeps its own buffer size. An ASIO
 input on the same interface is opened at the output's size: input and output share one driver
 and one buffer size, and an input opened without it would put the driver back on its own size
-under the output.
+under the output. The driver calls the streams' callbacks one after the other in each cycle, the
+output's first (its stream is made first), so with an ASIO input it is the input's callback,
+once its frames are in the input's ring, that wakes the render thread, not the output's: woken
+by the output, the render thread read the input before that cycle's frames were written and
+filled the block's input with silence, an input underrun in every cycle it won the race, more
+often the smaller the buffer. When the input closes or fails the output wakes it again, and the
+render thread also looks every millisecond by itself.
 
 The answer is kept with the device descriptor (below) and asked again each time an ASIO output
 opens. When no driver is loaded the driver is loaded for the question and kept loaded until the
