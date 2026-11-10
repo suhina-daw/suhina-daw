@@ -1051,21 +1051,35 @@ impl App {
     /// Then an edit key acts on those notes or on nothing, and never on the clip or the view
     /// behind; only a press in another view takes the keyboard from it.
     pub(super) fn piano_has_keyboard(&self) -> bool {
-        self.piano_roll.focused
+        self.piano_roll.focused && self.detail_open && self.piano_roll_on_show() && self.piano_shows_the_selection()
+    }
+
+    /// Whether the piano roll shows the one clip selected: the Launcher's slot, or the only clip
+    /// picked in the Arrangement.
+    fn piano_shows_the_selection(&self) -> bool {
+        match self.shown {
+            View::Session => self
+                .view
+                .selected_slot
+                .is_some_and(|(t, s)| self.piano_clip(Some(detail_view::ClipRef::Slot(t, s))).is_some()),
+            View::Arrangement => {
+                self.arrangement.selected_clips().len() == 1
+                    && self
+                        .arrangement
+                        .selected_clip()
+                        .is_some_and(|(t, i)| self.piano_clip(Some(detail_view::ClipRef::Arrangement(t, i))).is_some())
+            }
+        }
+    }
+
+    /// Whether Ctrl+V pastes copied notes into the piano roll although it does not have the keys:
+    /// notes were copied last and the piano roll shows the one clip selected.
+    pub(super) fn piano_takes_paste(&self) -> bool {
+        self.notes_copied_last
+            && self.session().is_some_and(|s| s.copied_notes().is_some())
             && self.detail_open
             && self.piano_roll_on_show()
-            && match self.shown {
-                View::Session => self
-                    .view
-                    .selected_slot
-                    .is_some_and(|(t, s)| self.piano_clip(Some(detail_view::ClipRef::Slot(t, s))).is_some()),
-                View::Arrangement => {
-                    self.arrangement.selected_clips().len() == 1
-                        && self.arrangement.selected_clip().is_some_and(|(t, i)| {
-                            self.piano_clip(Some(detail_view::ClipRef::Arrangement(t, i))).is_some()
-                        })
-                }
-            }
+            && self.piano_shows_the_selection()
     }
 
     /// Whether the edit keys act on the piano roll's selected notes although several clips are picked:

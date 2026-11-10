@@ -547,6 +547,49 @@ fn the_keys_leave_the_notes_alone_when_the_piano_roll_does_not_have_the_keyboard
     assert!(!h.state().session().unwrap().can_undo());
 }
 
+/// Every arrangement clip and every note in the project: what a paste adds to.
+fn clips_and_notes(h: &Harness<'static, App>) -> (usize, usize) {
+    let project = h.state().session().unwrap().project();
+    let clips = project.arrangement.lanes.iter().map(|l| l.clips.len()).sum();
+    let notes = project
+        .arrangement
+        .lanes
+        .iter()
+        .flat_map(|l| &l.clips)
+        .filter_map(|c| project.content(c.content))
+        .flat_map(|c| &c.lanes)
+        .map(|l| match &l.data {
+            LaneData::Notes(notes) => notes.len(),
+            LaneData::Audio(_) => 0,
+        })
+        .sum();
+    (clips, notes)
+}
+
+/// Notes copied, another clip picked in the view (which takes the other keys from the piano roll),
+/// Ctrl+V: the notes go into the clip the piano roll now shows, not a copy of the clip into the
+/// view. Once a clip is copied, Ctrl+V pastes the clip again.
+#[test]
+fn notes_copied_last_paste_into_the_next_clip_picked_in_the_view() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    pick(&mut h, 0);
+    key(&mut h, Modifiers::COMMAND, Key::C);
+    h.get_by_label("Clip Walk on Bass at bar 17").click();
+    h.run();
+    assert!(!h.state().piano_roll().focused);
+    let (clips, notes) = clips_and_notes(&h);
+    key(&mut h, Modifiers::COMMAND, Key::V);
+    assert_eq!(clips_and_notes(&h), (clips, notes + 1), "a note pasted, no clip");
+    assert!(h.state().piano_roll().focused, "the keys stay with the pasted notes");
+    // A clip copied after the notes: Ctrl+V in the view pastes the clip.
+    h.get_by_label(CLIP).click();
+    h.run();
+    key(&mut h, Modifiers::COMMAND, Key::C);
+    key(&mut h, Modifiers::COMMAND, Key::V);
+    assert_eq!(clips_and_notes(&h).0, clips + 1, "the copied clip pasted");
+}
+
 /// With two clips picked the strip shows both, a click on a bar gives its clip the focus, and the keys
 /// act on that clip's notes: an arrow moves one, and Delete takes one note, not the clips.
 #[test]

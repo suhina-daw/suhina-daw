@@ -786,6 +786,11 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   **Select-first**, the default (› Keymap presets); it can be changed like any other key.
   With no note
   selected (or, for Ctrl+V, no notes copied) the keys act on the selected clip, as elsewhere.
+- **Ctrl+V after copying notes:** when notes were what was copied or cut last, Ctrl+V pastes them
+  into the clip the piano roll shows, even when a click on another clip in the view took the
+  other keys from it: copy notes, pick another MIDI clip, Ctrl+V. The paste gives the piano roll
+  the keyboard. A clip, a time range, a track or automation copied after the notes makes Ctrl+V
+  paste that again.
 - The keys are Ctrl on Windows and Linux and Cmd on macOS. The window reports them (and the other
   system keys for the same thing: Shift+Delete, Ctrl+Insert and Shift+Insert on Windows, and the
   Cut, Copy and Paste keys some keyboards have) as cut, copy and paste rather than as keys; the

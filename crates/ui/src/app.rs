@@ -456,6 +456,9 @@ pub struct App {
     detail_drag: Option<f32>,
     /// The width a drag of the stacked devices' column splitter has reached so far.
     side_drag: Option<f32>,
+    /// Notes were what was copied or cut last: Ctrl+V pastes them into the clip the piano roll
+    /// shows, although a click in the view took the other edit keys.
+    notes_copied_last: bool,
     /// When Escape was last pressed, and whether it was pressed twice in a row this frame (the
     /// focus mode, read before the shortcuts take the key).
     last_escape: Option<f64>,
@@ -694,6 +697,7 @@ impl App {
             escape_twice: false,
             detail_drag: None,
             side_drag: None,
+            notes_copied_last: false,
             window: None,
             title_bar: 0.0,
             window_corner: 0,
@@ -2425,6 +2429,14 @@ impl App {
         // of what was there before, so it lets go.
         if matches!(action.id, "edit.undo" | "edit.redo") {
             self.carry = None;
+        }
+        // Which copy came last decides what Ctrl+V pastes while the piano roll shows a clip.
+        match action.id {
+            "note.copy" | "note.cut" => self.notes_copied_last = true,
+            "clip.copy" | "clip.cut" | "range.copy" | "range.cut" | "track.copy" | "track.cut" | "automation.copy" => {
+                self.notes_copied_last = false
+            }
+            _ => {}
         }
         if action.id == "ui.renameClip" {
             let mut target = action.params.clone();
