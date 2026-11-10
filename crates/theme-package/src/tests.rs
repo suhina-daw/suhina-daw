@@ -256,7 +256,7 @@ fn rewriting_theme_json_keeps_the_schema_and_keys_it_does_not_read() {
 /// the registry.
 #[test]
 fn the_user_agent_sheet_selects_by_name_state_and_attribute_only() {
-    let sheet = suhina_style::sheet::Sheet::parse(USER_AGENT_SHEET).expect("the user-agent sheet parses");
+    assert!(suhina_style::sheet::Sheet::parse(USER_AGENT_SHEET).is_ok(), "the user-agent sheet parses");
     assert!(!USER_AGENT_SHEET.contains("var("), "the user-agent sheet uses no variables");
     assert!(!USER_AGENT_SHEET.contains("--"), "the user-agent sheet declares no custom properties");
     assert!(!USER_AGENT_SHEET.contains('@'), "the user-agent sheet has no at-rules");
@@ -273,15 +273,14 @@ fn the_user_agent_sheet_selects_by_name_state_and_attribute_only() {
             rules += 1;
             let name = selector.split(['[', ':']).next().unwrap();
             assert!(elements::is_element(name), "{selector}: {name} is not an element");
-            // The standard toolbar group classes are the only classes it may use (#995 § 7).
-            let classes = selector.matches('.').count();
-            assert!(classes == 0 || ["group.transport", "group.display"].contains(&selector), "{selector} has a class");
+            // No classes yet: the standard toolbar group classes the spec allows come with the
+            // toolbar's groups (#995 § 7).
+            assert!(!selector.contains('.'), "{selector} has a class");
             assert!(!selector.contains('#'), "{selector} has an id");
         }
         rest = &rest[close + 1..];
     }
     assert!(rules > 30);
-    let _ = sheet;
 }
 
 /// Every region keeps what its children paint (`overflow: hidden`), and only regions do.
@@ -337,4 +336,11 @@ fn image_rules_read_selector_lists_and_skip_comments_and_at_rules() {
         image_rules(css),
         vec![("a".to_owned(), "y.svg".to_owned()), ("b:hover".to_owned(), "y.svg".to_owned())]
     );
+    // A rule after an at-rule's block with rules in it is read as a rule of its own, and the
+    // rules inside the block are not; a statement at-rule does not swallow the selector after it.
+    let css = "@media (max-width: 1px) { c { image: url(z.svg); } d { color: red; } }
+               e { image: url(e.svg); }
+               @import \"more.css\";
+               f { image: url(f.svg); }";
+    assert_eq!(image_rules(css), vec![("e".to_owned(), "e.svg".to_owned()), ("f".to_owned(), "f.svg".to_owned())]);
 }

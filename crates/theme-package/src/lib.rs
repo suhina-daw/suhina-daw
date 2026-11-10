@@ -81,7 +81,8 @@ pub fn built_in_artwork(file: &str) -> Option<(&'static str, &'static str)> {
 }
 
 /// The `image` declarations of `css`'s plain rules, as `(selector, url)`, one per selector of a
-/// list; comments are skipped and rules inside an at-rule are not read.
+/// list. Comments are skipped, a statement at-rule (`@import "a.css";`) is passed over, and the
+/// rules inside an at-rule's block (`@media`, `@layer`) are not read.
 pub fn image_rules(css: &str) -> Vec<(String, String)> {
     let mut text = String::with_capacity(css.len());
     let mut rest = css;
@@ -91,12 +92,36 @@ pub fn image_rules(css: &str) -> Vec<(String, String)> {
     }
     text.push_str(rest);
     let mut rules = Vec::new();
-    let mut rest = text.as_str();
-    while let Some(open) = rest.find('{') {
+    let mut rest = text.trim_start();
+    while !rest.is_empty() {
+        let open = rest.find('{');
+        // A statement at-rule ends at its semicolon, before any block.
+        if rest.starts_with('@')
+            && let Some(end) = rest.find(';').filter(|end| open.is_none_or(|open| *end < open))
+        {
+            rest = rest[end + 1..].trim_start();
+            continue;
+        }
+        let Some(open) = open else { break };
+        // The block's end, past any block inside it.
+        let mut depth = 0usize;
+        let close = rest[open..].char_indices().find_map(|(at, c)| {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Some(open + at);
+                    }
+                }
+                _ => {}
+            }
+            None
+        });
+        let Some(close) = close else { break };
         let selector = rest[..open].trim();
-        let Some(close) = rest[open..].find('}').map(|close| open + close) else { break };
         let body = &rest[open + 1..close];
-        rest = &rest[close + 1..];
+        rest = rest[close + 1..].trim_start();
         if selector.starts_with('@') || body.contains('{') {
             continue;
         }
