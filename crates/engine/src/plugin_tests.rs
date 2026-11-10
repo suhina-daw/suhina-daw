@@ -893,6 +893,34 @@ fn a_plug_in_instrument_is_released_when_the_transport_stops() {
     assert!(off.is_some() && all.is_some() && off < all, "{seen:?}");
 }
 
+/// At the arrangement loop's wrap the held keys are released one by one and the notes at the
+/// loop start play again in the same block, with no all-notes-off among them: a plug-in takes
+/// that as controller changes, which many apply to the whole block, silencing the new notes.
+#[test]
+fn the_notes_at_the_loop_start_play_on_every_pass_with_no_all_notes_off() {
+    let mut p = project(vec![note(0.0, 2.0, 60), note(2.0, 2.0, 62)], 4.0, vec![plug(vst3())]);
+    p.transport.loop_range = Some(LoopRange { start: 0.0, end: 4.0 });
+    p.transport.loop_enabled = true;
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    // Three passes of four beats, in blocks that do not divide a pass.
+    blocks(&mut renderer, 3 * 4 * BEAT / 500 + 1, 500);
+    let seen = seen.lock().unwrap();
+    let starts = seen.iter().filter(|(_, e)| matches!(e, NoteEvent::On { key: 60, .. })).count();
+    assert_eq!(starts, 3, "{seen:?}");
+    assert!(!seen.iter().any(|(_, e)| *e == NoteEvent::AllNotesOff), "{seen:?}");
+    let ends = seen.iter().filter(|(_, e)| matches!(e, NoteEvent::Off { key: 62, .. })).count();
+    assert!(ends >= 2, "key 62 released at each wrap: {seen:?}");
+}
+
 /// A new audio output (another buffer size, the same sample rate) builds a new renderer: the
 /// old one gives its running processors back, including one still in its queue, and the new
 /// one plays them without a restart.

@@ -740,7 +740,9 @@ turning it on again repeats the same span. It is separate from a clip's own loop
 **Playing.** While looping is on and the playhead reaches the loop end, playback goes on from the
 loop start on the very next frame: the frame after the loop end's last one is the loop start's
 first, whatever the audio block size. The wrap is a jump while playing ([Play
-position](#play-position)): notes that sound are released, notes that start at the loop start or
+position](#play-position)): notes that sound are released, each key on its own and with no
+all-notes-off (an instrument plug-in takes that as controller changes, which many apply to the
+whole block, so it would silence the notes that start in it), notes that start at the loop start or
 later play again, and audio clips play on from where they are at the loop start, sample for
 sample. The play start marker does not move, so Stop goes back to it as usual. A playhead that is
 already at or past the loop end (the play start marker set there, or a jump there) plays on

@@ -892,10 +892,22 @@ impl Chain {
         }
     }
 
-    /// Releases every note now, at `frame` of the block.
-    /// Each held key is released on its own, then everything: an instrument that ignores an
-    /// all-notes-off (many plug-ins do) still lets go of its notes.
+    /// Releases every note now, at `frame` of the block, for a stop: each held key on its own,
+    /// then everything, so an instrument that ignores an all-notes-off (many plug-ins do) still
+    /// lets go of its notes.
     pub(crate) fn release_all(&mut self, frame: usize) {
+        if !self.instrument {
+            return;
+        }
+        self.release_held(frame);
+        self.push(frame, NoteEvent::AllNotesOff);
+    }
+
+    /// Releases each held key on its own at `frame` of the block, with no all-notes-off: for a
+    /// jump, a loop's wrap or a launch, where new notes start in the same block. A plug-in gets an
+    /// all-notes-off as controller changes, which many apply to the whole block, so it would
+    /// silence the notes that start after it in that block (the notes at a loop's start).
+    pub(crate) fn release_held(&mut self, frame: usize) {
         if !self.instrument {
             return;
         }
@@ -906,7 +918,6 @@ impl Chain {
         }
         self.held = [NOT_HELD; 128];
         self.next_off = NOT_HELD;
-        self.push(frame, NoteEvent::AllNotesOff);
     }
 
     /// A retained processor has voices whose schedule belonged to the old renderer.

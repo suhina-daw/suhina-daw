@@ -1642,8 +1642,10 @@ impl Renderer {
             voice.end = voice.end.min(position);
         }
         let frame = self.block_frame;
+        // The clip or arrangement taking over starts its notes in this block: key by key, with
+        // no all-notes-off that would silence them (› `Chain::release_held`).
         for chain in self.graph.chains.iter_mut().filter(|c| c.column == column) {
-            chain.release_all(frame);
+            chain.release_held(frame);
         }
         // Arrangement audio on this track goes silent through the override check.
     }
