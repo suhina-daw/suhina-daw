@@ -1099,6 +1099,7 @@ fn a_grouped_collection_lists_its_capture_packs_and_a_new_capture_lists_again() 
     // machine was between the writes).
     let group = models.join("Live Amp Modeler");
     filetime::set_file_mtime(&group, filetime::FileTime::from_unix_time(0, 0)).expect("the collection's stamp is set");
+    filetime::set_file_mtime(&capture, filetime::FileTime::from_unix_time(0, 0)).expect("the capture's stamp is set");
     let lists = app.nam_lists();
     assert_eq!(
         lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)"),
@@ -1118,6 +1119,16 @@ fn a_grouped_collection_lists_its_capture_packs_and_a_new_capture_lists_again() 
         lists.models.iter().any(|set| set.name == "Live Amp Modeler / British Classic (Slammin Captures)"),
         "a capture added after a read lists again: {:?}",
         lists.models
+    );
+    // A file dropped inside an existing capture folder later: only the capture's own stamp
+    // changes (its parents' do not), so the watch holds the capture folders too — the pack
+    // lists its file with the next read.
+    std::fs::write(capture.join("Chime High.nam"), b"capture").unwrap();
+    let lists = app.nam_lists();
+    let chime = lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)");
+    assert!(
+        chime.is_some_and(|set| set.files.iter().any(|(path, _)| path.ends_with("Chime High.nam"))),
+        "a file added inside a capture folder lists again: {chime:?}"
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }

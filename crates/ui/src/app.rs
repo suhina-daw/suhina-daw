@@ -283,6 +283,12 @@ fn scan_sets(
         here.sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default());
         for capture in here {
             let capture_name = capture.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+            // A capture folder's own writes (a file the user dropped in it) are watched too:
+            // its mtime is what changes, its parents' do not.
+            watch.push((
+                capture.display().to_string(),
+                std::fs::metadata(&capture).ok().and_then(|m| m.modified().ok()),
+            ));
             if let Some(pack) = pack_of(&capture, format!("{group_name} / {capture_name}")) {
                 packs.push(pack);
             }
@@ -1473,10 +1479,11 @@ impl App {
             (&irs_folder, "wav", &mut cache.irs, &mut cache.irs_watch),
         ];
         for (folder, extension, sets, watch) in folders.iter_mut() {
-            // The watch holds the folder and its top-level folders with their write times at
-            // the last read; a change inside any of them (a new pack, a capture in a
-            // collection) reads the listing anew. A pack's files re-read only when the pack's
-            // own folder changed ([docs/spec/nam-amp-and-cab.md] › Folders › Packs). The
+            // The watch holds the folder, its top-level folders and their capture folders with
+            // their write times at the last read; a change inside any of them (a new pack, a
+            // capture in a collection, a file in a capture) reads the listing anew. A pack's
+            // files re-read only when the pack's own folder changed
+            // ([docs/spec/nam-amp-and-cab.md] › Folders › Packs). The
             // folder itself changed since the last read (the setting moved, or the default
             // folder went): the listing reads again, not the last read's folder's files.
             let reading = (**watch)
@@ -2693,10 +2700,7 @@ impl App {
                 if action.id == "device.savePreset" {
                     self.browser.refresh();
                     let name = result["name"].as_str().unwrap_or_default();
-                    self.status = match result["file_missing"].as_str() {
-                        Some(file) => Status::Hint(format!("Preset {name} saved, but {file}")),
-                        None => Status::Hint(format!("Preset {name} saved into the library's Presets folder")),
-                    };
+                    self.status = Status::Hint(format!("Preset {name} saved into the library's Presets folder"));
                 }
                 // A new track is selected and scrolled into view (#918).
                 if action.id == "track.add" {

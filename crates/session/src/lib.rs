@@ -1299,17 +1299,7 @@ impl Session {
             }
         }
         if need.is_empty() {
-            #[cfg(test)]
-            if std::env::var("SUH_INA_SYNC_DEBUG").is_ok() {
-                println!("SCRATCH sync sees no need");
-            }
             return;
-        }
-        #[cfg(test)]
-        if std::env::var("SUH_INA_SYNC_DEBUG").is_ok() {
-            for (path, kind) in &need {
-                println!("SCRATCH need {path:?} ({kind})");
-            }
         }
         let mut changed = false;
         for (path, kind) in need.iter() {

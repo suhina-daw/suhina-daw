@@ -253,6 +253,57 @@ fn input_diagnostics_keep_only_the_latest_32_short_reads() {
 }
 
 #[test]
+fn a_starved_pair_holds_each_channels_last_state_not_the_previous_blocks_bytes() {
+    // The hold's span starts `take` samples in — `take` is a sample count, twice the frame a
+    // pair's hold starts at. The old loop took it as a frame index: for a shallow starvation
+    // its range was empty and the block's tail kept the scratch's previous block, for a deep
+    // one the wrong middle span stayed stale. The held slot's channel is its remainder.
+    let (mut ring, consumer) = rtrb::RingBuffer::new(4096);
+    let mut input = crate::input::Input::new();
+    let underruns = Arc::new(AtomicU64::new(0));
+    input.attach(consumer, 2, Arc::clone(&underruns));
+    const FRAMES: usize = 256;
+    // One block of a rising ramp, the sign saying which channel: the scratch now holds the
+    // ramp, and the block's last frame — the next starved block's hold — is 255.
+    for frame in 0..FRAMES {
+        ring.push(f32::from(frame as u16)).unwrap();
+        ring.push(-f32::from(frame as u16)).unwrap();
+    }
+    input.read(FRAMES);
+    // Half a block: the first half reads fresh, the rest holds 255 on both channels — never
+    // the scratch's ramp, which at those frames is 128 to 254.
+    for _ in 0..FRAMES / 2 {
+        ring.push(0.75).unwrap();
+        ring.push(-0.75).unwrap();
+    }
+    input.read(FRAMES);
+    for frame in 0..FRAMES {
+        let (l, r) = (input.sample(frame, 0), input.sample(frame, 1));
+        if frame < FRAMES / 2 {
+            assert!((l - 0.75).abs() < 1e-6 && (r + 0.75).abs() < 1e-6, "frame {frame}: {l} {r}");
+        } else {
+            assert!((l - 255.0).abs() < 1e-6 && (r + 255.0).abs() < 1e-6, "frame {frame}: {l} {r}");
+        }
+    }
+    // A deeper starvation: a quarter block fresh, the rest the hold again (the hold survived
+    // the starved block: its last state is still 255).
+    for _ in 0..FRAMES / 4 {
+        ring.push(0.75).unwrap();
+        ring.push(-0.75).unwrap();
+    }
+    input.read(FRAMES);
+    for frame in 0..FRAMES {
+        let (l, r) = (input.sample(frame, 0), input.sample(frame, 1));
+        if frame < FRAMES / 4 {
+            assert!((l - 0.75).abs() < 1e-6 && (r + 0.75).abs() < 1e-6, "frame {frame}: {l} {r}");
+        } else {
+            assert!((l - 255.0).abs() < 1e-6 && (r + 255.0).abs() < 1e-6, "frame {frame}: {l} {r}");
+        }
+    }
+    assert_eq!(underruns.load(Ordering::Relaxed), 2);
+}
+
+#[test]
 fn looping_input_never_discards_the_rest_of_the_device_block() {
     // The hardware trace's first failure followed a 136-frame loop-boundary chunk:
     // the old policy kept only 272 input frames and starved the 1024 + 888 after it.

@@ -1283,8 +1283,18 @@ pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value
         return Err(format!("the library's {} folder could not be made", folder.display()).into());
     }
     let file_name = format!("{name}.{}.preset.suhina", info.id);
-    std::fs::write(folder.join(&file_name), &bytes)
-        .map_err(|e| CommandError(format!("{}: {e}", folder.join(&file_name).display())))?;
+    // The preset publishes whole or not at all: the bytes write beside the target first, then
+    // rename into place — a write that fails (or an app that ends mid-write) never truncates
+    // the preset the user saved before (the unpack's `publish` is the same shape).
+    let target = folder.join(&file_name);
+    let staging = folder.join(format!("{file_name}.suhina-new"));
+    let wrote = std::fs::write(&staging, &bytes)
+        .and_then(|()| std::fs::rename(&staging, &target))
+        .map_err(|e| CommandError(format!("{}: {e}", target.display())));
+    if let Err(e) = wrote {
+        let _ = std::fs::remove_file(&staging);
+        return Err(e);
+    }
     Ok(
         json!({ "preset": base.join("Presets").join(info.id.as_ref()).join(&file_name).display().to_string(), "name": name.trim() }),
     )

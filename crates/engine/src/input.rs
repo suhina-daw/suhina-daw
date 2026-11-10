@@ -190,12 +190,12 @@ impl Input {
             // dropping to silence — a splice to silence and back cracks through everything
             // downstream, and a recording baked hundreds of those splices into its takes
             // ([#1290] › the takes' crackle). The frames still count as the block's, so the
-            // take's length and the recorder's timing stay exact.
-            for frame in take..frames {
-                for channel in 0..channels {
-                    if let Some(slot) = block.get_mut(frame * channels + channel) {
-                        *slot = self.last[channel];
-                    }
+            // take's length and the recorder's timing stay exact. The held slots run from
+            // `take` samples in; a slot's channel is its remainder (`take` is a sample count,
+            // whole frames' worth).
+            for slot in take..wanted {
+                if let Some(sample) = block.get_mut(slot) {
+                    *sample = self.last[slot % channels];
                 }
             }
             self.diagnostics.short_read(take / channels, frames);
