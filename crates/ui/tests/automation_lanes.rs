@@ -1221,8 +1221,10 @@ fn a_range_dragged_off_the_lanes_becomes_a_time_selection_over_the_tracks() {
         let time = h.state().arrangement().time_selection().map(|s| s.tracks.iter().map(|t| t.0).collect::<Vec<_>>());
         (time, h.state().arrangement().automation.range.is_some())
     };
+    // From the lane's upper half, below the faint line of the volume at 0 dB near the top, which
+    // a drag on it would bend instead.
     let rect = lane(&harness);
-    let from = Pos2::new(rect.left() + 60.0, rect.top() + rect.height() * 0.25);
+    let from = Pos2::new(rect.left() + 60.0, rect.top() + rect.height() * 0.45);
     // Up onto the track's own clips.
     drag(&mut harness, from, vec2(180.0, rect.top() - 20.0 - from.y));
     assert_eq!(selection(&harness), (Some(vec![1]), false));
