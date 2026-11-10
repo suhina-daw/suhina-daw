@@ -166,7 +166,15 @@ fn light_row() -> egui::Color32 {
 fn dark_row() -> egui::Color32 {
     let dark = crate::kit::style_class::surface_or(theme::window_background());
     let light = light_row();
-    if dark == light { light.lerp_to_gamma(theme::window_background(), 0.5) } else { dark }
+    if dark != light {
+        return dark;
+    }
+    // Pulled toward the window colour; if that is the surface itself, toward black, then white.
+    [theme::window_background(), egui::Color32::BLACK, egui::Color32::WHITE]
+        .into_iter()
+        .map(|toward| light.lerp_to_gamma(toward, 0.5))
+        .find(|row| *row != light)
+        .unwrap_or(light)
 }
 
 /// The 2 px mark at the right of the key column on a key in the scale (the root's brighter).
@@ -365,6 +373,15 @@ mod tests {
             assert_ne!(white, black, "the dark row is not");
             assert_eq!(row_fill(Some(scale(0, ScaleMode::Major)), 61, true), black, "outside a scale too");
         });
+    }
+
+    #[test]
+    fn plain_rows_stay_distinct_when_the_surface_is_the_window_colour() {
+        for surface in [theme::window_background(), egui::Color32::BLACK, egui::Color32::TRANSPARENT] {
+            crate::kit::style_class::with_surface(surface, || {
+                assert_ne!(row_fill(None, 60, false), row_fill(None, 61, true), "surface {surface:?}");
+            });
+        }
     }
 
     #[test]

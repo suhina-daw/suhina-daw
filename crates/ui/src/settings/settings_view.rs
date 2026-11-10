@@ -2975,15 +2975,10 @@ fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> 
     let knob_width = SEGMENT - 4.0;
     let x = track.left() + 2.0 + lit * (track.width() - 4.0 - knob_width);
     let knob = Rect::from_min_size(Pos2::new(x, track.top() + 2.0), Vec2::new(knob_width, SEGMENT - 4.0));
-    painter.rect_filled(
-        knob,
-        0.0,
-        motion::mix(
-            theme::text_secondary(),
-            crate::kit::style_class::opaque_surface_or(theme::window_background()),
-            lit,
-        ),
-    );
+    // The knob's lit colour contrasts with the lit track: an opaque ground, else the inverse text.
+    let ground = crate::kit::style_class::opaque_surface_or(theme::window_background());
+    let ground = if ground.a() == u8::MAX { ground } else { theme::text_inverse() };
+    painter.rect_filled(knob, 0.0, motion::mix(theme::text_secondary(), ground, lit));
     response.clicked().then_some(!on)
 }
 

@@ -249,6 +249,8 @@ impl MissingFiles {
         if self.poll() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
+        // The panel is a dialog: the theme may style it, and its panel does not take the window's colour.
+        let _dialog = crate::kit::element::DIALOG.enter();
         egui::Area::new(Id::unique("missing-files"))
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
