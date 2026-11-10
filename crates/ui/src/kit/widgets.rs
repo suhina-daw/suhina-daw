@@ -925,7 +925,7 @@ fn along_chosen_axis(ui: &Ui, id: egui::Id, moved: Vec2) -> f32 {
 }
 
 impl From<crate::kit::control_layout::Direction> for DragAxis {
-    /// A theme's `--suhina-direction` for a control.
+    /// A theme's `direction` for a control.
     fn from(direction: crate::kit::control_layout::Direction) -> Self {
         match direction {
             crate::kit::control_layout::Direction::Vertical => Self::Vertical,

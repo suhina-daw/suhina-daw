@@ -900,7 +900,7 @@ choose its direction, which it keeps until it is let go, so a drag across that w
 does not change the value twice. The pointer over the field stays as it is; while it is dragged
 the pointer shows the arrow of the direction chosen (left-right or up-down). Shown as knobs
 (Settings › Launcher and mixer › **Mixer controls** on Knob) they turn with an up or down drag instead, unless the theme
-lays the control out horizontally (`--suhina-direction: horizontal`).
+lays the control out horizontally (`direction: horizontal`).
 
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging
