@@ -367,6 +367,7 @@ impl App {
             self.settings.keep_device_inputs(self.projects.device_inputs());
             self.projects.set_backup_settings(self.settings.backup, self.settings.backup_clean_up);
             motion::set_enabled(ui.ctx(), self.settings.animations);
+            crate::kit::widgets::set_drag_hides_pointer(ui.ctx(), self.settings.drag_hides_pointer);
             self.arrangement.headers_left = headers_left(self.settings.track_headers);
             self.arrangement.returns_hidden = self.settings.view.returns_hidden;
             self.arrangement.waveform_zoom = self.settings.view.waveform_zoom as f32 / 100.0;

@@ -222,6 +222,8 @@ refused or suspended, never by losing its edits.
   in Settings; and a part moved or copied on the track takes its takes along
   ([#1078](https://github.com/suhina-daw/suhina-daw/issues/1078)).
 
+- Value drags: the Arrangement's volume and pan bars and Main's volume bar drag up and down or across, whichever way a drag moves first. Settings › Appearance › Hide pointer while dragging (on by default) chooses whether the pointer hides during a value drag or shows the arrow of its direction, and a theme can choose for its own controls with `drag-pointer: hidden | visible`.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
@@ -1029,4 +1031,17 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   and a click on a bar or a faint note gives that clip the focus.
 
 - Audio clip panel (#1190, #742, #824): a selected audio clip's column in the detail area is laid out in groups, Clip (colour, markers and loop with Set to the playhead), Audio (warp, a stretch mode drop-down, the clip's tempo with ÷2 and ×2 and where it came from, Find to pick another source's tempo), Gain (a fader, −70 to +24 dB) and Pitch (a knob in semitones and a cents field). Every number can be typed after a double-click. Every audio clip has its own gain, pitch and warp, also two clips of the same file, and a gain envelope drawn on its waveform in the Arrangement (a double-click adds a point, a drag moves it, a double-click removes it); `clip.setTempo`, `clip.findTempo` and `clip.setEnvelope` do the same for agents.
+
+- The browser's **Tags section** in the sidebar reaches a tag's items again (#1196): one row
+  per tag with its colour dot, its name and how many items carry it (a tag with none dimmed),
+  clicked as a place lists every item that carries it of any kind (`library.search` takes it
+  as `tag:<name>`), Ctrl-click combines tags, the row's right-click menu adds (a New tag…
+  field with an Add tag button, taking the colour the menu's own tag shows), renames live as
+  the name is typed, recolours
+  (the palette or the theme editor's picker in the menu) and removes it (asking first while
+  items carry it);
+  items dropped on a row are tagged with it, and a tag dragged from its row tags the item it
+  lands on (its whole selection when the row is one of them). The section is where the tags
+  live now, so the footer's tag editor and its Edit tags button are gone and the footer's
+  dots stay only as the quick filter of the list shown.
 

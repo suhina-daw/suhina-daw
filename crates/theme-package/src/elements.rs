@@ -123,7 +123,7 @@ const CONTROL_IDS: &[&str] = &[
 const LEVEL_FIELDS: &[&str] = &["arrangement-volume", "arrangement-pan", "main-volume", "mixer-volume", "mixer-pan"];
 
 /// Settings of a value a person drags, inherited from its ancestors.
-const VALUE_SETTINGS: &[&str] = &["appearance", "value-position", "value-decimals", "value-unit"];
+const VALUE_SETTINGS: &[&str] = &["appearance", "value-position", "value-decimals", "value-unit", "drag-pointer"];
 
 macro_rules! default_svg {
     ($role:literal, $selector:literal) => {

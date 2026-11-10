@@ -121,6 +121,7 @@ macro_rules! named {
 /// The settings `Settings::to_text` writes first, in this order.
 pub(super) const FIELDS: &[Field] = &[
     switch!("animations", animations),
+    switch!("drag_hides_pointer", drag_hides_pointer),
     Field {
         key: "track_headers",
         write: |s| {

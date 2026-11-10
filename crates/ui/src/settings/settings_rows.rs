@@ -913,6 +913,14 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Appearance,
         "Window",
+        "Hide pointer while dragging",
+        "The pointer disappears while a knob, fader or value is dragged",
+        &["drag_hides_pointer"],
+        |cx, r| cx.on_off(r, |s| &mut s.drag_hides_pointer),
+    ),
+    row(
+        Page::Appearance,
+        "Window",
         "Menu bar in window",
         "The menus show at the top of the window, and on macOS in the screen's menu bar too",
         &["menu_bar"],

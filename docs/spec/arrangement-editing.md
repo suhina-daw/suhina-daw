@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-09
+last_verified: 2026-11-10
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -892,6 +892,17 @@ level controls together; on the second, the automation lanes button under the to
 and the send knobs at its end, as many as leave the name its room. A shorter lane has one row:
 the buttons, the name and the automation button at its end. Taller still, the routing and the
 input lines follow below.
+
+A header's volume and pan fields, and the main row's volume bar, are dragged either up and down
+or across: up or right raises the value (pans it right), down or left lowers it, a quarter of a
+decibel (or 0.01 of pan) a point, ten times finer with Shift. The first few points a drag moves
+choose its direction, which it keeps until it is let go, so a drag across that wavers up or down
+does not change the value twice. The pointer over the field stays as it is. While it is dragged
+the pointer hides, as on every value control (Settings › Appearance › **Hide pointer while
+dragging**, on by default, or a theme's `drag-pointer: hidden`); with the setting off or
+`drag-pointer: visible` it shows the arrow of the direction chosen (left-right or up-down). Shown as knobs
+(Settings › Launcher and mixer › **Mixer controls** on Knob) they turn with an up or down drag instead, unless the theme
+lays the control out horizontally (`direction: horizontal`).
 
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging

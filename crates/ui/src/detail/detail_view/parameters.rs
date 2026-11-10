@@ -353,7 +353,8 @@ fn themed_slider_widget(
     let logarithmic = control == ParameterControl::LogSlider && min > 0.0 && max > min;
     let height = ui.spacing().interact_size.y.min(rect.height()).max(8.0);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(rect.width(), height), Sense::click_and_drag());
-    let _style = crate::kit::element::SLIDER.response(&response).enter();
+    let slider_el = crate::kit::element::SLIDER.response(&response).enter();
+    widgets::value_drag_pointer(ui.ctx(), &response, &slider_el);
     let to_position = |v: f64| {
         if logarithmic { (v / min).ln() / (max / min).ln() } else { (v - min) / (max - min).max(f64::EPSILON) }
     };
@@ -428,15 +429,21 @@ pub(super) fn knob(
     // `device knob { width }` (or height) sets the knob's size, within its cell; with
     // `--suhina-param-row` taller rows give it room. Its `accent-color` colours its ring and
     // pointer, unless the device gives an accent of its own.
-    let (themed, sheet_accent) = {
+    let (themed, sheet_accent, hides_pointer) = {
         let knob = crate::kit::element::KNOB.enter();
+        let hides = crate::kit::style_class::drag_hides_pointer(&knob, widgets::drag_hides_pointer(ui.ctx()));
         let computed = knob.style();
-        (computed.as_ref().and_then(|c| c.width.or(c.height)), computed.filter(|c| c.authored.accent).map(|c| c.accent))
+        (
+            computed.as_ref().and_then(|c| c.width.or(c.height)),
+            computed.filter(|c| c.authored.accent).map(|c| c.accent),
+            hides,
+        )
     };
     let accent = accent.or(sheet_accent);
     let room = rect.width().min(rect.height()).max(8.0);
     let size = themed.map_or(room, |s| s.clamp(8.0, room));
     let (rect, mut response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click_and_drag());
+    widgets::value_drag_hides(ui.ctx(), &response, hides_pointer);
     if response.clicked() {
         response.request_focus();
     }
