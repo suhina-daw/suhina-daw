@@ -3239,8 +3239,11 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 // review: the two menus had drifted apart).
                 let armed = state.tag_remove_confirm.as_deref() == Some(tag.name.as_str());
                 let count = state.tag_counts(projects.file_library_mut()).get(&tag.id).copied().unwrap_or(0);
-                let label =
-                    if armed { format!("Remove {}? ({count} items)", tag.name) } else { "Remove tag".to_string() };
+                let label = if armed {
+                    format!("Remove {}? ({count} items)", tag.name)
+                } else {
+                    format!("Remove tag {}", tag.name)
+                };
                 if ui.button(label).clicked() {
                     if !armed && count > 0 {
                         state.tag_remove_confirm = Some(tag.name.clone());
