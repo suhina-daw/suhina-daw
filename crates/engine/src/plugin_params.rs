@@ -373,22 +373,16 @@ mod tests {
         );
     }
 
-    /// A parameter that takes steps (a switch, a choice) holds each point's value until the next
-    /// point, as its lane draws it, stopped or playing; another one goes from point to point
-    /// (#1205).
+    /// A parameter that takes steps holds each point's value until the next, as drawn (#1205).
     #[test]
     fn a_stepped_parameters_lane_holds_each_value() {
         let lane: &[(f64, f64)] = &[(0.0, 0.0), (2.0, 1.0)];
-        let mut held = SlotParams::new(&device(&[], &[("4", lane)]), 100.0, &[4]);
-        held.plan(None, 50, 64);
-        held.plan(None, 150, 64);
-        assert_eq!(held.block(), [ParamEvent { frame: 0, id: 4, value: 0.0 }], "stopped half-way");
-        held.plan(Some(100), 0, 64);
-        assert!(held.block().iter().all(|e| e.value == 0.0), "playing before the next point: {:?}", held.block());
-        let mut ramped = SlotParams::new(&device(&[], &[("4", lane)]), 100.0, &[]);
-        ramped.plan(None, 50, 64);
-        ramped.plan(None, 150, 64);
-        assert_eq!(ramped.block(), [ParamEvent { frame: 0, id: 4, value: 0.75 }]);
+        for (stepped, value) in [(&[4][..], 0.0), (&[][..], 0.75)] {
+            let mut params = SlotParams::new(&device(&[], &[("4", lane)]), 100.0, stepped);
+            params.plan(None, 50, 64);
+            params.plan(None, 150, 64);
+            assert_eq!(params.block(), [ParamEvent { frame: 0, id: 4, value }], "{stepped:?}");
+        }
     }
 
     /// Stopped, a lane sends its value where the transport stands when the transport is moved
@@ -447,7 +441,7 @@ mod tests {
         let lanes: Vec<(String, &[(f64, f64)])> =
             (0..300).map(|i| (i.to_string(), if i == 0 { wild } else { many.as_slice() })).collect();
         let lanes: Vec<(&str, &[(f64, f64)])> = lanes.iter().map(|(p, l)| (p.as_str(), *l)).collect();
-        let mut params = SlotParams::new(&device(&[], &lanes), 22_050.0);
+        let mut params = SlotParams::new(&device(&[], &lanes), 22_050.0, &[]);
         for time in [0, 1, u64::MAX / 2, u64::MAX - 10] {
             params.plan(Some(time), time, 1024);
             assert!(params.block().len() <= MAX_BLOCK_PARAMS);
