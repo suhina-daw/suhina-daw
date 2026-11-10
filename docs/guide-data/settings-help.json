@@ -394,7 +394,7 @@
       },
       {
         "name": "Stack",
-        "description": "Place the detail area in a column beside the Session or Arrangement view, with device controls arranged vertically. Detail area layout does not affect this side-panel arrangement."
+        "description": "Place a track's devices in a column beside the Session or Arrangement view, with device controls arranged vertically. A clip's editor, such as the piano roll, still opens along the bottom; with a clip selected, the Devices tab opens the column beside it and the editor stays open. Detail area layout does not affect the side column."
       }
     ],
     "whenToChange": "Choose Row when you want to see several effects side by side along the bottom. Choose Stack when you prefer a vertical column of controls beside the tracks.",
@@ -1426,7 +1426,7 @@
   "ClipEditor/Piano roll/piano_roll_top": {
     "sourceFingerprint": "8720a624fd734467058d63f061368bb35ebbe526ebaeffaad8fcadded3a93e78",
     "summary": "Choose what remains visible when the clip editor is pulled to the top.",
-    "description": "The piano roll is the MIDI note editor in the detail area. Dragging its top divider high enough in the Arrangement expands the editor to the top; this also applies to the audio editor supplied by an ARA plug-in. This preference decides whether the edited track’s timeline remains visible. It has no effect on that gesture when Device chain is Stack, because the detail area is then a side column rather than a bottom panel.",
+    "description": "The piano roll is the MIDI note editor in the detail area. Dragging its top divider high enough in the Arrangement expands the editor to the top; this also applies to the audio editor supplied by an ARA plug-in. This preference decides whether the edited track’s timeline remains visible. It works the same with Device chain set to Stack, as the clip editor then stays along the bottom too.",
     "options": [
       {
         "name": "Edited track",

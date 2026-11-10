@@ -44,7 +44,9 @@ lane, the grid and zoom, and the `note.*` commands.
 - **Built:** selecting a MIDI clip in the Arrangement view shows the clip's properties column on the
   left of the detail area and the piano roll in the rest of it, in place of the track's devices.
   Selecting a track, or an audio clip, shows what it showed before (devices; an audio clip's
-  properties). With the detail area stacked on the right, the piano roll sits under the properties.
+  properties). With the devices stacked (Settings › Devices › Device chain layout: Stack) the
+  piano roll still lies along the bottom as in a row: only the devices stack, in a column of their
+  own beside the view, and never the piano roll.
 - **Built:** a clip selected in a Launcher slot opens it too (the Clip / Devices switch below).
 - **Later ([#343](https://github.com/suhina-daw/suhina-daw/issues/343)):** the piano roll edits
   that slot's clip with the same commands (`scene` instead of `index`). A double-click on a clip
@@ -54,8 +56,10 @@ lane, the grid and zoom, and the `note.*` commands.
   that has an editor (a MIDI clip, in the Arrangement view or in a slot), the clip column's title
   row ends in a two-part switch, **Clip** and **Devices** ([components](../design/components.md)
   › Clip properties). **Devices** puts the track's device chain where the piano roll was: the clip
-  column stays on the left (on top when stacked) with the switch in it, and the chain fills the
-  rest. The MIDI clip retains its resizable detail area in both tabs. A device row alone has
+  column stays on the left with the switch in it, and the chain fills the rest. With the devices
+  stacked, **Devices** opens them in a column at the right of the view, above the detail area as the
+  browser is beside it, and the piano roll (or an ARA plug-in's editor) stays open under it with
+  its keys; **Clip** shows the editor alone. The column has a splitter of its own for its width. The MIDI clip retains its resizable detail area in both tabs. A device row alone has
   two states: open at 200 logical pixels or closed. Dragging the splitter down past half that(
   )height closes it, dragging it up opens it whole; no height in between cuts its panels.
   The panels in the row are one height, the tallest's, at least a compact panel's and at most the
@@ -851,9 +855,8 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   **Position** | **Length** with **Set**, and **Scale** (root and mode, `clip.setScale`). Under
   the Clip part, what the tools act on in figures (below), at any height: in a short detail area
   their rows are left out whole from the bottom up, so the panel keeps its width (and the piano
-  roll its place) while the detail area is resized. In a row the note tools sit beside the Clip part (› Note tools); with the
-  detail area stacked (a column at the right of the window) everything goes one under another, the
-  tools only when the column is tall enough to leave the note grid under them 160 px. The piano
+  roll its place) while the detail area is resized. The note tools sit beside the Clip part
+  (› Note tools), with the devices stacked too, as the piano roll stays along the bottom. The piano
   roll takes the rest.
 - **Several clips picked** in the Arrangement: the title says how many ("2 selected") and the
   panel shows the last picked clip; its Loop switch turns every picked clip's loop on or off with

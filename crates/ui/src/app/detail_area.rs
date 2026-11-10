@@ -312,6 +312,13 @@ impl App {
             None => self.ara_was_open = None,
         }
         let least = self.least_detail_height();
+        // With the devices stacked, a clip's editor (the piano roll, an ARA plug-in's editor)
+        // still lies along the bottom as in a row: only the devices stack, in a column of their
+        // own beside the view, shown with Devices while the editor stays open (› Stacked in
+        // `docs/spec/ui-clip-editor.md`).
+        let split = stacked && geometry.is_none() && (piano.is_some() || ara.is_some());
+        let side_devices = split && self.detail_showing == detail_view::Showing::Devices;
+        let stacked = stacked && !split;
         // The piano roll, or an ARA plug-in's editor in the clip's place, can be pulled to the
         // top, the edited track's lane above it (Melodyne as a MIDI clip's notes are). Pulled up,
         // it stays so while the track's devices show instead: the switch on Devices, or a click on
@@ -328,8 +335,8 @@ impl App {
         // With the switch on Devices the track's devices take the editor's place, pulled up as it
         // was (› Where it opens in `docs/spec/ui-clip-editor.md`).
         let switch = (piano.is_some() || ara.is_some()).then_some(self.detail_showing);
-        let ara = ara.filter(|_| self.detail_showing == detail_view::Showing::Clip);
-        let piano = piano.filter(|_| self.detail_showing == detail_view::Showing::Clip);
+        let ara = ara.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
+        let piano = piano.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
         let edits = piano.is_some() || ara.is_some();
         let focus = match clip {
             _ if !pulled || self.settings.piano_roll_top != PianoRollTop::Track => None,
@@ -389,6 +396,27 @@ impl App {
                 Rect::from_min_max(Pos2::new(area.left(), y), area.max),
             )
         };
+        // The stacked devices beside a clip's editor: a column at the view's right, as wide as
+        // the stacked area is, with its own splitter.
+        let (view, side) = if side_devices {
+            self.detail_width = detail_width_in(self.detail_width, view.width());
+            let x = view.right() - self.detail_width;
+            let side_splitter = Rect::from_min_max(Pos2::new(x - SPLITTER, view.top()), Pos2::new(x, view.bottom()));
+            let response = ui
+                .interact(side_splitter, Id::unique("detail-side-splitter"), Sense::click_and_drag())
+                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Devices column splitter"));
+            if response.dragged_by(egui::PointerButton::Primary) {
+                self.detail_width -= response.drag_delta().x;
+            }
+            paint_splitter(ui, side_splitter, &response, true);
+            (
+                Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())),
+                Some(Rect::from_min_max(Pos2::new(x, view.top()), view.max)),
+            )
+        } else {
+            (view, None)
+        };
 
         // The splitter: dragged to make the detail area bigger or smaller; under the
         // Arrangement view, past the view's least height the piano roll goes to the top, and a
@@ -442,7 +470,7 @@ impl App {
         }
 
         if let Some(shown_track) = clip.map(ClipRef::track).or(track) {
-            self.detail_drop = Some((detail, shown_track));
+            self.detail_drop = Some((side.unwrap_or(detail), shown_track));
         }
         let nam_lists = self.nam_lists();
         let mut shown = self.session().map_or(detail_view::Detail::Nothing, |s| {
@@ -731,10 +759,22 @@ impl App {
                 detail_view::show_row(ui, &shown, &picks, actions, &mut places)
             }
         });
+        // The stacked devices' column, beside the editor.
+        let side_clicked = match (side, &shown) {
+            (Some(side), detail_view::Detail::Clip(_, chain)) => {
+                let devices = detail_view::Detail::Devices(chain.clone());
+                ui.scope_builder(egui::UiBuilder::new().max_rect(side), |ui| {
+                    detail_view::show_stack(ui, &devices, &picks, actions, &mut places)
+                })
+                .inner
+                .clicked
+            }
+            _ => None,
+        };
         if let Some(showing) = picked.inner.showing {
             self.detail_showing = showing;
         }
-        if let Some((track, at)) = picked.inner.clicked {
+        if let Some((track, at)) = picked.inner.clicked.or(side_clicked) {
             let (add, run) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
             self.pick_device(track, at, add, run);
             // A fresh pick says where the user is now: a removal's undo or redo no longer
@@ -831,9 +871,8 @@ impl App {
     /// use, or the piano roll's own when that is more (several clips picked add their strip).
     /// Dragged under half of it, the area closes (› Least height and closing).
     pub(super) fn least_detail_height(&self) -> f32 {
-        let piano = self.settings.device_layout != DeviceLayout::Stack
-            && self.detail_showing == detail_view::Showing::Clip
-            && self.piano_clip(self.shown_clip()).is_some();
+        // Stacked devices leave the piano roll along the bottom, whichever the switch shows.
+        let piano = self.piano_roll_on_show() && self.piano_clip(self.shown_clip()).is_some();
         // Several clips picked: their strip takes room from the rows.
         let picked = self.arrangement.selected_clips().len();
         let rows = if picked > 1 { picked.min(crate::detail::piano_roll_ghosts::MAX_STRIP_ROWS) } else { 0 };
@@ -896,9 +935,15 @@ impl App {
         Some(piano)
     }
 
+    /// Whether a MIDI clip's piano roll is on show: with the switch on Clip, or with the devices
+    /// stacked, where Devices opens them beside it and it stays open.
+    pub(super) fn piano_roll_on_show(&self) -> bool {
+        self.detail_showing == detail_view::Showing::Clip || self.settings.device_layout == DeviceLayout::Stack
+    }
+
     /// The params that name the clip the piano roll shows in a `note.*` command, if it shows one.
     pub fn piano_roll_address(&self) -> Option<serde_json::Value> {
-        if self.detail_showing == detail_view::Showing::Devices {
+        if !self.piano_roll_on_show() {
             return None;
         }
         let clip = match self.shown {
@@ -924,7 +969,7 @@ impl App {
     pub(super) fn piano_has_keyboard(&self) -> bool {
         self.piano_roll.focused
             && self.detail_open
-            && self.detail_showing == detail_view::Showing::Clip
+            && self.piano_roll_on_show()
             && match self.shown {
                 View::Session => self
                     .view
@@ -946,7 +991,7 @@ impl App {
         self.piano_roll.focused
             && !self.piano_roll.selected.is_empty()
             && self.detail_open
-            && self.detail_showing == detail_view::Showing::Clip
+            && self.piano_roll_on_show()
             && self.shown == View::Arrangement
             && self.arrangement.selected_clips().len() > 1
             && self.piano_clip(self.shown_clip()).is_some()
@@ -954,7 +999,7 @@ impl App {
 
     /// What a key does in the piano roll, when it shows a clip and has the keyboard.
     pub(super) fn piano_key(&mut self, action: &str) -> Option<Action> {
-        if self.detail_showing == detail_view::Showing::Devices {
+        if !self.piano_roll_on_show() {
             return None;
         }
         let clip = match self.shown {

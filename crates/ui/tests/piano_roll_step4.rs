@@ -568,19 +568,30 @@ fn the_right_button_and_the_wheel_still_choose_tools_and_delete_nothing() {
 // ---------------------------------------------------------------------------------------------
 
 #[test]
-fn with_the_detail_area_stacked_the_tools_go_under_the_clip_part_and_ctrl_u_still_quantises() {
+fn with_the_devices_stacked_the_piano_roll_stays_along_the_bottom_and_ctrl_u_still_quantises() {
     let mut renderer = engine();
-    // The clip is selected with the detail area in its usual place, where it is in view, and the
-    // device chain is stacked afterwards: the tools part goes under the Clip part, above the note
-    // grid, when the column is tall enough to leave the grid its room.
+    // The clip is selected with the detail area in its usual place, and the device chain is
+    // stacked afterwards: only the devices stack. The piano roll stays along the bottom, the
+    // clip's panel beside its grid as in a row, the whole width of the window.
     let mut h = piano_app(&mut renderer, Settings::default());
     let ctx = h.ctx.clone();
     h.state_mut().set_settings(&ctx, Settings { device_layout: DeviceLayout::Stack, ..Settings::default() });
     h.run();
     let grid = h.get_by_label_contains("Piano roll,").rect();
-    if let Some(head) = h.query_by_label("Whole clip") {
-        assert!(head.rect().bottom() <= grid.top() + 0.5, "the tools are above the grid: {:?} {grid:?}", head.rect());
-    }
+    let head = h.get_by_label("Whole clip").rect();
+    assert!(head.right() <= grid.left() + 0.5, "the clip's panel is beside the grid: {head:?} {grid:?}");
+    assert!(grid.right() > SIZE.0 - 40.0, "the grid reaches the window's right: {grid:?}");
+    assert!(grid.top() > SIZE.1 / 2.0 - 160.0, "along the bottom: {grid:?}");
+    // Devices opens the stacked devices in a column beside the view, the piano roll still open.
+    h.get_by_label("Show Devices").click();
+    h.run();
+    let column = h.get_by_label("Devices column splitter").rect();
+    let still = h.get_by_label_contains("Piano roll,").rect();
+    assert!(column.bottom() <= still.top() + 1.0, "the devices are above the piano roll: {column:?} {still:?}");
+    assert!(still.right() > SIZE.0 - 40.0, "the piano roll keeps the whole width: {still:?}");
+    h.get_by_label("Show Clip").click();
+    h.run();
+    assert!(h.query_by_label("Devices column splitter").is_none(), "Clip shows the piano roll alone");
     // The quantise settings and Ctrl+U work whether the tools show or not.
     h.key_press_modifiers(Modifiers::COMMAND, Key::U);
     h.run();
