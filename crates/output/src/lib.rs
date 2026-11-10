@@ -131,6 +131,13 @@ pub struct Progress {
     /// The output took from the ring in this driver cycle and the input's frames of it are not
     /// in yet ([`Progress::input_due`]).
     input_due: AtomicBool,
+    output_cycles: AtomicU64,
+    input_callbacks: AtomicU64,
+    rendered_blocks: AtomicU64,
+    max_cycle_blocks: AtomicU64,
+    extra_cycle_blocks: AtomicU64,
+    input_timeouts: AtomicU64,
+    input_diagnostics: std::sync::OnceLock<Arc<suhina_engine::InputDiagnostics>>,
 }
 
 impl Progress {
@@ -307,6 +314,7 @@ impl Progress {
     /// The input's callback has written this cycle's frames: wakes the render thread to render
     /// with them. Lock-free, never allocates.
     pub(crate) fn input_written(&self) {
+        self.input_callbacks.fetch_add(1, Ordering::Relaxed);
         self.input_due.store(false, Ordering::Release);
         self.wake_render();
     }
@@ -323,6 +331,7 @@ impl Progress {
 /// Fills `out` (whole frames of [`RING_CHANNELS`] samples) from the ring, with silence, counted
 /// as an underrun, for what is not there yet. Never allocates.
 pub(crate) fn read_ring(ring: &mut Ring, out: &mut [f32], progress: &Progress) {
+    progress.output_cycles.fetch_add(1, Ordering::Relaxed);
     // Before taking from the ring: a render thread that sees the room made sees this too.
     if progress.input_wakes_render() {
         progress.input_due.store(true, Ordering::Release);
@@ -954,6 +963,33 @@ fn ring(block: usize) -> (rtrb::Producer<f32>, Ring) {
     rtrb::RingBuffer::<f32>::new((target + block) * RING_CHANNELS)
 }
 
+/// Counts render starts between observed output callbacks. Owned only by the render thread.
+/// Cycle zero (before the first callback) is startup, excluded from per-cycle counts.
+#[derive(Default)]
+struct RenderCycles {
+    cycle: u64,
+    blocks: u64,
+}
+
+impl RenderCycles {
+    fn started(&mut self, progress: &Progress) {
+        progress.rendered_blocks.fetch_add(1, Ordering::Relaxed);
+        let cycle = progress.output_cycles.load(Ordering::Relaxed);
+        if cycle == 0 {
+            return;
+        }
+        if cycle != self.cycle {
+            self.cycle = cycle;
+            self.blocks = 0;
+        }
+        self.blocks = self.blocks.saturating_add(1);
+        progress.max_cycle_blocks.fetch_max(self.blocks, Ordering::Relaxed);
+        if self.blocks > 1 {
+            progress.extra_cycle_blocks.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 /// The render thread: runs the engine a block at a time whenever the ring holds less than its
 /// target, until told to stop; then gives the renderer back. Real-time: at the highest priority
 /// the system allows ([`RealTime`]), which it says through `joined` before it renders, and never
@@ -974,6 +1010,7 @@ fn render_ahead(
     progress.block.store(frames, Ordering::Relaxed);
     // Since when the render thread has waited for the input's frames of this cycle.
     let mut input_wait: Option<Instant> = None;
+    let mut cycles = RenderCycles::default();
     while !stop.load(Ordering::Acquire) {
         let queued = (capacity - ring.slots()) / RING_CHANNELS;
         // Arming shrinks the queue as the device drains it, and disarming fills it again: no
@@ -991,7 +1028,7 @@ fn render_ahead(
         // stopped calling back.
         if progress.input_due() {
             let since = *input_wait.get_or_insert_with(Instant::now);
-            if since.elapsed() < input_grace(progress.callback_frames(), renderer.sample_rate()) {
+            if wait_for_input(progress, since.elapsed(), renderer.sample_rate()) {
                 std::thread::park_timeout(RENDER_WAIT);
                 realtime.waited();
                 continue;
@@ -1011,6 +1048,7 @@ fn render_ahead(
         renderer.set_record_latency(output.round().clamp(0.0, f64::from(u32::MAX)) as u32, input);
         // How long the device can wait for this block: what is queued before it.
         renderer.set_render_lead(queued, progress.callback_frames());
+        cycles.started(progress);
         renderer.process_with_cue(&mut block, &mut cue);
         // A device that takes faster than it plays, or a project too heavy to render in time,
         // keeps the thread from waiting: it rests rather than outlive its real-time limit.
@@ -1021,6 +1059,17 @@ fn render_ahead(
         }
     }
     renderer
+}
+
+/// Called only for a pending input; elapsed time is supplied so the timeout counter can be
+/// tested without a clock or sleeping. Each expiry counts one render allowed without input.
+fn wait_for_input(progress: &Progress, elapsed: Duration, sample_rate: u32) -> bool {
+    if elapsed < input_grace(progress.callback_frames(), sample_rate) {
+        true
+    } else {
+        progress.input_timeouts.fetch_add(1, Ordering::Relaxed);
+        false
+    }
 }
 
 /// How long the render thread waits for an ASIO input's frames after the output took from the
@@ -1196,6 +1245,16 @@ impl LiveOutput for Live {
                 .as_ref()
                 .map_or(0, |(_, channels, _)| u16::try_from(*channels).unwrap_or(u16::MAX)),
             input_underruns: self.input.as_ref().map_or(0, |(_, _, underruns)| underruns.load(Ordering::Relaxed)),
+            input_diagnostics: self.progress.input_diagnostics.get().map(|d| d.snapshot()).unwrap_or_default(),
+            render_diagnostics: [
+                &self.progress.output_cycles,
+                &self.progress.input_callbacks,
+                &self.progress.rendered_blocks,
+                &self.progress.max_cycle_blocks,
+                &self.progress.extra_cycle_blocks,
+                &self.progress.input_timeouts,
+            ]
+            .map(|counter| counter.load(Ordering::Relaxed)),
         }
     }
 }
@@ -1267,6 +1326,7 @@ pub fn open_chosen(
                 controller
                     .run_stretch_worker(&mut renderer)
                     .map_err(|e| format!("could not start the stretch worker: {e}"))?;
+                let _ = progress.input_diagnostics.set(renderer.input_diagnostics());
                 let stream = output.play(device, renderer, producer, &progress)?;
                 output.notices.extend(stream.priority_notice().map(str::to_owned));
                 Ok::<_, String>((output, controller, progress, stream, kept, input))

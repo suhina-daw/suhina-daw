@@ -27,9 +27,61 @@ pub const MAX_INPUT_CHANNELS: usize = 64;
 /// blocks, so the input keeps up with the output when the two clocks drift apart.
 const MAX_BACKLOG_BLOCKS: usize = 4;
 
+/// A bounded diagnostic history, published without logging on the render thread.
+#[derive(Default)]
+pub struct InputDiagnostics {
+    events: [AtomicU64; 32],
+    sequence: AtomicU64,
+    backlog_drops: AtomicU64,
+    backlog_frames: AtomicU64,
+}
+
+/// Input diagnostics read on a control thread. Counters are independent snapshots.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct InputSnapshot {
+    /// Latest 32 short reads, ordered by sequence: [sequence, available, wanted] frames.
+    /// Sequence numbers wrap after 2^32 events; each row is one coherent atomic load.
+    pub short_reads: Vec<[u64; 3]>,
+    /// Successful removals of old input from the ring.
+    pub backlog_drops: u64,
+    /// Frames removed by those drops.
+    pub backlog_frames: u64,
+}
+
+impl InputDiagnostics {
+    fn short_read(&self, available: usize, wanted: usize) {
+        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+        // Both sizes are capped at MAX_BLOCK (1024). Pack a complete event so a reader
+        // cannot combine one underrun's available frames with another's requested frames.
+        let event =
+            ((sequence & 0xffff_ffff) << 32) | ((available.min(MAX_BLOCK) as u64) << 16) | wanted.min(MAX_BLOCK) as u64;
+        if let Some(slot) = self.events.get((sequence % 32) as usize) {
+            slot.store(event, Ordering::Relaxed);
+        }
+    }
+
+    /// Read on the UI/control thread only: allocates the bounded event list there.
+    pub fn snapshot(&self) -> InputSnapshot {
+        let mut short_reads: Vec<_> = self
+            .events
+            .iter()
+            .map(|slot| slot.load(Ordering::Relaxed))
+            .filter(|event| *event != 0)
+            .map(|event| [event >> 32, (event >> 16) & 0xffff, event & 0xffff])
+            .collect();
+        short_reads.sort_unstable_by_key(|event| event[0]);
+        InputSnapshot {
+            short_reads,
+            backlog_drops: self.backlog_drops.load(Ordering::Relaxed),
+            backlog_frames: self.backlog_frames.load(Ordering::Relaxed),
+        }
+    }
+}
+
 /// The render thread's end of the input device's ring.
 pub(crate) struct Input {
     ring: Option<Consumer<f32>>,
+    pub(crate) diagnostics: Arc<InputDiagnostics>,
     /// Samples per frame in the ring, 1 to [`MAX_INPUT_CHANNELS`].
     channels: usize,
     /// Blocks that found less input than they needed.
@@ -46,6 +98,7 @@ impl Input {
     pub(crate) fn new() -> Self {
         Self {
             ring: None,
+            diagnostics: Arc::new(InputDiagnostics::default()),
             channels: 1,
             underruns: Arc::new(AtomicU64::new(0)),
             scratch: vec![0.0; MAX_INPUT_CHANNELS * MAX_BLOCK],
@@ -81,6 +134,8 @@ impl Input {
             let drop = (available - frames * 2) * channels;
             if let Ok(chunk) = ring.read_chunk(drop) {
                 chunk.commit_all();
+                self.diagnostics.backlog_drops.fetch_add(1, Ordering::Relaxed);
+                self.diagnostics.backlog_frames.fetch_add((drop / channels) as u64, Ordering::Relaxed);
             }
         }
         let take = (ring.slots() / channels).min(frames) * channels;
@@ -98,6 +153,7 @@ impl Input {
             if let Some(rest) = block.get_mut(take..) {
                 rest.fill(0.0);
             }
+            self.diagnostics.short_read(take / channels, frames);
             self.underruns.fetch_add(1, Ordering::Relaxed);
         }
     }

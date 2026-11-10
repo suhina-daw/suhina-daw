@@ -1281,7 +1281,7 @@ impl App {
             || cpu >= 700
         {
             suhina_plugins::trace!(
-                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}",
+                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
                 device.saturating_sub(was_device),
                 input.saturating_sub(was_input),
                 stretched.saturating_sub(was_stretched),
@@ -1296,6 +1296,8 @@ impl App {
                 info.as_ref().map(|i| (&i.host, &i.device, i.sample_rate)),
                 player.monitor().beat(),
                 player.cpu_monitor().late_render(),
+                info.as_ref().map(|i| &i.input_diagnostics),
+                info.as_ref().map(|i| i.render_diagnostics),
             );
         }
         self.audio_traced = (device, stretched, misses, blocked, input);

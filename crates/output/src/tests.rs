@@ -495,3 +495,40 @@ fn the_next_look_for_the_names_waits_its_turn() {
     watch.looking = true;
     assert!(!watch.due(start + NAMES_LOOK_EVERY), "one at a time");
 }
+
+#[test]
+fn render_diagnostics_count_catch_up_blocks_and_skip_cycle_zero() {
+    let progress = Progress::default();
+    let mut cycles = RenderCycles::default();
+    cycles.started(&progress);
+    assert_eq!(progress.max_cycle_blocks.load(Ordering::Relaxed), 0);
+    progress.set_input_wakes_render(true);
+    let (_producer, mut consumer) = rtrb::RingBuffer::<f32>::new(16);
+    let mut out = [0.0; 8];
+    read_ring(&mut consumer, &mut out, &progress);
+    progress.input_written();
+    cycles.started(&progress);
+    cycles.started(&progress);
+    assert_eq!(progress.max_cycle_blocks.load(Ordering::Relaxed), 2);
+    assert_eq!(progress.extra_cycle_blocks.load(Ordering::Relaxed), 1);
+    read_ring(&mut consumer, &mut out, &progress);
+    progress.input_written();
+    cycles.started(&progress);
+    assert_eq!(progress.output_cycles.load(Ordering::Relaxed), 2);
+    assert_eq!(progress.input_callbacks.load(Ordering::Relaxed), 2);
+    assert_eq!(progress.rendered_blocks.load(Ordering::Relaxed), 4);
+    assert_eq!(progress.extra_cycle_blocks.load(Ordering::Relaxed), 1);
+    assert_eq!(progress.max_cycle_blocks.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn input_wait_diagnostics_count_expirations_not_each_wait_poll() {
+    let progress = Progress::default();
+    progress.set_callback_frames(2048);
+    let grace = input_grace(2048, 44_100);
+    assert!(wait_for_input(&progress, Duration::ZERO, 44_100));
+    assert!(wait_for_input(&progress, grace / 2, 44_100));
+    assert_eq!(progress.input_timeouts.load(Ordering::Relaxed), 0);
+    assert!(!wait_for_input(&progress, grace, 44_100));
+    assert_eq!(progress.input_timeouts.load(Ordering::Relaxed), 1);
+}

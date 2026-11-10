@@ -199,3 +199,54 @@ fn an_offline_render_hears_no_input() {
     let out = crate::render_offline(&project, SR, BLOCK, suhina_device_registry::factory()).unwrap();
     assert!(out.iter().all(|s| *s == 0.0));
 }
+
+#[test]
+fn input_diagnostics_distinguish_empty_and_partial_chunks_of_a_device_block() {
+    let project = Project::default();
+    let (mut renderer, mut ring, underruns) = with_input(&project, 16);
+    let diagnostics = renderer.input_diagnostics();
+    let mut output = vec![0.0; 2048 * 2];
+    feed(&mut ring, 16, 2048, 0, 0.5);
+    renderer.process(&mut output);
+    assert!(diagnostics.snapshot().short_reads.is_empty());
+    // A second render before the next input callback reads two empty engine chunks.
+    renderer.process(&mut output);
+    assert_eq!(diagnostics.snapshot().short_reads, [[1, 0, 1024], [2, 0, 1024]]);
+    feed(&mut ring, 16, 1280, 0, 0.5);
+    renderer.process(&mut output);
+    assert_eq!(diagnostics.snapshot().short_reads, [[1, 0, 1024], [2, 0, 1024], [3, 256, 1024]]);
+    assert_eq!(underruns.load(Ordering::Relaxed), 3);
+}
+
+#[test]
+fn input_diagnostics_count_backlog_frames_without_changing_the_drop_policy() {
+    let (mut ring, consumer) = rtrb::RingBuffer::new(8192 * 16);
+    let mut input = crate::input::Input::new();
+    input.attach(consumer, 16, Arc::new(AtomicU64::new(0)));
+    feed(&mut ring, 16, 6144, 0, 0.5);
+    input.read(1024);
+    let snapshot = input.diagnostics.snapshot();
+    assert_eq!((snapshot.backlog_drops, snapshot.backlog_frames), (1, 4096));
+    input.read(1024);
+    assert!(input.diagnostics.snapshot().short_reads.is_empty());
+    input.read(1024);
+    assert_eq!(input.diagnostics.snapshot().short_reads, [[1, 0, 1024]]);
+    assert_eq!(input.diagnostics.snapshot().backlog_drops, 1);
+}
+
+#[test]
+fn input_diagnostics_keep_only_the_latest_32_short_reads() {
+    let (_producer, consumer) = rtrb::RingBuffer::new(2048);
+    let mut input = crate::input::Input::new();
+    input.attach(consumer, 1, Arc::new(AtomicU64::new(0)));
+    for frames in 1..=40 {
+        input.read(frames);
+    }
+    let expected: Vec<_> = (9..=40).map(|sequence| [sequence, 0, sequence]).collect();
+    assert_eq!(input.diagnostics.snapshot().short_reads, expected);
+    let mut detached = crate::input::Input::new();
+    detached.read(1024);
+    input.read(0);
+    assert!(detached.diagnostics.snapshot().short_reads.is_empty());
+    assert_eq!(input.diagnostics.snapshot().short_reads, expected);
+}

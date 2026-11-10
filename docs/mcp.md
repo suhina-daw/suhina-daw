@@ -164,7 +164,11 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   with it; the result names the device as `input_device` (`host|device`). It is refused while the
   input device is off, and `audio.info` and `audio.devices` show the device's as
   `chosen.track_input`.
-  `audio.info` adds `input`, `input_channels` and `input_underruns`. Arming is not an edit (no undo step, not saved) and works
+  `audio.info` adds `input`, `input_channels` and `input_underruns`. Diagnostic fields
+  `input_short_reads` (latest 32 `[sequence, available, wanted]` frame counts),
+  `input_backlog_drops`, `input_backlog_frames` and `render_diagnostics` distinguish
+  missing input, discarded backlog and render catch-up; see [Audio dropouts](debugging.md#audio-dropouts)
+  for counter ordering and sampling limits. Arming is not an edit (no undo step, not saved) and works
   before an engine plays; `project.tracks` says which tracks are `armed`. Without `--audio`,
   `midi.*` returns an error.
 

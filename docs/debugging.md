@@ -154,7 +154,7 @@ use bounded storage and are printed together only when the enclosing call is slo
 ### Audio dropouts
 
 A sample that sometimes does not sound, or sound that stutters, shows as `audio:` lines while it
-happens. Two counters tell the causes apart:
+happens. The counters tell the causes apart:
 
 - **device underruns:** the engine had not filled the audio device's buffer in time, so the
   device played silence for what was missing. The engine load and the buffer size on the line say
@@ -178,6 +178,32 @@ happens. Two counters tell the causes apart:
 - **longest trip:** the longest round trip a plug-in answered in, in microseconds: what any
   answered block took at worst. With this and *not sent*, a miss's cause says itself — long
   trips (the host's serve or the machine's scheduling), or a budget the deadline never left.
+
+The `input diagnostics` suffix keeps the latest 32 short reads as
+`[sequence, available frames, wanted frames]`, together with cumulative `backlog_drops`
+and `backlog_frames`. Each row is published atomically; other counters are independently
+sampled and may straddle a callback. Sequence numbers wrap after 2^32 short reads.
+History can overwrite events between trace lines; gaps in the sequence expose this.
+For a 2048-frame device block, the engine reads two chunks of at most 1024 frames, so
+`[n, 0, 1024]` followed by `[n+1, 0, 1024]` means both chunks found no input.
+
+`render diagnostics` lists, in order: output callbacks, ASIO input callbacks, render
+blocks, maximum render starts in one observed output cycle, extra starts after the first
+in a cycle, and input-grace expirations. Counts restart when output opens. Before the
+first output callback, renders count only in the total; later startup catch-up is included.
+A render is assigned to the output cycle observed just before the engine call, not to a
+hardware timestamp. Multiple renders may be normal with different block/device sizes or
+when disarming refills the output queue. Compare successive lines: increasing `extra`
+alongside short reads supports the catch-up hypothesis; increasing `timeouts` supports
+input arriving beyond the grace period; increasing backlog drops identifies discarded
+input. A historical maximum alone does not show recurring catch-up. ASIO callback-count
+deltas can expose unequal input/output delivery but do not identify a rejected driver
+callback; these counters are downstream of CPAL's duplicate-cycle guard. This trace does
+not establish which hypothesis explains a particular interface until it is measured.
+
+`audio.info` exposes the same data as `input_short_reads`, `input_backlog_drops`,
+`input_backlog_frames` and `render_diagnostics`. Histories allocate only when read on the
+control/UI thread; the audio path publishes into fixed atomic storage and never logs.
 
 While playing, a health line is written each second, including zero deltas, so a clean
 interval can be distinguished from a stopped logger. While stopped, lines require a changed

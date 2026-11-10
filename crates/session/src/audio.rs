@@ -374,6 +374,11 @@ pub struct OutputInfo {
     pub input_channels: u16,
     /// Blocks the engine found too little input for.
     pub input_underruns: u64,
+    /// Recent short reads and cumulative backlog drops; sampled independently.
+    pub input_diagnostics: suhina_engine::InputSnapshot,
+    /// Output cycles, ASIO input callbacks, render blocks, maximum blocks per cycle,
+    /// extra blocks in a cycle, and input-grace expirations. Reset on output reopen.
+    pub render_diagnostics: [u64; 6],
 }
 
 impl OutputInfo {
@@ -397,6 +402,10 @@ impl OutputInfo {
             "input": self.input,
             "input_channels": self.input_channels,
             "input_underruns": self.input_underruns,
+            "input_short_reads": self.input_diagnostics.short_reads,
+            "input_backlog_drops": self.input_diagnostics.backlog_drops,
+            "input_backlog_frames": self.input_diagnostics.backlog_frames,
+            "render_diagnostics": self.render_diagnostics,
         })
     }
 
@@ -932,5 +941,19 @@ mod tests {
         let cued = OutputInfo { cue_pair: Some(1), ..info.clone() };
         assert_eq!(cued.describe(), "Speakers (WASAPI, exclusive, 44100 Hz, 512 frames, cue on 3/4)");
         assert_eq!(info.to_json()["latency_ms"], json!(23.46));
+        let diagnostics = OutputInfo {
+            input_diagnostics: suhina_engine::InputSnapshot {
+                short_reads: vec![[1, 256, 1024]],
+                backlog_drops: 2,
+                backlog_frames: 4096,
+            },
+            render_diagnostics: [100, 99, 104, 3, 4, 1],
+            ..OutputInfo::default()
+        }
+        .to_json();
+        assert_eq!(diagnostics["input_short_reads"], json!([[1, 256, 1024]]));
+        assert_eq!(diagnostics["input_backlog_drops"], json!(2));
+        assert_eq!(diagnostics["input_backlog_frames"], json!(4096));
+        assert_eq!(diagnostics["render_diagnostics"], json!([100, 99, 104, 3, 4, 1]));
     }
 }

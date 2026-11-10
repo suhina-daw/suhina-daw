@@ -99,6 +99,17 @@ frames of that cycle, a quarter of the device's buffer at most (at least half a 
 before it renders without them. When the input closes or fails the output wakes it again and
 nothing is waited for.
 
+The trace and `audio.info` expose input short reads as a bounded history of the latest
+32 events, each with a sequence number and available/requested frames, and cumulative
+backlog-drop counts and dropped frames. One 2048-frame render reads input in two chunks
+of at most 1024 frames; two short reads can therefore belong to one device block.
+Render diagnostics count output callbacks, ASIO input callbacks, rendered blocks, the
+maximum render starts between observed output callbacks, extra starts after the first,
+and input-wait expirations. Cycle zero, before any output callback, is excluded from
+per-cycle counts. These diagnostics do not change buffering, waiting or backlog policy.
+An extra render is not by itself a defect: startup, disarming and different device/block
+sizes can require it. Hardware traces are needed to correlate it with short reads.
+
 The answer is kept with the device descriptor (below) and asked again each time an ASIO output
 opens. When no driver is loaded the driver is loaded for the question and kept loaded until the
 stream is built, so it is loaded once. A size changed in the driver's control panel while Suhina
