@@ -2329,6 +2329,37 @@ fn a_tag_drags_into_a_closed_folder() {
 }
 
 #[test]
+fn a_picked_rows_menu_removes_every_picked_tag_and_folder() {
+    let (settings, folder) = (temp("pick-remove-settings"), temp("pick-remove"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Drums" })).unwrap();
+    harness.run();
+    for label in ["Place Tag Red", "Place Tag Purple", "Folder Drums (0 tags)"] {
+        harness.get_by_label(label).click_modifiers(Modifiers::SHIFT);
+        harness.run();
+    }
+    harness.get_by_label("Place Tag Red").click_secondary();
+    harness.run();
+    assert!(harness.query_by_label_contains("2 tags and 1 folder picked").is_some(), "the menu is the pick's");
+    harness.get_by_label("Remove 2 tags and 1 folder").click();
+    harness.run();
+    // Removing asks first only when a picked tag carries items; the asking button goes on.
+    if let Some(confirm) = harness.query_by_label_contains("Remove 2 tags and 1 folder?") {
+        confirm.click();
+        harness.run();
+    }
+    let forest = harness.state_mut().projects_mut().file_library_mut().tags();
+    let tags: Vec<String> = suhina_library::store::tags_iter(&forest).map(|t| t.name.clone()).collect();
+    assert!(!tags.iter().any(|t| t == "Red" || t == "Purple"), "both picked tags went: {tags:?}");
+    assert!(!tags.is_empty(), "the tags not picked stay");
+    assert_eq!(suhina_library::store::folders_iter(&forest).count(), 0, "the picked folder went");
+    assert!(harness.state().browser.tag_selection.is_empty(), "the pick went with them");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn shift_picked_tags_move_with_the_carry() {
     let (settings, folder) = (temp("shift-pick-settings"), temp("shift-pick"));
     pack(&folder);

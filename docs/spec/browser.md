@@ -548,7 +548,10 @@ the status bar) says what the drop does, for folders and subfolders alike: *Move
 Drums*, *Put Purple before Yellow*, *Move Red to the top of the tags* ([#1254] review). Several tags move as one: a Shift-click picks a
 tag (a ring marks it; the place keeps doing its own work), a drag of any picked one lands them
 all in the folder of the drop, in the pick's order — a drop before a row moves only the
-carried one. A right-click on any tag's menu offers **New folder** at the tag's own level,
+carried one. Folders are picked the same way. A right-click on a picked row while more than
+one is picked opens the pick's menu: **Remove** takes every picked tag and folder away at
+once (a folder's own tags and folders still move up), asking first when a picked tag carries
+items or a picked folder holds anything. A right-click on any tag's menu offers **New folder** at the tag's own level,
 which reaches the first folder from the mouse on any tag.
 
 The rest is as it was with the ids in the rows' place (#1196): a right-click on a tag's dot in

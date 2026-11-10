@@ -1481,6 +1481,82 @@ fn tag_folder_menu(
     }
 }
 
+/// The confirm key of a removal of the whole pick: no tag or folder id takes this form.
+const PICK_REMOVE: &str = "picked";
+
+/// The menu of a row the Shift-click pick holds, with more than one picked: removes every
+/// picked tag and folder. Removing a folder keeps what it held (its tags and folders move
+/// up), so a picked tag inside a picked folder is removed by its own id either way. Asks
+/// first when a picked tag carries items or a picked folder holds anything.
+fn picked_remove_menu(
+    ui: &mut Ui,
+    state: &mut BrowserState,
+    projects: &mut Projects,
+    out: &mut BrowserOut,
+    counts: &std::collections::HashMap<u32, usize>,
+) {
+    let picked = state.tag_selection.clone();
+    let forest = projects.file_library_mut().tags();
+    let tags: Vec<u32> =
+        picked.iter().copied().filter(|id| suhina_library::store::tag_by_id(&forest, *id).is_some()).collect();
+    let folders: Vec<u32> =
+        picked.iter().copied().filter(|id| suhina_library::store::folder_by_id(&forest, *id).is_some()).collect();
+    let items: usize = tags.iter().map(|id| counts.get(id).copied().unwrap_or(0)).sum();
+    let moved: usize = folders.iter().map(|id| suhina_library::store::folder_carried(&forest, *id)).sum();
+    let what = match (tags.len(), folders.len()) {
+        (t, 0) => format!("{t} tag{}", if t == 1 { "" } else { "s" }),
+        (0, f) => format!("{f} folder{}", if f == 1 { "" } else { "s" }),
+        (t, f) => {
+            format!("{t} tag{} and {f} folder{}", if t == 1 { "" } else { "s" }, if f == 1 { "" } else { "s" })
+        }
+    };
+    ui.label(format!("{what} picked"));
+    ui.separator();
+    let armed = state.tag_remove_confirm.as_deref() == Some(PICK_REMOVE);
+    let label = if armed {
+        let mut parts = Vec::new();
+        if items > 0 {
+            parts.push(format!("{items} item{} lose a tag", if items == 1 { "" } else { "s" }));
+        }
+        if moved > 0 {
+            parts.push(format!("{moved} move up"));
+        }
+        format!("Remove {what}? ({})", parts.join(", "))
+    } else {
+        format!("Remove {what}")
+    };
+    if ui.button(label).clicked() {
+        if !armed && (items > 0 || moved > 0) {
+            state.tag_remove_confirm = Some(PICK_REMOVE.to_string());
+        } else {
+            let mut removed = 0;
+            for id in &tags {
+                if run(projects, "library.removeTag", json!({ "id": format!("#{id}") }), out) {
+                    removed += 1;
+                }
+            }
+            for id in &folders {
+                if run(projects, "library.removeTagFolder", json!({ "folder": format!("#{id}") }), out) {
+                    removed += 1;
+                }
+            }
+            // As a single removal: the reconcile drops the gone ids from the place, the
+            // filter and the pick whatever the commands said ([#1254] review).
+            state.reconcile(projects);
+            state.tag_selection.clear();
+            state.tag_remove_confirm = None;
+            state.relist();
+            if removed == tags.len() + folders.len() {
+                out.status = Some(Status::Done(format!("Removed {what}")));
+            }
+            ui.close();
+        }
+    }
+    if armed && ui.button("Keep").clicked() {
+        state.tag_remove_confirm = None;
+    }
+}
+
 /// The Tags section's rows: the tags and folders as places ([#1254]), which the sidebar
 /// draws when the section is open.
 fn tags_section(
@@ -1857,6 +1933,12 @@ fn tags_section(
         let popup = egui::Popup::context_menu(&response)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
+                // A row the Shift-click pick holds, with others picked beside it: the menu
+                // acts on the whole pick, as the results' row menu acts on the selection.
+                if picked && state.tag_selection.len() > 1 {
+                    picked_remove_menu(ui, state, projects, out, &counts);
+                    return;
+                }
                 if is_folder {
                     tag_folder_menu(ui, row.entry.id(), state, projects, out);
                     return;
