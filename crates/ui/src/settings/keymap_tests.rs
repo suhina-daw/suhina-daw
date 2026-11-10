@@ -106,6 +106,9 @@ fn alt_l_is_legato_and_the_loop_key_is_left_alone_in_the_piano_roll() {
     assert!(piano_roll_only("pianoRoll.legato"));
     assert_eq!(Keymap::default().binding_text("pianoRoll.legato").as_deref(), Some("Alt+L"));
     assert!(not_in_piano_roll("transport.setLoopEnabled"));
+    // Its key is the clip's own loop there, so the two share Ctrl+L without a conflict.
+    assert!(piano_roll_only("pianoRoll.loop"));
+    assert_eq!(Keymap::default().binding_text("pianoRoll.loop").as_deref(), Some("Ctrl+L"));
     // What runs there is listed, so the rest is left alone without being named: the keys of
     // the views behind the notes, and an action nobody has listed yet.
     for id in [

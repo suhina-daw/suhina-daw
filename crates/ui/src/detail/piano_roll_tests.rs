@@ -1013,3 +1013,27 @@ fn the_legato_key_acts_on_the_selection_or_the_whole_clip() {
     let mut state = focused_on(&empty);
     assert!(state.key_action("pianoRoll.legato", &empty, 0.0, None).is_none());
 }
+
+/// Ctrl+L in the piano roll is the clip's own loop: over the time selection, off again when the
+/// loop is on over that very stretch, and with no time selection the clip's loop on or off.
+#[test]
+fn the_loop_key_loops_the_clip_over_the_time_selection_or_switches_its_loop() {
+    let mut two = clip_of_two();
+    let mut state = focused_on(&two);
+    let on = state.key_action("pianoRoll.loop", &two, 0.0, None).expect("a command");
+    assert_eq!(on.id, "clip.setLoop");
+    assert_eq!(on.params["loop"], json!(true), "no loop yet: on");
+    assert!(on.params.get("start").is_none());
+    two.shape.loop_range = Some((0.0, 8.0));
+    let off = state.key_action("pianoRoll.loop", &two, 0.0, None).expect("a command");
+    assert_eq!(off.params["loop"], json!(false), "looping: off");
+
+    let mut state = span_state(&two, 2.0, 4.0);
+    let over = state.key_action("pianoRoll.loop", &two, 0.0, None).expect("a command");
+    assert_eq!((&over.params["start"], &over.params["end"]), (&json!(2.0), &json!(4.0)));
+    assert!(over.params.get("loop").is_none(), "a range turns the loop on by itself: {}", over.params);
+    two.shape.loop_range = Some((2.0, 4.0));
+    let again = state.key_action("pianoRoll.loop", &two, 0.0, None).expect("a command");
+    assert_eq!(again.params["loop"], json!(false), "the same stretch again takes the loop away");
+    assert!(again.params.get("start").is_none());
+}

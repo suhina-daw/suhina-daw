@@ -140,6 +140,7 @@ Arrangement or the Launcher (the clip and slot keys below, the Arrangement's too
 | In the piano roll: turn the triplet grid on or off (`pianoRoll.gridTriplet`) | Ctrl+3 |
 | In the piano roll: turn snapping to the grid on or off (`pianoRoll.gridSnap`) | Ctrl+4 |
 | In the piano roll: zoom time to the selected notes (the whole clip when none is selected); to the whole clip (`pianoRoll.zoomSelection`, `.zoomClip`, [spec](spec/ui-clip-editor.md) › Zoom and scroll) | Z; Shift+Z |
+| In the piano roll: loop the clip over the time selection (again on the same stretch: off), or turn the clip's loop on or off (`pianoRoll.loop`, `clip.setLoop`, [spec](spec/ui-clip-editor.md) › Shortcuts) | Ctrl+L |
 | In the piano roll: Legato on the selected notes, or on every note when none is selected (`pianoRoll.legato`, [spec](spec/ui-clip-editor.md) › Other note tools) | Alt+L |
 | In the piano roll: move the loop's start or end, the loop, the clip's start or end marker (on the grid; Alt free); zoom time, scroll it ([spec](spec/ui-clip-editor.md) › Layout) | drag a handle, the loop bar or a marker on the ruler; drag the ruler up and down, sideways |
 | In the piano roll: play a key of the key column through the track's instrument while it is held; Ctrl+click, Ctrl+drag select the notes of that pitch or those pitches ([spec](spec/ui-clip-editor.md) › Playing the keys) | click, drag on the key column; Ctrl+click, Ctrl+drag |
@@ -153,7 +154,7 @@ Arrangement or the Launcher (the clip and slot keys below, the Arrangement's too
 | Quantise the piano roll's selected notes, the notes that start in its time selection, or all its notes, with the settings Quantise in the note tools' Transform tab keeps (`pianoRoll.quantize`, [spec](spec/ui-clip-editor.md) › Quantise) | Ctrl+U |
 | Open or close the shown track's plug-in editor — the device the chain panel selects, else the track's first running plug-in (`view.plugin`; [spec](spec/ui-clip-editor.md) › The device chain) | P |
 | Add an arrangement marker at the playhead, or at the play start marker while stopped (`marker.addAtPlayhead`; [spec](spec/arrangement-editing.md#markers)) | M |
-| Turn arrangement looping on or off; on without a loop region makes one over the first 4 bars (`transport.setLoopEnabled`; [spec](spec/arrangement-editing.md#loop-region)); not while the piano roll has the keyboard | Ctrl+L |
+| Turn arrangement looping on or off; on without a loop region makes one over the first 4 bars (`transport.setLoopEnabled`; [spec](spec/arrangement-editing.md#loop-region)); while the piano roll has the keyboard the key is the clip's own loop instead | Ctrl+L |
 | Next, previous project (`project.next`, `project.previous`) | Ctrl+Tab, Ctrl+Shift+Tab |
 | New project or open one (`file.new`), open one (`file.open`) | Ctrl+N, Ctrl+O |
 | Save, save as (`file.save`, `file.saveAs`); save as template (`file.saveTemplate`) | Ctrl+S, Ctrl+Shift+S; none |

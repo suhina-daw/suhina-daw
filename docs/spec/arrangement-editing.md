@@ -775,8 +775,9 @@ end; dragging its middle moves the whole region, keeping its length. A click on 
 **Ctrl+L** (`transport.setLoopEnabled`, in the keymap) and a right-click on the row (**Turn loop
 on** or **Turn loop off**) turn looping on or off. With a time selection or clips selected, Ctrl+L
 loops their span; pressed again while the loop is on over that very span, it turns looping off.
-While the piano roll has the keyboard (after a click in it) Ctrl+L does nothing, as the
-Arrangement's other keys ([clip editor spec](ui-clip-editor.md) › Shortcuts).
+While the piano roll has the keyboard (after a click in it) Ctrl+L leaves this loop alone, as the
+Arrangement's other keys do, and is the clip's own loop instead ([clip editor spec](ui-clip-editor.md)
+› Shortcuts).
 
 A time-stretched audio clip plays the loop start at once after each wrap, in real time as offline.
 Its stretched audio is rendered ahead (ADR 0003), so it is ready at the loop start before the wrap

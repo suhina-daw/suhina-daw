@@ -588,6 +588,26 @@ impl PianoRollState {
                 self.zoom_to(0.0, clip.length);
                 return None;
             }
+            // The clip's own loop, as Ctrl+L is the Arrangement's there: over the stretch selected
+            // in time, or off again when it is on over that very stretch; with no time selection
+            // the loop the clip has (or its whole length) on or off.
+            "pianoRoll.loop" => {
+                let looped = clip.shape.loop_range;
+                let span = self.span.as_ref().map(|span| (round_beat(span.start), round_beat(span.end)));
+                match span {
+                    Some((start, end)) if end > start => {
+                        let same = looped.is_some_and(|(s, e)| (s - start).abs() < 1e-6 && (e - end).abs() < 1e-6);
+                        if same {
+                            params["loop"] = json!(false);
+                        } else {
+                            params["start"] = json!(start);
+                            params["end"] = json!(end);
+                        }
+                    }
+                    _ => params["loop"] = json!(looped.is_none()),
+                }
+                return Some(Action::new("clip.setLoop", params));
+            }
             // Legato, as the Notes tab's button: the selected notes, or the whole clip with none
             // selected, and nothing where a time selection holds no note.
             "pianoRoll.legato" => {
