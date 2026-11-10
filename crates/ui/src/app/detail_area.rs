@@ -316,7 +316,10 @@ impl App {
         // still lies along the bottom as in a row: only the devices stack, in a column of their
         // own beside the view, shown with Devices while the editor stays open (› Stacked in
         // `docs/spec/ui-clip-editor.md`).
-        let split = stacked && geometry.is_none() && (piano.is_some() || ara.is_some());
+        // Settings › Devices › Stack device panel only in piano roll does the same in a row.
+        let split = (stacked || self.settings.view.stack_in_piano_roll)
+            && geometry.is_none()
+            && (piano.is_some() || ara.is_some());
         let side_devices = split && self.detail_showing == detail_view::Showing::Devices;
         let stacked = stacked && !split;
         // The piano roll, or an ARA plug-in's editor in the clip's place, can be pulled to the
@@ -963,7 +966,9 @@ impl App {
     /// Whether a MIDI clip's piano roll is on show: with the switch on Clip, or with the devices
     /// stacked, where Devices opens them beside it and it stays open.
     pub(super) fn piano_roll_on_show(&self) -> bool {
-        self.detail_showing == detail_view::Showing::Clip || self.settings.device_layout == DeviceLayout::Stack
+        self.detail_showing == detail_view::Showing::Clip
+            || self.settings.device_layout == DeviceLayout::Stack
+            || self.settings.view.stack_in_piano_roll
     }
 
     /// The params that name the clip the piano roll shows in a `note.*` command, if it shows one.

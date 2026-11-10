@@ -623,3 +623,25 @@ fn a_click_on_an_empty_spot_moves_the_play_start_marker_there() {
     renderer.process(&mut [0.0f32; 2 * 64]);
     assert_eq!(monitor.start_beat(), CLIP_START + 2.0, "beat 2 of the clip, which starts at beat 64");
 }
+
+/// With the devices in a row, Stack device panel only in piano roll opens them in a column beside
+/// the piano roll, which stays open; off, Devices puts them in its place.
+#[test]
+fn stack_device_panel_only_in_piano_roll_keeps_the_piano_roll_open() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    h.get_by_label("Show Devices").click();
+    h.run();
+    assert!(h.query_by_label_contains("Piano roll,").is_none(), "off: the chain takes the piano roll's place");
+    h.get_by_label("Show Clip").click();
+    h.run();
+    let mut settings = Settings::default();
+    settings.view.stack_in_piano_roll = true;
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    h.get_by_label("Show Devices").click();
+    h.run();
+    assert!(h.query_by_label("Devices column splitter").is_some(), "on: the column beside the view");
+    assert!(h.query_by_label_contains("Piano roll,").is_some(), "and the piano roll stays open");
+}

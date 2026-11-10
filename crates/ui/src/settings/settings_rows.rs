@@ -264,6 +264,14 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Devices,
         "Device panels",
+        "Stack device panel only in piano roll",
+        "With the devices in a row, whether Devices opens them in a column beside the piano roll instead of in its place",
+        &["stack_in_piano_roll"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.stack_in_piano_roll),
+    ),
+    row(
+        Page::Devices,
+        "Device panels",
         "Long parameter lists",
         "Whether a list opened from its device's arrow continues to the right or scrolls down",
         &["device_list_scroll"],

@@ -206,6 +206,10 @@ pub struct ViewSettings {
     /// A long parameter list opened from its device's chevron scrolls down in two columns, instead
     /// of continuing in columns to the right (the default).
     pub device_list_vertical: bool,
+    /// With the devices in a row, a clip's editor (the piano roll) keeps its place when Devices is
+    /// shown: the devices stack in a column beside the view, as with the Stack layout (off by
+    /// default).
+    pub stack_in_piano_roll: bool,
     /// New tracks all get the palette's first colour, instead of the next one in turn (off by
     /// default, #709).
     pub fixed_track_colour: bool,
@@ -293,6 +297,7 @@ impl Default for ViewSettings {
             rename_selected: true,
             play_from_clip: true,
             device_list_vertical: false,
+            stack_in_piano_roll: false,
             fixed_track_colour: false,
             new_clip_track_colour: true,
             recent_chips: false,
@@ -358,6 +363,7 @@ impl ViewSettings {
             "liquid_panel_strength = {}\nliquid_track_strength = {}\nliquid_clip_strength = {}\n",
             self.liquid.panels, self.liquid.tracks, self.liquid.clips,
         ) + &format!("replace_clip = {}\n", if self.replace_clip { "on" } else { "off" })
+            + &format!("stack_in_piano_roll = {}\n", if self.stack_in_piano_roll { "on" } else { "off" })
             + &format!(
                 "take_crossfade = {}\ntake_crossfade_custom = {}\n",
                 if self.take_crossfade == 0 { "custom".to_string() } else { self.take_crossfade.to_string() },
@@ -479,6 +485,7 @@ impl ViewSettings {
             ("rename_selected_clips", "on" | "off") => self.rename_selected = value == "on",
             ("play_from_selected_clip", "on" | "off") => self.play_from_clip = value == "on",
             ("device_list_scroll", "horizontal" | "vertical") => self.device_list_vertical = value == "vertical",
+            ("stack_in_piano_roll", "on" | "off") => self.stack_in_piano_roll = value == "on",
             ("new_track_colour", "fixed" | "alternating") => self.fixed_track_colour = value == "fixed",
             ("new_clip_colour", "track" | "theme") => self.new_clip_track_colour = value == "track",
             ("browser_recent", "chips" | "indented") => self.recent_chips = value == "chips",
@@ -549,6 +556,7 @@ mod tests {
             rename_selected: false,
             play_from_clip: false,
             device_list_vertical: false,
+            stack_in_piano_roll: false,
             fixed_track_colour: true,
             new_clip_track_colour: false,
             recent_chips: true,
