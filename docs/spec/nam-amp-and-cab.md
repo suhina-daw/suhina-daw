@@ -329,11 +329,13 @@ A preset of the shared preset format holds the device's parameter values — the
 ([§ The devices' parameters](#the-devices-parameters)) and, since
 [ADR 0036] › **A preset may name a file**, the file the device runs in its optional `file` field.
 A stock preset's `file` names a shipped file by its key (`builtin:<device id>/<file name>`), and a
-user preset's may name the user's own file. A preset without `file` leaves the state as the user
-has set it, so adding one to a device that already points at a file keeps that file, and adding
-one to a device with none leaves it none; a preset that names one loads it when it is added —
-a stock preset's from the pack, the user's with a file that does not load leaving the device
-without one (the add says so). The Amp Modeler's five; four of them pair a shipped model, which
+user preset's may name the user's own file. Adding a preset adds a separate device with the
+preset's values; it changes no device that is already there, and the file such a one runs stays
+as it is. A preset that names a file starts the new device on it — a stock preset's from the
+pack, the user's with a file that does not load leaving the device without one (the add says
+so). A preset without `file` starts the new device with none through `device.add {stock}`; from
+the app it lands on the folder's first file ([§ Commands](#commands) › The file a device starts
+on). The Amp Modeler's five; four of them pair a shipped model, which
 the file's key carries alongside the trimming values ([issue 1279]; the pack's files
 [§ Limits](#limits)):
 

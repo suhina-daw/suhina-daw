@@ -90,7 +90,7 @@ describe a file. Read only the ones that match your task.
     follow-up issue for any left
     ([docs/workflow.md](docs/workflow.md) › Closing issues).
 
-13. **Shipped content carries its licence record** ([ADR 0036](docs/decisions/0036-library-and-shipped-content.md)
+14. **Shipped content carries its licence record** ([ADR 0036](docs/decisions/0036-library-and-shipped-content.md)
     › 1, [CONTRIBUTING.md › Shipped content](CONTRIBUTING.md#shipped-content)). Content that
     rides Suhina (the starter pack, the library's kept files, the presets) ships under a
     publisher's licence that is GPL-3.0-compatible, with its author, source and licence recorded
