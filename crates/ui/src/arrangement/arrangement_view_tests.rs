@@ -567,6 +567,44 @@ fn alt_and_the_wheel_over_the_returns_change_the_return() {
     assert_eq!(at, Some((top, DEFAULT_LANE * 2.0)));
 }
 
+/// One selection at a time (#1322): a range painted on automation lanes lets go of the time
+/// selection and the picked clips, and a time selection or a clip picked after it lets go of it.
+#[test]
+fn the_last_selection_made_is_the_only_one() {
+    use crate::arrangement::automation_lanes::{LaneKey, LaneRange};
+    let range = || LaneRange {
+        track: TrackId(1),
+        key: LaneKey { device: None, param: "volume".into() },
+        start: 4.0,
+        end: 8.0,
+        more: Vec::new(),
+    };
+    let time = || TimeSelection { tracks: vec![TrackId(2)], start: 0.0, end: 4.0, row: None };
+    let mut state = ArrangementViewState::default();
+    state.set_time_selection(Some(time()));
+    state.selected = vec![(TrackId(2), ClipId(5))];
+    state.settle_selections();
+    assert!(state.time_selection().is_some() && !state.selected.is_empty(), "nothing else was there");
+
+    state.automation.range = Some(range());
+    state.settle_selections();
+    assert!(state.time_selection().is_none() && state.selected.is_empty(), "the range came last");
+    assert!(state.automation.range.is_some());
+    state.settle_selections();
+    assert!(state.automation.range.is_some(), "it stays as long as nothing else is made");
+
+    state.set_time_selection(Some(time()));
+    state.settle_selections();
+    assert!(state.automation.range.is_none(), "the time selection came last");
+    assert!(state.time_selection().is_some());
+
+    state.automation.range = Some(range());
+    state.settle_selections();
+    state.select_clips(vec![(TrackId(2), ClipId(5))]);
+    state.settle_selections();
+    assert!(state.automation.range.is_none(), "a clip picked came last");
+}
+
 #[test]
 fn a_stretch_goes_past_the_audio_and_a_midi_clip_before_its_notes() {
     use suhina_engine::model::{AudioRegion, ClipContent, ContentId, ContentLane, Extensions, LaneData};
