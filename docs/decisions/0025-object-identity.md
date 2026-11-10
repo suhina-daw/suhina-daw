@@ -4,7 +4,7 @@ read_when: object id, ClipId, clip identity, positional addressing, clip.move, d
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-05
+last_verified: 2026-11-10
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/ids.rs
@@ -150,11 +150,31 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
    second part of a split, the part of a covered clip after one placed over it) is a new clip with a
    new id; a moved, trimmed or edited clip keeps its id. For step D, the file stays **version 1**:
    `id` and `next_id` are optional fields that a reader without them ignores, and a reader with them
-   derives what is missing ([`docs/spec/suhina-format.md`](../spec/suhina-format.md)). The
-   commands resolve a `clip` id (or a name only one clip has) to the clip's place in the project as
-   it is when the command runs, in one place before any command sees its parameters
-   (`commands::resolve_clip_ids`), so every command that names a clip by `track` with `index` or
-   `scene` takes `clip` too, the `note.*` commands and `transport.play` included.
+   derives what is missing ([`docs/spec/suhina-format.md`](../spec/suhina-format.md)). Every
+   command that names a clip by `track` with `index` or `scene` takes `clip` too (an id, or a name
+   only one clip has), the `note.*` commands and `transport.play` included. Since
+   [#1157](https://github.com/suhina-daw/suhina-daw/issues/1157) the command finds that clip where
+   it reads its parameters, once, through `commands::named_clip` (which `lane_and_index`,
+   `clip_list` and the note commands' reader start from), in the project as it is when the command
+   runs; nothing rewrites `clip` into `track` with `index` before the command sees it.
+
+   **The deprecation window, decided again in #1157 (2026-11-10).** The window did not end with
+   the format's next version: the `.suhina` version rose several times (9 at #1157) and nothing
+   removed `index`, so the end above is replaced. The two positional forms are decided apart:
+   - **`track` with `index` (an arrangement clip) goes.** An index is the clip's place in its lane,
+     and nearly every edit renumbers the clips after it (a delete, a split, a paste, a move), so an
+     agent that chains calls by index edits the wrong clip unless it lists the clips again after
+     each one. Every command that makes or moves a clip returns its id, and `project.clips` lists
+     the ids beside the indexes, so `clip` costs an agent nothing that `index` did not. The
+     window ends with the pull request that moves the UI and the tests to ids and then removes
+     `index` from the clip commands and `{ "track", "index" }` from `clips` lists
+     ([#1328](https://github.com/suhina-daw/suhina-daw/issues/1328)). It is a breaking change for agents ([ADR 0002](0002-commands.md)) and is announced as
+     one.
+   - **`track` with `scene` (a slot's clip) stays, and is not deprecated.** It names a place in
+     the launcher's grid ("the clip in scene 2 of Drums"), which edits to other clips never
+     change; only adding or removing scenes moves it, and a scene can be named by `{"id": n}`
+     (#1156) wherever it has moved. It is how people and agents think of a slot, and an id there
+     would only add a lookup.
 
 5. **The parameter type is `ParamType::Clip`, and it is not new machinery.** `ParamType::Track`
    already exists (`ParamType::Track` in `suhina_session::commands`) and its JSON Schema is

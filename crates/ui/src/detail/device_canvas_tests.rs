@@ -9,8 +9,10 @@ fn sampler_mode_icons_have_distinct_geometry_and_keep_their_captions() {
     for label in ["Sample", "Slice", "Grain"] {
         let mut output = context.run_ui(Default::default(), |ui| {
             crate::kit::theme::install(ui.ctx());
+            let el = crate::kit::element::BUTTON.enter();
             paint_sample_mode(
                 ui.painter(),
+                &el,
                 Rect::from_min_size(Pos2::new(10., 10.), Vec2::new(60., 46.)),
                 label,
                 true,

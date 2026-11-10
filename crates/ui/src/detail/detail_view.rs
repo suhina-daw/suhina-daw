@@ -78,14 +78,14 @@ pub fn show_row(
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
-    let _style_class = crate::kit::style_class::enter("detail");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let el = crate::kit::element::DETAIL.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::window_background());
-    crate::kit::native_css::background(&painter, area);
+    el.paint_background(&painter, area, 0.0);
     match detail {
         Detail::Nothing => hint(&painter, area, "Select a track or a clip to see it here"),
         Detail::Devices(chain) => return chain_row(ui, &painter, area, chain, selected, actions, places),
@@ -450,14 +450,14 @@ pub fn show_stack(
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
-    let _style_class = crate::kit::style_class::enter("detail");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let el = crate::kit::element::DETAIL.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::window_background());
-    crate::kit::native_css::background(&painter, area);
+    el.paint_background(&painter, area, 0.0);
     match detail {
         Detail::Nothing => hint(&painter, area, "Select a track or a clip"),
         Detail::Devices(chain) => return chain_stack(ui, &painter, area, chain, selected, actions, places),
@@ -484,14 +484,14 @@ pub fn show_stack(
 /// (› Other note tools in `docs/spec/ui-clip-editor.md`). With it, the part the Clip / Devices
 /// switch was clicked to, if it was.
 pub fn show_clip_column(ui: &mut Ui, info: &ClipInfo, stacked: bool, actions: &mut Vec<Action>) -> (Rect, Picked) {
-    let _style_class = crate::kit::style_class::enter("clip-editor");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let el = crate::kit::element::CLIP_EDITOR.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::window_background());
-    crate::kit::native_css::background(&painter, area);
+    el.paint_background(&painter, area, 0.0);
     let (column, picked) = clip_properties(ui, &painter, area, info, stacked, actions);
     clip_for_readers(ui, column, info);
     let rest = if stacked {
@@ -689,7 +689,7 @@ pub fn show_ara_editor(
             crate::kit::widgets::hover(ui, &response),
         );
         painter.rect_filled(hide, 0.0, fill);
-        crate::detail::piano_roll::IconButton::Hide.draw(&painter, hide, theme::text_secondary(), 1.0);
+        crate::interaction::toolbar::IconButton::Hide.draw(&painter, hide, theme::text_secondary(), 1.0);
         if response.clicked() {
             actions.push(Action::new("view.editor", json!({})));
         }
@@ -828,12 +828,15 @@ fn device_panel(
     // `device` styles every device's panel and `#device-compressor` (a built-in device's id)
     // one kind of them; `device-header` its header row. Everything inside (`device-control`,
     // the generated parameter list's widgets) is in that scope.
-    let device_style = crate::kit::element::DEVICE.id(&format!("device-{}", device.theme_id)).enter();
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, !device.enabled);
+    let device_id = format!("device-{}", device.theme_id);
+    let device_style = crate::kit::element::DEVICE
+        .id(&device_id)
+        .attr(crate::kit::element::Selected, selected)
+        .attr(crate::kit::element::Muted, !device.enabled)
+        .enter();
     // A list keeps a compact panel's width unless the theme sizes the panel (`device { width }`).
     let themed_width = device_style.style().is_some_and(|c| c.width.is_some());
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let mut styled_ui = device_style.ui(ui);
     let ui = &mut *styled_ui;
     device_style.paint_with(
         painter,

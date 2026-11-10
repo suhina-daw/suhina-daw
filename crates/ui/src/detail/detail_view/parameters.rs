@@ -218,7 +218,7 @@ pub(super) fn parameter_widget(
                 .max_decimals(style.decimals),
         ),
         ParameterControl::Knob | ParameterControl::LogKnob => knob(ui, parameter, rect, accent, value),
-        // `slider { --suhina-appearance: knob }` draws a slider as a knob.
+        // `slider { appearance: knob }` draws a slider as a knob.
         ParameterControl::Slider | ParameterControl::LogSlider | ParameterControl::Integer if slider_as_knob() => {
             knob(ui, parameter, rect, accent, value)
         }
@@ -263,10 +263,10 @@ pub(super) fn parameter_widget(
     }
 }
 
-/// Whether the theme draws parameter sliders as knobs (`slider { --suhina-appearance: knob }`).
+/// Whether the theme draws parameter sliders as knobs (`slider { appearance: knob }`).
 pub(crate) fn slider_as_knob() -> bool {
-    let _style = crate::kit::style_class::enter("slider");
-    crate::kit::style_class::knob_preference(false)
+    let slider = crate::kit::element::SLIDER.enter();
+    crate::kit::style_class::knob_preference(&slider, false)
 }
 
 /// A click or drag on a horizontal slider in `rect`, `handle` wide, as a fader's: a click sets the
@@ -353,7 +353,7 @@ fn themed_slider_widget(
     let logarithmic = control == ParameterControl::LogSlider && min > 0.0 && max > min;
     let height = ui.spacing().interact_size.y.min(rect.height()).max(8.0);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(rect.width(), height), Sense::click_and_drag());
-    let _style = crate::kit::style_class::enter_response("slider", &response);
+    let _style = crate::kit::element::SLIDER.response(&response).enter();
     let to_position = |v: f64| {
         if logarithmic { (v / min).ln() / (max / min).ln() } else { (v - min) / (max - min).max(f64::EPSILON) }
     };
@@ -369,9 +369,10 @@ fn themed_slider_widget(
     let painter = ui.painter_at(rect);
     let rail = {
         let rail_el = crate::kit::element::SLIDER_RAIL.enter();
-        let thickness = crate::kit::native_css::thickness(4.0).clamp(1.0, rect.height());
+        let thickness = rail_el.thickness_or(4.0).clamp(1.0, rect.height());
         let rail = Rect::from_center_size(rect.center(), Vec2::new(rect.width(), thickness));
-        if !(skin::has_own("slider.rail") && skin::paint(&painter, rail, "slider.rail", state, theme::text_hint(), 0.0))
+        if !(skin::has_own("slider.rail")
+            && skin::paint_as(&rail_el, &painter, rail, "slider.rail", state, theme::text_hint()))
         {
             rail_el.paint_with(
                 &painter,
@@ -387,7 +388,7 @@ fn themed_slider_widget(
         let fill = Rect::from_min_max(rail.min, Pos2::new(at, rail.bottom()));
         if fill.width() >= 1.0
             && !(skin::has_own("slider.fill")
-                && skin::paint(&painter, fill, "slider.fill", state, theme::accent(), 0.0))
+                && skin::paint_as(&fill_el, &painter, fill, "slider.fill", state, theme::accent()))
         {
             fill_el.paint_with(
                 &painter,
@@ -400,7 +401,7 @@ fn themed_slider_widget(
         let handle_el = crate::kit::element::SLIDER_HANDLE.response(&response).enter();
         let handle = Rect::from_center_size(Pos2::new(at, rect.center().y), Vec2::new(handle_width, rect.height()));
         if !(skin::has_own("slider.handle")
-            && skin::paint(&painter, handle, "slider.handle", state, theme::text_primary(), 0.0))
+            && skin::paint_as(&handle_el, &painter, handle, "slider.handle", state, theme::text_primary()))
         {
             handle_el.paint_with(
                 &painter,
@@ -504,8 +505,7 @@ pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Show
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         let fill = motion::mix(idle, theme::control_selected(), on);
         el.paint_with(painter, cell, crate::kit::element::Native { radius: 0.0, fill });
-        let color =
-            crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), on));
+        let color = el.color_or(motion::mix(theme::text_secondary(), theme::text_inverse(), on));
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked

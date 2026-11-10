@@ -794,8 +794,8 @@ fn a_theme_keeps_the_header_column_at_its_least_width() {
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
     app.settings.animations = false;
     app.shown = View::Arrangement;
-    // As a theme file is read: the sheet's --suhina-* values are the app's.
-    let css = "arrangement { --suhina-header-min-width: 330px; }";
+    // As a theme file is read.
+    let css = "arrangement { header-min-width: 330px; }";
     let mut theme = crate::kit::theme::Theme::default();
     assert!(crate::kit::theme_css::read_host_rules(&mut theme, css).is_empty());
     theme.skin.css = Some(std::sync::Arc::from(css));

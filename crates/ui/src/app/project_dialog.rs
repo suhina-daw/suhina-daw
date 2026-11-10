@@ -64,13 +64,13 @@ pub enum Choice {
 
 /// Draws the project dialog over `area`, above everything else.
 pub fn show(ui: &Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Option<Choice> {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("project-dialog"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
             // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw(ui, area, state, lists)
@@ -210,13 +210,13 @@ pub enum SaveChoice {
 
 /// Draws the save prompt over `area`.
 pub fn show_save(ui: &Ui, area: Rect, prompt: &mut SavePrompt) -> Option<SaveChoice> {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("save-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
             // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_save(ui, area, prompt)
@@ -292,13 +292,13 @@ pub enum UnsavedChoice {
 
 /// Asks whether to save `name`'s changes before `doing` ("closing it", "quitting"), over `area`.
 pub fn show_unsaved(ui: &Ui, area: Rect, name: &str, doing: &str) -> Option<UnsavedChoice> {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("unsaved-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
             // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_unsaved(ui, area, name, doing)
@@ -334,13 +334,13 @@ fn platform() -> String {
 
 /// Draws the About dialog over `area`. Returns what was chosen, or `None` while it stays open.
 pub fn show_about(ui: &Ui, area: Rect) -> Option<AboutChoice> {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("about-dialog"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
             // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_about(ui, area)
@@ -429,13 +429,13 @@ pub enum AraEditsChoice {
 
 /// Asks whether clips `plugin` edits keep their edits on the track they go to, over `area`.
 pub fn show_ara_edits(ui: &Ui, area: Rect, plugin: &str) -> Option<AraEditsChoice> {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("ara-edits-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
             // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_ara_edits(ui, area, plugin)
@@ -498,13 +498,13 @@ const RECOVERY_BUTTON: Vec2 = Vec2::new(120.0, 18.0);
 /// Offers the backup of `name` written at `written` (local time) that is newer than its project
 /// file, over `area`; `saved` says whether the project has a file at all.
 pub fn show_recovery(ui: &Ui, area: Rect, name: &str, written: &str, saved: bool) -> Option<RecoveryChoice> {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("recovery-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
             // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_recovery(ui, area, name, written, saved)
@@ -558,13 +558,13 @@ pub enum AgentChoice {
 /// Asks whether to let `client`, an agent that has just connected, work on the open projects,
 /// over `area`.
 pub fn show_agent(ui: &Ui, area: Rect, client: &str) -> Option<AgentChoice> {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("agent-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
             // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_agent(ui, area, client)
@@ -606,12 +606,12 @@ fn draw_agent(ui: &mut Ui, area: Rect, client: &str) -> Option<AgentChoice> {
 /// Asks whether to move Suhina's `what` to the folder `to`, a backup made first. `Some(true)` to
 /// move, `Some(false)` to leave them.
 pub fn show_folder_move(ui: &Ui, area: Rect, what: &str, to: &str) -> Option<bool> {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("folder-move"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             let mut closed: Option<AgentChoice> = None;
@@ -665,12 +665,12 @@ impl CloseChoice for ImportChoice {
 /// Asks what to do with a theme package whose theme, `name`, is here already: replace it, bring
 /// it in as a copy, or leave it.
 pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice> {
-    let _style_class = crate::kit::style_class::enter("dialog");
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("theme-import"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             let mut closed: Option<ImportChoice> = None;

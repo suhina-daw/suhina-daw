@@ -52,7 +52,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "index",
                 ParamType::Integer,
-                "with from: clip and track, the clip's index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+                "with from: clip and track, the clip's index on the track, from project.clips (deprecated, use clip; to be removed, ADR 0025 › 4)",
             ),
         ],
         kind: CommandKind::TRANSPORT,

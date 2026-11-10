@@ -22,27 +22,8 @@
   --control-selectedBackground: #A8B55A;
   --grid-major: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--highlight) 28.4%), white 9.5%);
   --grid-minor: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--surface) 49.3%), var(--highlight) 4.7%);
-  --kind-bass: #A84F4F;
-  --kind-clap: #5EC0B0;
-  --kind-closedHat: #C6AC5E;
-  --kind-crash: #E0A0C8;
-  --kind-cymbal: #A497CC;
-  --kind-effect: #9CC49C;
-  --kind-hat: #D8C47A;
-  --kind-kick: #D06E5E;
-  --kind-openHat: #D08F6E;
-  --kind-other: #8A8680;
-  --kind-percussion: #8FC06E;
-  --kind-ride: #C8B8E8;
-  --kind-rim: #8CA8E0;
-  --kind-snare: #73AAC0;
-  --kind-tom: #B074A4;
-  --kind-tonal: #6EB0D0;
-  --kind-vocal: #E8D0A0;
   --meter-hot: #D9D52E;
   --meter-normal: #66DF19;
-  --meter-segments: 32;
-  --meter-style: segmented;
   --pan-background: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--tint) 2.5%), black 16.3%);
   --pan-centre: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--ink) 29.7%), var(--highlight) 26.6%);
   --panel-background: var(--surface);
@@ -50,11 +31,6 @@
   --recording: #D65139;
   --recording-background: #5A2E22;
   --selection: var(--highlight);
-  --session-header-height: 24px;
-  --session-return-width: 80px;
-  --session-scene-width: 84px;
-  --session-slot-height: 24px;
-  --session-track-width: 92px;
   --slot-empty: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--highlight) 45.7%), white 26.8%);
   --text-hint: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--highlight) 42.8%), white 28.1%);
   --text-inverse: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--tint) 2.6%), black 29.8%);
@@ -77,6 +53,8 @@
   --track-mutedBackground: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--stone) 29.7%), black 21.3%);
   --window-background: var(--ground);
 }
+meter { meter-segments: 32; meter-style: segmented; }
+session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-height: 24px; track-width: 92px; }
 
 /* Copyright (C) 2026 The Suhina contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -112,30 +90,30 @@
 }
 
 /* Control placements. */
-.control-mixer-color { left: 0px; top: 0px; bottom: auto; display: none; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
-.control-mixer-meter { left: -48px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
-.control-mixer-pan { left: 25px; top: 0px; bottom: auto; display: block; right: auto; width: 24px; height: 24px; --suhina-direction: vertical; }
-.control-mixer-volume { left: 18px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
-.control-mixer-volume-readout { left: -24px; top: 0px; bottom: auto; display: block; right: auto; width: 30px; height: auto; --suhina-direction: vertical; }
-.control-mixer-volume-scale { left: -40px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
-pan { --suhina-appearance: knob; }
-track-column { --suhina-track-artwork: on; }
+.control-mixer-color { left: 0px; top: 0px; bottom: auto; display: none; right: auto; width: auto; height: auto; direction: vertical; }
+.control-mixer-meter { left: -48px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; direction: vertical; }
+.control-mixer-pan { left: 25px; top: 0px; bottom: auto; display: block; right: auto; width: 24px; height: 24px; direction: vertical; }
+.control-mixer-volume { left: 18px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; direction: vertical; }
+.control-mixer-volume-readout { left: -24px; top: 0px; bottom: auto; display: block; right: auto; width: 30px; height: auto; direction: vertical; }
+.control-mixer-volume-scale { left: -40px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; direction: vertical; }
+pan { appearance: knob; }
+track-column { track-artwork: on; }
 
 /* Artwork. */
-arm { image: url("assets/arm.svg"); }
+icon[kind="arm"] { image: url("assets/arm.svg"); }
 button { image: url("assets/button.svg"); }
-cue { image: url("assets/cue.svg"); }
-fader.cap { image: url("assets/fader.cap.svg"); }
-fader.rail { image: url("assets/fader.rail.svg"); }
-folder { image: url("assets/folder.svg"); }
-knob.body { image: url("assets/knob.body.svg"); }
-knob.pointer { image: url("assets/knob.pointer.svg"); }
+icon[kind="cue"] { image: url("assets/cue.svg"); }
+icon[kind="folder"] { image: url("assets/folder.svg"); }
+fader-cap { image: url("assets/fader.cap.svg"); }
+fader-rail { image: url("assets/fader.rail.svg"); }
+knob-body { image: url("assets/knob.body.svg"); }
+knob-pointer { image: url("assets/knob.pointer.svg"); }
 meter { image: url("assets/meter.svg"); }
-play { image: url("assets/play.svg"); }
-record { image: url("assets/record.svg"); }
-solo { image: url("assets/solo.svg"); }
-stop { image: url("assets/stop.svg"); }
-track.audio { image: url("assets/track.audio.svg"); }
+icon[kind="play"] { image: url("assets/play.svg"); }
+icon[kind="record"] { image: url("assets/record.svg"); }
+icon[kind="solo"] { image: url("assets/solo.svg"); }
+icon[kind="stop"] { image: url("assets/stop.svg"); }
+icon[kind="audio"] { image: url("assets/track.audio.svg"); }
 track.body.color-4fc3f7 { image: url("assets/track.body.color-4fc3f7.svg"); }
 track.body.color-7fdb5a { image: url("assets/track.body.color-7fdb5a.svg"); }
 track.body.color-80ada1 { image: url("assets/track.body.color-80ada1.svg"); }
@@ -144,6 +122,6 @@ track.body.color-b38bff { image: url("assets/track.body.color-b38bff.svg"); }
 track.body.color-e5484d { image: url("assets/track.body.color-e5484d.svg"); }
 track.body.color-f2d541 { image: url("assets/track.body.color-f2d541.svg"); }
 track.body.color-ff9a3c { image: url("assets/track.body.color-ff9a3c.svg"); }
-track.body { image: url("assets/track.body.svg"); }
-track.midi { image: url("assets/track.midi.svg"); }
-track.name { image: url("assets/track.name.svg"); }
+track-header { image: url("assets/track.body.svg"); }
+icon[kind="midi"] { image: url("assets/track.midi.svg"); }
+track-name { image: url("assets/track.name.svg"); }
