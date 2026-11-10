@@ -244,8 +244,23 @@ const LIST_EVERY: Duration = Duration::from_secs(2);
 const LIST_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A plug-in's own texts for values of its parameters (#1205): by parameter id and the value's
-/// bits, the text it gave (empty where it gave none or did not answer, so it is not asked again).
-pub type ParamTexts = std::collections::HashMap<(u32, u64), String>;
+/// bits, the text it gave (empty where it gave none, so it is not asked again). Shared with the
+/// window and filled in place as the plug-in answers, so an answer neither copies the texts nor
+/// makes the window build its lanes' parameters again.
+pub type ParamTexts = std::sync::Mutex<std::collections::HashMap<(u32, u64), String>>;
+
+/// How often a plug-in is asked for texts at most: a point dragged or a value under the pointer
+/// asks about a new value every frame, and each request lends out the plug-in's control half.
+const TEXTS_EVERY: Duration = Duration::from_millis(100);
+
+/// How long a plug-in that did not answer a request for texts is left alone before it is asked
+/// again; meanwhile the values show as numbers.
+const TEXTS_AGAIN: Duration = Duration::from_secs(30);
+
+/// The texts of `texts`, locked; a poisoned lock is taken as it is.
+fn texts_of(texts: &ParamTexts) -> std::sync::MutexGuard<'_, std::collections::HashMap<(u32, u64), String>> {
+    texts.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// Most texts kept for one plug-in; past this the texts are forgotten and asked for again.
 const MAX_TEXTS: usize = 8192;
@@ -380,6 +395,8 @@ struct Instance {
     /// is under way.
     texts: Arc<ParamTexts>,
     texting: bool,
+    /// When it may be asked for texts again ([`TEXTS_EVERY`], [`TEXTS_AGAIN`]).
+    texts_next: Option<Instant>,
     /// When the last listing for the panel ended, answered or not; a plug-in that refuses to
     /// list is asked as seldom as one that answers.
     list_tried: Option<Instant>,
@@ -428,8 +445,12 @@ impl Instance {
     /// asked about again.
     fn texts_done(&mut self, id: u32, values: &[f64], texts: Option<Vec<String>>) {
         self.texting = false;
-        let texts = texts.unwrap_or_default();
-        let kept = Arc::make_mut(&mut self.texts);
+        // No answer: asked again a while later, the values meanwhile shown as numbers.
+        let Some(texts) = texts else {
+            self.texts_next = Some(Instant::now() + TEXTS_AGAIN);
+            return;
+        };
+        let mut kept = texts_of(&self.texts);
         if kept.len().saturating_add(values.len()) > MAX_TEXTS {
             kept.clear();
         }
@@ -450,6 +471,7 @@ impl Instance {
             listing: false,
             texts: Arc::default(),
             texting: false,
+            texts_next: None,
             list_tried: None,
             control: None,
             last_state: None,
@@ -1120,6 +1142,12 @@ impl Rack {
         }
     }
 
+    /// The parameters the running plug-in device `key` listed last, as its report gives them.
+    pub(crate) fn listed(&self, key: u64) -> Option<Arc<[suhina_plugins::ParamInfo]>> {
+        let instance = self.instances.get(&key).filter(|i| i.status == PluginStatus::Running)?;
+        instance.listed.as_ref().map(|(list, _)| Arc::clone(list))
+    }
+
     /// The plug-in device `key`'s own texts for values it was asked about (#1205).
     pub fn texts(&self, key: u64) -> Option<Arc<ParamTexts>> {
         self.instances.get(&key).map(|i| Arc::clone(&i.texts))
@@ -1130,18 +1158,25 @@ impl Rack {
     /// half is not lent out.
     pub fn ask_texts(&mut self, key: u64, id: u32, values: &[f64]) {
         let Some(instance) = self.instances.get(&key) else { return };
-        if instance.status != PluginStatus::Running || instance.texting || instance.control.is_none() {
+        let now = Instant::now();
+        if instance.status != PluginStatus::Running
+            || instance.texting
+            || instance.control.is_none()
+            || instance.texts_next.is_some_and(|next| now < next)
+        {
             return;
         }
         let mut wanted: Vec<f64> = Vec::new();
-        for value in values.iter().copied().filter(|v| v.is_finite()) {
-            if !instance.texts.contains_key(&(id, value.to_bits()))
-                && !wanted.iter().any(|w| w.to_bits() == value.to_bits())
-            {
-                wanted.push(value);
-            }
-            if wanted.len() >= suhina_plugins::protocol::MAX_PARAM_TEXTS {
-                break;
+        {
+            let known = texts_of(&instance.texts);
+            for value in values.iter().copied().filter(|v| v.is_finite()) {
+                if !known.contains_key(&(id, value.to_bits())) && !wanted.iter().any(|w| w.to_bits() == value.to_bits())
+                {
+                    wanted.push(value);
+                }
+                if wanted.len() >= suhina_plugins::protocol::MAX_PARAM_TEXTS {
+                    break;
+                }
             }
         }
         if wanted.is_empty() {
@@ -1155,6 +1190,7 @@ impl Rack {
             && let Some(instance) = self.instances.get_mut(&key)
         {
             instance.texting = true;
+            instance.texts_next = Some(now + TEXTS_EVERY);
         }
     }
 

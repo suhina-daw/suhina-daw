@@ -573,9 +573,9 @@ fn a_plug_in_lane_takes_the_plug_in_s_range_steps_and_text() {
     let (project, track) = plugin_project();
     let mut lists = PluginLists::default();
     lists.lists.insert((track, 0), plugin_list());
-    let mut texts = suhina_session::ParamTexts::new();
-    texts.insert((0, 0.25f64.to_bits()), "25 %".into());
-    lists.texts.insert((track, 0), std::sync::Arc::new(texts));
+    let mut texts = std::collections::HashMap::new();
+    texts.insert((0, 0.25f64.to_bits()), "25 %".to_string());
+    lists.texts.insert((track, 0), std::sync::Arc::new(std::sync::Mutex::new(texts)));
     let params = Params::build_with(&project, lists);
     let gain = params.param(track, &LaneKey { device: Some(0), param: "0".into() }).unwrap();
     assert!(!gain.scale.stepped());

@@ -939,6 +939,32 @@ impl Session {
         std::mem::take(&mut self.touched)
     }
 
+    /// The plug-in devices on the own chains of `tracks` (not inside a device group), for their
+    /// automation lanes (#1205): each one's track and place on the chain, the parameters it
+    /// listed last (asked for again in the background once a couple of seconds old) and its
+    /// texts. The project's plug-in devices are looked up once, whatever the number of tracks.
+    #[allow(clippy::type_complexity)]
+    pub fn lane_plugin_lists(
+        &mut self,
+        tracks: &[suhina_model::TrackId],
+    ) -> Vec<(
+        suhina_model::TrackId,
+        usize,
+        Option<std::sync::Arc<[suhina_plugins::ParamInfo]>>,
+        Option<std::sync::Arc<ParamTexts>>,
+    )> {
+        let mut found = Vec::new();
+        for device in suhina_engine::plugin_devices(&self.project) {
+            let (Some(track), [index]) = (device.track, device.path.as_slice()) else { continue };
+            if !tracks.contains(&track) {
+                continue;
+            }
+            self.plugins.list_params(device.key);
+            found.push((track, *index, self.plugins.listed(device.key), self.plugins.texts(device.key)));
+        }
+        found
+    }
+
     /// The plug-in device at `path` on `track`'s own texts for values it was asked about
     /// ([`Session::ask_plugin_texts_at`], #1205).
     pub fn plugin_texts_at(&self, track: suhina_model::TrackId, path: &[usize]) -> Option<std::sync::Arc<ParamTexts>> {

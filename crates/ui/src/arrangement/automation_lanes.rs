@@ -197,7 +197,7 @@ impl PluginScale {
     pub fn text(&self, value: f64) -> String {
         let value = self.snap(value);
         match self.known_text(value) {
-            Some(text) => text.to_string(),
+            Some(text) => text,
             None => {
                 let (low, high) = self.range();
                 if self.steps > 0 && high - low >= f64::from(self.steps) {
@@ -211,16 +211,17 @@ impl PluginScale {
 
     /// The text the plug-in gave for `value`, if it gave one. A value it was never asked about
     /// is noted for the app to ask it, so the next frames show its text.
-    pub fn known_text(&self, value: f64) -> Option<&str> {
+    pub fn known_text(&self, value: f64) -> Option<String> {
         let (low, high) = self.range();
         let near = ((high - low) * 1e-6).max(1e-12);
         if let Some((_, text)) =
             self.listed.as_ref().filter(|(at, text)| (at - value).abs() <= near && !text.trim().is_empty())
         {
-            return Some(text.as_str());
+            return Some(text.clone());
         }
-        match self.texts.get(&(self.id, value.to_bits())) {
-            Some(text) => Some(text.as_str()).filter(|text| !text.trim().is_empty()),
+        let known = self.texts.lock().ok()?.get(&(self.id, value.to_bits())).cloned();
+        match known {
+            Some(text) => Some(text).filter(|text| !text.trim().is_empty()),
             None => {
                 if let Ok(mut asked) = self.asked.lock()
                     && asked.len() < MAX_ASKED

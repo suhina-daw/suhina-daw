@@ -3716,24 +3716,19 @@ impl App {
                 lists.moved.push((track, index, id, value));
             }
         }
-        let open: Vec<(TrackId, usize)> = session
+        let open: Vec<TrackId> = session
             .project()
             .tracks
             .iter()
             .map(|t| t.id)
             .chain([TrackId::MAIN])
-            .filter(|track| lanes.is_open(*track))
-            .flat_map(|track| {
-                let devices = session.project().channel_of_track(track).map_or(0, |c| c.devices.len());
-                (0..devices).map(move |index| (track, index))
-            })
+            .filter(|t| lanes.is_open(*t))
             .collect();
-        for (track, index) in open {
-            session.list_plugin_params_at(track, &[index]);
-            if let Some(list) = session.plugin_report_at(track, &[index]).and_then(|r| r.params) {
+        for (track, index, list, texts) in session.lane_plugin_lists(&open) {
+            if let Some(list) = list {
                 lists.lists.insert((track, index), list);
             }
-            if let Some(texts) = session.plugin_texts_at(track, &[index]) {
+            if let Some(texts) = texts {
                 lists.texts.insert((track, index), texts);
             }
         }
