@@ -473,10 +473,18 @@ fn show_lanes(
         } else if alt {
             // Some systems turn Alt and the wheel into a sideways scroll; either axis zooms.
             let steps = if wheel.y == 0.0 { wheel.x } else { wheel.y };
-            if steps != 0.0 && pointer.y > lanes_area.top() {
+            let factor = (steps * LANE_ZOOM_PER_POINT).exp();
+            if steps != 0.0 && pointer.y > fixed.top() {
+                // Over the returns and the main track, which do not scroll: their own rows.
+                state.zoom_fixed(&returns, timeline, factor, pointer.y - fixed.top(), lanes_area.height());
+            } else if steps != 0.0 && pointer.y > lanes_area.top() {
                 let lanes: Vec<&Lane> = drawn.iter().filter_map(|d| timeline.lanes.get(d.lane)).collect();
-                let factor = (steps * LANE_ZOOM_PER_POINT).exp();
-                state.zoom_wheel(&lanes, timeline, factor, pointer.y - lanes_area.top());
+                // A row made taller past the bottom keeps its bottom in view, and its top first.
+                if let Some((top, height)) = state.zoom_wheel(&lanes, timeline, factor, pointer.y - lanes_area.top())
+                    && top + height > state.scroll.y + lanes_area.height()
+                {
+                    state.scroll.y = (top + height - lanes_area.height()).min(top);
+                }
             }
         } else {
             // Track controls have their own horizontal send navigation. Only the
