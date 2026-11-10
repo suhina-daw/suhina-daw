@@ -1221,7 +1221,7 @@ fn play(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     };
     let args = Args::new(params);
     if start.is_none() && (args.has("clip") || args.has("track") || args.has("index")) {
-        return Err("track and index go with from: \"clip\"".into());
+        return Err("clip, track and index go with from: \"clip\"".into());
     }
     // The marker moves first, so playback starts there; while playing, that is a jump.
     if let Some(beat) = start {
@@ -1516,7 +1516,7 @@ pub(crate) struct NamedClip {
 /// so it is the same clip whatever earlier edits moved (ADR 0025). `None` when `params` gives no
 /// `clip`: the command then reads the positional form, `track` with `scene` (a clip slot, a place
 /// in the launcher's grid that stays) or `track` with `index` (an arrangement clip, deprecated:
-/// [ADR 0025](../../docs/decisions/0025-object-identity.md) › 4).
+/// ADR 0025 › 4).
 ///
 /// Every reader of a command's clip starts here ([`lane_and_index`], [`clip_list`],
 /// `notes::locate` and the commands that read their clip themselves), so a clip named by id is
