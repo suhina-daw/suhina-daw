@@ -1167,6 +1167,27 @@ fn points_of(session: &Session, param: &str) -> Vec<(f64, f64)> {
         .map_or_else(Vec::new, |l| l.points.iter().map(|p| (p.beat, p.value)).collect())
 }
 
+/// A dragged point's preview sets a hosted plug-in's parameter in the playing engine, and only
+/// there: not a built-in device's, not without a player, not a value that is no number, and the
+/// project is left as it was (#1205).
+#[test]
+fn a_preview_reaches_a_hosted_plug_in_in_the_engine_only() {
+    let mut project = project();
+    project.channels[0].devices.push(Device::new("Synth", DeviceKind::Clap { id: "x".into() }));
+    let mut session = Session::new(project.clone());
+    assert!(!session.preview_plugin_param(TrackId(1), 0, 3, 0.5), "no player");
+    let renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    let before = session.project().clone();
+    assert!(session.preview_plugin_param(TrackId(1), 0, 3, 0.5), "the plug-in");
+    assert!(!session.preview_plugin_param(TrackId(1), 0, 3, f64::NAN), "no number");
+    assert!(!session.preview_plugin_param(TrackId(1), 1, 3, 0.5), "a built-in device");
+    assert_eq!(session.project(), &before, "the project is left as it was");
+}
+
 /// Lanes copied together and pasted on another track go to a device of the same kind there, not
 /// to whatever device sits at the same place on its chain (#1322).
 #[test]

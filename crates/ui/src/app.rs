@@ -3682,7 +3682,7 @@ impl App {
         });
         match preview {
             Some((track, device, id, value)) if self.lane_preview != Some((track, device, id, value.to_bits())) => {
-                session.preview_plugin_param(track, device, id, value);
+                let _sent = session.preview_plugin_param(track, device, id, value);
                 self.lane_preview = Some((track, device, id, value.to_bits()));
             }
             Some(_) => {}
@@ -3694,7 +3694,7 @@ impl App {
                 if let Some((track, device, id, _)) = self.lane_preview.take() {
                     let beat = session.player().map_or(0.0, |p| p.monitor().beat());
                     if let Some(value) = session.plugin_param_now(track, device, id, beat, stepped_now) {
-                        session.preview_plugin_param(track, device, id, value);
+                        let _sent = session.preview_plugin_param(track, device, id, value);
                     }
                 }
             }

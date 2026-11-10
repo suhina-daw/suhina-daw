@@ -890,8 +890,9 @@ impl Session {
     /// now, from the next audio block, leaving the project and its lanes alone (#1205): while a
     /// point of the parameter's lane is dragged, the plug-in and its editor follow the line where
     /// the transport stands. The command that lets go of the point puts the lane in for good. Does
-    /// nothing for a device that is not a hosted plug-in or without a player.
-    pub fn preview_plugin_param(&mut self, track: suhina_model::TrackId, device: usize, id: u32, value: f64) {
+    /// nothing for a device that is not a hosted plug-in or without a player. Returns whether the
+    /// value went to the engine.
+    pub fn preview_plugin_param(&mut self, track: suhina_model::TrackId, device: usize, id: u32, value: f64) -> bool {
         let hosted = self.project.channel_of_track(track).and_then(|c| c.devices.get(device)).is_some_and(|d| {
             matches!(
                 d.kind,
@@ -900,13 +901,14 @@ impl Session {
                     | suhina_model::DeviceKind::Vst2 { .. }
             )
         });
-        let Ok(param) = usize::try_from(id) else { return };
+        let Ok(param) = usize::try_from(id) else { return false };
         if hosted
             && value.is_finite()
             && let Some(player) = self.sync.player.as_mut()
         {
-            let _ = player.set_device_param(ParamEdit { track, device, param, value });
+            return player.set_device_param(ParamEdit { track, device, param, value }).is_ok();
         }
+        false
     }
 
     /// What the project plays on parameter `id` of the plug-in device at `device` on `track`'s
