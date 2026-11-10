@@ -161,7 +161,10 @@ fn audio_page_follows_the_focus_of_its_own_viewport() {
         raw.viewports
             .insert(egui::ViewportId::ROOT, egui::ViewportInfo { focused: Some(root_focus), ..Default::default() });
         raw.viewports.insert(settings, egui::ViewportInfo { focused: Some(settings_focus), ..Default::default() });
-        let _ = ctx.run_ui(raw, |ui| app.follow_audio_page(ui.ctx()));
+        // The first frame carries the font atlas: a test with no painter clears it, as epaint
+        // asks of a dropped `TexturesDelta`.
+        let mut output = ctx.run_ui(raw, |ui| app.follow_audio_page(ui.ctx()));
+        output.textures_delta.clear();
     };
     frame(&mut app, false, true);
     assert_eq!(checks.load(Ordering::Relaxed), 1, "opening Audio");
