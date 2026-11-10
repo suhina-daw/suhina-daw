@@ -92,8 +92,12 @@ output's first (its stream is made first), so with an ASIO input it is the input
 once its frames are in the input's ring, that wakes the render thread, not the output's: woken
 by the output, the render thread read the input before that cycle's frames were written and
 filled the block's input with silence, an input underrun in every cycle it won the race, more
-often the smaller the buffer. When the input closes or fails the output wakes it again, and the
-render thread also looks every millisecond by itself.
+often the smaller the buffer. The render thread also looks every millisecond by itself, and a
+look that fell between the two callbacks read too early the same way (about one cycle in 15 at
+2048 frames), so once the output has taken from the ring the render thread waits for the input's
+frames of that cycle, a quarter of the device's buffer at most (at least half a millisecond),
+before it renders without them. When the input closes or fails the output wakes it again and
+nothing is waited for.
 
 The answer is kept with the device descriptor (below) and asked again each time an ASIO output
 opens. When no driver is loaded the driver is loaded for the question and kept loaded until the

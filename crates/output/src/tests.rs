@@ -177,9 +177,28 @@ fn an_input_on_the_asio_driver_takes_over_waking_the_render_thread() {
     read_ring(&mut consumer, &mut out, &progress);
     assert_eq!(out, [0.1, 0.2, 0.3, 0.4, 0.0, 0.0, 0.0, 0.0]);
     assert_eq!(progress.underruns(), 1);
-    // The input closed or failed: the output wakes it again.
+    // The output took from the ring: the input's frames of this cycle are due, until written.
+    assert!(progress.input_due());
+    progress.input_written();
+    assert!(!progress.input_due());
+    read_ring(&mut consumer, &mut out, &progress);
+    assert!(progress.input_due());
+    // The input closed or failed: the output wakes it again, and nothing is waited for.
     progress.set_input_wakes_render(false);
     assert!(!progress.input_wakes_render());
+    assert!(!progress.input_due());
+    read_ring(&mut consumer, &mut out, &progress);
+    assert!(!progress.input_due());
+}
+
+/// The render thread waits a quarter of the device's buffer for an ASIO input's frames, and at
+/// least half a millisecond.
+#[test]
+fn the_wait_for_the_input_is_a_quarter_of_the_buffer() {
+    assert_eq!(input_grace(2048, 44_100), Duration::from_secs_f64(2048.0 / 44_100.0 / 4.0));
+    assert_eq!(input_grace(128, 48_000), Duration::from_secs_f64(128.0 / 48_000.0 / 4.0));
+    assert_eq!(input_grace(32, 48_000), Duration::from_micros(500));
+    assert_eq!(input_grace(128, 0), Duration::from_secs_f64(128.0 / 4.0));
 }
 
 #[test]

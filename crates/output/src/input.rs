@@ -132,7 +132,7 @@ where
                 progress.set_input_latency(input_latency(since_capture, data.len() / device_channels, sample_rate));
                 write_frames(data, device_channels, &mut ring);
                 if wakes {
-                    progress.wake_render();
+                    progress.input_written();
                 }
             },
             // A device unplugged ends its input; the output plays on, waking the render thread

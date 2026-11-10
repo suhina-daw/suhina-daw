@@ -128,6 +128,9 @@ pub struct Progress {
     /// An input on the output's ASIO driver wakes the render thread instead of the output
     /// ([`Progress::input_wakes_render`]).
     input_wakes: AtomicBool,
+    /// The output took from the ring in this driver cycle and the input's frames of it are not
+    /// in yet ([`Progress::input_due`]).
+    input_due: AtomicBool,
 }
 
 impl Progress {
@@ -288,6 +291,24 @@ impl Progress {
     /// input that stops does not stop the output.
     pub(crate) fn set_input_wakes_render(&self, wakes: bool) {
         self.input_wakes.store(wakes, Ordering::Release);
+        if !wakes {
+            self.input_due.store(false, Ordering::Release);
+        }
+    }
+
+    /// Whether the output has taken from the ring in this driver cycle and the input's
+    /// callback, which comes after it, has not written its frames yet: the render thread waits
+    /// for them rather than read the input too early, also when its own look every millisecond
+    /// lands between the two callbacks. Only while the input wakes it.
+    pub(crate) fn input_due(&self) -> bool {
+        self.input_wakes_render() && self.input_due.load(Ordering::Acquire)
+    }
+
+    /// The input's callback has written this cycle's frames: wakes the render thread to render
+    /// with them. Lock-free, never allocates.
+    pub(crate) fn input_written(&self) {
+        self.input_due.store(false, Ordering::Release);
+        self.wake_render();
     }
 
     /// Wakes the render thread, if there is one, to fill what the device took: no waiting for
@@ -302,6 +323,10 @@ impl Progress {
 /// Fills `out` (whole frames of [`RING_CHANNELS`] samples) from the ring, with silence, counted
 /// as an underrun, for what is not there yet. Never allocates.
 pub(crate) fn read_ring(ring: &mut Ring, out: &mut [f32], progress: &Progress) {
+    // Before taking from the ring: a render thread that sees the room made sees this too.
+    if progress.input_wakes_render() {
+        progress.input_due.store(true, Ordering::Release);
+    }
     let ready = ring.slots().min(out.len()) / RING_CHANNELS * RING_CHANNELS;
     match ring.read_chunk(ready) {
         Ok(chunk) => {
@@ -947,6 +972,8 @@ fn render_ahead(
     let mut cue = vec![0.0f32; frames * 2];
     let capacity = ring.buffer().capacity();
     progress.block.store(frames, Ordering::Relaxed);
+    // Since when the render thread has waited for the input's frames of this cycle.
+    let mut input_wait: Option<Instant> = None;
     while !stop.load(Ordering::Acquire) {
         let queued = (capacity - ring.slots()) / RING_CHANNELS;
         // Arming shrinks the queue as the device drains it, and disarming fills it again: no
@@ -959,6 +986,18 @@ fn render_ahead(
             realtime.waited();
             continue;
         }
+        // The input's frames of this driver cycle are due right after the output's callback:
+        // wait for them, though not so long that the device is kept waiting by an input that
+        // stopped calling back.
+        if progress.input_due() {
+            let since = *input_wait.get_or_insert_with(Instant::now);
+            if since.elapsed() < input_grace(progress.callback_frames(), renderer.sample_rate()) {
+                std::thread::park_timeout(RENDER_WAIT);
+                realtime.waited();
+                continue;
+            }
+        }
+        input_wait = None;
         let started = Instant::now();
         // A stamped live note plays this long after it was played (#269): the longest the
         // thread waits between blocks (a block, or a device buffer that takes several at once)
@@ -982,6 +1021,16 @@ fn render_ahead(
         }
     }
     renderer
+}
+
+/// How long the render thread waits for an ASIO input's frames after the output took from the
+/// ring: a quarter of the device's buffer, at least half a millisecond. The input's callback
+/// comes microseconds after the output's in the same driver cycle; past this the input is taken
+/// to have stopped, and the block renders without its frames rather than keep the device
+/// waiting.
+pub(crate) fn input_grace(device_frames: usize, sample_rate: u32) -> Duration {
+    let buffer = device_frames as f64 / f64::from(sample_rate.max(1));
+    Duration::from_secs_f64(buffer / 4.0).max(Duration::from_micros(500))
 }
 
 /// `notice` the first time one is given with `told` not yet set, `None` after: what is told once
