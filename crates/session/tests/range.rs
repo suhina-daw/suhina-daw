@@ -327,6 +327,20 @@ fn a_range_carries_its_automation_with_or_without_clips() {
     assert!((volume_at(&session, 22.0) - 1.0).abs() < 1e-9, "outside the span stays");
 }
 
+/// A time selection copied and pasted on a track of the paste's own choosing takes the automation
+/// under its clips along, as a copy of the clips does (#1205).
+#[test]
+fn a_range_pasted_on_a_chosen_track_keeps_the_automation_under_its_clips() {
+    let mut session = with_volume_lane();
+    let peak = json!({ "track": 1, "param": "volume", "beat": 2.0, "value": 0.0 });
+    run(&mut session, "automation.addPoint", peak).unwrap();
+    assert!((volume_at(&session, 2.0) - 1.0).abs() < 1e-9, "0 dB under the clip");
+    run(&mut session, "range.copy", json!({ "tracks": [1], "start": 0.0, "end": 4.0 })).unwrap();
+    run(&mut session, "clip.paste", json!({ "track": 1, "start": 20.0 })).unwrap();
+    assert!(spans(&session, 1).contains(&(20.0, 4.0)), "the clip is pasted");
+    assert!((volume_at(&session, 22.0) - 1.0).abs() < 1e-9, "its automation came with it");
+}
+
 /// A range copied with a clip in it lays the automation once, not again under the clip (#1205).
 #[test]
 fn a_range_with_a_clip_lays_its_automation_once() {

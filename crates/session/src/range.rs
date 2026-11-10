@@ -347,10 +347,10 @@ pub(crate) fn copy_range(session: &mut Session, params: &Value) -> Result<Value,
         return Err("nothing plays in the selection".into());
     }
     let count = copy_parts(session, parts);
-    // The span's automation stands for the automation under each clip, so it is laid once; one
-    // row of a stack keeps the automation under each of its clips instead.
+    // The span's automation, laid once by a paste back on the copied tracks; a paste on a track
+    // of its own choosing lays the automation under each clip instead (one row of a stack keeps
+    // only that).
     if only.0.is_none() {
-        session.clipboards.under = vec![Vec::new(); count];
         session.clipboards.span = Some(automation);
     }
     Ok(json!({ "copied": count, "start": start, "end": end }))
@@ -464,8 +464,9 @@ pub(crate) fn paste_to_sources(session: &mut Session, start: f64, stack: bool) -
             crate::automation_range::lay_under(session, *track, span.start + offset, lanes, true)?;
         }
     }
-    // The automation that was under each clip, under its copy on the same track.
-    let under = session.clipboards.under.clone();
+    // The automation that was under each clip, under its copy on the same track: the span's
+    // automation holds it already when a time selection was copied.
+    let under = if span.is_some() { Vec::new() } else { session.clipboards.under.clone() };
     for ((track, at), lanes) in starts.iter().zip(&under) {
         crate::automation_range::lay_under(session, *track, *at, lanes, true)?;
     }
