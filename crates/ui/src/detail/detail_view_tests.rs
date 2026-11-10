@@ -1749,7 +1749,10 @@ fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
     });
     harness.run_steps(10);
     let scrolled = gains(&harness);
-    assert!(scrolled[1] < start[1] - 10.0 && scrolled[0] == start[0], "only the second list scrolls: {start:?} {scrolled:?}");
+    assert!(
+        scrolled[1] < start[1] - 10.0 && scrolled[0] == start[0],
+        "only the second list scrolls: {start:?} {scrolled:?}"
+    );
     // Pitch goes: the Utilities move up a place each and keep their own scroll.
     project.channels[0].devices.remove(0);
     *harness.state_mut() = build(&project, Some(TrackId(1)), None);

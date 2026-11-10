@@ -4,7 +4,8 @@
 //! Editing the notes of a MIDI clip: the `note.*` commands the piano roll, the CLI and MCP run
 //! (`docs/spec/ui-clip-editor.md` › Commands).
 //!
-//! A clip is named by `track` and `index` (an arrangement clip) or `scene` (a launcher slot); its
+//! A clip is named by `clip`, its id, or (deprecated) by `track` and `index` (an arrangement clip)
+//! or `scene` (a launcher slot), and found by [`locate`]; its
 //! notes by their index in the content's note lane, or by `{"id": n}` with their id (#1182), which
 //! names a note wherever it is now, after other writers have added, deleted or moved notes. Edits
 //! keep the notes' order, so the indices of notes an edit did not delete stay valid for the next
@@ -15,7 +16,7 @@ use serde_json::{Map, Value, json};
 use suhina_engine::{MAX_START_BEAT, Quantization};
 use suhina_model::{Clip, ClipContent, ContentId, ContentLane, LaneData, Note, NoteId, Notes, Project, TrackId};
 
-use crate::commands::{Args, opt_scene_at, parse_quantization, track_id};
+use crate::commands::{Args, named_clip, opt_scene_at, parse_quantization, track_id};
 use crate::named::{Miss, Named};
 use crate::{CommandError, Session};
 
@@ -36,7 +37,7 @@ const EPSILON: f64 = 1e-9;
 
 /// Where a clip is: an arrangement lane and the clip's index in it, or a launcher column and
 /// the slot's index in it.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum ClipAt {
     Arrangement(usize, usize),
     Slot(usize, usize),
@@ -44,6 +45,10 @@ pub(crate) enum ClipAt {
 
 /// The clip a command names: where it is, its content and the track it plays on.
 pub(crate) fn locate(p: &Project, params: &Value) -> Result<(ClipAt, ContentId, TrackId), CommandError> {
+    if let Some(named) = named_clip(p, params)? {
+        let clip = clip_at(p, named.at).ok_or("the clip is missing")?;
+        return Ok((named.at, clip.content, named.track));
+    }
     let track = track_id(p, params)?;
     let whole = |key: &str| -> Result<Option<u64>, CommandError> {
         match Args::new(params).value(key) {

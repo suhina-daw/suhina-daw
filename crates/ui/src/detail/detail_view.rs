@@ -726,7 +726,7 @@ pub fn show_ara_editor(
             crate::kit::widgets::hover(ui, &response),
         );
         painter.rect_filled(hide, 0.0, fill);
-        crate::detail::piano_roll::IconButton::Hide.draw(&painter, hide, theme::text_secondary(), 1.0);
+        crate::interaction::toolbar::IconButton::Hide.draw(&painter, hide, theme::text_secondary(), 1.0);
         if response.clicked() {
             actions.push(Action::new("view.editor", json!({})));
         }

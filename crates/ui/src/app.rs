@@ -2748,7 +2748,7 @@ impl App {
         }
         if self.arrangement.grid_keys[0].is_empty() {
             self.arrangement.grid_keys =
-                crate::detail::piano_roll::grid_key_labels(&self.keymap, &arrangement_view::GRID_KEYS);
+                crate::interaction::grid_menu::grid_key_labels(&self.keymap, &arrangement_view::GRID_KEYS);
         }
         if self.arrangement.toolbar && self.arrangement.tool_keys.is_empty() {
             self.arrangement.tool_keys =

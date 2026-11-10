@@ -13,7 +13,7 @@ use egui_kittest::kittest::Queryable;
 use suhina_engine::model::{Clip, LaneData, Note, Project};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
-use suhina_ui::detail::piano_roll::key_name;
+use suhina_ui::interaction::key_name::key_name;
 use suhina_ui::settings::Settings;
 use suhina_ui::{App, kit::theme};
 

@@ -281,7 +281,7 @@ impl Scale {
                     match info.unit {
                         Unit::Semitones => format!("{value:+} st"),
                         Unit::ScaleDegrees => format!("{value:+} sd"),
-                        Unit::Key => crate::detail::piano_roll::key_name(value.clamp(0.0, 127.0) as u8),
+                        Unit::Key => crate::interaction::key_name::key_name(value.clamp(0.0, 127.0) as u8),
                         _ => format!("{value}"),
                     }
                 }
@@ -294,7 +294,7 @@ impl Scale {
                     Unit::Octaves => format!("{value:.2} oct"),
                     Unit::Semitones => format!("{value:+.2} st"),
                     Unit::ScaleDegrees => format!("{value:+.2} sd"),
-                    Unit::Key => crate::detail::piano_roll::key_name(value.round().clamp(0.0, 127.0) as u8),
+                    Unit::Key => crate::interaction::key_name::key_name(value.round().clamp(0.0, 127.0) as u8),
                     Unit::None => format!("{value:.2}"),
                 },
             },
@@ -2443,7 +2443,7 @@ pub const RANGE_GESTURE: &str = "range:";
 fn grid_menu(ui: &mut Ui, state: &mut LanesState, _actions: &mut Vec<Action>) {
     ui.separator();
     let keys = state.grid_keys.clone();
-    if let Some(picked) = crate::detail::piano_roll::grid_entries(ui, state.grid, &keys, &|_| true) {
+    if let Some(picked) = crate::interaction::grid_menu::grid_entries(ui, state.grid, &keys, &|_| true) {
         state.grid_picked = Some(picked);
         ui.close();
     }

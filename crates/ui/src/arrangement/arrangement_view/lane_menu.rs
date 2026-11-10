@@ -8,7 +8,7 @@ use super::*;
 /// The Arrangement's grid, in a menu itself, as its toolbar offers it.
 pub(super) fn grid_section(ui: &mut Ui, state: &mut ArrangementViewState) {
     let keys = state.grid_keys.clone();
-    if let Some(picked) = crate::detail::piano_roll::grid_entries(ui, state.grid, &keys, &|_| true) {
+    if let Some(picked) = crate::interaction::grid_menu::grid_entries(ui, state.grid, &keys, &|_| true) {
         state.grid = picked;
     }
 }

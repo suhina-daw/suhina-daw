@@ -15,8 +15,9 @@ use egui::{Color32, Id, Painter, Rect, Sense, Ui};
 use suhina_engine::model::{Clip, LaneData, Note, Project, TrackId};
 
 use crate::detail::detail_view::ClipRef;
-use crate::detail::piano_roll::{Placement, key_name};
+use crate::detail::piano_roll::Placement;
 use crate::interaction::grid::track_colour;
+use crate::interaction::key_name::key_name;
 use crate::kit::theme;
 
 /// The most ghost notes one clip shows, so a big project never draws without end.

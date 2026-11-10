@@ -12,7 +12,8 @@
 use egui::{Id, Pos2, Rect, Sense, Ui, Vec2};
 use suhina_engine::model::Scale;
 
-use crate::detail::piano_roll::{PianoClip, key_name};
+use crate::detail::piano_roll::PianoClip;
+use crate::interaction::key_name::key_name;
 use crate::kit::theme;
 
 /// Which key rows the piano roll shows.
