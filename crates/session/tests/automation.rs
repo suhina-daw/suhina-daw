@@ -1176,7 +1176,7 @@ fn a_preview_reaches_a_hosted_plug_in_in_the_engine_only() {
     project.channels[0].devices.push(Device::new("Synth", DeviceKind::Clap { id: "x".into() }));
     let mut session = Session::new(project.clone());
     assert!(!session.preview_plugin_param(TrackId(1), 0, 3, 0.5), "no player");
-    let renderer =
+    let mut renderer =
         suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
             .unwrap();
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
