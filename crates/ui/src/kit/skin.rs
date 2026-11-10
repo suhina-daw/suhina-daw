@@ -35,12 +35,13 @@ pub fn default_svgs() -> impl Iterator<Item = (&'static str, &'static str)> {
 
 /// The default artwork that `theme` lacks, by role: what *Include the default artwork* and *Add
 /// default artwork* copy into the theme's `assets/`, with a rule for each in its `theme.css`. A role
-/// the theme has artwork for (in any state) keeps it.
+/// the theme has artwork for in any state (`knob.body`, `knob.body.hover`) keeps it; a role of its
+/// own that merely starts with the same name (`track.body.session`) is another role.
 pub fn missing_defaults(assets: &BTreeMap<String, String>) -> BTreeMap<String, String> {
-    default_svgs()
-        .filter(|(role, _)| !assets.contains_key(*role))
-        .map(|(role, svg)| (role.to_owned(), svg.to_owned()))
-        .collect()
+    let has = |role: &str| {
+        ["", ".hover", ".active", ".disabled", ".on"].iter().any(|state| assets.contains_key(&format!("{role}{state}")))
+    };
+    default_svgs().filter(|(role, _)| !has(role)).map(|(role, svg)| (role.to_owned(), svg.to_owned())).collect()
 }
 
 pub fn default_assets() -> BTreeMap<String, String> {

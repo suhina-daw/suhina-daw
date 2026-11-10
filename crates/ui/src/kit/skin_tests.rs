@@ -407,6 +407,15 @@ fn missing_defaults_leave_a_themes_own_artwork() {
     assert_eq!(missing.len(), roles().count() - 1);
     assert!(!missing.contains_key("knob.body"));
     assert!(missing.contains_key("knob.pointer"));
+    // Artwork for a state only keeps the role too; another role with the same start does not.
+    let own = BTreeMap::from([
+        ("knob.pointer.hover".to_owned(), "assets/tip.svg".to_owned()),
+        ("track.body.session".to_owned(), "assets/session.svg".to_owned()),
+    ]);
+    let missing = missing_defaults(&own);
+    assert!(!missing.contains_key("knob.pointer"), "{missing:?}");
+    assert!(missing.contains_key("track.body"), "{missing:?}");
+    assert!(missing.contains_key("knob.body"));
 }
 
 #[test]
