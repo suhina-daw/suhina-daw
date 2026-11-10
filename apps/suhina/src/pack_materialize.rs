@@ -226,9 +226,21 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
 /// name, and the ones that could not move at all (a permission or the filesystem refused the
 /// rename) — so a folder that lands only in part is reported as the partial move it is, and a
 /// failed move is never silent: the file stays in the old folder and the user hears why.
+/// Every source is classified by its own kind (`symlink_metadata`), never by following a
+/// link: a symlink in the user's old folder renames as the one entry it is and nothing reads
+/// through it, whatever it points at — a link to an ancestor can neither loop the walk nor
+/// drag the link target's real files into the new tree's nested paths. A link counts no
+/// files: the link itself moves, not content.
 fn move_entry(source: &Path, target: &Path) -> (usize, usize, usize) {
-    if target.exists() {
-        if !source.is_dir() {
+    let kind = match std::fs::symlink_metadata(source) {
+        Ok(kind) => kind,
+        // The entry went away between the listing and the move: nothing there to count.
+        Err(_) => return (0, 0, 0),
+    };
+    // The name the new tree holds — by its own kind too, a dangling link included — is never
+    // written over.
+    if std::fs::symlink_metadata(target).is_ok() {
+        if !kind.is_dir() {
             return (0, 1, 0);
         }
         let (mut moved, mut kept, mut stuck) = (0, 0, 0);
@@ -243,15 +255,20 @@ fn move_entry(source: &Path, target: &Path) -> (usize, usize, usize) {
         if is_empty(source) {
             let _ = std::fs::remove_dir(source);
         }
-        (moved, kept, stuck)
-    } else {
-        // The whole folder renames where its name is missing: the files it carries are the
-        // move the warning reports, not the folder as one entry. A refused rename (a
-        // permission, a different filesystem) leaves the files where they are — that is
-        // neither a move nor a kept name, and it gets its own count.
-        let count = if source.is_dir() { files_in(source) } else { 1 };
-        if std::fs::rename(source, target).is_ok() { (count, 0, 0) } else { (0, 0, count) }
+        return (moved, kept, stuck);
     }
+    // The whole entry renames where its name is missing: a folder's files are the move the
+    // warning reports, a file is one, a symlink is none. A refused rename (a permission, a
+    // different filesystem) leaves the entry where it is — that is neither a move nor a kept
+    // name, and it gets its own count.
+    let count = if kind.is_file() {
+        1
+    } else if kind.is_dir() {
+        files_in(source)
+    } else {
+        0
+    };
+    if std::fs::rename(source, target).is_ok() { (count, 0, 0) } else { (0, 0, count) }
 }
 
 /// Counts the files inside `folder`, its subfolders included, so a whole folder's move
@@ -460,6 +477,48 @@ mod tests {
         assert!(
             warnings.iter().any(|line| line.contains("moved") && line.contains("1 file(s)")),
             "the real file moved, the link with it: {warnings:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A link is classified by its own kind, never by what it points at: a self-parenting
+    /// link inside a pack whose name the new tree holds must neither loop the walk nor drag
+    /// the real files through the link into nested paths — the file moves to the place the
+    /// tree expects, the link stays whole, and the counts read the same whatever order the
+    /// directory's entries come in (unix: needs `symlink`).
+    #[cfg(unix)]
+    #[test]
+    fn a_link_in_a_clashing_pack_is_never_followed_by_the_move() {
+        use std::os::unix::fs::symlink;
+        let dir = std::env::temp_dir().join(format!("suhina-pack-link-clash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let old_pack = dir.join("NAM models").join("My Amps");
+        std::fs::create_dir_all(&old_pack).unwrap();
+        std::fs::write(old_pack.join("One.nam"), b"one").unwrap();
+        symlink(&old_pack, old_pack.join("loop")).unwrap();
+        let new_pack = dir.join("Amp models").join("My Amps");
+        std::fs::create_dir_all(&new_pack).unwrap();
+        std::fs::write(new_pack.join("Clash.nam"), b"clash").unwrap();
+        std::fs::write(new_pack.join("loop"), b"the user's own link-name file").unwrap();
+
+        let warnings = migrate_old_folders(&dir, &dir);
+        assert_eq!(std::fs::read(new_pack.join("One.nam")).unwrap(), b"one", "the real file moved to the tree's place");
+        assert_eq!(std::fs::read(new_pack.join("Clash.nam")).unwrap(), b"clash", "the user's file never written over");
+        assert_eq!(
+            std::fs::read(new_pack.join("loop")).unwrap(),
+            b"the user's own link-name file",
+            "the link's name kept"
+        );
+        assert!(
+            !new_pack.join("loop").join("One.nam").exists() && !new_pack.join("loop/loop").exists(),
+            "nothing landed in nested paths through the link"
+        );
+        assert!(old_pack.join("loop").is_symlink(), "the link itself stayed with the kept name");
+        assert!(
+            warnings
+                .iter()
+                .any(|line| line.contains("mostly moved") && line.contains("1 file(s)") && line.contains("1 kept")),
+            "one real file moved, one kept name, the link counted no file: {warnings:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
