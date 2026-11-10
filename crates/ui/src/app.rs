@@ -3654,11 +3654,18 @@ impl App {
         // sends nothing.
         let dragged = lanes.dragged.clone().filter(|d| d.at.is_none());
         // A parameter that takes steps holds each value until the next point, as the engine plays it.
-        let stepped = dragged.as_ref().is_some_and(|d| {
+        let stepped_of = |track: TrackId, key: &crate::arrangement::automation_lanes::LaneKey| {
             self.timeline
                 .as_ref()
-                .and_then(|(_, _, t)| t.automation.param(d.track, &d.key))
+                .and_then(|(_, _, t)| t.automation.param(track, key))
                 .is_some_and(|p| p.scale.stepped())
+        };
+        let stepped = dragged.as_ref().is_some_and(|d| stepped_of(d.track, &d.key));
+        let stepped_now = self.lane_preview.is_some_and(|(track, device, id, _)| {
+            stepped_of(
+                track,
+                &crate::arrangement::automation_lanes::LaneKey { device: Some(device), param: id.to_string() },
+            )
         });
         let Ok(session) = self.projects.session_mut(None) else { return lists };
         let preview = dragged.and_then(|d| {
@@ -3679,7 +3686,18 @@ impl App {
                 self.lane_preview = Some((track, device, id, value.to_bits()));
             }
             Some(_) => {}
-            None => self.lane_preview = None,
+            None => {
+                // The drag is over, let go of or given up: the plug-in goes back to what the
+                // project plays there now, the lane's value where the transport stands (its new
+                // line, when the drag changed it) or the value set, so a drag that changed
+                // nothing does not leave the plug-in at the value it previewed.
+                if let Some((track, device, id, _)) = self.lane_preview.take() {
+                    let beat = session.player().map_or(0.0, |p| p.monitor().beat());
+                    if let Some(value) = session.plugin_param_now(track, device, id, beat, stepped_now) {
+                        session.preview_plugin_param(track, device, id, value);
+                    }
+                }
+            }
         }
         for (track, index, id, values) in asked {
             session.ask_plugin_texts_at(track, &[index], id, &values);

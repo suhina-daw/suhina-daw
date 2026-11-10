@@ -909,6 +909,28 @@ impl Session {
         }
     }
 
+    /// What the project plays on parameter `id` of the plug-in device at `device` on `track`'s
+    /// chain at `beat`: its enabled lane's value there (held until the next point when `stepped`),
+    /// else the value set; `None` for a device or parameter the project does not hold.
+    pub fn plugin_param_now(
+        &self,
+        track: suhina_model::TrackId,
+        device: usize,
+        id: u32,
+        beat: f64,
+        stepped: bool,
+    ) -> Option<f64> {
+        let device = self.project.channel_of_track(track)?.devices.get(device)?;
+        let lane = device
+            .automation
+            .iter()
+            .find(|l| suhina_engine::param_id(&l.param) == Some(id) && l.enabled && !l.points.is_empty());
+        if let Some(value) = lane.and_then(|l| l.value_at(beat.max(0.0), stepped, &suhina_model::automation::Plain)) {
+            return Some(value);
+        }
+        device.params.iter().find(|p| suhina_engine::param_id(&p.id) == Some(id)).map(|p| p.value)
+    }
+
     /// The plug-in parameters the user moved in a plug-in's own editor since the last call
     /// (track, device on the track's own chain, parameter id), each once, for the window to show
     /// them in the track's lanes (#1205). A value a lane sent there and the plug-in reported back

@@ -112,3 +112,19 @@ fn a_parameter_moved_in_an_editor_is_reported_for_its_lanes() {
     // A device the project no longer holds.
     assert!(touched_by_hand(&project, &[(key ^ 1, 0, 0.5)], None, &[]).is_empty());
 }
+
+/// When a dragged point's preview ends, the plug-in goes back to what the project plays at the
+/// playhead: the enabled lane's value there, held for a parameter that takes steps, else the value
+/// set (#1205).
+#[test]
+fn what_the_project_plays_on_a_plug_in_parameter_now() {
+    let mut project = with_lane();
+    project.tracks[0].channel = Some(ChannelId(1));
+    project.channels[0].devices[0].params.push(DeviceParam::new("3", 0.25));
+    let session = crate::Session::new(project);
+    assert_eq!(session.plugin_param_now(TrackId(1), 0, 0, 4.0, false), Some(0.5), "the lane at beat 4");
+    assert_eq!(session.plugin_param_now(TrackId(1), 0, 0, 4.0, true), Some(0.0), "held until the next point");
+    assert_eq!(session.plugin_param_now(TrackId(1), 0, 3, 4.0, false), Some(0.25), "no lane: the value set");
+    assert_eq!(session.plugin_param_now(TrackId(1), 0, 7, 4.0, false), None);
+    assert_eq!(session.plugin_param_now(TrackId(1), 5, 0, 4.0, false), None, "no such device");
+}
