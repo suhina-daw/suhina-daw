@@ -427,7 +427,7 @@ wheel over it, as far as its last row and no further.
 | Audio › Output | Driver | Default (the host's own), then each host (WASAPI, ASIO, …): a 260 px dropdown |
 | Audio › Output | Device | Default (the host's default device), then the host's devices; a saved device that is gone says so and the default plays |
 | Audio › Output | Sample rate | The device's own (default), then the rates the device offers |
-| Audio › Output | Buffer size | Default (1024 frames), then the device's sizes with their length in ms |
+| Audio › Output | Buffer size | Default (the ASIO driver's preferred size, the one set in its control panel; 1024 frames elsewhere), then the device's sizes with their length in ms. An ASIO driver that takes one size has its size said as text ("2048 frames (46.4 ms)"), with a note that it is set in the driver's own control panel, instead of a dropdown |
 | Audio › Output | Engine block | Where the device's buffer is not Suhina's to set — WASAPI shared mode, or a driver whose declared sizes the engine cannot render in — the row says *Engine block*, and on WASAPI its note names the period Windows gives the device in milliseconds (WASAPI reports that period in frames at each sample rate, lowest first); ASIO says *Buffer size*, with the driver's declared range in the note; WASAPI exclusive mode says *Buffer size* too, and asks the device for the period |
 | Audio › Output | Exclusive mode | On, Off (default): WASAPI only; the note says when the device does not allow it |
 | Audio › Output | Input | Off (default), Default (the host's default input), then the host's input devices with their channel count ("Line In (2 in)"); a saved device that is gone says so. Tracks with an audio input hear it |

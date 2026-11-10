@@ -6,6 +6,26 @@
 use super::*;
 
 impl App {
+    /// Asks the ASIO driver for its buffer sizes again (`audio.checkDriver`) when Settings › Audio
+    /// opens or closes, and when the window gets the focus back while it shows: a size set in the
+    /// driver's control panel that the driver did not announce opens the output again, with no
+    /// refresh to press. Asking is cheap: the driver playing is asked on its own thread.
+    pub(super) fn follow_audio_page(&mut self, ctx: &egui::Context) {
+        let shown = self.settings_open && self.page.shows_devices();
+        let viewport =
+            if self.page.window { egui::ViewportId::from_hash_of("settings-window") } else { egui::ViewportId::ROOT };
+        // The root frame receives metadata for every native viewport. Its own focus
+        // need not change when the driver panel returns focus to floating Settings.
+        let focused = ctx.input(|i| i.raw.viewports.get(&viewport).and_then(|v| v.focused).unwrap_or(false));
+        let returned = shown && focused && !self.window_focused;
+        if shown != self.audio_page_shown || returned {
+            // No output open, or not ASIO: nothing to ask.
+            let _ = self.projects.execute("audio.checkDriver", &json!({}));
+        }
+        self.audio_page_shown = shown;
+        self.window_focused = focused;
+    }
+
     /// Lists the audio hosts and devices for Settings › Audio (`audio.devices`).
     pub(super) fn list_audio_devices(&mut self) {
         match self.projects.execute("audio.devices", &json!({})) {
@@ -281,7 +301,12 @@ impl App {
                 self.list_midi_inputs();
             }
             let names = self.projects.audio_system().and_then(|system| system.device_names());
-            if self.audio_devices.changed(names) {
+            // An output opened again (after a size set in the ASIO driver's control panel, say)
+            // has asked its driver for its sizes anew, so the list is made again from them. What
+            // the output measures per callback is not followed: it changes from one callback to
+            // the next on some hosts, and the list would be made again many times a second.
+            let opened = self.projects.outputs_opened();
+            if self.audio_devices.changed(names) | self.audio_output_watch.changed(Some(opened)) {
                 self.list_audio_devices();
             }
         }
