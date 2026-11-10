@@ -11,8 +11,10 @@
 //! buffer made up front; each track with an audio input then adds its channel (or pair) to its
 //! chain or to the output, the way an audio clip does, while its monitoring says so. The input
 //! device runs on its own clock: input that piles up past a few blocks is dropped, and a block
-//! that finds too little is filled with silence and counted. Nothing here allocates, locks or
-//! frees on the render thread.
+//! that finds too little holds the last sample each channel delivered and is counted — a
+//! splice to silence cracked through everything downstream, and a recording baked hundreds of
+//! those splices into its takes ([#1290] › the takes' crackle). Nothing here allocates, locks
+//! or frees on the render thread.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -40,6 +42,10 @@ pub(crate) struct Input {
     frames: usize,
     /// Frames that waited in the ring when this block's were read, them included.
     waiting: usize,
+    /// The last sample each channel delivered, for a starved block's hold: the block holds
+    /// the signal's last state instead of dropping to silence — a silence splice cracks
+    /// through everything downstream, and a recording baked hundreds of them in.
+    last: [f32; MAX_INPUT_CHANNELS],
 }
 
 impl Input {
@@ -51,6 +57,7 @@ impl Input {
             scratch: vec![0.0; MAX_INPUT_CHANNELS * MAX_BLOCK],
             frames: 0,
             waiting: 0,
+            last: [0.0; MAX_INPUT_CHANNELS],
         }
     }
 
@@ -95,10 +102,25 @@ impl Input {
             Err(_) => block.fill(0.0),
         }
         if take < wanted {
-            if let Some(rest) = block.get_mut(take..) {
-                rest.fill(0.0);
+            // The ring starved: the block holds the last state each channel delivered, never
+            // dropping to silence — a splice to silence and back cracks through everything
+            // downstream, and a recording baked hundreds of those splices into its takes
+            // ([#1290] › the takes' crackle). The frames still count as the block's, so the
+            // take's length and the recorder's timing stay exact.
+            for frame in take..frames {
+                for channel in 0..channels {
+                    if let Some(slot) = block.get_mut(frame * channels + channel) {
+                        *slot = self.last[channel];
+                    }
+                }
             }
             self.underruns.fetch_add(1, Ordering::Relaxed);
+        }
+        // The block's last state is the next starved block's hold.
+        for channel in 0..channels {
+            if let Some(sample) = block.get((frames - 1) * channels + channel) {
+                self.last[channel] = *sample;
+            }
         }
     }
 

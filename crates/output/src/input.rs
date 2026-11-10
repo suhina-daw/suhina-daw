@@ -33,12 +33,16 @@ pub(crate) struct InputStream {
 
 /// Opens the input `choice` names on the host `host_name` at `sample_rate`, playing into a ring
 /// whose reading end is returned for the engine. `Ok(None)` when the choice is off.
-/// Its callback measures the device's own latency into `progress`.
+/// Its callback measures the device's own latency into `progress`. `block_frames` is the
+/// render thread's block: the input's buffer is pinned to it, so the input's delivery and the
+/// render's reads share the device's cycle instead of racing it — a starved read held the
+/// signal once, but the race baked 128-frame silence splices into every take.
 pub(crate) fn open(
     host_name: &str,
     choice: &InputChoice,
     sample_rate: u32,
     progress: Arc<Progress>,
+    block_frames: usize,
 ) -> Result<Option<(InputStream, rtrb::Consumer<f32>)>, String> {
     if *choice == InputChoice::Off {
         return Ok(None);
@@ -75,16 +79,29 @@ pub(crate) fn open(
     if device_channels == 0 {
         return Err(format!("audio input {name} reports no channels"));
     }
+    // The input's buffer rides the render thread's block: the device's cycle then delivers
+    // the input the same cycle's reads consume. A driver can refuse a size it declared — the
+    // stream builds again without one, as the output's open does.
+    let block = block_frames.clamp(64, MAX_DEVICE_FRAMES);
     let channels = device_channels.min(MAX_INPUT_CHANNELS);
-    let (producer, consumer) = rtrb::RingBuffer::new(MAX_DEVICE_FRAMES * RING_BUFFERS * channels);
     let underruns = Arc::new(AtomicU64::new(0));
-    let stream = match format {
-        cpal::SampleFormat::F32 => build::<f32>(&device, &config, producer, progress),
-        cpal::SampleFormat::I16 => build::<i16>(&device, &config, producer, progress),
-        cpal::SampleFormat::I32 => build::<i32>(&device, &config, producer, progress),
-        cpal::SampleFormat::U16 => build::<u16>(&device, &config, producer, progress),
-        other => return Err(format!("audio input {name} uses sample format {other}, which is not supported yet")),
-    }?;
+    let build_ring = |buffer_frames: Option<u32>| -> Result<(cpal::Stream, rtrb::Consumer<f32>), String> {
+        let mut config = config;
+        if let Some(frames) = buffer_frames {
+            config.buffer_size = cpal::BufferSize::Fixed(frames);
+        }
+        let (producer, consumer) = rtrb::RingBuffer::new(MAX_DEVICE_FRAMES * RING_BUFFERS * channels);
+        let stream = match format {
+            cpal::SampleFormat::F32 => build::<f32>(&device, &config, producer, Arc::clone(&progress)),
+            cpal::SampleFormat::I16 => build::<i16>(&device, &config, producer, Arc::clone(&progress)),
+            cpal::SampleFormat::I32 => build::<i32>(&device, &config, producer, Arc::clone(&progress)),
+            cpal::SampleFormat::U16 => build::<u16>(&device, &config, producer, Arc::clone(&progress)),
+            other => Err(format!("audio input {name} uses sample format {other}, which is not supported yet")),
+        }?;
+        Ok((stream, consumer))
+    };
+    let (stream, consumer) =
+        build_ring(Some(u32::try_from(block).unwrap_or(u32::MAX))).or_else(|_| build_ring(None))?;
     stream.play().map_err(|e| format!("could not start audio input {name}: {e}"))?;
     Ok(Some((InputStream { _stream: stream, name, channels, underruns }, consumer)))
 }
@@ -178,11 +195,16 @@ mod tests {
     #[test]
     fn an_input_off_or_missing_opens_nothing() {
         let progress = || Arc::new(Progress::default());
-        assert!(open("anything", &InputChoice::Off, 48_000, progress()).is_ok_and(|o| o.is_none()));
-        let missing =
-            open(cpal::default_host().id().name(), &InputChoice::Named("No Such Input".into()), 48_000, progress());
+        assert!(open("anything", &InputChoice::Off, 48_000, progress(), 128).is_ok_and(|o| o.is_none()));
+        let missing = open(
+            cpal::default_host().id().name(),
+            &InputChoice::Named("No Such Input".into()),
+            48_000,
+            progress(),
+            128,
+        );
         assert!(missing.is_err());
-        assert!(open("No Such Host", &InputChoice::Default, 48_000, progress()).is_err());
+        assert!(open("No Such Host", &InputChoice::Default, 48_000, progress(), 128).is_err());
     }
 
     #[test]
