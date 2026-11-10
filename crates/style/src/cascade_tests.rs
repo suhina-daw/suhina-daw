@@ -366,3 +366,30 @@ fn overflow_and_the_host_settings_are_properties_with_their_own_syntax() {
     assert_eq!(knob.get(Property::MeterStyle), Value::Keyword(""), "a meter's style is its own");
     assert_eq!(knob.get(Property::Overflow), Value::Keyword("visible"));
 }
+
+#[test]
+fn a_user_agent_rule_on_a_child_is_not_authored_though_its_parent_is() {
+    let tree = Tree::new(vec![
+        Element::new("window", None),
+        Element::new("knob", Some(0)),
+        Element::new("knob-body", Some(1)),
+        Element::new("knob-pointer", Some(1)),
+    ])
+    .unwrap();
+    let agent = Sheet::parse("knob-body { color: #202020; }").unwrap();
+    let theme = Sheet::parse("knob { color: #ffb000; }").unwrap();
+    let styles = compute(
+        &tree,
+        viewport(800.0),
+        &[
+            AppliedSheet { sheet: &agent, layer: Layer::UserAgent, root: None },
+            AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None },
+        ],
+    )
+    .unwrap();
+    // The body keeps the user agent's colour, which no sheet wrote; the pointer inherits the knob's.
+    assert_eq!(styles[2].get(Property::Color), Value::Color(Color::Rgba([32, 32, 32, 255])));
+    assert!(!styles[2].authored(Property::Color));
+    assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 176, 0, 255])));
+    assert!(styles[3].authored(Property::Color));
+}

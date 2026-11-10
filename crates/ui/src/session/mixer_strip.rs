@@ -1123,8 +1123,7 @@ fn paint_fader(
     let x = fader.center().x;
     // An unfilled recessed rail: volume is the cap's position, not a bright background bar.
     let rail = Rect::from_center_size(Pos2::new(x, fader.center().y), Vec2::new(rail_width(), fader.height()));
-    let recess = motion::mix(theme::control_background(), egui::Color32::BLACK, 0.65);
-    let rail_el = crate::kit::element::FADER_RAIL.enter();
+    let rail_el = crate::kit::element::FADER_RAIL.response(response).enter();
     if !crate::kit::skin::paint(
         painter,
         rail,
@@ -1133,7 +1132,7 @@ fn paint_fader(
         crate::kit::mixer_controls::rail_ink(&rail_el),
         0.0,
     ) {
-        painter.fill_background(rail, 2.0, recess);
+        painter.fill_background(rail, 2.0, crate::kit::mixer_controls::recess());
     }
     drop(rail_el);
     let _scale_style = crate::kit::element::FADER_SCALE.enter();
@@ -1173,7 +1172,7 @@ fn paint_fader(
     drop(_scale_style);
     let level = at(widgets::volume_position(db));
     let cap = Rect::from_center_size(Pos2::new(x, level), cap_size);
-    crate::kit::mixer_controls::fader_cap(painter, cap, hover, crate::kit::skin::State::response(response, false));
+    crate::kit::mixer_controls::fader_cap(painter, cap, hover, response);
 }
 
 fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: f32, response: &egui::Response) {
@@ -1184,7 +1183,7 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
     let state = crate::kit::skin::State::response(response, false);
     // Rasterize the same vertical artwork, then rotate its geometry and texture together.
     let rail = Rect::from_center_size(fader.center(), Vec2::new(rail_width(), fader.width()));
-    let rail_el = crate::kit::element::FADER_RAIL.enter();
+    let rail_el = crate::kit::element::FADER_RAIL.response(response).enter();
     let rail_ink = crate::kit::mixer_controls::rail_ink(&rail_el);
     if !crate::kit::skin::paint(painter, rail, "fader.rail", state, rail_ink, std::f32::consts::FRAC_PI_2) {
         painter.fill_background(
@@ -1226,7 +1225,7 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
     drop(_scale_style);
     let centre = egui::pos2(at(widgets::volume_position(db)), fader.center().y);
     let cap = Rect::from_center_size(centre, Vec2::new(thickness, length));
-    let cap_style = crate::kit::element::FADER_CAP.enter();
+    let cap_style = crate::kit::element::FADER_CAP.response(response).enter();
     cap_style.paint_background(painter, Rect::from_center_size(centre, Vec2::new(length, thickness)), 2.0);
     let cap_ink = crate::kit::mixer_controls::cap_ink(&cap_style, state);
     if !crate::kit::skin::paint(painter, cap, "fader.cap", state, cap_ink, std::f32::consts::FRAC_PI_2) {

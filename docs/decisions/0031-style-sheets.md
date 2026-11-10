@@ -921,7 +921,12 @@ Accepted, from [issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)
   attribute only, with no classes (but the standard toolbar group classes), ids or variables. It
   holds the regions' `overflow: hidden`, the default artwork, the sample map's colours and the
   theme swatch's rounded square. Until the palette goes (section 10 of #995), the palette's
-  values and the text colour of `html, body` sit beside it in its tier as the host's.
+  values, the text colour of `html, body` and the palette colours of `knob-body`, `fader-cap` and
+  `fader-rail` sit beside it in its tier as the host's. A rule of this tier on an element replaces
+  what it inherited from a sheet's rule above it, and its value counts as not written by a sheet
+  (`ComputedStyle::authored`): a colour a theme gives a `knob` or a `mixer` does not reach a
+  knob's body or a fader's rail or cap, whose readers take the computed colour, this tier's
+  included (`Entered::computed_color_or`).
 - **Default artwork belongs to the user-agent sheet** (`knob-body { image:
   url("suhina:knob.body.svg"); }`), on the element that draws it, and takes its colour only from
   `currentColor`: the `data-suhina-ink` attribute is gone. A control with two colours is two

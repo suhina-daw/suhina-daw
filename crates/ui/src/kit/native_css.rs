@@ -24,10 +24,8 @@ mod diagnostics;
 mod geometry;
 mod native;
 
-/// Suhina's user-agent sheet, parsed once: the first tier of every cascade.
-pub(super) fn user_agent_sheet() -> Option<&'static suhina_style::sheet::Sheet> {
-    native::user_agent()
-}
+pub(super) use native::user_agent;
+pub use native::user_agent_color;
 mod paint;
 mod shadows;
 mod text;
@@ -913,8 +911,10 @@ pub fn begin_frame(ui: &egui::Ui) {
         // style/layout caches for an unrelated opacity tick rebuilt every control's
         // style during every drag frame.
         // Escaped identifiers are conservatively treated as depending on all tokens.
+        let needed = format!("--{variable}");
         if key != "text.primary"
-            && !source.as_deref().is_some_and(|css| css.contains('\\') || css.contains(&format!("--{variable}")))
+            && !native::PART_COLOURS.contains(&needed)
+            && !source.as_deref().is_some_and(|css| css.contains('\\') || css.contains(&needed))
         {
             continue;
         }

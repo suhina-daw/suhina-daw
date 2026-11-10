@@ -120,6 +120,14 @@ impl Name {
     pub fn response(self, response: &Response) -> Builder<'_> {
         self.builder().response(response)
     }
+    /// [`Name::response`] when there is a response, else the element with no pointer state.
+    pub fn response_if(self, response: Option<&Response>) -> Builder<'_> {
+        let builder = self.builder();
+        match response {
+            Some(response) => builder.response(response),
+            None => builder,
+        }
+    }
     pub fn attr<'a>(self, attr: Attr, on: bool) -> Builder<'a> {
         self.builder().attr(attr, on)
     }
@@ -345,6 +353,14 @@ impl Entered {
     /// The element's `color`, or `fallback` where the sheet sets none.
     pub fn color_or(&self, fallback: Color32) -> Color32 {
         self.style().filter(|s| s.authored.color).map_or(fallback, |s| s.color)
+    }
+
+    /// The element's computed `color`, the user-agent tier's included: for an element whose
+    /// colour that tier gives (`knob-body`, `fader-cap`, `sample-point[kind]`), so a colour a
+    /// theme gives an element around it does not reach it. `fallback` only where no sheet styles
+    /// the window.
+    pub fn computed_color_or(&self, fallback: Color32) -> Color32 {
+        self.style().map_or(fallback, |s| s.color)
     }
 
     /// The element's `background-color`, or `fallback` where the sheet sets none.

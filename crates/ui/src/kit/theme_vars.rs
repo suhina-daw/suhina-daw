@@ -392,7 +392,7 @@ pub(in crate::kit) fn element_styles(
     let tree = Tree::new(elements)?;
     let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
     let mut sheets = vec![AppliedSheet { sheet: core, layer: Layer::UserAgent, root: None }];
-    if let Some(agent) = super::native_css::user_agent_sheet() {
+    if let Some(agent) = super::native_css::user_agent() {
         sheets.push(AppliedSheet { sheet: agent, layer: Layer::UserAgent, root: None });
     }
     sheets.push(AppliedSheet { sheet, layer: Layer::Theme, root: None });

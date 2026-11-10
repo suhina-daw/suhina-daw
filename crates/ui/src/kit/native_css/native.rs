@@ -81,16 +81,51 @@ impl Paint {
 }
 
 /// Suhina's user-agent sheet, parsed once: the first tier of every cascade.
-pub(super) fn user_agent() -> Option<&'static Sheet> {
+pub(in crate::kit) fn user_agent() -> Option<&'static Sheet> {
     static SHEET: std::sync::OnceLock<Option<Sheet>> = std::sync::OnceLock::new();
     SHEET.get_or_init(|| Sheet::parse(suhina_theme_package::USER_AGENT_SHEET).ok()).as_ref()
 }
 
-/// The palette's values and the text they colour, beside the user-agent sheet in its tier. Not
-/// part of the user-agent sheet, which has no variables: it goes with the palette (#995 § 10).
+/// The colour the user-agent sheet alone gives the element `name` with `attributes`
+/// (`sample-point[kind="kick"]`), as the element's own rule: what it looks like where no sheet
+/// styles the window. `None` where the sheet gives it no colour.
+pub fn user_agent_color(name: &str, attributes: &[(&str, &str)]) -> Option<Color32> {
+    let sheet = user_agent()?;
+    let element =
+        attributes.iter().fold(Element::new(name, None), |element, (name, value)| element.with_attribute(name, value));
+    let tree = Tree::new(vec![element]).ok()?;
+    let viewport = Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
+    let style =
+        cascade::last_style(&tree, None, viewport, &[AppliedSheet { sheet, layer: Layer::UserAgent, root: None }])
+            .ok()?;
+    match style.get(Property::Color) {
+        color if color == Property::Color.initial() => None,
+        Value::Color(Color::Rgba([r, g, b, a])) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
+        _ => None,
+    }
+}
+
+/// The palette colours of the parts whose artwork takes their `color` (`currentColor`) where a
+/// theme gives them none: a knob's body, a fader's rail and its cap, lit a little by the values'
+/// text while the pointer is on it. Each is a rule on the part itself, so a colour a theme gives
+/// an element around it (`knob`, `mixer`) is not inherited into the artwork. A knob's pointer
+/// has none: it takes the knob's colour.
+pub(super) const PART_COLOURS: &str = "\
+knob-body { color: var(--control-background); }
+fader-rail { color: color-mix(in srgb, var(--control-background), black 65%); }
+fader-cap { color: color-mix(in srgb, var(--control-background), var(--text-value) 28%); }
+fader-cap:hover, fader-cap:active { color: color-mix(in srgb, var(--control-hoverBackground), var(--text-value) 28%); }
+";
+
+/// The palette's values, the text they colour and [`PART_COLOURS`], beside the user-agent sheet
+/// in its tier. Not part of the user-agent sheet, which has no variables: it goes with the palette
+/// (#995 § 10).
 fn defaults(palette: &str) -> Option<Sheet> {
-    Sheet::parse(&format!("{palette}\nhtml, body {{ color:var(--text-primary); font-size:{}px; }}", super::theme::TEXT))
-        .ok()
+    Sheet::parse(&format!(
+        "{palette}\nhtml, body {{ color:var(--text-primary); font-size:{}px; }}\n{PART_COLOURS}",
+        super::theme::TEXT
+    ))
+    .ok()
 }
 
 fn viewport(engine: &Engine) -> Viewport {

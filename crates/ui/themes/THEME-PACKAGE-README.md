@@ -411,7 +411,9 @@ Use self-contained SVG paths and shapes; native labels stay native.
 The default artwork takes its colour only from `currentColor`, the `color` of the element that
 draws it, so a copy of it works in any theme. A control with two colours is two elements: style
 `knob-body` and `knob-pointer`, or `fader-cap` and `fader-rail`, each with its own `color`.
-Without a `color` of the theme's, each keeps the colour Suhina gives it today.
+Without a `color` of the theme's on the part itself, each keeps the colour Suhina gives it today:
+a `color` on `knob` or on a view around a fader does not change a knob's body or a fader's rail
+or cap, while a knob's pointer takes the knob's colour.
 
 *More › New theme…* and *More › Duplicate theme…* have an **Include the default artwork**
 checkbox: it copies every default SVG into the new theme's `assets/` and writes a rule for each

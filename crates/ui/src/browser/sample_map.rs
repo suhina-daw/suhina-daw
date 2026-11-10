@@ -468,29 +468,24 @@ thread_local! {
         std::cell::Cell::new(user_agent_kind_colours());
 }
 
-/// Each kind's colour as the user-agent sheet gives it, for when no theme sheet styles the map.
-fn user_agent_kind_colours() -> [Color32; Kind::ALL.len()] {
+/// Each kind's colour as the user-agent sheet alone gives it, for where no sheet styles the
+/// window: the sheet's own cascade, so its rules may be written in any form.
+pub(crate) fn user_agent_kind_colours() -> [Color32; Kind::ALL.len()] {
     static COLOURS: std::sync::OnceLock<[Color32; Kind::ALL.len()]> = std::sync::OnceLock::new();
     *COLOURS.get_or_init(|| {
-        let sheet = suhina_theme_package::USER_AGENT_SHEET;
         Kind::ALL.map(|kind| {
-            let rule = format!("sample-point[kind=\"{}\"] {{ color: ", kind.id());
-            sheet
-                .find(&rule)
-                .and_then(|at| sheet[at + rule.len()..].split(';').next())
-                .and_then(theme::parse_rgba)
-                .map_or(Color32::GRAY, |[r, g, b, a]| Color32::from_rgba_unmultiplied(r, g, b, a))
+            crate::kit::native_css::user_agent_color("sample-point", &[("kind", kind.id())]).unwrap_or(Color32::GRAY)
         })
     })
 }
 
 /// Works out each kind's colour for this frame, inside the map's element: one `sample-point`
-/// element per kind, styled by the sheets in use.
+/// element per kind, styled by the sheets in use, the user-agent sheet's rules included.
 fn refresh_kind_colours() {
     let defaults = user_agent_kind_colours();
     let colours = std::array::from_fn(|at| {
         let kind = Kind::ALL[at];
-        crate::kit::element::SAMPLE_POINT.attribute("kind", kind.id()).enter().color_or(defaults[at])
+        crate::kit::element::SAMPLE_POINT.attribute("kind", kind.id()).enter().computed_color_or(defaults[at])
     });
     KIND_COLOURS.with(|cell| cell.set(colours));
 }

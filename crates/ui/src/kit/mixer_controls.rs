@@ -235,26 +235,34 @@ pub fn send_field(
     }
 }
 
-/// The colour of a fader cap's artwork (its `currentColor`): `el`'s, the `fader-cap` in `state`,
-/// else the control colour lit a little by the values' text.
+/// The colour of a fader cap's artwork (its `currentColor`): the computed colour of `el`, the
+/// `fader-cap` in `state`, which the palette's tier gives (`native_css::native::PART_COLOURS`);
+/// where no sheet styles the window, the same: the control colour lit a little by the values' text.
 pub fn cap_ink(el: &super::element::Entered, state: super::skin::State) -> Color32 {
-    let lit = matches!(state, super::skin::State::Hover | super::skin::State::Active | super::skin::State::On);
-    el.color_or(motion::mix(
+    let lit = matches!(state, super::skin::State::Hover | super::skin::State::Active);
+    el.computed_color_or(motion::mix(
         if lit { theme::control_hover() } else { theme::control_background() },
         theme::text_value(),
         0.28,
     ))
 }
 
-/// The colour of a fader rail's artwork (its `currentColor`): `el`'s, the `fader-rail`, else the
-/// control colour darkened into a recess.
-pub fn rail_ink(el: &super::element::Entered) -> Color32 {
-    el.color_or(motion::mix(theme::control_background(), Color32::BLACK, 0.65))
+/// The control colour darkened into a recess: a fader rail's colour where a theme gives none.
+pub fn recess() -> Color32 {
+    motion::mix(theme::control_background(), Color32::BLACK, 0.65)
 }
 
-/// A tactile vertical fader cap. Its centre marker, rather than its edges, indicates the gain.
-pub fn fader_cap(painter: &egui::Painter, cap: Rect, hover: f32, state: super::skin::State) {
-    let el = super::element::FADER_CAP.enter();
+/// The colour of a fader rail's artwork (its `currentColor`): the computed colour of `el`, the
+/// `fader-rail`, which the palette's tier gives; where no sheet styles the window, [`recess`].
+pub fn rail_ink(el: &super::element::Entered) -> Color32 {
+    el.computed_color_or(recess())
+}
+
+/// A tactile vertical fader cap, drawn as `response`'s widget. Its centre marker, rather than its
+/// edges, indicates the gain.
+pub fn fader_cap(painter: &egui::Painter, cap: Rect, hover: f32, response: &egui::Response) {
+    let state = super::skin::State::response(response, false);
+    let el = super::element::FADER_CAP.response(response).enter();
     el.paint_background(painter, cap, 2.0);
     if super::skin::paint(painter, cap, "fader.cap", state, cap_ink(&el, state), 0.0) {
         return;

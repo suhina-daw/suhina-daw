@@ -376,9 +376,10 @@ like before a theme styles it.
   names is in the registry.
 - **The cascade** is: the user-agent sheet, the theme's `theme.css`, the chosen variant, device
   panel sheets (each inside its panel), and the user's `user.css` (`suhina_style::cascade::Layer`).
-  Until the palette goes (#995 § 10), the palette's values (`:root { --accent: … }`) and the text
-  colour of `html, body` sit beside the user-agent sheet in its tier; they are the host's, not the
-  sheet's.
+  Until the palette goes (#995 § 10), the palette's values (`:root { --accent: … }`), the text
+  colour of `html, body` and the palette colours of the parts below sit beside the user-agent
+  sheet in its tier; they are the host's, not the sheet's. A rule of this tier on an element
+  replaces what the element inherited from a theme's rule on an element around it.
 - **What it holds:** `overflow: hidden` on every region (the registry's `Region` kind); the default
   artwork; the sample map's colours; the theme swatch's rounded square.
 - **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
@@ -387,9 +388,14 @@ like before a theme styles it.
   colour only from `currentColor`, the `color` of the element that draws them: there is no
   `data-suhina-ink` attribute any more, so a copy of the default artwork works in any theme. A
   control with two colours is two elements: `knob-body` and `knob-pointer`, `fader-cap` and
-  `fader-rail`. Until a theme gives an element a `color`, each takes the palette colour the default
-  artwork had (`--control-background` for a knob's body, the control colour darkened for a fader's
-  rail, lit a little by the values' text for its cap, the knob's own colour for its pointer).
+  `fader-rail`. Until a theme gives one of these elements a `color` of its own, each takes the
+  palette colour the default artwork had: `--control-background` for a knob's body, the control
+  colour darkened for a fader's rail, lit a little by the values' text for its cap
+  (`--control-hoverBackground` instead while the pointer is on it or drags it), each a rule of the
+  palette's tier on the part itself, so a `color` a theme gives an element around it (`knob`,
+  `mixer`) does not reach it. A knob's pointer has no such rule: it takes the knob's colour. The
+  parts are entered with their control's pointer states, so `knob-body:hover` and
+  `fader-rail:active` apply.
 - **The elements of the default artwork:**
 
   | Element | Role | File |
