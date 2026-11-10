@@ -14,7 +14,7 @@ use suhina_model::{AutomationPoint, Entry, IdList, PointId};
 use suhina_model::TrackId;
 
 use crate::automation::{Points, Target, target};
-use crate::commands::Args;
+use crate::commands::{Args, track_id};
 use crate::{CommandError, Session};
 
 /// Copied points: their offsets from the range's start, their places on the lane (0 … 1) and
@@ -180,6 +180,38 @@ fn lane_of(params: &Value) -> (Option<usize>, String) {
     (device, params.get("param").and_then(Value::as_str).unwrap_or_default().to_string())
 }
 
+/// One of several lanes copied together (#1322): its device by its place on the track's chain
+/// and what it is (its kind and name), its parameter and its range.
+#[derive(Debug, Clone)]
+pub(crate) struct CopiedLane {
+    device: Option<usize>,
+    kind: Option<(suhina_model::DeviceKind, String)>,
+    param: String,
+    clip: AutomationClip,
+}
+
+/// What the device at `index` on `track`'s chain is: its kind and its name.
+fn device_kind(session: &Session, track: TrackId, index: usize) -> Option<(suhina_model::DeviceKind, String)> {
+    let device = session.project().channel_of_track(track)?.devices.get(index)?;
+    Some((device.kind.clone(), device.name.clone()))
+}
+
+/// Where a lane copied from a device goes on `track`: a device of the same kind (a built-in one
+/// by its id, a plug-in by its class, a `.sd` graph by its name), the one at the same place when
+/// that is one, else the first; `None` when the track has none, so the lane is left out rather
+/// than land on another device's parameter of the same id.
+fn same_device(session: &Session, track: TrackId, lane: &CopiedLane) -> Option<Option<usize>> {
+    let (Some(index), Some((kind, name))) = (lane.device, &lane.kind) else { return Some(lane.device) };
+    let devices = &session.project().channel_of_track(track)?.devices;
+    let alike = |d: &suhina_model::Device| {
+        d.kind == *kind && (!matches!(kind, suhina_model::DeviceKind::Sd) || d.name == *name)
+    };
+    if devices.get(index).is_some_and(alike) {
+        return Some(Some(index));
+    }
+    devices.iter().position(alike).map(Some)
+}
+
 /// Runs `one` on every lane `params` names (#1322), as one command: the lanes it could not act
 /// on (no automation there) are left out, and it fails only when it could act on none.
 fn on_each_lane(
@@ -227,11 +259,15 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
             && let Some(clip) = session.clipboards.automation.clone()
         {
             let (device, param) = lane_of(lane);
-            copied.push((device, param, clip));
+            let kind = match (device, track_id(&session.project, lane)) {
+                (Some(index), Ok(track)) => device_kind(session, track, index),
+                _ => None,
+            };
+            copied.push(CopiedLane { device, kind, param, clip });
             answers.push(answer);
         }
     }
-    let Some((_, _, first)) = copied.first().cloned() else {
+    let Some(first) = copied.first().map(|lane| lane.clip.clone()) else {
         return Err("none of these lanes has automation in the range".into());
     };
     session.clipboards.automation = Some(first);
@@ -282,8 +318,12 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
     let several = session.clipboards.automation_lanes.clone();
     if several.len() > 1 {
         let kept = session.clipboards.automation.clone();
+        let track = track_id(&session.project, params)?;
         let mut answers = Vec::new();
-        for (device, param, clip) in several {
+        for lane in several {
+            // Onto a device of the same kind on the track pasted to, or not at all.
+            let Some(device) = same_device(session, track, &lane) else { continue };
+            let CopiedLane { param, clip, .. } = lane;
             let mut one = params.clone();
             if let Some(map) = one.as_object_mut() {
                 map.insert("param".into(), json!(param));

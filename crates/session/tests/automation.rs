@@ -1167,6 +1167,44 @@ fn points_of(session: &Session, param: &str) -> Vec<(f64, f64)> {
         .map_or_else(Vec::new, |l| l.points.iter().map(|p| (p.beat, p.value)).collect())
 }
 
+/// Lanes copied together and pasted on another track go to a device of the same kind there, not
+/// to whatever device sits at the same place on its chain (#1322).
+#[test]
+fn lanes_copied_together_go_to_the_same_kind_of_device_on_another_track() {
+    let mut session = Session::new(project());
+    run(&mut session, "track.add", json!({ "kind": "midi", "name": "Other" })).unwrap();
+    let other = session.project().tracks.iter().find(|t| t.name == "Other").map(|t| t.id.0).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    // On the other track the utility comes second, after an instrument.
+    run(&mut session, "device.add", json!({ "track": other, "id": "sampler" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": other, "id": "utility" })).unwrap();
+    let kinds = |track: u32| -> Vec<String> {
+        let channel = session.project().channel_of_track(TrackId(track)).unwrap();
+        channel.devices.iter().map(|d| format!("{:?}", d.kind)).collect()
+    };
+    assert_eq!(kinds(other).len(), 2, "{:?}", kinds(other));
+    for beat in [0, 4] {
+        let gain = json!({ "track": 1, "device": 0, "param": "gain", "beat": beat, "value": beat });
+        run(&mut session, "automation.addPoint", gain).unwrap();
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": 0.5 }))
+            .unwrap();
+    }
+    let lanes_too = json!([{ "device": 0, "param": "gain" }]);
+    run(
+        &mut session,
+        "automation.copy",
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "lanes": lanes_too }),
+    )
+    .unwrap();
+    run(&mut session, "automation.paste", json!({ "track": other, "param": "pan", "start": 8 })).unwrap();
+    let channel = session.project().channel_of_track(TrackId(other)).unwrap();
+    assert!(
+        channel.devices[1].automation.iter().any(|l| l.param == "gain" && !l.points.is_empty()),
+        "the utility's gain"
+    );
+    assert!(channel.devices[0].automation.is_empty(), "nothing on the instrument at the same place");
+}
+
 /// A range painted over several lanes acts on all of them in one step (#1322): duplicated,
 /// deleted, copied and pasted back on each lane; a lane without automation there is left out.
 #[test]
