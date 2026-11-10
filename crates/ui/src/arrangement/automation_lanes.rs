@@ -1350,6 +1350,7 @@ pub struct LanesState {
     /// its edge went past, for the view to scroll by on its next frame so the edge stays in view.
     follow_resize: Option<(Rect, f32)>,
     /// The range's moves an undo can take back, and those a redo can make again, newest last.
+    range_undo: Vec<RangeStep>,
     range_redo: Vec<RangeStep>,
     /// A click anywhere on a lane adds a point (Settings › Arrangement › Automation); off, only a
     /// click on or near the line does, and a double-click adds one anywhere.
