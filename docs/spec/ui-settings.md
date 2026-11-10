@@ -152,7 +152,8 @@ themes remain in a two-column grid. Clicking a card immediately applies and save
 selected theme and returns the gallery to the top. Holding the primary button on the
 active card keeps the background clear, including stationary frames; release restores
 the blur and dimming immediately.
-More holds Duplicate, Reload, Open folder, Back up and Export template.
+More holds New theme…, Duplicate theme…, New variant, Add default artwork, Reload, Open folder,
+Export theme, Back up and Export template.
 
 Restore built-in opens a choice of the original built-in palettes, in both gallery and
 editor. Selecting one asks whether to save a new copy of the current theme first:

@@ -656,7 +656,7 @@ with a label is one of the theme's **quick controls**, listed under *Theme setti
 control for its type. The variant editor (*Edit current theme…*) shows only those: the core
 palette colours, liquid strengths and surface gradients are no longer listed there, and a theme
 that declares none says so. The theme's values
-are read at the root of a 1280 by 800 dark window (the settings on `window`, `session` and
+are read at the root of a 1280 by 800 window (the settings on `window`, `session` and
 `meter` under it). A variant holds values for declared properties and for settings
 (`"meter-style": "needle"`, written as a rule of the setting's element); they apply in the Variant tier,
 above the theme's rules, including its conditional ones.
@@ -751,7 +751,7 @@ deeply nested, unbalanced) keeps the last working styles. Not implemented: trans
 filters, other gradient interpolation spaces and hints, font families and weights,
 container queries and geometry animation.
 
-**Tiers.** Every style resolves through four tiers: Suhina's defaults, the theme's sheet,
+**Tiers.** Every style resolves through five tiers: the user-agent sheet, the theme's sheet, the variant,
 device panel sheets (`.sd` version 6 `style`, bounded to their panel; `#id` selects a control
 by its id) and the user's own `user.css` in the themes folder. A higher tier wins even over
 `!important` in a lower one. `user.css` is read like a theme file (watched, at most 128 KiB, a

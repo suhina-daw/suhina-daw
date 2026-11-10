@@ -98,20 +98,6 @@ fn render_themes_gallery_and_editor_for_review() {
     harness.remove_cursor();
     harness.run();
     harness.render().unwrap().save(folder.join("editor.png")).unwrap();
-    wheel_to(&mut harness, "Track gradient", 40);
-    harness.get_by_label("Track gradient").click();
-    harness.run();
-    wheel_to(&mut harness, "Enable Track gradient", 40);
-    harness.get_by_label("Enable Track gradient").click();
-    harness.run();
-    harness.remove_cursor();
-    harness.run();
-    harness.render().unwrap().save(folder.join("gradient-editor.png")).unwrap();
-    harness.get_by_label("Track stop 1 colour").click();
-    harness.run();
-    harness.remove_cursor();
-    harness.run();
-    harness.render().unwrap().save(folder.join("colour-popup.png")).unwrap();
 }
 
 /// A swatch is a rounded rectangle its colour fills to the edge, larger on the large card, and

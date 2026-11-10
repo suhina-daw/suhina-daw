@@ -417,3 +417,24 @@ fn add_default_artwork_on_a_variant_goes_to_its_theme() {
     assert!(actions.iter().any(|action| matches!(action, FileAction::Save { id, .. } if id == "ink")), "{actions:?}");
     assert_eq!(themes.take_notice().as_deref(), Some("Added 16 default images to the theme's assets folder"));
 }
+
+/// Add default artwork on a theme of the user's in use as itself adds the artwork to its variants
+/// too, so a later save of a variant, which writes the theme's theme.css, keeps the rules.
+#[test]
+fn add_default_artwork_on_a_theme_goes_to_its_variants() {
+    let sheet = "@property --glow { syntax: \"<number>\"; initial-value: 0.5; label: \"Glow\"; range: 0 1; }";
+    let (theme, warnings) = crate::kit::theme::from_css(sheet);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut themes = Themes::default();
+    themes.set(vec![ThemeEntry { id: "ink".into(), theme }], None);
+    let set = ThemeRequest::EditValue { name: "--glow".into(), value: "0.2".into() };
+    assert_eq!(themes.request("ink", set), Some("ink@custom".into()));
+    themes.take_actions();
+    assert_eq!(themes.request("ink", ThemeRequest::AddDefaultArtwork), None, "the theme stays in use");
+    let all = crate::kit::skin::roles().count();
+    for id in ["ink", "ink@custom"] {
+        assert_eq!(themes.get(id).unwrap().skin.assets.len(), all, "{id}");
+    }
+    let actions = themes.take_actions();
+    assert!(actions.iter().any(|action| matches!(action, FileAction::Save { id, .. } if id == "ink")), "{actions:?}");
+}

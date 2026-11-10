@@ -368,12 +368,12 @@ impl Themes {
                 }
                 let count = missing.len();
                 let real = self.real_id(current);
-                let (base, variant) = crate::kit::theme_vars::split_id(&real);
-                let base = base.to_owned();
-                // Artwork is the theme's, not a variant's: a theme of the user's in use with a
-                // variant gets it in the theme and in each of its variants, and the theme is saved,
-                // so a later save of the theme itself keeps the rules (#1019 review).
-                let switched = if variant.is_some() && !theme::is_built_in(&base) && self.get(&base).is_some() {
+                let base = crate::kit::theme_vars::split_id(&real).0.to_owned();
+                // Artwork is the theme's, not a variant's: a theme of the user's, in use as itself
+                // or with a variant, gets it in the theme and in each of its variants, and the theme
+                // is saved, so a later save of the theme or of any variant (each writes theme.css)
+                // keeps the rules (#1019 review).
+                let switched = if !theme::is_built_in(&base) && self.get(&base).is_some() {
                     for entry in self.entries.iter_mut().filter(|e| crate::kit::theme_vars::split_id(&e.id).0 == base) {
                         let missing = crate::kit::skin::missing_defaults(&entry.theme.skin.assets);
                         entry.theme.skin.assets.extend(missing);
