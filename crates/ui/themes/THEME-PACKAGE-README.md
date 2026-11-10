@@ -200,7 +200,7 @@ or on `#device-<id>` for one (its expanded panel included):
 4. For conditional styles, selectors, variables, effects, motion or connected Flex/Grid
    layout, write them in `theme.css` too. Suhina changes only the declarations its editors set.
 5. For a new control silhouette, edit an SVG or PNG and name it in `theme.css`, e.g.
-   `play { image: url("assets/play.svg"); }`.
+   `icon[kind="play"] { image: url("assets/play.svg"); }`.
    For layout positions, the toolbar's right-click → Edit toolbar mode is usually
    easier: drag the actual controls on the 8-point grid. Done saves to `theme.json`; Cancel or
    Escape discards. Entering/leaving edit mode alone preserves the layout.
@@ -379,22 +379,55 @@ receiver needs to know it came from you.
 
 ## SVG inheritance and safe defaults
 
-Supported roles are `fader.cap`, `fader.rail`, `knob.body`, `knob.pointer`, `button`,
-`play`, `stop`, `record`, `solo`, `arm`, `cue`, `track.midi`, `track.audio`,
-`track.name`, `track.body` and `meter`. State variants append `.hover`,
-`.active` or `.disabled`. Example overrides:
+Suhina's user-agent style sheet, the first sheet under your theme, gives every control its
+default artwork, on the element that draws it:
+
+| Element | File |
+|---|---|
+| `button` | `button.svg` |
+| `icon[kind="play"]`, `icon[kind="stop"]`, `icon[kind="record"]`, `icon[kind="solo"]`, `icon[kind="arm"]`, `icon[kind="cue"]` | `play.svg`, `stop.svg`, … |
+| `icon[kind="midi"]`, `icon[kind="audio"]` | `track.midi.svg`, `track.audio.svg` |
+| `track-header`, `track-name` | `track.body.svg`, `track.name.svg` |
+| `knob-body`, `knob-pointer` | `knob.body.svg`, `knob.pointer.svg` |
+| `fader-cap`, `fader-rail` | `fader.cap.svg`, `fader.rail.svg` |
+| `meter` | `meter.svg` |
+
+It writes them as `knob-body { image: url("suhina:knob.body.svg"); }`; a `suhina:` URL names an
+SVG built into Suhina, and your theme may use one too. A state follows the element:
+`button:hover`, `fader-cap:active`, `button:disabled`, `button[checked]` (a toggle that is on).
+Example overrides:
 
 ```css
-play { image: url("assets/play.svg"); }
+icon[kind="play"] { image: url("assets/play.svg"); }
 button:hover { image: url("assets/button.hover.svg"); }
+knob-pointer { color: #FFB000; }
 ```
 
 Lookup uses the theme's state SVG, then its base SVG, then Suhina's default SVG.
 Themes only need to define the images they replace. Removing an override restores
 inheritance. Knob pointers rotate with the parameter and fader caps follow its value.
-Use self-contained SVG paths and shapes; native labels stay native. `currentColor`
-uses the current theme/control colour. Default body/rail/cap SVGs additionally use
-`data-suhina-ink` to retain their semantic palette colour when copied or exported.
+Use self-contained SVG paths and shapes; native labels stay native.
+
+The default artwork takes its colour only from `currentColor`, the `color` of the element that
+draws it, so a copy of it works in any theme. A control with two colours is two elements: style
+`knob-body` and `knob-pointer`, or `fader-cap` and `fader-rail`, each with its own `color`.
+Without a `color` of the theme's on the part itself, each keeps the colour Suhina gives it today:
+a `color` on `knob` or on a view around a fader does not change a knob's body or a fader's rail
+or cap, while a knob's pointer takes the knob's colour.
+
+A theme made for an earlier version: artwork of its own for `knob.body`, `fader.rail` or
+`fader.cap` that uses `currentColor` drew in the knob's pointer colour or the values' text colour,
+and now draws in the part's `color`. Give the part that colour to keep the look
+(`knob-body { color: var(--accent); }`, `fader-cap, fader-rail { color: var(--text-value); }`).
+The `--kind-*` colours of the sample map are no longer read: write
+`sample-point[kind="kick"] { color: #D06E5E; }` and so on instead.
+
+*More › New theme…* and *More › Duplicate theme…* have an **Include the default artwork**
+checkbox: it copies every default SVG into the new theme's `assets/` and writes a rule for each
+into its `theme.css` (`knob-body { image: url("assets/knob.body.svg"); }`), ready to edit. *More ›
+Add default artwork* does the same for the theme in use, adding only what it lacks.
+
+The rules of an earlier form (`knob.body { image: … }`, `play`, `solo:on`) still read.
 
 Suhina's default artwork is built into the app (its sources are in the repository's
 `assets/themes/default/`); there is no copy in the themes folder to edit. To change a control's
@@ -603,7 +636,8 @@ track-header[selected] track-name { color: #FFFFFF; }
 ```
 
 A button's glyph takes the button's `color`, in every state. Artwork has an on state of its own,
-`solo:on { image: url("assets/solo.on.svg"); }`, which falls back to `:active` artwork.
+`icon[kind="solo"][checked] { image: url("assets/solo.on.svg"); }`, which falls back to
+`:active` artwork.
 
 ### Tracks
 

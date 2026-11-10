@@ -283,7 +283,7 @@ README, so an agent can write a theme from the README alone.
 | --- | --- |
 | `width`, `height`, `aspect-ratio`, `orientation` | The window (with `min-` and `max-`) |
 | `resolution` | The display's scale factor (`2dppx` on a Retina screen) |
-| `prefers-color-scheme`, `prefers-contrast`, `prefers-reduced-motion`, `prefers-reduced-transparency` | The OS settings |
+| `prefers-contrast`, `prefers-reduced-motion`, `prefers-reduced-transparency` | The OS settings (`prefers-color-scheme` is not supported: amendment of 2026-11-10) |
 | `transparency` | `on` when the window is transparent (section 6) |
 | `desktop-blur` | `on` when the OS blurs the desktop behind it |
 | `platform` | `windows`, `macos`, `linux` |
@@ -909,3 +909,36 @@ open.
   section's edge and stops at the toolbar's, with no exception for the toolbar. `outline-width`,
   `outline-style` (`none` or `solid`), `outline-color` (the foreground by default),
   `outline-offset` and the `outline` shorthand are registered properties.
+
+## Amendment: the user-agent sheet and default artwork (2026-11-10)
+
+Accepted, from [issue #995](https://github.com/suhina-daw/suhina-daw/issues/995) sections 1 and 4
+([#1019](https://github.com/suhina-daw/suhina-daw/issues/1019)).
+
+- **A user-agent style sheet**, `crates/theme-package/src/user-agent.css`, is the first tier of
+  the cascade: user-agent sheet, theme, variant, device panel sheets, user sheet
+  (`Layer::UserAgent`, which was `Layer::Default`). It styles elements by name, state and
+  attribute only, with no classes (but the standard toolbar group classes), ids or variables. It
+  holds the regions' `overflow: hidden`, the default artwork, the sample map's colours and the
+  theme swatch's rounded square. Until the palette goes (section 10 of #995), the palette's
+  values, the text colour of `html, body` and the palette colours of `knob-body`, `fader-cap` and
+  `fader-rail` sit beside it in its tier as the host's. A rule of this tier on an element replaces
+  what it inherited from a sheet's rule above it, and its value counts as not written by a sheet
+  (`ComputedStyle::authored`): a colour a theme gives a `knob` or a `mixer` does not reach a
+  knob's body or a fader's rail or cap, whose readers take the computed colour, this tier's
+  included (`Entered::computed_color_or`).
+- **Default artwork belongs to the user-agent sheet** (`knob-body { image:
+  url("suhina:knob.body.svg"); }`), on the element that draws it, and takes its colour only from
+  `currentColor`: the `data-suhina-ink` attribute is gone. A control with two colours is two
+  elements (`knob-body` and `knob-pointer`, new in the registry, and `fader-cap` and
+  `fader-rail`); a button's and a track's symbols are `icon[kind="…"]`. The earlier role
+  selectors (`knob.body`, `play`, `solo:on`) still read; Suhina writes the element form.
+- **Including the default artwork** in a theme is an option of *New theme* and *Duplicate*, and
+  *Add default artwork* adds what a theme lacks: the SVGs are copied into its `assets/` with a
+  rule for each in its `theme.css`.
+- **Sample-map colours are not settings**: the user-agent sheet styles `sample-point[kind="…"]`
+  and the `kind.*` palette tokens are gone.
+- **Quick controls are the theme's `@property` rules with a label**; the variant editor shows
+  only those.
+- **`@media (prefers-color-scheme)` is not supported**, which replaces it in the table of media
+  features above: a theme's light and dark looks are variants.

@@ -245,6 +245,13 @@ Every item has a kind. The kinds and the words in names that give them:
 | Effect | fx, sfx, riser, impact, sweep, noise |
 | Other | anything else |
 
+**Colours.** Each dot is a `sample-point` element with a `kind` attribute (`kick`, `snare`,
+`clap`, `closedHat`, `openHat`, `hat`, `rim`, `tom`, `crash`, `ride`, `cymbal`, `percussion`,
+`bass`, `tonal`, `vocal`, `effect`, `other`), and its colour is the element's `color`. Suhina's
+user-agent sheet gives each kind its colour (`sample-point[kind="kick"] { color: #D06E5E; }`,
+[theme skins](theme-skins.md) › The user-agent sheet); a theme may restyle them. They are not
+theme settings or palette tokens.
+
 - Names are split into words at spaces, punctuation, changes of case and between letters and
   digits (`KickHard_02` → kick, hard, 02); a word with a trailing *s* also counts as the word
   without it (`Kicks`, `Hats`) when what is left has at least three letters and the word is not

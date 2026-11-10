@@ -354,9 +354,9 @@ fn root_variables(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<Str
     use suhina_style::selector::{Element, Tree};
     let core = core_parsed().ok_or("the core theme properties do not parse")?;
     let tree = Tree::new(vec![Element::new("html", None)])?;
-    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, dark: true, reduced_motion: false };
+    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
     let mut sheets = vec![
-        AppliedSheet { sheet: core, layer: Layer::Default, root: None },
+        AppliedSheet { sheet: core, layer: Layer::UserAgent, root: None },
         AppliedSheet { sheet, layer: Layer::Theme, root: None },
     ];
     if let Some(variant) = variant {
@@ -390,11 +390,12 @@ pub(in crate::kit) fn element_styles(
         ends.push(parent);
     }
     let tree = Tree::new(elements)?;
-    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, dark: true, reduced_motion: false };
-    let mut sheets = vec![
-        AppliedSheet { sheet: core, layer: Layer::Default, root: None },
-        AppliedSheet { sheet, layer: Layer::Theme, root: None },
-    ];
+    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
+    let mut sheets = vec![AppliedSheet { sheet: core, layer: Layer::UserAgent, root: None }];
+    if let Some(agent) = super::native_css::user_agent() {
+        sheets.push(AppliedSheet { sheet: agent, layer: Layer::UserAgent, root: None });
+    }
+    sheets.push(AppliedSheet { sheet, layer: Layer::Theme, root: None });
     if let Some(variant) = variant {
         sheets.push(AppliedSheet { sheet: variant, layer: Layer::Variant, root: None });
     }

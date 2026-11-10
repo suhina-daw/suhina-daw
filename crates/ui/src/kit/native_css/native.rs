@@ -36,7 +36,7 @@ impl Paint {
         Some(())
     }
 
-    /// The cascade of host defaults, the theme, the chosen variant's values, device panel sheets (each bounded to its
+    /// The cascade of the user-agent sheet (and the palette's defaults beside it), the theme, the chosen variant's values, device panel sheets (each bounded to its
     /// panel's element) and the user's sheet, in that order of precedence.
     fn styles(
         &self,
@@ -58,9 +58,13 @@ impl Paint {
         devices: &[(&'s Sheet, usize)],
         user: Option<&'s Sheet>,
     ) -> Vec<AppliedSheet<'s>> {
-        let mut sheets = vec![AppliedSheet { sheet: &self.defaults, layer: Layer::Default, root: None }];
+        let mut sheets = Vec::with_capacity(5 + devices.len().min(16));
+        if let Some(agent) = user_agent() {
+            sheets.push(AppliedSheet { sheet: agent, layer: Layer::UserAgent, root: None });
+        }
+        sheets.push(AppliedSheet { sheet: &self.defaults, layer: Layer::UserAgent, root: None });
         if let Some(extra) = extra {
-            sheets.push(AppliedSheet { sheet: extra, layer: Layer::Default, root: None });
+            sheets.push(AppliedSheet { sheet: extra, layer: Layer::UserAgent, root: None });
         }
         sheets.push(AppliedSheet { sheet: &self.sheet, layer: Layer::Theme, root: None });
         if let Some(variant) = variant {
@@ -76,29 +80,56 @@ impl Paint {
     }
 }
 
+/// Suhina's user-agent sheet, parsed once: the first tier of every cascade.
+pub(in crate::kit) fn user_agent() -> Option<&'static Sheet> {
+    static SHEET: std::sync::OnceLock<Option<Sheet>> = std::sync::OnceLock::new();
+    SHEET.get_or_init(|| Sheet::parse(suhina_theme_package::USER_AGENT_SHEET).ok()).as_ref()
+}
+
+/// The colour the user-agent sheet alone gives the element `name` with `attributes`
+/// (`sample-point[kind="kick"]`), as the element's own rule: what it looks like where no sheet
+/// styles the window. `None` where the sheet gives it no colour.
+pub fn user_agent_color(name: &str, attributes: &[(&str, &str)]) -> Option<Color32> {
+    let sheet = user_agent()?;
+    let element =
+        attributes.iter().fold(Element::new(name, None), |element, (name, value)| element.with_attribute(name, value));
+    let tree = Tree::new(vec![element]).ok()?;
+    let viewport = Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
+    let style =
+        cascade::last_style(&tree, None, viewport, &[AppliedSheet { sheet, layer: Layer::UserAgent, root: None }])
+            .ok()?;
+    match style.get(Property::Color) {
+        color if color == Property::Color.initial() => None,
+        Value::Color(Color::Rgba([r, g, b, a])) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
+        _ => None,
+    }
+}
+
+/// The palette colours of the parts whose artwork takes their `color` (`currentColor`) where a
+/// theme gives them none: a knob's body, a fader's rail and its cap, lit a little by the values'
+/// text while the pointer is on it. Each is a rule on the part itself, so a colour a theme gives
+/// an element around it (`knob`, `mixer`) is not inherited into the artwork. A knob's pointer
+/// has none: it takes the knob's colour.
+pub(super) const PART_COLOURS: &str = "\
+knob-body { color: var(--control-background); }
+fader-rail { color: color-mix(in srgb, var(--control-background), black 65%); }
+fader-cap { color: color-mix(in srgb, var(--control-background), var(--text-value) 28%); }
+fader-cap:hover, fader-cap:active { color: color-mix(in srgb, var(--control-hoverBackground), var(--text-value) 28%); }
+";
+
+/// The palette's values, the text they colour and [`PART_COLOURS`], beside the user-agent sheet
+/// in its tier. Not part of the user-agent sheet, which has no variables: it goes with the palette
+/// (#995 § 10).
 fn defaults(palette: &str) -> Option<Sheet> {
-    // Regions keep what their children paint inside them (`overflow: hidden`); other elements let
-    // it pass, as CSS's elements do.
-    let regions: Vec<&str> = suhina_theme_package::elements::ELEMENTS
-        .iter()
-        .filter(|element| matches!(element.kind, suhina_theme_package::elements::Kind::Region))
-        .map(|element| element.name)
-        .collect();
     Sheet::parse(&format!(
-        "{palette}\nhtml, body {{ color:var(--text-primary); font-size:{}px; }}\n{} {{ overflow: hidden; }}",
-        super::theme::TEXT,
-        regions.join(", ")
+        "{palette}\nhtml, body {{ color:var(--text-primary); font-size:{}px; }}\n{PART_COLOURS}",
+        super::theme::TEXT
     ))
     .ok()
 }
 
 fn viewport(engine: &Engine) -> Viewport {
-    Viewport {
-        width: engine.size[0] as f32,
-        height: engine.size[1] as f32,
-        dark: engine.dark,
-        reduced_motion: !engine.motion,
-    }
+    Viewport { width: engine.size[0] as f32, height: engine.size[1] as f32, reduced_motion: !engine.motion }
 }
 
 fn variant(engine: &Engine) -> Option<&Sheet> {
@@ -239,23 +270,14 @@ pub(super) fn settings_of(
     crate::kit::theme_vars::element_styles(sheet, variant, user, &[path]).ok()?.first().map(computed)
 }
 
-/// What the host gives a theme's swatch before any theme styles it.
-const SWATCH_DEFAULTS: &str = "theme-swatch { background-color: attr(color type(<color>)); border-radius: 6px; }";
-
-/// A `theme-swatch` element whose `color` attribute is `color`, as the theme in use styles it.
+/// A `theme-swatch` element whose `color` attribute is `color`, as the theme in use styles it
+/// over the user-agent sheet's rounded square.
 pub(super) fn theme_swatch(engine: &Engine, color: &str) -> Option<Computed> {
-    static DEFAULTS: std::sync::OnceLock<Option<Sheet>> = std::sync::OnceLock::new();
-    let defaults = DEFAULTS.get_or_init(|| Sheet::parse(SWATCH_DEFAULTS).ok()).as_ref()?;
     let mut elements = roots(false);
     elements.push(Element::new("theme-swatch", Some(1)).with_attribute("color", color));
     let tree = Tree::new(elements).ok()?;
     let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
-    engine
-        .native
-        .as_ref()?
-        .styles(&tree, viewport(engine), Some(defaults), variant(engine), &[], user)?
-        .last()
-        .map(computed)
+    engine.native.as_ref()?.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.last().map(computed)
 }
 
 /// Properties that ask for theme layout when a theme writes them on a laid-out element.

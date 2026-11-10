@@ -64,6 +64,96 @@ fn a_drawn_item_takes_its_colour_attribute() {
     assert_eq!(style.map(|s| s.background), Some(color));
 }
 
+/// A colour a theme gives a knob, or a view around a fader, does not reach the parts whose artwork
+/// keeps a colour of its own: a knob's body and a fader's rail and cap keep their palette colours
+/// (the user-agent tier's rules on the parts themselves), and only the knob's pointer takes the
+/// knob's colour (#1019 review).
+#[test]
+fn a_colour_around_a_knob_or_fader_does_not_reach_its_body_rail_or_cap() {
+    let css = ":root { --control-background: #112233; --control-hoverBackground: #223344; \
+               --text-value: #FFFFFF; } mixer { color: #00FF00; } knob { color: #FF0000; }";
+    let unset = egui::Color32::from_rgb(1, 2, 3);
+    let (body, pointer, rail, cap) = frames(css, || {
+        let _mixer = MIXER.enter();
+        let knob = KNOB.enter();
+        let body = KNOB_BODY.enter().computed_color_or(unset);
+        let pointer = KNOB_POINTER.enter().color_or(unset);
+        drop(knob);
+        let rail = super::super::mixer_controls::rail_ink(&FADER_RAIL.enter());
+        let cap = super::super::mixer_controls::cap_ink(&FADER_CAP.enter(), super::super::skin::State::Normal);
+        (body, pointer, rail, cap)
+    });
+    let rgb = egui::Color32::from_rgb;
+    let mix = super::super::motion::mix;
+    assert_eq!(body, rgb(0x11, 0x22, 0x33));
+    assert_eq!(pointer, rgb(0xff, 0, 0));
+    let near =
+        |a: egui::Color32, b: egui::Color32| a.to_array().iter().zip(b.to_array()).all(|(x, y)| x.abs_diff(y) <= 1);
+    assert!(near(rail, mix(rgb(0x11, 0x22, 0x33), egui::Color32::BLACK, 0.65)), "{rail:?}");
+    assert!(near(cap, mix(rgb(0x11, 0x22, 0x33), egui::Color32::WHITE, 0.28)), "{cap:?}");
+}
+
+/// A fader's cap under the pointer takes the hover colour of the palette's tier
+/// (`fader-cap:hover`), which applies when the cap is entered with its pointer state.
+#[test]
+fn a_hovered_fader_cap_takes_its_hover_colour() {
+    let css = ":root { --control-background: #112233; --control-hoverBackground: #808080; \
+               --text-value: #FFFFFF; }";
+    let (normal, hovered) = frames(css, || {
+        let normal = FADER_CAP.pointer(false, false, false).enter().computed_color_or(egui::Color32::BLACK);
+        let hovered = FADER_CAP.pointer(true, false, false).enter().computed_color_or(egui::Color32::BLACK);
+        (normal, hovered)
+    });
+    let near =
+        |a: egui::Color32, b: egui::Color32| a.to_array().iter().zip(b.to_array()).all(|(x, y)| x.abs_diff(y) <= 1);
+    let mix = super::super::motion::mix;
+    let rgb = egui::Color32::from_rgb;
+    assert!(near(normal, mix(rgb(0x11, 0x22, 0x33), egui::Color32::WHITE, 0.28)), "{normal:?}");
+    assert!(near(hovered, mix(rgb(0x80, 0x80, 0x80), egui::Color32::WHITE, 0.28)), "{hovered:?}");
+}
+
+/// A knob's body entered with the knob's response has its pointer states, so a theme's
+/// `knob-body:hover` applies to it.
+#[test]
+fn a_part_entered_with_its_controls_response_takes_its_hover_rule() {
+    let css = "knob-body { color: #000000; } knob-body:hover { color: #00FF00; }";
+    super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut colours = Vec::new();
+    for _ in 0..3 {
+        let input =
+            egui::RawInput { events: vec![egui::Event::PointerMoved(egui::pos2(10.0, 10.0))], ..Default::default() };
+        ctx.run_ui(input, |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, false);
+            let rect = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(20.0, 20.0));
+            let response = ui.interact(rect, egui::Id::unique("knob"), egui::Sense::click_and_drag());
+            colours.push((
+                KNOB_BODY.response_if(Some(&response)).enter().computed_color_or(egui::Color32::RED),
+                KNOB_BODY.response_if(None).enter().computed_color_or(egui::Color32::RED),
+            ));
+        })
+        .textures_delta
+        .clear();
+    }
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    assert_eq!(colours.last(), Some(&(egui::Color32::from_rgb(0, 0xFF, 0), egui::Color32::BLACK)), "{colours:?}");
+}
+
+/// A sound on the sample map takes the user-agent sheet's colour for its kind, not a colour a
+/// theme gives the map around it, and a theme's rule for a kind replaces it.
+#[test]
+fn a_sample_point_takes_its_kinds_colour_not_the_maps() {
+    let css = "sample-map { color: #00FF00; } sample-point[kind=\"snare\"] { color: #0000FF; }";
+    let (kick, snare) = frames(css, || {
+        let _map = SAMPLE_MAP.enter();
+        let kick = SAMPLE_POINT.attribute("kind", "kick").enter().computed_color_or(egui::Color32::BLACK);
+        let snare = SAMPLE_POINT.attribute("kind", "snare").enter().computed_color_or(egui::Color32::BLACK);
+        (kick, snare)
+    });
+    assert_eq!(kick, egui::Color32::from_rgb(0xD0, 0x6E, 0x5E));
+    assert_eq!(snare, egui::Color32::from_rgb(0, 0, 0xff));
+}
+
 #[test]
 fn paint_uses_the_native_fallbacks_where_the_sheet_sets_nothing() {
     let ctx = egui::Context::default();

@@ -195,7 +195,7 @@ fn portable_packages_include_the_shared_ai_author_guide_and_effective_svg() {
     );
     assert!(theme.skin.assets.is_empty(), "export must not modify sparse local overrides");
     let css = files.iter().find(|(name, _)| name == "plain/theme.css").unwrap();
-    assert!(std::str::from_utf8(&css.1).unwrap().contains("play { image: url(\"assets/play.svg\"); }"));
+    assert!(std::str::from_utf8(&css.1).unwrap().contains("icon[kind=\"play\"] { image: url(\"assets/play.svg\"); }"));
     assert!(files.iter().all(|(name, _)| !name.ends_with(".json") || name == "plain/theme.json"), "packages are CSS");
     assert!(!files.iter().any(|(name, _)| name.ends_with("layout.css")));
 }
