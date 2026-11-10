@@ -1422,16 +1422,16 @@ impl Session {
         let old = suhina_device_registry::legacy_folder(kind)?;
         let new = suhina_device_registry::library_folder(kind)?;
         let base = self.library_base()?;
-        let old_prefix = format!("{old}/");
-        let tail = if let Some(rest) = path.strip_prefix(&old_prefix) {
-            rest.to_owned()
-        } else if std::path::Path::new(path).is_absolute() {
-            let under = base.join(old).display().to_string();
-            path.strip_prefix(&format!("{under}/"))?.to_owned()
+        // Component-wise matching (`Path::strip_prefix`), never a display string: the
+        // state's separators are whatever the saving platform wrote, and a string match on
+        // `/` would miss every Windows one.
+        let given = std::path::Path::new(path);
+        let tail: PathBuf = if given.is_absolute() {
+            given.strip_prefix(base.join(old)).ok()?.to_path_buf()
         } else {
-            return None;
+            given.strip_prefix(old).ok()?.to_path_buf()
         };
-        (!tail.is_empty()).then(|| base.join("Sounds").join("NAM").join(new).join(tail))
+        (!tail.as_os_str().is_empty()).then(|| base.join("Sounds").join("NAM").join(new).join(tail))
     }
 
     /// The file a state's text points at: an absolute path is itself, a relative one joins the

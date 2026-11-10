@@ -146,11 +146,12 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
         let _ = std::fs::create_dir_all(&fresh);
         let mut moved = 0;
         let mut kept = 0;
+        let mut stuck = 0;
         let entries = std::fs::read_dir(&old).map(|entries| entries.flatten().collect::<Vec<_>>()).unwrap_or_default();
         for entry in entries {
             let target = fresh.join(entry.file_name());
             let source = entry.path();
-            let (entry_moved, entry_kept) = move_entry(&source, &target);
+            let (entry_moved, entry_kept, entry_stuck) = move_entry(&source, &target);
             if entry_moved > 0 {
                 if debug {
                     eprintln!("pack migrate: moved {:?}", entry.file_name());
@@ -163,6 +164,12 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
                 }
                 kept += entry_kept;
             }
+            if entry_stuck > 0 {
+                if debug {
+                    eprintln!("pack migrate: could not move {:?}", entry.file_name());
+                }
+                stuck += entry_stuck;
+            }
         }
         if old.is_dir() && is_empty(&old) {
             let _ = std::fs::remove_dir(&old);
@@ -170,26 +177,42 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
                 eprintln!("pack migrate: removed the emptied old folder {old:?}");
             }
         }
-        match (moved, kept) {
-            (0, 0) => {}
-            (moved, 0) => warnings.push(format!(
+        match (moved, kept, stuck) {
+            (0, 0, 0) => {}
+            (moved, 0, 0) => warnings.push(format!(
                 "your old {} folder ({}) moved into the library's {} folder: {moved} file(s)",
                 old_name,
                 old.display(),
                 library_folder
             )),
-            (0, kept) => warnings.push(format!(
+            (0, kept, 0) => warnings.push(format!(
                 "your old {} folder ({}) kept its {kept} file(s): their names are already in the library's {} folder",
                 old_name,
                 old.display(),
                 library_folder
             )),
-            (moved, kept) => warnings.push(format!(
+            (0, 0, stuck) => warnings.push(format!(
+                "your old {} folder ({}) could not move its {stuck} file(s) into the library's {} folder (a permission or \
+                 the filesystem refused); they stay at {}",
+                old_name,
+                old.display(),
+                library_folder,
+                old.display()
+            )),
+            (moved, kept, 0) => warnings.push(format!(
                 "your old {} folder ({}) mostly moved into the library's {} folder: {moved} file(s), {kept} kept in place \
                  because their names were already there",
                 old_name,
                 old.display(),
                 library_folder
+            )),
+            (moved, kept, stuck) => warnings.push(format!(
+                "your old {} folder ({}) mostly moved into the library's {} folder: {moved} file(s), {kept} kept in place \
+                 because their names were already there, {stuck} that could not move and stay at {}",
+                old_name,
+                old.display(),
+                library_folder,
+                old.display()
             )),
         }
     }
@@ -198,44 +221,52 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
 
 /// Moves one file or folder into `target` when it is missing there. Folders move recursively,
 /// their own names carried; a folder that lands only in part stays whole beside its moved
-/// files. A `target` that exists is never written over. Returns `(moved, kept)` — the files
-/// that landed in the new tree and the ones kept in place — so a folder that lands only in
-/// part is reported as the partial move it is, not a complete one.
-fn move_entry(source: &Path, target: &Path) -> (usize, usize) {
+/// files. A `target` that exists is never written over. Returns `(moved, kept, stuck)` — the
+/// files that landed in the new tree, the ones kept in place because the new tree holds their
+/// name, and the ones that could not move at all (a permission or the filesystem refused the
+/// rename) — so a folder that lands only in part is reported as the partial move it is, and a
+/// failed move is never silent: the file stays in the old folder and the user hears why.
+fn move_entry(source: &Path, target: &Path) -> (usize, usize, usize) {
     if target.exists() {
         if !source.is_dir() {
-            return (0, 1);
+            return (0, 1, 0);
         }
-        let (mut moved, mut kept) = (0, 0);
+        let (mut moved, mut kept, mut stuck) = (0, 0, 0);
         let entries =
             std::fs::read_dir(source).map(|entries| entries.flatten().collect::<Vec<_>>()).unwrap_or_default();
         for entry in entries {
-            let (inner_moved, inner_kept) = move_entry(&entry.path(), &target.join(entry.file_name()));
+            let (inner_moved, inner_kept, inner_stuck) = move_entry(&entry.path(), &target.join(entry.file_name()));
             moved += inner_moved;
             kept += inner_kept;
+            stuck += inner_stuck;
         }
         if is_empty(source) {
             let _ = std::fs::remove_dir(source);
         }
-        (moved, kept)
+        (moved, kept, stuck)
     } else {
         // The whole folder renames where its name is missing: the files it carries are the
-        // move the warning reports, not the folder as one entry.
+        // move the warning reports, not the folder as one entry. A refused rename (a
+        // permission, a different filesystem) leaves the files where they are — that is
+        // neither a move nor a kept name, and it gets its own count.
         let count = if source.is_dir() { files_in(source) } else { 1 };
-        (if std::fs::rename(source, target).is_ok() { count } else { 0 }, 0)
+        if std::fs::rename(source, target).is_ok() { (count, 0, 0) } else { (0, 0, count) }
     }
 }
 
 /// Counts the files inside `folder`, its subfolders included, so a whole folder's move
-/// reports the files it carried.
+/// reports the files it carried. The walk does not follow symlinks (`DirEntry::file_type`
+/// reads the entry's own kind): a link to an ancestor in the user's old folder would make
+/// `is_dir` recursion run forever and overflow the stack at start-up.
 fn files_in(folder: &Path) -> usize {
     std::fs::read_dir(folder)
         .map(|entries| {
             entries
                 .flatten()
-                .map(|entry| {
-                    let path = entry.path();
-                    usize::from(path.is_file()) + if path.is_dir() { files_in(&path) } else { 0 }
+                .map(|entry| match entry.file_type() {
+                    Ok(kind) if kind.is_dir() => files_in(&entry.path()),
+                    Ok(kind) if kind.is_file() => 1,
+                    _ => 0,
                 })
                 .sum()
         })
@@ -380,6 +411,56 @@ mod tests {
         }
         let written = unpack_pack(&dir);
         assert_eq!(written, 0, "the move carries the pack: the unpack writes nothing over it");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A move the filesystem refuses is never silent: the file stays in the old folder and
+    /// the warning says so with its own count, not as a kept name ([ADR 0036] › 4, the move
+    /// is told in a start-up warning). Unix only: Windows' read-only flag does not hold a
+    /// directory's children back, so the refusal cannot be staged there this way.
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_move_is_reported_as_stuck() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("suhina-pack-stuck-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let old_models = dir.join("NAM models");
+        std::fs::create_dir_all(&old_models).unwrap();
+        std::fs::write(old_models.join("One.nam"), b"one").unwrap();
+        let fresh = dir.join("Amp models");
+        std::fs::create_dir_all(&fresh).unwrap();
+        std::fs::set_permissions(&fresh, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let warnings = migrate_old_folders(&dir, &dir);
+        std::fs::set_permissions(&fresh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            warnings.iter().any(|line| line.contains("could not move") && line.contains("1 file(s)")),
+            "the refused move names its count: {warnings:?}"
+        );
+        assert_eq!(std::fs::read(old_models.join("One.nam")).unwrap(), b"one", "the stuck file stayed whole");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A symlink in the user's old folder is never followed: a link to an ancestor would
+    /// make a following walk run forever and overflow the stack at start-up (never crash).
+    /// The count reads the entries' own kinds and covers the real files only.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_in_the_old_folder_is_not_followed() {
+        use std::os::unix::fs::symlink;
+        let dir = std::env::temp_dir().join(format!("suhina-pack-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let old_models = dir.join("NAM models");
+        std::fs::create_dir_all(&old_models).unwrap();
+        std::fs::write(old_models.join("One.nam"), b"one").unwrap();
+        symlink(&old_models, old_models.join("loop")).unwrap();
+
+        assert_eq!(files_in(&old_models), 1, "the walk ends: the link is not followed");
+        let warnings = migrate_old_folders(&dir, &dir);
+        assert!(
+            warnings.iter().any(|line| line.contains("moved") && line.contains("1 file(s)")),
+            "the real file moved, the link with it: {warnings:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
