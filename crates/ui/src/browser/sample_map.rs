@@ -146,6 +146,9 @@ pub struct MapView {
     /// Shift-drag rectangle, from where it started.
     rubber_band: Option<Pos2>,
     similar: Option<(usize, Vec<usize>)>,
+    /// The point a right-click opened the menu for: the menu acts on it alone, never on a
+    /// point the pointer passes over later, and closes when it is gone ([#1254] review).
+    menu_point: Option<usize>,
     /// Where the points were drawn last frame.
     area: Rect,
     /// The area the density was last asked for, and since when it has had that size.
@@ -261,6 +264,7 @@ impl Default for MapView {
             legend: HashSet::new(),
             rubber_band: None,
             similar: None,
+            menu_point: None,
             area: Rect::NOTHING,
             resized: (Rect::NOTHING, 0.0),
             revision: 0,
@@ -298,6 +302,46 @@ impl MapView {
     /// The width over the height of where the points were drawn last frame; 1 before the first.
     pub fn aspect(&self) -> f32 {
         aspect_of(self.area)
+    }
+
+    /// The map's points are gone (the library they came from went under a replacement, and
+    /// the next one's are laid out in their place): the point-index states — the shown
+    /// similar ones and who they are for, a hover, a preview, the pressed point — are
+    /// indices into a points list that no longer is, and they read as unrelated samples of
+    /// the new layout ([#1254] review). The sizes, layout, zoom and centre are kept.
+    pub fn forget_points(&mut self) {
+        self.similar = None;
+        self.hovered = None;
+        self.previewed = None;
+        self.pressed = None;
+        self.menu_point = None;
+        // The waveform read for the hovered point goes with it ([#1254] review: a caller
+        // drawing new points directly showed it on another point of that index).
+        self.hover_waveform = None;
+        // A rubber band held over the old layout selects nothing of the new one's: the
+        // gesture ends here before a stretched release can pick by the old indices
+        // ([#1254] review).
+        self.rubber_band = None;
+    }
+
+    /// The map was laid out again, its points in a new order: the point-index states follow
+    /// their items to `moved(old index)`, and one whose item is not on the new map goes
+    /// ([#1254] review: Show similar's list kept the old indices and showed, and previewed,
+    /// unrelated samples). The hovered point's waveform follows it too. Show similar ends when the point it was asked for is gone; a
+    /// rubber band ends, as the points under it moved.
+    pub fn rebind_points(&mut self, moved: impl Fn(usize) -> Option<usize>) {
+        self.similar = self.similar.take().and_then(|(of, items)| {
+            let of = moved(of)?;
+            Some((of, items.into_iter().filter_map(&moved).collect()))
+        });
+        self.hovered = self.hovered.and_then(|(i, since)| Some((moved(i)?, since)));
+        self.previewed = self.previewed.and_then(&moved);
+        self.pressed = self.pressed.and_then(&moved);
+        self.menu_point = self.menu_point.and_then(&moved);
+        // The waveform read for the hovered point goes with it: a caller that keeps it a frame
+        // longer shows it for the same sample, or not at all ([#1254] review).
+        self.hover_waveform = self.hover_waveform.take().and_then(|(i, peaks)| Some((moved(i)?, peaks)));
+        self.rubber_band = None;
     }
 
     /// Shows the answer to [`MapEvent::Similar`]: rings these items and lists them at the side.
@@ -831,10 +875,17 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
     }
     if response.secondary_clicked() {
         view.hovered = under.map(|i| (i, 0.0));
+        view.menu_point = under;
     }
-    let menu_item = view.hovered.map(|(i, _)| i).or(under);
+    let menu_item = view.menu_point;
     response.context_menu(|ui| {
-        if let Some(i) = menu_item {
+        // The menu's own point, gone with a new layout: the menu closes rather than act on
+        // whatever point is under the pointer then ([#1254] review).
+        let Some(i) = menu_item else {
+            ui.close();
+            return;
+        };
+        {
             if ui.button("Show similar").clicked() {
                 events.push(MapEvent::Similar(i));
                 ui.close();

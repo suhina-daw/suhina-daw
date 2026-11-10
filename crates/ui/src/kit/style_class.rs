@@ -35,6 +35,14 @@ pub fn surface_or(fallback: egui::Color32) -> egui::Color32 {
     SURFACE.with(std::cell::Cell::get).unwrap_or(fallback)
 }
 
+/// [`surface_or`] for something that must hide what is under it, a modal dialog's panel or the
+/// dim behind it: the region's background only while it is opaque, else `fallback`. On a
+/// see-through window the region's background is clear, which would leave the dialog with no
+/// fill and its text over the project.
+pub fn opaque_surface_or(fallback: egui::Color32) -> egui::Color32 {
+    SURFACE.with(std::cell::Cell::get).filter(|surface| surface.a() == u8::MAX).unwrap_or(fallback)
+}
+
 /// Runs `body` as if drawn inside a region whose sheet gives it `surface`.
 #[cfg(test)]
 pub(crate) fn with_surface<R>(surface: egui::Color32, body: impl FnOnce() -> R) -> R {
@@ -192,6 +200,16 @@ pub fn knob_preference(el: &Entered, fallback: bool) -> bool {
     match el.style().and_then(|style| style.keyword(Property::Appearance)) {
         Some("knob") => true,
         Some("field") => false,
+        _ => fallback,
+    }
+}
+
+/// Whether a value drag on `el` hides the pointer: the sheet's `drag-pointer: hidden` or
+/// `visible` on it or an element it is in, else the user's setting (`fallback`).
+pub fn drag_hides_pointer(el: &Entered, fallback: bool) -> bool {
+    match el.style().and_then(|style| style.keyword(Property::DragPointer)) {
+        Some("hidden") => true,
+        Some("visible") => false,
         _ => fallback,
     }
 }
@@ -458,7 +476,19 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kit::element::{MIXER, PAN, SEND, test_el};
+
+    #[test]
+    fn a_modal_takes_its_regions_surface_only_when_it_is_opaque() {
+        let token = egui::Color32::from_rgb(1, 2, 3);
+        let opaque = egui::Color32::from_rgb(10, 20, 30);
+        assert_eq!(opaque_surface_or(token), token, "no surface");
+        assert_eq!(with_surface(opaque, || opaque_surface_or(token)), opaque);
+        let clear = egui::Color32::from_rgba_unmultiplied(10, 20, 30, 120);
+        assert_eq!(with_surface(clear, || opaque_surface_or(token)), token, "a see-through surface hides nothing");
+        assert_eq!(with_surface(egui::Color32::TRANSPARENT, || opaque_surface_or(token)), token);
+    }
+
+    use crate::kit::element::{FADER, KNOB, MIXER, PAN, SEND, test_el};
     use crate::kit::skin;
 
     /// What `draw` sees once the frames it takes for the tree to resolve have passed, with `css` as
@@ -505,6 +535,24 @@ mod tests {
             });
             assert_eq!(seen.0, [false, true].map(|preference| forced.unwrap_or(preference)), "{value}");
             assert_eq!(seen.1, [false, true], "a send keeps the user's choice");
+        }
+    }
+
+    #[test]
+    fn drag_pointer_overrides_the_setting_for_the_controls_inside_it() {
+        for (value, forced) in [("hidden", Some(true)), ("visible", Some(false)), ("auto", None)] {
+            let css = format!("mixer {{ drag-pointer: {value}; }}");
+            let seen = frames(&css, || {
+                let mixer = MIXER.enter();
+                let fader = FADER.enter();
+                let inside = [false, true].map(|setting| drag_hides_pointer(&fader, setting));
+                drop(fader);
+                drop(mixer);
+                let knob = KNOB.enter();
+                (inside, [false, true].map(|setting| drag_hides_pointer(&knob, setting)))
+            });
+            assert_eq!(seen.0, [false, true].map(|setting| forced.unwrap_or(setting)), "{value}");
+            assert_eq!(seen.1, [false, true], "a knob outside the mixer keeps the setting");
         }
     }
 

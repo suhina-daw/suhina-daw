@@ -65,6 +65,13 @@ impl Player {
         self.output.as_ref().ok_or("no audio output is open")?.open_control_panel()
     }
 
+    /// Asks the output's ASIO driver for its buffer sizes again ([`LiveOutput::check_driver`]).
+    pub fn check_driver(&self) {
+        if let Some(output) = &self.output {
+            output.check_driver();
+        }
+    }
+
     /// The controller and whatever keeps the output open, for the output layer to close it in
     /// its own way (taking its plug-ins back) before opening another.
     pub fn into_parts(self) -> (Controller, Option<Box<dyn OutputHandle>>) {

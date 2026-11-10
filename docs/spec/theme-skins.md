@@ -1089,6 +1089,12 @@ of bars, and a slider id per parameter.
   surface with a transparent background and no authored radius casts them round.
 - **Value text:** `value-decimals` (0–2) and `value-unit` (quoted, at most 8
   characters) format a level bar's and a knob's value.
+- **Pointer while dragging:** `drag-pointer: hidden | visible | auto` on a value control (`value`,
+  `pan`, `fader`, `send`, `knob`, `slider`), inherited: `hidden` hides the pointer while it is
+  dragged, `visible` shows the arrow of the drag's direction, `auto` (the default) follows
+  Settings › Appearance › Hide pointer while dragging. Read by the Arrangement's headers and
+  Main, the mixer's faders, pans and sends, and device panels' knobs and sliders; other value
+  controls follow the setting.
 - **Device panels:** `height` on `device` or `#device-<id>` (60–1200, not with an embedded
   editor); `param-label` over each parameter's own; `knob { width | height }` within
   its cell.

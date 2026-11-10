@@ -3,7 +3,7 @@ description: ASIO host initialization and native panels, plus audio output start
 read_when: ASIO, audio driver initialization, native control panel, output startup and shutdown, ASIOInit, sysRef
 type: spec
 status: current
-last_verified: 2026-11-03
+last_verified: 2026-11-10
 covers:
   - third_party/asio-sys/
   - third_party/cpal/
@@ -57,6 +57,88 @@ Audio status reports
 The latter is not a claim about every internal hardware/WDM buffer. The driver
 owns its internal settings. External offline panels may edit defaults rather than
 the running application's settings; the native call addresses the current instance.
+
+## Buffer sizes
+
+`ASIOGetBufferSize` answers with the smallest, largest and preferred buffer size and a
+granularity (ASIO SDK 2.3, section 3): -1 for the powers of two from the smallest to the largest,
+a positive step for the smallest and every step after it, and 0 with the smallest equal to the
+largest for that one size. Drivers whose size is set in their own control panel commonly answer
+with that one size as smallest, largest and preferred, and not always with 0: a driver seen on
+Windows answers -1 with it. A driver answering one size is offered that size whatever
+granularity it states, also when it is no power of two or step.
+
+Settings › Audio offers the sizes the answer allows within what the engine renders in (64 to 4096
+frames): with powers of two every power in the range; with a positive step every allowed
+size on it, without reducing long lists to common sizes; with 0 and a range, the preferred size alone, the
+one size such a driver is sure to take, or with a preferred size outside its range only the two
+ends it declared; and the smallest, largest and preferred when the driver takes them. An answer
+that makes no sense (an empty or reversed range) counts as none: the engine's own sizes are
+offered and the driver is asked for none. A driver that takes one size has the Buffer size row
+say that size, with a note that it is set in the driver's own control panel (**Control panel…**
+opens it), instead of a list with nothing to choose.
+
+With no size chosen the driver's preferred size plays and the engine renders in blocks of that
+size; the **Default** entry names it. When the driver cannot be asked for its preferred size (off
+its steps, or outside what the engine renders in), the size it takes nearest the engine's own
+block (1024 frames) plays instead, so the engine's block and the driver's buffer stay the same
+size. Should a driver refuse the size it is asked for, the output opens once more asking for none
+(the driver plays its preferred size), and a notice says it keeps its own buffer size. An ASIO
+input on the same interface is opened at the output's size: input and output share one driver
+and one buffer size, and an input opened without it would put the driver back on its own size
+under the output. The driver calls the streams' callbacks one after the other in each cycle, the
+output's first (its stream is made first), so with an ASIO input it is the input's callback,
+once its frames are in the input's ring, that wakes the render thread, not the output's: woken
+by the output, the render thread read the input before that cycle's frames were written and
+filled the block's input with silence, an input underrun in every cycle it won the race, more
+often the smaller the buffer. The render thread also looks every millisecond by itself, and a
+look that fell between the two callbacks read too early the same way (about one cycle in 15 at
+2048 frames), so once the output has taken from the ring the render thread waits for the input's
+frames of that cycle, a quarter of the device's buffer at most (at least half a millisecond),
+before it renders without them. Once that grace expires, further render blocks in the same
+output callback cycle proceed without restarting the wait. The next output callback gets
+a fresh grace period; timeout handling never clears a callback-owned pending-input flag.
+When the input closes or fails the output wakes it again and nothing is waited for.
+
+The trace and `audio.info` expose input short reads as a bounded history of the latest
+32 events, each with a sequence number and available/requested frames, and cumulative
+backlog-drop counts and dropped frames. A render reads input in chunks of at most 1024 frames, also split at transport
+boundaries; several short reads can therefore belong to one device block.
+Render diagnostics count output callbacks, ASIO input callbacks, rendered blocks, the
+maximum render starts between observed output callbacks, extra starts after the first,
+and input-wait expirations. Cycle zero, before any output callback, is excluded from
+per-cycle counts.
+
+Input backlog is trimmed once at the start of a whole render call: when more than four
+render blocks wait, old input is dropped down to two whole blocks. Internal splits at
+1024 frames, loop boundaries, count-in ends, jumps or graph swaps do not run this policy
+again or reduce its frame budget. A short piece at a loop boundary must not discard input
+needed by the rest of the same render. The queued-input latency for each piece is measured
+after any drop, from the frames actually waiting.
+An extra render is not by itself a defect: startup, disarming and different device/block
+sizes can require it. Hardware traces are needed to correlate it with short reads.
+
+The answer is kept with the device descriptor (below) and asked again each time an ASIO output
+opens. When no driver is loaded the driver is loaded for the question and kept loaded until the
+stream is built, so it is loaded once. A size changed in the driver's control panel while Suhina
+runs reaches Suhina as `kAsioResetRequest` or `kAsioBufferSizeChange`; both invalidate the stream
+(a `kAsioBufferSizeChange` repeating the size already playing does not), and the output opens
+again with the new answer. For drivers that announce nothing, Suhina asks the driver itself
+(`audio.checkDriver`, on the thread that holds the driver) when Settings › Audio opens or
+closes and when its window gets the focus back while it shows (the separate Settings window
+when detached, otherwise the main window), as after using the driver's
+control panel; when the answer differs from the one the output opened with, the output opens
+again. Settings › Audio lists the devices again each time an output opens. The trace says
+why an output opened again (`audio output failed: the driver asked for a reset`, … `the
+driver's buffer sizes changed`), and `audio.info` reports it as `failure`. Each opening writes
+the driver's answer, the sizes made from it and the size asked to the trace (`audio driver:`),
+and `audio.checkDriver` writes a changed answer before and after (`audio driver check:`),
+so a log shows why Suhina plays the size it plays ([debugging](../debugging.md)).
+
+A size chosen is remembered whatever the driver says: while the driver does not take it, the
+nearest size it takes plays with a notice saying what the driver takes, and the list keeps the
+chosen size, saying the device does not take it now; it plays again once the driver takes it.
+Default (the driver's preferred size) applies only when no size is chosen.
 
 ## Device catalog during playback
 

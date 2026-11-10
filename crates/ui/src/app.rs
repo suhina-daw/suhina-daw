@@ -483,6 +483,14 @@ pub struct App {
     midi_listed: Option<std::time::Instant>,
     /// Follows the audio devices while Settings › Audio shows, so headphones connected later show up.
     audio_devices: suhina_session::audio::DeviceWatch,
+    /// Follows how many times an output was opened while Settings › Audio shows: each opening
+    /// asked an ASIO driver for its buffer sizes anew, so the list is made again.
+    audio_output_watch: suhina_session::audio::Watch<u64>,
+    /// Settings › Audio showed in the last frame, and the window had the focus: when the page
+    /// opens or closes, or the window gets the focus back while it shows (from a driver's control
+    /// panel, say), the ASIO driver is asked for its sizes again (`audio.checkDriver`).
+    audio_page_shown: bool,
+    window_focused: bool,
     /// The themes to pick from; the settings say which is in use.
     themes: Themes,
     /// The project dialog (File › New or open) while it shows, and what it lists.
@@ -579,7 +587,7 @@ pub struct App {
     ram: Option<u64>,
     next_ram: Option<f64>,
     /// The audio's health counters last traced: device underruns, late stretched frames and late plug-in blocks.
-    audio_traced: (u64, u64, u64, u64),
+    audio_traced: (u64, u64, u64, u64, u64),
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
     /// A device carried from a chain or a strip's list onto another track (#688): its track and
@@ -699,6 +707,9 @@ impl App {
             about: About::default(),
             midi_listed: None,
             audio_devices: suhina_session::audio::DeviceWatch::default(),
+            audio_output_watch: suhina_session::audio::Watch::default(),
+            audio_page_shown: false,
+            window_focused: true,
             themes: Themes::default(),
             project_dialog: None,
             project_lists: Lists::default(),
@@ -742,7 +753,7 @@ impl App {
             reveal: None,
             ram: None,
             next_ram: None,
-            audio_traced: (0, 0, 0, 0),
+            audio_traced: (0, 0, 0, 0, 0),
             carry: None,
             device_carry: None,
             applied_grid: None,
@@ -789,13 +800,19 @@ impl App {
     /// views keep from them is read again.
     pub fn note_outside_change(&mut self) {
         self.revision += 1;
+        self.browser.reconcile(&mut self.projects);
     }
 
     /// Uses `library` for the browser and the `library.*` commands (ADR 0012); the app gives
     /// it Suhina's settings folder and starts it.
     pub fn set_file_library(&mut self, library: suhina_library::Library) {
         self.projects.set_file_library(library);
-        self.browser.relist();
+        // The map's kept layouts key on the old library's files; a replacement can read the
+        // same place and the same revisions, so they are dropped with it ([#1254] review).
+        self.sample_map.library_replaced();
+        // Its tag ids are the new library's own: a number the old one used can name another
+        // tag there, so the browser keeps nothing by id ([#1254] review).
+        self.browser.forget_tags();
     }
 
     /// The open projects, to change (the browser's library, for the app).
@@ -1246,6 +1263,9 @@ impl App {
         }
         let Some(player) = self.session().and_then(Session::player) else { return };
         let device = info.as_ref().map_or(0, |i| i.underruns);
+        // Blocks that found too little input from the input device; counted from when the
+        // output last opened, so a smaller number than before means it opened again.
+        let input = info.as_ref().map_or(0, |i| i.input_underruns);
         let stretched = player.stretch_underruns();
         let moves = player.stretch_moves();
         let (misses, worst, worst_misses) = player.plugin_misses();
@@ -1256,17 +1276,19 @@ impl App {
             .unwrap_or_else(|| "none".into());
         let cpu = player.cpu_monitor().load_milli();
         let running = player.monitor().running();
-        let (was_device, was_stretched, was_misses, was_blocked) = self.audio_traced;
+        let (was_device, was_stretched, was_misses, was_blocked, was_input) = self.audio_traced;
         if running
             || device > was_device
             || stretched > was_stretched
             || misses > was_misses
             || blocked > was_blocked
+            || input > was_input
             || cpu >= 700
         {
             suhina_plugins::trace!(
-                "audio: device underruns {device} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}",
+                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
                 device.saturating_sub(was_device),
+                input.saturating_sub(was_input),
                 stretched.saturating_sub(was_stretched),
                 misses.saturating_sub(was_misses),
                 blocked.saturating_sub(was_blocked),
@@ -1279,15 +1301,18 @@ impl App {
                 info.as_ref().map(|i| (&i.host, &i.device, i.sample_rate)),
                 player.monitor().beat(),
                 player.cpu_monitor().late_render(),
+                info.as_ref().map(|i| &i.input_diagnostics),
+                info.as_ref().map(|i| i.render_diagnostics),
             );
         }
-        self.audio_traced = (device, stretched, misses, blocked);
+        self.audio_traced = (device, stretched, misses, blocked, input);
     }
 
     /// Uses `settings` from now on, as loaded from the settings file.
     pub fn set_settings(&mut self, ctx: &egui::Context, settings: Settings) {
         self.projects.set_backup_settings(settings.backup, settings.backup_clean_up);
         motion::set_enabled(ctx, settings.animations);
+        crate::kit::widgets::set_drag_hides_pointer(ctx, settings.drag_hides_pointer);
         self.arrangement.headers_left = headers_left(settings.track_headers);
         self.arrangement.returns_hidden = settings.view.returns_hidden;
         self.arrangement.waveform_zoom = settings.view.waveform_zoom as f32 / 100.0;
@@ -3443,6 +3468,7 @@ impl App {
             drop_overlay(ui, view_area);
         });
         self.browser_drag(ui);
+        self.tag_drag(ui);
         self.device_drag(ui);
         if let Some((items, dropped)) = system {
             self.system_drag(ui, items, dropped);
@@ -3458,6 +3484,7 @@ impl App {
         let actions_held = self.dialog_holds_actions();
         self.plugin_dialog(ui, window);
         self.project_dialogs(ui, window);
+        self.follow_audio_page(ui.ctx());
         if self.settings_open {
             // Embedded plug-in editors are windows of their own and would cover the dialog.
             if !self.page.window {

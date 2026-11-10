@@ -2524,11 +2524,33 @@ fn output_rows(
     } else {
         ("Engine block", "Suhina's render block; the driver keeps its own buffer size".to_string())
     };
-    label(painter, r, name, &note);
-    let mut options: Vec<(String, Option<u32>)> = vec![("Default (1024 frames)".to_string(), None)];
-    options.extend(sizes.iter().map(|n| (format!("{n} frames ({:.1} ms)", f64::from(*n) * 1000.0 / rate), Some(*n))));
-    if let Some(frames) = choice_dropdown(ui, painter, r, name, &options, &choice.buffer_frames) {
-        picked = choice.with_params(&serde_json::json!({ "bufferFrames": frames.unwrap_or(0) })).ok();
+    match buffer_row(&sizes, device_sets, host.is_some_and(|h| h.name == "ASIO")) {
+        // A driver that takes one size, as one whose size is set in its own control panel: the
+        // size is said, not offered, as there is nothing to choose. A size chosen before stays
+        // in the settings and plays again on a device that takes it.
+        BufferRow::Only(frames) => {
+            label(painter, r, name, "Set in the driver's own control panel (Control panel… above)");
+            let value = Rect::from_min_size(Pos2::new(control_x(r), r.top() + 1.0), Vec2::new(260.0, SEGMENT));
+            let text = format!("{frames} frames ({:.1} ms)", f64::from(frames) * 1000.0 / rate.max(1.0));
+            widgets::text_in(
+                painter,
+                value,
+                Align2::LEFT_CENTER,
+                &text,
+                theme::ui_font(theme::TEXT_SMALL),
+                theme::text_primary(),
+            );
+        }
+        BufferRow::Choose => {
+            label(painter, r, name, &note);
+            // With none chosen an ASIO driver plays the size it prefers (the one set in its
+            // control panel); elsewhere the engine renders in its own 1024-frame block.
+            let default_frames = device.and_then(|d| d.default_buffer).unwrap_or(1024);
+            let options = buffer_options(&sizes, default_frames, choice.buffer_frames, rate, wasapi);
+            if let Some(frames) = choice_dropdown(ui, painter, r, name, &options, &choice.buffer_frames) {
+                picked = choice.with_params(&serde_json::json!({ "bufferFrames": frames.unwrap_or(0) })).ok();
+            }
+        }
     }
     // Exclusive mode belongs to WASAPI, not to the ASIO driver panel.
     if wasapi {
@@ -2570,6 +2592,57 @@ fn output_rows(
     }
 
     picked.map(OutputPick::Setting)
+}
+
+/// How the Buffer size row shows: a dropdown to choose from, or the one size the driver takes,
+/// said as text.
+#[derive(Debug, PartialEq)]
+enum BufferRow {
+    Choose,
+    Only(u32),
+}
+
+/// The Buffer size row for a device offering `sizes`, when the size is the device's own
+/// (`device_sets`): an ASIO driver that takes one size, as one whose size is set in its own
+/// control panel, has it said, not offered; with none chosen that size plays and the engine
+/// renders in it. Elsewhere a size chosen sets the engine's block even where the device keeps
+/// its own, so there is always a choice.
+fn buffer_row(sizes: &[u32], device_sets: bool, asio: bool) -> BufferRow {
+    match sizes {
+        [frames] if device_sets && asio => BufferRow::Only(*frames),
+        _ => BufferRow::Choose,
+    }
+}
+
+/// The Buffer size list: Default (`default_frames`, what plays with none chosen), then `sizes`
+/// with their length at `rate`. A size chosen before that the device does not offer now stays
+/// chosen and is listed in its place: on WASAPI (`engine_block`), where the number is the
+/// engine's block, it plays when it lies within the sizes offered; elsewhere the list says the
+/// device does not take it, and the nearest size it takes plays until it does.
+fn buffer_options(
+    sizes: &[u32],
+    default_frames: u32,
+    chosen: Option<u32>,
+    rate: f64,
+    engine_block: bool,
+) -> Vec<(String, Option<u32>)> {
+    let ms = |n: u32| f64::from(n) * 1000.0 / rate.max(1.0);
+    let mut listed: Vec<(u32, String)> = sizes.iter().map(|n| (*n, format!("{n} frames ({:.1} ms)", ms(*n)))).collect();
+    if let Some(kept) = chosen.filter(|n| !sizes.contains(n)) {
+        let plays = engine_block
+            && sizes.first().is_some_and(|least| kept >= *least)
+            && sizes.last().is_some_and(|most| kept <= *most);
+        let label = if plays {
+            format!("{kept} frames ({:.1} ms)", ms(kept))
+        } else {
+            format!("{kept} frames, chosen; the device does not take it now")
+        };
+        listed.push((kept, label));
+        listed.sort_by_key(|(n, _)| *n);
+    }
+    std::iter::once((format!("Default ({default_frames} frames)"), None))
+        .chain(listed.into_iter().map(|(n, label)| (label, Some(n))))
+        .collect()
 }
 
 /// What the Device row says about the driver chosen: why it lists nothing, and where a driver's

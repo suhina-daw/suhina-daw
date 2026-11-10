@@ -711,12 +711,16 @@ pub(crate) fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str
     let behind = ui.interact(area, Id::unique(("dialog-behind", title)), Sense::click_and_drag());
     let _swallowed = behind.clicked();
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(0.6));
+    painter.rect_filled(
+        area,
+        0.0,
+        crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
+    );
     let size = Vec2::new(size.x.min(area.width() - 2.0 * PAD), size.y.min(area.height() - 2.0 * PAD));
     let rect = Rect::from_center_size(area.center(), size);
     // The window's content, blurred, under the panel.
     crate::kit::liquid::backdrop(&painter, rect);
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::opaque_surface_or(theme::panel_background()));
     painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     painter.rect_filled(bar, 0.0, theme::control_background());

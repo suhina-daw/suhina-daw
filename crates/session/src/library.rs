@@ -78,7 +78,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
             optional(
                 "place",
                 ParamType::Path(PathKind::Place),
-                "pinned, recent:all, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), or a folder",
+                "pinned, recent:all, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), tag:<name> or tag:#<id> (the items carrying that tag; several joined by id, tag:#<id>+#<id>…), or a folder",
             ),
             optional("tags", ParamType::Texts, "only items carrying any of these tags"),
             optional("limit", ParamType::Integer, "at most this many (default and most 500)"),
@@ -139,9 +139,23 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         id: "library.setTag",
         label: "Add a colour tag, or change a tag's colour or name; or change the most tags there may be",
         params: &[
-            optional("name", ParamType::Text, "the tag"),
-            optional("color", ParamType::Text, "its colour, #RRGGBB (needed for a new tag)"),
+            optional(
+                "id",
+                ParamType::Text,
+                "the tag to change, by its id (#<id>) or name; a name no tag has creates one, coloured from the named colours ([#1254])",
+            ),
+            optional("name", ParamType::Text, "the tag (the id's form names it too)"),
+            optional(
+                "color",
+                ParamType::Text,
+                "its colour, #RRGGBB (new tags take a named colour when it is left out)",
+            ),
             optional("rename", ParamType::Text, "a new name for it"),
+            optional(
+                "folder",
+                ParamType::Text,
+                "the tag folder a made tag lands in, by its id (#<id>) or name; the top when it is left out ([#1254] review)",
+            ),
             optional("limit", ParamType::Integer, "the most tags there may be, from 1 to 1024 (default 64)"),
         ],
         kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
@@ -151,7 +165,10 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
         id: "library.removeTag",
         label: "Remove a colour tag from the list and from every item",
-        params: &[param("name", ParamType::Text, "the tag")],
+        params: &[
+            optional("id", ParamType::Text, "the tag, by its id (#<id>) or its name ([#1254])"),
+            optional("name", ParamType::Text, "the tag"),
+        ],
         kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
         run: remove_tag,
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
@@ -161,11 +178,87 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         label: "Set or clear a colour tag on an item",
         params: &[
             ITEM,
-            param("tag", ParamType::Text, "the tag's name"),
+            param("tag", ParamType::Text, "the tag, by its id (#<id>) or its name ([#1254])"),
             param("on", ParamType::Bool, "true sets it, false clears it"),
         ],
         kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
         run: tag,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "library.addTagFolder",
+        label: "Add a folder of tags, unique among its own level's names and named when the name is left out, under a folder or at the top",
+        params: &[
+            optional("name", ParamType::Text, "its name (the next free \"Folder\" when left out)"),
+            optional(
+                "parent",
+                ParamType::Text,
+                "the folder it goes under, by id (#<id>) or name, at the top when left out",
+            ),
+        ],
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
+        run: add_tag_folder,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "library.renameTagFolder",
+        label: "Rename a tag folder, unique among the folders of its own level",
+        params: &[
+            param("folder", ParamType::Text, "the folder, by id (#<id>) or name"),
+            param("rename", ParamType::Text, "its new name"),
+        ],
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
+        run: rename_tag_folder,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "library.removeTagFolder",
+        label: "Remove a tag folder: its tags and folders move up to its parent, and the count of them comes with the answer",
+        params: &[param("folder", ParamType::Text, "the folder, by id (#<id>) or name")],
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
+        run: remove_tag_folder,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "library.setFolderOpen",
+        label: "Set whether a tag folder of the browser shows open, remembered between runs",
+        params: &[
+            param("folder", ParamType::Text, "the folder, by id (#<id>) or name"),
+            param("open", ParamType::Bool, "true opens it, false closes it"),
+        ],
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
+        run: set_folder_open,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "library.moveTag",
+        label: "Move a tag or a tag folder: to a folder (or to the top level), at a position of that level",
+        params: &[
+            param("id", ParamType::Text, "the tag or folder, by its id (#<id>) or name"),
+            optional("folder", ParamType::Text, "the folder it goes under (the top level when left out)"),
+            optional("position", ParamType::Integer, "at this position of the level (the end when left out)"),
+        ],
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
+        run: move_tag,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "library.setSections",
+        label: "Set the browser's sidebar sections in an order; whether each shows open is kept, and Folders stays last whatever is asked",
+        params: &[optional("order", ParamType::Texts, "pinned, tags, library, in the order their titles show")],
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
+        run: set_sections,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "library.setSectionOpen",
+        label: "Set whether one of the browser's sidebar sections shows open",
+        params: &[
+            param("section", ParamType::Text, "pinned, tags or library"),
+            param("open", ParamType::Bool, "true opens it, false collapses it"),
+        ],
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
+        run: set_section_open,
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
@@ -351,7 +444,8 @@ impl Category {
 pub struct Found {
     pub item: Item,
     pub name: String,
-    /// `sample`, `midi`, `preset`, `project`, `instrument`, `effect`, or `audio_effect`.
+    /// `sample`, `midi`, `preset`, `project`, `instrument`, `effect`, `audio_effect`, or `folder`
+    /// (a pinned or tagged folder of the library, [#1254] review).
     pub kind: &'static str,
     /// For a plug-in: its format and vendor.
     pub detail: Option<String>,
@@ -365,6 +459,12 @@ pub struct Found {
 impl Found {
     pub fn to_json(&self, library: &mut Library) -> Value {
         let key = self.item.key();
+        // The tags the item carries (by id, [#1254]), named for a script's reading.
+        let item_tags: Vec<Value> = library
+            .item_tags(&key)
+            .iter()
+            .filter_map(|id| library.tag_name_of(*id).map(|name| json!({ "id": id, "name": name })))
+            .collect();
         json!({
             "item": key,
             "name": self.name,
@@ -373,7 +473,7 @@ impl Found {
             "format": self.format.map(|f| f.name()),
             "detail": self.detail,
             "folder": self.folder.as_ref().map(|f| f.display().to_string()),
-            "tags": library.item_tags(&key),
+            "tags": item_tags,
         })
     }
 }
@@ -384,6 +484,23 @@ fn file_kind_name(kind: FileKind) -> &'static str {
 
 /// What an item key is, for a search over pins or recent items.
 fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
+    // A folder of the library, a top one or a sub-folder its index holds: a pinned or tagged
+    // folder lists as a folder ([#1254] review: a tagged folder was counted on its tag's row
+    // and left out of the tag's place).
+    if let Item::File(path) = &item
+        && let Some(root) = projects.file_library_mut().folder_root_of(path)
+    {
+        let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+        return Some(Found {
+            name,
+            kind: "folder",
+            detail: None,
+            plugin: false,
+            format: None,
+            folder: Some(root),
+            item,
+        });
+    }
     match &item {
         Item::File(path) | Item::Voice(path, _) => {
             let kind = item.file_kind()?;
@@ -432,7 +549,7 @@ fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
 fn fits(found: &Found, category: Category) -> bool {
     match category {
         Category::All => true,
-        Category::Samples => found.kind == "sample",
+        Category::Samples => matches!(found.kind, "sample" | "stems"),
         Category::Midi => found.kind == "midi",
         Category::Presets => found.kind == "preset",
         Category::Instruments => found.kind == "instrument",
@@ -441,8 +558,8 @@ fn fits(found: &Found, category: Category) -> bool {
     }
 }
 
-/// The keys a place that is a list holds, in its order: `pinned`, `recent:all` or
-/// `recent:<group>`; `None` for every other place (a folder, or everything).
+/// The keys a place that is a list holds, in its order: `pinned`, `recent:all`, `recent:<group>`
+/// or `tag:<name>`; `None` for every other place (a folder, or everything).
 pub(crate) fn listed_keys(projects: &mut Projects, place: Option<&str>) -> Result<Option<Vec<String>>, CommandError> {
     Ok(match place {
         Some("pinned") => Some(projects.file_library_mut().pinned()),
@@ -463,6 +580,55 @@ pub(crate) fn listed_keys(projects: &mut Projects, place: Option<&str>) -> Resul
             let group = Group::parse(&p["recent:".len()..]).ok_or_else(|| format!("unknown recent group in {p:?}"))?;
             Some(projects.file_library_mut().recent(group))
         }
+        Some(p) if p.starts_with("tag:") => {
+            // A tag by its name, or by `tag:#<id>`, so a script keeps working after a rename
+            // ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)). A joined
+            // `tag:#<id>+#<id>…` is a place of several: the ids only, because no two names
+            // join into one param unambiguously, and every part names its tag — a part that
+            // is not one of the library's ids refuses rather than quietly searching the rest
+            // ([#1254] review). The joined shape is the selectors' alone (`#` over digits),
+            // which no name may spell, so a name with `+` and `#` in it (`#notes+#rock`)
+            // reads as the name it is ([#1254] review).
+            let given = &p["tag:".len()..];
+            let joined = given.contains('+') && suhina_library::store::name_is_id_form(given);
+            let ids = if joined {
+                let mut ids: Vec<u32> = Vec::new();
+                for part in given.split('+') {
+                    let id = suhina_library::store::id_of_selector(part)
+                        .ok_or_else(|| format!("there is no tag {part:?}; library.tags lists them"))?;
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                }
+                ids
+            } else {
+                vec![
+                    resolve_tag_param(projects, given)
+                        .ok_or_else(|| format!("there is no tag {given:?}; library.tags lists them"))?,
+                ]
+            };
+            if let Some(id) = ids.iter().copied().find(|id| {
+                let library = projects.file_library_mut();
+                suhina_library::store::tag_by_id(&library.tags(), *id).is_none()
+            }) {
+                return Err(format!("there is no tag #{id}; library.tags lists them").into());
+            }
+            let library = projects.file_library_mut();
+            // The union in the first tag's order, then each further tag's own items as its
+            // own passes them ([#1254] review: a place of several lists each). The set keeps
+            // the looks cheap: a hundred thousand claimed keys is no cause for a
+            // nested-loop's parade ([#1254] review).
+            let mut keys: Vec<String> = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            for id in ids {
+                for key in library.items_tagged(id) {
+                    if seen.insert(key.clone()) {
+                        keys.push(key);
+                    }
+                }
+            }
+            Some(keys)
+        }
         _ => None,
     })
 }
@@ -473,7 +639,7 @@ pub fn search_items(
     text: &str,
     category: Category,
     place: Option<&str>,
-    tags: &[String],
+    tags: &[u32],
     limit: usize,
 ) -> Result<Vec<Found>, CommandError> {
     Ok(prepare_search(projects, text, category, place, tags, limit)?.run(&AtomicBool::new(false)))
@@ -533,13 +699,16 @@ pub fn prepare_search(
     text: &str,
     category: Category,
     place: Option<&str>,
-    tags: &[String],
+    tags: &[u32],
     limit: usize,
 ) -> Result<PreparedSearch, CommandError> {
     let limit = if limit == 0 { suhina_library::MAX_RESULTS } else { limit.min(suhina_library::MAX_RESULTS) };
     let words = suhina_library::words(text);
     let tagged =
         |library: &mut Library, key: &str| tags.is_empty() || library.item_tags(key).iter().any(|t| tags.contains(t));
+    // A tag's place lists its items named first, whatever kind they are; a pin's place keeps
+    // the pins' order, a recent group the recency.
+    let sorted_by_name = place.is_some_and(|p| p.starts_with("tag:"));
     if let Some(keys) = listed_keys(projects, place)? {
         let mut out = Vec::new();
         for key in keys {
@@ -555,10 +724,20 @@ pub fn prepare_search(
             {
                 out.push(found);
             }
-            if out.len() >= limit {
+            // A place that does not sort before the cut can stop at it: the order is the
+            // keys' own, so the first `limit` that fit are the answer ([#1250] review). A
+            // tag's place sorts first, and a cut before the sort would rank `/a/Zebra`
+            // over `/z/Apple` (#1196).
+            if !sorted_by_name && out.len() >= limit {
                 break;
             }
         }
+        // A place that sorts by name sorts before the limit: a cut in key order would
+        // rank `/a/Zebra` over `/z/Apple` (#1196).
+        if sorted_by_name {
+            out.sort_by(|a, b| suhina_library::natural_cmp(&a.name, &b.name));
+        }
+        out.truncate(limit);
         return Ok(PreparedSearch { listed: Some(out), ranked: Vec::new(), files: None, words, limit });
     }
     let within = place.map(PathBuf::from);
@@ -643,13 +822,21 @@ fn search(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
         }
     };
     let place = optional_text(params, "place")?;
-    let tags: Vec<String> = match Args::new(params).value("tags") {
+    let tags: Vec<u32> = match Args::new(params).value("tags") {
         None => Vec::new(),
         Some(v) => v
             .as_array()
-            .ok_or("tags must be a list of tag names")?
+            .ok_or("tags must be a list of tag names or ids")?
             .iter()
-            .map(|t| t.as_str().map(str::to_string).ok_or("tags must be a list of tag names"))
+            .map(|t| match t {
+                // A tag by its name, or by `#<id>` ([#1254]).
+                Value::String(given) => resolve_tag_param(projects, given)
+                    .ok_or_else(|| format!("there is no tag {given:?}; library.tags lists them")),
+                Value::Number(n) => {
+                    resolve_tag_param(projects, &format!("#{}", n)).ok_or_else(|| format!("there is no tag {};", n))
+                }
+                _ => Err("tags must be a list of tag names or ids".into()),
+            })
             .collect::<Result<_, _>>()?,
     };
     let limit = match Args::new(params).value("limit") {
@@ -670,6 +857,7 @@ fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
     let key = Args::new(params).text("item")?;
     let item = Item::parse(key).ok_or("item must be a path or an item key")?;
     let tags = projects.file_library_mut().item_tags(&item.key());
+
     let mut out = match &item {
         Item::Device(id) => {
             let info =
@@ -947,46 +1135,201 @@ fn recent(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
 }
 
 fn tags(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
+    // The tags and folders, each with its id, in the order the section shows ([#1254]).
     let library = projects.file_library_mut();
-    let list: Vec<Value> = library.tags().into_iter().map(|t| json!({ "name": t.name, "color": t.color })).collect();
+    let forest = library.tags();
+    let list: Vec<Value> = collect_tag_json(&forest, None);
+    let folders: Vec<Value> = suhina_library::store::folders_iter(&forest)
+        .map(|f| {
+            json!({
+                "id": f.id, "name": f.name, "open": f.open,
+                "parent": suhina_library::store::find_entry_parent(&forest, f.id).and_then(|(p, _)| p),
+            })
+        })
+        .collect();
     let tagged: serde_json::Map<String, Value> = library.tagged().into_iter().map(|(k, v)| (k, json!(v))).collect();
-    Ok(json!({ "tags": list, "limit": library.tag_limit(), "tagged": tagged }))
+    let sections = library.sections();
+    Ok(json!({ "tags": list, "folders": folders, "tagged": tagged, "limit": library.tag_limit(),
+        "sections": sections.iter().map(|s| json!({ "kind": s.kind.name(), "open": s.open })).collect::<Vec<_>>() }))
+}
+
+/// The tags of the forest in the order shown, each with the folder it sits in: a level's
+/// folders' tags ahead of its own tags, as the sidebar's rows go ([#1254] › Tag folders).
+fn collect_tag_json(tree: &[suhina_library::TagEntry], parent: Option<u32>) -> Vec<Value> {
+    let mut out = Vec::new();
+    for entry in tree {
+        if let suhina_library::TagEntry::Folder { folder, tags } = entry {
+            out.extend(collect_tag_json(tags, Some(folder.id)));
+        }
+    }
+    for entry in tree {
+        if let suhina_library::TagEntry::Tag(tag) = entry {
+            out.push(json!({
+                "id": tag.id, "name": tag.name, "color": tag.color, "folder": parent,
+            }));
+        }
+    }
+    out
 }
 
 fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let library = projects.file_library_mut();
-    let mut done = false;
-    if let Some(limit) = Args::new(params).value("limit").filter(|v| !v.is_null()) {
-        let limit = limit.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("limit must be a whole number")?;
-        library.set_tag_limit(limit).map_err(CommandError)?;
-        done = true;
+    // What the command asks is agreed before anything runs: the limit's form, and the
+    // folder a make lands in ([#1254] review). The limit goes in before the tag's own
+    // work, so a raise makes past the library's own wall — `{"name":"Extra","limit":65}`
+    // at the 64 tags makes, where the old limit refused both. A tag work that fails
+    // rolls that limit back, so the one command lands whole or refuses whole ([#1254]
+    // review: a make behind a lowered limit is refused with nothing half in).
+    let limit = Args::new(params).value("limit").filter(|v| !v.is_null());
+    let parsed_limit = match &limit {
+        Some(limit) => match limit.as_u64().and_then(|n| usize::try_from(n).ok()) {
+            Some(n) if (1..=suhina_library::MAX_TAG_LIMIT).contains(&n) => Some(n),
+            _ => return Err("the tag limit is from 1 to 1024".into()),
+        },
+        None => None,
+    };
+    let folder = match optional_text(params, "folder")? {
+        Some(given) => Some(resolve_folder_param(projects, given).map_err(CommandError)?),
+        None => None,
+    };
+    let mut raised = None;
+    if let Some(max) = parsed_limit {
+        let old = projects.file_library_mut().tag_limit();
+        if old != max {
+            projects.file_library_mut().set_tag_limit(max).map_err(CommandError)?;
+            raised = Some(old);
+        }
     }
-    if let Some(name) = optional_text(params, "name")? {
-        library
-            .set_tag(name, optional_text(params, "color")?, optional_text(params, "rename")?)
-            .map_err(CommandError)?;
-        done = true;
+    let work = |projects: &mut Projects| -> Result<Value, CommandError> {
+        // The limit applied before this runs is its own turn: the nothing form refuses
+        // when no limit and no tag came with it ([#1254] review).
+        let mut done = parsed_limit.is_some();
+        match tag_param(projects, params)? {
+            // A tag by its id or name, changed, or created from the named colours when the name
+            // is not one yet ([#1254]):
+            Some(SetTagGiven::Tag((id, rename))) => {
+                if folder.is_some() {
+                    // A tag the library has takes no `folder`: where it goes is
+                    // `library.moveTag`'s ([#1254] review).
+                    return Err("a tag the library has takes no folder; give its moves to library.moveTag".into());
+                }
+                if let Some(renamed) = rename {
+                    projects.file_library_mut().rename_tag(id, &renamed).map_err(CommandError)?;
+                }
+                if let Some(color) = optional_text(params, "color")? {
+                    projects.file_library_mut().set_tag_color(id, Some(color)).map_err(CommandError)?;
+                }
+                done = true;
+            }
+            // A name the `id` carried that no tag has: made from the store's make, which holds
+            // the same turn for `rename` and lands in the `folder` when one is asked ([#1254]
+            // review).
+            Some(SetTagGiven::Name(name)) => {
+                projects
+                    .file_library_mut()
+                    .set_tag(&name, optional_text(params, "color")?, optional_text(params, "rename")?, folder)
+                    .map_err(CommandError)?;
+                done = true;
+            }
+            // The `name` param is the id-keep's own: read as soon as no id gave, so a limit and
+            // a make can come in the one command ([#1254] review: the word forms keep their own
+            // work beside the limit's).
+            None => {
+                if let Some(name) = optional_text(params, "name")? {
+                    projects
+                        .file_library_mut()
+                        .set_tag(name, optional_text(params, "color")?, optional_text(params, "rename")?, folder)
+                        .map_err(CommandError)?;
+                    done = true;
+                }
+            }
+        }
+        if !done {
+            return Err("give a tag's id or name, a tag folder's, or a limit".into());
+        }
+        tags(projects, &Value::Null)
+    };
+    match work(projects) {
+        Ok(reply) => Ok(reply),
+        Err(e) => {
+            if let Some(old) = raised {
+                let _ = projects.file_library_mut().set_tag_limit(old);
+            }
+            Err(e)
+        }
     }
-    if !done {
-        return Err("give a tag's name (with a color or a new name), or a limit".into());
+}
+
+/// A `set_tag`'s `id` names a tag the library has, with its rename untouched, or a name
+/// nothing has — created from rather than looked up ([#1254] review: the help keeps its
+/// promise; a `#<id>` that is not one stays an error).
+enum SetTagGiven {
+    Tag((u32, Option<String>)),
+    Name(String),
+}
+
+fn tag_param(projects: &mut Projects, params: &Value) -> Result<Option<SetTagGiven>, CommandError> {
+    let rename = Args::new(params).value("rename").and_then(Value::as_str).map(str::to_string);
+    match Args::new(params).value("id") {
+        // An id's own, by number or `#<id>` ([#1254]: the UIs send the text form). A name
+        // nothing has makes one instead; an id's own form that is not one refuses.
+        Some(Value::String(given)) => {
+            if let Some(id) = resolve_tag_param(projects, given) {
+                return Ok(Some(SetTagGiven::Tag((id, rename))));
+            }
+            // The id's own shape (`#` over digits and nothing else, [#1254] review) that
+            // is not one of the library's stays an error; other leading-# forms are
+            // names, made and reached as names.
+            if suhina_library::store::name_is_id_form(given) {
+                return Err(format!("there is no tag {given:?}; library.tags lists them").into());
+            }
+            Ok(Some(SetTagGiven::Name(given.to_string())))
+        }
+        Some(given) => {
+            let id = given.as_u64().ok_or("id must be a whole number")?;
+            let id = u32::try_from(id).map_err(|_| "id must be a whole number")?;
+            Ok(Some(SetTagGiven::Tag((id, rename))))
+        }
+        None => Ok(None),
     }
-    tags(projects, &Value::Null)
 }
 
 fn remove_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let name = Args::new(params).text("name")?;
-    projects.file_library_mut().remove_tag(name).map_err(CommandError)?;
-    Ok(json!({ "removed": name }))
+    let given: String = match Args::new(params).value("id").filter(|v| !v.is_null()) {
+        Some(v) => v.as_str().map(|s| s.to_string()).ok_or_else(|| "id must be a tag's id or name".to_string())?,
+        None => Args::new(params).text("name")?.to_string(),
+    };
+    let id = resolve_tag_param(projects, &given)
+        .ok_or_else(|| format!("there is no tag {given:?}; library.tags lists them"))?;
+    projects.file_library_mut().remove_tag(id).map_err(CommandError)?;
+    Ok(json!({ "removed": given }))
 }
 
 fn tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let key = Args::new(params).text("item")?;
     let item = Item::parse(key).ok_or("item must be a path or an item key")?;
-    let name = Args::new(params).text("tag")?;
+    let given = Args::new(params).text("tag")?;
     let on = Args::new(params).bool("on")?;
+    let id = resolve_tag_param(projects, given)
+        .ok_or_else(|| format!("there is no tag {given:?}; library.tags lists them"))?;
     let library = projects.file_library_mut();
-    library.tag(&item.key(), name, on).map_err(CommandError)?;
-    Ok(json!({ "item": item.key(), "tags": library.item_tags(&item.key()) }))
+    library.tag(&item.key(), id, on).map_err(CommandError)?;
+    let tags = library.item_tags(&item.key());
+    Ok(json!({ "item": item.key(), "tags": tags }))
+}
+
+/// The tag a `tag`-sounding param names: `#<id>` for the id's own, else the name (names are
+/// unique, [#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)). The id's form is
+/// `#` over ASCII digits and nothing else, the shape no name may spell ([#1254] review:
+/// `#+1` parsed as the id 1 and reached Red instead of the tag named so); any other text,
+/// leading-# or not, is a name.
+pub(crate) fn resolve_tag_param(projects: &mut Projects, given: &str) -> Option<u32> {
+    if suhina_library::store::name_is_id_form(given) {
+        let id = suhina_library::store::id_of_selector(given)?;
+        let library = projects.file_library_mut();
+        suhina_library::store::tag_by_id(&library.tags(), id).map(|_| id)
+    } else {
+        projects.file_library_mut().tag_id_of(given)
+    }
 }
 
 /// Records what a successful command added to a project among the recent items
@@ -1055,4 +1398,136 @@ pub(crate) fn record_use(library: &mut Library, recent: crate::Recent, params: &
             }
         }
     }
+}
+/// The folder a folder-sounding param names: `#<id>` for the id's own, else the name
+/// ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254) review: folder params know
+/// folders only, so a tag of the same name does not shadow the folder). A name that more
+/// than one folder has is refused: the forest order would pick one of them, and a
+/// reordering would change which ([#1254] review), the id's own says which. The id's form is
+/// the selectors' shape alone (`#` over ASCII digits); a folder named `#notes` or `#` is
+/// reached by its name ([#1254] review). The paths' errors are the callers'.
+pub(crate) fn resolve_folder_param(projects: &mut Projects, given: &str) -> Result<u32, String> {
+    if suhina_library::store::name_is_id_form(given) {
+        let id = suhina_library::store::id_of_selector(given)
+            .ok_or_else(|| format!("there is no tag folder {given:?}; library.tags lists the folders"))?;
+        let library = projects.file_library_mut();
+        if suhina_library::store::folder_by_id(&library.tags(), id).is_some() {
+            Ok(id)
+        } else {
+            Err(format!("there is no tag folder {given:?}; library.tags lists the folders"))
+        }
+    } else {
+        let library = projects.file_library_mut();
+        let matches: Vec<u32> =
+            suhina_library::store::folders_iter(&library.tags()).filter(|f| f.name == given).map(|f| f.id).collect();
+        match matches.as_slice() {
+            [id] => Ok(*id),
+            [] => Err(format!("there is no tag folder {given:?}; library.tags lists the folders")),
+            more => Err(format!("there are {} tag folders named {given:?}; name it by its id (#<id>)", more.len())),
+        }
+    }
+}
+
+/// `library.addTagFolder` ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)):
+/// a folder of tags, unique among its own level's names, named when not asked.
+pub(crate) fn add_tag_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let parent = match optional_text(params, "parent")? {
+        Some(given) => Some(resolve_folder_param(projects, given).map_err(CommandError)?),
+        None => None,
+    };
+    let id =
+        projects.file_library_mut().add_tag_folder(optional_text(params, "name")?, parent).map_err(CommandError)?;
+    Ok(json!({ "folder": id }))
+}
+
+/// `library.renameTagFolder` ([#1254]: the name is unique among its own level).
+pub(crate) fn rename_tag_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let given = Args::new(params).text("folder")?;
+    let id = resolve_folder_param(projects, given).map_err(CommandError)?;
+    let renamed = Args::new(params).text("rename")?;
+    projects.file_library_mut().rename_tag_folder(id, renamed).map_err(CommandError)?;
+    Ok(json!({ "folder": id, "renamed": renamed }))
+}
+
+/// `library.removeTagFolder` ([#1254]: its tags and folders move up to its parent).
+pub(crate) fn remove_tag_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let given = Args::new(params).text("folder")?;
+    let id = resolve_folder_param(projects, given).map_err(CommandError)?;
+    let up = projects.file_library_mut().remove_tag_folder(id).map_err(CommandError)?;
+    Ok(json!({ "removed": given, "up": up }))
+}
+
+/// `library.setFolderOpen` ([#1254]: each folder remembers whether it shows open).
+pub(crate) fn set_folder_open(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let given = Args::new(params).text("folder")?;
+    let id = resolve_folder_param(projects, given).map_err(CommandError)?;
+    let open = Args::new(params).bool("open")?;
+    projects.file_library_mut().set_tag_folder_open(id, open).map_err(CommandError)?;
+    Ok(json!({ "folder": id, "open": open }))
+}
+
+/// `library.moveTag` ([#1254]): a tag or a tag folder moves under `folder` — the top
+/// level when left out — at `position` of that level, clamped to its length.
+pub(crate) fn move_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let given = Args::new(params).text("id")?;
+    // The id's own: the tag's own first, then the folder's — an ambiguous folder name
+    // still refuses ([#1254] review).
+    let id = match resolve_tag_param(projects, given) {
+        Some(id) => id,
+        None => resolve_folder_param(projects, given).map_err(CommandError)?,
+    };
+    let parent = match optional_text(params, "folder")? {
+        Some(given) => Some(resolve_folder_param(projects, given).map_err(CommandError)?),
+        None => None,
+    };
+    let position = match Args::new(params).value("position") {
+        None => usize::MAX,
+        Some(v) => v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("position must be a whole number")?,
+    };
+    projects.file_library_mut().move_tag_node(id, parent, position).map_err(CommandError)?;
+    Ok(json!({ "moved": given, "folder": parent }))
+}
+
+/// `library.setSections` ([#1254] › Sidebar sections): the three movable sections in
+/// the order given, each whether it shows open — as it already showed, so a collapse
+/// survives a reordering ([#1254] review); a section left out of the command keeps what it
+/// had, and Folders stays last whatever is asked.
+pub(crate) fn set_sections(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let mut order: Vec<suhina_library::Section> = Vec::new();
+    let current = projects.file_library_mut().sections();
+    if let Some(list) = Args::new(params).value("order").and_then(Value::as_array) {
+        for kind in list {
+            let Some(kind) = kind.as_str().and_then(suhina_library::SectionKind::parse) else {
+                return Err("order is the sections by name (pinned, tags, library), each once".into());
+            };
+            if order.iter().any(|s| s.kind == kind) {
+                return Err("order is the sections by name (pinned, tags, library), each once".into());
+            }
+            order.push(
+                current
+                    .iter()
+                    .find(|s| s.kind == kind)
+                    .copied()
+                    .unwrap_or(suhina_library::Section { kind, open: true }),
+            );
+        }
+    }
+    // Sections left out keep the order and the open state they had.
+    for was in &current {
+        if !order.iter().any(|s| s.kind == was.kind) {
+            order.push(*was);
+        }
+    }
+    projects.file_library_mut().set_sections(order).map_err(CommandError)?;
+    tags(projects, &Value::Null)
+}
+
+/// `library.setSectionOpen` ([#1254] › Sidebar sections): whether a section shows open.
+pub(crate) fn set_section_open(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let kind = optional_text(params, "section")?
+        .and_then(suhina_library::SectionKind::parse)
+        .ok_or("section is pinned, tags or library")?;
+    let open = Args::new(params).bool("open")?;
+    projects.file_library_mut().set_section_open(kind, open).map_err(CommandError)?;
+    Ok(json!({ "section": kind.name(), "open": open }))
 }
