@@ -415,6 +415,13 @@ Without a `color` of the theme's on the part itself, each keeps the colour Suhin
 a `color` on `knob` or on a view around a fader does not change a knob's body or a fader's rail
 or cap, while a knob's pointer takes the knob's colour.
 
+A theme made for an earlier version: artwork of its own for `knob.body`, `fader.rail` or
+`fader.cap` that uses `currentColor` drew in the knob's pointer colour or the values' text colour,
+and now draws in the part's `color`. Give the part that colour to keep the look
+(`knob-body { color: var(--accent); }`, `fader-cap, fader-rail { color: var(--text-value); }`).
+The `--kind-*` colours of the sample map are no longer read: write
+`sample-point[kind="kick"] { color: #D06E5E; }` and so on instead.
+
 *More › New theme…* and *More › Duplicate theme…* have an **Include the default artwork**
 checkbox: it copies every default SVG into the new theme's `assets/` and writes a rule for each
 into its `theme.css` (`knob-body { image: url("assets/knob.body.svg"); }`), ready to edit. *More ›

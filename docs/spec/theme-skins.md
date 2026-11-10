@@ -419,6 +419,20 @@ like before a theme styles it.
   quick controls for them. The `kind.*` palette tokens (`--kind-kick`, …) are gone.
 - **`@media (prefers-color-scheme)` is not supported.** A theme with light and dark looks ships
   them as variants; a sheet that uses it gets a notice and the `@media` rule does not apply.
+- **What changes for a theme of an earlier version** (breaking changes, #1019):
+  - *Artwork of the theme's own that uses `currentColor` for a knob's body or a fader's rail or
+    cap changes colour.* Without `data-suhina-ink`, `currentColor` was the knob's pointer colour
+    (its `color`, else the accent) for `knob.body` and `--text-value` for `fader.rail` and
+    `fader.cap`; it is now the `color` of `knob-body`, `fader-rail` or `fader-cap`, the palette
+    colours above until the theme gives one. A theme keeps its look with a rule for the part
+    (`knob-body { color: var(--accent); }`, `fader-cap, fader-rail { color: var(--text-value); }`).
+    Other artwork keeps its colour, and `data-suhina-ink` in an SVG is no longer read (the default
+    artwork's copies had it, and keep the colour it gave them). Nothing in a theme tells the two
+    apart, so there is no notice.
+  - *The `kind.*` palette tokens are not read.* A sheet's `--kind-kick` or a theme file's
+    `"kind.kick"` gets a notice that names the rule to write instead,
+    `sample-point[kind="kick"] { color: … }` (`theme::former_kind_token`); the sample map shows
+    the user-agent sheet's colour for the kind until the theme has that rule.
 
 **Including the default artwork.** *More › New theme…* and *More › Duplicate theme…* ask first,
 with an **Include the default artwork** checkbox (off by default). With it, the new theme gets a

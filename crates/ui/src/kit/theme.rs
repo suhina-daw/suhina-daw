@@ -414,6 +414,7 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
         }
         Err(error) => warnings.push(error),
     }
+    warnings.extend(theme.vars.base.keys().filter_map(|name| former_kind_token(name.strip_prefix("--kind-")?)));
     warnings.extend(super::theme_css::read_host_rules(&mut theme, sheet));
     if let Some((toolbar, offsets)) = theme.meta.toolbar.as_ref().and_then(read_toolbar) {
         theme.skin.toolbar = Some(toolbar);
@@ -421,6 +422,18 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
     }
     warnings.extend(super::theme_vars::resolve(&mut theme));
     (theme, warnings)
+}
+
+/// The notice for a sample-map colour a theme of an earlier version gives as a palette token
+/// (`--kind-kick`, `"kind.kick"`) for the sound kind `kind`: the `kind.*` tokens are gone, and a
+/// theme colours a kind with a rule for its `sample-point` (#1019). `None` for a name that is not
+/// a kind.
+pub fn former_kind_token(kind: &str) -> Option<String> {
+    suhina_soundmap::kinds::Kind::ALL.iter().find(|k| k.id() == kind)?;
+    Some(format!(
+        "--kind-{kind} is no longer read: the sample map's colours are rules, \
+         sample-point[kind=\"{kind}\"] {{ color: … }}"
+    ))
 }
 
 /// The toolbar arrangement in `theme.json` as the toolbar editor has it: `items` (names only) and
@@ -606,7 +619,11 @@ impl Theme {
                                 theme.transparent_rgb.insert(canonical.to_string(), [r, g, b]);
                             }
                         }
-                        (None, _) => warnings.push(format!("{key} is not a colour token")),
+                        (None, _) => warnings.push(
+                            key.strip_prefix("kind.")
+                                .and_then(former_kind_token)
+                                .unwrap_or_else(|| format!("{key} is not a colour token")),
+                        ),
                         (Some(_), None) => {
                             warnings.push(format!("{key}: {value} is not a #RRGGBB or #RRGGBBAA colour"))
                         }

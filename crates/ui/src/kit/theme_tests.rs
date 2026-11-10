@@ -499,3 +499,17 @@ fn toolbar_rules_in_a_current_sheet_are_not_read_and_are_named_once() {
     let (theme, _) = from_folder(meta, sheet);
     assert_eq!(theme.skin.toolbar.unwrap().hidden, ["tempo"]);
 }
+
+/// A sample-map colour given as a `kind.*` palette token, which is gone, is not read silently: the
+/// notice says the colours are `sample-point` rules now, in a sheet and in a theme file alike.
+#[test]
+fn a_former_kind_token_gets_a_notice_naming_its_sample_point_rule() {
+    let (_, warnings) = from_css(":root { --kind-kick: #FF0000; --kind-closedHat: #00FF00; --kind-ness: #0000FF; }");
+    let kinds: Vec<_> = warnings.iter().filter(|w| w.contains("is no longer read")).collect();
+    assert_eq!(kinds.len(), 2, "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.contains("sample-point[kind=\"kick\"] { color: … }")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.starts_with("--kind-closedHat is no longer read")), "{warnings:?}");
+    let (_, warnings) = Theme::from_json(r##"{"colors":{"kind.snare":"#123456","kind.nothing":"#123456"}}"##);
+    assert!(warnings.iter().any(|w| w.contains("sample-point[kind=\"snare\"]")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w == "kind.nothing is not a colour token"), "{warnings:?}");
+}
