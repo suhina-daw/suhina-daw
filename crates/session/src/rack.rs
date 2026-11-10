@@ -204,6 +204,10 @@ struct Started {
     /// Its state read just after it started, for later reads to be compared with (a plug-in may
     /// report a state it was given in a form of its own); `None` when it did not answer.
     first_state: Option<SavedState>,
+    /// Its parameters listed just after it started, on the same thread, so the engine knows
+    /// which take steps without the control half being lent out for it later (#1205); `None`
+    /// when it did not answer.
+    listed: Option<Vec<suhina_plugins::ParamInfo>>,
 }
 
 /// A superseded start can own a control connection whose destructor waits for an
@@ -1365,17 +1369,8 @@ impl Rack {
         self.follow_notes(project, &devices);
         self.send_placements();
         self.watch(&mut notices);
-        // A plug-in's parameters are listed once it runs, so the engine knows which take steps
-        // even when no panel or lane asks for them (#1205).
-        let unlisted: Vec<u64> = self
-            .instances
-            .iter()
-            .filter(|(_, i)| i.status == PluginStatus::Running && i.steps.is_none() && i.list_tried.is_none())
-            .map(|(key, _)| *key)
-            .collect();
-        for key in unlisted {
-            self.list_params(key);
-        }
+        // The parameters that take steps, from the lists the plug-ins gave as they started
+        // (#1205): the engine holds their lanes' values.
         let steps = self.step_map();
         if steps != self.steps_sent {
             player.set_plugin_steps(steps.clone());
@@ -1617,6 +1612,9 @@ impl Rack {
             if let Some(state) = started.first_state {
                 self.edits.read(started.key, &state);
                 instance.last_state = Some(state);
+            }
+            if let Some(list) = started.listed {
+                instance.list_done(Some(list), Instant::now());
             }
             let name = instance.plugin.as_ref().map_or_else(String::new, |p| p.0.clone());
             match started.result {
@@ -1866,8 +1864,9 @@ impl Rack {
         let (sender, generation) = (self.sender.clone(), self.next_generation);
         let spawned = std::thread::Builder::new().name("suhina-plugin-restart".into()).spawn(move || {
             let mut control = control;
-            let result = control.restart().map(|audio| (control, audio, None)).map_err(|e| e.to_string());
-            let _gone = sender.send(Started { key, generation, result, first_state: None });
+            let mut result = control.restart().map(|audio| (control, audio, None)).map_err(|e| e.to_string());
+            let listed = listed_after_start(&mut result);
+            let _gone = sender.send(Started { key, generation, result, first_state: None, listed });
         });
         spawned.map(|_| ()).map_err(|e| CommandError(format!("could not restart the plug-in: {e}")))
     }
@@ -2162,12 +2161,22 @@ fn spawn_start(sender: Sender<Started>, key: u64, generation: u64, launch: Launc
         let mut result = start(launch, state).map_err(|e| e.to_string());
         suhina_plugins::trace!("rack started key {key} generation {generation}: {:?}", result.as_ref().map(|_| ()));
         let first_state = result.as_mut().ok().and_then(|(plugin, _, _)| plugin.save_state().ok());
-        let _gone = sender.send(Started { key, generation, result, first_state });
+        let listed = listed_after_start(&mut result);
+        let _gone = sender.send(Started { key, generation, result, first_state, listed });
     });
     if let Err(e) = spawned {
         let result = Err(format!("no thread to start it on: {e}"));
-        let _gone = fallback.send(Started { key, generation, result, first_state: None });
+        let _gone = fallback.send(Started { key, generation, result, first_state: None, listed: None });
     }
+}
+
+/// The parameters a plug-in that just started lists, read on the thread that started it, while
+/// its control half is still that thread's.
+fn listed_after_start(
+    result: &mut Result<(Plugin, PluginAudio, Option<String>), String>,
+) -> Option<Vec<suhina_plugins::ParamInfo>> {
+    let (plugin, _, _) = result.as_mut().ok()?;
+    plugin.params_within(LIST_TIMEOUT).ok()
 }
 
 /// Starts the plug-in `launch` names and gives it `state`. A plug-in that refuses the state
