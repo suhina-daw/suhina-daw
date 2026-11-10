@@ -509,7 +509,9 @@ the browser's rows and places `:is(browser-row, browser-place)`; the timeline's 
 `:is(ruler, loop-region, loop-line, playhead)`. Settings such as `appearance` are properties
 like the others: `mixer pan { appearance: knob; }` and `:is(pan, send) { appearance: knob; }`
 both work, and the settings of a value (`appearance`, `value-position`, `value-decimals`,
-`value-unit`) are inherited, so `mixer { appearance: knob; }` reaches its pans and sends.
+`value-unit`, `drag-pointer`) are inherited, so `mixer { appearance: knob; }` reaches its pans
+and sends. `drag-pointer: hidden | visible | auto` says whether the pointer hides while a value
+control is dragged or shows the arrow of the drag's direction; `auto` keeps the user's setting.
 
 | Area (ancestor) | Parts (element or id) |
 |---|---|

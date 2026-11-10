@@ -1559,6 +1559,7 @@ fn show_lanes(
             widgets::format_db(state.main_drag.unwrap_or(db)),
             widgets::DragAxis::Both,
         );
+        widgets::value_drag_pointer(ui.ctx(), &response, &volume_style);
         state.value_areas.push(field.intersect(fixed));
         let mut preview = state.main_drag;
         // Dragged up or across: up or right raises it, whichever the drag moves along first.

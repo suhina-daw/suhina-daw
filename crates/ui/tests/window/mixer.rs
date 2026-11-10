@@ -678,10 +678,18 @@ fn a_return_in_the_arrangement_has_a_tracks_controls_and_main_a_volume_bar_and_t
         assert!((main(harness) - 1.0).abs() < 1e-9, "one undo step");
         (dragged, icon)
     };
-    // The pointer over it stays as it is; a drag shows the arrow of the way it goes.
+    // The pointer over it stays as it is, and a drag hides it, as every value drag does.
     harness.hover_at(bar);
     harness.step();
     assert_eq!(harness.output().platform_output.cursor_icon, egui::CursorIcon::Default);
+    let (hidden, icon) = drag(&mut harness, &[egui::vec2(-10.0, 0.0), egui::vec2(-20.0, 0.0), egui::vec2(-40.0, 0.0)]);
+    assert!(hidden < 1.0, "dragged left, quieter: {hidden}");
+    assert_eq!(icon, egui::CursorIcon::None, "hidden while dragged, though it chose an axis");
+    // Settings › Hide pointer while dragging off: a drag shows the arrow of the way it goes.
+    let ctx = harness.ctx.clone();
+    let settings = suhina_ui::settings::Settings { drag_hides_pointer: false, ..harness.state().settings().clone() };
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
     let (left, icon) = drag(&mut harness, &[egui::vec2(-10.0, 0.0), egui::vec2(-20.0, 0.0), egui::vec2(-40.0, 0.0)]);
     assert!(left < 1.0, "dragged left, quieter: {left}");
     assert_eq!(icon, egui::CursorIcon::ResizeHorizontal);

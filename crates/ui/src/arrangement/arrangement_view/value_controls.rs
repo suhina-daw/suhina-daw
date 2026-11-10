@@ -76,6 +76,7 @@ pub(super) fn send_knob(
     let position = ((shown - low) / (high - low)) as f32;
     // `send` styles it here as in the mixer.
     let el = crate::kit::element::SEND.response(&response).enter();
+    widgets::value_drag_pointer(ui.ctx(), &response, &el);
     let amount = widgets::hover(ui, &response);
     let surface = motion::mix(background, theme::control_hover(), amount);
     el.paint(painter, rect);
@@ -173,6 +174,7 @@ pub(super) fn value_control(
         let axis =
             if knob { crate::kit::control_layout::placement(name).direction.into() } else { widgets::DragAxis::Both };
         let response = widgets::value_area_axis(ui, rect.intersect(clip), id.with(label.as_str()), &label, text, axis);
+        widgets::value_drag_pointer(ui.ctx(), &response, el);
         control_response = Some(response.clone());
         hover = widgets::hover(ui, &response);
         // One track hears every frame of a drag: each sets the value, all in one gesture, so the

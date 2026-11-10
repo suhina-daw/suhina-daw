@@ -31,6 +31,7 @@ const ON_OFF: &[&str] = &["on", "off"];
 const SIDE: &[&str] = &["left", "right"];
 const PARAM_LABEL: &[&str] = &["left", "top", "hidden"];
 const METER_STYLE: &[&str] = &["continuous", "segmented", "needle", "frames"];
+const DRAG_POINTER: &[&str] = &["auto", "hidden", "visible"];
 
 /// A value's unit (`" dB"`): a quoted string of at most ten characters.
 fn quoted_unit(text: &str) -> bool {
@@ -177,6 +178,7 @@ properties! {
     ValuePosition, "value-position", Keyword(VALUE_POSITION), Value::Keyword(""), true, "Where a knob's value goes: right, left, top, bottom, inside or none.";
     ValueDecimals, "value-decimals", Keyword(DECIMALS), Value::Keyword(""), true, "Decimals a level's value shows: 0, 1 or 2.";
     ValueUnit, "value-unit", Text(quoted_unit), Value::Text(String::new()), true, "A unit after a level's value, quoted: \" dB\".";
+    DragPointer, "drag-pointer", Keyword(DRAG_POINTER), Value::Keyword(""), true, "While a value control is dragged: hidden hides the pointer, visible shows the arrow of the drag's direction, auto follows the user's setting.";
     TrackArtwork, "track-artwork", Keyword(ON_OFF), Value::Keyword(""), true, "on draws a track's artwork behind its Launcher column and clips.";
     TrackHeaders, "track-headers", Keyword(SIDE), Value::Keyword(""), false, "The side of the Arrangement view its track headers are on.";
     TrackHeight, "track-height", Length, Value::Length(Length::Auto), false, "The height of an Arrangement track that has none of its own, 20 to 400 points.";

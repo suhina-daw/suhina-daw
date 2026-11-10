@@ -164,6 +164,16 @@ pub fn knob_preference(el: &Entered, fallback: bool) -> bool {
     }
 }
 
+/// Whether a value drag on `el` hides the pointer: the sheet's `drag-pointer: hidden` or
+/// `visible` on it or an element it is in, else the user's setting (`fallback`).
+pub fn drag_hides_pointer(el: &Entered, fallback: bool) -> bool {
+    match el.style().and_then(|style| style.keyword(Property::DragPointer)) {
+        Some("hidden") => true,
+        Some("visible") => false,
+        _ => fallback,
+    }
+}
+
 /// Whether the sheet draws a track's artwork behind `el` (`track-column { track-artwork: on; }`).
 pub fn track_artwork(el: &Entered) -> bool {
     el.style().and_then(|style| style.keyword(Property::TrackArtwork)) == Some("on")
@@ -426,7 +436,7 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kit::element::{MIXER, PAN, SEND, test_el};
+    use crate::kit::element::{FADER, KNOB, MIXER, PAN, SEND, test_el};
     use crate::kit::skin;
 
     /// What `draw` sees once the frames it takes for the tree to resolve have passed, with `css` as
@@ -473,6 +483,24 @@ mod tests {
             });
             assert_eq!(seen.0, [false, true].map(|preference| forced.unwrap_or(preference)), "{value}");
             assert_eq!(seen.1, [false, true], "a send keeps the user's choice");
+        }
+    }
+
+    #[test]
+    fn drag_pointer_overrides_the_setting_for_the_controls_inside_it() {
+        for (value, forced) in [("hidden", Some(true)), ("visible", Some(false)), ("auto", None)] {
+            let css = format!("mixer {{ drag-pointer: {value}; }}");
+            let seen = frames(&css, || {
+                let mixer = MIXER.enter();
+                let fader = FADER.enter();
+                let inside = [false, true].map(|setting| drag_hides_pointer(&fader, setting));
+                drop(fader);
+                drop(mixer);
+                let knob = KNOB.enter();
+                (inside, [false, true].map(|setting| drag_hides_pointer(&knob, setting)))
+            });
+            assert_eq!(seen.0, [false, true].map(|setting| forced.unwrap_or(setting)), "{value}");
+            assert_eq!(seen.1, [false, true], "a knob outside the mixer keeps the setting");
         }
     }
 

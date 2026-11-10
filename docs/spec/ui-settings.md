@@ -100,7 +100,7 @@ what is inside it).
 | Browser | Tags | Colour tag limit |
 | Keys | Mouse and key behaviour | The clip editor's workflow settings (click, right click, double-click, duplicate key); kept in `keymap.json` |
 | Keys | Shortcuts | The preset, every action's keys, Reset all |
-| Appearance | Window | Window zoom, Animations, Menu bar in window |
+| Appearance | Window | Window zoom, Animations, Hide pointer while dragging (On by default; a theme's `drag-pointer` wins for its controls), Menu bar in window |
 | Appearance | Waveforms | Waveform scale |
 | Appearance | Background | Background image, Surface opacity, Background blur |
 | Appearance | Application bar | Application name position, Show project name, Show project timing, Project information position |

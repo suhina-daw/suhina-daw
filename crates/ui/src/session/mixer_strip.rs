@@ -1095,6 +1095,7 @@ fn paint_fader(
     centred: bool,
 ) {
     let style = crate::kit::element::FADER.id("mixer-volume").response(response).enter();
+    widgets::value_drag_pointer(ui.ctx(), response, &style);
     style.paint_background(painter, fader, 0.0);
     let hover = widgets::hover(ui, response);
     let value_color = motion::mix(theme::text_value(), theme::text_primary(), hover);
@@ -1314,6 +1315,7 @@ fn pan_row(
         format!("{} pan", column.name),
         widgets::format_pan(shown(state, column, Control::Pan, column.pan)),
     );
+    widgets::value_drag_pointer(ui.ctx(), &pan_response, &style);
     let mut preview = match state.drag {
         Some((t, Control::Pan, v)) if t == track => Some(v),
         _ => None,
@@ -1474,6 +1476,7 @@ fn send_knobs(
         // `send` styles every send, `#mixer-send-N` one of them; `appearance: knob` draws it as a
         // knob.
         let el = crate::kit::element::SEND.id(&name).response(&response).enter();
+        widgets::value_drag_pointer(ui.ctx(), &response, &el);
         let pointer =
             el.color_or(motion::mix(theme::text_value(), theme::text_primary(), widgets::hover(ui, &response)));
         if crate::kit::style_class::knob_preference(&el, false) {
