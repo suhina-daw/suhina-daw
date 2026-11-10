@@ -381,6 +381,9 @@ Mounted lanes are put in an order of one's own and gathered in groups (#1322):
   them: copy, cut, paste, duplicate and delete act on each in one step (`automation.copy`,
   `automation.duplicate` and `automation.deleteRange` with `lanes`; a paste of lanes copied together
   puts each back on its own lane of the track). A lane with no automation in the range is left out.
+  It is drawn as one area over those lanes, with no gap where one lane meets the next. It is the
+  one selection: painting it lets go of the time selection and the clips picked on the tracks, and
+  a time selection or a clip picked after it lets go of it.
   Ctrl+L, or **Loop selection** in the range's right-click menu, loops the range's span, as it
   does a time selection on the clips' lanes; Ctrl+L again over the same span turns looping off.
 

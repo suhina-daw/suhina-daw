@@ -256,6 +256,10 @@ pub struct ArrangementViewState {
     pub(super) marquee_scroll: Vec2,
     /// The span the last selection rectangle covered: its tracks and its beats.
     pub(super) time_selection: Option<TimeSelection>,
+    /// The time selection, the picked clips and the range painted on automation lanes as the
+    /// last frame left them: whichever was made since gives the others up (#1322).
+    seen_selections:
+        (Option<TimeSelection>, Vec<(TrackId, ClipId)>, Option<crate::arrangement::automation_lanes::LaneRange>),
     /// Where a drag on the ruler started, in beats: it selects time over every track.
     pub(super) ruler_select: Option<f64>,
     /// While time is being painted: what a drag with Shift goes on from, known once it has begun.
@@ -443,6 +447,7 @@ impl Default for ArrangementViewState {
             marquee_row: None,
             marquee_scroll: Vec2::ZERO,
             time_selection: None,
+            seen_selections: (None, Vec::new(), None),
             ruler_select: None,
             painted_from: None,
             edge_drag: None,
@@ -596,6 +601,24 @@ impl ArrangementViewState {
             self.track_focus = false;
         }
         self.time_selection = selection;
+    }
+
+    /// One selection at a time (#1322): a time selection or clips picked since the last frame let
+    /// go of the range painted on automation lanes, and a range painted there lets go of the
+    /// time selection and the picked clips, so the edit keys act on what was selected last.
+    pub(super) fn settle_selections(&mut self) {
+        let (time, clips, range) = &self.seen_selections;
+        let time_new = self.time_selection.is_some() && self.time_selection != *time;
+        let clips_new = !self.selected.is_empty() && self.selected != *clips;
+        let range_new = self.automation.range.is_some() && self.automation.range != *range;
+        if range_new {
+            self.time_selection = None;
+            // The clip the editor shows stays shown; it is only not picked.
+            self.selected.clear();
+        } else if time_new || clips_new {
+            self.automation.range = None;
+        }
+        self.seen_selections = (self.time_selection.clone(), self.selected.clone(), self.automation.range.clone());
     }
 
     /// Lets go of the take pieces picked and the area painted across take lanes: the Delete and

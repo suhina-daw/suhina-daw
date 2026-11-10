@@ -330,6 +330,8 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
     let mut styled_ui = arrangement.ui(ui);
     let ui = &mut *styled_ui;
 
+    // What was selected since the last frame (here or by a key) is the one selection.
+    state.settle_selections();
     // The lanes' menus show the Arrangement's grid and change it.
     if let Some(picked) = state.automation.grid_picked.take() {
         state.grid = picked;

@@ -1432,6 +1432,9 @@ pub struct LanesState {
     renaming: Option<(TrackId, usize, String)>,
     /// The lanes a range being painted reaches over, on its track, top to bottom (#1322).
     covered: Vec<LaneKey>,
+    /// The lanes of the track being drawn that the range (painted or being painted) is on, top to
+    /// bottom: it is drawn as one area over them, with no gaps between the lanes.
+    range_lanes: Vec<LaneKey>,
 }
 
 impl LanesState {
@@ -2115,6 +2118,20 @@ pub fn show(
         }
         state.covered = covered;
     }
+    let painting = state.box_drag.as_ref().filter(|d| !d.select && d.track == lanes.track);
+    let on = |key: &LaneKey| match painting {
+        Some(drag) => &drag.key == key || state.covered.contains(key),
+        None => state.range.as_ref().is_some_and(|r| r.track == lanes.track && (&r.key == key || r.more.contains(key))),
+    };
+    let range_lanes: Vec<LaneKey> = state
+        .rows(lanes.track, params)
+        .into_iter()
+        .filter_map(|row| match row {
+            LaneRow::Lane(key) if on(&key) => Some(key),
+            _ => None,
+        })
+        .collect();
+    state.range_lanes = range_lanes;
     let mut y = lanes.top;
     // Where each row went, for a drag of headers to land between them.
     let mut placed_rows: Vec<(LaneRow, f32, f32)> = Vec::new();
@@ -3120,9 +3137,26 @@ fn lane(
             .map(|r| (geometry.x_of(r.start), geometry.x_of(r.end))),
     };
     if let Some((a, b)) = painted {
-        let area = Rect::from_x_y_ranges(egui::Rangef::new(a.min(b), a.max(b)), time.y_range());
+        // One area over every lane it is on: a lane with another below it reaches over the line
+        // between them, and only the area's outer edges are drawn.
+        let at = state.range_lanes.iter().position(|k| k == key);
+        let first = at.is_none_or(|i| i == 0);
+        let last = at.is_none_or(|i| i + 1 == state.range_lanes.len());
+        let mut area = Rect::from_x_y_ranges(egui::Rangef::new(a.min(b), a.max(b)), time.y_range());
+        if !last {
+            area.max.y += LINE;
+        }
         lane_painter.rect_filled(area, 0.0, theme::accent().gamma_multiply(0.15));
-        lane_painter.rect_stroke(area, 0.0, theme::hairline(theme::accent()), StrokeKind::Inside);
+        let stroke = theme::hairline(theme::accent());
+        let inner = area.shrink(0.5);
+        lane_painter.line_segment([inner.left_top(), Pos2::new(inner.left(), area.bottom())], stroke);
+        lane_painter.line_segment([inner.right_top(), Pos2::new(inner.right(), area.bottom())], stroke);
+        if first {
+            lane_painter.line_segment([inner.left_top(), inner.right_top()], stroke);
+        }
+        if last {
+            lane_painter.line_segment([inner.left_bottom(), inner.right_bottom()], stroke);
+        }
     }
 
     // A round handle half-way along each sloping segment wide enough: dragged up or down it bends
