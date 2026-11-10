@@ -46,6 +46,12 @@ pub(crate) struct Input {
     /// the signal's last state instead of dropping to silence — a silence splice cracks
     /// through everything downstream, and a recording baked hundreds of them in.
     last: [f32; MAX_INPUT_CHANNELS],
+    /// Frames of input time covered since the renderer started: every block's frames, and the
+    /// frames dropped when the ring overflowed. The input's own clock: its frames arrive in
+    /// order whatever the render thread's position does, so a recording's positions run on it
+    /// and never jump the way a position against the render's clock jumps with the ring's
+    /// depth.
+    consumed: u64,
 }
 
 impl Input {
@@ -58,6 +64,7 @@ impl Input {
             frames: 0,
             waiting: 0,
             last: [0.0; MAX_INPUT_CHANNELS],
+            consumed: 0,
         }
     }
 
@@ -75,6 +82,9 @@ impl Input {
     pub(crate) fn read(&mut self, frames: usize) {
         let frames = frames.min(MAX_BLOCK);
         self.frames = frames;
+        // This block's window of input time is spent whatever the ring had: the input's own
+        // clock runs at the render block's cadence.
+        self.consumed += frames as u64;
         let channels = self.channels;
         let wanted = frames * channels;
         let Some(block) = self.scratch.get_mut(..wanted) else { return };
@@ -89,6 +99,9 @@ impl Input {
             if let Ok(chunk) = ring.read_chunk(drop) {
                 chunk.commit_all();
             }
+            // Dropped frames were input time too: the take's positions jump over them, and the
+            // writer fills their span with silence so the beat keeps.
+            self.consumed += (drop / channels) as u64;
         }
         let take = (ring.slots() / channels).min(frames) * channels;
         match ring.read_chunk(take) {
@@ -129,6 +142,13 @@ impl Input {
     /// an input device.
     pub(crate) fn waiting(&self) -> u64 {
         if self.ring.is_some() { self.waiting as u64 } else { 0 }
+    }
+
+    /// The input's own clock: frames of input time covered since the renderer started — every
+    /// block's frames and the ring's dropped ones. A recording's positions run on it, so they
+    /// never jump the way a position against the render's clock jumps with the ring's depth.
+    pub(crate) fn frames_consumed(&self) -> u64 {
+        self.consumed
     }
 
     /// The sample of input channel `channel` (from 0) at `frame` of this block; silence for a

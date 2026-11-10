@@ -209,6 +209,21 @@ engine code.
     output fed back into the input offline, with a known delay) checks that a recorded frame
     lands on the frame it was played at.
 
+## Amendment: a take's frames run on the input's own clock (2026-11-10)
+
+The body's arithmetic for an input frame's stamp — its frame less the output's latency, the
+input device's and the frames that waited in the input ring — is right for the block, but the
+ring's depth swings block to block as the device's delivery and the render thread's reads
+trade places, and a stamp that followed it jumped with every swing. The record writer reads a
+forward jump as frames lost and fills them with silence, and a backward one as frames to
+skip: a take recorded through the swings came out full of exact-zero runs of one block, heard
+as clicks and pops, with no underrun counted anywhere (the ring never starved; its depth only
+oscillated). A take's frames run on the input's own clock now — its frames arrive in order,
+so they never jump — lined up once at the take's start by the body's arithmetic, from the
+input's consumed-frame count the render thread reads each block
+([`docs/spec/recording.md`](../spec/recording.md) › Lined up with what was heard). A loopback
+still records the project back exactly on its frames.
+
 ## Amendment: default track input (2026-11-05)
 
 [#1191](https://github.com/suhina-daw/suhina-daw/issues/1191). Before, every new audio track heard

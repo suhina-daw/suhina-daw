@@ -298,6 +298,48 @@ fn a_loopback_records_the_output_back_on_its_own_frames() {
 }
 
 #[test]
+fn a_takes_positions_follow_the_inputs_own_clock_not_the_rings_depth() {
+    // The input ring's depth swings block to block as the device's delivery and the render
+    // thread's reads trade places: two blocks of input, then none, swings it between two blocks
+    // and one without ever starving (a block's frames are always there). A take's positions ran
+    // on the render's clock less that depth, so they jumped with every swing, and the writer
+    // read the jumps as lost frames and spliced silence in: takes full of clicks and pops with
+    // no underrun counted anywhere. On the input's own clock the positions follow one another.
+    let mut renderer =
+        Renderer::stopped(&input_track(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let (mut ring, consumer) = rtrb::RingBuffer::new(BLOCK * 64);
+    renderer.set_audio_input(consumer, 1, Arc::new(AtomicU64::new(0)));
+    let mut controller = renderer.controller();
+    let mut recorder = controller.take_recorder().unwrap();
+    arm(&mut controller, 1);
+    controller.send(LaunchCommand::SetRecording { on: true }).unwrap();
+    controller.send(LaunchCommand::Play).unwrap();
+    let mut block = vec![0.0f32; BLOCK * 2];
+    let mut fed = 0.0f32;
+    for n in 0..40 {
+        for _ in 0..(if n % 2 == 0 { BLOCK * 2 } else { 0 }) {
+            fed += 0.001;
+            ring.push(fed).unwrap();
+        }
+        renderer.process(&mut block);
+    }
+    let chunks: Vec<_> = std::iter::from_fn(|| recorder.next_audio()).collect();
+    assert!(chunks.len() > 8, "{} chunks", chunks.len());
+    // The take's first frames, before the transport has run the ring's depth, stamp at 0 as
+    // they always did. From the last of them on, the positions never go backward and follow
+    // one another: on the render's clock less the ring's depth they jumped with every swing
+    // of the depth - backward, and forward into gaps the writer spliced silence into.
+    let line_up = chunks.iter().rposition(|chunk| chunk.position == 0).map_or(0, |at| at + 1);
+    for pair in chunks[line_up..].windows(2) {
+        assert_eq!(pair[1].position, pair[0].position + u64::from(pair[0].frames), "chunks follow one another");
+    }
+    for pair in chunks.windows(2) {
+        assert!(pair[1].position >= pair[0].position, "positions never go backward");
+    }
+    assert_eq!(recorder.lost(), (0, 0));
+}
+
+#[test]
 fn input_is_recorded_only_from_armed_tracks_while_recording_and_playing() {
     let mut renderer =
         Renderer::stopped(&input_track(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
