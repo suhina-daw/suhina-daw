@@ -204,10 +204,10 @@ impl App {
             // Notes copied last paste into the clip the piano roll shows, even when a click on
             // that clip in the view took the other keys: copy notes, pick another clip, paste.
             "selection.paste" if self.piano_takes_paste() => {
+                // The paste gives the piano roll the keys; it acts only with them.
+                self.piano_roll.focused = true;
                 let paste = self.piano_key(action);
-                if paste.is_some() {
-                    self.piano_roll.focused = true;
-                }
+                self.piano_roll.focused = paste.is_some();
                 actions.extend(paste)
             }
             "selection.mute"
