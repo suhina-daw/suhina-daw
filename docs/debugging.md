@@ -184,7 +184,8 @@ The `input diagnostics` suffix keeps the latest 32 short reads as
 and `backlog_frames`. Each row is published atomically; other counters are independently
 sampled and may straddle a callback. Sequence numbers wrap after 2^32 short reads.
 History can overwrite events between trace lines; gaps in the sequence expose this.
-For a 2048-frame device block, the engine reads two chunks of at most 1024 frames, so
+A 2048-frame device block uses chunks of at most 1024 frames, with additional splits at
+transport boundaries. With no additional split,
 `[n, 0, 1024]` followed by `[n+1, 0, 1024]` means both chunks found no input.
 
 `render diagnostics` lists, in order: output callbacks, ASIO input callbacks, render
@@ -198,8 +199,10 @@ alongside short reads supports the catch-up hypothesis; increasing `timeouts` su
 input arriving beyond the grace period; increasing backlog drops identifies discarded
 input. A historical maximum alone does not show recurring catch-up. ASIO callback-count
 deltas can expose unequal input/output delivery but do not identify a rejected driver
-callback; these counters are downstream of CPAL's duplicate-cycle guard. This trace does
-not establish which hypothesis explains a particular interface until it is measured.
+callback; these counters are downstream of CPAL's duplicate-cycle guard. A short read
+following a backlog drop at a small internal loop-boundary chunk identifies input discarded
+too early. Backlog trimming now runs once per whole render call, so loop
+boundaries cannot reduce its budget; a new trace is still needed to verify the hardware.
 
 `audio.info` exposes the same data as `input_short_reads`, `input_backlog_drops`,
 `input_backlog_frames` and `render_diagnostics`. Histories allocate only when read on the

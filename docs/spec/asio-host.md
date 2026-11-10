@@ -101,12 +101,19 @@ nothing is waited for.
 
 The trace and `audio.info` expose input short reads as a bounded history of the latest
 32 events, each with a sequence number and available/requested frames, and cumulative
-backlog-drop counts and dropped frames. One 2048-frame render reads input in two chunks
-of at most 1024 frames; two short reads can therefore belong to one device block.
+backlog-drop counts and dropped frames. A render reads input in chunks of at most 1024 frames, also split at transport
+boundaries; several short reads can therefore belong to one device block.
 Render diagnostics count output callbacks, ASIO input callbacks, rendered blocks, the
 maximum render starts between observed output callbacks, extra starts after the first,
 and input-wait expirations. Cycle zero, before any output callback, is excluded from
-per-cycle counts. These diagnostics do not change buffering, waiting or backlog policy.
+per-cycle counts.
+
+Input backlog is trimmed once at the start of a whole render call: when more than four
+render blocks wait, old input is dropped down to two whole blocks. Internal splits at
+1024 frames, loop boundaries, count-in ends, jumps or graph swaps do not run this policy
+again or reduce its frame budget. A short piece at a loop boundary must not discard input
+needed by the rest of the same render. The queued-input latency for each piece is measured
+after any drop, from the frames actually waiting.
 An extra render is not by itself a defect: startup, disarming and different device/block
 sizes can require it. Hardware traces are needed to correlate it with short reads.
 

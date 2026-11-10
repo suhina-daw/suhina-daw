@@ -967,6 +967,7 @@ impl Renderer {
         self.receive_plugins();
         let misses_before = self.plugin_misses();
         let render_frames = out.len() / 2;
+        self.input.begin_block(render_frames);
         let mut rest = out;
         let mut cue_rest = cue;
         // Every new graph whose frame falls in this block takes over at its frame: the frames

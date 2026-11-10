@@ -23,8 +23,8 @@ use crate::chain::MAX_BLOCK;
 
 /// The most input channels the render thread reads; the output layer writes no more.
 pub const MAX_INPUT_CHANNELS: usize = 64;
-/// Blocks of input that may wait in the ring; past that the oldest are dropped, down to two
-/// blocks, so the input keeps up with the output when the two clocks drift apart.
+/// Whole render calls of input that may wait in the ring; past that the oldest are dropped
+/// down to two calls, once before rendering, independently of internal chunk boundaries.
 const MAX_BACKLOG_BLOCKS: usize = 4;
 
 /// A bounded diagnostic history, published without logging on the render thread.
@@ -116,6 +116,26 @@ impl Input {
         self.underruns = underruns;
     }
 
+    /// Discards stale input once before a whole render call. A loop, graph swap or MAX_BLOCK
+    /// split must not shrink this budget midway through consuming the call's input.
+    pub(crate) fn begin_block(&mut self, frames: usize) {
+        if frames == 0 {
+            return;
+        }
+        let Some(ring) = self.ring.as_mut() else { return };
+        let available = ring.slots() / self.channels;
+        if available > frames.saturating_mul(MAX_BACKLOG_BLOCKS) {
+            let dropped_frames = available.saturating_sub(frames.saturating_mul(2));
+            // Bounded by ring.slots(), which contains only whole frames.
+            let samples = dropped_frames * self.channels;
+            if let Ok(chunk) = ring.read_chunk(samples) {
+                chunk.commit_all();
+                self.diagnostics.backlog_drops.fetch_add(1, Ordering::Relaxed);
+                self.diagnostics.backlog_frames.fetch_add(dropped_frames as u64, Ordering::Relaxed);
+            }
+        }
+    }
+
     /// Takes `frames` frames of input for this block (at most [`MAX_BLOCK`]): what the ring has,
     /// then silence. Without an input device, silence.
     pub(crate) fn read(&mut self, frames: usize) {
@@ -128,16 +148,7 @@ impl Input {
             block.fill(0.0);
             return;
         };
-        let available = ring.slots() / channels;
-        self.waiting = available.min(frames * MAX_BACKLOG_BLOCKS);
-        if available > frames * MAX_BACKLOG_BLOCKS {
-            let drop = (available - frames * 2) * channels;
-            if let Ok(chunk) = ring.read_chunk(drop) {
-                chunk.commit_all();
-                self.diagnostics.backlog_drops.fetch_add(1, Ordering::Relaxed);
-                self.diagnostics.backlog_frames.fetch_add((drop / channels) as u64, Ordering::Relaxed);
-            }
-        }
+        self.waiting = ring.slots() / channels;
         let take = (ring.slots() / channels).min(frames) * channels;
         match ring.read_chunk(take) {
             Ok(chunk) => {
