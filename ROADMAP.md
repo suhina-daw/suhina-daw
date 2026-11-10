@@ -222,6 +222,8 @@ refused or suspended, never by losing its edits.
   in Settings; and a part moved or copied on the track takes its takes along
   ([#1078](https://github.com/suhina-daw/suhina-daw/issues/1078)).
 
+- Value drags: the Arrangement's volume and pan bars and Main's volume bar drag up and down or across, whichever way a drag moves first. Settings › Appearance › Hide pointer while dragging (on by default) chooses whether the pointer hides during a value drag or shows the arrow of its direction, and a theme can choose for its own controls with `drag-pointer: hidden | visible`.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.

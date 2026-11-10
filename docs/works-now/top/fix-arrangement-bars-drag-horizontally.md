@@ -1,1 +1,0 @@
-- Value drags: the Arrangement's volume and pan bars and Main's volume bar drag up and down or across, whichever way a drag moves first. Settings › Appearance › Hide pointer while dragging (on by default) chooses whether the pointer hides during a value drag or shows the arrow of its direction, and a theme can choose for its own controls with `drag-pointer: hidden | visible`.
