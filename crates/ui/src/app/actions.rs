@@ -266,6 +266,17 @@ impl App {
                 let after = picks.iter().filter_map(|(_, at)| at.0.first().copied()).max().unwrap_or(0) + 1;
                 actions.push(Action::new("device.paste", json!({ "track": track.0, "position": after })));
             }
+            // Devices copied last, none picked: Ctrl+V puts them at the end of the selected
+            // track's chain, never a copy of a track or a clip (#871). A clip or slot clicked
+            // last picks its track.
+            "selection.paste"
+                if self.copied_last == CopiedLast::Devices
+                    && self.session().is_some_and(|s| s.copied_devices() > 0)
+                    && self.paste_track().is_some() =>
+            {
+                let Some(track) = self.paste_track() else { return };
+                actions.push(Action::new("device.paste", json!({ "track": track.0 })));
+            }
             // Ctrl+D copies the picked devices right after the last of them (#685).
             "selection.duplicate" if self.device_focus && self.selected_device.is_some() => {
                 let Some((track, _)) = self.device_picks().first().cloned() else { return };
@@ -1261,6 +1272,20 @@ impl App {
         self.view.selected_slot = None;
         self.view.track_focus = true;
         self.view.reveal = Some(first);
+    }
+
+    /// The track copied devices are pasted on: the track of the clip or slot clicked last, else
+    /// the selected track.
+    pub(super) fn paste_track(&self) -> Option<TrackId> {
+        match self.shown {
+            View::Session if !self.view.track_focus => {
+                self.view.selected_slot.map(|(track, _)| track).or(self.view.selected)
+            }
+            View::Arrangement if !self.arrangement.track_focus => {
+                self.arrangement.selected_clip().map(|(track, _)| track).or_else(|| self.selected_track())
+            }
+            _ => self.selected_track(),
+        }
     }
 
     /// The track selected in the view shown.

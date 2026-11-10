@@ -456,9 +456,10 @@ pub struct App {
     detail_drag: Option<f32>,
     /// The width a drag of the stacked devices' column splitter has reached so far.
     side_drag: Option<f32>,
-    /// Notes were what was copied or cut last: Ctrl+V pastes them into the clip the piano roll
-    /// shows, although a click in the view took the other edit keys.
-    notes_copied_last: bool,
+    /// What was copied or cut last: Ctrl+V pastes notes into the clip the piano roll shows and
+    /// devices into the selected track's chain, although a click in the view took the other edit
+    /// keys.
+    copied_last: CopiedLast,
     /// When Escape was last pressed, and whether it was pressed twice in a row this frame (the
     /// focus mode, read before the shortcuts take the key).
     last_escape: Option<f64>,
@@ -697,7 +698,7 @@ impl App {
             escape_twice: false,
             detail_drag: None,
             side_drag: None,
-            notes_copied_last: false,
+            copied_last: CopiedLast::Other,
             window: None,
             title_bar: 0.0,
             window_corner: 0,
@@ -2430,11 +2431,12 @@ impl App {
         if matches!(action.id, "edit.undo" | "edit.redo") {
             self.carry = None;
         }
-        // Which copy came last decides what Ctrl+V pastes while the piano roll shows a clip.
+        // Which copy came last decides what Ctrl+V pastes (› `CopiedLast`).
         match action.id {
-            "note.copy" | "note.cut" => self.notes_copied_last = true,
+            "note.copy" | "note.cut" => self.copied_last = CopiedLast::Notes,
+            "device.copy" => self.copied_last = CopiedLast::Devices,
             "clip.copy" | "clip.cut" | "range.copy" | "range.cut" | "track.copy" | "track.cut" | "automation.copy" => {
-                self.notes_copied_last = false
+                self.copied_last = CopiedLast::Other
             }
             _ => {}
         }
@@ -3752,3 +3754,14 @@ fn headers_left(side: Option<Side>) -> bool {
 #[cfg(test)]
 #[path = "app_tests.rs"]
 mod tests;
+
+/// What a copy or cut put on the clipboards last, for Ctrl+V.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CopiedLast {
+    /// Notes: pasted into the clip the piano roll shows.
+    Notes,
+    /// Devices: pasted into the selected track's chain.
+    Devices,
+    /// Anything else: Ctrl+V goes where the last click put the keys.
+    Other,
+}

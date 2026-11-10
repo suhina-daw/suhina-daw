@@ -1075,7 +1075,7 @@ impl App {
     /// Whether Ctrl+V pastes copied notes into the piano roll although it does not have the keys:
     /// notes were copied last and the piano roll shows the one clip selected.
     pub(super) fn piano_takes_paste(&self) -> bool {
-        self.notes_copied_last
+        self.copied_last == CopiedLast::Notes
             && self.session().is_some_and(|s| s.copied_notes().is_some())
             && self.detail_open
             && self.piano_roll_on_show()
