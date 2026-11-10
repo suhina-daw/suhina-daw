@@ -331,7 +331,7 @@ impl Progress {
 /// Fills `out` (whole frames of [`RING_CHANNELS`] samples) from the ring, with silence, counted
 /// as an underrun, for what is not there yet. Never allocates.
 pub(crate) fn read_ring(ring: &mut Ring, out: &mut [f32], progress: &Progress) {
-    progress.output_cycles.fetch_add(1, Ordering::Relaxed);
+    progress.output_cycles.fetch_add(1, Ordering::Release);
     // Before taking from the ring: a render thread that sees the room made sees this too.
     if progress.input_wakes_render() {
         progress.input_due.store(true, Ordering::Release);
@@ -1009,7 +1009,7 @@ fn render_ahead(
     let capacity = ring.buffer().capacity();
     progress.block.store(frames, Ordering::Relaxed);
     // Since when the render thread has waited for the input's frames of this cycle.
-    let mut input_wait: Option<Instant> = None;
+    let mut input_wait = InputWait::default();
     let mut cycles = RenderCycles::default();
     while !stop.load(Ordering::Acquire) {
         let queued = (capacity - ring.slots()) / RING_CHANNELS;
@@ -1026,15 +1026,11 @@ fn render_ahead(
         // The input's frames of this driver cycle are due right after the output's callback:
         // wait for them, though not so long that the device is kept waiting by an input that
         // stopped calling back.
-        if progress.input_due() {
-            let since = *input_wait.get_or_insert_with(Instant::now);
-            if wait_for_input(progress, since.elapsed(), renderer.sample_rate()) {
-                std::thread::park_timeout(RENDER_WAIT);
-                realtime.waited();
-                continue;
-            }
+        if input_wait.waiting(progress, Instant::now(), renderer.sample_rate()) {
+            std::thread::park_timeout(RENDER_WAIT);
+            realtime.waited();
+            continue;
         }
-        input_wait = None;
         let started = Instant::now();
         // A stamped live note plays this long after it was played (#269): the longest the
         // thread waits between blocks (a block, or a device buffer that takes several at once)
@@ -1061,14 +1057,39 @@ fn render_ahead(
     renderer
 }
 
-/// Called only for a pending input; elapsed time is supplied so the timeout counter can be
-/// tested without a clock or sleeping. Each expiry counts one render allowed without input.
-fn wait_for_input(progress: &Progress, elapsed: Duration, sample_rate: u32) -> bool {
-    if elapsed < input_grace(progress.callback_frames(), sample_rate) {
-        true
-    } else {
-        progress.input_timeouts.fetch_add(1, Ordering::Relaxed);
-        false
+/// Render-thread-owned grace period. Expiry belongs to one output cycle, so catching up
+/// cannot restart it and cannot clear a newer callback's shared input-due flag.
+#[derive(Default)]
+struct InputWait {
+    cycle: u64,
+    started: Option<Instant>,
+    expired: bool,
+}
+
+impl InputWait {
+    fn waiting(&mut self, progress: &Progress, now: Instant, sample_rate: u32) -> bool {
+        let due = progress.input_due();
+        let cycle = progress.output_cycles.load(Ordering::Acquire);
+        if cycle != self.cycle {
+            self.cycle = cycle;
+            self.started = None;
+            self.expired = false;
+        }
+        if !due {
+            self.started = None;
+            return false;
+        }
+        if self.expired {
+            return false;
+        }
+        let since = *self.started.get_or_insert(now);
+        if now.saturating_duration_since(since) < input_grace(progress.callback_frames(), sample_rate) {
+            true
+        } else {
+            self.expired = true;
+            progress.input_timeouts.fetch_add(1, Ordering::Relaxed);
+            false
+        }
     }
 }
 

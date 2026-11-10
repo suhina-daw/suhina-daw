@@ -320,13 +320,12 @@ fn a_stepped_driver_offers_every_size_on_its_steps() {
     assert_eq!(fit_to_driver(200, &stepped), (192, Some(192)));
     // A size off its steps is never asked for.
     assert_eq!(fit_to_driver(256, &stepped), (240, Some(240)));
-    // More steps than a list can show: the size on its steps nearest each common size, and its
-    // own.
+    // Fine-grained drivers retain every permitted size, including past 64 entries.
     let fine = driver(16, 4096, 200, 8);
-    assert_eq!(fine.sizes(), vec![64, 128, 200, 256, 512, 1024, 2048, 4096]);
+    assert_eq!(fine.sizes(), (64..=4096).step_by(8).collect::<Vec<_>>());
     // Steps that never land on a common size still give a list, every size on them.
     let coarse = driver(48, 8192, 192, 48);
-    assert_eq!(coarse.sizes(), vec![96, 144, 192, 240, 528, 1008, 2064, 4080]);
+    assert_eq!(coarse.sizes(), (96..=4080).step_by(48).collect::<Vec<_>>());
     assert!(coarse.sizes().iter().all(|n| (n - 48).is_multiple_of(48)));
     // A granularity below -1 is a step no size but the smallest is on, as the stream checks it.
     assert_eq!(driver(64, 2048, 64, -2).sizes(), vec![64]);

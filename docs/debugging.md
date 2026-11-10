@@ -190,7 +190,8 @@ transport boundaries. With no additional split,
 
 `render diagnostics` lists, in order: output callbacks, ASIO input callbacks, render
 blocks, maximum render starts in one observed output cycle, extra starts after the first
-in a cycle, and input-grace expirations. Counts restart when output opens. Before the
+in a cycle, and input-grace expirations (at most once per observed output cycle, even
+when several render blocks refill the queue). Counts restart when output opens. Before the
 first output callback, renders count only in the total; later startup catch-up is included.
 A render is assigned to the output cycle observed just before the engine call, not to a
 hardware timestamp. Multiple renders may be normal with different block/device sizes or

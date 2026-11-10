@@ -12,7 +12,11 @@ impl App {
     /// refresh to press. Asking is cheap: the driver playing is asked on its own thread.
     pub(super) fn follow_audio_page(&mut self, ctx: &egui::Context) {
         let shown = self.settings_open && self.page.shows_devices();
-        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        let viewport =
+            if self.page.window { egui::ViewportId::from_hash_of("settings-window") } else { egui::ViewportId::ROOT };
+        // The root frame receives metadata for every native viewport. Its own focus
+        // need not change when the driver panel returns focus to floating Settings.
+        let focused = ctx.input(|i| i.raw.viewports.get(&viewport).and_then(|v| v.focused).unwrap_or(false));
         let returned = shown && focused && !self.window_focused;
         if shown != self.audio_page_shown || returned {
             // No output open, or not ASIO: nothing to ask.

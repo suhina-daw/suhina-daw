@@ -69,9 +69,8 @@ Windows answers -1 with it. A driver answering one size is offered that size wha
 granularity it states, also when it is no power of two or step.
 
 Settings › Audio offers the sizes the answer allows within what the engine renders in (64 to 4096
-frames): with powers of two every power in the range; with a step every size on it, or, when
-there would be more than 64, the size on the steps nearest each common size (64, 128 … 4096), so
-every size offered stays on the driver's steps; with 0 and a range, the preferred size alone, the
+frames): with powers of two every power in the range; with a positive step every allowed
+size on it, without reducing long lists to common sizes; with 0 and a range, the preferred size alone, the
 one size such a driver is sure to take, or with a preferred size outside its range only the two
 ends it declared; and the smallest, largest and preferred when the driver takes them. An answer
 that makes no sense (an empty or reversed range) counts as none: the engine's own sizes are
@@ -96,8 +95,10 @@ often the smaller the buffer. The render thread also looks every millisecond by 
 look that fell between the two callbacks read too early the same way (about one cycle in 15 at
 2048 frames), so once the output has taken from the ring the render thread waits for the input's
 frames of that cycle, a quarter of the device's buffer at most (at least half a millisecond),
-before it renders without them. When the input closes or fails the output wakes it again and
-nothing is waited for.
+before it renders without them. Once that grace expires, further render blocks in the same
+output callback cycle proceed without restarting the wait. The next output callback gets
+a fresh grace period; timeout handling never clears a callback-owned pending-input flag.
+When the input closes or fails the output wakes it again and nothing is waited for.
 
 The trace and `audio.info` expose input short reads as a bounded history of the latest
 32 events, each with a sequence number and available/requested frames, and cumulative
@@ -124,7 +125,8 @@ runs reaches Suhina as `kAsioResetRequest` or `kAsioBufferSizeChange`; both inva
 (a `kAsioBufferSizeChange` repeating the size already playing does not), and the output opens
 again with the new answer. For drivers that announce nothing, Suhina asks the driver itself
 (`audio.checkDriver`, on the thread that holds the driver) when Settings › Audio opens or
-closes and when the window gets the focus back while it shows, as after using the driver's
+closes and when its window gets the focus back while it shows (the separate Settings window
+when detached, otherwise the main window), as after using the driver's
 control panel; when the answer differs from the one the output opened with, the output opens
 again. Settings › Audio lists the devices again each time an output opens. The trace says
 why an output opened again (`audio output failed: the driver asked for a reset`, … `the

@@ -121,10 +121,6 @@ pub fn allowed_buffers(range: Option<(u32, u32)>) -> Vec<u32> {
     sizes
 }
 
-/// The most sizes a stepped ASIO driver is offered one by one; with more, the size on its steps
-/// nearest each common size is offered.
-pub const MOST_STEPS: usize = 64;
-
 /// Which sizes between its smallest and largest an ASIO driver takes: the granularity
 /// `ASIOGetBufferSize` answers with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -190,8 +186,7 @@ impl DriverBuffers {
 
     /// The sizes it can be asked for, smallest first, within [`MIN_BUFFER_FRAMES`] …
     /// [`MAX_BUFFER_FRAMES`]: with powers of two every power in its range; with a step every size
-    /// on it, or when that would be more than [`MOST_STEPS`] the size on its steps nearest each
-    /// common size; with nothing stated its preferred size alone (its one size when the smallest
+    /// on it within the bounded engine range; with nothing stated its preferred size alone (its one size when the smallest
     /// is the largest). Its smallest, largest and preferred are in when it takes them. A range
     /// that makes no sense holds nothing: such a driver is asked for no size.
     pub fn sizes(&self) -> Vec<u32> {
@@ -202,17 +197,7 @@ impl DriverBuffers {
         let mut sizes: Vec<u32> = match self.granularity {
             Granularity::Step(step) => {
                 let top = max.min(MAX_BUFFER_FRAMES);
-                let on_steps: Vec<u32> = if min <= top {
-                    (min..=top).step_by(step.max(1) as usize).filter(engine).collect()
-                } else {
-                    Vec::new()
-                };
-                if on_steps.len() <= MOST_STEPS {
-                    on_steps
-                } else {
-                    // Every one of them stays on its steps, whatever sizes the steps land on.
-                    BUFFER_SIZES.iter().map(|common| fit_buffer(*common, &on_steps)).collect()
-                }
+                if min <= top { (min..=top).step_by(step.max(1) as usize).filter(engine).collect() } else { Vec::new() }
             }
             // Powers of two; `takes` keeps those it takes, and the ends and preferred size added
             // below are the rest of what a driver with nothing stated takes.
