@@ -425,8 +425,10 @@ with an **Include the default artwork** checkbox (off by default). With it, the 
 copy of every default SVG in its `assets/` (`assets/knob.body.svg`) and a rule for each in its
 `theme.css` (`knob-body { image: url("assets/knob.body.svg"); }`): without the rules the copies
 would do nothing, since the built-in images would still apply. *More › Add default artwork* does
-the same for the theme in use, adding only the roles it has no artwork for (a built-in theme is
-copied first); when nothing is missing it says so and changes nothing. *New theme* starts from a
+the same for the theme in use, adding only the roles it has no artwork for in any state (a
+built-in theme is copied first; with a variant of a theme of the user's in use, the artwork goes to
+the theme and each of its variants, since artwork is the theme's); when nothing is missing it says
+so and changes nothing. *New theme* starts from a
 `theme.css` that holds only a comment, so the user-agent sheet styles everything.
 
 ## Native CSS: controls and the toolbar

@@ -360,7 +360,22 @@ impl Themes {
                     return None;
                 }
                 let count = missing.len();
-                let switched = self.edit(current, true, false, |theme| theme.skin.assets.extend(missing));
+                let real = self.real_id(current);
+                let (base, variant) = crate::kit::theme_vars::split_id(&real);
+                let base = base.to_owned();
+                // Artwork is the theme's, not a variant's: a theme of the user's in use with a
+                // variant gets it in the theme and in each of its variants, and the theme is saved,
+                // so a later save of the theme itself keeps the rules (#1019 review).
+                let switched = if variant.is_some() && !theme::is_built_in(&base) && self.get(&base).is_some() {
+                    for entry in self.entries.iter_mut().filter(|e| crate::kit::theme_vars::split_id(&e.id).0 == base) {
+                        let missing = crate::kit::skin::missing_defaults(&entry.theme.skin.assets);
+                        entry.theme.skin.assets.extend(missing);
+                    }
+                    self.actions.push(Pending::Save(base));
+                    None
+                } else {
+                    self.edit(current, true, false, |theme| theme.skin.assets.extend(missing))
+                };
                 let images = if count == 1 { "image" } else { "images" };
                 self.notice = Some(format!("Added {count} default {images} to the theme's assets folder"));
                 switched
