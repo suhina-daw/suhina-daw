@@ -199,3 +199,122 @@ fn an_offline_render_hears_no_input() {
     let out = crate::render_offline(&project, SR, BLOCK, suhina_device_registry::factory()).unwrap();
     assert!(out.iter().all(|s| *s == 0.0));
 }
+
+#[test]
+fn input_diagnostics_distinguish_empty_and_partial_chunks_of_a_device_block() {
+    let project = Project::default();
+    let (mut renderer, mut ring, underruns) = with_input(&project, 16);
+    let diagnostics = renderer.input_diagnostics();
+    let mut output = vec![0.0; 2048 * 2];
+    feed(&mut ring, 16, 2048, 0, 0.5);
+    renderer.process(&mut output);
+    assert!(diagnostics.snapshot().short_reads.is_empty());
+    // A second render before the next input callback reads two empty engine chunks.
+    renderer.process(&mut output);
+    assert_eq!(diagnostics.snapshot().short_reads, [[1, 0, 1024], [2, 0, 1024]]);
+    feed(&mut ring, 16, 1280, 0, 0.5);
+    renderer.process(&mut output);
+    assert_eq!(diagnostics.snapshot().short_reads, [[1, 0, 1024], [2, 0, 1024], [3, 256, 1024]]);
+    assert_eq!(underruns.load(Ordering::Relaxed), 3);
+}
+
+#[test]
+fn input_diagnostics_count_backlog_frames_without_changing_the_drop_policy() {
+    let (mut ring, consumer) = rtrb::RingBuffer::new(8192 * 16);
+    let mut input = crate::input::Input::new();
+    input.attach(consumer, 16, Arc::new(AtomicU64::new(0)));
+    feed(&mut ring, 16, 6144, 0, 0.5);
+    input.begin_block(1024);
+    input.read(1024);
+    let snapshot = input.diagnostics.snapshot();
+    assert_eq!((snapshot.backlog_drops, snapshot.backlog_frames), (1, 4096));
+    input.read(1024);
+    assert!(input.diagnostics.snapshot().short_reads.is_empty());
+    input.read(1024);
+    assert_eq!(input.diagnostics.snapshot().short_reads, [[1, 0, 1024]]);
+    assert_eq!(input.diagnostics.snapshot().backlog_drops, 1);
+}
+
+#[test]
+fn input_diagnostics_keep_only_the_latest_32_short_reads() {
+    let (_producer, consumer) = rtrb::RingBuffer::new(2048);
+    let mut input = crate::input::Input::new();
+    input.attach(consumer, 1, Arc::new(AtomicU64::new(0)));
+    for frames in 1..=40 {
+        input.read(frames);
+    }
+    let expected: Vec<_> = (9..=40).map(|sequence| [sequence, 0, sequence]).collect();
+    assert_eq!(input.diagnostics.snapshot().short_reads, expected);
+    let mut detached = crate::input::Input::new();
+    detached.read(1024);
+    input.read(0);
+    assert!(detached.diagnostics.snapshot().short_reads.is_empty());
+    assert_eq!(input.diagnostics.snapshot().short_reads, expected);
+}
+
+#[test]
+fn looping_input_never_discards_the_rest_of_the_device_block() {
+    // The hardware trace's first failure followed a 136-frame loop-boundary chunk:
+    // the old policy kept only 272 input frames and starved the 1024 + 888 after it.
+    for device_frames in [128, 2048, 4096] {
+        for boundary in [1, 68, 136] {
+            let mut project = tracks_with_inputs(&[(1, InputChannels::Mono(1), Monitor::In)]);
+            project.transport.loop_range = Some(LoopRange { start: 0.0, end: 1.0 });
+            project.transport.loop_enabled = true;
+            let mut renderer =
+                Renderer::stopped(&project, &AudioPool::new(), 44_100, suhina_device_registry::factory()).unwrap();
+            renderer.set_offline(true);
+            let (mut ring, consumer) = rtrb::RingBuffer::new(device_frames * 16 * 8);
+            let underruns = Arc::new(AtomicU64::new(0));
+            renderer.set_audio_input(consumer, 16, Arc::clone(&underruns));
+            renderer.handle(LaunchCommand::SetPosition { beat: 1.0 - f64::from(boundary) / 22_050.0 });
+            renderer.handle(LaunchCommand::Play);
+            let mut out = vec![0.0; device_frames * 2];
+            // One input callback then one render, as in the trace. Several loop wraps,
+            // without a hardware clock, sleep or scheduler dependency.
+            for _ in 0..(44_100 / device_frames + 2) {
+                feed(&mut ring, 16, device_frames, 0, 0.5);
+                renderer.process(&mut out);
+            }
+            assert_eq!(underruns.load(Ordering::Relaxed), 0, "block {device_frames}, boundary {boundary}");
+            assert_eq!(renderer.input_diagnostics().snapshot().backlog_drops, 0);
+            assert_eq!(ring.buffer().capacity() - ring.slots(), 0);
+        }
+    }
+}
+
+#[test]
+fn backlog_trim_preserves_two_whole_batches_across_short_chunks() {
+    let (mut ring, consumer) = rtrb::RingBuffer::new(12_288 * 16);
+    let mut input = crate::input::Input::new();
+    let underruns = Arc::new(AtomicU64::new(0));
+    input.attach(consumer, 16, Arc::clone(&underruns));
+    for frame in 0..10_240 {
+        for _ in 0..16 {
+            ring.push(frame as f32).unwrap();
+        }
+    }
+    // Empty and hostile batch lengths must neither overflow nor discard input.
+    input.begin_block(0);
+    input.begin_block(usize::MAX);
+    assert_eq!(input.diagnostics.snapshot().backlog_drops, 0);
+    input.begin_block(2048);
+    let snapshot = input.diagnostics.snapshot();
+    assert_eq!((snapshot.backlog_drops, snapshot.backlog_frames), (1, 6144));
+    let mut next_frame = 6144;
+    for _ in 0..2 {
+        for frames in [136, 1024, 888] {
+            input.read(frames);
+            assert_eq!(input.waiting(), (10_240 - next_frame) as u64);
+            for frame in 0..frames {
+                assert_eq!(input.sample(frame, 0), (next_frame + frame) as f32);
+                assert_eq!(input.sample(frame, 15), (next_frame + frame) as f32);
+            }
+            next_frame += frames;
+        }
+        input.begin_block(2048);
+    }
+    assert_eq!(underruns.load(Ordering::Relaxed), 0);
+    assert_eq!(input.diagnostics.snapshot().backlog_drops, 1);
+    assert_eq!(ring.buffer().capacity() - ring.slots(), 0);
+}

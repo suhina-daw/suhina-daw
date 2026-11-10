@@ -160,6 +160,47 @@ fn a_keys_latency_is_the_measured_latency_and_the_fixed_delay() {
     assert!(!progress.live());
 }
 
+/// An input on the output's ASIO driver takes over waking the render thread, and gives it back:
+/// the output's callback, which the driver calls first in each cycle, then leaves the render
+/// thread asleep until the input's frames are in, and reading the ring still counts as before.
+#[test]
+fn an_input_on_the_asio_driver_takes_over_waking_the_render_thread() {
+    let progress = Progress::default();
+    assert!(!progress.input_wakes_render(), "the output wakes it by default");
+    progress.set_input_wakes_render(true);
+    assert!(progress.input_wakes_render());
+    let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(8);
+    for sample in [0.1, 0.2, 0.3, 0.4] {
+        producer.push(sample).unwrap();
+    }
+    let mut out = [9.0f32; 8];
+    read_ring(&mut consumer, &mut out, &progress);
+    assert_eq!(out, [0.1, 0.2, 0.3, 0.4, 0.0, 0.0, 0.0, 0.0]);
+    assert_eq!(progress.underruns(), 1);
+    // The output took from the ring: the input's frames of this cycle are due, until written.
+    assert!(progress.input_due());
+    progress.input_written();
+    assert!(!progress.input_due());
+    read_ring(&mut consumer, &mut out, &progress);
+    assert!(progress.input_due());
+    // The input closed or failed: the output wakes it again, and nothing is waited for.
+    progress.set_input_wakes_render(false);
+    assert!(!progress.input_wakes_render());
+    assert!(!progress.input_due());
+    read_ring(&mut consumer, &mut out, &progress);
+    assert!(!progress.input_due());
+}
+
+/// The render thread waits a quarter of the device's buffer for an ASIO input's frames, and at
+/// least half a millisecond.
+#[test]
+fn the_wait_for_the_input_is_a_quarter_of_the_buffer() {
+    assert_eq!(input_grace(2048, 44_100), Duration::from_secs_f64(2048.0 / 44_100.0 / 4.0));
+    assert_eq!(input_grace(128, 48_000), Duration::from_secs_f64(128.0 / 48_000.0 / 4.0));
+    assert_eq!(input_grace(32, 48_000), Duration::from_micros(500));
+    assert_eq!(input_grace(128, 0), Duration::from_secs_f64(128.0 / 4.0));
+}
+
 #[test]
 fn reading_the_ring_counts_what_was_missing() {
     let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(16);
@@ -453,4 +494,60 @@ fn the_next_look_for_the_names_waits_its_turn() {
     assert!(watch.due(start + NAMES_LOOK_EVERY));
     watch.looking = true;
     assert!(!watch.due(start + NAMES_LOOK_EVERY), "one at a time");
+}
+
+#[test]
+fn render_diagnostics_count_catch_up_blocks_and_skip_cycle_zero() {
+    let progress = Progress::default();
+    let mut cycles = RenderCycles::default();
+    cycles.started(&progress);
+    assert_eq!(progress.max_cycle_blocks.load(Ordering::Relaxed), 0);
+    progress.set_input_wakes_render(true);
+    let (_producer, mut consumer) = rtrb::RingBuffer::<f32>::new(16);
+    let mut out = [0.0; 8];
+    read_ring(&mut consumer, &mut out, &progress);
+    progress.input_written();
+    cycles.started(&progress);
+    cycles.started(&progress);
+    assert_eq!(progress.max_cycle_blocks.load(Ordering::Relaxed), 2);
+    assert_eq!(progress.extra_cycle_blocks.load(Ordering::Relaxed), 1);
+    read_ring(&mut consumer, &mut out, &progress);
+    progress.input_written();
+    cycles.started(&progress);
+    assert_eq!(progress.output_cycles.load(Ordering::Relaxed), 2);
+    assert_eq!(progress.input_callbacks.load(Ordering::Relaxed), 2);
+    assert_eq!(progress.rendered_blocks.load(Ordering::Relaxed), 4);
+    assert_eq!(progress.extra_cycle_blocks.load(Ordering::Relaxed), 1);
+    assert_eq!(progress.max_cycle_blocks.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn input_wait_expires_once_per_cycle_and_preserves_the_next_cycles_wait() {
+    let progress = Progress::default();
+    progress.set_callback_frames(2048);
+    progress.set_input_wakes_render(true);
+    let (_producer, mut consumer) = rtrb::RingBuffer::<f32>::new(16);
+    let mut out = [0.0; 8];
+    let mut wait = InputWait::default();
+    let start = Instant::now();
+    let grace = input_grace(2048, 44_100);
+    read_ring(&mut consumer, &mut out, &progress);
+    assert!(wait.waiting(&progress, start, 44_100));
+    assert!(wait.waiting(&progress, start + grace / 2, 44_100));
+    assert!(!wait.waiting(&progress, start + grace, 44_100));
+    // More render blocks in this cycle do not restart the grace period.
+    assert!(!wait.waiting(&progress, start + grace, 44_100));
+    assert!(!wait.waiting(&progress, start + grace * 2, 44_100));
+    assert_eq!(progress.input_timeouts.load(Ordering::Relaxed), 1);
+    assert!(progress.input_due(), "expiry must not clear a callback-owned flag");
+    // The next callback must get its own grace even though the old input never arrived.
+    read_ring(&mut consumer, &mut out, &progress);
+    assert!(wait.waiting(&progress, start + grace * 2, 44_100));
+    progress.input_written();
+    assert!(!wait.waiting(&progress, start + grace * 2, 44_100));
+    assert_eq!(progress.input_timeouts.load(Ordering::Relaxed), 1);
+    read_ring(&mut consumer, &mut out, &progress);
+    assert!(wait.waiting(&progress, start + grace * 3, 44_100));
+    progress.set_input_wakes_render(false);
+    assert!(!wait.waiting(&progress, start + grace * 3, 44_100));
 }

@@ -114,7 +114,7 @@ use chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK};
 pub use cpu::CpuMonitor;
 pub use cue::MAX_CUE_GAIN;
 pub use group::{GROUP_PARAMS, SILENT_DB, group_param_index, group_param_values};
-pub use input::MAX_INPUT_CHANNELS;
+pub use input::{InputDiagnostics, InputSnapshot, MAX_INPUT_CHANNELS};
 use launcher::ClipLauncher;
 pub use launcher::{
     ColumnStatus, Controller, LaunchCommand, LauncherMonitor, MAX_START_BEAT, PlayingMeter, Quantization, Queued,
@@ -836,6 +836,11 @@ impl Renderer {
         self.input.attach(ring, channels, underruns);
     }
 
+    /// Shared input diagnostics; obtain before moving the renderer to the audio thread.
+    pub fn input_diagnostics(&self) -> Arc<InputDiagnostics> {
+        Arc::clone(&self.input.diagnostics)
+    }
+
     /// Whether a track is armed to play the live input (ADR 0017): someone may be playing, so
     /// the output keeps less queued ahead of the device. Lock-free; for the render thread.
     pub fn live_armed(&self) -> bool {
@@ -962,6 +967,7 @@ impl Renderer {
         self.receive_plugins();
         let misses_before = self.plugin_misses();
         let render_frames = out.len() / 2;
+        self.input.begin_block(render_frames);
         let mut rest = out;
         let mut cue_rest = cue;
         // Every new graph whose frame falls in this block takes over at its frame: the frames

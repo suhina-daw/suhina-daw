@@ -218,3 +218,42 @@ fn choosing_another_audio_device_brings_back_its_input() {
     let kept = restore_input(OutputPick::Device(same.clone()), &active, &settings);
     assert!(matches!(kept, OutputPick::Device(c) if c == same));
 }
+
+/// A driver taking 128 to 512 frames with 128 set in its control panel: Default names that size,
+/// and a size chosen before (2048) stays chosen and listed, saying the device does not take it now.
+#[test]
+fn the_buffer_list_names_the_drivers_default_and_keeps_an_earlier_choice() {
+    let options = buffer_options(&[128, 256, 512], 128, None, 44_100.0, false);
+    let labels: Vec<&str> = options.iter().map(|(label, _)| label.as_str()).collect();
+    assert_eq!(labels, ["Default (128 frames)", "128 frames (2.9 ms)", "256 frames (5.8 ms)", "512 frames (11.6 ms)"]);
+    let options = buffer_options(&[128, 256, 512], 128, Some(2048), 44_100.0, false);
+    assert_eq!(
+        options.iter().map(|(_, n)| *n).collect::<Vec<_>>(),
+        [None, Some(128), Some(256), Some(512), Some(2048)]
+    );
+    assert!(options[4].0.contains("does not take it now"), "{}", options[4].0);
+    // A choice the device offers is listed once.
+    assert_eq!(buffer_options(&[128, 256], 128, Some(256), 44_100.0, false).len(), 3);
+}
+
+/// On WASAPI the number is the engine's block: a size chosen elsewhere (96 frames on a stepped
+/// ASIO driver) plays as it is, so the list does not say the device refuses it. One past the
+/// sizes offered is fitted down, and says so.
+#[test]
+fn an_unlisted_block_on_wasapi_plays_as_chosen() {
+    let options = buffer_options(&[64, 128, 256, 512, 1024, 2048], 1024, Some(96), 48_000.0, true);
+    assert_eq!(options[2], ("96 frames (2.0 ms)".to_string(), Some(96)));
+    let options = buffer_options(&[64, 128, 256, 512, 1024, 2048], 1024, Some(4096), 48_000.0, true);
+    assert!(options.last().is_some_and(|(label, _)| label.contains("does not take it now")));
+}
+
+/// A driver that takes one size, as one whose size is set in its control panel, has its size
+/// said, not offered; a driver with sizes to choose from gets the dropdown.
+#[test]
+fn a_driver_with_one_size_says_it_instead_of_offering_it() {
+    assert_eq!(buffer_row(&[2048], true, true), BufferRow::Only(2048));
+    assert_eq!(buffer_row(&[128, 256], true, true), BufferRow::Choose);
+    // Elsewhere a size chosen sets the engine's block, so there is always a choice.
+    assert_eq!(buffer_row(&[256], true, false), BufferRow::Choose);
+    assert_eq!(buffer_row(&[1024], false, false), BufferRow::Choose);
+}
