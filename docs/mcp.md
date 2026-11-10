@@ -3,7 +3,7 @@ description: The MCP server for agents: tools, file roots, errors and how to run
 read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
-last_verified: 2026-11-06
+last_verified: 2026-11-10
 covers:
   - crates/automation/src/server.rs
   - crates/automation/src/workspace.rs
@@ -92,7 +92,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `project.*` commands that list, switch and close projects.
 - **Choosing the output.** `audio.devices` lists the audio hosts (WASAPI, and ASIO in a build
   with the `asio` feature; ALSA and, with a sound server running, PulseAudio on Linux; JACK or CoreAudio elsewhere) and each one's output devices with
-  `sample_rates`, `buffer_sizes` (what the driver allows), `buffer_range` and whether WASAPI
+  `sample_rates`, `buffer_sizes` (what the driver allows), `buffer_range`, `default_buffer` (the size an ASIO
+  driver prefers, which plays when none is chosen) and whether WASAPI
   exclusive mode is possible, plus the output `chosen`. `audio.setOutput {host?, device?,
   sample_rate?, buffer_frames?, exclusive?}` changes the parts given (an empty text or 0 goes back
   to the default; a new host forgets the device) and reopens the active project's output there,
@@ -112,13 +113,18 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `engine_block`, `exclusive`, `latency_ms` (engine to speaker, measured), `live` (a track is
   armed, so the engine keeps one block ahead instead of two), `live_latency_ms` (what a key on a
   MIDI controller takes to be heard: the measured latency and the fixed delay notes are placed
-  at, ADR 0017), `underruns`, `failed` and `fallback` (it plays in
+  at, ADR 0017), `underruns`, `failed`, `failure` (why, when the device said: the ASIO driver
+  asked for a reset, changed its buffer size…) and `fallback` (it plays in
   place of a chosen host or device that is not there), `channels` (opened) and `cue_pair`.
   Without `--audio`, `audio.devices` returns an error.
   `audio.openControlPanel {}` requests the active ASIO stream's own native panel
   on its owner thread and returns `requested: true`. It does not reopen the output
   or load plugins. Other hosts or a missing output return an error; close a modal
   driver panel before changing output or closing the project.
+  `audio.checkDriver {}` asks the active ASIO driver for its buffer sizes again on the same
+  thread and returns `requested: true`: when a size set in its control panel changed them
+  without the driver saying so, the output opens again at the new size. It does nothing on
+  other hosts; a missing output returns an error.
 
 - **The cue (headphones).** `output.setCuePair {pair}` plays previews and the tracks whose cue
   is on (`track.setCue {track, cue}`, an edit) on another pair of the same device's outputs
@@ -160,7 +166,11 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   with it; the result names the device as `input_device` (`host|device`). It is refused while the
   input device is off, and `audio.info` and `audio.devices` show the device's as
   `chosen.track_input`.
-  `audio.info` adds `input`, `input_channels` and `input_underruns`. Arming is not an edit (no undo step, not saved) and works
+  `audio.info` adds `input`, `input_channels` and `input_underruns`. Diagnostic fields
+  `input_short_reads` (latest 32 `[sequence, available, wanted]` frame counts),
+  `input_backlog_drops`, `input_backlog_frames` and `render_diagnostics` distinguish
+  missing input, discarded backlog and render catch-up; see [Audio dropouts](debugging.md#audio-dropouts)
+  for counter ordering and sampling limits. Arming is not an edit (no undo step, not saved) and works
   before an engine plays; `project.tracks` says which tracks are `armed`. Without `--audio`,
   `midi.*` returns an error.
 
@@ -204,10 +214,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   the clip it meant: `clip.move {clip, start}`, `note.add {clip, notes}`. Commands that make
   clips (`clip.paste`, `clip.duplicate`, `clip.split`, `clip.create`, `clip.consolidate`,
   `clip.addFiles`) return the new clips' ids. The older form, `track` with `index` (an
-  arrangement clip's place on its track) or `scene`, still works and is **deprecated**: an index
-  changes whenever a clip before it moves, and it is accepted only until the project format's
-  next version. The examples below show the positional form where it is still the only way to
-  name a slot (`scene`).
+  arrangement clip's place on its track) still works but is **deprecated**: an index changes
+  whenever a clip before it moves. It will be removed after the UI and tests move to ids
+  ([#1328](https://github.com/suhina-daw/suhina-daw/issues/1328)). `track` with `scene` remains
+  supported and is not deprecated. The examples below use `scene` to name slots.
 - **Scenes by id.** Every `scene` and `toScene` parameter takes the scene's number, from 0, or
   `{"id": n}` with its id, which names the scene wherever it has moved since. `project.launcher`
   lists each scene's `scene_id`, and every result that reports a scene (`scene.insert`,

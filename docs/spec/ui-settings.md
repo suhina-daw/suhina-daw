@@ -3,10 +3,9 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-11-06
+last_verified: 2026-11-10
 covers:
   - crates/ui/src/settings/settings_view.rs
-  - crates/ui/src/settings/gradient_editor.rs
   - crates/ui/src/settings/settings_rows.rs
   - crates/ui/src/settings/track_sizes.rs
   - crates/ui/src/settings.rs
@@ -153,7 +152,8 @@ themes remain in a two-column grid. Clicking a card immediately applies and save
 selected theme and returns the gallery to the top. Holding the primary button on the
 active card keeps the background clear, including stationary frames; release restores
 the blur and dimming immediately.
-More holds Duplicate, Reload, Open folder, Back up and Export template.
+More holds New theme…, Duplicate theme…, New variant, Add default artwork, Reload, Open folder,
+Export theme, Back up and Export template.
 
 Restore built-in opens a choice of the original built-in palettes, in both gallery and
 editor. Selecting one asks whether to save a new copy of the current theme first:
@@ -166,28 +166,16 @@ A short gallery note explains that existing tracks and clips keep their colours 
 a theme.
 
 Edit current theme opens a child view, with Back to themes and the current theme name.
-Its Liquid section defaults to Use global liquid settings. Turning that off copies the
-current global Panel/Track/Clip strengths into independent theme overrides. The three
-sliders then apply live and save with the theme; turning inheritance back on removes
-the override. Settings edits are saved in a variant of the theme (Custom, made the first time
-on the theme's own values), so a built-in theme is not copied for them. The renderer uses theme
-values when present, otherwise global settings; GPU support, reduced effects and high contrast
-remain final gates. A theme's `--liquid` property is `auto` or three integers from 0 to 100
-(panels, tracks, clips); `auto` preserves global inheritance. Copies
-and exports retain these values; Reset changes restores entry colours, inheritance and the theme's own settings.
-Colours are grouped into Surfaces, Text, Tracks & clips, Controls, Meters and Sample map.
-Each colour has its swatch, hex and wrapping token on the first line, followed by the
-full wrapping explanation on a separate line. No fixed token/description columns or
-truncation hide the purpose or let long token names overlap it.
-Tracks & clips exposes two defaults: Default MIDI clip (`clip.midiDefault`) and Default
-audio clip (`clip.audioDefault`). The session copies these RGB colours only into newly created tracks and clips.
-Opening a legacy project resolves its unset track colours from the existing numbered
-palette once, without adding an undo step or marking the project dirty. Existing
-tracks/clips never read the live creation defaults. Changes apply only to future
-creations; explicit colours and copies of existing clip content remain unchanged. The old numbered
-`track.1`–`track.8` swatches remain readable in theme files and in colour pickers/browser
-icons for compatibility, but are hidden from this editor. Older theme files inherit their
-MIDI default from `track.3` and audio default from `track.1`; explicit new tokens win.
+It shows only the theme's quick controls: the settings it declares with `@property` and a
+label, under *Theme settings* (a theme that declares none says so). The palette colours, the
+liquid strengths and the surface gradients are not listed there (#1019); a theme sets them in its
+`theme.css`. Settings edits are saved in a variant of the theme (Custom, made the first time on
+the theme's own values), so a built-in theme is not copied for them. A theme's `window { liquid }`
+setting is `auto` or three integers from 0 to 100 (panels, tracks, clips); `auto` preserves global
+inheritance. Copies and exports retain these values; Reset changes restores the theme's own
+settings. Tracks & clips colours for new tracks and clips (`clip.midiDefault`,
+`clip.audioDefault`) stay palette tokens a theme sets in its sheet; the session copies them only
+into newly created tracks and clips, and existing tracks and clips never read them.
 Changes apply and save live into the variant in use; moving controls or changing artwork of a
 built-in theme creates a custom copy. A theme with variants shows a row of swatches under its
 card, the default variant first (named in `theme.json`, *Default* otherwise); clicking one uses
@@ -198,7 +186,10 @@ do not fit. A card without variants keeps the row's room, so all the grid's card
 one from the values in use, and with a variant in use the name field renames the variant.
 *Theme settings* lists the settings the theme declares with `@property`, each with a control
 for its type ([theme skins](theme-skins.md#theme-folders-themejson-themecss-thumbnail-and-variants)).
-Save as new theme duplicates the current palette and focuses its editable name. Reset
+Save as new theme duplicates the current theme and focuses its editable name. *More › New
+theme…* and *More › Duplicate theme…* ask first, with an **Include the default artwork** checkbox
+(off by default), and *More › Add default artwork* copies the default artwork the theme in use
+lacks ([theme skins](theme-skins.md#the-user-agent-sheet)). Reset
 changes restores the palette captured when entering the editor, without changing the
 built-in source. The name field reserves the same space for built-in and custom themes,
 so making the first custom edit does not shift the picker.
@@ -207,12 +198,10 @@ An open colour picker holds the undimmed preview for the entire primary-button p
 including frames with no pointer motion or colour change. Release restores dimming on
 the same frame. This also applies to the custom waveform colour picker.
 
-Theme surface colours expose Opacity (0–100%) and the picker's alpha channel. Files
-write opaque colours as `#RRGGBB`, translucent colours as `#RRGGBBAA` (alpha last).
+Theme files write opaque colours as `#RRGGBB`, translucent colours as `#RRGGBBAA` (alpha last).
 The two clip creation defaults are RGB assignments, so they keep an opaque picker.
 Premultiplied interpolation preserves transparency, including the liquid body gradient.
-Opacity changes apply live and save with the theme; holding their slider previews the
-background without dimming, as with the other colour controls.
+Holding a quick control's colour picker or slider previews the background without dimming.
 
 Under the gallery, *Themes folder* (`themes_folder`) is where themes are kept and read from. It is
 shown, not typed into: **Browse** chooses a folder and **Reset** goes back to `themes` in Suhina's

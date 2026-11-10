@@ -117,7 +117,8 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
         |ui| {
             // In the device's own scope, as its compact panel is: a rule on `#device-<id>` (its
             // `--device-*` tokens) reaches the expanded canvas too.
-            let _device_style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
+            let device_id = format!("device-{}", device.theme_id);
+            let _device_style = crate::kit::element::DEVICE.id(&device_id).enter();
             // The panel takes the pointer, so the views under it get no clicks.
             let (rect, _) = ui.allocate_exact_size(slice.size(), Sense::click());
             let painter = ui.painter_at(rect);

@@ -919,22 +919,12 @@ fn read_variants(dir: &Path, warnings: &mut Vec<String>) -> Vec<(Variant, String
 
 /// Whether two themes look the same: every setting, the name, artwork and layout. Their sheets'
 /// text may differ (a migrated theme's is new), and so may the styles the style engine paints from
-/// the sheet: only the `--suhina-*` ones are the app's own.
+/// the sheet.
 fn same_look(a: &Theme, b: &Theme) -> bool {
     let skin = |theme: &Theme| suhina_ui::kit::skin::Skin {
         css: None,
         variant: None,
         variables: Default::default(),
-        styles: theme
-            .skin
-            .styles
-            .iter()
-            .map(|(selector, properties)| {
-                let own = properties.iter().filter(|(property, _)| property.starts_with("--suhina-"));
-                (selector.clone(), own.map(|(k, v)| (k.clone(), v.clone())).collect())
-            })
-            .filter(|(_, properties): &(String, std::collections::BTreeMap<String, String>)| !properties.is_empty())
-            .collect(),
         ..theme.skin.clone()
     };
     theme_vars::core_values(a) == theme_vars::core_values(b) && a.name == b.name && skin(a) == skin(b)

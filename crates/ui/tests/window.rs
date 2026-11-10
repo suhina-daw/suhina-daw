@@ -64,7 +64,11 @@ pub(super) fn view() -> Harness<'static, SessionHarness> {
         actions: Vec::new(),
     };
     let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
-        |ui, v: &mut SessionHarness| session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions),
+        |ui, v: &mut SessionHarness| {
+            // The style engine's frame, as the app runs it: a theme's sheet styles the view.
+            let _frame = suhina_ui::kit::native_css::frame(ui);
+            session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions)
+        },
         view,
     );
     theme::install(&harness.ctx);
@@ -309,6 +313,7 @@ impl suhina_session::AudioSystem for StandAudio {
                 } else {
                     Some((256, 512))
                 },
+                default_buffer: None,
                 exclusive: wasapi,
             }],
             inputs: vec![suhina_session::audio::InputInfo {

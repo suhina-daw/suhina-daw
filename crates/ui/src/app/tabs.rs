@@ -148,11 +148,11 @@ impl App {
 
     /// The tab row: one tab per open project, the active one lit; a tab's × closes it.
     pub(super) fn tab_row(&mut self, ui: &mut Ui, actions: &mut Vec<Action>) {
-        let _style_class = crate::kit::style_class::enter("project-tabs");
-        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let style_class = crate::kit::element::PROJECT_TABS.enter();
+        let mut styled_ui = style_class.ui(ui);
         let ui = &mut *styled_ui;
         let bar = ui.max_rect();
-        crate::kit::native_css::background(ui.painter(), bar);
+        style_class.paint_background(ui.painter(), bar, 0.0);
         ui.allocate_rect(bar, Sense::hover());
         let painter = ui.painter_at(bar);
         let active = self.projects.active();

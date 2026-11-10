@@ -225,9 +225,9 @@ pub fn show(ui: &mut Ui, area: Rect, tools: &Tools<'_>, state: &mut PianoRollSta
         }
         // A button or field too narrow for its text shortens it; nothing wraps onto more lines.
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-        // `midi-tools { --suhina-gap: 2px }` packs the rows closer (0 to 16 points), and
+        // `midi-tools { gap: 2px }` packs the rows closer (0 to 16 points), and
         // `midi-tools button { height }` sets the buttons' and fields' height.
-        if let Some(gap) = crate::kit::style_class::property("--suhina-gap").and_then(|v| px_value(&v)) {
+        if let Some(gap) = el.style().and_then(|style| style.points(suhina_style::property::Property::RowGap)) {
             ui.spacing_mut().item_spacing.y = gap.clamp(0.0, 16.0);
         }
         let button_height = {
@@ -274,10 +274,10 @@ fn quantise_block(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, ac
     );
     menu.response
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("Quantise grid {shown}")));
-    // `midi-tools slider { --suhina-appearance: knob }` draws the amount as a knob, dragged up
+    // `midi-tools slider { appearance: knob }` draws the amount as a knob, dragged up
     // or down; `#quantise-amount` selects it alone.
     let slider_style = crate::kit::element::SLIDER.id("quantise-amount").enter();
-    let slider = if crate::kit::style_class::knob_preference(false) {
+    let slider = if crate::kit::style_class::knob_preference(&slider_style, false) {
         let size = slider_style.style().and_then(|c| c.height).map_or(32.0, |h| h.clamp(16.0, 96.0));
         let (rect, response) = ui.allocate_exact_size(Vec2::new(size * 2.4, size), egui::Sense::drag());
         if response.dragged() {
@@ -291,6 +291,7 @@ fn quantise_block(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, ac
         crate::kit::widgets::knob_with_value(
             ui.painter(),
             rect,
+            &slider_style,
             position,
             pointer,
             Some(&response),
@@ -518,9 +519,4 @@ fn button(ui: &mut Ui, name: &str, font: &egui::FontId) -> bool {
 fn heading(ui: &mut Ui, text: &str, color: egui::Color32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), LABEL + 3.0), egui::Sense::hover());
     widgets::text_in(ui.painter(), rect, Align2::LEFT_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
-}
-
-/// `12px` as 12.0.
-fn px_value(value: &str) -> Option<f32> {
-    value.trim().strip_suffix("px").and_then(|v| v.trim().parse::<f32>().ok()).filter(|v| v.is_finite())
 }

@@ -247,8 +247,19 @@ pub enum ThemeRequest {
     /// Give the theme in use this name (and its folder a name made from it); for a variant, the
     /// variant's name.
     Rename(String),
-    /// A copy of the theme in use, to change.
-    Duplicate,
+    /// A copy of the theme in use, to change; with `artwork`, the default artwork it lacks is
+    /// copied into its `assets/` with a rule for each in its `theme.css`.
+    Duplicate {
+        artwork: bool,
+    },
+    /// A new theme of its own, from nothing but the user-agent sheet; with `artwork`, the default
+    /// artwork is copied into its `assets/` with a rule for each in its `theme.css`.
+    NewTheme {
+        artwork: bool,
+    },
+    /// Copy the default artwork the theme in use lacks into its `assets/`, with a rule for each in
+    /// its `theme.css`; a built-in theme is copied first.
+    AddDefaultArtwork,
     /// Optionally save a new copy, then activate an unchanged built-in palette.
     RestoreBuiltIn {
         id: String,
@@ -264,6 +275,15 @@ pub enum ThemeRequest {
     ExportPackage,
     /// Write a theme template and a README on the format into a zip.
     ExportTemplate,
+}
+
+/// What *New theme* and *Duplicate theme* ask before they make a theme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThemeCreate {
+    /// A copy of the theme in use, rather than a new theme of its own.
+    pub copy: bool,
+    /// Include the default artwork: copy its SVGs into the theme's `assets/` with their rules.
+    pub artwork: bool,
 }
 
 /// The pages of Settings, in the order the list on the left shows them
@@ -327,6 +347,8 @@ pub struct PageState {
     /// The colour editor is a child view of Themes, not another sidebar page.
     pub theme_editor: bool,
     pub theme_restore: Option<(String, String)>,
+    /// A theme about to be made, by *New theme* or *Duplicate theme*, with its options.
+    pub theme_create: Option<ThemeCreate>,
     pub theme_original_skin: Option<crate::kit::skin::Skin>,
     pub skin_editor: super::skin_editor::State,
     pub theme_original_liquid: Option<Option<crate::kit::liquid::Options>>,
@@ -853,8 +875,8 @@ pub(crate) fn input_style(ui: &mut Ui) {
 
 /// Draws the page into the space left in `ui`.
 pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &mut PageState) -> Outcome {
-    let _style_class = crate::kit::style_class::enter("settings");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let style_class = crate::kit::element::SETTINGS.enter();
+    let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let mut outcome = Outcome::default();
     let area = ui.available_rect_before_wrap();
@@ -863,7 +885,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     let panel_base = crate::kit::liquid::panel_base(ui.ctx());
     painter.fill_background(area, 0.0, panel_base);
     if !state.window {
-        crate::kit::liquid::paint(&painter, area, panel_base, crate::kit::liquid::Surface::Panel);
+        crate::kit::liquid::paint(&painter, area, &style_class, panel_base, crate::kit::liquid::Surface::Panel);
     }
     input_style(ui);
 
@@ -963,6 +985,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         state.theme_original_gradients = None;
         state.theme_original_skin = None;
         state.theme_restore = None;
+        state.theme_create = None;
         state.search.clear();
         state.capture = None;
         state.audio_listed = None;
@@ -1185,8 +1208,10 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), Some(page) == shown, motion::VALUE);
         let hover = widgets::hover(ui, &response);
         // `settings-nav`, one row per page: `:hover`, and `[checked]` for the page shown.
-        let nav = crate::kit::element::SETTINGS_NAV.response(&response).enter();
-        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, Some(page) == shown);
+        let nav = crate::kit::element::SETTINGS_NAV
+            .response(&response)
+            .attr(crate::kit::element::Checked, Some(page) == shown)
+            .enter();
         let own = nav.style().filter(|c| c.authored.background);
         if let Some(own) = &own {
             painter.rect_filled(row, own.radius, own.background);
@@ -1197,8 +1222,7 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
         // A page under another (Themes under Appearance) is stepped in.
         let indent = if page == Page::Theme { PAD * 2.0 } else { 0.0 };
         let text = Rect::from_min_max(Pos2::new(row.left() + PAD + indent, row.top()), row.max);
-        let color =
-            crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_primary(), selected));
+        let color = nav.color_or(motion::mix(theme::text_secondary(), theme::text_primary(), selected));
         widgets::text_in(painter, text, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), color);
     }
     picked
@@ -1311,6 +1335,41 @@ fn theme_page(
             *at = ui.min_rect().bottom();
             return;
         }
+        if let Some(mut create) = state.theme_create {
+            let mut cancelled = false;
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                let title = if create.copy { format!("Duplicate {}", themes.name) } else { "New theme".to_owned() };
+                ui.label(egui::RichText::new(title).strong());
+                ui.label(if create.copy {
+                    "The copy is a theme of its own that you can change, with the look of the theme in use."
+                } else {
+                    "A theme of its own, styled by Suhina's defaults until its theme.css says otherwise."
+                });
+                ui.checkbox(&mut create.artwork, "Include the default artwork");
+                ui.label(
+                    egui::RichText::new(
+                        "Copies the built-in control images into the theme's assets folder, with a rule for each in \
+                         its theme.css, so you can edit them.",
+                    )
+                    .small()
+                    .color(theme::text_secondary()),
+                );
+                ui.horizontal(|ui| {
+                    let label = if create.copy { "Duplicate" } else { "Create theme" };
+                    if ui.button(label).clicked() {
+                        request = Some(if create.copy {
+                            ThemeRequest::Duplicate { artwork: create.artwork }
+                        } else {
+                            ThemeRequest::NewTheme { artwork: create.artwork }
+                        });
+                    }
+                    cancelled = ui.button("Cancel").clicked();
+                });
+            });
+            state.theme_create = (request.is_none() && !cancelled).then_some(create);
+            *at = ui.min_rect().bottom();
+            return;
+        }
         if state.theme_editor {
             request = theme_editor(ui, themes, state);
         } else {
@@ -1327,9 +1386,15 @@ fn theme_page(
                     state.scrolled = None;
                 }
                 ui.menu_button("More", |ui| {
+                    for (label, copy) in [("New theme…", false), ("Duplicate theme…", true)] {
+                        if ui.button(label).clicked() {
+                            state.theme_create = Some(ThemeCreate { copy, artwork: false });
+                            ui.close();
+                        }
+                    }
                     for (label, action) in [
                         ("New variant", ThemeRequest::NewVariant("Variant".into())),
-                        ("Duplicate theme", ThemeRequest::Duplicate),
+                        ("Add default artwork", ThemeRequest::AddDefaultArtwork),
                         ("Reload themes", ThemeRequest::Reload),
                         ("Open the themes folder", ThemeRequest::OpenFolder),
                         ("Export theme…", ThemeRequest::ExportPackage),
@@ -1593,25 +1658,6 @@ fn paint_swatch(painter: &egui::Painter, rect: Rect, color: egui::Color32) -> f3
     }
 }
 
-/// Each colour appears in exactly one understandable group; the token name stays visible.
-fn colour_group(key: &str) -> &'static str {
-    if key.starts_with("browser.") {
-        "Browser text"
-    } else if key.starts_with("text.") {
-        "Text"
-    } else if key.starts_with("kind.") {
-        "Sample map"
-    } else if key.starts_with("track.") || key.starts_with("clip.") {
-        "Tracks & clips"
-    } else if key.starts_with("meter.") {
-        "Meters"
-    } else if key.starts_with("control.") || matches!(key, "accent" | "recording" | "playhead" | "selection") {
-        "Controls"
-    } else {
-        "Surfaces"
-    }
-}
-
 /// The values of the settings the theme in use declares.
 fn declared_values(themes: &ThemesView) -> std::collections::BTreeMap<String, String> {
     themes
@@ -1668,7 +1714,7 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
     }
     ui.horizontal(|ui| {
         if ui.button("Save as new theme…").clicked() {
-            request = Some(ThemeRequest::Duplicate);
+            request = Some(ThemeRequest::Duplicate { artwork: false });
             state.theme_rename_focus = true;
         }
         let original = *state.theme_original.get_or_insert(themes.colors);
@@ -1701,128 +1747,22 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
         }
     });
     ui.add_space(8.0);
+    // A variant holds values for the quick controls its theme declares, and the editor shows only
+    // those: the theme's `@property` rules with a label.
+    if themes.declared.is_empty() {
+        ui.label(
+            egui::RichText::new(
+                "This theme offers no quick controls. A theme offers them in its theme.css with @property and \
+                 a label.",
+            )
+            .color(theme::text_secondary()),
+        );
+    }
     if let Some(edit) = super::skin_editor::declared(ui, themes, &mut state.skin_editor, &mut state.theme_colour_held) {
         request = Some(edit);
     }
     if let Some(edit) = super::skin_editor::show(ui, themes, &mut state.skin_editor) {
         request = Some(edit);
-    }
-    ui.label(egui::RichText::new("Liquid (experimental)").strong());
-    let mut inherit = themes.liquid.is_none();
-    if ui.checkbox(&mut inherit, "Use global liquid settings").changed() {
-        request = Some(ThemeRequest::EditLiquid(if inherit { None } else { Some(themes.global_liquid) }));
-    }
-    let mut options = themes.liquid.unwrap_or(themes.global_liquid);
-    let original_options = options;
-    let available = crate::kit::liquid::available(ui.ctx());
-    ui.add_enabled_ui(!inherit, |ui| {
-        for (name, value) in [
-            ("Theme panel liquid", &mut options.panels),
-            ("Theme track liquid", &mut options.tracks),
-            ("Theme clip liquid", &mut options.clips),
-        ] {
-            let response = ui.add(egui::Slider::new(value, 0..=100).suffix(" %").text(name));
-            state.theme_colour_held |= response.dragged() || response.is_pointer_button_down_on();
-        }
-    });
-    if options != original_options {
-        request = Some(ThemeRequest::EditLiquid(Some(options)));
-    }
-    if !available {
-        ui.add(egui::Label::new("Liquid preview is unavailable. Values can be saved. Select GPU in Appearance > Renderer, enable Animations and restart Suhina to see the effect.").wrap());
-    }
-    ui.add(egui::Label::new(egui::RichText::new("Turn off inheritance to save independent panel, track and clip strengths with this theme. Requires the GPU renderer; reduced effects and high contrast still apply.").small().color(theme::text_secondary())).wrap());
-    if let Some(change) = super::gradient_editor::show(ui, themes, state) {
-        request = Some(change);
-    }
-    let mut edited = themes.colors;
-    let mut transparent_rgb = themes.transparent_rgb.clone();
-    let tokens = themes.colors.tokens();
-    for group in ["Surfaces", "Text", "Browser text", "Tracks & clips", "Controls", "Meters", "Sample map"] {
-        ui.add_space(8.0);
-        ui.label(egui::RichText::new(group).strong());
-        ui.separator();
-        for &(key, purpose, color) in tokens.iter().filter(|(key, _, _)| {
-            colour_group(key) == group && !key.strip_prefix("track.").is_some_and(|suffix| suffix.parse::<u8>().is_ok())
-        }) {
-            ui.push_id(("theme-colour", key), |ui| {
-                let mut rgba = color.to_srgba_unmultiplied();
-                if color.a() == 0
-                    && let Some(rgb) = transparent_rgb.get(key)
-                {
-                    rgba[..3].copy_from_slice(rgb);
-                }
-                let rgb_default = matches!(key, "clip.midiDefault" | "clip.audioDefault");
-                ui.horizontal(|ui| {
-                    let popup = ui.auto_id_with("popup");
-                    let swatch = edit_rgba(
-                        ui,
-                        &mut rgba,
-                        if matches!(key, "clip.midiDefault" | "clip.audioDefault") {
-                            egui::color_picker::Alpha::Opaque
-                        } else {
-                            egui::color_picker::Alpha::OnlyBlend
-                        },
-                    );
-                    swatch.widget_info(|| {
-                        egui::WidgetInfo::labeled(egui::Role::ColorWell, true, format!("Colour {key}"))
-                    });
-                    state.theme_colour_held |=
-                        egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
-                    ui.allocate_ui_with_layout(
-                        Vec2::new(82.0, 18.0),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| {
-                            ui.set_min_width(82.0);
-                            ui.label(
-                                egui::RichText::new(theme::hex_rgba(rgba))
-                                    .font(theme::mono_font(theme::TEXT_SMALL))
-                                    .color(theme::text_value()),
-                            );
-                        },
-                    );
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(match key {
-                                "clip.midiDefault" => "Default MIDI clip",
-                                "clip.audioDefault" => "Default audio clip",
-                                _ => key,
-                            })
-                            .font(theme::mono_font(theme::TEXT_SMALL))
-                            .color(theme::text_primary()),
-                        )
-                        .wrap(),
-                    );
-                });
-                if !rgb_default {
-                    let mut opacity = (f32::from(rgba[3]) * 100.0 / 255.0).round() as u8;
-                    let response = ui.add(egui::Slider::new(&mut opacity, 0..=100).suffix(" %").text("Opacity"));
-                    response
-                        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Opacity {key}")));
-                    state.theme_colour_held |= response.dragged() || response.is_pointer_button_down_on();
-                    if response.changed() {
-                        rgba[3] = (f32::from(opacity) * 2.55).round() as u8;
-                    }
-                }
-                let [r, g, b, a] = rgba;
-                let picked = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
-                if a == 0 && [r, g, b] != [0, 0, 0] {
-                    transparent_rgb.insert(key.to_string(), [r, g, b]);
-                } else {
-                    transparent_rgb.remove(key);
-                }
-                if picked != color
-                    && let Some(slot) = edited.token_mut(key)
-                {
-                    *slot = picked;
-                }
-                ui.add(egui::Label::new(egui::RichText::new(purpose).small().color(theme::text_secondary())).wrap());
-                ui.add_space(6.0);
-            });
-        }
-    }
-    if edited != themes.colors || transparent_rgb != themes.transparent_rgb {
-        request = Some(ThemeRequest::EditRgba { colors: edited, transparent_rgb });
     }
     request
 }
@@ -2574,11 +2514,33 @@ fn output_rows(
     } else {
         ("Engine block", "Suhina's render block; the driver keeps its own buffer size".to_string())
     };
-    label(painter, r, name, &note);
-    let mut options: Vec<(String, Option<u32>)> = vec![("Default (1024 frames)".to_string(), None)];
-    options.extend(sizes.iter().map(|n| (format!("{n} frames ({:.1} ms)", f64::from(*n) * 1000.0 / rate), Some(*n))));
-    if let Some(frames) = choice_dropdown(ui, painter, r, name, &options, &choice.buffer_frames) {
-        picked = choice.with_params(&serde_json::json!({ "bufferFrames": frames.unwrap_or(0) })).ok();
+    match buffer_row(&sizes, device_sets, host.is_some_and(|h| h.name == "ASIO")) {
+        // A driver that takes one size, as one whose size is set in its own control panel: the
+        // size is said, not offered, as there is nothing to choose. A size chosen before stays
+        // in the settings and plays again on a device that takes it.
+        BufferRow::Only(frames) => {
+            label(painter, r, name, "Set in the driver's own control panel (Control panel… above)");
+            let value = Rect::from_min_size(Pos2::new(control_x(r), r.top() + 1.0), Vec2::new(260.0, SEGMENT));
+            let text = format!("{frames} frames ({:.1} ms)", f64::from(frames) * 1000.0 / rate.max(1.0));
+            widgets::text_in(
+                painter,
+                value,
+                Align2::LEFT_CENTER,
+                &text,
+                theme::ui_font(theme::TEXT_SMALL),
+                theme::text_primary(),
+            );
+        }
+        BufferRow::Choose => {
+            label(painter, r, name, &note);
+            // With none chosen an ASIO driver plays the size it prefers (the one set in its
+            // control panel); elsewhere the engine renders in its own 1024-frame block.
+            let default_frames = device.and_then(|d| d.default_buffer).unwrap_or(1024);
+            let options = buffer_options(&sizes, default_frames, choice.buffer_frames, rate, wasapi);
+            if let Some(frames) = choice_dropdown(ui, painter, r, name, &options, &choice.buffer_frames) {
+                picked = choice.with_params(&serde_json::json!({ "bufferFrames": frames.unwrap_or(0) })).ok();
+            }
+        }
     }
     // Exclusive mode belongs to WASAPI, not to the ASIO driver panel.
     if wasapi {
@@ -2620,6 +2582,57 @@ fn output_rows(
     }
 
     picked.map(OutputPick::Setting)
+}
+
+/// How the Buffer size row shows: a dropdown to choose from, or the one size the driver takes,
+/// said as text.
+#[derive(Debug, PartialEq)]
+enum BufferRow {
+    Choose,
+    Only(u32),
+}
+
+/// The Buffer size row for a device offering `sizes`, when the size is the device's own
+/// (`device_sets`): an ASIO driver that takes one size, as one whose size is set in its own
+/// control panel, has it said, not offered; with none chosen that size plays and the engine
+/// renders in it. Elsewhere a size chosen sets the engine's block even where the device keeps
+/// its own, so there is always a choice.
+fn buffer_row(sizes: &[u32], device_sets: bool, asio: bool) -> BufferRow {
+    match sizes {
+        [frames] if device_sets && asio => BufferRow::Only(*frames),
+        _ => BufferRow::Choose,
+    }
+}
+
+/// The Buffer size list: Default (`default_frames`, what plays with none chosen), then `sizes`
+/// with their length at `rate`. A size chosen before that the device does not offer now stays
+/// chosen and is listed in its place: on WASAPI (`engine_block`), where the number is the
+/// engine's block, it plays when it lies within the sizes offered; elsewhere the list says the
+/// device does not take it, and the nearest size it takes plays until it does.
+fn buffer_options(
+    sizes: &[u32],
+    default_frames: u32,
+    chosen: Option<u32>,
+    rate: f64,
+    engine_block: bool,
+) -> Vec<(String, Option<u32>)> {
+    let ms = |n: u32| f64::from(n) * 1000.0 / rate.max(1.0);
+    let mut listed: Vec<(u32, String)> = sizes.iter().map(|n| (*n, format!("{n} frames ({:.1} ms)", ms(*n)))).collect();
+    if let Some(kept) = chosen.filter(|n| !sizes.contains(n)) {
+        let plays = engine_block
+            && sizes.first().is_some_and(|least| kept >= *least)
+            && sizes.last().is_some_and(|most| kept <= *most);
+        let label = if plays {
+            format!("{kept} frames ({:.1} ms)", ms(kept))
+        } else {
+            format!("{kept} frames, chosen; the device does not take it now")
+        };
+        listed.push((kept, label));
+        listed.sort_by_key(|(n, _)| *n);
+    }
+    std::iter::once((format!("Default ({default_frames} frames)"), None))
+        .chain(listed.into_iter().map(|(n, label)| (label, Some(n))))
+        .collect()
 }
 
 /// What the Device row says about the driver chosen: why it lists nothing, and where a driver's
@@ -2999,8 +3012,10 @@ fn segmented<T: Copy + PartialEq>(
             picked = Some(*value);
         }
         // A part is a `button` (`[checked]` when chosen), as the sheet's generic rules say.
-        let el = crate::kit::element::BUTTON.response(&response).enter();
-        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, *value == current);
+        let el = crate::kit::element::BUTTON
+            .response(&response)
+            .attr(crate::kit::element::Checked, *value == current)
+            .enter();
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), *value == current, motion::VALUE);
         let hover = widgets::hover(ui, &response);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), hover);
@@ -3009,51 +3024,10 @@ fn segmented<T: Copy + PartialEq>(
             cell,
             crate::kit::element::Native { radius: 0.0, fill: motion::mix(idle, theme::control_selected(), selected) },
         );
-        let color =
-            crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), selected));
+        let color = el.color_or(motion::mix(theme::text_secondary(), theme::text_inverse(), selected));
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked
-}
-
-/// Keep unmultiplied colour channels even at zero alpha.
-pub(super) fn edit_rgba(ui: &mut Ui, rgba: &mut [u8; 4], alpha: egui::color_picker::Alpha) -> egui::Response {
-    let mut hsva = egui::ecolor::Hsva::from_srgba_unmultiplied(*rgba);
-    let popup_id = ui.auto_id_with("popup");
-    let (rect, mut response) = ui.allocate_exact_size(Vec2::new(40.0, 18.0), Sense::click());
-    let swatch = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
-    for column in 0..8 {
-        for row in 0..4 {
-            let tile =
-                Rect::from_min_size(rect.min + Vec2::new(column as f32 * 5.0, row as f32 * 5.0), Vec2::splat(5.0))
-                    .intersect(rect);
-            ui.painter().rect_filled(
-                tile,
-                0.0,
-                egui::Color32::from_gray(if (column + row) % 2 == 0 { 180 } else { 100 }),
-            );
-        }
-    }
-    ui.painter().rect_filled(rect, 0.0, swatch);
-    ui.painter().rect_stroke(rect, 0.0, theme::hairline(theme::text_secondary()), egui::StrokeKind::Inside);
-    let background = theme::panel_background().to_opaque();
-    // Popup Areas resolve their own style; setting the parent Ui's fill does not set their frame.
-    egui::Popup::menu(&response)
-        .id(popup_id)
-        .frame(egui::Frame::popup(ui.style()).fill(background))
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|ui| {
-            ui.spacing_mut().slider_width = 275.0;
-            ui.visuals_mut().override_text_color = Some(theme::text_on(background));
-            ui.visuals_mut().text_edit_bg_color = Some(background);
-            if egui::color_picker::color_picker_hsva_2d(ui, &mut hsva, alpha) {
-                response.mark_changed();
-            }
-        });
-    if response.changed() {
-        *rgba = hsva.to_srgba_unmultiplied();
-    }
-    response
 }
 
 #[cfg(test)]

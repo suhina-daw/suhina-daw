@@ -484,6 +484,14 @@ pub struct App {
     midi_listed: Option<std::time::Instant>,
     /// Follows the audio devices while Settings › Audio shows, so headphones connected later show up.
     audio_devices: suhina_session::audio::DeviceWatch,
+    /// Follows how many times an output was opened while Settings › Audio shows: each opening
+    /// asked an ASIO driver for its buffer sizes anew, so the list is made again.
+    audio_output_watch: suhina_session::audio::Watch<u64>,
+    /// Settings › Audio showed in the last frame, and the window had the focus: when the page
+    /// opens or closes, or the window gets the focus back while it shows (from a driver's control
+    /// panel, say), the ASIO driver is asked for its sizes again (`audio.checkDriver`).
+    audio_page_shown: bool,
+    window_focused: bool,
     /// The themes to pick from; the settings say which is in use.
     themes: Themes,
     /// The project dialog (File › New or open) while it shows, and what it lists.
@@ -580,7 +588,7 @@ pub struct App {
     ram: Option<u64>,
     next_ram: Option<f64>,
     /// The audio's health counters last traced: device underruns, late stretched frames and late plug-in blocks.
-    audio_traced: (u64, u64, u64, u64),
+    audio_traced: (u64, u64, u64, u64, u64),
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
     /// A device carried from a chain or a strip's list onto another track (#688): its track and
@@ -700,6 +708,9 @@ impl App {
             about: About::default(),
             midi_listed: None,
             audio_devices: suhina_session::audio::DeviceWatch::default(),
+            audio_output_watch: suhina_session::audio::Watch::default(),
+            audio_page_shown: false,
+            window_focused: true,
             themes: Themes::default(),
             project_dialog: None,
             project_lists: Lists::default(),
@@ -743,7 +754,7 @@ impl App {
             reveal: None,
             ram: None,
             next_ram: None,
-            audio_traced: (0, 0, 0, 0),
+            audio_traced: (0, 0, 0, 0, 0),
             carry: None,
             device_carry: None,
             applied_grid: None,
@@ -1247,6 +1258,9 @@ impl App {
         }
         let Some(player) = self.session().and_then(Session::player) else { return };
         let device = info.as_ref().map_or(0, |i| i.underruns);
+        // Blocks that found too little input from the input device; counted from when the
+        // output last opened, so a smaller number than before means it opened again.
+        let input = info.as_ref().map_or(0, |i| i.input_underruns);
         let stretched = player.stretch_underruns();
         let moves = player.stretch_moves();
         let (misses, worst, worst_misses) = player.plugin_misses();
@@ -1257,17 +1271,19 @@ impl App {
             .unwrap_or_else(|| "none".into());
         let cpu = player.cpu_monitor().load_milli();
         let running = player.monitor().running();
-        let (was_device, was_stretched, was_misses, was_blocked) = self.audio_traced;
+        let (was_device, was_stretched, was_misses, was_blocked, was_input) = self.audio_traced;
         if running
             || device > was_device
             || stretched > was_stretched
             || misses > was_misses
             || blocked > was_blocked
+            || input > was_input
             || cpu >= 700
         {
             suhina_plugins::trace!(
-                "audio: device underruns {device} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}",
+                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
                 device.saturating_sub(was_device),
+                input.saturating_sub(was_input),
                 stretched.saturating_sub(was_stretched),
                 misses.saturating_sub(was_misses),
                 blocked.saturating_sub(was_blocked),
@@ -1280,9 +1296,11 @@ impl App {
                 info.as_ref().map(|i| (&i.host, &i.device, i.sample_rate)),
                 player.monitor().beat(),
                 player.cpu_monitor().late_render(),
+                info.as_ref().map(|i| &i.input_diagnostics),
+                info.as_ref().map(|i| i.render_diagnostics),
             );
         }
-        self.audio_traced = (device, stretched, misses, blocked);
+        self.audio_traced = (device, stretched, misses, blocked, input);
     }
 
     /// Uses `settings` from now on, as loaded from the settings file.
@@ -2642,7 +2660,7 @@ impl App {
         if self.settings.track_headers.is_none() {
             self.arrangement.headers_left = headers_left(None);
         }
-        // The frame's placed controls, for anchors between them (`--suhina-anchor-*`).
+        // The frame's placed controls, for anchors between them (`anchor-*`).
         let _capture = crate::kit::control_layout::Capture::begin(ui.ctx());
         self.ui_content(ui);
         crate::kit::widgets::hide_pointer_during_value_drag(ui.ctx());
@@ -2659,8 +2677,8 @@ impl App {
             ui,
             self.settings.animations && self.settings.theme != "high-contrast",
         );
-        let _window_style = crate::kit::style_class::enter("window");
-        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let window_style = crate::kit::element::WINDOW.enter();
+        let mut styled_ui = window_style.ui(ui);
         let ui = &mut *styled_ui;
         if let Err(error) = self.background.update(ui, &self.settings, self.themes.palette(&self.settings.theme)) {
             self.status = Status::Error(error);
@@ -2732,7 +2750,7 @@ impl App {
         }
         if self.arrangement.grid_keys[0].is_empty() {
             self.arrangement.grid_keys =
-                crate::detail::piano_roll::grid_key_labels(&self.keymap, &arrangement_view::GRID_KEYS);
+                crate::interaction::grid_menu::grid_key_labels(&self.keymap, &arrangement_view::GRID_KEYS);
         }
         if self.arrangement.toolbar && self.arrangement.tool_keys.is_empty() {
             self.arrangement.tool_keys =
@@ -2870,7 +2888,7 @@ impl App {
         if self.title_bar > 0.0 && !full_screen {
             egui::Panel::top("title-bar").exact_size(self.title_bar).frame(egui::Frame::NONE).show(ui, |ui| {
                 // The strip reads as the top of the toolbar under it, in the toolbar's colour.
-                let _style_class = crate::kit::style_class::enter("toolbar");
+                let _style_class = crate::kit::element::TOOLBAR.enter();
                 let top = egui::CornerRadius { nw: corner, ne: corner, sw: 0, se: 0 };
                 ui.painter().fill_background(ui.max_rect(), top, theme::panel_background());
             });
@@ -2912,11 +2930,11 @@ impl App {
                     .exact_size(theme::MENU_BAR)
                     .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(4, 0)))
                     .show(ui, |ui| {
-                        let _style_class = crate::kit::style_class::enter("menu-bar");
+                        let style_class = crate::kit::element::MENU_BAR.enter();
                         let bar = ui.max_rect().expand2(Vec2::new(4.0, 0.0));
                         ui.painter().fill_background(bar, 0.0, theme::panel_background());
-                        crate::kit::native_css::background(ui.painter(), bar);
-                        self.menu_bar(ui, &mut actions)
+                        style_class.paint_background(ui.painter(), bar, 0.0);
+                        self.menu_bar(ui, &style_class, &mut actions)
                     })
             });
         }
@@ -2929,17 +2947,17 @@ impl App {
         }
         with_bar_line(ui, "toolbar", |ui| {
             egui::Panel::top("control-bar").exact_size(theme::CONTROL_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
-                let _style_class = crate::kit::style_class::enter("toolbar");
+                let style_class = crate::kit::element::TOOLBAR.enter();
                 ui.painter().fill_background(ui.max_rect(), 0.0, theme::panel_background());
-                crate::kit::native_css::background(ui.painter(), ui.max_rect());
-                self.control_bar(ui, grid.as_ref(), cpu, ram, &mut actions)
+                style_class.paint_background(ui.painter(), ui.max_rect(), 0.0);
+                self.control_bar(ui, &style_class, grid.as_ref(), cpu, ram, &mut actions)
             })
         });
         self.frame_trace.mark("control bar");
         egui::Panel::bottom("status-bar").exact_size(theme::STATUS_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
             let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
             {
-                let _style_class = crate::kit::style_class::enter("status-bar");
+                let _style_class = crate::kit::element::STATUS_BAR.enter();
                 ui.painter().fill_background(ui.max_rect(), bottom, theme::panel_background());
             }
             self.status_bar(ui, grid.as_ref())
@@ -2957,11 +2975,11 @@ impl App {
             egui::Color32::TRANSPARENT
         } else {
             // `#workspace { border-color }` is this line's own colour.
-            let _workspace = crate::kit::style_class::enter_named("workspace", "workspace");
+            let _workspace = crate::kit::element::WORKSPACE.id("workspace").enter();
             theme::border()
         };
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(workspace_base)).show(ui, |ui| {
-            let _workspace_style = crate::kit::style_class::enter_named("workspace", "workspace");
+            let _workspace_style = crate::kit::element::WORKSPACE.id("workspace").enter();
             let area = ui.available_rect_before_wrap();
             // A 1 px gap shows the line colour between the bars and the view.
             let inner = Rect::from_min_max(area.min + Vec2::new(0.0, 1.0), area.max - Vec2::new(0.0, 1.0));
@@ -3100,7 +3118,9 @@ impl App {
                 view_area = inner;
             }
             self.frame_trace.mark("browser");
-            let _main_style = crate::kit::style_class::enter_named("workspace-panel", "panel-main");
+            let main_style = crate::kit::element::WORKSPACE_PANEL.id("panel-main").enter();
+            // The panel clips its children's shadows (`overflow`).
+            main_style.occupies(view_area, ui.clip_rect());
             // A clip whose drag or held press the view switch carried becomes the carry first,
             // so the probe below reads it on the switch's first frame.
             self.begin_clip_carry(ui.ctx());
@@ -3152,7 +3172,7 @@ impl App {
             self.arrangement.meters = meters;
             // The large sample map takes the main area, except while something is dragged, so
             // the drop can land on a track.
-            let styled_ui = crate::kit::style_class::ui(ui);
+            let styled_ui = main_style.ui(ui);
             let mut styled_ui = if css_workspace.is_some() { styled_ui.clipped_to(inner) } else { styled_ui };
             let ui = &mut *styled_ui;
             if self.sample_map.view.large && dragged.is_none() && inner.is_positive() {
@@ -3432,6 +3452,7 @@ impl App {
         let actions_held = self.dialog_holds_actions();
         self.plugin_dialog(ui, window);
         self.project_dialogs(ui, window);
+        self.follow_audio_page(ui.ctx());
         if self.settings_open {
             // Embedded plug-in editors are windows of their own and would cover the dialog.
             if !self.page.window {

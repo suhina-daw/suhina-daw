@@ -64,7 +64,8 @@ impl Shadow {
         }
     }
 
-    fn bounds(&self, caster: Rect) -> Rect {
+    /// What the shadow of `caster` can cover (the caster included).
+    pub(super) fn bounds(&self, caster: Rect) -> Rect {
         if self.inset {
             caster
         } else {

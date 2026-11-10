@@ -15,8 +15,9 @@ use egui::{Color32, Id, Painter, Rect, Sense, Ui};
 use suhina_engine::model::{Clip, LaneData, Note, Project, TrackId};
 
 use crate::detail::detail_view::ClipRef;
-use crate::detail::piano_roll::{Placement, key_name};
+use crate::detail::piano_roll::Placement;
 use crate::interaction::grid::track_colour;
+use crate::interaction::key_name::key_name;
 use crate::kit::theme;
 
 /// The most ghost notes one clip shows, so a big project never draws without end.
@@ -595,7 +596,7 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
             });
         });
         let label = format!("Ghost notes {}", source.name(ghosts));
-        crate::detail::piano_roll::menu_arrow(ui, menu.response.rect, color);
+        crate::interaction::toolbar::menu_arrow(ui, menu.response.rect, color);
         menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         shown = menu.response.rect;
         menu.response.on_hover_text(format!(

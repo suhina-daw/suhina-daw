@@ -13,7 +13,7 @@ use egui_kittest::kittest::Queryable;
 use suhina_engine::model::{LaneData, Note};
 use suhina_session::{Session, midi_velocity};
 use suhina_ui::demo::demo_project;
-use suhina_ui::detail::piano_roll::key_name;
+use suhina_ui::interaction::key_name::key_name;
 use suhina_ui::{App, kit::theme};
 
 const SIZE: (f32, f32) = (1280.0, 800.0);

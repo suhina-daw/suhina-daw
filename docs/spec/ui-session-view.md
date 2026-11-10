@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-11-09
+last_verified: 2026-11-10
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -39,7 +39,7 @@ divider remains independent. See [theme skins](theme-skins.md#launcher-density-a
 The existing knob/field preference applies to the Launcher pan face as well as compact
 volume: a knob uses the same native pan input area and command. A narrow themed pan
 area shows the dial alone; a wider one keeps the value beside it.
-Canonical `.pan { --suhina-appearance: knob; }` or `field` can override that preference
+`pan { appearance: knob; }` or `field` can override that preference
 as portable theme data in either view. `native` restores the global preference.
 
 From top to bottom:
@@ -102,7 +102,7 @@ this list and `docs/design/components.md` differ, components.md describes Suhina
 ## Launcher view
 
 A theme can opt slot columns into colour/state-keyed `track.body` SVG/PNG artwork
-using canonical `.track-column { --suhina-track-artwork: on; }`. The image stays
+using `track-column { track-artwork: on; }`. The image stays
 behind cells; empty slots retain the texture, with native stop marks and hover
 feedback. Launch, selection, mapping and drop geometry are unchanged. Omission or
 `off` retains native slot fills. See [theme skins](theme-skins.md).

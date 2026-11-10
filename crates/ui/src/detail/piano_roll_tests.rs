@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+use crate::detail::piano_roll_grid::{GridMode, Width};
 
 fn note(time: f64, duration: f64, key: u8) -> Note {
     Note { time, duration, key, velocity: 100.0 / 127.0, release_velocity: 0.5, channel: 0, muted: false }
