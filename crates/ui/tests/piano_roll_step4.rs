@@ -600,6 +600,30 @@ fn with_the_devices_stacked_the_piano_roll_stays_along_the_bottom_and_ctrl_u_sti
     h.get_by_label("Show Devices").click();
     h.run();
     assert!(h.query_by_label("Devices column splitter").is_none(), "Devices again closes the column");
+    // Closed, the column keeps a splitter at the view's right edge: dragged left, it opens again.
+    let closed = h.get_by_label("Closed devices column splitter").rect().center();
+    h.hover_at(closed);
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: closed,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    h.step();
+    for step in 1..=6 {
+        h.hover_at(closed - egui::vec2(40.0 * step as f32, 0.0));
+        h.step();
+    }
+    let to = closed - egui::vec2(240.0, 0.0);
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.run();
+    assert!(h.query_by_label("Devices column splitter").is_some(), "a drag of the closed splitter opens it");
     // The quantise settings and Ctrl+U work whether the tools show or not.
     h.key_press_modifiers(Modifiers::COMMAND, Key::U);
     h.run();

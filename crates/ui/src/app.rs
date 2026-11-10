@@ -3098,6 +3098,9 @@ impl App {
                     layout.main
                 } else if grid.is_some() && self.editor_along_bottom() {
                     self.collapsed_splitter(ui, inner)
+                } else if grid.is_some() {
+                    // Stacked beside the view, it stays along the right edge, to drag it open.
+                    self.collapsed_side_splitter(ui, inner)
                 } else {
                     inner
                 }

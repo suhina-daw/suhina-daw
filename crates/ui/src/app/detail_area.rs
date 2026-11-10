@@ -427,6 +427,33 @@ impl App {
                 Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())),
                 Some(Rect::from_min_max(Pos2::new(x, view.top()), view.max)),
             )
+        } else if split {
+            // Closed beside the editor, the column keeps its splitter along the view's right edge:
+            // dragged left past half its width, or double-clicked, it opens, as Devices does.
+            let side_splitter =
+                Rect::from_min_max(Pos2::new((view.right() - SPLITTER).max(view.left()), view.top()), view.max);
+            let response = ui
+                .interact(side_splitter, Id::unique("detail-side-splitter"), Sense::click_and_drag())
+                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+            response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Closed devices column splitter"));
+            let width = detail_view::STACK_WIDTH;
+            if response.double_clicked() {
+                self.detail_showing = detail_view::Showing::Devices;
+            }
+            if response.dragged_by(egui::PointerButton::Primary) {
+                let dragged = self.side_drag.unwrap_or(0.0) - response.drag_delta().x;
+                self.side_drag = Some(dragged);
+                if dragged >= width / 2.0 {
+                    self.detail_showing = detail_view::Showing::Devices;
+                    // The same drag goes on from the open column's width.
+                    self.side_drag = Some(width);
+                }
+            } else {
+                self.side_drag = None;
+            }
+            paint_splitter(ui, side_splitter, &response, true);
+            (Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())), None)
         } else {
             (view, None)
         };
@@ -892,6 +919,33 @@ impl App {
         }
         paint_splitter(ui, splitter, &response, false);
         Rect::from_min_max(area.min, Pos2::new(area.right(), splitter.top()))
+    }
+
+    /// The splitter along the right edge while the stacked detail area is hidden: dragged left past
+    /// half a stacked panel's width, or double-clicked, the area opens whole, as the stacked area
+    /// is open a panel wide or closed. Returns the room left beside it for the view.
+    pub(super) fn collapsed_side_splitter(&mut self, ui: &mut Ui, area: Rect) -> Rect {
+        let splitter = Rect::from_min_max(Pos2::new((area.right() - SPLITTER).max(area.left()), area.top()), area.max);
+        let response = ui
+            .interact(splitter, Id::unique("detail-splitter"), Sense::click_and_drag())
+            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
+        if response.double_clicked() {
+            self.show_editor();
+        }
+        if response.dragged_by(egui::PointerButton::Primary) {
+            let width = self.detail_drag.unwrap_or(0.0) - response.drag_delta().x;
+            self.detail_drag = Some(width);
+            if width >= detail_view::STACK_WIDTH / 2.0 {
+                self.show_editor();
+                // The same drag goes on from the open area's width, so it does not close it again.
+                self.detail_drag = Some(detail_view::STACK_WIDTH);
+            }
+        } else {
+            self.detail_drag = None;
+        }
+        paint_splitter(ui, splitter, &response, true);
+        Rect::from_min_max(area.min, Pos2::new(splitter.left(), area.bottom()))
     }
 
     /// The least height of the detail area in a row: the device panels' compact height (the

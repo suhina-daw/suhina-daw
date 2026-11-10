@@ -153,6 +153,9 @@ fn the_detail_area_shows_the_selected_tracks_devices_in_a_row_or_stacked() {
     harness.key_press_modifiers(Modifiers::SHIFT, Key::Tab);
     harness.run();
     assert!(harness.query_by_label("Device Utility").is_none(), "Shift+Tab hides the detail area");
+    // Closed stacked, it keeps its splitter along the window's right edge, to drag it open again.
+    let splitter = harness.get_by_label("Detail area splitter").rect();
+    assert!(splitter.height() > splitter.width(), "an upright splitter at the right: {splitter:?}");
 }
 
 #[test]
