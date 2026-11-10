@@ -314,6 +314,11 @@ pub fn device_row_height() -> f32 {
 /// How many columns of a long generated list a panel shows until the header's chevron opens the rest.
 const LIST_COLUMNS: f32 = 2.0;
 
+/// [`LIST_COLUMNS`], or one while the stacked chain is drawn, so a panel fits the column.
+fn list_columns() -> f32 {
+    if ONE_COLUMN.with(std::cell::Cell::get) { 1.0 } else { LIST_COLUMNS }
+}
+
 /// The state of a panel's list, for the chevron in its header: how many parameters are left out, or the same count
 /// and that they show.
 #[derive(Clone, Copy)]
@@ -354,12 +359,12 @@ pub fn set_list_project(ctx: &egui::Context, project: u32) {
 fn tall_list_height(parameters: &[GraphParameter]) -> f32 {
     let height = |p: &GraphParameter| parameter_height(p);
     let total: f32 = parameters.iter().map(height).sum();
-    total / LIST_COLUMNS + parameters.iter().map(height).fold(0.0, f32::max)
+    total / list_columns() + parameters.iter().map(height).fold(0.0, f32::max)
 }
 
 /// How many of `parameters` fit the first columns of a list `max_height` tall; `None` when all do.
 fn list_fit(parameters: &[GraphParameter], max_height: f32) -> Option<usize> {
-    let limit = COMPACT_WIDTH * LIST_COLUMNS - 0.5;
+    let limit = COMPACT_WIDTH * list_columns() - 0.5;
     let cells = parameter_layout(parameters, COMPACT_WIDTH, max_height, &[]);
     let fit = cells.iter().take_while(|c| c.left() < limit).count();
     (fit < cells.len()).then_some(fit)
@@ -385,7 +390,9 @@ fn limited_list(ui: &Ui, track: TrackId, device: &DeviceBox) -> Option<DeviceBox
     ui.ctx().data_mut(|d| d.insert_temp(id, ListFold { more, open }));
     let mut limited = device.clone();
     if open {
-        if !ui.data(|d| d.get_temp::<bool>(list_vertical_id())).unwrap_or(false) {
+        // Stacked, an opened list goes down in its one column whatever the setting says.
+        let vertical = ui.data(|d| d.get_temp::<bool>(list_vertical_id())).unwrap_or(false);
+        if !vertical && !ONE_COLUMN.with(std::cell::Cell::get) {
             return None;
         }
         limited.list_tall = true;
@@ -427,9 +434,6 @@ fn list_right(device: &DeviceBox, graph: &GraphBox) -> f32 {
 /// taller canvas beside it. A list in a panel the theme sizes (`device { width }`) keeps one
 /// column that follows that width and scrolls.
 fn list_height(device: &DeviceBox, graph: &GraphBox) -> f32 {
-    if graph.canvas.is_none() && ONE_COLUMN.with(std::cell::Cell::get) {
-        return f32::INFINITY;
-    }
     if graph.canvas.is_none() {
         let el = crate::kit::element::DEVICE.id(&format!("device-{}", device.theme_id)).enter();
         if el.style().is_some_and(|c| c.width.is_some()) {
@@ -516,8 +520,8 @@ pub fn show_clip_column(
 }
 
 thread_local! {
-    /// While the stacked chain is drawn: a list keeps one column, so a panel fits the column's
-    /// width, and scrolls as a themed width's does.
+    /// While the stacked chain is drawn: a list shows one column, so a panel fits the column's
+    /// width, and its chevron opens the rest down that column.
     static ONE_COLUMN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -553,6 +557,42 @@ fn chain_stack(
         hint(painter, area, &format!("No devices on {} yet", chain.name));
         return Picked::default();
     }
+    // The column scrolls when its devices are taller than it, and nothing it draws leaves it. The
+    // devices' height is the last frame's, the first frame's the column's own.
+    let tall_id = Id::unique(("stack-chain-height", chain.track.0));
+    let tall = ui.data(|d| d.get_temp::<f32>(tall_id)).unwrap_or(area.height()).max(area.height());
+    let mut picked = Picked::default();
+    ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
+        egui::ScrollArea::vertical().id_salt(("stack-chain", chain.track.0)).auto_shrink([false, false]).show_viewport(
+            ui,
+            |ui, _| {
+                let content = Rect::from_min_size(ui.max_rect().min, Vec2::new(area.width(), tall));
+                ui.allocate_rect(content, Sense::hover());
+                let painter = ui.painter().clone();
+                let (inner, used) = chain_stack_in(ui, &painter, content, area, chain, selected, actions, places);
+                picked = inner;
+                ui.data_mut(|d| d.insert_temp(tall_id, used));
+            },
+        );
+    });
+    picked
+}
+
+/// [`chain_stack`]'s devices in `area`, the column's whole height scrolled into place, of which
+/// `visible` shows: those wholly outside it are measured, not drawn. Returns what was picked and
+/// how tall the devices are.
+#[allow(clippy::too_many_arguments)]
+fn chain_stack_in(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    area: Rect,
+    visible: Rect,
+    chain: &Chain,
+    selected: &[(TrackId, DeviceAt)],
+    actions: &mut Vec<Action>,
+    places: &mut Vec<EditorPlace>,
+) -> (Picked, f32) {
+    let _ = painter;
     let _one_column = OneColumn::new();
     let scale = ui.ctx().pixels_per_point();
     let mut picked = Picked::default();
@@ -565,8 +605,8 @@ fn chain_stack(
         if let Some(group) = &device.group {
             let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), group_height(group)));
             y = rect.bottom() + 1.0;
-            if rect.top() > area.bottom() {
-                break;
+            if rect.top() > visible.bottom() || rect.bottom() < visible.top() {
+                continue;
             }
             let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
             let clicked =
@@ -583,8 +623,8 @@ fn chain_stack(
         let right = sdk_viewport(device).map_or(area.right(), |v| (area.left() + v[0] + PAD * 2.0).min(area.right()));
         let rect = Rect::from_min_max(Pos2::new(area.left(), y), Pos2::new(right, y + height));
         y = rect.bottom() + 1.0;
-        if rect.top() > area.bottom() {
-            break;
+        if rect.top() > visible.bottom() || rect.bottom() < visible.top() {
+            continue;
         }
         let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
         let clicked =
@@ -597,10 +637,10 @@ fn chain_stack(
         plugin_button(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
         if let Some(editor) = editor {
             let origin = Pos2::new(rect.left() + PAD, rect.top() + EDITOR_TOP);
-            places.push(editor_place(ui, area, rect, editor, chain.track, device, origin));
+            places.push(editor_place(ui, visible, rect, editor, chain.track, device, origin));
         }
     }
-    picked
+    (picked, y - area.top())
 }
 
 /// Where a plug-in's embedded editor of `editor` points goes under its line and button in the

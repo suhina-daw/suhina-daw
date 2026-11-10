@@ -1715,7 +1715,8 @@ fn the_panels_in_a_row_are_one_height() {
 }
 
 /// Stacked lists each keep their own scroll, also when a device before them goes: the scroll is
-/// the device's, not its place's (#826). Stacked, a list keeps one column and scrolls down.
+/// the device's, not its place's (#826). Stacked, a list shows one column, and opened it scrolls
+/// down.
 #[test]
 fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
     use egui_kittest::Harness;
@@ -1734,6 +1735,14 @@ fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
             build(&project, Some(TrackId(1)), None),
         );
     harness.run_steps(10);
+    // Stacked, a list shows its first page; its chevron opens the rest down the column, where it
+    // scrolls.
+    for _ in 0..3 {
+        let clicked = harness.query_all_by_label_contains("more parameters").next().map(|chevron| chevron.click());
+        if clicked.is_some() {
+            harness.run_steps(5);
+        }
+    }
     let gains = |harness: &Harness<'_, Detail>| {
         // Each Gain from the top of its own panel: the panels move up when one before them goes.
         let panels: Vec<f32> = harness.query_all_by_label("Device Utility").map(|n| n.rect().top()).collect();
@@ -1820,4 +1829,38 @@ fn a_check_box_shows_its_short_name_where_the_whole_one_does_not_fit() {
     let (name, short) = ("Move ends too", "Ends too");
     assert_eq!(midi_panel::check_text(name, short, 78.0, width), name);
     assert_eq!(midi_panel::check_text(name, short, 77.0, width), short);
+}
+
+/// A stacked chain taller than its column scrolls, and a list in it shows its first page with
+/// the chevron for the rest, as in a row.
+#[test]
+fn a_stacked_chain_taller_than_its_column_scrolls() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let mut project = demo_project();
+    project.channels[0].devices =
+        (0..5).map(|_| Device::new("Utility", DeviceKind::Builtin("utility".into()))).collect();
+    let _ = project.assign_ids();
+    let mut harness =
+        Harness::builder().allow_missing_glyphs().with_size(egui::vec2(STACK_WIDTH, 400.0)).build_ui_state(
+            |ui, detail: &mut Detail| {
+                show_stack(ui, detail, &[], &mut Vec::new(), &mut Vec::new());
+            },
+            build(&project, Some(TrackId(1)), None),
+        );
+    harness.run_steps(10);
+    assert!(harness.query_all_by_label_contains("more parameters").next().is_some(), "a first page and a chevron");
+    let first = harness.query_all_by_label("Device Utility").next().unwrap().rect();
+    // Over the first panel's header, away from its list.
+    harness.hover_at(egui::pos2(first.center().x, first.top() + 6.0));
+    harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -100.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    harness.run_steps(10);
+    let moved = harness.query_all_by_label("Device Utility").next().map(|n| n.rect().top());
+    assert!(moved.is_some_and(|top| top < first.top() - 50.0), "the column scrolls: {first:?} to {moved:?}");
 }
