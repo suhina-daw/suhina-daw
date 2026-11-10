@@ -343,7 +343,9 @@ The lanes are the **top lane** and the **mounted lanes** under it (#1322):
 
 A lane is 40 px tall across the timeline until it is given another height, with a header under
 the track's. Dragging the line under a lane makes it taller or shorter (24 to 240 px) and moves
-the lanes below; the envelope is drawn to the new height. A double-click on that line, or
+the lanes below; the envelope is drawn to the new height. Dragged past the bottom of the view,
+the view scrolls with the line, so the whole lane stays in sight and the line stays under the
+pointer to be dragged back up. A double-click on that line, or
 **Reset height** in the menu a right-click on the lane's header opens, puts it back to 40 px.
 Each lane keeps its height while the track's lanes are hidden, for as long as the project is
 open (#818), and when it comes to show another parameter, chosen in its dropdown or brought in

@@ -1054,6 +1054,38 @@ fn alt_drags_a_point_off_the_grid() {
     assert!((points[0].beat - 16.5).abs() < 0.2, "{points:?}");
 }
 
+/// A lane dragged taller past the bottom of the view scrolls the view with its edge, so the whole
+/// lane stays in sight and the edge stays under the pointer to drag it back up (#1322).
+#[test]
+fn a_lane_dragged_taller_past_the_bottom_scrolls_the_view_with_it() {
+    let mut harness = arrangement_sized(demo_project(), (1280.0, 360.0));
+    click_anywhere(&mut harness, true);
+    harness.get_by_label("Show automation of Drums").click();
+    harness.run();
+    let before = lane(&harness).height();
+    let mut at = Pos2::new(lane(&harness).center().x, lane(&harness).bottom());
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.run();
+    for _ in 0..10 {
+        at.y += 20.0;
+        harness.hover_at(at);
+        harness.run();
+    }
+    assert!(harness.state().arrangement().scroll.y > 0.0, "the view followed the edge");
+    // The edge stayed under the pointer: dragged back up, the lane gets shorter again.
+    for _ in 0..5 {
+        at.y -= 20.0;
+        harness.hover_at(at);
+        harness.run();
+    }
+    harness.drop_at(at);
+    harness.run();
+    let height = lane(&harness).height();
+    assert!((height - (before + 100.0)).abs() < 2.0, "{before} -> {height}");
+}
+
 /// The line under a lane drags it taller, the height stays while the lanes are hidden, and a
 /// double-click on the line puts it back (#818).
 #[test]

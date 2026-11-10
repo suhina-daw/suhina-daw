@@ -529,6 +529,8 @@ fn show_lanes(
             top += height;
         }
     }
+    // An automation lane made taller past the bottom keeps its edge in view (#1322).
+    state.scroll.y += state.automation.take_follow_resize(lanes_area);
     state.scroll.y = state.scroll.y.clamp(0.0, (content_height - lanes_area.height()).max(0.0));
 
     let (scroll_x, beat_width) = (state.scroll.x, state.beat_width);

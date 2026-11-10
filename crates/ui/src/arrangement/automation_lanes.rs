@@ -1346,8 +1346,10 @@ pub struct LanesState {
     pub range: Option<LaneRange>,
     /// A duplicate's move of the range, until its command has run ([`LanesState::follow_history`]).
     range_moved: Option<(LaneRange, LaneRange)>,
+    /// A lane made taller past the bottom of the lanes' area it scrolls in: that area, and how far
+    /// its edge went past, for the view to scroll by on its next frame so the edge stays in view.
+    follow_resize: Option<(Rect, f32)>,
     /// The range's moves an undo can take back, and those a redo can make again, newest last.
-    range_undo: Vec<RangeStep>,
     range_redo: Vec<RangeStep>,
     /// A click anywhere on a lane adds a point (Settings › Arrangement › Automation); off, only a
     /// click on or near the line does, and a double-click adds one anywhere.
@@ -1915,6 +1917,15 @@ impl LanesState {
         self.range_redo.retain(|step| step.depth > after);
     }
 
+    /// How far the view that scrolls `area` moves down so a lane made taller past its bottom stays
+    /// in sight (`0` without one); asked once a frame.
+    pub fn take_follow_resize(&mut self, area: Rect) -> f32 {
+        match self.follow_resize.take() {
+            Some((asked, past)) if asked == area => past,
+            _ => 0.0,
+        }
+    }
+
     /// Picks the points a selection box begun on a track covers: on the lane where it covers the
     /// most (a selection of points is on one lane), in place of the points picked before. With no
     /// point under it, the selection of points is left as it is.
@@ -2430,8 +2441,15 @@ fn resize_edge(
     if response.double_clicked() {
         state.set_lane_height(lanes.track, key, LANE);
     } else if response.dragged_by(egui::PointerButton::Primary) {
-        let height = state.lane_height(lanes.track, key) + response.drag_delta().y;
-        state.set_lane_height(lanes.track, key, height);
+        let before = state.lane_height(lanes.track, key);
+        state.set_lane_height(lanes.track, key, before + response.drag_delta().y);
+        // Past the bottom of the area, the view follows the edge: the whole lane stays in sight,
+        // and the edge stays under the pointer to be dragged back up.
+        let bottom = full.bottom() + state.lane_height(lanes.track, key) - before + LINE + 2.0;
+        let past = bottom - geometry.visible.bottom();
+        if past > 0.0 {
+            state.follow_resize = Some((geometry.visible, past));
+        }
     }
 }
 
