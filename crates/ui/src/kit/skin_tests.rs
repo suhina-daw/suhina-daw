@@ -349,7 +349,8 @@ fn a_legacy_skin_s_styles_join_its_sheet_under_today_s_names() {
             "css": "browser { color: #123456; }",
             "styles": {
                 "mixer pan": { "--suhina-appearance": "knob", "color": "#ABCDEF" },
-                "device": { "--suhina-param-columns": "3" },
+                "device": { "--suhina-param-columns": "3", "--suhina-param-row": "48px" },
+                "arrangement": { "--suhina-param-columns": "12" },
                 "nowhere": { "color": "#000000" }
             }
         }),
@@ -358,9 +359,17 @@ fn a_legacy_skin_s_styles_join_its_sheet_under_today_s_names() {
     let css = skin.css.as_deref().unwrap_or_default();
     assert!(css.starts_with("browser { color: #123456; }"), "{css}");
     assert!(css.contains("mixer pan { appearance: knob; }") && css.contains("mixer pan { color: #ABCDEF; }"), "{css}");
-    assert!(!css.contains("param-columns"), "{css}");
+    // The device grid's styles become the CSS layout that took their place.
+    assert!(css.contains("device { grid-template-columns: repeat(3, 1fr); }"), "{css}");
+    assert!(css.contains("device device-control { height: 48px; }"), "{css}");
+    assert!(!css.contains("param-columns") && !css.contains("param-row"), "{css}");
     assert_eq!(warnings.len(), 2, "{warnings:?}");
-    assert!(warnings.iter().any(|w| w.contains("device --suhina-param-columns")), "{warnings:?}");
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("arrangement --suhina-param-columns") && w.contains("grid-template-columns")),
+        "a value out of range names what replaced the style: {warnings:?}"
+    );
     assert!(warnings.iter().any(|w| w.contains("nowhere")), "{warnings:?}");
 }
 
@@ -398,4 +407,21 @@ fn missing_defaults_leave_a_themes_own_artwork() {
     assert_eq!(missing.len(), roles().count() - 1);
     assert!(!missing.contains_key("knob.body"));
     assert!(missing.contains_key("knob.pointer"));
+}
+
+#[test]
+fn a_legacy_skin_s_device_grid_lays_its_parameters_out_as_before() {
+    let mut warnings = Vec::new();
+    let skin = Skin::from_json(
+        &serde_json::json!({
+            "css": "",
+            "styles": { "device": { "--suhina-param-columns": "3", "--suhina-param-row": "48px" } }
+        }),
+        &mut warnings,
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+    configure(&skin);
+    let grid = super::super::style_class::theme_param_grid();
+    configure(&Skin::default());
+    assert_eq!(grid, (3, Some(48.0)));
 }

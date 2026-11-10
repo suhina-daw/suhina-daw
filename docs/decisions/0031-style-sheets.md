@@ -4,7 +4,7 @@ read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taff
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-07
+last_verified: 2026-11-10
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
@@ -862,11 +862,16 @@ open.
   `gap`. A control placement's `--suhina-direction` and `--suhina-anchor-*` are `direction` and
   `anchor-*`. A sheet that still sets an old name gets a notice naming its replacement, and the
   value is not read. The legacy `skin.styles` map is gone: a JSON skin of an earlier version
-  has its styles appended to its sheet under the new names.
+  has its styles appended to its sheet under the new names, its `--suhina-param-columns: N` as
+  `grid-template-columns: repeat(N, 1fr)` and its `--suhina-param-row` as the `height` of the
+  `device-control`s inside the element. A control placement's `left`, `top`, `right`, `bottom`,
+  `direction` and `anchor-*` are read only in `.control-*` rules; anywhere else they get a
+  notice.
 - **The hot path.** An element is a registry index (`Name` carries it), so the style stack and the
   tree hold small ids: entering an element allocates no string and scans no list. The ids the
   app gives elements (`track-3`) are interned per engine. The legacy `skin.styles` path is gone.
-  A computed style keeps only the values that differ from their property's initial value.
+  A computed style keeps values only for the properties an element inherits and the ones set
+  on it; the rest read as their initial values.
   Hitting `MAX_NODES` or `MAX_DEPTH`, or filling the identities, the ids or the swatches, writes a
   line to the trace (`suhina --trace`) instead of dropping styles silently.
 - **Styles in the same frame.** An element's style is worked out in the frame that enters it,
@@ -882,7 +887,10 @@ open.
   is gone. A theme change or a hover change needs no frame of the style engine's own (the budget
   test holds `*_style_frames` at zero); the frame left after a theme change is egui's after a
   new palette. An element with a transition keeps its painted values in the frame its target
-  changes, and the transition runs from them.
+  changes, and the transition runs from them; what is inside it inherits those values, so its
+  styles in that frame are worked out without the cache and are not kept in it. The ids the app
+  gives elements start again, when they fill their table, only at a frame's start: an element
+  that would add one to a full table that frame gets no id.
 - **One paint order.** `Entered::paint` paints an element's box as CSS does: its outer
   `box-shadow`, its `background-color`, its `background-image` (or the artwork its caller draws),
   then for a control, a part or a drawn item its inset shadows and border before its contents,
@@ -895,8 +903,10 @@ open.
   regions `hidden`. An element records its box when it paints it, its background, or says where
   it is (`Entered::occupies`, for the workspace panels); the nearest element around that hides
   its overflow and has a box clips the outer shadows and outline, in place of the painter's
-  clip, which holds where none is known. A toolbar control's glow thus passes its section's edge
-  and stops at the toolbar's, with no exception for the toolbar. `outline-width`,
+  clip, which holds where none is known. They pass the painter's clip only as far as they reach
+  and only on a side where the element is whole inside it: a side that cuts the element is a
+  scroll area's viewport, whose edge they keep. A toolbar control's glow thus passes its
+  section's edge and stops at the toolbar's, with no exception for the toolbar. `outline-width`,
   `outline-style` (`none` or `solid`), `outline-color` (the foreground by default),
   `outline-offset` and the `outline` shorthand are registered properties.
 

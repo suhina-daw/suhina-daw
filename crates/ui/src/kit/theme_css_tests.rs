@@ -194,7 +194,7 @@ fn a_former_suhina_property_is_not_read_and_its_notice_names_what_took_its_place
     let warnings = read_host_rules(&mut theme, css);
     assert_eq!(warnings.len(), 3, "{warnings:?}");
     assert!(warnings[0].contains("now appearance"), "{warnings:?}");
-    assert!(warnings[1].contains("a CSS layout replaces it"), "{warnings:?}");
+    assert!(warnings[1].contains("a CSS layout replaces it, device { grid-template-columns"), "{warnings:?}");
     assert!(warnings[2].contains("now direction"), "{warnings:?}");
 }
 

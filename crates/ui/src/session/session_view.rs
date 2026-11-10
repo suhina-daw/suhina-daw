@@ -543,7 +543,13 @@ pub fn show(
         crate::session::mixer_strip::Shared { reserve_input: state.reserve_input, fader: state.strip_fader_shown() };
     let parts = crate::session::mixer_strip::layout_main(main_mixer, shared);
     if let Some(list) = parts.devices {
-        crate::session::mixer_strip::main_devices(&painter.with_clip_rect(main_mixer), list, &grid.main_devices);
+        crate::session::mixer_strip::main_devices(
+            ui,
+            &painter.with_clip_rect(main_mixer),
+            list,
+            &grid.main_devices,
+            state,
+        );
     }
     if let Some(fader) = parts.fader {
         let main_painter = painter.with_clip_rect(main_mixer);

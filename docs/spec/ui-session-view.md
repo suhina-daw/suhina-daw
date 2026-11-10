@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-11-06
+last_verified: 2026-11-10
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -375,6 +375,8 @@ vertical channel strip under its slots, and the strip shows more the taller the 
   A row dragged up or down its own list moves the device there (`device.move`), a line showing
   where it goes; dragged onto another track it moves there, with Ctrl it is copied, and that track
   is selected with its chain shown, so the editor opened next is the moved or copied device's.
+  Main's list behaves the same: its wheel, clicks, double-clicks and drags act on the main
+  channel's devices (`track: "main"`), and Delete removes the picked ones (#683, #690).
 - **A double-click on the strip** itself (its background or its name, not a fader, knob,
   button or device row) does the same for the whole track: it selects the track and shows its
   devices in the detail area, opening the detail area if it was hidden. A single click there

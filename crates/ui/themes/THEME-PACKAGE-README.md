@@ -787,7 +787,8 @@ that far inside its box.
 outer shadows and outlines included; `overflow: visible`, the default for every element but a
 region, lets them pass. Regions (the bars, the panels, the views, dialogs) are `hidden`. A
 toolbar control's glow therefore passes the edge of its section (`toolbar-module`) and stops at
-the toolbar's.
+the toolbar's. A list scrolled so that a control is partly out of view cuts its glow and outline
+at the list's edge too: they never cover what is beyond the scrolled list.
 
 ### Bars and lines
 
@@ -1057,7 +1058,9 @@ Opposite edges keep the gap between the two controls (a bottom edge above a top 
 matching edges inset by it (a top edge 4 points below another top edge). With one edge
 anchored, a full-width or full-height control keeps its other edge and stretches;
 otherwise it moves and keeps its size. Anchoring both edges of an axis sets both.
-`anchor-bottom: none` removes an anchor.
+`anchor-bottom: none` removes an anchor. A placement's `left`, `top`, `right`, `bottom`,
+`direction` and `anchor-*` are read only in `.control-*` rules: anywhere else
+(`arrangement { direction: vertical; }`) nothing reads them, and the theme gets a notice.
 
 When the target is hidden, absent, or in another container, the anchored edge keeps the
 control's own placement. Anchors that form a cycle (including a control anchored to

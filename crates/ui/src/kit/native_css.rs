@@ -15,6 +15,7 @@ use egui::{Color32, Rect, Vec2};
 use suhina_style::{
     motion::{self, Animation, Frames, Transition},
     property::Property,
+    sheet::Sheet,
     value::Value,
 };
 
@@ -22,6 +23,11 @@ use super::{skin, theme};
 mod diagnostics;
 mod geometry;
 mod native;
+
+/// Suhina's user-agent sheet, parsed once: the first tier of every cascade.
+pub(super) fn user_agent_sheet() -> Option<&'static suhina_style::sheet::Sheet> {
+    native::user_agent()
+}
 mod paint;
 mod shadows;
 mod text;
@@ -39,7 +45,8 @@ const MAX_CONTEXTS: usize = 128;
 const MAX_DEPTH: usize = 16;
 const MAX_NODES: usize = 4096;
 /// Most element identities whose styles are kept, and most ids the app gives elements (`track-3`,
-/// `device-compressor`) kept interned; past either the cache starts again empty.
+/// `device-compressor`) kept interned. Past the identities' limit their cache starts again empty;
+/// a full id table starts again at the next frame, and until then a new id is not given.
 const MAX_IDENTITIES: usize = 4096;
 const MAX_IDS: usize = 8192;
 
@@ -310,6 +317,9 @@ struct Engine {
     /// For each node of this frame: the style it was painted with, to compare with the full tree's
     /// at the frame's end.
     served: Vec<Option<Arc<suhina_style::cascade::ComputedStyle>>>,
+    /// For each node of this frame: whether it was served a style other than its chain's (held
+    /// for a transition, or inherited from a parent that was), which its children inherit.
+    held: Vec<bool>,
     /// The chain each element key had when the whole tree was last resolved: its resolved style
     /// still holds while its chain is the same.
     resolved: HashMap<u64, u64>,
@@ -387,7 +397,7 @@ struct StyleNode {
     element: super::element::Name,
     /// The id the app gave it, interned in [`Engine::ids`].
     id: Option<u32>,
-    /// Pointer states (hover 1, active 2, disabled 4, focus 8) and the host's ([`mark`]).
+    /// Pointer states (hover 1, active 2, disabled 4, focus 8) and the host's ([`mark_node`]).
     state: u16,
     /// Custom properties the host gives the element ([`set_variable`]).
     variables: Vec<(String, String)>,
@@ -474,12 +484,19 @@ pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
             engine.styles_changed = true;
         }
         engine.collecting = engine.source.is_some();
+        if engine.ids.len() >= MAX_IDS {
+            // No node holds an index now: the table starts again between frames, so the elements'
+            // keys change with the ids and their styles are worked out again.
+            engine.ids.clear();
+            engine.id_index.clear();
+        }
         engine.nodes.clear();
         engine.parents.clear();
         engine.occurrences.clear();
         engine.chains.clear();
         engine.boxes.clear();
         engine.served.clear();
+        engine.held.clear();
         engine.unstyled = 0;
         engine.fresh = 0;
         engine.limited = false;
@@ -533,6 +550,7 @@ pub(super) fn enter(
         engine.chains.push(0);
         engine.boxes.push(None);
         engine.served.push(None);
+        engine.held.push(false);
         engine.parents.push(index);
         Some(index)
     })
@@ -544,10 +562,10 @@ fn intern(engine: &mut Engine, name: &str) -> Option<u32> {
         return Some(*id);
     }
     if engine.ids.len() >= MAX_IDS {
-        // The keys of the elements change with the ids; their styles are worked out again.
-        limit(engine, "the style engine's ids are full: they start again");
-        engine.ids.clear();
-        engine.id_index.clear();
+        // The nodes entered this frame hold indices into the table, so it starts again only when
+        // the next frame begins (`frame_with_motion`); until then the element has no id.
+        limit(engine, "the style engine's ids are full: they start again next frame");
+        return None;
     }
     let id = u32::try_from(engine.ids.len()).ok()?;
     let name: Arc<str> = Arc::from(name);
@@ -1029,15 +1047,14 @@ fn chain_of(engine: &mut Engine, at: usize) -> Option<u64> {
     if let Some(chain) = engine.chains.get(at).copied().filter(|chain| *chain != 0) {
         return Some(chain);
     }
-    let node = engine.nodes.get(at)?;
-    let parent = node.parent;
-    let (parent_chain, parent_sheet) = match parent {
-        Some(parent) => (chain_of(engine, parent)?, engine.nodes.get(parent).map_or(0, |p| p.sheet)),
-        None => (0, 0),
+    // The parent's chain holds its device sheet, and every other sheet above it.
+    let parent_chain = match engine.nodes.get(at)?.parent {
+        Some(parent) => chain_of(engine, parent)?,
+        None => 0,
     };
     let node = engine.nodes.get(at)?;
     let mut hash = std::hash::DefaultHasher::new();
-    (parent_chain, parent_sheet, node.element.index(), name_of(engine, node), node.state, node.sheet).hash(&mut hash);
+    (parent_chain, node.element.index(), name_of(engine, node), node.state, node.sheet).hash(&mut hash);
     node.attributes.hash(&mut hash);
     node.variables.hash(&mut hash);
     let chain = hash.finish().max(1);
@@ -1050,36 +1067,49 @@ fn chain_of(engine: &mut Engine, at: usize) -> Option<u64> {
 /// the one worked out for its chain now.
 fn style_at(engine: &mut Engine, at: usize) -> Option<Styled> {
     let chain = chain_of(engine, at)?;
-    let key = engine.nodes.get(at)?.key;
+    let node = engine.nodes.get(at)?;
+    let key = node.key;
+    // A parent served a style its chain does not give (held for a transition) passes that style
+    // on: what the element inherits from it is not its chain's, so it is neither looked up among
+    // the identities nor kept there.
+    let parent_held = node.parent.is_some_and(|parent| engine.held.get(parent).copied().unwrap_or(false));
     let resolved = engine.resolved.get(&key) == Some(&chain);
     let previous =
         engine.values.get(&key).map(|values| Styled { raw: Arc::clone(&values.resolved), computed: values.clone() });
-    let styled = match previous.clone().filter(|_| resolved) {
-        Some(styled) => styled,
+    let (styled, held) = match previous.clone().filter(|_| resolved) {
+        Some(styled) => (styled, false),
         None => {
-            let fresh = match engine.identities.get(&chain) {
+            let fresh = match engine.identities.get(&chain).filter(|_| !parent_held) {
                 Some(styled) => styled.clone(),
                 None => {
                     let styled = native::fresh(engine, at)?;
                     engine.fresh += 1;
-                    if engine.identities.len() >= MAX_IDENTITIES {
-                        limit(engine, "the style engine's identities are full: they start again");
-                        engine.identities.clear();
+                    if !parent_held {
+                        if engine.identities.len() >= MAX_IDENTITIES {
+                            limit(engine, "the style engine's identities are full: they start again");
+                            engine.identities.clear();
+                        }
+                        engine.identities.insert(chain, styled.clone());
                     }
-                    engine.identities.insert(chain, styled.clone());
                     styled
                 }
             };
             // An element with transitions keeps its painted values for now: the end of the frame
             // starts the transition from them.
             match previous {
-                Some(previous) if engine.motion && !fresh.computed.transitions.is_empty() => previous,
-                _ => fresh,
+                Some(previous) if engine.motion && !fresh.computed.transitions.is_empty() => {
+                    let held = parent_held || (!Arc::ptr_eq(&previous.raw, &fresh.raw) && *previous.raw != *fresh.raw);
+                    (previous, held)
+                }
+                _ => (fresh, parent_held),
             }
         }
     };
     if let Some(served) = engine.served.get_mut(at) {
         *served = Some(Arc::clone(&styled.raw));
+    }
+    if let Some(slot) = engine.held.get_mut(at) {
+        *slot = held;
     }
     Some(styled)
 }
@@ -1110,34 +1140,64 @@ pub fn theme_swatch(color: Color32) -> Option<Computed> {
     })
 }
 
-/// The settings looked up by element path, for one set of sheets.
-type Settings = HashMap<Vec<&'static str>, Option<Computed>>;
+/// The sheets settings are read from: the theme's, its variant's and the user's, as given (the
+/// key, compared by pointer, and held so that no other text can take its address) and parsed.
+struct SettingsSheets {
+    sources: (Arc<str>, Option<Arc<str>>, Option<Arc<str>>),
+    parsed: Option<(Sheet, Option<Sheet>, Option<Sheet>)>,
+    /// The settings looked up by element path.
+    found: HashMap<Vec<&'static str>, Option<Computed>>,
+}
+
+/// Whether `a` and `b` are the same text, by pointer.
+fn same_arc(a: Option<&Arc<str>>, b: Option<&Arc<str>>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+        (None, None) => true,
+        _ => false,
+    }
+}
 
 /// The style the theme's sheets give the elements named by `path` (from `window` inward), for the
 /// settings Suhina reads outside a frame: the Arrangement view's track height, a device's
-/// parameter labels. Worked out once per sheet and path; `None` without a sheet.
+/// parameter labels. Worked out once per set of sheets and path, which are known by their
+/// pointers: asked for by every track header in every frame, it hashes no sheet's text. `None`
+/// without a sheet.
 pub fn settings_of(path: &[super::element::Name]) -> Option<Computed> {
     thread_local! {
-        static CACHE: RefCell<(u64, Settings)> = RefCell::new((0, HashMap::new()));
+        static CACHE: RefCell<Option<SettingsSheets>> = const { RefCell::new(None) };
     }
     let skin = skin::current();
     let css = skin.css.clone()?;
     let user = USER_SHEET.with(|sheet| sheet.borrow().clone());
-    let mut hash = std::hash::DefaultHasher::new();
-    (css.as_ref(), skin.variant.as_deref(), user.as_deref()).hash(&mut hash);
-    let sources = hash.finish();
     let key: Vec<&'static str> = path.iter().map(|name| name.name()).collect();
     CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if cache.0 != sources {
-            *cache = (sources, HashMap::new());
+        let current = cache.as_ref().is_some_and(|cache| {
+            let (theme, variant, own) = &cache.sources;
+            Arc::ptr_eq(theme, &css)
+                && same_arc(variant.as_ref(), skin.variant.as_ref())
+                && same_arc(own.as_ref(), user.as_ref())
+        });
+        if !current {
+            let parsed = Sheet::parse(&css).ok().map(|sheet| {
+                let parse = |text: &Option<Arc<str>>| text.as_deref().and_then(|text| Sheet::parse(text).ok());
+                (sheet, parse(&skin.variant), parse(&user))
+            });
+            *cache = Some(SettingsSheets {
+                sources: (Arc::clone(&css), skin.variant.clone(), user.clone()),
+                parsed,
+                found: HashMap::new(),
+            });
         }
-        if let Some(found) = cache.1.get(&key) {
+        let cache = cache.as_mut()?;
+        if let Some(found) = cache.found.get(&key) {
             return found.clone();
         }
-        let found = native::settings_of(&css, skin.variant.as_deref(), user.as_deref(), &key);
-        if cache.1.len() < MAX_CONTEXTS {
-            cache.1.insert(key, found.clone());
+        let (sheet, variant, user) = cache.parsed.as_ref()?;
+        let found = native::settings_of(sheet, variant.as_ref(), user.as_ref(), &key);
+        if cache.found.len() < MAX_CONTEXTS {
+            cache.found.insert(key, found.clone());
         }
         found
     })

@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-07
+last_verified: 2026-11-10
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -450,7 +450,10 @@ its border, last. `Boxed::content` is the box less its `padding`. The outer shad
 outline are clipped by the box of the nearest element with `overflow: hidden` (or `clip`)
 around the element, not by the painter in use, so a toolbar control's glow passes its
 section's edge and stops at the toolbar's; regions are `hidden` by the host's own sheet, other
-elements `visible`. Without such an element the painter's clip holds.
+elements `visible`. They pass the painter's clip only as far as they reach, and only on a side
+where the element is whole inside that clip: a side that cuts the element is a viewport's edge (a
+scroll area scrolled part of it out of view), which they do not pass. Without such an element
+the painter's clip holds.
 
 **Views and controls.** A background on a view or bar (`window`, `toolbar`, `session`,
 `arrangement`, `browser`, `mixer`, `detail` and the other regions and containers of the element
