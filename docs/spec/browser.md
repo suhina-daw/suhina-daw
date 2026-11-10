@@ -555,8 +555,8 @@ items or a picked folder holds anything. A right-click on any tag's menu offers 
 which reaches the first folder from the mouse on any tag.
 
 The rest is as it was with the ids in the rows' place (#1196): a right-click on a tag's dot in
-the footer renames it (a field, Enter; clicks inside that menu do not close it),
-recolours it (the swatches of the track colour palette, [components](../design/components.md#colour-palette), or Select colour…, which opens the theme editor's picker in the menu itself) or removes it; new ones are added from a row's Tag menu or a footer dot's menu — and the add opens the Tags section when it is closed, to show the tag it made ([#1254] review) — up to 64
+the footer renames it (a field, Enter, or a click outside the menu; clicks inside that menu do not close it),
+recolours it (the swatches of the track colour palette, [components](../design/components.md#colour-palette), or Select colour…, which opens the theme editor's picker in the menu itself) or removes it — the Remove there asks as the section's row menu does, saying how many items carry it, and the asking goes when the menu closes ([#1250] review); new ones are added from a row's Tag menu or a footer dot's menu — and the add opens the Tags section when it is closed, to show the tag it made ([#1254] review) — up to 64
 (Settings › Browser › Tag limit raises it, at most 1024). Any item can carry any
 number of tags; a tag is a 6 px dot after the name. Hovering a dot — the footer's or an item
 row's — says the tag's name: as a tooltip, and in the status bar (the footer's dot adds how
@@ -573,7 +573,7 @@ review), named first no matter the kind, as a `library.search` place of
 or takes it off:
 items with any of the row's tags show; a Ctrl-click on a folder's own row puts its whole
 cortège in the place ([#1254] › Tag folders). A place of several tags is a search place of its
-ids joined: items with any of them, named first, as a single tag's place lists them
+ids joined: items with any of them, named first, as a single tag's place lists them, and the coloured dots filter it the way they filter a one-tag place: down to its items that carry a filtered tag, never wider than the place ([#1250] review)
 ([#1254] review). A plain click of a tag a place of several holds sets the place to its tag
 alone ([#1254] review), and a tag the library dropped goes from the browser's states with it:
 a place, a filter or a Shift pick the rows no longer hold reads back as gone ([#1254]
@@ -591,9 +591,10 @@ a row's Tag menu applies to the selection it is one of and the section's drops a
 elsewhere changes nothing. While either is carried, a
 pill beside the pointer says what a drop does, and the status bar says so: *Tag 3 items with
 Blue*, *Drop to tag Kick.wav with Blue*. The row's right-click
-menu renames live as the name is typed (the section, the footer dots and a tag's place read
-the field per key; the field erased changes nothing, and a name another tag has is refused
-where it stands),
+menu renames it (a field; **Enter** commits, and so does a click outside the menu — the field
+erased commits nothing, and a name another tag has is refused, the status bar saying why,
+[#1250] review: the rename that ran under every key lost the field's own typing to the
+name it made),
 recolours —
 the palette's swatches, or **Select colour…**, which opens the theme editor's picker in the
 menu itself, where a picker of its own would end the menu as a click outside it does —, and
@@ -641,7 +642,7 @@ the CLI can do the same.
 | `library.removeFolder` | `folder` | removes it and its part of the index |
 | `library.refresh` | `folder?` | reads a folder (or every folder) again |
 | `library.list` | `folder` | what is directly in a folder: sub-folders and files of the kinds above, with kind and size |
-| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); `place` takes a tag's place (`tag:<name>`, `tag:#<id>`, or the ids joined `tag:#<id>+#<id>` for a place of several, [#1254]), which lists the items carrying it or any of them of any kind no matter the folders, a tagged library folder among them as an item of kind `folder` (as `pinned` lists a pinned one, [#1254] review); a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
+| `library.search` | `text?`, `category?`, `place?`, `tags?`, `limit?` | matching items as in *Results* (`limit` at most 500); `place` takes a tag's place (`tag:<name>`, `tag:#<id>`, or the ids joined `tag:#<id>+#<id>` for a place of several, [#1254]), which lists the items carrying it or any of them of any kind no matter the folders, a tagged library folder among them as an item of kind `folder` (as `pinned` lists a pinned one, [#1254] review); `tags` narrows a listed place to its items carrying one of them, and filters the rest of the search ([#1250] review); a plug-in's item carries its `format` (`vst2`, `vst3`, `clap`) |
 | `library.info` | `item` | a file's kind, size, duration, sample rate, channels, tempo (and where it came from) and key; a Stems file's stems and mastering; a MIDI file's tracks with their notes; a preset's voices; a built-in device's or plug-in's role (and a plug-in's vendor, format and version); the item's tags |
 | `library.pinned` | | the pinned items |
 | `library.pin`, `library.unpin` | `item` | pins or unpins an item |

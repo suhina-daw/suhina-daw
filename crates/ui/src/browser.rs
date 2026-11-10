@@ -331,7 +331,10 @@ pub struct BrowserState {
     pub(crate) tag_remove_confirm: Option<String>,
     /// How many items carry each tag, counted when the library's tags last changed (the
     /// sidebar's rows share the cache).
-    pub(crate) tag_counts: Option<(u64, HashMap<u32, usize>)>,
+    pub(crate) tag_counts: Arc<HashMap<u32, usize>>,
+    /// The library's tag revision `tag_counts` was counted at, `None` before the first count
+    /// or after a relist.
+    pub(crate) tag_counts_revision: Option<u64>,
     /// The Plug-ins category's list sorts by this column (0 name, 1 format), `true`
     /// descending. The window's own, not kept between runs.
     pub plugin_sort: (u8, bool),
@@ -449,7 +452,8 @@ impl Default for BrowserState {
             anchor: None,
             tag_filter: Vec::new(),
             tag_remove_confirm: None,
-            tag_counts: None,
+            tag_counts: Arc::new(HashMap::new()),
+            tag_counts_revision: None,
             plugin_sort: (0, false),
             focus_search: false,
             select_search: false,
@@ -537,7 +541,7 @@ impl BrowserState {
     pub fn relist(&mut self) {
         self.listings.clear();
         self.voices.clear();
-        self.tag_counts = None;
+        self.tag_counts_revision = None;
         self.generation = self.generation.wrapping_add(1);
         self.rows_key = None;
     }
@@ -631,22 +635,23 @@ impl BrowserState {
         self.selection_changed = true;
     }
 
-    /// How many items carry each tag: counted once, when the library's tags changed since the
-    /// last count (a frame over a large library costs nothing more). The sidebar's Tags rows
-    /// and the tag editor share the cache.
-    pub fn tag_counts(&mut self, library: &mut suhina_library::Library) -> HashMap<u32, usize> {
+    /// How many items carry each tag, by id: counted once, when the library's tags changed
+    /// since the last count. The rows read it every frame, so a frame gets the cache itself
+    /// behind an `Arc`, not a copy of the whole map ([#1250] review). The sidebar's Tags rows
+    /// and the row menus share the cache.
+    pub fn tag_counts(&mut self, library: &mut suhina_library::Library) -> Arc<HashMap<u32, usize>> {
         let revision = library.tag_revision();
-        let stale = self.tag_counts.as_ref().is_none_or(|(r, _)| *r != revision);
-        if stale {
+        if self.tag_counts_revision != Some(revision) {
             let mut counts = HashMap::new();
             for (_, ids) in library.tagged() {
                 for id in ids {
                     counts.entry(id).and_modify(|c| *c += 1).or_insert(1);
                 }
             }
-            self.tag_counts = Some((revision, counts));
+            self.tag_counts = Arc::new(counts);
+            self.tag_counts_revision = Some(revision);
         }
-        self.tag_counts.as_ref().map_or_else(HashMap::new, |(_, counts)| counts.clone())
+        Arc::clone(&self.tag_counts)
     }
 
     /// The selected items.

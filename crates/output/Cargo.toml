@@ -15,6 +15,8 @@ asio = ["cpal/asio"]
 [dependencies]
 suhina-engine.workspace = true
 suhina-session.workspace = true
+# The trace log (`suhina --trace`): what an ASIO driver answers about its buffer sizes.
+suhina-plugins.workspace = true
 cpal.workspace = true
 # The ring the engine renders ahead into, read by the device's callback.
 rtrb.workspace = true

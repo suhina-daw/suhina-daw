@@ -199,10 +199,26 @@ fn a_tag_place_lists_every_item_that_carries_the_tag_of_any_kind() -> Result<(),
     assert_eq!(names(&effects), ["Utility"]);
     let snares = run(&mut p, "library.search", json!({ "place": "tag:Red", "category": "samples" })).unwrap();
     assert_eq!(names(&snares), ["Snare.wav"]);
-    // The tags filter combines: the UI's Places of several tags send this instead (#1196).
+    // The tags filter combines on its own terms: a search with no place filters the whole
+    // library by the tags (#1196).
     run(&mut p, "library.setTag", json!({ "name": "Hot", "color": "#336699" })).unwrap();
     let files = run(&mut p, "library.search", json!({ "tags": ["Red", "Hot"] })).unwrap();
     assert_eq!(names(&files), ["Utility", "Snare.wav"]);
+    // A place of several tags joins their ids into one place (the joined place's own test
+    // is below); the `tags` param narrows a listed place to its items that carry one of
+    // them, as the footer's dots narrow a one-tag place ([#1250] review).
+    let narrowed = run(&mut p, "library.search", json!({ "place": "tag:Red", "tags": ["Hot"] })).unwrap();
+    let none: Vec<String> = names(&narrowed);
+    assert!(none.is_empty(), "the filter narrows the place, it never widens it: {none:?}");
+    // The whole string names its tag first: a tag whose name has a `+` in it is its own
+    // place, not a join ([#1250] review).
+    run(&mut p, "library.setTag", json!({ "name": "a+b", "color": "#336699" })).unwrap();
+    run(&mut p, "library.tag", json!({ "item": "device:utility", "tag": "a+b", "on": true })).unwrap();
+    let whole = run(&mut p, "library.search", json!({ "place": "tag:a+b" })).unwrap();
+    assert_eq!(names(&whole), ["Utility"]);
+    // Every part names its tag: a part that is none refuses rather than quietly searching
+    // the rest ([#1250] review).
+    assert!(run(&mut p, "library.search", json!({ "place": "tag:Red+Nope" })).is_err());
     // A place of a tag that no longer is one is an error, not an empty list.
     assert!(run(&mut p, "library.search", json!({ "place": "tag:Nope" })).is_err());
     assert!(run(&mut p, "library.search", json!({ "place": "tag:" })).is_err());
@@ -220,6 +236,12 @@ fn a_tag_place_lists_every_item_that_carries_the_tag_of_any_kind() -> Result<(),
     }
     let limited = run(&mut p, "library.search", json!({ "place": "tag:Hot", "limit": 1 })).unwrap();
     assert_eq!(names(&limited), ["Apple.wav"], "the sort leads, the limit cuts after it");
+    // A place that keeps its own order cuts at the limit as it walks, so nothing past the
+    // cut is read ([#1250] review; only the places that sort before the cut walk on).
+    run(&mut p, "library.pin", json!({ "item": deep.join("a").join("Zebra.wav").display().to_string() })).unwrap();
+    run(&mut p, "library.pin", json!({ "item": deep.join("z").join("Apple.wav").display().to_string() })).unwrap();
+    let first = run(&mut p, "library.search", json!({ "place": "pinned", "limit": 1 })).unwrap();
+    assert_eq!(names(&first), ["Zebra.wav"], "the pins' own order, cut at the limit");
     let _ = std::fs::remove_dir_all(&settings);
     Ok(())
 }

@@ -21,6 +21,15 @@ The WASAPI device's `description()` returns an error when the endpoint's propert
 opened, as when a Bluetooth device goes away between listing and reading its name, instead of
 panicking on it.
 
+The ASIO Device keeps the whole `ASIOGetBufferSize` answer (smallest, largest, preferred and
+granularity, `buffer_sizes()`) behind one lock shared by the descriptor's clones, and
+`refresh_buffer_sizes()` asks the driver again (the loaded driver when it is the same one,
+otherwise loaded for the call), so a size set in the driver's control panel after enumeration
+shows. It returns a `LoadedDriver` that keeps the driver loaded while it lives, so the stream
+built next uses it instead of loading it again. `kAsioBufferSizeChange` with a size other than
+the stream's invalidates the stream as `kAsioResetRequest` does, with a static message (no
+allocation in the driver's callback), so the application reopens it at the new size.
+
 The ASIO Stream also exposes `control_panel()` on its retained driver so the
 application's stream owner can open the active instance's settings without loading
 another driver or launching an external executable.

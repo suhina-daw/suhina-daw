@@ -78,7 +78,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
             optional(
                 "place",
                 ParamType::Path(PathKind::Place),
-                "pinned, recent:all, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), tag:<name> (the items carrying that tag), or a folder",
+                "pinned, recent:all, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), tag:<name> or tag:#<id> (the items carrying that tag; several joined by id, tag:#<id>+#<id>…), or a folder",
             ),
             optional("tags", ParamType::Texts, "only items carrying any of these tags"),
             optional("limit", ParamType::Integer, "at most this many (default and most 500)"),
@@ -723,6 +723,13 @@ pub fn prepare_search(
                 && tagged(projects.file_library_mut(), &key)
             {
                 out.push(found);
+            }
+            // A place that does not sort before the cut can stop at it: the order is the
+            // keys' own, so the first `limit` that fit are the answer ([#1250] review). A
+            // tag's place sorts first, and a cut before the sort would rank `/a/Zebra`
+            // over `/z/Apple` (#1196).
+            if !sorted_by_name && out.len() >= limit {
+                break;
             }
         }
         // A place that sorts by name sorts before the limit: a cut in key order would
