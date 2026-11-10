@@ -6,7 +6,6 @@
 //! `docs/design/components.md` › Follow action). Every control changes it through
 //! `clip.setFollowAction`, one undo step per change; it never changes the project itself.
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Pos2, Rect, Response, Ui, Vec2};
 use serde_json::{Value, json};
 use suhina_engine::model::{FollowAction, FollowKind, Project, TrackId};
@@ -114,7 +113,7 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
     }
     .intersect(area);
     let painter = ui.painter_at(column);
-    painter.fill_background(column, 0.0, theme::panel_background());
+    painter.rect_filled(column, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let f = &info.follow;
     let id = Id::unique(("follow", info.track.0, info.scene));
 
@@ -194,7 +193,7 @@ fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, id: Id, label: &str, on:
     } else {
         widgets::toggle_colors(ui, &response, on)
     };
-    painter.fill_background(rect, 0.0, fill);
+    painter.rect_filled(rect, 0.0, fill);
     let word = if on { "On" } else { "Off" };
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, word, theme::ui_font(theme::TEXT_SMALL), text);
     response.clicked()
@@ -215,10 +214,10 @@ fn value_look(
     } else {
         motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response))
     };
-    painter.fill_background(rect, 0.0, fill);
+    painter.rect_filled(rect, 0.0, fill);
     if let Some(share) = share {
         let width = rect.width() * share.clamp(0.0, 1.0) as f32;
-        painter.fill_background(
+        painter.rect_filled(
             Rect::from_min_size(rect.min, Vec2::new(width, rect.height())),
             0.0,
             theme::control_playing(),

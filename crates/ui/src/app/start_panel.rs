@@ -7,7 +7,6 @@
 //! was last saved; the audio output at a glance; the version. Files dropped on it open as they
 //! do anywhere on the window.
 
-use crate::kit::surface::Backgrounds as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -98,9 +97,8 @@ pub fn show(
     now: SystemTime,
 ) -> Option<StartChoice> {
     // `start-page` styles it; its buttons and fields take the sheet's `button` and `text-input`.
-    let page = crate::kit::element::START_PAGE
-        .native(crate::kit::element::Native { radius: 0.0, fill: theme::window_background() })
-        .enter();
+    // Its own background over the window's, which is the page's where the sheet gives none.
+    let page = crate::kit::element::START_PAGE.enter();
     let mut styled_ui = page.ui(ui);
     let ui = &mut *styled_ui;
     ui.allocate_rect(area, Sense::hover());
@@ -197,7 +195,7 @@ pub fn show(
 /// The update line: its text, a progress bar while downloading, and its buttons on the right.
 fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: &Notice) -> Option<StartChoice> {
     let mut choice = None;
-    painter.fill_background(line, 0.0, theme::panel_background());
+    painter.rect_filled(line, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let edge = if notice.error { theme::recording() } else { theme::accent() };
     painter.rect_filled(Rect::from_min_size(line.min, Vec2::new(3.0, line.height())), 0.0, edge);
     let mut right = line.right() - PAD;
@@ -223,7 +221,7 @@ fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: &Notice) ->
     widgets::text_in(painter, text, Align2::LEFT_CENTER, &notice.text, theme::ui_font(theme::TEXT), colour);
     if let Some(part) = notice.progress {
         let bar = Rect::from_min_size(Pos2::new(text.left(), line.bottom() - 4.0), Vec2::new(text.width(), 2.0));
-        painter.fill_background(bar, 0.0, theme::control_background());
+        painter.rect_filled(bar, 0.0, theme::control_background());
         painter.rect_filled(
             Rect::from_min_size(bar.min, Vec2::new(bar.width() * part, bar.height())),
             0.0,
@@ -239,7 +237,7 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
         return None;
     }
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::panel_background());
+    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.rect_stroke(area, 0.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
     let inner = area.shrink(PAD);
     let mut choice = None;
@@ -363,7 +361,7 @@ fn audio_card(ui: &Ui, area: Rect, audio: &AudioSummary) -> bool {
         return false;
     }
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::panel_background());
+    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.rect_stroke(area, 0.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
     let inner = area.shrink(PAD);
     heading(&painter, Rect::from_min_size(inner.min, Vec2::new(inner.width(), 0.0)), "Audio");

@@ -975,7 +975,7 @@ pub fn free_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, f
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, free, "Free move"));
     let ink = if free { theme::accent() } else { theme::text_secondary() };
-    painter.rect_filled(rect, 2.0, theme::panel_background().gamma_multiply(0.85));
+    painter.rect_filled(rect, 2.0, crate::kit::style_class::surface_or(theme::panel_background()).gamma_multiply(0.85));
     if free || response.hovered() {
         painter.rect_filled(rect, 2.0, ink.gamma_multiply(0.18));
     }

@@ -31,7 +31,7 @@ pub(super) fn toolbar(
     }
     let painter = ui.painter_at(rect);
     let paint = ButtonPaint { ui, painter: &painter, keymap, scale };
-    painter.fill_background(rect, 0.0, theme::panel_background());
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(theme::border()));
     let row = rect.shrink2(Vec2::new(4.0, 3.0));
     // The icon box, the gap and the strokes scale with Toolbar size; the box never outgrows the

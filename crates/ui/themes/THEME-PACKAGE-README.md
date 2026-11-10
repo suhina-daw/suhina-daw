@@ -900,24 +900,21 @@ The native clip light, accessible level description and click-to-reset remain ac
 
 ## Backgrounds on the see-through window
 
-`background:` resets `background-color` to transparent when no colour is included.
-Suhina treats that computed transparent colour as authored. Native background fills
-write colour **and alpha** directly into the main window, so a transparent fill can
-expose the desktop even when its gradient is opaque. For an opaque surface, use an
-opaque base and a separate image. This applies to views, panels, bars and buttons.
+Every background blends with what is under it, as in a browser. The window clears once
+(to nothing when `--window-background` has alpha), `window` paints its background once,
+and each view, panel, bar or control paints only its own background over that. A
+translucent panel therefore composites over the window: a `window` at 50% under a panel
+at 50% shows the desktop through 25%. To let a view show the desktop at exactly its own
+alpha, make what is under it transparent:
 
 ```css
-/* Wrong: resets the native base to transparent. */
-browser { background: linear-gradient(#243A30, #101C17); }
-/* Right: opaque base and independently painted gradient. */
-browser { background-color: #101C17;
-           background-image: linear-gradient(#243A30, #101C17); }
+window { background-color: transparent; }
+browser { background-color: rgb(20 30 40 / 70%); }
 ```
 
-For overlays such as `track-header` and `track-name`, use `background-image` alone
-to preserve the native fill. The `meter-level` measured overlay may use the
-shorthand. Meadow deliberately uses transparency over its private background PNG;
-do not make an intentionally translucent theme opaque as a blanket correction.
+`background:` resets `background-color` to transparent when no colour is included, so
+the element then shows only its gradient over what is under it. Text, artwork and
+outlines blend the same way, and nothing an element paints punches a hole to the desktop.
 
 ## Closed-panel Grid tracks
 

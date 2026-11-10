@@ -291,7 +291,7 @@ pub(super) fn track_header(
         header_fill,
         rgb(lane.color),
     ) {
-        painter.fill_background(rect, 0.0, header_fill);
+        painter.rect_filled(rect, 0.0, header_fill);
     }
     crate::kit::liquid::paint(painter, rect, &own, header_fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`arrangement track-header`) over the native one.

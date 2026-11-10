@@ -6,7 +6,6 @@
 //! `docs/design/components.md` › Mixer strip). [`layout`] says where each part goes for a height;
 //! [`show`] draws a column's strip and turns what is done there into [`Action`]s.
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::{InputChannels, Monitor, TrackId};
@@ -425,7 +424,7 @@ pub fn show(
         .enter();
     // The strip in a shade of its track's colour, as the column above it.
     let tint = style_class.background_or(motion::mix(
-        theme::panel_background(),
+        crate::kit::style_class::surface_or(theme::panel_background()),
         egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
         0.16,
     ));
@@ -438,7 +437,7 @@ pub fn show(
         tint,
         egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
     ) {
-        painter.fill_background(rect, 0.0, tint);
+        painter.rect_filled(rect, 0.0, tint);
     }
     crate::kit::liquid::paint(painter, rect, &style_class, tint, crate::kit::liquid::Surface::Track);
     style_class.paint_background(painter, rect, 0.0);
@@ -465,7 +464,7 @@ pub fn show(
         rect,
     );
     if !control_layout::placement("mixer-color").hidden {
-        painter.fill_background(band, 0.0, colour_picker::fill(column.color, column.mute));
+        painter.rect_filled(band, 0.0, colour_picker::fill(column.color, column.mute));
     }
     let band_hit = band.intersect(painter.clip_rect());
     if band_hit.is_positive() && !control_layout::placement("mixer-color").hidden {
@@ -573,7 +572,7 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
         fill,
         egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
     ) {
-        painter.fill_background(rect, 0.0, fill);
+        painter.rect_filled(rect, 0.0, fill);
     }
     crate::kit::liquid::paint(painter, rect, &name_style, fill, crate::kit::liquid::Surface::Track);
     name_style.paint_background(painter, rect, 0.0);
@@ -662,7 +661,7 @@ fn device_list(
     state: &mut SessionViewState,
     id: Id,
 ) {
-    painter.fill_background(rect, 0.0, theme::window_background());
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
     if devices.is_empty() {
         widgets::text_in(
             painter,
@@ -724,9 +723,9 @@ fn device_list(
         let fill = if lit {
             theme::control_active()
         } else {
-            motion::mix(theme::window_background(), theme::control_hover(), widgets::hover(ui, &response))
+            motion::mix(egui::Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response))
         };
-        list_painter.fill_background(row, 0.0, fill);
+        list_painter.rect_filled(row, 0.0, fill);
         let text = row.shrink2(Vec2::new(4.0, 0.0));
         let color = if device.enabled { theme::text_secondary() } else { theme::text_hint() };
         let tag = match device.group {
@@ -868,7 +867,7 @@ fn audio_block(
         } else {
             motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response))
         };
-        painter.fill_background(area, 0.0, fill);
+        painter.rect_filled(area, 0.0, fill);
         widgets::text_in(
             painter,
             area.shrink2(Vec2::new(3.0, 0.0)),
@@ -1132,7 +1131,7 @@ fn paint_fader(
         theme::text_value(),
         0.0,
     ) {
-        painter.fill_background(rail, 2.0, recess);
+        painter.rect_filled(rail, 2.0, recess);
     }
     let _scale_style = crate::kit::element::FADER_SCALE.enter();
     let native_scale = Rect::from_min_size(
@@ -1183,7 +1182,7 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
     // Rasterize the same vertical artwork, then rotate its geometry and texture together.
     let rail = Rect::from_center_size(fader.center(), Vec2::new(rail_width(), fader.width()));
     if !crate::kit::skin::paint(painter, rail, "fader.rail", state, theme::text_value(), std::f32::consts::FRAC_PI_2) {
-        painter.fill_background(
+        painter.rect_filled(
             Rect::from_center_size(fader.center(), Vec2::new(fader.width(), 5.0)),
             2.0,
             theme::control_background(),
@@ -1225,7 +1224,7 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
     cap_style.paint_background(painter, Rect::from_center_size(centre, Vec2::new(length, thickness)), 2.0);
     if !crate::kit::skin::paint(painter, cap, "fader.cap", state, theme::text_value(), std::f32::consts::FRAC_PI_2) {
         let cap = Rect::from_center_size(centre, Vec2::new(length, thickness));
-        painter.fill_background(cap, 2.0, motion::mix(theme::control_background(), theme::text_value(), hover * 0.3));
+        painter.rect_filled(cap, 2.0, motion::mix(theme::control_background(), theme::text_value(), hover * 0.3));
         painter.vline(centre.x, cap.shrink(2.0).y_range(), theme::hairline(theme::text_value()));
     }
 }
@@ -1267,13 +1266,9 @@ fn compact_volume(
             Some(&response),
         );
     } else {
-        painter.fill_background(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+        painter.rect_filled(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
         let x = rect.left() + rect.width() * position;
-        painter.fill_background(
-            Rect::from_min_max(rect.min, Pos2::new(x, rect.bottom())),
-            0.0,
-            theme::control_playing(),
-        );
+        painter.rect_filled(Rect::from_min_max(rect.min, Pos2::new(x, rect.bottom())), 0.0, theme::control_playing());
     }
     widgets::text_in(painter, text, Align2::RIGHT_CENTER, &widgets::format_db(db), font, theme::text_primary());
 }

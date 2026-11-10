@@ -3,7 +3,6 @@
 
 //! One selected colour stop, with direct manipulation on a shared gradient ramp.
 use super::settings_view::{PageState, ThemeRequest, ThemesView, edit_rgba};
-use crate::kit::surface::Backgrounds as _;
 use crate::kit::{
     gradient::{Gradient, Stop},
     theme,
@@ -40,7 +39,11 @@ pub(super) fn show(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> O
                     .min(gradient.stops.len() - 1);
                 let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 58.0), Sense::hover());
                 let ramp = Rect::from_min_max(area.min + Vec2::new(9.0, 0.0), area.max - Vec2::new(9.0, 25.0));
-                ui.painter().fill_background(ramp, 0.0, theme::panel_background().to_opaque());
+                ui.painter().rect_filled(
+                    ramp,
+                    0.0,
+                    crate::kit::style_class::surface_or(theme::panel_background()).to_opaque(),
+                );
                 // Positions always run left to right; direction is a separate surface setting.
                 let mut preview = gradient.clone();
                 preview.angle = 0;
@@ -71,7 +74,7 @@ pub(super) fn show(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> O
                     } else {
                         theme::control_background().to_opaque()
                     };
-                    ui.painter().fill_background(handle, 3.0, fill);
+                    ui.painter().rect_filled(handle, 3.0, fill);
                     ui.painter().text(
                         handle.center(),
                         Align2::CENTER_CENTER,

@@ -15,8 +15,24 @@ pub struct Scope {
     revision: u64,
     /// What the elements in scope inherited before this one was entered.
     inherited: Option<super::native_css::Computed>,
+    /// The region's background in scope before this one was entered, when this is a region with
+    /// a background of its own.
+    surface: Option<Option<egui::Color32>>,
     /// The element's node in this frame's style tree, when the engine collected it.
     pub(super) node: Option<usize>,
+}
+
+thread_local! {
+    /// The background of the innermost region or container whose sheet gives it one.
+    static SURFACE: std::cell::Cell<Option<egui::Color32>> = const { std::cell::Cell::new(None) };
+}
+
+/// The background of the region or container something is drawn in, where the sheet gives it
+/// one, else `fallback` (a token): for a part that takes its region's colour (a stop button on
+/// the launcher, a ruler's rows) and so matches a theme that styles that region. A region's
+/// background writes no token (#1233), so the part asks for it here.
+pub fn surface_or(fallback: egui::Color32) -> egui::Color32 {
+    SURFACE.with(std::cell::Cell::get).unwrap_or(fallback)
 }
 
 thread_local! {
@@ -49,6 +65,9 @@ impl Drop for Scope {
             theme::local_palette(self.palette);
         }
         INHERITED.with(|inherited| *inherited.borrow_mut() = self.inherited.take());
+        if let Some(surface) = self.surface {
+            SURFACE.with(|s| s.set(surface));
+        }
         if self.node.is_some() {
             super::native_css::leave();
         }
@@ -74,6 +93,10 @@ pub(super) fn enter_inner(
     STACK.with(|s| s.borrow_mut().push(class));
     let mut palette = saved;
     let own = super::native_css::style_of(node);
+    let surface = own
+        .as_ref()
+        .filter(|values| values.authored.background && class.is_surface())
+        .map(|values| SURFACE.with(|s| s.replace(Some(values.background))));
     if let Some(values) = &own {
         if values.authored.color {
             set_foreground(&mut palette, values.color, Some(class));
@@ -100,14 +123,14 @@ pub(super) fn enter_inner(
             None => inherited.clone(),
         }
     });
-    Scope { palette: saved, revision: theme::palette_revision(), inherited, node }
+    Scope { palette: saved, revision: theme::palette_revision(), inherited, surface, node }
 }
 
-/// A background for `class`: a view's sets the surfaces inside it, and a control's its own fill
-/// too. So a view's background never repaints the buttons drawn on it.
+/// A background for `class`. A region's or container's is its own, painted once where it is
+/// ([`super::element::Entered::paint`]), so it writes no token: what is drawn inside it never
+/// paints it again, and a translucent one never builds up with depth (#1233). A control's sets
+/// its own fill, which its painter reads as `control_background`.
 fn set_background(palette: &mut theme::Palette, color: egui::Color32, class: super::element::Name) {
-    palette.window_background = color;
-    palette.panel_background = color;
     if !class.is_surface() {
         palette.control_background = color;
     }

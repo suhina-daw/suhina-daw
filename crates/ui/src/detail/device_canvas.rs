@@ -3,7 +3,6 @@
 
 //! SDK drawing programs are evaluated only on the UI thread.
 use crate::detail::detail_view::GraphParameter;
-use crate::kit::surface::Backgrounds as _;
 use crate::kit::widgets::{Action, fixed};
 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::json;
@@ -277,13 +276,13 @@ fn sample_waveform(
     });
     let source = ui.ctx().data(|data| data.get_temp::<Arc<suhina_engine::AudioData>>(sample_source_id(track, device)));
     let painter = ui.painter_at(visible);
-    painter.fill_background(bounds, 0., crate::kit::theme::control_background());
+    painter.rect_filled(bounds, 0., crate::kit::theme::control_background());
     let mut colors = crate::kit::theme::palette();
     let scoped = styled_palette(widget_palette(), style);
     colors.accent = color(scoped.accent);
     colors.text_primary = color(scoped.text);
     colors.border = color(scoped.border);
-    painter.fill_background(bounds, 0., color(scoped.control));
+    painter.rect_filled(bounds, 0., color(scoped.control));
     let compact = bounds.height() < 100. && inline_recording;
     let field = if compact {
         Rect::from_min_max(
@@ -846,7 +845,11 @@ fn sample_waveform(
                 )
                 .intersect(field);
                 if index >= playable {
-                    wave_painter.rect_filled(band, 0., crate::kit::theme::panel_background().gamma_multiply(0.6));
+                    wave_painter.rect_filled(
+                        band,
+                        0.,
+                        crate::kit::style_class::surface_or(crate::kit::theme::panel_background()).gamma_multiply(0.6),
+                    );
                     continue;
                 }
                 if index % 2 == 1 {
@@ -1436,7 +1439,10 @@ fn handle(
             if hollow {
                 painter.circle_stroke(center, if hot { 4.0 } else { 3.0 }, Stroke::new(1.5, color(line_color)));
             } else {
-                let ring = Stroke::new(1.0, crate::kit::theme::palette().panel_background);
+                let ring = Stroke::new(
+                    1.0,
+                    crate::kit::style_class::surface_or(crate::kit::theme::palette().panel_background),
+                );
                 painter.circle(center, if hot { 5.5 } else { 4.0 }, color(line_color), ring);
             }
         }
@@ -2120,13 +2126,13 @@ pub(crate) fn show(
     let tokens = Tokens::resolve(&panel);
     let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
     let background = if canvas.background == DeviceUi::default().background {
-        crate::kit::theme::palette().panel_background
+        crate::kit::style_class::surface_or(crate::kit::theme::palette().panel_background)
     } else {
         tokens.color(canvas.background)
     };
     // A clear background (a header strip's) leaves what is under the canvas showing.
     if canvas.background[3] > 0 {
-        painter.fill_background(rect, 0.0, panel.background_or(background));
+        painter.rect_filled(rect, 0.0, panel.background_or(background));
         panel.paint_background(&painter, rect, 0.);
     }
     // A strip is scaled to the rect it is shown in on each axis, smaller too, as it has no scroll

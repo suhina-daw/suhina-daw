@@ -183,7 +183,14 @@ pub fn show(ui: &mut Ui, area: Rect, tools: &Tools<'_>, state: &mut PianoRollSta
     let painter = ui.painter_at(column);
     // `midi-tools` styles the column: its background and, through the scope, its controls' text.
     let el = crate::kit::element::MIDI_TOOLS.enter();
-    el.paint_with(&painter, column, crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() });
+    el.paint_with(
+        &painter,
+        column,
+        crate::kit::element::Native {
+            radius: 0.0,
+            fill: crate::kit::style_class::surface_or(theme::panel_background()),
+        },
+    );
     painter.line_segment(
         [Pos2::new(column.right() - 0.5, column.top()), Pos2::new(column.right() - 0.5, column.bottom())],
         egui::Stroke::new(1.0, theme::border()),

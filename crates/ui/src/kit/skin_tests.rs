@@ -53,92 +53,38 @@ fn png_roles_reuse_pixels_until_a_live_edit_changes_the_source() {
 }
 
 #[test]
-fn svg_backgrounds_clear_native_alpha_once_and_keep_private_images_underneath() {
+fn artwork_blends_and_never_clears_the_window_under_it() {
     struct Mark;
     impl super::super::surface::Provider for Mark {
-        fn shape(&self, rect: Rect, _: egui::CornerRadius, color: Color32) -> egui::Shape {
-            assert_eq!(color, Color32::TRANSPARENT);
+        fn shape(&self, rect: Rect, _: egui::CornerRadius, _: Color32) -> egui::Shape {
             egui::Shape::circle_filled(rect.center(), 1.0, Color32::BLUE)
         }
     }
     configure(&Skin::default());
     let ctx = egui::Context::default();
     super::super::surface::install(&ctx, Arc::new(Mark));
-    // Only a theme whose surfaces show the desktop clears under its artwork.
+    // A see-through window: under its round artwork, a button leaves what is under it (#1233),
+    // where it used to punch a square hole to the desktop.
     let saved = super::super::theme::palette();
     let mut see_through = saved;
     see_through.window_background = Color32::from_rgba_unmultiplied(20, 20, 20, 160);
+    see_through.panel_background = Color32::from_rgba_unmultiplied(30, 30, 30, 160);
     super::super::theme::set_palette(&ctx, see_through);
-    for private_image in [false, true] {
-        super::super::liquid::set_background_image(
-            &ctx,
-            private_image.then(|| super::super::liquid::BackgroundImage {
-                id: egui::TextureId::Managed(42),
-                pixels: Arc::new(egui::ColorImage::filled([2, 2], Color32::RED)),
-            }),
-        );
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            super::super::surface::begin_frame(ui.ctx());
-            let painter = ui.ctx().layer_painter(egui::LayerId::background());
-            assert!(button(
-                &painter,
-                Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0)),
-                &super::super::element::BUTTON.enter(),
-                State::Normal,
-                Color32::from_rgba_unmultiplied(50, 60, 70, 128),
-                3.0
-            ));
-            super::super::surface::finish_frame(ui.ctx());
-        });
-        output.textures_delta.clear();
-        assert_eq!(
-            output.shapes.iter().filter(|shape| matches!(shape.shape, egui::Shape::Circle(_))).count(),
-            usize::from(!private_image)
-        );
-        assert!(
-            output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.brush.is_some()))
-        );
-    }
-    // Over opaque surfaces nothing is cleared: the desktop never shows at the artwork's edges.
-    super::super::theme::set_palette(&ctx, saved);
-    super::super::liquid::set_background_image(&ctx, None);
     let mut output = ctx.run_ui(Default::default(), |ui| {
-        super::super::surface::begin_frame(ui.ctx());
         let painter = ui.ctx().layer_painter(egui::LayerId::background());
-        let rect = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0));
         assert!(button(
             &painter,
-            rect,
+            Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0)),
             &super::super::element::BUTTON.enter(),
             State::Normal,
-            Color32::from_rgb(50, 60, 70),
+            Color32::from_rgba_unmultiplied(50, 60, 70, 128),
             3.0
         ));
-        super::super::surface::finish_frame(ui.ctx());
-    });
-    output.textures_delta.clear();
-    assert!(!output.shapes.iter().any(|shape| matches!(shape.shape, egui::Shape::Circle(_))));
-    // A translucent hover colour is not a see-through window.
-    let mut hover = saved;
-    hover.control_hover = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
-    super::super::theme::set_palette(&ctx, hover);
-    let mut output = ctx.run_ui(Default::default(), |ui| {
-        super::super::surface::begin_frame(ui.ctx());
-        let painter = ui.ctx().layer_painter(egui::LayerId::background());
-        let rect = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0));
-        assert!(button(
-            &painter,
-            rect,
-            &super::super::element::BUTTON.enter(),
-            State::Normal,
-            Color32::from_rgb(50, 60, 70),
-            3.0
-        ));
-        super::super::surface::finish_frame(ui.ctx());
     });
     output.textures_delta.clear();
     super::super::theme::set_palette(&ctx, saved);
     assert!(!output.shapes.iter().any(|shape| matches!(shape.shape, egui::Shape::Circle(_))));
+    assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.brush.is_some())));
 }
 #[test]
 fn inherited_svg_renders_missing_roles_while_theme_artwork_overrides_one_role() {

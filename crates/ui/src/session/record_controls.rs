@@ -6,7 +6,6 @@
 //! (`transport.setCountIn`), and the record button an armed track's empty slots show
 //! (`clip.record`; a click on a slot that records ends its take with `clip.launch`).
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Painter, Pos2, Rect, Stroke, Ui, Vec2};
 use serde_json::json;
 
@@ -158,12 +157,12 @@ pub fn metronome_level(
         }
     }
     let over = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, response.id.with("level")));
-    over.fill_background(slider, 0.0, theme::panel_background());
+    over.rect_filled(slider, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     over.rect_stroke(slider, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-    over.fill_background(track, 0.0, theme::control_background());
+    over.rect_filled(track, 0.0, theme::control_background());
     let position = ((level - low) / (high - low)) as f32;
     let y = track.bottom() - track.height() * position;
-    over.fill_background(Rect::from_min_max(Pos2::new(track.left(), y), track.max), 0.0, theme::control_playing());
+    over.rect_filled(Rect::from_min_max(Pos2::new(track.left(), y), track.max), 0.0, theme::control_playing());
     over.rect_filled(
         Rect::from_center_size(Pos2::new(track.center().x, y), Vec2::new(18.0, 5.0)),
         0.0,
@@ -242,7 +241,7 @@ pub fn slot_record(
     }
     let pulse = if recording { motion::pulse(ui.ctx()) } else { 1.0 };
     if recording {
-        painter.fill_background(rect, 0.0, theme::recording_background());
+        painter.rect_filled(rect, 0.0, theme::recording_background());
         widgets::text_in(
             painter,
             rect.shrink2(Vec2::new(width, 0.0)),

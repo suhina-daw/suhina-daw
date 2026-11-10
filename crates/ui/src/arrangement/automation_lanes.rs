@@ -7,7 +7,6 @@
 //! timeline and its points edited with the pointer. Every edit is an `automation.*` command;
 //! which lanes are shown is the view's own state, like a lane's height.
 
-use crate::kit::surface::Backgrounds as _;
 use std::collections::{HashMap, HashSet};
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
@@ -2009,7 +2008,11 @@ fn lane(
                 }
             }
             let hover = widgets::hover(ui, &response);
-            lane_painter.circle_filled(center, CURVE_HANDLE + hover, theme::window_background());
+            lane_painter.circle_filled(
+                center,
+                CURVE_HANDLE + hover,
+                crate::kit::style_class::surface_or(theme::window_background()),
+            );
             lane_painter.circle_stroke(center, CURVE_HANDLE + hover, Stroke::new(1.2, ink));
         }
     }
@@ -2208,7 +2211,11 @@ fn lane(
         let radius = POINT + hover;
         let fill = if selected { theme::text_primary() } else { ink };
         lane_painter.circle_filled(center, radius, fill);
-        lane_painter.circle_stroke(center, radius, Stroke::new(1.0, theme::window_background()));
+        lane_painter.circle_stroke(
+            center,
+            radius,
+            Stroke::new(1.0, crate::kit::style_class::surface_or(theme::window_background())),
+        );
     }
 }
 
@@ -2466,7 +2473,7 @@ fn shape_menu(ui: &mut Ui, title: &str, chosen: Option<&str>) -> Option<&'static
                     theme::control_active()
                 } else {
                     crate::kit::motion::mix(
-                        theme::window_background(),
+                        crate::kit::style_class::surface_or(theme::window_background()),
                         theme::control_hover(),
                         widgets::hover(ui, &response),
                     )
@@ -2603,7 +2610,7 @@ fn heading_row(ui: &mut Ui, name: &str, count: usize, marked: bool, open: bool, 
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         if toggles && response.hovered() {
-            painter.fill_background(rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
+            painter.rect_filled(rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
         }
         widgets::chevron(painter, Pos2::new(rect.left() + 6.0, rect.center().y), open, theme::text_hint());
         let font = egui::TextStyle::Button.resolve(ui.style());
@@ -2819,7 +2826,7 @@ fn lane_header(
         return;
     }
     let painter = painter.with_clip_rect(clip);
-    painter.fill_background(rect, 0.0, theme::panel_background());
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let track = lanes.track;
     let id = Id::unique(("automation-header", track.0, param.key.device, param.key.param.as_str()));
     // A right-click on the header's free space: the lane's height back to normal (#818).
@@ -2935,7 +2942,7 @@ fn lane_header(
             response.on_hover_text("A manual change turned this automation off; click to follow it again")
         };
         let (fill, ink) = widgets::toggle_colors(ui, &response, param.enabled);
-        painter.fill_background(toggle, 0.0, fill);
+        painter.rect_filled(toggle, 0.0, fill);
         if !param.enabled {
             painter.rect_stroke(toggle, 0.0, theme::hairline(theme::accent()), StrokeKind::Inside);
         }
@@ -2998,7 +3005,7 @@ fn forget_menu(ui: &Ui, filter: Id, placed: Id) {
 fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response, text: &str) {
     let fill =
         crate::kit::motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response));
-    painter.fill_background(rect, 0.0, fill);
+    painter.rect_filled(rect, 0.0, fill);
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), theme::text_secondary());
 }
 

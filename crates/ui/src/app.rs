@@ -39,7 +39,6 @@ pub mod updates;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::kit::surface::Backgrounds;
 use egui::{Align2, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::{Value, json};
 use suhina_engine::model::{ClipId, TrackId};
@@ -2665,10 +2664,16 @@ impl App {
         if let Err(error) = self.background.update(ui, &self.settings, self.themes.palette(&self.settings.theme)) {
             self.status = Status::Error(error);
         }
+        // The root: the window's background, painted once under everything (over a private
+        // image, at its strength). Each view, panel and bar paints only its own over it (#1233).
+        let full_screen = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
+        let corner = if full_screen { 0 } else { self.window_corner };
+        let root = window_style.background_or(theme::window_background());
+        ui.painter().rect_filled(ui.max_rect(), corner, root);
+        window_style.paint_background(ui.painter(), ui.max_rect(), f32::from(corner));
         let liquid =
             self.themes.get(&self.settings.theme).and_then(|theme| theme.liquid).unwrap_or(self.settings.view.liquid);
         crate::kit::liquid::configure(ui.ctx(), liquid);
-        crate::kit::surface::begin_frame(ui.ctx());
         crate::kit::liquid::begin_frame(
             ui.ctx(),
             self.themes.get(&self.settings.theme).map(|theme| theme.gradients.clone()).unwrap_or_default(),
@@ -2863,16 +2868,18 @@ impl App {
         }
         self.frame_trace.mark("plug-in requests");
 
-        // Under the system's title bar: the window's background, as behind the bars below it.
+        // Under the system's title bar: the toolbar's background, as behind the bars below it.
         // Full screen hides the title bar, and the room with it.
-        let full_screen = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
-        let corner = if full_screen { 0 } else { self.window_corner };
         if self.title_bar > 0.0 && !full_screen {
             egui::Panel::top("title-bar").exact_size(self.title_bar).frame(egui::Frame::NONE).show(ui, |ui| {
                 // The strip reads as the top of the toolbar under it, in the toolbar's colour.
                 let _style_class = crate::kit::element::TOOLBAR.enter();
                 let top = egui::CornerRadius { nw: corner, ne: corner, sw: 0, se: 0 };
-                ui.painter().fill_background(ui.max_rect(), top, theme::panel_background());
+                ui.painter().rect_filled(
+                    ui.max_rect(),
+                    top,
+                    crate::kit::style_class::surface_or(theme::panel_background()),
+                );
             });
         }
         let project_info = self
@@ -2914,7 +2921,11 @@ impl App {
                     .show(ui, |ui| {
                         let style_class = crate::kit::element::MENU_BAR.enter();
                         let bar = ui.max_rect().expand2(Vec2::new(4.0, 0.0));
-                        ui.painter().fill_background(bar, 0.0, theme::panel_background());
+                        ui.painter().rect_filled(
+                            bar,
+                            0.0,
+                            crate::kit::style_class::surface_or(theme::panel_background()),
+                        );
                         style_class.paint_background(ui.painter(), bar, 0.0);
                         self.menu_bar(ui, &style_class, &mut actions)
                     })
@@ -2922,15 +2933,19 @@ impl App {
         }
         self.frame_trace.mark("menu bar");
         if self.projects.len() >= 2 {
-            egui::Panel::top("tabs").exact_size(TABS).frame(egui::Frame::NONE).show(ui, |ui| {
-                ui.painter().fill_background(ui.max_rect(), 0.0, theme::window_background());
-                self.tab_row(ui, &mut actions)
-            });
+            egui::Panel::top("tabs")
+                .exact_size(TABS)
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| self.tab_row(ui, &mut actions));
         }
         with_bar_line(ui, "toolbar", |ui| {
             egui::Panel::top("control-bar").exact_size(theme::CONTROL_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
                 let style_class = crate::kit::element::TOOLBAR.enter();
-                ui.painter().fill_background(ui.max_rect(), 0.0, theme::panel_background());
+                ui.painter().rect_filled(
+                    ui.max_rect(),
+                    0.0,
+                    crate::kit::style_class::surface_or(theme::panel_background()),
+                );
                 style_class.paint_background(ui.painter(), ui.max_rect(), 0.0);
                 self.control_bar(ui, &style_class, grid.as_ref(), cpu, ram, &mut actions)
             })
@@ -2939,8 +2954,13 @@ impl App {
         egui::Panel::bottom("status-bar").exact_size(theme::STATUS_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
             let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
             {
-                let _style_class = crate::kit::element::STATUS_BAR.enter();
-                ui.painter().fill_background(ui.max_rect(), bottom, theme::panel_background());
+                let style_class = crate::kit::element::STATUS_BAR.enter();
+                ui.painter().rect_filled(
+                    ui.max_rect(),
+                    bottom,
+                    crate::kit::style_class::surface_or(theme::panel_background()),
+                );
+                style_class.paint_background(ui.painter(), ui.max_rect(), 0.0);
             }
             self.status_bar(ui, grid.as_ref())
         });
@@ -2953,18 +2973,23 @@ impl App {
         };
         // A private image is already painted underneath the workspace. Keep its
         // transparent regions visible instead of covering them with separator ink.
-        let workspace_base = if crate::kit::liquid::background_image(ui.ctx()).is_some() {
+        let workspace_line = if crate::kit::liquid::background_image(ui.ctx()).is_some() {
             egui::Color32::TRANSPARENT
         } else {
             // `#workspace { border-color }` is this line's own colour.
             let _workspace = crate::kit::element::WORKSPACE.id("workspace").enter();
             theme::border()
         };
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(workspace_base)).show(ui, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
             let _workspace_style = crate::kit::element::WORKSPACE.id("workspace").enter();
             let area = ui.available_rect_before_wrap();
-            // A 1 px gap shows the line colour between the bars and the view.
+            // A 1 px line between the bars and the view, in the line colour: drawn in the gap
+            // only, since a fill under the views would show through a translucent one.
             let inner = Rect::from_min_max(area.min + Vec2::new(0.0, 1.0), area.max - Vec2::new(0.0, 1.0));
+            for y in [area.top(), inner.bottom()] {
+                let line = Rect::from_x_y_ranges(area.x_range(), egui::Rangef::new(y, y + 1.0));
+                ui.painter().rect_filled(line, 0.0, workspace_line);
+            }
             self.missing.sync(&mut self.projects, self.revision);
             let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
             let prompt_height = if self.open_prompt.is_some() || missing_bar { theme::ROW + 12.0 } else { 0.0 };
@@ -3172,7 +3197,7 @@ impl App {
                     .on_hover_text("Close the sample map (Esc)");
                 let fill =
                     motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-                over.fill_background(close, 0.0, fill);
+                over.rect_filled(close, 0.0, fill);
                 let ink = theme::text_primary();
                 for (from, to) in
                     [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
@@ -3621,7 +3646,7 @@ fn drag_label(ctx: &egui::Context, pointer: Pos2, text: &str, lands: bool) {
     let font = theme::ui_font(theme::TEXT_SMALL);
     let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);
     let rect = Rect::from_min_size(pointer + Vec2::new(14.0, 10.0), galley.size() + Vec2::new(PAD * 2.0, 6.0));
-    painter.fill_background(rect, 0.0, theme::control_active());
+    painter.rect_filled(rect, 0.0, theme::control_active());
     painter.rect_stroke(
         rect,
         0.0,
@@ -3678,7 +3703,9 @@ fn with_bar_line<R>(ui: &mut Ui, class: &str, show: impl FnOnce(&mut Ui) -> R) -
             (c.authored.border_width && c.border_width <= 0.0) || (c.authored.border && c.border.a() == 0)
         });
         if lineless {
-            own.as_ref().filter(|c| c.authored.background).map_or_else(theme::panel_background, |c| c.background)
+            own.as_ref()
+                .filter(|c| c.authored.background)
+                .map_or_else(|| crate::kit::style_class::surface_or(theme::panel_background()), |c| c.background)
         } else {
             theme::border()
         }

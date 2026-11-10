@@ -5,7 +5,6 @@
 //! kind, as a cloud or a grid. The view draws and reports what the user did as [`MapEvent`]s;
 //! the browser turns them into its own selection, previews and drags.
 
-use crate::kit::surface::Backgrounds as _;
 use std::collections::HashSet;
 
 use egui::{Color32, CornerRadius, Key, PointerButton, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
@@ -557,7 +556,7 @@ fn busy_card(ui: &Ui, area: Rect, busy: &Busy) {
     }
     let card = Rect::from_center_size(area.center(), Vec2::new(width, HEIGHT));
     let painter = ui.painter().with_clip_rect(area);
-    painter.fill_background(card, CornerRadius::ZERO, theme::panel_background());
+    painter.rect_filled(card, CornerRadius::ZERO, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.rect_stroke(card, CornerRadius::ZERO, Stroke::new(1.0, theme::border_strong()), StrokeKind::Inside);
     let inner = card.shrink(2.0 * theme::PAD);
     painter.text(
@@ -568,7 +567,7 @@ fn busy_card(ui: &Ui, area: Rect, busy: &Busy) {
         theme::text_primary(),
     );
     let bar = Rect::from_min_size(Pos2::new(inner.min.x, inner.center().y - BAR / 2.0), Vec2::new(inner.width(), BAR));
-    painter.fill_background(bar, CornerRadius::ZERO, theme::control_background());
+    painter.rect_filled(bar, CornerRadius::ZERO, theme::control_background());
     let done = Rect::from_min_size(bar.min, Vec2::new(bar.width() * busy.fraction.clamp(0.0, 1.0), BAR));
     painter.rect_filled(done, CornerRadius::ZERO, theme::accent());
     painter.text(
@@ -721,8 +720,8 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
     view.area = rect;
     let id = ui.scope_id().with("sample-map");
     let response = ui.interact(rect, id, Sense::click_and_drag());
+    // On the window's background, which its root painted.
     let painter = ui.painter_at(rect);
-    painter.fill_background(rect, CornerRadius::ZERO, theme::window_background());
 
     // Zoom and pan.
     if let Some(pointer) = response.hover_pos() {
@@ -1119,7 +1118,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
         .collect();
     let sizes: Vec<(Pos2, Vec2)> =
         clusters.iter().zip(&galleys).map(|(c, g)| (transform.to_screen(c.spot), g.size())).collect();
-    let shadow = theme::window_background().gamma_multiply(fade);
+    let shadow = crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(fade);
     for (spot, galley) in crowd::place_labels(&sizes, painter.clip_rect()).into_iter().zip(galleys) {
         let Some(spot) = spot else { continue };
         // A shadow keeps the label readable over the points.
@@ -1130,7 +1129,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
 
 fn similar_strip(ui: &mut Ui, rect: Rect, view: &mut MapView, points: &[MapPoint], events: &mut Vec<MapEvent>) {
     let Some((of, items)) = view.similar.clone() else { return };
-    ui.painter().fill_background(rect, CornerRadius::ZERO, theme::panel_background());
+    ui.painter().rect_filled(rect, CornerRadius::ZERO, crate::kit::style_class::surface_or(theme::panel_background()));
     let mut child = ui.new_child(
         egui::UiBuilder::new().max_rect(rect.shrink(theme::PAD)).layout(egui::Layout::top_down(egui::Align::Min)),
     );

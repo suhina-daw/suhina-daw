@@ -9,7 +9,6 @@
 //! crash left (`docs/spec/backups.md`). And Help › About Suhina, which says which build this is
 //! (docs/spec/about.md). All are drawn over the window; Escape closes them.
 
-use crate::kit::surface::Backgrounds as _;
 use std::path::{Path, PathBuf};
 
 use egui::{Align2, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
@@ -712,15 +711,15 @@ pub(crate) fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str
     let behind = ui.interact(area, Id::unique(("dialog-behind", title)), Sense::click_and_drag());
     let _swallowed = behind.clicked();
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::window_background().gamma_multiply(0.6));
+    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(0.6));
     let size = Vec2::new(size.x.min(area.width() - 2.0 * PAD), size.y.min(area.height() - 2.0 * PAD));
     let rect = Rect::from_center_size(area.center(), size);
     // The window's content, blurred, under the panel.
     crate::kit::liquid::backdrop(&painter, rect);
-    painter.fill_background(rect, 0.0, theme::panel_background());
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    painter.fill_background(bar, 0.0, theme::control_background());
+    painter.rect_filled(bar, 0.0, theme::control_background());
     let font = theme::ui_font(theme::TEXT);
     widgets::text_in(
         &painter,
@@ -733,7 +732,7 @@ pub(crate) fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str
     let close = Rect::from_min_size(Pos2::new(bar.right() - 52.0, bar.top()), Vec2::new(52.0, ROW));
     let response = widgets::button_area(ui, close, Id::unique(("dialog-close", title)), format!("Close {title}"));
     let hover = widgets::hover(ui, &response);
-    painter.fill_background(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+    painter.rect_filled(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
     let small = theme::ui_font(theme::TEXT_SMALL);
     widgets::text_in(&painter, close, Align2::CENTER_CENTER, "Close", small, theme::text_primary());
     if response.clicked() {
@@ -798,8 +797,9 @@ pub(crate) fn heading(painter: &egui::Painter, at: Rect, text: &str) {
 /// A row to click: a name, and a note on the right.
 pub(crate) fn row(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, note: &str, label: &str) -> egui::Response {
     let response = widgets::button_area(ui, rect, Id::unique(("dialog-row", label)), label);
-    let fill = motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response));
-    painter.fill_background(rect, 0.0, fill);
+    // Over the dialog's own background: only the hover paints.
+    let fill = motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response));
+    painter.rect_filled(rect, 0.0, fill);
     let inner = rect.shrink2(Vec2::new(PAD, 0.0));
     let font = theme::ui_font(theme::TEXT);
     let name_width = widgets::text_width(ui, name, font.clone()).min(inner.width() * 0.6);

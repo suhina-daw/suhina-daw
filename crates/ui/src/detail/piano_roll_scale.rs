@@ -150,9 +150,9 @@ pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool) -> egui::Colo
     match scale {
         Some(scale) if scale.contains(key) && key % 12 == scale.root() => theme::control_hover(),
         Some(scale) if scale.contains(key) => theme::control_background(),
-        Some(_) => theme::window_background(),
-        None if black => theme::window_background(),
-        None => theme::panel_background(),
+        Some(_) => crate::kit::style_class::surface_or(theme::window_background()),
+        None if black => crate::kit::style_class::surface_or(theme::window_background()),
+        None => crate::kit::style_class::surface_or(theme::panel_background()),
     }
 }
 
@@ -334,9 +334,13 @@ mod tests {
         let c = Some(scale(0, ScaleMode::Major));
         assert_eq!(row_fill(c, 60, false), theme::control_hover(), "the root");
         assert_eq!(row_fill(c, 62, false), theme::control_background(), "in the scale");
-        assert_eq!(row_fill(c, 61, true), theme::window_background(), "outside it");
-        assert_eq!(row_fill(None, 61, true), theme::window_background());
-        assert_eq!(row_fill(None, 60, false), theme::panel_background());
+        assert_eq!(
+            row_fill(c, 61, true),
+            crate::kit::style_class::surface_or(theme::window_background()),
+            "outside it"
+        );
+        assert_eq!(row_fill(None, 61, true), crate::kit::style_class::surface_or(theme::window_background()));
+        assert_eq!(row_fill(None, 60, false), crate::kit::style_class::surface_or(theme::panel_background()));
     }
 
     #[test]

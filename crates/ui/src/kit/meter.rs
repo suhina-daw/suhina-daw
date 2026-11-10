@@ -6,7 +6,6 @@
 //! on the volume control's dB scale, with the highest peak of the last moments held as a line
 //! and a clip light that a click turns off (`mixer.resetClip`).
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::TrackId;
@@ -170,7 +169,7 @@ pub fn show(
         let light = Rect::from_min_max(Pos2::new(rect.right() - CLIP, rect.top()), rect.max);
         (light, Rect::from_min_max(rect.min, Pos2::new(light.left() - 1.0, rect.bottom())))
     };
-    painter.fill_background(light, 0.0, if level.clipped { theme::recording() } else { background });
+    painter.rect_filled(light, 0.0, if level.clipped { theme::recording() } else { background });
     // Intensity changes only measured ink, never rails or the safety indicator.
     let mut ink = painter.clone();
     ink.multiply_opacity(f32::from(skin.meter_intensity.min(100)) / 100.0);
@@ -211,7 +210,7 @@ pub fn show(
                 )
             }
         };
-        painter.fill_background(bar, 0.0, background);
+        painter.rect_filled(bar, 0.0, background);
         let level_el = super::element::METER_LEVEL.enter();
         let opacity = level_el.style().map_or(1.0, |style| style.opacity);
         let mut native_ink = ink.clone();
