@@ -3,7 +3,7 @@ description: The MCP server for agents: tools, file roots, errors and how to run
 read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
-last_verified: 2026-11-06
+last_verified: 2026-11-10
 covers:
   - crates/automation/src/server.rs
   - crates/automation/src/workspace.rs
@@ -204,10 +204,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   the clip it meant: `clip.move {clip, start}`, `note.add {clip, notes}`. Commands that make
   clips (`clip.paste`, `clip.duplicate`, `clip.split`, `clip.create`, `clip.consolidate`,
   `clip.addFiles`) return the new clips' ids. The older form, `track` with `index` (an
-  arrangement clip's place on its track) or `scene`, still works and is **deprecated**: an index
-  changes whenever a clip before it moves, and it is accepted only until the project format's
-  next version. The examples below show the positional form where it is still the only way to
-  name a slot (`scene`).
+  arrangement clip's place on its track) still works but is **deprecated**: an index changes
+  whenever a clip before it moves. It will be removed after the UI and tests move to ids
+  ([#1328](https://github.com/suhina-daw/suhina-daw/issues/1328)). `track` with `scene` remains
+  supported and is not deprecated. The examples below use `scene` to name slots.
 - **Scenes by id.** Every `scene` and `toScene` parameter takes the scene's number, from 0, or
   `{"id": n}` with its id, which names the scene wherever it has moved since. `project.launcher`
   lists each scene's `scene_id`, and every result that reports a scene (`scene.insert`,

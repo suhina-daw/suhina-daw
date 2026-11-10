@@ -21,6 +21,7 @@ use crate::interaction::drop::{DropProbe, DropTarget};
 use crate::interaction::grid::ColumnKind;
 use crate::interaction::menus::{self, TrackMenu};
 use crate::interaction::nesting::{self, Place};
+use crate::interaction::scroll::most_scroll_x;
 use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::meter::{self, Meters};
 use crate::kit::motion;
@@ -259,12 +260,6 @@ fn zoom_at(beat_width: f32, scroll_x: f32, offset: f32, factor: f32) -> (f32, f3
     (width, beat * width - offset)
 }
 
-/// How far the timeline scrolls sideways: to the end of `content_beats`, or as far as a zoom
-/// at the pointer reached (`reach` beats at the right edge), in a view `view_width` wide.
-pub(crate) fn most_scroll_x(content_beats: f64, reach: f64, beat_width: f32, view_width: f32) -> f32 {
-    ((content_beats.max(reach) as f32) * beat_width - view_width).max(0.0)
-}
-
 /// The Arrangement's grid keys: snap, narrower, wider, triplets (Ctrl+4, 1, 2, 3 by default).
 pub const GRID_KEYS: [&str; 4] =
     ["arrangement.gridSnap", "arrangement.gridNarrow", "arrangement.gridWiden", "arrangement.gridTriplet"];
@@ -326,8 +321,8 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 /// Draws the Arrangement view in the space left in `ui` and adds what the user asked for to
 /// `actions`.
 pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
-    let _style = crate::kit::style_class::enter("arrangement");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let arrangement = crate::kit::element::ARRANGEMENT.enter();
+    let mut styled_ui = arrangement.ui(ui);
     let ui = &mut *styled_ui;
 
     // The lanes' menus show the Arrangement's grid and change it.
@@ -349,7 +344,7 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
     if state.focus.is_some() {
         state.scroll.y = 0.0;
     }
-    show_lanes(ui, timeline, state, actions);
+    show_lanes(ui, &arrangement, timeline, state, actions);
     if state.focus.is_some() {
         state.scroll.y = scrolled;
     }
@@ -362,7 +357,14 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
     }
 }
 
-fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
+/// `arrangement` is the view's element, entered by [`show`].
+fn show_lanes(
+    ui: &mut Ui,
+    arrangement: &crate::kit::element::Entered,
+    timeline: &Timeline,
+    state: &mut ArrangementViewState,
+    actions: &mut Vec<Action>,
+) {
     state.apply_size_defaults(timeline);
     // The track lanes shown: every one but the return tracks, or only the focused one.
     let focus = state.focus;
@@ -387,7 +389,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     }
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::window_background());
-    crate::kit::native_css::background(&painter, area);
+    arrangement.paint_background(&painter, area, 0.0);
 
     // The header column, on either side, and the timeline beside it.
     let max_header = (area.width() - 120.0).max(HEADER_COLUMN_RANGE.0);
@@ -536,15 +538,21 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     // `ruler` styles it: its background, `color` for the bar numbers, `border-color` for
     // their lines; `ruler` is its artwork (nine-sliced when the SVG says so).
     let ruler_style = crate::kit::element::RULER.enter();
-    if !crate::kit::skin::paint(&painter, ruler, "ruler", crate::kit::skin::State::Normal, theme::text_secondary(), 0.0)
-    {
+    if !crate::kit::skin::paint_as(
+        &ruler_style,
+        &painter,
+        ruler,
+        "ruler",
+        crate::kit::skin::State::Normal,
+        theme::text_secondary(),
+    ) {
         ruler_style.paint_with(
             &painter,
             ruler,
             crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() },
         );
     }
-    let ruler_ink = crate::kit::style_class::foreground(theme::text_secondary());
+    let ruler_ink = ruler_style.color_or(theme::text_secondary());
     let ruler_line = ruler_style.style().filter(|c| c.authored.border).map_or_else(theme::border, |c| c.border);
     // `ruler-number` (its `color`, `font-size`, `display: none`) and `ruler-tick` (its `color`
     // and `width`, `width: 0` hides it) inside `ruler`.
@@ -552,7 +560,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let number = crate::kit::element::RULER_NUMBER.enter();
         let style = number.style();
         (
-            crate::kit::style_class::foreground(ruler_ink),
+            number.color_or(ruler_ink),
             style.as_ref().filter(|s| s.authored.font_size).map_or(theme::TEXT_SMALL, |s| s.font_size),
             style.as_ref().is_none_or(|s| s.visible),
         )
@@ -560,7 +568,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let ruler_tick = {
         let tick = crate::kit::element::RULER_TICK.enter();
         let style = tick.style();
-        let ink = crate::kit::style_class::foreground(ruler_line);
+        let ink = tick.color_or(ruler_line);
         let width = style.as_ref().and_then(|s| s.width).map_or(1.0, |w| w.clamp(0.0, 4.0));
         egui::Stroke::new(width, if style.as_ref().is_some_and(|s| s.authored.color) { ink } else { ruler_line })
     };
@@ -1542,7 +1550,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let field = Rect::from_min_max(Pos2::new(inner.left() + inner.width() * 0.45, inner.top()), inner.max);
         // An element of its own, `#main-volume`, as the tracks' are `#arrangement-volume`: without
         // it the field paints `arrangement`'s style as its own (#1237).
-        let volume_style = crate::kit::style_class::enter_named("value", "main-volume");
+        let volume_style = crate::kit::element::VALUE.id("main-volume").enter();
         let response = widgets::value_area(
             ui,
             field.intersect(fixed),
@@ -1569,7 +1577,13 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             }
             Drag::None => {}
         }
-        volume_field(&fixed_painter, field, state.main_drag.unwrap_or(db), widgets::hover(ui, &response));
+        volume_field(
+            &fixed_painter,
+            field,
+            &volume_style,
+            state.main_drag.unwrap_or(db),
+            widgets::hover(ui, &response),
+        );
         drop(volume_style);
         let at = lying_meter(field.left() - PAD, inner.center().y);
         let level = state.meters.main;
@@ -1643,7 +1657,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         if let Some((start, end)) = shown {
             let line = crate::kit::element::LOOP_LINE.enter();
             let style = line.style();
-            let colour = crate::kit::style_class::foreground(theme::accent());
+            let colour = line.color_or(theme::accent());
             let width = style.as_ref().and_then(|s| s.width).map_or(1.5, |w| w.clamp(0.5, 6.0));
             let down = egui::Rangef::new(lanes_area.top(), fixed.bottom());
             // The timeline's width, not the view's: a beat under the track headers, on either
@@ -1802,7 +1816,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         if x >= time.left() && x <= time.right() {
             // `playhead { color; width }`: its colour and thickness.
             let el = crate::kit::element::PLAYHEAD.enter();
-            let color = crate::kit::style_class::foreground(theme::accent());
+            let color = el.color_or(theme::accent());
             match el.style().and_then(|c| c.width) {
                 Some(width) if width > 0.0 => {
                     painter.vline(x, time.y_range(), egui::Stroke::new(width.min(8.0), color));

@@ -83,13 +83,12 @@ fn example_themes_embed_their_paint_and_all_editable_artwork() {
         assert!(warnings.is_empty(), "{warnings:?}");
         let values = super::super::theme_vars::core_values;
         assert_eq!(values(&restored), values(&sheet));
-        assert_eq!((&restored.skin.controls, &restored.skin.styles), (&sheet.skin.controls, &sheet.skin.styles));
+        assert_eq!(restored.skin.controls, sheet.skin.controls);
         let mut native = sheet.clone();
         assert!(super::super::theme_css::apply(&mut native, &super::super::theme_css::export(&sheet)).is_empty());
         assert_eq!(native.skin.session, sheet.skin.session);
         assert_eq!(native.skin.controls, sheet.skin.controls);
         assert_eq!(native.skin.meter_intensity, sheet.skin.meter_intensity);
-        assert_eq!(native.skin.styles, sheet.skin.styles);
     }
     let meadow = || built_in_themes().into_iter().find(|(id, _)| *id == "suhina-meadow").unwrap().1;
     let first = meadow().skin.background.unwrap();
@@ -102,7 +101,7 @@ fn example_themes_embed_their_paint_and_all_editable_artwork() {
 }
 
 #[test]
-fn track_and_kind_colours_keep_their_values_in_suhina_studio() {
+fn track_colours_keep_their_values_in_suhina_studio() {
     let dark = Palette::DARK;
     let tracks = [
         dark.track_color_1,
@@ -116,11 +115,10 @@ fn track_and_kind_colours_keep_their_values_in_suhina_studio() {
     ];
     let expected = [0xFF9A3C, 0xF2D541, 0x4FC3F7, 0xB38BFF, 0x7FDB5A, 0xFF6FA8, 0x5C8DFF, 0x2FD9C4].map(rgb);
     assert_eq!(tracks, expected);
-    assert_eq!((dark.kind_kick, dark.kind_other), (rgb(0xD06E5E), rgb(0x8A8680)));
     // A theme can change them like any other token.
-    let (theme, warnings) = Theme::from_json(r##"{ "colors": { "track.1": "#010203", "kind.snare": "#040506" } }"##);
+    let (theme, warnings) = Theme::from_json(r##"{ "colors": { "track.1": "#010203" } }"##);
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!((theme.colors.track_color_1, theme.colors.kind_snare), (rgb(0x010203), rgb(0x040506)));
+    assert_eq!(theme.colors.track_color_1, rgb(0x010203));
 }
 
 #[test]
@@ -266,7 +264,6 @@ fn suhina_sheet_takes_its_colours_from_its_two_accent_shades() {
     // Colours that say what something is or holds stay, and the paper stays white.
     let fixed = [
         "track.",
-        "kind.",
         "clip.",
         "recording",
         "meter.",
@@ -501,4 +498,18 @@ fn toolbar_rules_in_a_current_sheet_are_not_read_and_are_named_once() {
     meta.toolbar = Some(serde_json::json!({ "items": ["transport"], "hidden": ["tempo"] }));
     let (theme, _) = from_folder(meta, sheet);
     assert_eq!(theme.skin.toolbar.unwrap().hidden, ["tempo"]);
+}
+
+/// A sample-map colour given as a `kind.*` palette token, which is gone, is not read silently: the
+/// notice says the colours are `sample-point` rules now, in a sheet and in a theme file alike.
+#[test]
+fn a_former_kind_token_gets_a_notice_naming_its_sample_point_rule() {
+    let (_, warnings) = from_css(":root { --kind-kick: #FF0000; --kind-closedHat: #00FF00; --kind-ness: #0000FF; }");
+    let kinds: Vec<_> = warnings.iter().filter(|w| w.contains("is no longer read")).collect();
+    assert_eq!(kinds.len(), 2, "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.contains("sample-point[kind=\"kick\"] { color: … }")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.starts_with("--kind-closedHat is no longer read")), "{warnings:?}");
+    let (_, warnings) = Theme::from_json(r##"{"colors":{"kind.snare":"#123456","kind.nothing":"#123456"}}"##);
+    assert!(warnings.iter().any(|w| w.contains("sample-point[kind=\"snare\"]")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w == "kind.nothing is not a colour token"), "{warnings:?}");
 }

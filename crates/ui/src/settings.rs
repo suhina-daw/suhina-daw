@@ -5,7 +5,6 @@
 //! (`key = value` lines, so a person can read and fix it). The app decides where the file lives.
 
 mod fields;
-mod gradient_editor;
 pub mod keymap;
 pub mod plugin_manager;
 mod settings_rows;

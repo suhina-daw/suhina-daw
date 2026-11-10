@@ -281,7 +281,7 @@ impl Scale {
                     match info.unit {
                         Unit::Semitones => format!("{value:+} st"),
                         Unit::ScaleDegrees => format!("{value:+} sd"),
-                        Unit::Key => crate::detail::piano_roll::key_name(value.clamp(0.0, 127.0) as u8),
+                        Unit::Key => crate::interaction::key_name::key_name(value.clamp(0.0, 127.0) as u8),
                         _ => format!("{value}"),
                     }
                 }
@@ -294,7 +294,7 @@ impl Scale {
                     Unit::Octaves => format!("{value:.2} oct"),
                     Unit::Semitones => format!("{value:+.2} st"),
                     Unit::ScaleDegrees => format!("{value:+.2} sd"),
-                    Unit::Key => crate::detail::piano_roll::key_name(value.round().clamp(0.0, 127.0) as u8),
+                    Unit::Key => crate::interaction::key_name::key_name(value.round().clamp(0.0, 127.0) as u8),
                     Unit::None => format!("{value:.2}"),
                 },
             },
@@ -1195,19 +1195,22 @@ pub fn header_button(
         state.toggle(track, params);
     }
     // `#control-automation`, `[checked]` while the lanes show, and `automation` artwork.
-    let _style = crate::kit::style_class::enter_named_response("button", "automation", &response);
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, open);
+    let el = crate::kit::element::BUTTON
+        .id("automation")
+        .response(&response)
+        .attr(crate::kit::element::Checked, open)
+        .enter();
     let hover = widgets::hover(ui, &response);
     let off = crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover);
-    widgets::track_button_face(ui, painter, rect, &response, if open { theme::control_active() } else { off });
-    let ink = crate::kit::style_class::foreground(if open { theme::text_primary() } else { theme::text_secondary() });
-    if crate::kit::skin::paint(
+    widgets::track_button_face(ui, painter, rect, &el, &response, if open { theme::control_active() } else { off });
+    let ink = el.color_or(if open { theme::text_primary() } else { theme::text_secondary() });
+    if crate::kit::skin::paint_as(
+        &el,
         painter,
         rect,
         "automation",
         crate::kit::skin::State::response(&response, open),
         ink,
-        0.0,
     ) {
         return;
     }
@@ -2440,7 +2443,7 @@ pub const RANGE_GESTURE: &str = "range:";
 fn grid_menu(ui: &mut Ui, state: &mut LanesState, _actions: &mut Vec<Action>) {
     ui.separator();
     let keys = state.grid_keys.clone();
-    if let Some(picked) = crate::detail::piano_roll::grid_entries(ui, state.grid, &keys, &|_| true) {
+    if let Some(picked) = crate::interaction::grid_menu::grid_entries(ui, state.grid, &keys, &|_| true) {
         state.grid_picked = Some(picked);
         ui.close();
     }

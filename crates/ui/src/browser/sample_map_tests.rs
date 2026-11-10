@@ -469,3 +469,13 @@ fn a_new_layout_rebinds_the_point_states_to_their_items() {
     view.rebind_points(moved);
     assert!(view.hover_waveform.is_none(), "the gone point's waveform goes");
 }
+
+/// Without a theme sheet each kind takes the colour the user-agent sheet's own cascade gives it,
+/// whatever form its rules are written in; no kind falls back to grey.
+#[test]
+fn every_kind_has_the_user_agent_sheets_colour() {
+    let colours = user_agent_kind_colours();
+    assert_eq!(colours[kind_index(Kind::Kick)], Color32::from_rgb(0xD0, 0x6E, 0x5E));
+    assert_eq!(colours[kind_index(Kind::Other)], Color32::from_rgb(0x8A, 0x86, 0x80));
+    assert!(colours.iter().all(|colour| *colour != Color32::GRAY), "{colours:?}");
+}
