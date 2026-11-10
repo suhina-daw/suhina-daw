@@ -332,7 +332,7 @@ The lanes are the **top lane** and the **mounted lanes** under it (#1322):
   state.
 - A mounted lane keeps its parameter: its header shows the name, with no dropdown, and a change
   to that parameter is made in its own lane. A filled pin in the theme's
-  `automation.pin` colour (its accent unless the theme sets it) stands left of the name; a click on it ("Unpin this lane", or "Unpin these N lanes" when it is
+  `automation.pin` colour (the built-in themes give it their accent) stands left of the name; a click on it ("Unpin this lane", or "Unpin these N lanes" when it is
   one of several picked) unmounts it, with the other picked lanes (the lanes' points stay). The
   buttons have no box: their marks, drawn with lines so they are the same in every font, are dim
   until the pointer is on them.

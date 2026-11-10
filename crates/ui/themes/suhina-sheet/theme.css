@@ -3,6 +3,7 @@
 @property --tint-light { syntax: "<color>"; initial-value: #8FCEA0; label: "Accent, light"; group: "Colours"; }
 :root {
   --accent: var(--tint);
+  --automation-pin: var(--tint);
   --border: color-mix(in oklab, color-mix(in oklab, var(--tint), white 84%), black 3%);
   --border-strong: color-mix(in oklab, color-mix(in oklab, var(--tint), white 75%), black 8%);
   --browser-text-hint: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 14%);

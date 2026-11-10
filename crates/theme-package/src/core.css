@@ -79,4 +79,3 @@
 @property --session-scene-width { syntax: "auto | <length>"; initial-value: auto; }
 @property --session-slot-height { syntax: "auto | <length>"; initial-value: auto; }
 @property --session-header-height { syntax: "auto | <length>"; initial-value: auto; }
-:root { --automation-pin: var(--accent); }

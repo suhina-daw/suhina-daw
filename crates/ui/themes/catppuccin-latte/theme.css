@@ -24,6 +24,7 @@
   --pan-background: color-mix(in oklab, var(--ground), var(--surface) 30%);
   --pan-centre: color-mix(in oklab, var(--ink), var(--surface) 50%);
   --accent: var(--tint);
+  --automation-pin: var(--tint);
   --selection: var(--highlight);
   --text-primary: var(--ink);
   --text-secondary: color-mix(in oklab, var(--ink), var(--surface) 25%);

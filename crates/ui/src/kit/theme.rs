@@ -109,7 +109,7 @@ palette! {
     accent, "accent", 0xA6A3FF,
         "The playhead, queued clips, a key being set";
     automation_pin, "automation.pin", 0xA6A3FF,
-        "The pin of an automation lane pinned below its track's top lane; the accent unless a theme sets it";
+        "The pin of an automation lane pinned below its track's top lane (older theme files: their accent)";
     selection, "selection", 0xE3C86A,
         "The selected device's outline";
     recording, "recording", 0xE5484D,

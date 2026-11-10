@@ -131,7 +131,7 @@ a theme file can change any of them (see Themes). Current values:
 | `text.onColorLight`, `text.onColorDark` | `#ECE8E1`, `#1D1C1A` | The contrast-selected text on coloured tracks, returns and clips |
 | `browser.text.primary`, `browser.text.secondary`, `browser.text.hint`, `browser.text.value` | `#ECE8E1`, `#B5B2AC`, `#85837E`, `#DAD6D0` | Independent browser names, labels, hints and values; older themes inherit the corresponding text tokens |
 | `accent` | `#A6A3FF` | The playhead, queued clips, a key being set |
-| `automation.pin` | `#A6A3FF` | The pin of an automation lane pinned below its track's top lane; a theme that does not set it gets its `accent` |
+| `automation.pin` | `#A6A3FF` | The pin of an automation lane pinned below its track's top lane; the built-in themes set it to their `accent`, and an older theme file without it gets its `accent` |
 | `recording` | `#E5484D` | Recording and errors |
 | `recording.background` | `#4D2F2B` | Behind an armed track's arm button and a recording clip |
 | `meter.normal` | `#8BC48A` | A level meter below the top |

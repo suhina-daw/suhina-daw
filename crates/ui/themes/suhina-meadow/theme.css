@@ -6,6 +6,7 @@
 @property --browser-clear { syntax: "<integer>"; initial-value: 40; label: "Browser transparency"; group: "Material"; range: 0 90; step: 1; }
 :root {
   --accent: var(--tint);
+  --automation-pin: var(--tint);
   --background-image: url("background.png");
   --background-opacity: 100;
   --border: color-mix(in oklab, var(--paper), black 21.7%);
