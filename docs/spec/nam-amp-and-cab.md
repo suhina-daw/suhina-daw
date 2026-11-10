@@ -272,9 +272,10 @@ or dragged from the browser onto a track — one undo step each.
 A preset of the shared preset format holds the device's parameter values — the controls
 ([§ The devices' parameters](#the-devices-parameters)) and nothing else. It does not name a model
 or an impulse response: the file the device runs is its state
-([§ Model and IR files](#model-and-ir-files)), and a preset leaves it as the user has set it, so
-adding one to a device that already points at a file keeps that file, and adding one to a device
-with none leaves it none. The Amp Modeler's five set how the capture is trimmed and shaped; the
+([§ Model and IR files](#model-and-ir-files)), and a device starts with none selected. Adding a
+preset adds a separate device with the preset's parameter values and no model or impulse response
+selected; it changes no device that is already there, and the file such a one points at stays as
+it is. The Amp Modeler's five set how the capture is trimmed and shaped; the
 Cab Loader's five set what the cabinet is stripped down to:
 
 - **NAM Amp Modeler:** Bright Clean (a finish on the bright side), Tight High Gain (the low end
