@@ -19,8 +19,8 @@ use crate::browser::{BrowserState, Place, Row, duration_text};
 use crate::interaction::drop::{BrowserItem, ItemKind};
 use crate::interaction::status::Status;
 use crate::kit::element::{
-    BROWSER, BROWSER_PLACE, BROWSER_PLAY, BROWSER_ROW as BROWSER_ROW_ELEMENT, BUTTON, Checked, DIVIDER, Entered,
-    Native, Selected,
+    BROWSER, BROWSER_PLACE, BROWSER_PLAY, BROWSER_ROW as BROWSER_ROW_ELEMENT, BUTTON, Checked, Entered, Native,
+    Selected,
 };
 use crate::kit::theme::{self, BROWSER_ROW as ROW, PAD};
 use crate::kit::widgets::play_glyph;
@@ -3411,40 +3411,39 @@ fn footer_overflow(
         });
 }
 
-/// The browser's resize handle at its inner edge: dragged, the width it is dragged to;
-/// double-clicked, `default`. Gives that width, and whether the handle was let go (or reset)
-/// now: the width is saved then, not on every frame of a drag.
-pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32) -> (Option<f32>, bool) {
-    let response = ui
-        .interact(handle, Id::unique("browser-resize"), Sense::click_and_drag())
-        .on_hover_cursor(CursorIcon::ResizeHorizontal);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Browser splitter"));
-    if response.double_clicked() {
+/// The browser's splitter in `handle`, beside its panel of `width` on the `left` or the right,
+/// bounded to `bounds`: the width a drag gives, or `default` for a double-click, and whether the
+/// drag ended.
+pub fn resize_handle(
+    ui: &Ui,
+    handle: Rect,
+    width: f32,
+    left: bool,
+    default: f32,
+    bounds: (f32, f32),
+) -> (Option<f32>, bool) {
+    let divider = crate::kit::divider::show(
+        ui,
+        crate::kit::divider::Divider {
+            name: "browser-splitter",
+            key: Id::unique("browser-resize"),
+            strip: handle,
+            across: true,
+            label: "Browser splitter",
+            size: width,
+            grows_forward: left,
+            bounds,
+        },
+    );
+    if divider.response.double_clicked() {
         return (Some(default), true);
     }
-    {
-        // `#browser-splitter` (a `divider`, with `:hover` and `:active`) takes the element's
-        // `background-color`; without one, the border colour, stronger under the pointer.
-        let style = DIVIDER.id("browser-splitter").response(&response).enter();
-        let native = if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() };
-        ui.painter().rect_filled(handle, 0.0, style.background_or(native));
-    }
-    // The width follows the pointer from where the drag began, so it never falls behind it
-    // (adding each frame's movement to the width rounded to whole points would).
-    let start_id = Id::unique("browser-resize-start");
-    if response.drag_started()
-        && let Some(pointer) = response.interact_pointer_pos()
-    {
-        ui.ctx().data_mut(|d| d.insert_temp(start_id, (width, pointer.x)));
-    }
-    if response.dragged()
-        && let (Some((from, x0)), Some(pointer)) =
-            (ui.ctx().data(|d| d.get_temp::<(f32, f32)>(start_id)), response.interact_pointer_pos())
-    {
-        let dx = pointer.x - x0;
-        return (Some(if left { from + dx } else { from - dx }), false);
-    }
-    (None, response.drag_stopped())
+    // `#browser-splitter` takes the element's `background-color`; without one, the border colour,
+    // stronger under the pointer.
+    let response = &divider.response;
+    let native = if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() };
+    ui.painter().rect_filled(handle, 0.0, divider.style.background_or(native));
+    (divider.size, response.drag_stopped())
 }
 
 /// The active project's session.

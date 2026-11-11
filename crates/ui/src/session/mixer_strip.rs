@@ -529,26 +529,31 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, rect: Rect, fader: f32
         return;
     }
     let line = rect.center().y;
-    let response = ui
-        .interact(
-            rect.intersect(painter.clip_rect()),
-            Id::unique(("strip-divider", strip.left() as i32)),
-            Sense::click_and_drag(),
-        )
-        .on_hover_cursor(egui::CursorIcon::ResizeVertical);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Device list and controls divider"));
+    let divider = crate::kit::divider::show(
+        ui,
+        crate::kit::divider::Divider {
+            name: "mixer-divider",
+            key: Id::unique(("strip-divider", strip.left() as i32)),
+            strip: rect.intersect(painter.clip_rect()),
+            across: false,
+            label: "Device list and controls divider",
+            size: fader,
+            // Down makes the controls lower and the list taller.
+            grows_forward: false,
+            bounds: (LEAST_FADER, strip.height().max(LEAST_FADER)),
+        },
+    );
+    let response = &divider.response;
     if response.double_clicked() {
         state.strip_fader_dragged = None;
         state.strip_fader = 0.0;
-    } else if response.dragged_by(egui::PointerButton::Primary) {
-        // Down makes the controls lower and the list taller.
-        state.strip_fader_dragged = Some((fader - response.drag_delta().y).max(LEAST_FADER));
+    } else if let Some(size) = divider.size {
+        state.strip_fader_dragged = Some(size);
     } else if response.drag_stopped_by(egui::PointerButton::Primary) && state.strip_fader_dragged.take().is_some() {
         state.strip_fader = fader.round();
     }
     if response.hovered() || response.dragged() {
-        let style = crate::kit::element::DIVIDER.id("mixer-divider").response(&response).enter();
-        painter.hline(rect.x_range(), line, egui::Stroke::new(2.0, style.color_or(theme::accent())));
+        painter.hline(rect.x_range(), line, egui::Stroke::new(2.0, divider.style.color_or(theme::accent())));
     }
 }
 

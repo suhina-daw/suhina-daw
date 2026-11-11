@@ -434,7 +434,8 @@ impl App {
             } else {
                 self.side_drag = None;
             }
-            paint_splitter(ui, side_splitter, &response, true);
+            let style = crate::kit::element::DIVIDER.id("detail-splitter").response(&response).enter();
+            paint_splitter(ui, side_splitter, &style, true);
             (
                 Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())),
                 Some(Rect::from_min_max(Pos2::new(x, view.top()), view.max)),
@@ -464,7 +465,8 @@ impl App {
             } else {
                 self.side_drag = None;
             }
-            paint_splitter(ui, side_splitter, &response, true);
+            let style = crate::kit::element::DIVIDER.id("detail-splitter").response(&response).enter();
+            paint_splitter(ui, side_splitter, &style, true);
             (Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())), None)
         } else {
             (view, None)
@@ -475,42 +477,45 @@ impl App {
         // double-click takes it there and back.
         if splitter.is_positive() {
             let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
-            let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
-            let sense = Sense::click_and_drag();
-            let response = ui.interact(splitter, Id::unique("detail-splitter"), sense).on_hover_cursor(cursor);
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
+            let divider = crate::kit::divider::show(
+                ui,
+                crate::kit::divider::Divider {
+                    name: "detail-splitter",
+                    key: Id::unique("detail-splitter"),
+                    strip: splitter,
+                    across: stacked,
+                    label: "Detail area splitter",
+                    size: if stacked { detail.width() } else { detail.height() },
+                    grows_forward: false,
+                    bounds: (0.0, if stacked { area.width() } else { area.height() }),
+                },
+            );
+            let response = &divider.response;
             // A double-click closes the detail area, as a double-click on a split view's divider does
             // on macOS; a double-click on the closed splitter opens it at its default size.
             if response.double_clicked() {
                 self.detail_max = false;
                 self.hide_editor();
             }
-            if response.dragged_by(egui::PointerButton::Primary) {
-                let delta = response.drag_delta();
+            if let Some(size) = divider.size {
                 if stacked {
                     // Stacked, the area is open a panel wide or closed, as a track's devices in
                     // a row are: past half that width a drag closes it.
-                    let width = self.detail_drag.unwrap_or(detail.width()) - delta.x;
-                    self.detail_drag = Some(width);
-                    if width < detail_view::STACK_WIDTH / 2.0 {
+                    if size < detail_view::STACK_WIDTH / 2.0 {
                         self.hide_editor();
                     }
                 } else {
-                    let height = self.detail_drag.unwrap_or(detail.height()) - delta.y;
-                    self.detail_drag = Some(height);
-                    self.detail_max = pullable && height > area.height() - MIN_VIEW;
+                    self.detail_max = pullable && size > area.height() - MIN_VIEW;
                     let closes_under = if open_or_closed { self.device_row_height() } else { least };
-                    if height < closes_under / 2.0 {
+                    if size < closes_under / 2.0 {
                         // Dragged down past half its least height, the detail area closes; the same
                         // drag going back up opens it again (`collapsed_splitter`).
                         self.detail_max = false;
                         self.hide_editor();
                     } else if !self.detail_max && !open_or_closed {
-                        self.detail_height = height.max(least);
+                        self.detail_height = size.max(least);
                     }
                 }
-            } else {
-                self.detail_drag = None;
             }
             // A theme's layout that follows the splitter holds the dragged size to the bounds the
             // native layout keeps, in the room the view and the detail area share: a drag neither
@@ -524,7 +529,7 @@ impl App {
                     self.detail_height = detail_height_in(self.detail_height, room.height(), editor_needs, least);
                 }
             }
-            paint_splitter(ui, splitter, &response, stacked);
+            paint_splitter(ui, splitter, &divider.style, stacked);
         }
         // The panel's own box, its background and border, once its splitter beside it is drawn;
         // it clips what the detail area paints (`overflow`), and the detail area goes in its
@@ -922,46 +927,48 @@ impl App {
             return;
         }
         let side = !self.editor_along_bottom();
-        let cursor = if side { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
-        let response =
-            ui.interact(splitter, Id::unique("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
-        if response.double_clicked() {
+        let room = main.union(detail);
+        let divider = crate::kit::divider::show(
+            ui,
+            crate::kit::divider::Divider {
+                name: "detail-splitter",
+                key: Id::unique("detail-splitter"),
+                strip: splitter,
+                across: side,
+                label: "Detail area splitter",
+                size: 0.0,
+                grows_forward: false,
+                bounds: (0.0, if side { room.width() } else { room.height() }),
+            },
+        );
+        if divider.response.double_clicked() {
             self.show_editor();
             // The default content height, with the area's border and padding round it (#1336).
             self.detail_height = DETAIL_HEIGHT + self.detail_insets.area;
             self.detail_shown = Vec2::new(detail_view::STACK_WIDTH, self.detail_height);
             self.detail_width = detail_view::STACK_WIDTH;
         }
-        if response.dragged_by(egui::PointerButton::Primary) {
+        if let Some(size) = divider.size {
             if side {
-                let width = self.detail_drag.unwrap_or(0.0) - response.drag_delta().x;
-                self.detail_drag = Some(width);
-                if width >= detail_view::STACK_WIDTH / 2.0 {
+                if size >= detail_view::STACK_WIDTH / 2.0 {
                     self.show_editor();
-                    // The same drag goes on from the open area's width, so it does not close it again.
-                    self.detail_drag = Some(detail_view::STACK_WIDTH);
                 }
             } else {
-                let height = self.detail_drag.unwrap_or(0.0) - response.drag_delta().y;
-                self.detail_drag = Some(height);
                 let least = self.least_detail_height();
                 // A track's devices open at their one height, at the point a drag down closes them.
                 let track_devices = self.shown_clip().is_none();
                 let opens_at = if track_devices { self.device_row_height() } else { least };
-                if height >= opens_at / 2.0 {
+                if size >= opens_at / 2.0 {
                     self.show_editor();
                     // The height dragged is a clip's view's.
                     if !track_devices {
-                        self.detail_height = height.max(least);
+                        self.detail_height = size.max(least);
                     }
                     self.detail_shown.y = if track_devices { opens_at } else { self.detail_height };
                 }
             }
-        } else {
-            self.detail_drag = None;
         }
-        paint_splitter(ui, splitter, &response, side);
+        paint_splitter(ui, splitter, &divider.style, side);
     }
 
     /// The least height of the detail area in a row: the device panels' compact height (the
@@ -1188,8 +1195,7 @@ fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
 /// The detail area's splitter: a strip with a grip across its middle, `#detail-splitter` (a
 /// `divider`, with `:hover` and `:active`). The strip takes the element's `background-color` and
 /// the grip its `color`; without them, the control background and the hint colour.
-fn paint_splitter(ui: &Ui, splitter: Rect, response: &egui::Response, stacked: bool) {
-    let style = crate::kit::element::DIVIDER.id("detail-splitter").response(response).enter();
+fn paint_splitter(ui: &Ui, splitter: Rect, style: &crate::kit::element::Entered, stacked: bool) {
     let painter = ui.painter_at(splitter);
     painter.rect_filled(splitter, 0.0, style.background_or(theme::control_background()));
     let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };

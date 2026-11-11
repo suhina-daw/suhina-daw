@@ -59,7 +59,7 @@ impl App {
         };
         let default_width = crate::settings::Settings::default().browser_width;
         let (resized, done) = if part >= 1.0 && handle.is_positive() {
-            browser_view::resize_handle(ui, handle, width, left, default_width as f32)
+            browser_view::resize_handle(ui, handle, width, left, default_width as f32, (low as f32, widest))
         } else {
             (None, false)
         };

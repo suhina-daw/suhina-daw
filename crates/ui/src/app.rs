@@ -467,10 +467,8 @@ pub struct App {
     /// The Arrangement's clip selection last frame: when it changes while stopped, the play
     /// start marker goes to its first clip.
     clips_before: Vec<(TrackId, ClipId)>,
-    /// The piano roll is pulled to the top (`docs/spec/ui-clip-editor.md` › Pulled to the top),
-    /// and the detail area's height a splitter drag has reached so far, unclamped.
+    /// The piano roll is pulled to the top (`docs/spec/ui-clip-editor.md` › Pulled to the top).
     detail_max: bool,
-    detail_drag: Option<f32>,
     /// The width a drag of the stacked devices' column splitter has reached so far.
     side_drag: Option<f32>,
     /// What was copied or cut last: Ctrl+V pastes notes into the clip the piano roll shows and
@@ -727,7 +725,6 @@ impl App {
             detail_max: false,
             last_escape: None,
             escape_twice: false,
-            detail_drag: None,
             side_drag: None,
             copied_last: CopiedLast::Other,
             window: None,
