@@ -83,6 +83,11 @@ pub fn start_offline(project: &Project, audio: &AudioPool, env: &PluginEnv, samp
                     offline.notices.push(format!("{} did not take its saved settings ({why})", device.name));
                 }
                 let info = PluginSlotInfo { instrument, latency: control.latency() };
+                // Its stepped parameters' lanes hold their values, as they do while playing.
+                let mut control = control;
+                if let Ok(list) = control.params() {
+                    offline.plugins.set_steps(found.key, super::steps(&list));
+                }
                 let hosted = Hosted::new(audio).with_instrument_transport(instrument, sample_rate);
                 offline.plugins.insert(found.key, info, Box::new(hosted));
                 offline.controls.push(control);

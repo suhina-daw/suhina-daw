@@ -18,6 +18,7 @@ mod comping;
 mod groups;
 mod id_list;
 mod ids;
+mod lane_layout;
 pub mod names;
 mod tempo;
 
@@ -53,6 +54,7 @@ pub fn is_preset_file(path: &std::path::Path) -> bool {
 }
 pub use id_list::{Entry, IdList, ListId};
 pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, NoteId, PointId, SceneId, TempoPointId};
+pub use lane_layout::{LaneGroup, LaneLayout, LaneRef, MAX_GROUP_NAME, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
 
 mod launch;
 mod mapping;
@@ -108,6 +110,11 @@ pub struct Project {
     /// controller mappings). A mapping whose track is gone stays, unused, so an undo brings it back
     /// working; deleting a scene removes the mappings on it, and undo restores them.
     pub controller_mappings: Vec<ControllerMapping>,
+    /// How each channel's automation lanes are laid out in the Arrangement view: the lanes
+    /// mounted under its track's top lane and their groups (#1322). A channel with none shows
+    /// the lanes that have points; a layout of a channel that is gone stays, unused, so an undo
+    /// brings it back.
+    pub lane_layouts: Vec<LaneLayout>,
     /// The next id a clip, an arrangement lane or a scene gets: the three kinds share this
     /// counter, and a value is never handed out twice, deleted objects' included
     /// ([ADR 0025](../../docs/decisions/0025-object-identity.md)). Allocate with

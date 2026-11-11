@@ -11,7 +11,7 @@ primary platform; Windows and macOS are supported.
 | M3 | **Commands and agents:** command registry with undo; CLI and MCP server on the same commands | in progress: commands, undo, MCP, edits heard while playing, and saving projects in Suhina's own format (`.suhina`) work; more commands to come |
 | M4 | **Clip launching:** launch quantisation, scenes, stop buttons, follow actions | in progress: launching, scenes, stops, quantisation, follow actions, the metronome, launch modes, legato, per-clip quantisation and launch keys work; launching from live MIDI notes to come |
 | M5 | **Audio playback:** imported audio clips with gain, transpose, warping and time-stretching | done (verified by ear on a heavily warped set) |
-| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); still to do: automation lanes in the UI, Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
+| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); their parameters automated from lanes in the Arrangement view; still to do: Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
 | M7 | **More formats:** DAWproject import and export | not started |
 | M8 | **UI:** Launcher and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Launcher and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
@@ -221,6 +221,8 @@ refused or suspended, never by losing its edits.
   between parts show on the track and are set by a handle (`take.setCrossfade`), with their default
   in Settings; and a part moved or copied on the track takes its takes along
   ([#1078](https://github.com/suhina-daw/suhina-daw/issues/1078)).
+
+- Value drags: the Arrangement's volume and pan bars and Main's volume bar drag up and down or across, whichever way a drag moves first. Settings › Appearance › Hide pointer while dragging (on by default) chooses whether the pointer hides during a value drag or shows the arrow of its direction, and a theme can choose for its own controls with `drag-pointer: hidden | visible`.
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and

@@ -71,6 +71,20 @@ fn with_lanes() -> Harness<'static, App> {
     harness
 }
 
+/// [`with_lanes`], with the top lane showing the pan when the lanes open (Settings ›
+/// Arrangement › Automation › Top lane shows).
+fn with_pan_on_top() -> Harness<'static, App> {
+    let mut harness = arrangement(demo_project());
+    let ctx = harness.ctx.clone();
+    let mut settings = harness.state().settings().clone();
+    settings.view.automation_top_lane = suhina_ui::arrangement::automation_lanes::TopLane::Pan;
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    harness.get_by_label("Show automation of Drums").click();
+    harness.run();
+    harness
+}
+
 /// The points of the Drums track's volume lane, and whether it plays.
 fn volume(harness: &Harness<'static, App>) -> (Vec<AutomationPoint>, bool) {
     let Some(session) = harness.state().session() else { return (Vec::new(), true) };
@@ -285,27 +299,30 @@ fn a_lane_turned_off_by_a_manual_change_turns_on_again_from_its_header() {
     assert!(harness.query_by_label("Turn off Volume automation on Drums").is_some());
 }
 
-/// **+** adds a lane of the next parameter and **×** hides it again.
+/// The top lane's **+** mounts its parameter (the volume) under it and leaves the top lane
+/// empty, not showing the pan; its **×** clears it (#1322).
 #[test]
 fn a_lane_shows_another_parameter_and_more_lanes_are_added() {
     let mut harness = with_lanes();
-    harness.get_by_label("Add an automation lane to Drums").click();
+    harness.get_by_label("Mount Volume lane on Drums").click();
     harness.run();
-    // The next parameter not shown: the pan.
-    assert!(harness.query_by_label("Pan automation on Drums").is_some());
-    harness.get_by_label("Hide Pan lane on Drums").click();
+    assert!(harness.query_by_label("Choose a parameter on Drums").is_some(), "the top lane is empty");
+    assert!(harness.query_by_label("Pan automation on Drums").is_none());
+    assert!(harness.query_by_label("Volume automation on Drums").is_some(), "the volume is mounted");
+
+    let mut harness = with_pan_on_top();
+    assert!(harness.query_by_label("Pan automation on Drums").is_some(), "the setting's parameter");
+    harness.get_by_label("Clear the top lane on Drums").click();
     harness.run();
     assert!(harness.query_by_label("Pan automation on Drums").is_none());
-    assert!(harness.query_by_label("Volume automation on Drums").is_some());
+    assert!(harness.query_by_label("Choose a parameter on Drums").is_some());
 }
 
 /// Dragging the line between two points up bends the first point's curve, in one undo step.
 #[test]
 fn dragging_a_segment_up_bends_its_curve() {
-    let mut harness = with_lanes();
     // The pan's lane: its values are spread evenly up the lane.
-    harness.get_by_label("Add an automation lane to Drums").click();
-    harness.run();
+    let mut harness = with_pan_on_top();
     let rect = harness.get_by_label("Pan automation on Drums").rect();
     click_at(&mut harness, Pos2::new(rect.left() + 100.0, rect.bottom() - 8.0));
     click_at(&mut harness, Pos2::new(rect.left() + 228.0, rect.top() + 8.0));
@@ -402,9 +419,7 @@ fn envelope_y_at(harness: &Harness<'static, App>, lane: egui::Rect, x: f32) -> O
 /// the segment's old shape for a frame until the command has run.
 #[test]
 fn a_bent_segment_keeps_its_new_shape_when_the_mouse_is_let_go() {
-    let mut harness = with_lanes();
-    harness.get_by_label("Add an automation lane to Drums").click();
-    harness.run();
+    let mut harness = with_pan_on_top();
     let rect = harness.get_by_label("Pan automation on Drums").rect();
     click_at(&mut harness, Pos2::new(rect.left() + 100.0, rect.bottom() - 8.0));
     click_at(&mut harness, Pos2::new(rect.left() + 228.0, rect.top() + 8.0));
@@ -764,7 +779,8 @@ fn over_the_dropdown_the_menu_stays_open_and_in_place_as_the_lanes_device_closes
 }
 
 /// The demo project with the FM synth and the utility on the Drums channel, its volume and the
-/// utility's gain automated, and its lanes shown (those two, as they have points).
+/// utility's gain automated, and its lanes shown: those two mounted, as they have points, under
+/// the top lane, which is empty, the volume being mounted (#1322).
 fn with_automation() -> Harness<'static, App> {
     with_automation_of(&[])
 }
@@ -812,7 +828,7 @@ fn with_automation_of(fm: &[&str]) -> Harness<'static, App> {
 #[test]
 fn the_parameter_menu_lists_the_automated_parameters_first() {
     let mut harness = with_automation();
-    harness.get_by_label("Parameter of Volume lane on Drums").click();
+    harness.get_by_label("Choose a parameter on Drums").click();
     harness.run();
     let heading = harness.get_by_label("Automated").rect();
     let volume = harness.get_by_label("Volume (automated)").rect();
@@ -831,7 +847,7 @@ fn the_parameter_menu_lists_the_automated_parameters_first() {
 #[test]
 fn a_search_narrows_the_automated_parameters() {
     let mut harness = with_automation();
-    harness.get_by_label("Parameter of Volume lane on Drums").click();
+    harness.get_by_label("Choose a parameter on Drums").click();
     harness.run();
     harness.get_by_label("Search parameters").type_text("gain");
     harness.run();
@@ -848,16 +864,16 @@ fn a_search_narrows_the_automated_parameters() {
 #[test]
 fn choosing_an_automated_parameter_at_the_top_switches_the_lane() {
     let mut harness = with_automation();
-    // The gain's own lane is hidden, so the volume lane may show it.
+    // The gain's own lane is unmounted, so the top lane may show it.
     harness.get_by_label("Hide Utility: Gain lane on Drums").click();
     harness.run();
-    harness.get_by_label("Parameter of Volume lane on Drums").click();
+    harness.get_by_label("Choose a parameter on Drums").click();
     harness.run();
     harness.get_by_label("Utility: Gain (automated)").click();
     harness.run();
     assert!(harness.query_by_label("Search parameters").is_none(), "the menu stayed open");
     assert!(harness.query_by_label("Utility: Gain automation on Drums").is_some());
-    assert!(harness.query_by_label("Volume automation on Drums").is_none(), "the lane kept the volume");
+    assert!(harness.query_by_label("Choose a parameter on Drums").is_none(), "the top lane shows the gain");
 }
 
 /// The open parameter menu's own area.
@@ -874,13 +890,13 @@ fn in_view(harness: &Harness<'static, App>, label: &str) -> bool {
     row.top() >= list_top && row.bottom() <= menu_area(harness).bottom()
 }
 
-/// The FM synth's first operator's last parameter automated, and its lane hidden, so the
-/// volume lane may show it; the volume lane's menu open.
+/// The FM synth's first operator's last parameter automated, and its lane unmounted, so the
+/// top lane may show it; the top lane's menu open.
 fn op_1_on_automated() -> Harness<'static, App> {
     let mut harness = with_automation_of(&["op1.on"]);
     harness.get_by_label("Hide FM Synth: Op 1 On lane on Drums").click();
     harness.run();
-    harness.get_by_label("Parameter of Volume lane on Drums").click();
+    harness.get_by_label("Choose a parameter on Drums").click();
     harness.run();
     harness
 }
@@ -964,8 +980,8 @@ fn render_the_lanes() {
     harness.run();
     harness.get_by_label("Show automation of Drums").click();
     harness.run();
-    // A lane without points: the mute's faint line.
-    if let Some(add) = harness.get_all_by_label("Add an automation lane to Drums").last() {
+    // The volume mounted under the empty top lane.
+    if let Some(add) = harness.get_all_by_label("Mount Volume lane on Drums").last() {
         add.click();
     }
     harness.run();
@@ -1005,9 +1021,7 @@ fn a_click_near_the_envelope_adds_a_point_on_it() {
 /// A click near the faint line of a lane without points adds a point at the parameter's value.
 #[test]
 fn a_lane_without_points_adds_one_on_the_parameters_value() {
-    let mut harness = with_lanes();
-    harness.get_by_label("Add an automation lane to Drums").click();
-    harness.run();
+    let mut harness = with_pan_on_top();
     let set = {
         let project = harness.state().session().map(|s| s.project().clone());
         let channel = project.as_ref().and_then(|p| {
@@ -1038,6 +1052,63 @@ fn alt_drags_a_point_off_the_grid() {
     let (points, _) = volume(&harness);
     assert_eq!(points.len(), 1);
     assert!((points[0].beat - 16.5).abs() < 0.2, "{points:?}");
+}
+
+/// A lane dragged taller past the bottom of the view scrolls the view with its edge, so the whole
+/// lane stays in sight and the edge stays under the pointer to drag it back up (#1322).
+#[test]
+fn a_lane_dragged_taller_past_the_bottom_scrolls_the_view_with_it() {
+    let mut harness = arrangement(demo_project());
+    // More tracks than the view holds, the last with its lanes open, scrolled to the end: its
+    // lane's bottom edge is the bottom of the view.
+    for params in
+        [serde_json::json!({ "kind": "midi", "count": 12 }), serde_json::json!({ "kind": "midi", "name": "Last" })]
+    {
+        harness.state_mut().run(&suhina_ui::kit::widgets::Action::new("track.add", params));
+        harness.run();
+    }
+    let to_the_end = |h: &mut Harness<'static, App>| {
+        h.hover_at(Pos2::new(640.0, 300.0));
+        h.step();
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, -100_000.0),
+            modifiers: Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+        });
+        h.run();
+    };
+    to_the_end(&mut harness);
+    harness.get_by_label("Show automation of Last").click();
+    harness.run();
+    to_the_end(&mut harness);
+    let lane = |h: &Harness<'static, App>| h.get_by_label("Volume automation on Last").rect();
+    let scrolled = harness.state().arrangement().scroll.y;
+    assert!(scrolled > 0.0, "the tracks fill more than the view");
+    let before = lane(&harness).height();
+    let mut at = Pos2::new(lane(&harness).center().x, lane(&harness).bottom() - 1.0);
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.run();
+    for _ in 0..10 {
+        at.y += 20.0;
+        harness.hover_at(at);
+        harness.run();
+    }
+    let followed = harness.state().arrangement().scroll.y;
+    assert!(followed > scrolled + 100.0, "the view followed the edge: {scrolled} -> {followed}");
+    // The edge stayed under the pointer: dragged back up, the lane gets shorter again.
+    for _ in 0..5 {
+        at.y -= 20.0;
+        harness.hover_at(at);
+        harness.run();
+    }
+    harness.drop_at(at);
+    harness.run();
+    let height = lane(&harness).height();
+    assert!((height - (before + 100.0)).abs() < 2.0, "{before} -> {height}");
 }
 
 /// The line under a lane drags it taller, the height stays while the lanes are hidden, and a
@@ -1105,6 +1176,92 @@ fn a_painted_range_copies_duplicates_and_pastes() {
     assert_eq!(beats(&harness), pasted);
 }
 
+/// Ctrl+D moves the range onto its copy, and Ctrl+Z brings it back with each copy it takes back,
+/// one at a time; Ctrl+Y takes it on again (#1322). An undo of another edit leaves it.
+#[test]
+fn undoing_a_duplicate_brings_the_range_back() {
+    let mut harness = with_lanes();
+    for x in [100.0, 200.0] {
+        add_point(&mut harness, x);
+    }
+    let span = |h: &Harness<'static, App>| h.state().arrangement().automation.range.as_ref().map(|r| (r.start, r.end));
+    // Bars 3 to 8 (beats 8 to 32), on the grid, painted from the lane's upper half.
+    let rect = lane(&harness);
+    drag(&mut harness, Pos2::new(rect.left() + 60.0, rect.top() + rect.height() * 0.25), vec2(180.0, 0.0));
+    assert_eq!(span(&harness), Some((8.0, 32.0)));
+    for _ in 0..2 {
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::D);
+        harness.run();
+    }
+    assert_eq!(span(&harness), Some((56.0, 80.0)), "on the second copy");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(span(&harness), Some((32.0, 56.0)), "back on the first copy");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(span(&harness), Some((8.0, 32.0)), "back where it was painted");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Y);
+    harness.run();
+    assert_eq!(span(&harness), Some((32.0, 56.0)), "a redo takes it on again");
+    // The copy taken back again, then the undo of a point added before the range: it stays.
+    for _ in 0..2 {
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run();
+    }
+    assert_eq!(span(&harness), Some((8.0, 32.0)), "an undo of a point leaves the range");
+}
+
+/// A range painted on a lane and dragged out of the track's lanes goes on as one time selection:
+/// up onto the track's clips it is on the track, down onto the next track on both, the lanes'
+/// own range let go (#1322).
+#[test]
+fn a_range_dragged_off_the_lanes_becomes_a_time_selection_over_the_tracks() {
+    let mut harness = with_lanes();
+    let selection = |h: &Harness<'static, App>| {
+        let time = h.state().arrangement().time_selection().map(|s| s.tracks.iter().map(|t| t.0).collect::<Vec<_>>());
+        (time, h.state().arrangement().automation.range.is_some())
+    };
+    // From the lane's upper half, below the faint line of the volume at 0 dB near the top, which
+    // a drag on it would bend instead.
+    let rect = lane(&harness);
+    let from = Pos2::new(rect.left() + 60.0, rect.top() + rect.height() * 0.45);
+    // Up onto the track's own clips.
+    drag(&mut harness, from, vec2(180.0, rect.top() - 20.0 - from.y));
+    assert_eq!(selection(&harness), (Some(vec![1]), false));
+    // Down onto the next track.
+    let rect = lane(&harness);
+    drag(&mut harness, from, vec2(180.0, rect.bottom() + 40.0 - from.y));
+    assert_eq!(selection(&harness), (Some(vec![1, 2]), false));
+    // Kept within the lane, it is the lane's own range again.
+    drag(&mut harness, from, vec2(180.0, 0.0));
+    assert_eq!(selection(&harness), (None, true));
+}
+
+/// Ctrl+L loops a range painted on the lanes, its span exactly, and turns the loop off again
+/// (#1322).
+#[test]
+fn ctrl_l_loops_a_painted_range() {
+    let mut harness = with_lanes();
+    let looped = |h: &Harness<'static, App>| {
+        h.state().session().map(|s| {
+            let transport = &s.project().transport;
+            (transport.loop_enabled, transport.loop_range.map(|r| (r.start, r.end)))
+        })
+    };
+    // Bars 3 to 8 (beats 8 to 32), on the grid, painted from the lane's upper half (the lower half
+    // draws a selection box), just above its middle, away from the faint line of the volume at
+    // 0 dB near the top, which a drag on it would move instead.
+    let rect = lane(&harness);
+    drag(&mut harness, Pos2::new(rect.left() + 60.0, rect.top() + rect.height() * 0.45), vec2(180.0, 0.0));
+    assert!(harness.state().arrangement().automation.range.is_some(), "a range is painted");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
+    harness.run();
+    assert_eq!(looped(&harness), Some((true, Some((8.0, 32.0)))));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
+    harness.run();
+    assert_eq!(looped(&harness).map(|l| l.0), Some(false), "the same key takes the loop away");
+}
+
 /// A range painted on a lane moves the play start marker to its start, as a time selection on
 /// the clips' lanes does, so the lane's controls show the value there and Play starts there (#811).
 #[test]
@@ -1133,6 +1290,33 @@ fn a_painted_range_moves_the_play_start_marker_to_its_start() {
     drag(&mut harness, Pos2::new(rect.left() + 392.0, rect.top() + rect.height() * 0.25), vec2(-96.0, 0.0));
     renderer.process(&mut [0.0f32; 2 * 64]);
     assert_eq!(monitor.start_beat(), 36.0);
+}
+
+/// Moving the Drums track's pan by hand shows its pan in the lanes when they are open, in the
+/// top lane's place, ready to draw on; with the lanes closed nothing opens (#1205).
+#[test]
+fn a_pan_moved_by_hand_shows_in_the_open_lanes() {
+    let mut harness = with_lanes();
+    let drums = harness
+        .state()
+        .session()
+        .and_then(|s| s.project().tracks.iter().find(|t| t.name == "Drums").map(|t| t.id))
+        .unwrap();
+    assert!(harness.query_by_label("Volume automation on Drums").is_some());
+    let pan =
+        suhina_ui::kit::widgets::Action::new("track.setPan", serde_json::json!({ "tracks": [drums.0], "pan": 0.5 }));
+    harness.state_mut().run(&pan);
+    harness.run();
+    assert!(harness.query_by_label("Pan automation on Drums").is_some(), "the pan shows");
+    assert!(harness.query_by_label("Volume automation on Drums").is_none(), "in the top lane's place");
+    // Closed lanes stay closed.
+    harness.get_by_label("Hide automation of Drums").click();
+    harness.run();
+    let mute =
+        suhina_ui::kit::widgets::Action::new("track.setMute", serde_json::json!({ "tracks": [drums.0], "mute": true }));
+    harness.state_mut().run(&mute);
+    harness.run();
+    assert!(harness.query_by_label("Mute automation on Drums").is_none());
 }
 
 /// A right-click at `at`.
