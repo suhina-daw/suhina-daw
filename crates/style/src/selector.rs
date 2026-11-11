@@ -337,11 +337,15 @@ impl Selector {
     }
 
     /// Whether the element this selector styles (its last compound) is named one of `names`, by
-    /// its kind or its id (`toolbar`, `#workspace`).
+    /// its kind or its id (`toolbar`, `#workspace`), or by an `:is()` or `:where()` each of
+    /// whose selectors is (`:is(toolbar, #workspace)`); never by a `:not()`.
     pub fn subject_is(&self, names: &[&str]) -> bool {
         self.parts.last().is_some_and(|part| {
             part.tests.iter().any(|test| match test {
                 Test::Kind(name) | Test::Id(name) => names.contains(&name.as_str()),
+                Test::Any(selectors, false) => {
+                    !selectors.is_empty() && selectors.iter().all(|selector| selector.subject_is(names))
+                }
                 _ => false,
             })
         })

@@ -886,6 +886,15 @@ mod tests {
     /// the element, so it is refused with a notice rather than read as no padding (#1336).
     #[test]
     fn padding_in_percent_is_read_only_on_a_layout_container() {
+        // `:is()` and `:where()` that hold only layout containers name them too; `:not()` does not.
+        let named = Sheet::parse(
+            ":is(toolbar, #workspace) { padding: 1%; } :where(toolbar) { padding-top: 2%; } \
+             :is(toolbar, device) { padding: 1%; } :not(device) { padding: 1%; }",
+        )
+        .unwrap();
+        assert_eq!(named.notices.len(), 2, "{:?}", named.notices);
+        let kept: Vec<_> = named.rules.iter().map(|r| r.declarations.len()).collect();
+        assert_eq!(kept, [4, 1, 0, 0]);
         let sheet = Sheet::parse(
             "workspace { padding: 2%; } #workspace, toolbar { padding-left: 5%; } \
              device { padding: 5%; } browser { padding-top: 10%; } toolbar, device { padding: 1% 4px; } \
