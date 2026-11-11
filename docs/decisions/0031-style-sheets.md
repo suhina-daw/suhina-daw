@@ -893,13 +893,14 @@ open.
   that would add one to a full table that frame gets no id.
 - **One paint order.** `Entered::paint` paints an element's box as CSS does: its outer
   `box-shadow`, its `background-color`, its `background-image` (or the artwork its caller draws),
-  then for a control, a part or a drawn item its inset shadows and border before its contents,
-  and for a region or a container the same after its contents, when the element leaves scope;
-  last its `outline`. So a row no longer covers its panel's border. `Boxed::content` is the box
-  less its `padding`.
+  its inset shadows and its border, all before its contents, for every element (since #1336; a
+  region or a container first painted its inset shadows and border after its contents); last,
+  when the element leaves scope, its `outline`. `Boxed::content` is the box less its border
+  widths and its `padding` (#1336), so its contents never cover its border.
 - **`padding`, `overflow` and `outline-*`.** `padding` (already a layout property) shrinks the
-  content box. `overflow: hidden | clip` makes an element's box clip the outer shadows and
-  outlines of the elements inside it; `visible` lets them pass. The host's own sheet makes the
+  content box. `overflow: hidden | clip` makes an element's padding box clip everything its
+  children paint (since #1336; at first only the outer shadows and outlines of the elements
+  inside it); `visible` lets them pass. The host's own sheet makes the
   regions `hidden`. An element records its box when it paints it, its background, or says where
   it is (the workspace panels paint theirs like any element, #1336); the nearest element around that hides
   its overflow and has a box clips the outer shadows and outline, in place of the painter's
