@@ -87,7 +87,7 @@ what is inside it).
 | Arrangement | View | Grid inside clips, Waveform size, Waveform and note colour (Theme, Auto, Light, Dark, Custom), Custom waveform colour (shown with Custom), Audio clip colour strength |
 | Arrangement | Tracks | New track colour, New clip colour, Track header colour strength, Track header side (Theme, Left, Right), Return tracks, Returns in new projects (A and B, or None, #898), Alt+wheel resizes |
 | Arrangement | Tools | Toolbar (On or Off, Off by default, #991), Default grid |
-| Arrangement | Automation | Click anywhere adds (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere) |
+| Arrangement | Automation | Click anywhere adds (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere), Group plug-in lanes (On or Off, On by default: a lane mounted from a plug-in goes into that plug-in's group, #1322) |
 | Arrangement | Gain envelope | Show gain envelope (On by default), Gain envelope ceiling (+3, +6, +12, +24 dB; +6 by default), Gain envelope grid (0.5, 1, 2, 3, 6 dB; 1 dB by default), Envelope points move (On the grid by default, or Freely; [clip panel](clip-panel.md#gain-envelope)) |
 | Arrangement | Track sizes | Default track size, Default return size, Tiny height, Compact height, Small height, Medium height, Large height |
 | Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights, Copy names |

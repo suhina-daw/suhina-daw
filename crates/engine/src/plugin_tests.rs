@@ -1540,7 +1540,7 @@ fn diagnostic_slot(processor: Box<dyn PluginProcessor>) -> crate::plugin::Plugin
         busy: 0,
         longest_us: 0,
         sent_at: None,
-        params: crate::plugin_params::SlotParams::new(&plug(vst3()), BEAT as f64),
+        params: crate::plugin_params::SlotParams::new(&plug(vst3()), BEAT as f64, &[]),
     }
 }
 

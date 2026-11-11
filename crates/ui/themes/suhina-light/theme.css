@@ -2,6 +2,7 @@
 /* Suhina theme. Colours are custom properties and the other settings are element properties; see README.md. */
 :root {
   --accent: #5A54D6;
+  --automation-pin: #5A54D6;
   --border: #D3CEC6;
   --border-strong: #C2BCB1;
   --browser-text-hint: #8E887F;

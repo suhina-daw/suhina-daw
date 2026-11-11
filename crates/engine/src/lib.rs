@@ -128,8 +128,8 @@ pub use meters::{Level, MAX_METERED_TRACKS, MAX_READOUT_DEVICES, MeterMonitor, P
 pub use metronome::ClickSound;
 use plugin::{DEADLINE_SHARE, Delay};
 pub use plugin::{
-    Followed, Joint, MAX_JOINED, OFFLINE_TIMEOUT, PluginDevice, PluginProcessor, PluginSlotInfo, Plugins, Sent,
-    SongPosition, plugin_devices, plugin_key,
+    Followed, Joint, MAX_JOINED, OFFLINE_TIMEOUT, PluginDevice, PluginProcessor, PluginSlotInfo, PluginSteps, Plugins,
+    Sent, SongPosition, plugin_devices, plugin_key,
 };
 pub use plugin_params::{MAX_BLOCK_PARAMS, ParamEvent, RAMP_STEP, param_id};
 pub use preview::{PreviewMonitor, PreviewNote, PreviewNotes, preview_notes};
@@ -520,6 +520,7 @@ pub struct Renderer {
     observed_deadlines: (usize, [Option<Instant>; 2]),
     /// What is known about the project's plug-in devices, for the graphs built after edits.
     plugin_info: HashMap<u64, PluginSlotInfo>,
+    plugin_steps: PluginSteps,
     /// The browser's preview voice (ADR 0011).
     preview: preview::Preview,
     /// The cue bus: cued tracks and the preview, for headphones (`cue.rs`).
@@ -745,6 +746,7 @@ impl Renderer {
             #[cfg(test)]
             observed_deadlines: (0, [None; 2]),
             plugin_info: plugins.info,
+            plugin_steps: plugins.steps,
             preview: preview::Preview::new(sample_rate),
             cue: cue::Cue::new(),
             live: live::Live::new(sample_rate),
@@ -786,7 +788,7 @@ impl Renderer {
         for key in processors.keys() {
             info.entry(*key).or_default();
         }
-        Plugins { info, processors, carried: true }
+        Plugins { info, steps: std::mem::take(&mut self.plugin_steps), processors, carried: true }
     }
 
     /// The delay latency compensation adds to everything, in frames: the most any track's
@@ -1186,7 +1188,7 @@ impl Renderer {
         };
         for chain in &mut self.graph.chains {
             chain.transport(&song);
-            chain.automate(at, frames);
+            chain.automate(at, time, frames);
             chain.automate_mix(time, frames, self.transport.running);
         }
         let attack = (ATTACK_SECONDS * f64::from(self.sample_rate)).max(1.0);

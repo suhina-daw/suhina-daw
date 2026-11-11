@@ -95,6 +95,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | 8 | A launch mapping's `scene` counts from 0, as the commands do, where earlier versions counted from 1 | #763 › 1 |
 | 9 | The project's `controller_mappings`, in place of the launcher's `mappings`; an earlier file's launch mappings are read into it ([MIDI mapping › Launch keys](midi-mapping.md#launch-keys)) | #1162 |
 | 10 | An audio clip's own `audio` state (gain, gain envelope, transpose, warp, warp markers, tempo source) on the clip, the region keeping the file only; an earlier file's region state is read into every clip of its content ([ADR 0035](../decisions/0035-clip-gain-envelope.md)) | #1190 |
+| 11 | The project's `lane_layouts`: how each channel's automation lanes are laid out in the Arrangement view ([automation](automation.md#in-the-arrangement-view)) | #1322 |
 
 ## Parts
 
@@ -118,6 +119,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | scene | `id`; `name`; `tempo_bpm` or `null`; `time_signature` `[numerator, denominator]` (left out when the scene has none; the numerator a whole number from 1 to 255, the denominator 1, 2, 4, 8 or 16) |
 | launcher column | `track`; `slots` `[{ clip, has_stop }]`, one per scene |
 | controller mapping | in the project's `controller_mappings` (from version 9), left out when empty: `source` (`key:<name>` or `note:<channel 1-16>:<note 0-127>`) and `target`, `{ "command", "track", "scene" }`: `clip.launch` with `track` and `scene`, `scene.launch` with `scene`, or `track.stop` with `track`, the scene from 0. A source appears once. The track and scene need not exist: a mapping whose target is gone is kept. A mapping that does not read refuses the file, as every part does. See [MIDI mapping › Launch keys](midi-mapping.md#launch-keys) |
+| lane layout | in the project's `lane_layouts` (from version 11), left out when empty: per channel `{ channel, lanes, groups }`. `lanes` lists the lanes mounted under the track's top lane, top to bottom, each `{ device?, param }`: `device` is the device's id (left out for the channel's own `volume`, `pan` or `mute`) and `param` the parameter's id as its automation lane names it. `groups` lists groups of those lanes, each `{ name, lanes, folded?, device? }`: its lanes are in `lanes` and in no other group, `folded` (default false) and `device`, the device a group was made for. At most 1024 lanes and 256 groups a channel, a name of 1 to 128 characters, no lane twice. A lane whose device or channel is gone is kept. A layout that does not read refuses the file |
 | launch mapping | before version 9, in the launcher's `mappings`: `source`, `target` (`slot`, `scene` or `stop`), `track` (slot, stop) and `scene` (slot, scene; from 0 from version 8, from 1 before). Read into `controller_mappings` (`slot` → `clip.launch`, `scene` → `scene.launch`, `stop` → `track.stop`) and never written; a version 9 file's launcher `mappings` is not read |
 
 ## Audio paths

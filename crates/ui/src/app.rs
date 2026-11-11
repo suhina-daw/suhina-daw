@@ -377,6 +377,13 @@ pub struct App {
     /// The Arrangement view's data, the revision it was built from and the folds it was built
     /// with: folding a group changes what the lanes are, without changing the project.
     timeline: Option<(u64, Folds, Timeline)>,
+    /// The value a dragged plug-in lane last sent its plug-in (track, device, parameter id, the
+    /// value's bits), so a drag that holds still sends nothing more (#1205).
+    lane_preview: Option<(TrackId, usize, u32, u64)>,
+    /// Parameters moved in plug-ins' own editors this frame, for their tracks' lanes to show
+    /// once the timeline is built: such an edit changes the project, so the timeline is
+    /// rebuilt in the same frame (#1205).
+    touched_lanes: Vec<(TrackId, crate::arrangement::automation_lanes::LaneKey)>,
     /// Waveforms of the open project's audio files.
     waveforms: std::sync::Arc<crate::kit::waveform::Waveforms>,
     /// The plug-in library as Settings shows it, and a scan running in the background.
@@ -660,6 +667,8 @@ impl App {
             open_request: None,
             revision: 0,
             timeline: None,
+            lane_preview: None,
+            touched_lanes: Vec::new(),
             waveforms: std::sync::Arc::default(),
             plugins: PluginsView::default(),
             plugins_read: false,
@@ -2429,6 +2438,8 @@ impl App {
         if let Some(gesture) = action.params.get("gesture").and_then(serde_json::Value::as_str) {
             self.open_gesture = Some(gesture.to_owned());
         }
+        // A control moved by hand shows its parameter in the track's open lanes (#1205).
+        self.focus_touched_lane(action);
         // A fader or a send dragged on one of several selected tracks moves them together.
         if let Some(wider) = self.drag_to_selection(action) {
             return self.run(&wider);
@@ -2498,7 +2509,14 @@ impl App {
             }
             _ => None,
         };
-        match session.execute(action.id, params) {
+        let depth = session.undo_steps();
+        let ran = session.execute(action.id, params);
+        // A range a duplicate moved onto its copy goes back with its undo (#1322).
+        if ran.is_ok() {
+            let after = session.undo_steps();
+            self.arrangement.automation.follow_history(action.id, depth, after);
+        }
+        match ran {
             Ok(result) if result["no_input"].as_bool() == Some(true) => {
                 self.revision += 1;
                 self.status = Status::Hint(
@@ -3276,11 +3294,16 @@ impl App {
                                 })
                                 .collect()
                         });
+                        // What the plug-ins on tracks with open lanes listed, for the lanes'
+                        // parameter chooser (#1205); read before the session is borrowed.
+                        let plugin_lists = self.plugin_lists_for_lanes();
                         if let Some(session) = self.projects.active().and_then(|id| self.projects.get(id)) {
                             self.arrangement.stack_audio = self.settings.sample_stacking;
                             self.arrangement.stack_midi = self.settings.midi_stacking;
                             self.arrangement.double_click_does_nothing = !self.settings.view.double_click_clip;
                             self.arrangement.automation.click_anywhere = self.settings.view.automation_click_anywhere;
+                            self.arrangement.automation.group_plugins = self.settings.view.automation_group_plugins;
+                            self.arrangement.automation.top_lane = self.settings.view.automation_top_lane;
                             self.arrangement.knobs = self.settings.mixer_controls == MixerControls::Knob;
                             let monitor = session.player().map(|p| p.monitor());
                             // A folded group's row shows the track being worked on, so the folds
@@ -3332,6 +3355,12 @@ impl App {
                                 }
                             };
                             let mut timeline = timeline;
+                            timeline.automation.take_plugins(session.project(), plugin_lists);
+                            // A parameter moved in a plug-in's own editor shows in its track's
+                            // lanes, against the parameters just built (#1205).
+                            for (track, key) in std::mem::take(&mut self.touched_lanes) {
+                                self.arrangement.automation.focus(track, key, &timeline.automation);
+                            }
                             timeline.follow_automation(session.project());
                             timeline.follow_drag(self.arrangement.automation.dragged.as_ref());
                             timeline.recording_spans = session.arrangement_recording_spans();
@@ -3637,6 +3666,108 @@ impl App {
     /// Where the plug-in device `device` of `track` stands, in the active project.
     fn session_mut_report(&mut self, track: TrackId, device: usize) -> Option<suhina_session::PluginReport> {
         self.projects.session_mut(None).ok()?.plugin_report(track, device)
+    }
+
+    /// The parameters each hosted plug-in on a track with open lanes (Main's too) listed last,
+    /// and its texts for the lanes' values, for the lanes' parameter chooser (#1205). A list a
+    /// couple of seconds old is asked for again in the background, as the device's panel asks.
+    fn plugin_lists_for_lanes(&mut self) -> crate::arrangement::automation_lanes::PluginLists {
+        let mut lists = crate::arrangement::automation_lanes::PluginLists::default();
+        let lanes = &self.arrangement.automation;
+        // The texts the lanes wanted last frame and did not know are asked for now.
+        let asked = self.timeline.as_ref().map(|(_, _, t)| t.automation.asked_texts()).unwrap_or_default();
+        // A plug-in lane whose point is dragged: the plug-in and its editor follow the line where
+        // the transport stands, before the point is let go of (#1205). A range being painted
+        // sends nothing.
+        let dragged = lanes.dragged.clone().filter(|d| d.at.is_none());
+        // A parameter that takes steps holds each value until the next point, as the engine plays it.
+        let stepped_of = |track: TrackId, key: &crate::arrangement::automation_lanes::LaneKey| {
+            self.timeline
+                .as_ref()
+                .and_then(|(_, _, t)| t.automation.param(track, key))
+                .is_some_and(|p| p.scale.stepped())
+        };
+        let stepped = dragged.as_ref().is_some_and(|d| stepped_of(d.track, &d.key));
+        let stepped_now = self.lane_preview.is_some_and(|(track, device, id, _)| {
+            stepped_of(
+                track,
+                &crate::arrangement::automation_lanes::LaneKey { device: Some(device), param: id.to_string() },
+            )
+        });
+        let Ok(session) = self.projects.session_mut(None) else { return lists };
+        let preview = dragged.and_then(|d| {
+            let device = d.key.device?;
+            let id = suhina_engine::param_id(&d.key.param)?;
+            let beat = session.player().map_or(0.0, |p| p.monitor().beat());
+            let value = suhina_engine::model::automation::value_at(
+                &d.points,
+                beat,
+                stepped,
+                &suhina_engine::model::automation::Plain,
+            )?;
+            Some((d.track, device, id, value))
+        });
+        match preview {
+            Some((track, device, id, value)) if self.lane_preview != Some((track, device, id, value.to_bits())) => {
+                let _sent = session.preview_plugin_param(track, device, id, value);
+                self.lane_preview = Some((track, device, id, value.to_bits()));
+            }
+            Some(_) => {}
+            None => {
+                // The drag is over, let go of or given up: the plug-in goes back to what the
+                // project plays there now, the lane's value where the transport stands (its new
+                // line, when the drag changed it) or the value set, so a drag that changed
+                // nothing does not leave the plug-in at the value it previewed.
+                if let Some((track, device, id, _)) = self.lane_preview.take() {
+                    let beat = session.player().map_or(0.0, |p| p.monitor().beat());
+                    if let Some(value) = session.plugin_param_now(track, device, id, beat, stepped_now) {
+                        let _sent = session.preview_plugin_param(track, device, id, value);
+                    }
+                }
+            }
+        }
+        for (track, index, id, values) in asked {
+            session.ask_plugin_texts_at(track, &[index], id, &values);
+        }
+        // A parameter moved in a plug-in's own editor shows in its track's open lanes (#1205),
+        // and their faint lines follow the value it has now at once.
+        let touched = session.take_touched_params();
+        for &(track, index, id) in &touched {
+            let value = session
+                .project()
+                .channel_of_track(track)
+                .and_then(|c| c.devices.get(index))
+                .and_then(|d| d.params.iter().find(|p| suhina_engine::param_id(&p.id) == Some(id)))
+                .map(|p| p.value);
+            if let Some(value) = value {
+                lists.moved.push((track, index, id, value));
+            }
+        }
+        let open: Vec<TrackId> = session
+            .project()
+            .tracks
+            .iter()
+            .map(|t| t.id)
+            .chain([TrackId::MAIN])
+            .filter(|t| lanes.is_open(*t))
+            .collect();
+        for (track, index, list, texts) in session.lane_plugin_lists(&open) {
+            if let Some(list) = list {
+                lists.lists.insert((track, index), list);
+            }
+            if let Some(texts) = texts {
+                lists.texts.insert((track, index), texts);
+            }
+        }
+        // Focused once the timeline is built: the edit changed the project, so the timeline
+        // this frame is a new one, not the one cached (that is gone).
+        for (track, index, id) in touched {
+            let key = crate::arrangement::automation_lanes::LaneKey { device: Some(index), param: id.to_string() };
+            if !self.touched_lanes.contains(&(track, key.clone())) {
+                self.touched_lanes.push((track, key));
+            }
+        }
+        lists
     }
 }
 

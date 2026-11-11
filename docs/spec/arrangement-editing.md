@@ -313,12 +313,12 @@ With a time selection:
 
 | Key | Command | What it does |
 |---|---|---|
-| Delete | `range.delete` | Removes what plays inside; clips crossing an edge keep their parts outside it, and the gap stays. |
+| Delete | `range.delete` | Removes what plays inside, the tracks' automation inside too (its values at the edges kept); clips crossing an edge keep their parts outside it, and the gap stays. |
 | Ctrl+X | `range.cut` | Copies what plays inside, cut to it, and removes it. |
-| Ctrl+C | `range.copy` | Copies what plays inside, cut to it. |
+| Ctrl+C | `range.copy` | Copies what plays inside, cut to it, with the tracks' automation over the whole span; Ctrl+V puts it back on its own tracks from the play start marker. |
 | Ctrl+V | `clip.paste {start}` | A copy from several tracks goes back to its own tracks, from the play start marker. |
 | Ctrl+E | `range.split` | Splits the clips at both edges: the span becomes clips of its own. |
-| Ctrl+D | `range.duplicate` | Puts a copy right after the span on the same tracks; the selection moves onto the copy. |
+| Ctrl+D | `range.duplicate` | Puts a copy right after the span on the same tracks, the tracks' automation over the whole span with it; the selection moves onto the copy. |
 | Ctrl+J | `clip.consolidate` | Consolidates the span on each of its tracks. |
 
 Each takes `{tracks, start, end}` and is one undo step. A span painted in one row of a stack lights
@@ -328,7 +328,8 @@ that row only, and every key above acts on that row's clips alone, the other row
 names the row's clips under the copy in `clips` too), landing over the other rows' clips without
 changing them (over a take it replaces what it covers, as anywhere). Like a copied clip, it
 stacks, replacing nothing, when the stacking setting for the kind of every clip it copies is on
-(`stack`). Closing the gap (deleting the time
+(`stack`). In one row of a stack the tracks' automation is not cleared or laid over the whole
+span: Delete leaves it, and copies carry the automation under the row's clips only. Closing the gap (deleting the time
 itself) is not built yet.
 
 ## Duplicating and deleting
