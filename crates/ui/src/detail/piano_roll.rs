@@ -348,6 +348,8 @@ pub fn show(
     let shape = ruler_view::interact(ui, ruler, grid_rect.left(), clip, state, inputs.alt, seeks, actions);
     state.view_width = grid_rect.width();
     let rows_height = rows.len() as f32 * state.key_height;
+    // Notes a key moved or sized stay in view.
+    layout::reveal_selection(state, clip, &rows, grid_rect);
     state.scroll.y = state.scroll.y.clamp(0.0, (rows_height - grid_rect.height()).max(0.0));
     // The view goes on past the clip over the ghost notes, so the other picked clips' notes can
     // be reached (#1054).
@@ -844,6 +846,10 @@ pub fn show(
     scale_view::key_readers(ui, layout.keys, clip, &layout.rows, |key| layout.y_of(key), layout.key_height);
     // Notes the audition sounds go on now and off a moment later.
     let track = clip.address.get("track").and_then(Value::as_u64);
+    // A drag held at the grid's edge scrolls the view for the next frame, its start moving along.
+    if dragging && let Some(pointer) = now {
+        layout::scroll_at_edges(state, grid_rect, pointer);
+    }
     state.settle_frame(clip, actions);
     state.audition_frame(ui, track, actions);
     state.remember_selection(&clip.notes, selecting_new || sent_edit(&actions[sent_from..]));

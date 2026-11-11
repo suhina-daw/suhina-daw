@@ -376,3 +376,69 @@ pub(super) fn scroll_and_zoom_by_hand(ui: &Ui, state: &mut PianoRollState, area:
         ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
     }
 }
+
+/// How far from the grid's edge the selected notes are kept, in points.
+const REVEAL_MARGIN: f32 = 24.0;
+
+/// Scrolls so the selected notes of `clip` are in `grid`, once a key has moved or sized them
+/// ([`PianoRollState::reveal_selection`]): the least scroll that brings their span in, with a little
+/// room; a span wider or taller than the grid shows its start or its top row.
+pub(super) fn reveal_selection(state: &mut PianoRollState, clip: &PianoClip, rows: &KeyRows, grid: Rect) {
+    if state.reveal_selection == 0 {
+        return;
+    }
+    state.reveal_selection -= 1;
+    let chosen: Vec<&Note> = state.selected.iter().filter_map(|i| clip.notes.get(*i)).collect();
+    if chosen.is_empty() {
+        return;
+    }
+    let start = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min) as f32 * state.beat_width;
+    let end = chosen.iter().map(|n| n.time + n.duration.max(0.0)).fold(0.0, f64::max) as f32 * state.beat_width;
+    state.scroll.x = shown_span(state.scroll.x, grid.width(), start, end);
+    let shown_rows: Vec<usize> = chosen.iter().filter_map(|n| rows.row_of(n.key)).collect();
+    if let (Some(top), Some(bottom)) = (shown_rows.iter().min(), shown_rows.iter().max()) {
+        let (top, bottom) = (*top as f32 * state.key_height, (*bottom + 1) as f32 * state.key_height);
+        state.scroll.y = shown_span(state.scroll.y, grid.height(), top, bottom);
+        state.scrolled_by_hand = true;
+    }
+}
+
+/// The scroll that shows `from` to `to` (points along the content) in a view `size` long now at
+/// `scroll`: unchanged when it is in view, else the least move, keeping [`REVEAL_MARGIN`] where
+/// there is room; a span longer than the view shows its start.
+fn shown_span(scroll: f32, size: f32, from: f32, to: f32) -> f32 {
+    let margin = REVEAL_MARGIN.min(((size - (to - from)) / 2.0).max(0.0));
+    if to - from + 2.0 * margin > size || from - margin < scroll {
+        (from - margin).max(0.0)
+    } else if to + margin > scroll + size {
+        to + margin - size
+    } else {
+        scroll
+    }
+}
+
+/// While a drag that moves, sizes or draws notes holds the pointer at or past the grid's edge, the
+/// view scrolls that way, faster the further past it is, and the drag's start moves with it so
+/// the notes go on following the pointer.
+pub(super) fn scroll_at_edges(state: &mut PianoRollState, grid: Rect, pointer: Pos2) {
+    let Some(gesture) = state.gesture.as_mut().filter(|g| g.follows_edges()) else { return };
+    let edge = 16.0;
+    let speed = |past: f32| (past.max(0.0) / 2.0 + 2.0).min(40.0);
+    let mut by = Vec2::ZERO;
+    if pointer.x > grid.right() - edge {
+        by.x = speed(pointer.x - grid.right());
+    } else if pointer.x < grid.left() + edge && state.scroll.x > 0.0 {
+        by.x = -speed(grid.left() - pointer.x).min(state.scroll.x);
+    }
+    if pointer.y > grid.bottom() - edge {
+        by.y = speed(pointer.y - grid.bottom());
+    } else if pointer.y < grid.top() + edge && state.scroll.y > 0.0 {
+        by.y = -speed(grid.top() - pointer.y).min(state.scroll.y);
+    }
+    if by == Vec2::ZERO {
+        return;
+    }
+    gesture.scrolled(by);
+    state.scroll += by;
+    state.scrolled_by_hand = true;
+}

@@ -120,7 +120,8 @@ pub(super) fn draw_playhead(ui: &Ui, layout: &Layout, beat: f64) {
 }
 
 /// The note a draw drag from `from` to `now` makes: it starts where the press was, and its end
-/// follows the pointer on the grid (`free`: as it is), at least one step long.
+/// follows the pointer on the grid (`free`: as it is), at least one step long. A drag back to or
+/// before the start keeps it one step long, never the last note's length, which a click draws.
 pub(super) fn drawn_note(
     state: &PianoRollState,
     layout: &Layout,
@@ -132,10 +133,8 @@ pub(super) fn drawn_note(
 ) -> Option<Note> {
     let mut note = state.new_note(layout, clip, grid, from, free)?;
     let end = grid.place(layout.beat_at(now.x), free, false);
-    let least = if grid.snaps && !free { grid.step.min(note.duration) } else { MIN_LENGTH };
-    if end - note.time >= least {
-        note.duration = end - note.time;
-    }
+    let least = if grid.snaps && !free { grid.step } else { MIN_LENGTH };
+    note.duration = (end - note.time).max(least);
     Some(note)
 }
 
@@ -453,15 +452,9 @@ pub(super) fn draw(
         // playing (› Muting).
         let muted = note.muted || (state.muting.contains(&i) && state.mute_target);
         let unmuting = state.muting.contains(&i) && !state.mute_target;
-        let alpha = if state.erasing.contains(&i) {
-            0.12
-        } else if muted {
-            0.25
-        } else {
-            0.4 + 0.6 * velocity / 127.0
-        };
-        let alpha = if outside(&note) { alpha * 0.45 } else { alpha };
+        let erasing = state.erasing.contains(&i);
         let selected = state.selected.contains(&i) || selecting.is_some_and(|r| r.intersects(rect));
+        let alpha = note_alpha(velocity, NoteLook { erasing, muted, selected, outside: outside(&note) });
         let style = if selected {
             selected_style
         } else if muted {
@@ -472,8 +465,6 @@ pub(super) fn draw(
         let radius = style.radius.unwrap_or(0.0);
         let own =
             if selected { selected_note_color(clip.color, theme::accent(), theme::text_primary()) } else { clip.color };
-        // Selected, it stays bright enough to tell at any velocity; a muted note stays faded.
-        let alpha = if selected && !muted { alpha.max(0.75) } else { alpha };
         grid_painter.rect_filled(rect, radius, style.background.unwrap_or(own).gamma_multiply(alpha));
         if let Some(border) = style.border {
             grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);
@@ -608,5 +599,46 @@ pub(super) fn for_readers(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &Pi
             let response = ui.interact(stem, Id::unique(("piano-roll-stem", i)), Sense::hover());
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
         }
+    }
+}
+
+/// What a note's look depends on besides its velocity.
+#[derive(Clone, Copy)]
+struct NoteLook {
+    /// An erase stroke has passed over it.
+    erasing: bool,
+    muted: bool,
+    selected: bool,
+    /// Outside the clip's window.
+    outside: bool,
+}
+
+/// How opaque a note is drawn: by its velocity (1 to 127), nearly gone under an erase stroke,
+/// faded while muted, fainter outside the clip's window. Selected, it stays bright enough to tell
+/// at any velocity, unless it is muted or an erase stroke has passed over it.
+fn note_alpha(velocity: f32, look: NoteLook) -> f32 {
+    let alpha = if look.erasing {
+        0.12
+    } else if look.muted {
+        0.25
+    } else {
+        0.4 + 0.6 * velocity / 127.0
+    };
+    let alpha = if look.outside { alpha * 0.45 } else { alpha };
+    if look.selected && !look.muted && !look.erasing { alpha.max(0.75) } else { alpha }
+}
+
+#[cfg(test)]
+mod note_alpha_tests {
+    use super::*;
+
+    #[test]
+    fn an_erase_stroke_dims_a_selected_note_too() {
+        let look = NoteLook { erasing: false, muted: false, selected: true, outside: false };
+        assert!(note_alpha(10.0, look) >= 0.75, "selected stays bright");
+        let erased = note_alpha(127.0, NoteLook { erasing: true, ..look });
+        assert!((erased - 0.12).abs() < 1e-6, "erased, selected or not: {erased}");
+        let plain = NoteLook { selected: false, ..look };
+        assert!((note_alpha(127.0, NoteLook { erasing: true, ..plain }) - erased).abs() < 1e-6);
     }
 }

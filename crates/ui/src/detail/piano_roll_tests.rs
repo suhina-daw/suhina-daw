@@ -877,6 +877,72 @@ fn selected_notes_make_room_once_let_go_and_only_where_they_overlap() {
     assert!(actions.is_empty(), "a deleted note makes no room");
 }
 
+/// Notes a key moves out of the grid are scrolled back into view, on the frame the move lands and
+/// the one after; notes in view leave the scroll alone.
+#[test]
+fn notes_a_key_moves_stay_in_view() {
+    let far = clip(vec![note(30.0, 1.0, 20)]);
+    let mut state = focused_on(&far);
+    state.selected = BTreeSet::from([0]);
+    let grid = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0));
+    let rows = KeyRows::default();
+    assert!(state.key_action("pianoRoll.later", &far, 0.0, None).is_some());
+    assert_eq!(state.reveal_selection, 2);
+    layout::reveal_selection(&mut state, &far, &rows, grid);
+    let (x, y) = (state.scroll.x, state.scroll.y);
+    let end = 31.0 * state.beat_width;
+    assert!(x <= 30.0 * state.beat_width && end <= x + 400.0, "beats 30 to 31 in view: {x}");
+    let row = rows.row_of(20).unwrap_or(0) as f32 * state.key_height;
+    assert!(y <= row && row + state.key_height <= y + 200.0, "the key's row in view: {y}");
+    // Once it is in view, the next frame leaves the scroll as it is; then nothing follows.
+    layout::reveal_selection(&mut state, &far, &rows, grid);
+    assert_eq!((state.scroll.x, state.scroll.y), (x, y));
+    assert_eq!(state.reveal_selection, 0);
+}
+
+/// A move dragged past the grid's right edge scrolls the view, and the drag's start moves back by as
+/// much, so the notes go on following the pointer; a drag inside the grid scrolls nothing.
+#[test]
+fn a_drag_at_the_grid_edge_scrolls_and_its_start_follows() {
+    let grid = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0));
+    let mut state = PianoRollState {
+        gesture: Some(Gesture::Move { from: Pos2::new(100.0, 50.0), grabbed: 0, copy: false }),
+        ..PianoRollState::default()
+    };
+    layout::scroll_at_edges(&mut state, grid, Pos2::new(200.0, 100.0));
+    assert_eq!(state.scroll, Vec2::ZERO, "inside: nothing");
+    layout::scroll_at_edges(&mut state, grid, Pos2::new(440.0, 100.0));
+    assert!(state.scroll.x > 0.0);
+    let Some(Gesture::Move { from, .. }) = state.gesture else { panic!("still moving") };
+    assert_eq!(from.x, 100.0 - state.scroll.x, "the start moves back by the scroll");
+    // A paint stroke does not scroll.
+    state.gesture = Some(Gesture::Paint);
+    let before = state.scroll;
+    layout::scroll_at_edges(&mut state, grid, Pos2::new(440.0, 100.0));
+    assert_eq!(state.scroll, before);
+}
+
+/// Stacked notes turned on while edited notes wait to make room: once let go, they make none, and
+/// nothing waits for a later let-go either.
+#[test]
+fn turning_stacked_notes_on_drops_the_room_waiting_to_be_made() {
+    let on_top = clip(vec![note(0.0, 1.0, 62), note(0.0, 1.0, 62)]);
+    let mut state = focused_on(&on_top);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&on_top, &mut actions);
+    state.settle_frame(&on_top, &mut actions);
+    state.notes_replace = false;
+    state.selected.clear();
+    state.settle_frame(&on_top, &mut actions);
+    assert!(actions.is_empty(), "{actions:?}");
+    state.notes_replace = true;
+    state.settle_frame(&on_top, &mut actions);
+    assert!(actions.is_empty(), "nothing left to settle later: {actions:?}");
+    assert!(state.settle_on_hide().is_none());
+}
+
 /// Notes let go on the first frame after their edit still make room, and so do notes whose clip
 /// is no longer shown (another clip picked): by id, in their own clip.
 #[test]

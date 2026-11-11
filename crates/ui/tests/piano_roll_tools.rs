@@ -298,6 +298,11 @@ fn the_draw_tool_adds_a_note_with_a_click_and_its_length_with_a_drag() {
     assert!((drawn.duration - 1.0).abs() < 1e-9, "{drawn:?}");
     undo(&mut h);
     assert_eq!(notes(&h).len(), before + 1, "one drawn note is one undo step");
+    // A drag back past the start, after a beat-long note was drawn: one step long, never the last
+    // note's length, which a click would draw.
+    drag(&mut h, to, at, 4);
+    let drawn = *notes(&h).last().unwrap();
+    assert!((drawn.duration - 0.25).abs() < 1e-9, "{drawn:?}");
 }
 
 #[test]

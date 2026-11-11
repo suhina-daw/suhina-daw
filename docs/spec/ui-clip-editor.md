@@ -455,6 +455,10 @@ pull up.
   fold to it, centres the notes again in the rows that show then, so they stay in view wherever
   the rows were scrolled. It is window state, kept until
   Suhina closes and the same for every clip: not a command, not saved, not an undo step.
+- **Built:** notes moved or sized with the keys stay in view: the view scrolls the least that
+  brings them back in, with a little room, when a key takes them past an edge. A drag that moves,
+  sizes, draws or selects notes scrolls the view when the pointer reaches the grid's edge (faster
+  the further past it), and the notes go on following the pointer.
 - **Built:** a drag in the scale strip left of the keys changes the row height sideways (to the right,
   taller) and scrolls the rows up and down, the row where it began staying under the pointer: the
   ruler's drag the other way round (› Key column and scale strip). During both drags the pointer is
@@ -466,7 +470,8 @@ pull up.
   down to the grid line before the pointer (Alt: where the pointer is), its key the row under the
   pointer, its length one grid step (a quarter beat with `none`), velocity 100. The note is there
   as the second press goes down, and dragging sideways before letting go sets its length, as the
-  Draw tool's drag does. The new note is
+  Draw tool's drag does. A drag's note is never shorter than one grid step: dragged back to or
+  before its start, it is one step long, not the last note's length, which a click draws. The new note is
   selected. A double-click on a note deletes it. Both are workflow settings, and what a
   double-click does with every tool and in every part of the editor is › Double-click.
 - **Built:** the toolbar's tools ([#442](https://github.com/suhina-daw/suhina-daw/issues/442),
@@ -490,8 +495,8 @@ pull up.
     in the stroke, or holding a note of the same key at the same start, is skipped. The stroke is
     one `note.add`, one undo step, and the painted notes are selected. A click adds one note.
   - **Erase**: a click on a note deletes it; dragging deletes every note the pointer passes over
-    (they fade while the drag lasts and stay faded until they are gone, never whole again for a
-    moment), one `note.delete`, one undo step. A paint, Shift+Draw or mute stroke likewise shows
+    (they fade while the drag lasts, selected ones too, and stay faded until they are gone, never
+    whole again for a moment), one `note.delete`, one undo step. A paint, Shift+Draw or mute stroke likewise shows
     its notes as it leaves them until its command has run.
   - **Slice**: pressing and dragging draws a cut line from the press to the pointer, standing
     straight up or down on the beat the pointer is at; with **Shift** held it runs slanted, from
@@ -721,7 +726,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   rest**, which keeps the tails of notes lengthened over, for new rhythms). Covered notes is in
   Settings › Clip editor › Advanced and in the toolbar's workflow menu under Allow stacked notes;
   the commands take it as `covered` (`"delete"` or `"cut"`, the default for the CLI and MCP). A paint stroke
-  paints only the gaps: it adds nothing that would start inside a note. On, notes of a key may overlap. The commands take this as `replace`, so the CLI and MCP choose too; left out,
+  paints only the gaps: it adds nothing that would start inside a note. Turning **Allow stacked
+  notes** on while edited notes wait to be let go drops their waiting room-making: nothing is
+  replaced when they are let go. On, notes of a key may overlap. The commands take this as `replace`, so the CLI and MCP choose too; left out,
   notes may overlap.
 - **Built ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** the pointer over the
   first few pixels of a note shows a resize cursor too; dragging there moves the start of every

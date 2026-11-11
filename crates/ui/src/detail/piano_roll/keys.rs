@@ -643,6 +643,12 @@ impl PianoRollState {
     /// They are named by id, taken once the clip shows them (a paste's copies a frame later), so a
     /// note deleted meanwhile is left out.
     pub(super) fn settle_frame(&mut self, clip: &PianoClip, actions: &mut Vec<Action>) {
+        // Stacked notes allowed (turned on while notes waited): nothing makes room, then or later.
+        if !self.notes_replace {
+            self.settling = None;
+            self.settle_pending = false;
+            return;
+        }
         let acting = self.acting().clone();
         if let Some(settling) = &mut self.settling {
             let same_clip = settling.address == clip.address;
@@ -682,7 +688,7 @@ impl PianoRollState {
     pub fn settle_on_hide(&mut self) -> Option<Action> {
         self.settle_pending = false;
         let settling = self.settling.take()?;
-        (!settling.ids.is_empty()).then(|| settling.make_room())
+        (self.notes_replace && !settling.ids.is_empty()).then(|| settling.make_room())
     }
 
     /// `note.add` for `notes`, under the rule for stacked notes.

@@ -147,6 +147,34 @@ pub(super) enum Gesture {
     KeySelect { anchor: u8, silent: bool },
 }
 
+impl Gesture {
+    /// A drag that moves, sizes or draws notes on the grid, which the view scrolls along with when
+    /// the pointer reaches its edge.
+    pub(super) fn follows_edges(&self) -> bool {
+        matches!(
+            self,
+            Self::Move { .. }
+                | Self::Resize { .. }
+                | Self::ResizeStart { .. }
+                | Self::Select { .. }
+                | Self::Draw { .. }
+        )
+    }
+
+    /// The view scrolled by `by` points: where the drag started moves the other way on the screen,
+    /// so it stays on the same beat and key.
+    pub(super) fn scrolled(&mut self, by: Vec2) {
+        match self {
+            Self::Move { from, .. }
+            | Self::Resize { from, .. }
+            | Self::ResizeStart { from, .. }
+            | Self::Select { from, .. }
+            | Self::Draw { from } => *from -= by,
+            _ => {}
+        }
+    }
+}
+
 /// What the piano roll keeps between frames.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PianoRollState {
@@ -255,6 +283,9 @@ pub struct PianoRollState {
     pub(super) scrolled_by_hand: bool,
     /// The grid's height the notes were last centred for.
     pub(super) centred_for: f32,
+    /// Frames left to keep the selected notes in view: a key moved or sized them, and the view
+    /// follows them on the frame the command lands and the one after.
+    pub(super) reveal_selection: u8,
     /// The key the key column is playing, if any, and where the pointer last was on it: the
     /// window turns a change into `preview.noteOn` and `preview.noteOff`.
     pub(super) playing_key: Option<u8>,
@@ -364,6 +395,7 @@ impl Default for PianoRollState {
             hide_requested: false,
             scrolled_by_hand: false,
             centred_for: 0.0,
+            reveal_selection: 0,
             playing_key: None,
             hover_key: None,
             last_click: None,
@@ -690,6 +722,7 @@ impl PianoRollState {
                 params["notes"] = json!(named);
                 params["lengths"] = json!(lengths);
                 self.replacing(&mut params);
+                self.reveal_selection = 2;
                 return Some(Action::new("note.resize", params));
             }
             "pianoRoll.earlier" => ("note.move", moves(key_step(&chosen, grid, true), 0).0, 0),
@@ -717,6 +750,7 @@ impl PianoRollState {
                 self.audition_keys(keys.iter().filter_map(|k| u8::try_from(*k).ok()));
                 params["keys"] = json!(keys);
                 self.replacing(&mut params);
+                self.reveal_selection = 2;
                 return Some(Action::new("note.move", params));
             }
             "pianoRoll.up" => ("note.move", 0.0, moves(0.0, 1).1),
@@ -737,6 +771,7 @@ impl PianoRollState {
         params["beats"] = json!(round_beat(beats));
         params["semitones"] = json!(keys);
         self.replacing(&mut params);
+        self.reveal_selection = 2;
         Some(Action::new(id, params))
     }
 
