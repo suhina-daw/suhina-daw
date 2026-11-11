@@ -11,10 +11,14 @@ const TEMPO_SEND: f64 = 0.1;
 pub(crate) use crate::kit::widgets::{snap_tempo, tempo_place, tempo_place_span};
 
 impl App {
+    /// The toolbar in `ui`'s rect, its whole box (a theme's toolbar layout keeps its border and
+    /// padding itself); Suhina's own layout goes in `inside`, its content box.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn control_bar(
         &mut self,
         ui: &mut Ui,
         bar: &crate::kit::element::Entered,
+        inside: Rect,
         grid: Option<&TrackGrid>,
         cpu: Option<u32>,
         ram: Option<u64>,
@@ -22,10 +26,10 @@ impl App {
     ) {
         let mut styled_ui = bar.ui(ui);
         let ui = &mut *styled_ui;
-        if self.themed_toolbar(ui, grid, cpu, ram, actions) {
+        if self.themed_toolbar(ui, inside, grid, cpu, ram, actions) {
             return;
         }
-        let bar = ui.max_rect();
+        let bar = inside;
         ui.allocate_rect(bar, Sense::hover());
         let painter = ui.painter_at(bar);
         let Some(grid) = grid else {
@@ -459,8 +463,9 @@ impl App {
         drop(browser_style);
     }
 
-    pub(super) fn status_bar(&self, ui: &mut Ui, grid: Option<&TrackGrid>) {
-        let style_class = crate::kit::element::STATUS_BAR.enter();
+    /// The status bar's contents in `ui`'s rect, its content box: `style_class` is the bar's
+    /// element, which the window entered and painted.
+    pub(super) fn status_bar(&self, ui: &mut Ui, style_class: &crate::kit::element::Entered, grid: Option<&TrackGrid>) {
         let mut styled_ui = style_class.ui(ui);
         let ui = &mut *styled_ui;
         let bar = ui.max_rect();

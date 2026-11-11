@@ -261,6 +261,13 @@ fn spacing(style: &ComputedStyle, property: Property) -> LengthPercentage {
         _ => length(0.0),
     }
 }
+/// A border side's width, 0 to 16 px as it is painted.
+fn border(style: &ComputedStyle, property: Property) -> LengthPercentage {
+    match style.get(property) {
+        Value::Length(Length::Px(n)) if n.is_finite() => length(n.clamp(0.0, 16.0)),
+        _ => length(0.0),
+    }
+}
 fn keyword(style: &ComputedStyle, property: Property) -> &'static str {
     match style.get(property) {
         Value::Keyword(word) => word,
@@ -438,6 +445,13 @@ pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Res
                 right: spacing(computed, Property::PaddingRight),
                 top: spacing(computed, Property::PaddingTop),
                 bottom: spacing(computed, Property::PaddingBottom),
+            },
+            // A box's border takes room inside it, as its padding does: children go in its content box.
+            border: taffy::Rect {
+                left: border(computed, Property::BorderLeftWidth),
+                right: border(computed, Property::BorderRightWidth),
+                top: border(computed, Property::BorderTopWidth),
+                bottom: border(computed, Property::BorderBottomWidth),
             },
             margin: taffy::Rect {
                 left: margin(computed, Property::MarginLeft),
@@ -626,6 +640,15 @@ mod tests {
         elements.truncate(2);
         let main = layout(css, elements, 800.0)[1].unwrap();
         assert!(main.width >= 790.0 && main.height >= 590.0, "{main:?}");
+    }
+
+    #[test]
+    fn a_border_takes_room_inside_the_box_as_padding_does() {
+        let css = "toolbar { display:flex; padding:0 6px; border-width:1px 2px 3px; } #a { width:100px; height:20px; }";
+        let elements = vec![Element::new("toolbar", None), Element::new("div", Some(0)).with_id("a")];
+        let rects = layout(css, elements, 800.0);
+        assert_eq!(rects[1].unwrap().x, 2.0 + 6.0, "the left border, then the padding");
+        assert_eq!(rects[1].unwrap().y, 1.0, "the top border");
     }
 
     #[test]

@@ -77,9 +77,11 @@ pub(super) fn place(ui: &Ui, module: &str, base: Rect) -> Rect {
 
 impl App {
     /// Returns true when the custom layout has rendered the bar.
+    /// `inside` is the toolbar's content box, in `ui`'s rect, its whole box.
     pub(super) fn themed_toolbar(
         &mut self,
         ui: &mut Ui,
+        inside: Rect,
         grid: Option<&TrackGrid>,
         cpu: Option<u32>,
         ram: Option<u64>,
@@ -140,7 +142,7 @@ impl App {
                 .filter(|id| !toolbar.hidden.contains(id))
                 .map(|id| (id.clone(), self.toolbar_module_width(id)))
                 .collect();
-            if let Some(modules) = crate::kit::native_css::toolbar(&modules, rect.size()) {
+            if let Some(modules) = crate::kit::native_css::toolbar(&modules, rect.size(), inside.height()) {
                 if default_layout && !crate::kit::native_css::toolbar_layout_requested() {
                     return false;
                 }

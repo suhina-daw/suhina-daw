@@ -927,7 +927,11 @@ fn column_body(
             rgb(column.color),
         );
     }
-    let (top, scenes) = (bands.top, bands.scenes);
+    // Its border, and its slots in its content box, inside its border and padding (#1336).
+    let column_box = Rect::from_x_y_ranges(span, bands.body.y_range());
+    let inside = column_style.paint_border(painter, column_box);
+    let (span, top) = (inside.x_range(), bands.top + (inside.top() - column_box.top()));
+    let scenes = bands.scenes;
     let mapping = state.launch_keys.mode.on && column.kind != ColumnKind::Return;
     let label = |target: MappingTarget| bands.mapped.iter().find(|(t, _)| *t == target).map(|(_, l)| l.as_str());
     for (scene, slot) in column.slots.iter().enumerate() {

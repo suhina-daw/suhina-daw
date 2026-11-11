@@ -241,7 +241,12 @@ fn edge(painter: &Painter, rect: Rect, radius: f32, style: &super::Computed) {
     for shadow in style.shadows.iter().rev().filter(|s| s.inset) {
         shadow.paint(painter, rect, radius, style.opacity);
     }
-    if style.border_width <= 0.0 || style.border.a() == 0 {
+    border(painter, rect, radius, style);
+}
+
+/// An element's border alone, for one whose background and inset shadows its caller painted.
+pub(in crate::kit) fn border(painter: &Painter, rect: Rect, radius: f32, style: &super::Computed) {
+    if !rect.is_positive() || !rect.is_finite() || style.border_width <= 0.0 || style.border.a() == 0 {
         return;
     }
     let color = style.border.gamma_multiply(style.opacity);

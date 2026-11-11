@@ -35,7 +35,7 @@ pub use paint::background_with;
 #[cfg(test)]
 pub(in crate::kit) use paint::surface_with;
 pub(in crate::kit) use paint::{artwork_shadows, background_rounded, gradients_rounded, level_fill, level_glow};
-pub(in crate::kit) use paint::{box_begin, box_end};
+pub(in crate::kit) use paint::{border, box_begin, box_end};
 pub use text::paint_text;
 pub use workspace::{Workspace, splitter_between, workspace};
 
@@ -1226,7 +1226,10 @@ pub fn toolbar_layout_requested() -> bool {
 }
 
 /// Flex/Grid layout for actual ordered, visible module ids. No theme-supplied markup.
-pub fn toolbar(order: &[(String, f32)], size: Vec2) -> Option<Vec<Module>> {
+///
+/// `size` is the toolbar's whole box; a module is `module_height` tall where the sheet gives no
+/// height, the height of the toolbar's content box (its box less its border and padding).
+pub fn toolbar(order: &[(String, f32)], size: Vec2, module_height: f32) -> Option<Vec<Module>> {
     if order.len() > skin::MODULES.len()
         || order.iter().any(|(id, _)| !skin::MODULES.contains(&id.as_str()))
         || !size.is_finite()
@@ -1239,7 +1242,7 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2) -> Option<Vec<Module>> {
         if !same_source(engine.source.as_ref()) {
             return None;
         }
-        let key = format!("{order:?}:{size:?}");
+        let key = format!("{order:?}:{size:?}:{module_height:?}");
         if let Some((previous, modules)) = &engine.toolbar
             && previous == &key
         {
@@ -1249,7 +1252,7 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2) -> Option<Vec<Module>> {
             "toolbar {{ display:flex; width:{}px; height:{}px; gap:4px; align-items:center; }} toolbar-module {{ flex-shrink:0; height:{}px; }}",
             size.x.clamp(1.0, 16384.0),
             size.y.clamp(1.0, 16384.0),
-            size.y.clamp(24.0, 16384.0)
+            module_height.clamp(24.0, 16384.0)
         );
         for (id, width) in order {
             defaults.push_str(&format!("#{id} {{ width:{}px; }}", width.clamp(1.0, 4096.0)));

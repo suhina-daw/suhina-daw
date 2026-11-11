@@ -2982,66 +2982,65 @@ impl App {
         // The application bar is the window's title bar where Suhina draws its own (Windows); where
         // the system draws one, it would be a second.
         if cfg!(target_os = "windows") {
-            with_bar_line(ui, "application-bar", |ui| {
-                egui::Panel::top("application-bar")
-                    .exact_size(28.0)
-                    .frame(egui::Frame::NONE)
-                    .show(ui, |ui| application_bar::show(ui, self.settings.view, &project_info, &timing))
-            });
+            let bar = crate::kit::element::APPLICATION_BAR.enter();
+            egui::Panel::top("application-bar")
+                .exact_size(bar_height(&bar, 28.0))
+                .show_separator_line(false)
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| {
+                    let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO);
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+                        application_bar::show(ui, &bar, self.settings.view, &project_info, &timing)
+                    })
+                });
         }
         // The window's own menu bar, unless Settings turns it off (by default on macOS, whose bar
         // at the top of the screen has the same menus).
         if self.settings.view.menu_bar {
-            with_bar_line(ui, "menu-bar", |ui| {
-                egui::Panel::top("menu-bar")
-                    .exact_size(theme::MENU_BAR)
-                    .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(4, 0)))
-                    .show(ui, |ui| {
-                        let style_class = crate::kit::element::MENU_BAR.enter();
-                        let bar = ui.max_rect().expand2(Vec2::new(4.0, 0.0));
-                        ui.painter().rect_filled(
-                            bar,
-                            0.0,
-                            crate::kit::style_class::surface_or(theme::panel_background()),
-                        );
-                        style_class.paint_background(ui.painter(), bar, 0.0);
-                        self.menu_bar(ui, &style_class, &mut actions)
+            let bar = crate::kit::element::MENU_BAR.enter();
+            egui::Panel::top("menu-bar")
+                .exact_size(bar_height(&bar, theme::MENU_BAR))
+                .show_separator_line(false)
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| {
+                    // The menus keep 4 points from the bar's sides.
+                    let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO).shrink2(Vec2::new(4.0, 0.0));
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+                        self.menu_bar(ui, &bar, &mut actions)
                     })
-            });
+                });
         }
         self.frame_trace.mark("menu bar");
         if self.projects.len() >= 2 {
+            let bar = crate::kit::element::PROJECT_TABS.enter();
             egui::Panel::top("tabs")
-                .exact_size(TABS)
+                .exact_size(bar_height(&bar, TABS))
+                .show_separator_line(false)
                 .frame(egui::Frame::NONE)
-                .show(ui, |ui| self.tab_row(ui, &mut actions));
+                .show(ui, |ui| self.tab_row(ui, &bar, &mut actions));
         }
-        with_bar_line(ui, "toolbar", |ui| {
-            egui::Panel::top("control-bar").exact_size(theme::CONTROL_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
-                let style_class = crate::kit::element::TOOLBAR.enter();
-                ui.painter().rect_filled(
-                    ui.max_rect(),
-                    0.0,
-                    crate::kit::style_class::surface_or(theme::panel_background()),
-                );
-                style_class.paint_background(ui.painter(), ui.max_rect(), 0.0);
-                self.control_bar(ui, &style_class, grid.as_ref(), cpu, ram, &mut actions)
-            })
-        });
+        let bar = crate::kit::element::TOOLBAR.enter();
+        egui::Panel::top("control-bar")
+            .exact_size(bar_height(&bar, theme::CONTROL_BAR))
+            .show_separator_line(false)
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO);
+                self.control_bar(ui, &bar, inside, grid.as_ref(), cpu, ram, &mut actions)
+            });
+        drop(bar);
         self.frame_trace.mark("control bar");
-        egui::Panel::bottom("status-bar").exact_size(theme::STATUS_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
-            let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
-            {
-                let style_class = crate::kit::element::STATUS_BAR.enter();
-                ui.painter().rect_filled(
-                    ui.max_rect(),
-                    bottom,
-                    crate::kit::style_class::surface_or(theme::panel_background()),
-                );
-                style_class.paint_background(ui.painter(), ui.max_rect(), 0.0);
-            }
-            self.status_bar(ui, grid.as_ref())
-        });
+        let bar = crate::kit::element::STATUS_BAR.enter();
+        egui::Panel::bottom("status-bar")
+            .exact_size(bar_height(&bar, theme::STATUS_BAR))
+            .show_separator_line(false)
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
+                let inside = bar_box(ui, &bar, bottom);
+                ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.status_bar(ui, &bar, grid.as_ref()))
+            });
+        drop(bar);
         self.frame_trace.mark("bars");
         // Samples and MIDI files from the system: dropped this frame, or still over the window.
         let system = match (self.browser.drag.is_some(), dropped.is_empty()) {
@@ -3895,30 +3894,43 @@ pub(crate) fn clipboard_line(command: &str) -> Option<String> {
     Some(format!("Suhina: {what} copied"))
 }
 
-/// Shows a bar with `show`, its separator line in the bar's own `border-color` (`.toolbar {
-/// border-color }`), else the theme's border.
-fn with_bar_line<R>(ui: &mut Ui, class: &str, show: impl FnOnce(&mut Ui) -> R) -> R {
-    let line = {
-        let bar = crate::kit::element::named(class).map(crate::kit::element::Name::enter);
-        let own = bar.as_ref().and_then(crate::kit::element::Entered::style);
-        // A bar with no line (`border-width: 0`, or a transparent border) fills the line's pixel
-        // with its own background, so no gap shows the window behind it.
-        let lineless = own.as_ref().is_some_and(|c| {
-            (c.authored.border_width && c.border_width <= 0.0) || (c.authored.border && c.border.a() == 0)
-        });
-        if lineless {
-            own.as_ref()
-                .filter(|c| c.authored.background)
-                .map_or_else(|| crate::kit::style_class::surface_or(theme::panel_background()), |c| c.background)
-        } else {
-            theme::border()
-        }
-    };
-    let saved = ui.visuals().widgets.noninteractive.bg_stroke;
-    ui.visuals_mut().widgets.noninteractive.bg_stroke.color = line;
-    let shown = show(ui);
-    ui.visuals_mut().widgets.noninteractive.bg_stroke = saved;
-    shown
+/// A bar along the top or the bottom of the window (`application-bar`, `menu-bar`,
+/// `project-tabs`, `toolbar`, `status-bar`) in the panel `ui` gives it: its background (with the
+/// window's `corners` where it meets them), gradients and inset shadows, then its border, in
+/// CSS's order. Returns the content box what the bar holds goes in (#1336). The line between a bar
+/// and the view is the bar's border: the user-agent sheet gives each a 1 px one in `--border`, and
+/// without a sheet that line is drawn the same.
+fn bar_box(ui: &Ui, bar: &crate::kit::element::Entered, corners: egui::CornerRadius) -> Rect {
+    let rect = ui.max_rect();
+    let painter = ui.painter();
+    painter.rect_filled(rect, corners, crate::kit::style_class::surface_or(theme::panel_background()));
+    bar.paint_background(painter, rect, 0.0);
+    if bar.style().is_some() {
+        return bar.paint_border(painter, rect);
+    }
+    let [top, _, bottom, _] = native_bar_line(bar);
+    let line = |y: f32| Rect::from_x_y_ranges(rect.x_range(), egui::Rangef::new(y, y + 1.0));
+    if top > 0.0 {
+        painter.rect_filled(line(rect.top()), 0.0, theme::border());
+    }
+    if bottom > 0.0 {
+        painter.rect_filled(line(rect.bottom() - 1.0), 0.0, theme::border());
+    }
+    Rect::from_min_max(rect.min + Vec2::new(0.0, top), rect.max - Vec2::new(0.0, bottom))
+}
+
+/// How tall a bar is whose native height, its line included, is `height`: what it holds, and its
+/// border and padding around that.
+fn bar_height(bar: &crate::kit::element::Entered, height: f32) -> f32 {
+    let [line_top, _, line_bottom, _] = native_bar_line(bar);
+    let [top, _, bottom, _] = if bar.style().is_some() { bar.insets() } else { [line_top, 0.0, line_bottom, 0.0] };
+    height - line_top - line_bottom + top + bottom
+}
+
+/// The line a bar has without a sheet, as the user-agent sheet gives it: under a bar over the
+/// views, over the status bar. Top, right, bottom, left.
+fn native_bar_line(bar: &crate::kit::element::Entered) -> [f32; 4] {
+    if bar.name() == crate::kit::element::STATUS_BAR { [1.0, 0.0, 0.0, 0.0] } else { [0.0, 0.0, 1.0, 0.0] }
 }
 
 /// Draws a workspace panel with `draw`; when the theme's grid lays `panel` over the `main` view

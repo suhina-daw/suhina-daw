@@ -113,8 +113,10 @@ pub fn user_agent_color(name: &str, attributes: &[(&str, &str)]) -> Option<Color
 /// theme gives them none: a knob's body, a fader's rail and its cap, lit a little by the values'
 /// text while the pointer is on it. Each is a rule on the part itself, so a colour a theme gives
 /// an element around it (`knob`, `mixer`) is not inherited into the artwork. A knob's pointer
-/// has none: it takes the knob's colour.
+/// has none: it takes the knob's colour. And the colour of the bars' borders, the lines between
+/// them and the view, which the user-agent sheet draws.
 pub(super) const PART_COLOURS: &str = "\
+application-bar, menu-bar, project-tabs, toolbar, status-bar { border-color: var(--border); }
 knob-body { color: var(--control-background); }
 fader-rail { color: color-mix(in srgb, var(--control-background), black 65%); }
 fader-cap { color: color-mix(in srgb, var(--control-background), var(--text-value) 28%); }

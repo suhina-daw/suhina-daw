@@ -305,6 +305,7 @@ fn responsive_workspace_and_toolbar_survive_resize() {
                         ("mapping".into(), 60.0),
                     ],
                     Vec2::new(size.x, 56.0),
+                    56.0,
                 )
                 .unwrap();
                 assert_eq!(modules.iter().any(|module| module.name == "performance"), size.x > 1000.0);
@@ -491,6 +492,7 @@ fn taffy_grid_changes_real_module_rectangles_and_hidden_modules() {
     let modules = toolbar(
         &[("tempo".into(), 62.0), ("transport".into(), 86.0), ("mapping".into(), 64.0)],
         Vec2::new(400.0, 32.0),
+        32.0,
     )
     .unwrap();
     assert_eq!(modules.len(), 2);

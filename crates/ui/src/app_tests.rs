@@ -698,18 +698,15 @@ fn a_bar_draws_its_separator_in_its_own_border_colour() {
     assert!(found, "the line under the menu bar is red");
 }
 
-#[test]
-fn a_bar_without_a_line_fills_the_line_with_its_background() {
+/// The green rectangles across the window one settled frame paints with `css` as the theme.
+fn wide_green_rects(css: &str) -> Vec<Rect> {
     let ctx = egui::Context::default();
     let mut app = App::new();
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
     app.settings.animations = false;
-    app.use_test_skin(crate::kit::skin::Skin {
-        css: Some(std::sync::Arc::from("menu-bar { background-color: #00FF00; border-width: 0; }")),
-        ..Default::default()
-    });
+    app.use_test_skin(crate::kit::skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() });
     let green = egui::Color32::from_rgb(0, 0xFF, 0);
-    let mut found = false;
+    let mut found = Vec::new();
     for _ in 0..4 {
         let mut output = ctx.run_ui(
             egui::RawInput {
@@ -719,16 +716,33 @@ fn a_bar_without_a_line_fills_the_line_with_its_background() {
             |ui| app.ui(ui),
         );
         output.textures_delta.clear();
-        found = output.shapes.iter().any(|shape| match &shape.shape {
-            egui::Shape::LineSegment { points, stroke } => {
-                stroke.color == green && (points[1].x - points[0].x).abs() > 1000.0
-            }
-            egui::Shape::Rect(rect) => rect.fill == green && rect.rect.width() > 1000.0 && rect.rect.height() <= 2.0,
-            _ => false,
-        });
+        found = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) if rect.fill == green && rect.rect.width() > 1000.0 => Some(rect.rect),
+                _ => None,
+            })
+            .collect();
     }
     app.use_test_skin(crate::kit::skin::Skin::default());
-    assert!(found, "the menu bar's line is its own green");
+    found
+}
+
+#[test]
+fn a_bar_s_line_is_its_bottom_border_and_without_one_the_bar_is_a_line_shorter() {
+    // The line under the menu bar is its border, in its border colour, inside its box.
+    let lined = wide_green_rects("menu-bar { border-color: #00FF00; }");
+    let line = lined.iter().find(|rect| rect.height() <= 1.0).expect("the line under the bar");
+    assert_eq!(line.bottom(), theme::MENU_BAR, "at the bar's bottom edge: {lined:?}");
+    // Without a border the bar has no line, and is that line shorter.
+    let bare = wide_green_rects("menu-bar { background-color: #00FF00; border-width: 0; }");
+    let bar = bare.iter().find(|rect| rect.height() > 1.0).expect("the bar");
+    assert_eq!(bar.height(), theme::MENU_BAR - 1.0, "{bare:?}");
+    // Padding grows the bar around what it holds.
+    let padded = wide_green_rects("menu-bar { background-color: #00FF00; padding: 3px 0; }");
+    let bar = padded.iter().find(|rect| rect.height() > 1.0).expect("the bar");
+    assert_eq!(bar.height(), theme::MENU_BAR + 6.0, "{padded:?}");
 }
 
 #[test]

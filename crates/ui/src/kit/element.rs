@@ -396,6 +396,20 @@ impl Entered {
         self.contain(painter, rect, style, radius, outer)
     }
 
+    /// The element's border in `rect`, for a bar whose background its caller paints with the
+    /// window's corners (and [`Entered::paint_background`] its gradients and inset shadows): then,
+    /// as after [`Entered::paint`], its contents go in the content box returned, are clipped to
+    /// its padding box when it hides its overflow, and its outline comes when it leaves scope.
+    pub fn paint_border(&self, painter: &Painter, rect: Rect) -> Rect {
+        self.finish();
+        let style = self.style();
+        if let Some(style) = &style {
+            super::native_css::border(painter, rect, 0.0, style);
+        }
+        let outer = super::native_css::outer_clip(self.scope.node);
+        self.contain(painter, rect, style, 0.0, outer)
+    }
+
     /// The element's content box in `rect`; and from here on, until it is dropped, its box
     /// clips what is painted in `painter`'s layer when it hides its overflow.
     fn contain(

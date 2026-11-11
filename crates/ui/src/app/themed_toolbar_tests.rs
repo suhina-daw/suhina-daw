@@ -95,7 +95,16 @@ fn native_bar() -> Harness<'static, Fixture> {
             let rect = Rect::from_min_size(ui.max_rect().min, Vec2::new(ui.available_width(), 56.0));
             ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                 let bar = crate::kit::element::TOOLBAR.enter();
-                fixture.app.control_bar(ui, &bar, Some(&fixture.grid), Some(10), Some(1024), &mut fixture.actions);
+                let inside = ui.max_rect();
+                fixture.app.control_bar(
+                    ui,
+                    &bar,
+                    inside,
+                    Some(&fixture.grid),
+                    Some(10),
+                    Some(1024),
+                    &mut fixture.actions,
+                );
             });
         },
         fixture,
@@ -286,7 +295,8 @@ fn css_toolbar_targets_keep_native_commands_with_svg_artwork() {
             skin::configure(&skin);
             let _frame = crate::kit::native_css::frame(ui);
             let bar = crate::kit::element::TOOLBAR.enter();
-            fixture.app.control_bar(ui, &bar, Some(&fixture.grid), None, None, &mut fixture.actions);
+            let inside = ui.max_rect();
+            fixture.app.control_bar(ui, &bar, inside, Some(&fixture.grid), None, None, &mut fixture.actions);
         },
         fixture,
     );
