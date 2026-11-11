@@ -607,6 +607,8 @@ pub struct App {
     /// bar shows it and once a second is often enough for a number that moves that slowly.
     ram: Option<u64>,
     next_ram: Option<f64>,
+    /// Blur and glass even with animations off (`suhina-theme-render`, whose scenes are still).
+    effects_when_still: bool,
     /// The audio's health counters last traced: device underruns, late stretched frames and late plug-in blocks.
     audio_traced: (u64, u64, u64, u64, u64),
     /// A clip carried between the views, and the view whose name it hovers over since when.
@@ -781,6 +783,7 @@ impl App {
             reveal: None,
             ram: None,
             next_ram: None,
+            effects_when_still: false,
             audio_traced: (0, 0, 0, 0, 0),
             carry: None,
             device_carry: None,
@@ -1210,6 +1213,12 @@ impl App {
     pub fn hold_ram(&mut self, bytes: Option<u64>) {
         self.ram = bytes;
         self.next_ram = Some(f64::INFINITY);
+    }
+
+    /// Keeps blur and glass on while animations are off, so that still renders of the window show
+    /// them (`suhina-theme-render`). Off, the animations setting turns them off with motion.
+    pub fn effects_when_still(&mut self, on: bool) {
+        self.effects_when_still = on;
     }
 
     /// Turns animations on or off (a setting; on by default).
@@ -2016,70 +2025,74 @@ impl App {
                     // The field takes the name's own place and colours, with no frame of its
                     // own, the whole name selected to type over (#916).
                     let rect = spot.rect;
-                    egui::Area::new(egui::Id::unique("inline-rename"))
-                        .order(egui::Order::Foreground)
-                        .fixed_pos(rect.min)
-                        .show(ui.ctx(), |ui| {
-                            // An opaque back in the name's own colour, so the name the view drew
-                            // under the field does not show through it.
-                            let back = ui.painter().add(egui::Shape::Noop);
-                            // The selected name is a shade of its own ink on its own colour, not
-                            // the theme's selection colour, which on a coloured header reads as a
-                            // box of its own.
-                            let selection = &mut ui.visuals_mut().selection;
-                            selection.bg_fill = motion::mix(spot.fill.to_opaque(), spot.text, 0.28);
-                            selection.stroke.color = spot.text;
-                            let field_id = egui::Id::unique("inline-rename-field");
-                            let field = ui.put(
-                                rect,
-                                egui::TextEdit::singleline(&mut draft)
-                                    .id(field_id)
-                                    .frame(egui::Frame::NONE)
-                                    .margin(egui::Margin::ZERO)
-                                    .font(theme::ui_font(spot.size))
-                                    .text_color(spot.text)
-                                    .align(egui::Align2::LEFT_CENTER)
-                                    .min_size(rect.size())
-                                    .desired_width(rect.width()),
-                            );
-                            field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, what));
-                            let covered = field.rect.union(rect);
-                            ui.painter().set(back, egui::Shape::rect_filled(covered, 2.0, spot.fill.to_opaque()));
-                            if !focused {
-                                field.request_focus();
-                                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), field_id) {
-                                    let all = egui::text::CCursorRange::two(
-                                        egui::text::CCursor::new(0),
-                                        egui::text::CCursor::new(draft.chars().count()),
-                                    );
-                                    state.cursor.set_char_range(Some(all));
-                                    state.store(ui.ctx(), field_id);
+                    crate::kit::floating::area(
+                        ui.ctx(),
+                        egui::Id::unique("inline-rename"),
+                        crate::kit::floating::Kind::Plain,
+                    )
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(rect.min)
+                    .show(ui.ctx(), |ui| {
+                        // An opaque back in the name's own colour, so the name the view drew
+                        // under the field does not show through it.
+                        let back = ui.painter().add(egui::Shape::Noop);
+                        // The selected name is a shade of its own ink on its own colour, not
+                        // the theme's selection colour, which on a coloured header reads as a
+                        // box of its own.
+                        let selection = &mut ui.visuals_mut().selection;
+                        selection.bg_fill = motion::mix(spot.fill.to_opaque(), spot.text, 0.28);
+                        selection.stroke.color = spot.text;
+                        let field_id = egui::Id::unique("inline-rename-field");
+                        let field = ui.put(
+                            rect,
+                            egui::TextEdit::singleline(&mut draft)
+                                .id(field_id)
+                                .frame(egui::Frame::NONE)
+                                .margin(egui::Margin::ZERO)
+                                .font(theme::ui_font(spot.size))
+                                .text_color(spot.text)
+                                .align(egui::Align2::LEFT_CENTER)
+                                .min_size(rect.size())
+                                .desired_width(rect.width()),
+                        );
+                        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, what));
+                        let covered = field.rect.union(rect);
+                        ui.painter().set(back, egui::Shape::rect_filled(covered, 2.0, spot.fill.to_opaque()));
+                        if !focused {
+                            field.request_focus();
+                            if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), field_id) {
+                                let all = egui::text::CCursorRange::two(
+                                    egui::text::CCursor::new(0),
+                                    egui::text::CCursor::new(draft.chars().count()),
+                                );
+                                state.cursor.set_char_range(Some(all));
+                                state.store(ui.ctx(), field_id);
+                            }
+                        }
+                        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                        if escape {
+                            keep = false;
+                        } else if field.lost_focus() && focused {
+                            let name = draft.trim();
+                            apply = match (renamed_track, target.get("clips")) {
+                                // A track keeps a name: an empty one leaves it as it was.
+                                (Some(_), _) if name.is_empty() => None,
+                                (Some(track), _) => {
+                                    Some(Action::new("track.rename", json!({ "track": track, "name": name })))
                                 }
-                            }
-                            let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-                            if escape {
-                                keep = false;
-                            } else if field.lost_focus() && focused {
-                                let name = draft.trim();
-                                apply = match (renamed_track, target.get("clips")) {
-                                    // A track keeps a name: an empty one leaves it as it was.
-                                    (Some(_), _) if name.is_empty() => None,
-                                    (Some(track), _) => {
-                                        Some(Action::new("track.rename", json!({ "track": track, "name": name })))
-                                    }
-                                    (None, Some(clips)) => Some(Action::new(
-                                        "clip.renameMany",
-                                        json!({ "clips": clips.clone(), "name": name }),
-                                    )),
-                                    (None, None) => {
-                                        let mut params = target.clone();
-                                        params["name"] = json!(name);
-                                        Some(Action::new("clip.rename", params))
-                                    }
-                                };
-                                keep = false;
-                            }
-                        });
+                                (None, Some(clips)) => Some(Action::new(
+                                    "clip.renameMany",
+                                    json!({ "clips": clips.clone(), "name": name }),
+                                )),
+                                (None, None) => {
+                                    let mut params = target.clone();
+                                    params["name"] = json!(name);
+                                    Some(Action::new("clip.rename", params))
+                                }
+                            };
+                            keep = false;
+                        }
+                    });
                 }
             }
             if keep {
@@ -2751,7 +2764,7 @@ impl App {
         );
         crate::kit::liquid::set_effects_allowed(
             ui.ctx(),
-            self.settings.animations && self.settings.theme != "high-contrast",
+            (self.settings.animations || self.effects_when_still) && self.settings.theme != "high-contrast",
         );
         self.frame_trace.start();
         self.frame_trace.causes(ui.ctx());
@@ -3274,8 +3287,12 @@ impl App {
                 // A close button at its top right, and Escape, put the views back (#710).
                 let close =
                     Rect::from_min_size(Pos2::new(inner.right() - 28.0, inner.top() + 4.0), Vec2::new(24.0, 20.0));
-                let over =
-                    ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("sample-map-close")));
+                let over = ui.ctx().layer_painter(crate::kit::floating::layer(
+                    ui.ctx(),
+                    egui::Order::Foreground,
+                    Id::unique("sample-map-close"),
+                    crate::kit::floating::Kind::Plain,
+                ));
                 let response = widgets::button_area(ui, close, Id::unique("sample-map-close"), "Close sample map")
                     .on_hover_text("Close the sample map (Esc)");
                 let fill =
@@ -3846,7 +3863,12 @@ impl App {
 /// The label beside the pointer while something is dragged: outlined in the accent colour when
 /// it can land where the pointer is.
 fn drag_label(ctx: &egui::Context, pointer: Pos2, text: &str, lands: bool) {
-    let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("browser-drag"));
+    let layer = crate::kit::floating::layer(
+        ctx,
+        egui::Order::Tooltip,
+        Id::unique("browser-drag"),
+        crate::kit::floating::Kind::Plain,
+    );
     let painter = ctx.layer_painter(layer);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);

@@ -400,13 +400,13 @@ fn the_wheel_zooms_only_when_no_dialog_is_on_top() {
         |ui, (view, dialog): &mut (MapView, bool)| {
             show(ui, view, &points, None, "20 samples", &[], None, &[], &mut Vec::new());
             if *dialog {
-                egui::Area::new(egui::Id::unique("dialog")).order(egui::Order::Foreground).fixed_pos(Pos2::ZERO).show(
-                    ui.ctx(),
-                    |ui| {
+                crate::kit::floating::area(ui.ctx(), egui::Id::unique("dialog"), crate::kit::floating::Kind::Dialog)
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(Pos2::ZERO)
+                    .show(ui.ctx(), |ui| {
                         ui.set_min_size(size);
                         let _ = ui.interact(Rect::from_min_size(Pos2::ZERO, size), ui.scope_id(), Sense::click());
-                    },
-                );
+                    });
             }
         },
         state,

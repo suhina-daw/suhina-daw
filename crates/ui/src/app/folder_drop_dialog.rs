@@ -30,7 +30,7 @@ impl CloseChoice for FolderDropChoice {
 pub fn show(ui: &Ui, area: Rect, count: usize, folder: &str, remember: &mut bool) -> Option<FolderDropChoice> {
     // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("folder-drop-prompt"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("folder-drop-prompt"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {

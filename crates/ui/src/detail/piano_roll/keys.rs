@@ -458,7 +458,12 @@ pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRoll
 /// the pointer is hidden and a magnifier is drawn where it is, as the drawing tools' icons are.
 pub(super) fn draw_magnifier(ui: &Ui, pos: Pos2) {
     ui.ctx().set_cursor_icon(CursorIcon::None);
-    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("piano-roll-magnifier")));
+    let painter = ui.ctx().layer_painter(crate::kit::floating::layer(
+        ui.ctx(),
+        egui::Order::Tooltip,
+        Id::unique("piano-roll-magnifier"),
+        crate::kit::floating::Kind::Plain,
+    ));
     let (halo, line) = (crate::kit::style_class::surface_or(theme::window_background()), theme::text_primary());
     let handle = [pos + Vec2::splat(MAGNIFIER_RADIUS * 0.7), pos + Vec2::splat(MAGNIFIER_RADIUS * 1.7)];
     painter.line_segment(handle, Stroke::new(4.0, halo));

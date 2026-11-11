@@ -43,8 +43,11 @@ pub const FIXED: &[(&str, Step)] = &[
     ("arrangement", arrangement),
     ("piano-roll", piano_roll),
     ("menu", |h| click(h, "File")),
+    ("context-menu", context_menu),
     ("settings", settings),
     ("tooltip", tooltip),
+    ("export-dialog", |h| menu_item(h, "File", "Export…")),
+    ("about-dialog", |h| menu_item(h, "Help", "About Suhina")),
 ];
 
 /// The scenes with the views scrolled down and along, on a project with more tracks and scenes
@@ -120,6 +123,19 @@ fn settle(h: &mut Window) -> Result<(), String> {
 fn click(h: &mut Window, label: &str) -> Result<(), String> {
     settle(h)?;
     h.query_by_label(label).ok_or_else(|| format!("no control labelled {label:?}"))?.click();
+    settle(h)
+}
+
+/// `item` of the menu bar's `menu`: a dialog it opens.
+fn menu_item(h: &mut Window, menu: &str, item: &str) -> Result<(), String> {
+    click(h, menu)?;
+    click(h, item)
+}
+
+/// A right-click menu: a popup egui builds, not one of the bar's menus.
+fn context_menu(h: &mut Window) -> Result<(), String> {
+    settle(h)?;
+    h.query_by_label("Track Drums").ok_or("no control labelled \"Track Drums\"")?.click_secondary();
     settle(h)
 }
 

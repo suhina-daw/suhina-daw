@@ -202,6 +202,11 @@ impl Computed {
         self.variables.get(name).map(String::as_str)
     }
 
+    /// Whether the sheet gives the element a `box-shadow`.
+    pub fn has_shadow(&self) -> bool {
+        !self.shadows.is_empty()
+    }
+
     pub fn has_gradient(&self) -> bool {
         !self.gradients.is_empty()
     }

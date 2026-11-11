@@ -107,12 +107,16 @@ impl Splash {
         // splash is on screen (and read by screen readers) from its first frame.
         if egui::AreaState::load(ctx, id).is_none() {
             let state = egui::AreaState { pivot_pos: Some(area.min), size: Some(area.size()), ..Default::default() };
-            ctx.memory_mut(|m| m.areas_mut().set_state(egui::LayerId::new(egui::Order::Tooltip, id), state));
+            let layer = crate::kit::floating::layer(ctx, egui::Order::Tooltip, id, crate::kit::floating::Kind::Plain);
+            ctx.memory_mut(|m| m.areas_mut().set_state(layer, state));
         }
-        egui::Area::new(id).order(egui::Order::Tooltip).fixed_pos(area.min).show(ctx, |ui| {
-            ui.set_min_size(area.size());
-            self.draw(ui, area, opacity);
-        });
+        crate::kit::floating::area(ctx, id, crate::kit::floating::Kind::Plain)
+            .order(egui::Order::Tooltip)
+            .fixed_pos(area.min)
+            .show(ctx, |ui| {
+                ui.set_min_size(area.size());
+                self.draw(ui, area, opacity);
+            });
         self.first_frame.get_or_insert((ctx.cumulative_frame_nr(), now));
         true
     }

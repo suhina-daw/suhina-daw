@@ -6,6 +6,9 @@ allow-indexing-slicing-in-tests = true
 # translucent (#1235). Read them with to_srgba_unmultiplied(), or to_array() where premultiplied
 # channels are meant.
 disallowed-methods = [
+    # Every floating layer the app builds says what it is, so egui's menus and tooltips are told
+    # from the app's own dialogs and overlays (#1234).
+    { path = "egui::containers::area::Area::new", reason = "use kit::floating::area, which says what the area is" },
     { path = "ecolor::Color32::r", reason = "premultiplied: use to_srgba_unmultiplied(), or to_array() for premultiplied channels" },
     { path = "ecolor::Color32::g", reason = "premultiplied: use to_srgba_unmultiplied(), or to_array() for premultiplied channels" },
     { path = "ecolor::Color32::b", reason = "premultiplied: use to_srgba_unmultiplied(), or to_array() for premultiplied channels" },

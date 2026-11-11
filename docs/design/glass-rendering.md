@@ -80,10 +80,16 @@ binds the textures it meets from where they already are, without copying them: e
 textures (images, icons) from eframe's main renderer, and another capture's image from that
 capture's targets. A capture never samples its own target, and what it cannot bind (a native
 callback, a texture only the main renderer can draw) is left out while the rest still draws.
-Menus (the menu bar's, right-click menus and dropdowns) get a third capture: once the frame is
-painted, the window's own layers are drawn and blurred into targets of the menus' own and
-placed under each popup's frame, fading in with it; in a see-through window the pixels under
-the menu are cleared first, so the image keeps the window's alpha.
+What floats over the window (menus, right-click menus, dropdowns, tooltips and dialogs) gets a
+third capture: once the frame is painted, the window's own layers are drawn and blurred, once
+however many surfaces float and not at all when none does, into targets of their own, and placed
+under each surface's frame, fading in as egui fades the surface in (its area's fade, worked out
+again from egui's area state); in a see-through window the pixels under it are cleared first, so
+the image keeps the window's alpha. A surface is found by its layer, not its colour: every layer
+at egui's popup or tooltip order is one, unless the app declared it its own (`kit::floating`,
+the only caller of `egui::Area::new`); its frame is the layer's first shape. Dialogs place their
+image under their box themselves (`kit::floating::dialog`). The element's `backdrop-filter`
+turns each kind on or off (#1234).
 Surfaces smaller than 12 logical pixels stay solid. The three strengths are independently
 saved percentages: 0 is off, 100 is the strongest supported material. Panels interpolate
 from opaque to a 55% theme tint at full strength; track and clip rims keep the source

@@ -171,16 +171,17 @@ impl Updates {
         let channel = settings.channel();
         // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
         let style_class = crate::kit::element::DIALOG.enter();
-        let choice = egui::Area::new(Id::unique("updates-dialog"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(area.min)
-            .show(ui.ctx(), |ui| {
-                let mut styled_ui = style_class.ui(ui);
-                let ui = &mut *styled_ui;
-                ui.set_min_size(area.size());
-                self.draw(ui, &style_class, area, channel)
-            })
-            .inner;
+        let choice =
+            crate::kit::floating::area(ui.ctx(), Id::unique("updates-dialog"), crate::kit::floating::Kind::Dialog)
+                .order(egui::Order::Foreground)
+                .fixed_pos(area.min)
+                .show(ui.ctx(), |ui| {
+                    let mut styled_ui = style_class.ui(ui);
+                    let ui = &mut *styled_ui;
+                    ui.set_min_size(area.size());
+                    self.draw(ui, &style_class, area, channel)
+                })
+                .inner;
         match choice? {
             Choice::Close => self.open = false,
             Choice::Check => self.check(ui.ctx(), settings),

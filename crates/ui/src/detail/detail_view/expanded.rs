@@ -112,9 +112,10 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     } else {
         area
     };
-    egui::Area::new(Id::unique("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(slice.min).show(
-        ui.ctx(),
-        |ui| {
+    crate::kit::floating::area(ui.ctx(), Id::unique("device-expanded-area"), crate::kit::floating::Kind::Plain)
+        .order(egui::Order::Foreground)
+        .fixed_pos(slice.min)
+        .show(ui.ctx(), |ui| {
             // In the device's own scope, as its compact panel is: a rule on `#device-<id>` (its
             // `--device-*` tokens) reaches the expanded canvas too.
             let device_id = format!("device-{}", device.theme_id);
@@ -196,8 +197,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             }
             // The canvas stretched to the strip on each axis.
             crate::detail::device_canvas::show(ui, body, canvas, &state, &graph.parameters, track, &device.at, actions);
-        },
-    );
+        });
 }
 
 /// A graph's node list, then its canvas and parameter list side by side in `body`: a `.sd`

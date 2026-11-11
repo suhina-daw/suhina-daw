@@ -64,7 +64,7 @@ pub enum Choice {
 /// Draws the project dialog over `area`, above everything else.
 pub fn show(ui: &Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Option<Choice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("project-dialog"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("project-dialog"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -216,7 +216,7 @@ pub enum SaveChoice {
 /// Draws the save prompt over `area`.
 pub fn show_save(ui: &Ui, area: Rect, prompt: &mut SavePrompt) -> Option<SaveChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("save-prompt"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("save-prompt"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -303,7 +303,7 @@ pub enum UnsavedChoice {
 /// Asks whether to save `name`'s changes before `doing` ("closing it", "quitting"), over `area`.
 pub fn show_unsaved(ui: &Ui, area: Rect, name: &str, doing: &str) -> Option<UnsavedChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("unsaved-prompt"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("unsaved-prompt"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -345,7 +345,7 @@ fn platform() -> String {
 /// Draws the About dialog over `area`. Returns what was chosen, or `None` while it stays open.
 pub fn show_about(ui: &Ui, area: Rect) -> Option<AboutChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("about-dialog"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("about-dialog"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -452,7 +452,7 @@ pub enum AraEditsChoice {
 /// Asks whether clips `plugin` edits keep their edits on the track they go to, over `area`.
 pub fn show_ara_edits(ui: &Ui, area: Rect, plugin: &str) -> Option<AraEditsChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("ara-edits-prompt"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("ara-edits-prompt"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -532,7 +532,7 @@ const RECOVERY_BUTTON: Vec2 = Vec2::new(120.0, 18.0);
 /// file, over `area`; `saved` says whether the project has a file at all.
 pub fn show_recovery(ui: &Ui, area: Rect, name: &str, written: &str, saved: bool) -> Option<RecoveryChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("recovery-prompt"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("recovery-prompt"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -599,7 +599,7 @@ pub enum AgentChoice {
 /// over `area`.
 pub fn show_agent(ui: &Ui, area: Rect, client: &str) -> Option<AgentChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("agent-prompt"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("agent-prompt"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -647,7 +647,7 @@ fn draw_agent(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect, cl
 /// move, `Some(false)` to leave them.
 pub fn show_folder_move(ui: &Ui, area: Rect, what: &str, to: &str) -> Option<bool> {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("folder-move"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("folder-move"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -706,7 +706,7 @@ impl CloseChoice for ImportChoice {
 /// it in as a copy, or leave it.
 pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("theme-import"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("theme-import"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -764,11 +764,13 @@ pub(crate) fn panel<T: CloseChoice>(
         0.0,
         crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
     );
-    let rect = Rect::from_center_size(area.center(), dialog_size(dialog, area, size));
-    // The window's content, blurred, under the panel.
-    crate::kit::liquid::backdrop(&painter, rect);
-    let rect =
-        dialog_box(&painter, dialog, rect, crate::kit::style_class::own_background_or(theme::panel_background()));
+    let rect = Rect::from_center_size(area.center(), crate::kit::floating::dialog_size(dialog, area, size));
+    let rect = crate::kit::floating::dialog(
+        &painter,
+        dialog,
+        rect,
+        crate::kit::style_class::own_background_or(theme::panel_background()),
+    );
     let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     painter.rect_filled(bar, 0.0, theme::control_background());
     let font = theme::ui_font(theme::TEXT);
@@ -790,30 +792,6 @@ pub(crate) fn panel<T: CloseChoice>(
         *closed = Some(T::close());
     }
     rect
-}
-
-/// How big a dialog is in `area` that holds `size`: that, and its border and padding around it
-/// (#1336), never closer than [`PAD`] to the window's edges.
-pub(crate) fn dialog_size(dialog: &crate::kit::element::Entered, area: Rect, size: Vec2) -> Vec2 {
-    let [top, right, bottom, left] = dialog.insets();
-    let size = size + Vec2::new(left + right, top + bottom);
-    Vec2::new(size.x.min(area.width() - 2.0 * PAD), size.y.min(area.height() - 2.0 * PAD))
-}
-
-/// A dialog's box in `rect` over `fill`, its own background, in CSS's order, with Suhina's hairline
-/// round it where the sheet gives it no border; returns the content box what it holds goes in
-/// (#1336).
-pub(crate) fn dialog_box(
-    painter: &egui::Painter,
-    dialog: &crate::kit::element::Entered,
-    rect: Rect,
-    fill: egui::Color32,
-) -> Rect {
-    let content = dialog.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill }).content;
-    if !dialog.style().is_some_and(|style| style.authored.border_width) {
-        painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-    }
-    content
 }
 
 /// The choice that closes a dialog.

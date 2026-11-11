@@ -24,7 +24,7 @@ const BUTTON: Vec2 = Vec2::new(150.0, 18.0);
 /// user sent it to the background (its button, or Escape).
 pub fn show(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("plugin-loading"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("plugin-loading"), crate::kit::floating::Kind::Dialog)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -51,10 +51,9 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
     let loading = progress.loading.len().min(LISTED) + usize::from(progress.loading.len() > LISTED);
     let lines = 1 + loading + progress.failed.len().min(LISTED);
     let height = ROW + PAD * 3.0 + BAR + lines as f32 * LINE + BUTTON.y + PAD;
-    let size = crate::app::project_dialog::dialog_size(dialog, area, Vec2::new(WIDTH, height));
+    let size = crate::kit::floating::dialog_size(dialog, area, Vec2::new(WIDTH, height));
     let rect = Rect::from_center_size(area.center(), size);
-    crate::kit::liquid::backdrop(&painter, rect);
-    let rect = crate::app::project_dialog::dialog_box(
+    let rect = crate::kit::floating::dialog(
         &painter,
         dialog,
         rect,

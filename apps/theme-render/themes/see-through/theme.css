@@ -30,3 +30,8 @@
 button { image: url("assets/button.svg"); }
 fader.cap { image: url("assets/fader.cap.svg"); }
 fader.rail { image: url("assets/fader.rail.svg"); }
+
+/* Menus and tooltips in frames of the theme's own, not egui's: the blur behind them still finds
+   them (#1234). */
+popup { background-color: rgba(40, 20, 60, 0.55); border-radius: 6px; border-width: 1px; border-color: rgba(255, 255, 255, 0.35); }
+tooltip { background-color: rgba(10, 40, 30, 0.6); border-radius: 4px; }

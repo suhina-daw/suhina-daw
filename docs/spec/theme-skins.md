@@ -382,7 +382,8 @@ like before a theme styles it.
 - **What it holds:** `overflow: hidden` on every region (the registry's `Region` kind); a 1 px
   `border-bottom-width` on the bars over the views (`application-bar`, `menu-bar`,
   `project-tabs`, `toolbar`) and a 1 px `border-top-width` on `status-bar`, in `--border` from
-  the palette's tier (the lines above and under the view are `#workspace`'s); the default
+  the palette's tier (the lines above and under the view are `#workspace`'s);
+  `backdrop-filter: blur(20px)` on `popup`, `menu`, `dialog` and `tooltip`; the default
   artwork; the sample map's colours; the theme swatch's rounded square.
 - **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
   `suhina:` URL names an SVG built into Suhina (`assets/themes/default/`), and a theme may use one
@@ -516,6 +517,29 @@ that changes them draws its border but does not move the rows, and the rows are 
 column's top and bottom border, so a thicker one shows under the ends of the rows rather than
 cutting a slot.
 
+**Floating surfaces (#1234).** What floats over the window is styled by four elements: `menu`
+(an open menu of the menu bar), `popup` (every other menu: right-click menus, dropdown lists, a
+control's popup, the project switcher), `tooltip` and `dialog`.
+
+- **`backdrop-filter`** on these four takes `none` or `blur(<length>)` (a length in `px`, or 0).
+  Anything but `none` puts the window's own layers, blurred, under the surface; the radius is
+  read but not used yet: the blur is on or off. On any other element a rule that sets it gets a
+  warning: what sits in the window is over the window's own background, which the system already
+  blurs behind a see-through window. The user-agent sheet blurs all four. The blur needs the GPU
+  renderer, and is off with animations off (Settings) and in the high-contrast theme. `menu`,
+  `popup` and `tooltip` read it from rules on the element alone (`popup { … }`), not from ids,
+  attributes or the elements around them; a dialog reads it as its other properties.
+- **Frames.** A `popup`'s and a `tooltip`'s `background`, border, `border-radius` and
+  `box-shadow` replace the frame egui draws, over egui's own where the sheet sets one and not the
+  others; the blur takes the frame's corners. Their `padding` is not used yet: the contents keep
+  egui's margins. `menu` paints its own background, as before.
+- **One capture.** The window is captured once a frame however many surfaces float, and not at
+  all when none does. The capture holds the window's own layers only, so a tooltip over a menu
+  blurs the window, not the menu under it.
+- **Which layers float.** Every layer egui shows at its popup or tooltip order is a surface,
+  unless the app made it: an overlay, a drag's preview, the splash and the dialogs say what they
+  are (`kit::floating`), so a new menu or tooltip is blurred and framed without code of its own.
+
 **Borders.** `border-width` is a shorthand of `border-top-width`, `border-right-width`,
 `border-bottom-width` and `border-left-width` (one to four lengths, as `padding`), each 0 to
 16 px; `border-color` is one colour for all four sides. Sides of one width follow the element's
@@ -563,8 +587,9 @@ transport's buttons, `[selected]` on the selected track's header, column, strip 
 `.on` state (`solo:on`), falling back to `.active`, and per-view track roles
 (`track.name.mixer` and the others) over `track.name` and `track.body`.
 
-**Elements for menus and popups.** An open menu of the menu bar is `menu`; the metronome's level
-slider is `popup#metronome-level`, outside the toggle's scope.
+**Elements for menus and popups.** An open menu of the menu bar is `menu`; every other menu,
+dropdown list and popup is `popup`, and a tooltip `tooltip` (see *Floating surfaces*); the
+metronome's level slider is `popup#metronome-level`, outside the toggle's scope.
 
 **Bar lines.** The separator under a bar uses that bar's `border-color`, and the line above the
 view `#workspace`'s; `--border` stays every other line.

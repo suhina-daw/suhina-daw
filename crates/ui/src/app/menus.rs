@@ -120,6 +120,8 @@ fn entries(ui: &mut Ui, entries: &[Entry], picked: &mut Option<String>) {
 /// A menu of the bar that opens when the pointer moves onto it while another is open.
 fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
     let shown = ui.menu_button(title, |ui| {
+        // Its layer is the bar's menu: blurred as `menu` says, and framed by the menu itself.
+        crate::kit::floating::declare(ui.ctx(), ui.layer_id().id, crate::kit::floating::Kind::Menu);
         // `menu` styles the open menu: its background, text colour, corner radius and font size.
         let menu = crate::kit::element::MENU.enter();
         // The menu opens over the window, not the bar: text it inherits from the bar (Suhina

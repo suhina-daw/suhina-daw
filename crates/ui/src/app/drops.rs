@@ -1070,7 +1070,12 @@ pub(super) fn drop_overlay(ui: &Ui, area: Rect) {
     // Above every window, Settings included, which takes the drop like the rest of the window.
     let painter = ui
         .ctx()
-        .layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("drop-overlay")))
+        .layer_painter(crate::kit::floating::layer(
+            ui.ctx(),
+            egui::Order::Foreground,
+            Id::unique("drop-overlay"),
+            crate::kit::floating::Kind::Plain,
+        ))
         .with_clip_rect(area);
     painter.rect_filled(
         area,
@@ -1100,7 +1105,12 @@ pub(super) fn name_taken(file: &Path, folder: &Path) -> bool {
 /// pointer takes the drop. The browser's item drags, a tag carry and the tags section's
 /// drops share it.
 fn drag_pill(ui: &Ui, pointer: Pos2, text: &str, accent: bool) {
-    let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("browser-drag"));
+    let layer = crate::kit::floating::layer(
+        ui.ctx(),
+        egui::Order::Tooltip,
+        Id::unique("browser-drag"),
+        crate::kit::floating::Kind::Plain,
+    );
     let painter = ui.ctx().layer_painter(layer);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);

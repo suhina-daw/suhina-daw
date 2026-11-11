@@ -156,7 +156,12 @@ pub fn metronome_level(
             actions.push(Action::new("transport.setMetronome", json!({ "on": on, "db": next })));
         }
     }
-    let over = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, response.id.with("level")));
+    let over = ui.ctx().layer_painter(crate::kit::floating::layer(
+        ui.ctx(),
+        egui::Order::Foreground,
+        response.id.with("level"),
+        crate::kit::floating::Kind::Plain,
+    ));
     over.rect_filled(slider, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     over.rect_stroke(slider, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     over.rect_filled(track, 0.0, theme::control_background());

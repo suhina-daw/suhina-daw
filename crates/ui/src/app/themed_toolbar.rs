@@ -225,7 +225,7 @@ impl App {
         let rects = ui.ctx().data(|d| d.get_temp::<Vec<(String, Rect, Rect)>>(rects_id())).unwrap_or_default();
         let mut done = false;
         let mut cancel = ui.input(|i| i.key_pressed(Key::Escape));
-        egui::Area::new(Id::unique("toolbar-edit-overlay"))
+        crate::kit::floating::area(ui.ctx(), Id::unique("toolbar-edit-overlay"), crate::kit::floating::Kind::Plain)
             .order(egui::Order::Foreground)
             .movable(false)
             .fixed_pos(bar.min)
