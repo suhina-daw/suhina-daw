@@ -1522,7 +1522,7 @@ impl App {
         // these lists every frame, and a frame does not stat every watched folder
         // ([ADR 0036] › 5, the review). The cheap checks stay every frame: empty lists (a
         // device just added reads at once) and the folder the settings name.
-        let due = cache.checked.map_or(true, |at| at.elapsed() >= NAM_WATCH_INTERVAL);
+        let due = cache.checked.is_none_or(|at| at.elapsed() >= NAM_WATCH_INTERVAL);
         for (folder, extension, sets, watch) in folders.iter_mut() {
             // The watch holds the folder, its top-level folders and their capture folders with
             // their write times at the last read; a change inside any of them (a new pack, a

@@ -100,9 +100,11 @@ pub use commands::{
 };
 pub use demo::{demo_project, grouped_project};
 pub use export::{ExportData, ExportGather, export_from};
-pub use files::{MAX_FILES, file_tempo};
-pub use library::{Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items, user_presets};
 pub use files::stage_and_rename;
+pub use files::{MAX_FILES, file_tempo};
+pub use library::{
+    Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items, user_presets,
+};
 pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
 pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};

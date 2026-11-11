@@ -671,8 +671,8 @@ pub const MAX_PRESET_BYTES: usize = 64 * 1024;
 /// The file names Windows reserves for its devices, which a preset file's name may not be:
 /// the stem before any dots, any case ([ADR 0014] › 5, the review).
 const RESERVED_FILE_NAMES: [&str; 22] = [
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1",
-    "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2",
+    "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// A device's values from a preset file (`docs/spec/browser.md` › Built-in effects and instruments, presets
@@ -825,9 +825,9 @@ fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
     if let Some(file) = file.as_deref().filter(|file| !file.starts_with("builtin:")) {
         let given = std::path::Path::new(file);
         if given.is_absolute()
-            || given.components().any(|component| {
-                matches!(component, std::path::Component::ParentDir | std::path::Component::Prefix(_))
-            })
+            || given
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir | std::path::Component::Prefix(_)))
         {
             return Err(format!(
                 "{file:?} is not a preset's file: a preset names a shipped file's key or a library-relative path"
@@ -879,9 +879,9 @@ pub fn write_preset_file(
         }
         let given = std::path::Path::new(file);
         if given.is_absolute()
-            || given.components().any(|component| {
-                matches!(component, std::path::Component::ParentDir | std::path::Component::Prefix(_))
-            })
+            || given
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir | std::path::Component::Prefix(_)))
         {
             return Err(format!(
                 "{file:?} is not a preset's file: a preset names a shipped file's key or a library-relative path"

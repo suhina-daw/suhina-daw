@@ -1128,10 +1128,7 @@ fn a_windows_backslash_state_stores_forward_slashed() {
         json!({ "track": 1, "device": 0, "path": r"Sounds\NAM\Amp models\Suhina\Suhina Overdrive.nam" }),
     )
     .unwrap();
-    assert_eq!(
-        out["file"], "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam",
-        "forward slashes on every platform"
-    );
+    assert_eq!(out["file"], "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam", "forward slashes on every platform");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -1234,10 +1231,7 @@ fn a_relative_state_in_the_users_own_folder_misses_elsewhere_not_on_the_pack() {
         note.is_some_and(|note| note.contains("missing") || note.contains("not there") || !note.is_empty()),
         "{relative}: the user's own missing file keeps its note, not the pack's stand-in: {note:?}"
     );
-    assert!(
-        session.device_asset(relative).is_none(),
-        "no asset: the pack's file of the same name does not stand in"
-    );
+    assert!(session.device_asset(relative).is_none(), "no asset: the pack's file of the same name does not stand in");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
