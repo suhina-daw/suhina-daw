@@ -2984,7 +2984,7 @@ impl App {
         if cfg!(target_os = "windows") {
             let bar = crate::kit::element::APPLICATION_BAR.enter();
             egui::Panel::top("application-bar")
-                .exact_size(bar_height(&bar, 28.0))
+                .exact_size(bar_height(ui, &bar, 28.0))
                 .show_separator_line(false)
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
@@ -2999,7 +2999,7 @@ impl App {
         if self.settings.view.menu_bar {
             let bar = crate::kit::element::MENU_BAR.enter();
             egui::Panel::top("menu-bar")
-                .exact_size(bar_height(&bar, theme::MENU_BAR))
+                .exact_size(bar_height(ui, &bar, theme::MENU_BAR))
                 .show_separator_line(false)
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
@@ -3014,14 +3014,14 @@ impl App {
         if self.projects.len() >= 2 {
             let bar = crate::kit::element::PROJECT_TABS.enter();
             egui::Panel::top("tabs")
-                .exact_size(bar_height(&bar, TABS))
+                .exact_size(bar_height(ui, &bar, TABS))
                 .show_separator_line(false)
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| self.tab_row(ui, &bar, &mut actions));
         }
         let bar = crate::kit::element::TOOLBAR.enter();
         egui::Panel::top("control-bar")
-            .exact_size(bar_height(&bar, theme::CONTROL_BAR))
+            .exact_size(bar_height(ui, &bar, theme::CONTROL_BAR))
             .show_separator_line(false)
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
@@ -3032,7 +3032,7 @@ impl App {
         self.frame_trace.mark("control bar");
         let bar = crate::kit::element::STATUS_BAR.enter();
         egui::Panel::bottom("status-bar")
-            .exact_size(bar_height(&bar, theme::STATUS_BAR))
+            .exact_size(bar_height(ui, &bar, theme::STATUS_BAR))
             .show_separator_line(false)
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
@@ -3927,10 +3927,13 @@ fn native_line(painter: &egui::Painter, bar: &crate::kit::element::Entered, rect
 }
 
 /// How tall a bar is whose native height, its line included, is `height`: what it holds, and its
-/// border and padding around that.
-fn bar_height(bar: &crate::kit::element::Entered, height: f32) -> f32 {
+/// border and padding around that. The bar is as wide as `ui`'s room for it, which a padding in
+/// percent is taken of, as the toolbar's layout and its content box take it (#1336).
+fn bar_height(ui: &Ui, bar: &crate::kit::element::Entered, height: f32) -> f32 {
     let [line_top, _, line_bottom, _] = native_bar_line(bar);
-    let [top, _, bottom, _] = if bar.style().is_some() { bar.insets() } else { [line_top, 0.0, line_bottom, 0.0] };
+    let width = ui.available_rect_before_wrap().width();
+    let [top, _, bottom, _] =
+        if bar.style().is_some() { bar.insets_in(width) } else { [line_top, 0.0, line_bottom, 0.0] };
     height - line_top - line_bottom + top + bottom
 }
 

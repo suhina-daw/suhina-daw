@@ -110,22 +110,31 @@ impl Computed {
         self.border_sides.iter().all(|side| *side == top).then_some(top)
     }
 
-    /// The element's `padding` in points: top, right, bottom, left.
+    /// The element's `padding` in points: top, right, bottom, left. A percentage, which the sheet
+    /// takes only on a CSS layout container, is none here: [`Computed::padding_in`] knows its box.
     pub fn padding(&self) -> [f32; 4] {
-        // As the layout resolves it (`em` of the element's font size), so a box laid out by the
-        // sheet and the content box painted in it agree.
+        self.padding_in(0.0)
+    }
+
+    /// [`Computed::padding`] in a box `width` wide: a percentage is of that width, as the layout
+    /// takes it for the containers the sheet lets pad in percent (`workspace`, `toolbar`), which
+    /// are laid out in their own box (#1336). Points and `em` resolve as the layout's do.
+    pub fn padding_in(&self, width: f32) -> [f32; 4] {
         [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft].map(|side| {
-            match suhina_style::layout::spacing_points(&self.resolved, side) {
-                Some(points) if points.is_finite() => points.clamp(0.0, 512.0),
-                _ => 0.0,
-            }
+            let points = suhina_style::layout::spacing_points_of(&self.resolved, side, width);
+            if points.is_finite() { points.clamp(0.0, 512.0) } else { 0.0 }
         })
     }
 
     /// The room the element's border and `padding` take inside its box, top, right, bottom, left:
     /// what is left is its content box.
     pub fn insets(&self) -> [f32; 4] {
-        let padding = self.padding();
+        self.insets_in(0.0)
+    }
+
+    /// [`Computed::insets`] in a box `width` wide ([`Computed::padding_in`]).
+    pub fn insets_in(&self, width: f32) -> [f32; 4] {
+        let padding = self.padding_in(width);
         std::array::from_fn(|side| padding[side] + self.border_sides[side])
     }
 

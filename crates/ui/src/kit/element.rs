@@ -415,7 +415,7 @@ impl Entered {
         let [top, right, bottom, left] = style.border_sides;
         let padding_box = shrink(rect, [top, right, bottom, left]);
         super::native_css::set_box(self.scope.node, padding_box, painter.clip_rect());
-        let content = shrink(rect, style.insets());
+        let content = shrink(rect, style.insets_in(rect.width()));
         let clip = style.hides_overflow().then(|| {
             let from = painter.ctx().graphics_mut(|layers| layers.entry(painter.layer_id()).next_idx());
             (from, padding_box)
@@ -445,13 +445,19 @@ impl Entered {
     /// The element's content box in `rect`: `rect` less its border and `padding`, for an element
     /// painted in part (a header scrolled partly out of view) whose contents follow its whole box.
     pub fn content_in(&self, rect: Rect) -> Rect {
-        shrink(rect, self.insets())
+        shrink(rect, self.insets_in(rect.width()))
     }
 
     /// The room the element's border and `padding` take inside its box (top, right, bottom,
     /// left): what a box sized from its contents adds around them. Zero where no sheet styles it.
     pub fn insets(&self) -> [f32; 4] {
         self.style().map_or([0.0; 4], |style| style.insets())
+    }
+
+    /// [`Entered::insets`] for a box `width` wide, which a padding in percent is taken of
+    /// (`toolbar`, `workspace`: [`super::native_css::Computed::padding_in`]).
+    pub fn insets_in(&self, width: f32) -> [f32; 4] {
+        self.style().map_or([0.0; 4], |style| style.insets_in(width))
     }
 
     /// The element's `color`, or `fallback` where the sheet sets none.

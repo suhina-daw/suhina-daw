@@ -260,6 +260,16 @@ fn spacing(style: &ComputedStyle, property: Property) -> LengthPercentage {
     }
 }
 
+/// [`spacing_points`], with a percentage taken of `basis`: the width of the box around the
+/// element, as the layout takes it. For the CSS layout containers the sheet lets pad in percent
+/// (`workspace`, `toolbar`) that is their own box's width, the size they are laid out in.
+pub fn spacing_points_of(style: &ComputedStyle, property: Property, basis: f32) -> f32 {
+    match style.get(property) {
+        Value::Length(Length::Percent(n)) if basis.is_finite() => (n * basis.max(0.0)).min(16384.0),
+        _ => spacing_points(style, property).unwrap_or(0.0),
+    }
+}
+
 /// A padding (or gap) side in points as the layout resolves it, for painters that need the same
 /// box without laying the element out: a length in points, or in `em` of the element's own font
 /// size. `None` for a percentage, which takes the size of the box around the element.

@@ -478,7 +478,9 @@ children at the padding box (› Overflow), so its border stays whole.
 widths and its `padding`. Padding in points and in `em` (of the element's own font size) is
 resolved as the CSS layout resolves it. A percentage, which CSS takes of the width of the box
 around the element, is read only on the elements whose children the CSS layout places
-(`workspace`, `toolbar`): anywhere else Suhina paints the content box without that box, so the
+(`workspace`, `toolbar`), each laid out in its own box: there it is a percentage of that box's
+width, for the layout and for the sizes Suhina works out (the toolbar's height grows by it, and
+its content box keeps it), so they agree. Anywhere else Suhina paints the content box without that box, so the
 sheet refuses the declaration with a notice instead of reading it as no padding. Every view lays its children out there, not in the rectangle it
 painted; a view that draws to its edge on purpose (a grid line, a selection band) says so in its
 code. A size the app works out from what an element holds is its content box's size, and the

@@ -1456,3 +1456,50 @@ fn a_tall_group_does_not_raise_the_padded_detail_area() {
     }
     assert_eq!(splitter(true), splitter(false));
 }
+
+/// A toolbar's padding in percent, which the sheet takes on `toolbar`: the bar grows by it and its
+/// buttons stay inside it, above its bottom border, as they do with padding in points (#1336).
+#[test]
+fn toolbar_percent_padding_keeps_the_buttons_in_the_bar() {
+    fn bar(css: &str) -> (Option<egui::Rect>, egui::Rect) {
+        let (padded, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), css);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let mut app = demo_app();
+        let ctx = egui::Context::default();
+        app.set_themes(
+            &ctx,
+            vec![suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: padded }],
+            None,
+        );
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, "padded");
+        h.run_steps(4);
+        let play = h.query_by_label("Play").map(|n| n.rect());
+        // The bar's bottom border: the magenta line across the window.
+        fn lines(shape: &egui::Shape, found: &mut Vec<egui::Rect>) {
+            match shape {
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| lines(s, found)),
+                egui::Shape::Rect(r) if r.fill == egui::Color32::from_rgb(0xFF, 0, 0xFF) => found.push(r.rect),
+                _ => {}
+            }
+        }
+        let mut found = Vec::new();
+        h.output().shapes.iter().for_each(|s| lines(&s.shape, &mut found));
+        let line = found.into_iter().find(|r| r.width() > SIZE.0 * 0.5).expect("the bar's bottom border");
+        (play, line)
+    }
+    let border = "toolbar { border-width: 0 0 3px; border-color: #FF00FF; }";
+    let (_, plain) = bar(border);
+    for padding in ["padding-top: 12px", "padding: 0 5%", "padding-top: 1%", "padding-top: 5%"] {
+        let (play, line) = bar(&format!("{border} toolbar {{ {padding} }}"));
+        let play = play.unwrap_or_else(|| panic!("{padding}: the toolbar has no Play button"));
+        assert!(
+            play.bottom() <= line.top() + 0.5,
+            "{padding}: Play {play:?} reaches past the bar's bottom border {line:?}"
+        );
+    }
+    // 1% of the bar's width (the window's, less its 8-point margins) above what it holds.
+    let (_, one) = bar(&format!("{border} toolbar {{ padding-top: 1% }}"));
+    assert!((one.top() - plain.top() - (SIZE.0 - 16.0) * 0.01).abs() < 0.5, "the bar grows by it: {plain:?} {one:?}");
+}
