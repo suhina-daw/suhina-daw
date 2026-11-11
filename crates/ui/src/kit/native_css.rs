@@ -1279,7 +1279,16 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2, module_height: f32) -> Optio
             elements.push(native::element("toolbar-module", Some(id), None, Some(2)));
         }
         let laid = native::layout(&engine, elements, &defaults, [size.x, size.y])?;
-        engine.toolbar_layout = laid.requested;
+        // The toolbar's own padding pads Suhina's toolbar, in its content box, as its border does
+        // (#1336): only its layout properties (display, flex, grid, gap, sizes) and its modules'
+        // ask for the theme's layout.
+        const PADDING: [Property; 4] =
+            [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft];
+        engine.toolbar_layout = laid
+            .items
+            .iter()
+            .enumerate()
+            .any(|(index, (_, style))| native::requests_layout(style, if index == 0 { &PADDING } else { &[] }));
         let mut modules = Vec::new();
         for ((name, _), (rect, style)) in order.iter().zip(laid.items.into_iter().skip(1)) {
             let Some(rect) = rect else { continue };

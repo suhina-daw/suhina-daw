@@ -337,3 +337,26 @@ fn toolbar_module_backgrounds_follow_the_sheet() {
     skin::configure(&skin::Skin::default());
     assert!(fills.iter().any(|(_, fill)| *fill == egui::Color32::from_rgb(0x10, 0x20, 0x30)), "{fills:?}");
 }
+
+/// Padding on the toolbar pads Suhina's own toolbar, in its content box: it does not switch to
+/// the theme's layout, whose view switches are framed buttons. Layout properties still do
+/// (#1336).
+#[test]
+fn padding_pads_the_native_toolbar_and_layout_properties_still_switch() {
+    let mut harness = native_bar();
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    harness.state_mut().app.use_test_skin(css("toolbar { padding: 0 20px; border-width: 0 0 2px; }"));
+    harness.run();
+    assert!(!crate::kit::native_css::toolbar_layout_requested(), "padding keeps Suhina's layout");
+    let launcher = harness.get_by_label("Launcher view").rect();
+    let framed = harness.output().shapes.iter().any(
+        |shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == launcher && rect.stroke.width > 0.0),
+    );
+    assert!(!framed, "the view switches keep their own look");
+    for layout in ["toolbar { gap: 12px; }", "toolbar { display: flex; padding: 4px; }", "#transport { order: 3; }"] {
+        harness.state_mut().app.use_test_skin(css(layout));
+        harness.run();
+        assert!(crate::kit::native_css::toolbar_layout_requested(), "{layout} asks for the theme's layout");
+    }
+    skin::configure(&skin::Skin::default());
+}

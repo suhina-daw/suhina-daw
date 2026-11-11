@@ -286,6 +286,12 @@ pub(super) fn theme_swatch(engine: &Engine, color: &str) -> Option<Computed> {
     engine.native.as_ref()?.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.last().map(computed)
 }
 
+/// Whether the theme writes on `style`'s element one of the properties that ask for theme layout,
+/// other than those in `except`.
+pub(super) fn requests_layout(style: &super::Computed, except: &[Property]) -> bool {
+    LAYOUT.iter().any(|property| !except.contains(property) && style.resolved.authored(*property))
+}
+
 /// Properties that ask for theme layout when a theme writes them on a laid-out element.
 const LAYOUT: &[Property] = &[
     Property::Display,

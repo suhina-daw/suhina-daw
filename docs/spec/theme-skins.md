@@ -876,7 +876,10 @@ computes variables, layers, inheritance, colours, value expressions and viewport
 media conditions for class scopes. Taffy computes Flex/Grid rectangles for the actual
 visible toolbar modules (`#tempo`, `#transport`, etc.); the same rectangles bound their
 native input targets. The host still defines toolbar height. A stylesheet without
-toolbar layout declarations leaves the ordinary toolbar arrangement intact; a customized
+toolbar layout declarations leaves the ordinary toolbar arrangement intact. The toolbar's own
+`padding` and border are not layout declarations: they pad Suhina's toolbar, whose contents go
+in its content box, and only its other layout properties (`display`, flex and grid properties,
+`gap`, sizes) or its modules' (placement, `order`) switch to the CSS layout (#1336); a customized
 bar scrolls horizontally when it exceeds the window. The bounded retained scope tree
 exposes actual ancestry and siblings. Launcher mixer and track-header scopes carry stable
 `[data-object="track-N"]` identities. Clip, scene and slot roles also expose their native

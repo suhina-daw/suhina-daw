@@ -484,7 +484,9 @@ The toolbar exposes `browser`, `tempo`, `signature`, `grid`, `count-in`, `transp
 `position`, `metronome`, `mapping`, `performance`, `views`, `agents` module ids.
 Device SDK controls are elements such as `device-panel`, `knob`, `button` and
 `device-control`. Stable named track/clip/slot/scene scopes also exist.
-The native centred toolbar exposes the same module ids as CSS layouts. Its main
+The native centred toolbar exposes the same module ids as CSS layouts. Padding and a border on
+`toolbar` pad it and keep it; `display`, flex and grid properties, `gap`, sizes or a module's
+placement or `order` switch it to the CSS layout. Its main
 buttons additionally expose `#control-play`, `#control-stop`, `#control-record`,
 `#control-browser-toggle` and `#control-metronome-toggle`. Paint-only rules preserve
 the existing geometry. The selector reference below lists every element and id.
