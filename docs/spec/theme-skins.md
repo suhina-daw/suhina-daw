@@ -533,9 +533,11 @@ control's popup, the project switcher), `tooltip` and `dialog`.
   `box-shadow` replace the frame egui draws, over egui's own where the sheet sets one and not the
   others; the blur takes the frame's corners. Their `padding` is not used yet: the contents keep
   egui's margins. `menu` paints its own background, as before.
-- **One capture.** The window is captured once a frame however many surfaces float, and not at
-  all when none does. The capture holds the window's own layers only, so a tooltip over a menu
-  blurs the window, not the menu under it.
+- **Captures.** The window's own layers are captured once a frame however many surfaces float
+  over them, and not at all when none does. A menu or tooltip over a dialog or Settings (a
+  dropdown in Export audio, Settings › Themes › More) has that dialog behind it, so while one is
+  open a second capture holds the window and the dialog, its own blur in it. Neither holds
+  another floating surface: a tooltip over a menu blurs what is under the menu, not the menu.
 - **Which layers float.** Every layer egui shows at its popup or tooltip order is a surface,
   unless the app made it: an overlay, a drag's preview, the splash and the dialogs say what they
   are (`kit::floating`), so a new menu or tooltip is blurred and framed without code of its own.

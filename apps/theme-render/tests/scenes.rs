@@ -53,6 +53,7 @@ fn the_scenes_cover_the_views_the_devices_and_the_floating_surfaces() {
         "menu",
         "context-menu",
         "settings",
+        "settings-menu",
         "tooltip",
         "export-dialog",
         "about-dialog",

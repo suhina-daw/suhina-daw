@@ -71,7 +71,7 @@ fn nothing_scrolled_shows_through_a_frozen_header() {
 fn the_floating_surfaces_are_blurred_in_the_scenes() {
     let theme = super::see_through().unwrap();
     let gpu = Gpu::new().unwrap();
-    for name in ["menu", "context-menu", "tooltip", "export-dialog", "about-dialog"] {
+    for name in ["menu", "context-menu", "settings-menu", "tooltip", "export-dialog", "about-dialog"] {
         let scene = scenes::find(name).expect("the scene");
         let mut h = rendered((scene.app)().unwrap(), &theme, scene.width, 1.0, &gpu);
         (scene.drive)(&mut h).unwrap_or_else(|e| panic!("{e}"));

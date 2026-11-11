@@ -45,6 +45,7 @@ pub const FIXED: &[(&str, Step)] = &[
     ("menu", |h| click(h, "File")),
     ("context-menu", context_menu),
     ("settings", settings),
+    ("settings-menu", settings_menu),
     ("tooltip", tooltip),
     ("export-dialog", |h| menu_item(h, "File", "Export…")),
     ("about-dialog", |h| menu_item(h, "Help", "About Suhina")),
@@ -243,6 +244,13 @@ fn settings(h: &mut Window) -> Result<(), String> {
     settle(h)?;
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     settle(h)
+}
+
+/// A menu over Settings (Themes › More): what is behind it is Settings, blurred (#1234).
+fn settings_menu(h: &mut Window) -> Result<(), String> {
+    settings(h)?;
+    click(h, "Settings page: Themes")?;
+    click(h, "More")
 }
 
 /// A tooltip: the pointer held over the toolbar's browser button until its tooltip shows.

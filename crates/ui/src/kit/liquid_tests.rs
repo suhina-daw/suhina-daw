@@ -43,6 +43,9 @@ fn a_dialog_that_marks_its_panel_gets_the_window_blurred_under_it() {
 struct Behind {
     calls: std::sync::atomic::AtomicUsize,
     seen: std::sync::Mutex<Vec<egui::epaint::ClippedShape>>,
+    /// Captures of the window with a dialog in it, and the last one's shapes.
+    above: std::sync::atomic::AtomicUsize,
+    seen_above: std::sync::Mutex<Vec<egui::epaint::ClippedShape>>,
 }
 
 impl Provider for Behind {
@@ -61,6 +64,18 @@ impl Provider for Behind {
         }
         Some(Backdrop { texture: TextureId::User(7), sharp_texture: None, screen: ctx.content_rect() })
     }
+    fn capture_above(
+        &self,
+        ctx: &Context,
+        shapes: Vec<egui::epaint::ClippedShape>,
+        _see_through: bool,
+    ) -> Option<Backdrop> {
+        self.above.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if let Ok(mut seen) = self.seen_above.lock() {
+            *seen = shapes;
+        }
+        Some(Backdrop { texture: TextureId::User(9), sharp_texture: None, screen: ctx.content_rect() })
+    }
 }
 
 const WINDOW: Color32 = Color32::from_rgb(1, 2, 3);
@@ -69,7 +84,12 @@ const WINDOW: Color32 = Color32::from_rgb(1, 2, 3);
 /// the theme; the last frame's shapes and how many captures the host made in it.
 fn floating_frames(css: Option<&str>, float: impl Fn(&Context)) -> (Vec<egui::Shape>, usize, Arc<Behind>) {
     super::super::skin::configure(&super::super::skin::Skin { css: css.map(Into::into), ..Default::default() });
-    let host = Arc::new(Behind { calls: Default::default(), seen: Default::default() });
+    let host = Arc::new(Behind {
+        calls: Default::default(),
+        seen: Default::default(),
+        above: Default::default(),
+        seen_above: Default::default(),
+    });
     let ctx = Context::default();
     install(&ctx, host.clone());
     let frame = |ui: &mut egui::Ui| {
@@ -84,6 +104,7 @@ fn floating_frames(css: Option<&str>, float: impl Fn(&Context)) -> (Vec<egui::Sh
     let mut last = Vec::new();
     for step in 0..4 {
         host.calls.store(0, std::sync::atomic::Ordering::SeqCst);
+        host.above.store(0, std::sync::atomic::Ordering::SeqCst);
         let input = egui::RawInput {
             time: Some(f64::from(step)),
             screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0))),
@@ -162,6 +183,41 @@ fn the_app_s_own_layers_are_not_blurred_and_nothing_floating_means_no_capture() 
     });
     assert_eq!(calls, 0, "no capture when nothing floats");
     assert!(!shapes.iter().any(is_image), "{shapes:?}");
+}
+
+/// A menu opened over a dialog (a dropdown in Export audio, Settings' More) shows the dialog
+/// blurred behind it, with the dialog's own blur in it; the dialog's blur is the window alone.
+#[test]
+fn a_menu_over_a_dialog_gets_the_dialog_blurred_behind_it() {
+    use super::super::floating::{Kind, area};
+    let panel = Color32::from_rgb(4, 5, 6);
+    let (shapes, calls, host) = floating_frames(None, |ctx| {
+        area(ctx, Id::unique("dialog"), Kind::Dialog).order(egui::Order::Foreground).fixed_pos(pos2(0.0, 0.0)).show(
+            ctx,
+            |ui| {
+                let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(200.0, 150.0));
+                backdrop(ui.painter(), rect);
+                ui.painter().rect_filled(rect, 0.0, panel);
+                ui.allocate_rect(rect, egui::Sense::hover());
+            },
+        );
+        odd_menu(ctx, "dropdown", egui::Order::Foreground, pos2(60.0, 60.0));
+    });
+    assert_eq!(calls, 1, "the window, for the dialog");
+    assert_eq!(host.above.load(std::sync::atomic::Ordering::SeqCst), 1, "the window and the dialog, for the menu");
+    let dialog_image = shapes.iter().position(is_image).expect("the dialog's blur");
+    let menu_image = shapes
+        .iter()
+        .position(|s| matches!(s, egui::Shape::Rect(r) if r.fill_texture_id() == TextureId::User(9)))
+        .expect("the menu's blur");
+    assert!(dialog_image < menu_image);
+    let seen = host.seen_above.lock().map(|seen| seen.clone()).unwrap_or_default();
+    assert!(seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == panel)), "the dialog is in it");
+    assert!(
+        seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill_texture_id() == TextureId::User(7))),
+        "with its own blur"
+    );
+    assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Text(_))), "and never the menu");
 }
 
 #[test]
