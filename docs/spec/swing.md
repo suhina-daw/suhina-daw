@@ -3,7 +3,7 @@ description: Functional spec of swing - the project's swing and a MIDI clip's ow
 read_when: swing, shuffle, groove, global swing, clip swing, use global swing, transport.setSwing, clip.setSwing, second sixteenth, triplet, dotted, swing percent, step sequencer swing feel, swing slider, Resize all
 type: spec
 status: draft
-last_verified: 2026-11-06
+last_verified: 2026-11-11
 covers:
   - crates/model/src/swing.rs
   - crates/session/src/swing.rs

@@ -3,7 +3,7 @@ description: Functional spec of the audio clip's panel in the detail area (the c
 read_when: clip panel, clip column, audio clip properties, gain fader, pitch knob, cents, clip tempo, find tempo, tempo source, Set to playhead, audio clip scale, lists under a field, gain envelope, clip.setEnvelope, clip.setTempo, per-clip gain
 type: spec
 status: draft
-last_verified: 2026-11-07
+last_verified: 2026-11-11
 covers:
   - crates/ui/src/detail/detail_view/clip_properties.rs
   - crates/ui/src/detail/detail_view/clip_panel.rs
