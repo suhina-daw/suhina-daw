@@ -556,7 +556,7 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
     figure(ui, painter, row, "Velocity", &velocity);
     y += INFO_ROW;
     let bar = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), RANGE_BAR));
-    painter.fill_background(bar, 3.0, theme::control_background());
+    painter.rect_filled(bar, 3.0, theme::control_background());
     let x_of = |v: u8| bar.left() + 2.0 + (f32::from(v.saturating_sub(1)) / 126.0) * (bar.width() - 4.0);
     let span = Rect::from_min_max(
         Pos2::new(x_of(low), bar.top() + 3.0),

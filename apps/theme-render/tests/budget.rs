@@ -13,7 +13,8 @@ use suhina_theme_render::{Subject, scenes};
 /// summed over the frames a change takes to settle. The style engine works out an element's style
 /// in the frame that draws it (#1273), so it asks for no frame of its own after a change
 /// (`*_style_frames`); the frame left after a theme change is egui's own after a new palette, and
-/// those after a hover are its tooltip's.
+/// those after a hover are its tooltip's. Every background blends (#1233), so a settled frame has
+/// no paint callbacks: only a menu's or dialog's backdrop clears the pixels under it.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
@@ -23,7 +24,7 @@ const RECORDED: [(&str, Counts); 2] = [
             identities: 293,
             unstyled: 0,
             fresh: 0,
-            paint_callbacks: 138,
+            paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
             theme_change_fresh: 293,
@@ -39,7 +40,7 @@ const RECORDED: [(&str, Counts); 2] = [
             identities: 516,
             unstyled: 0,
             fresh: 0,
-            paint_callbacks: 163,
+            paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
             theme_change_fresh: 516,
@@ -61,7 +62,7 @@ const RECORDED: [(&str, Counts); 2] = [
             identities: 301,
             unstyled: 0,
             fresh: 0,
-            paint_callbacks: 139,
+            paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
             theme_change_fresh: 301,
@@ -77,7 +78,7 @@ const RECORDED: [(&str, Counts); 2] = [
             identities: 524,
             unstyled: 0,
             fresh: 0,
-            paint_callbacks: 164,
+            paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
             theme_change_fresh: 524,

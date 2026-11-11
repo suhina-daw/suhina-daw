@@ -7,7 +7,6 @@
 //! timeline and its points edited with the pointer. Every edit is an `automation.*` command;
 //! which lanes are shown is the view's own state, like a lane's height.
 
-use crate::kit::surface::Backgrounds as _;
 use std::collections::{HashMap, HashSet};
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
@@ -2252,7 +2251,7 @@ fn empty_lane(
         return;
     }
     let painter = painter.with_clip_rect(clip);
-    painter.fill_background(header, 0.0, theme::panel_background());
+    painter.rect_filled(header, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let inner = header.shrink2(Vec2::new(PAD, 5.0));
     let row = Rect::from_min_size(inner.min, Vec2::new(inner.width(), HEADER_ROW));
     let id = Id::unique(("automation-empty", track.0));
@@ -2376,7 +2375,7 @@ fn group_heading(
         return;
     }
     let painter = painter.with_clip_rect(geometry.visible);
-    painter.fill_background(header, 0.0, theme::control_background());
+    painter.rect_filled(header, 0.0, theme::control_background());
     if state.picked_groups.contains(&(track, index)) {
         painter.rect_filled(header, 0.0, theme::accent().gamma_multiply(0.25));
     }
@@ -3275,7 +3274,11 @@ fn lane(
                 }
             }
             let hover = widgets::hover(ui, &response);
-            lane_painter.circle_filled(center, CURVE_HANDLE + hover, theme::window_background());
+            lane_painter.circle_filled(
+                center,
+                CURVE_HANDLE + hover,
+                crate::kit::style_class::surface_or(theme::window_background()),
+            );
             lane_painter.circle_stroke(center, CURVE_HANDLE + hover, Stroke::new(1.2, ink));
         }
     }
@@ -3474,7 +3477,11 @@ fn lane(
         let radius = POINT + hover;
         let fill = if selected { theme::text_primary() } else { ink };
         lane_painter.circle_filled(center, radius, fill);
-        lane_painter.circle_stroke(center, radius, Stroke::new(1.0, theme::window_background()));
+        lane_painter.circle_stroke(
+            center,
+            radius,
+            Stroke::new(1.0, crate::kit::style_class::surface_or(theme::window_background())),
+        );
     }
 }
 
@@ -3738,7 +3745,7 @@ fn shape_menu(ui: &mut Ui, title: &str, chosen: Option<&str>) -> Option<&'static
                     theme::control_active()
                 } else {
                     crate::kit::motion::mix(
-                        theme::window_background(),
+                        crate::kit::style_class::surface_or(theme::window_background()),
                         theme::control_hover(),
                         widgets::hover(ui, &response),
                     )
@@ -3875,7 +3882,7 @@ fn heading_row(ui: &mut Ui, name: &str, count: usize, marked: bool, open: bool, 
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         if toggles && response.hovered() {
-            painter.fill_background(rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
+            painter.rect_filled(rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
         }
         widgets::chevron(painter, Pos2::new(rect.left() + 6.0, rect.center().y), open, theme::text_hint());
         let font = egui::TextStyle::Button.resolve(ui.style());
@@ -4166,7 +4173,7 @@ fn lane_header(
         return;
     }
     let painter = painter.with_clip_rect(clip);
-    painter.fill_background(rect, 0.0, theme::panel_background());
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let track = lanes.track;
     let layout = state.layout(track, params);
     let top = !layout.lanes.contains(&param.key);
@@ -4276,7 +4283,7 @@ fn lane_header(
             response.on_hover_text("A manual change turned this automation off; click to follow it again")
         };
         let (fill, ink) = widgets::toggle_colors(ui, &response, param.enabled);
-        painter.fill_background(toggle, 0.0, fill);
+        painter.rect_filled(toggle, 0.0, fill);
         if !param.enabled {
             painter.rect_stroke(toggle, 0.0, theme::hairline(theme::accent()), StrokeKind::Inside);
         }

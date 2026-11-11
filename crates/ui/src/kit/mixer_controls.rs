@@ -4,7 +4,6 @@
 //! Shared Launcher and Arrangement channel control faces; interaction belongs to each view.
 use super::element::{Entered, Native};
 use super::{motion, theme, widgets};
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Color32, Pos2, Rect, Vec2};
 
 /// A pan as a field in `rect`, drawn as `el`, the pan control its caller entered (`pan`,
@@ -189,7 +188,7 @@ pub fn send_field(
         Pos2::new(rect.right() - 4.0, rect.bottom() - 1.5),
     );
     let quiet = motion::mix(theme::control_background(), pointer, 0.25);
-    painter.fill_background(rail, 1.0, quiet);
+    painter.rect_filled(rail, 1.0, quiet);
     let level = Rect::from_min_size(rail.min, Vec2::new(rail.width() * position.clamp(0.0, 1.0), rail.height()));
     if level.width() >= 1.0
         && !super::skin::paint(painter, level, "send.fill", super::skin::State::Normal, pointer, 0.0)

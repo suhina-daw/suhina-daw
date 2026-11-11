@@ -14,7 +14,6 @@ use suhina_device_sdk::ui::FileRowPart;
 use suhina_engine::model::TrackId;
 
 use crate::detail::detail_view::DeviceAt;
-use crate::kit::surface::Backgrounds as _;
 use crate::kit::theme;
 use crate::kit::widgets::{self, Action};
 
@@ -203,7 +202,7 @@ pub(crate) fn switch(
         format!("Click to enable the {} again", label)
     });
     let (fill, text) = widgets::toggle_colors(ui, &response, state.enabled);
-    ui.painter().fill_background(rect, 3.0, fill);
+    ui.painter().rect_filled(rect, 3.0, fill);
     let word = if state.enabled { "On" } else { "Off" };
     widgets::text_in(ui.painter(), rect, Align2::CENTER_CENTER, word, theme::ui_font(theme::TEXT_SMALL), text);
     if response.clicked() {
@@ -342,7 +341,7 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
     let painter = ui.painter();
     let (fill, _) = widgets::toggle_colors(ui, &ui.interact(rect, egui::Id::unique(id_salt), Sense::click()), false);
     let response = ui.interact(rect, egui::Id::unique(id_salt), Sense::click());
-    painter.fill_background(rect, 2.0, if response.hovered() { theme::control_hover() } else { fill });
+    painter.rect_filled(rect, 2.0, if response.hovered() { theme::control_hover() } else { fill });
     let inner = rect.shrink(5.0);
     let center = inner.center();
     let dir = if up { -1.0 } else { 1.0 };

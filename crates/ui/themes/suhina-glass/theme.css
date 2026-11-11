@@ -62,11 +62,15 @@
 }
 window { liquid: var(--glassiness) 0 0; panel-gradient: 90deg, #FFFFFF2E 0%, #FFFFFF12 38%, #00000008 53%, #0000001C 100%; track-gradient: 90deg, #FFFFFF18 0%, #00000012 100%; clip-gradient: 90deg, #FFFFFF14 0%, #0000000A 100%; }
 
-/* The views paint at half the bars' strength. Menus and dialogs float over the window, in the
-   panel colour, at its full strength. */
+/* Every background blends over what is under it, so the window itself is transparent and each
+   view and panel carries its own alpha: the views paint at half the bars' strength. A panel inside
+   a view (a mixer strip, a device's panel) only tints the view's colour, whose alpha it already
+   has. Menus and dialogs float over the window, in the panel colour, at its full strength. */
 @layer suhina-glass {
-  window, session, arrangement { background-color: var(--ground-half); }
-  workspace-panel, browser, detail, clip-editor, device-panel, mixer, scene-column { background-color: var(--surface-half); }
+  window { background-color: transparent; }
+  session, arrangement, start-page { background-color: var(--ground-half); }
+  browser, detail, clip-editor { background-color: var(--surface-half); }
+  mixer, device-panel { background-color: color-mix(in srgb, var(--surface), transparent 45%); }
   application-bar, menu-bar, project-tabs, toolbar, status-bar {
     background-color: color-mix(in srgb, var(--surface), transparent var(--glassiness)%);
   }

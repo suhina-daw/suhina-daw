@@ -152,7 +152,8 @@ impl App {
         let mut styled_ui = style_class.ui(ui);
         let ui = &mut *styled_ui;
         let bar = ui.max_rect();
-        style_class.paint_background(ui.painter(), bar, 0.0);
+        // The row's own background, over the window's (#1233).
+        let _ = style_class.paint(ui.painter(), bar);
         ui.allocate_rect(bar, Sense::hover());
         let painter = ui.painter_at(bar);
         let active = self.projects.active();
@@ -176,8 +177,16 @@ impl App {
                 actions.push(Action::new("project.switch", json!({ "project": id.0 })));
             }
             let lit = motion::toward(ui.ctx(), response.id.with("active"), Some(id) == active, motion::VALUE);
-            let idle = motion::mix(theme::window_background(), theme::panel_hover(), widgets::hover(ui, &response));
-            painter.fill_background(tab, 0.0, motion::mix(idle, theme::panel_background(), lit));
+            let idle = motion::mix(
+                crate::kit::style_class::surface_or(theme::window_background()),
+                theme::panel_hover(),
+                widgets::hover(ui, &response),
+            );
+            painter.rect_filled(
+                tab,
+                0.0,
+                motion::mix(idle, crate::kit::style_class::surface_or(theme::panel_background()), lit),
+            );
             let text = motion::mix(theme::text_secondary(), theme::text_primary(), lit);
             widgets::paint_text(
                 &painter,
@@ -198,7 +207,7 @@ impl App {
     pub(super) fn open_prompt_bar(&mut self, ui: &mut Ui) {
         let Some(path) = self.open_prompt.clone() else { return };
         let bar = ui.max_rect();
-        ui.painter().fill_background(bar, 0.0, theme::panel_background());
+        ui.painter().rect_filled(bar, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
         let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().to_string());
         let current = self.projects.active().and_then(|id| self.projects.name(id)).unwrap_or("the project").to_string();
         let mut choice = None;

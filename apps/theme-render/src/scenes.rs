@@ -47,6 +47,12 @@ pub const FIXED: &[(&str, Step)] = &[
     ("tooltip", tooltip),
 ];
 
+/// The scenes with the views scrolled down and along, on a project with more tracks and scenes
+/// than fit: what scrolls must never show through the headers, rulers and fixed rows that stay
+/// where they are (#1233).
+pub const SCROLLED: &[(&str, Step)] =
+    &[("launcher-scrolled", launcher_scrolled), ("arrangement-scrolled", arrangement_scrolled)];
+
 /// Wide enough for every effect and MIDI effect in one row.
 const DEVICE_ROW: f32 = 5400.0;
 
@@ -61,6 +67,12 @@ pub fn scenes() -> Vec<Scene> {
             drive: Arc::new(drive),
         })
         .collect();
+    scenes.extend(SCROLLED.iter().map(|&(name, drive)| Scene {
+        name: name.to_owned(),
+        width: crate::SIZE.0,
+        app: Arc::new(crowded),
+        drive: Arc::new(drive),
+    }));
     let row: Vec<&'static str> = DEVICES.iter().filter(|d| d.role != Role::Instrument).map(|d| &*d.id).collect();
     scenes.push(Scene {
         name: "devices".into(),
@@ -152,6 +164,63 @@ fn on_keys(devices: &[&str]) -> Result<App, String> {
     app.set_browser_open(false);
     app.set_session(session, &[]);
     Ok(app)
+}
+
+/// The demo project with every track copied twice and every scene three times, so both views
+/// scroll both ways.
+fn crowded() -> Result<App, String> {
+    let mut session = suhina_session::Session::new(suhina_ui::demo::demo_project());
+    for _ in 0..2 {
+        session
+            .execute("track.duplicate", &json!({ "tracks": ["Drums", "Bass", "Keys", "Vox"] }))
+            .map_err(|e| format!("track.duplicate: {e}"))?;
+    }
+    for _ in 0..3 {
+        for scene in 1..=6 {
+            session
+                .execute("scene.duplicate", &json!({ "scene": scene }))
+                .map_err(|e| format!("scene.duplicate: {e}"))?;
+        }
+    }
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    Ok(app)
+}
+
+/// The wheel turned over the control labelled `over` (its first match), by `delta` points.
+fn scroll(h: &mut Window, over: &str, delta: egui::Vec2) -> Result<(), String> {
+    let at = h
+        .query_all_by_label_contains(over)
+        .next()
+        .ok_or_else(|| format!("no control with {over:?} in its label"))?
+        .rect()
+        .center();
+    h.hover_at(at);
+    h.step();
+    h.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta,
+        modifiers: Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    h.step();
+    h.remove_cursor();
+    settle(h)?;
+    // Under the wheel, the content moved; a view that did not scroll would hide what this tests.
+    let moved = h.query_all_by_label_contains(over).next().is_none_or(|n| n.rect().center() != at);
+    if moved { Ok(()) } else { Err(format!("the view under {over:?} did not scroll")) }
+}
+
+fn launcher_scrolled(h: &mut Window) -> Result<(), String> {
+    settle(h)?;
+    scroll(h, "Launch Beat A on Drums", egui::vec2(-150.0, -120.0))
+}
+
+fn arrangement_scrolled(h: &mut Window) -> Result<(), String> {
+    click(h, "Arrangement view")?;
+    scroll(h, "Clip Beat A on Drums", egui::vec2(-300.0, -200.0))
 }
 
 fn settings(h: &mut Window) -> Result<(), String> {

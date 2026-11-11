@@ -21,7 +21,12 @@ fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_pan
     }
     let mut h = window(demo_app());
     let border = theme::border();
-    assert!(h.output().shapes.iter().any(|shape| covers_workspace(&shape.shape, border)));
+    // The line between the bars and the views is a line in the gap, never a fill under the views
+    // that a translucent one would show (#1233).
+    assert!(!h.output().shapes.iter().any(|shape| covers_workspace(&shape.shape, border)));
+    assert!(h.output().shapes.iter().any(|shape| matches!(&shape.shape,
+        egui::Shape::Rect(rect) if rect.fill == border && rect.rect.width() > SIZE.0 * 0.9 && rect.rect.height() <= 1.0
+    )));
     let before = h.state().session().unwrap().project().clone();
     let ctx = h.ctx.clone();
     let mut paper = theme::Theme { name: "Private paper".into(), ..Default::default() };
@@ -54,8 +59,11 @@ fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_pan
     assert_eq!(h.state().session().unwrap().project(), &before);
 }
 
+/// Every background blends (#1233): in a see-through theme, with the window's clearing host
+/// installed, nothing in a settled launcher replaces the window's pixels, so no fill can erase the
+/// column artwork under an empty slot.
 #[test]
-fn textured_empty_slots_do_not_clear_their_artwork_on_native_alpha_surfaces() {
+fn no_background_replaces_the_window_pixels_on_native_alpha_surfaces() {
     use std::sync::{Arc, Mutex};
     struct Replacement(Arc<Mutex<Vec<(egui::Rect, egui::Color32)>>>);
     impl suhina_ui::kit::surface::Provider for Replacement {
@@ -68,20 +76,16 @@ fn textured_empty_slots_do_not_clear_their_artwork_on_native_alpha_surfaces() {
     }
     let mut h = window(demo_app());
     let ctx = h.ctx.clone();
-    h.state_mut().use_theme(&ctx, "suhina-blocks");
+    h.state_mut().use_theme(&ctx, "suhina-glass");
     let fills = Arc::new(Mutex::new(Vec::new()));
     suhina_ui::kit::surface::install(&ctx, Arc::new(Replacement(fills.clone())));
     for _ in 0..4 {
         fills.lock().unwrap().clear();
         h.step();
     }
-    let slot = h.get_by_label("Stop Keys (scene 1)").rect();
-    assert!(
-        !fills.lock().unwrap().iter().any(|(rect, color)| color.a() == 0
-            && rect.min.distance(slot.min) < 1.0
-            && rect.max.distance(slot.max) < 1.0),
-        "transparent replacement fills erase the column artwork on a native GPU surface"
-    );
+    assert!(theme::window_background().a() < u8::MAX, "a see-through theme");
+    assert!(fills.lock().unwrap().is_empty(), "nothing replaces pixels: {:?}", fills.lock().unwrap());
+    theme::set_palette(&ctx, theme::Palette::DARK);
 }
 
 #[test]

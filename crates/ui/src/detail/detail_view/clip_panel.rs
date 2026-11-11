@@ -220,7 +220,7 @@ pub(super) fn button_face(
         })
     });
     let Some(style) = style else {
-        painter.fill_background(rect, 3.0, fill);
+        painter.rect_filled(rect, 3.0, fill);
         if outline {
             painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
         }
@@ -235,7 +235,7 @@ pub(super) fn button_face(
 
 /// A button that cannot be pressed now: the panel's own look, which the theme does not restyle.
 pub(super) fn disabled_face(painter: &egui::Painter, rect: Rect) {
-    painter.fill_background(rect, 3.0, theme::panel_background());
+    painter.rect_filled(rect, 3.0, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
 }
 
@@ -1023,7 +1023,7 @@ fn audio_part(
     let find = set_button(name);
     let response = widgets::button_area(ui, find, Id::unique(("clip-panel-find", panel.clip.0)), "Find tempo");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.fill_background(find, 3.0, fill);
+    painter.rect_filled(find, 3.0, fill);
     painter.rect_stroke(find, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
     widgets::text_in(
         painter,
@@ -1237,7 +1237,7 @@ fn gain_part(
         widgets::text_in(painter, mark, Align2::LEFT_CENTER, text, scale.clone(), theme::text_hint());
     }
     let slot = Rect::from_center_size(track.center(), Vec2::new(4.0, track.height()));
-    painter.fill_background(slot, 2.0, theme::control_background());
+    painter.rect_filled(slot, 2.0, theme::control_background());
     painter.hline(
         egui::Rangef::new(track.left() - 1.0, track.right() + 1.0),
         y_of(0.0),

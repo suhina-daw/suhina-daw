@@ -6,7 +6,6 @@
 //! A plug-in busy with work of its own (an ARA plug-in finishing an analysis) can take longer;
 //! the window then closes anyway and the plug-in's host ends once it is done.
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 
 use crate::kit::theme::{self, PAD, ROW};
@@ -35,15 +34,15 @@ fn draw(ui: &Ui, area: Rect, waiting: &[String]) {
     let behind = ui.interact(area, Id::unique("closing-behind"), Sense::click_and_drag());
     let _swallowed = behind.clicked();
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
+    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
 
     let listed = waiting.len().min(LISTED) + usize::from(waiting.len() > LISTED);
     let height = ROW + PAD * 2.0 + (1 + listed) as f32 * LINE;
     let rect = Rect::from_center_size(area.center(), Vec2::new(WIDTH.min(area.width() - 2.0 * PAD), height));
-    painter.fill_background(rect, 0.0, theme::panel_background());
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    painter.fill_background(title, 0.0, theme::control_background());
+    painter.rect_filled(title, 0.0, theme::control_background());
     widgets::text_in(
         &painter,
         title.shrink2(Vec2::new(PAD, 0.0)),

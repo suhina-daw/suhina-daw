@@ -5,7 +5,6 @@
 //! along the bottom (`docs/spec/ui-session-view.md`, sizes in `docs/design/components.md`).
 //! It draws a [`TrackGrid`] and turns clicks into [`Action`]s; it never changes the project itself.
 
-use crate::kit::surface::Backgrounds as _;
 use std::collections::BTreeSet;
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Response, Sense, StrokeKind, Ui, Vec2};
@@ -250,8 +249,8 @@ pub fn show(
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
-    style_class.paint_background(&painter, area, 0.0);
+    // The view's own background, over the window's (#1233).
+    let _ = style_class.paint(&painter, area);
 
     // Fixed bands: header on top, mixer at the bottom, scene column on the right.
     let header = Rect::from_min_size(area.min, Vec2::new(area.width(), header_height()));
@@ -485,7 +484,7 @@ pub fn show(
     painter.vline(scenes_x - 0.5, area.y_range(), theme::hairline(theme::border_strong()));
     let scene_span = egui::Rangef::new(scenes_x, area.right());
     let header_rect = Rect::from_x_y_ranges(scene_span, header.y_range());
-    painter.fill_background(header_rect, 0.0, theme::control_background());
+    painter.rect_filled(header_rect, 0.0, theme::control_background());
     widgets::text_in(
         &painter,
         header_rect.shrink2(Vec2::new(PAD, 0.0)),
@@ -525,14 +524,9 @@ pub fn show(
     {
         probe.offer(header_rect.union(main_mixer), DropTarget::Track(TrackId::MAIN));
     }
-    painter.fill_background(main_mixer, 0.0, theme::panel_background());
-    crate::kit::liquid::paint(
-        &painter,
-        main_mixer,
-        &style_class,
-        theme::panel_background(),
-        crate::kit::liquid::Surface::Track,
-    );
+    let main_fill = crate::kit::style_class::surface_or(theme::panel_background());
+    painter.rect_filled(main_mixer, 0.0, main_fill);
+    crate::kit::liquid::paint(&painter, main_mixer, &style_class, main_fill, crate::kit::liquid::Surface::Track);
     if main_selected {
         painter.rect_stroke(header_rect.shrink(0.5), 0.0, egui::Stroke::new(1.0, theme::accent()), StrokeKind::Inside);
     }
@@ -599,7 +593,7 @@ fn main_metronome(
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
     let fill = if on { theme::control_active() } else { theme::control_background() };
-    painter.fill_background(rect, 0.0, fill);
+    painter.rect_filled(rect, 0.0, fill);
     let glyph = if on { theme::accent() } else { theme::text_primary() };
     crate::session::record_controls::metronome_glyph(painter, rect, glyph);
     // Held: the level's slider beside the button, where there is room.
@@ -841,7 +835,7 @@ fn column_header(
         fill,
         rgb(column.color),
     ) {
-        painter.fill_background(rect, 0.0, fill);
+        painter.rect_filled(rect, 0.0, fill);
     }
     crate::kit::liquid::paint(painter, rect, &own, fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`track-header[selected]`) over the native one;
@@ -1190,8 +1184,12 @@ fn column_body(
             actions.push(Action::new("track.stop", json!({ "track": column.track.0 })));
         }
     }
-    let fill = motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response));
-    painter.fill_background(stop_rect, 0.0, fill);
+    let fill = motion::mix(
+        crate::kit::style_class::surface_or(theme::panel_background()),
+        theme::panel_hover(),
+        widgets::hover(ui, &response),
+    );
+    painter.rect_filled(stop_rect, 0.0, fill);
     let square = Rect::from_center_size(stop_rect.center(), Vec2::splat(7.0));
     let color = if column.stop_queued { theme::accent() } else { theme::text_secondary() };
     painter.rect_stroke(square, 0.0, theme::hairline(color), StrokeKind::Inside);
@@ -1268,7 +1266,7 @@ fn slot_cell(
     // An empty slot is tinted with its track's colour, unless the sheet gives it a background
     // (`slot { background-color }`).
     let empty = el.background_or(motion::mix(
-        theme::window_background(),
+        crate::kit::style_class::surface_or(theme::window_background()),
         track_color,
         if column.mute { EMPTY_TINT / 2.0 } else { EMPTY_TINT },
     ));
@@ -1287,16 +1285,24 @@ fn slot_cell(
     match slot.state {
         SlotState::Empty => {
             if !textured {
-                painter.fill_background(rect, 0.0, empty);
+                painter.rect_filled(rect, 0.0, empty);
             }
         }
         SlotState::EmptyStop => {
             if textured {
                 // Blend hover over artwork; a replacement-alpha background fill
                 // would erase the texture on native GPU surfaces.
-                painter.rect_filled(rect, 0.0, theme::panel_background().gamma_multiply(hover));
+                painter.rect_filled(
+                    rect,
+                    0.0,
+                    crate::kit::style_class::surface_or(theme::panel_background()).gamma_multiply(hover),
+                );
             } else {
-                painter.fill_background(rect, 0.0, motion::mix(empty, theme::panel_background(), hover));
+                painter.rect_filled(
+                    rect,
+                    0.0,
+                    motion::mix(empty, crate::kit::style_class::surface_or(theme::panel_background()), hover),
+                );
             }
             painter.rect_filled(mark_rect(EMPTY_MARK), 0.0, theme::slot_empty());
         }
@@ -1305,7 +1311,7 @@ fn slot_cell(
             let base = if slot.enabled { clip_color } else { theme::control_background() };
             let fill = lit(base, 0.0);
             let fill = if column.mute { motion::mix(theme::control_background(), fill, 0.45) } else { fill };
-            painter.fill_background(rect, 0.0, fill);
+            painter.rect_filled(rect, 0.0, fill);
             crate::kit::liquid::paint(painter, rect, el, fill, crate::kit::liquid::Surface::Clip);
             let (mark, text) = if slot.enabled {
                 (theme::text_on(fill), theme::text_on(fill))
@@ -1337,7 +1343,7 @@ fn slot_cell(
             // A playing clip keeps its colour, brighter, so the column still reads as its track.
             let fill = lit(clip_color, 0.10);
             let fill = if column.mute { motion::mix(theme::control_background(), fill, 0.45) } else { fill };
-            painter.fill_background(rect, 0.0, fill);
+            painter.rect_filled(rect, 0.0, fill);
             crate::kit::liquid::paint(painter, rect, el, fill, crate::kit::liquid::Surface::Clip);
             let ink = theme::text_on(fill);
             // The mark is the shape its click does: a stop square while playing. A stopped
@@ -1403,7 +1409,7 @@ fn scene_column(
         let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         let playing = motion::toward(ui.ctx(), response.id.with("playing"), scene.playing, motion::VALUE);
         let fill = motion::mix(hover, theme::control_playing(), playing);
-        painter.fill_background(rect, 0.0, fill);
+        painter.rect_filled(rect, 0.0, fill);
         // The row's glyph: the play arrow while its clips wait for a launch, the stop square
         // while the row plays — the click does what the glyph says.
         let glyph = Rect::from_min_size(
@@ -1464,10 +1470,14 @@ fn scene_column(
         if response.clicked() {
             actions.push(Action::new("launcher.stopAll", json!({})));
         }
-        painter.fill_background(
+        painter.rect_filled(
             rect,
             0.0,
-            motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response)),
+            motion::mix(
+                crate::kit::style_class::surface_or(theme::panel_background()),
+                theme::panel_hover(),
+                widgets::hover(ui, &response),
+            ),
         );
         let square = Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.center().y - 3.5), Vec2::splat(7.0));
         painter.rect_stroke(square, 0.0, theme::hairline(theme::text_secondary()), StrokeKind::Inside);

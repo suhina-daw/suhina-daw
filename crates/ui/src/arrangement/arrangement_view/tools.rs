@@ -35,7 +35,7 @@ const GRID_MENU: f32 = 96.0;
 /// its right end the grid menu.
 pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState) {
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, theme::panel_background());
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(theme::border()));
     let mut x = rect.left() + 6.0;
     for (index, (tool, name)) in ArrangementTool::ALL.into_iter().enumerate() {

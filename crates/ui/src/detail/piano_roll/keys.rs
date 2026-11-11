@@ -386,7 +386,11 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
     }
     let style = part_style("piano-scale-strip", &[]);
     let painter = ui.painter_at(strip);
-    painter.rect_filled(strip, 0.0, style.background.unwrap_or_else(theme::panel_background));
+    painter.rect_filled(
+        strip,
+        0.0,
+        style.background.unwrap_or_else(|| crate::kit::style_class::surface_or(theme::panel_background())),
+    );
     painter.vline(strip.right() - 0.5, strip.y_range(), theme::hairline(style.border.unwrap_or_else(theme::border)));
     let text = style.color.unwrap_or_else(theme::text_secondary);
     let font = theme::mono_font(theme::TEXT_TINY);
@@ -455,7 +459,7 @@ pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRoll
 pub(super) fn draw_magnifier(ui: &Ui, pos: Pos2) {
     ui.ctx().set_cursor_icon(CursorIcon::None);
     let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("piano-roll-magnifier")));
-    let (halo, line) = (theme::window_background(), theme::text_primary());
+    let (halo, line) = (crate::kit::style_class::surface_or(theme::window_background()), theme::text_primary());
     let handle = [pos + Vec2::splat(MAGNIFIER_RADIUS * 0.7), pos + Vec2::splat(MAGNIFIER_RADIUS * 1.7)];
     painter.line_segment(handle, Stroke::new(4.0, halo));
     painter.circle_stroke(pos, MAGNIFIER_RADIUS, Stroke::new(3.5, halo));

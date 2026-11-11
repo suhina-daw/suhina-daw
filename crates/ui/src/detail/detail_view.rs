@@ -10,7 +10,6 @@
 //! takes the room under that line, and where it lands in the window is reported each frame
 //! ([`EditorPlace`]) for the host process to put it there.
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_device_sdk::builtin::{COMPACT_HEIGHT, COMPACT_WIDTH};
@@ -88,8 +87,8 @@ pub fn show_row(
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
-    el.paint_background(&painter, area, 0.0);
+    // The area's own background, over the window's (#1233).
+    let _ = el.paint(&painter, area);
     match detail {
         Detail::Nothing => hint(&painter, area, "Select a track or a clip to see it here"),
         Detail::Devices(chain) => return chain_row(ui, &painter, area, chain, selected, actions, places),
@@ -269,7 +268,7 @@ fn chain_row(
     let list = crate::interaction::drop::DeviceSlots { track: chain.track, area, slots, vertical: false, pass };
     crate::interaction::drop::note_device_slots(ui.ctx(), list);
     if let Some(bar) = bar {
-        painter.fill_background(bar, 0.0, theme::control_background());
+        painter.rect_filled(bar, 0.0, theme::control_background());
         let thumb_width = (area.width() / total * bar.width()).max(24.0);
         let thumb_left = bar.left() + offset / most * (bar.width() - thumb_width);
         let thumb =
@@ -467,8 +466,8 @@ pub fn show_stack(
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
-    el.paint_background(&painter, area, 0.0);
+    // The area's own background, over the window's (#1233).
+    let _ = el.paint(&painter, area);
     match detail {
         Detail::Nothing => hint(&painter, area, "Select a track or a clip"),
         Detail::Devices(chain) => return chain_stack(ui, &painter, area, chain, selected, actions, places),
@@ -507,8 +506,8 @@ pub fn show_clip_column(
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
-    el.paint_background(&painter, area, 0.0);
+    // The area's own background, over the window's (#1233).
+    let _ = el.paint(&painter, area);
     let (column, picked) = clip_properties(ui, &painter, area, info, stacked, midi, actions);
     clip_for_readers(ui, column, info);
     let rest = if stacked {
@@ -701,7 +700,7 @@ fn plugin_button(
     );
     let hover = widgets::hover(ui, &response);
     let fill = crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover);
-    painter.fill_background(button, 0.0, fill);
+    painter.rect_filled(button, 0.0, fill);
     painter.rect_stroke(button, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     widgets::text_in(
         painter,
@@ -729,8 +728,8 @@ pub fn show_ara_editor(
     places: &mut Vec<EditorPlace>,
 ) {
     ui.allocate_rect(area, Sense::hover());
+    // On the detail area's own background.
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
     // The clip host is not among the chain's devices (#990): its editor is found as the host.
     let found = chain.devices.iter().find(|d| d.index == device && d.at.top());
     let Some(device) = found.or(chain.host.as_ref().filter(|h| h.index == device)) else { return };
@@ -827,11 +826,7 @@ fn ara_button(
     let response =
         widgets::button_area(ui, rect, egui::Id::unique(("ara-button", id.0.0, id.1)), format!("{label} {plugin}"));
     let hover = widgets::hover(ui, &response);
-    painter.fill_background(
-        rect,
-        0.0,
-        crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover),
-    );
+    painter.rect_filled(rect, 0.0, crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover));
     painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     widgets::text_in(
         painter,
@@ -909,7 +904,10 @@ fn device_panel(
     device_style.paint_with(
         painter,
         rect,
-        crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() },
+        crate::kit::element::Native {
+            radius: 0.0,
+            fill: crate::kit::style_class::surface_or(theme::panel_background()),
+        },
     );
     let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     {

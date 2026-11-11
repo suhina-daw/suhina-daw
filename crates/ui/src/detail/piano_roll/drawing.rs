@@ -276,7 +276,11 @@ pub(super) fn draw(
         )
     };
     // Rows: black keys darker, a stronger line under each C.
-    painter.fill_background(layout.grid, 0.0, grid_style.background.unwrap_or_else(theme::window_background));
+    painter.rect_filled(
+        layout.grid,
+        0.0,
+        grid_style.background.unwrap_or_else(|| crate::kit::style_class::surface_or(theme::window_background())),
+    );
     el.paint_background(&painter, layout.grid, 0.0);
     for key in (first_key..=last_key).filter(|k| layout.rows.shows(*k)) {
         let top = layout.y_of(key);
@@ -292,7 +296,7 @@ pub(super) fn draw(
             (None, Some(own)) => own,
             _ => scale_view::row_fill(highlighted, key, is_black(key), clip.color),
         };
-        grid_painter.fill_background(row, 0.0, fill);
+        grid_painter.rect_filled(row, 0.0, fill);
         // The row under the pointer, so it can be followed to the strip that names it.
         if state.hover_key() == Some(key) {
             grid_painter.rect_filled(row, 0.0, theme::text_primary().gamma_multiply(0.05));
@@ -305,10 +309,12 @@ pub(super) fn draw(
     let first_beat = layout.beat_at(layout.grid.left()).max(0.0);
     let last_beat = layout.beat_at(layout.grid.right());
     let bar = clip.bar_beats.max(EPSILON);
-    painter.fill_background(
+    painter.rect_filled(
         layout.ruler,
         0.0,
-        part_style("ruler", &[]).background.unwrap_or_else(theme::panel_background),
+        part_style("ruler", &[])
+            .background
+            .unwrap_or_else(|| crate::kit::style_class::surface_or(theme::panel_background())),
     );
     let lane_painter = painter.with_clip_rect(layout.lane);
     for (beat, on_bar) in grid.lines(first_beat, last_beat, MAX_LINES) {
@@ -540,12 +546,12 @@ pub(super) fn draw(
         Pos2::new(layout.strip.left(), layout.ruler.top()),
         Pos2::new(layout.keys.right(), layout.ruler.bottom()),
     );
-    painter.fill_background(corner, 0.0, theme::panel_background());
+    painter.rect_filled(corner, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let lane_keys = Rect::from_min_max(
         Pos2::new(layout.strip.left(), layout.lane.top()),
         Pos2::new(layout.keys.right(), layout.lane.bottom()),
     );
-    painter.fill_background(lane_keys, 0.0, theme::panel_background());
+    painter.rect_filled(lane_keys, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     if lane_keys.height() >= 24.0 {
         let font = theme::mono_font(theme::TEXT_TINY);
         widgets::text_in(

@@ -4,7 +4,6 @@
 //! Small drawing helpers and the controls the views share: text that fits a cell, the value
 //! field drag, the knob.
 
-use crate::kit::surface::Backgrounds as _;
 use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextWrapping};
@@ -941,7 +940,7 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
     let radius = if response.rect.width() > response.rect.height() * 4.0 { response.rect.height() * 0.5 } else { 4.0 };
     painter.rect_stroke(response.rect, radius, Stroke::new(1.0, theme::text_secondary()), egui::StrokeKind::Outside);
     if !typed.is_empty() {
-        painter.fill_background(response.rect.shrink(1.0), 0.0, theme::control_active());
+        painter.rect_filled(response.rect.shrink(1.0), 0.0, theme::control_active());
         painter.text(
             response.rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -1227,7 +1226,11 @@ pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response:
         })
         .collect();
     painter.add(egui::Shape::line(points, Stroke::new(4.0, theme::border())));
-    painter.circle_filled(center, (radius - 4.0).max(0.0), theme::panel_background());
+    painter.circle_filled(
+        center,
+        (radius - 4.0).max(0.0),
+        crate::kit::style_class::surface_or(theme::panel_background()),
+    );
     painter.circle_filled(center, (radius - 8.0).max(0.0), theme::control_background());
     // The pointer: a quarter in, three quarters to the rim, in the accent token.
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();

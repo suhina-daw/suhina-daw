@@ -6,9 +6,6 @@
 
 use egui::{Color32, Pos2, Rect, Stroke, StrokeKind, Ui, Vec2};
 
-use crate::kit::surface::Backgrounds as _;
-use crate::kit::theme;
-
 /// The toolbar's buttons: one shape each, drawn in code with our own strokes, as
 /// [`crate::browser::browser_view`]'s icons are. `active` marks the note clipboard's buttons while there
 /// is something to act on, and the quantise block while it is open.
@@ -221,14 +218,18 @@ impl IconButton {
             }
             // Two sheets, one behind the other: duplicate.
             Self::Duplicate => {
-                painter.rect_stroke(
-                    Rect::from_center_size(at(-1.5, -1.5), size(8.0, 8.0)),
-                    0.0,
-                    stroke,
-                    StrokeKind::Inside,
-                );
+                // The back square's edges where the front one does not cover them: drawn only
+                // there, rather than hidden under a fill that a translucent theme shows through.
+                let w = 0.55;
+                let back = vec![
+                    at(-2.5, 2.5 - w),
+                    at(-5.5 + w, 2.5 - w),
+                    at(-5.5 + w, -5.5 + w),
+                    at(2.5 - w, -5.5 + w),
+                    at(2.5 - w, -2.5),
+                ];
+                painter.add(egui::Shape::line(back, stroke));
                 let front = Rect::from_center_size(at(1.5, 1.5), size(8.0, 8.0));
-                painter.fill_background(front, 0.0, theme::panel_background());
                 painter.rect_stroke(front, 0.0, stroke, StrokeKind::Inside);
             }
             // Scissors: two rings and the blades crossing over them.

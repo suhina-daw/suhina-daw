@@ -3,7 +3,7 @@ description: The plug-in host protocol - the control messages, the shared-memory
 read_when: plug-in protocol, protocol version, hello, load, unload, get_params, set_param, get_param_texts, param_texts, param_changed, open_editor, place_editor, latency_changed, ara_update, reconfigure, shared memory, region version, memfd, OpenFileMappingW, sweep, catalog format
 type: spec
 status: current
-last_verified: 2026-11-09
+last_verified: 2026-11-11
 covers:
   - crates/plugins/src/protocol.rs
   - crates/ipc/**

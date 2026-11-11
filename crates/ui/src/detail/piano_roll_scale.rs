@@ -147,15 +147,36 @@ pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool, color: egui::
     match scale {
         Some(scale) if scale.contains(key) && key % 12 == scale.root() => tinted(ROOT_TINT),
         Some(scale) if scale.contains(key) => tinted(SCALE_TINT),
-        Some(_) => theme::window_background(),
-        None if black => theme::window_background(),
-        None => theme::panel_background(),
+        Some(_) => dark_row(),
+        None if black => dark_row(),
+        None => light_row(),
     }
 }
 
 /// How much of the clip's colour a row in the clip's scale takes, and its root's row.
 const SCALE_TINT: f32 = 0.08;
 const ROOT_TINT: f32 = 0.14;
+
+/// The lighter plain row. Under an authored surface it paints nothing: the region already painted
+/// that surface, and painting it again would stack its alpha; else it is the panel colour.
+fn light_row() -> egui::Color32 {
+    if crate::kit::style_class::has_surface() { egui::Color32::TRANSPARENT } else { theme::panel_background() }
+}
+
+/// The darker plain row: the window colour; under an authored surface, that surface pulled toward
+/// the window colour (black, then white, where that leaves it as it is), painted over it so it reads
+/// darker than the light row, which paints nothing.
+fn dark_row() -> egui::Color32 {
+    if !crate::kit::style_class::has_surface() {
+        return theme::window_background();
+    }
+    let surface = crate::kit::style_class::surface_or(theme::window_background());
+    [theme::window_background(), egui::Color32::BLACK, egui::Color32::WHITE]
+        .into_iter()
+        .map(|toward| surface.lerp_to_gamma(toward, 0.5))
+        .find(|row| *row != egui::Color32::TRANSPARENT && *row != surface)
+        .unwrap_or(surface)
+}
 
 /// The 2 px mark at the right of the key column on a key in the scale (the root's brighter).
 pub(crate) fn key_mark(painter: &egui::Painter, scale: Option<Scale>, key: u8, row: Rect, color: egui::Color32) {
@@ -254,5 +275,51 @@ mod tests {
         assert_eq!(row_fill(c, 61, false, red), dark, "white or black alike");
         assert_eq!(row_fill(None, 61, true, red), theme::window_background());
         assert_eq!(row_fill(None, 60, false, red), theme::panel_background());
+    }
+
+    #[test]
+    fn plain_rows_stay_distinct_under_an_authored_surface() {
+        let surface = egui::Color32::from_rgba_unmultiplied(20, 30, 40, 100);
+        crate::kit::style_class::with_surface(surface, || {
+            let (white, black) =
+                (row_fill(None, 60, false, egui::Color32::RED), row_fill(None, 61, true, egui::Color32::RED));
+            assert_eq!(white, egui::Color32::TRANSPARENT, "the light row paints nothing over the surface");
+            assert_ne!(white, black, "the dark row is a tint");
+            assert_eq!(
+                row_fill(Some(scale(0, ScaleMode::Major)), 61, true, egui::Color32::RED),
+                black,
+                "outside a scale too"
+            );
+        });
+    }
+
+    /// `top` painted over `under`, both premultiplied: what the screen shows.
+    fn over(top: egui::Color32, under: egui::Color32) -> egui::Color32 {
+        let (top, under) = (top.to_array(), under.to_array());
+        let keep = 255 - u32::from(top[3]);
+        let mix =
+            |channel: usize| (u32::from(top[channel]) + (u32::from(under[channel]) * keep + 127) / 255).min(255) as u8;
+        egui::Color32::from_rgba_premultiplied(mix(0), mix(1), mix(2), mix(3))
+    }
+
+    #[test]
+    fn plain_rows_look_different_on_any_surface() {
+        let opaque_window = theme::window_background().to_opaque();
+        let surfaces = [
+            theme::window_background(),
+            opaque_window,
+            egui::Color32::BLACK,
+            egui::Color32::WHITE,
+            egui::Color32::TRANSPARENT,
+            egui::Color32::from_rgba_unmultiplied(20, 30, 40, 100),
+        ];
+        for surface in surfaces {
+            crate::kit::style_class::with_surface(surface, || {
+                // The region paints the surface, then each row paints its fill over it.
+                let white = over(row_fill(None, 60, false, egui::Color32::RED), surface);
+                let black = over(row_fill(None, 61, true, egui::Color32::RED), surface);
+                assert_ne!(white, black, "surface {surface:?}");
+            });
+        }
     }
 }
