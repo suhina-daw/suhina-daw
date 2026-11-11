@@ -256,7 +256,9 @@ fn chain_row(
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
         }
-        let content = device_content(rect, device, lit);
+        // Only a plug-in's button and editor are placed in it; the element is not entered for
+        // other devices (the budget counts each one).
+        let content = if device.plugin.is_some() { device_content(rect, device, lit) } else { rect };
         plugin_button(ui, &painter.with_clip_rect(area), content, chain.track, device, actions);
         if let Some(editor) = editor {
             let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
@@ -701,7 +703,9 @@ fn chain_stack_in(
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
         }
-        let content = device_content(rect, device, lit);
+        // Only a plug-in's button and editor are placed in it; the element is not entered for
+        // other devices (the budget counts each one).
+        let content = if device.plugin.is_some() { device_content(rect, device, lit) } else { rect };
         plugin_button(ui, &painter.with_clip_rect(area), content, chain.track, device, actions);
         if let Some(editor) = editor {
             let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
