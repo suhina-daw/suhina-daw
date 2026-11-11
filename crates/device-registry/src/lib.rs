@@ -668,6 +668,13 @@ fn make_cab(data: &AssetData) -> Option<Box<dyn Device>> {
 /// Largest preset file read.
 pub const MAX_PRESET_BYTES: usize = 64 * 1024;
 
+/// The file names Windows reserves for its devices, which a preset file's name may not be:
+/// the stem before any dots, any case ([ADR 0014] › 5, the review).
+const RESERVED_FILE_NAMES: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1",
+    "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
 /// A device's values from a preset file (`docs/spec/browser.md` › Built-in effects and instruments, presets
 /// and plug-ins).
 #[derive(Debug, Clone, PartialEq)]
@@ -811,6 +818,22 @@ fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
     {
         return Err(format!("{} runs a shipped file of its own kind, not {packed_id:?}", info.name));
     }
+    // A preset is the format people share, so its file is a shipped key or a library-relative
+    // path ([ADR 0014] › Amendment, the review): an absolute, a UNC or a `..`-carrying text is
+    // refused — a device added from it would read another machine's (or another share's) file
+    // the moment the preset landed.
+    if let Some(file) = file.as_deref().filter(|file| !file.starts_with("builtin:")) {
+        let given = std::path::Path::new(file);
+        if given.is_absolute()
+            || given.components().any(|component| {
+                matches!(component, std::path::Component::ParentDir | std::path::Component::Prefix(_))
+            })
+        {
+            return Err(format!(
+                "{file:?} is not a preset's file: a preset names a shipped file's key or a library-relative path"
+            ));
+        }
+    }
     Ok((Preset { device: &info.id, name: name.to_string(), params, file }, tags))
 }
 
@@ -830,12 +853,21 @@ pub fn write_preset_file(
     if name.is_empty() {
         return Err("a preset has a name".into());
     }
-    if name.contains(['/', '\\', ':']) || name.trim_matches('.') != name || name.chars().any(char::is_control) {
+    // The name is the file's stem: the characters a Windows file name refuses and the reserved
+    // device names are refused here, where the message says why — at the write they would fail
+    // only as a file the filesystem would not take ([ADR 0014] › 5, the review).
+    if name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+        || name.trim_matches('.') != name
+        || name.chars().any(char::is_control)
+        || name.split('.').next().is_some_and(|stem| RESERVED_FILE_NAMES.contains(&stem.to_ascii_uppercase().as_str()))
+    {
         return Err(format!("{name:?} is not a preset file's name"));
     }
     // A shipped file's key is the running device's own (load_builtin_file refuses another), and
-    // a device that runs no file names none at all. Where the file is the user's own path, the
-    // writer leaves it as it is: the state already carries it.
+    // a device that runs no file names none at all. The file a preset carries is a shipped key
+    // or a library-relative path ([ADR 0014] › Amendment, the review): a state naming a file
+    // outside the library is refused, so every preset this writes is one any machine can
+    // apply — the file it names comes from the library or rides the pack.
     if let Some(file) = file.map(str::trim).filter(|file| !file.is_empty()) {
         if !is_file_device(info.id.as_ref()) {
             return Err(format!("{} runs no file, so the preset names none", info.name));
@@ -844,6 +876,16 @@ pub fn write_preset_file(
             && packed_id != info.id.as_ref()
         {
             return Err(format!("{} runs a shipped file of its own kind, not {packed_id:?}", info.name));
+        }
+        let given = std::path::Path::new(file);
+        if given.is_absolute()
+            || given.components().any(|component| {
+                matches!(component, std::path::Component::ParentDir | std::path::Component::Prefix(_))
+            })
+        {
+            return Err(format!(
+                "{file:?} is not a preset's file: a preset names a shipped file's key or a library-relative path"
+            ));
         }
     }
     let mut written = serde_json::Map::new();

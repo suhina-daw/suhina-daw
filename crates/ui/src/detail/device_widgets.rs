@@ -128,7 +128,9 @@ fn pack_of_current<'a>(current: &str, sets: &'a [Set]) -> Option<&'a Set> {
         return None;
     }
     let current = canonical_paths(current);
-    if let Some(pack) = sets.iter().find(|pack| pack.files.iter().any(|(path, _)| canonical_paths(path) == current)) {
+    // The rows carry the canonical form already ([ADR 0036] › 5, the review): the compare is
+    // the plain one.
+    if let Some(pack) = sets.iter().find(|pack| pack.files.iter().any(|(path, _)| path == &current)) {
         return Some(pack);
     }
     let (_, file) = current.strip_prefix("builtin:")?.split_once('/')?;
@@ -164,12 +166,13 @@ fn listed_of_disk_row(listed: String, in_pack: Option<&Set>) -> String {
         .map_or_else(|| listed, |(path, _)| path.clone())
 }
 
-/// Where `current` sits in `files`. The two texts read the same file by
-/// `canonical_paths` — the rows' whole paths and the state's joined form fold what
-/// separators their own platform made in ([ADR 0036] › 4).
+/// Where `current` sits in `files`. The rows carry the canonical form already
+/// ([ADR 0036] › 5, the review), so the compare folds the state's joined form alone — the
+/// two texts read the same file whatever separators their own platform made in
+/// ([ADR 0036] › 4).
 fn index_of(files: &[(String, String)], current: &str) -> Option<usize> {
     let current = canonical_paths(current);
-    files.iter().position(|(path, _)| canonical_paths(path) == current)
+    files.iter().position(|(path, _)| path == &current)
 }
 
 /// The device's file state as the lists carry its file: a shipped key stands whole (the
@@ -188,13 +191,31 @@ fn state_as_listed(state: &str, lists: &Lists) -> String {
 /// The texts the lists' whole paths and a state's joined form compare by: path components
 /// joined with `/` ([ADR 0036] › 4, the portable form). A Windows join folds backslashes
 /// in, the mac's does not, and both must read the same file; the compare does not care
-/// which separator either text was quoted with.
-fn canonical_paths(text: &str) -> String {
-    std::path::Path::new(text)
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/")
+/// which separator either text was quoted with. The root's own separator is written once,
+/// at the front — a plain join of the components would double it — and a `.` step is left
+/// out, so the form is a path that reads the same file it came from. The scan writes the
+/// lists' rows in this form ([ADR 0036] › 5, the review), so a panel's per-frame compares
+/// read the rows as they are and fold only the state's side.
+pub(crate) fn canonical_paths(text: &str) -> String {
+    let mut canonical = String::new();
+    for component in std::path::Path::new(text).components() {
+        match component {
+            std::path::Component::RootDir => {
+                if !canonical.ends_with('/') {
+                    canonical.push('/');
+                }
+            }
+            std::path::Component::Prefix(prefix) => canonical.push_str(prefix.as_os_str().to_string_lossy().as_ref()),
+            std::path::Component::CurDir => {}
+            other => {
+                if !canonical.is_empty() && !canonical.ends_with('/') {
+                    canonical.push('/');
+                }
+                canonical.push_str(other.as_os_str().to_string_lossy().as_ref());
+            }
+        }
+    }
+    canonical
 }
 
 /// Steps `current` through `files` by `by` (wrapping); a file that is not in the list steps
@@ -419,7 +440,9 @@ fn dropdown(
                     .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{label}: {empty}")));
             }
             for (path, name) in rows {
-                let mut on = canonical_paths(path) == canonical_paths(current);
+                // The rows carry the canonical form ([ADR 0036] › 5, the review): the compare
+                // folds the state's side alone.
+                let mut on = path == &canonical_paths(current);
                 let item = ui.selectable_value(
                     &mut on,
                     true,

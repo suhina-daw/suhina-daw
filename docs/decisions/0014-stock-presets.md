@@ -117,13 +117,18 @@ values: what a sound gets from effects after it is not in the preset. A test kee
 A preset's format gains one optional field, `file`: a text, the file the preset's device runs,
 left out when the device runs none ([ADR 0036](0036-library-and-shipped-content.md) › 5). It is
 what `device.setNamFile` set on the device the preset was saved from: a shipped file's key
-(`builtin:<device id>/<file name>`), the file's library-relative path, or its absolute one.
-A preset of a device that runs no file names none, and a file that is another device's shipped
-key is refused at the read and the write. Adding a preset that names a file loads it — a stock
-preset's from the pack, a user's from their file — and when the user's file is not there, the
-device is still added without one and the answer says so. `device.savePreset` writes the field
-from the device's state; the names of a preset and its file's own page say what a preset may
-carry, the commands and the library's folders are [ADR 0036](0036-library-and-shipped-content.md)'s.
+(`builtin:<device id>/<file name>`) or the file's library-relative path ([ADR 0036](0036-library-and-shipped-content.md)
+› 4). Presets are the format people share, so an absolute, a UNC or a `..`-carrying text is
+refused at the read and the write (2026-11-10, the starter pack's review): a device added from
+a preset must not read another machine's — or another share's — file the moment the preset
+lands, and a preset saved from a device that runs a file outside the library is refused until
+the file is brought in. A preset of a device that runs no file names none, and a file that is
+another device's shipped key is refused at the read and the write. Adding a preset that names a
+file loads it — a stock preset's from the pack, a user's from their file — and when the user's
+file is not there, the device is still added without one and the answer says so.
+`device.savePreset` writes the field from the device's state; the names of a preset and its
+file's own page say what a preset may carry, the commands and the library's folders are
+[ADR 0036](0036-library-and-shipped-content.md)'s.
 
 ## Consequences
 

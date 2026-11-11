@@ -159,3 +159,16 @@ fn a_shipped_key_reads_the_pack_and_the_unpacked_copy_of_its_file() {
     // And a state that is no key stands as it is.
     assert_eq!(listed_of_disk_row("/library/other.nam".to_owned(), None), "/library/other.nam");
 }
+
+#[test]
+fn the_canonical_form_folds_the_root_once_and_the_dot_steps_out() {
+    // The fold is a path that reads the same file it came from: the root's separator once at
+    // the front (a plain join of the components would double it), a `.` step left out, and a
+    // Windows prefix carrying its own ([ADR 0036] › 5, the review).
+    assert_eq!(canonical_paths("/var/x"), "/var/x");
+    assert_eq!(canonical_paths("a/./b//c"), "a/b/c");
+    assert_eq!(canonical_paths("a/b"), "a/b");
+    assert_eq!(canonical_paths(""), "");
+    #[cfg(windows)]
+    assert_eq!(canonical_paths(r"C:\a\b"), "C:/a/b");
+}

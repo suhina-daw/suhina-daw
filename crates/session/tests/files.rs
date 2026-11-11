@@ -962,6 +962,20 @@ fn a_preset_is_saved_into_the_library_and_replaced_on_saving_again() {
     run(&mut session, "device.savePreset", json!({ "track": 1, "device": 0, "name": "Home Crunch" })).unwrap();
     let read = suhina_device_registry::preset(&std::fs::read(&path).unwrap(), 1).unwrap();
     assert_eq!(input_gain(&read), 1.5);
+
+    // A name typed with padding writes the trimmed name's file ([ADR 0014] › 5, the review):
+    // the same file a plain typing of the name replaces.
+    let padded =
+        run(&mut session, "device.savePreset", json!({ "track": 1, "device": 0, "name": "  Lead  " })).unwrap();
+    let lead = PathBuf::from(padded["preset"].as_str().unwrap());
+    assert_eq!(
+        lead,
+        dir.join("Presets/nam-amp-modeler/Lead.nam-amp-modeler.preset.suhina"),
+        "the trimmed name is the file's"
+    );
+    assert_eq!(padded["name"], "Lead");
+    run(&mut session, "device.savePreset", json!({ "track": 1, "device": 0, "name": "Lead" })).unwrap();
+    assert!(lead.exists(), "the plain typing replaced the padded name's file");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -1066,6 +1080,61 @@ fn a_file_state_handed_back_keeps_the_library_relative_form() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A relative state text stores its plain forward-slash form, whatever separators or `.` steps
+/// the caller's text carried ([ADR 0036] › 4, the review): the component join the absolute
+/// branch writes, so `Sounds/./NAM//Amp models/…` stores as `Sounds/NAM/Amp models/…` — the
+/// form every machine's base joins, a Windows caller's backslash text included (checked on
+/// Windows below).
+#[test]
+fn a_relative_state_stores_its_plain_forward_slash_form() {
+    let dir = temp_dir("relative-state-normalised");
+    let mut session = Session::new(blank_project());
+    session.set_library_base(dir.clone());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+    let file = dir.join("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, SHIPPED_OVERDRIVE).unwrap();
+    let out = run(
+        &mut session,
+        "device.setNamFile",
+        json!({ "track": 1, "device": 0, "path": "Sounds/./NAM//Amp models/Suhina/Suhina Overdrive.nam" }),
+    )
+    .unwrap();
+    assert_eq!(
+        out["file"], "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam",
+        "the store is the plain form, the caller's separators and steps gone"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A Windows caller's backslash text (`Sounds\NAM\…` from MCP or the CLI) stores forward
+/// slashed ([ADR 0036] › 4, the review), so the state opens on every machine's base. Windows
+/// only: the separators the component join normalises are the caller's own.
+#[cfg(windows)]
+#[test]
+fn a_windows_backslash_state_stores_forward_slashed() {
+    let dir = temp_dir("windows-backslash-state");
+    let mut session = Session::new(blank_project());
+    session.set_library_base(dir.clone());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+    let file = dir.join("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, SHIPPED_OVERDRIVE).unwrap();
+    let out = run(
+        &mut session,
+        "device.setNamFile",
+        json!({ "track": 1, "device": 0, "path": r"Sounds\NAM\Amp models\Suhina\Suhina Overdrive.nam" }),
+    )
+    .unwrap();
+    assert_eq!(
+        out["file"], "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam",
+        "forward slashes on every platform"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A library-relative state's file is at the library's base, not the working folder: the
 /// timestamp check sees the same resolved path the load read, so a rewritten file is
 /// reloaded and the player hears it.
@@ -1130,6 +1199,45 @@ fn a_missing_outside_file_keeps_its_missing_file_note() {
     session.sync_device_files();
     let note = session.device_asset_note(&absolute);
     assert!(note.is_some(), "{absolute}: the missing file keeps its note, not the pack's sound");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The pack stands in only where the state names the shipped pack's own place: a project
+/// carrying its own recording by a library-relative path in the user's folder
+/// (`Sounds/NAM/Cabinets/MyCabs/Marshall MG 15.wav`) opens elsewhere on a missing-file note,
+/// never on the pack's different file of the same name ([ADR 0036] › 7, the review).
+#[test]
+fn a_relative_state_in_the_users_own_folder_misses_elsewhere_not_on_the_pack() {
+    let dir = temp_dir("own-folder-missing");
+    let mut session = Session::new(blank_project());
+    session.set_library_base(dir.clone());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-cab-loader" })).unwrap();
+    // The user's own recording, in the user's own folder under the library: not the pack's
+    // `Suhina` folder. The state stores it library-relative.
+    let own = dir.join("Sounds/NAM/Cabinets/MyCabs");
+    std::fs::create_dir_all(&own).unwrap();
+    let own = wav(&own, "Marshall MG 15.wav", 0.1, 0.25);
+    run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": text(&own) })).unwrap();
+    let relative = "Sounds/NAM/Cabinets/MyCabs/Marshall MG 15.wav";
+    let device = &session.project().tracks[0].channel.and_then(|c| session.project().channel(c)).unwrap().devices[0];
+    assert_eq!(
+        device.state.as_deref().and_then(|s| std::str::from_utf8(s).ok()),
+        Some(relative),
+        "the user's own file stores library-relative"
+    );
+    // Another machine without the file: the note is the missing file's, not the pack's IR.
+    let _ = std::fs::remove_file(&own);
+    session.sync_device_files();
+    let note = session.device_asset_note(relative);
+    assert!(
+        note.is_some_and(|note| note.contains("missing") || note.contains("not there") || !note.is_empty()),
+        "{relative}: the user's own missing file keeps its note, not the pack's stand-in: {note:?}"
+    );
+    assert!(
+        session.device_asset(relative).is_none(),
+        "no asset: the pack's file of the same name does not stand in"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 

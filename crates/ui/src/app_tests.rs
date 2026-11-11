@@ -1110,10 +1110,13 @@ fn a_grouped_collection_lists_its_capture_packs_and_a_new_capture_lists_again() 
         "the capture pack lists with its group and its file whole"
     );
     // A new capture dropped into the collection later: the collection's own folder changed,
-    // so the check reads anew and the pack lists beside the first.
+    // so the check reads anew and the pack lists beside the first. The check is throttled
+    // ([ADR 0036] › 5, the review), so the test makes it due — a test never waits on the
+    // clock.
     let capture_3 = models.join("Live Amp Modeler").join("British Classic (Slammin Captures)");
     std::fs::create_dir_all(&capture_3).unwrap();
     std::fs::write(capture_3.join("Classic Bass.nam"), b"capture").unwrap();
+    app.nam_cache.checked = None;
     let lists = app.nam_lists();
     assert!(
         lists.models.iter().any(|set| set.name == "Live Amp Modeler / British Classic (Slammin Captures)"),
@@ -1124,6 +1127,7 @@ fn a_grouped_collection_lists_its_capture_packs_and_a_new_capture_lists_again() 
     // changes (its parents' do not), so the watch holds the capture folders too — the pack
     // lists its file with the next read.
     std::fs::write(capture.join("Chime High.nam"), b"capture").unwrap();
+    app.nam_cache.checked = None;
     let lists = app.nam_lists();
     let chime = lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)");
     assert!(

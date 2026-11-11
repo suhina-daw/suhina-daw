@@ -1143,7 +1143,16 @@ pub(crate) fn device_file_state(session: &Session, path: &str) -> String {
         && let Some(base) = session.library_base()
         && base.join(path).exists()
     {
-        return path.to_owned();
+        // The relative form carries forward slashes on every platform, whatever separators
+        // the caller's text had ([ADR 0036] › 4, the review): the same component join the
+        // absolute branch writes, so a Windows caller's `Sounds\NAM\…` stores as
+        // `Sounds/NAM/…` and opens on another machine's base, and a text carrying `.` or
+        // doubled separators stores its plain form.
+        return given
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
     }
     let absolute = crate::files::absolute(std::path::Path::new(path));
     match session.library_base() {
@@ -1249,7 +1258,10 @@ pub(crate) fn device_file(session: &mut Session, params: &Value) -> Result<Value
 /// is written before the preset's bytes are made; the library's base is the one set on the
 /// session (`Session::set_library_base`).
 pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    // The trimmed name is the file's name too ([ADR 0014] › 5, the review): a name typed with
+    // padding writes the same file a plain typing of it replaces.
     let name = Args::new(params).text("name")?;
+    let name = name.trim();
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at(&channel.devices, &path).ok_or("the device is missing")?;
@@ -1283,20 +1295,16 @@ pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value
         return Err(format!("the library's {} folder could not be made", folder.display()).into());
     }
     let file_name = format!("{name}.{}.preset.suhina", info.id);
-    // The preset publishes whole or not at all: the bytes write beside the target first, then
-    // rename into place — a write that fails (or an app that ends mid-write) never truncates
-    // the preset the user saved before (the unpack's `publish` is the same shape).
+    // The preset publishes whole or not at all (the unpack's publish is the same shape, one
+    // shared write, [ADR 0036] › 5, the review): the bytes write beside the target first,
+    // then rename into place — a write that fails (or an app that ends mid-write) never
+    // truncates the preset the user saved before.
     let target = folder.join(&file_name);
     let staging = folder.join(format!("{file_name}.suhina-new"));
-    let wrote = std::fs::write(&staging, &bytes)
-        .and_then(|()| std::fs::rename(&staging, &target))
-        .map_err(|e| CommandError(format!("{}: {e}", target.display())));
-    if let Err(e) = wrote {
-        let _ = std::fs::remove_file(&staging);
-        return Err(e);
-    }
+    crate::files::stage_and_rename(&staging, &target, &bytes)
+        .map_err(|e| CommandError(format!("{}: {e}", target.display())))?;
     Ok(
-        json!({ "preset": base.join("Presets").join(info.id.as_ref()).join(&file_name).display().to_string(), "name": name.trim() }),
+        json!({ "preset": base.join("Presets").join(info.id.as_ref()).join(&file_name).display().to_string(), "name": name }),
     )
 }
 

@@ -99,7 +99,8 @@ pub use commands::{
 pub use demo::{demo_project, grouped_project};
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::{MAX_FILES, file_tempo};
-pub use library::{Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items};
+pub use library::{Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items, user_presets};
+pub use files::stage_and_rename;
 pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
 pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
@@ -1379,22 +1380,34 @@ impl Session {
         {
             return suhina_device_registry::load_file(kind, &legacy, rate);
         }
-        // The disk does not carry it; the pack may. A file of the state's own name rides the
-        // executable — the on-disk copy's stand-in, so a project that opened on a machine
-        // without the file on disk still renders from the pack ([`ADR 0036`] › 7). A renamed
-        // copy is no stand-in: nothing proves it is the pack's file. The stand-in is for a
-        // library-relative state only: an absolute path is the file's own, and a missing one
-        // is a missing file, not a sound of the same name.
+        // The disk does not carry it; the pack may. A file the state names by the shipped
+        // pack's own place rides the executable — the on-disk copy's stand-in, so a project
+        // that opened on a machine without the file on disk still renders from the pack
+        // ([ADR 0036] › 7). The stand-in is honest only there ([ADR 0036] › 7, the review):
+        // the state's last components must name `<library folder>/Suhina/<name>` — a file of
+        // the same name in the user's own folder proves nothing about the pack, and it would
+        // open elsewhere on the pack's different file with no missing-file note. An absolute
+        // path is the file's own, and a missing one is a missing file, not a sound of the
+        // same name.
         let shipped = if std::path::Path::new(path).is_absolute() {
             None
+        } else if let Some(library) = suhina_device_registry::library_folder(kind) {
+            let mut components = std::path::Path::new(path)
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            let name = components.pop().unwrap_or_default();
+            let pack = components.pop().unwrap_or_default();
+            let folder = components.pop().unwrap_or_default();
+            if pack.eq_ignore_ascii_case(suhina_device_registry::SHIPPED_PACK) && folder.eq_ignore_ascii_case(library) {
+                suhina_device_registry::pack_files(kind)
+                    .into_iter()
+                    .find(|(packed, _)| packed.eq_ignore_ascii_case(&name))
+            } else {
+                None
+            }
         } else {
-            std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).as_deref().and_then(
-                |name| {
-                    suhina_device_registry::pack_files(kind)
-                        .into_iter()
-                        .find(|(packed, _)| packed.eq_ignore_ascii_case(name))
-                },
-            )
+            None
         };
         if let Some((packed_name, _)) = shipped {
             return suhina_device_registry::load_builtin_file(kind, packed_name, rate);

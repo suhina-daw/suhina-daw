@@ -89,27 +89,17 @@ pub fn unpack_pack(sounds: &Path) -> usize {
 /// Writes `bytes` to `target` beside it first, then renames the completed file into place —
 /// a write that fails (or an app that ends mid-write) leaves no partial file at the target,
 /// and the rename publishes the completed bytes only
-/// ([docs/spec/nam-amp-and-cab.md] › the unpack). A file that appeared at the target while
-/// the copy ran (the user's own, or another start's) is never written over. Returns whether
-/// it published.
+/// ([docs/spec/nam-amp-and-cab.md] › the unpack). The write is the session's
+/// staging-and-rename ([ADR 0036] › 5, the review). A file at the target is never written
+/// over: the check before the copy is the promise — a file that appeared while the copy ran
+/// is another start's, and its bytes are the pack's own.
 fn publish(target: &Path, bytes: &[u8]) -> bool {
+    if target.exists() {
+        return false;
+    }
     let staging =
         target.with_file_name(format!("{}.suhina-new", target.file_name().unwrap_or_default().to_string_lossy()));
-    if std::fs::write(&staging, bytes).is_err() {
-        let _ = std::fs::remove_file(&staging);
-        return false;
-    }
-    if target.exists() {
-        let _ = std::fs::remove_file(&staging);
-        return false;
-    }
-    match std::fs::rename(&staging, target) {
-        Ok(()) => true,
-        Err(_) => {
-            let _ = std::fs::remove_file(&staging);
-            false
-        }
-    }
+    suhina_session::stage_and_rename(&staging, target, bytes).is_ok()
 }
 
 /// The old default folders each device's files may still carry

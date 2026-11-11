@@ -906,6 +906,26 @@ pub(crate) fn absolute(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// Writes `bytes` to `staging` and renames the completed file onto `target` — a write that
+/// fails (or an app that ends mid-write) leaves no partial file at the target, and the rename
+/// publishes the completed bytes only. The rename replaces a file the target already carries —
+/// the caller that must not replace checks `target.exists()` first. Staging is removed
+/// whatever the outcome. The pack unpack's publish and `device.savePreset`'s write are the
+/// same shape ([ADR 0036] › 5, the review).
+pub fn stage_and_rename(staging: &Path, target: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
+    if let Err(e) = std::fs::write(staging, bytes) {
+        let _ = std::fs::remove_file(staging);
+        return Err(e);
+    }
+    match std::fs::rename(staging, target) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(staging);
+            Err(e)
+        }
+    }
+}
+
 /// Whether `track` is a group track.
 fn is_group(p: &Project, track: TrackId) -> bool {
     p.tracks

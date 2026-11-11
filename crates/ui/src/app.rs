@@ -247,7 +247,13 @@ fn scan_sets(
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
-                right.then_some((path.display().to_string(), name))
+                // The rows carry the canonical form ([ADR 0036] › 5, the review): a panel's
+                // per-frame compares read them as they are, and the state's joined form is
+                // the only side that folds.
+                right.then_some((
+                    crate::detail::device_widgets::canonical_paths(path.display().to_string().as_str()),
+                    name,
+                ))
             })
             .take(CAP)
             .collect()
@@ -360,7 +366,18 @@ struct NamCache {
     /// A pack folder's write time by its path, so a scan re-reads only the packs that
     /// changed.
     pack_writes: HashMap<String, Option<std::time::SystemTime>>,
+    /// When the watch was last checked: the check stats every watched folder, and the detail
+    /// area draws the lists every frame, so the check runs at most
+    /// [`NAM_WATCH_INTERVAL`] apart ([ADR 0036] › 5, the review). `None` until the first
+    /// check, and cleared again by the tests, which must see a write the moment they make it.
+    checked: Option<std::time::Instant>,
 }
+
+/// How long a watch check waits before it reads the watched folders' stamps again: a change
+/// inside any of them shows in the panels within a quarter of a second, and a frame does not
+/// spend a syscall per watched folder on folders that did not change ([ADR 0036] › 5, the
+/// review).
+const NAM_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// The window's state.
 /// What auto-arm (Settings › MIDI, #834) last acted on.
@@ -1479,6 +1496,11 @@ impl App {
             (&models_folder, "nam", &mut cache.models, &mut cache.models_watch),
             (&irs_folder, "wav", &mut cache.irs, &mut cache.irs_watch),
         ];
+        // The stamps' read runs at most [`NAM_WATCH_INTERVAL`] apart — the detail area draws
+        // these lists every frame, and a frame does not stat every watched folder
+        // ([ADR 0036] › 5, the review). The cheap checks stay every frame: empty lists (a
+        // device just added reads at once) and the folder the settings name.
+        let due = cache.checked.map_or(true, |at| at.elapsed() >= NAM_WATCH_INTERVAL);
         for (folder, extension, sets, watch) in folders.iter_mut() {
             // The watch holds the folder, its top-level folders and their capture folders with
             // their write times at the last read; a change inside any of them (a new pack, a
@@ -1487,12 +1509,14 @@ impl App {
             // ([docs/spec/nam-amp-and-cab.md] › Folders › Packs). The
             // folder itself changed since the last read (the setting moved, or the default
             // folder went): the listing reads again, not the last read's folder's files.
-            let reading = (**watch)
-                .iter()
-                .map(|(path, _)| (path.clone(), std::fs::metadata(path).ok().and_then(|m| m.modified().ok())))
-                .collect::<Vec<_>>();
+            let reading = due.then(|| {
+                (**watch)
+                    .iter()
+                    .map(|(path, _)| (path.clone(), std::fs::metadata(path).ok().and_then(|m| m.modified().ok())))
+                    .collect::<Vec<_>>()
+            });
             let scan = (**sets).is_empty()
-                || reading != **watch
+                || reading.as_ref().is_some_and(|reading| reading != &**watch)
                 || (**watch).first().is_some_and(|w| w.0 != folder.display().to_string());
             let previous = std::mem::take(&mut **sets);
             if scan {
@@ -1502,6 +1526,9 @@ impl App {
             } else {
                 **sets = previous;
             }
+        }
+        if due {
+            cache.checked = Some(std::time::Instant::now());
         }
         // The shipped pack lists first, before every folder's own, whatever the settings say
         // ([ADR 0036] › the starter pack). Its key is what the file command takes. A folder that

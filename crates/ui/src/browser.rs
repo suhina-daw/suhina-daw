@@ -128,35 +128,17 @@ fn stock_of(id: &str) -> impl Iterator<Item = &'static suhina_device_registry::S
 }
 
 /// The library's own presets for every device (docs/decisions/0036-library-and-shipped-content.md
-/// › 5): the files of each device's `Presets/<device id>/` folder, the folder `device.savePreset`
-/// writes, a preset's page name as the file's stem before `.preset.suhina`. Read when the tree's
-/// rows are built; a preset saved from a device panel reaches the browser on its next build.
+/// › 5): the shared walk ([`suhina_session::user_presets`]) mapped by device, so the tree's
+/// rows read the same files in the same order the search does, and a change to the naming
+/// cannot leave the two disagreeing ([ADR 0036] › 5, the review). Read when the tree's rows
+/// are built; a preset saved from a device panel reaches the browser on its next build.
 fn user_presets(library: Option<&Path>) -> HashMap<&'static str, Vec<(PathBuf, String)>> {
     let Some(library) = library else { return HashMap::new() };
-    let Ok(presets) = std::fs::read_dir(library.join("Presets")) else { return HashMap::new() };
-    presets
-        .flatten()
-        .filter(|device| device.path().is_dir())
-        .filter_map(|device| {
-            let id =
-                String::from_utf8_lossy(&device.file_name().to_string_lossy().into_owned().into_bytes()).into_owned();
-            let id = suhina_device_registry::DEVICES.iter().find(|d| d.id.as_ref() == id).map(|d| &*d.id)?;
-            let ends = format!(".{id}.preset.suhina");
-            let mut files: Vec<(PathBuf, String)> = std::fs::read_dir(device.path())
-                .ok()?
-                .flatten()
-                .filter_map(|file| {
-                    let name = file.file_name().to_string_lossy().into_owned();
-                    name.ends_with(&ends).then(|| {
-                        let stem = name.strip_suffix(&ends).unwrap_or(name.as_str()).trim().to_owned();
-                        (file.path(), stem)
-                    })
-                })
-                .collect();
-            files.sort_by(|(a, _), (b, _)| a.file_name().cmp(&b.file_name()));
-            Some((id, files))
-        })
-        .collect()
+    let mut out: HashMap<&'static str, Vec<(PathBuf, String)>> = HashMap::new();
+    for (id, path, stem) in suhina_session::user_presets(library) {
+        out.entry(id).or_default().push((path, stem));
+    }
+    out
 }
 
 /// Adds a row per stock preset of the device `id`, inside the node `parent`: a preset is listed under

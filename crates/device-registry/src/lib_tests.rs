@@ -205,6 +205,22 @@ fn a_preset_may_name_a_file() {
     for bad in [file(r#""file": 1, "params": {}"#), file(r#""file": [], "params": {}"#)] {
         assert!(preset(bad.as_bytes(), 1).is_err(), "{bad}");
     }
+    // A preset is the format people share, so its file is a shipped key or a library-relative
+    // path ([ADR 0014] › Amendment, the review): an absolute or a `..`-climbing text would
+    // have the added device read another machine's file the moment the preset landed.
+    let relative = file(r#""file": "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam", "params": {}"#);
+    assert_eq!(
+        preset(relative.as_bytes(), 1).unwrap().file.as_deref(),
+        Some("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam"),
+        "a library-relative path reads"
+    );
+    for outside in [
+        file(r#""file": "/etc/passwd.nam", "params": {}"#),
+        file(r#""file": "../outside.nam", "params": {}"#),
+        file(r#""file": "Sounds/NAM/../../outside.nam", "params": {}"#),
+    ] {
+        assert!(preset(outside.as_bytes(), 1).is_err(), "{outside}");
+    }
 }
 
 #[test]
@@ -230,9 +246,50 @@ fn a_saved_preset_file_is_whole_or_refused() {
         ("compressor", "Mine", Some("x.wav"), squeeze.as_slice(), "the compressor runs no file"),
         ("nothing", "Mine", None, values.as_slice(), "no device"),
         ("nam-amp-modeler", "Mine", None, out_of_range.as_slice(), "a value outside the range"),
+        (
+            "nam-amp-modeler",
+            "Mine",
+            Some("/etc/passwd.nam"),
+            values.as_slice(),
+            "an absolute path is not a preset's file",
+        ),
+        (
+            "nam-amp-modeler",
+            "Mine",
+            Some("../outside.nam"),
+            values.as_slice(),
+            "a climb leaves the library",
+        ),
+        ("nam-amp-modeler", "a*b", None, values.as_slice(), "a star is not a file name"),
+        ("nam-amp-modeler", "a?b", None, values.as_slice(), "a question mark is not one"),
+        ("nam-amp-modeler", "a\"b", None, values.as_slice(), "a quote is not one"),
+        ("nam-amp-modeler", "a<b", None, values.as_slice(), "a left angle is not one"),
+        ("nam-amp-modeler", "a>b", None, values.as_slice(), "a right angle is not one"),
+        ("nam-amp-modeler", "a|b", None, values.as_slice(), "a pipe is not one"),
+        ("nam-amp-modeler", "CON", None, values.as_slice(), "a reserved device name is not one"),
+        ("nam-amp-modeler", "com1", None, values.as_slice(), "a reserved name any case"),
+        ("nam-amp-modeler", "LPT9.txt", None, values.as_slice(), "a reserved stem before dots"),
     ] {
         assert!(write_preset_file(device, name, file, values).is_err(), "{why}");
     }
+    // The name a preset carries is the trimmed one: a name typed with padding writes the same
+    // file a plain typing of it replaces ([ADR 0014] › 5, the review).
+    let padded = write_preset_file("nam-amp-modeler", "  Lead  ", None, values.as_slice()).unwrap();
+    assert_eq!(preset(&padded, 1).unwrap().name, "Lead", "the trimmed name carries");
+    // A library-relative file writes and reads back: the one form a shared preset carries
+    // beside the shipped key ([ADR 0014] › Amendment, the review).
+    let with_file = write_preset_file(
+        "nam-amp-modeler",
+        "Home Crunch",
+        Some("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam"),
+        values.as_slice(),
+    )
+    .unwrap();
+    assert_eq!(
+        preset(&with_file, 1).unwrap().file.as_deref(),
+        Some("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam"),
+        "a library-relative file writes and reads back"
+    );
     let read = preset(&bytes, 1).unwrap();
     assert!(read.params.iter().any(|(id, _)| *id == "inputGain"), "the file still carries every declared parameter");
 }
