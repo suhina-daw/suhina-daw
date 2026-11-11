@@ -156,7 +156,12 @@ impl App {
         let mut styled_ui = style_class.ui(ui);
         let ui = &mut *styled_ui;
         // The row's own background, over the window's (#1233); the tabs in its content box (#1336).
-        let bar = style_class.paint(ui.painter(), ui.max_rect()).content;
+        // Without a sheet, the native line under the row.
+        let bar = if style_class.style().is_some() {
+            style_class.paint(ui.painter(), ui.max_rect()).content
+        } else {
+            super::native_line(ui.painter(), style_class, ui.max_rect())
+        };
         ui.allocate_rect(bar, Sense::hover());
         let painter = ui.painter_at(bar);
         let active = self.projects.active();

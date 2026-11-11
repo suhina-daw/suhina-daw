@@ -1318,3 +1318,17 @@ fn a_launch_marks_click_takes_the_focus_off_a_selected_track() {
     harness.run();
     assert_eq!(tracks(&harness), before, "Delete after the launch removed the track selected before it");
 }
+
+/// A theme that pads the track columns moves every column's slots and the scene buttons down
+/// together, so a scene's row still lines up with its slots (#1336).
+#[test]
+fn padded_track_columns_keep_their_slots_in_line_with_the_scenes() {
+    let plain = view().get_by_label("Launch Walk on Bass (scene 2)").rect();
+    suhina_ui::kit::native_css::set_user_sheet(Some("track-column { padding: 10px 2px 4px; }".into()));
+    let harness = view();
+    let slot = harness.get_by_label("Launch Walk on Bass (scene 2)").rect();
+    let scene = harness.query_all_by_label_contains("Launch scene 2").next().map(|n| n.rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_eq!(slot.top(), plain.top() + 10.0, "below the column's top padding");
+    assert_eq!(scene.map(|r| r.top()), Some(slot.top()), "the scene's row lines up with its slots");
+}

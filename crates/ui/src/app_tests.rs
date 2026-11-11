@@ -745,6 +745,42 @@ fn a_bar_s_line_is_its_bottom_border_and_without_one_the_bar_is_a_line_shorter()
     assert_eq!(bar.height(), theme::MENU_BAR + 6.0, "{padded:?}");
 }
 
+/// Without a sheet the project tabs keep the native line under them, as every other bar does
+/// (#1336).
+#[test]
+fn without_a_sheet_the_project_tabs_have_their_line() {
+    let ctx = egui::Context::default();
+    let mut app = App::new();
+    app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab);
+    app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab);
+    app.settings.animations = false;
+    app.use_test_skin(crate::kit::skin::Skin::default());
+    let mut lines = Vec::new();
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0))),
+                ..Default::default()
+            },
+            |ui| app.ui(ui),
+        );
+        output.textures_delta.clear();
+        lines = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect)
+                    if rect.fill == theme::border() && rect.rect.width() > 1000.0 && rect.rect.height() == 1.0 =>
+                {
+                    Some(rect.rect.bottom())
+                }
+                _ => None,
+            })
+            .collect();
+    }
+    assert!(lines.contains(&(theme::MENU_BAR + TABS)), "a line at the tabs' bottom: {lines:?}");
+}
+
 #[test]
 fn a_theme_keeps_the_header_column_at_its_least_width() {
     let ctx = egui::Context::default();

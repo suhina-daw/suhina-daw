@@ -190,22 +190,28 @@ impl App {
             }
         }
         let mut hovered_switch = None;
-        egui::ScrollArea::horizontal().id_salt("custom-toolbar-scroll").auto_shrink([false, false]).show(ui, |ui| {
-            ui.set_min_height(rect.height());
-            ui.horizontal(|ui| {
-                for module in &toolbar.order {
-                    let hidden = toolbar.hidden.contains(module);
-                    if hidden {
-                        continue;
-                    }
-                    let width = self.toolbar_module_width(module);
-                    let (_, at) = ui.allocate_space(Vec2::new(width, (rect.height() - 4.0).max(24.0)));
-                    let at = place(ui, module, at);
-                    if let Some(grid) = grid {
-                        self.toolbar_module(ui, at, module, grid, cpu, ram, actions, &mut hovered_switch);
-                    }
-                }
-            });
+        // In the bar's content box, inside its border and padding (#1336).
+        ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+            egui::ScrollArea::horizontal().id_salt("custom-toolbar-scroll").auto_shrink([false, false]).show(
+                ui,
+                |ui| {
+                    ui.set_min_height(inside.height());
+                    ui.horizontal(|ui| {
+                        for module in &toolbar.order {
+                            let hidden = toolbar.hidden.contains(module);
+                            if hidden {
+                                continue;
+                            }
+                            let width = self.toolbar_module_width(module);
+                            let (_, at) = ui.allocate_space(Vec2::new(width, (inside.height() - 4.0).max(24.0)));
+                            let at = place(ui, module, at);
+                            if let Some(grid) = grid {
+                                self.toolbar_module(ui, at, module, grid, cpu, ram, actions, &mut hovered_switch);
+                            }
+                        }
+                    });
+                },
+            );
         });
         self.hover_switch(ui.ctx(), hovered_switch);
         self.toolbar_edit_overlay(ui, rect);

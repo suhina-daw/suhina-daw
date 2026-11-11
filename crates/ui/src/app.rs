@@ -3908,6 +3908,11 @@ fn bar_box(ui: &Ui, bar: &crate::kit::element::Entered, corners: egui::CornerRad
     if bar.style().is_some() {
         return bar.paint_border(painter, rect);
     }
+    native_line(painter, bar, rect)
+}
+
+/// Without a sheet, a bar's native line along `rect` (`native_bar_line`), and what is inside it.
+fn native_line(painter: &egui::Painter, bar: &crate::kit::element::Entered, rect: Rect) -> Rect {
     let [top, _, bottom, _] = native_bar_line(bar);
     let line = |y: f32| Rect::from_x_y_ranges(rect.x_range(), egui::Rangef::new(y, y + 1.0));
     if top > 0.0 {

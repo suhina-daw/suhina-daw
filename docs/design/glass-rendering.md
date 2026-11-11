@@ -75,7 +75,7 @@ captures. Temporarily hiding content lenses during modal replay keeps the dialog
 glass drawn from another capture; the lenses are restored afterward. A lens is set into a slot
 reserved while its region was painted; a region that hides its overflow narrows the clip of
 everything painted inside it when it leaves scope (#1336), so the lens is set with the slot's
-clip as it is then, not the wider one it was reserved with. Each capture renderer
+clip as it is then, not the wider one it was reserved with; a dialog's backdrop slots likewise. Each capture renderer
 binds the textures it meets from where they already are, without copying them: egui's
 textures (images, icons) from eframe's main renderer, and another capture's image from that
 capture's targets. A capture never samples its own target, and what it cannot bind (a native

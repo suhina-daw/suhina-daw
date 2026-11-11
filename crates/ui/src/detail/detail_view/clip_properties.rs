@@ -156,9 +156,11 @@ pub(super) fn clip_properties(
         midi
     });
     let show_tools = midi.as_ref().is_some_and(|m| m.show_tools);
+    // `clip-info` styles the clip's column: its background and its text.
+    let el = crate::kit::element::CLIP_INFO.enter();
     let column = if stacked {
         // As tall as its rows, and its border and padding around them (#1336).
-        let [top, _, bottom, _] = crate::kit::element::CLIP_INFO.enter().insets();
+        let [top, _, bottom, _] = el.insets();
         let height = top
             + bottom
             + match &panel {
@@ -170,20 +172,17 @@ pub(super) fn clip_properties(
     } else {
         // `clip-info { width }` in the theme (120 to 480 points); an audio clip's panel has three
         // parts side by side (`docs/spec/clip-panel.md` › Layout).
-        let width = {
-            let el = crate::kit::element::CLIP_INFO.enter();
-            el.style().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0))
-        };
+        let width = el.style().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0));
+        // A panel's width is what its parts need, and its border and padding round them (#1336).
+        let [_, right, _, left] = el.insets();
         let width = match &panel {
-            Some(_) if !info.audio => super::midi_panel::row_width(show_tools),
-            Some(_) => super::clip_panel::ROW_WIDTH,
+            Some(_) if !info.audio => super::midi_panel::row_width(show_tools) + left + right,
+            Some(_) => super::clip_panel::ROW_WIDTH + left + right,
             None => width,
         };
         Rect::from_min_max(area.min, Pos2::new(area.left() + width, area.bottom()))
     }
     .intersect(area);
-    // `clip-info` styles the clip's column: its background and its text.
-    let el = crate::kit::element::CLIP_INFO.enter();
     let boxed = column;
     // What it holds goes in its content box, inside its border and padding (#1336).
     let column = el

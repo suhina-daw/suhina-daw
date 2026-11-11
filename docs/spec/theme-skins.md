@@ -381,8 +381,8 @@ like before a theme styles it.
   replaces what the element inherited from a theme's rule on an element around it.
 - **What it holds:** `overflow: hidden` on every region (the registry's `Region` kind); a 1 px
   `border-bottom-width` on the bars over the views (`application-bar`, `menu-bar`,
-  `project-tabs`, `toolbar`), in `--border` from the palette's tier (the lines above and under the
-  view are `#workspace`'s); the default
+  `project-tabs`, `toolbar`) and a 1 px `border-top-width` on `status-bar`, in `--border` from
+  the palette's tier (the lines above and under the view are `#workspace`'s); the default
   artwork; the sample map's colours; the theme swatch's rounded square.
 - **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
   `suhina:` URL names an SVG built into Suhina (`assets/themes/default/`), and a theme may use one
@@ -479,7 +479,9 @@ code. A size the app works out from what an element holds is its content box's s
 element adds its border and padding around it, as a CSS box with `height: auto` does: the detail
 area's heights (a device row, an embedded editor, the piano roll's least height), each bar's
 height and each dialog's size. A size the user drags (the detail splitter, the browser's width)
-is the whole box, and so is a `width` or `height` the sheet gives (`border-box`). A box whose
+is the whole box, and so is a `width` or `height` the sheet gives (`border-box`); when a theme
+changes the detail area's border or padding, the area grows or shrinks by that change, so what it
+shows keeps its height. A box whose
 border and padding leave no room has an empty content box at its centre.
 
 **Overflow.** `overflow: hidden` (or `clip`) clips everything an element's children paint to its

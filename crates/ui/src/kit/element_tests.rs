@@ -357,6 +357,19 @@ fn sides_of_different_widths_are_drawn_each() {
         "only the line under it"
     );
     assert!(stroke_of(&painted, red).is_none());
+    // Wider together than the box is tall, the top and bottom meet without overlapping.
+    let short = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 20.0));
+    let painted = shapes("toolbar { border-width: 16px 0 16px 1px; border-color: #FF0000; }", |ui| {
+        TOOLBAR.enter().paint(ui.painter(), short);
+    });
+    let tall: f32 = painted
+        .iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Rect(rect) if rect.fill == red && rect.rect.width() > 50.0 => Some(rect.rect.height()),
+            _ => None,
+        })
+        .sum();
+    assert_eq!(tall, 20.0, "{painted:?}");
 }
 
 #[test]
@@ -387,6 +400,8 @@ fn a_parent_that_hides_its_overflow_clips_its_children_to_its_padding_box() {
     let (clip, menu_clip) = child_clip("browser { border-width: 2px; border-color: #FF0000; }");
     assert_eq!(clip, area.shrink(2.0), "the region's padding box (regions hide their overflow)");
     assert!(menu_clip.contains_rect(area.expand(10.0)), "a menu is not clipped: {menu_clip:?}");
+    // Counted only in debug builds, as the window tests run.
+    #[cfg(debug_assertions)]
     assert!(super::overflow_cuts() > 0, "the cut is counted");
     let (clip, _) = child_clip("browser { overflow: visible; }");
     assert!(clip.contains_rect(area.expand(10.0)), "overflow: visible lets it pass: {clip:?}");

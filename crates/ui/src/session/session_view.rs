@@ -281,7 +281,11 @@ pub fn show(
         .filter(|c| c.kind != ColumnKind::Return && !hidden.contains(&c.track))
         .map(|c| column_width(c) + 1.0)
         .sum();
-    let content_height = (grid.scenes.len() as f32 + 1.0) * slot_pitch();
+    // The slots are rows shared by every column and the scene column: they start below a track
+    // column's top border and padding and end above its bottom ones, as a plain `track-column`
+    // has them, so the rows line up whatever a column's state (#1336).
+    let [rows_top, _, rows_bottom, _] = crate::kit::element::TRACK_COLUMN.enter().insets();
+    let content_height = (grid.scenes.len() as f32 + 1.0) * slot_pitch() + rows_top + rows_bottom;
     let fields = std::mem::take(&mut state.value_areas);
     let lists = std::mem::take(&mut state.scroll_areas);
     if ui.rect_contains_pointer(area) {
@@ -350,7 +354,7 @@ pub fn show(
         header,
         body,
         mixer,
-        top: body.top() - state.scroll.y,
+        top: body.top() - state.scroll.y + rows_top,
         scenes: grid.scenes.len(),
         places,
         groups,
@@ -498,7 +502,7 @@ pub fn show(
         ui,
         &painter.with_clip_rect(Rect::from_x_y_ranges(scene_span, body.y_range())),
         scene_span,
-        body.top() - state.scroll.y,
+        bands.top,
         grid,
         &mut state.launch_keys,
         actions,
@@ -651,6 +655,8 @@ struct Bands<'a> {
     header: Rect,
     body: Rect,
     mixer: Rect,
+    /// Where the first scene's row starts, scrolled, inside a track column's top border and
+    /// padding.
     top: f32,
     scenes: usize,
     /// Every track but the returns, in track order, and the group tracks with their names.
@@ -927,10 +933,10 @@ fn column_body(
             rgb(column.color),
         );
     }
-    // Its border, and its slots in its content box, inside its border and padding (#1336).
+    // Its border, and its slots in its content box, inside its border and padding (#1336); the
+    // rows' top is the one every column shares (`Bands::top`).
     let column_box = Rect::from_x_y_ranges(span, bands.body.y_range());
-    let inside = column_style.paint_border(painter, column_box);
-    let (span, top) = (inside.x_range(), bands.top + (inside.top() - column_box.top()));
+    let (span, top) = (column_style.paint_border(painter, column_box).x_range(), bands.top);
     let scenes = bands.scenes;
     let mapping = state.launch_keys.mode.on && column.kind != ColumnKind::Return;
     let label = |target: MappingTarget| bands.mapped.iter().find(|(t, _)| *t == target).map(|(_, l)| l.as_str());

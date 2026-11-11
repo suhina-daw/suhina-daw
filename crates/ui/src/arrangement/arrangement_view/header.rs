@@ -299,6 +299,8 @@ pub(super) fn track_header(
     crate::kit::liquid::paint(painter, rect, &own, header_fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`arrangement track-header`) over the native one.
     own.paint(painter, rect.intersect(clip));
+    // The lane's whole height: what folding saves and restores, and where its resize edge is.
+    let lane_rect = rect;
     let rect = inside;
     // The name and the controls' ink read on whichever background is shown.
     let header_fill = own.background_or(header_fill);
@@ -376,7 +378,7 @@ pub(super) fn track_header(
         let folded = if group_fold {
             state.folds.is_folded(lane.track)
         } else {
-            rect.height() <= f32::from(state.sizes.height(TrackSize::Compact))
+            lane_rect.height() <= f32::from(state.sizes.height(TrackSize::Compact))
         };
         let label = if group_fold {
             if folded { format!("Unfold {}", lane.name) } else { format!("Fold {}", lane.name) }
@@ -416,7 +418,7 @@ pub(super) fn track_header(
             if group_fold {
                 state.folds.toggle(lane.track);
             } else {
-                state.toggle_height(lane.track, rect.height());
+                state.toggle_height(lane.track, lane_rect.height());
             }
             // What the lanes are changes without the project changing: draw the next frame.
             ui.ctx().request_repaint();
@@ -868,6 +870,7 @@ pub(super) fn track_header(
     // The bottom edge resizes the lane; a return's top edge, as the fixed rows sit along the
     // bottom and grow upward.
     let upward = lane.kind == ColumnKind::Return;
+    let rect = lane_rect;
     let edge = if upward {
         Rect::from_min_max(Pos2::new(rect.left(), rect.top() - 1.0), Pos2::new(rect.right(), rect.top() + 3.0))
     } else {

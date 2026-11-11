@@ -370,10 +370,12 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
     let font = values.as_ref().filter(|style| style.authored.font_size).map(|style| style.font_size);
     let radius = values.as_ref().filter(|style| style.authored.radius).map(|style| style.radius);
     // A border the sheet gives (a width, 0 for none) is the ordinary widgets' outline too, in
-    // every state: without it they keep egui's own.
+    // every state: without it they keep egui's own. Only one width all round: a bar's line along
+    // one side is not a box round each of its buttons (#1336).
     let border = values
         .as_ref()
         .filter(|style| style.authored.border_width)
+        .filter(|style| style.border_sides.iter().all(|side| *side == style.border_width))
         .map(|style| egui::Stroke::new(style.border_width, style.border));
     // A panel's or view's background is the surface behind its widgets, not their fill: a
     // device panel's colour would otherwise hide its sliders' rails.

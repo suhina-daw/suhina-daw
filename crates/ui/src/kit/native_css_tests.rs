@@ -1134,7 +1134,11 @@ fn a_level_bar_s_value_may_sit_left_and_its_lit_part_take_its_own_ink() {
 #[test]
 fn a_sheet_s_border_is_the_ordinary_widgets_outline() {
     let mut strokes = Vec::new();
-    for css in ["dropdown { border-width: 0px; }", "dropdown { border-width: 2px; border-color: #FF0000; }"] {
+    for css in [
+        "dropdown { border-width: 0px; }",
+        "dropdown { border-width: 2px; border-color: #FF0000; }",
+        "dropdown { border-width: 0 0 2px; border-color: #FF0000; }",
+    ] {
         let mut seen = None;
         painted(css, |ui| {
             let menu = test_el("dropdown").enter();
@@ -1146,6 +1150,8 @@ fn a_sheet_s_border_is_the_ordinary_widgets_outline() {
     }
     assert_eq!(strokes[0].width, 0.0);
     assert_eq!(strokes[1], egui::Stroke::new(2.0, egui::Color32::from_rgb(0xFF, 0, 0)));
+    // A line along one side is the element's own, not a box round each widget in it (#1336).
+    assert_ne!(strokes[2], strokes[1], "a one-sided border keeps egui's own outline");
 }
 
 #[test]

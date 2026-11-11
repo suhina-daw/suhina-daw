@@ -162,10 +162,11 @@ fn chain_row(
                 let el = crate::kit::element::DEVICE.id(&format!("device-{}", device.theme_id)).enter();
                 let computed = el.style();
                 let insets = el.insets();
+                let width = width + insets[1] + insets[3];
                 let width = computed
                     .as_ref()
                     .and_then(|c| c.width)
-                    .map_or(width + insets[1] + insets[3], |themed| width.max(themed.clamp(120.0, 1600.0)));
+                    .map_or(width, |themed| width.max(themed.clamp(120.0, 1600.0)));
                 (width, computed.and_then(|c| c.height), insets)
             };
             let height = top

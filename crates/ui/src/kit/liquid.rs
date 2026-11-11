@@ -264,10 +264,17 @@ pub fn finish_backdrops(ctx: &Context) {
     ctx.graphics_mut(|layers| {
         for (marked, cut, image) in dialogs {
             let list = layers.entry(marked.layer);
+            // Each slot keeps its clip as it is now: a region that hides its overflow may have
+            // narrowed it since it was reserved (#1336).
+            let clip_of = |list: &egui::layers::PaintList, slot: egui::layers::ShapeIdx| {
+                list.all_entries().nth(slot.0).map_or(marked.clip, |shape| shape.clip_rect)
+            };
             if let Some(cut) = cut {
-                list.set(marked.cut, marked.clip, cut);
+                let clip = clip_of(list, marked.cut);
+                list.set(marked.cut, clip, cut);
             }
-            list.set(marked.image, marked.clip, image);
+            let clip = clip_of(list, marked.image);
+            list.set(marked.image, clip, image);
         }
         for (layer, index, shapes) in under {
             let list = layers.entry(layer);

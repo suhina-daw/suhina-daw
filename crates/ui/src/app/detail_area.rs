@@ -919,7 +919,8 @@ impl App {
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
         if response.double_clicked() {
             self.show_editor();
-            self.detail_height = DETAIL_HEIGHT;
+            // The default content height, with the area's border and padding round it (#1336).
+            self.detail_height = DETAIL_HEIGHT + self.detail_insets.area;
             self.detail_width = detail_view::STACK_WIDTH;
         }
         if response.dragged_by(egui::PointerButton::Primary) {

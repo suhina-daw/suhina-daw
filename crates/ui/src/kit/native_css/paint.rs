@@ -255,8 +255,13 @@ pub(in crate::kit) fn border(painter: &Painter, rect: Rect, radius: f32, style: 
         painter.rect_stroke(rect, radius, egui::Stroke::new(top, color), egui::StrokeKind::Inside);
         return;
     }
-    // Top and bottom take the corners; the sides fill between them.
+    // Top and bottom take the corners; the sides fill between them. Wider than the box, the
+    // sides meet without overlapping, so a translucent colour is not drawn twice.
     let (x, y) = (rect.x_range(), rect.y_range());
+    let top = top.min(rect.height());
+    let bottom = bottom.min(rect.height() - top);
+    let left = left.min(rect.width());
+    let right = right.min(rect.width() - left);
     let sides = [
         Rect::from_x_y_ranges(x, egui::Rangef::new(y.min, y.min + top)),
         Rect::from_x_y_ranges(x, egui::Rangef::new(y.max - bottom, y.max)),

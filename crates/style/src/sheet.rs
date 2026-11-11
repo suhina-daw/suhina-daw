@@ -35,7 +35,7 @@ pub(crate) enum Shorthand {
 }
 
 impl Shorthand {
-    fn from_name(name: &str) -> Option<Self> {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "background" => Self::Background,
             "gap" => Self::Gap,
@@ -48,7 +48,7 @@ impl Shorthand {
         })
     }
 
-    fn longhands(self) -> &'static [Property] {
+    pub(crate) fn longhands(self) -> &'static [Property] {
         match self {
             Self::Background => &[Property::BackgroundColor, Property::BackgroundImage],
             Self::Gap => &[Property::RowGap, Property::ColumnGap],
