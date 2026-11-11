@@ -14,8 +14,9 @@
 //! that finds too little holds the last sample each channel delivered and is counted — a
 //! splice to silence cracked through everything downstream, and a recording baked hundreds of
 //! those splices into its takes ([#1290] › the takes' crackle); a starvation that sustains
-//! fades its hold toward zero, so a dead input never becomes a DC offset. Nothing here
-//! allocates, locks or frees on the render thread.
+//! fades its hold toward zero, so a dead input never becomes a DC offset; and the frames a
+//! hold made up are skipped when the device delivers them late, so the rest of a take keeps
+//! the beat. Nothing here allocates, locks or frees on the render thread.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -116,6 +117,18 @@ pub(crate) struct Input {
     /// and never jump the way a position against the render's clock jumps with the ring's
     /// depth.
     consumed: u64,
+    /// Frames a starved block's hold made up, that the device may still deliver late rather
+    /// than dropping them: they stay in the ring while every later block reads its own
+    /// `frames`, so the rest of a take runs that count late against the beat. A read that
+    /// finds the ring a whole block deeper than the last whole read left it skips them —
+    /// their window already spent its input time, and the hold is the content the take
+    /// carries for it.
+    owed: usize,
+    /// The ring's leftover frames after the last read that took a whole block: the steady
+    /// excess a delivery's uneven pace leaves and a backlog drop keeps. A late-held delivery
+    /// arrives as a jump over this steady depth, which is what the skip reads it against —
+    /// a steady depth itself (drift, the drop's kept block) is never a late delivery.
+    excess: usize,
 }
 
 impl Input {
@@ -132,16 +145,21 @@ impl Input {
             hold: 1.0,
             starved: false,
             consumed: 0,
+            owed: 0,
+            excess: 0,
         }
     }
 
     /// Reads from `ring`, `channels` samples per frame, from now on; blocks that find too little
     /// count in `underruns`. Channels past [`MAX_INPUT_CHANNELS`] are not taken: the writer
-    /// writes `channels.min(MAX_INPUT_CHANNELS)` per frame.
+    /// writes `channels.min(MAX_INPUT_CHANNELS)` per frame. The ring's own history starts here:
+    /// what a past ring's starvation owed or its reads left over is not this ring's.
     pub(crate) fn attach(&mut self, ring: Consumer<f32>, channels: usize, underruns: Arc<AtomicU64>) {
         self.ring = Some(ring);
         self.channels = channels.clamp(1, MAX_INPUT_CHANNELS);
         self.underruns = underruns;
+        self.owed = 0;
+        self.excess = 0;
     }
 
     /// Discards stale input once before a whole render call. A loop, graph swap or MAX_BLOCK
@@ -171,7 +189,8 @@ impl Input {
     /// then the last state each channel delivered (a starved block holds the signal's last state
     /// instead of dropping to silence — a splice to silence and back cracks through everything
     /// downstream; a starvation that sustains fades its hold toward zero, so a dead input does
-    /// not hold a DC offset forever). Without an input device, silence.
+    /// not hold a DC offset forever; and a hold's frames the device delivers late are skipped,
+    /// so the rest of a take keeps the beat). Without an input device, silence.
     pub(crate) fn read(&mut self, frames: usize) {
         let frames = frames.min(MAX_BLOCK);
         self.frames = frames;
@@ -188,6 +207,26 @@ impl Input {
             block.fill(0.0);
             return;
         };
+        // The held frames may still be delivered late rather than dropped (a device callback
+        // that landed after its read): they stay in the ring while every later block reads its
+        // own `frames`, so the ring carries them for good and the rest of a take runs that
+        // count late against the beat. The read skips them when the ring carries a whole block
+        // more than the last whole read left: the starvation emptied the ring, so the front
+        // frames are the oldest thing in it — the late delivery — and the input time their
+        // content belongs to was already spent (the starved block's window counted it, and the
+        // hold is the content the take carries for it). A real loss leaves the ring at its own
+        // pace, a block's production over the leftover a whole read leaves, and never that
+        // much deeper — the skip fires on the jump a late delivery makes, not on a steady
+        // depth (drift, the drop's kept block), and a loss is never mistaken for one.
+        let depth = ring.slots() / channels;
+        if self.owed > 0 && depth >= frames.saturating_add(self.owed).saturating_add(self.excess) {
+            // Bounded by the depth the condition checked, which contains only whole frames.
+            let samples = self.owed * channels;
+            if let Ok(chunk) = ring.read_chunk(samples) {
+                chunk.commit_all();
+            }
+            self.owed = 0;
+        }
         self.waiting = ring.slots() / channels;
         let take = (ring.slots() / channels).min(frames) * channels;
         match ring.read_chunk(take) {
@@ -237,11 +276,18 @@ impl Input {
             }
             self.hold = end;
             self.starved = true;
+            // The held frames are input time the block's window already spent: the device may
+            // still deliver them late rather than dropping them, and a read that then finds
+            // the ring a whole block deeper than a whole read leaves it skips them.
+            self.owed += wanted - take;
             self.diagnostics.short_read(take / channels, frames);
             self.underruns.fetch_add(1, Ordering::Relaxed);
         } else {
             self.hold = 1.0;
             self.starved = false;
+            // The leftover a whole read leaves is the steady depth a later late delivery jumps
+            // over: a block's own production on top of what the pace and the backlog drop keep.
+            self.excess = ring.slots() / channels;
             // The last state each channel delivered is the next starved block's hold: the
             // block's last frame, which the ring carried whole.
             for channel in 0..channels {

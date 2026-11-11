@@ -224,6 +224,22 @@ input's consumed-frame count the render thread reads each block
 ([`docs/spec/recording.md`](../spec/recording.md) › Lined up with what was heard). A loopback
 still records the project back exactly on its frames.
 
+## Amendment: a hold's frames delivered late are skipped (2026-11-11)
+
+[#1290](https://github.com/suhina-daw/suhina-daw/issues/1290) › the second review. The clock
+amendment spends a starved block's input time whole — the hold made up what the ring did not
+deliver, and the take's positions count the block's frames either way. When the device
+delivers the held frames after all (a callback that landed after its read), they stay in the
+ring while every later block reads its own `frames`: the rest of the take ran that count late
+against the beat, and each further underrun added to it. The read now skips them when the ring
+carries a whole block more than the last whole read left it: the starvation emptied the ring,
+so the front frames are the late delivery, and the input time their content belongs to is
+already spent — the hold is the content the take carries for it. A real loss leaves the ring
+at its own pace (a block's production over the leftover a whole read leaves) and never trips
+the skip, and a steady depth — drift, the backlog drop's kept block — is not a late delivery.
+A loopback whose callback lands half a block late, then delivers, records the rest of the take
+on its beats.
+
 ## Amendment: default track input (2026-11-05)
 
 [#1191](https://github.com/suhina-daw/suhina-daw/issues/1191). Before, every new audio track heard

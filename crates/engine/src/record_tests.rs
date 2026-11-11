@@ -297,6 +297,69 @@ fn a_loopback_records_the_output_back_on_its_own_frames() {
     }
 }
 
+/// A late delivery of the held frames does not shift the rest of the take: the device delivers
+/// one block in two halves, half before the render thread's read and the rest after it (driver
+/// jitter), the starved block holds the rest, and the next block finds the ring deeper by the
+/// held count and skips them — the rest of the take runs on the beat.
+#[test]
+fn a_late_delivery_of_held_frames_does_not_shift_the_rest_of_the_take() {
+    let (delay, output, input) = (BLOCK * 3 + 17, 500u32, 29u32);
+    assert_eq!(output as usize + input as usize + BLOCK, delay, "the latencies add up to the delay");
+    let mut renderer =
+        Renderer::stopped(&input_track(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let (mut ring, consumer) = rtrb::RingBuffer::new(BLOCK * 64);
+    renderer.set_audio_input(consumer, 1, Arc::new(AtomicU64::new(0)));
+    let mut controller = renderer.controller();
+    let mut recorder = controller.take_recorder().unwrap();
+    arm(&mut controller, 1);
+    controller.send(LaunchCommand::SetMetronome { on: true, gain: Some(0.5) }).unwrap();
+    controller.send(LaunchCommand::SetRecording { on: true }).unwrap();
+    controller.send(LaunchCommand::Play).unwrap();
+    let mut played: Vec<f32> = Vec::new();
+    let mut block = vec![0.0f32; BLOCK * 2];
+    // The device's window: the output `delay` frames ago, at `n * BLOCK + frame` of input time.
+    let count = (3 * BEAT) / BLOCK;
+    for n in 0..count {
+        // What the input hears during this block: the output `delay` frames ago (silence before
+        // the start). The device delivers half before the render thread's read, the rest after
+        // it — the first block's frames are delivered in two halves.
+        let half = if n == 0 { BLOCK / 2 } else { BLOCK };
+        for frame in 0..half {
+            let at = (n * BLOCK + frame) as i64 - delay as i64;
+            let sample = usize::try_from(at).ok().and_then(|at| played.get(at).copied()).unwrap_or(0.0);
+            ring.push(sample).unwrap();
+        }
+        renderer.set_record_latency(output, input);
+        renderer.process(&mut block);
+        played.extend(block.chunks(2).map(|f| f[0]));
+        // The device's late delivery: the rest of the block's frames arrive after the read.
+        if n == 0 {
+            for frame in BLOCK / 2..BLOCK {
+                let at = (n * BLOCK + frame) as i64 - delay as i64;
+                let sample = usize::try_from(at).ok().and_then(|at| played.get(at).copied()).unwrap_or(0.0);
+                ring.push(sample).unwrap();
+            }
+        }
+    }
+    let mut compared = 0;
+    let mut clicks = 0;
+    while let Some(chunk) = recorder.next_audio() {
+        assert_eq!((chunk.track, chunk.channels), (TrackId(1), 1));
+        let position = chunk.position as usize;
+        if position < BLOCK {
+            continue;
+        }
+        assert!((chunk.beat - beats(position)).abs() < 1e-9, "stamped with its beat");
+        for (i, sample) in chunk.samples().iter().enumerate() {
+            assert_eq!(*sample, played[position + i], "{delay}: frame {}", position + i);
+            compared += 1;
+            clicks += usize::from(sample.abs() > 0.05);
+        }
+    }
+    assert!(compared > 2 * BEAT && clicks > 0, "{delay}: {compared} frames, {clicks} loud");
+    assert_eq!(recorder.lost(), (0, 0));
+}
+
 #[test]
 fn a_takes_positions_follow_the_inputs_own_clock_not_the_rings_depth() {
     // The input ring's depth swings block to block as the device's delivery and the render

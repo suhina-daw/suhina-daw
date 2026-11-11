@@ -274,7 +274,9 @@ of the speaker. A take is placed where what was played lines up with what was he
   delivery and the render thread's reads trade places — and the writer read the jumps as lost
   frames and spliced silence in: takes full of clicks and pops with no underrun counted
   anywhere. A loopback (the output played straight into the input) then records the project
-  back exactly on its beats.
+  back exactly on its beats. A starved block's hold spends its frames' input time either way,
+  so frames the device delivers late — a callback that landed after its read — are skipped at
+  the read (ADR 0017 › the amendment of 2026-11-11), and the rest of the take keeps the beat.
 
 Notes before the take's start (a key a little early) are not kept, nor is sound before it.
 
