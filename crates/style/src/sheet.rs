@@ -29,6 +29,7 @@ pub(crate) enum Shorthand {
     Gap,
     Padding,
     Margin,
+    BorderWidth,
     Flex,
     Outline,
 }
@@ -40,6 +41,7 @@ impl Shorthand {
             "gap" => Self::Gap,
             "padding" => Self::Padding,
             "margin" => Self::Margin,
+            "border-width" => Self::BorderWidth,
             "flex" => Self::Flex,
             "outline" => Self::Outline,
             _ => return None,
@@ -54,6 +56,12 @@ impl Shorthand {
                 &[Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft]
             }
             Self::Margin => &[Property::MarginTop, Property::MarginRight, Property::MarginBottom, Property::MarginLeft],
+            Self::BorderWidth => &[
+                Property::BorderTopWidth,
+                Property::BorderRightWidth,
+                Property::BorderBottomWidth,
+                Property::BorderLeftWidth,
+            ],
             Self::Flex => &[Property::FlexGrow, Property::FlexShrink, Property::FlexBasis],
             Self::Outline => &[Property::OutlineWidth, Property::OutlineStyle, Property::OutlineColor],
         }
@@ -73,10 +81,10 @@ impl Shorthand {
         let text = match (self, words.len()) {
             (Self::Gap, 1) => pick(&[0, 0]),
             (Self::Gap, 2) => pick(&[0, 1]),
-            (Self::Padding | Self::Margin, 1) => pick(&[0, 0, 0, 0]),
-            (Self::Padding | Self::Margin, 2) => pick(&[0, 1, 0, 1]),
-            (Self::Padding | Self::Margin, 3) => pick(&[0, 1, 2, 1]),
-            (Self::Padding | Self::Margin, 4) => pick(&[0, 1, 2, 3]),
+            (Self::Padding | Self::Margin | Self::BorderWidth, 1) => pick(&[0, 0, 0, 0]),
+            (Self::Padding | Self::Margin | Self::BorderWidth, 2) => pick(&[0, 1, 0, 1]),
+            (Self::Padding | Self::Margin | Self::BorderWidth, 3) => pick(&[0, 1, 2, 1]),
+            (Self::Padding | Self::Margin | Self::BorderWidth, 4) => pick(&[0, 1, 2, 3]),
             (Self::Flex, 1) => match words.first().copied() {
                 Some("none") => Some(["0", "0", "auto"][index].to_owned()),
                 Some("auto") => Some(["1", "1", "auto"][index].to_owned()),
@@ -101,6 +109,7 @@ impl Shorthand {
             Self::Gap => "gap",
             Self::Padding => "padding",
             Self::Margin => "margin",
+            Self::BorderWidth => "border-width",
             Self::Flex => "flex",
             Self::Outline => "outline",
         }
