@@ -278,8 +278,9 @@ impl Input {
             self.starved = true;
             // The held frames are input time the block's window already spent: the device may
             // still deliver them late rather than dropping them, and a read that then finds
-            // the ring a whole block deeper than a whole read leaves it skips them.
-            self.owed += wanted - take;
+            // the ring a whole block deeper than a whole read leaves it skips them. The count
+            // is frames, not their samples — the skip's check and its drop read frames.
+            self.owed += (wanted - take) / channels;
             self.diagnostics.short_read(take / channels, frames);
             self.underruns.fetch_add(1, Ordering::Relaxed);
         } else {
