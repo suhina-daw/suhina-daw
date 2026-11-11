@@ -358,16 +358,14 @@ fn load_project(args: &Args) -> Result<(Project, AudioPool, suhina_engine::Devic
             // the project's folder: the files they saved projects with, their library folders.
             let mut projects = suhina_session::Projects::new();
             projects.set_file_library(suhina_library::Library::new(suhina_plugins::library::settings_folder()));
-            let (mut session, warnings) = projects.open_path(path, options).map_err(|e| e.message().to_owned())?;
+            // The library's base is the session's before its loads: a device's file state may
+            // say a library-relative path ([ADR 0036]), which resolves against it — the open
+            // takes it, so the files load once, from the library and not the working folder.
+            projects.set_library_base(suhina_session::documents_base());
+            let (session, warnings) = projects.open_path(path, options).map_err(|e| e.message().to_owned())?;
             for warning in &warnings {
                 eprintln!("warning: {warning}");
             }
-            // The library's base is the session's before its loads: a device's file state may say
-            // a library-relative path ([ADR 0036]), which resolves against it. A load that ran
-            // before the base was set missed, so the files are built again with it — before the
-            // render, not the working folder.
-            session.set_library_base(suhina_session::documents_base());
-            session.sync_device_files();
             let audio = session.audio().clone();
             if !audio.files.is_empty() {
                 eprintln!("audio: {} files decoded in {:.1} s", audio.files.len(), started.elapsed().as_secs_f64());

@@ -102,9 +102,6 @@ fn publish(target: &Path, bytes: &[u8]) -> bool {
     suhina_session::stage_and_rename(&staging, target, bytes).is_ok()
 }
 
-/// The old default folders each device's files may still carry
-/// ([issue 1279] · the library move): `(device id, old folder name)`.
-const OLD_DEVICE_FOLDERS: &[(&str, &str)] = &[("nam-amp-modeler", "NAM models"), ("nam-cab-loader", "IRs")];
 /// The marker that says an old folder's kept files were reported: the warning is a start-up
 /// record, not a per-start nag, and the folder sits quiet about them after until something in
 /// it moves ([#1290] › the review). It rides beside the folder — inside it, the move's walk
@@ -114,23 +111,42 @@ fn migrate_reported(base: &Path, old_name: &str) -> PathBuf {
     base.join(format!(".suhina-migrate-{}-reported", old_name.to_lowercase().replace(' ', "-")))
 }
 
+/// Whether `folder` is one of `keep`, the folders the settings name: compared by their
+/// components, case-insensitively, so a settings text that names the folder in another
+/// spelling of its case still keeps it.
+fn is_kept(folder: &Path, keep: &[PathBuf]) -> bool {
+    let components = |path: &Path| -> Vec<String> {
+        path.components().map(|component| component.as_os_str().to_string_lossy().to_lowercase()).collect()
+    };
+    let folder = components(folder);
+    keep.iter().any(|kept| components(kept) == folder)
+}
+
 /// Moves the old defaults' contents into the library's device folders before the pack unpacks:
 /// `base` is the library's root (`Documents/Suhina`), `sounds` the NAM sounds under it — the
-/// old folders sit at the root, the device folders under `sounds`. A pack subfolder moves as a
-/// pack, a file moves by its name, and a name the new tree already holds stays where it is, so
-/// nothing is ever overwritten ([issue 1279]). Each moved-empty old folder is removed; the
-/// returned lines go to the start-up warnings.
-pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
+/// old folders sit at the root, the device folders under `sounds`; which devices have an old
+/// folder, and what it is, the device registry names
+/// ([`suhina_device_registry::legacy_folder`]), one source with the resolution the loads read.
+/// A pack subfolder moves as a pack, a file moves by its name, and a name the new tree already
+/// holds stays where it is, so nothing is ever overwritten ([issue 1279]). Each moved-empty
+/// old folder is removed; the returned lines go to the start-up warnings. An old folder of
+/// `keep` — the folders the Settings name — is left alone: its files are where the user's
+/// panels list them, and a move would empty and remove a folder the panels go on reading,
+/// their files gone from the lists.
+pub fn migrate_old_folders(base: &Path, sounds: &Path, keep: &[PathBuf]) -> Vec<String> {
     let debug = std::env::var("SUHINA_PACK_DEBUG").as_deref() == Ok("1");
     let mut warnings = Vec::new();
-    for (device, old_name) in OLD_DEVICE_FOLDERS {
-        let Some(library_folder) = suhina_device_registry::pack_files_flat()
-            .iter()
-            .find_map(|(id, folder, _, _, _)| (*id == *device).then_some(*folder))
-        else {
-            continue;
-        };
+    for device in suhina_device_registry::DEVICES {
+        let device = device.id.as_ref();
+        let Some(old_name) = suhina_device_registry::legacy_folder(device) else { continue };
+        let Some(library_folder) = suhina_device_registry::library_folder(device) else { continue };
         let old = base.join(old_name);
+        if is_kept(&old, keep) {
+            if debug {
+                eprintln!("pack migrate: the settings name {old:?}, so it stays as it is");
+            }
+            continue;
+        }
         let fresh = sounds.join(library_folder);
         if !old.is_dir() {
             if debug {

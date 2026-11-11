@@ -45,7 +45,7 @@ fn an_old_library_moves_into_the_sounds_folders() {
     std::fs::create_dir_all(&old_irs).unwrap();
     std::fs::write(old_irs.join("Dark.wav"), b"three").unwrap();
 
-    let warnings = migrate_old_folders(&dir, &dir);
+    let warnings = migrate_old_folders(&dir, &dir, &[]);
     assert_eq!(warnings.len(), 2, "{warnings:?}");
     assert!(warnings.iter().all(|line| line.contains("moved into the library")));
 
@@ -55,6 +55,34 @@ fn an_old_library_moves_into_the_sounds_folders() {
     assert_eq!(std::fs::read(dir.join("Cabinets/Dark.wav")).unwrap(), b"three");
     assert!(!old_models.exists(), "the moved-empty old folder stays behind");
     assert!(!old_irs.exists(), "the moved-empty old folder stays behind");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An old folder the Settings name is left alone: the panels list from it, and a move would
+/// empty and remove a folder the lists go on reading — their files gone from the lists. The
+/// other old folder, which no setting names, moves as usual. The keep compares the folder by
+/// its components, case-insensitively, so a settings text in another spelling still keeps it.
+#[test]
+fn an_old_folder_a_setting_names_stays() {
+    let dir = std::env::temp_dir().join(format!("suhina-pack-migrate-keep-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let old_models = dir.join("NAM models");
+    std::fs::create_dir_all(&old_models).unwrap();
+    std::fs::write(old_models.join("Kept.nam"), b"one").unwrap();
+    let old_irs = dir.join("IRs");
+    std::fs::create_dir_all(&old_irs).unwrap();
+    std::fs::write(old_irs.join("Dark.wav"), b"three").unwrap();
+
+    let keep = vec![dir.join("NAM MODELS")];
+    let warnings = migrate_old_folders(&dir, &dir, &keep);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("IRs"), "{warnings:?}");
+
+    assert_eq!(std::fs::read(old_models.join("Kept.nam")).unwrap(), b"one", "the kept folder's file is where it was");
+    assert!(old_models.is_dir(), "the kept folder stays");
+    assert!(!dir.join("Amp models/Kept.nam").exists(), "nothing moved out of the kept folder");
+    assert_eq!(std::fs::read(dir.join("Cabinets/Dark.wav")).unwrap(), b"three", "the other old folder moved");
+    assert!(!old_irs.exists(), "the folder no setting names moved and emptied");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -74,7 +102,7 @@ fn a_name_the_new_tree_holds_is_never_overwritten() {
     std::fs::create_dir_all(&models).unwrap();
     std::fs::write(models.join("Clash.nam"), b"the new bytes").unwrap();
 
-    let warnings = migrate_old_folders(&dir, &dir);
+    let warnings = migrate_old_folders(&dir, &dir, &[]);
     assert_eq!(std::fs::read(models.join("Clash.nam")).unwrap(), b"the new bytes", "overwritten");
     assert_eq!(std::fs::read(old_models.join("Clash.nam")).unwrap(), b"the old bytes", "moved over");
     assert!(old_models.exists(), "a folder with leftovers is not removed");
@@ -82,14 +110,14 @@ fn a_name_the_new_tree_holds_is_never_overwritten() {
 
     // The next start is quiet about the kept files: the marker beside the folder says they
     // were reported.
-    let again = migrate_old_folders(&dir, &dir);
+    let again = migrate_old_folders(&dir, &dir, &[]);
     assert!(again.is_empty(), "the kept warning repeats at every start: {again:?}");
     assert_eq!(std::fs::read(old_models.join("Clash.nam")).unwrap(), b"the old bytes", "still never overwritten");
 
     // The conflict gone, the old file moves at the next start and the move speaks — the
     // quiet was about the kept files, not the folder.
     std::fs::remove_file(models.join("Clash.nam")).unwrap();
-    let moved = migrate_old_folders(&dir, &dir);
+    let moved = migrate_old_folders(&dir, &dir, &[]);
     assert_eq!(
         std::fs::read(models.join("Clash.nam")).unwrap(),
         b"the old bytes",
@@ -117,7 +145,7 @@ fn a_partial_folder_move_is_reported_with_its_kept_files() {
     std::fs::create_dir_all(&new_pack).unwrap();
     std::fs::write(new_pack.join("Clash.nam"), b"the new bytes").unwrap();
 
-    let warnings = migrate_old_folders(&dir, &dir);
+    let warnings = migrate_old_folders(&dir, &dir, &[]);
     assert_eq!(std::fs::read(new_pack.join("Moved.nam")).unwrap(), b"moved bytes", "the movable file went");
     assert_eq!(
         std::fs::read(new_pack.join("Clash.nam")).unwrap(),
@@ -146,7 +174,7 @@ fn the_pack_unpack_runs_after_the_move() {
         std::fs::create_dir_all(&folder).unwrap();
         std::fs::write(folder.join(name), bytes).unwrap();
     }
-    migrate_old_folders(&dir, &dir);
+    migrate_old_folders(&dir, &dir, &[]);
     // The records the move does not carry (they ride the unpack alone) are carried here
     // too, so the count below says nothing over the carried pack was written.
     for (library_folder, pack_folder, name, bytes) in suhina_device_registry::pack_records() {
@@ -176,7 +204,7 @@ fn a_refused_move_is_reported_as_stuck() {
     std::fs::create_dir_all(&fresh).unwrap();
     std::fs::set_permissions(&fresh, std::fs::Permissions::from_mode(0o555)).unwrap();
 
-    let warnings = migrate_old_folders(&dir, &dir);
+    let warnings = migrate_old_folders(&dir, &dir, &[]);
     std::fs::set_permissions(&fresh, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(
         warnings.iter().any(|line| line.contains("could not move") && line.contains("1 file(s)")),
@@ -201,7 +229,7 @@ fn a_symlink_in_the_old_folder_is_not_followed() {
     symlink(&old_models, old_models.join("loop")).unwrap();
 
     assert_eq!(files_in(&old_models), 1, "the walk ends: the link is not followed");
-    let warnings = migrate_old_folders(&dir, &dir);
+    let warnings = migrate_old_folders(&dir, &dir, &[]);
     assert!(
         warnings.iter().any(|line| line.contains("moved") && line.contains("1 file(s)")),
         "the real file moved, the link with it: {warnings:?}"
@@ -229,7 +257,7 @@ fn a_link_in_a_clashing_pack_is_never_followed_by_the_move() {
     std::fs::write(new_pack.join("Clash.nam"), b"clash").unwrap();
     std::fs::write(new_pack.join("loop"), b"the user's own link-name file").unwrap();
 
-    let warnings = migrate_old_folders(&dir, &dir);
+    let warnings = migrate_old_folders(&dir, &dir, &[]);
     assert_eq!(std::fs::read(new_pack.join("One.nam")).unwrap(), b"one", "the real file moved to the tree's place");
     assert_eq!(std::fs::read(new_pack.join("Clash.nam")).unwrap(), b"clash", "the user's file never written over");
     assert_eq!(std::fs::read(new_pack.join("loop")).unwrap(), b"the user's own link-name file", "the link's name kept");

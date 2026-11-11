@@ -809,9 +809,8 @@ pub fn prepare_search(
         // ([ADR 0036] › 5, the review), so a change to the naming cannot leave the tree and
         // the search disagreeing.
         if let Some(base) = projects.library_base() {
-            let mut found_presets: Vec<Found> = Vec::new();
             for (_, path, stem) in user_presets(base) {
-                found_presets.push(Found {
+                let found = Found {
                     item: Item::File(path),
                     name: stem,
                     kind: "preset",
@@ -819,9 +818,7 @@ pub fn prepare_search(
                     plugin: false,
                     format: None,
                     folder: None,
-                });
-            }
-            for found in found_presets {
+                };
                 let haystack = found.item.key();
                 if let Some(rank) = suhina_library::rank(&words, &found.name, &haystack)
                     && fits(&found, category)

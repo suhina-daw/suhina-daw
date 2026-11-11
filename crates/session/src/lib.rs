@@ -541,24 +541,25 @@ impl Session {
     }
 
     /// What a device's file is called, for a device panel: the model's own name (its metadata)
-    /// for a NAM Amp Modeler, the IR's parent folder's name for a NAM Cab Loader. `None` while
-    /// the file is not in the assets.
+    /// for a NAM Amp Modeler, the IR file's own stem for a NAM Cab Loader — a shipped key's
+    /// stem is its file's, the same name the lists' rows carry ([ADR 0036]). `None` while the
+    /// file is not in the assets.
     pub fn device_asset_name(&self, path: &str) -> Option<String> {
         let asset = self.device_files.assets.get(path)?;
-        // A shipped file's name reads its key's library shape ([ADR 0036]): the Cab Loader's
-        // name fn takes the pack's name from the parent folder, so the key's file rides
-        // `Suhina/`.
-        let shape = match suhina_device_registry::builtin_file_path(path) {
-            Some(shaped) => shaped,
-            None => std::path::PathBuf::from(path),
-        };
-        suhina_device_registry::asset_name(asset, &shape)
+        suhina_device_registry::asset_name(asset, std::path::Path::new(path))
     }
 
     /// Why a device's file is not in the assets, by the path: what a read gave, for a device
     /// panel's note.
     pub fn device_asset_note(&self, path: &str) -> Option<&str> {
         self.device_files.notes.get(path).map(String::as_str)
+    }
+
+    /// How many device-file loads the syncs have made since the session was made: a parse
+    /// and, for an IR, a resample each, on the session's thread. A diagnostic — an open loads
+    /// each file once, and a test counts them to keep it that way.
+    pub fn device_file_loads(&self) -> u64 {
+        self.device_files.loads
     }
 
     /// Puts audio made by a command (a consolidated range) into the pool under `key`, for the
@@ -1063,6 +1064,15 @@ impl Session {
     /// The NAM devices' files are read here, so the session is ready for the planned audio
     /// before a player is attached.
     pub fn open(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
+        Self::open_with_base(path, None)
+    }
+
+    /// [`Session::open`] with the library's root the caller knows ([ADR 0036]): the base is
+    /// the session's before its first loads, so a device's file state that is a
+    /// library-relative path resolves against it at once, and no load runs to be built again
+    /// when the base arrives later — a load that ran without it is a parse and, for an IR, a
+    /// resample the session's thread spends twice ([`Session::set_library_base`], the review).
+    pub fn open_with_base(path: &Path, base: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
         let (project, warnings) = if suhina_project_file::is_project_file(path) {
             let project = suhina_project_file::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
             (project, Vec::new())
@@ -1080,26 +1090,35 @@ impl Session {
         let mut session = Self::new(project);
         session.source = Some(path.to_path_buf());
         session.audio.folder = path.parent().map(Path::to_path_buf);
+        if let Some(base) = base {
+            session.set_library_base(base.to_path_buf());
+        }
         session.sync_device_files();
         Ok((session, warnings))
     }
 
     /// A new, untitled project made from the template file `path` (any project Suhina opens).
-    /// Its audio is still found where the template's is.
-    pub fn from_template(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
-        let (mut session, warnings) = Self::open(path)?;
+    /// Its audio is still found where the template's is. `base` is the library's root, as
+    /// [`Session::open_with_base`] takes it.
+    pub fn from_template(path: &Path, base: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
+        let (mut session, warnings) = Self::open_with_base(path, base)?;
         session.source = None;
         Ok((session, warnings))
     }
 
     /// Opens a backup (`docs/spec/backups.md` › The offer on start) as an unsaved project tied
     /// to `file`, the project file it is a backup of: saving writes `file`, and the backup is
-    /// left as it is. Without `file` (a project never saved) it opens untitled.
-    pub fn recover(backup: &Path, file: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
+    /// left as it is. Without `file` (a project never saved) it opens untitled. `base` is the
+    /// library's root, as [`Session::open_with_base`] takes it.
+    pub fn recover(
+        backup: &Path,
+        file: Option<&Path>,
+        base: Option<&Path>,
+    ) -> Result<(Self, Vec<String>), CommandError> {
         if !suhina_project_file::is_project_file(backup) {
             return Err(format!("{} is not a Suhina project", backup.display()).into());
         }
-        let (mut session, warnings) = Self::open(backup)?;
+        let (mut session, warnings) = Self::open_with_base(backup, base)?;
         session.source = file.map(Path::to_path_buf);
         // The changes since the project file was saved are in the backup only.
         session.history.changes = 1;
@@ -1428,6 +1447,7 @@ impl Session {
                 continue;
             }
             let result = self.load_device_file(kind, path);
+            self.device_files.loads = self.device_files.loads.wrapping_add(1);
             self.device_files.modified.insert(path.clone(), mtime);
             match result {
                 Ok(asset) => {
@@ -1470,9 +1490,10 @@ impl Session {
         // id>/<file name>`, run against the pack's bytes through the device's own loader. A
         // key of another device's pack is refused here, as a path of the wrong extension
         // would be.
-        if let Some(rest) = path.strip_prefix("builtin:") {
-            let (packed_id, name) =
-                rest.split_once('/').ok_or("a shipped file's key is builtin:<device id>/<file name>")?;
+        if path.starts_with("builtin:") {
+            let Some((packed_id, name)) = suhina_device_registry::builtin_file_key_parts(path) else {
+                return Err("a shipped file's key is builtin:<device id>/<file name>".into());
+            };
             if packed_id != kind {
                 return Err(format!("{kind:?} runs a shipped file of its own kind, not {packed_id:?}"));
             }
@@ -1504,28 +1525,36 @@ impl Session {
         // same name.
         let shipped = if std::path::Path::new(path).is_absolute() {
             None
-        } else if let Some(library) = suhina_device_registry::library_folder(kind) {
-            let mut components = std::path::Path::new(path)
-                .components()
-                .map(|component| component.as_os_str().to_string_lossy().into_owned())
-                .collect::<Vec<_>>();
-            let name = components.pop().unwrap_or_default();
-            let pack = components.pop().unwrap_or_default();
-            let folder = components.pop().unwrap_or_default();
-            if pack.eq_ignore_ascii_case(suhina_device_registry::SHIPPED_PACK) && folder.eq_ignore_ascii_case(library) {
+        } else {
+            Self::pack_standin(kind, path).and_then(|name| {
                 suhina_device_registry::pack_files(kind)
                     .into_iter()
                     .find(|(packed, _)| packed.eq_ignore_ascii_case(&name))
-            } else {
-                None
-            }
-        } else {
-            None
+            })
         };
         if let Some((packed_name, _)) = shipped {
             return suhina_device_registry::load_builtin_file(kind, packed_name, rate);
         }
         suhina_device_registry::load_file(kind, &resolved, rate)
+    }
+
+    /// The shipped pack's file name a relative state's own place names, when it names the
+    /// pack's place: the state's last components must be `<library folder>/Suhina/<name>`
+    /// ([ADR 0036] › 7, the review) — a file of the same name in the user's own folder proves
+    /// nothing about the pack, and it would open elsewhere on the pack's different file with
+    /// no missing-file note. The one rule the load's stand-in and the state's store share, so
+    /// the two cannot drift apart; whether the pack carries the name is the caller's check.
+    pub(crate) fn pack_standin(kind: &str, path: &str) -> Option<String> {
+        let library = suhina_device_registry::library_folder(kind)?;
+        let mut components = std::path::Path::new(path)
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let name = components.pop()?;
+        let pack = components.pop()?;
+        let folder = components.pop()?;
+        (pack.eq_ignore_ascii_case(suhina_device_registry::SHIPPED_PACK) && folder.eq_ignore_ascii_case(library))
+            .then_some(name)
     }
 
     /// The file a state's old-form text points at since the library's move: the old defaults

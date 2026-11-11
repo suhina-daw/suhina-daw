@@ -768,7 +768,11 @@ impl Projects {
     /// session is not added to the open projects: the caller adds it ([`Projects::add`]) or shows
     /// it. Returns the session and what could not be read.
     pub fn open_path(&mut self, path: &Path, options: OpenOptions) -> Result<(Session, Vec<String>), CommandError> {
-        let (mut session, mut warnings) = Session::open(path)?;
+        // The library's base is the session's before its first loads ([ADR 0036]): a device's
+        // file state may be a library-relative path, which resolves against it, and a load
+        // that ran without it is built again when the base arrives ([ADR 0036] › 4, the
+        // review).
+        let (mut session, mut warnings) = Session::open_with_base(path, self.devices.library_base.as_deref())?;
         if options.audio {
             warnings.extend(self.load_audio(&mut session));
         }

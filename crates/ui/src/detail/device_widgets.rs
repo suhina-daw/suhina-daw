@@ -132,7 +132,7 @@ fn pack_of_current<'a>(current: &str, sets: &'a [Set]) -> Option<&'a Set> {
     if let Some(pack) = sets.iter().find(|pack| pack.files.iter().any(|(path, _)| path == &current)) {
         return Some(pack);
     }
-    let (_, file) = current.strip_prefix("builtin:")?.split_once('/')?;
+    let (_, file) = suhina_device_registry::builtin_file_key_parts(&current)?;
     let file_name = Path::new(file).file_name()?.to_string_lossy().into_owned();
     sets.iter().find(|pack| {
         pack.name == suhina_device_registry::SHIPPED_PACK
@@ -154,7 +154,7 @@ fn salt(track: TrackId, at: &DeviceAt, part: FileRowPart) -> egui::Id {
 /// successor, not the pack's first. Without the copy the pack's rows are the keys, and the
 /// lookup finds the key's own.
 fn listed_of_disk_row(listed: String, in_pack: Option<&Set>) -> String {
-    let Some((_, file)) = listed.strip_prefix("builtin:").and_then(|rest| rest.split_once('/')) else {
+    let Some((_, file)) = suhina_device_registry::builtin_file_key_parts(&listed) else {
         return listed;
     };
     let Some(pack) = in_pack else { return listed };
@@ -438,10 +438,11 @@ fn dropdown(
                 empty_label
                     .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{label}: {empty}")));
             }
+            // The rows carry the canonical form ([ADR 0036] › 5, the review): the compare
+            // folds the state's side alone, once, not per row.
+            let current = canonical_paths(current);
             for (path, name) in rows {
-                // The rows carry the canonical form ([ADR 0036] › 5, the review): the compare
-                // folds the state's side alone.
-                let mut on = path == &canonical_paths(current);
+                let mut on = path == &current;
                 let item = ui.selectable_value(
                     &mut on,
                     true,

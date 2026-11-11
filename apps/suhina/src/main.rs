@@ -274,7 +274,11 @@ fn main() -> ExitCode {
     // only where a file is missing, never over one ([issue 1279]). The old defaults' contents
     // move into the library first, packs carried whole, and their move lands in the start-up
     // warnings.
-    let old_warnings = pack_materialize::migrate_old_folders(&nam_base, &nam_sounds);
+    // The move leaves alone a folder the Settings name: the user's panels list from it, and
+    // its files are where they are (the defaults are the library's folders, so only a setting
+    // typed before the library's move, or typed to the old place by hand, names one).
+    let keep = [window.app.nam_models_folder(), window.app.ir_folder()];
+    let old_warnings = pack_materialize::migrate_old_folders(&nam_base, &nam_sounds, &keep);
     pack_materialize::unpack_pack(&nam_sounds);
     if let Some(start_up) = window.start_up.as_mut() {
         start_up.warnings.extend(old_warnings);
@@ -566,7 +570,7 @@ impl Window {
             self.new_project(new);
         }
         if let Some(offer) = self.app.take_recovery_request() {
-            match Session::recover(&offer.backup, offer.file.as_deref()) {
+            match Session::recover(&offer.backup, offer.file.as_deref(), Some(&documents_base())) {
                 Ok((session, warnings)) => {
                     self.show_session(session, warnings, OpenAs::NewTab);
                 }
@@ -739,7 +743,7 @@ impl Window {
             self.app.request_open(path.to_path_buf());
             return;
         }
-        match Session::open(path) {
+        match Session::open_with_base(path, Some(&documents_base())) {
             Ok((session, warnings)) => {
                 if self.show_session(session, warnings, how) {
                     self.remember(path);
@@ -755,7 +759,7 @@ impl Window {
             NewProject::Blank { returns } => {
                 Ok((Session::new(suhina_session::blank_project_with(returns)), Vec::new()))
             }
-            NewProject::Template(path) => Session::from_template(&path),
+            NewProject::Template(path) => Session::from_template(&path, Some(&documents_base())),
         };
         match made {
             Ok((session, warnings)) => {

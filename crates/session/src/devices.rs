@@ -690,7 +690,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
             if !path.to_lowercase().ends_with(&format!(".{want_extension}")) {
                 return Err(format!("a {id} runs a .{want_extension} file").into());
             }
-            let state_text = device_file_state(session, path);
+            let state_text = device_file_state(session, info.id.as_ref(), path);
             session.load_device_file(&info.id, &state_text).map_err(CommandError)?;
             Some(state_text)
         }
@@ -1130,18 +1130,23 @@ pub(crate) fn set_enabled_many(session: &mut Session, params: &Value) -> Result<
 /// a shipped file's key stands whole; a file inside the library documents stores relative to
 /// it ([ADR 0036] › it, so the project opens on another machine that has the same pack), one
 /// outside keeps its absolute path, recorded when it is all there is.
-pub(crate) fn device_file_state(session: &Session, path: &str) -> String {
+pub(crate) fn device_file_state(session: &Session, kind: &str, path: &str) -> String {
     if path.starts_with("builtin:") {
         return path.to_owned();
     }
     // A library-relative state text (a path the library's base joins to an existing file, as
     // `device.file` reads it back) stays one: a caller that hands it back to `setNamFile` or
-    // `device.add` keeps the same reference ([ADR 0036] › 4). A relative path the library
-    // does not carry is a working-folder path: its absolute text is the state.
+    // `device.add` keeps the same reference ([ADR 0036] › 4). So does a relative text the
+    // shipped pack stands in for ([ADR 0036] › 7): the state names the pack's own place, and
+    // the load reads the pack's file of that name when the disk copy is missing — a caller
+    // that read `device.file` of a project opened elsewhere keeps the same reference, where
+    // the working-folder absolute this would otherwise store is a load that fails off this
+    // machine. A relative path that is neither is a working-folder path: its absolute text is
+    // the state.
     let given = std::path::Path::new(path);
     if !given.is_absolute()
-        && let Some(base) = session.library_base()
-        && base.join(path).exists()
+        && (session.library_base().is_some_and(|base| base.join(path).exists())
+            || Session::pack_standin(kind, path).is_some())
     {
         // The relative form carries forward slashes on every platform, whatever separators
         // the caller's text had ([ADR 0036] › 4, the review): the same component join the
@@ -1201,27 +1206,23 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     // A shipped file's key is its own state ([ADR 0036]): `builtin:<device id>/<file name>` —
     // the pack's bytes load through the device's loader, one undo step, the same shown names.
     // Every other path joins the project at its absolute path, as before.
-    let state_text = match path.strip_prefix("builtin:") {
-        Some(shipped) => {
-            let (packed_id, _) =
-                shipped.split_once('/').ok_or("a shipped file's key is builtin:<device id>/<file name>")?;
-            if packed_id != kind {
-                return Err(format!("{kind:?} runs a shipped file of its own kind, not {packed_id:?}").into());
-            }
-            let asset = session.load_device_file(&kind, path).map_err(CommandError)?;
-            let name = suhina_device_registry::asset_name(
-                &asset,
-                &suhina_device_registry::builtin_file_path(path)
-                    .ok_or("a shipped file's key is builtin:<device id>/<file name>")?,
-            )
-            .unwrap_or_default();
-            let channel = device_channel(session, params)?;
-            let device_track = device_path(&channel.devices, params, "device")?;
-            let device = device_at_mut(&mut channel.devices, &device_track).ok_or("the device is missing")?;
-            device.state = Some(path.as_bytes().into());
-            return Ok(json!({ "device": path_value(&device_track), "file": path, "name": name }));
+    let state_text = if path.starts_with("builtin:") {
+        let Some((packed_id, _)) = suhina_device_registry::builtin_file_key_parts(path) else {
+            return Err("a shipped file's key is builtin:<device id>/<file name>".into());
+        };
+        if packed_id != kind {
+            return Err(format!("{kind:?} runs a shipped file of its own kind, not {packed_id:?}").into());
         }
-        None => device_file_state(session, path),
+        let asset = session.load_device_file(&kind, path).map_err(CommandError)?;
+        // The shown name reads the key's file stem, like the lists' rows do ([ADR 0036] › it).
+        let name = suhina_device_registry::asset_name(&asset, std::path::Path::new(path)).unwrap_or_default();
+        let channel = device_channel(session, params)?;
+        let device_track = device_path(&channel.devices, params, "device")?;
+        let device = device_at_mut(&mut channel.devices, &device_track).ok_or("the device is missing")?;
+        device.state = Some(path.as_bytes().into());
+        return Ok(json!({ "device": path_value(&device_track), "file": path, "name": name }));
+    } else {
+        device_file_state(session, &kind, path)
     };
     let asset = session.load_device_file(&kind, &state_text).map_err(CommandError)?;
     let name = suhina_device_registry::asset_name(&asset, std::path::Path::new(&state_text)).unwrap_or_default();
@@ -1251,6 +1252,36 @@ pub(crate) fn device_file(session: &mut Session, params: &Value) -> Result<Value
     Ok(json!({ "file": file, "name": name }))
 }
 
+/// The file text a saved preset names for a device's state ([ADR 0014] › Amendment): a
+/// shipped key stands; a file the library carries names its library-relative path — including
+/// one the library's move carried there, whose state still names the old folder
+/// ([ADR 0036] › 4), an absolute text the write would otherwise refuse although the file is
+/// in the library now — and a file outside the library keeps its state, which the write
+/// refuses with its reason ([ADR 0014] › Amendment, the review).
+fn preset_file_state(session: &Session, kind: &str, state: &str) -> String {
+    if state.starts_with("builtin:") {
+        return state.to_owned();
+    }
+    // The file the device actually runs, as the loads resolve it: the state's own place when
+    // it is there, else the move's new place for an old-form state — a kept file's old place
+    // wins, for the new tree's file of that name is another file.
+    let resolved = session
+        .resolve_device_file(state)
+        .filter(|path| path.exists())
+        .or_else(|| session.legacy_device_file(kind, state).filter(|path| path.exists()));
+    let (Some(resolved), Some(base)) = (resolved, session.library_base()) else { return state.to_owned() };
+    match resolved.strip_prefix(base) {
+        // The preset's file carries forward slashes on every platform, like every
+        // library-relative text ([ADR 0036] › 4).
+        Ok(relative) if !relative.as_os_str().is_empty() => relative
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/"),
+        _ => state.to_owned(),
+    }
+}
+
 /// `device.savePreset` ([ADR 0036] › it): a built-in device's values — and, with the file it
 /// selects, one file reference (`device.state`, the NAM devices') — written into the library as
 /// `Presets/<device id>/<name>.<device id>.preset.suhina` ([`ADR 0014`]'s format). A preset of
@@ -1265,28 +1296,36 @@ pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at(&channel.devices, &path).ok_or("the device is missing")?;
-    let (info, file) = match &device.kind {
+    let (info, state, values) = match &device.kind {
         DeviceKind::Builtin(id) => {
             let info =
                 suhina_device_registry::info(id).ok_or_else(|| format!("{id:?} is not a device this version knows"))?;
-            let file = if suhina_device_registry::is_file_device(id) {
+            let state = if suhina_device_registry::is_file_device(id) {
                 device.state.as_deref().and_then(|state| std::str::from_utf8(state).ok()).map(str::to_owned)
             } else {
                 None
             };
-            (info, file)
+            let values: Vec<(&str, f64)> = info
+                .params
+                .iter()
+                .map(|param| {
+                    let value = device
+                        .params
+                        .iter()
+                        .rev()
+                        .find(|p| p.id == param.id)
+                        .map_or(param.default, |p| param.clamp(p.value));
+                    (&*param.id, value)
+                })
+                .collect();
+            (info, state, values)
         }
         _ => return Err("a preset is saved from a built-in effect, instrument or MIDI effect".into()),
     };
-    let values: Vec<(&str, f64)> = info
-        .params
-        .iter()
-        .map(|param| {
-            let value =
-                device.params.iter().rev().find(|p| p.id == param.id).map_or(param.default, |p| param.clamp(p.value));
-            (&*param.id, value)
-        })
-        .collect();
+    // The preset's file names the file the device runs by the form a preset carries ([ADR 0014]
+    // › Amendment): a state the library's move carried reads its new place, so the save works
+    // where the state's own text would be refused.
+    let file = state.map(|state| preset_file_state(session, info.id.as_ref(), &state));
     let bytes =
         suhina_device_registry::write_preset_file(&info.id, name, file.as_deref(), &values).map_err(CommandError)?;
     let base = session.library_base().ok_or("the library's folder is not set")?;

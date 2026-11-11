@@ -76,7 +76,8 @@ and store absolute paths in projects.
    resort, recorded when it is all there is. The old defaults `Documents/Suhina/NAM models` and
    `Documents/Suhina/IRs` *move into* the device folders at start — a pack carried whole, a
    name moved only where it is missing, an old folder left whole when a name would be written
-   over, a moved-empty folder removed, and the move told in a start-up warning — so files
+   over, a moved-empty folder removed, and the move told in a start-up warning — an old folder
+   a setting names stays as it is, its files where the panels list them — so files
    already placed land in the library and the old default disappears by emptying out. The
    shipped file in a device's `builtin:<device id>/<file name>` state loads from the
    executable always — the pack rides the build, and the unpack's on-disk copy is the user's

@@ -1270,6 +1270,101 @@ fn a_state_in_the_old_defaults_form_reads_the_files_new_place() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A preset saved from a device whose state names the old defaults' absolute place
+/// ([ADR 0036] › 4): the move carried the file into the library, the project's state still
+/// names the old path, and the preset names the library-relative path the file has now
+/// ([ADR 0014] › Amendment) — a file the library carries is not refused the way one outside
+/// it is.
+#[test]
+fn a_preset_names_the_moved_file_s_new_place() {
+    let dir = temp_dir("save-preset-moved");
+    // The file the move carried: the new place holds it, the old one does not.
+    let moved = dir.join("Sounds/NAM/Amp models/edge.nam");
+    std::fs::create_dir_all(moved.parent().unwrap()).unwrap();
+    std::fs::write(&moved, SHIPPED_OVERDRIVE).unwrap();
+    let old_place = dir.join("NAM models/edge.nam");
+    let mut device = Device::new("NAM Amp Modeler", DeviceKind::Builtin("nam-amp-modeler".into()));
+    device.state = Some(text(&old_place).into_bytes().into());
+    let mut project = ProjectBuilder::new().audio_track(1, "Audio").build_without_ids();
+    project.channels[0].devices.push(device);
+    let mut session = Session::new(suhina_test_support::with_ids(project));
+    session.set_library_base(dir.clone());
+    session.sync_device_files();
+    assert!(session.device_asset(&text(&old_place)).is_some(), "the device runs the moved file");
+
+    let saved =
+        run(&mut session, "device.savePreset", json!({ "track": 1, "device": 0, "name": "Moved Crunch" })).unwrap();
+    let path = PathBuf::from(saved["preset"].as_str().unwrap());
+    let read = suhina_device_registry::preset(&std::fs::read(&path).unwrap(), 1).unwrap();
+    assert_eq!(
+        read.file.as_deref(),
+        Some("Sounds/NAM/Amp models/edge.nam"),
+        "the preset names the file's place in the library"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An open loads each device file once: the library's base is the session's before its first
+/// sync ([ADR 0036]), so a load is not built again when the base arrives later — a load is a
+/// parse and, for an IR, a resample on the session's thread, and the base's arrival used to
+/// clear what the loads had counted.
+#[test]
+fn an_open_loads_each_device_file_once() {
+    let dir = temp_dir("open-loads-once");
+    // The file, inside the library, carried by an absolute state — the form a project saved
+    // before the library-relative one carried.
+    let file = dir.join("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, SHIPPED_OVERDRIVE).unwrap();
+    let mut device = Device::new("NAM Amp Modeler", DeviceKind::Builtin("nam-amp-modeler".into()));
+    device.state = Some(text(&file).into_bytes().into());
+    let mut project = ProjectBuilder::new().audio_track(1, "Audio").build_without_ids();
+    project.channels[0].devices.push(device);
+    let project_path = dir.join("Band.suhina");
+    suhina_project_file::write_file(&project_path, &suhina_test_support::with_ids(project)).unwrap();
+
+    let (mut opened, _) = Session::open_with_base(&project_path, Some(&dir)).unwrap();
+    assert_eq!(opened.device_file_loads(), 1, "the open's one sync loaded the file");
+    // The base again — as the open projects hand it to the session — stands: no load again.
+    opened.set_library_base(dir.clone());
+    opened.sync_device_files();
+    assert_eq!(opened.device_file_loads(), 1, "the base's arrival built no load again");
+
+    // The one way the window, the CLI and the MCP server open a project, which hands the
+    // library's base to the open: one load there too.
+    let mut projects = suhina_session::Projects::new();
+    projects.set_library_base(dir.clone());
+    let (opened, _) = projects.open_path(&project_path, suhina_session::OpenOptions { audio: false }).unwrap();
+    assert_eq!(opened.device_file_loads(), 1, "the open through the projects loaded the file once");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A relative state the shipped pack stands in for keeps its portable form ([ADR 0036] › 7):
+/// a project opened elsewhere holds `Sounds/NAM/Amp models/Suhina/<name>` with no disk copy
+/// on this machine, and a caller that reads `device.file` and hands the text back to
+/// `device.add` or `device.setNamFile` stores the same text — the pack's file of the name
+/// runs, where a working-folder absolute would be a load that fails off this machine.
+#[test]
+fn a_relative_state_the_pack_stands_in_for_stays_one_when_handed_back() {
+    let dir = temp_dir("pack-standin-state");
+    let mut session = Session::new(blank_project());
+    session.set_library_base(dir.clone());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    // The disk copy is missing: only the pack's file of the name runs.
+    let relative = "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam";
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler", "file": relative })).unwrap();
+    let read = run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+    assert_eq!(read["file"], relative, "the state stays library-relative without the disk copy");
+    assert!(session.device_asset(relative).is_some(), "the pack's file of the name runs");
+
+    // Handed back, the text is the state again, and the load runs the pack's file.
+    run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": relative })).unwrap();
+    let read = run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+    assert_eq!(read["file"], relative, "handed back, the text is the state again");
+    assert!(session.device_asset(relative).is_some(), "the pack's file still runs");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The library's base given again: a session's loads that ran with it stand, so the same
 /// assignment does not clear the assets a project's devices already loaded.
 #[test]

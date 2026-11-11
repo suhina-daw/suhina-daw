@@ -203,7 +203,9 @@ Projects folder row (a field on the right, the default shown when the setting is
   of a folder that is not there is empty, with the path and a note to put files in it. The
   *old* defaults `Suhina/NAM models` and `Suhina/IRs` move into these folders at start — a
   pack carried whole, a name moved only where it is missing, a moved-empty old folder
-  removed, leftovers kept, and the move told in the start-up warnings.
+  removed, leftovers kept, and the move told in the start-up warnings. An old folder a
+  setting names stays as it is: the panels list from it, and a move would empty and remove a
+  folder the lists go on reading.
 - The pick bridge gets two fields (`PickField::NamModelsFolder`, `PickField::IrFolder`) so the
   system dialog opens for them like for the Projects folder (macOS waits on the main thread, as
   those already do).
@@ -303,11 +305,16 @@ Everything the user does is one of the existing device commands plus one new `Ed
     `Sounds/NAM/Amp models/Suhina/<file>.nam`), resolved against the library's base wherever
     the project opens, with the pack's file of the same name standing in when this machine's
     disk (and its unpacked copy) is not there; a file outside the library — its absolute path,
-    recorded when it is all there is. One undo step, as `device.setParam` takes.
+    recorded when it is all there is. A relative text the pack stands in for stores as the
+    relative text it was read by, so a caller that hands it back keeps the same reference
+    ([ADR 0036] › 7). One undo step, as `device.setParam` takes.
 - `device.savePreset{track, device, name}` — the device's values, and the file it selects, into
   the library's `Presets/<device id>/<name>.<device id>.preset.suhina`
   ([ADR 0036] › 5, [ADR 0014]'s format with its `file` field). A same-name preset is replaced.
-  Not a project change: no undo step, nothing to save; the panel's menu runs it.
+  A state the library's move carried — the file in the library now, the state still naming the
+  old folder — saves by the file's library-relative place ([ADR 0014] › Amendment); a file
+  outside the library is refused. Not a project change: no undo step, nothing to save; the
+  panel's menu runs it.
 
 The session keeps the parsed models and decoded IRs keyed by path — the same road the decoded
 audio files take ([ADR 0011](../decisions/0011-preview-and-added-audio.md); the session fills a

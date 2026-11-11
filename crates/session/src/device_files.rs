@@ -19,4 +19,7 @@ pub(crate) struct DeviceFiles {
     pub(crate) notes: HashMap<String, String>,
     /// When each loaded file was last written, so a rewritten file is reloaded.
     pub(crate) modified: HashMap<String, Option<SystemTime>>,
+    /// How many loads the syncs have made: a parse and, for an IR, a resample each, on the
+    /// session's thread. A diagnostic, read by [`Session::device_file_loads`].
+    pub(crate) loads: u64,
 }

@@ -6,7 +6,7 @@
 //! through this crate; front ends list what can be added.
 
 use std::any::Any;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use suhina_device_api::{Device, DeviceInfo};
@@ -282,19 +282,19 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
 pub use suhina_device_sdk::{DeviceAsset, DeviceFactory, Devices};
 
 /// What a panel calls the file `asset` holds, read from `path`: a NAM model's own name (its
-/// metadata), an IR's folder.
+/// metadata), an IR's file stem.
 pub fn asset_name(asset: &DeviceAsset, path: &Path) -> Option<String> {
     file_kind(asset.device()).and_then(|file| (file.name)(path, asset.data()))
 }
 
-/// A shipped file's key as a library-shaped path, for the name fns that read a folder from a
-/// path: the Cab Loader's shown name is its pack's name ([docs/spec/nam-amp-and-cab.md]) and
-/// the shipped pack's name is "Suhina" ([ADR 0036]). The Amp Modeler's name fn reads the
-/// model's metadata and leaves the path alone, so the shape is only for the folder.
-pub fn builtin_file_path(key: &str) -> Option<PathBuf> {
+/// A shipped file's key's two parts, as [`builtin_file_key`] writes them: the device id and
+/// the file name (`builtin:<device id>/<file name>`, [ADR 0036]). `None` for any other text —
+/// a path, or a `builtin:` key without the `/` — so a caller cannot take a path for a key.
+/// The one parser the loader, the commands and the panels share, so the key's shape is read
+/// one way.
+pub fn builtin_file_key_parts(key: &str) -> Option<(&str, &str)> {
     let rest = key.strip_prefix("builtin:")?;
-    let (_, name) = rest.split_once('/')?;
-    Some(PathBuf::from(format!("Suhina/{name}")))
+    rest.split_once('/')
 }
 
 /// Every built-in device, as the factory the engine builds with (#1147).
@@ -767,6 +767,37 @@ pub fn stock_preset(key: &str) -> Option<&'static StockPreset> {
     stock_presets().iter().find(|stock| stock.key == key)
 }
 
+/// The file text a preset carries, checked as both the read and the write check it
+/// ([ADR 0014] › Amendment): a shipped key of the preset's own device, or a library-relative
+/// path — an absolute, a UNC, a root-anchored or a `..`-carrying text is refused, so a device
+/// added from the preset would read another machine's (or another share's) file the moment it
+/// landed. The root-anchored form (`/etc/…`) is absolute on Unix and `is_absolute()` there;
+/// Windows' `is_absolute()` wants a drive prefix, so the root component is matched itself.
+/// One check, so the reader and the writer cannot drift apart.
+fn check_preset_file(file: &str, info: &DeviceInfo) -> Result<(), String> {
+    if let Some((packed_id, _)) = builtin_file_key_parts(file)
+        && packed_id != info.id.as_ref()
+    {
+        return Err(format!("{} runs a shipped file of its own kind, not {packed_id:?}", info.name));
+    }
+    if !file.starts_with("builtin:") {
+        let given = std::path::Path::new(file);
+        if given.is_absolute()
+            || given.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::Prefix(_) | std::path::Component::RootDir
+                )
+            })
+        {
+            return Err(format!(
+                "{file:?} is not a preset's file: a preset names a shipped file's key or a library-relative path"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// A device preset's file (ADR 0014) as a preset and its tags. A parameter it does not name takes
 /// its default, and one the device no longer has is left out.
 fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
@@ -812,32 +843,8 @@ fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
     // A shipped file's key is the preset's own device's, refused at the read as at the write
     // ([ADR 0014] › Amendment: a preset may name a file); the loader would refuse it later,
     // but then the device is added without its file instead of the preset being refused here.
-    if let Some((packed_id, _)) =
-        file.as_deref().and_then(|f| f.strip_prefix("builtin:")).and_then(|rest| rest.split_once('/'))
-        && packed_id != info.id.as_ref()
-    {
-        return Err(format!("{} runs a shipped file of its own kind, not {packed_id:?}", info.name));
-    }
-    // A preset is the format people share, so its file is a shipped key or a library-relative
-    // path ([ADR 0014] › Amendment, the review): an absolute, a UNC, a root-anchored or a
-    // `..`-carrying text is refused — a device added from it would read another machine's (or
-    // another share's) file the moment the preset landed. The root-anchored form (`/etc/…`)
-    // is absolute on Unix and `is_absolute()` there; Windows' `is_absolute()` wants a drive
-    // prefix, so the root component is matched itself.
-    if let Some(file) = file.as_deref().filter(|file| !file.starts_with("builtin:")) {
-        let given = std::path::Path::new(file);
-        if given.is_absolute()
-            || given.components().any(|component| {
-                matches!(
-                    component,
-                    std::path::Component::ParentDir | std::path::Component::Prefix(_) | std::path::Component::RootDir
-                )
-            })
-        {
-            return Err(format!(
-                "{file:?} is not a preset's file: a preset names a shipped file's key or a library-relative path"
-            ));
-        }
+    if let Some(file) = file.as_deref() {
+        check_preset_file(file, info)?;
     }
     Ok((Preset { device: &info.id, name: name.to_string(), params, file }, tags))
 }
@@ -877,24 +884,7 @@ pub fn write_preset_file(
         if !is_file_device(info.id.as_ref()) {
             return Err(format!("{} runs no file, so the preset names none", info.name));
         }
-        if let Some((packed_id, _)) = file.strip_prefix("builtin:").and_then(|rest| rest.split_once('/'))
-            && packed_id != info.id.as_ref()
-        {
-            return Err(format!("{} runs a shipped file of its own kind, not {packed_id:?}", info.name));
-        }
-        let given = std::path::Path::new(file);
-        if given.is_absolute()
-            || given.components().any(|component| {
-                matches!(
-                    component,
-                    std::path::Component::ParentDir | std::path::Component::Prefix(_) | std::path::Component::RootDir
-                )
-            })
-        {
-            return Err(format!(
-                "{file:?} is not a preset's file: a preset names a shipped file's key or a library-relative path"
-            ));
-        }
+        check_preset_file(file, info)?;
     }
     let mut written = serde_json::Map::new();
     written.insert("format".into(), serde_json::Value::from("suhina-preset"));
