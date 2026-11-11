@@ -1332,3 +1332,46 @@ fn padded_track_columns_keep_their_slots_in_line_with_the_scenes() {
     assert_eq!(slot.top(), plain.top() + 10.0, "below the column's top padding");
     assert_eq!(scene.map(|r| r.top()), Some(slot.top()), "the scene's row lines up with its slots");
 }
+
+/// A track column stays while its rows scroll: scrolled up, the rows are cut at its padding box,
+/// so they neither draw over its top border nor take the pointer there (#1336).
+#[test]
+fn scrolled_slots_stay_inside_a_track_column_s_border() {
+    let mut session = Session::new(demo_project());
+    for _ in 0..30 {
+        session.execute("scene.insert", &json!({ "scene": 0 })).unwrap();
+    }
+    let tall = SessionHarness {
+        grid: TrackGrid::build(session.project(), None),
+        state: SessionViewState::default(),
+        actions: Vec::new(),
+    };
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        "track-column { border-width: 6px; border-color: #FF00FF; }".into(),
+    ));
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
+        |ui, v: &mut SessionHarness| {
+            let _frame = suhina_ui::kit::native_css::frame(ui);
+            session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions)
+        },
+        tall,
+    );
+    theme::install(&harness.ctx);
+    harness.run();
+    let slots = |h: &Harness<'static, SessionHarness>| {
+        h.ctx
+            .viewport(|v| v.prev_pass.widgets.layers().flat_map(|(_, rects)| rects.iter()).copied().collect::<Vec<_>>())
+    };
+    // The highest slot under the column's top border, unscrolled: the body's top is 6 above it.
+    let label = harness.query_all_by_label_contains("(scene 1)").next().map(|n| n.rect()).expect("a slot of scene 1");
+    let inside = label.top();
+    harness.state_mut().state.scroll.y = 4.0;
+    harness.run();
+    let moved = slots(&harness)
+        .into_iter()
+        .find(|w| w.rect.x_range() == label.x_range() && (w.rect.bottom() - (label.bottom() - 4.0)).abs() < 0.5);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let moved = moved.expect("the slot, scrolled 4 points up");
+    assert!(moved.interact_rect.top() >= inside - 0.5, "it takes the pointer only below the border: {moved:?}");
+    assert!(moved.interact_rect.height() > 0.0, "and still where it shows: {moved:?}");
+}

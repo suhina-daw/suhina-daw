@@ -935,9 +935,19 @@ fn column_body(
         );
     }
     // Its border, and its slots in its content box, inside its border and padding (#1336); the
-    // rows' top is the one every column shares (`Bands::top`).
+    // rows' top is the one every column shares (`Bands::top`). The column stays while its rows
+    // scroll, as a CSS scroll container: they are cut at its padding box, so they never draw
+    // over its border nor take the pointer there.
     let column_box = Rect::from_x_y_ranges(span, bands.body.y_range());
     let (span, top) = (column_style.paint_border(painter, column_box).x_range(), bands.top);
+    let [border_top, border_right, border_bottom, border_left] =
+        column_style.style().map_or([0.0; 4], |style| style.border_sides);
+    let padding_box = Rect::from_min_max(
+        column_box.min + Vec2::new(border_left, border_top),
+        column_box.max - Vec2::new(border_right, border_bottom),
+    );
+    let clip = clip.intersect(padding_box);
+    let painter = &painter.with_clip_rect(painter.clip_rect().intersect(padding_box));
     let scenes = bands.scenes;
     let mapping = state.launch_keys.mode.on && column.kind != ColumnKind::Return;
     let label = |target: MappingTarget| bands.mapped.iter().find(|(t, _)| *t == target).map(|(_, l)| l.as_str());

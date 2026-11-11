@@ -502,6 +502,11 @@ toolbar section's edge) as far as they reach and up to the nearest element aroun
 its overflow, so a toolbar control's glow passes its section's edge and stops at the toolbar's;
 only on a side where the element is whole inside that clip, though: a side that cuts the element
 is a viewport's edge (a scroll area scrolled part of it out of view), which they do not pass.
+A Launcher `track-column` stays while its slots scroll under it, as a CSS scroll container: they
+are cut at its padding box whatever its `overflow`, so they never cover its border. Its top and
+bottom border and padding are those of a plain `track-column` rule, because every column and the
+scene column share the rows: a track's or a state's rule (`#track-3`, `track-column[selected]`)
+that changes them draws its border but does not move the rows.
 
 **Borders.** `border-width` is a shorthand of `border-top-width`, `border-right-width`,
 `border-bottom-width` and `border-left-width` (one to four lengths, as `padding`), each 0 to
