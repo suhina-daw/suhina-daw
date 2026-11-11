@@ -147,28 +147,24 @@ impl App {
         }
     }
 
-    /// Lays out the detail area beside or under the view in `area`, draws it with its splitter,
-    /// and returns what is left for the view. With `geometry` the theme's layout places it: the
-    /// view's rectangle, its own, and whether its size follows the splitter
-    /// (`Workspace::detail_follows`).
-    pub(super) fn detail_area(
-        &mut self,
-        ui: &mut Ui,
-        area: Rect,
-        actions: &mut Vec<Action>,
-        geometry: Option<(Rect, Rect, bool)>,
-    ) -> Rect {
-        let panel_style = crate::kit::element::WORKSPACE_PANEL.id("panel-detail").enter();
+    /// Draws the detail area where the window's grid puts it, beside or under the view, with its
+    /// splitter in the gap between them while its size follows the splitter
+    /// (`Window::detail_follows`), and returns what is left for the view. `geometry` is the view's
+    /// rectangle, the area's and whether it follows. Its own rules (a track's devices at one height,
+    /// the piano roll pulled to the top) set the size the grid gives it next (`detail_shown`).
+    pub(super) fn detail_area(&mut self, ui: &mut Ui, actions: &mut Vec<Action>, geometry: (Rect, Rect, bool)) -> Rect {
+        let (main, laid, follows) = geometry;
+        // The room the view and the detail area share.
+        let area = main.union(laid);
+        let panel_style = crate::kit::element::WORKSPACE_PANEL.id("panel-detail").attribute("kind", "detail").enter();
         let styled_ui = panel_style.ui(ui);
-        // The splitter a theme's layout keeps lies in the gap beside the area: drawn and taking the
-        // pointer there too (#1240).
-        let css_splitter = geometry.map(|(view, detail, follows)| {
-            if follows { crate::kit::native_css::splitter_between(detail, view, SPLITTER) } else { Rect::NOTHING }
-        });
-        let mut styled_ui = match (geometry, css_splitter) {
-            (Some((_, detail, _)), Some(splitter)) => styled_ui.clipped_to(detail.union(splitter)),
-            _ => styled_ui,
-        };
+        // The splitter lies in the gap beside the area: drawn and taking the pointer there too
+        // (#1240).
+        let splitter =
+            if follows { crate::kit::native_css::splitter_between(laid, main, SPLITTER) } else { Rect::NOTHING };
+        // The devices column beside a clip's editor is cut from the view's side, so the area
+        // draws in the room it shares with the view; its panel clips what it holds (`overflow`).
+        let mut styled_ui = styled_ui.clipped_to(area.union(splitter));
         let ui = &mut *styled_ui;
         let stacked = self.settings.device_layout == DeviceLayout::Stack;
         // The piano roll's Focus switch keeps the focus on the clip picked first.
@@ -318,9 +314,7 @@ impl App {
         // own beside the view, shown with Devices while the editor stays open (› Stacked in
         // `docs/spec/ui-clip-editor.md`).
         // Settings › Devices › Devices beside piano roll does the same in a row.
-        let split = (stacked || self.settings.view.stack_in_piano_roll)
-            && geometry.is_none()
-            && (piano.is_some() || ara.is_some());
+        let split = (stacked || self.settings.view.stack_in_piano_roll) && (piano.is_some() || ara.is_some());
         let side_devices = split && self.detail_showing == detail_view::Showing::Devices;
         let stacked = stacked && !split;
         // The piano roll, or an ARA plug-in's editor in the clip's place, can be pulled to the
@@ -328,7 +322,7 @@ impl App {
         // it stays so while the track's devices show instead: the switch on Devices, or a click on
         // the track's header (› Pulled to the top in `docs/spec/ui-clip-editor.md`).
         let track_devices = clip.is_none() && track.is_some();
-        let base = geometry.is_none() && !stacked && self.shown == View::Arrangement;
+        let base = follows && !stacked && self.shown == View::Arrangement;
         // Escape twice in a row pulls the editor (or the track's devices) to the top and lets it
         // go again.
         if std::mem::take(&mut self.escape_twice) && base && (piano.is_some() || ara.is_some() || track_devices) {
@@ -379,42 +373,44 @@ impl App {
                 self.detail_showing,
             ),
         );
-        let (view, splitter, detail) = if let Some((view, detail, _)) = geometry {
-            (view, css_splitter.unwrap_or(Rect::NOTHING), detail)
-        } else if stacked {
-            self.detail_width = detail_width_in(detail_view::STACK_WIDTH, area.width());
-            let x = area.right() - self.detail_width;
-            (
-                Rect::from_min_max(area.min, Pos2::new(x - SPLITTER, area.bottom())),
-                Rect::from_min_max(Pos2::new(x - SPLITTER, area.top()), Pos2::new(x, area.bottom())),
-                Rect::from_min_max(Pos2::new(x, area.top()), area.max),
-            )
-        } else {
-            // Only the chain shown: no taller than its panels, but never held under the area's
-            // default height. A chain of short panels (a plug-in whose editor is not embedded,
-            // or no devices at all) would otherwise keep the area too short to drag up.
-            self.detail_height = detail_height_in(self.detail_height, area.height(), editor_needs, least);
-            // A track's devices, reached by clicking the track, are open at one height or closed; the
-            // height the user drags is the clip's, its editor's and the devices reached from it.
-            let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
-            let shown_height = if track_devices {
-                self.device_row_height().min((area.height() - MIN_VIEW).max(least))
+        // The size the area's rules give it in the room there is, which the grid lays it out at
+        // from the next frame on; a frame laid out at another size is drawn again at once.
+        if follows {
+            let shown = if stacked {
+                self.detail_width = detail_width_in(detail_view::STACK_WIDTH, area.width());
+                self.detail_width
             } else {
-                self.detail_height
+                // Only the chain shown: no taller than its panels, but never held under the area's
+                // default height. A chain of short panels (a plug-in whose editor is not embedded,
+                // or no devices at all) would otherwise keep the area too short to drag up.
+                self.detail_height = detail_height_in(self.detail_height, area.height(), editor_needs, least);
+                // A track's devices, reached by clicking the track, are open at one height or
+                // closed; the height the user drags is the clip's, its editor's and the devices
+                // reached from it.
+                let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
+                if pulled {
+                    // Above it only the edited track, or nothing.
+                    let above = focus.map_or(0.0, |t| self.arrangement.focus_height(t));
+                    (area.height() - above.min(area.height() - least) - SPLITTER).max(least)
+                } else if track_devices {
+                    self.device_row_height().min((area.height() - MIN_VIEW).max(least))
+                } else {
+                    self.detail_height
+                }
             };
-            let y = if pulled {
-                // Above it only the edited track, or nothing.
-                let above = focus.map_or(0.0, |t| self.arrangement.focus_height(t));
-                (area.top() + above.min(area.height() - least) + SPLITTER).min(area.bottom() - least)
+            // The grid adds the panel's own padding and border to the content size it is given.
+            let [top, right, bottom, left] = panel_style.insets();
+            if stacked {
+                self.detail_shown.x = (shown - left - right).max(0.0);
             } else {
-                area.bottom() - shown_height
-            };
-            (
-                Rect::from_min_max(area.min, Pos2::new(area.right(), (y - SPLITTER).max(area.top()))),
-                Rect::from_min_max(Pos2::new(area.left(), y - SPLITTER), Pos2::new(area.right(), y)),
-                Rect::from_min_max(Pos2::new(area.left(), y), area.max),
-            )
-        };
+                self.detail_shown.y = (shown - top - bottom).max(0.0);
+            }
+            let laid_size = if stacked { laid.width() } else { laid.height() };
+            if (shown - laid_size).abs() > 0.5 {
+                ui.ctx().request_repaint();
+            }
+        }
+        let (view, detail) = (main, laid);
         // The stacked devices beside a clip's editor: a column at the view's right, a stacked
         // panel wide, with its own splitter. As a track's devices in a row, it is open whole or
         // closed: a drag past half its width or a double-click closes it.
@@ -520,8 +516,8 @@ impl App {
             // native layout keeps, in the room the view and the detail area share: a drag neither
             // takes the area, and with it its splitter, away nor closes the view. Held here, after
             // the drag, as a size the layout gives no room hides the area until it is opened again.
-            if let Some((view, detail, true)) = geometry {
-                let room = view.union(detail);
+            if follows {
+                let room = area;
                 if stacked {
                     self.detail_width = detail_width_in(self.detail_width, room.width());
                 } else {
@@ -915,67 +911,57 @@ impl App {
             || matches!(self.shown_clip(), Some(ClipRef::Arrangement(t, c)) if self.clip_uses_ara(t, c))
     }
 
-    /// The splitter along the bottom while the detail area is hidden: dragged up past half the
-    /// least height, the detail area opens at the height the drag reaches. Returns the room left
-    /// above it for the view.
-    pub(super) fn collapsed_splitter(&mut self, ui: &mut Ui, area: Rect) -> Rect {
-        let splitter = Rect::from_min_max(Pos2::new(area.left(), (area.bottom() - SPLITTER).max(area.top())), area.max);
-        let response = ui
-            .interact(splitter, Id::unique("detail-splitter"), Sense::click_and_drag())
-            .on_hover_cursor(egui::CursorIcon::ResizeVertical);
+    /// The splitter of the closed detail area, in the gap the grid keeps between the `main` view
+    /// and the area's empty place `detail`. Along the bottom, dragged up past half the least
+    /// height, the area opens at the height the drag reaches; stacked beside the view, dragged left
+    /// past half a stacked panel's width, it opens whole, as the stacked area is open a panel wide
+    /// or closed. A double-click opens it at its default size.
+    pub(super) fn collapsed_splitter(&mut self, ui: &mut Ui, main: Rect, detail: Rect) {
+        let splitter = crate::kit::native_css::splitter_between(detail, main, SPLITTER);
+        if !splitter.is_positive() {
+            return;
+        }
+        let side = !self.editor_along_bottom();
+        let cursor = if side { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
+        let response =
+            ui.interact(splitter, Id::unique("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
         if response.double_clicked() {
             self.show_editor();
             // The default content height, with the area's border and padding round it (#1336).
             self.detail_height = DETAIL_HEIGHT + self.detail_insets.area;
+            self.detail_shown = Vec2::new(detail_view::STACK_WIDTH, self.detail_height);
             self.detail_width = detail_view::STACK_WIDTH;
         }
         if response.dragged_by(egui::PointerButton::Primary) {
-            let height = self.detail_drag.unwrap_or(0.0) - response.drag_delta().y;
-            self.detail_drag = Some(height);
-            let least = self.least_detail_height();
-            // A track's devices open at their one height, at the point a drag down closes them.
-            let track_devices = self.shown_clip().is_none();
-            let opens_at = if track_devices { self.device_row_height() } else { least };
-            if height >= opens_at / 2.0 {
-                self.show_editor();
-                // The height dragged is a clip's view's.
-                if !track_devices {
-                    self.detail_height = height.max(least);
+            if side {
+                let width = self.detail_drag.unwrap_or(0.0) - response.drag_delta().x;
+                self.detail_drag = Some(width);
+                if width >= detail_view::STACK_WIDTH / 2.0 {
+                    self.show_editor();
+                    // The same drag goes on from the open area's width, so it does not close it again.
+                    self.detail_drag = Some(detail_view::STACK_WIDTH);
+                }
+            } else {
+                let height = self.detail_drag.unwrap_or(0.0) - response.drag_delta().y;
+                self.detail_drag = Some(height);
+                let least = self.least_detail_height();
+                // A track's devices open at their one height, at the point a drag down closes them.
+                let track_devices = self.shown_clip().is_none();
+                let opens_at = if track_devices { self.device_row_height() } else { least };
+                if height >= opens_at / 2.0 {
+                    self.show_editor();
+                    // The height dragged is a clip's view's.
+                    if !track_devices {
+                        self.detail_height = height.max(least);
+                    }
+                    self.detail_shown.y = if track_devices { opens_at } else { self.detail_height };
                 }
             }
         } else {
             self.detail_drag = None;
         }
-        paint_splitter(ui, splitter, &response, false);
-        Rect::from_min_max(area.min, Pos2::new(area.right(), splitter.top()))
-    }
-
-    /// The splitter along the right edge while the stacked detail area is hidden: dragged left past
-    /// half a stacked panel's width, or double-clicked, the area opens whole, as the stacked area
-    /// is open a panel wide or closed. Returns the room left beside it for the view.
-    pub(super) fn collapsed_side_splitter(&mut self, ui: &mut Ui, area: Rect) -> Rect {
-        let splitter = Rect::from_min_max(Pos2::new((area.right() - SPLITTER).max(area.left()), area.top()), area.max);
-        let response = ui
-            .interact(splitter, Id::unique("detail-splitter"), Sense::click_and_drag())
-            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
-        if response.double_clicked() {
-            self.show_editor();
-        }
-        if response.dragged_by(egui::PointerButton::Primary) {
-            let width = self.detail_drag.unwrap_or(0.0) - response.drag_delta().x;
-            self.detail_drag = Some(width);
-            if width >= detail_view::STACK_WIDTH / 2.0 {
-                self.show_editor();
-                // The same drag goes on from the open area's width, so it does not close it again.
-                self.detail_drag = Some(detail_view::STACK_WIDTH);
-            }
-        } else {
-            self.detail_drag = None;
-        }
-        paint_splitter(ui, splitter, &response, true);
-        Rect::from_min_max(area.min, Pos2::new(splitter.left(), area.bottom()))
+        paint_splitter(ui, splitter, &response, side);
     }
 
     /// The least height of the detail area in a row: the device panels' compact height (the

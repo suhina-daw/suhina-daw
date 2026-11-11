@@ -8,6 +8,68 @@
  * nothing in it depends on a theme. The element reference lists every element it names.
  */
 
+/* The window is one grid of named areas (#1370): the bars, the lines over and under the views, the
+   notice strip and the three panels. A theme moves one by giving it another area, or hides it with
+   `display: none` or a template without its area. A region that is not there (the menu bar turned
+   off, the tabs of one project, the hidden browser) has no element, so its `auto` track is empty.
+   The bars' and the lines' heights, the browser's width and the detail area's size are content
+   sizes the app gives: a theme's `height` or `width` replaces one, and its splitter goes.
+   Columns: the browser on the left, the views, the detail area stacked beside them, the browser on
+   the right. */
+window {
+  height: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    "menu menu menu menu"
+    "tabs tabs tabs tabs"
+    "toolbar toolbar toolbar toolbar"
+    "top top top top"
+    "notice notice notice notice"
+    "left main side right"
+    "left detail detail right"
+    "bottom bottom bottom bottom"
+    "status status status status";
+}
+window[detail="full-width"] {
+  grid-template-areas:
+    "menu menu menu menu"
+    "tabs tabs tabs tabs"
+    "toolbar toolbar toolbar toolbar"
+    "top top top top"
+    "notice notice notice notice"
+    "left main side right"
+    "detail detail detail detail"
+    "bottom bottom bottom bottom"
+    "status status status status";
+}
+window[detail="beside"] {
+  grid-template-areas:
+    "menu menu menu menu"
+    "tabs tabs tabs tabs"
+    "toolbar toolbar toolbar toolbar"
+    "top top top top"
+    "notice notice notice notice"
+    "left main detail right"
+    "left main detail right"
+    "bottom bottom bottom bottom"
+    "status status status status";
+}
+menu-bar { grid-area: menu; }
+project-tabs { grid-area: tabs; }
+toolbar { grid-area: toolbar; }
+separator[kind="views-top"] { grid-area: top; }
+notice-bar { grid-area: notice; }
+workspace-panel[kind="browser"] { grid-area: left; margin-right: 4px; }
+window[browser="right"] workspace-panel[kind="browser"] { grid-area: right; margin: 0 0 0 4px; }
+workspace-panel[kind="main"] { grid-area: main; }
+/* The splitters lie in the gaps the panels' margins leave beside the views. */
+workspace-panel[kind="detail"] { grid-area: detail; margin-top: 6px; }
+window[detail="beside"] workspace-panel[kind="detail"] { margin: 0 0 0 6px; }
+separator[kind="views-bottom"] { grid-area: bottom; }
+status-bar { grid-area: status; }
+
 /* Regions keep what their children paint inside them; other elements let it pass. */
 window,
 application-bar,
@@ -16,7 +78,7 @@ menu,
 project-tabs,
 toolbar,
 status-bar,
-workspace,
+notice-bar,
 workspace-panel,
 browser,
 session,

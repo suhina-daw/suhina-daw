@@ -29,7 +29,7 @@ pub use native::user_agent_color;
 mod paint;
 mod shadows;
 mod text;
-mod workspace;
+mod window;
 pub use diagnostics::{Notice, inspect};
 pub use paint::background_with;
 pub(crate) use paint::border;
@@ -38,7 +38,7 @@ pub(in crate::kit) use paint::surface_with;
 pub(in crate::kit) use paint::{artwork_shadows, background_rounded, gradients_rounded, level_fill, level_glow};
 pub(in crate::kit) use paint::{box_begin, box_end};
 pub use text::paint_text;
-pub use workspace::{Workspace, splitter_between, workspace};
+pub use window::{BrowserSide, DetailPlace, Input as WindowInput, Region, Window, splitter_between, window};
 
 const MAX_CONTEXTS: usize = 128;
 const MAX_DEPTH: usize = 16;
@@ -357,11 +357,11 @@ struct Engine {
     /// Whether this frame hit a limit of the tree, which the trace was told of.
     limited: bool,
     toolbar: Option<(String, Vec<Module>)>,
-    workspace: Option<(String, Option<Workspace>)>,
+    window: Option<(String, Window)>,
     /// Whether the browser and the detail area follow their splitters, by the window's size and
-    /// which panels are open: a splitter drag changes only the preferred sizes, which lays the
-    /// workspace out again without probing the flags anew.
-    workspace_follows: Option<(String, (bool, bool))>,
+    /// which regions are there: a splitter drag changes only the content sizes, which lays the
+    /// window out again without probing the flags anew.
+    window_follows: Option<(String, (bool, bool))>,
     toolbar_layout: bool,
     collecting: bool,
     nodes: Vec<StyleNode>,
@@ -1039,8 +1039,8 @@ impl Engine {
         self.body = None;
         self.resolved.clear();
         self.toolbar = None;
-        self.workspace = None;
-        self.workspace_follows = None;
+        self.window = None;
+        self.window_follows = None;
     }
 }
 

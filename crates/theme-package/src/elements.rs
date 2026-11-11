@@ -86,6 +86,11 @@ pub const ATTRIBUTES: &[(&str, &str)] = &[
     ("recording", "record while it records, a clip being recorded"),
     ("armed", "a track armed for recording, and its arm button"),
     ("muted", "a muted track, a clip or note that is off, a device that is off"),
+    ("kind", "what an element is among those of its name: an icon's symbol, a panel or line of the window"),
+    ("closed", "the detail area while it is closed, its place kept for its splitter"),
+    ("detail", "where the window has its detail area: below, full-width or beside"),
+    ("browser", "the side the window shows its browser on, left or right, while it shows"),
+    ("menu-bar", "a window with its own menu bar"),
 ];
 
 /// The toolbar's areas, by id (`#tempo`).
@@ -176,16 +181,18 @@ use Kind::{Container, Control, Drawn, Part, Region};
 /// Every element, in the order the reference lists them.
 pub const ELEMENTS: &[Element] = &[
     // The window and its bars.
-    element("window", Region, "The whole window, under everything else.").settings(&[
-        "artwork-fps",
-        "liquid",
-        "panel-gradient",
-        "track-gradient",
-        "clip-gradient",
-        "backdrop-image",
-        "backdrop-opacity",
-        "backdrop-blur",
-    ]),
+    element("window", Region, "The whole window, under everything else: one grid of the bars and panels.")
+        .attributes(&["detail", "browser", "menu-bar"])
+        .settings(&[
+            "artwork-fps",
+            "liquid",
+            "panel-gradient",
+            "track-gradient",
+            "clip-gradient",
+            "backdrop-image",
+            "backdrop-opacity",
+            "backdrop-blur",
+        ]),
     element("application-bar", Region, "The bar at the very top, with the application's menus."),
     element("menu-bar", Region, "The menu bar."),
     element("menu", Region, "An open menu of the menu bar.").settings(FLOATING),
@@ -194,10 +201,10 @@ pub const ELEMENTS: &[Element] = &[
     element("toolbar-module", Part, "One area of the toolbar, by its id.")
         .ids(Ids::Listed { prefix: "", names: TOOLBAR_MODULES }),
     element("status-bar", Region, "The bar at the bottom of the window."),
-    element("workspace", Region, "The layout under the bars, holding the panels.")
-        .ids(Ids::Listed { prefix: "", names: &["workspace"] }),
-    element("workspace-panel", Region, "A panel of the workspace: the browser, the main view, the detail area.")
-        .ids(Ids::Listed { prefix: "", names: &["panel-browser", "panel-main", "panel-detail"] }),
+    element("notice-bar", Region, "The strip over the views that asks about an opened project or names missing files."),
+    element("workspace-panel", Region, "A panel of the window: the browser, the main view, the detail area.")
+        .ids(Ids::Listed { prefix: "", names: &["panel-browser", "panel-main", "panel-detail"] })
+        .attributes(&["kind", "closed"]),
     element("divider", Control, "A strip's divider and the workspace's splitters.")
         .ids(Ids::Listed { prefix: "", names: &["mixer-divider", "detail-splitter", "browser-splitter"] }),
     // Views.
@@ -409,7 +416,9 @@ pub const ELEMENTS: &[Element] = &[
     element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists."),
     element("text-input", Control, "A text field."),
     element("label", Drawn, "A label."),
-    element("separator", Drawn, "A rule between parts."),
+    element("separator", Drawn, "A rule between parts; the window's lines over and under the views.")
+        .ids(Ids::Listed { prefix: "", names: &["views-top", "views-bottom"] })
+        .attributes(&["kind"]),
     element("popup", Region, "A menu, right-click menu, dropdown list or control's popup.")
         .ids(Ids::Listed { prefix: "", names: &["metronome-level"] })
         .settings(FLOATING),

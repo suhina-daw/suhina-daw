@@ -35,6 +35,9 @@ pub mod start_panel;
 mod tabs;
 mod themed_toolbar;
 mod typing_keys;
+mod window_layout;
+
+use crate::kit::native_css::Region;
 pub mod updates;
 
 use std::collections::HashMap;
@@ -433,6 +436,10 @@ pub struct App {
     /// The detail area is showing, and its height (in a row) or width (stacked).
     detail_open: bool,
     detail_height: f32,
+    /// The detail area's content size as it was shown last (its width beside the view, its height
+    /// under it), under the Arrangement view's pull to the top or a track's one height for its
+    /// devices: what the window's grid lays it out at.
+    detail_shown: Vec2,
     /// Where each frame's time goes, written to the trace log when tracing is on.
     frame_trace: crate::kit::frame_trace::FrameTrace,
     /// What auto-arm (Settings › MIDI) last saw and armed.
@@ -705,6 +712,7 @@ impl App {
             pending_device_remove: None,
             detail_open: true,
             detail_height: DETAIL_HEIGHT,
+            detail_shown: Vec2::new(detail_view::STACK_WIDTH, DETAIL_HEIGHT),
             frame_trace: crate::kit::frame_trace::FrameTrace::default(),
             auto_arm: AutoArm::default(),
             fitted_editors: std::collections::HashSet::new(),
@@ -2742,7 +2750,17 @@ impl App {
             ui,
             self.settings.animations && self.settings.theme != "high-contrast",
         );
-        let window_style = crate::kit::element::WINDOW.enter();
+        // The layout settings, as the window's grid reads them (#1370), so a theme's rules for
+        // them paint as they lay out.
+        let (detail_place, browser_side) = self.window_place(self.session().is_some());
+        let mut window_builder = crate::kit::element::WINDOW.attribute("detail", detail_place.attribute());
+        if let Some(side) = browser_side {
+            window_builder = window_builder.attribute("browser", side.attribute());
+        }
+        if self.settings.view.menu_bar {
+            window_builder = window_builder.attribute("menu-bar", "");
+        }
+        let window_style = window_builder.enter();
         let mut styled_ui = window_style.ui(ui);
         let ui = &mut *styled_ui;
         if let Err(error) = self.background.update(ui, &self.settings, self.themes.palette(&self.settings.theme)) {
@@ -3007,53 +3025,57 @@ impl App {
                     })
                 });
         }
-        // The window's own menu bar, unless Settings turns it off (by default on macOS, whose bar
-        // at the top of the screen has the same menus).
-        if self.settings.view.menu_bar {
+        // The window is one grid (#1370): the bars, the lines over and under the views, the notice
+        // strip and the panels, where the sheets put them (the user-agent sheet's grid unless a
+        // theme moves them). Each region draws in its rectangle and takes input only there; a
+        // region the grid gives none is not drawn.
+        self.missing.sync(&mut self.projects, self.revision);
+        let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
+        // The browser stays hidden on the start panel (nothing to drop into); its setting keeps
+        // its value for when a project opens. It slides in and out from its side, with animations
+        // on (#708).
+        let browser_wanted = self.settings.browser_open && !self.start_panel_open();
+        self.browser_part = motion::toward(ui.ctx(), Id::unique("browser-shown"), browser_wanted, BROWSER_SLIDE);
+        let room = ui.available_rect_before_wrap();
+        let input = self.window_input(room.size(), grid.is_some(), self.open_prompt.is_some() || missing_bar);
+        let layout = crate::kit::native_css::window(&input)
+            .map(|layout| layout.translated(room.min.to_vec2()))
+            .unwrap_or_default();
+        let region = |region: Region| layout.rect(region).filter(|rect| rect.is_positive());
+        if let Some(rect) = region(Region::MenuBar) {
             let bar = crate::kit::element::MENU_BAR.enter();
-            egui::Panel::top("menu-bar")
-                .exact_size(bar_height(ui, &bar, theme::MENU_BAR))
-                .show_separator_line(false)
-                .frame(egui::Frame::NONE)
-                .show(ui, |ui| {
-                    // The menus keep 4 points from the bar's sides.
-                    let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO).shrink2(Vec2::new(4.0, 0.0));
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
-                        self.menu_bar(ui, &bar, &mut actions)
-                    })
-                });
+            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                // The menus keep 4 points from the bar's sides.
+                let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO).shrink2(Vec2::new(4.0, 0.0));
+                ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.menu_bar(ui, &bar, &mut actions))
+            });
         }
         self.frame_trace.mark("menu bar");
-        if self.projects.len() >= 2 {
+        if let Some(rect) = region(Region::Tabs) {
             let bar = crate::kit::element::PROJECT_TABS.enter();
-            egui::Panel::top("tabs")
-                .exact_size(bar_height(ui, &bar, TABS))
-                .show_separator_line(false)
-                .frame(egui::Frame::NONE)
-                .show(ui, |ui| self.tab_row(ui, &bar, &mut actions));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| self.tab_row(ui, &bar, &mut actions));
         }
-        let bar = crate::kit::element::TOOLBAR.enter();
-        egui::Panel::top("control-bar")
-            .exact_size(bar_height(ui, &bar, theme::CONTROL_BAR))
-            .show_separator_line(false)
-            .frame(egui::Frame::NONE)
-            .show(ui, |ui| {
+        if let Some(rect) = region(Region::Toolbar) {
+            let bar = crate::kit::element::TOOLBAR.enter();
+            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                 let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO);
                 self.control_bar(ui, &bar, inside, grid.as_ref(), cpu, ram, &mut actions)
             });
-        drop(bar);
+        }
         self.frame_trace.mark("control bar");
-        let bar = crate::kit::element::STATUS_BAR.enter();
-        egui::Panel::bottom("status-bar")
-            .exact_size(bar_height(ui, &bar, theme::STATUS_BAR))
-            .show_separator_line(false)
-            .frame(egui::Frame::NONE)
-            .show(ui, |ui| {
-                let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
+        if let Some(rect) = region(Region::StatusBar) {
+            let bar = crate::kit::element::STATUS_BAR.enter();
+            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                // The window's bottom corners are the bar's where it lies along the bottom.
+                let bottom = if rect.bottom() >= room.bottom() - 0.5 {
+                    egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner }
+                } else {
+                    egui::CornerRadius::ZERO
+                };
                 let inside = bar_box(ui, &bar, bottom);
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.status_bar(ui, &bar, grid.as_ref()))
             });
-        drop(bar);
+        }
         self.frame_trace.mark("bars");
         // Samples and MIDI files from the system: dropped this frame, or still over the window.
         let system = match (self.browser.drag.is_some(), dropped.is_empty()) {
@@ -3061,71 +3083,36 @@ impl App {
             (false, false) => Some((dropped, true)),
             (false, true) => Some((self.hovered_files(ui), false)).filter(|(items, _)| !items.is_empty()),
         };
-        // A private image is already painted underneath the workspace. Keep its
-        // transparent regions visible instead of covering them with separator ink.
-        let workspace_line = if crate::kit::liquid::background_image(ui.ctx()).is_some() {
-            egui::Color32::TRANSPARENT
-        } else {
-            // `#workspace { border-color }` is this line's own colour.
-            let _workspace = crate::kit::element::WORKSPACE.id("workspace").enter();
-            theme::border()
-        };
-        egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
-            let _workspace_style = crate::kit::element::WORKSPACE.id("workspace").enter();
-            let area = ui.available_rect_before_wrap();
-            // A 1 px line between the bars and the view, in the line colour: drawn in the gap
-            // only, since a fill under the views would show through a translucent one.
-            let inner = Rect::from_min_max(area.min + Vec2::new(0.0, 1.0), area.max - Vec2::new(0.0, 1.0));
-            for y in [area.top(), inner.bottom()] {
-                let line = Rect::from_x_y_ranges(area.x_range(), egui::Rangef::new(y, y + 1.0));
-                ui.painter().rect_filled(line, 0.0, workspace_line);
-            }
-            self.missing.sync(&mut self.projects, self.revision);
-            let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
-            let prompt_height = if self.open_prompt.is_some() || missing_bar { theme::ROW + 12.0 } else { 0.0 };
-            let (prompt, inner) = (
-                Rect::from_min_size(inner.min, Vec2::new(inner.width(), prompt_height)),
-                Rect::from_min_max(inner.min + Vec2::new(0.0, prompt_height), inner.max),
-            );
-            if self.open_prompt.is_some() {
-                ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.open_prompt_bar(ui));
-            } else if missing_bar {
-                ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.missing.bar(ui, prompt));
-            }
-            // With the detail area across the full width, the browser takes its side of what is
-            // left above it (Settings › Devices › Detail area width).
-            let full_width = grid.is_some()
-                && self.settings.view.detail_layout == crate::settings::view_settings::DetailLayout::FullWidth
-                && self.settings.device_layout != DeviceLayout::Stack;
-            // The browser stays hidden on the start panel (nothing to drop into); its setting keeps
-            // its value for when a project opens.
-            let browser_wanted = self.settings.browser_open && !self.start_panel_open();
-            // It slides in and out from its side, with animations on (#708).
-            self.browser_part = motion::toward(ui.ctx(), Id::unique("browser-shown"), browser_wanted, BROWSER_SLIDE);
-            let browser_shown = self.browser_part > 0.001;
-            let stacked = self.settings.device_layout == DeviceLayout::Stack;
-            let css_workspace = crate::kit::native_css::workspace(
-                inner.size(),
-                browser_shown.then_some(self.settings.browser_width as f32),
-                (grid.is_some() && self.detail_open)
-                    .then_some((stacked, if stacked { self.detail_width } else { self.detail_height })),
-            )
-            .map(|layout| layout.translated(inner.min.to_vec2()));
-            self.frame_trace.mark("bars");
-            let inner = if let Some(layout) = &css_workspace {
-                if let Some(panel) = layout.browser {
-                    over_view(ui, "panel-browser", panel, layout.main, |ui| {
-                        self.browser_panel(ui, inner, Some((panel, layout.main, layout.browser_follows)));
-                    });
+        // The lines over and under the views, in their `border-color` (the palette's line colour).
+        // A private image is already painted underneath the window: its transparent regions stay
+        // visible instead of being covered with separator ink.
+        let image = crate::kit::liquid::background_image(ui.ctx()).is_some();
+        for (line, id) in [(Region::TopLine, "views-top"), (Region::BottomLine, "views-bottom")] {
+            if let Some(rect) = region(line) {
+                let style = crate::kit::element::SEPARATOR.id(id).attribute("kind", id).enter();
+                if !image {
+                    ui.painter().rect_filled(rect, 0.0, theme::border());
                 }
-                inner
-            } else if browser_shown && !full_width {
-                self.browser_panel(ui, inner, None)
-            } else {
-                inner
-            };
+                style.paint_background(ui.painter(), rect, 0.0);
+            }
+        }
+        {
+            if let Some(rect) = region(Region::Notice) {
+                let style = crate::kit::element::NOTICE_BAR.enter();
+                let inside = style.paint(ui.painter(), rect).content;
+                if self.open_prompt.is_some() {
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.open_prompt_bar(ui));
+                } else if missing_bar {
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.missing.bar(ui, inside));
+                }
+            }
+            let main = layout.rect(Region::Main).unwrap_or(Rect::from_min_size(room.min, Vec2::ZERO));
+            if let Some(panel) = region(Region::Browser) {
+                over_view(ui, "panel-browser", panel, main, |ui| {
+                    self.browser_panel(ui, room, panel, main, layout.browser_follows);
+                });
+            }
             self.frame_trace.mark("browser");
-            let mut view_area = inner;
             self.detail_drop = None;
             self.sample_drops.clear();
             ui.ctx().data_mut(|d| {
@@ -3171,55 +3158,32 @@ impl App {
                     d.remove::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::unique("eq-spectrum"));
                 }
             });
-            let inner = if grid.is_some()
-                && self.detail_open
-                && css_workspace.as_ref().is_none_or(|layout| layout.detail.is_some())
-            {
-                let geometry = css_workspace
-                    .as_ref()
-                    .and_then(|layout| layout.detail.map(|detail| (layout.main, detail, layout.detail_follows)));
-                match geometry {
-                    Some((main, detail, _)) => over_view(ui, "panel-detail", detail, main, |ui| {
-                        self.detail_area(ui, inner, &mut actions, geometry)
-                    }),
-                    None => self.detail_area(ui, inner, &mut actions, geometry),
+            let detail_rect = layout.rect(Region::Detail);
+            let inner = match detail_rect.filter(|_| grid.is_some()) {
+                Some(detail) if self.detail_open => {
+                    let geometry = (main, detail, layout.detail_follows);
+                    over_view(ui, "panel-detail", detail, main, |ui| self.detail_area(ui, &mut actions, geometry))
                 }
-            } else {
-                self.place_editors(&[]);
-                // A hidden piano roll does not keep the keyboard, nor the view to one track, and
-                // a note its audition sounds goes off.
-                self.piano_roll.focused = false;
-                actions.extend(self.piano_roll.stop_audition());
-                actions.extend(self.piano_roll.settle_on_hide());
-                self.arrangement.focus = None;
-                // In a row under the view, the splitter stays along the bottom, to drag it open.
-                if let Some(layout) = &css_workspace {
-                    layout.main
-                } else if grid.is_some() && self.editor_along_bottom() {
-                    self.collapsed_splitter(ui, inner)
-                } else if grid.is_some() {
-                    // Stacked beside the view, it stays along the right edge, to drag it open.
-                    self.collapsed_side_splitter(ui, inner)
-                } else {
-                    inner
+                closed => {
+                    self.place_editors(&[]);
+                    // A hidden piano roll does not keep the keyboard, nor the view to one track, and
+                    // a note its audition sounds goes off.
+                    self.piano_roll.focused = false;
+                    actions.extend(self.piano_roll.stop_audition());
+                    actions.extend(self.piano_roll.settle_on_hide());
+                    self.arrangement.focus = None;
+                    // Closed, the area keeps its splitter in the gap beside the view, to drag it open.
+                    if let Some(detail) = closed.filter(|_| layout.detail_follows) {
+                        self.collapsed_splitter(ui, main, detail);
+                    }
+                    main
                 }
             };
             self.frame_trace.mark("detail");
-            let inner = if browser_shown && full_width && css_workspace.is_none() {
-                let rest = self.browser_panel(ui, inner, None);
-                view_area = Rect::from_min_max(
-                    Pos2::new(rest.left(), view_area.top()),
-                    Pos2::new(rest.right(), view_area.bottom()),
-                );
-                rest
-            } else {
-                inner
-            };
-            if css_workspace.is_some() {
-                view_area = inner;
-            }
-            self.frame_trace.mark("browser");
-            let main_style = crate::kit::element::WORKSPACE_PANEL.id("panel-main").enter();
+            // What a drop over the views lands on: the view and the detail area under it.
+            let view_area =
+                detail_rect.filter(|rect| self.detail_open && rect.is_positive()).map_or(main, |d| main.union(d));
+            let main_style = crate::kit::element::WORKSPACE_PANEL.id("panel-main").attribute("kind", "main").enter();
             // The panel's own box, as every element's: its background and border (none unless the
             // sheet gives them), then it clips what the view paints (`overflow`); the view goes in
             // its content box (#1336).
@@ -3276,7 +3240,7 @@ impl App {
             // The large sample map takes the main area, except while something is dragged, so
             // the drop can land on a track.
             let styled_ui = main_style.ui(ui);
-            let mut styled_ui = if css_workspace.is_some() { styled_ui.clipped_to(inner) } else { styled_ui };
+            let mut styled_ui = styled_ui.clipped_to(inner);
             let ui = &mut *styled_ui;
             if self.sample_map.view.large && dragged.is_none() && inner.is_positive() {
                 let (panel, browser, projects, settings) =
@@ -3555,7 +3519,7 @@ impl App {
                 detail_view::show_expanded(ui, inner, track, &device, &mut actions);
             }
             drop_overlay(ui, view_area);
-        });
+        }
         self.browser_drag(ui);
         self.tag_drag(ui);
         self.device_drag(ui);

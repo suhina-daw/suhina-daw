@@ -440,11 +440,13 @@ pub fn compute(
             Value::Name(area) if !area.is_empty() => Some(area),
             _ => None,
         };
-        let parent_areas = element.parent.and_then(|parent| match styles.get(parent)?.get(Property::GridTemplateAreas) {
-            Value::Areas(areas) => Some(areas),
-            _ => None,
-        });
-        let placed = area.as_ref().map(|area| parent_areas.as_ref().and_then(|areas| areas.bounds().get(area).copied()));
+        let parent_areas =
+            element.parent.and_then(|parent| match styles.get(parent)?.get(Property::GridTemplateAreas) {
+                Value::Areas(areas) => Some(areas),
+                _ => None,
+            });
+        let placed =
+            area.as_ref().map(|area| parent_areas.as_ref().and_then(|areas| areas.bounds().get(area).copied()));
         let shown = computed.get(Property::Visible) != Value::Bool(false)
             && computed.get(Property::Display) != Value::Keyword("none")
             && !matches!(placed, Some(None))
@@ -580,10 +582,15 @@ pub fn compute(
             |inputs, _, size, style| {
                 let [width, height] = size.map_or([None, None], |size| *size);
                 let clean = |n: Option<f32>| n.filter(|n| n.is_finite()).map_or(0.0, |n| n.clamp(0.0, 16384.0));
-                taffy::compute_leaf_layout(inputs, style, |_, _| 0.0, |known, _| Size {
-                    width: known.width.unwrap_or(clean(width)),
-                    height: known.height.unwrap_or(clean(height)),
-                })
+                taffy::compute_leaf_layout(
+                    inputs,
+                    style,
+                    |_, _| 0.0,
+                    |known, _| Size {
+                        width: known.width.unwrap_or(clean(width)),
+                        height: known.height.unwrap_or(clean(height)),
+                    },
+                )
             },
         )
         .map_err(|e| e.to_string())?;

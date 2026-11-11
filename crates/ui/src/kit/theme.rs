@@ -751,9 +751,6 @@ pub const GLOSS_EXAMPLE: &str = include_str!("../../themes/dark-gloss.css");
 /// Optional native Launcher density, shared by the editor and exported packages.
 pub const COMPACT_SESSION_EXAMPLE: &str = include_str!("../../themes/compact-session.css");
 
-/// Optional panels own their dimensions so closed panels leave no fixed-size track.
-pub const WORKSPACE_GRID_EXAMPLE: &str = "/* CSS owns panel geometry; removing these rules restores splitters. */\n#workspace { display:grid; grid-template-columns:minmax(0, 1fr) auto; grid-template-rows:minmax(0, 1fr) auto; gap:8px; }\n#panel-browser { grid-column:2; grid-row:1 / -1; width:240px; }\n#panel-main { grid-column:1; grid-row:1; }\n#panel-detail { grid-column:1; grid-row:2; height:180px; }\n";
-
 /// The README shipped with themes: the format, capabilities and generated palette reference.
 pub fn template_readme() -> String {
     let mut text = String::from(include_str!("../../themes/THEME-PACKAGE-README.md"));

@@ -639,9 +639,7 @@ fn a_panel_the_theme_lays_over_the_view_is_drawn_above_it() {
     app.settings.browser_open = true;
     app.use_test_skin(crate::kit::skin::Skin {
         css: Some(std::sync::Arc::from(
-            "#workspace { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr); } \
-             #panel-main { grid-column: 1; grid-row: 1; } \
-             #panel-browser { grid-column: 1; grid-row: 1; width: 260px; justify-self: start; }",
+            "#panel-browser { grid-area: main; width: 260px; justify-self: start; margin: 0; }",
         )),
         ..Default::default()
     });
@@ -920,7 +918,7 @@ fn a_rename_in_place_covers_the_name_drawn_under_it() {
 }
 
 #[test]
-fn css_workspace_moves_native_controls_and_preserves_project_state() {
+fn a_theme_s_grid_moves_the_controls_and_keeps_the_project() {
     use egui_kittest::kittest::Queryable;
     let mut app = App::new();
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
@@ -936,10 +934,10 @@ fn css_workspace_moves_native_controls_and_preserves_project_state() {
     // Let the normal first-frame project/theme initialization finish before
     // checking that changing presentation does not edit the project.
     let before = harness.state().session().unwrap().project().clone();
-    harness.state_mut().use_test_skin(crate::kit::skin::Skin {css:Some(std::sync::Arc::from("#workspace {display:grid;grid-template-columns:minmax(0,1fr) 240px;grid-template-rows:minmax(0,1fr) 160px;gap:8px;} #panel-browser {grid-column:2;grid-row:1 / -1;} #panel-main {grid-column:1;grid-row:1;} #panel-detail {grid-column:1;grid-row:2;}")),..Default::default()});
+    harness.state_mut().use_test_skin(crate::kit::skin::Skin {css:Some(std::sync::Arc::from("#panel-browser {grid-area:right;width:240px;margin:0 0 0 8px;} #panel-detail {height:160px;margin-top:8px;}")),..Default::default()});
     harness.run();
     let slot = harness.get_by_label("Stop Keys (scene 1)").rect();
-    assert!(slot.right() < 1032.0, "native slot uses CSS main rectangle: {slot:?}");
+    assert!(slot.right() < 1032.0, "the slot is in the main rectangle the sheet gives: {slot:?}");
     assert!(harness.query_by_label("Detail area splitter").is_none());
     assert_eq!(harness.state().session().unwrap().project(), &before);
     harness.state_mut().use_test_skin(crate::kit::skin::Skin::default());
@@ -947,7 +945,7 @@ fn css_workspace_moves_native_controls_and_preserves_project_state() {
     let native_slot = harness.get_by_label("Stop Keys (scene 1)").rect();
     assert!(
         native_slot.left() > slot.left() + 100.0,
-        "removing CSS restores the native browser beside the view: {slot:?} -> {native_slot:?}"
+        "removing the sheet puts the browser back at the left: {slot:?} -> {native_slot:?}"
     );
     assert!(harness.query_by_label("Detail area splitter").is_some());
     assert_eq!(harness.state().session().unwrap().project(), &before);

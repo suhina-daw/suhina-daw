@@ -1042,15 +1042,21 @@ fn open_with_clip(css: &str, stacked: bool) -> Harness<'static, App> {
 /// up leaves the view its least height (#1252).
 #[test]
 fn a_layout_with_only_gaps_keeps_the_dragged_detail_area_in_bounds() {
-    let mut h = open_with_clip("#workspace { gap: 8px; }", true);
+    let mut h = open_with_clip("workspace-panel { margin: 4px; }", true);
+    // A clip's editor lies along the bottom even with the devices stacked: a track's devices
+    // stand beside the view.
+    h.get_by_label("Track Drums").click();
+    h.run();
     let before = h.get_by_label("Detail area splitter").rect().center().x;
     let nudged = drag(&mut h, "Detail area splitter", Vec2::new(40.0, 0.0)).map(|s| s.center().x);
     assert!(nudged.is_some_and(|x| (x - before).abs() < 1.0), "one width: {before} to {nudged:?}");
     let closed = drag(&mut h, "Detail area splitter", Vec2::new(2000.0, 0.0));
     suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(closed.is_none(), "a drag towards the edge closes the area: {closed:?}");
+    // A drag towards the edge closes the area; closed, it keeps its splitter along the window's
+    // right edge, to drag it open again.
+    assert!(closed.is_some_and(|s| s.left() > before + 100.0 && s.height() > s.width()), "{before} {closed:?}");
 
-    let mut h = open_with_clip("#workspace { gap: 8px; }", false);
+    let mut h = open_with_clip("workspace-panel { margin: 4px; }", false);
     let raised = drag(&mut h, "Detail area splitter", Vec2::new(0.0, -2000.0));
     suhina_ui::kit::native_css::set_user_sheet(None);
     let raised = raised.map(|s| s.top());
@@ -1063,7 +1069,7 @@ fn a_layout_with_only_gaps_keeps_the_dragged_detail_area_in_bounds() {
 #[test]
 fn a_layout_with_only_gaps_keeps_the_splitters_and_a_fixed_width_takes_the_browsers() {
     let open = |css: &str| open_with_clip(css, false);
-    let mut h = open("#workspace { gap: 8px; }");
+    let mut h = open("workspace-panel { margin: 4px; }");
     let width = h.state().settings().browser_width;
     assert!(drag(&mut h, "Browser splitter", Vec2::new(40.0, 0.0)).is_some(), "the browser's splitter stays");
     let wider = h.state().settings().browser_width;
@@ -1075,7 +1081,7 @@ fn a_layout_with_only_gaps_keeps_the_splitters_and_a_fixed_width_takes_the_brows
 
     // The setting puts the browser on the right, the sheet's grid on the left: dragging its
     // splitter away from it still widens it.
-    let mut h = open("#workspace { gap: 8px; }");
+    let mut h = open("workspace-panel { margin: 4px; } #panel-browser { grid-area: left; }");
     let mut settings = h.state().settings().clone();
     settings.browser_side = suhina_ui::settings::Side::Right;
     let ctx = h.ctx.clone();
@@ -1088,7 +1094,7 @@ fn a_layout_with_only_gaps_keeps_the_splitters_and_a_fixed_width_takes_the_brows
     assert!(splitter.is_some_and(|s| s.center().x < 600.0), "the sheet's grid has it on the left: {splitter:?}");
     assert!(wider >= width + 30, "dragging right widens the browser on the left: {width} to {wider}");
 
-    let h = open("#workspace { gap: 8px; } #panel-browser { width: 260px; }");
+    let h = open("workspace-panel { margin: 4px; } #panel-browser { width: 260px; }");
     let fixed = h.query_by_label("Browser splitter").is_none();
     let detail = h.query_by_label("Detail area splitter").is_some();
     suhina_ui::kit::native_css::set_user_sheet(None);
@@ -1135,10 +1141,12 @@ fn the_browser_search_field_draws_an_underline() {
 /// only inside its panel: what runs past it does not take clicks over the main view (#1336).
 #[test]
 fn a_padded_browser_takes_the_pointer_only_inside_its_panel() {
-    // The panel is 300 points wide; its content box 50, narrower than the browser's sidebar.
-    let h = open_with_clip("#panel-browser { padding-left: 250px; }", false);
-    let splitter = h.get_by_label("Browser splitter").rect();
-    let edge = splitter.left();
+    // The panel is 300 points wide; its content box 50, narrower than the browser's sidebar. The
+    // sheet sets its width, so it has no splitter: the main view starts past its 4-point margin.
+    let h = open_with_clip("#panel-browser { width: 300px; padding-left: 250px; }", false);
+    // The test window's room starts 8 points in.
+    let edge = 308.0;
+    let splitter = egui::Rect::from_x_y_ranges(edge..=edge + 4.0, 0.0..=10_000.0);
     let (crossing, past) = h.ctx.viewport(|v| {
         // What the browser lays out in its content box, from there to the panel's edge.
         let browser: Vec<_> = v
@@ -1174,7 +1182,7 @@ fn a_theme_styles_the_workspace_splitters() {
     let rules = "#detail-splitter { background-color: #ff00ff; color: #00ffff; } \
                  #detail-splitter:hover { background-color: #00ff00; } \
                  #browser-splitter { background-color: #0000ff; }";
-    for layout in ["", "#workspace { gap: 8px; } "] {
+    for layout in ["", "workspace-panel { margin: 4px; } "] {
         let mut h = open_with_clip(&format!("{layout}{rules}"), false);
         let detail = h.get_by_label("Detail area splitter").rect();
         let browser = h.get_by_label("Browser splitter").rect();
@@ -1191,12 +1199,13 @@ fn a_theme_styles_the_workspace_splitters() {
 
     // A transparent strip leaves the gap to what is under it; without a rule the strip keeps the
     // native fill.
-    let h = open_with_clip("#workspace { gap: 8px; }", false);
+    let h = open_with_clip("workspace-panel { margin: 4px; }", false);
     let detail = h.get_by_label("Detail area splitter").rect();
     let native = fills_inside(&h, detail);
     drop(h);
     suhina_ui::kit::native_css::set_user_sheet(None);
-    let h = open_with_clip("#workspace { gap: 8px; } #detail-splitter { background-color: transparent; }", false);
+    let h =
+        open_with_clip("workspace-panel { margin: 4px; } #detail-splitter { background-color: transparent; }", false);
     let clear = fills_inside(&h, h.get_by_label("Detail area splitter").rect());
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(native.contains(&theme::control_background()), "the native strip: {native:?}");
