@@ -352,9 +352,11 @@ fn shown_device_extra_id() -> Id {
 }
 
 /// What the panels of the devices shown last frame add above and below a compact one, if they
-/// add more than a plain `device` panel does (`insets`, from [`box_insets`]).
+/// add more than a plain `device` panel does (`insets`, from [`box_insets`]). Reading takes the
+/// value: only a frame that shows a chain with devices leaves one, so an empty chain, a clip
+/// editor or a hidden row asks for nothing extra.
 pub fn shown_device_insets(ctx: &egui::Context, insets: f32) -> f32 {
-    ctx.data(|d| d.get_temp::<f32>(shown_device_extra_id())).unwrap_or(0.0).max(insets)
+    ctx.data_mut(|d| d.remove_temp::<f32>(shown_device_extra_id())).unwrap_or(0.0).max(insets)
 }
 
 /// [`box_insets`]: each box's top and bottom together.

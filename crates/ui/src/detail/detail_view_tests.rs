@@ -1865,3 +1865,13 @@ fn a_stacked_chain_taller_than_its_column_scrolls() {
     let moved = harness.query_all_by_label("Device Utility").next().map(|n| n.rect().top());
     assert!(moved.is_some_and(|top| top < first.top() - 50.0), "the column scrolls: {first:?} to {moved:?}");
 }
+
+/// The extra height a padded device panel asks for lasts one frame: a frame that shows no chain
+/// with devices (an empty track, a clip editor) leaves none, so the detail area shrinks back.
+#[test]
+fn the_height_a_padded_panel_asks_for_does_not_outlive_its_frame() {
+    let ctx = egui::Context::default();
+    ctx.data_mut(|d| d.insert_temp(shown_device_extra_id(), 40.0_f32));
+    assert_eq!(shown_device_insets(&ctx, 6.0), 40.0, "the frame after the panel was shown");
+    assert_eq!(shown_device_insets(&ctx, 6.0), 6.0, "gone when nothing leaves it again");
+}
