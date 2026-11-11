@@ -1272,3 +1272,31 @@ fn a_padded_detail_area_still_shows_a_device_panel_whole() {
     assert_eq!(padded.bottom(), plain.bottom() - 12.0, "inside the panel's and the area's padding");
     assert!(padded.top() > splitter.top(), "whole under the splitter: {padded:?}, {splitter:?}");
 }
+
+/// A theme that pads a selected device panel more than the others: the area opens as tall as the
+/// panel needs once it is selected, so the panel shows whole under the splitter (#1336).
+#[test]
+fn a_device_panel_padded_more_when_selected_is_still_shown_whole() {
+    let css = "device { padding: 4px; } device[selected] { padding: 14px; }";
+    let (themed, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), css);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut app = App::new();
+    app.set_session(Session::new(project_with_a_device()), &[]);
+    let ctx = egui::Context::default();
+    app.set_themes(&ctx, vec![suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: themed }], None);
+    let mut h = window(app);
+    let ctx = h.ctx.clone();
+    h.state_mut().use_theme(&ctx, "padded");
+    h.run_steps(2);
+    h.get_by_label("Track Drums").click();
+    h.run_steps(4);
+    let before = h.get_by_label("Device Utility").rect();
+    h.get_by_label("Device Utility").click();
+    h.run_steps(4);
+    assert!(before.height() < 228.0, "unselected, the panel is the plainer one's: {before:?}");
+    let splitter = h.get_by_label("Detail area splitter").rect();
+    let panel = h.get_by_label("Device Utility").rect();
+    let needs = suhina_ui::detail::detail_view::device_row_height() + 28.0;
+    assert_eq!(panel.height(), needs, "the panel has the selected state's padding: {panel:?}");
+    assert!(panel.top() > splitter.top(), "whole under the splitter: {panel:?}, {splitter:?}");
+}

@@ -348,7 +348,7 @@ impl App {
         // pads it: the height the user set grows by what the padding adds.
         let boxes = detail_view::box_insets();
         let [top, _, bottom, _] = panel_style.insets();
-        let devices = top + bottom + boxes.detail + boxes.device;
+        let devices = top + bottom + boxes.detail + detail_view::shown_device_insets(ui.ctx(), boxes.device);
         let piano_insets = top + bottom + boxes.editor + boxes.piano;
         let area_insets = if edits { piano_insets } else { devices };
         self.detail_height = (self.detail_height + area_insets - self.detail_insets.area).max(0.0);

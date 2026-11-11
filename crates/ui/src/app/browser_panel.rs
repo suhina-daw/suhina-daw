@@ -101,7 +101,9 @@ impl App {
         };
         let out = ui
             .scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
-                ui.set_clip_rect(inside.intersect(area).intersect(ui.clip_rect()));
+                // The panel's `overflow` clips the browser's painting (`occupies`); this clip is the
+                // viewport's edge while the browser slides in.
+                ui.set_clip_rect(area.intersect(ui.clip_rect()));
                 let cx = browser_view::Context {
                     projects: &mut self.projects,
                     settings: &self.settings,

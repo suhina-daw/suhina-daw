@@ -416,7 +416,6 @@ impl App {
             let width = motion::value(ctx, Id::unique("view-underline-width"), width, motion::SLIDE);
             painter.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, 1.0)), 0.0, color);
         }
-        painter.hline(bar.x_range(), bar.bottom() - 0.5, theme::hairline(theme::border()));
         self.toolbar_edit_overlay(ui, bar);
     }
 

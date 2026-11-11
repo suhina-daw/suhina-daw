@@ -159,7 +159,13 @@ fn chain_row(
             // A size worked out from what the panel holds takes its border and padding too
             // (#1336); a theme's `width` or `height` is the whole panel's.
             let (width, themed_height, [top, _, bottom, _]) = {
-                let el = crate::kit::element::DEVICE.id(&format!("device-{}", device.theme_id)).enter();
+                // In the state it is painted in: `device[selected]` may pad it more.
+                let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
+                let el = crate::kit::element::DEVICE
+                    .id(&format!("device-{}", device.theme_id))
+                    .attr(crate::kit::element::Selected, lit)
+                    .attr(crate::kit::element::Muted, !device.enabled)
+                    .enter();
                 let computed = el.style();
                 let insets = el.insets();
                 let width = width + insets[1] + insets[3];
@@ -187,6 +193,10 @@ fn chain_row(
         .map(|(_, height, _)| *height)
         .fold(device_row_height() + vertical(crate::kit::element::DEVICE.enter().insets()), f32::max)
         .min(area.height());
+    // What the tallest panel adds over a compact one, as painted (its id and state): the detail
+    // area opens that tall from the next frame.
+    let needs = boxes.iter().filter(|(.., own)| !own).map(|(_, height, _)| *height).fold(0.0, f32::max);
+    ui.data_mut(|d| d.insert_temp(shown_device_extra_id(), (needs - device_row_height()).max(0.0)));
     let total = boxes.iter().map(|(w, ..)| w + 1.0).sum::<f32>();
     let scroll_id = Id::unique(("chain-scroll", chain.track.0));
     let most = (total - area.width()).max(0.0);
@@ -322,16 +332,29 @@ pub fn device_row_height() -> f32 {
 /// clip editor's and the piano roll's, around the piano roll. Asked inside the detail area's
 /// workspace panel, as they are drawn (#1336).
 pub fn box_insets() -> BoxInsets {
-    use crate::kit::element::{CLIP_EDITOR, DETAIL, DEVICE, PIANO_ROLL};
+    use crate::kit::element::{CLIP_EDITOR, DETAIL, PIANO_ROLL};
     let (detail, device) = {
         let detail = DETAIL.enter();
-        (vertical(detail.insets()), vertical(DEVICE.enter().insets()))
+        (vertical(detail.insets()), vertical(crate::kit::element::DEVICE.enter().insets()))
     };
     let (editor, piano) = {
         let editor = CLIP_EDITOR.enter();
         (vertical(editor.insets()), vertical(PIANO_ROLL.enter().insets()))
     };
     BoxInsets { detail, device, editor, piano }
+}
+
+/// Where [`chain_row`] leaves what its tallest panel adds over a compact one (border and padding
+/// as painted: `#device-<id>` and `device[selected]` may pad more than `device`), for the detail
+/// area to open as tall as the panels need.
+fn shown_device_extra_id() -> Id {
+    Id::unique("detail-device-extra")
+}
+
+/// What the panels of the devices shown last frame add above and below a compact one, if they
+/// add more than a plain `device` panel does (`insets`, from [`box_insets`]).
+pub fn shown_device_insets(ctx: &egui::Context, insets: f32) -> f32 {
+    ctx.data(|d| d.get_temp::<f32>(shown_device_extra_id())).unwrap_or(0.0).max(insets)
 }
 
 /// [`box_insets`]: each box's top and bottom together.

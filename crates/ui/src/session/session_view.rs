@@ -255,7 +255,11 @@ pub fn show(
 
     // Fixed bands: header on top, mixer at the bottom, scene column on the right.
     let header = Rect::from_min_size(area.min, Vec2::new(area.width(), header_height()));
-    let mixer_height = mixer_height(state, area.height(), grid.scenes.len());
+    // The slots are rows shared by every column and the scene column: they start below a track
+    // column's top border and padding and end above its bottom ones, as a plain `track-column`
+    // has them, so the rows line up whatever a column's state (#1336).
+    let [rows_top, _, rows_bottom, _] = crate::kit::element::TRACK_COLUMN.enter().insets();
+    let mixer_height = mixer_height(state, area.height(), grid.scenes.len(), rows_top + rows_bottom);
     let mixer =
         Rect::from_min_max(Pos2::new(area.left(), (area.bottom() - mixer_height).max(header.bottom())), area.max);
     let body =
@@ -281,10 +285,6 @@ pub fn show(
         .filter(|c| c.kind != ColumnKind::Return && !hidden.contains(&c.track))
         .map(|c| column_width(c) + 1.0)
         .sum();
-    // The slots are rows shared by every column and the scene column: they start below a track
-    // column's top border and padding and end above its bottom ones, as a plain `track-column`
-    // has them, so the rows line up whatever a column's state (#1336).
-    let [rows_top, _, rows_bottom, _] = crate::kit::element::TRACK_COLUMN.enter().insets();
     let content_height = (grid.scenes.len() as f32 + 1.0) * slot_pitch() + rows_top + rows_bottom;
     let fields = std::mem::take(&mut state.value_areas);
     let lists = std::mem::take(&mut state.scroll_areas);
@@ -606,15 +606,16 @@ fn main_metronome(
 }
 
 /// The mixer's height this frame: the one being dragged to, else the saved one, kept between the
-/// least height and the most this view allows (`docs/design/components.md` › Mixer strip).
-fn mixer_height(state: &SessionViewState, view_height: f32, scenes: usize) -> f32 {
+/// least height and the most this view allows (`docs/design/components.md` › Mixer strip). The
+/// slots' rows are `rows_insets` taller than their pitch (a track column's border and padding).
+fn mixer_height(state: &SessionViewState, view_height: f32, scenes: usize, rows_insets: f32) -> f32 {
     let (least, default, _) = crate::settings::view_settings::MIXER_HEIGHTS;
     let (least, default) = (least as f32, default as f32);
     let saved = if state.mixer_height > 0.0 { state.mixer_height } else { default };
     let wanted = state.mixer_dragged.unwrap_or(saved);
     // Up to just under the stop row under the last scene, and always up to the default height;
     // never over the header.
-    let under_slots = view_height - header_height() - 1.0 - (scenes as f32 + 1.0) * slot_pitch() - 1.0;
+    let under_slots = view_height - header_height() - 1.0 - (scenes as f32 + 1.0) * slot_pitch() - rows_insets - 1.0;
     let most = under_slots.max(default).min(view_height - header_height() - 1.0).max(least);
     wanted.clamp(least, most)
 }
@@ -1504,3 +1505,7 @@ fn scene_column(
         );
     }
 }
+
+#[cfg(test)]
+#[path = "session_view_tests.rs"]
+mod tests;

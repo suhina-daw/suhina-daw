@@ -785,8 +785,10 @@ Every element with a box paints in one order, as CSS does: its outer `box-shadow
 its `border`, then its contents, and last its `outline` (`outline: 2px solid #FFFFFF;
 outline-offset: 1px;`, or `outline-width`, `outline-style`, `outline-color` and
 `outline-offset`), outside its border, over its contents. A row or highlight that reaches a
-panel's edge is drawn over the panel's border and inset shadows, as in a browser: to keep an
-edge in sight, pad the panel (Suhina Meadow pads its panels by 1 px on the sides it lights).
+panel's edge is drawn over the panel's inset shadows, as in a browser, and over its border only
+with `overflow: visible`: a panel is `overflow: hidden`, which cuts its children at the padding
+box, so its border stays whole. To keep an edge in sight, pad the panel (Suhina Meadow pads its
+panels by 1 px on the sides it lights).
 
 An element's contents go in its **content box**: its box less its border and its `padding`
 (`padding: 4px 8px;` or `padding-top` and the others). A size Suhina works out from what an

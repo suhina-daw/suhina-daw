@@ -470,7 +470,9 @@ its outer `box-shadow`, its `background-color`, its `background-image` (or the a
 draws), its inset shadows and its border, then its contents, then, when the element leaves scope,
 its `outline` (`outline-width`, `outline-style: solid`, `outline-color`, `outline-offset`, or the
 `outline` shorthand) outside its border, over its contents. A row or highlight that reaches a
-region's edge is therefore drawn over the region's border and inset shadows, as in a browser.
+region's edge is therefore drawn over the region's inset shadows, as in a browser, and over its
+border only where the element's `overflow` is `visible`: a region's is `hidden`, which cuts its
+children at the padding box (› Overflow), so its border stays whole.
 
 **The content box.** An element's contents go in `Boxed::content`: its box less its border
 widths and its `padding`. Every view lays its children out there, not in the rectangle it
@@ -478,8 +480,9 @@ painted; a view that draws to its edge on purpose (a grid line, a selection band
 code. A size the app works out from what an element holds is its content box's size, and the
 element adds its border and padding around it, as a CSS box with `height: auto` does: the detail
 area's heights (a device row, an embedded editor, the piano roll's least height), each bar's
-height and each dialog's size. A size the user drags (the detail splitter, the browser's width)
-is the whole box, and so is a `width` or `height` the sheet gives (`border-box`); when a theme
+height and each dialog's size. A device row is as tall as its tallest panel needs, as painted
+(`device[selected]` or `#device-<id>` may pad more), from the frame after the panel shows. A size the user drags
+(the detail splitter, the browser's width) is the whole box, and so is a `width` or `height` the sheet gives (`border-box`); when a theme
 changes the detail area's border or padding, the area grows or shrinks by that change, so what it
 shows keeps its height. A box whose
 border and padding leave no room has an empty content box at its centre.
