@@ -11,6 +11,8 @@ covers:
   - crates/engine/src/plugin.rs
   - crates/engine/src/plugin_params.rs
   - crates/session/src/rack.rs
+  - crates/session/src/rack/offline.rs
+  - apps/suhina-cli/src/cmd/plugin.rs
 ---
 
 # Plug-in hosting
@@ -577,6 +579,18 @@ tell when a setting was changed in the editor since the project was saved, which
 project unsaved without an undo step ([ADR 0010](../decisions/0010-project-files.md), decision 7). Crashes and hangs are noticed within 250 ms and shown on the
 device; `device.restart` starts it again (one that could not start at all is started from
 scratch with the project's state).
+
+The CLI works on one device of a project the same way (#1155). `suhina-cli plugin
+params-device` and `edit-device` open the project as the app does and attach an engine with no
+audio output. They run that engine's blocks themselves, a block each time they look at the
+plug-in, so a VST3 plug-in still gets the parameter changes that travel with blocks. They limit
+the rack to the one device (`Rack::only`), so the project's other plug-ins do not start. Then
+they run `device.pluginParams`, `device.openEditor` and `device.closeEditor`, as an agent
+would. `--save` asks the plug-in for its state right then (`Rack::state_now`) and fails if it
+does not answer; it never falls back to a state read earlier. `plugin run-device` starts the
+device as an export starts it (`start_offline_device`: the same installed plug-in, saved
+state, process group and clips). It then runs the input and the track's notes through it in
+blocks (`offline::render_started`), without the project's automation.
 
 ## Latency
 
