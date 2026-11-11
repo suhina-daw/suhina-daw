@@ -137,11 +137,12 @@ fn chain_row(
     let entries: Vec<&DeviceBox> = entries.iter().zip(&limited).map(|(d, l)| l.as_ref().unwrap_or(d)).collect();
     // Each panel's width and height first, so the scroll knows how wide the chain is, and whether
     // its height is its own (a theme's height or an embedded editor) rather than the row's.
-    let boxes: Vec<(f32, f32, bool)> = entries
+    // Each also carries its own border and padding above and below.
+    let boxes: Vec<(f32, f32, bool, f32)> = entries
         .iter()
         .map(|device| {
             if let Some(group) = &device.group {
-                return (GROUP_WIDTH, group_height(group), false);
+                return (GROUP_WIDTH, group_height(group), false, 0.0);
             }
             // An editor embedded in the panel is placed for devices on the track itself.
             let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
@@ -181,22 +182,24 @@ fn chain_row(
             // `device { height }` or `#device-<id> { height }` sets the panel's height (60 to 1200
             // points); what does not fit scrolls. An embedded editor keeps its own room.
             match (themed_height, editor) {
-                (Some(themed), None) => (width, themed.clamp(60.0, 1200.0), true),
-                (_, Some(_)) => (width, height, true),
-                (None, None) => (width, height, false),
+                (Some(themed), None) => (width, themed.clamp(60.0, 1200.0), true, top + bottom),
+                (_, Some(_)) => (width, height, true, top + bottom),
+                (None, None) => (width, height, false, top + bottom),
             }
         })
         .collect();
     let row_height = boxes
         .iter()
-        .filter(|(.., own)| !own)
-        .map(|(_, height, _)| *height)
+        .filter(|(_, _, own, _)| !own)
+        .map(|(_, height, ..)| *height)
         .fold(device_row_height() + vertical(crate::kit::element::DEVICE.enter().insets()), f32::max)
         .min(area.height());
-    // What the tallest panel adds over a compact one, as painted (its id and state): the detail
-    // area opens that tall from the next frame.
-    let needs = boxes.iter().filter(|(.., own)| !own).map(|(_, height, _)| *height).fold(0.0, f32::max);
-    ui.data_mut(|d| d.insert_temp(shown_device_extra_id(), (needs - device_row_height()).max(0.0)));
+    // The most border and padding a panel of the row has, as painted (its id and state): the
+    // detail area opens that much taller from the next frame. Only the boxes: a panel whose
+    // content is taller than a compact one (a group with many branches) does not change the
+    // height the user set, as before the boxes had insets.
+    let needs = boxes.iter().filter(|(_, _, own, _)| !own).map(|(.., insets)| *insets).fold(0.0, f32::max);
+    ui.data_mut(|d| d.insert_temp(shown_device_extra_id(), needs));
     let total = boxes.iter().map(|(w, ..)| w + 1.0).sum::<f32>();
     let scroll_id = Id::unique(("chain-scroll", chain.track.0));
     let most = (total - area.width()).max(0.0);
@@ -220,7 +223,7 @@ fn chain_row(
     let mut x = area.left() - offset;
     let mut tallest: f32 = 0.0;
     let mut slots = Vec::new();
-    for (device, (width, height, own)) in entries.iter().zip(boxes) {
+    for (device, (width, height, own, _)) in entries.iter().zip(boxes) {
         let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
         // A panel with its editor embedded takes the area's whole height, and the editor is
         // fitted to it (#689).
@@ -347,9 +350,9 @@ pub fn box_insets() -> BoxInsets {
     BoxInsets { detail, device, editor, piano }
 }
 
-/// Where [`chain_row`] leaves what its tallest panel adds over a compact one (border and padding
-/// as painted: `#device-<id>` and `device[selected]` may pad more than `device`), for the detail
-/// area to open as tall as the panels need.
+/// Where [`chain_row`] leaves the most border and padding above and below one of its panels has
+/// (as painted: `#device-<id>` and `device[selected]` may pad more than `device`), for the detail
+/// area to open as tall as the panels' boxes need.
 fn shown_device_extra_id() -> Id {
     Id::unique("detail-device-extra")
 }

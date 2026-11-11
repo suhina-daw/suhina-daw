@@ -1300,3 +1300,42 @@ fn a_device_panel_padded_more_when_selected_is_still_shown_whole() {
     assert_eq!(panel.height(), needs, "the panel has the selected state's padding: {panel:?}");
     assert!(panel.top() > splitter.top(), "whole under the splitter: {panel:?}, {splitter:?}");
 }
+
+/// The detail area opens taller by the device panels' padding only: a group with many branches,
+/// taller than a compact panel, does not raise it, so the height a user set for a clip's view
+/// stays what it was when they switch back (#1336).
+#[test]
+fn a_tall_group_does_not_raise_the_padded_detail_area() {
+    use suhina_engine::model::{Branch, Device, DeviceGroup, DeviceKind};
+    fn splitter(group: bool) -> egui::Rect {
+        let mut project = project_with_a_device();
+        if group {
+            let branches = (0..16)
+                .map(|i| Branch {
+                    devices: vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))],
+                    ..Branch::new(format!("B{i}"))
+                })
+                .collect();
+            project.channels[0].devices.push(Device::group("G", DeviceGroup::with_branches(branches)));
+        }
+        let css = "device { padding: 4px; }";
+        let (themed, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), css);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let mut app = App::new();
+        app.set_session(Session::new(project), &[]);
+        let ctx = egui::Context::default();
+        app.set_themes(
+            &ctx,
+            vec![suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: themed }],
+            None,
+        );
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, "padded");
+        h.run_steps(2);
+        h.get_by_label("Track Drums").click();
+        h.run_steps(4);
+        h.get_by_label("Detail area splitter").rect()
+    }
+    assert_eq!(splitter(true), splitter(false));
+}

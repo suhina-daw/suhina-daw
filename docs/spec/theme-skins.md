@@ -480,8 +480,10 @@ painted; a view that draws to its edge on purpose (a grid line, a selection band
 code. A size the app works out from what an element holds is its content box's size, and the
 element adds its border and padding around it, as a CSS box with `height: auto` does: the detail
 area's heights (a device row, an embedded editor, the piano roll's least height), each bar's
-height and each dialog's size. A device row is as tall as its tallest panel needs, as painted
-(`device[selected]` or `#device-<id>` may pad more), from the frame after the panel shows. A size the user drags
+height and each dialog's size. The detail area opens taller by the most border and padding a
+shown device panel has, as painted (`device[selected]` or `#device-<id>` may pad more), from the
+frame after the panel shows; a panel whose contents are taller than a compact one's (a group with
+many branches) does not change the area's height. A size the user drags
 (the detail splitter, the browser's width) is the whole box, and so is a `width` or `height` the sheet gives (`border-box`); when a theme
 changes the detail area's border or padding, the area grows or shrinks by that change, so what it
 shows keeps its height. A box whose
