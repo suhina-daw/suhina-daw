@@ -832,7 +832,9 @@ impl App {
                 detail_view::show_row(ui, &shown, &picks, actions, &mut places)
             }
         });
-        // The stacked devices' column, beside the editor.
+        // The stacked devices' column, beside the editor: above the panel, in the view's place, so
+        // the panel's box is closed first and its `overflow` does not cut the column (#1336).
+        panel_style.close_box();
         let side_clicked = match (side, &shown) {
             (Some(side), detail_view::Detail::Clip(_, chain)) => {
                 let devices = detail_view::Detail::Devices(chain.clone());

@@ -446,6 +446,14 @@ impl Entered {
         }
     }
 
+    /// Closes the box painted last before the element leaves scope: what its contents painted so
+    /// far is clipped, if it hides its overflow, and its outline is painted. Paint after this is
+    /// not clipped by it: for an element whose scope holds something outside its box (the detail
+    /// area's devices column, over the view above it).
+    pub fn close_box(&self) {
+        self.finish();
+    }
+
     /// The element's content box in `rect`: `rect` less its border and `padding`, for an element
     /// painted in part (a header scrolled partly out of view) whose contents follow its whole box.
     pub fn content_in(&self, rect: Rect) -> Rect {
