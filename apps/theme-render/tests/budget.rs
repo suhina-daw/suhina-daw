@@ -16,9 +16,8 @@ use suhina_theme_render::{Subject, scenes};
 /// those after a hover are its tooltip's. Every background blends (#1233), so a settled frame has
 /// no paint callbacks: only a menu's or dialog's backdrop clears the pixels under it.
 ///
-/// #1336 raised the counts of nodes and identities (launcher +2 and +4, FM synth +3 and +4): the
-/// bars and the clip editor are now elements of their own, with a border and a content box a theme
-/// styles, where they were paint calls and a bare rectangle.
+/// #1336 (the content box) raised the counts of nodes and identities, by 2 and 4 in the launcher
+/// and by 3 and 4 in the FM synth: its elements now hold what they lay out, inside their border.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
