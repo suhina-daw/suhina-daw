@@ -116,6 +116,21 @@ impl Shorthand {
     }
 }
 
+/// Whether the style engine accepts `value` for the property or shorthand `name` (`padding`,
+/// `border-width`) as a sheet's declaration does: a shorthand when each of its longhands takes
+/// its part. For callers that check one declaration on its own, such as a skin of an earlier
+/// version's styles.
+pub fn accepts(name: &str, value: &str) -> bool {
+    let value = crate::value::viewport_units(value.trim(), 1000.0, 1000.0);
+    match Shorthand::from_name(name) {
+        Some(shorthand) => shorthand
+            .longhands()
+            .iter()
+            .all(|property| shorthand.part(*property, &value).and_then(|part| property.parse(&part)).is_ok()),
+        None => Property::from_name(name).is_some_and(|property| property.parse(&value).is_ok()),
+    }
+}
+
 /// The part of an `outline` shorthand (`2px solid #fff`, in any order) that sets `property`. As in
 /// CSS an omitted width is `medium` (3 points), style `none` and colour the current foreground.
 pub(crate) fn outline_part(property: Property, value: &str) -> Result<String, String> {
@@ -806,6 +821,21 @@ fn declarations(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One declaration checked on its own, as a sheet checks it: a shorthand by its parts (#1336).
+    #[test]
+    fn a_declaration_is_accepted_as_a_sheet_accepts_it() {
+        assert!(accepts("border-width", "1px"));
+        assert!(accepts("border-width", "0 0 2px"));
+        assert!(accepts("border-top-width", "2px"));
+        assert!(accepts("padding", "4px 8px"));
+        assert!(accepts("gap", "6px"));
+        assert!(accepts("color", "#fff"));
+        assert!(!accepts("border-width", "1px 2px 3px 4px 5px"));
+        assert!(!accepts("border-width", "red"));
+        assert!(!accepts("colour", "#fff"));
+        assert!(!accepts("image", "url(a.svg)"));
+    }
 
     #[test]
     fn group_classes_are_declared_with_a_label_and_checked_for_a_rule() {

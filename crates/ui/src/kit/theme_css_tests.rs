@@ -150,6 +150,17 @@ fn css_changes_native_model_and_reports_unsupported_rules() {
     assert!(apply(&mut restored, &export(&theme)).is_empty());
     assert_eq!(restored, theme);
 }
+/// An element's border width, padding and gap are shorthands of the style engine; the editor takes
+/// them as it takes a longhand, and refuses a value none of their sides accepts (#1336).
+#[test]
+fn the_editor_takes_shorthands_of_an_element() {
+    let css = "button { border-width: 1px; } button { border-width: 0 0 2px; } mixer pan { padding: 2px 4px; } \
+               device { gap: 6px; } button { border-top-width: 3px; } button { border-radius: 4px; }";
+    assert!(apply(&mut Theme::default(), css).is_empty(), "{:?}", apply(&mut Theme::default(), css));
+    for bad in ["button { border-width: red; }", "button { border-width: 1px 2px 3px 4px 5px; }"] {
+        assert_eq!(apply(&mut Theme::default(), bad).len(), 1, "{bad}");
+    }
+}
 #[test]
 fn only_relative_css_imports_are_read() {
     assert_eq!(
