@@ -166,6 +166,9 @@ pub struct ViewSettings {
     /// Notes placed over others of their key replace them (on by default); Settings shows it the
     /// other way round, as Allow stacked notes.
     pub notes_replace: bool,
+    /// With stacked notes off, a note covered from its start by notes placed over it goes whole (on
+    /// by default), rather than keeping what runs on past them (Covered notes).
+    pub covered_whole: bool,
     /// Pasting onto a selected arrangement clip replaces that clip at its start.
     pub replace_clip: bool,
     /// How long the crossfade of a part comped from a take is: 10, 20 or 40 milliseconds, or 0
@@ -209,6 +212,10 @@ pub struct ViewSettings {
     /// A long parameter list opened from its device's chevron scrolls down in two columns, instead
     /// of continuing in columns to the right (the default).
     pub device_list_vertical: bool,
+    /// With the devices in a row, a clip's editor (the piano roll) keeps its place when Devices is
+    /// shown: the devices stack in a column beside the view, as with the Stack layout (off by
+    /// default).
+    pub stack_in_piano_roll: bool,
     /// New tracks all get the palette's first colour, instead of the next one in turn (off by
     /// default, #709).
     pub fixed_track_colour: bool,
@@ -279,6 +286,7 @@ impl Default for ViewSettings {
             envelope_all: true,
             menu_name_field: false,
             notes_replace: true,
+            covered_whole: true,
             replace_clip: false,
             take_crossfade: 10,
             take_crossfade_custom: 10,
@@ -297,6 +305,7 @@ impl Default for ViewSettings {
             rename_selected: true,
             play_from_clip: true,
             device_list_vertical: false,
+            stack_in_piano_roll: false,
             fixed_track_colour: false,
             new_clip_track_colour: true,
             recent_chips: false,
@@ -326,7 +335,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\nautomation_group = {}\nautomation_top_lane = {}\n",
+            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ncovered_notes = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\nautomation_group = {}\nautomation_top_lane = {}\n",
             if self.device_list_vertical { "vertical" } else { "horizontal" },
             self.mixer_height,
             self.strip_fader,
@@ -334,6 +343,7 @@ impl ViewSettings {
             if self.double_click_clip { "on" } else { "off" },
             if self.menu_name_field { "on" } else { "off" },
             if self.notes_replace { "on" } else { "off" },
+            if self.covered_whole { "delete" } else { "keep" },
             if self.time_select_ctrl { "ctrl_drag" } else { "clip_lower_half" },
             if self.stretch_alt { "on" } else { "off" },
             if self.rename_selected { "on" } else { "off" },
@@ -367,6 +377,7 @@ impl ViewSettings {
             "liquid_panel_strength = {}\nliquid_track_strength = {}\nliquid_clip_strength = {}\n",
             self.liquid.panels, self.liquid.tracks, self.liquid.clips,
         ) + &format!("replace_clip = {}\n", if self.replace_clip { "on" } else { "off" })
+            + &format!("stack_in_piano_roll = {}\n", if self.stack_in_piano_roll { "on" } else { "off" })
             + &format!(
                 "take_crossfade = {}\ntake_crossfade_custom = {}\n",
                 if self.take_crossfade == 0 { "custom".to_string() } else { self.take_crossfade.to_string() },
@@ -492,11 +503,13 @@ impl ViewSettings {
             ("gain_envelope_editing", "all" | "one") => self.envelope_all = value == "all",
             ("menu_name_field", "on" | "off") => self.menu_name_field = value == "on",
             ("notes_replace", "on" | "off") => self.notes_replace = value == "on",
+            ("covered_notes", "delete" | "keep") => self.covered_whole = value == "delete",
             ("time_select", "ctrl_drag" | "clip_lower_half") => self.time_select_ctrl = value == "ctrl_drag",
             ("stretch_alt_drag", "on" | "off") => self.stretch_alt = value == "on",
             ("rename_selected_clips", "on" | "off") => self.rename_selected = value == "on",
             ("play_from_selected_clip", "on" | "off") => self.play_from_clip = value == "on",
             ("device_list_scroll", "horizontal" | "vertical") => self.device_list_vertical = value == "vertical",
+            ("stack_in_piano_roll", "on" | "off") => self.stack_in_piano_roll = value == "on",
             ("new_track_colour", "fixed" | "alternating") => self.fixed_track_colour = value == "fixed",
             ("new_clip_colour", "track" | "theme") => self.new_clip_track_colour = value == "track",
             ("browser_recent", "chips" | "indented") => self.recent_chips = value == "chips",
@@ -560,6 +573,7 @@ mod tests {
             envelope_all: false,
             menu_name_field: true,
             notes_replace: false,
+            covered_whole: false,
             time_select_ctrl: true,
             clip_halves: true,
             grid_in_clips: false,
@@ -568,6 +582,7 @@ mod tests {
             rename_selected: false,
             play_from_clip: false,
             device_list_vertical: false,
+            stack_in_piano_roll: false,
             fixed_track_colour: true,
             new_clip_track_colour: false,
             recent_chips: true,

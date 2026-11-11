@@ -277,9 +277,13 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `"1/8T"`, `"1 bar"`, as `launcher.setQuantization` takes it) by `amount` percent (default 100,
   onto the line); with `ends: true` the ends move too. One undo step; a bad grid, an amount
   outside 0 to 100 or a note that does not exist fails and changes nothing.
-- **MIDI tools.** The piano roll's MIDI tools column runs the same commands an agent can:
-  `note.humanize {notes?, time?, velocity?, seed?}` moves each start and velocity a small random
-  amount, `note.fitToScale {notes?, root?, scale?}` moves each note to the nearest key of a scale
+- **Swing.** `transport.setSwing {amount}` sets the project's swing in percent (0 straight, 100 the second sixteenth of each eighth half a sixteenth late, about 67 the triplet), which every MIDI clip without its own plays with; `clip.setSwing {amount?, global?}` gives a MIDI clip its own swing (`amount`) or makes it follow the project's again (`global: true`, keeping its own for later). The notes never move; the swing is applied as the clip plays ([swing spec](spec/swing.md)).
+- **MIDI tools.** The note tools of a MIDI clip's panel (its Notes and Transform tabs) run the
+  same commands an agent can: `note.humanize {notes?, ms?, time?, velocity?, seed?}` moves
+  each start and velocity a little, like a person playing: a normally distributed draw within
+  `ms` milliseconds at the project's tempo (0 to 50, 10 when left out) or `time` beats (0 to 1;
+  not both), and within `velocity` steps; each note has a draw of its own and keeps its length
+  unless it would run into the next note on its key, `note.fitToScale {notes?, root?, scale?}` moves each note to the nearest key of a scale
   (a key name such as `"C"` or `"F#"`, and `major`, `minor`, `dorian`, `blues` and the rest),
   `note.invert {notes?}` mirrors the pitches, `note.reverse {notes?}` turns them round in time,
   `note.legato {notes?}` makes each note last until the next one starts, on any key, `note.stretch {notes?,
@@ -303,14 +307,17 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   changes nothing); `note.cut` copies and deletes them. `note.paste {track, index | scene, time?}`
   adds the copied notes to any MIDI clip with their spacing kept, the first at `time` (by default
   right after the copied notes), and returns their indices; `note.duplicate {..., notes, beats?,
-  semitones?}` adds a copy right after the notes' end, or `beats` and `semitones` from them (the
-  piano roll's Ctrl+drag). The note clipboard is apart from the clip clipboard.
-- **Splitting notes.** `note.split {track, index | scene, notes, at}` splits each named note that
-  spans the beat `at` into two at `at` (the first keeps the start, the second the end); a note
-  that starts or ends exactly at `at` is left alone, so a second split at the same beat changes
-  nothing. One undo step; it returns the indices and `ids` of the notes it made (each first half
-  keeps its note's id), and `at` is a beat from 0
-  to 120 000.
+  semitones? | keys?}` adds a copy right after the notes' end, or `beats` and `semitones` from them
+  (the piano roll's Ctrl+drag; `keys` gives each copy its own key, one per entry of `notes`). The note clipboard is apart from the clip clipboard.
+- **Making room.** `note.makeRoom {track, index | scene, notes, covered?}` makes room under the named notes as `replace` does (the piano roll sends it when notes edited while selected are let go); a note no longer in the clip is left out. `covered` (with `replace` on the other note commands too) says what happens to a note covered from its start that runs on past: `"cut"` (the default) keeps what runs on, `"delete"` removes it whole.
+- **Splitting notes.** `note.split {track, index | scene, notes, at | times, keepLonger?}` splits
+  each named note that spans the beat `at` into two at `at` (the first keeps the start, the second
+  the end); `times` instead gives each note a beat of its own, one per entry of `notes` (the piano
+  roll's slanted cut). A note that starts or ends exactly at its beat is left alone, so a second
+  split at the same beat changes nothing. One undo step; it returns the indices and `ids` of the
+  notes it made (each first half keeps its note's id), and every beat is from 0 to 120 000. With
+  `keepLonger: true` each note split keeps only its longer piece (the first when they are as
+  long) in its place, so nothing is added, and `trimmed` lists the notes cut down.
 - **Follow actions.** `clip.setFollowAction {track, scene, enabled?, time?, linked?, actionA?,
   actionB?, chanceA?, chanceB?}` sets what a slot clip does after its follow time (one undo
   step); `project.launcher` lists each slot clip's `follow_action`. A `project_render` script
@@ -331,8 +338,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `preview.setGain {gain}` changes the level of the one playing (in dB, gliding there without a
   click); `preview.stop` stops it; `launcher.state` reports `preview`. With no project open they still
   work, through an output of their own that closes before a project opens one (ADR 0011).
-  `preview.noteOn {track, key | keys, velocity?}` plays one key (or the keys of `keys` together,
-  as the piano roll's audition does) through the track's instrument and holds it, as the piano
+  `preview.noteOn {track, key | keys, velocity?, length?, add?}` plays one key (or the keys of `keys`
+  together, as the piano roll's audition does) through the track's instrument and holds it (for
+  `length` beats when given, 1/64 to 64; with `add: true` alongside the keys already sounding
+  there, which go on, as the selecting rectangle does), as the piano
   roll's key column does, until `preview.noteOff {track, key?}` lets that
   key go, or every held preview note when `key` is left out. Both are transport commands: the
   project, its undo history and the transport are untouched.

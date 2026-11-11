@@ -991,7 +991,7 @@ These native parts take the sheet (the theme package README lists every selector
   `--clip-colour`, `[selected]` and `[muted]` (background, border, radius, `color` for its name),
   `velocity` (`color` of the stems), `ruler`; the tool buttons `piano-tool` with
   `#piano-<tool>` ids, `[checked]` and artwork `piano.<tool>`; `midi-tools`, `clip-info`,
-  `editor-tab` (`#tab-clip`, `#tab-devices`, `[checked]`).
+  `editor-tab` (`#tab-clip`, `#tab-devices`, and the MIDI tools part's `#tab-notes` and `#tab-transform`; `[checked]`).
 - **Device panels:** `device` with `#device-<id>` (a built-in device's registry id; `plugin`,
   `sd`, `unsupported` otherwise), `[selected]` and `[muted]` (off), and `device-header`.
 - **Generic widgets:** inside any scope that maps the sheet onto egui (Settings, dialogs, the
@@ -1106,7 +1106,7 @@ of bars, and a slider id per parameter.
   border), `browser-preview-wave` (`color` played, `border-color` ahead), the search field
   `#browser-search`.
 - **Dialogs:** `settings-nav` (`[checked]` for the page shown), `progress`, `progress-fill`.
-- **MIDI tools:** `gap` (0–16) and `button { height }` inside `midi-tools`.
+- **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
 - **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
   `theme.css`.
 - **Host rules in layers:** placement and artwork rules inside `@layer` blocks are

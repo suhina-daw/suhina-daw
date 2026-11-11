@@ -79,7 +79,7 @@ what is inside it).
 | Plug-ins | Folders | Folders (each on or off, with its format; add with a format, or by the system's picker with nothing typed, remove) |
 | Plug-ins | Editors | Plug-in editors open in (Window, Device view; where the embed is not possible — macOS, or no display — a note says so, and on macOS the editors still open in a window of their own) |
 | Devices | NAM | Amp models folder, Cabinet sounds folder ([nam spec](nam-amp-and-cab.md) › Folders) |
-| Devices | Device panels | Device chain layout, Long parameter lists, Detail area width |
+| Devices | Device panels | Device chain layout, Devices beside piano roll, Long parameter lists, Detail area width |
 | Importing | Dropping files | Tracks for dropped files, Warp mode for samples |
 | Arrangement | Clip editing | Let audio clips overlap, Let MIDI clips overlap, Double-click makes a clip, Clip menu name field, Clip drag handle, Paste replaces clip |
 | Arrangement | Take lanes | Take crossfade (10 ms, 20 ms, 40 ms, Custom; 10 ms by default), Custom take crossfade (shown with Custom, 1 to 500 ms; [recording](recording.md#take-lanes)) |
@@ -93,7 +93,8 @@ what is inside it).
 | Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights, Copy names |
 | Launcher and mixer | Launching | Select launched clip |
 | Launcher and mixer | Mixer | Mixer control style |
-| Clip editor | Piano roll | Full-height piano roll covers, Piano roll toolbar size, Allow stacked notes, Piano key style, Piano key names |
+| Clip editor | Piano roll | Full-height piano roll covers, Piano roll toolbar size, Allow stacked notes, Piano key style, Piano key names, Note names, Default scale |
+| Clip editor | Advanced | Covered notes |
 | Browser | Browser | Browser side, Recent item kinds layout, Dropping on a folder |
 | Browser | Previews | Preview selected file, Preview volume |
 | Browser | Sample map | Sample map layout, Preview on map hover, Map sample length limit, Map labels |

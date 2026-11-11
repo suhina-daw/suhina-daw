@@ -7,6 +7,7 @@ last_verified: 2026-11-07
 covers:
   - crates/ui/src/detail/detail_view/clip_properties.rs
   - crates/ui/src/detail/detail_view/clip_panel.rs
+  - crates/ui/src/detail/detail_view/midi_panel.rs
   - crates/ui/src/detail/detail_view/model.rs
   - crates/ui/src/arrangement/envelope.rs
   - crates/session/src/clip_audio.rs
@@ -22,7 +23,8 @@ is laid out in groups, each control the kind that fits its value
 clip alone: two clips that play the same file have their own gain, envelope, pitch and warp
 ([#742](https://github.com/suhina-daw/suhina-daw/issues/742),
 [ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: per-clip audio). A MIDI clip's
-column is as the clip editor spec describes it.
+panel shares its title row and its Clip part, with the note tools beside them
+([clip editor spec](ui-clip-editor.md) › Clip column, › Note tools; #1222).
 
 ## Layout
 
@@ -41,7 +43,7 @@ beside it, and controls are 6 points apart, so no two touch.
 | **Clip** (156 points) | **Start** and **End** side by side, each with **Set** at the right of its name | `clip.setStart`, `clip.setLength` |
 | | **Loop**: a switch the width of the part, lit while on | `clip.setLoop` |
 | | **Position** and **Length** of the loop side by side, each with **Set**; faint while the loop is off, a change turns it on | `clip.setLoop` (`start`, `end`) |
-| | **Scale**: the root (C, C#/Db … B) and the mode (None, then Major, Minor … Blues), each a list | `clip.setScale` |
+| | **Scale**: a switch (a little keyboard, lit while the clip has a scale), the root (C, C# … B, or C, Db … B with the setting *Note names* at flats) and the mode (Major, Minor … Blues), each a list. Off, the root and the mode show the scale the switch turns on: the clip's own from before it was switched off, or Settings' *Default scale*; a pick turns the scale on with it | `clip.setScale` |
 | **Audio** (112 points) | **Warp**: a switch the width of the part | `clip.setAudio` (`warp`) |
 | | **Mode**: a list of Re-pitch, Rhythmic, Tonal, Texture, Smooth, High quality | `clip.setAudio` (`mode`) |
 | | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
@@ -52,6 +54,13 @@ beside it, and controls are 6 points apart, so no two touch.
 **Lists** (Mode, the scale's root and mode) open right under their field, as wide as it (the scale's
 mode as wide as both scale fields), the value they hold lit; a click on an entry sets it and closes
 the list, a click elsewhere closes it.
+
+**Theme.** To a theme the panel's buttons and switches are `button` (`:hover`, `:active`,
+`[checked]` for a switch that is on), its lists `dropdown` and its number fields `value`: a rule
+sets their background, border, radius and `color`, else they keep the panel's own look. A switch
+that is on stays lit unless `button[checked]` has a background or colour of its own (a theme that
+styles every button alike does not hide which switches are on), and a button that cannot be
+pressed keeps the panel's look.
 
 **Scale.** An audio clip's scale says the key of its audio, as a MIDI clip's says the key its notes
 are written in; it changes nothing that plays. It is the content's, as a MIDI clip's is, and a content

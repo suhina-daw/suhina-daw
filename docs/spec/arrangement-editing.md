@@ -229,6 +229,11 @@ double it), scroll over it a step at a time (×1.25), double-click it for ×1; C
 Ctrl+Alt+Down step it too. It is kept as a setting (Settings › Arrangement › *Waveform zoom*,
 `waveform_zoom`, the factor).
 
+**Swing.** On the same lower line of the corner, opposite the waveform zoom, a **Swing** slider
+sets the project's swing, 0 to 100 %, which every MIDI clip without a swing of its own plays with
+([swing spec](swing.md); `transport.setSwing`). It is left out when the corner is too narrow for it
+beside the zoom.
+
 The **Hide returns** button in the header column's top corner, by the ruler, takes the return
 tracks' rows out of the view and **Show returns** brings them back; it is kept as a setting
 (Settings › Arrangement › Return tracks, `arrangement_returns`). Main's row stays. Whether a new
@@ -736,7 +741,9 @@ turning it on again repeats the same span. It is separate from a clip's own loop
 **Playing.** While looping is on and the playhead reaches the loop end, playback goes on from the
 loop start on the very next frame: the frame after the loop end's last one is the loop start's
 first, whatever the audio block size. The wrap is a jump while playing ([Play
-position](#play-position)): notes that sound are released, notes that start at the loop start or
+position](#play-position)): notes that sound are released, each key on its own, and the sustain
+pedal is lifted, with no all-notes-off (an instrument plug-in takes that as controller changes,
+which many apply to the whole block, so it would silence the notes that start in it), notes that start at the loop start or
 later play again, and audio clips play on from where they are at the loop start, sample for
 sample. The play start marker does not move, so Stop goes back to it as usual. A playhead that is
 already at or past the loop end (the play start marker set there, or a jump there) plays on
@@ -771,6 +778,9 @@ end; dragging its middle moves the whole region, keeping its length. A click on 
 **Ctrl+L** (`transport.setLoopEnabled`, in the keymap) and a right-click on the row (**Turn loop
 on** or **Turn loop off**) turn looping on or off. With a time selection or clips selected, Ctrl+L
 loops their span; pressed again while the loop is on over that very span, it turns looping off.
+While the piano roll has the keyboard (after a click in it) Ctrl+L leaves this loop alone, as the
+Arrangement's other keys do, and is the clip's own loop instead ([clip editor spec](ui-clip-editor.md)
+› Shortcuts).
 
 A time-stretched audio clip plays the loop start at once after each wrap, in real time as offline.
 Its stretched audio is rendered ahead (ADR 0003), so it is ready at the loop start before the wrap

@@ -628,6 +628,33 @@ impl Cx<'_> {
         }
     }
 
+    /// The default scale: its root and its mode, two drop-downs side by side.
+    pub fn default_scale(&mut self, row: Rect) {
+        let left = control_x(row).min(row.right() - DROPDOWN_FIELD - 60.0);
+        let field = |from: f32, to: f32| {
+            Rect::from_min_max(Pos2::new(from, row.top() + 1.0), Pos2::new(to, row.top() + SEGMENT + 3.0))
+        };
+        let split = (left + 56.0).min(row.right());
+        let roots: Vec<(String, u8)> =
+            (0..12u8).map(|i| (crate::detail::piano_roll::pitch_class_name(i).to_string(), i)).collect();
+        let root = self.settings.default_scale_root;
+        if let Some(picked) =
+            choice_field(self.ui, self.painter, field(left, split - 4.0), "Default scale root", &roots, &root)
+        {
+            self.settings.default_scale_root = picked;
+            self.outcome.changed = true;
+        }
+        let modes: Vec<(String, suhina_engine::model::ScaleMode)> =
+            suhina_engine::model::ScaleMode::ALL.iter().map(|m| (m.label().to_string(), *m)).collect();
+        let mode = self.settings.default_scale_mode;
+        if let Some(picked) =
+            choice_field(self.ui, self.painter, field(split, row.right()), "Default scale mode", &modes, &mode)
+        {
+            self.settings.default_scale_mode = picked;
+            self.outcome.changed = true;
+        }
+    }
+
     /// A percentage applied live to its colour surface.
     pub fn colour_strength(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut u8) {
         let value = field(self.settings);
@@ -2883,6 +2910,19 @@ fn choice_dropdown<T: Clone + PartialEq>(
 ) -> Option<T> {
     let left = control_x(row).min(row.right() - DROPDOWN_FIELD);
     let field = Rect::from_min_size(Pos2::new(left, row.top() + 1.0), Vec2::new(row.right() - left, SEGMENT + 2.0));
+    choice_field(ui, painter, field, name, options, current)
+}
+
+/// A drop-down in `field`, named `name`: the value of `options` that is `current`, the list under
+/// it. Returns the value picked.
+fn choice_field<T: Clone + PartialEq>(
+    ui: &Ui,
+    painter: &egui::Painter,
+    field: Rect,
+    name: &str,
+    options: &[(String, T)],
+    current: &T,
+) -> Option<T> {
     let shown = options.iter().find(|(_, v)| v == current).map_or("-", |(text, _)| text.as_str());
     let response = widgets::button_area(ui, field, Id::unique(("audio-setting", name)), format!("{name}: {shown}"));
     widgets::form_dropdown(ui, painter, field, &response, shown);

@@ -27,11 +27,19 @@ pub enum IconButton {
     Audition,
     /// The × at the right end: hides the editor.
     Hide,
+    /// Fold: only the rows that have notes (or the scale's, while the clip has one).
+    Fold,
+    /// The clip's scale switch, the same as the clip panel's.
+    Scale,
+    /// Highlight scale: the scale's rows tinted and its keys marked.
+    Highlight,
+    /// Three dots above the keys: the piano roll's options (workflow, keys, stacked notes).
+    More,
 }
 
 impl IconButton {
     /// What the button is called, for its tooltip and its accessible label.
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Select => "Select",
             Self::Draw => "Draw",
@@ -47,6 +55,10 @@ impl IconButton {
             Self::MidiTools => "MIDI tools",
             Self::Audition => "Audition",
             Self::Hide => "Hide editor",
+            Self::Fold => "Fold",
+            Self::Scale => "Scale",
+            Self::Highlight => "Highlight scale",
+            Self::More => "Piano roll settings",
         }
     }
 
@@ -67,11 +79,15 @@ impl IconButton {
             Self::MidiTools => "piano-midi-tools",
             Self::Audition => "piano-audition",
             Self::Hide => "piano-hide",
+            Self::Fold => "piano-fold",
+            Self::Scale => "piano-scale",
+            Self::Highlight => "piano-highlight",
+            Self::More => "piano-more",
         }
     }
 
     /// The action id whose key the tooltip shows ("Draw (2)"), when the button has one.
-    pub(crate) fn action(self) -> Option<&'static str> {
+    pub fn action(self) -> Option<&'static str> {
         Some(match self {
             Self::Select => "pianoRoll.tool1",
             Self::Draw => "pianoRoll.tool2",
@@ -84,15 +100,48 @@ impl IconButton {
             Self::Paste => "selection.paste",
             Self::Duplicate => "selection.duplicate",
             Self::Hide => "view.editor",
-            Self::Quantise | Self::MidiTools | Self::Audition => return None,
+            Self::Quantise
+            | Self::MidiTools
+            | Self::Audition
+            | Self::Fold
+            | Self::Scale
+            | Self::Highlight
+            | Self::More => return None,
         })
     }
 
-    /// Our own strokes for the shape, in a 14 px box around `rect`'s centre, scaled with the
-    /// toolbar (Toolbar size): `scale` multiplies the shape and its strokes together.
+    /// The button's icon, drawn from Suhina's own artwork (`assets/icons/piano-roll/`) in
+    /// `currentColor`; `None` for the ones still drawn in code.
+    pub(crate) fn svg(self) -> Option<&'static str> {
+        Some(match self {
+            Self::Select => include_str!("../../../../assets/icons/piano-roll/select.svg"),
+            Self::Draw => include_str!("../../../../assets/icons/piano-roll/draw.svg"),
+            Self::Paint => include_str!("../../../../assets/icons/piano-roll/paint.svg"),
+            Self::Erase => include_str!("../../../../assets/icons/piano-roll/erase.svg"),
+            Self::Slice => include_str!("../../../../assets/icons/piano-roll/slice.svg"),
+            Self::Mute => include_str!("../../../../assets/icons/piano-roll/mute.svg"),
+            Self::Cut => include_str!("../../../../assets/icons/piano-roll/cut.svg"),
+            Self::Copy => include_str!("../../../../assets/icons/piano-roll/copy.svg"),
+            Self::Paste => include_str!("../../../../assets/icons/piano-roll/paste.svg"),
+            Self::Duplicate => include_str!("../../../../assets/icons/piano-roll/duplicate.svg"),
+            Self::Quantise => include_str!("../../../../assets/icons/piano-roll/quantise.svg"),
+            Self::MidiTools => include_str!("../../../../assets/icons/piano-roll/midi-tools.svg"),
+            Self::Audition => include_str!("../../../../assets/icons/piano-roll/audition.svg"),
+            Self::Hide | Self::Fold | Self::Scale | Self::Highlight | Self::More => return None,
+        })
+    }
+
+    /// The shape in a 14 px box around `rect`'s centre, scaled with the toolbar (Toolbar size):
+    /// the button's artwork in `color`, or, for the × and where the artwork does not raster, our
+    /// own strokes, `scale` multiplying the shape and its strokes together.
     pub fn draw(self, painter: &egui::Painter, rect: Rect, color: Color32, scale: f32) {
         let scale = if scale.is_finite() { scale.clamp(0.5, 2.5) } else { 1.0 };
         let c = rect.center();
+        if let Some(svg) = self.svg()
+            && crate::kit::skin::paint_icon(painter, Rect::from_center_size(c, Vec2::splat(14.0 * scale)), svg, color)
+        {
+            return;
+        }
         let stroke = Stroke::new(1.1 * scale, color);
         let at = |x: f32, y: f32| c + Vec2::new(x * scale, y * scale);
         let size = |w: f32, h: f32| Vec2::new(w * scale, h * scale);
@@ -222,6 +271,47 @@ impl IconButton {
                 painter.add(egui::Shape::line(band, stroke));
                 painter.rect_filled(Rect::from_center_size(at(-5.0, 3.5), size(3.0, 5.0)), 0.0, color);
                 painter.rect_filled(Rect::from_center_size(at(5.0, 3.5), size(3.0, 5.0)), 0.0, color);
+            }
+            // Two rows with arrows pointing in between them: fewer rows.
+            Self::Fold => {
+                line((-6.0, -6.0), (6.0, -6.0));
+                line((-6.0, 6.0), (6.0, 6.0));
+                line((-3.0, -3.5), (0.0, -1.0));
+                line((0.0, -1.0), (3.0, -3.5));
+                line((-3.0, 3.5), (0.0, 1.0));
+                line((0.0, 1.0), (3.0, 3.5));
+            }
+            // A little keyboard: three white keys and two black ones.
+            Self::Scale => {
+                painter.rect_stroke(
+                    Rect::from_center_size(at(0.0, 0.0), size(12.0, 10.0)),
+                    1.0,
+                    stroke,
+                    StrokeKind::Inside,
+                );
+                for x in [-2.0, 2.0] {
+                    line((x, -5.0), (x, 5.0));
+                    painter.rect_filled(Rect::from_center_size(at(x, -1.5), size(2.5, 5.0)), 0.0, color);
+                }
+            }
+            // A highlighter pen, tilted, over the band it leaves: the scale's rows tinted.
+            Self::Highlight => {
+                painter.rect_filled(Rect::from_min_max(at(-6.5, 3.5), at(6.5, 6.5)), 1.0, color.gamma_multiply(0.5));
+                line((-3.0, 1.5), (3.0, -4.5));
+                line((3.0, -4.5), (5.5, -2.0));
+                line((5.5, -2.0), (-0.5, 4.0));
+                line((-0.5, 4.0), (-3.0, 1.5));
+                painter.add(egui::Shape::convex_polygon(
+                    vec![at(-3.0, 1.5), at(-0.5, 4.0), at(-3.5, 4.5)],
+                    color,
+                    Stroke::NONE,
+                ));
+            }
+            // Three dots: more.
+            Self::More => {
+                for x in [-4.5, 0.0, 4.5] {
+                    painter.circle_filled(at(x, 0.0), 1.3 * scale, color);
+                }
             }
             // Three horizontal sliders: the MIDI tools column's toggle.
             Self::MidiTools => {

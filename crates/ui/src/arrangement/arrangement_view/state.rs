@@ -256,6 +256,9 @@ pub struct ArrangementViewState {
     pub(super) marquee_scroll: Vec2,
     /// The span the last selection rectangle covered: its tracks and its beats.
     pub(super) time_selection: Option<TimeSelection>,
+    /// The stretch selected in time in the piano roll, for the clip it shows: that clip and the
+    /// stretch in its content's beats. The clip lights it as the piano roll does.
+    pub editor_span: Option<(ClipId, f64, f64)>,
     /// The time selection, the picked clips and the range painted on automation lanes as the
     /// last frame left them: whichever was made since gives the others up (#1322).
     seen_selections:
@@ -447,6 +450,7 @@ impl Default for ArrangementViewState {
             marquee_row: None,
             marquee_scroll: Vec2::ZERO,
             time_selection: None,
+            editor_span: None,
             seen_selections: (None, Vec::new(), None),
             ruler_select: None,
             painted_from: None,
@@ -1149,6 +1153,8 @@ pub(crate) struct ClipLook {
     pub(crate) waveform_zoom: f32,
     pub(crate) waveform_appearance: crate::settings::view_settings::WaveformAppearance,
     pub(crate) audio_colour_strength: u8,
+    /// The piano roll's time selection and the clip it is on ([`ArrangementViewState::editor_span`]).
+    pub(crate) editor_span: Option<(ClipId, f64, f64)>,
 }
 
 impl ArrangementViewState {
@@ -1159,6 +1165,7 @@ impl ArrangementViewState {
             waveform_zoom: self.waveform_zoom,
             waveform_appearance: self.waveform_appearance,
             audio_colour_strength: self.audio_colour_strength,
+            editor_span: self.editor_span,
         }
     }
 }

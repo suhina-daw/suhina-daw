@@ -16,6 +16,7 @@ Apache-2.0, OFL, CC0, CC BY) and keep their license file next to them.
 | `crates/ui/themes/nord/theme.css` | Nord colour palette, mapped onto Suhina's tokens | Sven Greb | [nordtheme/nord](https://github.com/nordtheme/nord) | MIT (`crates/ui/themes/licenses/nord.txt`) |
 | `crates/ui/themes/catppuccin-mocha/theme.css`, `catppuccin-latte/theme.css` | Catppuccin Mocha and Latte colour palettes, mapped onto Suhina's tokens | Catppuccin | [catppuccin/palette](https://github.com/catppuccin/palette) | MIT (`crates/ui/themes/licenses/catppuccin.txt`) |
 | `suhina-light/theme.css`, `high-contrast/theme.css` | Suhina's own themes | Suhina contributors | Original work | GPL-3.0-or-later |
+| `assets/icons/piano-roll/*.svg` | The piano roll toolbar's icons (also the Arrangement's tools) | Juha Mikael (Suhina contributors) | Original work | GPL-3.0-or-later |
 | egui's default fonts (`epaint_default_fonts` crate, compiled in as fallbacks) | Ubuntu Light, Hack, Noto Emoji, emoji-icon-font | Canonical / Dalton Maag; Source Foundry; Google; John Slegers | [crates.io: epaint_default_fonts](https://crates.io/crates/epaint_default_fonts) | Ubuntu Font Licence 1.0, MIT, OFL-1.1 and Apache-2.0 (per font, in the crate) |
 
 ## Documentation

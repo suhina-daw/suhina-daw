@@ -1000,6 +1000,40 @@ pub fn paint_svg(painter: &Painter, rect: Rect, source: &str, radius: f32) -> bo
     true
 }
 
+/// Draws an icon's SVG (its shapes in `currentColor`) into `rect`, kept in proportion, in `ink`:
+/// rastered once per size in white and tinted, so every colour shares the one picture. Returns
+/// whether it drew.
+pub fn paint_icon(painter: &Painter, rect: Rect, source: &str, ink: Color32) -> bool {
+    if !rect.is_positive() || !rect.is_finite() {
+        return false;
+    }
+    let scale = painter.ctx().pixels_per_point();
+    let w = (rect.width() * scale).ceil().clamp(1.0, 1024.0) as u32;
+    let h = (rect.height() * scale).ceil().clamp(1.0, 1024.0) as u32;
+    let mut hash = std::hash::DefaultHasher::new();
+    (source, w, h).hash(&mut hash);
+    let key = hash.finish();
+    let cache_id = egui::Id::unique("svg-icons");
+    let cache = painter
+        .ctx()
+        .data_mut(|data| data.get_temp_mut_or_default::<Arc<std::sync::Mutex<Textures>>>(cache_id).clone());
+    let Ok(mut textures) = cache.lock() else { return false };
+    if !textures.images.contains_key(&key) {
+        if textures.images.len() >= 128 {
+            textures.images.clear();
+        }
+        let texture = raster_artwork(source, Color32::WHITE, w, h, true)
+            .map(|image| painter.ctx().load_texture(format!("icon-{key}"), image, egui::TextureOptions::LINEAR));
+        textures.images.insert(key, texture);
+    }
+    let Some(Some(texture)) = textures.images.get(&key) else { return false };
+    painter.add(
+        egui::epaint::RectShape::filled(rect, 0.0, ink)
+            .with_texture(texture.id(), Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0))),
+    );
+    true
+}
+
 /// An element's `box-shadow` (a glow is one without an offset), cast by a surface's artwork about
 /// to be drawn as `mesh`, under it and in its shape, in place of the rectangle's.
 fn cast_shadows(painter: &Painter, mesh: &egui::Mesh, style: Option<&super::native_css::Computed>) {

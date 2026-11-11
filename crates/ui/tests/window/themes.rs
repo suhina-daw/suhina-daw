@@ -1037,22 +1037,18 @@ fn open_with_clip(css: &str, stacked: bool) -> Harness<'static, App> {
 }
 
 /// A layout with only gaps holds the detail area's splitter to the sizes the native layout
-/// keeps: stacked, a drag towards the edge leaves the area, and its splitter, in the window;
-/// under the view, a drag up leaves the view its least height (#1252).
+/// keeps: stacked, the area is open a panel wide or closed, as a track's devices in a row are, so a
+/// short drag leaves it where it was and a drag towards the edge closes it; under the view, a drag
+/// up leaves the view its least height (#1252).
 #[test]
 fn a_layout_with_only_gaps_keeps_the_dragged_detail_area_in_bounds() {
-    let right = SIZE.0;
     let mut h = open_with_clip("#workspace { gap: 8px; }", true);
-    let narrowed = drag(&mut h, "Detail area splitter", Vec2::new(2000.0, 0.0));
-    let back = drag(&mut h, "Detail area splitter", Vec2::new(-100.0, 0.0));
+    let before = h.get_by_label("Detail area splitter").rect().center().x;
+    let nudged = drag(&mut h, "Detail area splitter", Vec2::new(40.0, 0.0)).map(|s| s.center().x);
+    assert!(nudged.is_some_and(|x| (x - before).abs() < 1.0), "one width: {before} to {nudged:?}");
+    let closed = drag(&mut h, "Detail area splitter", Vec2::new(2000.0, 0.0));
     suhina_ui::kit::native_css::set_user_sheet(None);
-    let narrowed = narrowed.map(|s| s.center().x);
-    assert!(
-        narrowed.is_some_and(|x| x <= right - 180.0),
-        "the area keeps its least width, and its splitter: {narrowed:?}"
-    );
-    let back = back.map(|s| s.center().x);
-    assert!(back.zip(narrowed).is_some_and(|(b, n)| b < n - 50.0), "and it drags back: {narrowed:?} to {back:?}");
+    assert!(closed.is_none(), "a drag towards the edge closes the area: {closed:?}");
 
     let mut h = open_with_clip("#workspace { gap: 8px; }", false);
     let raised = drag(&mut h, "Detail area splitter", Vec2::new(0.0, -2000.0));

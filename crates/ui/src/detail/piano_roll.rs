@@ -12,17 +12,17 @@ use serde_json::{Value, json};
 use suhina_engine::model::{Clip, ClipId, LaneData, Note, NoteId, Notes, Project, Scale, TrackId};
 
 use crate::detail::detail_view::ClipRef;
-use crate::detail::midi_tools::ToolSettings;
+use crate::detail::midi_tools::{ToolSettings, ToolsTab, Transform};
 use crate::detail::piano_roll_ghosts::{self as ghost_view, GhostSource, Ghosts};
 use crate::detail::piano_roll_grid::PianoGrid;
 use crate::detail::piano_roll_ruler::{self as ruler_view, ClipShape, RulerState};
 use crate::detail::piano_roll_scale::{self as scale_view, Fold, KeyRows};
 use crate::interaction::grid::track_colour;
 use crate::interaction::grid_menu::{grid_entries, grid_key_labels};
-use crate::interaction::key_name::key_name;
+pub use crate::interaction::key_name::{key_name, pitch_class_name, set_note_spelling};
 use crate::interaction::scroll::most_scroll_x;
 use crate::interaction::timeline_grid::TimelineGrid;
-use crate::interaction::toolbar::{IconButton, menu_arrow};
+use crate::interaction::toolbar::IconButton;
 use crate::kit::theme;
 use crate::kit::time_axis::{PIANO_ROLL_BEAT_WIDTHS, clamp_beat_width};
 use crate::kit::widgets::{self, Action};
@@ -64,7 +64,7 @@ pub use gestures::start_by;
 const TOOLBAR: f32 = 22.0;
 const SCALE_STRIP: f32 = 26.0;
 const KEYS: f32 = 60.0;
-const TOOLBAR_INSET: f32 = 32.0;
+const TOOLBAR_INSET: f32 = 4.0;
 const RULER: f32 = 36.0;
 const VELOCITY_LANE: f32 = 72.0;
 /// The velocity lane is left out under this height, and leaves at least this many key rows.
@@ -79,6 +79,8 @@ pub const CLIP_STRIP: f32 = 16.0;
 /// The toolbar's icon size and the space between its buttons, in points.
 const TOOL_ICON: f32 = 14.0;
 const TOOL_GAP: f32 = 3.0;
+/// The size of a tool's icon drawn in place of the pointer over the grid, about a system cursor's.
+const TOOL_POINTER: f32 = 18.0;
 /// Key row heights and points per beat: the default and the zoom ranges.
 const DEFAULT_KEY_HEIGHT: f32 = 12.0;
 const KEY_HEIGHT_RANGE: (f32, f32) = (6.0, 160.0);
@@ -104,6 +106,61 @@ const EPSILON: f64 = 1e-9;
 /// (› Double-click in `docs/spec/ui-clip-editor.md`).
 const DOUBLE_CLICK_TIME: f64 = 0.3;
 const DOUBLE_CLICK_DISTANCE: f32 = 6.0;
+
+thread_local! {
+    /// The scale a clip's Scale switch turns on when the clip has none of its own (the setting).
+    static DEFAULT_SCALE: std::cell::Cell<(u8, suhina_engine::model::ScaleMode)> =
+        const { std::cell::Cell::new((0, suhina_engine::model::ScaleMode::Major)) };
+}
+
+/// The Settings' *Default scale*, given each frame: its root (0 is C) and its mode.
+pub fn set_default_scale(root: u8, mode: suhina_engine::model::ScaleMode) {
+    DEFAULT_SCALE.with(|s| s.set((root % 12, mode)));
+}
+
+/// The scale a clip's Scale switch turns on when the clip has none of its own.
+pub fn default_scale() -> (u8, suhina_engine::model::ScaleMode) {
+    DEFAULT_SCALE.with(std::cell::Cell::get)
+}
+
+/// A clip's address as the piano roll names it (`{"track", "clip"}` or `{"track", "scene"}`):
+/// the key the Scale switch keeps a clip's scale under.
+pub(crate) fn clip_address(at: ClipRef) -> Value {
+    match at {
+        ClipRef::Arrangement(track, clip) => json!({ "track": track.0, "clip": clip.0 }),
+        ClipRef::Slot(track, scene) => json!({ "track": track.0, "scene": scene }),
+    }
+}
+
+/// Where the Scale switch keeps the scale a clip had when it was switched off, by its address, for
+/// as long as Suhina is open.
+fn kept_scale_id(address: &Value) -> Id {
+    Id::unique(("scale-switch-kept", address.to_string()))
+}
+
+/// The scale a clip's Scale switch turns on: the clip's own from before it was switched off, or
+/// Settings' Default scale. The clip panel shows it while the clip has none.
+pub(crate) fn switch_scale(ctx: &egui::Context, address: &Value) -> (u8, suhina_engine::model::ScaleMode) {
+    ctx.data(|d| d.get_temp::<(u8, suhina_engine::model::ScaleMode)>(kept_scale_id(address)))
+        .unwrap_or_else(default_scale)
+}
+
+/// The `clip.setScale` parameters the Scale switch sends (the clip panel's and the toolbar's are one
+/// switch) for a clip whose scale is `scale`: off when it has one, which is kept to turn on again;
+/// else the switch's scale ([`switch_scale`]). Without the clip's address.
+pub(crate) fn scale_switch_params(ctx: &egui::Context, address: &Value, scale: Option<Scale>) -> Value {
+    match scale {
+        Some(scale) => {
+            ctx.data_mut(|d| d.insert_temp(kept_scale_id(address), (scale.root(), scale.mode)));
+            json!({ "off": true })
+        }
+        None => {
+            let (root, mode) = switch_scale(ctx, address);
+            let root = suhina_engine::model::ROOT_NAMES.get(usize::from(root)).copied().unwrap_or("C");
+            json!({ "root": root, "mode": mode.name() })
+        }
+    }
+}
 
 fn is_black(key: u8) -> bool {
     matches!(key % 12, 1 | 3 | 6 | 8 | 10)
@@ -198,6 +255,7 @@ pub fn show(
         state.selected.clear();
         state.selected_ids = None;
         state.gesture = None;
+        state.press_draw = false;
         state.playing_key = None;
         state.key_live = None;
         state.clear_span();
@@ -251,9 +309,20 @@ pub fn show(
     }
     // A newly shown clip fits the width with its notes in the middle; until the rows are scrolled
     // by hand, a change in height centres the notes again, so they are in view at any height.
-    let rows = scale_view::rows(clip, state.fold);
+    let rows = scale_view::rows(clip, state.fold_for(clip));
+    // Another set of rows (Fold, Scale, or another scale while the rows fold to it) centres the
+    // notes in them, so they stay in view: the scroll of the last rows means nothing in the new
+    // ones. A scale the clip gets as Scale is clicked comes a frame later, once its command has
+    // run. Unfolded, the rows stay as they are whatever the scale.
+    let fold = state.fold_for(clip);
+    let rows_for = (fold, clip.scale.filter(|_| fold == Fold::Scale));
+    let rows_changed = state.rows_for.is_some_and(|was| was != rows_for);
+    state.rows_for = Some(rows_for);
     if fresh {
         fit(state, grid_rect, clip, &rows);
+    } else if rows_changed {
+        state.scrolled_by_hand = false;
+        centre_notes(state, grid_rect.height(), clip, &rows);
     } else if !state.scrolled_by_hand && (grid_rect.height() - state.centred_for).abs() > 0.5 {
         centre_notes(state, grid_rect.height(), clip, &rows);
     }
@@ -279,6 +348,8 @@ pub fn show(
     let shape = ruler_view::interact(ui, ruler, grid_rect.left(), clip, state, inputs.alt, seeks, actions);
     state.view_width = grid_rect.width();
     let rows_height = rows.len() as f32 * state.key_height;
+    // Notes a key moved or sized stay in view.
+    layout::reveal_selection(state, clip, &rows, grid_rect);
     state.scroll.y = state.scroll.y.clamp(0.0, (rows_height - grid_rect.height()).max(0.0));
     // The view goes on past the clip over the ghost notes, so the other picked clips' notes can
     // be reached (#1054).
@@ -311,28 +382,38 @@ pub fn show(
     // empty grid around it are told apart by where the press was.
     let response = ui.interact(grid_rect, Id::unique("piano-roll-grid"), Sense::click_and_drag());
     let pointer = response.interact_pointer_pos().or_else(|| ui.ctx().pointer_hover_pos());
-    let mut eraser = None;
-    if let Some(pos) = ui.ctx().pointer_hover_pos().filter(|p| grid_rect.contains(*p)) {
+    // The tool whose icon stands in for the pointer, and where: the windowing layer has no pencil,
+    // brush, eraser, blade or mute cursor, so the pointer is hidden and the icon is drawn there.
+    // Not where a menu or a window covers the grid: the pointer is that one's there.
+    let mut tool_icon = None;
+    if let Some(pos) =
+        ui.ctx().pointer_hover_pos().filter(|p| grid_rect.contains(*p) && ui.rect_contains_pointer(grid_rect))
+    {
         let over = note_at(&layout, &clip.notes, pos);
+        let mut drawn = |tool: Tool| {
+            tool_icon = tool_pointer(tool).map(|icon| (icon, pos));
+            cursor_for(tool)
+        };
         let cursor = match (&state.gesture, over, state.tool) {
             (Some(Gesture::Resize { .. } | Gesture::ResizeStart { .. }), _, _) => Some(CursorIcon::ResizeHorizontal),
             (Some(Gesture::Move { copy: true, .. }), _, _) => Some(CursorIcon::Copy),
             (Some(Gesture::Move { .. }), _, _) => Some(CursorIcon::Grabbing),
             (Some(Gesture::NoteVelocity { .. }), _, _) => Some(CursorIcon::ResizeVertical),
-            (Some(Gesture::Slice { .. }), _, _) | (None, _, Tool::Slice) => Some(CursorIcon::Text),
-            // There is no eraser cursor in the windowing layer, so the pointer is hidden and the
-            // eraser button's shape is drawn where the pointer is.
-            (Some(Gesture::Erase), _, _) | (None, _, Tool::Erase) => {
-                eraser = Some(pos);
-                Some(CursorIcon::None)
-            }
+            // Erase, Slice, Mute and Paint act on whatever they touch, a note's edge included.
+            (Some(Gesture::Slice { .. }), _, _) | (None, _, Tool::Slice) => drawn(Tool::Slice),
+            (Some(Gesture::Erase), _, _) | (None, _, Tool::Erase) => drawn(Tool::Erase),
+            (Some(Gesture::Mute), _, _) | (None, _, Tool::Mute) => drawn(Tool::Mute),
+            (Some(Gesture::Paint), _, _) | (None, _, Tool::Paint) => drawn(Tool::Paint),
+            (Some(Gesture::Draw { .. } | Gesture::DrawRun), _, Tool::Draw) => drawn(Tool::Draw),
+            // A note drawn with the Select tool (a double-click, or Left click draws) keeps the
+            // ordinary pointer: a cursor of its own only flashed for as long as the press lasted.
+            (Some(Gesture::Draw { .. } | Gesture::DrawRun), _, _) => None,
+            // Draw resizes and moves a note it presses on, as Select does.
             (None, Some((_, Part::Start | Part::End)), _) => Some(CursorIcon::ResizeHorizontal),
             (None, Some((_, Part::Body)), Tool::Select | Tool::Draw) if ui.input(|i| i.modifiers.command) => {
                 Some(CursorIcon::Copy)
             }
-            (Some(Gesture::Draw { .. } | Gesture::Paint), _, _) | (None, None, Tool::Draw | Tool::Paint) => {
-                Some(CursorIcon::Crosshair)
-            }
+            (None, _, Tool::Draw) => drawn(Tool::Draw),
             _ => None,
         };
         if let Some(cursor) = cursor {
@@ -350,7 +431,10 @@ pub fn show(
         );
     }
     let workflow = options.workflow;
+    // The click that lets go of a note the second press of a double-click is drawing adds nothing
+    // more: the note is added when the button is let go (below).
     if response.clicked()
+        && !state.press_draw
         && let Some(pos) = pointer
     {
         // The piano roll counts its own double-clicks: two clicks close in time and space, and a
@@ -375,7 +459,8 @@ pub fn show(
     // its faint note too; any other opens with a double-click of the right button.
     if let Some(pos) = pointer.filter(|pos| note_at(&layout, &clip.notes, *pos).is_none()) {
         let ghost = || ghost_view::ghost_at(&clip.ghosts, pos, |g| layout.note_rect(&g.note()));
-        let clicked = response.clicked() && state.tool == Tool::Select && !workflow.empty_click_draws;
+        let clicked =
+            response.clicked() && state.tool == Tool::Select && !workflow.empty_click_draws && !state.press_draw;
         if (clicked || response.double_clicked_by(PointerButton::Secondary))
             && let Some(from) = ghost().filter(|from| clip.ghosts.is_picked(*from))
         {
@@ -410,12 +495,59 @@ pub fn show(
                 actions.push(Action::new("transport.play", json!({})));
                 state.right_playing = true;
             }
+        } else if state.tool == Tool::Slice {
+            // The Slice tool's right button cuts and deletes the shorter piece of each note.
+            state.gesture = Some(Gesture::Slice { from, delete: true, by_shift: false });
         } else if workflow.shift_right_splits && inputs.shift {
-            state.gesture = Some(Gesture::Slice { from });
+            state.gesture = Some(Gesture::Slice { from, delete: false, by_shift: true });
         } else if right_deletes {
             state.gesture = Some(Gesture::Erase);
             if let Some((index, _)) = note_at(&layout, &clip.notes, from) {
                 state.erasing.insert(index);
+            }
+        }
+    }
+    // The second press of a double-click on an empty spot, with Select: the note is there as the
+    // press goes down, not when the button is let go, and dragging before letting go sets its
+    // length as the Draw tool's drag does (› Double-click).
+    if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
+        && state.tool == Tool::Select
+        && workflow.double_click_adds
+        && !workflow.empty_click_draws
+        && !(inputs.shift || inputs.command)
+        && let Some(pos) = widgets::pointer_over(ui, grid_rect)
+        && note_at(&layout, &clip.notes, pos).is_none()
+    {
+        let time = ui.input(|i| i.time);
+        if state
+            .last_click
+            .is_some_and(|(at, from)| time - at < DOUBLE_CLICK_TIME && from.distance(pos) < DOUBLE_CLICK_DISTANCE)
+        {
+            state.last_click = None;
+            state.press_draw = true;
+            state.selected.clear();
+            state.gesture = Some(Gesture::Draw { from: pos });
+        }
+    }
+    // A press on a note that is not selected selects it at once, as the press goes down, not when
+    // the button is let go (with Shift or Ctrl it joins the selection); a press on a selected note
+    // keeps the selection, so it can be dragged, and its click picks the note alone (› Selecting).
+    if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
+        && matches!(state.tool, Tool::Select | Tool::Draw | Tool::Paint)
+        && let Some(pos) = widgets::pointer_over(ui, grid_rect)
+    {
+        state.press_added = None;
+        if let Some((index, _)) = note_at(&layout, &clip.notes, pos)
+            && !state.selected.contains(&index)
+        {
+            if inputs.shift || inputs.command {
+                state.selected.insert(index);
+                state.press_added = Some(index);
+            } else {
+                state.selected = BTreeSet::from([index]);
+                if let Some(note) = clip.notes.get(index) {
+                    state.remember(note);
+                }
             }
         }
     }
@@ -449,7 +581,7 @@ pub fn show(
             (_, Tool::Erase | Tool::Mute | Tool::Slice) => None,
             (Some((index, _)), _) => clip.notes.get(index).map(|n| n.key),
             (None, Tool::Draw | Tool::Paint) => state.new_note(&layout, clip, grid, pos, inputs.alt).map(|n| n.key),
-            (None, Tool::Select) if workflow.empty_click_draws => {
+            (None, Tool::Select) if workflow.empty_click_draws || state.press_draw => {
                 state.new_note(&layout, clip, grid, pos, inputs.alt).map(|n| n.key)
             }
             (None, Tool::Select) => None,
@@ -459,7 +591,8 @@ pub fn show(
             state.audition_press = true;
         }
     }
-    if response.drag_started_by(PointerButton::Primary) {
+    // A drag from the second press of a double-click goes on drawing the note it pressed.
+    if response.drag_started_by(PointerButton::Primary) && !state.press_draw {
         let from = ui.input(|i| i.pointer.press_origin()).or(pointer).unwrap_or(grid_rect.center());
         // Alt, Ctrl and Shift count as they were when the button went down (› Moving): Alt
         // pressed between the press and the drag frees the move, it does not change velocity.
@@ -474,7 +607,7 @@ pub fn show(
         state.muting.clear();
         state.gesture = Some(match (note_at(&layout, &clip.notes, from), state.tool) {
             (_, Tool::Erase) => Gesture::Erase,
-            (_, Tool::Slice) => Gesture::Slice { from },
+            (_, Tool::Slice) => Gesture::Slice { from, delete: false, by_shift: false },
             // Mute: the state the stroke gives every note it touches is the first note's, flipped.
             (Some((index, _)), Tool::Mute) => {
                 state.mute_target = clip.notes.get(index).is_some_and(|note| !note.muted);
@@ -500,11 +633,11 @@ pub fn show(
             // empty spot the way Draw does (› Keymap presets).
             (None, Tool::Select) if workflow.empty_click_draws => Gesture::Draw { from },
             (Some((grabbed, part)), _) => {
-                if !state.selected.contains(&grabbed) {
-                    if !(inputs.shift || inputs.command) {
-                        state.selected.clear();
-                    }
-                    state.selected.insert(grabbed);
+                // A drag from a note that was not selected before its press takes that note alone,
+                // the rest let go, Shift or Ctrl held or not: a drag moves (or copies) either the
+                // selection it starts in or the one note it starts on, never both (› Moving).
+                if !state.selected.contains(&grabbed) || state.press_added.take() == Some(grabbed) {
+                    state.selected = BTreeSet::from([grabbed]);
                 }
                 // The ends resize; on the body Alt changes the velocity and Ctrl copies
                 // (› Moving, › Resizing, › Velocity).
@@ -576,9 +709,18 @@ pub fn show(
     let dragging = response.dragged_by(PointerButton::Primary)
         || response.dragged_by(PointerButton::Secondary)
         || lane_response.as_ref().is_some_and(|r| r.dragged_by(PointerButton::Primary));
-    let stopped = response.drag_stopped_by(PointerButton::Primary)
+    let drag_stopped = response.drag_stopped_by(PointerButton::Primary)
         || response.drag_stopped_by(PointerButton::Secondary)
         || lane_response.as_ref().is_some_and(|r| r.drag_stopped_by(PointerButton::Primary));
+    // The note the second press of a double-click is drawing is added when the button is let go,
+    // dragged or not.
+    let press_released = state.press_draw && ui.input(|i| i.pointer.button_released(PointerButton::Primary));
+    let stopped = drag_stopped || press_released;
+    // Ctrl (Cmd) pressed or let go while notes are dragged switches between moving and copying
+    // them; what it is when the button is let go decides (› Moving).
+    if dragging && let Some(Gesture::Move { copy, .. }) = &mut state.gesture {
+        *copy = inputs.command;
+    }
     if dragging && let Some(now) = now {
         match state.gesture {
             Some(Gesture::Paint) => paint(state, &layout, clip, now),
@@ -602,21 +744,27 @@ pub fn show(
     }
     let chosen: Vec<Note> = state.selected.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
     let preview = match (state.gesture.as_ref(), now) {
-        (Some(Gesture::Draw { from }), Some(now)) if dragging || stopped => {
+        (Some(Gesture::Draw { from }), Some(now)) if dragging || drag_stopped => {
             Some(Effect::Draw(drawn_note(state, &layout, clip, grid, *from, now, inputs.alt)))
+        }
+        // Pressed and not dragged: the note a click would add, where it was pressed.
+        (Some(Gesture::Draw { from }), Some(_)) if state.press_draw => {
+            Some(Effect::Draw(state.new_note(&layout, clip, grid, *from, inputs.alt)))
         }
         (Some(Gesture::VelocityLine { from }), Some(now)) if dragging || stopped => {
             Some(gestures::velocity_line(&layout, &clip.notes, *from, now))
         }
         (Some(gesture), Some(now)) if dragging || stopped => {
-            Some(effect(gesture, now, &layout, clip, &chosen, grid, inputs.alt))
+            Some(effect(gesture, now, &layout, clip, &chosen, grid, inputs))
         }
         _ => None,
     };
     // While a note is dragged, the keys it is on sound; the keys that already sound go on.
     if dragging {
         match preview {
-            Some(Effect::Move(_, keys)) => state.audition_moved(&chosen, keys),
+            Some(Effect::Move(_, keys, rows)) => {
+                state.audition_keys(chosen.iter().map(|n| edits::moved_key(&layout.rows, n.key, keys, rows)));
+            }
             Some(Effect::Draw(Some(note))) => state.audition_keys([note.key]),
             Some(Effect::Select(rect)) => state.audition_swept(&layout, clip, rect),
             _ => {}
@@ -636,13 +784,18 @@ pub fn show(
         _ => None,
     };
     if stopped {
-        if let (Some(effect), Some(gesture)) = (preview.clone(), state.gesture.take()) {
+        // A right-button hold that chose tools with the wheel edits nothing when it is let go.
+        let stepped = state.right_stepped && response.drag_stopped_by(PointerButton::Secondary);
+        if let (Some(effect), Some(gesture)) = (preview.clone(), state.gesture.take())
+            && !stepped
+        {
             commit(&gesture, effect, clip, state, actions, &layout);
         }
         state.gesture = None;
+        state.press_draw = false;
     } else if !dragging && !ui.input(|i| i.pointer.any_down()) {
         state.gesture = None;
-        state.swept.clear();
+        state.press_draw = false;
         state.stroke.clear();
         state.erasing.clear();
         state.muting.clear();
@@ -650,28 +803,30 @@ pub fn show(
 
     let shape = shape.unwrap_or(clip.shape);
     draw(ui, &el, &layout, clip, state, grid, preview, shape.played());
+    // A stroke let go this frame is drawn as it ends once more: its command runs after this frame,
+    // so the notes it deletes, mutes or adds change from the next one, and no frame between shows
+    // them as they were.
+    if stopped {
+        state.erasing.clear();
+        state.muting.clear();
+        state.stroke.clear();
+    }
     draw_strip(ui, &layout, state);
-    view_menu(
+    corner(
         ui,
         Rect::from_min_max(Pos2::new(strip.left(), ruler.top()), Pos2::new(keys.right(), ruler.bottom())),
         state,
+        keymap,
+        scale,
     );
     if let Some((grabbed, by)) = velocity_label {
         gestures::draw_velocity_label(ui, &layout, clip, grabbed, by);
     }
     let axis = ruler_view::Axis { origin: grid_rect.left() - state.scroll.x, beat_width: state.beat_width };
     ruler_view::draw(ui, ruler, &axis, &shape);
-    draw_span_bar(ui, &layout, clip, state, selecting);
-    // The eraser under the pointer: the windowing layer has no eraser cursor, so the pointer is
-    // hidden and the Erase button's shape is drawn where it is.
-    if let Some(pos) = eraser {
-        let painter = ui.painter_at(whole);
-        IconButton::Erase.draw(
-            &painter,
-            Rect::from_center_size(pos, Vec2::splat(TOOL_ICON * scale)),
-            theme::text_primary(),
-            scale,
-        );
+    state.live_span = draw_span_bar(ui, &layout, clip, state, selecting);
+    if let Some(((icon, hotspot), pos)) = tool_icon {
+        draw_tool_pointer(&ui.painter_at(whole), icon, tool_pointer_rect(pos, hotspot, TOOL_POINTER));
     }
     if state.magnifier
         && let Some(pos) = ui.input(|i| i.pointer.latest_pos())
@@ -691,6 +846,11 @@ pub fn show(
     scale_view::key_readers(ui, layout.keys, clip, &layout.rows, |key| layout.y_of(key), layout.key_height);
     // Notes the audition sounds go on now and off a moment later.
     let track = clip.address.get("track").and_then(Value::as_u64);
+    // A drag held at the grid's edge scrolls the view for the next frame, its start moving along.
+    if dragging && let Some(pointer) = now {
+        layout::scroll_at_edges(state, grid_rect, pointer);
+    }
+    state.settle_frame(clip, actions);
     state.audition_frame(ui, track, actions);
     state.remember_selection(&clip.notes, selecting_new || sent_edit(&actions[sent_from..]));
 }

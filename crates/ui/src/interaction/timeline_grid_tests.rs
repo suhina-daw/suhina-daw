@@ -141,7 +141,9 @@ fn an_adaptive_step_follows_the_zoom_the_bar_and_triplets() {
     assert_eq!(adaptive_step(24.0, false, 10.0, 4.0), 4.0, "a bar at 10 points per beat");
     assert_eq!(adaptive_step(24.0, false, 40.0, 4.0), 1.0, "a quarter at 40");
     assert_eq!(adaptive_step(24.0, false, 100.0, 4.0), 0.25, "a sixteenth at 100");
-    assert_eq!(adaptive_step(24.0, false, 1000.0, 4.0), 0.125, "never finer than 1/32");
+    assert_eq!(adaptive_step(24.0, false, 1000.0, 4.0), 0.031_25, "a 1/128 at 1000");
+    assert_eq!(adaptive_step(6.0, false, 400.0, 4.0), 0.031_25, "narrowest: a 1/128 at 400");
+    assert_eq!(adaptive_step(24.0, false, 100_000.0, 4.0), 0.031_25, "never finer than 1/128");
     assert_eq!(adaptive_step(24.0, false, 1.0, 4.0), 32.0, "bars double when zoomed far out");
     // In 3/4 the step after the half note is the 3-beat bar.
     assert_eq!(adaptive_step(24.0, false, 10.0, 3.0), 3.0);

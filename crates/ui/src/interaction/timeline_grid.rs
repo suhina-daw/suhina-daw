@@ -15,8 +15,9 @@ const EPSILON: f64 = 1e-9;
 /// a beat as 0.333333), and moved notes add those up.
 const ON_LINE: f64 = 1e-5;
 
-/// The finest note value an adaptive grid reaches, in beats (1/32).
-const FINEST: f64 = 0.125;
+/// The finest note value an adaptive grid reaches, in beats (1/128): zoomed far in, its lines go
+/// on getting finer past the fixed values' 1/32.
+const FINEST: f64 = 0.031_25;
 
 /// How many times an adaptive grid doubles a bar when zoomed far out, at most.
 const MAX_BAR_DOUBLINGS: i32 = 16;
@@ -172,7 +173,7 @@ impl TimelineGrid {
 }
 
 /// An adaptive grid's step at `beat_width` points a beat: the finest power of two note value
-/// (1/32 up to the last one shorter than a bar; two thirds as long with `triplet`), then 1 bar,
+/// (1/128 up to the last one shorter than a bar; two thirds as long with `triplet`), then 1 bar,
 /// 2 bars, 4 bars and on, whose lines are at least `spacing` points apart. An unusable zoom (not
 /// a positive number) gives one bar.
 pub fn adaptive_step(spacing: f64, triplet: bool, beat_width: f32, bar_beats: f64) -> f64 {
@@ -182,9 +183,9 @@ pub fn adaptive_step(spacing: f64, triplet: bool, beat_width: f32, bar_beats: f6
     }
     let points = f64::from(beat_width);
     let third = if triplet { 2.0 / 3.0 } else { 1.0 };
-    // The note values shorter than a bar: 1/32, 1/16, ... at most five of them (to 1/2).
+    // The note values shorter than a bar: 1/128, 1/64, ... at most seven of them (to 1/2).
     let mut value = FINEST;
-    for _ in 0..5 {
+    for _ in 0..7 {
         if value >= bar {
             break;
         }

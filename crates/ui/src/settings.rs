@@ -170,6 +170,40 @@ impl PianoKeyNames {
     }
 }
 
+/// How a black key is named: as a sharp of the key below it or a flat of the key above.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NoteSpelling {
+    /// C#, D#, F#, G#, A#, the default.
+    #[default]
+    Sharps,
+    /// Db, Eb, Gb, Ab, Bb.
+    Flats,
+}
+
+impl NoteSpelling {
+    pub const ALL: [Self; 2] = [Self::Sharps, Self::Flats];
+
+    /// The name the Settings row shows.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Sharps => "Sharps (C#)",
+            Self::Flats => "Flats (Db)",
+        }
+    }
+
+    /// The value the settings file keeps.
+    pub fn param(self) -> &'static str {
+        match self {
+            Self::Sharps => "sharps",
+            Self::Flats => "flats",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|spelling| spelling.param() == value)
+    }
+}
+
 impl ToolbarSize {
     pub const ALL: [Self; 3] = [Self::Normal, Self::Large, Self::Larger];
 
@@ -405,6 +439,14 @@ pub struct Settings {
     /// How the piano roll's keys are drawn, and which of them are named.
     pub piano_key_style: PianoKeyStyle,
     pub piano_key_names: PianoKeyNames,
+    /// Whether black keys are named as sharps or flats, wherever a note or a scale's root is named.
+    pub note_spelling: NoteSpelling,
+    /// The scale a clip's Scale switch turns on when the clip has none of its own: its root (0 is
+    /// C) and its mode (Settings › Clip editor › Default scale).
+    pub default_scale_root: u8,
+    pub default_scale_mode: suhina_engine::model::ScaleMode,
+    /// Whether the piano roll tints the rows of the clip's scale (the toolbar's Highlight).
+    pub highlight_scale: bool,
     /// A track's volume and pan as a field or as a knob (Settings › Launcher and mixer).
     pub mixer_controls: MixerControls,
     /// Where plug-in editors open.
@@ -523,6 +565,10 @@ impl Default for Settings {
             toolbar_size: ToolbarSize::Large,
             piano_key_style: PianoKeyStyle::default(),
             piano_key_names: PianoKeyNames::default(),
+            note_spelling: NoteSpelling::default(),
+            default_scale_root: 0,
+            default_scale_mode: suhina_engine::model::ScaleMode::Major,
+            highlight_scale: true,
             mixer_controls: MixerControls::Field,
             plugin_editors: EditorPlacement::Window,
             theme: crate::kit::theme::BUILT_IN.into(),

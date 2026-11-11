@@ -470,6 +470,29 @@ fn devices_picked_in_the_strip_are_copied_pasted_and_deleted_together() {
     assert_eq!(drums_devices(&harness), pasted, "one undo brings both back");
 }
 
+/// A device copied and another track picked by its name: Ctrl+V puts the device at the end of
+/// that track's chain, with no device of it picked, instead of pasting a copy of a track or a
+/// clip (#871).
+#[test]
+fn devices_copied_last_paste_into_the_track_picked_after_the_copy() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    let tracks = |h: &Harness<'static, App>| h.state().session().unwrap().project().tracks.len();
+    let count = tracks(&harness);
+    let bass = chain_of(&harness, "Bass").len();
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::C);
+    harness.run();
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::V);
+    harness.run();
+    let pasted = chain_of(&harness, "Bass");
+    assert_eq!(pasted.len(), bass + 1, "{pasted:?}");
+    assert_eq!(pasted.last().map(String::as_str), Some("Utility"), "at the end of the chain");
+    assert_eq!(tracks(&harness), count, "no track pasted");
+}
+
 /// The devices on Drums.
 fn drums(harness: &Harness<'static, App>) -> Vec<Device> {
     let p = harness.state().session().unwrap().project();

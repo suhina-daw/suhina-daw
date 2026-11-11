@@ -61,11 +61,13 @@ mod mapping;
 mod overlap;
 mod scale;
 mod shared;
+mod swing;
 pub use launch::{LaunchMode, LaunchQuantization, LaunchSettings};
 pub use mapping::{ControllerMapping, KEY_NAME_MAX, MAX_MAPPINGS, MappingSource, MappingTarget};
 pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, TOUCH_TOLERANCE};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
 pub use shared::{Bytes, Shared};
+pub use swing::{ClipSwing, SWING_RANGE, swung};
 
 /// Identifies a [`Track`] within a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -139,6 +141,9 @@ pub struct Transport {
     pub tempo_changes: IdList<TempoPointId, TempoPoint>,
     /// Time-signature changes after bar 0, in order of bar.
     pub time_signature_changes: Vec<TimeSignatureChange>,
+    /// The project's swing, 0 to 1 ([`SWING_RANGE`]): every MIDI clip that has no swing of its own
+    /// plays with it (#1221).
+    pub swing: f64,
 }
 
 impl Default for Transport {
@@ -150,6 +155,7 @@ impl Default for Transport {
             loop_enabled: false,
             tempo_changes: IdList::new(),
             time_signature_changes: Vec::new(),
+            swing: 0.0,
         }
     }
 }
@@ -643,6 +649,8 @@ pub struct Clip {
     /// What the clip does with the audio it plays: gain, envelope, transpose, warp. Its own, never
     /// shared with another clip of the same content; a clip without audio ignores it.
     pub audio: ClipAudio,
+    /// A MIDI clip's swing: the project's, or its own (#1221).
+    pub swing: ClipSwing,
     pub extensions: Extensions,
 }
 

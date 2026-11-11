@@ -1317,6 +1317,64 @@ fn the_midi_tools_column_takes_its_width_from_the_sheet() {
 }
 
 #[test]
+fn the_midi_tools_part_takes_its_gap_and_button_height_from_the_sheet() {
+    use crate::detail::detail_view::{ToolsSpacing, tools_spacing};
+    let mut plain = None;
+    painted("", |_| plain = Some(tools_spacing()));
+    assert_eq!(plain, Some(ToolsSpacing { gap: 6.0, button_gap: 4.0, field: 18.0, toggle: 20.0, knob: None }));
+    // `button { height }` inside `midi-tools` sets its fields', buttons', switches' and Apply's height,
+    // within 10 to 40 points.
+    let mut tall = None;
+    painted("midi-tools button { height: 26px; }", |_| tall = Some(tools_spacing()));
+    assert_eq!(tall, Some(ToolsSpacing { gap: 6.0, button_gap: 4.0, field: 26.0, toggle: 26.0, knob: None }));
+    let mut huge = None;
+    painted("midi-tools button { height: 90px; }", |_| huge = Some(tools_spacing()));
+    assert_eq!(huge.map(|s| (s.field, s.toggle)), Some((40.0, 40.0)));
+    // The gap is a host rule, read from the theme's sheet as the app reads it: the room between
+    // the part's rows and between the rows of its buttons.
+    let packed = spacing_in_theme("midi-tools { gap: 2px; }");
+    assert_eq!((packed.gap, packed.button_gap), (2.0, 2.0));
+}
+
+/// `tools_spacing` in a frame of the whole theme of `css`: its host rules and its sheet.
+fn spacing_in_theme(css: &str) -> crate::detail::detail_view::ToolsSpacing {
+    let (theme, _) = super::super::theme::from_css(css);
+    skin::configure(&theme.skin);
+    let ctx = egui::Context::default();
+    let input = || egui::RawInput {
+        screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(800.0, 600.0))),
+        ..Default::default()
+    };
+    ctx.run_ui(input(), |ui| begin_frame(ui)).textures_delta.clear();
+    let mut spacing = None;
+    for _ in 0..3 {
+        ctx.run_ui(input(), |ui| {
+            let _frame = frame(ui);
+            let _window = test_el("window").enter();
+            spacing = Some(crate::detail::detail_view::tools_spacing());
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    spacing.expect("three frames ran")
+}
+
+#[test]
+fn the_midi_tools_part_draws_the_quantise_amount_as_a_knob_where_the_theme_says() {
+    assert_eq!(spacing_in_theme("").knob, None);
+    // `slider { appearance: knob }` inside `midi-tools`: a knob 32 points tall, or as tall
+    // as the slider's `height` (16 to 96).
+    assert_eq!(spacing_in_theme("midi-tools slider { appearance: knob; }").knob, Some(32.0));
+    let tall = "midi-tools slider { appearance: knob; height: 48px; }";
+    assert_eq!(spacing_in_theme(tall).knob, Some(48.0));
+    let huge = "midi-tools slider { appearance: knob; height: 200px; }";
+    assert_eq!(spacing_in_theme(huge).knob, Some(96.0));
+    // A field says the amount stays a field.
+    assert_eq!(spacing_in_theme("midi-tools slider { appearance: field; }").knob, None);
+}
+
+#[test]
 fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_colour_spares_them() {
     use crate::detail::detail_view::{slider_as_knob, themed_slider};
     let mut seen = (true, true);

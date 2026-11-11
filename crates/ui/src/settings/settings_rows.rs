@@ -14,8 +14,8 @@ use crate::settings::settings_view::{Entry, Page, block, row};
 use crate::settings::track_sizes::TrackSize;
 use crate::settings::view_settings::{DetailLayout, FolderDrop, WaveformColour};
 use crate::settings::{
-    AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, OnOpen, PianoKeyNames, PianoKeyStyle,
-    PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
+    AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, NoteSpelling, OnOpen, PianoKeyNames,
+    PianoKeyStyle, PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
 };
 use suhina_update::Channel;
 
@@ -260,6 +260,14 @@ pub(crate) static ROWS: &[Entry] = &[
             let options = [("Row", DeviceLayout::Row), ("Stack", DeviceLayout::Stack)];
             cx.choose(r, &options, |s| &mut s.device_layout);
         },
+    ),
+    row(
+        Page::Devices,
+        "Device panels",
+        "Devices beside piano roll",
+        "With the devices in a row, whether Devices opens them in a column beside the piano roll instead of in its place",
+        &["stack_in_piano_roll"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.stack_in_piano_roll),
     ),
     row(
         Page::Devices,
@@ -809,6 +817,33 @@ pub(crate) static ROWS: &[Entry] = &[
             let options: Vec<(&str, PianoKeyNames)> = PianoKeyNames::ALL.iter().map(|n| (n.name(), *n)).collect();
             cx.choose(r, &options, |s| &mut s.piano_key_names);
         },
+    ),
+    row(
+        Page::ClipEditor,
+        "Piano roll",
+        "Note names",
+        "Whether a black key is named as a sharp (C#) or a flat (Db)",
+        &["note_spelling"],
+        |cx, r| {
+            let options: Vec<(&str, NoteSpelling)> = NoteSpelling::ALL.iter().map(|n| (n.name(), *n)).collect();
+            cx.choose(r, &options, |s| &mut s.note_spelling);
+        },
+    ),
+    row(
+        Page::ClipEditor,
+        "Piano roll",
+        "Default scale",
+        "The scale a clip's Scale switch turns on when the clip has none of its own",
+        &["default_scale_root", "default_scale_mode"],
+        |cx, r| cx.default_scale(r),
+    ),
+    row(
+        Page::ClipEditor,
+        "Advanced",
+        "Covered notes",
+        "What happens to a note whose start a note placed over it covers, where notes of one pitch do not stack: it goes whole, or keeps what runs on past",
+        &["covered_notes"],
+        |cx, r| cx.choose(r, &[("Delete them", true), ("Keep the rest", false)], |s| &mut s.view.covered_whole),
     ),
     row(
         Page::Browser,

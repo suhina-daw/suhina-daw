@@ -394,7 +394,7 @@
       },
       {
         "name": "Stack",
-        "description": "Place the detail area in a column beside the Session or Arrangement view, with device controls arranged vertically. Detail area layout does not affect this side-panel arrangement."
+        "description": "Place a track's devices in a column beside the Session or Arrangement view, with device controls arranged vertically. A clip's editor, such as the piano roll, still opens along the bottom; with a clip selected, the Devices tab opens the column beside it and the editor stays open. Detail area layout does not affect the side column."
       }
     ],
     "whenToChange": "Choose Row when you want to see several effects side by side along the bottom. Choose Stack when you prefer a vertical column of controls beside the tracks.",
@@ -403,6 +403,28 @@
       "crates/ui/src/settings.rs::Settings::default",
       "crates/ui/src/app.rs::detail_area",
       "docs/design/components.md"
+    ]
+  },
+  "Devices/Device panels/stack_in_piano_roll": {
+    "sourceFingerprint": "c5ce9912d17ae5b5afc6f9779e624be025037b0a9f993847f1575bb5c279271b",
+    "summary": "Keep the piano roll open and show a track's devices in a column beside it.",
+    "description": "With Device chain set to Row, the Devices tab of a MIDI clip normally puts the track's devices where the piano roll was. With this setting on, the piano roll stays open along the bottom and the devices open in a column at the right of the view, one under another, as with the Stack layout. Both tabs are lit while the column shows; Clip, Devices again, a double-click on the column's edge or dragging it narrow closes the column. It changes only where the devices are shown, not the sound.",
+    "options": [
+      {
+        "name": "Off (default)",
+        "description": "Devices replaces the piano roll in the detail area, and Clip brings it back."
+      },
+      {
+        "name": "On",
+        "description": "Devices opens a column of the track's devices beside the view, and the piano roll stays open under it with its keys."
+      }
+    ],
+    "whenToChange": "Turn it on if you want to adjust an instrument or effect while you keep editing the notes.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/app/detail_area.rs",
+      "docs/spec/ui-clip-editor.md"
     ]
   },
   "Devices/Device panels/device_list_scroll": {
@@ -1474,7 +1496,7 @@
   "ClipEditor/Piano roll/piano_roll_top": {
     "sourceFingerprint": "8720a624fd734467058d63f061368bb35ebbe526ebaeffaad8fcadded3a93e78",
     "summary": "Choose what remains visible when the clip editor is pulled to the top.",
-    "description": "The piano roll is the MIDI note editor in the detail area. Dragging its top divider high enough in the Arrangement expands the editor to the top; this also applies to the audio editor supplied by an ARA plug-in. This preference decides whether the edited track’s timeline remains visible. It has no effect on that gesture when Device chain is Stack, because the detail area is then a side column rather than a bottom panel.",
+    "description": "The piano roll is the MIDI note editor in the detail area. Dragging its top divider high enough in the Arrangement expands the editor to the top; this also applies to the audio editor supplied by an ARA plug-in. This preference decides whether the edited track’s timeline remains visible. It works the same with Device chain set to Stack, as the clip editor then stays along the bottom too.",
     "options": [
       {
         "name": "Edited track",
@@ -1524,7 +1546,7 @@
   "ClipEditor/Piano roll/notes_replace": {
     "sourceFingerprint": "a3417fdaae52f35fdeb8136bccac93872c6ab8d9ff25782d5d1955ecece7146d",
     "summary": "Choose whether notes of one pitch may overlap in the piano roll.",
-    "description": "In the piano roll, the grid where MIDI notes are edited, a note can be drawn, moved, resized, pasted, duplicated, quantised or made legato over other notes of the same pitch. With this off, the note replaces them: a note it covers whole is removed, one that starts before it ends where it starts, and one that runs on past it starts where it ends. Shift+Right also stops at the next note of the pitch. With it on, notes may overlap, and nothing else changes. The same choice is in the View menu in the piano roll's top left corner.",
+    "description": "In the piano roll, the grid where MIDI notes are edited, a note can be drawn, moved, copied, resized, pasted, duplicated, quantised, transposed, made legato, fitted to the scale, inverted, reversed or stretched over other notes of the same pitch. With this off, the note replaces them: a note it covers whole is removed, one that starts before it ends where it starts, and one that runs on past it starts where it ends. Notes that stay selected after an edit, such as notes moved with the arrow keys, replace only once they are let go, so moving them through other notes erases nothing on the way; until then the notes under them show only what will be left of them. A duplicate (the duplicate key, or a copy made by dragging with Ctrl) replaces what it lands on at once. Shift+Right runs over the next note of the pitch, which makes room once the note is let go. What happens to a note covered from its start is Covered notes, under Advanced on this page. With it on, notes may overlap, and nothing else changes. A paste right onto the notes it was copied from keeps them, so the copy can be moved off them. The same choice is in the View menu in the piano roll's top left corner and in its toolbar's workflow menu (Select-first, Draw-first, Mouse-first or Custom).",
     "options": [
       {
         "name": "Off",
@@ -1540,6 +1562,29 @@
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings/view_settings.rs",
       "crates/ui/src/app.rs",
+      "crates/session/src/notes.rs",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "ClipEditor/Advanced/covered_notes": {
+    "sourceFingerprint": "5bf26e891d1fbefa9c68fac5756e1648cb2a1a11d13b8bd4ceb361f1d79271fc",
+    "summary": "Choose what happens to a note that a note placed over it covers from its start.",
+    "description": "With Allow stacked notes off, a note placed over others of the same pitch replaces them: a note it covers whole is removed, and one that starts before it ends where it starts. This setting decides the third case, a note whose start the placed note covers and that runs on past it. Delete them removes that note, the part after the placed note too, so the placed note simply takes its place. Keep the rest cuts only the covered part away, so the rest of the note starts where the placed note ends; lengthening a note into a line of shorter ones then pushes their starts later, which can make new rhythms. It applies to every edit that replaces (drawing, moving, copying, resizing, Shift+Right, pasting, duplicating and the note tools), and to notes that make room once they are let go. The same choice is in the piano roll toolbar's workflow menu, under Allow stacked notes.",
+    "options": [
+      {
+        "name": "Delete them",
+        "description": "A note covered from its start goes whole, its tail too. This is the default."
+      },
+      {
+        "name": "Keep the rest",
+        "description": "A note covered from its start keeps what runs on past the note placed over it, starting where that note ends."
+      }
+    ],
+    "whenToChange": "Keep Delete them for clean lines where a new note takes the old one's place. Choose Keep the rest to keep the tails of notes you draw or lengthen over, for example to find a new rhythm by stretching one note across a line of others.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/detail/piano_roll/keys.rs",
       "crates/session/src/notes.rs",
       "docs/spec/ui-clip-editor.md"
     ]
@@ -2483,6 +2528,52 @@
       "crates/ui/src/settings.rs",
       "crates/ui/src/app.rs",
       "crates/ui/src/detail/piano_roll/keys.rs",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "ClipEditor/Piano roll/note_spelling": {
+    "sourceFingerprint": "a7246a08821d24ad3038205a1d01e7aecbf6d02472d3e4a52741b8fe28b6ce5b",
+    "summary": "Choose whether black keys are named as sharps (C#) or flats (Db).",
+    "description": "A black key sits between two white keys, so it has two names: the sharp of the key below it (C#) or the flat of the key above it (Db). This chooses which one Suhina uses wherever it names a note or a scale's root: the notes and the keys in the piano roll and the clip panel's figures and its Scale root list. It only changes the names: the notes, the scale and what plays stay the same, and the project file is not changed. White keys are named the same either way.",
+    "options": [
+      {
+        "name": "Sharps (C#)",
+        "description": "C#, D#, F#, G# and A#. This is the default."
+      },
+      {
+        "name": "Flats (Db)",
+        "description": "Db, Eb, Gb, Ab and Bb."
+      }
+    ],
+    "whenToChange": "Pick flats when the music you write or read uses them, such as in keys like F major or Bb minor, so the names match the score.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/app.rs",
+      "crates/ui/src/detail/piano_roll.rs",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "ClipEditor/Piano roll/default_scale_root,default_scale_mode": {
+    "sourceFingerprint": "45eb441da68bbb009599572a68618d2cfe3ae11b2689876f24d0bdea74019cee",
+    "summary": "Choose the scale a clip's Scale switch turns on when the clip has none of its own.",
+    "description": "A MIDI clip's scale is set in its clip panel: a switch, the root and the mode. While a clip has no scale, the root and the mode there show this scale, and the switch, or a pick of either, turns it on for the clip. Turning a clip's scale off and on again brings back the scale it had, while Suhina is open. This only chooses what a clip starts from: clips that have a scale keep it, and nothing is changed in the project until a clip's switch is used.",
+    "options": [
+      {
+        "name": "Root",
+        "description": "The scale's first note, C to B, named as sharps or flats by Note names. C is the default."
+      },
+      {
+        "name": "Mode",
+        "description": "Major, minor, harmonic minor, melodic minor, the church modes, major and minor pentatonic, or blues. Major is the default."
+      }
+    ],
+    "whenToChange": "Pick the key you write in most, so a clip's scale is right the moment you switch it on.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/detail/detail_view/clip_panel.rs",
       "docs/spec/ui-clip-editor.md"
     ]
   },

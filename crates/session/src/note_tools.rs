@@ -3,8 +3,8 @@
 
 //! The MIDI tools of the clip editor: `note.setMuted`, `note.humanize`, `note.fitToScale`,
 //! `note.invert`, `note.reverse`, `note.legato`, `note.stretch`, `note.randomizeVelocity` and
-//! `note.rampVelocity` (`docs/spec/ui-clip-editor.md` › Muting, › Other note tools (MIDI tools
-//! column)).
+//! `note.rampVelocity` (`docs/spec/ui-clip-editor.md` › Muting, › Note tools (the clip
+//! panel's tools)).
 //!
 //! Every one of them edits through [`crate::notes::edit_notes`], so a clip that shares its content
 //! with a duplicate gets a copy of it first (copy on write, ADR 0001) and the whole call is one
@@ -18,14 +18,15 @@ use suhina_model::{Note, Notes, Scale, ScaleMode};
 
 use crate::commands::Args;
 use crate::notes::{
-    MAX_BEAT, MAX_NOTES_PER_COMMAND, after_removal, edit_notes, indices, midi_velocity, notes_of, replace_under,
-    replaces, velocity_of, with_replaced,
+    MAX_BEAT, MAX_NOTES_PER_COMMAND, after_removal, covered_go, edit_notes, indices, midi_velocity, notes_of,
+    replace_under, replaces, velocity_of, with_replaced,
 };
 use crate::{CommandError, Session};
 
-/// The default of `note.humanize`'s `time`, in beats.
-const DEFAULT_HUMANIZE_BEATS: f64 = 0.02;
-/// The most `note.humanize` may move a start by, in beats.
+/// The default of `note.humanize`'s `ms`: how far a start may move, in milliseconds.
+const DEFAULT_HUMANIZE_MS: f64 = 10.0;
+/// The most `note.humanize` may move a start by, in milliseconds (`ms`) and in beats (`time`).
+const MAX_HUMANIZE_MS: f64 = 50.0;
 const MAX_HUMANIZE_BEATS: f64 = 1.0;
 /// The default of `note.humanize`'s `velocity`, in MIDI steps.
 const DEFAULT_HUMANIZE_STEPS: f64 = 8.0;
@@ -68,6 +69,22 @@ impl Rng {
     /// A number in `[-1, 1)`.
     fn next_signed(&mut self) -> f64 {
         self.next_f64() * 2.0 - 1.0
+    }
+
+    /// A normally distributed draw within ±`limit`: most draws small, few large, none past the
+    /// limit (a standard deviation of half the limit, the tails cut off), as a person's timing
+    /// varies (#1214). Box–Muller over two uniform draws.
+    fn next_within(&mut self, limit: f64) -> f64 {
+        if limit <= 0.0 {
+            // Still two draws, so a limit of 0 keeps the rest of the sequence where it was.
+            self.next_f64();
+            self.next_f64();
+            return 0.0;
+        }
+        let u1 = 1.0 - self.next_f64();
+        let u2 = self.next_f64();
+        let gauss = (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos();
+        (gauss * limit / 2.0).clamp(-limit, limit)
     }
 }
 
@@ -221,14 +238,40 @@ pub(crate) fn set_muted(session: &mut Session, params: &Value) -> Result<Value, 
     })
 }
 
-/// `note.humanize`: moves each note's start by a random draw in ±`time` beats and its velocity by
-/// a random draw in ±`velocity` MIDI steps, each kept within its range. The same `seed` gives the
-/// same result, so a call can be repeated.
-pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let beats = Args::new(params).opt_f64("time")?.unwrap_or(DEFAULT_HUMANIZE_BEATS);
-    if !(0.0..=MAX_HUMANIZE_BEATS).contains(&beats) {
-        return Err(format!("time must be 0 to {MAX_HUMANIZE_BEATS} beats, got {beats}").into());
+/// How far `note.humanize` may move a start, in beats: `time` in beats, or `ms` in milliseconds
+/// at the project's tempo (10 ms when neither is given), never both.
+fn humanize_beats(session: &Session, params: &Value) -> Result<f64, CommandError> {
+    let args = Args::new(params);
+    let time = args.opt_f64("time")?;
+    let ms = args.opt_f64("ms")?;
+    match (time, ms) {
+        (Some(_), Some(_)) => Err("give time (beats) or ms (milliseconds), not both".into()),
+        (Some(beats), None) => {
+            if !(0.0..=MAX_HUMANIZE_BEATS).contains(&beats) {
+                return Err(format!("time must be 0 to {MAX_HUMANIZE_BEATS} beats, got {beats}").into());
+            }
+            Ok(beats)
+        }
+        (None, ms) => {
+            let ms = ms.unwrap_or(DEFAULT_HUMANIZE_MS);
+            if !(0.0..=MAX_HUMANIZE_MS).contains(&ms) {
+                return Err(format!("ms must be 0 to {MAX_HUMANIZE_MS} milliseconds, got {ms}").into());
+            }
+            let bpm = session.project.transport.tempo_bpm;
+            let bpm = if bpm.is_finite() && bpm > 0.0 { bpm } else { 120.0 };
+            Ok(ms / 1000.0 * bpm / 60.0)
+        }
     }
+}
+
+/// `note.humanize`: moves each note's start by a normally distributed draw within ±`time` beats
+/// (or ±`ms` milliseconds) and its velocity by one within ±`velocity` MIDI steps, each kept within
+/// its range (#1214). Each note has a draw of its own and moves whole, keeping its length, as a
+/// played note does; a start goes no earlier than 0, and a note that would run into the next one
+/// on the same key ends at that one's start. The same `seed` gives the same result, so a call can
+/// be repeated.
+pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let beats = humanize_beats(session, params)?;
     let steps = Args::new(params).opt_f64("velocity")?.unwrap_or(DEFAULT_HUMANIZE_STEPS);
     if !(0.0..=127.0).contains(&steps) {
         return Err(format!("velocity must be 0 to 127 MIDI steps, got {steps}").into());
@@ -244,21 +287,54 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
             let mut humanized = *note;
-            let time = (note.time + rng.next_signed() * beats).clamp(0.0, MAX_BEAT);
-            if time != note.time {
-                humanized.time = time;
-            }
-            let midi = f64::from(midi_velocity(note.velocity)) + rng.next_signed() * steps;
+            humanized.time = (note.time + rng.next_within(beats)).clamp(0.0, MAX_BEAT);
+            let midi = f64::from(midi_velocity(note.velocity)) + rng.next_within(steps);
             apply_velocity(&mut humanized, midi);
             moved.push((index, humanized));
         }
+        let touched: Vec<usize> = moved.iter().filter(|(i, n)| notes.get(*i) != Some(n)).map(|(i, _)| *i).collect();
         for (index, note) in moved {
             if let Some(slot) = notes.get_mut(index) {
                 *slot = note;
             }
         }
+        keep_off_the_next(notes, &touched);
         Ok(json!({ "notes": named, "seed": seed }))
     })
+}
+
+/// Shortens a note that now runs into the next note on its key, where either of the two was moved
+/// (`touched`): its end goes to the next one's start, a hundredth of a beat long at least.
+fn keep_off_the_next(notes: &mut Notes, touched: &[usize]) {
+    if touched.is_empty() {
+        return;
+    }
+    // Looked up once per pair: a list's `contains` would make a large selection quadratic.
+    let mut moved = vec![false; notes.len()];
+    for &index in touched {
+        if let Some(slot) = moved.get_mut(index) {
+            *slot = true;
+        }
+    }
+    let was_moved = |index: usize| moved.get(index).copied().unwrap_or(false);
+    let mut order: Vec<usize> = (0..notes.len()).collect();
+    order.sort_by(|a, b| {
+        let (Some(x), Some(y)) = (notes.get(*a), notes.get(*b)) else { return std::cmp::Ordering::Equal };
+        x.key.cmp(&y.key).then(x.time.total_cmp(&y.time))
+    });
+    for pair in order.windows(2) {
+        let &[a, b] = pair else { continue };
+        if !(was_moved(a) || was_moved(b)) {
+            continue;
+        }
+        let (Some(first), Some(next)) = (notes.get(a).copied(), notes.get(b).copied()) else { continue };
+        if first.key != next.key || first.time + first.duration <= next.time + EPSILON {
+            continue;
+        }
+        if let Some(slot) = notes.get_mut(a) {
+            slot.duration = (next.time - first.time).max(MIN_LENGTH);
+        }
+    }
 }
 
 /// `note.fitToScale`: moves each note to the nearest key of a scale over a root (the clip's own
@@ -281,7 +357,9 @@ pub(crate) fn fit_to_scale(session: &mut Session, params: &Value) -> Result<Valu
                 moved += 1;
             }
         }
-        Ok(json!({ "notes": named, "moved": moved }))
+        let replaced =
+            if replaces(params) && moved > 0 { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
+        Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced), "moved": moved }), &replaced))
     })
 }
 
@@ -311,7 +389,8 @@ pub(crate) fn invert(session: &mut Session, params: &Value) -> Result<Value, Com
                 slot.key = key;
             }
         }
-        Ok(json!({ "notes": named }))
+        let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
+        Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced) }), &replaced))
     })
 }
 
@@ -341,7 +420,8 @@ pub(crate) fn reverse(session: &mut Session, params: &Value) -> Result<Value, Co
                 note.time = time;
             }
         }
-        Ok(json!({ "notes": named }))
+        let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
+        Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced) }), &replaced))
     })
 }
 
@@ -379,7 +459,11 @@ pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, Com
             }
         }
         let changed = lengthened.len();
-        let replaced = if replaces(params) && changed > 0 { replace_under(notes, &lengthened) } else { Vec::new() };
+        let replaced = if replaces(params) && changed > 0 {
+            replace_under(notes, &lengthened, covered_go(params))
+        } else {
+            Vec::new()
+        };
         Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced), "changed": changed }), &replaced))
     })
 }
@@ -422,7 +506,8 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
                 note.duration = length;
             }
         }
-        Ok(json!({ "notes": named }))
+        let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
+        Ok(with_replaced(params, json!({ "notes": after_removal(&named, &replaced) }), &replaced))
     })
 }
 

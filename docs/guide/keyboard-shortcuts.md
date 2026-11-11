@@ -67,7 +67,7 @@ The project you leave stops playing.
 | Key | Action | Where | What it does |
 |---|---|---|---|
 | Space | `transport.toggle` | Anywhere | Starts playback, or stops it when it is playing. Where playback starts and where the playhead goes when it stops are set in Settings › Arrangement › Time and play › **Play from** and **Stop**. |
-| Ctrl+L | `transport.setLoopEnabled` | Anywhere | Turns looping on or off. While looping is on, the arrangement plays the loop region over and over. If there is no loop region yet, turning it on makes one over the first 4 bars. |
+| Ctrl+L | `transport.setLoopEnabled` | Anywhere but the piano roll | Turns looping on or off. While looping is on, the arrangement plays the loop region over and over. If there is no loop region yet, turning it on makes one over the first 4 bars. After a click in the piano roll the same key loops the clip you are editing instead (see [Piano roll](#piano-roll)), so it never changes the arrangement's loop behind the notes. |
 | M | `marker.addAtPlayhead` | Anywhere | Adds a marker (a named point in the arrangement) where the playhead is. While stopped, it adds the marker at the play start marker. |
 
 ## Views and windows
@@ -157,6 +157,12 @@ The piano roll is the editor that shows a MIDI clip's notes, with pitch from low
 from left to right. Its keys work only after you have clicked inside it. A grid step is the length
 of one square of the grid, which follows the zoom and the grid setting.
 
+After a click inside the piano roll, the keys of the Arrangement and the Launcher behind it do
+nothing, also the ones listed as **Anywhere**: adding a track, a marker, the arrangement's loop, key
+mapping and the selected clips' keys. So a key pressed while you edit notes never changes
+something else by accident. Play and stop, undo and redo, save, the views, the browser and
+Settings go on working. Click in the Arrangement or the Launcher to give the keys back to it.
+
 | Key | Action | Where | What it does |
 |---|---|---|---|
 | 1 | `pianoRoll.tool1` | Piano roll | Chooses the **Select** tool: click a note to select it, drag to move it or to draw a selection box. |
@@ -180,7 +186,9 @@ of one square of the grid, which follows the zoom and the grid setting.
 | Shift+Right | `pianoRoll.longer` | Piano roll | Takes each selected note's end to the next grid line, or to the start of the next note of its key when that comes first (unless stacked notes are allowed). |
 | Alt+Shift+Left | `pianoRoll.shorterFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) shorter, off the grid. |
 | Alt+Shift+Right | `pianoRoll.longerFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) longer, off the grid, stopping at the next note of their key unless stacked notes are allowed. |
-| Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings in the quantise block of the MIDI tools column. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
+| Ctrl+L | `pianoRoll.loop` | Piano roll | Loops the clip you are editing. With a time selection (a stretch of time dragged in the piano roll) the clip's loop goes exactly over it; press again on the same stretch to turn the loop off. With no time selection it turns the clip's loop on or off, like a click on the loop bar in the piano roll's ruler. |
+| Alt+L | `pianoRoll.legato` | Piano roll | Legato: makes each selected note last until the next one starts, so there are no gaps between them. With no note selected it does this to every note in the clip. The same as **Legato** in the Notes tab of the clip panel's note tools. |
+| Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings of Quantise in the Transform tab of the clip panel's note tools. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
 
 Copy, cut, paste, duplicate and delete in the piano roll use the [Editing](#editing) keys. With no
 note selected (or nothing copied, for paste) they act on the clip instead.

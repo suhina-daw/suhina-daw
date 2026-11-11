@@ -206,6 +206,8 @@ pub struct Timeline {
     pub input_channels: u16,
     /// The main channel's volume, if the project has one.
     pub main_volume_db: Option<f64>,
+    /// The project's swing, 0 to 1, for the swing slider beside Resize all (#1221).
+    pub swing: f64,
     /// Where the last clip ends, in beats.
     pub end: f64,
     pub bar_beats: f64,
@@ -503,6 +505,7 @@ impl Timeline {
             input_channels: 0,
             lanes,
             main_volume_db,
+            swing: project.transport.swing,
             end,
             bar_beats,
             meter,

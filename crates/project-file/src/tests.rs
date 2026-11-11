@@ -144,6 +144,7 @@ fn everything() -> Project {
                 bar: 4,
                 time_signature: TimeSignature { numerator: 3, denominator: 4 },
             }],
+            swing: 0.25,
         },
         tracks: vec![
             Track {
@@ -1414,6 +1415,8 @@ fn every_feature() -> Project {
     sample_edits.push(2);
     sample_edits.extend_from_slice(&1i64.to_le_bytes());
     project.channels[0].devices[0].set_sample_edit_data(sample_edits).unwrap();
+    // Version 11: a clip's own swing (#1221).
+    project.arrangement.lanes[0].clips[0].swing = ClipSwing { amount: 0.6, own: true };
     renumbered(project)
 }
 
@@ -1472,6 +1475,13 @@ fn a_file_of_every_version_reads() {
         if version < 11 {
             // Lane layouts came with version 11 (#1322).
             expected.lane_layouts.clear();
+        }
+        if version < 12 {
+            // Swing came with version 12 (#1221).
+            expected.transport.swing = 0.0;
+            for clip in expected.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+                clip.swing = ClipSwing::default();
+            }
         }
         // Devices get their ids in document order when a file before version 6 is read.
         assert_eq!(from_json(&text).map(renumbered), Ok(renumbered(expected)), "version {version}");

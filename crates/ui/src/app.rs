@@ -460,6 +460,16 @@ pub struct App {
     /// and the detail area's height a splitter drag has reached so far, unclamped.
     detail_max: bool,
     detail_drag: Option<f32>,
+    /// The width a drag of the stacked devices' column splitter has reached so far.
+    side_drag: Option<f32>,
+    /// What was copied or cut last: Ctrl+V pastes notes into the clip the piano roll shows and
+    /// devices into the selected track's chain, although a click in the view took the other edit
+    /// keys.
+    copied_last: CopiedLast,
+    /// When Escape was last pressed, and whether it was pressed twice in a row this frame (the
+    /// focus mode, read before the shortcuts take the key).
+    last_escape: Option<f64>,
+    escape_twice: bool,
     /// The app's own window (`set_editor_owner`): a press on its controls takes the keyboard
     /// back from an embedded plug-in editor (`kit::keyboard`).
     window: Option<u64>,
@@ -700,7 +710,11 @@ impl App {
             quick_add_kept: String::new(),
             clips_before: Vec::new(),
             detail_max: false,
+            last_escape: None,
+            escape_twice: false,
             detail_drag: None,
+            side_drag: None,
+            copied_last: CopiedLast::Other,
             window: None,
             title_bar: 0.0,
             window_corner: 0,
@@ -2452,6 +2466,15 @@ impl App {
         if matches!(action.id, "edit.undo" | "edit.redo") {
             self.carry = None;
         }
+        // Which copy came last decides what Ctrl+V pastes (› `CopiedLast`).
+        match action.id {
+            "note.copy" | "note.cut" => self.copied_last = CopiedLast::Notes,
+            "device.copy" => self.copied_last = CopiedLast::Devices,
+            "clip.copy" | "clip.cut" | "range.copy" | "range.cut" | "track.copy" | "track.cut" | "automation.copy" => {
+                self.copied_last = CopiedLast::Other
+            }
+            _ => {}
+        }
         if action.id == "ui.renameClip" {
             let mut target = action.params.clone();
             let name = target.get("name").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
@@ -2749,8 +2772,15 @@ impl App {
             d.insert_temp(egui::Id::unique(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)
         });
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
+        self.piano_roll.covered_whole = self.settings.view.covered_whole;
         self.piano_roll.key_style = self.settings.piano_key_style;
         self.piano_roll.key_names = self.settings.piano_key_names;
+        crate::detail::piano_roll::set_note_spelling(self.settings.note_spelling);
+        crate::detail::piano_roll::set_default_scale(
+            self.settings.default_scale_root,
+            self.settings.default_scale_mode,
+        );
+        self.piano_roll.highlight_scale = self.settings.highlight_scale;
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;
@@ -3143,12 +3173,16 @@ impl App {
                 // a note its audition sounds goes off.
                 self.piano_roll.focused = false;
                 actions.extend(self.piano_roll.stop_audition());
+                actions.extend(self.piano_roll.settle_on_hide());
                 self.arrangement.focus = None;
                 // In a row under the view, the splitter stays along the bottom, to drag it open.
                 if let Some(layout) = &css_workspace {
                     layout.main
-                } else if grid.is_some() && self.settings.device_layout != DeviceLayout::Stack {
+                } else if grid.is_some() && self.editor_along_bottom() {
                     self.collapsed_splitter(ui, inner)
+                } else if grid.is_some() {
+                    // Stacked beside the view, it stays along the right edge, to drag it open.
+                    self.collapsed_side_splitter(ui, inner)
                 } else {
                     inner
                 }
@@ -3415,6 +3449,13 @@ impl App {
                                 .and_then(suhina_session::Player::output_info)
                                 .map_or(0, |i| i.input_channels);
                             self.frame_trace.mark("timeline");
+                            // The piano roll's time selection, lit on the clip it edits.
+                            self.arrangement.editor_span = match self.shown_clip() {
+                                Some(ClipRef::Arrangement(_, clip)) if self.detail_open => {
+                                    self.piano_roll.time_span().map(|(from, to)| (clip, from, to))
+                                }
+                                _ => None,
+                            };
                             arrangement_view::show(ui, &timeline, &mut self.arrangement, &mut actions);
                             self.frame_trace.mark("arrangement view");
                             self.frame_trace.note(|| {
@@ -3898,3 +3939,14 @@ fn headers_left(side: Option<Side>) -> bool {
 #[cfg(test)]
 #[path = "app_tests.rs"]
 mod tests;
+
+/// What a copy or cut put on the clipboards last, for Ctrl+V.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CopiedLast {
+    /// Notes: pasted into the clip the piano roll shows.
+    Notes,
+    /// Devices: pasted into the selected track's chain.
+    Devices,
+    /// Anything else: Ctrl+V goes where the last click put the keys.
+    Other,
+}
