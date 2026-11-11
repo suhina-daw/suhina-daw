@@ -241,7 +241,12 @@ fn elements_past_the_tree_s_depth_get_no_style_and_are_counted() {
 }
 
 /// The shapes one settled frame of `draw` paints, with `css` as the theme's sheet.
-fn shapes(css: &str, mut draw: impl FnMut(&egui::Ui)) -> Vec<egui::Shape> {
+fn shapes(css: &str, draw: impl FnMut(&egui::Ui)) -> Vec<egui::Shape> {
+    clipped(css, draw).into_iter().map(|(shape, _)| shape).collect()
+}
+
+/// [`shapes`], each with the rectangle that clips it.
+fn clipped(css: &str, mut draw: impl FnMut(&egui::Ui)) -> Vec<(egui::Shape, Rect)> {
     super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
     let ctx = egui::Context::default();
     let input = || egui::RawInput {
@@ -254,14 +259,14 @@ fn shapes(css: &str, mut draw: impl FnMut(&egui::Ui)) -> Vec<egui::Shape> {
     });
     output.textures_delta.clear();
     super::super::skin::configure(&super::super::skin::Skin::default());
-    fn flat(shape: egui::Shape, out: &mut Vec<egui::Shape>) {
+    fn flat(shape: egui::Shape, clip: Rect, out: &mut Vec<(egui::Shape, Rect)>) {
         match shape {
-            egui::Shape::Vec(shapes) => shapes.into_iter().for_each(|s| flat(s, out)),
-            shape => out.push(shape),
+            egui::Shape::Vec(shapes) => shapes.into_iter().for_each(|s| flat(s, clip, out)),
+            shape => out.push((shape, clip)),
         }
     }
     let mut all = Vec::new();
-    output.shapes.into_iter().for_each(|clipped| flat(clipped.shape, &mut all));
+    output.shapes.into_iter().for_each(|clipped| flat(clipped.shape, clipped.clip_rect, &mut all));
     all
 }
 
@@ -281,36 +286,132 @@ fn fill_of(shapes: &[egui::Shape], color: egui::Color32) -> Option<usize> {
 }
 
 #[test]
-fn a_container_s_border_comes_after_its_contents_and_a_control_s_before() {
+fn every_element_s_border_comes_before_its_contents() {
     let border = egui::Color32::from_rgb(0xFF, 0, 0);
     let row = egui::Color32::from_rgb(0, 0xFF, 0);
-    let css = "track-header, button { border-width: 1px; border-color: #FF0000; }";
+    let css = "browser, track-header, button { border-width: 1px; border-color: #FF0000; }";
     let area = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 40.0));
-    for (element, after) in [(TRACK_HEADER, true), (BUTTON, false)] {
+    for element in [BROWSER, TRACK_HEADER, BUTTON] {
         let painted = shapes(css, |ui| {
             let el = element.enter();
-            let boxed = el.paint(ui.painter(), area);
+            el.paint(ui.painter(), area);
             // A row as wide as the box, as a panel's rows are.
-            ui.painter().rect_filled(boxed.content, 0.0, row);
+            ui.painter().rect_filled(area, 0.0, row);
         });
         let (border_at, _) = stroke_of(&painted, border).expect("the border");
         let row_at = fill_of(&painted, row).expect("the row");
-        assert_eq!(border_at > row_at, after, "{}: {painted:?}", element.name());
+        assert!(border_at < row_at, "{}: {painted:?}", element.name());
     }
 }
 
 #[test]
-fn padding_keeps_the_contents_inside_the_box() {
+fn a_child_s_highlight_is_drawn_over_its_parent_s_inset_shadow() {
+    let highlight = egui::Color32::from_rgb(0, 0xFF, 0);
+    let css = "session { box-shadow: inset 0 0 0 1px #FF0000; background-color: #101010; }";
+    let area = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(200.0, 100.0));
+    let painted = shapes(css, |ui| {
+        let session = SESSION.enter();
+        let inside = session.paint(ui.painter(), area).content;
+        // The selected track's highlight, along the region's edge.
+        ui.painter().rect_filled(Rect::from_min_size(inside.min, egui::vec2(40.0, inside.height())), 0.0, highlight);
+    });
+    let shadow_at = painted.iter().rposition(|shape| matches!(shape, egui::Shape::Mesh(_))).expect("the inset shadow");
+    assert!(fill_of(&painted, highlight).expect("the highlight") > shadow_at, "{painted:?}");
+}
+
+#[test]
+fn border_and_padding_keep_the_contents_inside_the_box() {
     let area = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 40.0));
     let mut content = None;
     shapes("track-header { padding: 4px 8px 2px; }", |ui| {
         content = Some(TRACK_HEADER.enter().paint(ui.painter(), area).content);
     });
     assert_eq!(content, Some(Rect::from_min_max(egui::pos2(18.0, 14.0), egui::pos2(102.0, 48.0))));
+    shapes("browser { padding: 4px; border-width: 1px 0 2px; border-color: #FF0000; }", |ui| {
+        content = Some(BROWSER.enter().paint(ui.painter(), area).content);
+    });
+    assert_eq!(content, Some(Rect::from_min_max(egui::pos2(14.0, 15.0), egui::pos2(106.0, 44.0))));
     shapes("track-header { padding: 40px; }", |ui| {
         content = Some(TRACK_HEADER.enter().paint(ui.painter(), area).content);
     });
     assert_eq!(content.map(|c| c.area()), Some(0.0), "padding larger than the box leaves no room");
+}
+
+#[test]
+fn sides_of_different_widths_are_drawn_each() {
+    let area = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 40.0));
+    let red = egui::Color32::from_rgb(0xFF, 0, 0);
+    let painted = shapes("toolbar { border-width: 0 0 1px; border-color: #FF0000; }", |ui| {
+        TOOLBAR.enter().paint(ui.painter(), area);
+    });
+    let lines: Vec<Rect> = painted
+        .iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Rect(rect) if rect.fill == red => Some(rect.rect),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        vec![Rect::from_min_max(egui::pos2(10.0, 49.0), egui::pos2(110.0, 50.0))],
+        "only the line under it"
+    );
+    assert!(stroke_of(&painted, red).is_none());
+}
+
+#[test]
+fn a_parent_that_hides_its_overflow_clips_its_children_to_its_padding_box() {
+    let area = Rect::from_min_size(egui::pos2(40.0, 40.0), egui::vec2(100.0, 40.0));
+    let child = egui::Color32::from_rgb(0, 0xFF, 0);
+    let menu = egui::Color32::from_rgb(0, 0, 0xFF);
+    let child_clip = |css: &str| {
+        let painted = clipped(css, |ui| {
+            let browser = BROWSER.enter();
+            browser.paint(ui.painter(), area);
+            // A child painting past the region, through a painter of its own.
+            ui.ctx().layer_painter(ui.layer_id()).rect_filled(area.expand(20.0), 0.0, child);
+            // A menu above the views: another layer, which no region clips.
+            ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("menu"))).rect_filled(
+                area.expand(20.0),
+                0.0,
+                menu,
+            );
+        });
+        let clip_of = |color| {
+            painted
+                .iter()
+                .find(|(shape, _)| matches!(shape, egui::Shape::Rect(r) if r.fill == color))
+                .map(|(_, clip)| *clip)
+        };
+        (clip_of(child).expect("the child"), clip_of(menu).expect("the menu"))
+    };
+    let (clip, menu_clip) = child_clip("browser { border-width: 2px; border-color: #FF0000; }");
+    assert_eq!(clip, area.shrink(2.0), "the region's padding box (regions hide their overflow)");
+    assert!(menu_clip.contains_rect(area.expand(10.0)), "a menu is not clipped: {menu_clip:?}");
+    assert!(super::overflow_cuts() > 0, "the cut is counted");
+    let (clip, _) = child_clip("browser { overflow: visible; }");
+    assert!(clip.contains_rect(area.expand(10.0)), "overflow: visible lets it pass: {clip:?}");
+}
+
+#[test]
+fn a_parent_s_outline_is_drawn_over_its_children_and_past_its_own_clip() {
+    let outline = egui::Color32::from_rgb(0, 0, 0xFF);
+    let row = egui::Color32::from_rgb(0, 0xFF, 0);
+    let area = Rect::from_min_size(egui::pos2(50.0, 50.0), egui::vec2(100.0, 40.0));
+    let painted = clipped("browser { outline: 2px solid #0000FF; }", |ui| {
+        let browser = BROWSER.enter();
+        browser.paint(ui.painter(), area);
+        ui.painter().rect_filled(area, 0.0, row);
+    });
+    let at = |color| {
+        painted.iter().position(|(shape, _)| match shape {
+            egui::Shape::Rect(rect) => rect.fill == color || rect.stroke.color == color,
+            _ => false,
+        })
+    };
+    assert!(at(outline).expect("the outline") > at(row).expect("the row"));
+    let (_, clip) = painted[at(outline).unwrap_or_default()];
+    assert!(clip.contains_rect(area.expand(2.0)), "its own overflow does not clip it: {clip:?}");
 }
 
 #[test]

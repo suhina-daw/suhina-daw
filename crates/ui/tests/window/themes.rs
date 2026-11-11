@@ -1152,3 +1152,36 @@ fn a_theme_styles_the_workspace_splitters() {
     assert!(native.contains(&theme::control_background()), "the native strip: {native:?}");
     assert!(!clear.contains(&theme::control_background()), "a transparent strip paints no fill: {clear:?}");
 }
+
+/// Every bundled theme gives no region a border or padding, so no region's `overflow` clip cuts
+/// anything its views paint: a view that paints past its region is a view laid out in the wrong
+/// box (#1336). The browser and the detail area show, in both views.
+#[test]
+fn no_bundled_theme_has_a_view_painting_past_its_region() {
+    let themes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("themes");
+    let mut names: Vec<String> = std::fs::read_dir(&themes)
+        .expect("the bundled themes")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().join("theme.css").is_file())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+    names.sort();
+    assert!(names.len() > 5, "{names:?}");
+    for name in names {
+        let mut app = demo_app();
+        app.set_browser_open(true);
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, &name);
+        h.run_steps(4);
+        for view in [View::Session, View::Arrangement] {
+            if h.state().view() != view {
+                h.key_press(Key::Tab);
+                h.run_steps(2);
+            }
+            suhina_ui::kit::element::overflow_cuts();
+            h.run_steps(2);
+            assert_eq!(suhina_ui::kit::element::overflow_cuts(), 0, "{name}, {view:?}");
+        }
+    }
+}

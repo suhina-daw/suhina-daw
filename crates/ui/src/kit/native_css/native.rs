@@ -14,6 +14,10 @@ use suhina_style::{
     value::{Color, Length, Value},
 };
 
+/// The border's side widths, in `padding`'s order: top, right, bottom, left.
+const BORDER_SIDES: [Property; 4] =
+    [Property::BorderTopWidth, Property::BorderRightWidth, Property::BorderBottomWidth, Property::BorderLeftWidth];
+
 pub(super) struct Paint {
     sheet: Sheet,
     defaults: Sheet,
@@ -398,16 +402,18 @@ fn computed_from(resolved: Arc<ComputedStyle>) -> Computed {
         Value::Shadows(values) => values.iter().map(|shadow| shadow.resolve(font, foreground)).collect::<Vec<_>>(),
         _ => Vec::new(),
     };
+    let border_sides = BORDER_SIDES.map(|side| match style.get(side) {
+        Value::Length(Length::Px(value)) if value.is_finite() => value.clamp(0.0, 16.0),
+        _ => 0.0,
+    });
     Computed {
         color: color(Property::Color),
         background: ink(Property::BackgroundColor),
         border: ink(Property::BorderColor),
         font_size: font.clamp(7.0, 96.0),
         radius: radius.clamp(0.0, 128.0),
-        border_width: match style.get(Property::BorderWidth) {
-            Value::Length(Length::Px(value)) => value.clamp(0.0, 16.0),
-            _ => 0.0,
-        },
+        border_width: border_sides.into_iter().fold(0.0, f32::max),
+        border_sides,
         text_align: match style.get(Property::TextAlign) {
             _ if !style.authored(Property::TextAlign) => None,
             Value::Keyword("left" | "start") => Some(-1),
@@ -437,7 +443,7 @@ fn computed_from(resolved: Arc<ComputedStyle>) -> Computed {
             font_size: style.authored(Property::FontSize),
             radius: style.authored(Property::Radius),
             accent: style.authored(Property::AccentColor),
-            border_width: style.authored(Property::BorderWidth),
+            border_width: BORDER_SIDES.into_iter().any(|side| style.authored(side)),
         },
         variables: style.shared_variables(),
         gradients: match style.get(Property::BackgroundImage) {

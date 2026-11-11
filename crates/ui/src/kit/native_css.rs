@@ -35,7 +35,7 @@ pub use paint::background_with;
 #[cfg(test)]
 pub(in crate::kit) use paint::surface_with;
 pub(in crate::kit) use paint::{artwork_shadows, background_rounded, gradients_rounded, level_fill, level_glow};
-pub(in crate::kit) use paint::{box_begin, box_end, has_end};
+pub(in crate::kit) use paint::{box_begin, box_end};
 pub use text::paint_text;
 pub use workspace::{Workspace, splitter_between, workspace};
 
@@ -63,8 +63,11 @@ pub struct Computed {
     pub border: Color32,
     pub font_size: f32,
     pub radius: f32,
-    /// `border-width`; a control draws a border only when the sheet sets one.
+    /// The widest of the border's sides: the width of a border drawn the same all round (an egui
+    /// widget's stroke). A control draws a border only when the sheet sets one.
     pub border_width: f32,
+    /// The border's widths, top, right, bottom, left (`border-width`, `border-bottom-width`).
+    pub border_sides: [f32; 4],
     /// `height` in pixels, when the sheet sets one: the thickness of a bar such as a volume field's.
     pub height: Option<f32>,
     /// `width` in pixels, when the sheet sets one: the size of a fader's cap or rail.
@@ -109,6 +112,13 @@ impl Computed {
                 _ => 0.0,
             }
         })
+    }
+
+    /// The room the element's border and `padding` take inside its box, top, right, bottom, left:
+    /// what is left is its content box.
+    pub fn insets(&self) -> [f32; 4] {
+        let padding = self.padding();
+        std::array::from_fn(|side| padding[side] + self.border_sides[side])
     }
 
     /// The element's outline, when it has one: its width, colour and offset in points.

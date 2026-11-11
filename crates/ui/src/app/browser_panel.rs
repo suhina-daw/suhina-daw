@@ -66,8 +66,6 @@ impl App {
             );
             (panel, handle, Rect::from_min_max(area.min, Pos2::new(handle.left(), area.bottom())))
         };
-        // The panel clips its children's shadows (`overflow`).
-        panel_style.occupies(panel, ui.clip_rect());
         let default_width = crate::settings::Settings::default().browser_width;
         let (resized, done) = if part >= 1.0 && handle.is_positive() {
             browser_view::resize_handle(ui, handle, width, left, default_width as f32)
@@ -78,6 +76,9 @@ impl App {
             let new = new.round().clamp(low as f32, widest) as u32;
             self.settings.browser_width = new;
         }
+        // The panel clips what the browser paints (`overflow`), once its handle beside it is drawn;
+        // the browser goes in its content box.
+        let inside = panel_style.occupies(ui.painter(), panel);
         // Saved once the handle is let go: writing the settings file on every frame of a drag
         // made the drag lag.
         if done {
@@ -99,8 +100,8 @@ impl App {
             });
         };
         let out = ui
-            .scope_builder(egui::UiBuilder::new().max_rect(panel), |ui| {
-                ui.set_clip_rect(panel.intersect(area).intersect(ui.clip_rect()));
+            .scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+                ui.set_clip_rect(inside.intersect(area).intersect(ui.clip_rect()));
                 let cx = browser_view::Context {
                     projects: &mut self.projects,
                     settings: &self.settings,
@@ -108,7 +109,7 @@ impl App {
                     search_key,
                     other_results: Some(&mut draw_map),
                 };
-                browser_view::show(ui, panel, &mut self.browser, cx)
+                browser_view::show(ui, inside, &mut self.browser, cx)
             })
             .inner;
         // A press anywhere outside the browser gives the arrow keys back to the window.
