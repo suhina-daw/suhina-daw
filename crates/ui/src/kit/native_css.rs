@@ -121,8 +121,9 @@ impl Computed {
     /// are laid out in their own box (#1336). Points and `em` resolve as the layout's do.
     pub fn padding_in(&self, width: f32) -> [f32; 4] {
         [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft].map(|side| {
+            // The layout's own limit, so the two boxes agree however large the padding.
             let points = suhina_style::layout::spacing_points_of(&self.resolved, side, width);
-            if points.is_finite() { points.clamp(0.0, 512.0) } else { 0.0 }
+            if points.is_finite() { points } else { 0.0 }
         })
     }
 

@@ -265,18 +265,22 @@ fn spacing(style: &ComputedStyle, property: Property) -> LengthPercentage {
 /// (`workspace`, `toolbar`) that is their own box's width, the size they are laid out in.
 pub fn spacing_points_of(style: &ComputedStyle, property: Property, basis: f32) -> f32 {
     match style.get(property) {
-        Value::Length(Length::Percent(n)) if basis.is_finite() => (n * basis.max(0.0)).min(16384.0),
+        Value::Length(Length::Percent(n)) if basis.is_finite() => (n * basis.max(0.0)).clamp(0.0, MAX_SPACING),
         _ => spacing_points(style, property).unwrap_or(0.0),
     }
 }
 
+/// The most a padding or gap side resolves to, in points, for the layout and for painters alike.
+pub const MAX_SPACING: f32 = 16384.0;
+
 /// A padding (or gap) side in points as the layout resolves it, for painters that need the same
 /// box without laying the element out: a length in points, or in `em` of the element's own font
-/// size. `None` for a percentage, which takes the size of the box around the element.
+/// size, 0 to [`MAX_SPACING`]. `None` for a percentage, which takes the size of the box around
+/// the element.
 pub fn spacing_points(style: &ComputedStyle, property: Property) -> Option<f32> {
     match style.get(property) {
-        Value::Length(Length::Px(n)) => Some(n),
-        Value::Length(Length::Em(n)) => Some((n * font(style)).min(16384.0)),
+        Value::Length(Length::Px(n)) if n.is_finite() => Some(n.clamp(0.0, MAX_SPACING)),
+        Value::Length(Length::Em(n)) if n.is_finite() => Some((n * font(style)).clamp(0.0, MAX_SPACING)),
         Value::Length(Length::Percent(_)) => None,
         _ => Some(0.0),
     }
@@ -696,6 +700,24 @@ mod tests {
         let css = "toolbar { display:flex; width:400px; padding-left:10%; } #a { width:100px; height:20px; }";
         let elements = vec![Element::new("toolbar", None), Element::new("div", Some(0)).with_id("a")];
         assert_eq!(layout(css, elements, 800.0)[1].unwrap().x, 80.0, "10% of the 800 points around it");
+    }
+
+    /// Padding past 512 points: the layout and `spacing_points_of`, which painters use, give it
+    /// the same room (#1336).
+    #[test]
+    fn large_padding_is_where_painters_find_it() {
+        let css = "toolbar { display:flex; padding-left:60%; padding-top:700px; } #a { width:10px; height:20px; }";
+        let elements = vec![Element::new("toolbar", None), Element::new("div", Some(0)).with_id("a")];
+        let rect = layout(css, elements, 1000.0)[1].unwrap();
+        assert_eq!((rect.x, rect.y), (600.0, 700.0));
+        let sheet = Sheet::parse(css).unwrap();
+        let tree = Tree::new(vec![Element::new("toolbar", None)]).unwrap();
+        let viewport = Viewport { width: 1000.0, height: 600.0, reduced_motion: false };
+        let styles =
+            cascade::compute(&tree, viewport, &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }])
+                .unwrap();
+        assert_eq!(spacing_points_of(&styles[0], Property::PaddingLeft, 1000.0), 600.0);
+        assert_eq!(spacing_points_of(&styles[0], Property::PaddingTop, 1000.0), 700.0);
     }
 
     #[test]

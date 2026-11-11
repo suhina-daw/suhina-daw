@@ -349,6 +349,22 @@ fn padding_in_em_takes_the_element_s_font_size() {
     assert_eq!(content, Some(Rect::from_min_max(egui::pos2(20.0, 15.0), egui::pos2(100.0, 45.0))));
 }
 
+/// Padding past 512 points, in points or in percent of a toolbar's width, is the room the layout
+/// gives it too: one limit for both, so the content box and the laid-out children agree (#1336).
+#[test]
+fn large_padding_is_the_layout_s_in_the_content_box() {
+    let area = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1000.0, 40.0));
+    let mut content = None;
+    shapes("toolbar { padding-left: 60%; }", |ui| {
+        content = Some(TOOLBAR.enter().paint(ui.painter(), area).content);
+    });
+    assert_eq!(content.map(|c| c.left()), Some(600.0), "60% of the toolbar's 1000 points");
+    shapes("track-header { padding-left: 700px; }", |ui| {
+        content = Some(TRACK_HEADER.enter().paint(ui.painter(), area).content);
+    });
+    assert_eq!(content.map(|c| c.left()), Some(700.0));
+}
+
 #[test]
 fn sides_of_different_widths_are_drawn_each() {
     let area = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 40.0));
