@@ -861,7 +861,7 @@ fn a_devices_file_state_saves_library_relative() {
     assert_eq!(file_out["name"], "Suhina Overdrive", "the pack stands in by name");
 
     // A file outside the library keeps its absolute path, recorded when it is all there is.
-    let outside = std::env::temp_dir().join(format!("suhina-library-outside-{}.nam", std::process::id()));
+    let outside = std::env::temp_dir().join(format!("suhina-library-outside-save-{}.nam", std::process::id()));
     std::fs::write(&outside, SHIPPED_OVERDRIVE).unwrap();
     let out =
         run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": text(&outside) })).unwrap();
@@ -1071,7 +1071,7 @@ fn a_file_state_handed_back_keeps_the_library_relative_form() {
     let device = session.project().tracks[0].channel.and_then(|c| session.project().channel(c)).unwrap();
     assert_eq!(device.devices[0].state.as_deref().and_then(|s| std::str::from_utf8(s).ok()), Some(relative));
     // A file outside the library stays absolute: its path is the state.
-    let outside = std::env::temp_dir().join(format!("suhina-library-outside-{}.nam", std::process::id()));
+    let outside = std::env::temp_dir().join(format!("suhina-library-outside-back-{}.nam", std::process::id()));
     std::fs::write(&outside, SHIPPED_OVERDRIVE).unwrap();
     let out =
         run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": text(&outside) })).unwrap();
