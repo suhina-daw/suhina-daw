@@ -384,18 +384,6 @@ impl Entered {
         Boxed { content, radius }
     }
 
-    /// Says where the element is on screen without painting it (a workspace panel): its children
-    /// are clipped to it when it hides its overflow, and its outline is painted over them, as
-    /// [`Entered::paint`]'s are. Returns its content box, for its children.
-    pub fn occupies(&self, painter: &Painter, rect: Rect) -> Rect {
-        self.finish();
-        let style = self.style();
-        let outer = super::native_css::outer_clip(self.scope.node);
-        let radius =
-            style.as_ref().map_or(0.0, |style| style.radius.min(rect.width().min(rect.height()) / 2.0).max(0.0));
-        self.contain(painter, rect, style, radius, outer)
-    }
-
     /// The element's border in `rect`, for a bar whose background its caller paints with the
     /// window's corners (and [`Entered::paint_background`] its gradients and inset shadows): then,
     /// as after [`Entered::paint`], its contents go in the content box returned, are clipped to

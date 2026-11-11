@@ -1236,6 +1236,42 @@ fn no_bundled_theme_has_a_view_painting_past_its_region() {
     }
 }
 
+/// The workspace's panels paint their own box as every element does: a border a theme gives
+/// `workspace-panel` is drawn round the browser, the main view and the detail area, in the room it
+/// takes, and their background under them (#1336).
+#[test]
+fn the_workspace_panels_draw_their_border_and_background() {
+    fn rects(shape: &egui::Shape, out: &mut Vec<egui::epaint::RectShape>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| rects(s, out)),
+            egui::Shape::Rect(rect) => out.push(rect.clone()),
+            _ => {}
+        }
+    }
+    let red = egui::Color32::from_rgb(0xFF, 0, 0);
+    let blue = egui::Color32::from_rgb(0, 0, 0xFF);
+    let h = open_with_clip(
+        "workspace-panel { border-width: 3px; border-color: #FF0000; } #panel-detail { background-color: #0000FF; }",
+        false,
+    );
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| rects(&s.shape, &mut seen));
+    let browser = h.get_by_label("Browser splitter").rect();
+    let detail = h.get_by_label("Detail area splitter").rect();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let borders: Vec<_> =
+        seen.iter().filter(|r| r.stroke.color == red && r.stroke.width == 3.0).map(|r| r.rect).collect();
+    assert_eq!(borders.len(), 3, "the browser's, the main view's and the detail area's: {borders:?}");
+    assert!(borders.iter().any(|r| r.right() <= browser.left() + 0.5), "the browser's, left of its splitter");
+    assert!(borders.iter().any(|r| r.top() >= detail.bottom() - 0.5), "the detail area's, under its splitter");
+    assert!(
+        borders.iter().any(|r| r.bottom() <= detail.top() + 0.5 && r.left() >= browser.right() - 0.5),
+        "the view's"
+    );
+    let under = borders.iter().find(|r| r.top() >= detail.bottom() - 0.5).copied();
+    assert!(seen.iter().any(|r| r.fill == blue && Some(r.rect) == under), "the detail panel's background");
+}
+
 /// A theme that pads every region and container, gives it a border and makes it hide its
 /// overflow: every view lays its children out in its content box (its box less its border and
 /// padding), so no element's clip cuts anything painted in it (#1336). Each screen in turn: the

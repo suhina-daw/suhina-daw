@@ -460,7 +460,9 @@ browser { color: #D8E8DF; background-color: #101C17;
 #panel-detail { grid-column: 2; grid-row: 2; height: 180px; }
 ```
 
-Workspace layout respects native panel visibility. A panel whose size the sheet sets (a `width`
+Each panel draws its own background and border, as every element does, and holds its view in
+its content box: `#panel-detail { border-width: 1px; border-color: var(--border); padding: 4px; }`
+frames the detail area. Workspace layout respects native panel visibility. A panel whose size the sheet sets (a `width`
 on `#panel-browser`, a `height` on `#panel-detail`, a fixed grid track) has no splitter; one whose
 size it leaves alone keeps its splitter, in the gap beside it, so `#workspace { gap: 8px; }`
 alone keeps both. The splitters are elements of their own, `#detail-splitter` and

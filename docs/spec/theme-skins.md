@@ -829,7 +829,9 @@ absent elements; put sizes on the optional panels and use `auto` tracks instead:
 
 The native workspace exposes `workspace` / `#workspace`, with `workspace-panel`
 children `#panel-browser`, `#panel-main`, `#panel-detail`. They contain the browser,
-Launcher/Arrangement and detail scopes respectively. Authored layout declarations on
+Launcher/Arrangement and detail scopes respectively. Each panel paints its own box as every
+element does: a `background-color` under the view it holds and a border round it, in the room the
+border takes (none unless the sheet gives one), and the view goes in its content box. Authored layout declarations on
 these containers opt into CSS Flex/Grid geometry. With none, native splitters and layout
 remain in charge. Closed native panels do not become visible merely through CSS.
 In CSS layout mode, placement comes from the stylesheet. A panel whose size the sheet sets has no

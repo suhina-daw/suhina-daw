@@ -76,9 +76,9 @@ impl App {
             let new = new.round().clamp(low as f32, widest) as u32;
             self.settings.browser_width = new;
         }
-        // The panel clips what the browser paints (`overflow`), once its handle beside it is drawn;
-        // the browser goes in its content box.
-        let inside = panel_style.occupies(ui.painter(), panel);
+        // The panel's own box, its background and border, once its handle beside it is drawn; it
+        // clips what the browser paints (`overflow`), and the browser goes in its content box.
+        let inside = panel_style.paint(ui.painter(), panel).content;
         // Saved once the handle is let go: writing the settings file on every frame of a drag
         // made the drag lag.
         if done {
@@ -104,7 +104,7 @@ impl App {
                 // The panel bounds the browser's input as its drawing, on the panel's edge so
                 // padding a child paints over stays (spec › Overflow: the same rectangles for
                 // drawing and input); the area's edge is the viewport's while the browser slides
-                // in. A panel that hides its overflow clips the painting further (`occupies`).
+                // in. A panel that hides its overflow clips the painting further (`paint`).
                 ui.set_clip_rect(panel.intersect(area).intersect(ui.clip_rect()));
                 let cx = browser_view::Context {
                     projects: &mut self.projects,

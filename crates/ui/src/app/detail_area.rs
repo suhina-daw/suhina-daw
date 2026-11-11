@@ -530,9 +530,10 @@ impl App {
             }
             paint_splitter(ui, splitter, &response, stacked);
         }
-        // The panel clips what the detail area paints (`overflow`), once its splitter beside it is
-        // drawn; the detail area goes in its content box (#1336).
-        let detail = panel_style.occupies(ui.painter(), detail);
+        // The panel's own box, its background and border, once its splitter beside it is drawn;
+        // it clips what the detail area paints (`overflow`), and the detail area goes in its
+        // content box (#1336).
+        let detail = panel_style.paint(ui.painter(), detail).content;
 
         if let Some(shown_track) = clip.map(ClipRef::track).or(track) {
             self.detail_drop = Some((side.unwrap_or(detail), shown_track));
