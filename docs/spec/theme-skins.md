@@ -512,7 +512,9 @@ A Launcher `track-column` stays while its slots scroll under it, as a CSS scroll
 are cut at its padding box whatever its `overflow`, so they never cover its border. Its top and
 bottom border and padding are those of a plain `track-column` rule, because every column and the
 scene column share the rows: a track's or a state's rule (`#track-3`, `track-column[selected]`)
-that changes them draws its border but does not move the rows.
+that changes them draws its border but does not move the rows, and the rows are cut at a plain
+column's top and bottom border, so a thicker one shows under the ends of the rows rather than
+cutting a slot.
 
 **Borders.** `border-width` is a shorthand of `border-top-width`, `border-right-width`,
 `border-bottom-width` and `border-left-width` (one to four lengths, as `padding`), each 0 to

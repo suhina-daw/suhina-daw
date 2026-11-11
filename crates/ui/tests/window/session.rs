@@ -1375,3 +1375,34 @@ fn scrolled_slots_stay_inside_a_track_column_s_border() {
     assert!(moved.interact_rect.top() >= inside - 0.5, "it takes the pointer only below the border: {moved:?}");
     assert!(moved.interact_rect.height() > 0.0, "and still where it shows: {moved:?}");
 }
+
+/// A selected column whose state rule gives it a thicker top border than a plain column: its first
+/// slot is as tall as the other columns' first slots, whole and clickable (#1336).
+#[test]
+fn a_selected_column_s_thicker_top_border_keeps_its_first_slot_whole() {
+    let mut harness = view();
+    let selected = harness.state().grid.columns[0].track;
+    harness.state_mut().state.selected = Some(selected);
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        "track-column { border-width: 2px; border-color: #FF00FF; } \
+         track-column[selected] { border-top-width: 8px; }"
+            .into(),
+    ));
+    harness.run();
+    harness.run();
+    let widgets = harness
+        .ctx
+        .viewport(|v| v.prev_pass.widgets.layers().flat_map(|(_, rects)| rects.iter()).copied().collect::<Vec<_>>());
+    // Scene 1's launch buttons, left to right: the selected column's, then the next column's.
+    let mut buttons: Vec<egui::Rect> = harness.query_all_by_label_contains("(scene 1)").map(|n| n.rect()).collect();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    buttons.sort_by(|a, b| a.left().total_cmp(&b.left()));
+    let (selected, other) = (buttons[0], buttons[2]);
+    let pointer = |rect: egui::Rect| widgets.iter().find(|w| w.rect == rect).map(|w| w.interact_rect);
+    assert_eq!(
+        selected.height(),
+        other.height(),
+        "the selected column's first slot is cut: {selected:?} against {other:?}"
+    );
+    assert_eq!(pointer(selected).map(|r| r.height()), Some(other.height()), "and takes the pointer whole");
+}

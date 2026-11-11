@@ -258,7 +258,12 @@ pub fn show(
     // The slots are rows shared by every column and the scene column: they start below a track
     // column's top border and padding and end above its bottom ones, as a plain `track-column`
     // has them, so the rows line up whatever a column's state (#1336).
-    let [rows_top, _, rows_bottom, _] = crate::kit::element::TRACK_COLUMN.enter().insets();
+    let (rows_top, rows_bottom, rows_border) = {
+        let plain = crate::kit::element::TRACK_COLUMN.enter();
+        let [top, _, bottom, _] = plain.insets();
+        let [border_top, _, border_bottom, _] = plain.style().map_or([0.0; 4], |style| style.border_sides);
+        (top, bottom, (border_top, border_bottom))
+    };
     let mixer_height = mixer_height(state, area.height(), grid.scenes.len(), rows_top + rows_bottom);
     let mixer =
         Rect::from_min_max(Pos2::new(area.left(), (area.bottom() - mixer_height).max(header.bottom())), area.max);
@@ -355,6 +360,7 @@ pub fn show(
         body,
         mixer,
         top: body.top() - state.scroll.y + rows_top,
+        rows: egui::Rangef::new(body.top() + rows_border.0, body.bottom() - rows_border.1),
         scenes: grid.scenes.len(),
         places,
         groups,
@@ -659,6 +665,9 @@ struct Bands<'a> {
     /// Where the first scene's row starts, scrolled, inside a track column's top border and
     /// padding.
     top: f32,
+    /// Where the rows show, scrolling: the body inside a plain track column's top and bottom
+    /// border, the box every column's rows are laid out for.
+    rows: egui::Rangef,
     scenes: usize,
     /// Every track but the returns, in track order, and the group tracks with their names.
     places: Vec<Place>,
@@ -937,14 +946,15 @@ fn column_body(
     // Its border, and its slots in its content box, inside its border and padding (#1336); the
     // rows' top is the one every column shares (`Bands::top`). The column stays while its rows
     // scroll, as a CSS scroll container: they are cut at its padding box, so they never draw
-    // over its border nor take the pointer there.
+    // over its border nor take the pointer there. Across, its own; up and down, a plain
+    // column's (`Bands::rows`), the box the shared rows are laid out for, so a state's thicker
+    // top or bottom border is drawn under the rows' ends rather than cutting a slot.
     let column_box = Rect::from_x_y_ranges(span, bands.body.y_range());
     let (span, top) = (column_style.paint_border(painter, column_box).x_range(), bands.top);
-    let [border_top, border_right, border_bottom, border_left] =
-        column_style.style().map_or([0.0; 4], |style| style.border_sides);
-    let padding_box = Rect::from_min_max(
-        column_box.min + Vec2::new(border_left, border_top),
-        column_box.max - Vec2::new(border_right, border_bottom),
+    let [_, border_right, _, border_left] = column_style.style().map_or([0.0; 4], |style| style.border_sides);
+    let padding_box = Rect::from_x_y_ranges(
+        egui::Rangef::new(column_box.left() + border_left, column_box.right() - border_right),
+        bands.rows,
     );
     let clip = clip.intersect(padding_box);
     let painter = &painter.with_clip_rect(painter.clip_rect().intersect(padding_box));
