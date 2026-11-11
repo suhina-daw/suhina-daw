@@ -8,7 +8,7 @@
 //! write failures stay failures wholly on the page: the pack still plays from the executable,
 //! and the next start can try again.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Writes every pack file when its target is missing, under the library's NAM `sounds`
 /// folder: `<device folder>/<pack folder>/<file name>` — the pack's own `Suhina` folder inside
@@ -115,6 +115,14 @@ fn publish(target: &Path, bytes: &[u8]) -> bool {
 /// The old default folders each device's files may still carry
 /// ([issue 1279] · the library move): `(device id, old folder name)`.
 const OLD_DEVICE_FOLDERS: &[(&str, &str)] = &[("nam-amp-modeler", "NAM models"), ("nam-cab-loader", "IRs")];
+/// The marker that says an old folder's kept files were reported: the warning is a start-up
+/// record, not a per-start nag, and the folder sits quiet about them after until something in
+/// it moves ([#1290] › the review). It rides beside the folder — inside it, the move's walk
+/// would carry it into the new tree and the emptied-folder removal would refuse it — and is
+/// removed when the folder goes.
+fn migrate_reported(base: &Path, old_name: &str) -> PathBuf {
+    base.join(format!(".suhina-migrate-{}-reported", old_name.to_lowercase().replace(' ', "-")))
+}
 
 /// Moves the old defaults' contents into the library's device folders before the pack unpacks:
 /// `base` is the library's root (`Documents/Suhina`), `sounds` the NAM sounds under it — the
@@ -173,10 +181,18 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
         }
         if old.is_dir() && is_empty(&old) {
             let _ = std::fs::remove_dir(&old);
+            let _ = std::fs::remove_file(migrate_reported(base, old_name));
             if debug {
                 eprintln!("pack migrate: removed the emptied old folder {old:?}");
             }
         }
+        // The kept files' names are in the new tree and stay put: the folder never empties, so
+        // the same start-up warning would come again at every start. The move records that it
+        // was reported and sits quiet about them after ([#1290] › the review) — a start that
+        // moves or cannot move something still speaks, so a conflict the user resolves or a
+        // permission that heals is never silent.
+        let reported = migrate_reported(base, old_name);
+        let reported_before = reported.exists();
         match (moved, kept, stuck) {
             (0, 0, 0) => {}
             (moved, 0, 0) => warnings.push(format!(
@@ -185,12 +201,13 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
                 old.display(),
                 library_folder
             )),
-            (0, kept, 0) => warnings.push(format!(
+            (0, kept, 0) if !reported_before => warnings.push(format!(
                 "your old {} folder ({}) kept its {kept} file(s): their names are already in the library's {} folder",
                 old_name,
                 old.display(),
                 library_folder
             )),
+            (0, _kept, 0) => {}
             (0, 0, stuck) => warnings.push(format!(
                 "your old {} folder ({}) could not move its {stuck} file(s) into the library's {} folder (a permission or \
                  the filesystem refused); they stay at {}",
@@ -199,7 +216,7 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
                 library_folder,
                 old.display()
             )),
-            (moved, kept, 0) => warnings.push(format!(
+            (moved, kept, 0) if moved > 0 => warnings.push(format!(
                 "your old {} folder ({}) mostly moved into the library's {} folder: {moved} file(s), {kept} kept in place \
                  because their names were already there",
                 old_name,
@@ -214,6 +231,9 @@ pub fn migrate_old_folders(base: &Path, sounds: &Path) -> Vec<String> {
                 library_folder,
                 old.display()
             )),
+        }
+        if kept > 0 && !reported_before {
+            let _ = std::fs::write(&reported, b"the kept files were reported\n");
         }
     }
     warnings

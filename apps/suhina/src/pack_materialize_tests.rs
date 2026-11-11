@@ -59,7 +59,10 @@ fn an_old_library_moves_into_the_sounds_folders() {
 }
 
 /// A name the new tree already holds is never overwritten: that file stays in the old
-/// folder, the old folder stays, and the warning says what was kept.
+/// folder, the old folder stays, and the warning says what was kept — once. A folder whose
+/// names the new tree holds never empties, so its warning is a start-up record, not a nag
+/// at every start; the marker beside it silences the repeats, and a later move or a stuck
+/// file speaks again.
 #[test]
 fn a_name_the_new_tree_holds_is_never_overwritten() {
     let dir = std::env::temp_dir().join(format!("suhina-pack-keep-old-{}", std::process::id()));
@@ -76,6 +79,26 @@ fn a_name_the_new_tree_holds_is_never_overwritten() {
     assert_eq!(std::fs::read(old_models.join("Clash.nam")).unwrap(), b"the old bytes", "moved over");
     assert!(old_models.exists(), "a folder with leftovers is not removed");
     assert!(warnings.iter().all(|line| line.contains("kept")), "{warnings:?}");
+
+    // The next start is quiet about the kept files: the marker beside the folder says they
+    // were reported.
+    let again = migrate_old_folders(&dir, &dir);
+    assert!(again.is_empty(), "the kept warning repeats at every start: {again:?}");
+    assert_eq!(std::fs::read(old_models.join("Clash.nam")).unwrap(), b"the old bytes", "still never overwritten");
+
+    // The conflict gone, the old file moves at the next start and the move speaks — the
+    // quiet was about the kept files, not the folder.
+    std::fs::remove_file(models.join("Clash.nam")).unwrap();
+    let moved = migrate_old_folders(&dir, &dir);
+    assert_eq!(
+        std::fs::read(models.join("Clash.nam")).unwrap(),
+        b"the old bytes",
+        "the conflict resolved, the old file moved"
+    );
+    assert!(
+        moved.iter().any(|line| line.contains("moved into the library") && line.contains("1 file(s)")),
+        "the move after the report speaks: {moved:?}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 

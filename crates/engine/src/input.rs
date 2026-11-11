@@ -13,8 +13,9 @@
 //! device runs on its own clock: input that piles up past a few blocks is dropped, and a block
 //! that finds too little holds the last sample each channel delivered and is counted — a
 //! splice to silence cracked through everything downstream, and a recording baked hundreds of
-//! those splices into its takes ([#1290] › the takes' crackle). Nothing here allocates, locks
-//! or frees on the render thread.
+//! those splices into its takes ([#1290] › the takes' crackle); a starvation that sustains
+//! fades its hold toward zero, so a dead input never becomes a DC offset. Nothing here
+//! allocates, locks or frees on the render thread.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -28,6 +29,10 @@ pub const MAX_INPUT_CHANNELS: usize = 64;
 /// Whole render calls of input that may wait in the ring; past that the oldest are dropped
 /// down to two calls, once before rendering, independently of internal chunk boundaries.
 const MAX_BACKLOG_BLOCKS: usize = 4;
+/// The hold's level after one more block of sustained starvation: a block at 1024 frames and
+/// 48 kHz is 21 ms, so the hold is gone after about a second of a dead input, and the crackle
+/// fix's first held block still carries the signal's last state whole.
+pub(crate) const HOLD_DECAY: f32 = 0.9;
 
 /// A bounded diagnostic history, published without logging on the render thread.
 #[derive(Default)]
@@ -98,6 +103,13 @@ pub(crate) struct Input {
     /// the signal's last state instead of dropping to silence — a silence splice cracks
     /// through everything downstream, and a recording baked hundreds of them in.
     last: [f32; MAX_INPUT_CHANNELS],
+    /// The hold's level at this block's start, a fraction of `last`: 1.0 until the starvation
+    /// sustains, then decaying toward zero, so an input that never returns (an interface
+    /// unplugged mid-session, a driver that stopped calling back) does not hold a DC offset
+    /// through monitoring, the chain and the take for as long as the transport runs.
+    hold: f32,
+    /// The previous block starved: its hold is under way, and this one's fades on from it.
+    starved: bool,
     /// Frames of input time covered since the renderer started: every block's frames, and the
     /// frames dropped when the ring overflowed. The input's own clock: its frames arrive in
     /// order whatever the render thread's position does, so a recording's positions run on it
@@ -117,6 +129,8 @@ impl Input {
             frames: 0,
             waiting: 0,
             last: [0.0; MAX_INPUT_CHANNELS],
+            hold: 1.0,
+            starved: false,
             consumed: 0,
         }
     }
@@ -156,7 +170,8 @@ impl Input {
     /// Takes `frames` frames of input for this block (at most [`MAX_BLOCK`]): what the ring has,
     /// then the last state each channel delivered (a starved block holds the signal's last state
     /// instead of dropping to silence — a splice to silence and back cracks through everything
-    /// downstream). Without an input device, silence.
+    /// downstream; a starvation that sustains fades its hold toward zero, so a dead input does
+    /// not hold a DC offset forever). Without an input device, silence.
     pub(crate) fn read(&mut self, frames: usize) {
         let frames = frames.min(MAX_BLOCK);
         self.frames = frames;
@@ -193,18 +208,46 @@ impl Input {
             // take's length and the recorder's timing stay exact. The held slots run from
             // `take` samples in; a slot's channel is its remainder (`take` is a sample count,
             // whole frames' worth).
-            for slot in take..wanted {
-                if let Some(sample) = block.get_mut(slot) {
-                    *sample = self.last[slot % channels];
+            // The held state is the last frame the ring gave this block — the frame before the
+            // held span — not the previous hold's own: a hold carried from before the fresh
+            // samples would splice backward at the fresh-to-held boundary.
+            if take > 0 {
+                for channel in 0..channels {
+                    if let Some(sample) = block.get((take / channels - 1) * channels + channel) {
+                        self.last[channel] = *sample;
+                    }
                 }
             }
+            // A hold carried past its first block fades toward zero ([#1290] › the review):
+            // the first starved block holds the signal's last state whole (its splice in is
+            // seamless, and the crackle fix stands), while an input that never returns — an
+            // interface unplugged mid-session, a driver that stopped calling back — must not
+            // hold a DC offset through monitoring, the chain and the take for as long as the
+            // transport runs. Each further starved block fades from the level it starts at to
+            // the decayed one, so the block boundaries stay continuous; a block with input
+            // resets the hold to full strength, so the ring's own dips (which recover) hold
+            // flat every time.
+            let (start, end) = if self.starved { (self.hold, self.hold * HOLD_DECAY) } else { (self.hold, self.hold) };
+            let span = (wanted - take) as f32;
+            for (index, slot) in (take..wanted).enumerate() {
+                let level = start + (end - start) * ((index + 1) as f32 / span);
+                if let Some(sample) = block.get_mut(slot) {
+                    *sample = self.last[slot % channels] * level;
+                }
+            }
+            self.hold = end;
+            self.starved = true;
             self.diagnostics.short_read(take / channels, frames);
             self.underruns.fetch_add(1, Ordering::Relaxed);
-        }
-        // The block's last state is the next starved block's hold.
-        for channel in 0..channels {
-            if let Some(sample) = block.get((frames - 1) * channels + channel) {
-                self.last[channel] = *sample;
+        } else {
+            self.hold = 1.0;
+            self.starved = false;
+            // The last state each channel delivered is the next starved block's hold: the
+            // block's last frame, which the ring carried whole.
+            for channel in 0..channels {
+                if let Some(sample) = block.get((frames - 1) * channels + channel) {
+                    self.last[channel] = *sample;
+                }
             }
         }
     }

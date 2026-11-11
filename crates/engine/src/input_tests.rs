@@ -152,7 +152,9 @@ fn too_little_input_is_silence_counted_and_too_much_is_dropped() {
     let (mut renderer, mut ring, underruns) = with_input(&project, 1);
     feed(&mut ring, 1, BLOCK / 2, 0, 0.5);
     let out = blocks(&mut renderer, 1, BLOCK);
-    assert!((out[0] - 0.5).abs() < 1e-4 && out[out.len() - 2] == 0.0, "the half there, then silence");
+    // The half there, then the hold that carries its last delivered frame (a splice to
+    // silence would crack through everything downstream).
+    assert!((out[0] - 0.5).abs() < 1e-4 && (out[out.len() - 2] - 0.5).abs() < 1e-4, "the half there, then its hold");
     assert_eq!(underruns.load(Ordering::Relaxed), 1);
 
     // The input's clock ran ahead: ten blocks wait. One block later at most two remain.
@@ -257,21 +259,22 @@ fn a_starved_pair_holds_each_channels_last_state_not_the_previous_blocks_bytes()
     // The hold's span starts `take` samples in — `take` is a sample count, twice the frame a
     // pair's hold starts at. The old loop took it as a frame index: for a shallow starvation
     // its range was empty and the block's tail kept the scratch's previous block, for a deep
-    // one the wrong middle span stayed stale. The held slot's channel is its remainder.
+    // one the wrong middle span stayed stale. The held slot's channel is its remainder, and
+    // the held state is the last frame the ring delivered, never the scratch's bytes.
     let (mut ring, consumer) = rtrb::RingBuffer::new(4096);
     let mut input = crate::input::Input::new();
     let underruns = Arc::new(AtomicU64::new(0));
     input.attach(consumer, 2, Arc::clone(&underruns));
     const FRAMES: usize = 256;
     // One block of a rising ramp, the sign saying which channel: the scratch now holds the
-    // ramp, and the block's last frame — the next starved block's hold — is 255.
+    // ramp, so a stale hold would read 128 to 254 at the frames below.
     for frame in 0..FRAMES {
         ring.push(f32::from(frame as u16)).unwrap();
         ring.push(-f32::from(frame as u16)).unwrap();
     }
     input.read(FRAMES);
-    // Half a block: the first half reads fresh, the rest holds 255 on both channels — never
-    // the scratch's ramp, which at those frames is 128 to 254.
+    // Half a block: the first half reads fresh, the rest holds the fresh half's last
+    // delivered frame (0.75) on both channels — never the scratch's ramp.
     for _ in 0..FRAMES / 2 {
         ring.push(0.75).unwrap();
         ring.push(-0.75).unwrap();
@@ -279,28 +282,77 @@ fn a_starved_pair_holds_each_channels_last_state_not_the_previous_blocks_bytes()
     input.read(FRAMES);
     for frame in 0..FRAMES {
         let (l, r) = (input.sample(frame, 0), input.sample(frame, 1));
-        if frame < FRAMES / 2 {
-            assert!((l - 0.75).abs() < 1e-6 && (r + 0.75).abs() < 1e-6, "frame {frame}: {l} {r}");
-        } else {
-            assert!((l - 255.0).abs() < 1e-6 && (r + 255.0).abs() < 1e-6, "frame {frame}: {l} {r}");
-        }
+        assert!((l - 0.75).abs() < 1e-6 && (r + 0.75).abs() < 1e-6, "frame {frame}: {l} {r}");
     }
-    // A deeper starvation: a quarter block fresh, the rest the hold again (the hold survived
-    // the starved block: its last state is still 255).
+    // A deeper starvation: a quarter block fresh, the rest the hold again — still 0.75 at its
+    // first frame, and the hold's level fades (the starvation sustains): each held frame below
+    // the one before, the last one at nine tenths of the hold.
     for _ in 0..FRAMES / 4 {
         ring.push(0.75).unwrap();
         ring.push(-0.75).unwrap();
     }
     input.read(FRAMES);
+    let mut previous_l = 0.75;
+    let mut previous_r = -0.75;
     for frame in 0..FRAMES {
         let (l, r) = (input.sample(frame, 0), input.sample(frame, 1));
         if frame < FRAMES / 4 {
             assert!((l - 0.75).abs() < 1e-6 && (r + 0.75).abs() < 1e-6, "frame {frame}: {l} {r}");
         } else {
-            assert!((l - 255.0).abs() < 1e-6 && (r + 255.0).abs() < 1e-6, "frame {frame}: {l} {r}");
+            assert!(l <= previous_l + 1e-6 && r >= previous_r - 1e-6, "frame {frame}: {l} {r} fades down");
         }
+        previous_l = l;
+        previous_r = r;
     }
+    assert!((previous_l - 0.75 * crate::input::HOLD_DECAY).abs() < 1e-3, "last held {previous_l}");
     assert_eq!(underruns.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn a_starved_input_that_never_returns_fades_its_hold_to_silence() {
+    // An interface unplugged mid-session stops calling back: every later block holds, and
+    // nothing resets the hold. It fades toward zero block by block, so the DC offset the first
+    // held block carried does not run through monitoring, the chain and the take for as long
+    // as the transport runs.
+    let (mut ring, consumer) = rtrb::RingBuffer::new(4096);
+    let mut input = crate::input::Input::new();
+    let underruns = Arc::new(AtomicU64::new(0));
+    input.attach(consumer, 1, Arc::clone(&underruns));
+    const FRAMES: usize = 256;
+    for _ in 0..FRAMES {
+        ring.push(0.5).unwrap();
+    }
+    input.read(FRAMES);
+    // The first starved block holds the signal's last state whole.
+    input.read(FRAMES);
+    for frame in 0..FRAMES {
+        assert!((input.sample(frame, 0) - 0.5).abs() < 1e-6, "frame {frame}");
+    }
+    // The blocks after fade toward zero, each one continuing the last one's end level: the
+    // span's last held sample is exactly the decayed level, its first one between the levels.
+    let mut level = 1.0;
+    for _ in 0..64 {
+        let start = level;
+        level *= crate::input::HOLD_DECAY;
+        input.read(FRAMES);
+        let first = input.sample(0, 0);
+        let last = input.sample(FRAMES - 1, 0);
+        assert!((last - 0.5 * level).abs() < 1e-6, "last {last}");
+        assert!(first <= 0.5 * start + 1e-6 && first >= 0.5 * level - 1e-6, "first {first}");
+    }
+    // After the fade the hold is at silence for good.
+    for _ in 0..128 {
+        input.read(FRAMES);
+    }
+    assert!(input.sample(0, 0).abs() < 1e-4, "{}", input.sample(0, 0));
+    // Input back: the hold is at full strength again, and the block reads the ring whole.
+    for _ in 0..FRAMES {
+        ring.push(0.25).unwrap();
+    }
+    input.read(FRAMES);
+    for frame in 0..FRAMES {
+        assert!((input.sample(frame, 0) - 0.25).abs() < 1e-6, "frame {frame}");
+    }
 }
 
 #[test]
