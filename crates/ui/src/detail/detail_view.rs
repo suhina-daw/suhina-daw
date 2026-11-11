@@ -976,6 +976,7 @@ fn device_panel(
     let mut styled_ui = device_style.ui(ui);
     let ui = &mut *styled_ui;
     // What the panel holds goes in its content box, inside its border and padding (#1336).
+    let panel_box = rect;
     let rect = device_style
         .paint_with(
             painter,
@@ -986,10 +987,13 @@ fn device_panel(
             },
         )
         .content;
-    // The selection outline, over everything the panel draws — on every path out of here.
+    // The selection outline, over everything the panel draws — on every path out of here. Along
+    // the panel's edge, its whole box, as an outline goes round the border box: once the box is
+    // closed, so a panel that hides its overflow does not cut it at its padding box.
     let outline = |painter: &egui::Painter| {
         if selected {
-            painter.rect_stroke(rect, 1.0, theme::hairline(theme::selection()), egui::StrokeKind::Inside);
+            device_style.close_box();
+            painter.rect_stroke(panel_box, 1.0, theme::hairline(theme::selection()), egui::StrokeKind::Inside);
         }
     };
     let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));

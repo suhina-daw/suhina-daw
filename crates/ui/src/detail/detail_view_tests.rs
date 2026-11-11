@@ -813,6 +813,57 @@ fn a_plug_in_s_button_is_cut_by_its_panel_s_overflow() {
     crate::kit::native_css::set_user_sheet(None);
 }
 
+/// A selected device's outline runs along its panel's edge, round its border box, as it did
+/// before panels had padding, and a panel that hides its overflow does not cut it (#1336).
+#[test]
+fn a_selected_device_s_outline_runs_along_its_panel_s_edge() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let project = with_plugin();
+    let Detail::Devices(chain) = build_with(
+        &project,
+        Some(TrackId(1)),
+        None,
+        &mut |_, _| Some(report(PluginStatus::Running, false)),
+        crate::detail::device_widgets::Lists::default(),
+    ) else {
+        panic!()
+    };
+    let at = chain.devices.iter().find(|d| d.name == "Verb").map(|d| d.at.clone()).expect("the plug-in");
+    let selected = [(TrackId(1), at)];
+    let detail = Detail::Devices(chain);
+    crate::kit::native_css::set_user_sheet(Some(
+        "device { padding: 10px; border-width: 2px; overflow: hidden; }".into(),
+    ));
+    for stacked in [false, true] {
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(600.0, 300.0)).build_ui_state(
+            |ui, actions: &mut Vec<Action>| {
+                let _frame = crate::kit::native_css::frame(ui);
+                let _window = crate::kit::element::WINDOW.enter();
+                let mut places = Vec::new();
+                if stacked {
+                    show_stack(ui, &detail, &selected, actions, &mut places);
+                } else {
+                    show_row(ui, &detail, &selected, actions, &mut places);
+                }
+            },
+            Vec::new(),
+        );
+        harness.run_steps(3);
+        let panel = harness.get_by_label("Device Verb").rect();
+        let outline = harness.output().shapes.iter().find_map(|s| match &s.shape {
+            egui::Shape::Rect(r) if r.stroke.color == theme::selection() && r.stroke.width > 0.0 => {
+                Some((r.rect, s.clip_rect))
+            }
+            _ => None,
+        });
+        let (rect, clip) = outline.unwrap_or_else(|| panic!("stacked {stacked}: the selected device's outline"));
+        assert_eq!(rect, panel, "stacked {stacked}: along the panel's edge");
+        assert!(clip.contains_rect(panel), "stacked {stacked}: not cut at the padding box: {clip:?}");
+    }
+    crate::kit::native_css::set_user_sheet(None);
+}
+
 fn with_plugin() -> Project {
     let mut project = demo_project();
     project.channels[0]
