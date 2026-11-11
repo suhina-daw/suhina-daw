@@ -29,7 +29,8 @@
 //! without loading them and load the rest in a few long-lived `--scan-worker` processes with
 //! per-file timeouts, into a catalog that can be saved. `PluginAudio::process_with_events` sends an
 //! instrument its notes. `offline::render` runs audio (and `render_with_events` notes) through a
-//! plug-in without a deadline (`suhina-cli plugin run`, `plugin run-device`). The session starts a
+//! plug-in without a deadline (`suhina-cli plugin run`), and `render_started` through one the
+//! session started as a project's render starts it (`plugin run-device`). The session starts a
 //! project's plug-ins with it and hands their audio halves to the engine.
 
 pub mod arch;

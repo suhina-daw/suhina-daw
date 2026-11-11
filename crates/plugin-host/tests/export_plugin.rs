@@ -510,3 +510,73 @@ fn an_export_plays_the_running_plug_ins_state_without_a_project_change() {
     assert!(!session.can_undo());
     assert_eq!(session.project(), &opened);
 }
+
+/// The project's plug-in devices' keys, in chain order.
+fn plugin_keys(project: &Project) -> Vec<u64> {
+    suhina_engine::plugin_devices(project).iter().map(|d| d.key).collect()
+}
+
+/// A rack limited to one device (`suhina-cli plugin edit-device`, #1155) starts only that one,
+/// and reads its state as it is now; a device it did not start has no state to give.
+#[test]
+fn a_rack_limited_to_one_device_starts_only_it_and_reads_its_state_now() {
+    let mut project = project();
+    let second = project.channels[0].devices[0].clone();
+    project.channels[0].devices.push(second);
+    assert_eq!(project.assign_ids(), Ok(()));
+    let keys = plugin_keys(&project);
+    assert_eq!(keys.len(), 2);
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
+    let mut session = Session::new(project);
+    session.attach_player(Player::new(renderer.controller(), None));
+    session.rack_mut().set_env(env());
+    session.rack_mut().only(Some(keys[1]));
+    session.wait_for_plugins(PATIENT);
+
+    let status = |session: &mut Session, device: usize| {
+        session.execute("device.plugin", &json!({ "track": 1, "device": device })).unwrap()["status"].clone()
+    };
+    assert_eq!(status(&mut session, 0), "stopped", "the other device is not started");
+    assert_eq!(status(&mut session, 1), "running", "the one asked for is");
+    let state = session.rack_mut().state_now(keys[1]);
+    assert!(state.is_ok_and(|s| !s.data.is_empty()), "the running plug-in gives its state");
+    assert!(session.rack_mut().state_now(keys[0]).is_err(), "a device not started has none to give");
+}
+
+/// One device started as a project's offline render starts it (`suhina-cli plugin
+/// run-device`, #1155) runs audio through as the plug-in on its own does; a key that is no
+/// plug-in device of the project starts nothing.
+#[test]
+fn one_device_started_for_a_render_sounds_as_the_plug_in_alone() {
+    let mut project = project();
+    assert_eq!(project.assign_ids(), Ok(()));
+    let key = plugin_keys(&project)[0];
+    let env = env();
+    let input: Vec<f32> = (0..SR as usize / 4).flat_map(|i| [((i as f32) * 0.05).sin() * 0.8; 2]).collect();
+
+    let mut started = suhina_session::start_offline_device(&project, &AudioPool::new(), &env, key, SR)
+        .unwrap()
+        .expect("the test plug-in is installed");
+    assert!(started.refused.is_none(), "no saved state to refuse");
+    let through_session =
+        suhina_plugins::offline::render_started(&mut started.control, &mut started.audio, &input, &[], 256).unwrap();
+
+    let launch = suhina_plugins::Launch {
+        host: env.host.clone(),
+        plugin: "test:vst3".into(),
+        channels: 2,
+        max_frames: suhina_plugins::offline::BLOCK_FRAMES,
+        sample_rate: f64::from(SR),
+        timeout: PATIENT,
+        group: None,
+        ara: None,
+    };
+    let alone = suhina_plugins::offline::render_with_events(launch, None, &input, &[], 256).unwrap();
+    assert_eq!(through_session.samples.len(), alone.samples.len());
+    assert_eq!(through_session.samples, alone.samples, "the same sound either way");
+    let peak = through_session.samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!((peak - 0.8 * DEFAULT_GAIN).abs() < 0.01, "the plug-in's gain is in the sound: {peak}");
+
+    let none = suhina_session::start_offline_device(&project, &AudioPool::new(), &env, key ^ 1, SR).unwrap();
+    assert!(none.is_none(), "no such device, nothing started");
+}

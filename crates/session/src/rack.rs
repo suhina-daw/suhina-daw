@@ -625,6 +625,8 @@ pub struct Rack {
     next_carry: u64,
     /// The stepped parameters the player was last told of ([`Rack::step_map`]).
     steps_sent: suhina_engine::PluginSteps,
+    /// The one plug-in device this rack starts, when it is limited to one ([`Rack::only`]).
+    only: Option<u64>,
 }
 
 impl Default for Rack {
@@ -662,6 +664,7 @@ impl Default for Rack {
             carries: Vec::new(),
             next_carry: 0,
             steps_sent: Default::default(),
+            only: None,
         }
     }
 }
@@ -1310,7 +1313,10 @@ impl Rack {
         // New ones.
         let mut missing = Vec::new();
         for found in &devices {
-            if self.instances.contains_key(&found.key) || self.rebinding.contains(&found.key) {
+            if self.instances.contains_key(&found.key)
+                || self.rebinding.contains(&found.key)
+                || self.only.is_some_and(|only| only != found.key)
+            {
                 continue;
             }
             let Some(device) = project
@@ -1945,6 +1951,20 @@ impl Rack {
             instance.steps = Some(steps(&list));
         }
         Ok(list)
+    }
+
+    /// Starts only the plug-in device `key` from now on, none of the project's others (`None`:
+    /// every one, the default): for a tool that works on one device of a project
+    /// (`suhina-cli plugin edit-device`), which need not wait for the rest to load.
+    pub fn only(&mut self, key: Option<u64>) {
+        self.only = key;
+    }
+
+    /// The state of the plug-in device `key` as its plug-in gives it now, waiting for its
+    /// answer. Unlike the states read for saving a project, never one read earlier: an error
+    /// when the plug-in is not running or does not answer.
+    pub fn state_now(&mut self, key: u64) -> Result<SavedState, CommandError> {
+        self.running(key)?.save_state().map_err(|e| CommandError(e.to_string()))
     }
 
     /// The range of parameter `id` of the plug-in device `key`: `None` when its parameters
