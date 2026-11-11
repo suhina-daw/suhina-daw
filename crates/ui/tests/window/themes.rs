@@ -1512,3 +1512,32 @@ fn toolbar_percent_padding_keeps_the_buttons_in_the_bar() {
     let (_, one) = bar(&format!("{border} toolbar {{ padding-top: 1% }}"));
     assert!((one.top() - plain.top() - (SIZE.0 - 16.0) * 0.01).abs() < 0.5, "the bar grows by it: {plain:?} {one:?}");
 }
+
+/// A theme moves the toolbar under the views and the status bar to the top of the window: the
+/// toolbar's controls are where the grid puts it and take the pointer only there (#1370).
+#[test]
+fn a_theme_that_moves_the_toolbar_moves_its_controls_and_their_input() {
+    let h = open_with_clip("", false);
+    let home = h.get_by_label("Arrangement view").rect();
+    drop(h);
+    let css = "window { grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto auto auto; \
+               grid-template-areas: 'status status status status' 'menu menu menu menu' 'tabs tabs tabs tabs' \
+               'top top top top' 'notice notice notice notice' 'left main side right' 'left detail detail right' \
+               'bottom bottom bottom bottom' 'toolbar toolbar toolbar toolbar'; }";
+    let mut h = open_with_clip(css, false);
+    let moved = h.get_by_label("Arrangement view").rect();
+    // A press where the button was does not switch the view.
+    h.hover_at(home.center());
+    h.step();
+    press(&mut h, home.center(), true);
+    press(&mut h, home.center(), false);
+    h.run();
+    let still_launcher = h.query_by_label("Stop Keys (scene 1)").is_some();
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    let switched = h.query_by_label("Stop Keys (scene 1)").is_none();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(moved.top() > home.top() + 400.0, "the toolbar lies under the views: {home:?} -> {moved:?}");
+    assert!(still_launcher, "nothing of the toolbar answers where it was");
+    assert!(switched, "its button works where it is");
+}

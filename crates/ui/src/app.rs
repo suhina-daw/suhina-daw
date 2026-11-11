@@ -3034,6 +3034,9 @@ impl App {
         let browser_wanted = self.settings.browser_open && !self.start_panel_open();
         self.browser_part = motion::toward(ui.ctx(), Id::unique("browser-shown"), browser_wanted, BROWSER_SLIDE);
         let room = ui.available_rect_before_wrap();
+        // The grid takes the whole room, as the panels it replaced did: what the window holds
+        // reaches its edges, for what is painted behind it.
+        ui.advance_cursor_after_rect(room);
         let input = self.window_input(room.size(), grid.is_some(), self.open_prompt.is_some() || missing_bar);
         let layout = crate::kit::native_css::window(&input)
             .map(|layout| layout.translated(room.min.to_vec2()))
