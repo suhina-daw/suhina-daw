@@ -156,25 +156,25 @@ pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool) -> egui::Colo
     }
 }
 
-/// The lighter plain row: the surface it is drawn on, else the panel colour.
+/// The lighter plain row. Under an authored surface it paints nothing: the region already painted
+/// that surface, and painting it again would stack its alpha; else it is the panel colour.
 fn light_row() -> egui::Color32 {
-    crate::kit::style_class::surface_or(theme::panel_background())
+    if crate::kit::style_class::has_surface() { egui::Color32::TRANSPARENT } else { theme::panel_background() }
 }
 
-/// The darker plain row. Under an authored surface both plain rows would take that one colour, so
-/// the dark row is the surface pulled toward the window colour, and still blends over it.
+/// The darker plain row: the window colour; under an authored surface, that surface pulled toward
+/// the window colour (black, then white, where that changes nothing), painted over it so it reads
+/// darker than the light row, which paints nothing.
 fn dark_row() -> egui::Color32 {
-    let dark = crate::kit::style_class::surface_or(theme::window_background());
-    let light = light_row();
-    if dark != light {
-        return dark;
+    if !crate::kit::style_class::has_surface() {
+        return theme::window_background();
     }
-    // Pulled toward the window colour; if that is the surface itself, toward black, then white.
+    let surface = crate::kit::style_class::surface_or(theme::window_background());
     [theme::window_background(), egui::Color32::BLACK, egui::Color32::WHITE]
         .into_iter()
-        .map(|toward| light.lerp_to_gamma(toward, 0.5))
-        .find(|row| *row != light)
-        .unwrap_or(light)
+        .map(|toward| surface.lerp_to_gamma(toward, 0.5))
+        .find(|row| *row != egui::Color32::TRANSPARENT)
+        .unwrap_or(surface)
 }
 
 /// The 2 px mark at the right of the key column on a key in the scale (the root's brighter).
@@ -369,8 +369,8 @@ mod tests {
         let surface = egui::Color32::from_rgba_unmultiplied(20, 30, 40, 100);
         crate::kit::style_class::with_surface(surface, || {
             let (white, black) = (row_fill(None, 60, false), row_fill(None, 61, true));
-            assert_eq!(white, surface, "the light row is the surface");
-            assert_ne!(white, black, "the dark row is not");
+            assert_eq!(white, egui::Color32::TRANSPARENT, "the light row paints nothing over the surface");
+            assert_ne!(white, black, "the dark row is a tint");
             assert_eq!(row_fill(Some(scale(0, ScaleMode::Major)), 61, true), black, "outside a scale too");
         });
     }

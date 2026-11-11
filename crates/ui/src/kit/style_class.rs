@@ -101,6 +101,8 @@ impl Drop for Scope {
             theme::local_palette(self.palette);
         }
         INHERITED.with(|inherited| *inherited.borrow_mut() = self.inherited.take());
+        // `surface` is `Some` exactly when `enter_inner` replaced `SURFACE`, so only then is there
+        // anything to put back.
         if let Some(surface) = self.surface {
             SURFACE.with(|s| s.set(surface));
         }
