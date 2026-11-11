@@ -901,7 +901,7 @@ open.
   content box. `overflow: hidden | clip` makes an element's box clip the outer shadows and
   outlines of the elements inside it; `visible` lets them pass. The host's own sheet makes the
   regions `hidden`. An element records its box when it paints it, its background, or says where
-  it is (`Entered::occupies`, for the workspace panels); the nearest element around that hides
+  it is (the workspace panels paint theirs like any element, #1336); the nearest element around that hides
   its overflow and has a box clips the outer shadows and outline, in place of the painter's
   clip, which holds where none is known. They pass the painter's clip only as far as they reach
   and only on a side where the element is whole inside it: a side that cuts the element is a
