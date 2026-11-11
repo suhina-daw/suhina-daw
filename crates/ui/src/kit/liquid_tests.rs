@@ -146,6 +146,12 @@ fn popups_and_tooltips_get_the_window_blurred_under_their_frames_whatever_their_
     let (shapes, calls, host) = floating_frames(None, |ctx| {
         odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0));
         odd_menu(ctx, "tooltip", egui::Order::Tooltip, pos2(200.0, 20.0));
+        // A drag's preview, painted on without an area: never in the capture.
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("drag"))).rect_filled(
+            Rect::from_min_size(pos2(300.0, 200.0), egui::vec2(40.0, 20.0)),
+            0.0,
+            Color32::from_rgb(0, 200, 0),
+        );
     });
     assert_eq!(calls, 1, "one capture however many surfaces float");
     let images: Vec<usize> = shapes.iter().enumerate().filter(|(_, s)| is_image(s)).map(|(i, _)| i).collect();
@@ -162,23 +168,26 @@ fn popups_and_tooltips_get_the_window_blurred_under_their_frames_whatever_their_
     let seen = host.seen.lock().map(|seen| seen.clone()).unwrap_or_default();
     assert!(seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == WINDOW)));
     assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Text(_))));
+    assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 200, 0))));
 }
 
 #[test]
 fn the_app_s_own_layers_are_not_blurred_and_nothing_floating_means_no_capture() {
-    use super::super::floating::{Kind, area, layer};
+    use super::super::floating::{Kind, area};
     let (shapes, calls, _) = floating_frames(None, |ctx| {
         // A dialog's dimming, an overlay and a drag's preview, each a rectangle first.
         for (id, kind, order) in [
-            ("dialog", Kind::Dialog, egui::Order::Foreground),
-            ("overlay", Kind::Plain, egui::Order::Foreground),
-            ("splash", Kind::Plain, egui::Order::Tooltip),
+            ("dialog", Kind::Own, egui::Order::Foreground),
+            ("overlay", Kind::Own, egui::Order::Foreground),
+            ("splash", Kind::Own, egui::Order::Tooltip),
         ] {
             area(ctx, Id::unique(id), kind).order(order).fixed_pos(pos2(20.0, 20.0)).show(ctx, |ui| {
                 egui::Frame::menu(ui.style()).show(ui, |ui| ui.label(id));
             });
         }
-        let drag = ctx.layer_painter(layer(ctx, egui::Order::Tooltip, Id::unique("drag"), Kind::Plain));
+        // Painted on without an area: never taken for a tooltip.
+        super::super::floating::modal(ctx, Id::unique("help")).show(ctx, |ui| ui.label("Help"));
+        let drag = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("drag")));
         drag.rect_filled(Rect::from_min_size(pos2(5.0, 5.0), egui::vec2(40.0, 20.0)), 0.0, Color32::RED);
     });
     assert_eq!(calls, 0, "no capture when nothing floats");
@@ -192,7 +201,7 @@ fn a_menu_over_a_dialog_gets_the_dialog_blurred_behind_it() {
     use super::super::floating::{Kind, area};
     let panel = Color32::from_rgb(4, 5, 6);
     let (shapes, calls, host) = floating_frames(None, |ctx| {
-        area(ctx, Id::unique("dialog"), Kind::Dialog).order(egui::Order::Foreground).fixed_pos(pos2(0.0, 0.0)).show(
+        area(ctx, Id::unique("dialog"), Kind::Own).order(egui::Order::Foreground).fixed_pos(pos2(0.0, 0.0)).show(
             ctx,
             |ui| {
                 let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(200.0, 150.0));
@@ -218,6 +227,27 @@ fn a_menu_over_a_dialog_gets_the_dialog_blurred_behind_it() {
         "with its own blur"
     );
     assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Text(_))), "and never the menu");
+}
+
+/// A popup that is not blurred still floats: a tooltip over it, over a dialog, blurs the dialog
+/// and never the popup's contents.
+#[test]
+fn a_capture_never_holds_a_floating_surface_even_one_left_sharp() {
+    use super::super::floating::{Kind, area};
+    let (_, _, host) = floating_frames(Some("popup { backdrop-filter: none; }"), |ctx| {
+        area(ctx, Id::unique("dialog"), Kind::Own).order(egui::Order::Foreground).fixed_pos(pos2(0.0, 0.0)).show(
+            ctx,
+            |ui| {
+                ui.painter().rect_filled(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(200.0, 150.0)), 0.0, WINDOW);
+            },
+        );
+        odd_menu(ctx, "dropdown", egui::Order::Foreground, pos2(60.0, 60.0));
+        odd_menu(ctx, "tooltip", egui::Order::Tooltip, pos2(70.0, 70.0));
+    });
+    assert_eq!(host.above.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let seen = host.seen_above.lock().map(|seen| seen.clone()).unwrap_or_default();
+    assert!(!seen.is_empty());
+    assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Text(_))), "{seen:?}");
 }
 
 #[test]
@@ -249,6 +279,27 @@ fn a_theme_s_popup_and_tooltip_frames_replace_egui_s() {
     let image = rects.iter().find(|r| r.fill_texture_id() == TextureId::User(7) && r.rect == popup.rect);
     assert_eq!(image.map(|r| r.corner_radius), Some(egui::CornerRadius::same(6)), "the blur takes its corners");
     assert!(rects.iter().any(|r| r.fill == Color32::from_rgb(0, 0, 255)), "the tooltip's frame");
+}
+
+/// A sheet that sets a popup's background but no shadow keeps egui's shadow, and an outline is
+/// drawn over the popup's contents, as CSS draws it.
+#[test]
+fn a_restyled_frame_keeps_egui_s_shadow_and_draws_its_outline_over_the_contents() {
+    let css = "popup { background-color: #00ff00; outline: 2px solid #ff0000; }";
+    let (shapes, _, _) =
+        floating_frames(Some(css), |ctx| odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0)));
+    let frame = shapes
+        .iter()
+        .position(|s| matches!(s, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 255, 0)))
+        .expect("the popup's frame");
+    let shadow = shapes.iter().position(|s| matches!(s, egui::Shape::Rect(r) if r.blur_width > 0.0));
+    assert!(shadow.is_some_and(|shadow| shadow < frame), "egui's shadow stays under it: {shapes:?}");
+    let text = shapes.iter().position(|s| matches!(s, egui::Shape::Text(_))).expect("the contents");
+    let outline = shapes
+        .iter()
+        .position(|s| matches!(s, egui::Shape::Rect(r) if r.stroke.color == Color32::from_rgb(255, 0, 0)))
+        .expect("the outline");
+    assert!(frame < text && text < outline, "{frame} < {text} < {outline}");
 }
 
 #[test]

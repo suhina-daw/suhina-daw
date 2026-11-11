@@ -522,25 +522,31 @@ cutting a slot.
 control's popup, the project switcher), `tooltip` and `dialog`.
 
 - **`backdrop-filter`** on these four takes `none` or `blur(<length>)` (a length in `px`, or 0).
-  Anything but `none` puts the window's own layers, blurred, under the surface; the radius is
-  read but not used yet: the blur is on or off. On any other element a rule that sets it gets a
-  warning: what sits in the window is over the window's own background, which the system already
-  blurs behind a see-through window. The user-agent sheet blurs all four. The blur needs the GPU
-  renderer, and is off with animations off (Settings) and in the high-contrast theme. `menu`,
-  `popup` and `tooltip` read it from rules on the element alone (`popup { … }`), not from ids,
-  attributes or the elements around them; a dialog reads it as its other properties.
-- **Frames.** A `popup`'s and a `tooltip`'s `background`, border, `border-radius` and
-  `box-shadow` replace the frame egui draws, over egui's own where the sheet sets one and not the
-  others; the blur takes the frame's corners. Their `padding` is not used yet: the contents keep
+  A radius above 0 puts the window's own layers, blurred, under the surface; `none` and
+  `blur(0)` leave it sharp. The radius is not used yet beyond that: the blur is on or off. `menu`,
+  `popup` and `tooltip` read it from a rule on the element alone (`popup { … }`); a dialog reads
+  it as its other properties (`dialog[…]`, `window dialog`). Any other rule that sets it gets a
+  warning, including `menu-bar menu` or `popup#metronome-level`: what sits in the window is over
+  the window's own background, which the system already blurs behind a see-through window. The
+  user-agent sheet blurs all four. The blur needs the GPU renderer, and is off with animations
+  off (Settings) and in the high-contrast theme.
+- **Frames.** A `popup`'s and a `tooltip`'s `background`, border, `border-radius`, `box-shadow`
+  and `outline` (from a rule on the element alone) replace the frame egui draws, egui's own fill,
+  border, corners and shadow standing where the sheet sets none; the outline is drawn over the
+  contents, the rest under them, and the blur (and, in a see-through window, the cut under it)
+  takes the frame's corners. Their `padding` is not used yet: the contents keep
   egui's margins. `menu` paints its own background, as before.
 - **Captures.** The window's own layers are captured once a frame however many surfaces float
   over them, and not at all when none does. A menu or tooltip over a dialog or Settings (a
   dropdown in Export audio, Settings › Themes › More) has that dialog behind it, so while one is
   open a second capture holds the window and the dialog, its own blur in it. Neither holds
   another floating surface: a tooltip over a menu blurs what is under the menu, not the menu.
-- **Which layers float.** Every layer egui shows at its popup or tooltip order is a surface,
-  unless the app made it: an overlay, a drag's preview, the splash and the dialogs say what they
-  are (`kit::floating`), so a new menu or tooltip is blurred and framed without code of its own.
+- **Which layers float.** Every area egui shows at its popup or tooltip order is a surface,
+  unless the app made it: the dialogs, Settings, the splash and the editors laid over a view are
+  made through `kit::floating` (the only caller of `egui::Area::new` and `egui::Modal::new`,
+  which clippy bans elsewhere), so a new menu or tooltip is blurred and framed without code of its
+  own. What the app only paints on (a drag's preview) is not an area and never a surface. A
+  submenu of the menu bar is `menu`, as its menu is.
 
 **Borders.** `border-width` is a shorthand of `border-top-width`, `border-right-width`,
 `border-bottom-width` and `border-left-width` (one to four lengths, as `padding`), each 0 to

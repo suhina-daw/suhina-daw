@@ -2028,7 +2028,7 @@ impl App {
                     crate::kit::floating::area(
                         ui.ctx(),
                         egui::Id::unique("inline-rename"),
-                        crate::kit::floating::Kind::Plain,
+                        crate::kit::floating::Kind::Own,
                     )
                     .order(egui::Order::Foreground)
                     .fixed_pos(rect.min)
@@ -3287,12 +3287,8 @@ impl App {
                 // A close button at its top right, and Escape, put the views back (#710).
                 let close =
                     Rect::from_min_size(Pos2::new(inner.right() - 28.0, inner.top() + 4.0), Vec2::new(24.0, 20.0));
-                let over = ui.ctx().layer_painter(crate::kit::floating::layer(
-                    ui.ctx(),
-                    egui::Order::Foreground,
-                    Id::unique("sample-map-close"),
-                    crate::kit::floating::Kind::Plain,
-                ));
+                let over =
+                    ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("sample-map-close")));
                 let response = widgets::button_area(ui, close, Id::unique("sample-map-close"), "Close sample map")
                     .on_hover_text("Close the sample map (Esc)");
                 let fill =
@@ -3863,12 +3859,7 @@ impl App {
 /// The label beside the pointer while something is dragged: outlined in the accent colour when
 /// it can land where the pointer is.
 fn drag_label(ctx: &egui::Context, pointer: Pos2, text: &str, lands: bool) {
-    let layer = crate::kit::floating::layer(
-        ctx,
-        egui::Order::Tooltip,
-        Id::unique("browser-drag"),
-        crate::kit::floating::Kind::Plain,
-    );
+    let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("browser-drag"));
     let painter = ctx.layer_painter(layer);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);

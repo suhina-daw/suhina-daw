@@ -112,7 +112,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     } else {
         area
     };
-    crate::kit::floating::area(ui.ctx(), Id::unique("device-expanded-area"), crate::kit::floating::Kind::Plain)
+    crate::kit::floating::area(ui.ctx(), Id::unique("device-expanded-area"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(slice.min)
         .show(ui.ctx(), |ui| {

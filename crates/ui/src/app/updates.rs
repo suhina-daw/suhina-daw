@@ -172,7 +172,7 @@ impl Updates {
         // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
         let style_class = crate::kit::element::DIALOG.enter();
         let choice =
-            crate::kit::floating::area(ui.ctx(), Id::unique("updates-dialog"), crate::kit::floating::Kind::Dialog)
+            crate::kit::floating::area(ui.ctx(), Id::unique("updates-dialog"), crate::kit::floating::Kind::Own)
                 .order(egui::Order::Foreground)
                 .fixed_pos(area.min)
                 .show(ui.ctx(), |ui| {

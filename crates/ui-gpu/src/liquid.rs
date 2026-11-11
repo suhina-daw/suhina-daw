@@ -20,7 +20,7 @@ pub struct Liquid {
     /// The menus' backdrop: targets of its own, so a menu and a dialog never share an image.
     menu_state: Mutex<Option<State>>,
     /// The backdrop of menus over a dialog or Settings: the window with that dialog in it, in
-    /// targets of its own, made only while such a menu is open.
+    /// targets of its own, made the first time such a menu opens and kept.
     above_state: Mutex<Option<State>>,
     resource_report: Mutex<Option<std::time::Instant>>,
 }

@@ -20,7 +20,7 @@ const LISTED: usize = 6;
 /// Draws the dialog over `area`, above everything else, for the projects still being let go of.
 pub fn show(ui: &Ui, area: Rect, waiting: &[String]) {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("closing"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("closing"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {

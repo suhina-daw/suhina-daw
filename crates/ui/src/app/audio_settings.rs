@@ -211,7 +211,7 @@ impl App {
             });
             return;
         }
-        crate::kit::floating::area(ui.ctx(), Id::unique("settings-dialog"), crate::kit::floating::Kind::Plain)
+        crate::kit::floating::area(ui.ctx(), Id::unique("settings-dialog"), crate::kit::floating::Kind::Own)
             .order(egui::Order::Foreground)
             .fixed_pos(window.min)
             .show(ui.ctx(), |ui| {

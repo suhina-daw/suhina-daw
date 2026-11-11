@@ -84,7 +84,8 @@ What floats over the window (menus, right-click menus, dropdowns, tooltips and d
 third capture: once the frame is painted, the window's own layers are drawn and blurred, once
 however many surfaces float and not at all when none does, into targets of their own, and placed
 under each surface's frame (a menu or tooltip over a dialog or Settings gets a fourth capture,
-made only while one is open, of the window with that dialog in it), fading in as egui fades the
+of the window with that dialog in it, made only in the frames that need it; its targets are made
+the first time and kept, as the others' are), fading in as egui fades the
 surface in (its area's fade, worked out
 again from egui's area state); in a see-through window the pixels under it are cleared first, so
 the image keeps the window's alpha. A surface is found by its layer, not its colour: every layer

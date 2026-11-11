@@ -654,4 +654,16 @@ mod tests {
         assert_eq!(role_element("knob.body").map(|e| e.name), Some("knob"));
         assert_eq!(role_element("piano.draw").map(|e| e.name), Some("piano-tool"));
     }
+
+    /// The reference lists `backdrop-filter` for the elements the style engine reads it on.
+    #[test]
+    fn the_floating_elements_are_those_backdrop_filter_reads() {
+        let listed: Vec<&str> =
+            ELEMENTS.iter().filter(|e| e.settings.contains(&"backdrop-filter")).map(|e| e.name).collect();
+        let mut read = suhina_style::property::BACKDROP_FILTERED.to_vec();
+        let mut listed = listed;
+        read.sort_unstable();
+        listed.sort_unstable();
+        assert_eq!(listed, read);
+    }
 }

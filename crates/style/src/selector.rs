@@ -336,6 +336,18 @@ impl Selector {
         matches!(self.parts.as_slice(), [part] if matches!(part.tests.as_slice(), [Test::Root]))
     }
 
+    /// The element this selector names, when it is that name alone (`popup`, not `window popup`
+    /// or `popup#id`).
+    pub fn bare_kind(&self) -> Option<&str> {
+        match self.parts.as_slice() {
+            [part] => match part.tests.as_slice() {
+                [Test::Kind(kind)] => Some(kind),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     /// Whether the element this selector styles (its last compound) is named one of `names`, by
     /// its kind or its id (`toolbar`, `#workspace`), or by an `:is()` or `:where()` each of
     /// whose selectors is (`:is(toolbar, #workspace)`); never by a `:not()`.

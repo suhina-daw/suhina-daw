@@ -400,7 +400,7 @@ fn the_wheel_zooms_only_when_no_dialog_is_on_top() {
         |ui, (view, dialog): &mut (MapView, bool)| {
             show(ui, view, &points, None, "20 samples", &[], None, &[], &mut Vec::new());
             if *dialog {
-                crate::kit::floating::area(ui.ctx(), egui::Id::unique("dialog"), crate::kit::floating::Kind::Dialog)
+                crate::kit::floating::area(ui.ctx(), egui::Id::unique("dialog"), crate::kit::floating::Kind::Own)
                     .order(egui::Order::Foreground)
                     .fixed_pos(Pos2::ZERO)
                     .show(ui.ctx(), |ui| {

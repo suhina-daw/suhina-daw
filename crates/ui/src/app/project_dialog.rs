@@ -64,7 +64,7 @@ pub enum Choice {
 /// Draws the project dialog over `area`, above everything else.
 pub fn show(ui: &Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Option<Choice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("project-dialog"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("project-dialog"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -216,7 +216,7 @@ pub enum SaveChoice {
 /// Draws the save prompt over `area`.
 pub fn show_save(ui: &Ui, area: Rect, prompt: &mut SavePrompt) -> Option<SaveChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("save-prompt"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("save-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -303,7 +303,7 @@ pub enum UnsavedChoice {
 /// Asks whether to save `name`'s changes before `doing` ("closing it", "quitting"), over `area`.
 pub fn show_unsaved(ui: &Ui, area: Rect, name: &str, doing: &str) -> Option<UnsavedChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("unsaved-prompt"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("unsaved-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -345,7 +345,7 @@ fn platform() -> String {
 /// Draws the About dialog over `area`. Returns what was chosen, or `None` while it stays open.
 pub fn show_about(ui: &Ui, area: Rect) -> Option<AboutChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("about-dialog"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("about-dialog"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -452,7 +452,7 @@ pub enum AraEditsChoice {
 /// Asks whether clips `plugin` edits keep their edits on the track they go to, over `area`.
 pub fn show_ara_edits(ui: &Ui, area: Rect, plugin: &str) -> Option<AraEditsChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("ara-edits-prompt"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("ara-edits-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -532,7 +532,7 @@ const RECOVERY_BUTTON: Vec2 = Vec2::new(120.0, 18.0);
 /// file, over `area`; `saved` says whether the project has a file at all.
 pub fn show_recovery(ui: &Ui, area: Rect, name: &str, written: &str, saved: bool) -> Option<RecoveryChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("recovery-prompt"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("recovery-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -599,7 +599,7 @@ pub enum AgentChoice {
 /// over `area`.
 pub fn show_agent(ui: &Ui, area: Rect, client: &str) -> Option<AgentChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("agent-prompt"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("agent-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -647,7 +647,7 @@ fn draw_agent(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect, cl
 /// move, `Some(false)` to leave them.
 pub fn show_folder_move(ui: &Ui, area: Rect, what: &str, to: &str) -> Option<bool> {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("folder-move"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("folder-move"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
@@ -706,7 +706,7 @@ impl CloseChoice for ImportChoice {
 /// it in as a copy, or leave it.
 pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice> {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("theme-import"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("theme-import"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {

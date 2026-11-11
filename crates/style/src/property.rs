@@ -59,14 +59,24 @@ fn backdrop_filter(text: &str) -> bool {
         })
 }
 
-/// Whether a `backdrop-filter` value turns the blur on: anything but `none`.
+/// Whether a `backdrop-filter` value turns the blur on: a radius above 0. `none`, `blur(0)` and
+/// what does not parse leave it off.
 pub fn blurs(text: &str) -> bool {
-    text.trim() != "none"
+    text.trim()
+        .strip_prefix("blur(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .map(|radius| radius.trim().trim_end_matches("px").trim())
+        .and_then(|radius| radius.parse::<f32>().ok())
+        .is_some_and(|radius| radius.is_finite() && radius > 0.0)
 }
 
 /// The elements `backdrop-filter` reads: they float over the window's own layers. Everything else
-/// sits in the window, whose background the system already blurs behind it.
+/// sits in the window, whose background the system already blurs behind it. All but `dialog` read
+/// it from rules on the element alone (`popup { … }`), which [`BARE_FILTERED`] lists.
 pub const BACKDROP_FILTERED: &[&str] = &["popup", "menu", "dialog", "tooltip"];
+
+/// The floating elements that read `backdrop-filter` only from a rule naming them alone.
+pub const BARE_FILTERED: &[&str] = &["popup", "menu", "tooltip"];
 
 /// A surface gradient: `none`, or an angle and colour stops (`90deg, #fff2 0%, #0002 100%`).
 fn surface_gradient(text: &str) -> bool {

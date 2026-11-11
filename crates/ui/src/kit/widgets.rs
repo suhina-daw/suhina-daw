@@ -934,12 +934,7 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
     // Lit while it takes the keys; what is typed shows over it, on a layer above the window's
     // own, as a theme's field drawn after this would hide it (#916: the typed number did not
     // show until Enter set it).
-    let painter = ui.ctx().layer_painter(crate::kit::floating::layer(
-        ui.ctx(),
-        egui::Order::Foreground,
-        response.id.with("typed-layer"),
-        crate::kit::floating::Kind::Plain,
-    ));
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, response.id.with("typed-layer")));
     // Keep the target ring outside the surface: custom value painters run after key handling
     // and would cover an inset rectangle, leaving only sharp yellow corners behind.
     let radius = if response.rect.width() > response.rect.height() * 4.0 { response.rect.height() * 0.5 } else { 4.0 };

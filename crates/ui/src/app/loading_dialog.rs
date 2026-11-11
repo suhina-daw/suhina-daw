@@ -24,7 +24,7 @@ const BUTTON: Vec2 = Vec2::new(150.0, 18.0);
 /// user sent it to the background (its button, or Escape).
 pub fn show(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     let style_class = crate::kit::element::DIALOG.enter();
-    crate::kit::floating::area(ui.ctx(), Id::unique("plugin-loading"), crate::kit::floating::Kind::Dialog)
+    crate::kit::floating::area(ui.ctx(), Id::unique("plugin-loading"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {

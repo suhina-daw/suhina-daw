@@ -251,7 +251,7 @@ impl MissingFiles {
         }
         // The panel is a dialog: the theme may style it, and its panel does not take the window's colour.
         let dialog = crate::kit::element::DIALOG.enter();
-        crate::kit::floating::area(ui.ctx(), Id::unique("missing-files"), crate::kit::floating::Kind::Dialog)
+        crate::kit::floating::area(ui.ctx(), Id::unique("missing-files"), crate::kit::floating::Kind::Own)
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
             .show(ui.ctx(), |ui| {

@@ -110,7 +110,11 @@ fn entries(ui: &mut Ui, entries: &[Entry], picked: &mut Option<String>) {
             }
             Entry::Submenu { label, enabled, entries: inner } => {
                 ui.add_enabled_ui(*enabled, |ui| {
-                    ui.menu_button(label, |ui| self::entries(ui, inner, picked));
+                    ui.menu_button(label, |ui| {
+                        // A submenu of the bar's is the bar's menu too (`menu`), on a layer of its own.
+                        crate::kit::floating::declare(ui.ctx(), ui.layer_id().id, crate::kit::floating::Kind::Menu);
+                        self::entries(ui, inner, picked)
+                    });
                 });
             }
         }
