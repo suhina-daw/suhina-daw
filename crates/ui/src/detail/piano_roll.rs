@@ -5,7 +5,6 @@
 //! column, a ruler, the note grid and a velocity lane. Every edit is a `note.*` command; the view
 //! keeps only what is on screen: zoom, scroll, the selected notes and a gesture in progress.
 
-use crate::kit::surface::Backgrounds as _;
 use std::collections::BTreeSet;
 
 use egui::{Align2, Color32, CursorIcon, Id, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};

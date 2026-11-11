@@ -4,7 +4,6 @@
 //! Missing files (`docs/spec/missing-files.md`): the bar that says a project's audio files are
 //! missing, and the panel that finds them by name and relinks them.
 
-use crate::kit::surface::Backgrounds as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -221,7 +220,7 @@ impl MissingFiles {
     /// Draws the bar that says files are missing in `rect`, while it should show.
     pub fn bar(&mut self, ui: &mut Ui, rect: Rect) {
         let painter = ui.painter_at(rect);
-        painter.fill_background(rect, 0.0, theme::panel_background());
+        painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
         let count = self.rows.len();
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(PAD, 6.0))), |ui| {
             ui.horizontal_centered(|ui| {
@@ -250,6 +249,8 @@ impl MissingFiles {
         if self.poll() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
+        // The panel is a dialog: the theme may style it, and its panel does not take the window's colour.
+        let _dialog = crate::kit::element::DIALOG.enter();
         egui::Area::new(Id::unique("missing-files"))
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
@@ -264,15 +265,19 @@ impl MissingFiles {
         let behind = ui.interact(area, Id::unique("missing-files-behind"), Sense::click_and_drag());
         let _swallowed = behind.clicked();
         let painter = ui.painter_at(area);
-        painter.rect_filled(area, 0.0, theme::window_background().gamma_multiply(0.6));
+        painter.rect_filled(
+            area,
+            0.0,
+            crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
+        );
         let height = ROW + PAD * 4.0 + LINE * 3.0 + self.rows.len() as f32 * ROW_HEIGHT + BUTTON.y;
         let size = Vec2::new(WIDTH.min(area.width() - 2.0 * PAD), height.min(area.height() - 2.0 * PAD));
         let rect = Rect::from_center_size(area.center(), size);
         crate::kit::liquid::backdrop(&painter, rect);
-        painter.fill_background(rect, 0.0, theme::panel_background());
+        painter.rect_filled(rect, 0.0, crate::kit::style_class::own_background_or(theme::panel_background()));
         painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
         let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-        painter.fill_background(bar, 0.0, theme::control_background());
+        painter.rect_filled(bar, 0.0, theme::control_background());
         widgets::text_in(
             &painter,
             bar.shrink2(Vec2::new(PAD, 0.0)),
@@ -563,7 +568,7 @@ mod look {
             |ui, state: &mut MissingFiles| {
                 crate::kit::theme::install(ui.ctx());
                 let area = ui.max_rect();
-                ui.painter().rect_filled(area, 0.0, theme::window_background());
+                ui.painter().rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
                 let bar = Rect::from_min_size(area.min, Vec2::new(area.width(), theme::ROW + 12.0));
                 state.bar(ui, bar);
                 state.open = true;

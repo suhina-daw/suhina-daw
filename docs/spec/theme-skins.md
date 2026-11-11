@@ -295,11 +295,10 @@ The native device panel remains the containing clip and each control keeps its e
 parameter bindings and visibility condition. Disabled/hidden device controls do not dispatch
 parameter actions. The native volume-direction property does not reinterpret SDK bindings.
 
-On the native see-through surface host, SVG background roles clear their covered region
-before compositing the texture so a background's alpha is written once. The opaque/OpenGL
-path, floating layers and an active private background image retain normal blending. Native
-fallback fills use the shared `Backgrounds` path. Scoped authored foregrounds also cover the
-independent `text.inverse` role; selected fills use `control.selectedBackground`.
+SVG background roles blend over what is under them, as every background does: artwork never
+clears the window's pixels, so round artwork on a see-through toolbar leaves the toolbar
+showing at its corners. Scoped authored foregrounds also cover the independent `text.inverse`
+role; selected fills use `control.selectedBackground`.
 
 Artwork roles and frames also accept package-relative PNGs or embedded PNG data URLs.
 PNG decoding is off the audio callback and bounded to 8 MiB per file, 4096 pixels per
@@ -478,11 +477,24 @@ where the element is whole inside that clip: a side that cuts the element is a v
 scroll area scrolled part of it out of view), which they do not pass. Without such an element
 the painter's clip holds.
 
+**One paint model (#1233).** Every background blends with what is under it. The window clears
+once (to nothing in a see-through window), `window` paints its background once over the whole
+window (its `background-color`, else `--window-background`), and each view, bar, panel and
+control paints only its own background over that: a view without one of its own shows the
+window's. Nothing paints over content to hide it: what scrolls is clipped to the area beside a
+header that stays (the Launcher's track headers, scene column and returns, the Arrangement
+view's rulers, header column and fixed rows, the piano roll's keys), never painted under it. So
+a translucent panel composites over the window: a `window` at 50% under a `browser` at 50%
+shows the desktop through 25%; a theme that wants a panel's own alpha at the desktop makes
+`window` transparent, as Suhina Glass does.
+
 **Views and controls.** A background on a view or bar (`window`, `toolbar`, `session`,
 `arrangement`, `browser`, `mixer`, `detail` and the other regions and containers of the element
-registry, `suhina_theme_package::elements`)
-sets the surfaces inside it, not the fill of the controls on it. The add-track buttons
-under the last track keep their own fill.
+registry, `suhina_theme_package::elements`) is that view's own, painted once; it writes no
+token. A part drawn in it that takes its region's colour (the launcher's stop buttons, the
+Arrangement's ruler rows, the toolbar's fields) reads it with `style_class::surface_or`, and
+the controls on it keep their own fill. The add-track buttons under the last track keep their
+own fill.
 
 **Level bars.** Volume and pan fields of the track headers and the mixer are one level
 bar (`mixer_controls::level_bar`): the field's element is the track and `value-fill` the
@@ -491,10 +503,6 @@ lit part; `height` sets the thickness of either. `#arrangement-volume`,
 `#mixer-pan` select them, and `volume.track`,
 `volume.fill`, `pan.track` and `pan.fill` are artwork roles. Without any of these the
 volume field is the native capsule and the pan field the native flat field.
-
-**Artwork over opaque surfaces.** Artwork clears the window's pixels under it only when
-the theme's surfaces are see-through; over opaque ones the desktop would show wherever the
-artwork leaves a pixel uncovered.
 
 **Theme-given presentation.** `arrangement { track-headers: left | right; }` is
 the side of the Arrangement view's track headers while the user's Track headers setting
@@ -796,27 +804,7 @@ hint-coloured grip, and the browser's the border colour, stronger under the poin
 input clipping and drag/drop targets must use the same resolved rectangles. Removing those layout declarations restores the
 native arrangement and its saved sizes. Bars and floating windows remain host-managed.
 
-### Authoring opaque backgrounds and readable values
-
-The `background` shorthand resets an omitted `background-color` to transparent.
-That transparent computed colour is an authored native background override.
-On the see-through main window, `kit/surface.rs` writes a native fill's colour
-and alpha directly to window pixels, rather than blending with previous content.
-It can therefore reveal the desktop even when a separately painted gradient is opaque.
-Use an opaque base plus `background-image` on views, panels, bars and buttons:
-
-```css
-/* Wrong: the native base becomes transparent. */
-browser { background:linear-gradient(#243A30, #101C17); }
-/* Right: opaque window pixels under the gradient. */
-browser { background-color:#101C17;
-           background-image:linear-gradient(#243A30, #101C17); }
-```
-
-Use `background-image` alone for track-header/name overlays that retain their native
-fill. The shorthand is suitable for measured `meter-level` overlays. Meadow's
-explicit transparency over its private background image is intentional and remains
-unchanged. Other intentionally translucent surfaces need the same explicit choice.
+### Readable values
 
 Check `text.value` and `text.inverse` against `control.selectedBackground`, aiming
 for at least 4:1 contrast, as well as against unlit/panel backgrounds. Bright text
@@ -913,7 +901,9 @@ every device in a row and each expanded panel, a menu, Settings, a tooltip, and 
 selected states. Each scene is `<scene>.raw.png`, the window's own pixels with their alpha, and
 `<scene>.png`, those over the backdrop (bright bands by default), blurred where the system blurs
 behind a see-through window. It renders as a window that composites alpha does, so a hole a see-through theme leaves
-shows. A scene wider than the GPU's textures allow is drawn at a smaller `--scale`, with a warning. A built-in theme's id works in place of a folder. It warns when the window would keep
+shows. `launcher-scrolled` and `arrangement-scrolled` draw both views scrolled down and along on
+a project with more tracks and scenes than fit, so whatever shows through a header that stays
+shows there. A scene wider than the GPU's textures allow is drawn at a smaller `--scale`, with a warning. A built-in theme's id works in place of a folder. It warns when the window would keep
 repainting every frame in a scene. `--budget` prints the style engine's counts instead.
 
 Reading refuses a package, before anything is written, when:
@@ -1054,10 +1044,10 @@ of bars, and a slider id per parameter.
 
 ## Round 5 additions
 
-- **Window alpha:** backgrounds set the window's pixels only while the theme's
-  `--window-background` has alpha below 255; the window otherwise clears to an opaque colour and
-  every fill blends. A clip's body, the focused track's lane highlight and a control's surface
-  (`Entered::paint`) blend in every theme.
+- **Window alpha:** the window clears to nothing only while the theme's `--window-background`
+  has alpha below 255, and otherwise to an opaque colour; every background blends over it in
+  either case (#1233). Only a menu's or dialog's blurred backdrop clears the pixels under it
+  first (`kit::surface::clear`).
 - **Themes folder:** Settings › Themes › Themes folder (`themes_folder`), `SUHINA_THEMES` over
   it, or `--data-dir` / `SUHINA_DATA` for the whole data folder. Changing the setting reads the
   new folder at once; a folder that does not exist is not read. A theme's own folder may be a

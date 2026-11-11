@@ -5,7 +5,6 @@
 //! left under a search field; each setting is a row: a label, a short note and its control. What
 //! is on which page is the table in `settings_rows.rs` (`docs/spec/ui-settings.md`).
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2, pos2};
 
 use crate::interaction::pick::PickField;
@@ -883,7 +882,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
     let panel_base = crate::kit::liquid::panel_base(ui.ctx());
-    painter.fill_background(area, 0.0, panel_base);
+    painter.rect_filled(area, 0.0, panel_base);
     if !state.window {
         crate::kit::liquid::paint(&painter, area, &style_class, panel_base, crate::kit::liquid::Surface::Panel);
     }
@@ -926,7 +925,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     }
     let response = widgets::button_area(ui, close, Id::unique("settings-close"), "Close settings");
     let hover = widgets::hover(ui, &response);
-    painter.fill_background(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+    painter.rect_filled(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
     widgets::text_in(
         &painter,
         close,
@@ -1179,7 +1178,14 @@ fn page_body(
                 draw(&mut cx, &mut y);
                 y += 6.0;
                 let panel = Rect::from_min_max(Pos2::new(page.left() - 6.0, top), Pos2::new(page.right(), y));
-                painter.set(backdrop, egui::Shape::rect_filled(panel, 0.0, theme::panel_background()));
+                painter.set(
+                    backdrop,
+                    egui::Shape::rect_filled(
+                        panel,
+                        0.0,
+                        crate::kit::style_class::surface_or(theme::panel_background()),
+                    ),
+                );
                 y += 4.0;
             }
             Draw::Block(draw) => draw(&mut cx, &mut y),
@@ -1840,7 +1846,7 @@ fn shortcuts_page(
     );
     let response = widgets::button_area(ui, reset, Id::unique("reset-keys"), "Reset all keys");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.fill_background(reset, 0.0, fill);
+    painter.rect_filled(reset, 0.0, fill);
     widgets::text_in(painter, reset, Align2::CENTER_CENTER, "Reset all", small.clone(), theme::text_primary());
     if response.clicked() {
         *keymap = Keymap::default();
@@ -2028,7 +2034,7 @@ fn plugin_folders(
                 format!("Remove {}", folder.path),
             );
             let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-            painter.fill_background(remove, 0.0, fill);
+            painter.rect_filled(remove, 0.0, fill);
             widgets::text_in(painter, remove, Align2::CENTER_CENTER, "Remove", small.clone(), theme::text_secondary());
             if response.clicked() {
                 request = Some(PluginRequest::RemoveFolder(folder.path.clone()));
@@ -2079,13 +2085,13 @@ fn plugin_folders(
             plugins.new_format = format;
         }
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.fill_background(cell, 0.0, if chosen { theme::control_selected() } else { idle });
+        painter.rect_filled(cell, 0.0, if chosen { theme::control_selected() } else { idle });
         let color = if chosen { theme::text_inverse() } else { theme::text_secondary() };
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
     let response = widgets::button_area(ui, add, Id::unique("add-folder"), "Add plug-in folder");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.fill_background(add, 0.0, fill);
+    painter.rect_filled(add, 0.0, fill);
     widgets::text_in(painter, add, Align2::CENTER_CENTER, "Add", small.clone(), theme::text_primary());
     let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     if response.clicked() || entered {
@@ -2142,13 +2148,17 @@ fn plugin_actions(
             Vec2::new(half, buttons.height()),
         );
         let response = widgets::button_area(ui, cell, Id::unique(("scan", index)), text);
-        let base = if plugins.scanning { theme::panel_background() } else { theme::control_background() };
+        let base = if plugins.scanning {
+            crate::kit::style_class::surface_or(theme::panel_background())
+        } else {
+            theme::control_background()
+        };
         let fill = motion::mix(
             base,
             theme::control_hover(),
             if plugins.scanning { 0.0 } else { widgets::hover(ui, &response) },
         );
-        painter.fill_background(cell, 0.0, fill);
+        painter.rect_filled(cell, 0.0, fill);
         let color = if plugins.scanning { theme::text_hint() } else { theme::text_primary() };
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !plugins.scanning {
@@ -2162,7 +2172,7 @@ fn plugin_actions(
     let open = control_rect(r, 2);
     let response = widgets::button_area(ui, open, Id::unique("open-plugin-manager"), "Open the plug-in manager");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.fill_background(open, 0.0, fill);
+    painter.rect_filled(open, 0.0, fill);
     widgets::text_in(painter, open, Align2::CENTER_CENTER, "Manage plug-ins", small, theme::text_primary());
     if response.clicked() {
         plugins.manager.open = true;
@@ -2315,7 +2325,7 @@ fn driver_panel_row(ui: &Ui, painter: &egui::Painter, r: Rect) -> bool {
     let response =
         widgets::button_area(ui, rect, Id::unique("asio-control-panel"), "Open the active ASIO driver's control panel");
     let hover = widgets::hover(ui, &response);
-    painter.fill_background(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+    painter.rect_filled(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
     widgets::text_in(
         painter,
         rect,
@@ -2724,7 +2734,7 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
     let refresh = Rect::from_min_size(Pos2::new(r.right() - 120.0, r.top() + 1.0), Vec2::new(120.0, SEGMENT));
     let response = widgets::button_area(ui, refresh, Id::unique("audio-refresh"), "List the audio devices again");
     let hover = widgets::hover(ui, &response);
-    painter.fill_background(refresh, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+    painter.rect_filled(refresh, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
     widgets::text_in(
         painter,
         refresh,
@@ -2792,7 +2802,7 @@ fn preset_segmented(
         let response =
             widgets::button_area(ui, segment, Id::unique(("keymap-preset", *text)), format!("Preset: {text}"));
         let fill = if chosen { theme::control_active() } else { theme::control_background() };
-        painter.fill_background(segment, 0.0, motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response)));
+        painter.rect_filled(segment, 0.0, motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response)));
         let color = if chosen { theme::text_primary() } else { theme::text_secondary() };
         widgets::text_in(painter, segment, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !chosen {
@@ -2965,7 +2975,10 @@ fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> 
     let knob_width = SEGMENT - 4.0;
     let x = track.left() + 2.0 + lit * (track.width() - 4.0 - knob_width);
     let knob = Rect::from_min_size(Pos2::new(x, track.top() + 2.0), Vec2::new(knob_width, SEGMENT - 4.0));
-    painter.rect_filled(knob, 0.0, motion::mix(theme::text_secondary(), theme::window_background(), lit));
+    // The knob's lit colour contrasts with the lit track: an opaque ground, else the inverse text.
+    let ground = crate::kit::style_class::opaque_surface_or(theme::window_background());
+    let ground = if ground.a() == u8::MAX { ground } else { theme::text_inverse() };
+    painter.rect_filled(knob, 0.0, motion::mix(theme::text_secondary(), ground, lit));
     response.clicked().then_some(!on)
 }
 

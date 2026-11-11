@@ -473,7 +473,7 @@ pub(super) fn knob(
     let painter = ui.painter();
     if style.shape == ControlShape::Square {
         let square = Rect::from_center_size(center, Vec2::splat(radius * 2.0));
-        painter.fill_background(square, 0.0, background);
+        painter.rect_filled(square, 0.0, background);
         painter.rect_stroke(square, 0.0, border, egui::StrokeKind::Inside);
     } else {
         painter.circle_filled(center, radius, background);

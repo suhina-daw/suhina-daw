@@ -7,7 +7,6 @@
 //! its velocity, a line drawn in the velocity lane, the lane's top edge and the audition. A child
 //! module of [`super`], so it shares the piano roll's private state and layout.
 
-use crate::kit::surface::Backgrounds as _;
 use std::time::Duration;
 
 use egui::{Align2, CursorIcon, Id, Pos2, Rect, Sense, Ui, Vec2};
@@ -154,7 +153,7 @@ pub(super) fn draw_velocity_label(ui: &Ui, layout: &Layout, clip: &PianoClip, gr
     let rect = layout.note_rect(note);
     let label = Rect::from_min_size(Pos2::new(rect.left(), rect.top() - 15.0), Vec2::new(76.0, 14.0));
     let painter = ui.painter_at(layout.grid);
-    painter.fill_background(label, 2.0, theme::control_background());
+    painter.rect_filled(label, 2.0, theme::control_background());
     let text = format!("Velocity {midi}");
     widgets::text_in(
         &painter,

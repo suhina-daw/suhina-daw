@@ -938,28 +938,6 @@ fn paint_variant(
     let Some(Some(texture)) = textures.images.get(&key) else {
         return false;
     };
-    // The native see-through host writes a background's alpha rather than blending
-    // it twice. Clear the covered background before compositing its artwork; private
-    // image backdrops and the opaque/OpenGL path keep ordinary blending. Only a theme whose
-    // surfaces show the desktop needs it: over an opaque one, clearing would let the desktop
-    // show through wherever the artwork leaves a pixel uncovered (rounded corners, edges).
-    if (matches!(role, "button" | "fader.rail" | "fader.cap" | "track.name" | "track.body")
-        || role.starts_with("button."))
-        && super::surface::available(painter.ctx())
-        && desktop_shows()
-    {
-        let (sin, cos) = angle.sin_cos();
-        let size = egui::vec2(
-            rect.width() * cos.abs() + rect.height() * sin.abs(),
-            rect.width() * sin.abs() + rect.height() * cos.abs(),
-        );
-        super::surface::Backgrounds::fill_background(
-            painter,
-            Rect::from_center_size(rect.center(), size),
-            radius,
-            Color32::TRANSPARENT,
-        );
-    }
     if let Some(slice) = slice {
         let mut mesh = egui::Mesh::with_texture(texture.id());
         let size = texture.size();
@@ -1028,15 +1006,6 @@ fn cast_shadows(painter: &Painter, mesh: &egui::Mesh, style: Option<&super::nati
     let Some(style) = style else { return };
     let slot = painter.add(egui::Shape::Noop);
     super::native_css::artwork_shadows(painter, slot, mesh, style);
-}
-
-/// Whether the surfaces artwork stands on let the desktop show through: the window's, the
-/// panels' and the track headers'. A translucent hover or selection colour does not count.
-fn desktop_shows() -> bool {
-    use super::theme;
-    [theme::window_background(), theme::panel_background(), theme::track_header_background()]
-        .iter()
-        .any(|color| color.a() < 255)
 }
 
 /// Original editable artwork supplied with the theme template.

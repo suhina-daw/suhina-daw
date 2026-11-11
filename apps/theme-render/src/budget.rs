@@ -24,7 +24,8 @@ pub struct Counts {
     pub unstyled: usize,
     /// Styles worked out afresh in a settled frame.
     pub fresh: usize,
-    /// Paint callbacks in a frame: background fills that set the window's pixels.
+    /// Paint callbacks in a frame: the clears under a menu's or dialog's backdrop, which set the
+    /// window's pixels. Every background blends, so nothing else is one (#1233).
     pub paint_callbacks: usize,
     /// Frames from choosing the theme to a still window.
     pub theme_change_frames: u64,
@@ -40,11 +41,11 @@ pub struct Counts {
     pub hover_fresh: usize,
 }
 
-/// A stand-in for the GPU's background fills: each fill becomes a callback as on the GPU, so the
-/// callbacks can be counted without one.
-struct CountedFills;
+/// A stand-in for the GPU's clears: each becomes a callback as on the GPU, so the callbacks can be
+/// counted without one.
+struct CountedClears;
 
-impl suhina_ui::kit::surface::Provider for CountedFills {
+impl suhina_ui::kit::surface::Provider for CountedClears {
     fn shape(&self, rect: egui::Rect, _: egui::CornerRadius, _: egui::Color32) -> egui::Shape {
         egui::Shape::Callback(egui::PaintCallback { rect, callback: Arc::new(()) })
     }
@@ -84,7 +85,7 @@ fn frames(h: &mut Harness<'static, App>) -> (u64, u64, usize) {
 pub fn count(subject: &Subject, scene: &crate::scenes::Scene) -> Result<Counts, String> {
     let built_in = Subject { id: suhina_ui::kit::theme::BUILT_IN.to_owned(), theme: None };
     let mut h = crate::headless((scene.app)()?, &built_in, scene.width);
-    suhina_ui::kit::surface::install(&h.ctx, Arc::new(CountedFills));
+    suhina_ui::kit::surface::install(&h.ctx, Arc::new(CountedClears));
     (scene.drive)(&mut h)?;
     frames(&mut h);
     crate::choose(&mut h, subject);

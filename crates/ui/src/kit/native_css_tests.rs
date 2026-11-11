@@ -517,7 +517,8 @@ fn retained_scopes_match_siblings_and_keep_named_track_identity() {
                     assert_eq!(theme::text_primary(), Color32::from_rgb(10, 20, 30));
                 }
                 if (pass == 1 || pass == 3) && index == 1 {
-                    assert_eq!(theme::panel_background(), Color32::from_rgb(40, 50, 60));
+                    let own = super::super::style_class::surface_or(Color32::TRANSPARENT);
+                    assert_eq!(own, Color32::from_rgb(40, 50, 60));
                 }
             }
         })
@@ -925,14 +926,16 @@ fn a_transparent_control_background_paints_nothing() {
 
 #[test]
 fn a_view_background_leaves_the_controls_on_it_their_own_fill() {
-    let control = theme::control_background();
+    let (control, window_token) = (theme::control_background(), theme::window_background());
     let mut seen = None;
     painted("arrangement { background-color: #102030; }", |_| {
         let _view = test_el("arrangement").enter();
-        seen = Some((theme::window_background(), theme::control_background()));
+        let own = super::super::style_class::surface_or(egui::Color32::TRANSPARENT);
+        seen = Some((own, theme::window_background(), theme::control_background()));
     });
-    let (window, inside) = seen.unwrap();
-    assert_eq!(window, egui::Color32::from_rgb(0x10, 0x20, 0x30));
+    let (own, window, inside) = seen.unwrap();
+    assert_eq!(own, egui::Color32::from_rgb(0x10, 0x20, 0x30), "what is drawn in the view knows its colour");
+    assert_eq!(window, window_token, "the view's background writes no token (#1233)");
     assert_eq!(inside, control, "the add-track buttons keep the theme's control fill");
 }
 
@@ -984,8 +987,8 @@ fn checked_and_selected_states_reach_the_sheet() {
                     0.0,
                 );
             }
-            let _header = test_el("track-header").id("track-1").attr(crate::kit::element::Selected, on).enter();
-            header = Some(theme::window_background());
+            let el = test_el("track-header").id("track-1").attr(crate::kit::element::Selected, on).enter();
+            header = Some(el.background_or(egui::Color32::TRANSPARENT));
         });
         let orange = rects(&shapes).iter().any(|r| r.rect == field && r.fill == egui::Color32::from_rgb(0xFF, 0x88, 0));
         assert_eq!(orange, on, "the solo button is orange only when on");
@@ -1034,8 +1037,8 @@ fn a_track_gives_its_colour_to_the_sheet_and_each_view_is_known() {
             .id("track-1")
             .variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)))
             .enter();
-        let _name = test_el("track-name").id("track-1").enter();
-        seen = Some((theme::window_background(), super::super::style_class::view()));
+        let name = test_el("track-name").id("track-1").enter();
+        seen = Some((name.background_or(egui::Color32::TRANSPARENT), super::super::style_class::view()));
     });
     let (fill, view) = seen.unwrap();
     assert_eq!(fill, egui::Color32::from_rgb(0xE8, 0x91, 0x3A));

@@ -6,7 +6,6 @@
 //! has not started passes the sound through or is silent), so the dialog can be sent to the
 //! background; it closes by itself once nothing is loading.
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Color32, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 use suhina_session::PluginProgress;
 
@@ -43,18 +42,22 @@ fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     let behind = ui.interact(area, Id::unique("plugin-loading-behind"), Sense::click_and_drag());
     let _swallowed = behind.clicked();
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, theme::window_background().gamma_multiply(0.6));
+    painter.rect_filled(
+        area,
+        0.0,
+        crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
+    );
 
     let loading = progress.loading.len().min(LISTED) + usize::from(progress.loading.len() > LISTED);
     let lines = 1 + loading + progress.failed.len().min(LISTED);
     let height = ROW + PAD * 3.0 + BAR + lines as f32 * LINE + BUTTON.y + PAD;
     let rect = Rect::from_center_size(area.center(), Vec2::new(WIDTH.min(area.width() - 2.0 * PAD), height));
     crate::kit::liquid::backdrop(&painter, rect);
-    painter.fill_background(rect, 0.0, theme::panel_background());
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::own_background_or(theme::panel_background()));
     painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
 
     let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    painter.fill_background(title, 0.0, theme::control_background());
+    painter.rect_filled(title, 0.0, theme::control_background());
     let text = |rect: Rect, align: Align2, text: &str, color: Color32| {
         widgets::text_in(&painter, rect, align, text, theme::ui_font(theme::TEXT), color);
     };
@@ -73,7 +76,7 @@ fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     // `progress` (its background and radius) and `progress-fill` (its background) style the bar.
     let progress_style = crate::kit::element::PROGRESS.enter();
     let radius = progress_style.radius_or(0.0);
-    painter.fill_background(bar, radius, progress_style.background_or(theme::control_background()));
+    painter.rect_filled(bar, radius, progress_style.background_or(theme::control_background()));
     let share = if progress.total == 0 { 1.0 } else { progress.ready as f32 / progress.total as f32 };
     let fill = crate::kit::element::PROGRESS_FILL.enter().background_or(theme::accent());
     painter.rect_filled(
@@ -108,7 +111,7 @@ fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     let button = Rect::from_min_size(Pos2::new(inner.right() - BUTTON.x, inner.bottom() - BUTTON.y), BUTTON);
     let response = widgets::button_area(ui, button, Id::unique("plugin-loading-hide"), "Continue in the background");
     let hover = widgets::hover(ui, &response);
-    painter.fill_background(
+    painter.rect_filled(
         button,
         0.0,
         crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover),

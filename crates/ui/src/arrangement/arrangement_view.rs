@@ -5,7 +5,6 @@
 //! (`docs/design/components.md` › Arrangement view). Track headers show more controls as a lane
 //! grows. Like the Launcher view it draws data and turns gestures into [`Action`]s.
 
-use crate::kit::surface::Backgrounds as _;
 use std::collections::{HashMap, HashSet};
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
@@ -135,7 +134,7 @@ const LOOP_GRAB: f32 = 4.0;
 /// Subordinate timeline structure to clips while retaining editable theme colours.
 fn grid_color(major: bool) -> Color32 {
     motion::mix(
-        theme::window_background(),
+        crate::kit::style_class::surface_or(theme::window_background()),
         if major { theme::grid_major() } else { theme::grid_minor() },
         if major { 0.55 } else { 0.35 },
     )
@@ -393,8 +392,8 @@ fn show_lanes(
         ui.painter().rect_stroke(whole, 0.0, Stroke::new(1.0, theme::accent()), StrokeKind::Inside);
     }
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
-    arrangement.paint_background(&painter, area, 0.0);
+    // The view's own background, over the window's (#1233).
+    let _ = arrangement.paint(&painter, area);
 
     // The header column, on either side, and the timeline beside it.
     let max_header = (area.width() - 120.0).max(HEADER_COLUMN_RANGE.0);
@@ -564,7 +563,10 @@ fn show_lanes(
         ruler_style.paint_with(
             &painter,
             ruler,
-            crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() },
+            crate::kit::element::Native {
+                radius: 0.0,
+                fill: crate::kit::style_class::surface_or(theme::panel_background()),
+            },
         );
     }
     let ruler_ink = ruler_style.color_or(theme::text_secondary());
@@ -700,9 +702,9 @@ fn show_lanes(
         );
     }
     painter.hline(area.x_range(), ruler.bottom() + 0.5, theme::hairline(theme::border()));
-    painter.fill_background(loop_row, 0.0, theme::panel_background());
+    painter.rect_filled(loop_row, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.hline(area.x_range(), loop_row.bottom() + 0.5, theme::hairline(theme::border()));
-    painter.fill_background(marker_row, 0.0, theme::panel_background());
+    painter.rect_filled(marker_row, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.hline(area.x_range(), marker_row.bottom() + 0.5, theme::hairline(theme::border_strong()));
 
     // A click on the ruler moves the play start marker there, on the clip grid (Alt: free); while
@@ -823,7 +825,7 @@ fn show_lanes(
             actions.push(Action::new("launcher.backToArrangement", json!({})));
         }
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.fill_background(
+        painter.rect_filled(
             back,
             0.0,
             motion::mix(
@@ -847,7 +849,7 @@ fn show_lanes(
 
     // Header column top, beside the ruler: right-click moves the headers to the other side.
     let corner = Rect::from_x_y_ranges(headers, egui::Rangef::new(ruler.top(), marker_row.bottom()));
-    painter.fill_background(corner, 0.0, theme::panel_background());
+    painter.rect_filled(corner, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let corner_response = ui.interact(corner, Id::unique("arrangement-header-corner"), Sense::click());
     corner_response.context_menu(|ui| {
         let text = if state.headers_left { "Track headers on the right" } else { "Track headers on the left" };
@@ -861,7 +863,14 @@ fn show_lanes(
         if state.headers_left && corner.width() >= 210.0 { corner.right() - 102.0 } else { corner.left() + 6.0 };
     let resize = Rect::from_min_size(Pos2::new(resize_x, corner.top() + 4.0), Vec2::new(96.0, 18.0)).intersect(corner);
     let response = widgets::button_area(ui, resize, Id::unique("arrangement-resize-all"), "Resize all tracks");
-    widgets::subtle_dropdown(ui, &painter, resize, &response, "Resize all", theme::panel_background());
+    widgets::subtle_dropdown(
+        ui,
+        &painter,
+        resize,
+        &response,
+        "Resize all",
+        crate::kit::style_class::surface_or(theme::panel_background()),
+    );
     egui::Popup::menu(&response).show(|ui| {
         for size in TrackSize::ALL {
             let height = f32::from(state.sizes.height(size));
@@ -976,7 +985,7 @@ fn show_lanes(
         .intersect(corner);
         let response = widgets::button_area(ui, button, Id::unique("arrangement-returns-toggle"), label);
         let hover = widgets::hover(ui, &response);
-        painter.fill_background(button, 2.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+        painter.rect_filled(button, 2.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
         widgets::text_in(&painter, button, Align2::CENTER_CENTER, label, font, theme::text_secondary());
         if response.clicked() {
             state.returns_hidden = !state.returns_hidden;
@@ -1312,11 +1321,19 @@ fn show_lanes(
         // The track plays launched clips instead of its arrangement clips: the lane dims
         // until Back to arrangement returns it.
         if lane.overrides {
-            lanes_painter.rect_filled(lane_rect, 0.0, theme::window_background().gamma_multiply(0.45));
+            lanes_painter.rect_filled(
+                lane_rect,
+                0.0,
+                crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(0.45),
+            );
         }
         // A take lane is soloed: the track's own clips are not heard, so they grey (#989).
         if state.take_solo.is_some_and(|(t, _)| t == lane.track) {
-            lanes_painter.rect_filled(lane_rect, 0.0, theme::window_background().gamma_multiply(0.6));
+            lanes_painter.rect_filled(
+                lane_rect,
+                0.0,
+                crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(0.6),
+            );
         }
         lanes_painter.hline(area.x_range(), lane_rect.bottom() + 0.5, theme::hairline(grid_color(true)));
         // The track's take lanes, under it, then its automation lanes.
@@ -1554,8 +1571,12 @@ fn show_lanes(
             // A selected clip would keep its track's devices in the detail area.
             state.clear_selected_clip();
         }
-        let fill = if selected { theme::control_active() } else { theme::panel_background() };
-        fixed_painter.fill_background(header, 0.0, fill);
+        let fill = if selected {
+            theme::control_active()
+        } else {
+            crate::kit::style_class::surface_or(theme::panel_background())
+        };
+        fixed_painter.rect_filled(header, 0.0, fill);
         if let Some(probe) = state.drop.as_mut()
             && probe.devices
             && !probe.files
@@ -1750,7 +1771,11 @@ fn show_lanes(
                 rect: wave_area(rect),
                 origin: x_of(start),
                 beat_width: state.beat_width,
-                ink: ink_on(motion::mix(theme::panel_background(), rgb(clip.color), 0.82)),
+                ink: ink_on(motion::mix(
+                    crate::kit::style_class::surface_or(theme::panel_background()),
+                    rgb(clip.color),
+                    0.82,
+                )),
             };
             let snap = |elapsed: f64| elapsed;
             crate::arrangement::envelope::show(

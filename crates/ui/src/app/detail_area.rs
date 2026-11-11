@@ -983,7 +983,7 @@ fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
 fn paint_splitter(ui: &Ui, splitter: Rect, response: &egui::Response, stacked: bool) {
     let style = crate::kit::element::DIVIDER.id("detail-splitter").response(response).enter();
     let painter = ui.painter_at(splitter);
-    painter.fill_background(splitter, 0.0, style.background_or(theme::control_background()));
+    painter.rect_filled(splitter, 0.0, style.background_or(theme::control_background()));
     let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
     painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, style.color_or(theme::text_hint()));
 }

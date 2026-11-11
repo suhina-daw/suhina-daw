@@ -6,7 +6,7 @@
 //! Each scene is the demo project's window, driven through labels as the window tests drive it,
 //! with a fixed step so that two renders of the same theme are the same. The window is drawn
 //! offscreen on wgpu with the app's own providers (`suhina_ui_gpu`) and a transparent clear, so a
-//! see-through theme's fills set the pixels' alpha as they do in the real window. Each scene is
+//! see-through theme's backgrounds leave the pixels' alpha as they do in the real window. Each scene is
 //! written twice: `<scene>.raw.png`, the window's own pixels, and `<scene>.png`, those pixels over
 //! the backdrop, blurred where the system blurs behind the window.
 //!
@@ -80,7 +80,6 @@ pub fn demo_app() -> App {
 /// What the window does after the app has drawn a frame, as the app's window does.
 fn finish_frame(ctx: &egui::Context) {
     suhina_ui::kit::liquid::finish_backdrops(ctx);
-    suhina_ui::kit::surface::finish_frame(ctx);
 }
 
 /// Builds the window around `app` with `subject` chosen, on `renderer` when there is one.
@@ -192,8 +191,7 @@ fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
 
 /// A window on the GPU, with the app's surface and liquid providers installed as the app installs
 /// them in a see-through window. The render shows a window that composites alpha; on a system whose
-/// window does not (the app then leaves the surface provider out and blends fills over the panel
-/// colour), nested translucent fills look different there.
+/// window does not, the app clears opaque under the same blended backgrounds.
 pub fn rendered(app: App, subject: &Subject, width: f32, scale: f32, gpu: &Gpu) -> Harness<'static, App> {
     let state = gpu.render_state();
     let renderer = egui_kittest::wgpu::WgpuTestRenderer::from_render_state(state.clone());

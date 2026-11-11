@@ -190,7 +190,7 @@ fn thousandth(v: f64) -> f64 {
 /// #1190).
 fn field_surface(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response) {
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response));
-    painter.fill_background(rect, 3.0, fill);
+    painter.rect_filled(rect, 3.0, fill);
 }
 
 /// The places of a text a drag steps: each a range of characters and its step.
@@ -429,9 +429,9 @@ fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label:
     let fill = if enabled {
         motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response))
     } else {
-        theme::panel_background()
+        crate::kit::style_class::surface_or(theme::panel_background())
     };
-    painter.fill_background(rect, 3.0, fill);
+    painter.rect_filled(rect, 3.0, fill);
     painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
     let ink = if enabled { theme::text_primary() } else { theme::text_hint() };
     let size = if rect.height() < 15.0 { theme::TEXT_TINY } else { theme::TEXT_SMALL };
@@ -444,7 +444,7 @@ fn toggle(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, text: &str, 
     let state = if on { "On" } else { "Off" };
     let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-switch", name)), format!("{name}: {state}"));
     let (fill, ink) = widgets::toggle_colors(ui, &response, on);
-    painter.fill_background(rect, 3.0, fill);
+    painter.rect_filled(rect, 3.0, fill);
     if !on {
         painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
     }
@@ -473,7 +473,7 @@ fn drop_down(
 ) -> Option<usize> {
     let response = widgets::button_area(ui, rect, id, format!("{name}: {shown}"));
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.fill_background(rect, 3.0, fill);
+    painter.rect_filled(rect, 3.0, fill);
     let text = Rect::from_min_max(rect.min + Vec2::new(6.0, 0.0), rect.max - Vec2::new(14.0, 0.0));
     widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, theme::ui_font(theme::TEXT_SMALL), theme::text_value());
     widgets::chevron(painter, Pos2::new(rect.right() - 8.0, rect.center().y), false, theme::text_secondary());
@@ -860,7 +860,7 @@ fn audio_part(
     let find = set_button(name);
     let response = widgets::button_area(ui, find, Id::unique(("clip-panel-find", panel.clip.0)), "Find tempo");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.fill_background(find, 3.0, fill);
+    painter.rect_filled(find, 3.0, fill);
     painter.rect_stroke(find, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
     widgets::text_in(
         painter,
@@ -1074,7 +1074,7 @@ fn gain_part(
         widgets::text_in(painter, mark, Align2::LEFT_CENTER, text, scale.clone(), theme::text_hint());
     }
     let slot = Rect::from_center_size(track.center(), Vec2::new(4.0, track.height()));
-    painter.fill_background(slot, 2.0, theme::control_background());
+    painter.rect_filled(slot, 2.0, theme::control_background());
     painter.hline(
         egui::Rangef::new(track.left() - 1.0, track.right() + 1.0),
         y_of(0.0),
