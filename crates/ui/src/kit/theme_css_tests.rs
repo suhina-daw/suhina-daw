@@ -274,3 +274,14 @@ fn an_artwork_rules_attribute_reads_in_any_form_css_allows() {
         assert_eq!(theme.skin.assets.get(role).map(String::as_str), Some(path), "{role}");
     }
 }
+
+/// A theme that pads a painted element in percent is told so when it loads, and the padding is
+/// not used; on the workspace, laid out by the CSS layout, it is taken (#1336).
+#[test]
+fn a_theme_is_told_a_painted_element_takes_no_padding_in_percent() {
+    let meta = || crate::kit::theme::ThemeMeta::new("Padded", "#123456");
+    let (_, warnings) = crate::kit::theme::from_folder(meta(), "device { padding: 5%; }");
+    assert!(warnings.iter().any(|w| w.contains("percentage is read only on a CSS layout container")), "{warnings:?}");
+    let (_, warnings) = crate::kit::theme::from_folder(meta(), "#workspace { padding: 1%; }");
+    assert!(warnings.is_empty(), "{warnings:?}");
+}

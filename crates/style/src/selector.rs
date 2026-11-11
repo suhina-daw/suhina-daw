@@ -336,6 +336,17 @@ impl Selector {
         matches!(self.parts.as_slice(), [part] if matches!(part.tests.as_slice(), [Test::Root]))
     }
 
+    /// Whether the element this selector styles (its last compound) is named one of `names`, by
+    /// its kind or its id (`toolbar`, `#workspace`).
+    pub fn subject_is(&self, names: &[&str]) -> bool {
+        self.parts.last().is_some_and(|part| {
+            part.tests.iter().any(|test| match test {
+                Test::Kind(name) | Test::Id(name) => names.contains(&name.as_str()),
+                _ => false,
+            })
+        })
+    }
+
     /// Whether some compound of this selector, or of a selector in its `:is()` or `:where()`,
     /// names both the element `kind` and the class (`group.lcd`).
     pub fn styles(&self, kind: &str, class: &str) -> bool {

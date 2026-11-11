@@ -679,6 +679,15 @@ mod tests {
         assert_eq!(spacing_points(&styles[0], Property::PaddingTop), Some(5.0));
     }
 
+    /// On a CSS layout container a padding in percent is taken of the box around it, as in CSS
+    /// (#1336): the sheet takes it there.
+    #[test]
+    fn padding_in_percent_places_a_layout_container_s_children() {
+        let css = "toolbar { display:flex; width:400px; padding-left:10%; } #a { width:100px; height:20px; }";
+        let elements = vec![Element::new("toolbar", None), Element::new("div", Some(0)).with_id("a")];
+        assert_eq!(layout(css, elements, 800.0)[1].unwrap().x, 80.0, "10% of the 800 points around it");
+    }
+
     #[test]
     fn standard_flex_row_with_auto_margin_padding_and_display_none() {
         let css = ".toolbar { display:flex; align-items:center; gap:6px; padding:0 6px; } #transport { margin-left:auto; } .module { width:100px; height:20px; flex-shrink:0; } @media (max-width:500px) { #mapping { display:none; } }";

@@ -476,8 +476,10 @@ children at the padding box (› Overflow), so its border stays whole.
 
 **The content box.** An element's contents go in `Boxed::content`: its box less its border
 widths and its `padding`. Padding in points and in `em` (of the element's own font size) is
-resolved as the CSS layout resolves it; a percentage, which CSS takes of the width of the box
-around the element, is not known where a view paints and leaves no room in the content box yet. Every view lays its children out there, not in the rectangle it
+resolved as the CSS layout resolves it. A percentage, which CSS takes of the width of the box
+around the element, is read only on the elements whose children the CSS layout places
+(`workspace`, `toolbar`): anywhere else Suhina paints the content box without that box, so the
+sheet refuses the declaration with a notice instead of reading it as no padding. Every view lays its children out there, not in the rectangle it
 painted; a view that draws to its edge on purpose (a grid line, a selection band) says so in its
 code. A size the app works out from what an element holds is its content box's size, and the
 element adds its border and padding around it, as a CSS box with `height: auto` does: the detail

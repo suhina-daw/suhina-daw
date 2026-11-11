@@ -795,7 +795,9 @@ box, so its border stays whole. To keep an edge in sight, pad the panel (Suhina 
 panels by 1 px on the sides it lights).
 
 An element's contents go in its **content box**: its box less its border and its `padding`
-(`padding: 4px 8px;` or `padding-top` and the others). A size Suhina works out from what an
+(`padding: 4px 8px;` or `padding-top` and the others), in points or `em`. A percentage is
+taken only on `workspace` and `toolbar`, whose children the CSS layout places; elsewhere the
+sheet refuses it with a notice. A size Suhina works out from what an
 element holds grows by its border and padding, as a CSS box with `height: auto` does: each
 bar's height, each dialog's size, a device panel's size and the height the detail area opens at
 for a row of devices or the piano roll. A size you drag (the detail area, the browser) is the

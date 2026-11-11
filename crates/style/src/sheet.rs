@@ -305,6 +305,11 @@ pub const HOST_PROPERTIES: &[&str] = &["image", "name", "background-opacity", "b
 pub const PLACEMENT_PROPERTIES: &[&str] =
     &["left", "top", "right", "bottom", "direction", "anchor-left", "anchor-top", "anchor-right", "anchor-bottom"];
 
+/// The elements whose children the CSS layout places: only there does a padding in percent, which
+/// CSS takes of the width of the box around the element, mean anything. Everywhere else the app
+/// paints the element's content box itself, without that box, so a percentage is refused.
+pub const PERCENT_PADDING_ELEMENTS: &[&str] = &["workspace", "toolbar"];
+
 /// Whether a rule's selector list (`header`) holds a control placement (`.control-play`), whose
 /// [`PLACEMENT_PROPERTIES`] the host reads.
 fn placement(header: &str) -> bool {
@@ -634,8 +639,11 @@ fn rules(parser: &mut Parser<'_>, source: &str, scope: &Scope, sheet: &mut Sheet
                 } else {
                     match Selector::parse_list(header) {
                         Ok(selectors) => {
-                            let placement = placement(header);
-                            let declarations = nested(parser, |parser| declarations(parser, source, sheet, placement))?;
+                            let rule = RuleKind {
+                                placement: placement(header),
+                                layout: selectors.iter().all(|s| s.subject_is(PERCENT_PADDING_ELEMENTS)),
+                            };
+                            let declarations = nested(parser, |parser| declarations(parser, source, sheet, rule))?;
                             if sheet.rules.len() >= 1024 {
                                 return Err("Style sheet exceeds 1024 rules".into());
                             }
@@ -688,7 +696,7 @@ fn frames(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Ve
             Token::CurlyBracketBlock => {
                 let header = source.get(start.unwrap_or(at)..at).ok_or("Invalid keyframe span")?.trim().to_owned();
                 start = None;
-                let declarations = nested(parser, |parser| declarations(parser, source, sheet, false))?;
+                let declarations = nested(parser, |parser| declarations(parser, source, sheet, RuleKind::default()))?;
                 let mut offsets = Vec::new();
                 for offset in header.split(',').map(str::trim) {
                     let value = match offset {
@@ -723,14 +731,40 @@ fn frames(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Ve
     Ok(result)
 }
 
-/// The declarations of one rule; `placement` when the rule is a control placement's
-/// ([`placement`]).
+/// What a rule's selectors say about the declarations it may hold.
+#[derive(Clone, Copy, Default)]
+struct RuleKind {
+    /// A control placement's rule ([`placement`]).
+    placement: bool,
+    /// A rule for CSS-layout containers only ([`PERCENT_PADDING_ELEMENTS`]).
+    layout: bool,
+}
+
+/// A padding in percent where `rule` does not style a CSS-layout container: the notice for it.
+fn percent_padding(rule: RuleKind, property: Property, value: &crate::value::Value) -> Option<String> {
+    let padding = matches!(
+        property,
+        Property::PaddingTop | Property::PaddingRight | Property::PaddingBottom | Property::PaddingLeft
+    );
+    (padding && !rule.layout && matches!(value, crate::value::Value::Length(crate::value::Length::Percent(_)))).then(
+        || {
+            format!(
+                "{}: a percentage is read only on a CSS layout container ({}); give points or em",
+                property.name(),
+                PERCENT_PADDING_ELEMENTS.join(", ")
+            )
+        },
+    )
+}
+
+/// The declarations of one rule, of the kind its selectors say ([`RuleKind`]).
 fn declarations(
     parser: &mut Parser<'_>,
     source: &str,
     sheet: &mut Sheet,
-    placement: bool,
+    rule: RuleKind,
 ) -> Result<Vec<Declaration>, String> {
+    let placement = rule.placement;
     let mut declarations = Vec::new();
     while !parser.is_exhausted() {
         parser.skip_whitespace();
@@ -783,10 +817,8 @@ fn declarations(
                 let failure = shorthand.longhands().iter().find_map(|property| {
                     shorthand
                         .part(*property, value)
-                        .and_then(|part| {
-                            property.parse(&crate::value::viewport_units(&part, 1000.0, 1000.0)).map(|_| ())
-                        })
-                        .err()
+                        .and_then(|part| property.parse(&crate::value::viewport_units(&part, 1000.0, 1000.0)))
+                        .map_or_else(Some, |parsed| percent_padding(rule, *property, &parsed))
                 });
                 if let Some(message) = failure {
                     sheet.notice(at, format!("{name}: {message}"));
@@ -833,7 +865,9 @@ fn declarations(
             && !crate::variables::mentions_attr(value)
             && !matches!(value, "inherit" | "initial" | "unset")
             && let Some(property) = Property::from_name(&name)
-            && let Err(message) = property.parse(&crate::value::viewport_units(value, 1000.0, 1000.0))
+            && let Some(message) = property
+                .parse(&crate::value::viewport_units(value, 1000.0, 1000.0))
+                .map_or_else(Some, |parsed| percent_padding(rule, property, &parsed))
         {
             sheet.notice(at, format!("{name}: {message}"));
             continue;
@@ -846,6 +880,28 @@ fn declarations(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Padding in percent is taken only where the CSS layout places an element's children (the
+    /// workspace, the toolbar): elsewhere the app paints the content box without the box around
+    /// the element, so it is refused with a notice rather than read as no padding (#1336).
+    #[test]
+    fn padding_in_percent_is_read_only_on_a_layout_container() {
+        let sheet = Sheet::parse(
+            "workspace { padding: 2%; } #workspace, toolbar { padding-left: 5%; } \
+             device { padding: 5%; } browser { padding-top: 10%; } toolbar, device { padding: 1% 4px; } \
+             device { padding: 4px 1em; }",
+        )
+        .unwrap();
+        let messages: Vec<_> = sheet.notices.iter().map(|n| n.message.as_str()).collect();
+        assert_eq!(messages.len(), 3, "{messages:?}");
+        assert!(
+            messages.iter().all(|m| m.contains("percentage is read only on a CSS layout container")),
+            "{messages:?}"
+        );
+        // The refused declarations are dropped; the others stay.
+        let kept: Vec<_> = sheet.rules.iter().map(|r| r.declarations.len()).collect();
+        assert_eq!(kept, [4, 1, 0, 0, 0, 4]);
+    }
 
     /// One declaration checked on its own, as a sheet checks it: a shorthand by its parts (#1336).
     #[test]
