@@ -256,10 +256,11 @@ fn chain_row(
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
         }
-        plugin_button(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
+        let content = device_content(rect, device, lit);
+        plugin_button(ui, &painter.with_clip_rect(area), content, chain.track, device, actions);
         if let Some(editor) = editor {
-            let origin = Pos2::new(rect.left() + PAD, rect.top() + EDITOR_TOP);
-            places.push(editor_place(ui, area, rect, editor, chain.track, device, origin));
+            let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
+            places.push(editor_place(ui, area, content, editor, chain.track, device, origin));
         }
     }
     ui.set_clip_rect(outer_clip);
@@ -700,13 +701,29 @@ fn chain_stack_in(
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
         }
-        plugin_button(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
+        let content = device_content(rect, device, lit);
+        plugin_button(ui, &painter.with_clip_rect(area), content, chain.track, device, actions);
         if let Some(editor) = editor {
-            let origin = Pos2::new(rect.left() + PAD, rect.top() + EDITOR_TOP);
-            places.push(editor_place(ui, visible, rect, editor, chain.track, device, origin));
+            let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
+            places.push(editor_place(ui, visible, content, editor, chain.track, device, origin));
         }
     }
     (picked, y - area.top())
+}
+
+/// A device panel's content box: `rect` less the border and padding the theme gives the panel in
+/// the state it is painted in (#1336). Its header, line, button and embedded editor go in it.
+fn device_content(rect: Rect, device: &DeviceBox, lit: bool) -> Rect {
+    let [top, right, bottom, left] = crate::kit::element::DEVICE
+        .id(&format!("device-{}", device.theme_id))
+        .attr(crate::kit::element::Selected, lit)
+        .attr(crate::kit::element::Muted, !device.enabled)
+        .enter()
+        .insets();
+    Rect::from_min_max(
+        Pos2::new(rect.left() + left, rect.top() + top),
+        Pos2::new(rect.right() - right, rect.bottom() - bottom),
+    )
 }
 
 /// Where a plug-in's embedded editor of `editor` points goes under its line and button in the
