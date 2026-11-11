@@ -14,7 +14,7 @@ fn gradient_edits_copy_builtins_save_duplicate_and_reset_with_the_theme() {
     let edited = themes.get(&id).unwrap().clone();
     assert_eq!(edited.gradients, gradients);
     assert_eq!(Theme::from_json(&edited.to_json()).0.gradients, edited.gradients);
-    let copy = themes.request(&id, ThemeRequest::Duplicate).unwrap();
+    let copy = themes.request(&id, ThemeRequest::Duplicate { artwork: false }).unwrap();
     assert_eq!(themes.get(&copy).unwrap().gradients, gradients);
     themes.request(
         &id,
@@ -202,8 +202,8 @@ fn a_declared_setting_is_set_in_the_variant_and_checked_against_its_type() {
 fn duplicates_get_their_own_ids() {
     let mut themes = Themes::default();
     themes.set(vec![night()], None);
-    assert_eq!(themes.request("night", ThemeRequest::Duplicate), Some("night-copy".into()));
-    assert_eq!(themes.request("night", ThemeRequest::Duplicate), Some("night-copy-2".into()));
+    assert_eq!(themes.request("night", ThemeRequest::Duplicate { artwork: false }), Some("night-copy".into()));
+    assert_eq!(themes.request("night", ThemeRequest::Duplicate { artwork: false }), Some("night-copy-2".into()));
     assert_eq!(themes.get("night-copy-2").map(|t| t.colors), Some(night().theme.colors));
     assert_eq!(saved(&mut themes).len(), 2);
 }
@@ -261,11 +261,11 @@ fn a_copy_of_a_theme_with_placed_controls_says_so() {
     let mut placed = night();
     placed.theme.skin.controls.insert("arrangement-volume".into(), Default::default());
     themes.set(vec![placed], None);
-    assert_eq!(themes.request("night", ThemeRequest::Duplicate), Some("night-copy".into()));
+    assert_eq!(themes.request("night", ThemeRequest::Duplicate { artwork: false }), Some("night-copy".into()));
     assert!(themes.take_notice().is_some_and(|n| n.contains("1 placed control of")), "the copy says what it keeps");
     assert_eq!(themes.take_notice(), None, "once");
     themes.set(vec![night()], None);
-    themes.request("night", ThemeRequest::Duplicate);
+    themes.request("night", ThemeRequest::Duplicate { artwork: false });
     assert_eq!(themes.take_notice(), None, "nothing placed, nothing said");
 }
 
@@ -332,4 +332,109 @@ fn resetting_a_skin_only_edit_makes_no_variant_and_restores_the_theme_itself() {
     assert_eq!(themes.get("ink").unwrap().skin.toolbar_offsets, original.skin.toolbar_offsets);
     assert!(themes.get("ink@custom").is_none(), "a reset of what was not edited made a variant");
     assert_ne!(switched.as_deref(), Some("ink@custom"));
+}
+
+/// Duplicate with *Include the default artwork* gives the copy every image Suhina ships, to be
+/// written to its `assets/` with a rule each; without it the copy has only the artwork it had.
+#[test]
+fn duplicate_can_include_the_default_artwork() {
+    let mut themes = Themes::default();
+    let plain = themes.request("nord", ThemeRequest::Duplicate { artwork: false }).unwrap();
+    assert!(themes.get(&plain).unwrap().skin.assets.is_empty());
+    let with = themes.request("nord", ThemeRequest::Duplicate { artwork: true }).unwrap();
+    let assets = &themes.get(&with).unwrap().skin.assets;
+    assert_eq!(assets.len(), crate::kit::skin::roles().count());
+    let sheet = crate::kit::theme_css::export(themes.get(&with).unwrap());
+    assert!(sheet.contains("knob-body { image: url(\"assets/knob.body.svg\"); }"), "{sheet}");
+    assert!(sheet.contains("icon[kind=\"play\"] { image: url(\"assets/play.svg\"); }"), "{sheet}");
+}
+
+/// New theme makes a theme of its own from nothing but the starting sheet, and saves it.
+#[test]
+fn new_theme_starts_from_the_user_agent_sheet() {
+    let mut themes = Themes::default();
+    let id = themes.request("nord", ThemeRequest::NewTheme { artwork: false }).unwrap();
+    assert_eq!(id, "new-theme");
+    let theme = themes.get(&id).unwrap();
+    assert_eq!(theme.name, "New theme");
+    assert_eq!(theme.skin.css.as_deref(), Some(theme::NEW_THEME_SHEET));
+    assert!(theme.skin.assets.is_empty());
+    assert!(
+        themes.take_actions().iter().any(|action| matches!(action, FileAction::Save { id, .. } if id == "new-theme"))
+    );
+    let with = themes.request("nord", ThemeRequest::NewTheme { artwork: true }).unwrap();
+    assert_eq!(with, "new-theme-2");
+    assert_eq!(themes.get(&with).unwrap().name, "New theme 2", "named as its id is numbered");
+    assert_eq!(themes.get(&with).unwrap().skin.assets.len(), crate::kit::skin::roles().count());
+}
+
+/// Add default artwork adds only what is missing; a built-in theme is copied first, and a theme
+/// with all of it is left as it is with a notice.
+#[test]
+fn add_default_artwork_adds_only_what_is_missing() {
+    let mut themes = Themes::default();
+    let copy = themes.request("suhina-light", ThemeRequest::AddDefaultArtwork).unwrap();
+    assert_ne!(copy, "suhina-light");
+    assert!(themes.get("suhina-light").unwrap().skin.assets.is_empty());
+    assert_eq!(themes.get(&copy).unwrap().skin.assets.len(), crate::kit::skin::roles().count());
+    // Again: nothing is missing.
+    themes.take_actions();
+    assert_eq!(themes.request(&copy, ThemeRequest::AddDefaultArtwork), None);
+    assert!(themes.take_actions().is_empty());
+    // A theme with artwork of its own for a role keeps it.
+    let id = themes.request("nord", ThemeRequest::Duplicate { artwork: false }).unwrap();
+    themes.request(
+        &id,
+        ThemeRequest::EditSkin(crate::kit::skin::Skin {
+            assets: [("knob.body".to_owned(), "assets/mine.svg".to_owned())].into(),
+            ..Default::default()
+        }),
+    );
+    assert_eq!(themes.request(&id, ThemeRequest::AddDefaultArtwork), None);
+    let assets = &themes.get(&id).unwrap().skin.assets;
+    assert_eq!(assets.get("knob.body").map(String::as_str), Some("assets/mine.svg"));
+    assert_eq!(assets.len(), crate::kit::skin::roles().count());
+}
+
+/// Add default artwork on a theme of the user's in use with a variant adds the artwork to the
+/// theme itself and to each of its variants, and saves the theme, not only the variant.
+#[test]
+fn add_default_artwork_on_a_variant_goes_to_its_theme() {
+    let sheet = "@property --glow { syntax: \"<number>\"; initial-value: 0.5; label: \"Glow\"; range: 0 1; }";
+    let (theme, warnings) = crate::kit::theme::from_css(sheet);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut themes = Themes::default();
+    themes.set(vec![ThemeEntry { id: "ink".into(), theme }], None);
+    let set = ThemeRequest::EditValue { name: "--glow".into(), value: "0.2".into() };
+    assert_eq!(themes.request("ink", set), Some("ink@custom".into()));
+    themes.take_actions();
+    assert_eq!(themes.request("ink@custom", ThemeRequest::AddDefaultArtwork), None, "the variant stays in use");
+    let all = crate::kit::skin::roles().count();
+    for id in ["ink", "ink@custom"] {
+        assert_eq!(themes.get(id).unwrap().skin.assets.len(), all, "{id}");
+    }
+    let actions = themes.take_actions();
+    assert!(actions.iter().any(|action| matches!(action, FileAction::Save { id, .. } if id == "ink")), "{actions:?}");
+    assert_eq!(themes.take_notice().as_deref(), Some("Added 16 default images to the theme's assets folder"));
+}
+
+/// Add default artwork on a theme of the user's in use as itself adds the artwork to its variants
+/// too, so a later save of a variant, which writes the theme's theme.css, keeps the rules.
+#[test]
+fn add_default_artwork_on_a_theme_goes_to_its_variants() {
+    let sheet = "@property --glow { syntax: \"<number>\"; initial-value: 0.5; label: \"Glow\"; range: 0 1; }";
+    let (theme, warnings) = crate::kit::theme::from_css(sheet);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut themes = Themes::default();
+    themes.set(vec![ThemeEntry { id: "ink".into(), theme }], None);
+    let set = ThemeRequest::EditValue { name: "--glow".into(), value: "0.2".into() };
+    assert_eq!(themes.request("ink", set), Some("ink@custom".into()));
+    themes.take_actions();
+    assert_eq!(themes.request("ink", ThemeRequest::AddDefaultArtwork), None, "the theme stays in use");
+    let all = crate::kit::skin::roles().count();
+    for id in ["ink", "ink@custom"] {
+        assert_eq!(themes.get(id).unwrap().skin.assets.len(), all, "{id}");
+    }
+    let actions = themes.take_actions();
+    assert!(actions.iter().any(|action| matches!(action, FileAction::Save { id, .. } if id == "ink")), "{actions:?}");
 }

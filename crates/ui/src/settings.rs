@@ -5,7 +5,6 @@
 //! (`key = value` lines, so a person can read and fix it). The app decides where the file lives.
 
 mod fields;
-mod gradient_editor;
 pub mod keymap;
 pub mod plugin_manager;
 mod settings_rows;
@@ -402,6 +401,9 @@ pub struct Settings {
     /// User-owned PNG beneath translucent surfaces; never captures the desktop.
     pub background_image: String,
     pub animations: bool,
+    /// The pointer hides while a value control is dragged (on by default); off, it shows the
+    /// arrow of the drag's direction. A theme's `drag-pointer` overrides it for its elements.
+    pub drag_hides_pointer: bool,
     /// How the Settings window explains each setting (Help, beside Close): a tooltip on its name,
     /// a ? beside it, or the sentence under it.
     pub setting_descriptions: Descriptions,
@@ -543,6 +545,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             animations: true,
+            drag_hides_pointer: true,
             setting_descriptions: Descriptions::Tooltip,
             background_image: String::new(),
             track_headers: None,

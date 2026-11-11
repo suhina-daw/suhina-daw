@@ -13,6 +13,9 @@ pub(crate) struct History {
     pub(crate) saved_at: u64,
     pub(crate) undo: Vec<Project>,
     pub(crate) redo: Vec<Project>,
+    /// How many undo steps were ever made (not undone or redone ones): a new step is told apart
+    /// from one added to an open gesture, also once the oldest step goes at the limit.
+    pub(crate) made: u64,
     /// The open gesture (#1146): the id a drag's caller picked, whose calls make the undo step
     /// on top. `history.endGesture`, any other edit, a call with another gesture, undo and redo
     /// end it.

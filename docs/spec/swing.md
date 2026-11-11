@@ -82,6 +82,6 @@ nothing.
 ## Project file
 
 `transport.swing` (0 to 1, left out at 0) and a clip's `swing` `{ amount, own }` (amount 0 to 1,
-left out when the clip follows the project's swing with an amount of 0), from version 11
+left out when the clip follows the project's swing with an amount of 0), from version 12
 ([`.suhina` format](suhina-format.md) › Versions). A value outside 0 to 1 is an error naming where
 it is.

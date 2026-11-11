@@ -53,7 +53,7 @@ pub mod devices;
 mod exclusive;
 mod input;
 
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 use suhina_engine::{RenderInputs, RenderOptions};
@@ -110,6 +110,8 @@ pub struct Progress {
     frames: AtomicU64,
     underruns: AtomicU64,
     stream_error: AtomicBool,
+    /// Why the device reported its error ([`Failure`] as a number; 0 before one).
+    failure: AtomicU8,
     /// Frames the device asked for in its last callback.
     callback_frames: AtomicUsize,
     /// The last measured latency, engine to speaker, in microseconds.
@@ -123,6 +125,19 @@ pub struct Progress {
     block: AtomicUsize,
     /// The render thread, woken when the device has taken from the ring.
     render: std::sync::OnceLock<std::thread::Thread>,
+    /// An input on the output's ASIO driver wakes the render thread instead of the output
+    /// ([`Progress::input_wakes_render`]).
+    input_wakes: AtomicBool,
+    /// The output took from the ring in this driver cycle and the input's frames of it are not
+    /// in yet ([`Progress::input_due`]).
+    input_due: AtomicBool,
+    output_cycles: AtomicU64,
+    input_callbacks: AtomicU64,
+    rendered_blocks: AtomicU64,
+    max_cycle_blocks: AtomicU64,
+    extra_cycle_blocks: AtomicU64,
+    input_timeouts: AtomicU64,
+    input_diagnostics: std::sync::OnceLock<Arc<suhina_engine::InputDiagnostics>>,
 }
 
 impl Progress {
@@ -179,6 +194,82 @@ impl Progress {
         self.stream_error.store(true, Ordering::Relaxed);
     }
 
+    /// [`Progress::fail`], keeping why. Lock-free and without allocation, as it may be called
+    /// from the device's own thread.
+    pub(crate) fn fail_because(&self, failure: Failure) {
+        self.failure.store(failure as u8, Ordering::Relaxed);
+        self.fail();
+    }
+
+    /// Why the device reported its error, in words; `None` before one, or when it did not say.
+    pub fn failure(&self) -> Option<&'static str> {
+        Failure::from_code(self.failure.load(Ordering::Relaxed)).map(Failure::describe)
+    }
+}
+
+/// Why an output stopped playing and is opened again, for the trace and `audio.info`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum Failure {
+    /// The ASIO driver asked to be reset, as after a setting changed in its control panel.
+    ResetRequested = 1,
+    /// The ASIO driver said its buffer size changed.
+    BufferSizeChanged = 2,
+    /// The ASIO driver asked to be started again after losing data.
+    Resynchronised = 3,
+    /// The driver's sample rate changed.
+    SampleRateChanged = 4,
+    /// Suhina asked the ASIO driver, and it now answers other buffer sizes.
+    DriverChanged = 5,
+    /// The device is gone, or another program took it.
+    DeviceGone = 6,
+    /// Any other error the device reported.
+    Other = 7,
+}
+
+impl Failure {
+    fn from_code(code: u8) -> Option<Self> {
+        [
+            Self::ResetRequested,
+            Self::BufferSizeChanged,
+            Self::Resynchronised,
+            Self::SampleRateChanged,
+            Self::DriverChanged,
+            Self::DeviceGone,
+            Self::Other,
+        ]
+        .into_iter()
+        .find(|failure| *failure as u8 == code)
+    }
+
+    fn describe(self) -> &'static str {
+        match self {
+            Self::ResetRequested => "the driver asked for a reset",
+            Self::BufferSizeChanged => "the driver changed its buffer size",
+            Self::Resynchronised => "the driver asked to start again",
+            Self::SampleRateChanged => "the driver's sample rate changed",
+            Self::DriverChanged => "the driver's buffer sizes changed",
+            Self::DeviceGone => "the device is gone or taken",
+            Self::Other => "the device reported an error",
+        }
+    }
+
+    /// The reason a stream error gives: its kind, and for an invalidated ASIO stream the
+    /// driver's message. Compares text only, no allocation.
+    fn of(error: &cpal::Error) -> Self {
+        let message = error.message().unwrap_or_default();
+        match error.kind() {
+            cpal::ErrorKind::DeviceNotAvailable | cpal::ErrorKind::DeviceBusy => Self::DeviceGone,
+            cpal::ErrorKind::StreamInvalidated if message.contains("buffer size") => Self::BufferSizeChanged,
+            cpal::ErrorKind::StreamInvalidated if message.contains("reset") => Self::ResetRequested,
+            cpal::ErrorKind::StreamInvalidated if message.contains("resynchronization") => Self::Resynchronised,
+            cpal::ErrorKind::StreamInvalidated if message.contains("Sample rate") => Self::SampleRateChanged,
+            _ => Self::Other,
+        }
+    }
+}
+
+impl Progress {
     pub(crate) fn set_latency(&self, latency: Duration) {
         self.latency_us.store(u64::try_from(latency.as_micros()).unwrap_or(u64::MAX), Ordering::Relaxed);
     }
@@ -189,6 +280,43 @@ impl Progress {
 
     pub(crate) fn add_frames(&self, frames: usize) {
         self.frames.fetch_add(frames as u64, Ordering::Relaxed);
+    }
+
+    /// Whether an input on the same ASIO driver wakes the render thread, and the output's
+    /// callback leaves it alone ([`Progress::set_input_wakes_render`]).
+    pub(crate) fn input_wakes_render(&self) -> bool {
+        self.input_wakes.load(Ordering::Acquire)
+    }
+
+    /// From now on, with `wakes`, the input's callback wakes the render thread and the output's
+    /// does not. An ASIO driver calls the output's callback and the input's one after the other
+    /// in each cycle, the output's first (its stream is made first): woken by the output, the
+    /// render thread read the input before that cycle's frames were written, found too little
+    /// and filled the block's input with silence, an input underrun in every cycle it won the
+    /// race, more often the smaller the buffer. Woken after the input has written, it reads
+    /// that cycle's frames. The render thread still looks every millisecond by itself, so an
+    /// input that stops does not stop the output.
+    pub(crate) fn set_input_wakes_render(&self, wakes: bool) {
+        self.input_wakes.store(wakes, Ordering::Release);
+        if !wakes {
+            self.input_due.store(false, Ordering::Release);
+        }
+    }
+
+    /// Whether the output has taken from the ring in this driver cycle and the input's
+    /// callback, which comes after it, has not written its frames yet: the render thread waits
+    /// for them rather than read the input too early, also when its own look every millisecond
+    /// lands between the two callbacks. Only while the input wakes it.
+    pub(crate) fn input_due(&self) -> bool {
+        self.input_wakes_render() && self.input_due.load(Ordering::Acquire)
+    }
+
+    /// The input's callback has written this cycle's frames: wakes the render thread to render
+    /// with them. Lock-free, never allocates.
+    pub(crate) fn input_written(&self) {
+        self.input_callbacks.fetch_add(1, Ordering::Relaxed);
+        self.input_due.store(false, Ordering::Release);
+        self.wake_render();
     }
 
     /// Wakes the render thread, if there is one, to fill what the device took: no waiting for
@@ -203,6 +331,11 @@ impl Progress {
 /// Fills `out` (whole frames of [`RING_CHANNELS`] samples) from the ring, with silence, counted
 /// as an underrun, for what is not there yet. Never allocates.
 pub(crate) fn read_ring(ring: &mut Ring, out: &mut [f32], progress: &Progress) {
+    progress.output_cycles.fetch_add(1, Ordering::Release);
+    // Before taking from the ring: a render thread that sees the room made sees this too.
+    if progress.input_wakes_render() {
+        progress.input_due.store(true, Ordering::Release);
+    }
     let ready = ring.slots().min(out.len()) / RING_CHANNELS * RING_CHANNELS;
     match ring.read_chunk(ready) {
         Ok(chunk) => {
@@ -218,7 +351,9 @@ pub(crate) fn read_ring(ring: &mut Ring, out: &mut [f32], progress: &Progress) {
         }
         progress.underruns.fetch_add(1, Ordering::Relaxed);
     }
-    progress.wake_render();
+    if !progress.input_wakes_render() {
+        progress.wake_render();
+    }
 }
 
 fn read_device_ring(
@@ -429,6 +564,16 @@ pub struct Output {
     cue_gain: f32,
     /// What could not be had as chosen.
     notices: Vec<String>,
+    /// The buffer size the device is asked for (`cpal::BufferSize::Fixed`), when one is: an
+    /// ASIO input on the same driver is opened at the same size.
+    asked: Option<u32>,
+    /// What the ASIO driver answered about its buffer sizes when this was chosen.
+    driver: Option<devices::DriverBuffers>,
+    /// Keeps the ASIO driver loaded from the answer to the stream, so it is not loaded twice.
+    _driver_hold: Option<devices::DriverHold>,
+    /// Whether [`Output::driver_changed`] wrote an unchanged answer to the trace already: once
+    /// per output, since Settings › Audio asks on every focus.
+    driver_checked: AtomicBool,
 }
 
 impl Output {
@@ -443,6 +588,13 @@ impl Output {
     /// device is never asked for one outside the range its driver declared — a driver whose
     /// sizes the engine cannot render in is asked for none and keeps its own, with a notice.
     pub fn choose(choice: &OutputChoice) -> Result<Self, String> {
+        Self::choose_sized(choice, false)
+    }
+
+    /// [`Output::choose`], or with `driver_keeps_size` the device asked for no buffer size at
+    /// all: the retry when a driver refused the size it was asked for. An ASIO driver then plays
+    /// the size it prefers, and the engine renders in that size when it can.
+    fn choose_sized(choice: &OutputChoice, driver_keeps_size: bool) -> Result<Self, String> {
         let mut notices = Vec::new();
         let default_host = devices::default_host_id();
         let host_id = match &choice.host {
@@ -498,6 +650,10 @@ impl Output {
                 cue,
                 cue_gain: choice.cue_gain,
                 notices,
+                asked: None,
+                driver: None,
+                _driver_hold: None,
+                driver_checked: AtomicBool::new(false),
             });
         }
 
@@ -565,21 +721,50 @@ impl Output {
                 )),
             }
         }
+        // An ASIO driver is asked again: a size set in its control panel since the device was
+        // listed (the driver then asks for a reset, and the output opens again here) shows only
+        // this way. Its preferred size, the control panel's, plays when none is chosen. The
+        // driver stays loaded from this answer to the stream (`_driver_hold`): loaded once.
+        let (driver, driver_hold) = match devices::ask_driver(&device) {
+            Some((driver, hold)) => (Some(driver), hold),
+            None => (None, None),
+        };
         let range = devices::buffer_range(supported.buffer_size());
-        let wanted = devices::wanted_buffer(&host_name, choice.buffer_frames, ENGINE_BLOCK as u32);
-        let fitted = wanted.map(|wanted| devices::fit_for_host(&host_name, wanted, range));
-        if let (Some(wanted), Some((block, asked))) = (choice.buffer_frames, fitted)
-            && let Some(notice) = devices::buffer_notice(&host_name, &device_name, wanted, block, asked, range)
-        {
-            notices.push(notice);
+        let chosen = choice.buffer_frames.filter(|_| !driver_keeps_size);
+        let fitted = match &driver {
+            // Asked for no size, the driver plays the size it prefers: the engine renders in it
+            // when it renders in it at all.
+            Some(driver) if driver_keeps_size => Some(driver.preferred)
+                .filter(|n| (MIN_BUFFER_FRAMES..=MAX_BUFFER_FRAMES).contains(n))
+                .map(|size| (size, None)),
+            Some(driver) => devices::plan_for_driver(chosen, driver),
+            None => devices::wanted_buffer(&host_name, chosen, ENGINE_BLOCK as u32)
+                .map(|wanted| devices::fit_for_host(&host_name, wanted, range)),
+        };
+        if let (Some(wanted), Some((block, asked))) = (chosen, fitted) {
+            notices.extend(match &driver {
+                Some(driver) => devices::driver_notice(&device_name, wanted, block, asked, driver),
+                None => devices::buffer_notice(&host_name, &device_name, wanted, block, asked, range),
+            });
         }
         let buffer = fitted.map(|(block, _)| block);
+        let asked = fitted.and_then(|(_, asked)| asked);
+        if let Some(driver) = &driver {
+            // Without a hold the driver could not be asked, and the answer is the one kept from
+            // when it was asked last.
+            let source = if driver_hold.is_some() { "answers" } else { "could not be asked; kept answer" };
+            suhina_plugins::trace!(
+                "audio driver: {device_name} {source} {}; chosen {chosen:?}, asked {asked:?}, block {}",
+                driver.trace_text(),
+                engine_block(buffer)
+            );
+        }
         let format = supported.sample_format();
         let mut config: cpal::StreamConfig = supported.into();
         if config.channels == 0 {
             return Err(format!("audio output {device_name} reports no channels"));
         }
-        if let Some((_, Some(frames))) = fitted {
+        if let Some(frames) = asked {
             config.buffer_size = cpal::BufferSize::Fixed(frames);
         }
         let exclusive = host_name == "ASIO";
@@ -594,7 +779,40 @@ impl Output {
             cue: cue_channel(choice.cue_pair, config.channels),
             cue_gain: choice.cue_gain,
             notices,
+            asked,
+            driver,
+            _driver_hold: driver_hold,
+            driver_checked: AtomicBool::new(false),
         })
+    }
+
+    /// Whether the ASIO driver now answers differently about its buffer sizes from when this
+    /// output was chosen: a size set in the driver's control panel that the driver did not
+    /// announce. The output is then opened again, so what plays, the engine's block and the
+    /// sizes Settings › Audio lists all follow the new answer, even when the size chosen stays.
+    /// Asks the driver loaded for the stream; another host's output never differs.
+    fn driver_changed(&self) -> bool {
+        let device = match &self.backend {
+            Backend::Cpal { device, .. } => device,
+            #[cfg(windows)]
+            Backend::Exclusive { .. } => return false,
+        };
+        let (Some(before), Some((now, hold))) = (self.driver, devices::ask_driver(device)) else {
+            return false;
+        };
+        if hold.is_none() {
+            suhina_plugins::trace!("audio driver check: {} could not be asked", self.device_name);
+        } else if now != before {
+            suhina_plugins::trace!(
+                "audio driver check: {} answers differently; before {}; now {}",
+                self.device_name,
+                before.trace_text(),
+                now.trace_text()
+            );
+        } else if !self.driver_checked.swap(true, Ordering::Relaxed) {
+            suhina_plugins::trace!("audio driver check: {} answers as when opened", self.device_name);
+        }
+        now != before
     }
 
     /// The pair the cue plays on (1 is channels 3 and 4), or `None` with the main output.
@@ -745,6 +963,33 @@ fn ring(block: usize) -> (rtrb::Producer<f32>, Ring) {
     rtrb::RingBuffer::<f32>::new((target + block) * RING_CHANNELS)
 }
 
+/// Counts render starts between observed output callbacks. Owned only by the render thread.
+/// Cycle zero (before the first callback) is startup, excluded from per-cycle counts.
+#[derive(Default)]
+struct RenderCycles {
+    cycle: u64,
+    blocks: u64,
+}
+
+impl RenderCycles {
+    fn started(&mut self, progress: &Progress) {
+        progress.rendered_blocks.fetch_add(1, Ordering::Relaxed);
+        let cycle = progress.output_cycles.load(Ordering::Relaxed);
+        if cycle == 0 {
+            return;
+        }
+        if cycle != self.cycle {
+            self.cycle = cycle;
+            self.blocks = 0;
+        }
+        self.blocks = self.blocks.saturating_add(1);
+        progress.max_cycle_blocks.fetch_max(self.blocks, Ordering::Relaxed);
+        if self.blocks > 1 {
+            progress.extra_cycle_blocks.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 /// The render thread: runs the engine a block at a time whenever the ring holds less than its
 /// target, until told to stop; then gives the renderer back. Real-time: at the highest priority
 /// the system allows ([`RealTime`]), which it says through `joined` before it renders, and never
@@ -763,6 +1008,9 @@ fn render_ahead(
     let mut cue = vec![0.0f32; frames * 2];
     let capacity = ring.buffer().capacity();
     progress.block.store(frames, Ordering::Relaxed);
+    // Since when the render thread has waited for the input's frames of this cycle.
+    let mut input_wait = InputWait::default();
+    let mut cycles = RenderCycles::default();
     while !stop.load(Ordering::Acquire) {
         let queued = (capacity - ring.slots()) / RING_CHANNELS;
         // Arming shrinks the queue as the device drains it, and disarming fills it again: no
@@ -771,6 +1019,14 @@ fn render_ahead(
         progress.live.store(live, Ordering::Relaxed);
         let target = ring_target(frames, progress.callback_frames(), live);
         if queued >= target || ring.slots() < frames * RING_CHANNELS {
+            std::thread::park_timeout(RENDER_WAIT);
+            realtime.waited();
+            continue;
+        }
+        // The input's frames of this driver cycle are due right after the output's callback:
+        // wait for them, though not so long that the device is kept waiting by an input that
+        // stopped calling back.
+        if input_wait.waiting(progress, Instant::now(), renderer.sample_rate()) {
             std::thread::park_timeout(RENDER_WAIT);
             realtime.waited();
             continue;
@@ -788,6 +1044,7 @@ fn render_ahead(
         renderer.set_record_latency(output.round().clamp(0.0, f64::from(u32::MAX)) as u32, input);
         // How long the device can wait for this block: what is queued before it.
         renderer.set_render_lead(queued, progress.callback_frames());
+        cycles.started(progress);
         renderer.process_with_cue(&mut block, &mut cue);
         // A device that takes faster than it plays, or a project too heavy to render in time,
         // keeps the thread from waiting: it rests rather than outlive its real-time limit.
@@ -798,6 +1055,52 @@ fn render_ahead(
         }
     }
     renderer
+}
+
+/// Render-thread-owned grace period. Expiry belongs to one output cycle, so catching up
+/// cannot restart it and cannot clear a newer callback's shared input-due flag.
+#[derive(Default)]
+struct InputWait {
+    cycle: u64,
+    started: Option<Instant>,
+    expired: bool,
+}
+
+impl InputWait {
+    fn waiting(&mut self, progress: &Progress, now: Instant, sample_rate: u32) -> bool {
+        let due = progress.input_due();
+        let cycle = progress.output_cycles.load(Ordering::Acquire);
+        if cycle != self.cycle {
+            self.cycle = cycle;
+            self.started = None;
+            self.expired = false;
+        }
+        if !due {
+            self.started = None;
+            return false;
+        }
+        if self.expired {
+            return false;
+        }
+        let since = *self.started.get_or_insert(now);
+        if now.saturating_duration_since(since) < input_grace(progress.callback_frames(), sample_rate) {
+            true
+        } else {
+            self.expired = true;
+            progress.input_timeouts.fetch_add(1, Ordering::Relaxed);
+            false
+        }
+    }
+}
+
+/// How long the render thread waits for an ASIO input's frames after the output took from the
+/// ring: a quarter of the device's buffer, at least half a millisecond. The input's callback
+/// comes microseconds after the output's in the same driver cycle; past this the input is taken
+/// to have stopped, and the block renders without its frames rather than keep the device
+/// waiting.
+pub(crate) fn input_grace(device_frames: usize, sample_rate: u32) -> Duration {
+    let buffer = device_frames as f64 / f64::from(sample_rate.max(1));
+    Duration::from_secs_f64(buffer / 4.0).max(Duration::from_micros(500))
 }
 
 /// `notice` the first time one is given with `told` not yet set, `None` after: what is told once
@@ -812,21 +1115,24 @@ fn tell_once(told: &AtomicBool, notice: Option<String>) -> Option<String> {
 /// which cpal's range cannot tell us about — and the device is not given up over it. The stream
 /// does not play yet.
 fn open_fitting(choice: &OutputChoice) -> Result<(Output, DeviceStream, rtrb::Producer<f32>, Arc<Progress>), String> {
-    let mut tries = vec![choice.clone()];
-    if choice.buffer_frames.is_some() {
-        tries.push(OutputChoice { buffer_frames: None, ..choice.clone() });
+    // Each try with whether the device is asked for no buffer size at all. With no size chosen
+    // an ASIO driver is still asked for the size it prefers, so it gets that retry too.
+    let mut tries = vec![(choice.clone(), false)];
+    let asio = choice.host.as_deref().is_some_and(|host| devices::same_name(host, "ASIO"));
+    if choice.buffer_frames.is_some() || asio {
+        tries.push((OutputChoice { buffer_frames: None, ..choice.clone() }, true));
     }
     if choice.exclusive {
-        tries.push(OutputChoice { exclusive: false, ..choice.clone() });
+        tries.push((OutputChoice { exclusive: false, ..choice.clone() }, false));
     }
     // The default output keeps the cue's settings; it may have the cue's pair too.
     if choice.device_only() != OutputChoice::default() {
-        tries.push(OutputChoice::default().with_cue_of(choice));
+        tries.push((OutputChoice::default().with_cue_of(choice), false));
     }
     let mut notices = Vec::new();
     let mut last = String::from("no audio output");
-    for (i, attempt) in tries.iter().enumerate() {
-        let output = match Output::choose(attempt) {
+    for (i, (attempt, keeps_size)) in tries.iter().enumerate() {
+        let output = match Output::choose_sized(attempt, *keeps_size) {
             Ok(output) => output,
             Err(e) => {
                 last = e;
@@ -844,8 +1150,8 @@ fn open_fitting(choice: &OutputChoice) -> Result<(Output, DeviceStream, rtrb::Pr
             }
             Err(e) => {
                 let next = match tries.get(i + 1) {
-                    Some(next) if next.buffer_frames != attempt.buffer_frames => "it keeps its own buffer size",
-                    Some(next) if !next.exclusive && attempt.exclusive => "it plays shared",
+                    Some((_, true)) => "it keeps its own buffer size",
+                    Some((next, _)) if !next.exclusive && attempt.exclusive => "it plays shared",
                     Some(_) => "the default output plays",
                     None => "",
                 };
@@ -870,6 +1176,8 @@ struct Owner {
 enum OwnerRequest {
     Close,
     ControlPanel,
+    /// Ask the ASIO driver whether its buffer sizes changed ([`Output::driver_changed`]).
+    CheckDriver,
 }
 
 impl suhina_session::OutputHandle for Owner {
@@ -928,6 +1236,13 @@ impl LiveOutput for Live {
         Ok(())
     }
 
+    fn check_driver(&self) {
+        if self.host == "ASIO" {
+            // The owner thread holds the driver; it is gone only when the output closes.
+            let _ = self.owner.send(OwnerRequest::CheckDriver);
+        }
+    }
+
     fn info(&self) -> OutputInfo {
         OutputInfo {
             host: self.host.clone(),
@@ -941,6 +1256,7 @@ impl LiveOutput for Live {
             live_latency_ms: self.progress.live_latency(self.sample_rate).as_secs_f64() * 1000.0,
             underruns: self.progress.underruns(),
             failed: self.progress.failed(),
+            failure: self.progress.failure(),
             fallback: self.fallback,
             channels: self.channels,
             cue_pair: self.cue_pair,
@@ -950,6 +1266,16 @@ impl LiveOutput for Live {
                 .as_ref()
                 .map_or(0, |(_, channels, _)| u16::try_from(*channels).unwrap_or(u16::MAX)),
             input_underruns: self.input.as_ref().map_or(0, |(_, _, underruns)| underruns.load(Ordering::Relaxed)),
+            input_diagnostics: self.progress.input_diagnostics.get().map(|d| d.snapshot()).unwrap_or_default(),
+            render_diagnostics: [
+                &self.progress.output_cycles,
+                &self.progress.input_callbacks,
+                &self.progress.rendered_blocks,
+                &self.progress.max_cycle_blocks,
+                &self.progress.extra_cycle_blocks,
+                &self.progress.input_timeouts,
+            ]
+            .map(|counter| counter.load(Ordering::Relaxed)),
         }
     }
 }
@@ -1000,7 +1326,13 @@ pub fn open_chosen(
                 )
                 .map_err(|e| e.to_string())?;
                 // The input device, when one is chosen: a failure leaves the output playing.
-                let input = match input::open(&output.host, &choice.input, output.sample_rate, Arc::clone(&progress)) {
+                let input = match input::open(
+                    &output.host,
+                    &choice.input,
+                    output.sample_rate,
+                    output.asked,
+                    Arc::clone(&progress),
+                ) {
                     Ok(Some((stream, ring))) => {
                         renderer.set_audio_input(ring, stream.channels, Arc::clone(&stream.underruns));
                         Some(stream)
@@ -1015,6 +1347,7 @@ pub fn open_chosen(
                 controller
                     .run_stretch_worker(&mut renderer)
                     .map_err(|e| format!("could not start the stretch worker: {e}"))?;
+                let _ = progress.input_diagnostics.set(renderer.input_diagnostics());
                 let stream = output.play(device, renderer, producer, &progress)?;
                 output.notices.extend(stream.priority_notice().map(str::to_owned));
                 Ok::<_, String>((output, controller, progress, stream, kept, input))
@@ -1022,6 +1355,7 @@ pub fn open_chosen(
             match started {
                 Ok((output, controller, progress, stream, kept, input)) => {
                     let panel_pending = Arc::new(AtomicBool::new(false));
+                    let watched = Arc::clone(&progress);
                     let live = Live {
                         owner: owner_requests,
                         panel_pending: Arc::clone(&panel_pending),
@@ -1049,6 +1383,14 @@ pub fn open_chosen(
                                         eprintln!("ASIO control panel: {error}");
                                     }
                                     panel_pending.store(false, Ordering::Release);
+                                }
+                                // Asked on this thread, which holds the driver: a size set in
+                                // its control panel that the driver did not announce opens the
+                                // output again, as a reset it asked for does.
+                                OwnerRequest::CheckDriver => {
+                                    if output.driver_changed() {
+                                        watched.fail_because(Failure::DriverChanged);
+                                    }
                                 }
                             }
                         }
@@ -1236,7 +1578,7 @@ where
                 // Rerouted to the new default device, or no real-time rights: it plays on.
                 cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::RealtimeDenied => {}
                 // A reset the driver asked for, a device gone: the output is opened again.
-                _ => on_error.fail(),
+                _ => on_error.fail_because(Failure::of(&err)),
             },
             None,
         )

@@ -76,6 +76,7 @@ pub(super) fn send_knob(
     let position = ((shown - low) / (high - low)) as f32;
     // `send` styles it here as in the mixer.
     let el = crate::kit::element::SEND.response(&response).enter();
+    widgets::value_drag_pointer(ui.ctx(), &response, &el);
     let amount = widgets::hover(ui, &response);
     let surface = motion::mix(background, theme::control_hover(), amount);
     el.paint(painter, rect);
@@ -108,6 +109,9 @@ pub(super) fn send_knob(
     }
 }
 
+/// A header's volume or pan field: dragged up or across while it is drawn as a bar (up or right
+/// raises it), up or down as a knob; the wheel with Ctrl or Cmd, the arrow keys and a typed number set it, a
+/// double-click resets it. On a track of a selection it moves every selected track.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn value_control(
     ui: &Ui,
@@ -160,7 +164,17 @@ pub(super) fn value_control(
             Control::Volume => (format!("{} volume", lane.name), widgets::format_db(shown)),
             Control::Pan => (format!("{} pan", lane.name), widgets::format_pan(shown)),
         };
-        let response = widgets::value_area(ui, rect.intersect(clip), id.with(label.as_str()), &label, text);
+        // A field drawn as a bar is dragged either way: up or right raises it, whichever the drag
+        // moves along first. A knob turns with an up or down drag, unless the theme lays it out
+        // horizontally.
+        let knob = match control {
+            Control::Volume => state.knobs,
+            Control::Pan => crate::kit::style_class::knob_preference(el, state.knobs),
+        };
+        let axis =
+            if knob { crate::kit::control_layout::placement(name).direction.into() } else { widgets::DragAxis::Both };
+        let response = widgets::value_area_axis(ui, rect.intersect(clip), id.with(label.as_str()), &label, text, axis);
+        widgets::value_drag_pointer(ui.ctx(), &response, el);
         control_response = Some(response.clone());
         hover = widgets::hover(ui, &response);
         // One track hears every frame of a drag: each sets the value, all in one gesture, so the
@@ -172,17 +186,7 @@ pub(super) fn value_control(
             Control::Pan => commands::ChannelControl::Pan,
         };
         let set = |v: f64| commands::ChannelControlDrag { track, control: channel }.action(v, true);
-        match widgets::drag_value_axis(
-            ui,
-            &response,
-            &mut preview,
-            value,
-            per_point,
-            per_tick,
-            range,
-            default,
-            crate::kit::control_layout::placement(name).direction == crate::kit::control_layout::Direction::Horizontal,
-        ) {
+        match widgets::drag_value_axis(ui, &response, &mut preview, value, per_point, per_tick, range, default, axis) {
             Drag::Moving(v) => {
                 state.value_drag = Some(ValueDrag { track, control, start: value, now: v, tracks: tracks.clone() });
                 if one {

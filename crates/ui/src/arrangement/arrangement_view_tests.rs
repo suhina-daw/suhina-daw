@@ -545,6 +545,66 @@ fn alt_and_the_wheel_can_change_only_the_lane_under_the_pointer() {
     assert_eq!(state.height(tracks[0]), DEFAULT_LANE * 2.0);
 }
 
+/// Alt and the wheel over the returns at the bottom change the return under the pointer, not a
+/// track of the scrolling lanes above them, and a track's lane says where it is now, so the view
+/// can keep a lane made taller near the bottom in sight (#1322).
+#[test]
+fn alt_and_the_wheel_over_the_returns_change_the_return() {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let tracks: Vec<&Lane> = timeline.lanes.iter().filter(|l| l.kind != ColumnKind::Return).collect();
+    let returns: Vec<&Lane> = timeline.lanes.iter().filter(|l| l.kind == ColumnKind::Return).collect();
+    assert!(!returns.is_empty(), "the demo has a return");
+    let mut state = ArrangementViewState::default();
+    state.zoom_one = true;
+    let before = state.height(returns[0]);
+    state.zoom_fixed(&returns, &timeline, 2.0, before / 2.0, 300.0);
+    assert_eq!(state.height(returns[0]), (before * 2.0).clamp(MIN_LANE, MAX_LANE));
+    assert!(tracks.iter().all(|l| state.height(l) == DEFAULT_LANE), "the tracks keep their height");
+
+    // The second track's lane, made taller: its top and its new height.
+    let top = state.height(tracks[0]) + 1.0;
+    let at = state.zoom_wheel(&tracks, &timeline, 2.0, top + 2.0);
+    assert_eq!(at, Some((top, DEFAULT_LANE * 2.0)));
+}
+
+/// One selection at a time (#1322): a range painted on automation lanes lets go of the time
+/// selection and the picked clips, and a time selection or a clip picked after it lets go of it.
+#[test]
+fn the_last_selection_made_is_the_only_one() {
+    use crate::arrangement::automation_lanes::{LaneKey, LaneRange};
+    let range = || LaneRange {
+        track: TrackId(1),
+        key: LaneKey { device: None, param: "volume".into() },
+        start: 4.0,
+        end: 8.0,
+        more: Vec::new(),
+    };
+    let time = || TimeSelection { tracks: vec![TrackId(2)], start: 0.0, end: 4.0, row: None };
+    let mut state = ArrangementViewState::default();
+    state.set_time_selection(Some(time()));
+    state.selected = vec![(TrackId(2), ClipId(5))];
+    state.settle_selections();
+    assert!(state.time_selection().is_some() && !state.selected.is_empty(), "nothing else was there");
+
+    state.automation.range = Some(range());
+    state.settle_selections();
+    assert!(state.time_selection().is_none() && state.selected.is_empty(), "the range came last");
+    assert!(state.automation.range.is_some());
+    state.settle_selections();
+    assert!(state.automation.range.is_some(), "it stays as long as nothing else is made");
+
+    state.set_time_selection(Some(time()));
+    state.settle_selections();
+    assert!(state.automation.range.is_none(), "the time selection came last");
+    assert!(state.time_selection().is_some());
+
+    state.automation.range = Some(range());
+    state.settle_selections();
+    state.select_clips(vec![(TrackId(2), ClipId(5))]);
+    state.settle_selections();
+    assert!(state.automation.range.is_none(), "a clip picked came last");
+}
+
 #[test]
 fn a_stretch_goes_past_the_audio_and_a_midi_clip_before_its_notes() {
     use suhina_engine::model::{AudioRegion, ClipContent, ContentId, ContentLane, Extensions, LaneData};

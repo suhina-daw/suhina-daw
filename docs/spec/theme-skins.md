@@ -36,6 +36,7 @@ covers:
   - crates/ui/src/kit/style_class.rs
   - crates/ui/src/kit/element.rs
   - crates/theme-package/src/elements.rs
+  - crates/theme-package/src/user-agent.css
   - crates/theme-package/src/lib.rs
   - crates/theme-package/src/meta.rs
   - crates/ui/src/detail/piano_roll.rs
@@ -65,12 +66,12 @@ A sheet of an earlier version mirrors offsets as `toolbar { offset-transport: 80
 SVG inheritance resolves each control role in this order: theme state artwork,
 theme base artwork, shared default state artwork, shared default base artwork.
 Suhina ships original default SVG files under `assets/themes/default/` and builds them into
-the app; there is no copy of them in the themes folder to edit (the `_defaults` folder of
+the app, where the user-agent sheet names them (*The user-agent sheet*); there is no copy of them in the themes folder to edit (the `_defaults` folder of
 earlier versions is no longer made or read). Themes store only their explicit artwork
 overrides. Portable
 exports include inherited artwork so they keep their appearance on another machine.
-The current theme's palette supplies `currentColor`; inheritance does not force
-the default theme's colours. Deleting an override restores inheritance.
+The colour of the element that draws the artwork supplies `currentColor`; inheritance does not
+force the default theme's colours. Deleting an override restores inheritance.
 
 Every theme package contains a generated `README.md` for human and AI-assisted
 authors, shared with the template export. Multi-theme backups also carry it at
@@ -363,6 +364,88 @@ remain within the theme folder, contain no parent traversal or symlinks, and nam
 supported assets. Reads, file counts, SVG sizes and total expanded data are bounded.
 Imports choose unused theme ids rather than overwriting existing themes.
 
+## The user-agent sheet
+
+Suhina has a user-agent style sheet, as a browser does: `crates/theme-package/src/user-agent.css`
+(`suhina_theme_package::USER_AGENT_SHEET`), built into the app. It is what every element looks
+like before a theme styles it.
+
+- **It selects elements by name, state and attribute only:** no classes (but the standard toolbar
+  group classes, `group.transport` and `group.display`, once the toolbar has groups), no ids and no
+  variables, no at-rules. A test in `suhina-theme-package` checks this, and that every element it
+  names is in the registry.
+- **The cascade** is: the user-agent sheet, the theme's `theme.css`, the chosen variant, device
+  panel sheets (each inside its panel), and the user's `user.css` (`suhina_style::cascade::Layer`).
+  Until the palette goes (#995 § 10), the palette's values (`:root { --accent: … }`), the text
+  colour of `html, body` and the palette colours of the parts below sit beside the user-agent
+  sheet in its tier; they are the host's, not the sheet's. A rule of this tier on an element
+  replaces what the element inherited from a theme's rule on an element around it.
+- **What it holds:** `overflow: hidden` on every region (the registry's `Region` kind); the default
+  artwork; the sample map's colours; the theme swatch's rounded square.
+- **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
+  `suhina:` URL names an SVG built into Suhina (`assets/themes/default/`), and a theme may use one
+  too. Every theme gets the defaults for the controls it does not replace. The defaults take their
+  colour only from `currentColor`, the `color` of the element that draws them: there is no
+  `data-suhina-ink` attribute any more, so a copy of the default artwork works in any theme. A
+  control with two colours is two elements: `knob-body` and `knob-pointer`, `fader-cap` and
+  `fader-rail`. Until a theme gives one of these elements a `color` of its own, each takes the
+  palette colour the default artwork had: `--control-background` for a knob's body, the control
+  colour darkened for a fader's rail, lit a little by the values' text for its cap
+  (`--control-hoverBackground` instead while the pointer is on it or drags it), each a rule of the
+  palette's tier on the part itself, so a `color` a theme gives an element around it (`knob`,
+  `mixer`) does not reach it. A knob's pointer has no such rule: it takes the knob's colour. The
+  parts are entered with their control's pointer states, so `knob-body:hover` and
+  `fader-rail:active` apply.
+- **The elements of the default artwork:**
+
+  | Element | Role | File |
+  |---|---|---|
+  | `button` | every button's face | `button.svg` |
+  | `icon[kind="play"]`, `stop`, `record`, `solo`, `arm`, `cue` | a button's symbol | `play.svg`, … |
+  | `icon[kind="midi"]`, `icon[kind="audio"]` | a track header's type symbol | `track.midi.svg`, `track.audio.svg` |
+  | `track-header`, `track-name` | a track header's and name's surface | `track.body.svg`, `track.name.svg` |
+  | `knob-body`, `knob-pointer` | a knob | `knob.body.svg`, `knob.pointer.svg` |
+  | `fader-cap`, `fader-rail` | a fader | `fader.cap.svg`, `fader.rail.svg` |
+  | `meter` | a meter's frame | `meter.svg` |
+
+  A state follows the element as a pseudo-class or an attribute: `knob-body:hover`,
+  `fader-cap:active`, `button:disabled`, `button[checked]` (a toggle that is on). The earlier role
+  form (`knob.body:hover`, `solo:on`) still reads; Suhina writes the element form. Roles without
+  default artwork (`piano.draw`, `track.body.color-ff9a3c`, `meter.frame-3`) are written as roles.
+- **Sample-map colours are not settings.** The user-agent sheet styles each sound by its kind,
+  `sample-point[kind="kick"] { color: #D06E5E; }` and so on for `snare`, `clap`, `closedHat`,
+  `openHat`, `hat`, `rim`, `tom`, `crash`, `ride`, `cymbal`, `percussion`, `bass`, `tonal`,
+  `vocal`, `effect` and `other`. A theme restyles them with rules of its own and may offer its own
+  quick controls for them. The `kind.*` palette tokens (`--kind-kick`, …) are gone.
+- **`@media (prefers-color-scheme)` is not supported.** A theme with light and dark looks ships
+  them as variants; a sheet that uses it gets a notice and the `@media` rule does not apply.
+- **What changes for a theme of an earlier version** (breaking changes, #1019):
+  - *Artwork of the theme's own that uses `currentColor` for a knob's body or a fader's rail or
+    cap changes colour.* Without `data-suhina-ink`, `currentColor` was the knob's pointer colour
+    (its `color`, else the accent) for `knob.body` and `--text-value` for `fader.rail` and
+    `fader.cap`; it is now the `color` of `knob-body`, `fader-rail` or `fader-cap`, the palette
+    colours above until the theme gives one. A theme keeps its look with a rule for the part
+    (`knob-body { color: var(--accent); }`, `fader-cap, fader-rail { color: var(--text-value); }`).
+    Other artwork keeps its colour, and `data-suhina-ink` in an SVG is no longer read (the default
+    artwork's copies had it, and keep the colour it gave them). Nothing in a theme tells the two
+    apart, so there is no notice.
+  - *The `kind.*` palette tokens are not read.* A sheet's `--kind-kick` or a theme file's
+    `"kind.kick"` gets a notice that names the rule to write instead,
+    `sample-point[kind="kick"] { color: … }` (`theme::former_kind_token`); the sample map shows
+    the user-agent sheet's colour for the kind until the theme has that rule.
+
+**Including the default artwork.** *More › New theme…* and *More › Duplicate theme…* ask first,
+with an **Include the default artwork** checkbox (off by default). With it, the new theme gets a
+copy of every default SVG in its `assets/` (`assets/knob.body.svg`) and a rule for each in its
+`theme.css` (`knob-body { image: url("assets/knob.body.svg"); }`): without the rules the copies
+would do nothing, since the built-in images would still apply. *More › Add default artwork* does
+the same for the theme in use, adding only the roles it has no artwork for in any state (a
+built-in theme is copied first; with a variant of a theme of the user's in use, the artwork goes to
+the theme and each of its variants, since artwork is the theme's); when nothing is missing it says
+so and changes nothing. *New theme* starts from a
+`theme.css` that holds only a comment, so the user-agent sheet styles everything; it is named
+*New theme*, then *New theme 2* and so on, numbered as its id is.
+
 ## Native CSS: controls and the toolbar
 
 The native centred toolbar exposes the same `toolbar-module` ids as the custom
@@ -456,8 +539,9 @@ gradients, rounded buttons and bounded text/box shadows without changing the nat
 toolbar/workspace layout.
 
 Host rules the app reads itself, beside the engine: `meter` accepts `style`, `segments`
-and `intensity`; control `image` declarations name package-relative SVG/PNG artwork, including state
-suffixes; `window` accepts a relative PNG `background-image`, `background-opacity` and
+and `intensity`; `image` declarations name package-relative SVG/PNG artwork or Suhina's own
+(`url("suhina:knob.body.svg")`), on the element that draws it with its state (*The user-agent
+sheet*) or on a role; `window` accepts a relative PNG `background-image`, `background-opacity` and
 `background-blur` (0–100). Placement offsets on `.control-NAME` rules (`left`, `top`, `right`,
 `bottom`) are the app's too and give no notice. The toolbar's `order`, `hidden` and offsets are
 read only from a sheet of an earlier version, when it is migrated (`order` and `hidden` as
@@ -542,7 +626,7 @@ each theme.
   `suhina-cli theme validate` agrees with the app), and refuses the theme with a message naming
   the variant when it does not resolve to a colour.
 - The swatch is drawn as a `theme-swatch` element with a `color` attribute, styled by the
-  theme in use, never by the theme it shows. Suhina's own default is
+  theme in use, never by the theme it shows. The user-agent sheet's is
   `theme-swatch { background-color: attr(color type(<color>)); border-radius: 6px; }`; a theme
   may restyle it (`theme-swatch { border-radius: 50%; }`). Without a theme sheet it is a rounded
   square of the colour.
@@ -568,8 +652,11 @@ length). The custom properties that held them before (`--meter-style`, `--sessio
 …) are not read; a sheet that sets one gets a notice naming the rule that replaces it. A theme
 may declare properties of its own with `@property`
 (`syntax`, `initial-value`, and Suhina's `label`, `group`, `range`, `step`); a declared property
-with a label is listed under *Theme settings* with a control for its type. The theme's values
-are read at the root of a 1280 by 800 dark window (the settings on `window`, `session` and
+with a label is one of the theme's **quick controls**, listed under *Theme settings* with a
+control for its type. The variant editor (*Edit current theme…*) shows only those: the core
+palette colours, liquid strengths and surface gradients are no longer listed there, and a theme
+that declares none says so. The theme's values
+are read at the root of a 1280 by 800 window (the settings on `window`, `session` and
 `meter` under it). A variant holds values for declared properties and for settings
 (`"meter-style": "needle"`, written as a rule of the setting's element); they apply in the Variant tier,
 above the theme's rules, including its conditional ones.
@@ -627,8 +714,8 @@ implements what the bundled themes and the editor's examples use:
 
 - **Syntax and cascade:** `@layer` (named, anonymous, nested, order statements; later
   layers win, unlayered rules win over layers, `!important` reverses), `@media` with
-  `min-`/`max-` and range forms (`(400px <= width <= 800px)`), `orientation`,
-  `prefers-color-scheme` and `prefers-reduced-motion`, custom properties with fallbacks,
+  `min-`/`max-` and range forms (`(400px <= width <= 800px)`), `orientation` and
+  `prefers-reduced-motion` (not `prefers-color-scheme`: a theme's light and dark looks are variants), custom properties with fallbacks,
   `inherit`/`initial`/`unset`, specificity and source order.
 - **Selectors:** type (the element's name, from the registry `suhina_theme_package::elements`;
   the host's elements have no classes), `#id`, `.class` (toolbar group classes), `*`, descendant, `>`, `+`, `~`, `:is()`, `:not()`,
@@ -664,7 +751,7 @@ deeply nested, unbalanced) keeps the last working styles. Not implemented: trans
 filters, other gradient interpolation spaces and hints, font families and weights,
 container queries and geometry animation.
 
-**Tiers.** Every style resolves through four tiers: Suhina's defaults, the theme's sheet,
+**Tiers.** Every style resolves through five tiers: the user-agent sheet, the theme's sheet, the variant,
 device panel sheets (`.sd` version 6 `style`, bounded to their panel; `#id` selects a control
 by its id) and the user's own `user.css` in the themes folder. A higher tier wins even over
 `!important` in a lower one. `user.css` is read like a theme file (watched, at most 128 KiB, a
@@ -1012,6 +1099,12 @@ of bars, and a slider id per parameter.
   surface with a transparent background and no authored radius casts them round.
 - **Value text:** `value-decimals` (0–2) and `value-unit` (quoted, at most 8
   characters) format a level bar's and a knob's value.
+- **Pointer while dragging:** `drag-pointer: hidden | visible | auto` on a value control (`value`,
+  `pan`, `fader`, `send`, `knob`, `slider`), inherited: `hidden` hides the pointer while it is
+  dragged, `visible` shows the arrow of the drag's direction, `auto` (the default) follows
+  Settings › Appearance › Hide pointer while dragging. Read by the Arrangement's headers and
+  Main, the mixer's faders, pans and sends, and device panels' knobs and sliders; other value
+  controls follow the setting.
 - **Device panels:** `height` on `device` or `#device-<id>` (60–1200, not with an embedded
   editor); `param-label` over each parameter's own; `knob { width | height }` within
   its cell.

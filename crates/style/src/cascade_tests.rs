@@ -5,7 +5,7 @@ use super::*;
 use crate::{selector::Element, value::Length};
 
 fn viewport(width: f32) -> Viewport {
-    Viewport { width, height: 700.0, dark: true, reduced_motion: false }
+    Viewport { width, height: 700.0, reduced_motion: false }
 }
 fn tree() -> Tree {
     Tree::new(vec![
@@ -180,7 +180,7 @@ fn registered_properties_give_their_initial_value_and_a_variant_wins_over_the_th
     assert_eq!(theme.properties.len(), 2);
     let variant = Sheet::parse(":root { --accent: #abcdef; --glow: bright; }").unwrap();
     let tree = Tree::new(vec![Element::new("html", None), Element::new("body", Some(0))]).unwrap();
-    let viewport = Viewport { width: 800.0, height: 600.0, dark: true, reduced_motion: false };
+    let viewport = Viewport { width: 800.0, height: 600.0, reduced_motion: false };
     let alone = compute(&tree, viewport, &[AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None }]).unwrap();
     assert_eq!(alone[1].variable("--glow"), Some("0.6"));
     assert_eq!(alone[1].variable("--accent"), Some("#445566"));
@@ -225,7 +225,7 @@ fn a_host_variable_is_inherited_and_a_rule_may_replace_it() {
     let tree = Tree::new(vec![track, name]).unwrap();
     let styles = compute(
         &tree,
-        Viewport { width: 800.0, height: 600.0, dark: true, reduced_motion: false },
+        Viewport { width: 800.0, height: 600.0, reduced_motion: false },
         &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }],
     )
     .unwrap();
@@ -365,4 +365,31 @@ fn overflow_and_the_host_settings_are_properties_with_their_own_syntax() {
     let (_, knob) = style("window { meter-style: needle; overflow: hidden; }");
     assert_eq!(knob.get(Property::MeterStyle), Value::Keyword(""), "a meter's style is its own");
     assert_eq!(knob.get(Property::Overflow), Value::Keyword("visible"));
+}
+
+#[test]
+fn a_user_agent_rule_on_a_child_is_not_authored_though_its_parent_is() {
+    let tree = Tree::new(vec![
+        Element::new("window", None),
+        Element::new("knob", Some(0)),
+        Element::new("knob-body", Some(1)),
+        Element::new("knob-pointer", Some(1)),
+    ])
+    .unwrap();
+    let agent = Sheet::parse("knob-body { color: #202020; }").unwrap();
+    let theme = Sheet::parse("knob { color: #ffb000; }").unwrap();
+    let styles = compute(
+        &tree,
+        viewport(800.0),
+        &[
+            AppliedSheet { sheet: &agent, layer: Layer::UserAgent, root: None },
+            AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None },
+        ],
+    )
+    .unwrap();
+    // The body keeps the user agent's colour, which no sheet wrote; the pointer inherits the knob's.
+    assert_eq!(styles[2].get(Property::Color), Value::Color(Color::Rgba([32, 32, 32, 255])));
+    assert!(!styles[2].authored(Property::Color));
+    assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 176, 0, 255])));
+    assert!(styles[3].authored(Property::Color));
 }

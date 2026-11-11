@@ -259,6 +259,10 @@ pub struct ArrangementViewState {
     /// The stretch selected in time in the piano roll, for the clip it shows: that clip and the
     /// stretch in its content's beats. The clip lights it as the piano roll does.
     pub editor_span: Option<(ClipId, f64, f64)>,
+    /// The time selection, the picked clips and the range painted on automation lanes as the
+    /// last frame left them: whichever was made since gives the others up (#1322).
+    seen_selections:
+        (Option<TimeSelection>, Vec<(TrackId, ClipId)>, Option<crate::arrangement::automation_lanes::LaneRange>),
     /// Where a drag on the ruler started, in beats: it selects time over every track.
     pub(super) ruler_select: Option<f64>,
     /// While time is being painted: what a drag with Shift goes on from, known once it has begun.
@@ -447,6 +451,7 @@ impl Default for ArrangementViewState {
             marquee_scroll: Vec2::ZERO,
             time_selection: None,
             editor_span: None,
+            seen_selections: (None, Vec::new(), None),
             ruler_select: None,
             painted_from: None,
             edge_drag: None,
@@ -600,6 +605,24 @@ impl ArrangementViewState {
             self.track_focus = false;
         }
         self.time_selection = selection;
+    }
+
+    /// One selection at a time (#1322): a time selection or clips picked since the last frame let
+    /// go of the range painted on automation lanes, and a range painted there lets go of the
+    /// time selection and the picked clips, so the edit keys act on what was selected last.
+    pub(super) fn settle_selections(&mut self) {
+        let (time, clips, range) = &self.seen_selections;
+        let time_new = self.time_selection.is_some() && self.time_selection != *time;
+        let clips_new = !self.selected.is_empty() && self.selected != *clips;
+        let range_new = self.automation.range.is_some() && self.automation.range != *range;
+        if range_new {
+            self.time_selection = None;
+            // The clip the editor shows stays shown; it is only not picked.
+            self.selected.clear();
+        } else if time_new || clips_new {
+            self.automation.range = None;
+        }
+        self.seen_selections = (self.time_selection.clone(), self.selected.clone(), self.automation.range.clone());
     }
 
     /// Lets go of the take pieces picked and the area painted across take lanes: the Delete and
@@ -860,24 +883,61 @@ impl ArrangementViewState {
 
     /// Alt and the wheel over the lanes, `offset` points below their top (#957): every track lane
     /// and every shown automation lane by `factor`, or with [`Self::zoom_one`] only the lane under
-    /// the pointer.
-    pub(super) fn zoom_wheel(&mut self, drawn: &[&Lane], timeline: &Timeline, factor: f32, offset: f32) {
+    /// the pointer. Returns where the row it changed is now, its top and height from the top of
+    /// the lanes' content, so the view can keep it in sight; `None` when it changed every lane.
+    pub(super) fn zoom_wheel(
+        &mut self,
+        drawn: &[&Lane],
+        timeline: &Timeline,
+        factor: f32,
+        offset: f32,
+    ) -> Option<(f32, f32)> {
+        if !factor.is_finite() || factor <= 0.0 {
+            return None;
+        }
+        if !self.zoom_one {
+            self.zoom_lanes(&timeline.lanes, factor, offset);
+            self.automation.zoom_all(factor, &timeline.automation);
+            return None;
+        }
+        self.zoom_row(drawn, None, timeline, factor, offset + self.scroll.y)
+    }
+
+    /// Alt and the wheel over the fixed rows at the bottom, `offset` points below their top: the
+    /// return rows, the main track's row and their automation lanes, which do not scroll. With
+    /// [`Self::zoom_one`] off, every lane, the scrolling lanes kept where they meet the fixed
+    /// rows, `bottom` points below their top.
+    pub(super) fn zoom_fixed(&mut self, returns: &[&Lane], timeline: &Timeline, factor: f32, offset: f32, bottom: f32) {
         if !factor.is_finite() || factor <= 0.0 {
             return;
         }
         if !self.zoom_one {
-            self.zoom_lanes(&timeline.lanes, factor, offset);
-            self.automation.zoom_all(factor);
+            self.zoom_lanes(&timeline.lanes, factor, bottom);
+            self.automation.zoom_all(factor, &timeline.automation);
             return;
         }
-        let y = offset + self.scroll.y;
+        let main = self.main_height;
+        let _ = self.zoom_row(returns, Some(main), timeline, factor, offset);
+    }
+
+    /// Changes by `factor` the one row `y` points below the top of `drawn` (then of the main
+    /// track's row, `main` points tall, which keeps its height, and its lanes): a track's, a
+    /// take's or an automation lane's. Returns its top and new height.
+    fn zoom_row(
+        &mut self,
+        drawn: &[&Lane],
+        main: Option<f32>,
+        timeline: &Timeline,
+        factor: f32,
+        y: f32,
+    ) -> Option<(f32, f32)> {
         let mut top = 0.0;
         for lane in drawn {
             let height = self.height(lane);
             if y < top + height {
                 let kept = if lane.kind == ColumnKind::Return { height } else { self.kept_height(lane.track) };
                 self.heights.insert(lane.track, (kept * factor).clamp(MIN_LANE, MAX_LANE));
-                return;
+                return Some((top, self.height(lane)));
             }
             top += height + 1.0;
             if !self.takes_hidden.contains(&lane.track) {
@@ -886,20 +946,44 @@ impl ArrangementViewState {
                     if y < top + row {
                         let kept = self.kept_take_row(lane.track, take.number);
                         self.take_heights.insert((lane.track, take.number), (kept * factor).clamp(MIN_LANE, MAX_LANE));
-                        return;
+                        return Some((top, self.take_row(lane.track, take.number)));
                     }
                     top += row + 1.0;
                 }
             }
-            for key in self.automation.shown(lane.track, &timeline.automation) {
-                let lane_height = self.automation.lane_height(lane.track, &key);
-                if y < top + lane_height {
-                    self.automation.set_lane_height(lane.track, &key, lane_height * factor);
-                    return;
-                }
-                top += lane_height + 1.0;
+            if let Some(found) = self.zoom_automation(lane.track, timeline, factor, y, &mut top) {
+                return found;
             }
         }
+        let main = main?;
+        if y < top + main {
+            return None;
+        }
+        top += main + 1.0;
+        self.zoom_automation(TrackId::MAIN, timeline, factor, y, &mut top).flatten()
+    }
+
+    /// [`Self::zoom_row`] over `track`'s automation rows from `top` on: `Some` once `y` is in one
+    /// of them (holding the lane it changed, or `None` on a group's heading or the empty top lane,
+    /// which keep their height), `None` when `y` is past them, `top` then moved past them.
+    fn zoom_automation(
+        &mut self,
+        track: TrackId,
+        timeline: &Timeline,
+        factor: f32,
+        y: f32,
+        top: &mut f32,
+    ) -> Option<Option<(f32, f32)>> {
+        for row in self.automation.rows(track, &timeline.automation) {
+            let row_height = self.automation.row_height(track, &row);
+            if y < *top + row_height {
+                let crate::arrangement::automation_lanes::LaneRow::Lane(key) = row else { return Some(None) };
+                self.automation.set_lane_height(track, &key, row_height * factor);
+                return Some(Some((*top, self.automation.lane_height(track, &key))));
+            }
+            *top += row_height + 1.0;
+        }
+        None
     }
 
     /// What the clip at `key` shows: the project's gain and fades, or the value of a drag in

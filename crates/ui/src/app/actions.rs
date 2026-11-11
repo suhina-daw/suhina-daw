@@ -24,6 +24,14 @@ impl App {
             "file.new" => self.open_project_dialog(false),
             // With clips selected in the Arrangement, the loop is exactly their span; with none,
             // Ctrl+L turns looping on or off as before.
+            // A range painted on automation lanes, over one lane or several, loops its span (#1322).
+            "transport.setLoopEnabled"
+                if self.shown == View::Arrangement && self.arrangement.automation.range.is_some() =>
+            {
+                if let Some(range) = &self.arrangement.automation.range {
+                    actions.push(self.loop_or_unloop(range.start, range.end));
+                }
+            }
             // A time selection loops exactly its span; a click on a clip ends it, so then the
             // clips' span is looped (below).
             "transport.setLoopEnabled"
@@ -218,6 +226,15 @@ impl App {
             | "selection.takeDown"
                 if self.piano_has_keyboard() => {}
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
+            // Lane headers or group headings picked: Delete takes them out of the track's layout,
+            // one undo step (#1322).
+            "selection.delete" if self.shown == View::Arrangement && self.arrangement.automation.has_picks() => {
+                if let Some((_, _, timeline)) = self.timeline.as_ref()
+                    && let Some(action) = self.arrangement.automation.delete_picked(&timeline.automation)
+                {
+                    actions.push(action);
+                }
+            }
             // A range painted on an automation lane: copy, cut, paste (from its start), duplicate
             // (right after it) and delete act on it (#916).
             "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate" | "selection.delete"
@@ -1133,6 +1150,53 @@ impl App {
             if self.session().is_some_and(|s| s.is_armed(track)) {
                 self.auto_arm.armed.insert(project, track);
             }
+        }
+    }
+
+    /// A control moved by hand brings its parameter into view in its track's open lanes, the top
+    /// lane showing it ready to be drawn on (#1205): a track's volume, pan or mute (Main's too),
+    /// a parameter of a device on the track's own chain, a built-in's, an `.sd` device's or a
+    /// plug-in's.
+    pub(super) fn focus_touched_lane(&mut self, action: &Action) {
+        use crate::arrangement::automation_lanes::LaneKey;
+        let id = |v: &serde_json::Value| v.as_u64().and_then(|n| u32::try_from(n).ok()).map(TrackId);
+        let touched: Vec<(TrackId, LaneKey)> = match action.id {
+            "track.setVolume" | "track.setPan" | "track.setMute" => {
+                let param = match action.id {
+                    "track.setVolume" => suhina_engine::model::automation::VOLUME,
+                    "track.setPan" => suhina_engine::model::automation::PAN,
+                    _ => suhina_engine::model::automation::MUTE,
+                };
+                // One track moved by hand; a value set on many at once brings none forward.
+                match action.params["tracks"].as_array().map(Vec::as_slice) {
+                    Some([one]) => id(one).map(|track| (track, LaneKey::mixer(param))).into_iter().collect(),
+                    _ => Vec::new(),
+                }
+            }
+            "device.setParam" => {
+                let track = id(&action.params["track"]);
+                let device = detail_view::DeviceAt::parse(&action.params["device"]);
+                let param = match &action.params["param"] {
+                    serde_json::Value::String(text) => Some(text.clone()),
+                    serde_json::Value::Number(number) => Some(number.to_string()),
+                    _ => None,
+                };
+                // Lanes are of the devices on the track's own chain, not inside a device group.
+                match (track, device, param) {
+                    (Some(track), Some(device), Some(param)) if device.0.len() == 1 => device
+                        .0
+                        .first()
+                        .map(|&index| (track, LaneKey { device: Some(index), param }))
+                        .into_iter()
+                        .collect(),
+                    _ => Vec::new(),
+                }
+            }
+            _ => return,
+        };
+        let Some((_, _, timeline)) = self.timeline.as_ref() else { return };
+        for (track, key) in touched {
+            self.arrangement.automation.focus(track, key, &timeline.automation);
         }
     }
 

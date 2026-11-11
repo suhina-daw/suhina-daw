@@ -648,6 +648,27 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Automation",
+        "Group plug-in lanes",
+        "Whether a lane mounted from a plug-in goes into a group of that plug-in's lanes, one group a plug-in",
+        &["automation_group"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.automation_group_plugins),
+    ),
+    row(
+        Page::Arrangement,
+        "Automation",
+        "Top lane shows",
+        "What a track's top automation lane shows when you open its lanes, before you choose a parameter in it or move a control",
+        &["automation_top_lane"],
+        |cx, r| {
+            use crate::arrangement::automation_lanes::TopLane;
+            cx.choose(r, &[("None", TopLane::None), ("Volume", TopLane::Volume), ("Pan", TopLane::Pan)], |s| {
+                &mut s.view.automation_top_lane
+            })
+        },
+    ),
+    row(
+        Page::Arrangement,
         "Gain envelope",
         "Show gain envelope",
         "Audio clips with gain envelope points show the line on their waveform when you are not editing it",
@@ -944,6 +965,14 @@ pub(crate) static ROWS: &[Entry] = &[
         "Things fade and slide briefly when they change",
         &["animations"],
         |cx, r| cx.on_off(r, |s| &mut s.animations),
+    ),
+    row(
+        Page::Appearance,
+        "Window",
+        "Hide pointer while dragging",
+        "The pointer disappears while a knob, fader or value is dragged",
+        &["drag_hides_pointer"],
+        |cx, r| cx.on_off(r, |s| &mut s.drag_hides_pointer),
     ),
     row(
         Page::Appearance,

@@ -14,10 +14,14 @@ use std::{
     sync::Arc,
 };
 
-/// Layers are an explicit host policy; a device cannot choose a higher layer.
+/// The tiers of the cascade, lowest first: Suhina's user-agent sheet, the theme, its variant,
+/// device panel sheets and the user's sheet. Layers are an explicit host policy; a device cannot
+/// choose a higher layer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Layer {
-    Default,
+    /// Suhina's user-agent sheet (`suhina_theme_package::USER_AGENT_SHEET`), and the host's
+    /// palette defaults beside it until the palette goes (#995 § 10).
+    UserAgent,
     Theme,
     /// A theme variant's chosen values, above the theme's own rules.
     Variant,
@@ -70,7 +74,8 @@ impl ComputedStyle {
         Arc::clone(&self.variables)
     }
     /// Host defaults must not replace a native widget's own appearance. Inherited
-    /// authored properties retain this marker across the component tree.
+    /// authored properties retain this marker across the component tree, until a user-agent
+    /// rule on an element sets the property again.
     pub fn authored(&self, property: Property) -> bool {
         self.authored.contains(&property)
     }
@@ -261,8 +266,13 @@ pub(crate) fn element_style(
             },
         };
         computed.values.insert(property, value);
-        if priority.0 > Layer::Default as u8 {
+        // A user-agent rule on the element replaces what it inherited from a sheet's rule above
+        // it: its value is the user agent's, not one a sheet wrote (`knob-body` under a styled
+        // `knob`).
+        if priority.0 > Layer::UserAgent as u8 {
             computed.authored.insert(property);
+        } else {
+            computed.authored.remove(&property);
         }
     }
     if let Value::Animations(animations) = computed.get(Property::Animation) {

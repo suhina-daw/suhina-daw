@@ -314,6 +314,7 @@ impl suhina_session::AudioSystem for StandAudio {
                 } else {
                     Some((256, 512))
                 },
+                default_buffer: None,
                 exclusive: wasapi,
             }],
             inputs: vec![suhina_session::audio::InputInfo {

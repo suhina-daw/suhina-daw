@@ -86,6 +86,11 @@ impl App {
         let search_key = self.keymap.label("browser.search").unwrap_or_default();
         let selected_track = self.selected_track();
         let revision = self.revision;
+        // A drag that started in the map's own window carries through to the main window's
+        // views with the drag's own position: the main window's pointer is unset or stale
+        // while the map window has it ([#1254] review). Otherwise the hits test the pointer
+        // as ever.
+        self.browser.drag_pointer = if self.map_window.drag.is_some() { self.drag_pointer(ui.ctx()) } else { None };
         let mut map_settings = self.settings.clone();
         let map_panel = &mut self.sample_map;
         let mut draw_map = |ui: &mut Ui, rect: Rect, state: &mut BrowserState, projects: &mut Projects| {

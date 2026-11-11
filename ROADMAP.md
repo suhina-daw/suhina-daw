@@ -11,7 +11,7 @@ primary platform; Windows and macOS are supported.
 | M3 | **Commands and agents:** command registry with undo; CLI and MCP server on the same commands | in progress: commands, undo, MCP, edits heard while playing, and saving projects in Suhina's own format (`.suhina`) work; more commands to come |
 | M4 | **Clip launching:** launch quantisation, scenes, stop buttons, follow actions | in progress: launching, scenes, stops, quantisation, follow actions, the metronome, launch modes, legato, per-clip quantisation and launch keys work; launching from live MIDI notes to come |
 | M5 | **Audio playback:** imported audio clips with gain, transpose, warping and time-stretching | done (verified by ear on a heavily warped set) |
-| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); still to do: automation lanes in the UI, Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
+| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); their parameters automated from lanes in the Arrangement view; still to do: Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
 | M7 | **More formats:** DAWproject import and export | not started |
 | M8 | **UI:** Launcher and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Launcher and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
@@ -221,6 +221,8 @@ refused or suspended, never by losing its edits.
   between parts show on the track and are set by a handle (`take.setCrossfade`), with their default
   in Settings; and a part moved or copied on the track takes its takes along
   ([#1078](https://github.com/suhina-daw/suhina-daw/issues/1078)).
+
+- Value drags: the Arrangement's volume and pan bars and Main's volume bar drag up and down or across, whichever way a drag moves first. Settings › Appearance › Hide pointer while dragging (on by default) chooses whether the pointer hides during a value drag or shows the arrow of its direction, and a theme can choose for its own controls with `drag-pointer: hidden | visible`.
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
@@ -586,7 +588,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   about a minute, and closing or quitting asks whether to save it.
 - The **browser** (Ctrl+B shows and hides it, left or right of the view): search (Ctrl+F),
   category filters (All, Samples, MIDI, Instruments, Effects, Presets, Plug-ins), a sidebar of
-  Pinned, Recent (by kind) and the folders the user added (a path, or a folder dropped on the
+  Pinned, Recent (by kind), the Tags and the folders the user added (a path, or a folder dropped on the
   window), a tree with type icons, lengths and colour tags, a preview strip with the waveform,
   length, tempo and key, and a footer with the tags as filters. Samples and MIDI files preview
   through the engine (auto-play, or the play button; MIDI through the selected track's
@@ -1029,4 +1031,17 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   and a click on a bar or a faint note gives that clip the focus.
 
 - Audio clip panel (#1190, #742, #824): a selected audio clip's column in the detail area is laid out in groups, Clip (colour, markers and loop with Set to the playhead), Audio (warp, a stretch mode drop-down, the clip's tempo with ÷2 and ×2 and where it came from, Find to pick another source's tempo), Gain (a fader, −70 to +24 dB) and Pitch (a knob in semitones and a cents field). Every number can be typed after a double-click. Every audio clip has its own gain, pitch and warp, also two clips of the same file, and a gain envelope drawn on its waveform in the Arrangement (a double-click adds a point, a drag moves it, a double-click removes it); `clip.setTempo`, `clip.findTempo` and `clip.setEnvelope` do the same for agents.
+
+- The browser's **Tags section** in the sidebar reaches a tag's items again (#1196): one row
+  per tag with its colour dot, its name and how many items carry it (a tag with none dimmed),
+  clicked as a place lists every item that carries it of any kind (`library.search` takes it
+  as `tag:<name>`), Ctrl-click combines tags, the row's right-click menu adds (a New tag…
+  field with an Add tag button, taking the colour the menu's own tag shows), renames live as
+  the name is typed, recolours
+  (the palette or the theme editor's picker in the menu) and removes it (asking first while
+  items carry it);
+  items dropped on a row are tagged with it, and a tag dragged from its row tags the item it
+  lands on (its whole selection when the row is one of them). The section is where the tags
+  live now, so the footer's tag editor and its Edit tags button are gone and the footer's
+  dots stay only as the quick filter of the list shown.
 

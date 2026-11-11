@@ -373,6 +373,51 @@ fn a_legacy_skin_s_styles_join_its_sheet_under_today_s_names() {
     assert!(warnings.iter().any(|w| w.contains("nowhere")), "{warnings:?}");
 }
 
+/// Default artwork takes the colour its caller gives as its element's (`currentColor`), with no
+/// palette colour of its own: a knob body drawn in red is red.
+#[test]
+fn default_artwork_takes_its_colour_from_current_color() {
+    configure(&Skin::default());
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let rect = Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(22.0));
+        assert!(paint(ui.painter(), rect, "knob.body", State::Normal, Color32::RED, 0.0));
+    });
+    let image = output
+        .textures_delta
+        .set
+        .values()
+        .flat_map(|deltas| deltas.iter())
+        .map(|delta| match &delta.image {
+            egui::ImageData::Color(image) => image.clone(),
+        })
+        .find(|image| image.size == [22, 22])
+        .expect("the knob's body is rastered");
+    output.textures_delta.clear();
+    let centre = image.pixels[image.width() * (image.height() / 2) + image.width() / 2];
+    let [r, g, b, _] = centre.to_srgba_unmultiplied();
+    assert!(r > 200 && g < 60 && b < 60, "{centre:?}");
+}
+
+/// The default artwork a theme lacks, which Add default artwork copies; a role it has keeps its own.
+#[test]
+fn missing_defaults_leave_a_themes_own_artwork() {
+    let own = BTreeMap::from([("knob.body".to_owned(), "assets/mine.svg".to_owned())]);
+    let missing = missing_defaults(&own);
+    assert_eq!(missing.len(), roles().count() - 1);
+    assert!(!missing.contains_key("knob.body"));
+    assert!(missing.contains_key("knob.pointer"));
+    // Artwork for a state only keeps the role too; another role with the same start does not.
+    let own = BTreeMap::from([
+        ("knob.pointer.hover".to_owned(), "assets/tip.svg".to_owned()),
+        ("track.body.session".to_owned(), "assets/session.svg".to_owned()),
+    ]);
+    let missing = missing_defaults(&own);
+    assert!(!missing.contains_key("knob.pointer"), "{missing:?}");
+    assert!(missing.contains_key("track.body"), "{missing:?}");
+    assert!(missing.contains_key("knob.body"));
+}
+
 #[test]
 fn a_legacy_skin_s_device_grid_lays_its_parameters_out_as_before() {
     let mut warnings = Vec::new();

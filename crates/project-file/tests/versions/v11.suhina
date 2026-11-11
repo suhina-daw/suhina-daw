@@ -26,11 +26,7 @@
                 2.0
               ],
               "offset": 0.5,
-              "start": 0.0,
-              "swing": {
-                "amount": 0.6,
-                "own": true
-              }
+              "start": 0.0
             },
             {
               "content": 1,
@@ -752,6 +748,33 @@
         "key": "LiveSet"
       }
     ],
+    "lane_layouts": [
+      {
+        "channel": 1,
+        "groups": [
+          {
+            "device": 5,
+            "folded": true,
+            "lanes": [
+              {
+                "device": 5,
+                "param": "7"
+              }
+            ],
+            "name": "Synth"
+          }
+        ],
+        "lanes": [
+          {
+            "param": "pan"
+          },
+          {
+            "device": 5,
+            "param": "7"
+          }
+        ]
+      }
+    ],
     "launcher": {
       "columns": [
         {
@@ -893,7 +916,6 @@
         "end": 12.5,
         "start": 4.0
       },
-      "swing": 0.25,
       "tempo_bpm": 128.5,
       "tempo_changes": [
         {

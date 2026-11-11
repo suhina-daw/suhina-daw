@@ -25,12 +25,14 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 15;
+pub const VERSION: u64 = 16;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
 /// Most parameters a plug-in's list carries.
 pub const MAX_PARAMS: usize = 1 << 16;
+/// Most values one `get_param_texts` asks a parameter's text for (#1205).
+pub const MAX_PARAM_TEXTS: usize = 256;
 
 /// One of a plug-in's parameters. Values are in the plug-in's own range, `min` to `max`: a
 /// VST3 plug-in's are normalized (0 to 1), a CLAP plug-in's are its plain values.
@@ -421,6 +423,18 @@ pub enum Message {
         instance: u32,
         param: ParamInfo,
     },
+    /// The plug-in's own text for each of `values` of parameter `id`, in its own range (#1205);
+    /// answered with `ParamTexts`, one text a value, empty where it gives none.
+    GetParamTexts {
+        instance: u32,
+        id: u32,
+        values: Vec<f64>,
+    },
+    ParamTexts {
+        instance: u32,
+        id: u32,
+        texts: Vec<String>,
+    },
     /// Set by the user in the plug-in's own editor: the host reports it so the session keeps
     /// the project's values in step (decision 6). Comes unasked; `value` is what the plug-in
     /// now runs with.
@@ -592,6 +606,8 @@ impl Message {
             | Self::Params { instance, .. }
             | Self::SetParam { instance, .. }
             | Self::Param { instance, .. }
+            | Self::GetParamTexts { instance, .. }
+            | Self::ParamTexts { instance, .. }
             | Self::ParamChanged { instance, .. }
             | Self::OpenEditor { instance, .. }
             | Self::EditorOpened { instance, .. }
@@ -665,6 +681,12 @@ impl Message {
                 json!({ "op": "set_param", "instance": instance, "id": id, "value": value })
             }
             Self::Param { instance, param } => json!({ "op": "param", "instance": instance, "param": param.to_json() }),
+            Self::GetParamTexts { instance, id, values } => {
+                json!({ "op": "get_param_texts", "instance": instance, "id": id, "values": values })
+            }
+            Self::ParamTexts { instance, id, texts } => {
+                json!({ "op": "param_texts", "instance": instance, "id": id, "texts": texts })
+            }
             Self::ParamChanged { instance, id, value } => {
                 json!({ "op": "param_changed", "instance": instance, "id": id, "value": value })
             }
@@ -817,6 +839,28 @@ impl Message {
                 value: value.get("value").and_then(Value::as_f64).filter(|v| v.is_finite())?,
             },
             "param" => Self::Param { instance: instance()?, param: ParamInfo::from_json(value.get("param")?)? },
+            "get_param_texts" => {
+                let list = value.get("values")?.as_array()?;
+                if list.len() > MAX_PARAM_TEXTS {
+                    return None;
+                }
+                Self::GetParamTexts {
+                    instance: instance()?,
+                    id: small("id")?,
+                    values: list.iter().map(|v| v.as_f64().filter(|v| v.is_finite())).collect::<Option<Vec<_>>>()?,
+                }
+            }
+            "param_texts" => {
+                let list = value.get("texts")?.as_array()?;
+                if list.len() > MAX_PARAM_TEXTS {
+                    return None;
+                }
+                Self::ParamTexts {
+                    instance: instance()?,
+                    id: small("id")?,
+                    texts: list.iter().map(|t| t.as_str().map(str::to_string)).collect::<Option<Vec<_>>>()?,
+                }
+            }
             "param_changed" => Self::ParamChanged {
                 instance: instance()?,
                 id: small("id")?,

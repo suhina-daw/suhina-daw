@@ -3,6 +3,7 @@
 @property --tint-light { syntax: "<color>"; initial-value: #8FCEA0; label: "Accent, light"; group: "Colours"; }
 :root {
   --accent: var(--tint);
+  --automation-pin: var(--tint);
   --border: color-mix(in oklab, color-mix(in oklab, var(--tint), white 84%), black 3%);
   --border-strong: color-mix(in oklab, color-mix(in oklab, var(--tint), white 75%), black 8%);
   --browser-text-hint: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 14%);
@@ -18,23 +19,6 @@
   --control-selectedBackground: var(--tint);
   --grid-major: color-mix(in oklab, color-mix(in oklab, var(--tint), white 70%), black 2%);
   --grid-minor: color-mix(in oklab, var(--tint), white 85%);
-  --kind-bass: #A84F4F;
-  --kind-clap: #5EC0B0;
-  --kind-closedHat: #C6AC5E;
-  --kind-crash: #E0A0C8;
-  --kind-cymbal: #A497CC;
-  --kind-effect: #9CC49C;
-  --kind-hat: #D8C47A;
-  --kind-kick: #D06E5E;
-  --kind-openHat: #D08F6E;
-  --kind-other: #8A8680;
-  --kind-percussion: #8FC06E;
-  --kind-ride: #C8B8E8;
-  --kind-rim: #8CA8E0;
-  --kind-snare: #73AAC0;
-  --kind-tom: #B074A4;
-  --kind-tonal: #6EB0D0;
-  --kind-vocal: #E8D0A0;
   --meter-hot: #DC9A21;
   --meter-normal: #00B050;
   --pan-background: white;
@@ -127,19 +111,19 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
 pan { appearance: knob; }
 
 /* Artwork. */
-arm { image: url("assets/arm.svg"); }
+icon[kind="arm"] { image: url("assets/arm.svg"); }
 button { image: url("assets/button.svg"); }
-cue { image: url("assets/cue.svg"); }
-fader.cap { image: url("assets/fader.cap.svg"); }
-fader.rail { image: url("assets/fader.rail.svg"); }
-knob.body { image: url("assets/knob.body.svg"); }
-knob.pointer { image: url("assets/knob.pointer.svg"); }
+icon[kind="cue"] { image: url("assets/cue.svg"); }
+fader-cap { image: url("assets/fader.cap.svg"); }
+fader-rail { image: url("assets/fader.rail.svg"); }
+knob-body { image: url("assets/knob.body.svg"); }
+knob-pointer { image: url("assets/knob.pointer.svg"); }
 meter { image: url("assets/meter.svg"); }
-play { image: url("assets/play.svg"); }
-record { image: url("assets/record.svg"); }
-solo { image: url("assets/solo.svg"); }
-stop { image: url("assets/stop.svg"); }
-track.audio { image: url("assets/track.audio.svg"); }
-track.body { image: url("assets/track.body.svg"); }
-track.midi { image: url("assets/track.midi.svg"); }
-track.name { image: url("assets/track.name.svg"); }
+icon[kind="play"] { image: url("assets/play.svg"); }
+icon[kind="record"] { image: url("assets/record.svg"); }
+icon[kind="solo"] { image: url("assets/solo.svg"); }
+icon[kind="stop"] { image: url("assets/stop.svg"); }
+icon[kind="audio"] { image: url("assets/track.audio.svg"); }
+track-header { image: url("assets/track.body.svg"); }
+icon[kind="midi"] { image: url("assets/track.midi.svg"); }
+track-name { image: url("assets/track.name.svg"); }
