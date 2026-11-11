@@ -422,7 +422,7 @@ fn shown_span(scroll: f32, size: f32, from: f32, to: f32) -> f32 {
 /// the notes go on following the pointer.
 pub(super) fn scroll_at_edges(state: &mut PianoRollState, grid: Rect, pointer: Pos2) {
     let Some(gesture) = state.gesture.as_mut().filter(|g| g.follows_edges()) else { return };
-    let edge = 16.0;
+    let edge = 4.0;
     let speed = |past: f32| (past.max(0.0) / 2.0 + 2.0).min(40.0);
     let mut by = Vec2::ZERO;
     if pointer.x > grid.right() - edge {

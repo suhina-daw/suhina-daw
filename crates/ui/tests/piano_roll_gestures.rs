@@ -355,12 +355,10 @@ fn audition_sounds_moved_and_drawn_notes_once_when_it_is_on() {
     }
     assert!(h.state().piano_roll().auditioning().is_empty(), "the note goes off a moment later");
 
-    // A dragged note sounds too (the scale from the first and third notes: the second is now
-    // above the rows in view).
-    let n = notes(&h);
-    let (a, c) = (note_rect(&h, &n[0]), note_rect(&h, &n[2]));
-    let beat = (c.left() - a.left()) / 2.0;
-    let row = (a.top() - c.top()) / f32::from(n[2].key - n[0].key);
+    // A dragged note sounds too. The view followed the note the keys moved, so the scale comes
+    // from the piano roll's zoom, not from notes that may now be out of view.
+    let beat = h.state().piano_roll().beat_width;
+    let row = h.state().piano_roll().key_height;
     let from = note_rect(&h, &notes(&h)[3]).center();
     let to = from + vec2(-beat, -row);
     h.hover_at(from);
