@@ -23,7 +23,7 @@ fn cached_snapshot_invalidates_on_dimensions_state_and_source() {
     assert_eq!(hovered.rectangles[1].unwrap().width, 200.0);
     let replacement = resolver.replace(vec![scope("knob { width: 10px; }")], &tree, viewport).unwrap();
     assert_eq!(replacement.rectangles[1].unwrap().width, 10.0);
-    assert!(resolver.replace(vec![scope("knob { area: missing; }")], &tree, viewport).is_err());
+    assert!(resolver.replace(vec![scope("knob { width: 10000%; }")], &tree, viewport).is_err());
     assert!(Arc::ptr_eq(&replacement, &resolver.resolve(&tree, viewport).unwrap()));
 }
 

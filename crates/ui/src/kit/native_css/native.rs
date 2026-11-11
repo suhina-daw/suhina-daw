@@ -329,8 +329,8 @@ const LAYOUT: &[Property] = &[
     Property::Layout,
     Property::Columns,
     Property::Rows,
-    Property::Areas,
-    Property::Area,
+    Property::GridTemplateAreas,
+    Property::GridArea,
     Property::Visible,
 ];
 
@@ -354,7 +354,7 @@ pub(super) fn layout(engine: &Engine, elements: Vec<Element>, defaults: &str, si
     let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
     let styles = paint.styles(&tree, viewport(engine), Some(&defaults), variant(engine), &[], user)?;
     let size = [size[0].clamp(0.0, 16384.0), size[1].clamp(0.0, 16384.0)];
-    let rectangles = suhina_style::layout::compute(&tree, &styles, size).ok()?;
+    let rectangles = suhina_style::layout::compute(&tree, &styles, size, &[]).ok()?;
     let requested = styles.iter().skip(2).any(|style| LAYOUT.iter().any(|property| style.authored(*property)));
     let items = rectangles
         .iter()
