@@ -554,7 +554,7 @@ fn one_device_started_for_a_render_sounds_as_the_plug_in_alone() {
     let env = env();
     let input: Vec<f32> = (0..SR as usize / 4).flat_map(|i| [((i as f32) * 0.05).sin() * 0.8; 2]).collect();
 
-    let mut started = suhina_session::start_offline_device(&project, &AudioPool::new(), &env, key, SR)
+    let mut started = suhina_session::start_offline_device(&project, &AudioPool::new(), &env, key, SR, None)
         .unwrap()
         .expect("the test plug-in is installed");
     assert!(started.refused.is_none(), "no saved state to refuse");
@@ -577,6 +577,30 @@ fn one_device_started_for_a_render_sounds_as_the_plug_in_alone() {
     let peak = through_session.samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
     assert!((peak - 0.8 * DEFAULT_GAIN).abs() < 0.01, "the plug-in's gain is in the sound: {peak}");
 
-    let none = suhina_session::start_offline_device(&project, &AudioPool::new(), &env, key ^ 1, SR).unwrap();
+    let none = suhina_session::start_offline_device(&project, &AudioPool::new(), &env, key ^ 1, SR, None).unwrap();
     assert!(none.is_none(), "no such device, nothing started");
+}
+
+/// A state given for one device's render (`run-device --state`, #1155) is loaded in place of
+/// the one the project saved, not after it; without one, the saved state plays.
+#[test]
+fn a_state_given_for_one_device_replaces_the_saved_one() {
+    let mut project = project();
+    project.channels[0].devices[0].state = Some(0.25f32.to_le_bytes().to_vec().into());
+    assert_eq!(project.assign_ids(), Ok(()));
+    let key = plugin_keys(&project)[0];
+    let env = env();
+    let input: Vec<f32> = vec![0.8; 2 * 4096];
+    let gain = |state: Option<suhina_plugins::SavedState>| {
+        let mut started = suhina_session::start_offline_device(&project, &AudioPool::new(), &env, key, SR, state)
+            .unwrap()
+            .expect("the test plug-in is installed");
+        assert!(started.refused.is_none());
+        let rendered =
+            suhina_plugins::offline::render_started(&mut started.control, &mut started.audio, &input, &[], 0).unwrap();
+        rendered.samples.iter().fold(0.0f32, |m, s| m.max(s.abs())) / 0.8
+    };
+    assert!((gain(None) - 0.25).abs() < 1e-4, "the saved state plays");
+    let given = suhina_plugins::SavedState { data: 0.125f32.to_le_bytes().to_vec(), controller: None };
+    assert!((gain(Some(given)) - 0.125).abs() < 1e-4, "the given state replaces it");
 }

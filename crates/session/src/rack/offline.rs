@@ -62,7 +62,7 @@ pub fn start_offline(project: &Project, audio: &AudioPool, env: &PluginEnv, samp
     let ara_document = next_ara_document();
     for found in plugin_devices(project) {
         let Some(device) = device_of(project, &found) else { continue };
-        match start_one(project, audio, env, &found, sample_rate, &ara_document) {
+        match start_one(project, audio, env, &found, sample_rate, &ara_document, None) {
             Ok(Some(mut started)) => {
                 if let Some(why) = started.refused.take() {
                     offline.notices.push(format!("{} did not take its saved settings ({why})", device.name));
@@ -88,17 +88,19 @@ pub fn start_offline(project: &Project, audio: &AudioPool, env: &PluginEnv, samp
 }
 
 /// Starts the one plug-in device `key` of `project` as [`start_offline`] starts each: the same
-/// installed plug-in, saved state, process group and clips (ADR 0033). `Ok(None)` when no
-/// installed plug-in stands for it, or `key` is no plug-in device of `project`.
+/// installed plug-in, saved state, process group and clips (ADR 0033); with `state`, that in
+/// place of the state the project saved. `Ok(None)` when no installed plug-in stands for it,
+/// or `key` is no plug-in device of `project`.
 pub fn start_offline_device(
     project: &Project,
     audio: &AudioPool,
     env: &PluginEnv,
     key: u64,
     sample_rate: u32,
+    state: Option<SavedState>,
 ) -> Result<Option<OfflineDevice>, PluginError> {
     let Some(found) = plugin_devices(project).into_iter().find(|d| d.key == key) else { return Ok(None) };
-    start_one(project, audio, env, &found, sample_rate, &next_ara_document())
+    start_one(project, audio, env, &found, sample_rate, &next_ara_document(), state)
 }
 
 fn device_of<'a>(project: &'a Project, found: &suhina_engine::PluginDevice) -> Option<&'a Device> {
@@ -110,7 +112,8 @@ fn device_of<'a>(project: &'a Project, found: &suhina_engine::PluginDevice) -> O
 }
 
 /// Starts the plug-in device `found` for an offline render, in the ARA document
-/// `ara_document`; `Ok(None)` when it is not installed.
+/// `ara_document`, with `state` or else the state the project saved; `Ok(None)` when it is not
+/// installed.
 fn start_one(
     project: &Project,
     audio: &AudioPool,
@@ -118,6 +121,7 @@ fn start_one(
     found: &suhina_engine::PluginDevice,
     sample_rate: u32,
     ara_document: &str,
+    state: Option<SavedState>,
 ) -> Result<Option<OfflineDevice>, PluginError> {
     let Some(device) = device_of(project, found) else { return Ok(None) };
     let Some((matched, instrument)) = find(&env.catalog, device) else { return Ok(None) };
@@ -141,6 +145,6 @@ fn start_one(
         group: (env.group)(matched.plugin),
         ara,
     };
-    let (control, audio, refused) = start(launch, saved_state(device))?;
+    let (control, audio, refused) = start(launch, state.or_else(|| saved_state(device)))?;
     Ok(Some(OfflineDevice { control, audio, instrument, refused, _ara_sources: ara_sources }))
 }

@@ -21,16 +21,12 @@ pub(crate) fn plugin(args: &[String]) -> Result<(), String> {
     };
     let mut words = args.iter().map(String::as_str);
     let mut library = suhina_plugins::library::Library::default();
-    // For a device: the project's session and where the device is, to start it as the project
-    // does and to read its track's notes.
-    let mut device_source: Option<ProjectDevice> = None;
-    let mut device_env: Option<std::sync::Arc<suhina_session::PluginEnv>> = None;
-    let (spec, mut state, input, output) = match words.next() {
+    let (target, mut state, input, output) = match words.next() {
         Some("run") => {
             let (Some(name), Some(input), Some(output)) = (words.next(), words.next(), words.next()) else {
                 return Err(usage());
             };
-            (plugin_spec(&mut library, name)?, None, input, output)
+            (Target::Alone(plugin_spec(&mut library, name)?), None, input, output)
         }
         Some("params") => {
             let Some(name) = words.next() else { return Err(usage()) };
@@ -44,14 +40,12 @@ pub(crate) fn plugin(args: &[String]) -> Result<(), String> {
         }
         Some("edit-device") => {
             let (Some(project), Some(device)) = (words.next(), words.next()) else { return Err(usage()) };
-            let env = std::sync::Arc::new(suhina_session::PluginEnv::from_library(&mut library));
-            let found = project_device(&env, project, device)?;
+            let (found, env) = open_device(&mut library, project, device)?;
             return edit_device(found, env, words);
         }
         Some("params-device") => {
             let (Some(project), Some(device)) = (words.next(), words.next()) else { return Err(usage()) };
-            let env = std::sync::Arc::new(suhina_session::PluginEnv::from_library(&mut library));
-            let found = project_device(&env, project, device)?;
+            let (found, env) = open_device(&mut library, project, device)?;
             return print_device_params(found, env);
         }
         Some("run-device") => {
@@ -60,12 +54,8 @@ pub(crate) fn plugin(args: &[String]) -> Result<(), String> {
             else {
                 return Err(usage());
             };
-            let env = std::sync::Arc::new(suhina_session::PluginEnv::from_library(&mut library));
-            let found = project_device(&env, project, device)?;
-            device_env = Some(env);
-            let spec = found.spec.clone();
-            device_source = Some(found);
-            (spec, None, input, output)
+            let (found, env) = open_device(&mut library, project, device)?;
+            (Target::Device(Box::new(found), env), None, input, output)
         }
         _ => return Err(usage()),
     };
@@ -117,19 +107,10 @@ pub(crate) fn plugin(args: &[String]) -> Result<(), String> {
         })
         .collect();
     let tail_frames = (tail * f64::from(audio.sample_rate)) as usize;
-    let launch = suhina_plugins::Launch {
-        host: library.host().to_path_buf(),
-        plugin: spec,
-        channels: 2,
-        max_frames: suhina_plugins::offline::BLOCK_FRAMES,
-        sample_rate: f64::from(audio.sample_rate),
-        timeout: std::time::Duration::from_secs(30),
-        group: None,
-        ara: None,
-    };
     // An instrument's notes: its track's arrangement, from the bar asked for or the first clip.
-    let events = match &device_source {
-        Some(ProjectDevice { session, channel, .. }) => {
+    let events = match &target {
+        Target::Device(device, _) => {
+            let (session, channel) = (&device.session, &device.channel);
             let project = session.project();
             let meter = project.transport.meter();
             let first_clip = || {
@@ -163,13 +144,27 @@ pub(crate) fn plugin(args: &[String]) -> Result<(), String> {
             }
             events
         }
-        None => Vec::new(),
+        Target::Alone(_) => Vec::new(),
     };
     let started = std::time::Instant::now();
-    let rendered = match (&device_source, &device_env) {
-        (Some(found), Some(env)) => render_device(found, env, audio.sample_rate, state, &stereo, &events, tail_frames)?,
-        _ => suhina_plugins::offline::render_with_events(launch, state, &stereo, &events, tail_frames)
-            .map_err(|e| e.to_string())?,
+    let rendered = match target {
+        Target::Device(device, env) => {
+            render_device(&device, &env, audio.sample_rate, state, &stereo, &events, tail_frames)?
+        }
+        Target::Alone(spec) => {
+            let launch = suhina_plugins::Launch {
+                host: library.host().to_path_buf(),
+                plugin: spec,
+                channels: 2,
+                max_frames: suhina_plugins::offline::BLOCK_FRAMES,
+                sample_rate: f64::from(audio.sample_rate),
+                timeout: std::time::Duration::from_secs(30),
+                group: None,
+                ara: None,
+            };
+            suhina_plugins::offline::render_with_events(launch, state, &stereo, &events, tail_frames)
+                .map_err(|e| e.to_string())?
+        }
     };
     if let Some(why) = &rendered.state_refused {
         eprintln!("warning: the plug-in did not take the saved settings ({why}); it ran with its defaults");
@@ -194,6 +189,13 @@ pub(crate) fn plugin(args: &[String]) -> Result<(), String> {
         started.elapsed().as_secs_f64()
     );
     Ok(())
+}
+
+/// What `plugin run` and `run-device` run audio through: a plug-in on its own, by how the host
+/// is asked to load it, or a project's plug-in device with the catalog it was found in.
+enum Target {
+    Alone(String),
+    Device(Box<ProjectDevice>, std::sync::Arc<suhina_session::PluginEnv>),
 }
 
 pub(crate) fn plugins(args: &[String]) -> Result<(), String> {
@@ -264,25 +266,38 @@ pub(crate) struct ProjectDevice {
     pub(crate) session: suhina_session::Session,
     /// The device's channel, for its track's notes.
     pub(crate) channel: ChannelId,
-    /// How the plug-in-device commands name it: its track (or main) and its place on it.
-    pub(crate) params: serde_json::Value,
+    /// How the plug-in-device commands name it: its track (or main) and its place on it; `None`
+    /// on a channel no track plays through, which those commands cannot name.
+    pub(crate) params: Option<serde_json::Value>,
     /// Its plug-in device key, which the session's plug-in host runs it by.
     pub(crate) key: u64,
-    /// How the host is asked to load the installed plug-in found for it.
-    pub(crate) spec: String,
 }
 
-/// A project's plug-in device by name, among its channels' devices: the project opened as the
-/// app opens it (its audio decoded, for a plug-in that edits clips), and the installed plug-in
-/// found for the device in `env`'s catalog (plug-ins switched off in Settings are not in it).
+/// [`project_device`] with the catalog of the installed plug-ins that are switched on.
+fn open_device(
+    library: &mut suhina_plugins::library::Library,
+    project: &str,
+    device: &str,
+) -> Result<(ProjectDevice, std::sync::Arc<suhina_session::PluginEnv>), String> {
+    let env = std::sync::Arc::new(suhina_session::PluginEnv::from_library(library));
+    Ok((project_device(&env, project, device)?, env))
+}
+
+/// A project's plug-in device by name, among its channels' devices, and the installed plug-in
+/// found for it in `env`'s catalog (plug-ins switched off in Settings are not in it). The
+/// project is opened as `render` and the app open it, trusting what the person's library
+/// trusts; its audio is decoded only for a plug-in that edits clips (ARA), the one kind that
+/// hears it.
 pub(crate) fn project_device(
     env: &suhina_session::PluginEnv,
     project: &str,
     device: &str,
 ) -> Result<ProjectDevice, String> {
-    let options = suhina_session::OpenOptions { audio: true };
-    let (session, warnings) =
-        suhina_session::Projects::new().open_path(Path::new(project), options).map_err(|e| e.message().to_owned())?;
+    let mut projects = suhina_session::Projects::new();
+    projects.set_file_library(suhina_library::Library::new(suhina_plugins::library::settings_folder()));
+    let options = suhina_session::OpenOptions { audio: false };
+    let (mut session, warnings) =
+        projects.open_path(Path::new(project), options).map_err(|e| e.message().to_owned())?;
     for warning in warnings {
         eprintln!("warning: {warning}");
     }
@@ -305,14 +320,17 @@ pub(crate) fn project_device(
         found.how.name(),
         if found.how.keeps_state() { "" } else { "; it may not read the saved settings" }
     );
-    let spec = found.plugin.spec();
+    if found.plugin.ara {
+        for warning in projects.load_audio(&mut session) {
+            eprintln!("warning: {warning}");
+        }
+    }
     let placed = suhina_engine::plugin_devices(session.project())
         .into_iter()
         .find(|d| d.channel == channel_id && d.path == [index])
         .ok_or_else(|| format!("{device:?} is not a plug-in device"))?;
-    let track = placed.track.ok_or_else(|| format!("{device:?} is on {channel}, which no track plays through"))?;
-    let params = serde_json::json!({ "track": track.0, "device": index });
-    Ok(ProjectDevice { session, channel: channel_id, params, key: placed.key, spec })
+    let params = placed.track.map(|track| serde_json::json!({ "track": track.0, "device": index }));
+    Ok(ProjectDevice { session, channel: channel_id, params, key: placed.key })
 }
 
 /// The sample rate the session's plug-in host runs a device at for `params-device` and
@@ -334,10 +352,17 @@ impl Hosted {
     /// Starts the device's plug-in, and only it, on the session's plug-in host and waits until
     /// it runs. Fails as the app reports it: not installed, could not start, crashed.
     fn start(mut device: ProjectDevice, env: std::sync::Arc<suhina_session::PluginEnv>) -> Result<Self, String> {
+        if device.params.is_none() {
+            return Err("the device is on a channel no track plays through; the device commands cannot name it".into());
+        }
         let session = &mut device.session;
-        session.rack_mut().set_env(env);
-        session.rack_mut().set_owner(None);
-        session.rack_mut().only(Some(device.key));
+        let rack = session.rack_mut();
+        rack.set_env(env);
+        rack.set_owner(None);
+        rack.only(Some(device.key));
+        // No backups to keep: a backup's state read lends the plug-in out, and a command at that
+        // moment would find it busy.
+        rack.set_save_every(std::time::Duration::MAX);
         let mut renderer = suhina_engine::Renderer::build(
             session.project(),
             suhina_engine::RenderInputs::from_audio(session.audio(), suhina_session::devices())
@@ -350,44 +375,73 @@ impl Hosted {
         let mut hosted =
             Self { device, renderer, block: vec![0.0; 2 * suhina_plugins::offline::BLOCK_FRAMES as usize] };
         let deadline = std::time::Instant::now() + suhina_session::START_TIMEOUT;
-        loop {
-            let status = hosted.poll().map(|r| r.status);
-            match status {
-                Some(suhina_session::PluginStatus::Loading) if std::time::Instant::now() < deadline => {
-                    std::thread::sleep(std::time::Duration::from_millis(5));
-                }
-                Some(suhina_session::PluginStatus::Loading) => return Err("the plug-in did not start in time".into()),
-                Some(suhina_session::PluginStatus::Running) => break,
-                Some(suhina_session::PluginStatus::Missing) | None => {
-                    return Err(
-                        "no installed plug-in stands for the device; `suhina-cli plugins check` says why".into()
-                    );
-                }
-                Some(suhina_session::PluginStatus::Crashed(why) | suhina_session::PluginStatus::Failed(why)) => {
-                    return Err(format!("the plug-in could not start: {why}"));
-                }
+        // Running in two looks in a row: one found to edit clips as it loads is stopped in the
+        // look after it first runs, to load again with its track's clips.
+        let mut running = 0;
+        while running < 2 {
+            match hosted.poll() {
+                Look::Running => running += 1,
+                Look::Starting => running = 0,
+                Look::Stopped(why) => return Err(why),
             }
-        }
-        if let Some(why) = hosted.poll().and_then(|r| r.state_refused) {
-            eprintln!("warning: the plug-in did not take the saved settings ({why}); it runs with its defaults");
+            if running < 2 {
+                if std::time::Instant::now() >= deadline {
+                    return Err("the plug-in did not start in time".into());
+                }
+                std::thread::sleep(START_POLL);
+            }
         }
         Ok(hosted)
     }
 
     /// Takes in what the plug-in host did since (a plug-in that started, crashed or closed its
-    /// editor), runs one engine block, and says where the device's plug-in stands.
-    fn poll(&mut self) -> Option<suhina_session::PluginReport> {
-        // The rack's notices repeat what the report says (a refused state, a crash).
-        let _notices = self.device.session.sync_plugins();
+    /// editor), runs one engine block, and says where the device's plug-in stands. Prints what
+    /// the session would tell the person (a refused state, an editor that did not close).
+    fn poll(&mut self) -> Look {
+        for notice in self.device.session.sync_plugins() {
+            eprintln!("warning: {notice}");
+        }
         self.renderer.process(&mut self.block);
-        self.device.session.rack_mut().report(self.device.key)
+        let key = self.device.key;
+        let rack = self.device.session.rack_mut();
+        match rack.report(key).map(|r| r.status) {
+            Some(suhina_session::PluginStatus::Running) => Look::Running,
+            Some(suhina_session::PluginStatus::Loading) => Look::Starting,
+            None if rack.reloading(key) => Look::Starting,
+            Some(suhina_session::PluginStatus::Missing) | None => {
+                Look::Stopped("no installed plug-in stands for the device; `suhina-cli plugins check` says why".into())
+            }
+            Some(suhina_session::PluginStatus::Crashed(why)) => Look::Stopped(format!("the plug-in crashed: {why}")),
+            Some(suhina_session::PluginStatus::Failed(why)) => {
+                Look::Stopped(format!("the plug-in could not start: {why}"))
+            }
+        }
+    }
+
+    /// Whether the device's plug-in has its editor open now.
+    fn editor_open(&mut self) -> bool {
+        let key = self.device.key;
+        self.device.session.rack_mut().report(key).is_some_and(|r| r.editor_open)
     }
 
     /// Runs the plug-in-device command `id` on the device.
     fn execute(&mut self, id: &str) -> Result<serde_json::Value, String> {
-        self.device.session.execute(id, &self.device.params).map_err(|e| e.message().to_owned())
+        let params = self.device.params.clone().unwrap_or_default();
+        self.device.session.execute(id, &params).map_err(|e| e.message().to_owned())
     }
 }
+
+/// Where a device's plug-in stands, as [`Hosted::poll`] finds it.
+enum Look {
+    Running,
+    /// Starting, or stopped to load again with its track's clips.
+    Starting,
+    /// It will not run: why.
+    Stopped(String),
+}
+
+/// How often [`Hosted::start`] looks whether the plug-in runs yet.
+const START_POLL: std::time::Duration = std::time::Duration::from_millis(20);
 
 /// `plugin params-device`: the device's parameters as the session's `device.pluginParams` lists
 /// them, from the plug-in running on the session's host with the state the project saved.
@@ -418,18 +472,23 @@ fn edit_device<'a>(
         _ => eprintln!("editor opening; close its window to finish"),
     }
     let started = std::time::Instant::now();
-    let mut seen_open = false;
+    // An editor that answered with its size is open, even if it closes before the next look.
+    let mut seen_open = opened.get("width").is_some();
     let mut close_asked = false;
     loop {
-        let report = hosted.poll();
-        let status = report.as_ref().map(|r| r.status.clone());
-        if !matches!(status, Some(suhina_session::PluginStatus::Running)) {
-            return Err("the plug-in stopped while its editor was open".into());
+        match hosted.poll() {
+            Look::Running => {}
+            // Loading again with its track's clips; its editor opens again when it runs.
+            Look::Starting => {
+                std::thread::sleep(EDIT_POLL);
+                continue;
+            }
+            Look::Stopped(why) => return Err(format!("the plug-in stopped while its editor was open ({why})")),
         }
-        let open = report.is_some_and(|r| r.editor_open);
+        let open = hosted.editor_open();
         seen_open |= open;
-        // Closed by the person, or by `--close-after`; an editor still opening is waited for.
-        if !open && (seen_open || close_asked) {
+        // Closed by the person, or by `--close-after`.
+        if !open && seen_open {
             break;
         }
         if !seen_open && started.elapsed() >= suhina_session::START_TIMEOUT {
@@ -443,8 +502,8 @@ fn edit_device<'a>(
     }
     if let Some(file) = save {
         // Once more, for a crash that came as the window closed.
-        if !matches!(hosted.poll().map(|r| r.status), Some(suhina_session::PluginStatus::Running)) {
-            return Err("the plug-in stopped while its editor was open".into());
+        if let Look::Stopped(why) = hosted.poll() {
+            return Err(format!("the plug-in stopped while its editor was open ({why})"));
         }
         let key = hosted.device.key;
         let state = hosted.device.session.rack_mut().state_now(key).map_err(|e| e.message().to_owned())?;
@@ -455,7 +514,8 @@ fn edit_device<'a>(
 
 /// `run-device`: `stereo` and `events` through the device's plug-in, started as the session
 /// starts it for a project's offline render (the same installed plug-in, saved state, process
-/// group and clips), or with `state` in place of the saved one.
+/// group and clips), or with `state` in place of the saved one. Unlike a render it gets no
+/// song position, tempo or transport, and none of the project's automation.
 fn render_device(
     device: &ProjectDevice,
     env: &suhina_session::PluginEnv,
@@ -467,21 +527,13 @@ fn render_device(
 ) -> Result<suhina_plugins::offline::Rendered, String> {
     let project = device.session.project();
     let mut started =
-        suhina_session::start_offline_device(project, device.session.audio(), env, device.key, sample_rate)
+        suhina_session::start_offline_device(project, device.session.audio(), env, device.key, sample_rate, state)
             .map_err(|e| e.to_string())?
             .ok_or("no installed plug-in stands for the device; `suhina-cli plugins check` says why")?;
-    let mut state_refused = started.refused.take();
-    if let Some(state) = state {
-        state_refused = match started.control.load_state(state) {
-            Ok(()) => None,
-            Err(suhina_plugins::PluginError::Host(why)) => Some(why),
-            Err(other) => return Err(other.to_string()),
-        };
-    }
     let rendered =
         suhina_plugins::offline::render_started(&mut started.control, &mut started.audio, stereo, events, tail_frames)
             .map_err(|e| e.to_string())?;
-    Ok(suhina_plugins::offline::Rendered { state_refused, ..rendered })
+    Ok(suhina_plugins::offline::Rendered { state_refused: started.refused, ..rendered })
 }
 
 /// Starts the plug-in `spec` with `state`, opens its editor and waits until its window is

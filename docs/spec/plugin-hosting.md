@@ -581,16 +581,19 @@ device; `device.restart` starts it again (one that could not start at all is sta
 scratch with the project's state).
 
 The CLI works on one device of a project the same way (#1155). `suhina-cli plugin
-params-device` and `edit-device` open the project as the app does and attach an engine with no
-audio output. They run that engine's blocks themselves, a block each time they look at the
+params-device` and `edit-device` open the project as the app does, trusting what the person's
+library trusts; they decode its audio only for a plug-in that edits clips. They attach an engine
+with no audio output. They run that engine's blocks themselves, a block each time they look at the
 plug-in, so a VST3 plug-in still gets the parameter changes that travel with blocks. They limit
 the rack to the one device (`Rack::only`), so the project's other plug-ins do not start. Then
 they run `device.pluginParams`, `device.openEditor` and `device.closeEditor`, as an agent
-would. `--save` asks the plug-in for its state right then (`Rack::state_now`) and fails if it
-does not answer; it never falls back to a state read earlier. `plugin run-device` starts the
-device as an export starts it (`start_offline_device`: the same installed plug-in, saved
-state, process group and clips). It then runs the input and the track's notes through it in
-blocks (`offline::render_started`), without the project's automation.
+would. They keep no backups of the plug-in's state, so a backup read never finds it busy.
+`--save` asks the plug-in for its state right then (`Rack::state_now`) and fails if it does not
+answer; it never falls back to a state read earlier. `plugin run-device` starts the device as an
+export starts it (`start_offline_device`: the same installed plug-in, saved state, process group
+and clips), with a `--state` file in place of the saved state. It then runs the input and the
+track's notes through it in blocks (`offline::render_started`). Unlike an export, the plug-in
+gets no song position, tempo or transport, and none of the project's automation.
 
 ## Latency
 

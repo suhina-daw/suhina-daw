@@ -1960,6 +1960,13 @@ impl Rack {
         self.only = key;
     }
 
+    /// Whether the plug-in device `key` was stopped to be loaded again with its track's clips
+    /// (a plug-in found to edit clips as it loaded, ADR 0033): it starts again by itself, so a
+    /// caller waiting for it to run keeps waiting.
+    pub fn reloading(&self, key: u64) -> bool {
+        self.rebinding.contains(&key)
+    }
+
     /// The state of the plug-in device `key` as its plug-in gives it now, waiting for its
     /// answer. Unlike the states read for saving a project, never one read earlier: an error
     /// when the plug-in is not running or does not answer.

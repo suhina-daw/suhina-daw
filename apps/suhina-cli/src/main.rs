@@ -79,9 +79,10 @@ commands:
             finds (one switched off in Settings counts as not installed), the settings the
             project saved, its process group and clips; an instrument plays its track's
             arrangement notes from --from (a bar, default the first clip) for --seconds
-            (default 16), and `-` as input means silence; --state gives the plug-in a saved
-            state from a file first (its own, a VST2 .fxb, or a VST2 .fxp, whose chunk only a
-            VST2 plug-in reads: a VST3 one warns and runs with its defaults);
+            (default 16), and `-` as input means silence; it gets no song position, tempo or
+            automation; --state gives the plug-in a saved state from a file in place of the
+            project's (its own, a VST2 .fxb, or a VST2 .fxp, whose chunk only a VST2 plug-in
+            reads: a VST3 one warns and runs with its defaults);
             plugin params lists a plug-in's parameters with their values; plugin edit opens a
             plug-in's editor and waits until its window is closed, then --save writes the state
             it has to a file; params-device and edit-device do the same with a project's
