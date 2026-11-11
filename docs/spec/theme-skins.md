@@ -489,7 +489,8 @@ rectangular: a rounded region does not round its children's corners (pad the reg
 children their own `border-radius`). It clips painting only: a child cut off still takes the
 pointer where it is, so a view keeps its children inside its content box. Menus, popups,
 tooltips and dragged items are drawn above the window's views, as CSS's top layer, and no region
-clips them. The outer shadows and the outline of an element pass the painter's own clip (a
+clips them; egui lays a menu's and a popup's contents out in its own margins, so their `padding`
+is not used yet. The outer shadows and the outline of an element pass the painter's own clip (a
 toolbar section's edge) as far as they reach and up to the nearest element around them that hides
 its overflow, so a toolbar control's glow passes its section's edge and stops at the toolbar's;
 only on a side where the element is whole inside that clip, though: a side that cuts the element

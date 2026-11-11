@@ -593,7 +593,8 @@ Ids:
 A view's or bar's background is the surface behind its controls: `toolbar` or `arrangement`
 with a `background-color` does not repaint the buttons on it. A control's own surface takes
 `background-color`, `background-image`, `border-radius`, `border-width` with `border-color`
-(no border is drawn without a width), `box-shadow` and `opacity`; `transparent` paints nothing.
+(no border is drawn without a width; `border-width: 0 0 1px` or `border-bottom-width` and the
+other sides draw some sides only), `box-shadow` and `opacity`; `transparent` paints nothing.
 A button shaped this way is not covered by the artwork Suhina ships, only by your own
 `button` artwork. For example, a toolbar as one surface with recessed displays:
 
@@ -780,34 +781,43 @@ text-input { background-color: #15171A; }
 ### How an element is painted: padding, overflow and outline
 
 Every element with a box paints in one order, as CSS does: its outer `box-shadow`, its
-`background-color`, its `background-image` gradients (or its artwork), then
+`background-color`, its `background-image` gradients (or its artwork), its inset shadows and
+its `border`, then its contents, and last its `outline` (`outline: 2px solid #FFFFFF;
+outline-offset: 1px;`, or `outline-width`, `outline-style`, `outline-color` and
+`outline-offset`), outside its border, over its contents. A row or highlight that reaches a
+panel's edge is drawn over the panel's border and inset shadows, as in a browser: to keep an
+edge in sight, pad the panel (Suhina Meadow pads its panels by 1 px on the sides it lights).
 
-- for a **control** (a button, a field, a knob), its `border` and inset shadows, then its
-  contents;
-- for a **region or container** (a panel, a view, a track header, a device), its contents, then
-  its `border` and inset shadows, so a row inside a panel never covers the panel's border;
+An element's contents go in its **content box**: its box less its border and its `padding`
+(`padding: 4px 8px;` or `padding-top` and the others). A size Suhina works out from what an
+element holds grows by its border and padding, as a CSS box with `height: auto` does: each
+bar's height, each dialog's size, a device panel's size and the height the detail area opens at
+for a row of devices or the piano roll. A size you drag (the detail area, the browser) is the
+whole box, and so is a `width` or `height` your sheet gives. Padding larger than its box leaves
+no room for the contents.
 
-and last its `outline` (`outline: 2px solid #FFFFFF; outline-offset: 1px;`, or `outline-width`,
-`outline-style`, `outline-color` and `outline-offset`), outside its border, over everything.
-
-`padding` (`padding: 4px 8px;` or `padding-top` and the others) keeps an element's contents
-that far inside its box.
-
-`overflow: hidden` (or `clip`) keeps what an element's children paint inside its box, their
-outer shadows and outlines included; `overflow: visible`, the default for every element but a
-region, lets them pass. Regions (the bars, the panels, the views, dialogs) are `hidden`. A
-toolbar control's glow therefore passes the edge of its section (`toolbar-module`) and stops at
-the toolbar's. A list scrolled so that a control is partly out of view cuts its glow and outline
-at the list's edge too: they never cover what is beyond the scrolled list.
+`overflow: hidden` (or `clip`) cuts everything an element's children paint at its padding box
+(its box less its border), their outer shadows and outlines included; `overflow: visible`, the
+default for every element but a region, lets them pass. Regions (the bars, the panels, the
+views, dialogs) are `hidden`. The cut is square: a panel with a `border-radius` does not round
+its children's corners, so pad it and round the children too. It cuts painting only: a control
+cut off still takes the pointer. Menus, tooltips and dragged items are drawn above the views,
+and no region cuts them; a menu's or popup's own `padding` is not used yet. A toolbar control's
+glow passes the edge of its section (`toolbar-module`) and stops at the toolbar's. A list
+scrolled so that a control is partly out of view cuts its glow and outline at the list's edge
+too: they never cover what is beyond the scrolled list.
 
 ### Bars and lines
 
-The line under each bar is that bar's `border-color` (`menu-bar`, `application-bar`,
-`toolbar`), and the line above the view `#workspace`'s, so a theme can join the bars into one
-surface without losing the lines elsewhere. `--border` is every other line: rulers, the
-browser's edges and the piano roll's keys and rows. A bar with `border-width: 0` (or a
-transparent `border-color`) fills its line with its own background, so no gap shows between
-bars. A gradient over the whole stack of bars is not possible yet: give each bar its share.
+A bar's border is a box round it, as any element's is. The line under each bar over the views
+(`application-bar`, `menu-bar`, `project-tabs`, `toolbar`) is its bottom border, and the line
+over `status-bar` its top border: 1 px each from Suhina's own sheet, in `--border` unless you
+give the bar a `border-color`. `border-width: 0` takes a bar's line away, and the bar is that
+much shorter, so no gap shows between bars; `border-width: 0 0 2px` makes it thicker. The
+lines above and under the view are `#workspace`'s `border-color`, so a theme can join the bars
+into one surface without losing the lines elsewhere. `--border` is every other line: rulers,
+the browser's edges and the piano roll's keys and rows. A gradient over the whole stack of bars
+is not possible yet: give each bar its share.
 
 `arrangement { header-tint: 0; }` (0 to 100) sets how strongly the track's colour
 tints its Arrangement header, over the user's header colour strength: 0 leaves the header
