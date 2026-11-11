@@ -594,6 +594,22 @@ fn parameters_are_listed_set_and_kept_over_a_restart() {
     assert!(plain.params().unwrap().is_empty());
 }
 
+/// A plug-in names any value of a parameter in its own words, for automation lanes (#1205): the
+/// CLAP test gain as a percentage; the VST3 test plug-in gives no texts and an unknown parameter
+/// none, one empty text a value; the plug-in's value is left as it was.
+#[test]
+fn a_plug_in_names_values_of_its_parameters() {
+    let (mut clap, _audio) = start("test:clap");
+    assert_eq!(clap.param_texts_within(0, &[0.0, 0.25, 1.0], PATIENT).unwrap(), ["0 %", "25 %", "100 %"]);
+    assert_eq!(clap.param_texts_within(99, &[0.5], PATIENT).unwrap(), [""]);
+    assert!(clap.param_texts_within(0, &[], PATIENT).unwrap().is_empty());
+    assert_eq!(clap.params().unwrap()[0].value, 0.5, "asking sets nothing");
+    let (mut vst3, _audio) = start("test:vst3");
+    assert_eq!(vst3.param_texts_within(0, &[0.25, 0.5], PATIENT).unwrap(), ["", ""]);
+    let (mut plain, _audio) = start("test:gain");
+    assert_eq!(plain.param_texts_within(0, &[0.5], PATIENT).unwrap(), [""]);
+}
+
 #[test]
 fn parameters_listed_within_a_time_wait_for_no_longer() {
     let (mut plugin, _audio) = start("test:clap");

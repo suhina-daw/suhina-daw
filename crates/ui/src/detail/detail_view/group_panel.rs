@@ -68,7 +68,7 @@ pub(super) fn value_row(
     let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_text("Drag sideways; double-click resets");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("{label} {text}")));
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.fill_background(rect, 0.0, fill);
+    painter.rect_filled(rect, 0.0, fill);
     let inner = rect.shrink2(Vec2::new(PAD / 2.0, 0.0));
     if !label.is_empty() {
         widgets::text_in(
@@ -170,12 +170,12 @@ pub(super) fn group_panel(
     let clicked = panel.clicked();
     // The device inside a group gets the same menu as one on the track itself, the preset
     // name's field included (`device.savePreset`).
-    egui::Popup::context_menu(&panel).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+    panel.context_menu(|ui| {
         menus::device_menu(ui, track, &device.at, Some(group.branches.len()), device.is_builtin, &device.name, actions)
     });
-    painter.fill_background(rect, 0.0, theme::panel_background());
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    painter.fill_background(header, 0.0, theme::control_background());
+    painter.rect_filled(header, 0.0, theme::control_background());
     let switch = Rect::from_min_size(
         Pos2::new(header.left() + PAD, header.center().y - ON_SWITCH / 2.0),
         Vec2::splat(ON_SWITCH),
@@ -295,9 +295,13 @@ pub(super) fn group_panel(
         let fill = if lit {
             theme::control_active()
         } else {
-            motion::mix(theme::window_background(), theme::control_hover(), widgets::hover(ui, &pick))
+            motion::mix(
+                crate::kit::style_class::surface_or(theme::window_background()),
+                theme::control_hover(),
+                widgets::hover(ui, &pick),
+            )
         };
-        painter.fill_background(name, 0.0, fill);
+        painter.rect_filled(name, 0.0, fill);
         let color = if branch.mute { theme::text_hint() } else { theme::text_secondary() };
         widgets::text_in(
             painter,
@@ -344,7 +348,7 @@ pub(super) fn group_panel(
             if branch.mute { format!("Unmute branch {}", branch.name) } else { format!("Mute branch {}", branch.name) },
         );
         let (fill, text) = widgets::toggle_colors(ui, &response, branch.mute);
-        painter.fill_background(mute, 0.0, fill);
+        painter.rect_filled(mute, 0.0, fill);
         widgets::text_in(painter, mute, Align2::CENTER_CENTER, "M", theme::ui_font(theme::TEXT_SMALL), text);
         if response.clicked() {
             actions.push(Action::new(
@@ -364,7 +368,7 @@ pub(super) fn group_panel(
         );
         let lit = motion::toward(ui.ctx(), response.id.with("on"), branch.solo, motion::VALUE);
         let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.fill_background(solo, 0.0, motion::mix(off, theme::accent(), lit));
+        painter.rect_filled(solo, 0.0, motion::mix(off, theme::accent(), lit));
         let text = motion::mix(theme::text_secondary(), theme::text_inverse(), lit);
         widgets::text_in(painter, solo, Align2::CENTER_CENTER, "S", theme::ui_font(theme::TEXT_SMALL), text);
         if response.clicked() {
@@ -381,8 +385,12 @@ pub(super) fn group_panel(
         Id::unique(("branch-add", track.0, &device.at)),
         format!("Add a branch to {}", device.name),
     );
-    let fill = motion::mix(theme::window_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.fill_background(add, 0.0, fill);
+    let fill = motion::mix(
+        crate::kit::style_class::surface_or(theme::window_background()),
+        theme::control_hover(),
+        widgets::hover(ui, &response),
+    );
+    painter.rect_filled(add, 0.0, fill);
     widgets::text_in(
         painter,
         add,

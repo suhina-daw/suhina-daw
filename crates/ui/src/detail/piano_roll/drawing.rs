@@ -120,7 +120,8 @@ pub(super) fn draw_playhead(ui: &Ui, layout: &Layout, beat: f64) {
 }
 
 /// The note a draw drag from `from` to `now` makes: it starts where the press was, and its end
-/// follows the pointer on the grid (`free`: as it is), at least one step long.
+/// follows the pointer on the grid (`free`: as it is), at least one step long. A drag back to or
+/// before the start keeps it one step long, never the last note's length, which a click draws.
 pub(super) fn drawn_note(
     state: &PianoRollState,
     layout: &Layout,
@@ -132,11 +133,37 @@ pub(super) fn drawn_note(
 ) -> Option<Note> {
     let mut note = state.new_note(layout, clip, grid, from, free)?;
     let end = grid.place(layout.beat_at(now.x), free, false);
-    let least = if grid.snaps && !free { grid.step.min(note.duration) } else { MIN_LENGTH };
-    if end - note.time >= least {
-        note.duration = end - note.time;
-    }
+    let least = if grid.snaps && !free { grid.step } else { MIN_LENGTH };
+    note.duration = (end - note.time).max(least);
     Some(note)
+}
+
+/// What is left of `note` once the notes `covers` (each a key, a start and an end) make room as
+/// `note.makeRoom` does: nothing when they cover it from its start to its end, the part before the
+/// first one that starts inside it, or the part after those that cover its start (nothing with
+/// `whole`, Covered notes' Delete them).
+pub(super) fn left_after(note: &Note, covers: &[(u8, f64, f64)], whole: bool) -> Option<Note> {
+    let end = note.time + note.duration;
+    let mut row: Vec<(f64, f64)> = covers.iter().filter(|c| c.0 == note.key).map(|c| (c.1, c.2)).collect();
+    if row.is_empty() {
+        return Some(*note);
+    }
+    row.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut start = note.time;
+    for (from, to) in row {
+        if to <= start + EPSILON {
+            continue;
+        }
+        if from >= end - EPSILON {
+            break;
+        }
+        if start < from - EPSILON {
+            return Some(Note { time: start, duration: from - start, ..*note });
+        }
+        start = start.max(to);
+    }
+    let covered_start = start > note.time + EPSILON;
+    (start < end - EPSILON && !(whole && covered_start)).then_some(Note { time: start, duration: end - start, ..*note })
 }
 
 /// A paint stroke at `now`: the slot of the stroke's note length under the pointer gets a note
@@ -248,7 +275,11 @@ pub(super) fn draw(
         )
     };
     // Rows: black keys darker, a stronger line under each C.
-    painter.fill_background(layout.grid, 0.0, grid_style.background.unwrap_or_else(theme::window_background));
+    painter.rect_filled(
+        layout.grid,
+        0.0,
+        grid_style.background.unwrap_or_else(|| crate::kit::style_class::surface_or(theme::window_background())),
+    );
     el.paint_background(&painter, layout.grid, 0.0);
     for key in (first_key..=last_key).filter(|k| layout.rows.shows(*k)) {
         let top = layout.y_of(key);
@@ -256,13 +287,15 @@ pub(super) fn draw(
             Pos2::new(layout.grid.left(), top),
             Pos2::new(layout.grid.right(), top + layout.key_height),
         );
-        // With a scale, its keys are lighter; without one, the white keys are (› Scale and key).
+        // With a scale highlighted, its keys are lighter; without one, the white keys are
+        // (› Scale and key).
         let own = if is_black(key) { black_row_style.background } else { row_style.background };
-        let fill = match (clip.scale, own) {
+        let highlighted = clip.scale.filter(|_| state.highlight_scale);
+        let fill = match (highlighted, own) {
             (None, Some(own)) => own,
-            _ => scale_view::row_fill(clip.scale, key, is_black(key)),
+            _ => scale_view::row_fill(highlighted, key, is_black(key), clip.color),
         };
-        grid_painter.fill_background(row, 0.0, fill);
+        grid_painter.rect_filled(row, 0.0, fill);
         // The row under the pointer, so it can be followed to the strip that names it.
         if state.hover_key() == Some(key) {
             grid_painter.rect_filled(row, 0.0, theme::text_primary().gamma_multiply(0.05));
@@ -275,10 +308,12 @@ pub(super) fn draw(
     let first_beat = layout.beat_at(layout.grid.left()).max(0.0);
     let last_beat = layout.beat_at(layout.grid.right());
     let bar = clip.bar_beats.max(EPSILON);
-    painter.fill_background(
+    painter.rect_filled(
         layout.ruler,
         0.0,
-        part_style("ruler", &[]).background.unwrap_or_else(theme::panel_background),
+        part_style("ruler", &[])
+            .background
+            .unwrap_or_else(|| crate::kit::style_class::surface_or(theme::panel_background())),
     );
     let lane_painter = painter.with_clip_rect(layout.lane);
     for (beat, on_bar) in grid.lines(first_beat, last_beat, MAX_LINES) {
@@ -341,9 +376,9 @@ pub(super) fn draw(
             return *note;
         }
         match preview {
-            Some(Effect::Move(beats, keys)) => Note {
+            Some(Effect::Move(beats, keys, rows)) => Note {
                 time: note.time + beats,
-                key: u8::try_from(i32::from(note.key) + keys).unwrap_or(note.key).min(127),
+                key: super::edits::moved_key(&layout.rows, note.key, keys, rows),
                 ..*note
             },
             Some(Effect::Resize(by)) => Note { duration: (note.duration + by).max(MIN_LENGTH), ..*note },
@@ -375,8 +410,38 @@ pub(super) fn draw(
             }
         }
     }
-    for (i, note) in clip.notes.iter().enumerate() {
+    // With stacked notes off, the notes of a key under selected notes that are to make room for
+    // them (moved, resized or nudged and not let go yet, or being dragged) show what is left of them
+    // once they do, as `note.makeRoom` leaves them: gone where covered whole, cut where covered in
+    // part. Moved off them before being let go, they show whole again (› Resizing).
+    let making_room = state.notes_replace
+        && (state.settle_pending
+            || state.settling.as_ref().is_some_and(|s| s.notes == *state.acting())
+            || matches!(preview, Some(Effect::Move(..) | Effect::Resize(_) | Effect::ResizeStart(_))));
+    let covers: Vec<(u8, f64, f64)> = if making_room {
+        state
+            .selected
+            .iter()
+            .filter_map(|&i| clip.notes.get(i).map(|n| shown(i, n)))
+            .map(|n| (n.key, n.time, n.time + n.duration))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    // The selected notes are drawn last, over the others: a note moved onto another of its key is
+    // seen while it is moved.
+    let order = (0..clip.notes.len()).filter(|i| !state.selected.contains(i)).chain(state.selected.iter().copied());
+    for i in order {
+        let Some(note) = clip.notes.get(i) else { continue };
         let note = shown(i, note);
+        let note = if covers.is_empty() || state.selected.contains(&i) {
+            note
+        } else {
+            match left_after(&note, &covers, state.covered_whole) {
+                Some(left) => left,
+                None => continue,
+            }
+        };
         let rect = layout.note_rect(&note);
         if !rect.intersects(layout.grid) {
             continue;
@@ -387,15 +452,9 @@ pub(super) fn draw(
         // playing (› Muting).
         let muted = note.muted || (state.muting.contains(&i) && state.mute_target);
         let unmuting = state.muting.contains(&i) && !state.mute_target;
-        let alpha = if state.erasing.contains(&i) {
-            0.12
-        } else if muted {
-            0.25
-        } else {
-            0.4 + 0.6 * velocity / 127.0
-        };
-        let alpha = if outside(&note) { alpha * 0.45 } else { alpha };
+        let erasing = state.erasing.contains(&i);
         let selected = state.selected.contains(&i) || selecting.is_some_and(|r| r.intersects(rect));
+        let alpha = note_alpha(velocity, NoteLook { erasing, muted, selected, outside: outside(&note) });
         let style = if selected {
             selected_style
         } else if muted {
@@ -406,8 +465,6 @@ pub(super) fn draw(
         let radius = style.radius.unwrap_or(0.0);
         let own =
             if selected { selected_note_color(clip.color, theme::accent(), theme::text_primary()) } else { clip.color };
-        // Selected, it stays bright enough to tell at any velocity; a muted note stays faded.
-        let alpha = if selected && !muted { alpha.max(0.75) } else { alpha };
         grid_painter.rect_filled(rect, radius, style.background.unwrap_or(own).gamma_multiply(alpha));
         if let Some(border) = style.border {
             grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);
@@ -457,15 +514,20 @@ pub(super) fn draw(
         grid_painter.rect_filled(rect, 0.0, clip.color.gamma_multiply(0.7));
         grid_painter.rect_stroke(rect, 0.0, Stroke::new(1.0, theme::text_primary()), StrokeKind::Inside);
     }
-    // The cut line of a slice drag, and a mark on each note it would split.
-    if let Some(Effect::Slice(at, cut)) = &preview {
-        let x = layout.x_of(*at).round() + 0.5;
-        grid_painter.vline(x, layout.grid.y_range(), Stroke::new(1.0, theme::accent()));
-        for index in cut {
-            if let Some(note) = clip.notes.get(*index) {
-                let row = layout.note_rect(note);
-                grid_painter.hline(row.x_range(), row.top() - 0.5, Stroke::new(1.0, theme::accent()));
+    // The cut line of a slice drag, and a mark where it cuts each note; the right button's slice
+    // is drawn in the recording red and fades the piece of each note it deletes.
+    if let Some(Effect::Slice(cut)) = &preview {
+        let ink = if cut.delete { theme::recording() } else { theme::accent() };
+        grid_painter.line_segment(cut.line, Stroke::new(1.5, ink));
+        for &(index, at) in &cut.cuts {
+            let Some(note) = clip.notes.get(index) else { continue };
+            let rect = layout.note_rect(note);
+            if cut.delete {
+                let (start, end) = edits::SliceCut::removed(note, at);
+                let gone = Rect::from_x_y_ranges(layout.x_of(start)..=layout.x_of(end), rect.y_range());
+                grid_painter.rect_filled(gone.intersect(rect), 0.0, theme::window_background().gamma_multiply(0.75));
             }
+            grid_painter.vline(layout.x_of(at).round() + 0.5, rect.y_range().expand(1.0), Stroke::new(2.0, ink));
         }
     }
     painter.hline(layout.lane.x_range(), layout.lane.top() + 0.5, theme::hairline(theme::border_strong()));
@@ -475,12 +537,12 @@ pub(super) fn draw(
         Pos2::new(layout.strip.left(), layout.ruler.top()),
         Pos2::new(layout.keys.right(), layout.ruler.bottom()),
     );
-    painter.fill_background(corner, 0.0, theme::panel_background());
+    painter.rect_filled(corner, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let lane_keys = Rect::from_min_max(
         Pos2::new(layout.strip.left(), layout.lane.top()),
         Pos2::new(layout.keys.right(), layout.lane.bottom()),
     );
-    painter.fill_background(lane_keys, 0.0, theme::panel_background());
+    painter.rect_filled(lane_keys, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     if lane_keys.height() >= 24.0 {
         let font = theme::mono_font(theme::TEXT_TINY);
         widgets::text_in(
@@ -537,5 +599,46 @@ pub(super) fn for_readers(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &Pi
             let response = ui.interact(stem, Id::unique(("piano-roll-stem", i)), Sense::hover());
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
         }
+    }
+}
+
+/// What a note's look depends on besides its velocity.
+#[derive(Clone, Copy)]
+struct NoteLook {
+    /// An erase stroke has passed over it.
+    erasing: bool,
+    muted: bool,
+    selected: bool,
+    /// Outside the clip's window.
+    outside: bool,
+}
+
+/// How opaque a note is drawn: by its velocity (1 to 127), nearly gone under an erase stroke,
+/// faded while muted, fainter outside the clip's window. Selected, it stays bright enough to tell
+/// at any velocity, unless it is muted or an erase stroke has passed over it.
+fn note_alpha(velocity: f32, look: NoteLook) -> f32 {
+    let alpha = if look.erasing {
+        0.12
+    } else if look.muted {
+        0.25
+    } else {
+        0.4 + 0.6 * velocity / 127.0
+    };
+    let alpha = if look.outside { alpha * 0.45 } else { alpha };
+    if look.selected && !look.muted && !look.erasing { alpha.max(0.75) } else { alpha }
+}
+
+#[cfg(test)]
+mod note_alpha_tests {
+    use super::*;
+
+    #[test]
+    fn an_erase_stroke_dims_a_selected_note_too() {
+        let look = NoteLook { erasing: false, muted: false, selected: true, outside: false };
+        assert!(note_alpha(10.0, look) >= 0.75, "selected stays bright");
+        let erased = note_alpha(127.0, NoteLook { erasing: true, ..look });
+        assert!((erased - 0.12).abs() < 1e-6, "erased, selected or not: {erased}");
+        let plain = NoteLook { selected: false, ..look };
+        assert!((note_alpha(127.0, NoteLook { erasing: true, ..plain }) - erased).abs() < 1e-6);
     }
 }

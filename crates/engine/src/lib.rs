@@ -128,8 +128,8 @@ pub use meters::{Level, MAX_METERED_TRACKS, MAX_READOUT_DEVICES, MeterMonitor, P
 pub use metronome::ClickSound;
 use plugin::{DEADLINE_SHARE, Delay};
 pub use plugin::{
-    Followed, Joint, MAX_JOINED, OFFLINE_TIMEOUT, PluginDevice, PluginProcessor, PluginSlotInfo, Plugins, Sent,
-    SongPosition, plugin_devices, plugin_key,
+    Followed, Joint, MAX_JOINED, OFFLINE_TIMEOUT, PluginDevice, PluginProcessor, PluginSlotInfo, PluginSteps, Plugins,
+    Sent, SongPosition, plugin_devices, plugin_key,
 };
 pub use plugin_params::{MAX_BLOCK_PARAMS, ParamEvent, RAMP_STEP, param_id};
 pub use preview::{PreviewMonitor, PreviewNote, PreviewNotes, preview_notes};
@@ -520,6 +520,7 @@ pub struct Renderer {
     observed_deadlines: (usize, [Option<Instant>; 2]),
     /// What is known about the project's plug-in devices, for the graphs built after edits.
     plugin_info: HashMap<u64, PluginSlotInfo>,
+    plugin_steps: PluginSteps,
     /// The browser's preview voice (ADR 0011).
     preview: preview::Preview,
     /// The cue bus: cued tracks and the preview, for headphones (`cue.rs`).
@@ -745,6 +746,7 @@ impl Renderer {
             #[cfg(test)]
             observed_deadlines: (0, [None; 2]),
             plugin_info: plugins.info,
+            plugin_steps: plugins.steps,
             preview: preview::Preview::new(sample_rate),
             cue: cue::Cue::new(),
             live: live::Live::new(sample_rate),
@@ -786,7 +788,7 @@ impl Renderer {
         for key in processors.keys() {
             info.entry(*key).or_default();
         }
-        Plugins { info, processors, carried: true }
+        Plugins { info, steps: std::mem::take(&mut self.plugin_steps), processors, carried: true }
     }
 
     /// The delay latency compensation adds to everything, in frames: the most any track's
@@ -1187,7 +1189,7 @@ impl Renderer {
         };
         for chain in &mut self.graph.chains {
             chain.transport(&song);
-            chain.automate(at, frames);
+            chain.automate(at, time, frames);
             chain.automate_mix(time, frames, self.transport.running);
         }
         let attack = (ATTACK_SECONDS * f64::from(self.sample_rate)).max(1.0);
@@ -1863,13 +1865,19 @@ fn heard_with_solo(project: &Project, channel: &suhina_model::Channel, chain: &[
 }
 
 /// Adds the notes of one content lane, as placed by `clip`, to `events`. Notes outside the clip's
-/// window are skipped; with a loop range the loop repeats until the clip ends.
+/// window are skipped; with a loop range the loop repeats until the clip ends. With `swing`, from
+/// 0 to 1, each note starts and ends where [`suhina_model::swung`] puts its start and its end in
+/// the content's beats, so every pass of a loop swings the same and notes that touch keep touching
+/// (#1221): a gap before a delayed note would let a mono instrument fall back to a note held under
+/// it.
+#[allow(clippy::too_many_arguments)]
 fn collect_notes(
     clip: &Clip,
     lane: &ContentLane,
     map: &TempoMap,
     (track, gain_left, gain_right, column, bus, meter): (TrackId, f32, f32, u32, u32, u32),
     scale: Option<MusicalScale>,
+    swing: f64,
     events: &mut Vec<ArrangedNote>,
 ) {
     let LaneData::Notes(notes) = &lane.data else { return };
@@ -1889,12 +1897,20 @@ fn collect_notes(
             if !(note.time.is_finite() && note.duration.is_finite()) || note.time < from || note.time >= to {
                 continue;
             }
-            let start = clip.start + at + (note.time - from);
+            let time = suhina_model::swung(note.time, swing);
+            // Swing that would take a note past the end of its loop pass leaves it out, as a
+            // launched clip's loop does: a pass ends where the loop does (a loop ending off an
+            // eighth, a note in its last sixteenth).
+            if time >= to {
+                continue;
+            }
+            let length = (suhina_model::swung(note.time + note.duration.max(0.0), swing) - time).max(0.0);
+            let start = clip.start + at + (time - from);
             let clip_end = clip.start + clip.length;
             if start >= clip_end {
                 continue;
             }
-            let end = (start + note.duration.max(0.0)).min(clip_end);
+            let end = (start + length).min(clip_end);
             events.push(ArrangedNote {
                 start: to_frame(start),
                 end: to_frame(end),

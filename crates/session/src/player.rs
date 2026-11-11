@@ -151,6 +151,12 @@ impl Player {
         self.controller.set_plugin_info(info);
     }
 
+    /// Which parameters of each plug-in device take steps, for the graphs built from now on: their
+    /// lanes hold each value until the next point (#1205).
+    pub fn set_plugin_steps(&mut self, steps: suhina_engine::PluginSteps) {
+        self.controller.set_plugin_steps(steps);
+    }
+
     /// Builds the engine's graphs from now on with `audio` (ADR 0011).
     pub fn set_audio(&mut self, audio: std::sync::Arc<suhina_engine::AudioPool>) {
         self.controller.set_audio(audio);

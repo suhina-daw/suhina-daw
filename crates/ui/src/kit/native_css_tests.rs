@@ -517,7 +517,8 @@ fn retained_scopes_match_siblings_and_keep_named_track_identity() {
                     assert_eq!(theme::text_primary(), Color32::from_rgb(10, 20, 30));
                 }
                 if (pass == 1 || pass == 3) && index == 1 {
-                    assert_eq!(theme::panel_background(), Color32::from_rgb(40, 50, 60));
+                    let own = super::super::style_class::surface_or(Color32::TRANSPARENT);
+                    assert_eq!(own, Color32::from_rgb(40, 50, 60));
                 }
             }
         })
@@ -925,14 +926,16 @@ fn a_transparent_control_background_paints_nothing() {
 
 #[test]
 fn a_view_background_leaves_the_controls_on_it_their_own_fill() {
-    let control = theme::control_background();
+    let (control, window_token) = (theme::control_background(), theme::window_background());
     let mut seen = None;
     painted("arrangement { background-color: #102030; }", |_| {
         let _view = test_el("arrangement").enter();
-        seen = Some((theme::window_background(), theme::control_background()));
+        let own = super::super::style_class::surface_or(egui::Color32::TRANSPARENT);
+        seen = Some((own, theme::window_background(), theme::control_background()));
     });
-    let (window, inside) = seen.unwrap();
-    assert_eq!(window, egui::Color32::from_rgb(0x10, 0x20, 0x30));
+    let (own, window, inside) = seen.unwrap();
+    assert_eq!(own, egui::Color32::from_rgb(0x10, 0x20, 0x30), "what is drawn in the view knows its colour");
+    assert_eq!(window, window_token, "the view's background writes no token (#1233)");
     assert_eq!(inside, control, "the add-track buttons keep the theme's control fill");
 }
 
@@ -984,8 +987,8 @@ fn checked_and_selected_states_reach_the_sheet() {
                     0.0,
                 );
             }
-            let _header = test_el("track-header").id("track-1").attr(crate::kit::element::Selected, on).enter();
-            header = Some(theme::window_background());
+            let el = test_el("track-header").id("track-1").attr(crate::kit::element::Selected, on).enter();
+            header = Some(el.background_or(egui::Color32::TRANSPARENT));
         });
         let orange = rects(&shapes).iter().any(|r| r.rect == field && r.fill == egui::Color32::from_rgb(0xFF, 0x88, 0));
         assert_eq!(orange, on, "the solo button is orange only when on");
@@ -1034,8 +1037,8 @@ fn a_track_gives_its_colour_to_the_sheet_and_each_view_is_known() {
             .id("track-1")
             .variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)))
             .enter();
-        let _name = test_el("track-name").id("track-1").enter();
-        seen = Some((theme::window_background(), super::super::style_class::view()));
+        let name = test_el("track-name").id("track-1").enter();
+        seen = Some((name.background_or(egui::Color32::TRANSPARENT), super::super::style_class::view()));
     });
     let (fill, view) = seen.unwrap();
     assert_eq!(fill, egui::Color32::from_rgb(0xE8, 0x91, 0x3A));
@@ -1311,6 +1314,64 @@ fn the_midi_tools_column_takes_its_width_from_the_sheet() {
     painted("", |_| widths.0 = crate::detail::midi_tools::tools_width());
     painted("midi-tools { width: 220px; }", |_| widths.1 = crate::detail::midi_tools::tools_width());
     assert_eq!(widths, (crate::detail::midi_tools::TOOLS_WIDTH, 220.0));
+}
+
+#[test]
+fn the_midi_tools_part_takes_its_gap_and_button_height_from_the_sheet() {
+    use crate::detail::detail_view::{ToolsSpacing, tools_spacing};
+    let mut plain = None;
+    painted("", |_| plain = Some(tools_spacing()));
+    assert_eq!(plain, Some(ToolsSpacing { gap: 6.0, button_gap: 4.0, field: 18.0, toggle: 20.0, knob: None }));
+    // `button { height }` inside `midi-tools` sets its fields', buttons', switches' and Apply's height,
+    // within 10 to 40 points.
+    let mut tall = None;
+    painted("midi-tools button { height: 26px; }", |_| tall = Some(tools_spacing()));
+    assert_eq!(tall, Some(ToolsSpacing { gap: 6.0, button_gap: 4.0, field: 26.0, toggle: 26.0, knob: None }));
+    let mut huge = None;
+    painted("midi-tools button { height: 90px; }", |_| huge = Some(tools_spacing()));
+    assert_eq!(huge.map(|s| (s.field, s.toggle)), Some((40.0, 40.0)));
+    // The gap is a host rule, read from the theme's sheet as the app reads it: the room between
+    // the part's rows and between the rows of its buttons.
+    let packed = spacing_in_theme("midi-tools { gap: 2px; }");
+    assert_eq!((packed.gap, packed.button_gap), (2.0, 2.0));
+}
+
+/// `tools_spacing` in a frame of the whole theme of `css`: its host rules and its sheet.
+fn spacing_in_theme(css: &str) -> crate::detail::detail_view::ToolsSpacing {
+    let (theme, _) = super::super::theme::from_css(css);
+    skin::configure(&theme.skin);
+    let ctx = egui::Context::default();
+    let input = || egui::RawInput {
+        screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(800.0, 600.0))),
+        ..Default::default()
+    };
+    ctx.run_ui(input(), |ui| begin_frame(ui)).textures_delta.clear();
+    let mut spacing = None;
+    for _ in 0..3 {
+        ctx.run_ui(input(), |ui| {
+            let _frame = frame(ui);
+            let _window = test_el("window").enter();
+            spacing = Some(crate::detail::detail_view::tools_spacing());
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    spacing.expect("three frames ran")
+}
+
+#[test]
+fn the_midi_tools_part_draws_the_quantise_amount_as_a_knob_where_the_theme_says() {
+    assert_eq!(spacing_in_theme("").knob, None);
+    // `slider { appearance: knob }` inside `midi-tools`: a knob 32 points tall, or as tall
+    // as the slider's `height` (16 to 96).
+    assert_eq!(spacing_in_theme("midi-tools slider { appearance: knob; }").knob, Some(32.0));
+    let tall = "midi-tools slider { appearance: knob; height: 48px; }";
+    assert_eq!(spacing_in_theme(tall).knob, Some(48.0));
+    let huge = "midi-tools slider { appearance: knob; height: 200px; }";
+    assert_eq!(spacing_in_theme(huge).knob, Some(96.0));
+    // A field says the amount stays a field.
+    assert_eq!(spacing_in_theme("midi-tools slider { appearance: field; }").knob, None);
 }
 
 #[test]

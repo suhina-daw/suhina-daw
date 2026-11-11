@@ -473,7 +473,7 @@ pub(super) fn knob(
     let painter = ui.painter();
     if style.shape == ControlShape::Square {
         let square = Rect::from_center_size(center, Vec2::splat(radius * 2.0));
-        painter.fill_background(square, 0.0, background);
+        painter.rect_filled(square, 0.0, background);
         painter.rect_stroke(square, 0.0, border, egui::StrokeKind::Inside);
     } else {
         painter.circle_filled(center, radius, background);
@@ -488,7 +488,9 @@ pub(super) fn knob(
 
 /// The Clip / Devices switch in `rect`: two equal parts 1 px apart, the one on light
 /// (`docs/design/components.md` › Clip properties). Returns the part clicked, when it was off.
-pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Showing) -> Option<Showing> {
+/// With `both` the two are on (the stacked devices beside the editor), and Devices clicked again
+/// closes them, as Clip does.
+pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Showing, both: bool) -> Option<Showing> {
     let part = (rect.width() - 1.0) / 2.0;
     let mut picked = None;
     for (index, (text, value)) in [("Clip", Showing::Clip), ("Devices", Showing::Devices)].into_iter().enumerate() {
@@ -498,17 +500,17 @@ pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Show
         );
         let response =
             widgets::button_area(ui, cell, egui::Id::unique(("detail-switch", index)), format!("Show {text}"));
+        let on = both || value == showing;
         if response.clicked() && value != showing {
             picked = Some(value);
+        } else if response.clicked() && both {
+            picked = Some(Showing::Clip);
         }
         // `editor-tab` (`[checked]` for the one shown), `#tab-clip` and `#tab-devices`.
         let tab = format!("tab-{}", text.to_ascii_lowercase());
-        let el = crate::kit::element::EDITOR_TAB
-            .id(&tab)
-            .response(&response)
-            .attr(crate::kit::element::Checked, value == showing)
-            .enter();
-        let on = motion::toward(ui.ctx(), response.id.with("on"), value == showing, motion::VALUE);
+        let el =
+            crate::kit::element::EDITOR_TAB.id(&tab).response(&response).attr(crate::kit::element::Checked, on).enter();
+        let on = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         let fill = motion::mix(idle, theme::control_selected(), on);
         el.paint_with(painter, cell, crate::kit::element::Native { radius: 0.0, fill });

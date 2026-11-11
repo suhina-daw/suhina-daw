@@ -1124,7 +1124,11 @@ pub(super) fn drop_overlay(ui: &Ui, area: Rect) {
         .ctx()
         .layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("drop-overlay")))
         .with_clip_rect(area);
-    painter.rect_filled(area, 0.0, theme::window_background().gamma_multiply(DROP_DIM * shown));
+    painter.rect_filled(
+        area,
+        0.0,
+        crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(DROP_DIM * shown),
+    );
     let text = theme::text_primary().gamma_multiply(shown);
     // A file whose name is not known yet counts as both; a project is the likelier.
     let what = if themes && !project { "Drop to bring in the theme" } else { "Drop to open" };
@@ -1153,7 +1157,7 @@ fn drag_pill(ui: &Ui, pointer: Pos2, text: &str, accent: bool) {
     let font = theme::ui_font(theme::TEXT_SMALL);
     let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);
     let rect = Rect::from_min_size(pointer + Vec2::new(14.0, 10.0), galley.size() + Vec2::new(PAD * 2.0, 6.0));
-    painter.fill_background(rect, 0.0, theme::control_active());
+    painter.rect_filled(rect, 0.0, theme::control_active());
     painter.rect_stroke(
         rect,
         0.0,

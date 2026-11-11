@@ -11,7 +11,7 @@ primary platform; Windows and macOS are supported.
 | M3 | **Commands and agents:** command registry with undo; CLI and MCP server on the same commands | in progress: commands, undo, MCP, edits heard while playing, and saving projects in Suhina's own format (`.suhina`) work; more commands to come |
 | M4 | **Clip launching:** launch quantisation, scenes, stop buttons, follow actions | in progress: launching, scenes, stops, quantisation, follow actions, the metronome, launch modes, legato, per-clip quantisation and launch keys work; launching from live MIDI notes to come |
 | M5 | **Audio playback:** imported audio clips with gain, transpose, warping and time-stretching | done (verified by ear on a heavily warped set) |
-| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); still to do: automation lanes in the UI, Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
+| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); their parameters automated from lanes in the Arrangement view; still to do: Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
 | M7 | **More formats:** DAWproject import and export | not started |
 | M8 | **UI:** Launcher and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Launcher and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
@@ -511,6 +511,19 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   embedded where the platform allows (Windows, X11)
   ([#1066](https://github.com/suhina-daw/suhina-daw/issues/1066),
   [spec](docs/spec/plugin-vst2.md)).
+
+- A hosted plug-in's parameters (CLAP, VST3, VST2) are automated from lanes in the Arrangement
+  view: the lane's parameter list shows each plug-in on the track under its name, with its own
+  groups and the same search as a built-in device; a lane shows the plug-in's own text for its
+  values, a move in the plug-in's editor turns the lane off, and the editor follows the lane
+  playing and stopped. A lane whose plug-in is missing keeps its points.
+- A track's top automation lane shows the parameter being worked on: a control moved by hand (a
+  track's volume, pan or mute, a device's knob, a knob in a plug-in's own editor) shows there,
+  ready to draw on, and its + mounts it as a lane of its own. Mounted lanes are reordered, picked,
+  grouped (each plug-in's lanes in a group of their own, a setting) and deleted, with undo, and
+  their layout is saved with the project.
+- A time range painted over several automation lanes, or over a track where no clip plays, is
+  copied, duplicated and deleted with its automation on every lane.
 
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it
@@ -1044,4 +1057,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   lands on (its whole selection when the row is one of them). The section is where the tags
   live now, so the footer's tag editor and its Edit tags button are gone and the footer's
   dots stay only as the quick filter of the list shown.
+
+- Swing (#1221): the project has a swing amount, set with the **Swing** slider beside **Resize all** in the Arrangement, that delays every second sixteenth of each eighth as MIDI clips play (up to half a sixteenth at 100 %, the triplet at about 67 %), live and in renders, the notes themselves unmoved. Every MIDI clip follows it until it gets its own in the clip panel's **Swing** row (the **Global** switch and a slider); turning **Global** back on keeps the clip's own amount for later. `transport.setSwing` and `clip.setSwing` do the same for agents; the project file is version 12.
+- MIDI clip panel (#1222, #1214): a selected MIDI clip's column in the detail area is the same compact panel as an audio clip's (its colour, name, length and the Clip / Devices switch; Start and End, Loop, Position and Length with Set to the playhead, and its scale), with what the tools act on in figures under it (notes, pitch, span, muted, velocity range) and the note tools beside it on two tabs: Notes (Transpose, Fit to scale to the clip's scale, Invert, Reverse, Legato, ×2 and ÷2) and Transform (Quantise, Humanise, Randomise velocity and Ramp velocity, each with its settings and an Apply button that says what it acts on). Humanise moves notes by milliseconds, mostly a little and never past its limit, each note on its own and keeping its length; `note.humanize` takes `ms`. With the detail area stacked the tools go under the Clip part.
 

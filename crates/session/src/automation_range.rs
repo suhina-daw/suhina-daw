@@ -14,7 +14,7 @@ use suhina_model::{AutomationPoint, Entry, IdList, PointId};
 use suhina_model::TrackId;
 
 use crate::automation::{Points, Target, target};
-use crate::commands::Args;
+use crate::commands::{Args, track_id};
 use crate::{CommandError, Session};
 
 /// Copied points: their offsets from the range's start, their places on the lane (0 … 1) and
@@ -142,7 +142,142 @@ fn points_of(session: &mut Session, target: &Target) -> Result<Points, CommandEr
 
 /// `automation.copy {track, device?, param, start, end}`: the envelope of the range, for
 /// `automation.paste`.
+/// Most lanes one command names with `lanes` (#1322).
+const MAX_LANES: usize = 256;
+
+/// The params of each lane a command names (#1322): its own lane, then each of `lanes`
+/// (`{device?, param}`) on the same track, with the rest of the params as given.
+fn each_lane(params: &Value) -> Result<Vec<Value>, CommandError> {
+    let mut own = params.clone();
+    if let Some(map) = own.as_object_mut() {
+        map.remove("lanes");
+    }
+    let mut all = vec![own.clone()];
+    let Some(list) = Args::new(params).value("lanes").filter(|v| !v.is_null()) else { return Ok(all) };
+    let list =
+        list.as_array().ok_or("lanes must be a list of lanes: {\"device\": n, \"param\": id} or {\"param\": id}")?;
+    if list.len() > MAX_LANES {
+        return Err(format!("lanes names at most {MAX_LANES} lanes").into());
+    }
+    for lane in list {
+        let param = lane.get("param").and_then(Value::as_str).ok_or("each of lanes needs a param")?;
+        let mut one = own.clone();
+        if let Some(map) = one.as_object_mut() {
+            map.insert("param".into(), json!(param));
+            match lane.get("device").filter(|d| !d.is_null()) {
+                Some(device) => map.insert("device".into(), device.clone()),
+                None => map.remove("device"),
+            };
+        }
+        all.push(one);
+    }
+    Ok(all)
+}
+
+/// The lane `params` names, as a copied range keeps it: its device and its parameter.
+fn lane_of(params: &Value) -> (Option<usize>, String) {
+    let device = params.get("device").and_then(Value::as_u64).and_then(|d| usize::try_from(d).ok());
+    (device, params.get("param").and_then(Value::as_str).unwrap_or_default().to_string())
+}
+
+/// One of several lanes copied together (#1322): its device by its place on the track's chain
+/// and what it is (its kind and name), its parameter and its range.
+#[derive(Debug, Clone)]
+pub(crate) struct CopiedLane {
+    device: Option<usize>,
+    kind: Option<(suhina_model::DeviceKind, String)>,
+    param: String,
+    clip: AutomationClip,
+}
+
+/// What the device at `index` on `track`'s chain is: its kind and its name.
+fn device_kind(session: &Session, track: TrackId, index: usize) -> Option<(suhina_model::DeviceKind, String)> {
+    let device = session.project().channel_of_track(track)?.devices.get(index)?;
+    Some((device.kind.clone(), device.name.clone()))
+}
+
+/// Where a lane copied from a device goes on `track`: a device of the same kind (a built-in one
+/// by its id, a plug-in by its class, a `.sd` graph by its name), the one at the same place when
+/// that is one, else the first; `None` when the track has none, so the lane is left out rather
+/// than land on another device's parameter of the same id.
+fn same_device(session: &Session, track: TrackId, lane: &CopiedLane) -> Option<Option<usize>> {
+    let (Some(index), Some((kind, name))) = (lane.device, &lane.kind) else { return Some(lane.device) };
+    let devices = &session.project().channel_of_track(track)?.devices;
+    let alike = |d: &suhina_model::Device| {
+        d.kind == *kind && (!matches!(kind, suhina_model::DeviceKind::Sd) || d.name == *name)
+    };
+    if devices.get(index).is_some_and(alike) {
+        return Some(Some(index));
+    }
+    devices.iter().position(alike).map(Some)
+}
+
+/// Runs `one` on every lane `params` names (#1322), as one command: the lanes it could not act
+/// on (no automation there) are left out, and it fails only when it could act on none.
+fn on_each_lane(
+    session: &mut Session,
+    params: &Value,
+    mut one: impl FnMut(&mut Session, &Value) -> Result<Value, CommandError>,
+) -> Result<Value, CommandError> {
+    let lanes = each_lane(params)?;
+    if lanes.len() == 1 {
+        return one(session, &lanes[0]);
+    }
+    let mut answers = Vec::new();
+    let mut first_error = None;
+    for lane in &lanes {
+        match one(session, lane) {
+            Ok(answer) => answers.push(answer),
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    match (answers.first().cloned(), first_error) {
+        (Some(first), _) => {
+            let mut answer = first;
+            answer["lanes"] = json!(answers);
+            Ok(answer)
+        }
+        (None, Some(error)) => Err(error),
+        (None, None) => Err("no lane was named".into()),
+    }
+}
+
+/// `automation.copy {track, device?, param, start, end, lanes?}` or `{…, points}`: a range of
+/// one lane, or of several (`lanes`, #1322) for `automation.paste` to put back on each.
 pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let lanes = each_lane(params)?;
+    if lanes.len() == 1 {
+        session.clipboards.automation_lanes.clear();
+        return copy_one(session, params);
+    }
+    let mut copied = Vec::new();
+    let mut answers = Vec::new();
+    for lane in &lanes {
+        if let Ok(answer) = copy_one(session, lane)
+            && let Some(clip) = session.clipboards.automation.clone()
+        {
+            let (device, param) = lane_of(lane);
+            let kind = match (device, track_id(&session.project, lane)) {
+                (Some(index), Ok(track)) => device_kind(session, track, index),
+                _ => None,
+            };
+            copied.push(CopiedLane { device, kind, param, clip });
+            answers.push(answer);
+        }
+    }
+    let Some(first) = copied.first().map(|lane| lane.clip.clone()) else {
+        return Err("none of these lanes has automation in the range".into());
+    };
+    session.clipboards.automation = Some(first);
+    session.clipboards.automation_lanes = copied;
+    let mut answer = answers.first().cloned().unwrap_or_else(|| json!({}));
+    answer["lanes"] = json!(answers);
+    Ok(answer)
+}
+
+fn copy_one(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     // Picked points (`points`): copied as they are, from the first of them.
     if let Some(list) = Args::new(params).value("points").filter(|v| !v.is_null()) {
@@ -179,6 +314,41 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
 /// `automation.paste {track, device?, param, start}`: the copied range from `start`, over what
 /// is there; on another parameter its values sit where they sat on their own lane.
 pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    // Several lanes copied together go back on the same lanes of the track pasted to (#1322).
+    let several = session.clipboards.automation_lanes.clone();
+    if several.len() > 1 {
+        let kept = session.clipboards.automation.clone();
+        let track = track_id(&session.project, params)?;
+        let mut answers = Vec::new();
+        for lane in several {
+            // Onto a device of the same kind on the track pasted to, or not at all.
+            let Some(device) = same_device(session, track, &lane) else { continue };
+            let CopiedLane { param, clip, .. } = lane;
+            let mut one = params.clone();
+            if let Some(map) = one.as_object_mut() {
+                map.insert("param".into(), json!(param));
+                match device {
+                    Some(device) => map.insert("device".into(), json!(device)),
+                    None => map.remove("device"),
+                };
+            }
+            session.clipboards.automation = Some(clip);
+            if let Ok(answer) = paste_one(session, &one) {
+                answers.push(answer);
+            }
+        }
+        session.clipboards.automation = kept;
+        let Some(first) = answers.first().cloned() else {
+            return Err("the track has none of the copied lanes' parameters".into());
+        };
+        let mut answer = first;
+        answer["lanes"] = json!(answers);
+        return Ok(answer);
+    }
+    paste_one(session, params)
+}
+
+fn paste_one(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     let start = Args::new(params).f64("start")?;
     if !(0.0..=MAX_START_BEAT).contains(&start) {
@@ -218,6 +388,10 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
 /// it; the copy's range is the answer, so the next duplicate goes on from there. The clipboard
 /// stays as it was.
 pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    on_each_lane(session, params, duplicate_one)
+}
+
+fn duplicate_one(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     let (start, end) = range(params)?;
     let length = end - start;
@@ -519,6 +693,10 @@ pub(crate) fn scale_range(session: &mut Session, params: &Value) -> Result<Value
 /// `automation.deleteRange {track, device?, param, start, end}`: the points inside the range go;
 /// the values at its edges stay, so the envelope outside is as it was.
 pub(crate) fn delete_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    on_each_lane(session, params, delete_range_one)
+}
+
+fn delete_range_one(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     let (start, end) = range(params)?;
     let points = points_of(session, &target)?;

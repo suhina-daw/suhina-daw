@@ -554,56 +554,54 @@ fn round(beat: f64) -> f64 {
 /// Playing together"); its menu offers
 /// None, Playing together, This track and, in a submenu, every other MIDI clip. A pick changes
 /// `source` at once: window state, not a command.
-pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostSource) -> Rect {
+pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostSource, word: bool) -> Rect {
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut picked = None;
-    let mut shown = rect;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-        // The button is short, so it fits beside the workflow menu; it is dimmed while nothing
-        // shows, and its tooltip and accessible label name what does.
-        let color = if *source == GhostSource::None { theme::text_hint() } else { theme::text_value() };
-        let text = egui::RichText::new("Ghosts   ").font(font.clone()).color(color);
-        let menu = ui.menu_button(text, |ui| {
-            let mut entry = |ui: &mut Ui, choice: GhostSource, shown: &str, label: &str| {
-                let on = *source == choice;
-                let response = ui.selectable_label(on, egui::RichText::new(shown).font(font.clone()));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
-                if response.clicked() {
-                    picked = Some(choice);
-                    ui.close();
-                }
-            };
-            for choice in [GhostSource::None, GhostSource::Together, GhostSource::Track] {
-                let name = choice.name(ghosts);
-                entry(ui, choice, &name, &format!("Ghost notes: {name}"));
+    // The button is short, so it fits beside the workflow menu, and drawn as the toolbar's other
+    // menus are; it is dimmed while nothing shows, and its tooltip and accessible label name what
+    // does. Short of room, the arrow alone (› Layout).
+    let color = if *source == GhostSource::None { theme::text_hint() } else { theme::text_secondary() };
+    let label = format!("Ghost notes {}", source.name(ghosts));
+    let id = Id::unique("piano-roll-ghost-menu");
+    let response =
+        crate::detail::piano_roll::menu_face(ui, rect, id, (None, if word { "Ghosts" } else { "" }), color, &label);
+    let shown = response.rect;
+    egui::Popup::menu(&response).show(|ui| {
+        let mut entry = |ui: &mut Ui, choice: GhostSource, shown: &str, label: &str| {
+            let on = *source == choice;
+            let response = ui.selectable_label(on, egui::RichText::new(shown).font(font.clone()));
+            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
+            if response.clicked() {
+                picked = Some(choice);
+                ui.close();
             }
-            ui.separator();
-            let chosen = matches!(source, GhostSource::Clip(_));
-            let title = egui::RichText::new("Clip\u{2026}").font(font.clone());
-            let clip_menu = ui.menu_button(title, |ui| {
-                if ghosts.choices.is_empty() {
-                    ui.label(egui::RichText::new("No other MIDI clip").font(font.clone()).color(theme::text_hint()));
+        };
+        for choice in [GhostSource::None, GhostSource::Together, GhostSource::Track] {
+            let name = choice.name(ghosts);
+            entry(ui, choice, &name, &format!("Ghost notes: {name}"));
+        }
+        ui.separator();
+        let chosen = matches!(source, GhostSource::Clip(_));
+        let title = egui::RichText::new("Clip\u{2026}").font(font.clone());
+        let clip_menu = ui.menu_button(title, |ui| {
+            if ghosts.choices.is_empty() {
+                ui.label(egui::RichText::new("No other MIDI clip").font(font.clone()).color(theme::text_hint()));
+            }
+            egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                for choice in &ghosts.choices {
+                    let label = format!("Ghost notes from {}", choice.name);
+                    entry(ui, GhostSource::Clip(choice.clip), &choice.name, &label);
                 }
-                egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                    for choice in &ghosts.choices {
-                        let label = format!("Ghost notes from {}", choice.name);
-                        entry(ui, GhostSource::Clip(choice.clip), &choice.name, &label);
-                    }
-                });
-            });
-            clip_menu.response.widget_info(|| {
-                egui::WidgetInfo::selected(egui::Role::Button, true, chosen, "Ghost notes: Clip\u{2026}")
             });
         });
-        let label = format!("Ghost notes {}", source.name(ghosts));
-        crate::interaction::toolbar::menu_arrow(ui, menu.response.rect, color);
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-        shown = menu.response.rect;
-        menu.response.on_hover_text(format!(
-            "Ghost notes: {}. Notes of other clips drawn faintly behind this clip's notes",
-            source.name(ghosts)
-        ));
+        clip_menu
+            .response
+            .widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, "Ghost notes: Clip\u{2026}"));
     });
+    response.on_hover_text(format!(
+        "Ghost notes: {}. Notes of other clips drawn faintly behind this clip's notes",
+        source.name(ghosts)
+    ));
     if let Some(picked) = picked {
         *source = picked;
     }

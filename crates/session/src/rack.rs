@@ -204,6 +204,10 @@ struct Started {
     /// Its state read just after it started, for later reads to be compared with (a plug-in may
     /// report a state it was given in a form of its own); `None` when it did not answer.
     first_state: Option<SavedState>,
+    /// Its parameters listed just after it started, on the same thread, so the engine knows
+    /// which take steps without the control half being lent out for it later (#1205); `None`
+    /// when it did not answer.
+    listed: Option<Vec<suhina_plugins::ParamInfo>>,
 }
 
 /// A superseded start can own a control connection whose destructor waits for an
@@ -225,6 +229,9 @@ enum Done {
     AraUpdated(Result<(), String>),
     /// Its parameters were listed for its generated panel; `None` when it did not answer.
     Listed(Option<Vec<suhina_plugins::ParamInfo>>),
+    /// It gave its texts for values of a parameter (#1205): the parameter, the values asked
+    /// about and the texts, `None` when it did not answer.
+    Texts(u32, Vec<f64>, Option<Vec<String>>),
     /// The edits of a clip carried to another track were stored ([`Carry`], by its number).
     AraExported(u64, Result<(String, Vec<u8>), String>),
     /// They were given to the other track's plug-in, or not yet.
@@ -239,6 +246,34 @@ const LIST_EVERY: Duration = Duration::from_secs(2);
 /// meanwhile, so it must not wait for as long as the start-up timeout does: a host that stops
 /// answering would keep restarts and health checks away for minutes.
 const LIST_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// A plug-in's own texts for values of its parameters (#1205): by parameter id and the value's
+/// bits, the text it gave (empty where it gave none, so it is not asked again). Shared with the
+/// window and filled in place as the plug-in answers, so an answer neither copies the texts nor
+/// makes the window build its lanes' parameters again.
+pub type ParamTexts = std::sync::Mutex<std::collections::HashMap<(u32, u64), String>>;
+
+/// How often a plug-in is asked for texts at most: a point dragged or a value under the pointer
+/// asks about a new value every frame, and each request lends out the plug-in's control half.
+const TEXTS_EVERY: Duration = Duration::from_millis(100);
+
+/// How long a plug-in that did not answer a request for texts is left alone before it is asked
+/// again; meanwhile the values show as numbers.
+const TEXTS_AGAIN: Duration = Duration::from_secs(30);
+
+/// The texts of `texts`, locked; a poisoned lock is taken as it is.
+fn texts_of(texts: &ParamTexts) -> std::sync::MutexGuard<'_, std::collections::HashMap<(u32, u64), String>> {
+    texts.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Most texts kept for one plug-in; past this the texts are forgotten and asked for again.
+const MAX_TEXTS: usize = 8192;
+
+/// The ids of a parameter list's parameters that take steps (a switch, a choice), as
+/// [`Instance::steps`] keeps them.
+fn steps(list: &[suhina_plugins::ParamInfo]) -> std::sync::Arc<[u32]> {
+    list.iter().filter(|p| p.steps > 0).map(|p| p.id).collect()
+}
 
 /// A parameter list's ids and ranges (lowest, highest), as [`Instance::ranges`] keeps them.
 fn ranges(list: &[suhina_plugins::ParamInfo]) -> Vec<(u32, f64, f64)> {
@@ -327,6 +362,10 @@ struct Instance {
     /// Sends the embedded editor's placement and size even while the control half is lent out
     /// (an ARA edit, an editor opening), so the editor never lags behind the window.
     placer: Option<suhina_plugins::EditorPlacer>,
+    /// Takes what the user moved in the plug-in's editor while the control half is lent out
+    /// (a listing of its parameters, a value's text asked for), so its lane follows the editor
+    /// without a pause (#1205). Taken from the control half every time it is lent.
+    edits: Option<suhina_plugins::EditWatch>,
     /// An editor asked open (`true`) or closed while the control half was out: done when it is
     /// back, rather than refused as busy.
     editor_wanted: Option<bool>,
@@ -349,10 +388,19 @@ struct Instance {
     counts: Option<Arc<BlockCounts>>,
     /// Its parameters' ids and ranges (lowest, highest), once listed ([`Rack::params`]).
     ranges: Option<Vec<(u32, f64, f64)>>,
+    /// The ids of its parameters that take steps, once listed: the engine holds their lanes'
+    /// values until the next point, as the lanes draw them (#1205).
+    steps: Option<std::sync::Arc<[u32]>>,
     /// Its parameters as last listed in the background for its generated panel, and when.
     listed: Option<(Arc<[suhina_plugins::ParamInfo]>, Instant)>,
     /// A listing for the panel is under way.
     listing: bool,
+    /// Its texts for the values automation lanes show (#1205), and whether a request for more
+    /// is under way.
+    texts: Arc<ParamTexts>,
+    texting: bool,
+    /// When it may be asked for texts again ([`TEXTS_EVERY`], [`TEXTS_AGAIN`]).
+    texts_next: Option<Instant>,
     /// When the last listing for the panel ended, answered or not; a plug-in that refuses to
     /// list is asked as seldom as one that answers.
     list_tried: Option<Instant>,
@@ -391,7 +439,27 @@ impl Instance {
         self.list_tried = Some(now);
         if let Some(list) = list {
             self.ranges = Some(ranges(&list));
+            self.steps = Some(steps(&list));
             self.listed = Some((list.into(), now));
+        }
+    }
+
+    /// A request for texts of `values` of parameter `id` ended with `texts`, or with nothing when
+    /// the plug-in did not answer: the values without a text keep an empty one, so they are not
+    /// asked about again.
+    fn texts_done(&mut self, id: u32, values: &[f64], texts: Option<Vec<String>>) {
+        self.texting = false;
+        // No answer: asked again a while later, the values meanwhile shown as numbers.
+        let Some(texts) = texts else {
+            self.texts_next = Some(Instant::now() + TEXTS_AGAIN);
+            return;
+        };
+        let mut kept = texts_of(&self.texts);
+        if kept.len().saturating_add(values.len()) > MAX_TEXTS {
+            kept.clear();
+        }
+        for (at, value) in values.iter().enumerate() {
+            kept.insert((id, value.to_bits()), texts.get(at).cloned().unwrap_or_default());
         }
     }
 
@@ -402,8 +470,12 @@ impl Instance {
             spec: String::new(),
             info: PluginSlotInfo::default(),
             ranges: None,
+            steps: None,
             listed: None,
             listing: false,
+            texts: Arc::default(),
+            texting: false,
+            texts_next: None,
             list_tried: None,
             control: None,
             last_state: None,
@@ -417,6 +489,7 @@ impl Instance {
             placement_wanted: None,
             placement_sent: None,
             placer: None,
+            edits: None,
             editor_wanted: None,
             fit_wanted: None,
             fit_sent: None,
@@ -550,6 +623,8 @@ pub struct Rack {
     /// Clips' edits on their way to another track's plug-in ([`Rack::carry`]).
     carries: Vec<Carry>,
     next_carry: u64,
+    /// The stepped parameters the player was last told of ([`Rack::step_map`]).
+    steps_sent: suhina_engine::PluginSteps,
 }
 
 impl Default for Rack {
@@ -586,6 +661,7 @@ impl Default for Rack {
             ara_learned: Vec::new(),
             carries: Vec::new(),
             next_carry: 0,
+            steps_sent: Default::default(),
         }
     }
 }
@@ -909,6 +985,7 @@ impl Rack {
     fn lend(&mut self, key: u64, work: impl FnOnce(&mut Plugin) -> Done + Send + 'static) -> Result<(), CommandError> {
         let instance = self.instances.get_mut(&key).ok_or("the device's plug-in is not running")?;
         let mut control = instance.control.take().ok_or("the plug-in is busy; try again in a moment")?;
+        instance.edits = Some(control.edit_watch());
         let (sender, generation) = (self.returned_sender.clone(), instance.generation);
         let spawned = std::thread::Builder::new().name("suhina-plugin-control".into()).spawn(move || {
             let done = work(&mut control);
@@ -985,6 +1062,7 @@ impl Rack {
                             instance.ara_failed = true;
                         }
                         Done::Listed(list) => instance.list_done(list, Instant::now()),
+                        Done::Texts(id, values, texts) => instance.texts_done(id, &values, texts),
                         Done::Saved(Some(state)) => {
                             self.edits.read(key, &state);
                             instance.last_state = Some(state);
@@ -1068,6 +1146,58 @@ impl Rack {
         }
     }
 
+    /// The parameters the running plug-in device `key` listed last, as its report gives them.
+    pub(crate) fn listed(&self, key: u64) -> Option<Arc<[suhina_plugins::ParamInfo]>> {
+        let instance = self.instances.get(&key).filter(|i| i.status == PluginStatus::Running)?;
+        instance.listed.as_ref().map(|(list, _)| Arc::clone(list))
+    }
+
+    /// The plug-in device `key`'s own texts for values it was asked about (#1205).
+    pub fn texts(&self, key: u64) -> Option<Arc<ParamTexts>> {
+        self.instances.get(&key).map(|i| Arc::clone(&i.texts))
+    }
+
+    /// Asks the plug-in device `key` in the background for its texts of `values` of parameter
+    /// `id` it has not given yet (#1205); one request at a time, while it runs and its control
+    /// half is not lent out.
+    pub fn ask_texts(&mut self, key: u64, id: u32, values: &[f64]) {
+        let Some(instance) = self.instances.get(&key) else { return };
+        let now = Instant::now();
+        if instance.status != PluginStatus::Running
+            || instance.texting
+            || instance.control.is_none()
+            || instance.texts_next.is_some_and(|next| now < next)
+        {
+            return;
+        }
+        let mut wanted: Vec<f64> = Vec::new();
+        {
+            let known = texts_of(&instance.texts);
+            for value in values.iter().copied().filter(|v| v.is_finite()) {
+                if !known.contains_key(&(id, value.to_bits())) && !wanted.iter().any(|w| w.to_bits() == value.to_bits())
+                {
+                    wanted.push(value);
+                }
+                if wanted.len() >= suhina_plugins::protocol::MAX_PARAM_TEXTS {
+                    break;
+                }
+            }
+        }
+        if wanted.is_empty() {
+            return;
+        }
+        let lent = self.lend(key, move |control| {
+            let texts = control.param_texts_within(id, &wanted, LIST_TIMEOUT).ok();
+            Done::Texts(id, wanted, texts)
+        });
+        if lent.is_ok()
+            && let Some(instance) = self.instances.get_mut(&key)
+        {
+            instance.texting = true;
+            instance.texts_next = Some(now + TEXTS_EVERY);
+        }
+    }
+
     /// What is known about the plug-in device `key`.
     pub fn report(&mut self, key: u64) -> Option<PluginReport> {
         let instance = self.instances.get_mut(&key)?;
@@ -1116,6 +1246,16 @@ impl Rack {
         progress.loading.sort();
         progress.failed.sort();
         progress
+    }
+
+    /// The parameters of each listed plug-in device that take steps, for the engine's graphs.
+    fn step_map(&self) -> suhina_engine::PluginSteps {
+        self.instances.iter().filter_map(|(key, i)| Some((*key, std::sync::Arc::clone(i.steps.as_ref()?)))).collect()
+    }
+
+    /// Whether parameter `id` of the plug-in device `key` takes steps, as its plug-in listed it.
+    pub(crate) fn stepped(&self, key: u64, id: u32) -> bool {
+        self.instances.get(&key).and_then(|i| i.steps.as_ref()).is_some_and(|steps| steps.contains(&id))
     }
 
     /// The slots the engine's graphs are built with.
@@ -1229,6 +1369,14 @@ impl Rack {
         self.follow_notes(project, &devices);
         self.send_placements();
         self.watch(&mut notices);
+        // The parameters that take steps, from the lists the plug-ins gave as they started
+        // (#1205): the engine holds their lanes' values.
+        let steps = self.step_map();
+        if steps != self.steps_sent {
+            player.set_plugin_steps(steps.clone());
+            self.steps_sent = steps;
+            changed = true;
+        }
         if changed {
             player.set_plugin_info(self.slot_info());
             if let Err(e) = player.update(project) {
@@ -1465,6 +1613,9 @@ impl Rack {
                 self.edits.read(started.key, &state);
                 instance.last_state = Some(state);
             }
+            if let Some(list) = started.listed {
+                instance.list_done(Some(list), Instant::now());
+            }
             let name = instance.plugin.as_ref().map_or_else(String::new, |p| p.0.clone());
             match started.result {
                 Ok((control, audio, refused)) => {
@@ -1550,8 +1701,12 @@ impl Rack {
             if instance.status != PluginStatus::Running {
                 continue;
             }
-            let Some(control) = instance.control.as_mut() else { continue };
-            for (id, value) in control.take_param_edits() {
+            let taken = match (instance.control.as_mut(), instance.edits.as_ref()) {
+                (Some(control), _) => control.take_param_edits(),
+                (None, Some(watch)) => watch.take_param_edits(),
+                (None, None) => continue,
+            };
+            for (id, value) in taken {
                 edits.push((*key, id, value));
             }
         }
@@ -1709,8 +1864,9 @@ impl Rack {
         let (sender, generation) = (self.sender.clone(), self.next_generation);
         let spawned = std::thread::Builder::new().name("suhina-plugin-restart".into()).spawn(move || {
             let mut control = control;
-            let result = control.restart().map(|audio| (control, audio, None)).map_err(|e| e.to_string());
-            let _gone = sender.send(Started { key, generation, result, first_state: None });
+            let mut result = control.restart().map(|audio| (control, audio, None)).map_err(|e| e.to_string());
+            let listed = listed_after_start(&mut result);
+            let _gone = sender.send(Started { key, generation, result, first_state: None, listed });
         });
         spawned.map(|_| ()).map_err(|e| CommandError(format!("could not restart the plug-in: {e}")))
     }
@@ -1786,6 +1942,7 @@ impl Rack {
         let list = self.running(key)?.params().map_err(|e| CommandError(e.to_string()))?;
         if let Some(instance) = self.instances.get_mut(&key) {
             instance.ranges = Some(ranges(&list));
+            instance.steps = Some(steps(&list));
         }
         Ok(list)
     }
@@ -2004,12 +2161,22 @@ fn spawn_start(sender: Sender<Started>, key: u64, generation: u64, launch: Launc
         let mut result = start(launch, state).map_err(|e| e.to_string());
         suhina_plugins::trace!("rack started key {key} generation {generation}: {:?}", result.as_ref().map(|_| ()));
         let first_state = result.as_mut().ok().and_then(|(plugin, _, _)| plugin.save_state().ok());
-        let _gone = sender.send(Started { key, generation, result, first_state });
+        let listed = listed_after_start(&mut result);
+        let _gone = sender.send(Started { key, generation, result, first_state, listed });
     });
     if let Err(e) = spawned {
         let result = Err(format!("no thread to start it on: {e}"));
-        let _gone = fallback.send(Started { key, generation, result, first_state: None });
+        let _gone = fallback.send(Started { key, generation, result, first_state: None, listed: None });
     }
+}
+
+/// The parameters a plug-in that just started lists, read on the thread that started it, while
+/// its control half is still that thread's.
+fn listed_after_start(
+    result: &mut Result<(Plugin, PluginAudio, Option<String>), String>,
+) -> Option<Vec<suhina_plugins::ParamInfo>> {
+    let (plugin, _, _) = result.as_mut().ok()?;
+    plugin.params_within(LIST_TIMEOUT).ok()
 }
 
 /// Starts the plug-in `launch` names and gives it `state`. A plug-in that refuses the state

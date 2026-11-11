@@ -7,6 +7,7 @@
 @property --highlight { syntax: "<color>"; initial-value: #D6B159; label: "Selection"; group: "Colours"; }
 :root {
   --accent: var(--tint);
+  --automation-pin: var(--tint);
   --border: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--surface) 50.5%), black 16.9%);
   --border-strong: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--highlight) 30.7%), white 13.1%);
   --browser-text-hint: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--highlight) 42.8%), white 28.1%);

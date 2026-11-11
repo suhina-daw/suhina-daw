@@ -24,8 +24,9 @@ const SIZE: (f32, f32) = (1280.0, 800.0);
 /// The demo clip the tests edit: on Drums, at bar 17 (beat 64).
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
 const CLIP_START: f64 = 64.0;
-/// The piano roll's least height (› Least height and closing).
-const LEAST: f32 = 132.0;
+/// The detail area's least height with a clip in it: the device panels' compact height, the
+/// area's default (› Least height and closing).
+const LEAST: f32 = 200.0;
 
 fn window() -> Harness<'static, App> {
     let mut app = App::new();
@@ -214,15 +215,17 @@ fn a_lane_at_its_least_height_still_shows_its_notes() {
 fn the_splitter_stops_at_the_piano_rolls_least_height() {
     let mut h = piano_app();
     let bottom = detail_bottom(&h);
-    pull_to(&mut h, bottom - 90.0);
+    // Under the least height but above half of it: it stops at the least height.
+    pull_to(&mut h, bottom - 130.0);
     let height = bottom - splitter(&h).bottom();
     assert!((height - LEAST).abs() < 1.5, "the detail area stops at {LEAST} px, not {height}");
     assert!(piano_shows(&h));
     // Five key rows at the default 12 px row height, at least.
     let grid = h.get_by_label_contains("Piano roll,").rect();
     assert!(grid.height() >= 5.0 * 12.0 - 0.5, "five key rows: the grid is {} px", grid.height());
-    // The clip column's five rows are all there, under its title, inside the detail area.
-    for label in ["Track: ", "Start: ", "Length: ", "Loop: ", "Notes: "] {
+    // The clip panel's first rows are there, under its title, inside the detail area: the markers,
+    // the loop switch and the tools' tabs.
+    for label in ["Start marker: ", "End marker: ", "Loop: ", "Notes tab"] {
         let row = h.get_by_label_contains(label).rect();
         assert!(row.bottom() <= bottom + 0.5, "{label} is whole: {row:?} over {bottom}");
     }
@@ -252,15 +255,15 @@ fn going_back_up_in_the_same_drag_keeps_the_editor_open() {
     h.hover_at(from);
     h.step();
     button(&mut h, from, true);
-    for y in [from.y + 60.0, bottom - 10.0, bottom - 20.0, bottom - 150.0] {
+    for y in [from.y + 60.0, bottom - 10.0, bottom - 20.0, bottom - 260.0] {
         h.hover_at(pos2(from.x, y));
         h.step();
     }
-    button(&mut h, pos2(from.x, bottom - 150.0), false);
+    button(&mut h, pos2(from.x, bottom - 260.0), false);
     h.run();
     assert!(piano_shows(&h), "back above the closing point, the editor is open again");
     let height = bottom - splitter(&h).bottom();
-    assert!((height - 147.0).abs() < 8.0, "under the pointer: {height}");
+    assert!((height - 257.0).abs() < 8.0, "under the pointer: {height}");
 }
 
 // 3. The notes in view at any height.
@@ -284,7 +287,7 @@ fn at_the_least_height_the_notes_are_in_view() {
     let bottom = detail_bottom(&h);
     let middle = middle_note(&h);
     assert!(h.query_by_label(&middle).is_some(), "{middle} shows at the default height");
-    pull_to(&mut h, bottom - 90.0);
+    pull_to(&mut h, bottom - 130.0);
     assert!(h.query_by_label(&middle).is_some(), "{middle} shows at the least height");
     // Taller again, the notes are still centred.
     pull_to(&mut h, bottom - 420.0);
@@ -333,10 +336,10 @@ fn the_clip_column_never_wraps_and_leaves_out_rows_that_do_not_fit() {
         for size in [(1280.0, 800.0), (900.0, 500.0), (640.0, 360.0), (420.0, 260.0)] {
             h.set_size(vec2(size.0, size.1));
             h.run();
-            if layout == DeviceLayout::Row {
-                let c = splitter(&h).center();
-                drag(&mut h, c, pos2(c.x, size.1 - 90.0));
-            }
+            // Stacked devices leave the piano roll along the bottom too, at the height dragged;
+            // a drag that closes it leaves its splitter there to open it again.
+            let c = splitter(&h).center();
+            drag(&mut h, c, pos2(c.x, size.1 - 90.0));
             let whole = Rect::from_min_size(Pos2::ZERO, vec2(size.0, size.1));
             let wrapped = wrapped_text(&h, whole);
             assert!(wrapped.is_empty(), "{layout:?} at {size:?}: text wrapped onto lines: {wrapped:?}");
@@ -352,9 +355,11 @@ fn at_the_least_height_the_selection_rows_are_left_out_not_cut() {
     click(&mut h, pos2(grid.right() - 4.0, grid.top() + 4.0));
     h.key_press_modifiers(Modifiers::COMMAND, Key::A);
     h.run();
-    assert!(h.query_by_label_contains("Pitch: ").is_some(), "the selection rows show at the default height");
-    pull_to(&mut h, bottom - 90.0);
-    assert!(h.query_by_label_contains("Notes: ").is_some(), "the Notes row fits");
+    // The figures sit under the Clip part: a taller detail area shows them.
+    pull_to(&mut h, bottom - 340.0);
+    assert!(h.query_by_label_contains("Pitch: ").is_some(), "the selection rows show in a tall detail area");
+    pull_to(&mut h, bottom - 130.0);
+    assert!(h.query_by_label_contains("Notes tab").is_some(), "the tools' tabs fit");
     for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
         if let Some(row) = h.query_by_label_contains(label) {
             assert!(row.rect().bottom() <= bottom + 0.5, "{label} is drawn whole or not at all: {:?}", row.rect());

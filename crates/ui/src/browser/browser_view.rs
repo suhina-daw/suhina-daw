@@ -7,7 +7,6 @@
 //! their commands (`library.*`, `preview.*`); adding to the project is left to the window,
 //! which knows the selected track.
 
-use crate::kit::surface::Backgrounds as _;
 use std::path::PathBuf;
 
 use egui::{Align2, Color32, CursorIcon, Id, Key, Modifiers, Pos2, Rect, Sense, Stroke, Ui, Vec2};
@@ -21,7 +20,7 @@ use crate::interaction::drop::{BrowserItem, ItemKind};
 use crate::interaction::status::Status;
 use crate::kit::element::{
     BROWSER, BROWSER_PLACE, BROWSER_PLAY, BROWSER_ROW as BROWSER_ROW_ELEMENT, BUTTON, Checked, DIVIDER, Entered,
-    Selected,
+    Native, Selected,
 };
 use crate::kit::theme::{self, BROWSER_ROW as ROW, PAD};
 use crate::kit::widgets::play_glyph;
@@ -267,8 +266,12 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     let Context { projects, settings, selected_track, search_key, other_results } = cx;
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::panel_background());
-    style.paint_background(&painter, area, 0.0);
+    // The panel's own background, over the window's (#1233).
+    let _ = style.paint_with(
+        &painter,
+        area,
+        Native { radius: 0.0, fill: crate::kit::style_class::surface_or(theme::panel_background()) },
+    );
     state.poll();
     suhina_plugins::trace::timed("library poll", || projects.file_library_mut().poll());
 
@@ -427,7 +430,7 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
     let painter = ui.painter_at(rect);
     // `.browser-search` (or `browser text-input`): its background, border, radius and `color`.
     let search_style = crate::kit::element::TEXT_INPUT.id("browser-search").enter();
-    paint_row(&painter, &search_style, rect, theme::window_background());
+    paint_row(&painter, &search_style, rect, crate::kit::style_class::surface_or(theme::window_background()));
     if let Some(style) = search_style.style().filter(|s| s.border_width > 0.0 && s.border.a() > 0) {
         painter.rect_stroke(
             rect,
@@ -634,7 +637,7 @@ fn entry_row(
                 let fill = if chosen {
                     theme::control_active()
                 } else {
-                    motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
+                    motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
                 };
                 paint_row(painter, &style, rect.intersect(area), fill);
                 let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
@@ -648,7 +651,7 @@ fn entry_row(
     let fill = if chosen {
         theme::control_active()
     } else {
-        motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
+        motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
     };
     let style = place_style(&response, chosen);
     if rect.intersects(area) {
@@ -976,8 +979,7 @@ fn results_view(
     selected_track: Option<TrackId>,
     out: &mut BrowserOut,
 ) {
-    let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::panel_background());
+    // On the browser's own background, which `show` painted.
     // The Plug-ins category's Instruments | Effects switch takes the results' top, then its
     // list's column headings, unless a place or a search lists other rows.
     let plugins_view = projects.file_library_mut().plugins_view();
@@ -1087,7 +1089,7 @@ fn results_view(
         } else if selected {
             theme::control_active()
         } else {
-            motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
+            motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
         };
         paint_row(&painter, &row_style, shown, fill);
         let mut x = rect.left() + 4.0 + row.depth as f32 * INDENT;
@@ -1739,7 +1741,7 @@ fn tags_section(
         } else if chosen {
             theme::control_active()
         } else {
-            motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
+            motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
         };
         let style = place_style(&response, chosen);
         if rect.intersects(area) {
@@ -2674,7 +2676,10 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
             Pos2::new(r.left() + r.width() * 0.4, r.bottom()),
             Pos2::new(r.right(), r.top()),
         ];
-        painter.add(egui::Shape::line(tick.to_vec(), Stroke::new(1.5, theme::window_background())));
+        painter.add(egui::Shape::line(
+            tick.to_vec(),
+            Stroke::new(1.5, crate::kit::style_class::surface_or(theme::window_background())),
+        ));
     }
     let swatch = Pos2::new(box_rect.right() + 6.0 + SWATCH / 2.0, rect.center().y);
     painter.circle_filled(swatch, SWATCH / 2.0, tag_color(&tag.color));
@@ -2807,8 +2812,8 @@ fn columns_header(ui: &mut Ui, area: Rect, state: &mut BrowserState) {
         let label =
             if chosen { format!("{name} {}", if descending { "▼" } else { "▲" }) } else { name.to_string() };
         let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_hint() };
-        let hover = motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response));
-        painter.fill_background(rect, 0.0, hover);
+        let hover = motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response));
+        painter.rect_filled(rect, 0.0, hover);
         let align = if index == 0 { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER };
         widgets::text_in(&painter, rect, align, &label, small.clone(), color);
     }
@@ -2878,7 +2883,12 @@ fn preview_strip(
     out: &mut BrowserOut,
 ) {
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
+    // Without an authored surface the strip is the window's colour under the browser's panel; with
+    // one, the surface `show` painted already is its background, and painting it again would
+    // stack its alpha.
+    if !crate::kit::style_class::has_surface() {
+        painter.rect_filled(area, 0.0, theme::window_background());
+    }
     painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(theme::border()));
     // The Auto switch at the top right: a selected sample plays by itself while it is lit
     // (Settings › Browser › the same setting).
@@ -3082,8 +3092,8 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
     // The tag menus' state keys on the library's epoch too: a replaced library's tag of the
     // same id opens none of the old one's menus or drafts ([#1254] review).
     let epoch = state.tag_epoch;
+    // On the browser's own background, which `show` painted.
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::panel_background());
     painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(theme::border()));
     let mut x = area.left() + PAD;
     let tags = projects.file_library_mut().tag_flat();
@@ -3452,7 +3462,7 @@ fn place_style(response: &egui::Response, chosen: bool) -> Entered {
 /// A row's background: the sheet's `background-color` for `el`, the row's element, else `fill`,
 /// and its gradients and shadows.
 fn paint_row(painter: &egui::Painter, el: &Entered, rect: Rect, fill: egui::Color32) {
-    painter.fill_background(rect, 0.0, el.background_or(fill));
+    painter.rect_filled(rect, 0.0, el.background_or(fill));
     el.paint_background(painter, rect, 0.0);
 }
 

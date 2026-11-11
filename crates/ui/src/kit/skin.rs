@@ -938,28 +938,6 @@ fn paint_variant(
     let Some(Some(texture)) = textures.images.get(&key) else {
         return false;
     };
-    // The native see-through host writes a background's alpha rather than blending
-    // it twice. Clear the covered background before compositing its artwork; private
-    // image backdrops and the opaque/OpenGL path keep ordinary blending. Only a theme whose
-    // surfaces show the desktop needs it: over an opaque one, clearing would let the desktop
-    // show through wherever the artwork leaves a pixel uncovered (rounded corners, edges).
-    if (matches!(role, "button" | "fader.rail" | "fader.cap" | "track.name" | "track.body")
-        || role.starts_with("button."))
-        && super::surface::available(painter.ctx())
-        && desktop_shows()
-    {
-        let (sin, cos) = angle.sin_cos();
-        let size = egui::vec2(
-            rect.width() * cos.abs() + rect.height() * sin.abs(),
-            rect.width() * sin.abs() + rect.height() * cos.abs(),
-        );
-        super::surface::Backgrounds::fill_background(
-            painter,
-            Rect::from_center_size(rect.center(), size),
-            radius,
-            Color32::TRANSPARENT,
-        );
-    }
     if let Some(slice) = slice {
         let mut mesh = egui::Mesh::with_texture(texture.id());
         let size = texture.size();
@@ -1022,21 +1000,46 @@ pub fn paint_svg(painter: &Painter, rect: Rect, source: &str, radius: f32) -> bo
     true
 }
 
+/// Draws an icon's SVG (its shapes in `currentColor`) into `rect`, kept in proportion, in `ink`:
+/// rastered once per size in white and tinted, so every colour shares the one picture. Returns
+/// whether it drew.
+pub fn paint_icon(painter: &Painter, rect: Rect, source: &str, ink: Color32) -> bool {
+    if !rect.is_positive() || !rect.is_finite() {
+        return false;
+    }
+    let scale = painter.ctx().pixels_per_point();
+    let w = (rect.width() * scale).ceil().clamp(1.0, 1024.0) as u32;
+    let h = (rect.height() * scale).ceil().clamp(1.0, 1024.0) as u32;
+    let mut hash = std::hash::DefaultHasher::new();
+    (source, w, h).hash(&mut hash);
+    let key = hash.finish();
+    let cache_id = egui::Id::unique("svg-icons");
+    let cache = painter
+        .ctx()
+        .data_mut(|data| data.get_temp_mut_or_default::<Arc<std::sync::Mutex<Textures>>>(cache_id).clone());
+    let Ok(mut textures) = cache.lock() else { return false };
+    if !textures.images.contains_key(&key) {
+        if textures.images.len() >= 128 {
+            textures.images.clear();
+        }
+        let texture = raster_artwork(source, Color32::WHITE, w, h, true)
+            .map(|image| painter.ctx().load_texture(format!("icon-{key}"), image, egui::TextureOptions::LINEAR));
+        textures.images.insert(key, texture);
+    }
+    let Some(Some(texture)) = textures.images.get(&key) else { return false };
+    painter.add(
+        egui::epaint::RectShape::filled(rect, 0.0, ink)
+            .with_texture(texture.id(), Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0))),
+    );
+    true
+}
+
 /// An element's `box-shadow` (a glow is one without an offset), cast by a surface's artwork about
 /// to be drawn as `mesh`, under it and in its shape, in place of the rectangle's.
 fn cast_shadows(painter: &Painter, mesh: &egui::Mesh, style: Option<&super::native_css::Computed>) {
     let Some(style) = style else { return };
     let slot = painter.add(egui::Shape::Noop);
     super::native_css::artwork_shadows(painter, slot, mesh, style);
-}
-
-/// Whether the surfaces artwork stands on let the desktop show through: the window's, the
-/// panels' and the track headers'. A translucent hover or selection colour does not count.
-fn desktop_shows() -> bool {
-    use super::theme;
-    [theme::window_background(), theme::panel_background(), theme::track_header_background()]
-        .iter()
-        .any(|color| color.a() < 255)
 }
 
 /// Original editable artwork supplied with the theme template.

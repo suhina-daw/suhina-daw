@@ -713,6 +713,7 @@ pub(crate) fn place_clip(
         color: None,
         ara: false,
         audio: source.audio,
+        swing: Default::default(),
         extensions: Default::default(),
     };
     match row {

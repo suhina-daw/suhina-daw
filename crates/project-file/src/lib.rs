@@ -23,15 +23,16 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
     Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, CLIP_GAIN_MAX_DB,
-    Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ContentId, ContentKinds, ContentLane,
-    ControllerMapping, Device, DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions, FadeCurve,
-    FadeShape, FollowAction, FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData, LaneId, LaunchMode,
-    LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_GAIN_POINTS,
-    MAX_INPUT_CHANNEL, MAX_MAPPINGS, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping, MappedDevice,
-    MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene,
-    SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track,
-    TrackId, Transport, WarpMarker, automation, max_clip_gain, valid_bpm,
+    Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ClipSwing, ContentId, ContentKinds,
+    ContentLane, ControllerMapping, Device, DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions,
+    FadeCurve, FadeShape, FollowAction, FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData, LaneId,
+    LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT,
+    MAX_GAIN_POINTS, MAX_INPUT_CHANNEL, MAX_MAPPINGS, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro,
+    MacroMapping, MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb,
+    SWING_RANGE, Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TempoSource,
+    TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, max_clip_gain, valid_bpm,
 };
+use suhina_model::{LaneGroup, LaneLayout, LaneRef, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
 
 /// The file extension, without the dot.
 pub const EXTENSION: &str = suhina_model::PROJECT_EXTENSION;
@@ -41,7 +42,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 10;
+pub const VERSION: u64 = 12;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -213,6 +214,10 @@ fn project_value(p: &Project) -> Value {
         "tempo_bpm": number(p.transport.tempo_bpm),
         "time_signature": [p.transport.time_signature.numerator, p.transport.time_signature.denominator],
     });
+    // Left out when the project does not swing (#1221, version 11).
+    if p.transport.swing != 0.0 {
+        transport["swing"] = json!(number(p.transport.swing));
+    }
     // Left out when there is no loop region, so such a project is written as before.
     if let Some(range) = p.transport.loop_range {
         transport["loop"] =
@@ -292,6 +297,10 @@ fn project_value(p: &Project) -> Value {
     // written as before. The launcher's `mappings` of earlier versions is never written again.
     if !p.controller_mappings.is_empty() {
         out.insert("controller_mappings".into(), p.controller_mappings.iter().map(mapping_value).collect());
+    }
+    // From version 11 (#1322); left out when no channel's lanes were laid out.
+    if !p.lane_layouts.is_empty() {
+        out.insert("lane_layouts".into(), p.lane_layouts.iter().map(lane_layout_value).collect());
     }
     // Left out when there is none, so a project without one is written as before.
     if let Some(scale) = p.default_scale {
@@ -661,6 +670,10 @@ fn clip_value(c: &Clip) -> Value {
         if c.audio != ClipAudio::default() {
             map.insert("audio".into(), clip_audio_value(&c.audio));
         }
+        // Only a clip whose swing is not the starting one carries it (#1221, version 11).
+        if !c.swing.is_default() {
+            map.insert("swing".into(), json!({ "amount": number(c.swing.amount), "own": c.swing.own }));
+        }
         with_extensions(map, &c.extensions);
     }
     out
@@ -930,6 +943,10 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                     (Some(range), flag(l, "enabled", false, at)?)
                 }
             };
+            let swing = float_or(t, "swing", 0.0, "project.transport")?;
+            if !SWING_RANGE.contains(&swing) {
+                return Err(format!("project.transport.swing: {swing} is not 0 to 1").into());
+            }
             Transport {
                 tempo_bpm: tempo,
                 time_signature: signature,
@@ -937,6 +954,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                 loop_enabled,
                 tempo_changes: tempo_changes(t)?.into(),
                 time_signature_changes: time_signature_changes(t)?,
+                swing,
             }
         }
     };
@@ -1080,6 +1098,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
         extensions: extensions(p, "project")?,
         default_scale: read_scale(p, "default_scale", "project")?,
         controller_mappings,
+        lane_layouts: read_lane_layouts(p)?,
         next_id: optional_whole(p, "next_id", "project")?.unwrap_or(0),
     };
     // A file written before ids, or an object added by hand without one: the objects without an
@@ -1088,6 +1107,91 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
     // got new ids as their lists were built: the file holds none (#763 › 1).
     project.assign_ids().map_err(|e| ProjectFileError(format!("project: {e}")))?;
     Ok(project)
+}
+
+/// A lane of a layout: `{device?, param}`, the device by its id.
+fn lane_ref_value(lane: &LaneRef) -> Value {
+    match lane.device {
+        Some(device) => json!({ "device": device.0, "param": lane.param }),
+        None => json!({ "param": lane.param }),
+    }
+}
+
+/// A channel's lane layout (#1322): `{channel, lanes, groups}`, a group's `folded` and `device`
+/// written only when set.
+fn lane_layout_value(layout: &LaneLayout) -> Value {
+    let groups: Vec<Value> = layout
+        .groups
+        .iter()
+        .map(|g| {
+            let mut group = json!({ "name": g.name, "lanes": g.lanes.iter().map(lane_ref_value).collect::<Vec<_>>() });
+            if let Some(map) = group.as_object_mut() {
+                if g.folded {
+                    map.insert("folded".into(), json!(true));
+                }
+                if let Some(device) = g.device {
+                    map.insert("device".into(), json!(device.0));
+                }
+            }
+            group
+        })
+        .collect();
+    json!({
+        "channel": layout.channel.0,
+        "lanes": layout.lanes.iter().map(lane_ref_value).collect::<Vec<_>>(),
+        "groups": groups,
+    })
+}
+
+fn read_lane_ref(value: &Value, at: &str) -> Result<LaneRef, ProjectFileError> {
+    let o = object(value, at)?;
+    Ok(LaneRef { device: optional_whole(o, "device", at)?.map(DeviceId), param: text(o, "param", at)? })
+}
+
+/// The project's `lane_layouts` (version 11 on): each whole, within its limits.
+fn read_lane_layouts(p: &Obj) -> Result<Vec<LaneLayout>, ProjectFileError> {
+    let listed = list(p, "lane_layouts", "project")?;
+    if listed.len() > 65_536 {
+        return Err("project.lane_layouts: too many layouts".into());
+    }
+    let mut layouts = Vec::new();
+    for (i, v) in listed.iter().enumerate() {
+        let at = format!("project.lane_layouts[{i}]");
+        let o = object(v, &at)?;
+        let lanes = list(o, "lanes", &at)?;
+        let groups = list(o, "groups", &at)?;
+        if lanes.len() > MAX_LAYOUT_LANES || groups.len() > MAX_LAYOUT_GROUPS {
+            return Err(format!("{at}: more than {MAX_LAYOUT_LANES} lanes or {MAX_LAYOUT_GROUPS} groups").into());
+        }
+        let lanes = lanes
+            .iter()
+            .enumerate()
+            .map(|(j, v)| read_lane_ref(v, &format!("{at}.lanes[{j}]")))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut read_groups = Vec::new();
+        for (j, g) in groups.iter().enumerate() {
+            let at = format!("{at}.groups[{j}]");
+            let go = object(g, &at)?;
+            let members = list(go, "lanes", &at)?;
+            if members.len() > MAX_LAYOUT_LANES {
+                return Err(format!("{at}.lanes: more than {MAX_LAYOUT_LANES} lanes").into());
+            }
+            read_groups.push(LaneGroup {
+                name: text(go, "name", &at)?,
+                lanes: members
+                    .iter()
+                    .enumerate()
+                    .map(|(k, v)| read_lane_ref(v, &format!("{at}.lanes[{k}]")))
+                    .collect::<Result<Vec<_>, _>>()?,
+                folded: flag(go, "folded", false, &at)?,
+                device: optional_whole(go, "device", &at)?.map(DeviceId),
+            });
+        }
+        let layout = LaneLayout { channel: ChannelId(whole(o, "channel", &at)?), lanes, groups: read_groups };
+        layout.check().map_err(|e| ProjectFileError(format!("{at}: {e}")))?;
+        layouts.push(layout);
+    }
+    Ok(layouts)
 }
 
 fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
@@ -1607,8 +1711,26 @@ fn read_clip(value: &Value, at: &str, legacy: &Legacy) -> Result<Clip, ProjectFi
         color: read_color(c.get("color"), at)?,
         ara: flag(c, "ara", false, at)?,
         audio,
+        swing: read_swing(c, at)?,
         extensions: extensions(c, at)?,
     })
+}
+
+/// A clip's `swing` (version 11 on): `{ amount, own }`, the amount 0 to 1; missing or `null` is the
+/// starting one, following the project's swing.
+fn read_swing(c: &Obj, at: &str) -> Result<ClipSwing, ProjectFileError> {
+    match c.get("swing") {
+        None | Some(Value::Null) => Ok(ClipSwing::default()),
+        Some(v) => {
+            let at = format!("{at}.swing");
+            let s = object(v, &at)?;
+            let amount = float_or(s, "amount", 0.0, &at)?;
+            if !SWING_RANGE.contains(&amount) {
+                return Err(format!("{at}.amount: {amount} is not 0 to 1").into());
+            }
+            Ok(ClipSwing { amount, own: flag(s, "own", false, &at)? })
+        }
+    }
 }
 
 /// A `color` field, `#RRGGBB`; missing or null is none.

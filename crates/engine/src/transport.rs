@@ -157,14 +157,21 @@ impl Renderer {
         crate::tempo::beat_at(&self.graph.tempo, self.time())
     }
 
-    /// Ends every sounding note and device tail that the transport stopping or jumping cuts.
-    pub(crate) fn release_sounding(&mut self) {
+    /// Ends every sounding note and device tail that the transport stopping or jumping cuts. A
+    /// stop (`everything`) also sends the instruments an all-notes-off; a jump or a loop's wrap,
+    /// where notes start again in the same block, releases the held keys one by one
+    /// ([`Chain::release_held`](crate::chain::Chain::release_held)).
+    pub(crate) fn release_sounding(&mut self, everything: bool) {
         for voice in self.voices.iter_mut().filter(|v| v.active) {
             voice.end = voice.end.min(self.transport.position);
         }
         let frame = self.block_frame;
         for chain in &mut self.graph.chains {
-            chain.release_all(frame);
+            if everything {
+                chain.release_all(frame);
+            } else {
+                chain.release_held(frame);
+            }
         }
         self.active_audio_count = 0;
     }
@@ -215,7 +222,7 @@ impl Renderer {
         self.transport.running = false;
         self.path_fade_left = 0;
         self.metronome.reset();
-        self.release_sounding();
+        self.release_sounding(true);
         // Ready for the next start, at the marker.
         self.graph.ahead.move_to(self.start_frame());
         self.stretch_fresh = true;
@@ -381,7 +388,7 @@ impl Renderer {
     fn jump_to_with(&mut self, beat: f64, wrap: bool) {
         // The sound moves anyway: no fade from where it was.
         self.path_fade_left = 0;
-        self.release_sounding();
+        self.release_sounding(false);
         self.locate(beat);
         // Read from the new place; until the worker gets there, stretched clips are silent.
         if wrap {

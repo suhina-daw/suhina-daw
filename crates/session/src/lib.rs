@@ -51,6 +51,7 @@ mod export;
 mod files;
 mod follow;
 mod history;
+mod lane_layout;
 mod launch;
 mod library;
 mod live_input;
@@ -75,6 +76,7 @@ mod relink;
 mod scales;
 mod sends;
 mod soundmap;
+mod swing;
 mod take_carry;
 mod tempo;
 mod track_copy;
@@ -112,8 +114,8 @@ pub use projects::{
     project_commands,
 };
 pub use rack::{
-    BlockCounts, Hosted, OfflinePlugins, PluginEnv, PluginProgress, PluginReport, PluginStatus, ProcessGroup, Rack,
-    is_instrument, plugin_group, start_offline,
+    BlockCounts, Hosted, OfflinePlugins, ParamTexts, PluginEnv, PluginProgress, PluginReport, PluginStatus,
+    ProcessGroup, Rack, is_instrument, plugin_group, start_offline,
 };
 pub use recording::{COUNT_IN_BARS, LiveTake, RECORDED_FOLDER};
 pub use relink::COLLECTED;
@@ -238,6 +240,9 @@ pub struct Session {
     audio: project_audio::ProjectAudio,
     device_files: device_files::DeviceFiles,
     pub(crate) sync: player_sync::PlayerSync,
+    /// Plug-in parameters the user moved in a plug-in's own editor since the window last asked
+    /// (track, device on the track's chain, parameter id), for its lanes to show them (#1205).
+    pub(crate) touched: Vec<(suhina_model::TrackId, usize, u32)>,
     /// When the project was last backed up and where (`backup.rs`).
     pub(crate) backup: backup::SessionBackups,
     pub(crate) live: live_input::LiveInput,
@@ -285,6 +290,7 @@ impl Session {
             audio: project_audio::ProjectAudio::default(),
             device_files: device_files::DeviceFiles::default(),
             sync: player_sync::PlayerSync::default(),
+            touched: Vec::new(),
             backup: backup::SessionBackups::default(),
             live: live_input::LiveInput::default(),
             take_solo: None,
@@ -446,8 +452,10 @@ impl Session {
     }
 
     pub fn copied_from_tracks(&self) -> bool {
-        self.clipboards.tracks.len() == self.clipboards.clips.len()
-            && self.clipboards.tracks.iter().any(|t| Some(t) != self.clipboards.tracks.first())
+        // A time selection's copy, its automation with it, goes back to its own tracks (#1205).
+        self.clipboards.span.is_some()
+            || (self.clipboards.tracks.len() == self.clipboards.clips.len()
+                && self.clipboards.tracks.iter().any(|t| Some(t) != self.clipboards.tracks.first()))
     }
 
     /// The project's decoded audio, which players are started with (ADR 0011).
@@ -931,6 +939,101 @@ impl Session {
         self.plugins.report(key)
     }
 
+    /// Sets parameter `id` of the hosted plug-in at `device` on `track`'s chain to `value` for
+    /// now, from the next audio block, leaving the project and its lanes alone (#1205): while a
+    /// point of the parameter's lane is dragged, the plug-in and its editor follow the line where
+    /// the transport stands. The command that lets go of the point puts the lane in for good. Does
+    /// nothing for a device that is not a hosted plug-in or without a player. Returns whether the
+    /// value went to the engine.
+    pub fn preview_plugin_param(&mut self, track: suhina_model::TrackId, device: usize, id: u32, value: f64) -> bool {
+        let hosted = self.project.channel_of_track(track).and_then(|c| c.devices.get(device)).is_some_and(|d| {
+            matches!(
+                d.kind,
+                suhina_model::DeviceKind::Clap { .. }
+                    | suhina_model::DeviceKind::Vst3 { .. }
+                    | suhina_model::DeviceKind::Vst2 { .. }
+            )
+        });
+        let Ok(param) = usize::try_from(id) else { return false };
+        if hosted
+            && value.is_finite()
+            && let Some(player) = self.sync.player.as_mut()
+        {
+            return player.set_device_param(ParamEdit { track, device, param, value }).is_ok();
+        }
+        false
+    }
+
+    /// What the project plays on parameter `id` of the plug-in device at `device` on `track`'s
+    /// chain at `beat`: its enabled lane's value there (held until the next point when `stepped`),
+    /// else the value set; `None` for a device or parameter the project does not hold.
+    pub fn plugin_param_now(
+        &self,
+        track: suhina_model::TrackId,
+        device: usize,
+        id: u32,
+        beat: f64,
+        stepped: bool,
+    ) -> Option<f64> {
+        let device = self.project.channel_of_track(track)?.devices.get(device)?;
+        let lane = device
+            .automation
+            .iter()
+            .find(|l| suhina_engine::param_id(&l.param) == Some(id) && l.enabled && !l.points.is_empty());
+        if let Some(value) = lane.and_then(|l| l.value_at(beat.max(0.0), stepped, &suhina_model::automation::Plain)) {
+            return Some(value);
+        }
+        device.params.iter().find(|p| suhina_engine::param_id(&p.id) == Some(id)).map(|p| p.value)
+    }
+
+    /// The plug-in parameters the user moved in a plug-in's own editor since the last call
+    /// (track, device on the track's own chain, parameter id), each once, for the window to show
+    /// them in the track's lanes (#1205). A value a lane sent there and the plug-in reported back
+    /// is not one.
+    pub fn take_touched_params(&mut self) -> Vec<(suhina_model::TrackId, usize, u32)> {
+        std::mem::take(&mut self.touched)
+    }
+
+    /// The plug-in devices on the own chains of `tracks` (not inside a device group), for their
+    /// automation lanes (#1205): each one's track and place on the chain, the parameters it
+    /// listed last (asked for again in the background once a couple of seconds old) and its
+    /// texts. The project's plug-in devices are looked up once, whatever the number of tracks.
+    #[allow(clippy::type_complexity)]
+    pub fn lane_plugin_lists(
+        &mut self,
+        tracks: &[suhina_model::TrackId],
+    ) -> Vec<(
+        suhina_model::TrackId,
+        usize,
+        Option<std::sync::Arc<[suhina_plugins::ParamInfo]>>,
+        Option<std::sync::Arc<ParamTexts>>,
+    )> {
+        let mut found = Vec::new();
+        for device in suhina_engine::plugin_devices(&self.project) {
+            let (Some(track), [index]) = (device.track, device.path.as_slice()) else { continue };
+            if !tracks.contains(&track) {
+                continue;
+            }
+            self.plugins.list_params(device.key);
+            found.push((track, *index, self.plugins.listed(device.key), self.plugins.texts(device.key)));
+        }
+        found
+    }
+
+    /// The plug-in device at `path` on `track`'s own texts for values it was asked about
+    /// ([`Session::ask_plugin_texts_at`], #1205).
+    pub fn plugin_texts_at(&self, track: suhina_model::TrackId, path: &[usize]) -> Option<std::sync::Arc<ParamTexts>> {
+        self.plugins.texts(plugin_key_at_path(&self.project, track, path)?)
+    }
+
+    /// Asks the plug-in device at `path` on `track` in the background for its own texts of
+    /// `values` of parameter `id`, for automation lanes to show (#1205).
+    pub fn ask_plugin_texts_at(&mut self, track: suhina_model::TrackId, path: &[usize], id: u32, values: &[f64]) {
+        if let Some(key) = plugin_key_at_path(&self.project, track, path) {
+            self.plugins.ask_texts(key, id, values);
+        }
+    }
+
     /// Has the plug-in device at `path` on `track` list its parameters again in the background,
     /// for its generated panel, when its list is a couple of seconds old
     /// ([`rack::Rack::list_params`]).
@@ -1136,6 +1239,14 @@ impl Session {
 
     pub fn can_redo(&self) -> bool {
         !self.history.redo.is_empty()
+    }
+
+    /// How many steps an undo can go back now, and how many undo steps were ever made: with both,
+    /// the window keeps a step of its own beside each of the session's, to bring back with an
+    /// undo what a step changed in the view (a range moved onto its copy, #1322). At
+    /// [`MAX_UNDO`] the oldest step goes as a new one comes, and the depth stays.
+    pub fn undo_steps(&self) -> (usize, u64) {
+        (self.history.undo.len(), self.history.made)
     }
 
     /// The colours a track without one of its own shows, by its place among the tracks (the
@@ -1489,6 +1600,7 @@ impl Session {
         }
         self.history.undo.push(before);
         self.history.redo.clear();
+        self.history.made = self.history.made.wrapping_add(1);
     }
 
     fn undo(&mut self) -> bool {

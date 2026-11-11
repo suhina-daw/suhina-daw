@@ -21,7 +21,12 @@ fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_pan
     }
     let mut h = window(demo_app());
     let border = theme::border();
-    assert!(h.output().shapes.iter().any(|shape| covers_workspace(&shape.shape, border)));
+    // The line between the bars and the views is a line in the gap, never a fill under the views
+    // that a translucent one would show (#1233).
+    assert!(!h.output().shapes.iter().any(|shape| covers_workspace(&shape.shape, border)));
+    assert!(h.output().shapes.iter().any(|shape| matches!(&shape.shape,
+        egui::Shape::Rect(rect) if rect.fill == border && rect.rect.width() > SIZE.0 * 0.9 && rect.rect.height() <= 1.0
+    )));
     let before = h.state().session().unwrap().project().clone();
     let ctx = h.ctx.clone();
     let mut paper = theme::Theme { name: "Private paper".into(), ..Default::default() };
@@ -54,8 +59,11 @@ fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_pan
     assert_eq!(h.state().session().unwrap().project(), &before);
 }
 
+/// Every background blends (#1233): in a see-through theme, with the window's clearing host
+/// installed, nothing in a settled launcher replaces the window's pixels, so no fill can erase the
+/// column artwork under an empty slot.
 #[test]
-fn textured_empty_slots_do_not_clear_their_artwork_on_native_alpha_surfaces() {
+fn no_background_replaces_the_window_pixels_on_native_alpha_surfaces() {
     use std::sync::{Arc, Mutex};
     struct Replacement(Arc<Mutex<Vec<(egui::Rect, egui::Color32)>>>);
     impl suhina_ui::kit::surface::Provider for Replacement {
@@ -68,20 +76,16 @@ fn textured_empty_slots_do_not_clear_their_artwork_on_native_alpha_surfaces() {
     }
     let mut h = window(demo_app());
     let ctx = h.ctx.clone();
-    h.state_mut().use_theme(&ctx, "suhina-blocks");
+    h.state_mut().use_theme(&ctx, "suhina-glass");
     let fills = Arc::new(Mutex::new(Vec::new()));
     suhina_ui::kit::surface::install(&ctx, Arc::new(Replacement(fills.clone())));
     for _ in 0..4 {
         fills.lock().unwrap().clear();
         h.step();
     }
-    let slot = h.get_by_label("Stop Keys (scene 1)").rect();
-    assert!(
-        !fills.lock().unwrap().iter().any(|(rect, color)| color.a() == 0
-            && rect.min.distance(slot.min) < 1.0
-            && rect.max.distance(slot.max) < 1.0),
-        "transparent replacement fills erase the column artwork on a native GPU surface"
-    );
+    assert!(theme::window_background().a() < u8::MAX, "a see-through theme");
+    assert!(fills.lock().unwrap().is_empty(), "nothing replaces pixels: {:?}", fills.lock().unwrap());
+    theme::set_palette(&ctx, theme::Palette::DARK);
 }
 
 #[test]
@@ -1033,22 +1037,18 @@ fn open_with_clip(css: &str, stacked: bool) -> Harness<'static, App> {
 }
 
 /// A layout with only gaps holds the detail area's splitter to the sizes the native layout
-/// keeps: stacked, a drag towards the edge leaves the area, and its splitter, in the window;
-/// under the view, a drag up leaves the view its least height (#1252).
+/// keeps: stacked, the area is open a panel wide or closed, as a track's devices in a row are, so a
+/// short drag leaves it where it was and a drag towards the edge closes it; under the view, a drag
+/// up leaves the view its least height (#1252).
 #[test]
 fn a_layout_with_only_gaps_keeps_the_dragged_detail_area_in_bounds() {
-    let right = SIZE.0;
     let mut h = open_with_clip("#workspace { gap: 8px; }", true);
-    let narrowed = drag(&mut h, "Detail area splitter", Vec2::new(2000.0, 0.0));
-    let back = drag(&mut h, "Detail area splitter", Vec2::new(-100.0, 0.0));
+    let before = h.get_by_label("Detail area splitter").rect().center().x;
+    let nudged = drag(&mut h, "Detail area splitter", Vec2::new(40.0, 0.0)).map(|s| s.center().x);
+    assert!(nudged.is_some_and(|x| (x - before).abs() < 1.0), "one width: {before} to {nudged:?}");
+    let closed = drag(&mut h, "Detail area splitter", Vec2::new(2000.0, 0.0));
     suhina_ui::kit::native_css::set_user_sheet(None);
-    let narrowed = narrowed.map(|s| s.center().x);
-    assert!(
-        narrowed.is_some_and(|x| x <= right - 180.0),
-        "the area keeps its least width, and its splitter: {narrowed:?}"
-    );
-    let back = back.map(|s| s.center().x);
-    assert!(back.zip(narrowed).is_some_and(|(b, n)| b < n - 50.0), "and it drags back: {narrowed:?} to {back:?}");
+    assert!(closed.is_none(), "a drag towards the edge closes the area: {closed:?}");
 
     let mut h = open_with_clip("#workspace { gap: 8px; }", false);
     let raised = drag(&mut h, "Detail area splitter", Vec2::new(0.0, -2000.0));

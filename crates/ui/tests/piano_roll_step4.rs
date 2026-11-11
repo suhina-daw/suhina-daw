@@ -47,6 +47,9 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
     harness.run();
     harness.get_by_label(CLIP).click();
     harness.run();
+    // A detail area tall enough for the figures under the clip panel's Clip part (› Clip column).
+    let splitter = harness.get_by_label("Detail area splitter").rect().center();
+    drag(&mut harness, splitter, splitter - egui::vec2(0.0, 160.0), 6);
     harness
 }
 
@@ -283,11 +286,25 @@ fn the_midi_tools_column_says_what_it_acts_on() {
     assert!(h.query_by_label(&format!("{total} notes")).is_some(), "the count under the head");
     let at = note_rect(&h, &notes(&h)[0]).center();
     click(&mut h, at);
-    assert!(h.query_by_label("Selected notes").is_some(), "one note selected");
-    assert!(h.query_by_label("1 of 4 notes").is_some(), "the count under the head");
+    assert!(h.query_by_label("Selection").is_some(), "one note selected");
+    assert!(h.query_by_label("1 of 4").is_some(), "the count under the head");
     h.key_press(Key::Escape);
     h.run();
     assert!(h.query_by_label("Whole clip").is_some(), "Escape clears the selection");
+}
+
+/// Transpose starts at 0 semitones, and its Apply moves nothing until a number is chosen.
+#[test]
+fn transpose_starts_at_zero_and_applies_nothing_until_chosen() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    assert_eq!(h.state().piano_roll().tools.transpose, 0);
+    let before = notes(&h);
+    let at = note_rect(&h, &before[0]).center();
+    click(&mut h, at);
+    h.get_by_label("Transpose").click_accesskit();
+    h.run();
+    assert_eq!(notes(&h), before, "nothing moved at 0");
 }
 
 #[test]
@@ -334,7 +351,14 @@ fn the_whole_clip_tools_reverse_double_and_ramp() {
         reversed[0]
     );
 
-    h.get_by_label("Ramp").click_accesskit();
+    // Ramp velocity is a transformation: the Transform tab, the list, Apply.
+    h.get_by_label("Transform tab").click();
+    h.run();
+    h.get_by_label("Transformation: Humanise").click();
+    h.run();
+    h.get_by_label("Ramp velocity").click_accesskit();
+    h.run();
+    h.get_by_label("Ramp clip").click_accesskit();
     h.run();
     let ramped = notes(&h);
     let velocities: Vec<u8> = ramped.iter().map(|n| suhina_session::midi_velocity(n.velocity)).collect();
@@ -350,10 +374,13 @@ fn the_whole_clip_tools_reverse_double_and_ramp() {
 fn humanise_twice_gives_two_different_results() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    h.get_by_label("Humanise").click_accesskit();
+    h.get_by_label("Transform tab").click();
+    h.run();
+    assert!(h.query_by_label("Transformation: Humanise").is_some(), "Humanise is chosen at first");
+    h.get_by_label("Humanise clip").click_accesskit();
     h.run();
     let once = notes(&h);
-    h.get_by_label("Humanise").click_accesskit();
+    h.get_by_label("Humanise clip").click_accesskit();
     h.run();
     let twice = notes(&h);
     assert_ne!(once, twice, "each press draws afresh: {once:?} against {twice:?}");
@@ -363,15 +390,16 @@ fn humanise_twice_gives_two_different_results() {
 fn the_three_slider_icon_hides_and_shows_the_column() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    assert!(h.query_by_label("Whole clip").is_some(), "the column shows at first");
+    assert!(h.query_by_label("Notes tab").is_some(), "the tools show at first");
     h.get_by_label("MIDI tools").click();
     h.run();
     assert!(!h.state().piano_roll().tools_open);
-    assert!(h.query_by_label("Whole clip").is_none(), "the column is hidden");
+    assert!(h.query_by_label("Notes tab").is_none(), "the tools are hidden");
+    assert!(h.query_by_label("Whole clip").is_some(), "what they act on still shows");
     h.get_by_label("MIDI tools").click();
     h.run();
     assert!(h.state().piano_roll().tools_open);
-    assert!(h.query_by_label("Whole clip").is_some(), "and comes back");
+    assert!(h.query_by_label("Notes tab").is_some(), "and they come back");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -384,14 +412,17 @@ fn the_clip_column_describes_the_selection() {
     let mut h = piano_app(&mut renderer, Settings::default());
     let notes = notes(&h);
     let total = notes.len();
-    assert!(h.query_by_label(&format!("Notes: {total}")).is_some(), "nothing selected: the count");
-    assert!(h.query_by_label_contains("From: ").is_none(), "no selection rows without a selection");
+    assert!(h.query_by_label(&format!("{total} notes")).is_some(), "nothing selected: the count");
+    // With nothing selected the figures are the whole clip's.
+    for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
+        assert!(h.query_by_label_contains(label).is_some(), "the whole clip's {label}");
+    }
 
     let at = note_rect(&h, &notes[0]).center();
     click(&mut h, at);
     let selected = h.state().piano_roll().selected.len();
     assert_eq!(selected, 1);
-    assert!(h.query_by_label(&format!("Notes: 1 of {total}")).is_some());
+    assert!(h.query_by_label(&format!("1 of {total}")).is_some(), "the count of the selection");
     for label in ["From: ", "To: ", "Pitch: ", "Velocity: "] {
         assert!(h.query_by_label_contains(label).is_some(), "{label}");
     }
@@ -404,7 +435,7 @@ fn the_clip_column_describes_the_selection() {
     tool(&mut h, "Mute");
     let at = note_rect(&h, &notes[0]).center();
     click(&mut h, at);
-    assert!(h.query_by_label(&format!("Notes: 1 of {total}, 1 muted")).is_some());
+    assert!(h.query_by_label("Muted: 1").is_some());
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -538,24 +569,104 @@ fn the_right_button_and_the_wheel_still_choose_tools_and_delete_nothing() {
 // ---------------------------------------------------------------------------------------------
 
 #[test]
-fn with_the_detail_area_stacked_the_column_is_hidden_and_ctrl_u_still_quantises() {
+fn with_the_devices_stacked_the_piano_roll_stays_along_the_bottom_and_ctrl_u_still_quantises() {
     let mut renderer = engine();
-    // The clip is selected with the detail area in its usual place, where it is in view, and the
-    // device chain is stacked afterwards: with the column beside the view there is no room for the
-    // MIDI tools column.
+    // The clip is selected with the detail area in its usual place, and the device chain is
+    // stacked afterwards: only the devices stack. The piano roll stays along the bottom, the
+    // clip's panel beside its grid as in a row, the whole width of the window.
     let mut h = piano_app(&mut renderer, Settings::default());
     let ctx = h.ctx.clone();
     h.state_mut().set_settings(&ctx, Settings { device_layout: DeviceLayout::Stack, ..Settings::default() });
     h.run();
-    assert!(h.query_by_label("Whole clip").is_none(), "there is no room for the column");
-    assert!(h.query_by_label("Quantise notes").is_none(), "and none for its controls");
-    // The quantise settings and Ctrl+U still work where there is no column.
+    let grid = h.get_by_label_contains("Piano roll,").rect();
+    let head = h.get_by_label("Whole clip").rect();
+    assert!(head.right() <= grid.left() + 0.5, "the clip's panel is beside the grid: {head:?} {grid:?}");
+    assert!(grid.right() > SIZE.0 - 40.0, "the grid reaches the window's right: {grid:?}");
+    assert!(grid.top() > SIZE.1 / 2.0 - 160.0, "along the bottom: {grid:?}");
+    // Devices opens the stacked devices in a column beside the view, the piano roll still open.
+    h.get_by_label("Show Devices").click();
+    h.run();
+    let column = h.get_by_label("Devices column splitter").rect();
+    let still = h.get_by_label_contains("Piano roll,").rect();
+    assert!(column.bottom() <= still.top() + 1.0, "the devices are above the piano roll: {column:?} {still:?}");
+    assert!(still.right() > SIZE.0 - 40.0, "the piano roll keeps the whole width: {still:?}");
+    h.get_by_label("Show Clip").click();
+    h.run();
+    assert!(h.query_by_label("Devices column splitter").is_none(), "Clip shows the piano roll alone");
+    // Both parts are on while the column shows, and Devices clicked again closes it too.
+    h.get_by_label("Show Devices").click();
+    h.run();
+    assert!(h.query_by_label("Devices column splitter").is_some());
+    h.get_by_label("Show Devices").click();
+    h.run();
+    assert!(h.query_by_label("Devices column splitter").is_none(), "Devices again closes the column");
+    // Closed, the column keeps a splitter at the view's right edge: dragged left, it opens again.
+    let closed = h.get_by_label("Closed devices column splitter").rect().center();
+    h.hover_at(closed);
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: closed,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    h.step();
+    for step in 1..=6 {
+        h.hover_at(closed - egui::vec2(40.0 * step as f32, 0.0));
+        h.step();
+    }
+    let to = closed - egui::vec2(240.0, 0.0);
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.run();
+    assert!(h.query_by_label("Devices column splitter").is_some(), "a drag of the closed splitter opens it");
+    // The quantise settings and Ctrl+U work whether the tools show or not.
     h.key_press_modifiers(Modifiers::COMMAND, Key::U);
     h.run();
     let quantised = notes(&h);
     assert!(
         quantised.iter().all(|n| (n.time / 0.25 - (n.time / 0.25).round()).abs() < 1e-6),
-        "Ctrl+U quantised without the column: {quantised:?}"
+        "Ctrl+U quantised: {quantised:?}"
     );
     assert_eq!(h.state().piano_roll().quantize.amount, 100.0, "the settings it keeps are intact");
+}
+
+/// A click on an empty spot of the note grid moves the play start marker there, as a click on an
+/// empty spot of a lane does: stopped, the playhead goes where the click was (on the grid).
+#[test]
+fn a_click_on_an_empty_spot_moves_the_play_start_marker_there() {
+    let mut renderer = engine();
+    let monitor = renderer.monitor();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let key = empty_key(&h);
+    let at = spot(&h, 2.0, key);
+    click(&mut h, at);
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    assert_eq!(monitor.start_beat(), CLIP_START + 2.0, "beat 2 of the clip, which starts at beat 64");
+}
+
+/// With the devices in a row, Devices beside piano roll opens them in a column beside
+/// the piano roll, which stays open; off, Devices puts them in its place.
+#[test]
+fn stack_device_panel_only_in_piano_roll_keeps_the_piano_roll_open() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    h.get_by_label("Show Devices").click();
+    h.run();
+    assert!(h.query_by_label_contains("Piano roll,").is_none(), "off: the chain takes the piano roll's place");
+    h.get_by_label("Show Clip").click();
+    h.run();
+    let mut settings = Settings::default();
+    settings.view.stack_in_piano_roll = true;
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    h.get_by_label("Show Devices").click();
+    h.run();
+    assert!(h.query_by_label("Devices column splitter").is_some(), "on: the column beside the view");
+    assert!(h.query_by_label_contains("Piano roll,").is_some(), "and the piano roll stays open");
 }

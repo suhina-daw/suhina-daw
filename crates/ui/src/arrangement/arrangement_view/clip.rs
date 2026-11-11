@@ -1028,7 +1028,8 @@ pub(super) fn clip_box<'a>(
     };
     let mut envelope_place = None;
     // The envelope's ink: what reads on the clip's colour, as its name does.
-    let envelope_ink = ink_on(motion::mix(theme::panel_background(), rgb(clip.color), 0.82));
+    let envelope_ink =
+        ink_on(motion::mix(crate::kit::style_class::surface_or(theme::panel_background()), rgb(clip.color), 0.82));
     let result = match state.clip_drag {
         Some(drag) if mine(&drag) && drag.target != lane.track => {
             if drag.copy || copy_key {
@@ -1137,7 +1138,7 @@ pub(super) fn clip_box<'a>(
     // outlined, so the clip the editor and the keys work on is plain to see.
     if selected && !lit && state.clip_drag.is_none() {
         let edge = Rect::from_min_size(rect.min, Vec2::new(4.0, rect.height()));
-        let body = motion::mix(theme::panel_background(), rgb(clip.color), 0.82);
+        let body = motion::mix(crate::kit::style_class::surface_or(theme::panel_background()), rgb(clip.color), 0.82);
         painter.with_clip_rect(row.clip).rect_filled(edge, 0.0, motion::mix(body, ink_on(body), 0.5));
         painter.with_clip_rect(row.clip).rect_stroke(
             rect,
@@ -1226,7 +1227,12 @@ pub(super) fn clip_box<'a>(
         let length = if edge == FadeEdge::In { shown.fade_in } else { shown.fade_out };
         let center = curve_handle(rect, edge, length as f32 * state.beat_width, shown.curve(edge));
         let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
-        handle_painter.circle(center, CURVE_HANDLE / 2.0, fill, theme::hairline(theme::window_background()));
+        handle_painter.circle(
+            center,
+            CURVE_HANDLE / 2.0,
+            fill,
+            theme::hairline(crate::kit::style_class::surface_or(theme::window_background())),
+        );
     }
     result
 }
@@ -1245,7 +1251,12 @@ fn paint_fade_handle(painter: &egui::Painter, handle: Rect, hover: f32) {
         el.paint_with(painter, handle, crate::kit::element::Native { radius: 0.0, fill });
     } else {
         painter.rect_filled(handle, 0.0, fill);
-        painter.rect_stroke(handle, 0.0, theme::hairline(theme::window_background()), StrokeKind::Outside);
+        painter.rect_stroke(
+            handle,
+            0.0,
+            theme::hairline(crate::kit::style_class::surface_or(theme::window_background())),
+            StrokeKind::Outside,
+        );
     }
 }
 
@@ -1376,7 +1387,12 @@ pub(super) fn paint_clip(
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
     let strength = if clip.audio { look.audio_colour_strength } else { 82 };
     let strength = if selected { strength.saturating_add(12).min(100) } else { strength };
-    let body = own.background_or(colour_surface(theme::panel_background(), rgb(clip.color), strength, off));
+    let body = own.background_or(colour_surface(
+        crate::kit::style_class::surface_or(theme::panel_background()),
+        rgb(clip.color),
+        strength,
+        off,
+    ));
     let radius = own.radius_or(2.0);
     // A clip is content, not a background: it blends with the lane under it, so its alpha never
     // reaches the window and the desktop never shows through it.
@@ -1556,6 +1572,16 @@ pub(super) fn paint_clip(
     {
         paint_ara_activity(painter, marks, body, ink, name, *progress);
     }
+    // The stretch selected in time in the piano roll, lit on the clip it edits, under its name
+    // bar: where those beats of the content play from the clip's start.
+    if let Some((from, to)) = editor_span_in(look.editor_span, clip) {
+        let x = egui::Rangef::new(x_of(start + from), x_of(start + to)).intersection(rect.x_range());
+        if x.span() > 0.0 {
+            let top = bar.map_or(rect.top(), |bar| bar.bottom());
+            let lit = Rect::from_x_y_ranges(x, egui::Rangef::new(top, rect.bottom()));
+            painter.rect_filled(lit, 0.0, theme::accent().gamma_multiply(EDITOR_SPAN_TINT));
+        }
+    }
     // Loop boundaries share the leading edge's contrast, with a small top notch so they
     // remain distinct from the grid and playhead at every lane height.
     let span = f64::from((rect.right() - x_of(start)) / beat_width);
@@ -1578,7 +1604,7 @@ pub(super) fn paint_clip(
         painter.with_clip_rect(painter.clip_rect().intersect(rect)).circle_filled(
             Pos2::new(x, rect.top() - notch * 0.5),
             notch,
-            theme::window_background(),
+            crate::kit::style_class::surface_or(theme::window_background()),
         );
     }
     // A fade is a line over the waveform, from the clip's bottom corner to where it ends at
@@ -1600,6 +1626,20 @@ pub(super) fn paint_clip(
     if clip.take.is_some() {
         paint_take_marker(painter, rect, ink);
     }
+}
+
+/// How strongly the piano roll's time selection tints the clip it edits.
+const EDITOR_SPAN_TINT: f32 = 0.45;
+
+/// The piano roll's time selection on `clip`, in beats from the clip's start and within it:
+/// the content's beats less where the clip starts playing them. `None` on any other clip.
+pub(super) fn editor_span_in(span: Option<(ClipId, f64, f64)>, clip: &ClipBox) -> Option<(f64, f64)> {
+    let (id, from, to) = span?;
+    if id != clip.id || clip.audio || !from.is_finite() || !to.is_finite() {
+        return None;
+    }
+    let (from, to) = ((from - clip.offset).max(0.0), (to - clip.offset).min(clip.length));
+    (to > from).then_some((from, to))
 }
 
 /// The small mark in a clip's lower left corner that says it holds takes: three stacked lines, as
@@ -1784,8 +1824,8 @@ pub(super) fn take_lanes(
         // The header in the take's colour, a darker shade of it, with a strip of the colour itself
         // at its inner edge, as a track's header has (#989).
         let swatch = crate::interaction::colour_picker::color32(colour);
-        let shade = motion::mix(theme::window_background(), swatch, 0.35);
-        painter.rect_filled(whole_header, 0.0, theme::window_background());
+        let shade = motion::mix(crate::kit::style_class::surface_or(theme::window_background()), swatch, 0.35);
+        painter.rect_filled(whole_header, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
         painter.rect_filled(header, 0.0, shade);
         let strip = Rect::from_min_size(header.min, Vec2::new(4.0, header.height()));
         painter.rect_filled(strip, 0.0, swatch);
@@ -1924,7 +1964,11 @@ pub(super) fn take_lanes(
                 false,
                 &state.clip_look(),
             );
-            painter.rect_filled(rect.intersect(row), 0.0, theme::window_background().gamma_multiply(0.6));
+            painter.rect_filled(
+                rect.intersect(row),
+                0.0,
+                crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(0.6),
+            );
             for &(start, end) in &take.used {
                 let span = Rect::from_x_y_ranges(egui::Rangef::new(x_of(start), x_of(end)), row.y_range());
                 let span = span.intersect(rect).intersect(painter.clip_rect());
@@ -2381,7 +2425,12 @@ pub(super) fn comp_crossfade(
         }
         if let Some(hover) = bend_handle {
             let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
-            painter.circle(center, CURVE_HANDLE / 2.0, fill, theme::hairline(theme::window_background()));
+            painter.circle(
+                center,
+                CURVE_HANDLE / 2.0,
+                fill,
+                theme::hairline(crate::kit::style_class::surface_or(theme::window_background())),
+            );
         }
     }
 }

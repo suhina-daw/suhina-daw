@@ -268,9 +268,13 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["selected", "muted"]),
     element("detail", Region, "The detail area under the main view."),
     element("clip-editor", Region, "The clip editor in the detail area.").parts(&["editor-tab"]),
-    element("editor-tab", Control, "The clip editor's Clip and Devices tabs.")
-        .ids(Ids::Prefixed("tab-"))
-        .attributes(&["checked"]),
+    element(
+        "editor-tab",
+        Control,
+        "The clip editor's Clip and Devices tabs, and the MIDI tools part's Notes and Transform tabs.",
+    )
+    .ids(Ids::Prefixed("tab-"))
+    .attributes(&["checked"]),
     element("piano-roll", Region, "The piano roll.").parts(&[
         "piano-grid",
         "piano-key",
@@ -316,7 +320,7 @@ pub const ELEMENTS: &[Element] = &[
             own("piano.audition"),
             own("piano.hide"),
         ]),
-    element("midi-tools", Container, "The MIDI tools column.").settings(&["gap"]),
+    element("midi-tools", Container, "The MIDI tools part of a MIDI clip's panel.").settings(&["gap"]),
     element("clip-info", Container, "The clip's column beside the piano roll."),
     element("sample-map", Region, "The sampler's sample map.").parts(&["sample-point"]),
     element("sample-point", Drawn, "A sound on the sample map, coloured by its `kind` attribute (`kick`, `snare`)."),
@@ -333,15 +337,16 @@ pub const ELEMENTS: &[Element] = &[
     element("xy-control", Control, "A two-dimensional control of a device panel."),
     element("envelope", Drawn, "An envelope a device panel shows."),
     element("waveform", Drawn, "A waveform a panel shows."),
-    element("slider", Control, "A parameter's slider.")
+    element("slider", Control, "A parameter's slider; the MIDI tools' quantise amount, as a knob.")
         .parts(&["slider-rail", "slider-fill", "slider-handle"])
+        .ids(Ids::Listed { prefix: "", names: &["quantise-amount"] })
         .settings(VALUE_SETTINGS)
         .artwork(&[own("slider.rail"), own("slider.fill"), own("slider.handle")]),
     element("slider-rail", Part, "A slider's rail."),
     element("slider-fill", Part, "A slider's fill up to its value."),
     element("slider-handle", Part, "A slider's handle."),
     // Controls everywhere.
-    element("button", Control, "A button; also egui's check boxes and drop-downs.")
+    element("button", Control, "A button or switch; also egui's check boxes and drop-downs.")
         .ids(Ids::Listed { prefix: "control-", names: CONTROL_IDS })
         .attributes(&["checked", "playing", "recording", "armed", "muted"])
         .artwork(&[
@@ -356,7 +361,7 @@ pub const ELEMENTS: &[Element] = &[
             own("automation"),
             own("monitor"),
         ]),
-    element("value", Control, "A value field, such as a volume bar.")
+    element("value", Control, "A value field, such as a volume bar or a clip panel's number field.")
         .parts(&["value-fill", "value-handle"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
         .settings(VALUE_SETTINGS)
@@ -399,7 +404,7 @@ pub const ELEMENTS: &[Element] = &[
     element("meter-level", Part, "A meter's lit part."),
     element("meter-vertical", Part, "A meter standing up, around its level."),
     element("meter-horizontal", Part, "A meter lying down, around its level."),
-    element("dropdown", Control, "A drop-down menu's button.")
+    element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists.")
         .artwork(&[default_svg!("folder", "icon[kind=\"folder\"]")]),
     element("text-input", Control, "A text field."),
     element("label", Drawn, "A label."),

@@ -18,6 +18,7 @@ mod comping;
 mod groups;
 mod id_list;
 mod ids;
+mod lane_layout;
 pub mod names;
 mod tempo;
 
@@ -53,17 +54,20 @@ pub fn is_preset_file(path: &std::path::Path) -> bool {
 }
 pub use id_list::{Entry, IdList, ListId};
 pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, NoteId, PointId, SceneId, TempoPointId};
+pub use lane_layout::{LaneGroup, LaneLayout, LaneRef, MAX_GROUP_NAME, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
 
 mod launch;
 mod mapping;
 mod overlap;
 mod scale;
 mod shared;
+mod swing;
 pub use launch::{LaunchMode, LaunchQuantization, LaunchSettings};
 pub use mapping::{ControllerMapping, KEY_NAME_MAX, MAX_MAPPINGS, MappingSource, MappingTarget};
 pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, TOUCH_TOLERANCE};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
 pub use shared::{Bytes, Shared};
+pub use swing::{ClipSwing, SWING_RANGE, swung};
 
 /// Identifies a [`Track`] within a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -108,6 +112,11 @@ pub struct Project {
     /// controller mappings). A mapping whose track is gone stays, unused, so an undo brings it back
     /// working; deleting a scene removes the mappings on it, and undo restores them.
     pub controller_mappings: Vec<ControllerMapping>,
+    /// How each channel's automation lanes are laid out in the Arrangement view: the lanes
+    /// mounted under its track's top lane and their groups (#1322). A channel with none shows
+    /// the lanes that have points; a layout of a channel that is gone stays, unused, so an undo
+    /// brings it back.
+    pub lane_layouts: Vec<LaneLayout>,
     /// The next id a clip, an arrangement lane or a scene gets: the three kinds share this
     /// counter, and a value is never handed out twice, deleted objects' included
     /// ([ADR 0025](../../docs/decisions/0025-object-identity.md)). Allocate with
@@ -132,6 +141,9 @@ pub struct Transport {
     pub tempo_changes: IdList<TempoPointId, TempoPoint>,
     /// Time-signature changes after bar 0, in order of bar.
     pub time_signature_changes: Vec<TimeSignatureChange>,
+    /// The project's swing, 0 to 1 ([`SWING_RANGE`]): every MIDI clip that has no swing of its own
+    /// plays with it (#1221).
+    pub swing: f64,
 }
 
 impl Default for Transport {
@@ -143,6 +155,7 @@ impl Default for Transport {
             loop_enabled: false,
             tempo_changes: IdList::new(),
             time_signature_changes: Vec::new(),
+            swing: 0.0,
         }
     }
 }
@@ -636,6 +649,8 @@ pub struct Clip {
     /// What the clip does with the audio it plays: gain, envelope, transpose, warp. Its own, never
     /// shared with another clip of the same content; a clip without audio ignores it.
     pub audio: ClipAudio,
+    /// A MIDI clip's swing: the project's, or its own (#1221).
+    pub swing: ClipSwing,
     pub extensions: Extensions,
 }
 

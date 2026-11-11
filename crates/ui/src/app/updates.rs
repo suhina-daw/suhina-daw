@@ -5,7 +5,6 @@
 //! *New version available* line, and Help › Check for updates…, which checks now, lists test
 //! builds in developer mode and connects to the GitHub CLI only when asked to.
 
-use crate::kit::surface::Backgrounds as _;
 use std::path::PathBuf;
 
 use egui::{Align2, Id, Key, Pos2, Rect, Ui, Vec2};
@@ -273,7 +272,7 @@ impl Updates {
             && build.size > 0
         {
             let bar = line(&mut y).shrink2(Vec2::new(0.0, 7.0));
-            painter.fill_background(bar, 0.0, theme::control_background());
+            painter.rect_filled(bar, 0.0, theme::control_background());
             let part = (*done as f32 / build.size as f32).clamp(0.0, 1.0);
             painter.rect_filled(
                 Rect::from_min_size(bar.min, Vec2::new(bar.width() * part, bar.height())),

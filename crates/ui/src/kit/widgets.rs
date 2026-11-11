@@ -4,7 +4,6 @@
 //! Small drawing helpers and the controls the views share: text that fits a cell, the value
 //! field drag, the knob.
 
-use crate::kit::surface::Backgrounds as _;
 use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextWrapping};
@@ -798,6 +797,62 @@ pub fn value_active(ctx: &egui::Context) -> bool {
         })
 }
 
+/// The keys a drop-down field takes this frame once it is clicked (as a value control does, until a
+/// click elsewhere, or Escape with its list closed): the arrow steps through its entries (down is
+/// +1, the next entry), and Enter while its list is `open`. Escape with the list open is left to
+/// the list, which it closes; the field keeps the keys, so the arrows then step the value itself.
+/// Escape with the list closed lets the keys go and is left to the rest of the window too (the
+/// panel's Escape, which leaves Quantise, still sees it).
+pub(crate) fn chooser_keys(ui: &Ui, response: &Response, open: bool) -> (i32, bool) {
+    let ctx = ui.ctx();
+    let key = egui::Id::unique(ACTIVE_VALUE);
+    let pass = ctx.cumulative_pass_nr();
+    if response.clicked() {
+        ctx.data_mut(|d| d.insert_temp(key, (response.id, pass)));
+    }
+    let active = ctx.data(|d| d.get_temp::<(egui::Id, u64)>(key)).is_some_and(|(id, _)| id == response.id);
+    if !active {
+        return (0, false);
+    }
+    // A press anywhere else lets it go; one in its own open list does not.
+    let pressed_elsewhere =
+        ui.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_none_or(|at| !response.rect.contains(at)));
+    if pressed_elsewhere && !response.hovered() && !open {
+        ctx.data_mut(|d| d.remove::<(egui::Id, u64)>(key));
+        return (0, false);
+    }
+    ctx.data_mut(|d| d.insert_temp(key, (response.id, pass)));
+    let (mut steps, mut enter, mut escape) = (0i32, false, false);
+    ctx.input_mut(|i| {
+        i.events.retain(|event| match event {
+            egui::Event::Key { key: egui::Key::ArrowUp, pressed: true, modifiers, .. } if !modifiers.command => {
+                steps -= 1;
+                false
+            }
+            egui::Event::Key { key: egui::Key::ArrowDown, pressed: true, modifiers, .. } if !modifiers.command => {
+                steps += 1;
+                false
+            }
+            egui::Event::Key { key: egui::Key::Enter, pressed: true, modifiers, .. } if open && !modifiers.command => {
+                enter = true;
+                false
+            }
+            egui::Event::Key { key: egui::Key::Escape, pressed: true, modifiers, .. }
+                if !open && !modifiers.command =>
+            {
+                escape = true;
+                true
+            }
+            _ => true,
+        });
+    });
+    if escape {
+        ctx.data_mut(|d| d.remove::<(egui::Id, u64)>(key));
+        return (0, false);
+    }
+    (steps, enter)
+}
+
 /// The keys an active value control takes this frame: arrow steps (up is +1), and Enter with
 /// the number typed into it. Ctrl (Cmd) with a key leaves it to the window's shortcuts, as
 /// [`value_active`] says.
@@ -885,7 +940,7 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
     let radius = if response.rect.width() > response.rect.height() * 4.0 { response.rect.height() * 0.5 } else { 4.0 };
     painter.rect_stroke(response.rect, radius, Stroke::new(1.0, theme::text_secondary()), egui::StrokeKind::Outside);
     if !typed.is_empty() {
-        painter.fill_background(response.rect.shrink(1.0), 0.0, theme::control_active());
+        painter.rect_filled(response.rect.shrink(1.0), 0.0, theme::control_active());
         painter.text(
             response.rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -1171,7 +1226,11 @@ pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response:
         })
         .collect();
     painter.add(egui::Shape::line(points, Stroke::new(4.0, theme::border())));
-    painter.circle_filled(center, (radius - 4.0).max(0.0), theme::panel_background());
+    painter.circle_filled(
+        center,
+        (radius - 4.0).max(0.0),
+        crate::kit::style_class::surface_or(theme::panel_background()),
+    );
     painter.circle_filled(center, (radius - 8.0).max(0.0), theme::control_background());
     // The pointer: a quarter in, three quarters to the rim, in the accent token.
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
@@ -1300,6 +1359,68 @@ pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, l
     let small = theme::ui_font(theme::TEXT_SMALL);
     text_in(painter, rect, Align2::CENTER_CENTER, text, small, theme::text_primary());
     response.clicked()
+}
+
+/// A horizontal slider of a percentage, 0 to 100 (swing, #1221): a click puts the handle there, a
+/// drag moves it and the value follows while it moves (every value of a drag says so, for the
+/// caller to send them as one gesture, one undo step), and a double-click puts it at 0. Named
+/// "`label`: N %" for a reader and a test. `lit` draws the filled part in the accent, otherwise in
+/// a quieter ink. Returns the value to set, and whether it comes from a drag.
+#[allow(clippy::too_many_arguments)]
+pub fn percent_slider(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    id: Id,
+    label: &str,
+    value: f64,
+    lit: bool,
+) -> Option<(f64, bool)> {
+    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+    let shown = if value.is_finite() { value.clamp(0.0, 100.0).round() } else { 0.0 };
+    let named = format!("{label}: {shown} %");
+    response.widget_info(|| {
+        let mut info = WidgetInfo::labeled(Role::Slider, true, &named);
+        info.value = Some(shown);
+        info
+    });
+    let hovered = hover(ui, &response);
+    let track = rect.shrink2(Vec2::new(4.0, 0.0));
+    let mid = rect.center().y;
+    let handle_x = track.left() + track.width() * (shown / 100.0) as f32;
+    painter.line_segment(
+        [Pos2::new(track.left(), mid), Pos2::new(track.right(), mid)],
+        Stroke::new(3.0, theme::control_background()),
+    );
+    let fill = if lit { theme::accent() } else { motion::mix(theme::text_hint(), theme::text_secondary(), hovered) };
+    painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(handle_x, mid)], Stroke::new(3.0, fill));
+    let cap = Rect::from_center_size(Pos2::new(handle_x, mid), Vec2::new(8.0, 12.0));
+    painter.rect_filled(cap, 2.0, motion::mix(theme::text_secondary(), theme::text_value(), hovered));
+    let sent = id.with("sent");
+    if response.double_clicked() {
+        ui.data_mut(|d| d.remove::<bool>(sent));
+        return (shown != 0.0).then_some((0.0, false));
+    }
+    let mut out = None;
+    if (response.clicked() || response.dragged())
+        && let Some(pointer) = response.interact_pointer_pos()
+        && track.width() > 0.0
+    {
+        let at = (f64::from((pointer.x - track.left()) / track.width()).clamp(0.0, 1.0) * 100.0).round();
+        if (at - shown).abs() >= 0.5 {
+            // Anything but a plain click is part of a drag, its frame included where the drag
+            // is let go or has not passed egui's threshold yet.
+            let dragged = !response.clicked();
+            if dragged {
+                ui.data_mut(|d| d.insert_temp(sent, true));
+            }
+            out = Some((at, dragged));
+        }
+    }
+    if response.drag_stopped() || !response.dragged() {
+        ui.data_mut(|d| d.remove::<bool>(sent));
+    }
+    out
 }
 
 #[cfg(test)]

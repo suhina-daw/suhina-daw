@@ -3,7 +3,7 @@ description: How Suhina hosts plug-ins in detail - host processes and instances,
 read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade
 type: spec
 status: current
-last_verified: 2026-11-09
+last_verified: 2026-11-11
 covers:
   - crates/plugins/**
   - crates/plugin-host/**
@@ -111,9 +111,15 @@ events a block. A parameter value that reaches the processor from the engine (a 
 set, an automation lane) also goes to the edit controller on the main thread
 (`setParamNormalized`: the same call a MIDI controller's mapped parameter gets, #812),
 so the plug-in's editor follows the sound; and the host reports what was changed in its
-editor back (`param_changed`, #828), so the session keeps
+editor back (`param_changed`, #828; each one wakes the window, so its lane and panel follow at once, #1205), so the session keeps
 the project's values in step with it — no undo step of its own, and a change since the
-last save.
+last save. A change there of a parameter an enabled lane plays turns the lane off as one undo
+step, unless it is a value the lane sent (#1205, [automation](automation.md#a-manual-change-turns-the-lane-off)).
+While the transport is stopped, a lane sends its value at the playhead when the playhead moves
+or the lane changes, so the editor follows it stopped too; a plug-in that starts keeps the state
+it was given until then, so opening a project changes nothing in it. For automation lanes the host also names any value of a parameter in the plug-in's own
+words (`get_param_texts`, [the protocol](plugin-protocol.md)), in the background, without setting
+it.
 
 ## Block sync and the deadline
 

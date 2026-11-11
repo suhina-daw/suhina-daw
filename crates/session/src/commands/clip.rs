@@ -522,6 +522,26 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "clip.setSwing",
+        label: "Set a MIDI clip's own swing, which it then plays instead of the project's, or make it follow the project's swing again (it keeps its own amount for later); only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            optional("amount", ParamType::Number, "the clip's own swing in percent, 0 to 100; the clip then plays it"),
+            optional(
+                "global",
+                ParamType::Bool,
+                "true: the clip follows the project's swing; false: it plays its own amount again",
+            ),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::swing::set_clip_swing,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "clip.findTempo",
         label: "What each source says an audio clip's tempo is (its file's metadata, its file's name, detection in its sound; null where one finds nothing), and the tempo the clip has now with its source",
         params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
@@ -935,6 +955,7 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     session.clipboards.clips = copied;
     session.clipboards.tracks = from;
     session.clipboards.under = under;
+    session.clipboards.span = None;
     Ok(json!({ "copied": names }))
 }
 
@@ -959,7 +980,9 @@ enum PasteAt {
 }
 
 fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    if session.clipboards.clips.is_empty() {
+    // A time selection copied with only automation in it pastes onto its own tracks.
+    let span_only = session.clipboards.clips.is_empty() && session.clipboards.span.is_some();
+    if session.clipboards.clips.is_empty() && !span_only {
         return Err("nothing has been copied".into());
     }
     let at = match (Args::new(params).value("start"), Args::new(params).value("scene")) {
@@ -986,8 +1009,9 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     if replace.is_some() && (!Args::new(params).has("track") || !matches!(at, PasteAt::Beat(_))) {
         return Err("replace requires an arrangement track and start".into());
     }
-    // No track: each copied clip goes back to the track it came from.
-    if !Args::new(params).has("track")
+    // No track: each copied clip goes back to the track it came from; so does a time
+    // selection's automation, with or without clips.
+    if (!Args::new(params).has("track") || span_only)
         && let PasteAt::Beat(start) = at
     {
         return crate::range::paste_to_sources(session, start, stack);

@@ -48,7 +48,7 @@ pub(super) fn marker_flags(
         } else {
             theme::control_background()
         };
-        painter.fill_background(tag, 0.0, fill);
+        painter.rect_filled(tag, 0.0, fill);
         painter.vline(x, row.y_range(), theme::hairline(theme::text_secondary()));
         widgets::text_in(
             &painter,

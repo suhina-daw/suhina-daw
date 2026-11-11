@@ -103,6 +103,7 @@ fn project_built() -> Project {
                     color: None,
                     ara: false,
                     audio: Default::default(),
+                    swing: Default::default(),
                     extensions: Extensions::default(),
                 }],
             }],

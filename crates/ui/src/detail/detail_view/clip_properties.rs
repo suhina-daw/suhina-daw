@@ -62,6 +62,7 @@ pub(super) fn clip_properties(
     area: Rect,
     info: &ClipInfo,
     stacked: bool,
+    midi: Option<super::midi_panel::MidiTools<'_, '_>>,
     actions: &mut Vec<Action>,
 ) -> (Rect, Option<Showing>) {
     let mut rows = vec![
@@ -138,16 +139,26 @@ pub(super) fn clip_properties(
             rows.push((label, name.clone(), ClipEdit::Focus(index)));
         }
     }
-    // An audio clip's column is its panel (`docs/spec/clip-panel.md`): groups instead of rows.
-    let panel = info.at.filter(|_| info.audio).map(|at| {
+    // A clip's column is its panel (`docs/spec/clip-panel.md`, and for a MIDI clip
+    // `docs/spec/ui-clip-editor.md` › Clip column): parts instead of rows.
+    let panel = info.at.map(|at| {
         let clip = match at {
             ClipRef::Arrangement(_, clip) => clip,
             ClipRef::Slot(..) => ClipId::NONE,
         };
         (at, info.panel.clone().unwrap_or(AudioPanel { clip, ..AudioPanel::default() }))
     });
+    // Stacked, the tools part goes under the Clip part only where it leaves the note grid under
+    // them its room.
+    let midi = midi.map(|mut midi| {
+        let room = 26.0 + super::midi_panel::stacked_height(true, true) + 160.0;
+        midi.show_tools &= !stacked || area.height() >= room;
+        midi
+    });
+    let show_tools = midi.as_ref().is_some_and(|m| m.show_tools);
     let column = if stacked {
         let height = match &panel {
+            Some(_) if !info.audio => 26.0 + super::midi_panel::stacked_height(midi.is_some(), show_tools),
             Some(_) => 26.0 + super::clip_panel::stacked_height(info),
             None => ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW,
         };
@@ -159,27 +170,43 @@ pub(super) fn clip_properties(
             let el = crate::kit::element::CLIP_INFO.enter();
             el.style().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0))
         };
-        let width = if panel.is_some() { super::clip_panel::ROW_WIDTH } else { width };
+        let width = match &panel {
+            Some(_) if !info.audio => super::midi_panel::row_width(show_tools),
+            Some(_) => super::clip_panel::ROW_WIDTH,
+            None => width,
+        };
         Rect::from_min_max(area.min, Pos2::new(area.left() + width, area.bottom()))
     }
     .intersect(area);
     // `clip-info` styles the clip's column: its background and its text.
     let el = crate::kit::element::CLIP_INFO.enter();
-    el.paint_with(painter, column, crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() });
+    el.paint_with(
+        painter,
+        column,
+        crate::kit::element::Native {
+            radius: 0.0,
+            fill: crate::kit::style_class::surface_or(theme::panel_background()),
+        },
+    );
     // Rows that do not fit under the column's bottom are left out rather than cut in half, the
     // title last; text never wraps (› Clip column in `docs/spec/ui-clip-editor.md`).
     let title = Rect::from_min_size(column.min, Vec2::new(column.width(), ROW));
     if title.bottom() > column.bottom() + 0.5 {
         return (column, None);
     }
-    // An audio clip's panel has a title row of its own: colour, name, length, a line under it.
+    // A clip's panel has a title row of its own: colour, name, length, the Clip / Devices switch,
+    // a line under it.
     if let Some((at, panel)) = &panel {
         let title = Rect::from_min_size(column.min, Vec2::new(column.width(), 26.0));
-        super::clip_panel::title_row(ui, painter, title, info, *at, panel, actions);
+        let picked = super::clip_panel::title_row(ui, painter, title, info, *at, panel, actions);
         painter.hline(title.x_range(), title.bottom() - 0.5, theme::hairline(theme::border()));
         let body = Rect::from_min_max(Pos2::new(column.left(), title.bottom()), column.max);
-        super::clip_panel::audio_panel(ui, painter, body, info, *at, panel, stacked, actions);
-        return (column, None);
+        if info.audio {
+            super::clip_panel::audio_panel(ui, painter, body, info, *at, panel, stacked, actions);
+        } else {
+            super::midi_panel::midi_panel(ui, painter, body, info, *at, panel, stacked, midi, actions);
+        }
+        return (column, picked);
     }
     // The Clip / Devices switch ends the title row; the name keeps clear of it.
     let (name, picked) = match info.switch {
@@ -189,7 +216,7 @@ pub(super) fn clip_properties(
                 Pos2::new(title.right() - PAD - width / 2.0, title.center().y),
                 Vec2::new(width, SWITCH_HEIGHT),
             );
-            let picked = switch(ui, painter, at, showing);
+            let picked = switch(ui, painter, at, showing, info.switch_both);
             (Rect::from_min_max(title.min, Pos2::new(at.left() - PAD, title.bottom())), picked)
         }
         None => (title, None),
@@ -274,7 +301,7 @@ pub(super) fn clip_edit_row(
     let id = Id::unique(("clip-edit", label));
     let draw_value = |response: &egui::Response, text: &str| {
         let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response));
-        painter.fill_background(value_rect, 2.0, fill);
+        painter.rect_filled(value_rect, 2.0, fill);
         widgets::text_in(
             painter,
             value_rect.shrink2(Vec2::new(PAD / 2.0, 0.0)),

@@ -349,9 +349,8 @@ or 4 megapixels (a 4K wallpaper) is scaled down to fit 2560 by 1600 when the the
 `window { backdrop-opacity }`, is how much it darkens the picture; `backdrop-opacity: 100` with
 an opaque colour hides it.
 
-A theme whose surfaces show the desktop through them (a window, panel or header colour with
-alpha) has the area under button, fader and track artwork cleared first; on an opaque theme
-the artwork is drawn over the surface, so its transparent parts show the strip under them.
+Button, fader and track artwork is drawn over the surface under it, on a see-through theme
+and an opaque one alike, so its transparent parts show what is under them.
 
 ## Theme packages
 
@@ -519,7 +518,7 @@ control is dragged or shows the arrow of the drag's direction; `auto` keeps the 
 | Arrangement header `arrangement track-header` | `track-name`, `track-number`, `#control-track-on`, `#control-solo`, `#control-cue`, `#control-arm`, `#control-automation`, `#control-monitor`, `fold`, `#arrangement-volume`, `#arrangement-pan`, `send`, `value-fill`, `value-handle` |
 | Timeline `arrangement` | `ruler`, `ruler-number`, `ruler-tick`, `loop-region`, `loop-line`, `playhead`, `clip`, `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle`, `add-track`, `#add-midi-track`, `#add-audio-track`, `#add-return-track` |
 | Launcher and mixer `session`, `mixer` | `track-column`, `slot`, `scene`, `scene-column`, `#mixer-volume`, `#mixer-pan`, `#mixer-send-N`, `fader`, `fader-cap`, `fader-rail`, `fader-scale`, `meter`, `#mixer-divider` |
-| Piano roll `piano-roll` | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark`, `piano-scale-strip`, `piano-range`, `piano-time-selection`, `piano-insert-mark`, `piano-note`, `velocity`, `piano-tool` with `#piano-<tool>`, `midi-tools` (`#quantise-amount`), `clip-info`, `editor-tab` |
+| Piano roll `piano-roll` | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark`, `piano-scale-strip`, `piano-range`, `piano-time-selection`, `piano-insert-mark`, `piano-note`, `velocity`, `piano-tool` with `#piano-<tool>`, `midi-tools` (with `slider#quantise-amount`), `clip-info`, `editor-tab` (`#tab-clip`, `#tab-devices`, `#tab-notes`, `#tab-transform`) |
 | Browser `browser` | `browser-place`, `browser-row`, `browser-play`, `browser-tag-dot`, `browser-preview-wave`, `#browser-search` (`text-input`) |
 | Devices `device`, `#device-<id>` | `device-header`, `device-control`, `slider`, `slider-rail`, `slider-fill`, `slider-handle`, `knob`, `value` |
 | Dialogs `settings`, `dialog`, `start-page`, `plugin-manager` | `button` (also egui's check boxes and drop-downs), `button[checked]` (a chosen item), `text-input`, `settings-nav`, `progress`, `progress-fill`, `menu`, `popup` |
@@ -569,7 +568,7 @@ Elements, by name:
 | `piano-scale-strip`, `piano-range` | the strip left of the keys that names the octaves and the row under the pointer, and the range a drag on the keys is selecting |
 | `piano-clip-strip` | the strip over the ruler that shows several picked clips (background) |
 | `piano-time-selection`, `piano-insert-mark` | what is selected in time (background over the rows, `border-color` for its edges and the bar on the ruler), and the mark a click leaves where a paste goes (background) |
-| `piano-tool`, `midi-tools`, `clip-info`, `editor-tab` | the piano roll's tool buttons, the MIDI tools column, the clip's column and the **Clip** / **Devices** tabs |
+| `piano-tool`, `midi-tools`, `clip-info`, `editor-tab` | the piano roll's tool buttons, the MIDI tools part of a MIDI clip's panel, the clip's column, and the **Clip** / **Devices** and **Notes** / **Transform** tabs |
 | `device`, `device-header` | a device's panel in the device chain, and its header row |
 
 Ids:
@@ -724,8 +723,8 @@ draws a handle where the fill ends; `volume.handle` and `pan.handle` are artwork
 ### Piano roll sizes
 
 `piano-tool { width; height }` sizes the tool buttons (8 to 96 points wide), so stretched
-artwork has room; `midi-tools { width }` (80 to 400) and `clip-info { width }` (120 to 480)
-set the MIDI tools and clip columns' widths. `loop-region { height }` above the native row
+artwork has room; `midi-tools { width }` (120 to 480) and `clip-info { width }` (120 to 480)
+set the MIDI tools part's and the clip column's widths. `loop-region { height }` above the native row
 grows the Arrangement's loop row with it (up to 40 points).
 
 ### Fader size
@@ -873,8 +872,9 @@ control with no room left is not drawn, without a notice: check narrow tracks an
   the name's).
 - **Loop lines:** `loop-line { color; width }`; the lines reach the returns and Main and
   follow the brace while it is dragged.
-- **MIDI tools:** `midi-tools slider { appearance: knob }` (or `#quantise-amount`)
-  draws the quantise amount as a knob.
+- **MIDI tools:** `midi-tools slider { appearance: knob }` draws the quantise amount
+  (Transform › Quantise) as a knob, dragged up for more; `#quantise-amount { height }` sizes it
+  (16 to 96 points, 32 by default) and `value-position` places its value.
 - **Piano roll tools:** artwork roles `piano.select`, `piano.draw`, `piano.paint`,
   `piano.slice`, `piano.erase`, `piano.mute`, `piano.cut`, `piano.copy`, `piano.paste`,
   `piano.duplicate`, `piano.quantise`, `piano.midi-tools`, `piano.audition` and `piano.hide`,
@@ -889,7 +889,15 @@ control with no room left is not drawn, without a notice: check narrow tracks an
   value's control.
 - **Device panels:** `device { height }` (60–1200), `param-label: left | top | hidden`,
   `device knob { width }`.
-- **MIDI tools:** `midi-tools { gap: 2px }` and `midi-tools button { height }`.
+- **MIDI tools:** `midi-tools { gap: 2px }` spaces the part's rows (0 to 16 points);
+  `midi-tools button { height }` sets its fields', buttons', switches' and Apply's height (10 to
+  40 points). Its buttons and switches are `button` (`:hover`, `:active`, `[checked]` for a
+  switch that is on), its lists `dropdown` and its number fields `value`, as in a clip's panel:
+  a rule sets their background, border, radius and `color`. A transformation's check box
+  (**Move ends too**) is a `button` too: the rule paints its box, not
+  its name. A switch that is on keeps Suhina's
+  lit look unless `button[checked]` has a background or colour of its own, and a button that
+  cannot be pressed keeps Suhina's look.
 - **Low tracks:** `arrangement { compact-below: 48px }`: a track lower than that keeps
   Suhina's own header layout instead of the placements, so nothing overlaps.
 - **Settings folder:** Settings › Projects and backups › Projects › Settings folder moves all of Suhina's
@@ -936,24 +944,21 @@ The native clip light, accessible level description and click-to-reset remain ac
 
 ## Backgrounds on the see-through window
 
-`background:` resets `background-color` to transparent when no colour is included.
-Suhina treats that computed transparent colour as authored. Native background fills
-write colour **and alpha** directly into the main window, so a transparent fill can
-expose the desktop even when its gradient is opaque. For an opaque surface, use an
-opaque base and a separate image. This applies to views, panels, bars and buttons.
+Every background blends with what is under it, as in a browser. The window clears once
+(to nothing when `--window-background` has alpha), `window` paints its background once,
+and each view, panel, bar or control paints only its own background over that. A
+translucent panel therefore composites over the window: a `window` at 50% under a panel
+at 50% shows the desktop through 25%. To let a view show the desktop at exactly its own
+alpha, make what is under it transparent:
 
 ```css
-/* Wrong: resets the native base to transparent. */
-browser { background: linear-gradient(#243A30, #101C17); }
-/* Right: opaque base and independently painted gradient. */
-browser { background-color: #101C17;
-           background-image: linear-gradient(#243A30, #101C17); }
+window { background-color: transparent; }
+browser { background-color: rgb(20 30 40 / 70%); }
 ```
 
-For overlays such as `track-header` and `track-name`, use `background-image` alone
-to preserve the native fill. The `meter-level` measured overlay may use the
-shorthand. Meadow deliberately uses transparency over its private background PNG;
-do not make an intentionally translucent theme opaque as a blanket correction.
+`background:` resets `background-color` to transparent when no colour is included, so
+the element then shows only its gradient over what is under it. Text, artwork and
+outlines blend the same way, and nothing an element paints punches a hole to the desktop.
 
 ## Closed-panel Grid tracks
 
@@ -1022,9 +1027,10 @@ Use `text.primary` contrast of at least 7:1 and hints of at least 3:1 where poss
 
 ## For AI-assisted edits
 
-Before editing, read the three authoring rules above: preserve an opaque native base
-with `background-color` plus `background-image`, collapse absent-panel Grid tracks,
-and contrast value/inverse text against selected fills. Report those checks explicitly.
+Before editing, read the three authoring rules above: check each background's intended
+alpha (every background blends over what is under it, see "Backgrounds on the see-through
+window"), collapse absent-panel Grid tracks, and contrast value/inverse text against
+selected fills. Report those checks explicitly.
 
 
 Describe the requested visual change and choose the smallest supported change.

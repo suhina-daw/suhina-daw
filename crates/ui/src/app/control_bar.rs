@@ -252,7 +252,7 @@ impl App {
         let recording = self.session().is_some_and(|s| s.records_arrangement());
         crate::session::record_controls::record_button(ui, &painter, record, recording, actions);
         let position = native_styles.place(ui, "position", position_base);
-        native_styles.paint(&painter, position, theme::window_background());
+        native_styles.paint(&painter, position, crate::kit::style_class::surface_or(theme::window_background()));
         widgets::text_in(
             &painter,
             position.shrink2(Vec2::new(PAD, 0.0)),
@@ -305,7 +305,7 @@ impl App {
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "performance", rect);
             let percent = f64::from(milli.min(1000)) / 10.0;
-            native_styles.paint(&painter, rect, theme::window_background());
+            native_styles.paint(&painter, rect, crate::kit::style_class::surface_or(theme::window_background()));
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
                 &painter,
@@ -327,7 +327,7 @@ impl App {
                 Pos2::new(rect.left() + 1.0, rect.bottom() - 3.0),
                 Pos2::new(rect.right() - 1.0, rect.bottom() - 1.0),
             );
-            painter.fill_background(track, 0.0, theme::control_background());
+            painter.rect_filled(track, 0.0, theme::control_background());
             let fill = track.width() * milli.min(1000) as f32 / 1000.0;
             let full = Rect::from_min_max(track.min, Pos2::new(track.left() + fill, track.bottom()));
             let color = if milli >= 800 { theme::meter_hot() } else { theme::meter_normal() };
@@ -341,7 +341,7 @@ impl App {
             let rect = row(right - 76.0, 76.0);
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "performance", rect);
-            native_styles.paint(&painter, rect, theme::window_background());
+            native_styles.paint(&painter, rect, crate::kit::style_class::surface_or(theme::window_background()));
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
                 &painter,

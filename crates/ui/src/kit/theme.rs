@@ -108,6 +108,8 @@ palette! {
         "Browser values and active preview controls";
     accent, "accent", 0xA6A3FF,
         "The playhead, queued clips, a key being set";
+    automation_pin, "automation.pin", 0xA6A3FF,
+        "The pin of an automation lane pinned below its track's top lane (older theme files: their accent)";
     selection, "selection", 0xE3C86A,
         "The selected device's outline";
     recording, "recording", 0xE5484D,
@@ -653,6 +655,7 @@ impl Theme {
                     ("browser.text.value", "text.value", theme.colors.text_value),
                     ("text.onColorLight", "text.primary", theme.colors.text_primary),
                     ("text.onColorDark", "window.background", theme.colors.window_background),
+                    ("automation.pin", "accent", theme.colors.accent),
                 ] {
                     if !colors.contains_key(key)
                         && let Some(slot) = theme.colors.token_mut(key)

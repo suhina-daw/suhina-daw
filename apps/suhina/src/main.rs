@@ -19,8 +19,9 @@
 //! runs the same item as the window's bar. With the GPU renderer the window is asked to be
 //! transparent; on the first frame `suhina_ui_gpu::surface` asks the GPU whether the swapchain hands alpha to
 //! the compositor (macOS always, DX12 through a DirectComposition visual on Windows, a probe
-//! surface for Vulkan and OpenGL). Where it does, it draws `kit::surface`'s backgrounds
-//! with a wgpu pipeline that writes their colour and alpha unblended, and the system blurs what is
+//! surface for Vulkan and OpenGL). Where it does, the window clears to nothing, every background
+//! blends over it, `kit::surface`'s clears (under a menu's backdrop) are drawn with a wgpu
+//! pipeline that writes their alpha unblended, and the system blurs what is
 //! behind while the theme has a see-through background (winit's blur on macOS and Wayland, DWM
 //! acrylic through `window-vibrancy` on Windows); on macOS the content runs under the title bar.
 //! Starting, it reads the settings, keymap and themes, opens the window and shows the splash
@@ -194,11 +195,10 @@ fn main() -> ExitCode {
         eframe::Renderer::Glow => Graphics::OpenGl,
         eframe::Renderer::Wgpu => Graphics::Gpu,
     };
-    // The window shows the desktop through its backgrounds' alpha where the GPU renderer sets the
-    // pixels directly and the system composites the window's alpha. It is asked for with the GPU
-    // renderer; whether the swapchain hands the alpha on is known on the first frame
-    // (`surface::composites_alpha`), and until then, or without it, the window stays opaque and
-    // backgrounds blend as before. On macOS it always does, and the content runs under the title
+    // The window shows the desktop through its backgrounds' alpha where the system composites the
+    // window's alpha. It is asked for with the GPU renderer; whether the swapchain hands the alpha
+    // on is known on the first frame (`surface::composites_alpha`), and until then, or without
+    // it, the window clears opaque and its backgrounds blend over that. On macOS it always does, and the content runs under the title
     // bar, which has to be chosen before the window opens.
     let see_through_asked = renderer == eframe::Renderer::Wgpu;
     let under_title_bar = cfg!(target_os = "macos") && see_through_asked;
@@ -475,7 +475,6 @@ impl eframe::App for Window {
         }
         self.draw(ui, frame);
         suhina_ui::kit::liquid::finish_backdrops(ui.ctx());
-        suhina_ui::kit::surface::finish_frame(ui.ctx());
         self.blur(frame);
     }
 

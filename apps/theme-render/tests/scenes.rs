@@ -49,6 +49,8 @@ fn the_scenes_cover_the_views_the_devices_and_the_floating_surfaces() {
     {
         assert!(names.iter().any(|n| n == wanted), "{wanted} in {names:?}");
     }
+    assert!(names.iter().any(|n| n == "launcher-scrolled"), "the launcher scrolled: {names:?}");
+    assert!(names.iter().any(|n| n == "arrangement-scrolled"), "the Arrangement view scrolled: {names:?}");
     assert!(names.iter().any(|n| n == "devices"), "every device in a row");
     assert!(names.iter().any(|n| n == "expanded-fm-synth"), "an expanded panel: {names:?}");
     let mut unique = names.clone();

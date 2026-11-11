@@ -15,8 +15,60 @@ pub struct Scope {
     revision: u64,
     /// What the elements in scope inherited before this one was entered.
     inherited: Option<super::native_css::Computed>,
+    /// The region's background in scope before this one was entered, when this is a region with
+    /// a background of its own.
+    surface: Option<Option<egui::Color32>>,
+    /// The innermost element's own background before this one was entered ([`own_background_or`]).
+    own_before: Option<egui::Color32>,
     /// The element's node in this frame's style tree, when the engine collected it.
     pub(super) node: Option<usize>,
+}
+
+thread_local! {
+    /// The background of the innermost region or container whose sheet gives it one.
+    static SURFACE: std::cell::Cell<Option<egui::Color32>> = const { std::cell::Cell::new(None) };
+}
+
+/// The background of the region or container something is drawn in, where the sheet gives it
+/// one, else `fallback` (a token): for a part that takes its region's colour (a stop button on
+/// the launcher, a ruler's rows) and so matches a theme that styles that region. A region's
+/// background writes no token (#1233), so the part asks for it here.
+pub fn surface_or(fallback: egui::Color32) -> egui::Color32 {
+    SURFACE.with(std::cell::Cell::get).unwrap_or(fallback)
+}
+
+/// Whether a region or container in scope gives itself a background.
+pub fn has_surface() -> bool {
+    SURFACE.with(std::cell::Cell::get).is_some()
+}
+
+/// [`surface_or`] for something that must hide what is under it, a modal dialog's panel or the
+/// dim behind it: the region's background only while it is opaque, else `fallback`. On a
+/// see-through window the region's background is clear, which would leave the dialog with no
+/// fill and its text over the project.
+pub fn opaque_surface_or(fallback: egui::Color32) -> egui::Color32 {
+    SURFACE.with(std::cell::Cell::get).filter(|surface| surface.a() == u8::MAX).unwrap_or(fallback)
+}
+
+thread_local! {
+    /// The `background-color` the innermost element in scope gives itself, if its sheet does.
+    static OWN: std::cell::Cell<Option<egui::Color32>> = const { std::cell::Cell::new(None) };
+}
+
+/// The innermost element's own `background-color` where its sheet sets one, else `fallback` (a
+/// token): for the panel of a dialog, which a theme may style on `dialog` but which must not take
+/// the enclosing window's colour, as [`surface_or`] would.
+pub fn own_background_or(fallback: egui::Color32) -> egui::Color32 {
+    OWN.with(std::cell::Cell::get).unwrap_or(fallback)
+}
+
+/// Runs `body` as if drawn inside a region whose sheet gives it `surface`.
+#[cfg(test)]
+pub(crate) fn with_surface<R>(surface: egui::Color32, body: impl FnOnce() -> R) -> R {
+    let before = SURFACE.with(|s| s.replace(Some(surface)));
+    let result = body();
+    SURFACE.with(|s| s.set(before));
+    result
 }
 
 thread_local! {
@@ -49,6 +101,12 @@ impl Drop for Scope {
             theme::local_palette(self.palette);
         }
         INHERITED.with(|inherited| *inherited.borrow_mut() = self.inherited.take());
+        // `surface` is `Some` exactly when `enter_inner` replaced `SURFACE`, so only then is there
+        // anything to put back.
+        if let Some(surface) = self.surface {
+            SURFACE.with(|s| s.set(surface));
+        }
+        OWN.with(|o| o.set(self.own_before));
         if self.node.is_some() {
             super::native_css::leave();
         }
@@ -74,6 +132,11 @@ pub(super) fn enter_inner(
     STACK.with(|s| s.borrow_mut().push(class));
     let mut palette = saved;
     let own = super::native_css::style_of(node);
+    let own_before = OWN.with(|o| o.replace(own.as_ref().filter(|v| v.authored.background).map(|v| v.background)));
+    let surface = own
+        .as_ref()
+        .filter(|values| values.authored.background && class.is_surface())
+        .map(|values| SURFACE.with(|s| s.replace(Some(values.background))));
     if let Some(values) = &own {
         if values.authored.color {
             set_foreground(&mut palette, values.color, Some(class));
@@ -100,14 +163,14 @@ pub(super) fn enter_inner(
             None => inherited.clone(),
         }
     });
-    Scope { palette: saved, revision: theme::palette_revision(), inherited, node }
+    Scope { palette: saved, revision: theme::palette_revision(), inherited, surface, own_before, node }
 }
 
-/// A background for `class`: a view's sets the surfaces inside it, and a control's its own fill
-/// too. So a view's background never repaints the buttons drawn on it.
+/// A background for `class`. A region's or container's is its own, painted once where it is
+/// ([`super::element::Entered::paint`]), so it writes no token: what is drawn inside it never
+/// paints it again, and a translucent one never builds up with depth (#1233). A control's sets
+/// its own fill, which its painter reads as `control_background`.
 fn set_background(palette: &mut theme::Palette, color: egui::Color32, class: super::element::Name) {
-    palette.window_background = color;
-    palette.panel_background = color;
     if !class.is_surface() {
         palette.control_background = color;
     }
@@ -434,139 +497,5 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::kit::element::{FADER, KNOB, MIXER, PAN, SEND, test_el};
-    use crate::kit::skin;
-
-    /// What `draw` sees once the frames it takes for the tree to resolve have passed, with `css` as
-    /// the theme's sheet.
-    fn frames<R>(css: &str, mut draw: impl FnMut() -> R) -> R {
-        skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
-        let ctx = egui::Context::default();
-        let mut result = None;
-        for _ in 0..3 {
-            ctx.run_ui(egui::RawInput::default(), |ui| {
-                let _frame = super::super::native_css::frame_with_motion(ui, false);
-                result = Some(draw());
-            })
-            .textures_delta
-            .clear();
-        }
-        skin::configure(&skin::Skin::default());
-        result.unwrap()
-    }
-
-    #[test]
-    fn settings_inherit_and_the_nearest_element_s_wins() {
-        let css = "track-column { track-artwork: on; } track-column clip { track-artwork: off; }";
-        let seen = frames(css, || {
-            let column = test_el("track-column").enter();
-            let slot = test_el("slot").enter();
-            let clip = test_el("clip").enter();
-            (track_artwork(&column), track_artwork(&slot), track_artwork(&clip))
-        });
-        assert_eq!(seen, (true, true, false));
-    }
-
-    #[test]
-    fn a_pan_s_appearance_is_its_own_and_reaches_no_other_control() {
-        for (value, forced) in [("knob", Some(true)), ("field", Some(false)), ("native", None)] {
-            let css = format!("mixer pan {{ appearance: {value}; }}");
-            let seen = frames(&css, || {
-                let _mixer = MIXER.enter();
-                let pan = PAN.enter();
-                let own = [false, true].map(|preference| knob_preference(&pan, preference));
-                drop(pan);
-                let send = SEND.enter();
-                (own, [false, true].map(|preference| knob_preference(&send, preference)))
-            });
-            assert_eq!(seen.0, [false, true].map(|preference| forced.unwrap_or(preference)), "{value}");
-            assert_eq!(seen.1, [false, true], "a send keeps the user's choice");
-        }
-    }
-
-    #[test]
-    fn drag_pointer_overrides_the_setting_for_the_controls_inside_it() {
-        for (value, forced) in [("hidden", Some(true)), ("visible", Some(false)), ("auto", None)] {
-            let css = format!("mixer {{ drag-pointer: {value}; }}");
-            let seen = frames(&css, || {
-                let mixer = MIXER.enter();
-                let fader = FADER.enter();
-                let inside = [false, true].map(|setting| drag_hides_pointer(&fader, setting));
-                drop(fader);
-                drop(mixer);
-                let knob = KNOB.enter();
-                (inside, [false, true].map(|setting| drag_hides_pointer(&knob, setting)))
-            });
-            assert_eq!(seen.0, [false, true].map(|setting| forced.unwrap_or(setting)), "{value}");
-            assert_eq!(seen.1, [false, true], "a knob outside the mixer keeps the setting");
-        }
-    }
-
-    #[test]
-    fn a_live_theme_change_survives_all_enclosing_style_scopes() {
-        let original = theme::palette();
-        let mut changed = original;
-        changed.text_primary = egui::Color32::from_rgb(40, 50, 60);
-        changed.grid_major = egui::Color32::from_rgba_unmultiplied(80, 90, 100, 120);
-        let ctx = egui::Context::default();
-        let inside = frames("browser { color: #123456; }", || {
-            let _window = test_el("window").enter();
-            let _browser = test_el("browser").enter();
-            let inside = theme::text_primary();
-            theme::set_palette(&ctx, changed);
-            inside
-        });
-        assert_eq!(inside, theme::parse_hex("#123456").unwrap());
-        assert_eq!(theme::palette(), changed);
-        theme::set_palette(&ctx, original);
-    }
-
-    #[test]
-    fn ordinary_widget_style_preserves_ui_identity_and_restores_caller() {
-        let css = "settings { color: #123456; font-size: 19px; }";
-        skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
-        let context = egui::Context::default();
-        context
-            .run_ui(egui::RawInput::default(), |ui| {
-                let _frame = super::super::native_css::frame_with_motion(ui, false);
-                let original = ui.style().clone();
-                let original_clip = ui.clip_rect();
-                let id = ui.scope_id();
-                {
-                    let scope = crate::kit::element::test_el("settings").enter();
-                    let limited = egui::Rect::from_min_size(ui.max_rect().min, egui::Vec2::splat(16.0));
-                    let styled = scope.ui(ui).clipped_to(limited);
-                    assert_eq!(styled.scope_id(), id);
-                    assert_eq!(styled.clip_rect(), original_clip.intersect(limited));
-                    assert_eq!(styled.visuals().override_text_color, theme::parse_hex("#123456"));
-                    assert!(styled.style().text_styles.values().all(|font| font.size == 19.0));
-                }
-                assert!(std::sync::Arc::ptr_eq(ui.style(), &original));
-                assert_eq!(ui.clip_rect(), original_clip);
-            })
-            .textures_delta
-            .clear();
-        skin::configure(&skin::Skin::default());
-    }
-    #[test]
-    fn descendant_styles_are_scoped_and_restore_palette() {
-        let original = theme::palette();
-        let seen = frames("browser { color: #123456; } browser button { color: #ABCDEF; }", || {
-            let browser = test_el("browser").enter();
-            let in_browser = theme::text_primary();
-            let in_button = {
-                let _button = test_el("button").enter();
-                theme::text_primary()
-            };
-            let after = theme::text_primary();
-            drop(browser);
-            (in_browser, in_button, after, theme::palette())
-        });
-        assert_eq!(seen.0, theme::parse_hex("#123456").unwrap());
-        assert_eq!(seen.1, theme::parse_hex("#ABCDEF").unwrap());
-        assert_eq!(seen.2, seen.0);
-        assert_eq!(seen.3, original);
-    }
-}
+#[path = "style_class_tests.rs"]
+mod tests;

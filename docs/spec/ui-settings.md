@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-11-10
+last_verified: 2026-11-11
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/settings_rows.rs
@@ -79,7 +79,7 @@ what is inside it).
 | Plug-ins | Folders | Folders (each on or off, with its format; add with a format, or by the system's picker with nothing typed, remove) |
 | Plug-ins | Editors | Plug-in editors open in (Window, Device view; where the embed is not possible — macOS, or no display — a note says so, and on macOS the editors still open in a window of their own) |
 | Devices | NAM | Amp models folder, Cabinet sounds folder ([nam spec](nam-amp-and-cab.md) › Folders) |
-| Devices | Device panels | Device chain layout, Long parameter lists, Detail area width |
+| Devices | Device panels | Device chain layout, Devices beside piano roll, Long parameter lists, Detail area width |
 | Importing | Dropping files | Tracks for dropped files, Warp mode for samples |
 | Arrangement | Clip editing | Let audio clips overlap, Let MIDI clips overlap, Double-click makes a clip, Clip menu name field, Clip drag handle, Paste replaces clip |
 | Arrangement | Take lanes | Take crossfade (10 ms, 20 ms, 40 ms, Custom; 10 ms by default), Custom take crossfade (shown with Custom, 1 to 500 ms; [recording](recording.md#take-lanes)) |
@@ -87,13 +87,14 @@ what is inside it).
 | Arrangement | View | Grid inside clips, Waveform size, Waveform and note colour (Theme, Auto, Light, Dark, Custom), Custom waveform colour (shown with Custom), Audio clip colour strength |
 | Arrangement | Tracks | New track colour, New clip colour, Track header colour strength, Track header side (Theme, Left, Right), Return tracks, Returns in new projects (A and B, or None, #898), Alt+wheel resizes |
 | Arrangement | Tools | Toolbar (On or Off, Off by default, #991), Default grid |
-| Arrangement | Automation | Click anywhere adds (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere) |
+| Arrangement | Automation | Click anywhere adds (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere), Group plug-in lanes (On or Off, On by default: a lane mounted from a plug-in goes into that plug-in's group, #1322) |
 | Arrangement | Gain envelope | Show gain envelope (On by default), Gain envelope ceiling (+3, +6, +12, +24 dB; +6 by default), Gain envelope grid (0.5, 1, 2, 3, 6 dB; 1 dB by default), Envelope points move (On the grid by default, or Freely; [clip panel](clip-panel.md#gain-envelope)) |
 | Arrangement | Track sizes | Default track size, Default return size, Tiny height, Compact height, Small height, Medium height, Large height |
 | Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights, Copy names |
 | Launcher and mixer | Launching | Select launched clip |
 | Launcher and mixer | Mixer | Mixer control style |
-| Clip editor | Piano roll | Full-height piano roll covers, Piano roll toolbar size, Allow stacked notes, Piano key style, Piano key names |
+| Clip editor | Piano roll | Full-height piano roll covers, Piano roll toolbar size, Allow stacked notes, Piano key style, Piano key names, Note names, Default scale |
+| Clip editor | Advanced | Covered notes |
 | Browser | Browser | Browser side, Recent item kinds layout, Dropping on a folder |
 | Browser | Previews | Preview selected file, Preview volume |
 | Browser | Sample map | Sample map layout, Preview on map hover, Map sample length limit, Map labels |
