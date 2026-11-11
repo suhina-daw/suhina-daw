@@ -384,10 +384,13 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
     // `button:disabled` for buttons, check boxes and drop-downs, `button[checked]` for a
     // chosen row, and `text-input` for text fields.
     let control = |hovered: bool, pressed: bool, disabled: bool| {
-        super::element::BUTTON
-            .pointer(hovered, pressed, disabled)
-            .style()
-            .filter(|c| c.authored.background || c.authored.border || c.authored.color || c.authored.radius)
+        super::element::BUTTON.pointer(hovered, pressed, disabled).style().filter(|c| {
+            c.authored.background
+                || c.authored.border
+                || c.authored.border_width
+                || c.authored.color
+                || c.authored.radius
+        })
     };
     let controls = [
         control(false, false, false),

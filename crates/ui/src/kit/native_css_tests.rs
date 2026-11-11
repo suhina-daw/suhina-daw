@@ -1286,6 +1286,23 @@ fn egui_widgets_in_a_scope_take_the_generic_button_and_input_rules() {
     assert_eq!(visuals.extreme_bg_color, egui::Color32::from_rgb(5, 5, 5));
 }
 
+/// A `button` rule that sets only a border width (no colour, no fill) still sets the width of
+/// egui's outline: `border-width: 0` removes it (#1336).
+#[test]
+fn a_button_rule_with_only_a_border_width_sets_egui_s_outline() {
+    let mut seen = Vec::new();
+    for css in ["settings button { border-width: 3px; }", "settings button { border-width: 0; }"] {
+        let mut last = None;
+        painted(css, |ui| {
+            let settings = test_el("settings").enter();
+            let styled = settings.ui(ui);
+            last = Some(styled.style().visuals.widgets.inactive.bg_stroke.width);
+        });
+        seen.extend(last);
+    }
+    assert_eq!(seen, [3.0, 0.0]);
+}
+
 /// egui draws one outline all round its widgets: a `button` rule whose sides differ (an
 /// underline) keeps egui's width and takes only its colour, not a box of its widest side (#1336).
 #[test]
