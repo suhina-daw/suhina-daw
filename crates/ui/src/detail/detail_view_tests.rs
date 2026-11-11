@@ -1565,7 +1565,8 @@ fn midi_harness(
                     nothing: false,
                 };
                 let midi = MidiTools { tools: &tools, state, show_tools: true };
-                show_clip_column(ui, &info, stacked, Some(midi), actions);
+                let editor = crate::kit::element::CLIP_EDITOR.enter();
+                show_clip_column(ui, &editor, &info, stacked, Some(midi), actions);
             },
             (Vec::new(), crate::detail::piano_roll::PianoRollState::default()),
         )
