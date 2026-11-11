@@ -75,7 +75,7 @@ impl Shorthand {
         if self == Self::Outline {
             return outline_part(property, value);
         }
-        let words: Vec<&str> = value.split_whitespace().collect();
+        let words = top_level_words(value);
         let index = self.longhands().iter().position(|p| *p == property).ok_or("Not a longhand of this shorthand")?;
         let pick = |order: &[usize]| order.get(index).and_then(|i| words.get(*i)).map(|w| (*w).to_owned());
         let text = match (self, words.len()) {
@@ -114,6 +114,31 @@ impl Shorthand {
             Self::Outline => "outline",
         }
     }
+}
+
+/// `value`'s words split at whitespace outside brackets, so a math function (`calc(1px + 1px)`)
+/// stays one word.
+fn top_level_words(value: &str) -> Vec<&str> {
+    let mut words = Vec::new();
+    let (mut depth, mut start) = (0usize, None);
+    for (at, c) in value.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        if c.is_whitespace() && depth == 0 {
+            if let Some(from) = start.take() {
+                words.extend(value.get(from..at));
+            }
+        } else if start.is_none() {
+            start = Some(at);
+        }
+    }
+    if let Some(from) = start {
+        words.extend(value.get(from..));
+    }
+    words
 }
 
 /// Whether the style engine accepts `value` for the property or shorthand `name` (`padding`,
@@ -831,6 +856,11 @@ mod tests {
         assert!(accepts("padding", "4px 8px"));
         assert!(accepts("gap", "6px"));
         assert!(accepts("color", "#fff"));
+        // A math function is one side, whatever spaces it holds.
+        assert!(accepts("border-width", "calc(1px + 1px)"));
+        assert!(accepts("border-width", "0 calc(1px + 1px) min(2px, 4px)"));
+        assert!(accepts("padding", "calc(2px * 3) 4px"));
+        assert_eq!(top_level_words(" a  calc(1px + (2px)) b "), ["a", "calc(1px + (2px))", "b"]);
         assert!(!accepts("border-width", "1px 2px 3px 4px 5px"));
         assert!(!accepts("border-width", "red"));
         assert!(!accepts("colour", "#fff"));
