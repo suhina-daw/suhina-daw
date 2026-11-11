@@ -819,15 +819,20 @@ fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
         return Err(format!("{} runs a shipped file of its own kind, not {packed_id:?}", info.name));
     }
     // A preset is the format people share, so its file is a shipped key or a library-relative
-    // path ([ADR 0014] › Amendment, the review): an absolute, a UNC or a `..`-carrying text is
-    // refused — a device added from it would read another machine's (or another share's) file
-    // the moment the preset landed.
+    // path ([ADR 0014] › Amendment, the review): an absolute, a UNC, a root-anchored or a
+    // `..`-carrying text is refused — a device added from it would read another machine's (or
+    // another share's) file the moment the preset landed. The root-anchored form (`/etc/…`)
+    // is absolute on Unix and `is_absolute()` there; Windows' `is_absolute()` wants a drive
+    // prefix, so the root component is matched itself.
     if let Some(file) = file.as_deref().filter(|file| !file.starts_with("builtin:")) {
         let given = std::path::Path::new(file);
         if given.is_absolute()
-            || given
-                .components()
-                .any(|component| matches!(component, std::path::Component::ParentDir | std::path::Component::Prefix(_)))
+            || given.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::Prefix(_) | std::path::Component::RootDir
+                )
+            })
         {
             return Err(format!(
                 "{file:?} is not a preset's file: a preset names a shipped file's key or a library-relative path"
@@ -879,9 +884,12 @@ pub fn write_preset_file(
         }
         let given = std::path::Path::new(file);
         if given.is_absolute()
-            || given
-                .components()
-                .any(|component| matches!(component, std::path::Component::ParentDir | std::path::Component::Prefix(_)))
+            || given.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::Prefix(_) | std::path::Component::RootDir
+                )
+            })
         {
             return Err(format!(
                 "{file:?} is not a preset's file: a preset names a shipped file's key or a library-relative path"
