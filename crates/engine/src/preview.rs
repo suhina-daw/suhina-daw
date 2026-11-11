@@ -348,9 +348,6 @@ impl Preview {
         }
     }
 
-    /// Releases the held preview keys, at `frame` of the block: one key, or every held key. A
-    /// note hold whose last key is let go ends the preview. A preview that plays to an end of its
-    /// own (a MIDI file) has no held keys and is left alone.
     /// Adds held `notes` to the held preview that plays on the same track: they start in the next
     /// frame and are held until let go, and the notes already held go on. The instrument that
     /// sounds stays: a fallback device moves into the new notes, and the one that came with them
@@ -372,6 +369,9 @@ impl Preview {
         self.monitor.playing.store(true, Ordering::Relaxed);
     }
 
+    /// Releases the held preview keys, at `frame` of the block: one key, or every held key. A
+    /// note hold whose last key is let go ends the preview. A preview that plays to an end of its
+    /// own (a MIDI file) has no held keys and is left alone.
     fn release(&mut self, chains: &mut [Chain], key: Option<u8>) {
         let Some(play) = self.notes.as_mut() else { return };
         let mut chain = play.chain.and_then(|i| chains.get_mut(i));

@@ -1689,6 +1689,28 @@ fn swing_moves_the_second_sixteenth_of_every_pass() {
     }
 }
 
+/// A loop that ends off an eighth (on 3.75) with full swing: a note in its last sixteenth would
+/// start past the loop end, in the next pass; it is left out, as a launched clip's loop leaves it.
+#[test]
+fn swing_leaves_out_a_note_it_would_take_past_the_loop_end() {
+    let notes = vec![Note::new(0.0, 0.25, 60, 1.0), Note::new(3.7, 0.05, 62, 1.0)];
+    let lane = ContentLane { target: None, data: LaneData::Notes(notes.into()) };
+    let mut placed = clip(0.0, 7.5);
+    placed.loop_range = Some(LoopRange { start: 0.0, end: 3.75 });
+    let map = Transport::default().tempo_map(48_000.0);
+    let keys = |swing: f64| {
+        let mut events = Vec::new();
+        collect_notes(&placed, &lane, &map, (TrackId(1), 1.0, 1.0, 0, 0, 0), None, swing, &mut events);
+        let mut keys: Vec<(u64, u8)> = events.iter().map(|e| (e.start, e.key)).collect();
+        keys.sort_unstable();
+        keys
+    };
+    // Straight, both play in each pass (3.75 beats are 90 000 frames).
+    assert_eq!(keys(0.0), [(0, 60), (88_800, 62), (90_000, 60), (178_800, 62)]);
+    // Full swing would put the second at 3.8, past the loop end: only the first plays.
+    assert_eq!(keys(1.0), [(0, 60), (90_000, 60)]);
+}
+
 /// Notes that start together go out lowest first, whatever order they were drawn in, so an
 /// instrument that plays one note at a time (the last one it is given) plays the highest of them.
 #[test]

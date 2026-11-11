@@ -641,12 +641,21 @@ impl PianoRollState {
     pub(super) fn settle_frame(&mut self, clip: &PianoClip, actions: &mut Vec<Action>) {
         let acting = self.acting().clone();
         if let Some(settling) = &mut self.settling {
-            let let_go = settling.address != clip.address || settling.notes != acting;
-            if settling.ids.is_empty() && !let_go {
+            let same_clip = settling.address == clip.address;
+            let let_go = !same_clip || settling.notes != acting;
+            // The ids are taken on the first frame the clip shows, even when the notes are let go
+            // on that very frame (Escape right after an arrow key), so the room is still made.
+            if settling.ids.is_empty() && same_clip {
                 settling.ids = settling.notes.iter().filter_map(|i| clip.notes.id(*i)).collect();
             }
-            if let_go {
-                actions.extend(self.settling.take().and_then(|s| s.action(clip)));
+            if let_go && let Some(settling) = self.settling.take() {
+                // Another clip shown now: the notes are not in it to check, so the room is made by
+                // id in their own clip; a command that changes nothing makes no undo step.
+                actions.extend(if same_clip {
+                    settling.action(clip)
+                } else {
+                    (!settling.ids.is_empty()).then(|| settling.make_room())
+                });
             }
         }
         if std::mem::take(&mut self.settle_pending) && !self.acting().is_empty() {

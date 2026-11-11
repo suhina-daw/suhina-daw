@@ -1897,6 +1897,12 @@ fn collect_notes(
                 continue;
             }
             let time = suhina_model::swung(note.time, swing);
+            // Swing that would take a note past the end of its loop pass leaves it out, as a
+            // launched clip's loop does: a pass ends where the loop does (a loop ending off an
+            // eighth, a note in its last sixteenth).
+            if time >= to {
+                continue;
+            }
             let length = (suhina_model::swung(note.time + note.duration.max(0.0), swing) - time).max(0.0);
             let start = clip.start + at + (time - from);
             let clip_end = clip.start + clip.length;

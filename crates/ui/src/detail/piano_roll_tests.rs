@@ -877,6 +877,36 @@ fn selected_notes_make_room_once_let_go_and_only_where_they_overlap() {
     assert!(actions.is_empty(), "a deleted note makes no room");
 }
 
+/// Notes let go on the first frame after their edit still make room, and so do notes whose clip
+/// is no longer shown (another clip picked): by id, in their own clip.
+#[test]
+fn edited_notes_make_room_when_let_go_at_once_or_when_another_clip_shows() {
+    let on_top = clip(vec![note(0.0, 1.0, 62), note(0.0, 1.0, 62)]);
+    // Let go (Escape) on the very first frame after the edit.
+    let mut state = focused_on(&on_top);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&on_top, &mut actions);
+    state.selected.clear();
+    state.settle_frame(&on_top, &mut actions);
+    assert_eq!(actions.iter().map(|a| a.id).collect::<Vec<_>>(), ["note.makeRoom"]);
+    // Another clip shown before the notes were let go.
+    let mut state = focused_on(&on_top);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&on_top, &mut actions);
+    state.settle_frame(&on_top, &mut actions);
+    let mut other = clip(vec![note(0.0, 1.0, 62)]);
+    other.address = json!({ "track": 2, "index": 0 });
+    state.selected.clear();
+    state.settle_frame(&other, &mut actions);
+    assert_eq!(actions.iter().map(|a| a.id).collect::<Vec<_>>(), ["note.makeRoom"]);
+    assert_eq!(actions[0].params["track"], json!(1), "in the clip the notes are in");
+    assert_eq!(actions[0].params["notes"].as_array().map(Vec::len), Some(1), "by id");
+}
+
 /// An arrow key takes the first note to the next line, the rest keeping their distance to it, and
 /// from there a line at a time.
 #[test]

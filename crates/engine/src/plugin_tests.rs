@@ -921,6 +921,9 @@ fn the_notes_at_the_loop_start_play_on_every_pass_with_no_all_notes_off() {
     assert!(!seen.iter().any(|(_, e)| *e == NoteEvent::AllNotesOff), "{seen:?}");
     let ends = seen.iter().filter(|(_, e)| matches!(e, NoteEvent::Off { key: 62, .. })).count();
     assert!(ends >= 2, "key 62 released at each wrap: {seen:?}");
+    // The sustain pedal is lifted at each wrap, which stops nothing that starts after it.
+    let lifted = seen.iter().filter(|(_, e)| *e == NoteEvent::Controller { number: 64, value: 0.0 }).count();
+    assert_eq!(lifted, 2, "{seen:?}");
 }
 
 /// A new audio output (another buffer size, the same sample rate) builds a new renderer: the

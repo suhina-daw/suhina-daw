@@ -309,6 +309,14 @@ fn keep_off_the_next(notes: &mut Notes, touched: &[usize]) {
     if touched.is_empty() {
         return;
     }
+    // Looked up once per pair: a list's `contains` would make a large selection quadratic.
+    let mut moved = vec![false; notes.len()];
+    for &index in touched {
+        if let Some(slot) = moved.get_mut(index) {
+            *slot = true;
+        }
+    }
+    let was_moved = |index: usize| moved.get(index).copied().unwrap_or(false);
     let mut order: Vec<usize> = (0..notes.len()).collect();
     order.sort_by(|a, b| {
         let (Some(x), Some(y)) = (notes.get(*a), notes.get(*b)) else { return std::cmp::Ordering::Equal };
@@ -316,7 +324,7 @@ fn keep_off_the_next(notes: &mut Notes, touched: &[usize]) {
     });
     for pair in order.windows(2) {
         let &[a, b] = pair else { continue };
-        if !(touched.contains(&a) || touched.contains(&b)) {
+        if !(was_moved(a) || was_moved(b)) {
             continue;
         }
         let (Some(first), Some(next)) = (notes.get(a).copied(), notes.get(b).copied()) else { continue };

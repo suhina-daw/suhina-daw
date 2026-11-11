@@ -45,6 +45,9 @@ use crate::spectrum;
 pub(crate) const MAX_BLOCK: usize = 1024;
 /// Events a chain keeps for one block before it runs up to the frame it has reached.
 const MAX_PENDING: usize = 256;
+/// The sustain pedal's MIDI controller number.
+const SUSTAIN_PEDAL: u8 = 64;
+
 const NOT_HELD: u64 = u64::MAX;
 /// Gain of a centred track at unity volume, which the sources of a chain track are mixed at
 /// (see `track_gains`); the track's real gains apply after the chain, divided by this.
@@ -900,18 +903,25 @@ impl Chain {
         if !self.instrument {
             return;
         }
-        self.release_held(frame);
+        self.release_keys(frame);
         self.push(frame, NoteEvent::AllNotesOff);
     }
 
-    /// Releases each held key on its own at `frame` of the block, with no all-notes-off: for a
-    /// jump, a loop's wrap or a launch, where new notes start in the same block. A plug-in gets an
-    /// all-notes-off as controller changes, which many apply to the whole block, so it would
-    /// silence the notes that start after it in that block (the notes at a loop's start).
+    /// Releases each held key on its own at `frame` of the block and lifts the sustain pedal, with
+    /// no all-notes-off: for a jump, a loop's wrap or a launch, where new notes start in the same
+    /// block. A plug-in gets an all-notes-off as controller changes, which many apply to the whole
+    /// block, so it would silence the notes that start after it in that block (the notes at a
+    /// loop's start). The pedal alone stops nothing that starts after it.
     pub(crate) fn release_held(&mut self, frame: usize) {
         if !self.instrument {
             return;
         }
+        self.release_keys(frame);
+        self.push(frame, NoteEvent::Controller { number: SUSTAIN_PEDAL, value: 0.0 });
+    }
+
+    /// A note-off for each held key, at `frame` of the block.
+    fn release_keys(&mut self, frame: usize) {
         for key in 0..=127u8 {
             if self.held.get(usize::from(key)).is_some_and(|&end| end != NOT_HELD) {
                 self.push(frame, NoteEvent::Off { key, velocity: 0.5 });

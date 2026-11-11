@@ -40,7 +40,9 @@ Notes that start at the same moment go to the instrument lowest first, so one th
 a time (the last one it is given) plays the highest of them, with swing or without.
 
 Swing works on the content's beats, so every pass of a looping clip swings the same, and a clip's
-start marker does not change which sixteenths are delayed.
+start marker does not change which sixteenths are delayed. A pass ends where the loop does: a note
+that swing would start at or past the loop end (a loop ending off an eighth, the note in its last
+sixteenth) is left out of that pass, in the Arrangement and in the Launcher alike.
 
 ## The project's swing and a clip's own
 
