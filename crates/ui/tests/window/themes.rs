@@ -1110,6 +1110,27 @@ fn fills_inside(h: &Harness<'static, App>, inside: egui::Rect) -> Vec<egui::Colo
     seen
 }
 
+/// The browser's search field draws each side of its border at its own width: an underline is a
+/// line under the field, not a box round it of its widest side (#1336).
+#[test]
+fn the_browser_search_field_draws_an_underline() {
+    fn rects(shape: &egui::Shape, out: &mut Vec<egui::epaint::RectShape>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| rects(s, out)),
+            egui::Shape::Rect(rect) => out.push(rect.clone()),
+            _ => {}
+        }
+    }
+    let magenta = egui::Color32::from_rgb(0xFF, 0, 0xFF);
+    let h = open_with_clip("browser text-input { border-width: 0 0 2px; border-color: #FF00FF; }", false);
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| rects(&s.shape, &mut seen));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let lines: Vec<_> = seen.iter().filter(|r| r.fill == magenta).map(|r| r.rect).collect();
+    assert!(lines.len() == 1 && lines[0].height() == 2.0, "one line along the bottom: {lines:?}");
+    assert!(!seen.iter().any(|r| r.stroke.color == magenta && r.stroke.width > 0.0), "no box round it");
+}
+
 /// A browser whose panel's padding leaves less room than its fixed layout needs takes the pointer
 /// only inside its panel: what runs past it does not take clicks over the main view (#1336).
 #[test]

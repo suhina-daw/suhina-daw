@@ -245,7 +245,7 @@ fn edge(painter: &Painter, rect: Rect, radius: f32, style: &super::Computed) {
 }
 
 /// An element's border alone, for one whose background and inset shadows its caller painted.
-pub(in crate::kit) fn border(painter: &Painter, rect: Rect, radius: f32, style: &super::Computed) {
+pub(crate) fn border(painter: &Painter, rect: Rect, radius: f32, style: &super::Computed) {
     if !rect.is_positive() || !rect.is_finite() || style.border_width <= 0.0 || style.border.a() == 0 {
         return;
     }

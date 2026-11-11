@@ -1286,6 +1286,30 @@ fn egui_widgets_in_a_scope_take_the_generic_button_and_input_rules() {
     assert_eq!(visuals.extreme_bg_color, egui::Color32::from_rgb(5, 5, 5));
 }
 
+/// egui draws one outline all round its widgets: a `button` rule whose sides differ (an
+/// underline) keeps egui's width and takes only its colour, not a box of its widest side (#1336).
+#[test]
+fn a_button_rule_with_uneven_sides_is_not_a_box_round_egui_s_widgets() {
+    let mut seen = Vec::new();
+    for css in [
+        "settings button { background-color: #101010; }",
+        "settings button { border-width: 0 0 2px; border-color: #FF0000; }",
+        "settings button { border-width: 3px; border-color: #FF0000; }",
+    ] {
+        let mut last = None;
+        painted(css, |ui| {
+            let settings = test_el("settings").enter();
+            let styled = settings.ui(ui);
+            last = Some(styled.style().visuals.widgets.inactive.bg_stroke);
+        });
+        seen.extend(last);
+    }
+    let red = egui::Color32::from_rgb(0xFF, 0, 0);
+    let [plain, uneven, even] = seen[..] else { panic!("three strokes: {seen:?}") };
+    assert_eq!(uneven, egui::Stroke::new(plain.width, red), "egui's own width, the rule's colour");
+    assert_eq!(even, egui::Stroke::new(3.0, red));
+}
+
 #[test]
 fn a_built_in_device_s_panel_is_selected_by_its_id() {
     let css = "device { background-color: #00FF00; } #device-compressor { background-color: #FF0000; } \

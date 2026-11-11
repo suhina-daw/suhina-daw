@@ -506,7 +506,9 @@ is a viewport's edge (a scroll area scrolled part of it out of view), which they
 **Borders.** `border-width` is a shorthand of `border-top-width`, `border-right-width`,
 `border-bottom-width` and `border-left-width` (one to four lengths, as `padding`), each 0 to
 16 px; `border-color` is one colour for all four sides. Sides of one width follow the element's
-`border-radius`; sides of different widths are drawn straight.
+`border-radius`; sides of different widths are drawn straight. egui's ordinary widgets (in
+Settings, dialogs and the browser, styled by the generic `button` rules) draw one outline all round: a rule whose sides differ gives them its
+`border-color` and leaves their outline's width as it was, rather than a box of its widest side.
 
 **One paint model (#1233).** Every background blends with what is under it. The window clears
 once (to nothing in a see-through window), `window` paints its background once over the whole

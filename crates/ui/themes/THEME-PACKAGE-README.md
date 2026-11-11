@@ -768,7 +768,9 @@ menu) and `text-input` style Suhina's ordinary widgets too: the buttons, check b
 drop-downs and text fields in Settings, in dialogs (Export audio, Save, the loading and closing
 dialogs), on the start page, in the browser, the sample map, the Plug-in manager and in
 popups. Scope them to one place with its element: `settings button`, `dialog text-input`.
-`border-width: 0` removes egui's own outline. Settings' choices of several parts (Ask, Panel,
+`border-width: 0` removes egui's own outline. egui draws one outline all round, so sides of
+different widths (`border-width: 0 0 2px`) give these widgets only the `border-color`; the
+browser's search field and Settings' theme swatches draw each side. Settings' choices of several parts (Ask, Panel,
 On) are `button` parts too, the chosen one `[checked]`.
 
 ```css

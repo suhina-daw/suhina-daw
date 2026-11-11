@@ -375,8 +375,7 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
     let border = values
         .as_ref()
         .filter(|style| style.authored.border_width)
-        .filter(|style| style.border_sides.iter().all(|side| *side == style.border_width))
-        .map(|style| egui::Stroke::new(style.border_width, style.border));
+        .and_then(|style| style.even_border().map(|width| egui::Stroke::new(width, style.border)));
     // A panel's or view's background is the surface behind its widgets, not their fill: a
     // device panel's colour would otherwise hide its sliders' rails.
     let fill = values.as_ref().filter(|style| style.authored.background && !surface).map(|style| style.background);
@@ -426,8 +425,11 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
                 widget.bg_fill = own.background;
                 widget.weak_bg_fill = own.background;
             }
+            // egui draws one outline all round: sides of different widths (an underline, `0 0
+            // 2px`) leave its width as it was, and only a colour is taken (#1336).
             if own.authored.border || own.authored.border_width {
-                widget.bg_stroke = egui::Stroke::new(own.border_width, own.border);
+                let width = own.even_border().unwrap_or(widget.bg_stroke.width);
+                widget.bg_stroke = egui::Stroke::new(width, own.border);
             }
             if own.authored.color {
                 widget.fg_stroke.color = own.color;

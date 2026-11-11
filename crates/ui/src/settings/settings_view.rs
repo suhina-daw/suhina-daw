@@ -1679,10 +1679,8 @@ fn paint_swatch(painter: &egui::Painter, rect: Rect, color: egui::Color32) -> f3
         Some(style) => {
             let corner = radius(style.radius);
             painter.rect_filled(rect, corner, style.background);
-            if style.border_width > 0.0 {
-                let stroke = egui::Stroke::new(style.border_width, style.border);
-                painter.rect_stroke(rect, corner, stroke, egui::StrokeKind::Inside);
-            }
+            // Each side at its own width.
+            crate::kit::native_css::border(painter, rect, corner, &style);
             corner
         }
         None => {

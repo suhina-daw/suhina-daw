@@ -32,10 +32,11 @@ mod text;
 mod workspace;
 pub use diagnostics::{Notice, inspect};
 pub use paint::background_with;
+pub(crate) use paint::border;
 #[cfg(test)]
 pub(in crate::kit) use paint::surface_with;
 pub(in crate::kit) use paint::{artwork_shadows, background_rounded, gradients_rounded, level_fill, level_glow};
-pub(in crate::kit) use paint::{border, box_begin, box_end};
+pub(in crate::kit) use paint::{box_begin, box_end};
 pub use text::paint_text;
 pub use workspace::{Workspace, splitter_between, workspace};
 
@@ -100,6 +101,13 @@ impl Computed {
     /// `clip`; regions by default).
     pub fn hides_overflow(&self) -> bool {
         matches!(self.value(Property::Overflow), Value::Keyword("hidden" | "clip"))
+    }
+
+    /// The border's width when its four sides are one width: the outline an egui widget can draw,
+    /// all round. `None` when the sides differ (`border-width: 0 0 2px`).
+    pub fn even_border(&self) -> Option<f32> {
+        let [top, ..] = self.border_sides;
+        self.border_sides.iter().all(|side| *side == top).then_some(top)
     }
 
     /// The element's `padding` in points: top, right, bottom, left.
