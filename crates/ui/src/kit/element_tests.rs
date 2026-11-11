@@ -337,6 +337,18 @@ fn border_and_padding_keep_the_contents_inside_the_box() {
     assert_eq!(content.map(|c| c.area()), Some(0.0), "padding larger than the box leaves no room");
 }
 
+/// Padding in `em` is the element's font size times it, as the layout takes it, so the content
+/// box painted agrees with the box the sheet lays out (#1336).
+#[test]
+fn padding_in_em_takes_the_element_s_font_size() {
+    let area = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 40.0));
+    let mut content = None;
+    shapes("track-header { font-size: 10px; padding: 0.5em 1em; }", |ui| {
+        content = Some(TRACK_HEADER.enter().paint(ui.painter(), area).content);
+    });
+    assert_eq!(content, Some(Rect::from_min_max(egui::pos2(20.0, 15.0), egui::pos2(100.0, 45.0))));
+}
+
 #[test]
 fn sides_of_different_widths_are_drawn_each() {
     let area = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 40.0));

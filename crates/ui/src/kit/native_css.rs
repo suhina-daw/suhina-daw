@@ -112,11 +112,11 @@ impl Computed {
 
     /// The element's `padding` in points: top, right, bottom, left.
     pub fn padding(&self) -> [f32; 4] {
+        // As the layout resolves it (`em` of the element's font size), so a box laid out by the
+        // sheet and the content box painted in it agree.
         [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft].map(|side| {
-            match self.value(side) {
-                Value::Length(suhina_style::value::Length::Px(points)) if points.is_finite() => {
-                    points.clamp(0.0, 512.0)
-                }
+            match suhina_style::layout::spacing_points(&self.resolved, side) {
+                Some(points) if points.is_finite() => points.clamp(0.0, 512.0),
                 _ => 0.0,
             }
         })

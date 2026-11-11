@@ -255,10 +255,20 @@ fn size(style: &ComputedStyle, property: Property) -> Dimension {
 }
 fn spacing(style: &ComputedStyle, property: Property) -> LengthPercentage {
     match style.get(property) {
-        Value::Length(Length::Px(n)) => length(n),
-        Value::Length(Length::Em(n)) => length((n * font(style)).min(16384.0)),
         Value::Length(Length::Percent(n)) => percent(n),
-        _ => length(0.0),
+        _ => length(spacing_points(style, property).unwrap_or(0.0)),
+    }
+}
+
+/// A padding (or gap) side in points as the layout resolves it, for painters that need the same
+/// box without laying the element out: a length in points, or in `em` of the element's own font
+/// size. `None` for a percentage, which takes the size of the box around the element.
+pub fn spacing_points(style: &ComputedStyle, property: Property) -> Option<f32> {
+    match style.get(property) {
+        Value::Length(Length::Px(n)) => Some(n),
+        Value::Length(Length::Em(n)) => Some((n * font(style)).min(16384.0)),
+        Value::Length(Length::Percent(_)) => None,
+        _ => Some(0.0),
     }
 }
 /// A border side's width, 0 to 16 px as it is painted.
@@ -649,6 +659,24 @@ mod tests {
         let rects = layout(css, elements, 800.0);
         assert_eq!(rects[1].unwrap().x, 2.0 + 6.0, "the left border, then the padding");
         assert_eq!(rects[1].unwrap().y, 1.0, "the top border");
+    }
+
+    /// Padding in `em` lays a child out where `spacing_points`, which painters use, says the
+    /// content box starts (#1336).
+    #[test]
+    fn padding_in_em_is_where_painters_find_it() {
+        let css = "toolbar { display:flex; font-size:10px; padding:0.5em 1.5em; } #a { width:100px; height:20px; }";
+        let elements = vec![Element::new("toolbar", None), Element::new("div", Some(0)).with_id("a")];
+        let rects = layout(css, elements, 800.0);
+        assert_eq!((rects[1].unwrap().x, rects[1].unwrap().y), (15.0, 5.0));
+        let sheet = Sheet::parse(css).unwrap();
+        let tree = Tree::new(vec![Element::new("toolbar", None)]).unwrap();
+        let viewport = Viewport { width: 800.0, height: 600.0, reduced_motion: false };
+        let styles =
+            cascade::compute(&tree, viewport, &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }])
+                .unwrap();
+        assert_eq!(spacing_points(&styles[0], Property::PaddingLeft), Some(15.0));
+        assert_eq!(spacing_points(&styles[0], Property::PaddingTop), Some(5.0));
     }
 
     #[test]
