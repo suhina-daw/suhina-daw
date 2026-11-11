@@ -762,6 +762,57 @@ fn a_plug_ins_generated_list_sets_its_parameters_by_id() {
     }
 }
 
+/// A plug-in's button is painted in its panel's scope, in a row and stacked: a panel that hides
+/// its overflow cuts it at its padding box, as it does the rest of what it holds (#1336).
+#[test]
+fn a_plug_in_s_button_is_cut_by_its_panel_s_overflow() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let project = with_plugin();
+    let Detail::Devices(chain) = build_with(
+        &project,
+        Some(TrackId(1)),
+        None,
+        &mut |_, _| Some(report(PluginStatus::Running, false)),
+        crate::detail::device_widgets::Lists::default(),
+    ) else {
+        panic!()
+    };
+    let detail = Detail::Devices(chain);
+    crate::kit::native_css::set_user_sheet(Some("device { overflow: hidden; border-width: 3px; }".into()));
+    for stacked in [false, true] {
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(600.0, 260.0)).build_ui_state(
+            |ui, actions: &mut Vec<Action>| {
+                let _frame = crate::kit::native_css::frame(ui);
+                let _window = crate::kit::element::WINDOW.enter();
+                let mut places = Vec::new();
+                if stacked {
+                    show_stack(ui, &detail, &[], actions, &mut places);
+                } else {
+                    show_row(ui, &detail, &[], actions, &mut places);
+                }
+            },
+            Vec::new(),
+        );
+        harness.run_steps(3);
+        let button = harness.get_by_label("Open editor Verb").rect();
+        let panel = harness.get_by_label("Device Verb").rect().shrink(3.0);
+        let clips: Vec<_> = harness
+            .output()
+            .shapes
+            .iter()
+            .filter(|s| matches!(&s.shape, egui::Shape::Rect(r) if r.rect == button))
+            .map(|s| s.clip_rect)
+            .collect();
+        assert!(!clips.is_empty(), "stacked {stacked}: the button is painted");
+        assert!(
+            clips.iter().all(|clip| panel.contains_rect(*clip)),
+            "stacked {stacked}: cut at the panel's padding box {panel:?}: {clips:?}"
+        );
+    }
+    crate::kit::native_css::set_user_sheet(None);
+}
+
 fn with_plugin() -> Project {
     let mut project = demo_project();
     project.channels[0]

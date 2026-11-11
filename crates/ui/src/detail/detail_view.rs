@@ -260,7 +260,6 @@ fn chain_row(
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
         }
-        plugin_button(ui, &painter.with_clip_rect(area), content, chain.track, device, actions);
         if let Some(editor) = editor {
             let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
             places.push(editor_place(ui, area, content, editor, chain.track, device, origin));
@@ -713,7 +712,6 @@ fn chain_stack_in(
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
         }
-        plugin_button(ui, &painter.with_clip_rect(area), content, chain.track, device, actions);
         if let Some(editor) = editor {
             let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
             places.push(editor_place(ui, visible, content, editor, chain.track, device, origin));
@@ -938,7 +936,7 @@ fn hint(painter: &egui::Painter, area: Rect, text: &str) {
 
 /// One device: a header with its on switch and name, then its parameters, one per row. Returns
 /// whether it was clicked, and its content box (inside its border and padding, #1336), where a
-/// plug-in's button and embedded editor go.
+/// plug-in's embedded editor goes.
 #[allow(clippy::too_many_arguments)]
 fn device_panel(
     ui: &mut Ui,
@@ -1160,6 +1158,9 @@ fn device_panel(
                 );
             }
         }
+        // Its button in the panel's scope, so the panel's `overflow` cuts it and the outline
+        // goes over it.
+        plugin_button(ui, painter, rect, track, device, actions);
         outline(painter);
         return (clicked, rect);
     }
