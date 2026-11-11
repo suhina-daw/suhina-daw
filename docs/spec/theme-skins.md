@@ -28,7 +28,9 @@ covers:
   - crates/ui/src/kit/native_css/geometry.rs
   - crates/ui/src/kit/native_css/shadows.rs
   - crates/ui/src/kit/native_css/text.rs
-  - crates/ui/src/kit/native_css/workspace.rs
+  - crates/ui/src/kit/native_css/window.rs
+  - crates/ui/src/app/window_layout.rs
+  - crates/ui/src/kit/divider.rs
   - crates/ui/src/kit/native_css/diagnostics.rs
   - crates/ui/src/kit/theme_css.rs
   - crates/ui/src/kit/theme_vars.rs
@@ -112,8 +114,8 @@ tracks 24, clips 12). The liquid renderer requires GPU rendering, animations ena
 and encoded/linear texture-view support; older GL adapters retain ordinary alpha
 materials without installing unsupported captures. Effective SVG roles include shared original Sheet
 glyphs plus Meadow's own faders, knobs, button, paper icon and mixer body.
-While a private background image is active, the workspace's separator backdrop
-stays transparent. Panel surfaces and individual splitter controls still paint
+While a private background image is active, the lines over and under the views
+(`#views-top`, `#views-bottom`) stay transparent. Panel surfaces and individual splitter controls still paint
 their own fills; without an image the native separator backdrop remains unchanged.
 
 ![Suhina Meadow with visible private wallpaper, translucent panels and live liquid materials](../design/reference/theme-meadow-liquid.png)
@@ -216,7 +218,7 @@ the native GPU transparency regression has separate automated coverage. Theme
 changes were made through external JSON/CSS files while the app remained open.
 Colour-dependent texture contrast is authored with named scopes, e.g.
 `track-name[data-object=track-1] { color: #edf6e9; }`; arbitrary named track scopes
-use `data-object`, while toolbar/workspace ids have their documented literal ids.
+use `data-object`, while the toolbar's and the window's ids have their documented literal ids.
 
 ## Native element placement contract
 
@@ -382,7 +384,8 @@ like before a theme styles it.
 - **What it holds:** `overflow: hidden` on every region (the registry's `Region` kind); a 1 px
   `border-bottom-width` on the bars over the views (`application-bar`, `menu-bar`,
   `project-tabs`, `toolbar`) and a 1 px `border-top-width` on `status-bar`, in `--border` from
-  the palette's tier (the lines above and under the view are `#workspace`'s);
+  the palette's tier (the lines over and under the views are `separator#views-top` and
+  `#views-bottom`); the window's grid (*The window grid*);
   `backdrop-filter: blur(20px)` on `popup`, `menu`, `dialog` and `tooltip`; the default
   artwork; the sample map's colours; the theme swatch's rounded square.
 - **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
@@ -479,7 +482,7 @@ children at the padding box (› Overflow), so its border stays whole.
 widths and its `padding`. Padding in points and in `em` (of the element's own font size) is
 resolved as the CSS layout resolves it. A percentage, which CSS takes of the width of the box
 around the element, is read only on the elements whose children the CSS layout places
-(`workspace`, `toolbar`), each laid out in its own box: there it is a percentage of that box's
+(`window`, `toolbar`), each laid out in its own box: there it is a percentage of that box's
 width, for the layout and for the sizes Suhina works out (the toolbar's height grows by it, and
 its content box keeps it), so they agree. Anywhere else Suhina paints the content box without that box, so the
 sheet refuses the declaration with a notice instead of reading it as no padding. Every view lays its children out there, not in the rectangle it
@@ -599,8 +602,8 @@ transport's buttons, `[selected]` on the selected track's header, column, strip 
 dropdown list and popup is `popup`, and a tooltip `tooltip` (see *Floating surfaces*); the
 metronome's level slider is `popup#metronome-level`, outside the toggle's scope.
 
-**Bar lines.** The separator under a bar uses that bar's `border-color`, and the line above the
-view `#workspace`'s; `--border` stays every other line.
+**Bar lines.** The separator under a bar uses that bar's `border-color`, and the lines over and
+under the views `#views-top`'s and `#views-bottom`'s; `--border` stays every other line.
 
 **Header width.** `arrangement { header-min-width }` (160 to 520 points) is the least
 width of the Arrangement header column, so the header's narrower layouts do not break a theme's
@@ -610,9 +613,9 @@ placements.
 warnings. Renaming a theme keeps its folder (its id). Two themes with one name are named in the
 warnings and show their folder names. Placement rules accept selector lists.
 
-**Workspace overlays.** A browser or detail panel that the `#workspace` grid places in
-the same cells as `#panel-main` is drawn on a layer above the view, so it shows and takes
-the pointer there.
+**Panel overlays.** A browser or detail panel that the window's grid places in the same
+cells as `#panel-main` is drawn on a layer above the view, so it shows and takes the pointer
+there.
 
 Connected native text helpers support computed CSS `text-shadow`, including lists,
 inherited/currentColor colours and animated offsets/colours. Up to four layers
@@ -623,7 +626,7 @@ and offsets of ±256 points. This is not a full image convolution. Native clippi
 still applies. Ordinary egui text that bypasses the shared/native helper is not
 covered yet. The editor includes an original dark gloss CSS example demonstrating
 gradients, rounded buttons and bounded text/box shadows without changing the native
-toolbar/workspace layout.
+toolbar or window layout.
 
 Host rules the app reads itself, beside the engine: `meter` accepts `style`, `segments`
 and `intensity`; `image` declarations name package-relative SVG/PNG artwork or Suhina's own
@@ -849,41 +852,95 @@ See [sd-device-format.md](sd-device-format.md) › Panel style sheets.
 Trace spans `style paint parse` and `style paint resolve` mark the engine's UI-thread
 work; no audio callback is instrumented.
 
-### Workspace layout contract
+### The window grid
 
-Panel elements are absent when closed. Fixed tracks still reserve their size for
-absent elements; put sizes on the optional panels and use `auto` tracks instead:
+The window is one CSS grid on `window` (#1370), laid out under the custom title bar (and, on
+Windows, the application bar, which holds the system's window buttons and the region that drags
+the window, so it stays outside the grid). The user-agent sheet states the default grid, so a
+window with no theme, or with a theme sheet whose layout fails, is laid out by it alone: there is
+no other layout path.
+
+Its children, by element, id and `kind`:
+
+| Element | Id | Area | What it is |
+|---|---|---|---|
+| `menu-bar` | `#menu-bar` | `menu` | the window's own menu bar, while Settings shows it |
+| `project-tabs` | `#project-tabs` | `tabs` | the tabs, while two or more projects are open |
+| `toolbar` | `#toolbar` | `toolbar` | the toolbar |
+| `separator[kind="views-top"]` | `#views-top` | `top` | the 1 px line over the views |
+| `notice-bar` | `#notice-bar` | `notice` | the strip asking about an opened project or naming missing files |
+| `workspace-panel[kind="browser"]` | `#panel-browser` | `left` (`right` with the browser on the right) | the browser |
+| `workspace-panel[kind="main"]` | `#panel-main` | `main` | the Launcher or the Arrangement |
+| `workspace-panel[kind="detail"]` | `#panel-detail` | `detail` | the detail area |
+| `separator[kind="views-bottom"]` | `#views-bottom` | `bottom` | the 1 px line under the views |
+| `status-bar` | `#status-bar` | `status` | the status bar |
+
+The default grid has four columns (the browser on the left, the views, the detail area stacked
+beside them, the browser on the right) and nine rows, one per area:
 
 ```css
-/* Wrong: leaves a browser-sized hole when the browser is closed. */
-#workspace { display:grid; grid-template-columns:248px minmax(0,1fr);
-             grid-template-rows:minmax(0,1fr) 200px; }
-/* Right: absent browser/detail panels have no fixed-size track. */
-#workspace { display:grid; grid-template-columns:auto minmax(0,1fr);
-             grid-template-rows:minmax(0,1fr) auto; }
-#panel-browser { grid-column:1; grid-row:1 / -1; width:248px; }
-#panel-main { grid-column:2; grid-row:1; }
-#panel-detail { grid-column:2; grid-row:2; height:200px; }
+window {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    "menu menu menu menu" "tabs tabs tabs tabs" "toolbar toolbar toolbar toolbar"
+    "top top top top" "notice notice notice notice"
+    "left main side right" "left detail detail right"
+    "bottom bottom bottom bottom" "status status status status";
+}
 ```
 
-The native workspace exposes `workspace` / `#workspace`, with `workspace-panel`
-children `#panel-browser`, `#panel-main`, `#panel-detail`. They contain the browser,
-Launcher/Arrangement and detail scopes respectively. Each panel paints its own box as every
-element does: a `background-color` under the view it holds and a border round it, in the room the
-border takes (none unless the sheet gives one), and the view goes in its content box. Authored layout declarations on
-these containers opt into CSS Flex/Grid geometry. With none, native splitters and layout
-remain in charge. Closed native panels do not become visible merely through CSS.
-In CSS layout mode, placement comes from the stylesheet. A panel whose size the sheet sets has no
-splitter; one whose size it leaves to the native grid (a layout with only gaps or margins) keeps
-its splitter in the gap beside it, and dragging it still sets the saved size. Which panels follow
-is found by laying the grid out again with their preferred sizes a point larger, not by a list of
-properties (#1240). The splitters are `divider` elements, `#detail-splitter` and
-`#browser-splitter`, with `:hover` and `:active`, in the native layout too, so a theme that owns
-the layout owns the strips in its gaps (#1252). The strip takes `background-color` and the detail
-splitter's grip `color`; without them the detail splitter keeps the control background and a
-hint-coloured grip, and the browser's the border colour, stronger under the pointer. Drawing,
-input clipping and drag/drop targets must use the same resolved rectangles. Removing those layout declarations restores the
-native arrangement and its saved sizes. Bars and floating windows remain host-managed.
+**What the app knows is an attribute on `window`:** `[detail="below"]` (the detail area under the
+view, beside the browser), `[detail="full-width"]` (under the view and the browser, Settings ›
+Devices › Detail area width) and `[detail="beside"]` (the devices stacked beside the view; a clip's
+editor still lies along the bottom, so a stacked area showing one is `below`); `[browser="left"]`
+or `[browser="right"]` while the browser shows; `[menu-bar]` while the window has its own menu
+bar. The user-agent sheet's grid reads them, and a theme's rules can too
+(`window[detail="beside"] #panel-detail { … }`). The closed detail area is
+`#panel-detail[closed]`.
+
+**A region that is not there has no element** (the menu bar turned off, the tabs of a single
+project, the hidden browser, the browser and the detail area on the start page), so its `auto`
+track is empty. A theme hides one with `display: none`, or with a template that lacks its area:
+an element whose `grid-area` names an area its parent's template does not is left out of the
+layout, with no implicit track.
+
+**Sizes.** A bar's height, a line's 1 px, the browser's saved width and the detail area's size
+are content sizes the app gives the elements: an `auto` size is the content size plus the
+element's padding and border, and a `width` or `height` in the sheet replaces it. The detail
+area's content size is the one its own rules give it: the height the user dragged, a track's
+devices at one height, the piano roll pulled to the top under the Arrangement view.
+
+**Splitters.** The panels' margins leave the gaps the splitters lie in (4 points beside the
+browser, 6 over the detail area or beside it). A panel whose size the sheet sets has no
+splitter; one the grid leaves to its content size keeps a `divider` in the gap beside it, and its
+drag sets the saved size. Which panels follow is found by laying the grid out again with their
+content sizes a point larger, one at a time, not by a list of properties (#1240). The closed
+detail area keeps its place with no size, so its splitter stays in the gap, to drag it open. The
+splitters are `divider` elements, `#browser-splitter` and `#detail-splitter`, with `:hover` and
+`:active`; every divider (a mixer strip's `#mixer-divider` too) drags and paints through one
+helper (`kit::divider`). The strip takes `background-color` and the detail splitter's grip
+`color`; without them the detail splitter keeps the control background and a hint-coloured grip,
+and the browser's the border colour, stronger under the pointer.
+
+**One set of rectangles.** Drawing, input clipping and drop targets use the rectangles the grid
+gives. A region the grid gives none draws nothing and takes no input. A panel the grid lays over
+`#panel-main` (in the same cells) is drawn on a layer above the view, so it shows and takes the
+pointer there.
+
+Example: the status bar at the top, the toolbar under the views, no tabs:
+
+```css
+window {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto auto;
+  grid-template-areas:
+    "status status status status" "menu menu menu menu" "top top top top"
+    "notice notice notice notice" "left main side right" "left detail detail right"
+    "bottom bottom bottom bottom" "toolbar toolbar toolbar toolbar" "tabs tabs tabs tabs";
+}
+project-tabs { display: none; }
+```
 
 ### Readable values
 

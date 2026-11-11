@@ -10,7 +10,7 @@ covers:
   - crates/ui/src/kit/native_css/paint.rs
   - crates/ui/src/kit/native_css/geometry.rs
   - crates/ui/src/kit/native_css/shadows.rs
-  - crates/ui/src/kit/native_css/workspace.rs
+  - crates/ui/src/kit/native_css/window.rs
   - crates/ui/src/kit/native_css/diagnostics.rs
   - crates/ui/src/kit/theme_css.rs
   - crates/ui/src/kit/style_class.rs
