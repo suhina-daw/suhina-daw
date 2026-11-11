@@ -246,9 +246,10 @@ fn chain_row(
         }
         // Picks are of any device, inside a group too (Ctrl+G groups them, Delete removes them).
         let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
-        let clicked = match &device.group {
+        // A plug-in's button and editor go in the panel's content box.
+        let (clicked, content) = match &device.group {
             Some(group) => {
-                group_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, group, lit, actions)
+                (group_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, group, lit, actions), rect)
             }
             None => {
                 device_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, lit, actions, &chain.nam)
@@ -259,9 +260,6 @@ fn chain_row(
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
         }
-        // Only a plug-in's button and editor are placed in it; the element is not entered for
-        // other devices (the budget counts each one).
-        let content = if device.plugin.is_some() { device_content(rect, device, lit) } else { rect };
         plugin_button(ui, &painter.with_clip_rect(area), content, chain.track, device, actions);
         if let Some(editor) = editor {
             let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
@@ -690,25 +688,31 @@ fn chain_stack_in(
             continue;
         }
         let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
+        let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
+        // The panel's border and padding round what it holds, as in a row (#1336): in the state
+        // it is painted in.
+        let [top, side_right, bottom, side_left] = crate::kit::element::DEVICE
+            .id(&format!("device-{}", device.theme_id))
+            .attr(crate::kit::element::Selected, lit)
+            .attr(crate::kit::element::Muted, !device.enabled)
+            .enter()
+            .insets();
         let height = panel_height(device, editor);
-        let height = sdk_viewport(device).map_or(height, |v| ROW + PAD * 2.0 + v[1]);
-        let right = sdk_viewport(device).map_or(area.right(), |v| (area.left() + v[0] + PAD * 2.0).min(area.right()));
+        let height = top + bottom + sdk_viewport(device).map_or(height, |v| ROW + PAD * 2.0 + v[1]);
+        let right = sdk_viewport(device)
+            .map_or(area.right(), |v| (area.left() + side_left + side_right + v[0] + PAD * 2.0).min(area.right()));
         let rect = Rect::from_min_max(Pos2::new(area.left(), y), Pos2::new(right, y + height));
         y = rect.bottom() + 1.0;
         if rect.top() > visible.bottom() || rect.bottom() < visible.top() {
             continue;
         }
-        let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
-        let clicked =
+        let (clicked, content) =
             device_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, lit, actions, &chain.nam);
         inside_group_mark(&painter.with_clip_rect(area), rect, &device.at);
         // Keep a device an earlier iteration clicked: the later panels were not clicked.
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
         }
-        // Only a plug-in's button and editor are placed in it; the element is not entered for
-        // other devices (the budget counts each one).
-        let content = if device.plugin.is_some() { device_content(rect, device, lit) } else { rect };
         plugin_button(ui, &painter.with_clip_rect(area), content, chain.track, device, actions);
         if let Some(editor) = editor {
             let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
@@ -716,21 +720,6 @@ fn chain_stack_in(
         }
     }
     (picked, y - area.top())
-}
-
-/// A device panel's content box: `rect` less the border and padding the theme gives the panel in
-/// the state it is painted in (#1336). Its header, line, button and embedded editor go in it.
-fn device_content(rect: Rect, device: &DeviceBox, lit: bool) -> Rect {
-    let [top, right, bottom, left] = crate::kit::element::DEVICE
-        .id(&format!("device-{}", device.theme_id))
-        .attr(crate::kit::element::Selected, lit)
-        .attr(crate::kit::element::Muted, !device.enabled)
-        .enter()
-        .insets();
-    Rect::from_min_max(
-        Pos2::new(rect.left() + left, rect.top() + top),
-        Pos2::new(rect.right() - right, rect.bottom() - bottom),
-    )
 }
 
 /// Where a plug-in's embedded editor of `editor` points goes under its line and button in the
@@ -947,7 +936,9 @@ fn hint(painter: &egui::Painter, area: Rect, text: &str) {
     painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), theme::text_hint());
 }
 
-/// One device: a header with its on switch and name, then its parameters, one per row.
+/// One device: a header with its on switch and name, then its parameters, one per row. Returns
+/// whether it was clicked, and its content box (inside its border and padding, #1336), where a
+/// plug-in's button and embedded editor go.
 #[allow(clippy::too_many_arguments)]
 fn device_panel(
     ui: &mut Ui,
@@ -958,7 +949,7 @@ fn device_panel(
     selected: bool,
     actions: &mut Vec<Action>,
     nam: &crate::detail::device_widgets::Lists,
-) -> bool {
+) -> (bool, Rect) {
     // The panel answers a right-click with its menu (the device's remove); its label is the
     // screen-reader and test name the chain drew for it before. A click selects the device, so
     // the Delete key takes it off the track.
@@ -1170,7 +1161,7 @@ fn device_panel(
             }
         }
         outline(painter);
-        return clicked;
+        return (clicked, rect);
     }
     if device.params.is_empty() && device.graph.is_none() {
         let text = if device.kind.starts_with("Not supported") {
@@ -1187,12 +1178,12 @@ fn device_panel(
             theme::text_hint(),
         );
         outline(painter);
-        return clicked;
+        return (clicked, rect);
     }
     if let Some(graph) = &device.graph {
         graph_controls(ui, body, graph, &state, list_height(device, graph), track, device, themed_width, actions);
         outline(painter);
-        return clicked;
+        return (clicked, rect);
     }
     for (index, (id, value)) in device.params.iter().enumerate() {
         let row = Rect::from_min_size(
@@ -1220,7 +1211,7 @@ fn device_panel(
         );
     }
     outline(painter);
-    clicked
+    (clicked, rect)
 }
 
 #[cfg(test)]

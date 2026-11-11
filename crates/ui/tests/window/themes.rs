@@ -1323,6 +1323,37 @@ fn a_padded_detail_area_still_shows_a_device_panel_whole() {
     assert!(padded.top() > splitter.top(), "whole under the splitter: {padded:?}, {splitter:?}");
 }
 
+/// In the stacked layout too a padded device panel grows by its border and padding, so what it
+/// holds keeps its height (#1336).
+#[test]
+fn a_padded_device_panel_in_the_stack_grows_by_its_padding() {
+    fn panel(css: &str) -> egui::Rect {
+        let (themed, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), css);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let mut app = App::new();
+        app.set_session(Session::new(project_with_a_device()), &[]);
+        let ctx = egui::Context::default();
+        app.set_themes(
+            &ctx,
+            vec![suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: themed }],
+            None,
+        );
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, "padded");
+        let mut settings = h.state().settings().clone();
+        settings.device_layout = suhina_ui::settings::DeviceLayout::Stack;
+        h.state_mut().set_settings(&ctx, settings);
+        h.run_steps(2);
+        h.get_by_label("Track Drums").click();
+        h.run_steps(4);
+        h.get_by_label("Device Utility").rect()
+    }
+    let plain = panel("device { color: #FFFFFF; }");
+    let padded = panel("device { padding: 4px; border-width: 1px; }");
+    assert_eq!(padded.height(), plain.height() + 10.0, "{plain:?} then {padded:?}");
+}
+
 /// A theme that pads a selected device panel more than the others: the area opens as tall as the
 /// panel needs once it is selected, so the panel shows whole under the splitter (#1336).
 #[test]
