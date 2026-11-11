@@ -140,6 +140,8 @@ const fn own(role: &'static str) -> Artwork {
 }
 
 const NO: &[&str] = &[];
+/// What a surface floating over the window reads: whether it blurs what is behind it.
+const FLOATING: &[&str] = &["backdrop-filter"];
 const NO_ART: &[Artwork] = &[];
 
 const fn element(name: &'static str, kind: Kind, description: &'static str) -> Element {
@@ -186,7 +188,7 @@ pub const ELEMENTS: &[Element] = &[
     ]),
     element("application-bar", Region, "The bar at the very top, with the application's menus."),
     element("menu-bar", Region, "The menu bar."),
-    element("menu", Region, "An open menu of the menu bar."),
+    element("menu", Region, "An open menu of the menu bar.").settings(FLOATING),
     element("project-tabs", Region, "The bar of open projects' tabs."),
     element("toolbar", Region, "The toolbar under the bars, with the transport.").parts(&["toolbar-module"]),
     element("toolbar-module", Part, "One area of the toolbar, by its id.")
@@ -408,13 +410,16 @@ pub const ELEMENTS: &[Element] = &[
     element("text-input", Control, "A text field."),
     element("label", Drawn, "A label."),
     element("separator", Drawn, "A rule between parts."),
-    element("popup", Region, "A control's popup.").ids(Ids::Listed { prefix: "", names: &["metronome-level"] }),
+    element("popup", Region, "A menu, right-click menu, dropdown list or control's popup.")
+        .ids(Ids::Listed { prefix: "", names: &["metronome-level"] })
+        .settings(FLOATING),
+    element("tooltip", Region, "A tooltip.").settings(FLOATING),
     element("progress", Drawn, "A progress bar.").parts(&["progress-fill"]),
     element("progress-fill", Part, "A progress bar's done part."),
     // Pages and dialogs.
     element("settings", Region, "The Settings page.").parts(&["settings-nav"]),
     element("settings-nav", Control, "An entry of the Settings page's list."),
-    element("dialog", Region, "A dialog."),
+    element("dialog", Region, "A dialog.").settings(FLOATING),
     element("start-page", Region, "The page shown with no project open."),
     element("plugin-manager", Region, "The Plug-in manager."),
     element("export", Region, "The Export audio dialog."),

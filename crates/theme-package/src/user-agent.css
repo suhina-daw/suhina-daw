@@ -27,11 +27,18 @@ clip-editor,
 piano-roll,
 sample-map,
 popup,
+tooltip,
 settings,
 dialog,
 start-page,
 plugin-manager,
 export { overflow: hidden; }
+
+/* What floats over the window blurs the window's own layers behind it. */
+popup,
+menu,
+dialog,
+tooltip { backdrop-filter: blur(20px); }
 
 /* The line between a bar and the view is the bar's border: under each bar over the views, over the
    status bar. Its colour, the palette's line colour, comes with the palette. */
