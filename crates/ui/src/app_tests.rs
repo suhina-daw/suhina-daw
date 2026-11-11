@@ -1115,3 +1115,16 @@ fn a_parameter_moved_in_an_editor_shows_in_its_lanes_when_the_timeline_is_rebuil
     assert_eq!(harness.state().arrangement.automation.last_lane, Some((track, key)));
     assert!(harness.state().touched_lanes.is_empty(), "focused once");
 }
+
+/// A plug-in's editor that edits clips (ARA) lies in the clip editor's box with no piano roll's
+/// round it: a theme that pads `piano-roll` does not add to the area around it (#1336).
+#[test]
+fn a_plug_in_s_clip_editor_takes_no_piano_roll_insets() {
+    use detail_area::Edits;
+    let boxes = crate::detail::detail_view::BoxInsets { detail: 4.0, device: 6.0, editor: 10.0, piano: 40.0 };
+    let around = |edits| DetailInsets::around(2.0, boxes, 8.0, edits);
+    assert_eq!(around(Edits::None).area, 2.0 + 4.0 + 8.0, "the panel's, the area's and the shown device's");
+    assert_eq!(around(Edits::PianoRoll).area, 2.0 + 10.0 + 40.0);
+    assert_eq!(around(Edits::Plugin).area, 2.0 + 10.0, "the clip editor's alone");
+    assert_eq!(around(Edits::Plugin).piano, around(Edits::PianoRoll).piano, "the piano roll's least height");
+}

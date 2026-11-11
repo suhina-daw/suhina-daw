@@ -342,17 +342,21 @@ impl App {
         let ara = ara.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
         let piano = piano.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
         let edits = piano.is_some() || ara.is_some();
-        // What the boxes add around what they hold (#1336): the workspace panel's, then the detail
-        // area's and a device panel's around a row of devices, or the clip editor's and the piano
-        // roll's around the piano roll. The area keeps the height of what it shows when a theme
-        // pads it: the height the user set grows by what the padding adds.
+        // What the boxes add around what they hold (#1336). The area keeps the height of what it
+        // shows when a theme pads it: the height the user set grows by what the padding adds.
         let boxes = detail_view::box_insets();
         let [top, _, bottom, _] = panel_style.insets();
-        let devices = top + bottom + boxes.detail + detail_view::shown_device_insets(ui.ctx(), boxes.device);
-        let piano_insets = top + bottom + boxes.editor + boxes.piano;
-        let area_insets = if edits { piano_insets } else { devices };
-        self.detail_height = (self.detail_height + area_insets - self.detail_insets.area).max(0.0);
-        self.detail_insets = DetailInsets { area: area_insets, devices, piano: piano_insets };
+        let shown_device = detail_view::shown_device_insets(ui.ctx(), boxes.device);
+        let editing = if piano.is_some() {
+            Edits::PianoRoll
+        } else if ara.is_some() {
+            Edits::Plugin
+        } else {
+            Edits::None
+        };
+        let insets = DetailInsets::around(top + bottom, boxes, shown_device, editing);
+        self.detail_height = (self.detail_height + insets.area - self.detail_insets.area).max(0.0);
+        self.detail_insets = insets;
         let focus = match clip {
             _ if !pulled || self.settings.piano_roll_top != PianoRollTop::Track => None,
             Some(detail_view::ClipRef::Arrangement(track, _)) => Some(track),
@@ -1203,6 +1207,17 @@ fn paint_splitter(ui: &Ui, splitter: Rect, response: &egui::Response, stacked: b
     painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, style.color_or(theme::text_hint()));
 }
 
+/// What the detail area edits a clip in, for [`DetailInsets::around`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Edits {
+    /// Nothing: it shows a row of devices.
+    None,
+    /// The piano roll, in the clip editor.
+    PianoRoll,
+    /// A plug-in's editor that edits clips (ARA), in the clip editor with no piano roll round it.
+    Plugin,
+}
+
 /// What the detail area's boxes add above and below what they hold: their borders and padding.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct DetailInsets {
@@ -1212,4 +1227,21 @@ pub(super) struct DetailInsets {
     pub devices: f32,
     /// Around the piano roll: the workspace panel's, the clip editor's and the piano roll's.
     pub piano: f32,
+}
+
+impl DetailInsets {
+    /// The insets inside a workspace panel whose border and padding take `panel` above and below:
+    /// the detail area's and a device panel's (`device`, as shown) round a row of devices, the
+    /// clip editor's and the piano roll's round the piano roll, and the clip editor's alone round
+    /// a plug-in's editor, which no `piano-roll` box holds.
+    pub(super) fn around(panel: f32, boxes: detail_view::BoxInsets, device: f32, edits: Edits) -> Self {
+        let devices = panel + boxes.detail + device;
+        let piano = panel + boxes.editor + boxes.piano;
+        let area = match edits {
+            Edits::None => devices,
+            Edits::PianoRoll => piano,
+            Edits::Plugin => panel + boxes.editor,
+        };
+        Self { area, devices, piano }
+    }
 }
