@@ -101,9 +101,11 @@ impl App {
         };
         let out = ui
             .scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
-                // The panel's `overflow` clips the browser's painting (`occupies`); this clip is the
-                // viewport's edge while the browser slides in.
-                ui.set_clip_rect(area.intersect(ui.clip_rect()));
+                // The panel bounds the browser's input as its drawing, on the panel's edge so
+                // padding a child paints over stays (spec › Overflow: the same rectangles for
+                // drawing and input); the area's edge is the viewport's while the browser slides
+                // in. A panel that hides its overflow clips the painting further (`occupies`).
+                ui.set_clip_rect(panel.intersect(area).intersect(ui.clip_rect()));
                 let cx = browser_view::Context {
                     projects: &mut self.projects,
                     settings: &self.settings,

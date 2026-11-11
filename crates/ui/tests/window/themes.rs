@@ -1110,6 +1110,35 @@ fn fills_inside(h: &Harness<'static, App>, inside: egui::Rect) -> Vec<egui::Colo
     seen
 }
 
+/// A browser whose panel's padding leaves less room than its fixed layout needs takes the pointer
+/// only inside its panel: what runs past it does not take clicks over the main view (#1336).
+#[test]
+fn a_padded_browser_takes_the_pointer_only_inside_its_panel() {
+    // The panel is 300 points wide; its content box 50, narrower than the browser's sidebar.
+    let h = open_with_clip("#panel-browser { padding-left: 250px; }", false);
+    let splitter = h.get_by_label("Browser splitter").rect();
+    let edge = splitter.left();
+    let (crossing, past) = h.ctx.viewport(|v| {
+        // What the browser lays out in its content box, from there to the panel's edge.
+        let browser: Vec<_> = v
+            .prev_pass
+            .widgets
+            .layers()
+            .flat_map(|(_, rects)| rects.iter())
+            .filter(|w| w.rect.left() > edge - 60.0 && w.rect.left() < edge)
+            .filter(|w| w.rect.top() >= splitter.top() && w.rect.bottom() <= splitter.bottom())
+            .collect();
+        // Past the splitter is the main view.
+        let crossing = browser.iter().filter(|w| w.rect.right() > splitter.right()).count();
+        let past: Vec<_> =
+            browser.iter().filter(|w| w.interact_rect.right() > splitter.right()).map(|w| w.interact_rect).collect();
+        (crossing, past)
+    });
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(crossing > 0, "the browser runs past its panel");
+    assert!(past.is_empty(), "nothing takes the pointer past the panel's edge {splitter:?}: {past:?}");
+}
+
 /// The workspace's splitters are elements a theme styles: `#detail-splitter` (its strip's
 /// `background-color`, its grip's `color`, with `:hover`) and `#browser-splitter`, in a layout
 /// with only gaps as in the native one; a sheet without them leaves the native colours (#1252).
