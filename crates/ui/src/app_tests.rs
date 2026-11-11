@@ -1051,10 +1051,12 @@ fn a_new_device_starts_on_a_file_in_the_library_the_unpacked_or_else_the_pack() 
     app.set_nam_default_folders(models.clone(), irs.clone());
     for id in ["nam-amp-modeler", "nam-cab-loader"] {
         let file = app.device_default_file(id).unwrap_or_else(|| panic!("{id} starts on a file"));
-        assert!(
-            file.starts_with(&models.display().to_string()) || file.starts_with(&irs.display().to_string()),
-            "{id}: {file}"
-        );
+        // The rows carry the canonical compare form ([ADR 0036] › 5, the review): the
+        // folders' starts fold the same way the rows do.
+        let starts = |folder: &std::path::Path| {
+            file.starts_with(&crate::detail::device_widgets::canonical_paths(folder.display().to_string().as_str()))
+        };
+        assert!(starts(&models) || starts(&irs), "{id}: {file}");
     }
     let lists = app.nam_lists();
     assert_eq!(
@@ -1105,7 +1107,14 @@ fn a_grouped_collection_lists_its_capture_packs_and_a_new_capture_lists_again() 
         lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)"),
         Some(&crate::detail::device_widgets::Set {
             name: "Live Amp Modeler / Albion Chime (Slammin Captures)".into(),
-            files: vec![(capture.join("Chime Low.nam").display().to_string(), "Chime Low.nam".into())],
+            // The scan's rows carry the canonical compare form ([ADR 0036] › 5, the review):
+            // the expected file folds the same way.
+            files: vec![(
+                crate::detail::device_widgets::canonical_paths(
+                    capture.join("Chime Low.nam").display().to_string().as_str()
+                ),
+                "Chime Low.nam".into()
+            )],
         }),
         "the capture pack lists with its group and its file whole"
     );
