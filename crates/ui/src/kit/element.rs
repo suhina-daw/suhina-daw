@@ -325,8 +325,16 @@ thread_local! {
 /// Counts a shape whose visible part an element's `overflow` clip cuts ([`overflow_cuts`]).
 #[cfg(debug_assertions)]
 fn count_cut(shape: &egui::epaint::ClippedShape, to: Rect) {
+    // Shapes that show nothing (a widget's transparent frame, an empty text) are not cut.
+    let shows = match &shape.shape {
+        egui::Shape::Mesh(mesh) => mesh.vertices.iter().any(|vertex| vertex.color.a() > 0),
+        egui::Shape::Text(text) => !text.galley.is_empty(),
+        egui::Shape::Rect(rect) => rect.fill.a() > 0 || (rect.stroke.width > 0.0 && rect.stroke.color.a() > 0),
+        egui::Shape::Noop => false,
+        _ => true,
+    };
     let seen = shape.shape.visual_bounding_rect().intersect(shape.clip_rect);
-    if seen.is_positive() && !to.expand(0.01).contains_rect(seen) {
+    if shows && seen.is_positive() && !to.expand(0.01).contains_rect(seen) {
         CUTS.set(CUTS.get() + 1);
     }
 }
@@ -422,6 +430,12 @@ impl Entered {
         if let Some(rest) = rest {
             rest.paint();
         }
+    }
+
+    /// The element's content box in `rect`: `rect` less its border and `padding`, for an element
+    /// painted in part (a header scrolled partly out of view) whose contents follow its whole box.
+    pub fn content_in(&self, rect: Rect) -> Rect {
+        shrink(rect, self.insets())
     }
 
     /// The room the element's border and `padding` take inside its box (top, right, bottom,

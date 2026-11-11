@@ -365,18 +365,17 @@ fn a_parent_that_hides_its_overflow_clips_its_children_to_its_padding_box() {
     let child = egui::Color32::from_rgb(0, 0xFF, 0);
     let menu = egui::Color32::from_rgb(0, 0, 0xFF);
     let child_clip = |css: &str| {
-        let painted = clipped(css, |ui| {
-            let browser = BROWSER.enter();
-            browser.paint(ui.painter(), area);
-            // A child painting past the region, through a painter of its own.
-            ui.ctx().layer_painter(ui.layer_id()).rect_filled(area.expand(20.0), 0.0, child);
-            // A menu above the views: another layer, which no region clips.
-            ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("menu"))).rect_filled(
-                area.expand(20.0),
-                0.0,
-                menu,
-            );
-        });
+        let painted =
+            clipped(css, |ui| {
+                let browser = BROWSER.enter();
+                browser.paint(ui.painter(), area);
+                // A child painting past the region, through a painter of its own.
+                ui.ctx().layer_painter(ui.layer_id()).rect_filled(area.expand(20.0), 0.0, child);
+                // A menu above the views: another layer, which no region clips.
+                ui.ctx()
+                    .layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("menu")))
+                    .rect_filled(area.expand(20.0), 0.0, menu);
+            });
         let clip_of = |color| {
             painted
                 .iter()

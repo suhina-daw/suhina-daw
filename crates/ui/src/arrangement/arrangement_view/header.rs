@@ -196,10 +196,13 @@ pub(super) fn track_header(
         .enter();
     work_trace.mark("style");
     let _artwork = crate::kit::artwork::track_color(rgb(lane.color));
-    let spacious = rect.height() >= 60.0;
-    let tiny = rect.height() < 20.0;
+    // What the header holds goes in its content box, inside its border and padding (#1336), and
+    // its rows are as tall as that box allows.
+    let inside = own.content_in(rect);
+    let spacious = inside.height() >= 60.0;
+    let tiny = inside.height() < 20.0;
     let header_row = if tiny {
-        (rect.height() - 2.0).max(1.0)
+        (inside.height() - 2.0).max(1.0)
     } else if spacious {
         20.0
     } else {
@@ -208,14 +211,14 @@ pub(super) fn track_header(
     let field_height = if spacious { 20.0 } else { FIELD };
     let header_pad = if tiny {
         1.0
-    } else if rect.height() < 48.0 {
+    } else if inside.height() < 48.0 {
         2.0
     } else if spacious {
         6.0
     } else {
         HEADER_PAD_Y
     };
-    let header_gap = if rect.height() < 48.0 {
+    let header_gap = if inside.height() < 48.0 {
         4.0
     } else if spacious {
         10.0
@@ -296,6 +299,7 @@ pub(super) fn track_header(
     crate::kit::liquid::paint(painter, rect, &own, header_fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`arrangement track-header`) over the native one.
     own.paint(painter, rect.intersect(clip));
+    let rect = inside;
     // The name and the controls' ink read on whichever background is shown.
     let header_fill = own.background_or(header_fill);
     if selected {

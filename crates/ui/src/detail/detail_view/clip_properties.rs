@@ -157,11 +157,15 @@ pub(super) fn clip_properties(
     });
     let show_tools = midi.as_ref().is_some_and(|m| m.show_tools);
     let column = if stacked {
-        let height = match &panel {
-            Some(_) if !info.audio => 26.0 + super::midi_panel::stacked_height(midi.is_some(), show_tools),
-            Some(_) => 26.0 + super::clip_panel::stacked_height(info),
-            None => ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW,
-        };
+        // As tall as its rows, and its border and padding around them (#1336).
+        let [top, _, bottom, _] = crate::kit::element::CLIP_INFO.enter().insets();
+        let height = top
+            + bottom
+            + match &panel {
+                Some(_) if !info.audio => 26.0 + super::midi_panel::stacked_height(midi.is_some(), show_tools),
+                Some(_) => 26.0 + super::clip_panel::stacked_height(info),
+                None => ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW,
+            };
         Rect::from_min_size(area.min, Vec2::new(area.width(), height))
     } else {
         // `clip-info { width }` in the theme (120 to 480 points); an audio clip's panel has three
@@ -180,19 +184,23 @@ pub(super) fn clip_properties(
     .intersect(area);
     // `clip-info` styles the clip's column: its background and its text.
     let el = crate::kit::element::CLIP_INFO.enter();
-    el.paint_with(
-        painter,
-        column,
-        crate::kit::element::Native {
-            radius: 0.0,
-            fill: crate::kit::style_class::surface_or(theme::panel_background()),
-        },
-    );
+    let boxed = column;
+    // What it holds goes in its content box, inside its border and padding (#1336).
+    let column = el
+        .paint_with(
+            painter,
+            column,
+            crate::kit::element::Native {
+                radius: 0.0,
+                fill: crate::kit::style_class::surface_or(theme::panel_background()),
+            },
+        )
+        .content;
     // Rows that do not fit under the column's bottom are left out rather than cut in half, the
     // title last; text never wraps (› Clip column in `docs/spec/ui-clip-editor.md`).
     let title = Rect::from_min_size(column.min, Vec2::new(column.width(), ROW));
     if title.bottom() > column.bottom() + 0.5 {
-        return (column, None);
+        return (boxed, None);
     }
     // A clip's panel has a title row of its own: colour, name, length, the Clip / Devices switch,
     // a line under it.
@@ -206,7 +214,7 @@ pub(super) fn clip_properties(
         } else {
             super::midi_panel::midi_panel(ui, painter, body, info, *at, panel, stacked, midi, actions);
         }
-        return (column, picked);
+        return (boxed, picked);
     }
     // The Clip / Devices switch ends the title row; the name keeps clear of it.
     let (name, picked) = match info.switch {
@@ -266,7 +274,7 @@ pub(super) fn clip_properties(
             theme::text_value(),
         );
     }
-    (column, picked)
+    (boxed, picked)
 }
 
 /// Semitones as the Transpose row shows them.

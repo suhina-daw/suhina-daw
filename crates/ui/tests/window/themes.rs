@@ -1185,3 +1185,90 @@ fn no_bundled_theme_has_a_view_painting_past_its_region() {
         }
     }
 }
+
+/// A theme that pads every region and container, gives it a border and makes it hide its
+/// overflow: every view lays its children out in its content box (its box less its border and
+/// padding), so no element's clip cuts anything painted in it (#1336). Each screen in turn: the
+/// Launcher with a track's devices, a clip and the piano roll, stacked, the Arrangement view, the
+/// File menu, the Export dialog and Settings.
+#[test]
+fn padded_regions_hold_their_views_inside_their_content_box() {
+    const BOXES: &str = "application-bar, menu-bar, project-tabs, toolbar, status-bar, workspace-panel, \
+        browser, session, arrangement, mixer, detail, clip-editor, piano-roll, sample-map, popup, settings, \
+        dialog, start-page, plugin-manager, export, track-column, track-header, midi-tools, clip-info, \
+        device-panel, device { padding: 5px; border-width: 2px; border-color: #FF00FF; overflow: hidden; }";
+    let (padded, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), BOXES);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut app = App::new();
+    app.set_session(Session::new(project_with_a_device()), &[]);
+    let ctx = egui::Context::default();
+    app.set_themes(&ctx, vec![suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: padded }], None);
+    let mut h = window(app);
+    let ctx = h.ctx.clone();
+    h.state_mut().use_theme(&ctx, "padded");
+    h.run_steps(4);
+    let check = |h: &mut Harness<'static, App>, screen: &str| {
+        h.run_steps(2);
+        suhina_ui::kit::element::overflow_cuts();
+        h.run_steps(2);
+        assert_eq!(suhina_ui::kit::element::overflow_cuts(), 0, "{screen}");
+    };
+    check(&mut h, "the Launcher");
+    h.get_by_label("Track Drums").click();
+    check(&mut h, "a track's devices");
+    assert!(h.query_by_label("Device Utility").is_some(), "the devices show");
+    h.get_by_label("Select Walk on Bass (scene 2)").click();
+    check(&mut h, "a clip and its notes");
+    let settings = suhina_ui::settings::Settings {
+        device_layout: suhina_ui::settings::DeviceLayout::Stack,
+        theme: "padded".into(),
+        ..Default::default()
+    };
+    h.state_mut().set_settings(&ctx, settings.clone());
+    check(&mut h, "the detail area stacked");
+    h.state_mut().set_settings(&ctx, suhina_ui::settings::Settings { device_layout: Default::default(), ..settings });
+    h.key_press(Key::Tab);
+    check(&mut h, "the Arrangement view");
+    h.get_by_label("File").click();
+    check(&mut h, "the File menu");
+    h.get_by_label("Export…").click();
+    check(&mut h, "the Export dialog");
+    assert!(h.query_by_label("File to export to").is_some(), "the Export dialog is open");
+    h.key_press(Key::Escape);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    check(&mut h, "Settings");
+    assert!(h.query_by_label("Settings page: Themes").is_some(), "Settings is open");
+}
+
+/// A theme that pads the detail area and its device panels: the area opens taller by that
+/// padding, so a track's device panel is as tall as without it plus its own padding, whole and
+/// not squeezed into a scroll (#1336).
+#[test]
+fn a_padded_detail_area_still_shows_a_device_panel_whole() {
+    fn device_panel(css: Option<&str>) -> (egui::Rect, egui::Rect) {
+        let mut app = App::new();
+        app.set_session(Session::new(project_with_a_device()), &[]);
+        if let Some(css) = css {
+            let (padded, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), css);
+            assert!(warnings.is_empty(), "{warnings:?}");
+            let ctx = egui::Context::default();
+            let entry = suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: padded };
+            app.set_themes(&ctx, vec![entry], None);
+        }
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, "padded");
+        h.run_steps(2);
+        h.get_by_label("Track Drums").click();
+        h.run_steps(4);
+        let splitter = h.get_by_label("Detail area splitter").rect();
+        (h.get_by_label("Device Utility").rect(), splitter)
+    }
+    let (plain, _) = device_panel(None);
+    assert_eq!(plain.height(), suhina_ui::detail::detail_view::device_row_height());
+    let css = "#panel-detail, detail { padding: 6px; } device { padding: 4px; border-width: 1px; }";
+    let (padded, splitter) = device_panel(Some(css));
+    assert_eq!(padded.height(), plain.height() + 10.0, "the panel grows by its own padding and border");
+    assert_eq!(padded.bottom(), plain.bottom() - 12.0, "inside the panel's and the area's padding");
+    assert!(padded.top() > splitter.top(), "whole under the splitter: {padded:?}, {splitter:?}");
+}

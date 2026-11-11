@@ -246,11 +246,12 @@ pub fn show(
     let style_class = crate::kit::element::SESSION.enter();
     let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
-    let area = ui.available_rect_before_wrap();
-    ui.allocate_rect(area, Sense::hover());
-    let painter = ui.painter_at(area);
-    // The view's own background, over the window's (#1233).
-    let _ = style_class.paint(&painter, area);
+    let whole = ui.available_rect_before_wrap();
+    ui.allocate_rect(whole, Sense::hover());
+    let painter = ui.painter_at(whole);
+    // The view's own background, over the window's (#1233); the view is laid out in its content
+    // box, inside its border and padding (#1336).
+    let area = style_class.paint(&painter, whole).content;
 
     // Fixed bands: header on top, mixer at the bottom, scene column on the right.
     let header = Rect::from_min_size(area.min, Vec2::new(area.width(), header_height()));
@@ -841,7 +842,8 @@ fn column_header(
     // The sheet's own background for the header (`track-header[selected]`) over the native one;
     // the name's ink reads on whichever is shown.
     let shown = own.background_or(fill);
-    own.paint(painter, rect);
+    // What the header holds goes in its content box, inside its border and padding (#1336).
+    let rect = own.paint(painter, rect).content;
     let name_style = crate::kit::element::TRACK_NAME
         .id(&track_id)
         .response(&response)

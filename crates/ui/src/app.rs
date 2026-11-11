@@ -14,6 +14,7 @@ mod browser_panel;
 pub mod closing_dialog;
 mod control_bar;
 mod detail_area;
+use detail_area::DetailInsets;
 mod drops;
 pub use drops::is_theme_package;
 pub mod export_dialog;
@@ -441,6 +442,9 @@ pub struct App {
     fitted_editors: std::collections::HashSet<(TrackId, Vec<usize>)>,
     /// An editor is embedded in the chain shown: the area may be taller than the panels.
     editor_in_chain: bool,
+    /// What the detail area's boxes add around a row of devices and around the piano roll: their
+    /// borders and padding, top and bottom, as the last frame's style gave them (#1336).
+    detail_insets: DetailInsets,
     /// A clip being renamed (Rename in its menu, Ctrl+R): the command's target, the name typed
     /// so far, and whether the field has had the keyboard yet.
     rename: Option<(serde_json::Value, String, bool)>,
@@ -703,6 +707,7 @@ impl App {
             auto_arm: AutoArm::default(),
             fitted_editors: std::collections::HashSet::new(),
             editor_in_chain: false,
+            detail_insets: DetailInsets::default(),
             rename: None,
             tab_switcher: None,
             quick_add: None,

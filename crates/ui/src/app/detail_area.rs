@@ -218,14 +218,14 @@ impl App {
         let editor_needs = embedded
             .iter()
             .filter_map(|(_, embedded)| *embedded)
-            .map(|(_, height)| detail_view::row_height_with_editor(height, scale))
+            .map(|(_, height)| detail_view::row_height_with_editor(height, scale) + self.detail_insets.devices)
             .fold(0.0, f32::max);
         if !stacked {
             let needed = embedded
                 .iter()
                 .filter(|(key, _)| !self.fitted_editors.contains(key))
                 .filter_map(|(_, embedded)| *embedded)
-                .map(|(_, height)| detail_view::row_height_with_editor(height, scale))
+                .map(|(_, height)| detail_view::row_height_with_editor(height, scale) + self.detail_insets.devices)
                 .fold(0.0, f32::max);
             self.detail_height = self.detail_height.max(needed);
         }
@@ -311,7 +311,8 @@ impl App {
             // No bound plug-in shown (a reload, another view): nothing was closed by hand.
             None => self.ara_was_open = None,
         }
-        let least = self.least_detail_height();
+        // Never taller than the room there is, however thick a theme's padding.
+        let least = self.least_detail_height().min((area.height() - SPLITTER).max(0.0));
         // With the devices stacked, a clip's editor (the piano roll, an ARA plug-in's editor)
         // still lies along the bottom as in a row: only the devices stack, in a column of their
         // own beside the view, shown with Devices while the editor stays open (› Stacked in
@@ -341,6 +342,17 @@ impl App {
         let ara = ara.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
         let piano = piano.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
         let edits = piano.is_some() || ara.is_some();
+        // What the boxes add around what they hold (#1336): the workspace panel's, then the detail
+        // area's and a device panel's around a row of devices, or the clip editor's and the piano
+        // roll's around the piano roll. The area keeps the height of what it shows when a theme
+        // pads it: the height the user set grows by what the padding adds.
+        let boxes = detail_view::box_insets();
+        let [top, _, bottom, _] = panel_style.insets();
+        let devices = top + bottom + boxes.detail + boxes.device;
+        let piano_insets = top + bottom + boxes.editor + boxes.piano;
+        let area_insets = if edits { piano_insets } else { devices };
+        self.detail_height = (self.detail_height + area_insets - self.detail_insets.area).max(0.0);
+        self.detail_insets = DetailInsets { area: area_insets, devices, piano: piano_insets };
         let focus = match clip {
             _ if !pulled || self.settings.piano_roll_top != PianoRollTop::Track => None,
             Some(detail_view::ClipRef::Arrangement(track, _)) => Some(track),
@@ -382,7 +394,7 @@ impl App {
             // height the user drags is the clip's, its editor's and the devices reached from it.
             let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
             let shown_height = if track_devices {
-                detail_view::device_row_height().min((area.height() - MIN_VIEW).max(least))
+                self.device_row_height().min((area.height() - MIN_VIEW).max(least))
             } else {
                 self.detail_height
             };
@@ -487,7 +499,7 @@ impl App {
                     let height = self.detail_drag.unwrap_or(detail.height()) - delta.y;
                     self.detail_drag = Some(height);
                     self.detail_max = pullable && height > area.height() - MIN_VIEW;
-                    let closes_under = if open_or_closed { detail_view::device_row_height() } else { least };
+                    let closes_under = if open_or_closed { self.device_row_height() } else { least };
                     if height < closes_under / 2.0 {
                         // Dragged down past half its least height, the detail area closes; the same
                         // drag going back up opens it again (`collapsed_splitter`).
@@ -514,6 +526,9 @@ impl App {
             }
             paint_splitter(ui, splitter, &response, stacked);
         }
+        // The panel clips what the detail area paints (`overflow`), once its splitter beside it is
+        // drawn; the detail area goes in its content box (#1336).
+        let detail = panel_style.occupies(ui.painter(), detail);
 
         if let Some(shown_track) = clip.map(ClipRef::track).or(track) {
             self.detail_drop = Some((side.unwrap_or(detail), shown_track));
@@ -762,6 +777,10 @@ impl App {
         let piano_roll = &mut self.piano_roll;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
             if let (Some(piano), detail_view::Detail::Clip(info, _)) = (&piano, &shown) {
+                // The clip editor holds the clip's column, its note tools and the piano roll.
+                let editor = crate::kit::element::CLIP_EDITOR.enter();
+                let mut styled_ui = editor.ui(ui);
+                let ui = &mut *styled_ui;
                 // The clip's panel: the Clip part with what the tools act on under it, and the note
                 // tools beside them while they are shown (the toolbar's three-slider button;
                 // › Note tools).
@@ -781,7 +800,7 @@ impl App {
                     state: &mut *piano_roll,
                     show_tools,
                 });
-                let (rest, picked) = detail_view::show_clip_column(ui, info, stacked, midi, actions);
+                let (rest, picked) = detail_view::show_clip_column(ui, &editor, info, stacked, midi, actions);
                 let picked = detail_view::Picked { showing: picked.showing, ..detail_view::Picked::default() };
                 let seeks = matches!(piano.address.get("clip"), Some(serde_json::Value::Number(_)));
                 let cx = piano_roll::Context { options, keymap: &keymap, copied, playhead, start_marker, seeks };
@@ -797,7 +816,10 @@ impl App {
                 }
                 picked
             } else if let (Some((_, _, device, _)), detail_view::Detail::Clip(info, chain)) = (ara, &shown) {
-                let (rest, picked) = detail_view::show_clip_column(ui, info, stacked, None, actions);
+                let editor = crate::kit::element::CLIP_EDITOR.enter();
+                let mut styled_ui = editor.ui(ui);
+                let ui = &mut *styled_ui;
+                let (rest, picked) = detail_view::show_clip_column(ui, &editor, info, stacked, None, actions);
                 detail_view::show_ara_editor(ui, rest, chain, device, actions, &mut places);
                 picked
             } else if stacked {
@@ -906,7 +928,7 @@ impl App {
             let least = self.least_detail_height();
             // A track's devices open at their one height, at the point a drag down closes them.
             let track_devices = self.shown_clip().is_none();
-            let opens_at = if track_devices { detail_view::device_row_height() } else { least };
+            let opens_at = if track_devices { self.device_row_height() } else { least };
             if height >= opens_at / 2.0 {
                 self.show_editor();
                 // The height dragged is a clip's view's.
@@ -959,8 +981,13 @@ impl App {
         let picked = self.arrangement.selected_clips().len();
         let rows = if picked > 1 { picked.min(crate::detail::piano_roll_ghosts::MAX_STRIP_ROWS) } else { 0 };
         let strip = piano_roll::CLIP_STRIP * rows as f32;
-        let compact = detail_view::device_row_height();
-        if piano { (piano_roll::LEAST_HEIGHT + strip).max(compact) } else { compact }
+        let compact = self.device_row_height();
+        if piano { (piano_roll::LEAST_HEIGHT + strip + self.detail_insets.piano).max(compact) } else { compact }
+    }
+
+    /// The height a track's devices open at: a row of devices, and the boxes around it.
+    fn device_row_height(&self) -> f32 {
+        detail_view::device_row_height() + self.detail_insets.devices
     }
 
     /// The clip the detail area shows: the Arrangement view's selected clip, or the Launcher view's
@@ -1173,4 +1200,15 @@ fn paint_splitter(ui: &Ui, splitter: Rect, response: &egui::Response, stacked: b
     painter.rect_filled(splitter, 0.0, style.background_or(theme::control_background()));
     let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
     painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, style.color_or(theme::text_hint()));
+}
+
+/// What the detail area's boxes add above and below what they hold: their borders and padding.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct DetailInsets {
+    /// Around what the area shows now: [`DetailInsets::devices`] or [`DetailInsets::piano`].
+    pub area: f32,
+    /// Around a row of devices: the workspace panel's, the detail area's and a device panel's.
+    pub devices: f32,
+    /// Around the piano roll: the workspace panel's, the clip editor's and the piano roll's.
+    pub piano: f32,
 }

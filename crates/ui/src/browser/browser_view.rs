@@ -266,12 +266,15 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     let Context { projects, settings, selected_track, search_key, other_results } = cx;
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    // The panel's own background, over the window's (#1233).
-    let _ = style.paint_with(
-        &painter,
-        area,
-        Native { radius: 0.0, fill: crate::kit::style_class::surface_or(theme::panel_background()) },
-    );
+    // The panel's own background, over the window's (#1233); the browser is laid out in its
+    // content box, inside its border and padding (#1336).
+    let area = style
+        .paint_with(
+            &painter,
+            area,
+            Native { radius: 0.0, fill: crate::kit::style_class::surface_or(theme::panel_background()) },
+        )
+        .content;
     state.poll();
     suhina_plugins::trace::timed("library poll", || projects.file_library_mut().poll());
 
