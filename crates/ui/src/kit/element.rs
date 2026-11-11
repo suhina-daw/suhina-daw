@@ -328,7 +328,7 @@ fn count_cut(shape: &egui::epaint::ClippedShape, to: Rect) {
     // Shapes that show nothing (a widget's transparent frame, an empty text) are not cut.
     let shows = match &shape.shape {
         egui::Shape::Mesh(mesh) => mesh.vertices.iter().any(|vertex| vertex.color.a() > 0),
-        egui::Shape::Text(text) => !text.galley.is_empty(),
+        egui::Shape::Text(text) => !text.galley.text().trim().is_empty(),
         egui::Shape::Rect(rect) => rect.fill.a() > 0 || (rect.stroke.width > 0.0 && rect.stroke.color.a() > 0),
         egui::Shape::Noop => false,
         _ => true,
