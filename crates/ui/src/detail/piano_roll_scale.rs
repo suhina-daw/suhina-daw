@@ -163,7 +163,7 @@ fn light_row() -> egui::Color32 {
 }
 
 /// The darker plain row: the window colour; under an authored surface, that surface pulled toward
-/// the window colour (black, then white, where that changes nothing), painted over it so it reads
+/// the window colour (black, then white, where that leaves it as it is), painted over it so it reads
 /// darker than the light row, which paints nothing.
 fn dark_row() -> egui::Color32 {
     if !crate::kit::style_class::has_surface() {
@@ -173,7 +173,7 @@ fn dark_row() -> egui::Color32 {
     [theme::window_background(), egui::Color32::BLACK, egui::Color32::WHITE]
         .into_iter()
         .map(|toward| surface.lerp_to_gamma(toward, 0.5))
-        .find(|row| *row != egui::Color32::TRANSPARENT)
+        .find(|row| *row != egui::Color32::TRANSPARENT && *row != surface)
         .unwrap_or(surface)
 }
 
@@ -375,11 +375,32 @@ mod tests {
         });
     }
 
+    /// `top` painted over `under`, both premultiplied: what the screen shows.
+    fn over(top: egui::Color32, under: egui::Color32) -> egui::Color32 {
+        let (top, under) = (top.to_array(), under.to_array());
+        let keep = 255 - u32::from(top[3]);
+        let mix =
+            |channel: usize| (u32::from(top[channel]) + (u32::from(under[channel]) * keep + 127) / 255).min(255) as u8;
+        egui::Color32::from_rgba_premultiplied(mix(0), mix(1), mix(2), mix(3))
+    }
+
     #[test]
-    fn plain_rows_stay_distinct_when_the_surface_is_the_window_colour() {
-        for surface in [theme::window_background(), egui::Color32::BLACK, egui::Color32::TRANSPARENT] {
+    fn plain_rows_look_different_on_any_surface() {
+        let opaque_window = theme::window_background().to_opaque();
+        let surfaces = [
+            theme::window_background(),
+            opaque_window,
+            egui::Color32::BLACK,
+            egui::Color32::WHITE,
+            egui::Color32::TRANSPARENT,
+            egui::Color32::from_rgba_unmultiplied(20, 30, 40, 100),
+        ];
+        for surface in surfaces {
             crate::kit::style_class::with_surface(surface, || {
-                assert_ne!(row_fill(None, 60, false), row_fill(None, 61, true), "surface {surface:?}");
+                // The region paints the surface, then each row paints its fill over it.
+                let white = over(row_fill(None, 60, false), surface);
+                let black = over(row_fill(None, 61, true), surface);
+                assert_ne!(white, black, "surface {surface:?}");
             });
         }
     }
