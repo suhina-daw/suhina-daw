@@ -613,10 +613,30 @@ pub fn device_menu(
     track: TrackId,
     at: &crate::detail::detail_view::DeviceAt,
     branches: Option<usize>,
+    is_builtin: bool,
+    name: &str,
     actions: &mut Vec<Action>,
 ) {
     ui.set_min_width(140.0);
     let device = at.value();
+    // Save as preset (`device.savePreset`, docs/decisions/0036-library-and-shipped-content.md ›
+    // 5): the menu stays open while the name is typed, as a rename's field does.
+    if is_builtin {
+        let id = Id::unique(("save-preset", track, device.clone()));
+        let mut draft: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| name.to_string());
+        let field = crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut draft).desired_width(140.0));
+        ui.ctx().data_mut(|d| d.insert_temp(id, draft.clone()));
+        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Preset name for {name}")));
+        let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+        if (enter || ui.button("Save as preset…").clicked()) && !draft.trim().is_empty() {
+            actions.push(Action::new(
+                "device.savePreset",
+                json!({ "track": track.0, "device": device, "name": draft.trim() }),
+            ));
+            ui.ctx().data_mut(|d| d.remove::<String>(id));
+            ui.close();
+        }
+    }
     if ui.add(egui::Button::new("Group").shortcut_text(shown("Ctrl+G"))).clicked() {
         actions.push(Action::new("device.group", json!({ "track": track.0, "device": device })));
         ui.close();

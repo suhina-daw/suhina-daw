@@ -37,6 +37,7 @@ mod crash_log;
 mod data_folder;
 #[cfg(target_os = "macos")]
 mod mac_menu;
+mod pack_materialize;
 mod recent;
 mod save_error;
 mod theme_files;
@@ -260,12 +261,32 @@ fn main() -> ExitCode {
     window.app.set_default_themes_folder(themes_env().or(default_themes).unwrap_or_default());
     window.app.set_default_data_folder(default_data_dir().unwrap_or_default());
     // The NAM devices' folders: the defaults exist from the start, so a user's first step is
-    // only to drop files in ([docs/spec/nam-amp-and-cab.md]).
+    // only to drop files in ([docs/spec/nam-amp-and-cab.md]). The defaults are the library's
+    // Sounds folders ([issue 1279]).
     let nam_base = documents_base();
-    let (nam_models, irs) = (nam_base.join("NAM models"), nam_base.join("IRs"));
+    let nam_sounds = nam_base.join("Sounds").join("NAM");
+    let nam_models = nam_sounds.join("Amp models");
+    let irs = nam_sounds.join("Cabinets");
     let _ = std::fs::create_dir_all(&nam_models);
     let _ = std::fs::create_dir_all(&irs);
     window.app.set_nam_default_folders(nam_models, irs);
+    // The shipped pack unpacks beside the user's own files in the library's Suhina folders —
+    // only where a file is missing, never over one ([issue 1279]). The old defaults' contents
+    // move into the library first, packs carried whole, and their move lands in the start-up
+    // warnings.
+    // The move leaves alone a folder the Settings name: the user's panels list from it, and
+    // its files are where they are (the defaults are the library's folders, so only a setting
+    // typed before the library's move, or typed to the old place by hand, names one).
+    let keep = [window.app.nam_models_folder(), window.app.ir_folder()];
+    let old_warnings = pack_materialize::migrate_old_folders(&nam_base, &nam_sounds, &keep);
+    pack_materialize::unpack_pack(&nam_sounds);
+    if let Some(start_up) = window.start_up.as_mut() {
+        start_up.warnings.extend(old_warnings);
+    }
+    // The user's own presets save into the library's Presets folders (`device.savePreset`,
+    // docs/decisions/0036-library-and-shipped-content.md › 5), and the browser lists them
+    // beside the stock ones.
+    window.app.set_library_base(nam_base.clone());
     // Backups of projects never saved, and the journal of the newest backups, beside the
     // settings; what a crash left there is offered once the window starts (`docs/spec/backups.md`).
     let backups = data_dir().map(|d| d.join(suhina_session::backup::SETTINGS_SUBFOLDER));
@@ -549,7 +570,7 @@ impl Window {
             self.new_project(new);
         }
         if let Some(offer) = self.app.take_recovery_request() {
-            match Session::recover(&offer.backup, offer.file.as_deref()) {
+            match Session::recover(&offer.backup, offer.file.as_deref(), Some(&documents_base())) {
                 Ok((session, warnings)) => {
                     self.show_session(session, warnings, OpenAs::NewTab);
                 }
@@ -722,7 +743,7 @@ impl Window {
             self.app.request_open(path.to_path_buf());
             return;
         }
-        match Session::open(path) {
+        match Session::open_with_base(path, Some(&documents_base())) {
             Ok((session, warnings)) => {
                 if self.show_session(session, warnings, how) {
                     self.remember(path);
@@ -738,7 +759,7 @@ impl Window {
             NewProject::Blank { returns } => {
                 Ok((Session::new(suhina_session::blank_project_with(returns)), Vec::new()))
             }
-            NewProject::Template(path) => Session::from_template(&path),
+            NewProject::Template(path) => Session::from_template(&path, Some(&documents_base())),
         };
         match made {
             Ok((session, warnings)) => {
@@ -750,6 +771,12 @@ impl Window {
 
     /// Decodes a session's audio, starts it playing (stopped) and shows it.
     fn show_session(&mut self, mut session: Session, mut warnings: Vec<String>, how: OpenAs) -> bool {
+        // The library's base is the session's before its first loads: a device's file state
+        // may say a library-relative path ([ADR 0036]), which resolves against it. A load that
+        // ran before the base was set missed, so the files are built again with it — before
+        // the output opens, and the player hears them from the start.
+        session.set_library_base(documents_base());
+        session.sync_device_files();
         if let Err(error) = self.app.projects().ensure_output_can_close() {
             self.app.set_status(Status::Error(error.to_string()));
             return false;
@@ -1055,10 +1082,7 @@ fn default_folders() -> (PathBuf, PathBuf) {
 /// `Suhina` in the user's documents folder, or the folder made under the program's old name
 /// while only that one exists; defaults are built beside it.
 fn documents_base() -> PathBuf {
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
-    let documents = home.map(|h| h.join("Documents")).unwrap_or_default();
-    let (new, old) = (documents.join("Suhina"), documents.join(OLD_APP_ID));
-    if !new.exists() && old.is_dir() { old } else { new }
+    suhina_session::documents_base()
 }
 
 /// Connects the output `choice` names to `session`, playing its audio; a device that is gone

@@ -482,12 +482,35 @@ impl App {
         // A device: what `device.*` takes on a track and `track.add` on a new one.
         let device = match (&found.item, found.kind) {
             (Item::Plugin(spec), _) => Some(("device.addPlugin", json!({ "plugin": spec }), json!({ "device": spec }))),
-            (Item::Device(id), _) => Some(("device.add", json!({ "id": id }), json!({ "device": id }))),
+            (Item::Device(id), _) => {
+                // The device starts on the file its folder lists first
+                // ([docs/spec/nam-amp-and-cab.md]), on a track or on a new one as one command.
+                let mut params = json!({ "id": id });
+                let mut on_new_track = json!({ "device": id });
+                if let Some(file) = self.device_default_file(id) {
+                    params["file"] = json!(file.clone());
+                    on_new_track["file"] = json!(file);
+                }
+                Some(("device.add", params, on_new_track))
+            }
             (Item::Voice(path, voice), _) => {
                 let preset = json!({ "preset": path.display().to_string(), "voice": voice });
                 Some(("device.add", preset.clone(), preset))
             }
-            (Item::Stock(key), _) => Some(("device.add", json!({ "stock": key }), json!({ "stock": key }))),
+            (Item::Stock(key), _) => {
+                // A stock preset that names a file brings it ([ADR 0036] › a preset may name
+                // a file); one that names none — the trims — starts the placed device on the
+                // same first file a plain device does, its values beside it
+                // ([docs/spec/nam-amp-and-cab.md] › The file a device starts on).
+                let (id, _) = key.split_once('/').map_or(("", ""), |(id, rest)| (id, rest));
+                let named = suhina_device_registry::stock_preset(key).is_none_or(|s| s.preset.file.is_some());
+                let mut params = json!({ "stock": key });
+                if !named && let Some(file) = self.device_default_file(id) {
+                    params["file"] = json!(file);
+                }
+                let on_new_track = params.clone();
+                Some(("device.add", params, on_new_track))
+            }
             (Item::File(path), "preset") => {
                 let preset = json!({ "preset": path.display().to_string() });
                 Some(("device.add", preset.clone(), preset))
@@ -498,9 +521,23 @@ impl App {
             match track {
                 Some(track) => {
                     params["track"] = json!(track.0);
-                    if self.quick_add_run(id, &params).is_some() {
+                    if let Some(added) = self.quick_add_run(id, &params) {
                         self.show_devices_of(track);
-                        self.status = Status::Done(format!("Added {} to {}", found.name, self.track_name(track)));
+                        // A preset whose file does not load still adds its device; the add
+                        // says so ([docs/spec/nam-amp-and-cab.md] › the file a device starts on).
+                        match added["file_missing"].as_str() {
+                            Some(missing) => {
+                                self.status = Status::Hint(format!(
+                                    "Added {} to {}; the file did not load: {missing}",
+                                    found.name,
+                                    self.track_name(track)
+                                ))
+                            }
+                            None => {
+                                self.status =
+                                    Status::Done(format!("Added {} to {}", found.name, self.track_name(track)))
+                            }
+                        }
                     }
                 }
                 None => {
@@ -513,7 +550,16 @@ impl App {
                         .map(TrackId);
                     if let Some(new) = new {
                         self.show_devices_of(new);
-                        self.status = Status::Done(format!("Added {} on a new track", found.name));
+                        let missing = added.as_ref().and_then(|r| r["device"]["file_missing"].as_str());
+                        match missing {
+                            Some(missing) => {
+                                self.status = Status::Hint(format!(
+                                    "Added {} on a new track; the file did not load: {missing}",
+                                    found.name
+                                ))
+                            }
+                            None => self.status = Status::Done(format!("Added {} on a new track", found.name)),
+                        }
                     }
                 }
             }

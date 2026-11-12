@@ -38,6 +38,16 @@ pub struct FileKind {
     pub extension: &'static str,
     /// Reads and checks the file at `path` for an engine running at `rate` Hz.
     read: fn(&Path, u32) -> Result<Arc<AssetData>, String>,
+    /// Reads and checks the pack's bytes ([ADR 0036] › the starter pack), the same parse the
+    /// path form gave them.
+    read_bytes: fn(&[u8], u32) -> Result<Arc<AssetData>, String>,
+    /// The library folder the pack unpacks beside ([ADR 0036] › the library): "Amp models" for
+    /// the Amp Modeler, "Cabinets" for the Cab Loader.
+    pub library_folder: &'static str,
+    /// The old defaults' folder the device's files may still be named by, before the library's
+    /// move emptied it into `library_folder` ([ADR 0036] › 4): "NAM models" for the Amp
+    /// Modeler, "IRs" for the Cab Loader, none for a device that ran no files then.
+    pub legacy_folder: Option<&'static str>,
     /// What a panel calls the loaded file at `path`.
     name: fn(&Path, &AssetData) -> Option<String>,
     /// A new device at its defaults, running the file.
@@ -132,13 +142,29 @@ pub const ENTRIES: [Entry; 17] = [
         info: &suhina_device_nam_amp_modeler::INFO,
         make: || Box::new(suhina_device_nam_amp_modeler::NamAmp::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/nam-amp-modeler/panel.json")),
-        file: Some(FileKind { extension: "nam", read: read_nam, name: nam_name, make: make_nam }),
+        file: Some(FileKind {
+            extension: "nam",
+            read: read_nam,
+            read_bytes: read_nam_bytes,
+            library_folder: "Amp models",
+            legacy_folder: Some("NAM models"),
+            name: nam_name,
+            make: make_nam,
+        }),
     },
     Entry {
         info: &suhina_device_nam_cab_loader::INFO,
         make: || Box::new(suhina_device_nam_cab_loader::CabLoader::new()),
         layout: LayoutSource::Json(include_str!("../../../devices/nam-cab-loader/panel.json")),
-        file: Some(FileKind { extension: "wav", read: read_ir, name: folder_name, make: make_cab }),
+        file: Some(FileKind {
+            extension: "wav",
+            read: read_ir,
+            read_bytes: read_ir_bytes,
+            library_folder: "Cabinets",
+            legacy_folder: Some("IRs"),
+            name: ir_name,
+            make: make_cab,
+        }),
     },
     Entry {
         info: &suhina_device_delay::INFO,
@@ -256,9 +282,19 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
 pub use suhina_device_sdk::{DeviceAsset, DeviceFactory, Devices};
 
 /// What a panel calls the file `asset` holds, read from `path`: a NAM model's own name (its
-/// metadata), an IR's folder.
+/// metadata), an IR's file stem.
 pub fn asset_name(asset: &DeviceAsset, path: &Path) -> Option<String> {
     file_kind(asset.device()).and_then(|file| (file.name)(path, asset.data()))
+}
+
+/// A shipped file's key's two parts, as [`builtin_file_key`] writes them: the device id and
+/// the file name (`builtin:<device id>/<file name>`, [ADR 0036]). `None` for any other text —
+/// a path, or a `builtin:` key without the `/` — so a caller cannot take a path for a key.
+/// The one parser the loader, the commands and the panels share, so the key's shape is read
+/// one way.
+pub fn builtin_file_key_parts(key: &str) -> Option<(&str, &str)> {
+    let rest = key.strip_prefix("builtin:")?;
+    rest.split_once('/')
 }
 
 /// Every built-in device, as the factory the engine builds with (#1147).
@@ -304,6 +340,19 @@ fn file_kind(id: &str) -> Option<&'static FileKind> {
 }
 
 /// The extension of the file the device `id` runs, or `None` for a device that runs no file.
+/// The old defaults' folder a file device's files may still be named by, before the library's
+/// move emptied it into the device's library folder ([ADR 0036] › 4): `None` for a device
+/// that ran no files then.
+pub fn legacy_folder(id: &str) -> Option<&'static str> {
+    file_kind(id).and_then(|file| file.legacy_folder)
+}
+
+/// The library folder a file device's pack unpacks beside ([ADR 0036] › the library):
+/// "Amp models" for the Amp Modeler, "Cabinets" for the Cab Loader.
+pub fn library_folder(id: &str) -> Option<&'static str> {
+    file_kind(id).map(|file| file.library_folder)
+}
+
 pub fn file_extension(id: &str) -> Option<&'static str> {
     file_kind(id).map(|file| file.extension)
 }
@@ -320,6 +369,237 @@ pub fn load_file(id: &str, path: &Path, rate: u32) -> Result<DeviceAsset, String
         return Err(format!("a {id} runs a .{} file", file.extension));
     }
     Ok(DeviceAsset::new(&entry.info.id, (file.read)(path, rate)?))
+}
+
+/// Every shipped file ([ADR 0036] › the starter pack): the device's id, the file's library
+/// name, and its bytes — `include_bytes!` puts the raw pack inside the executable, so the
+/// devices work at once and offline, with nothing on disk. Keep the pack small: the ADR caps
+/// the whole thing, and a test here keeps the rows honest.
+const PACK_FILES: &[(&str, &str, &[u8])] = &[
+    (
+        "nam-amp-modeler",
+        "Helga B 5150 BlockLetter - NoBoost.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Helga B 5150 BlockLetter - NoBoost.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Jason Z KSR CERES - light blue channel - all noon EQ.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Jason Z KSR CERES - light blue channel - all noon EQ.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Mikhail K Sovtek MIG50.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Mikhail K Sovtek MIG50.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Peter N HM-2_V5_L10_H10_D0_Std_ESR-0.0004.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Peter N HM-2_V5_L10_H10_D0_Std_ESR-0.0004.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Phillipe P Bug333-Clean-ESR0,002.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Phillipe P Bug333-Clean-ESR0,002.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Phillipe P Bug333-Crunch-NoDrive-ESR0,002.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Phillipe P Bug333-Crunch-NoDrive-ESR0,002.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Phillipe P LaneyGH100S-Lo-CrunchGain-ESR0,024.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Phillipe P LaneyGH100S-Lo-CrunchGain-ESR0,024.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Roman A LT_MESA_MARKIV_1.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Roman A LT_MESA_MARKIV_1.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Roman A YERASOV_MESHUGGAH.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Roman A YERASOV_MESHUGGAH.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Sascha S DirtyShirleyMini_Clean_B1_M6_T7_MV10_G4.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Sascha S DirtyShirleyMini_Clean_B1_M6_T7_MV10_G4.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Sascha S DirtyShirleyMini_crunch_G6.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Sascha S DirtyShirleyMini_crunch_G6.nam"),
+    ),
+    ("nam-amp-modeler", "Suhina Overdrive.nam", include_bytes!("../../../packs/nam-amp-modeler/Suhina Overdrive.nam")),
+    ("nam-amp-modeler", "Suhina Clean.nam", include_bytes!("../../../packs/nam-amp-modeler/Suhina Clean.nam")),
+    (
+        "nam-amp-modeler",
+        "Tim R Fender TwinVerb Vibrato Bright.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Tim R Fender TwinVerb Vibrato Bright.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Tim R JCM2000 Crunch.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Tim R JCM2000 Crunch.nam"),
+    ),
+    (
+        "nam-amp-modeler",
+        "Tim R Splawn Pro Mod 2nd Gear - G12.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Tim R Splawn Pro Mod 2nd Gear - G12.nam"),
+    ),
+    ("nam-amp-modeler", "Tim R TS9.nam", include_bytes!("../../../packs/nam-amp-modeler/Tim R TS9.nam")),
+    (
+        "nam-amp-modeler",
+        "Tudor N Driftwood Low Gain.nam",
+        include_bytes!("../../../packs/nam-amp-modeler/Tudor N Driftwood Low Gain.nam"),
+    ),
+    ("nam-cab-loader", "Blackat Leon S7.wav", include_bytes!("../../../packs/nam-cab-loader/Blackat Leon S7.wav")),
+    (
+        "nam-cab-loader",
+        "Cicognani Imperivm Luxury.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Cicognani Imperivm Luxury.wav"),
+    ),
+    ("nam-cab-loader", "DV Mark Triple 6.wav", include_bytes!("../../../packs/nam-cab-loader/DV Mark Triple 6.wav")),
+    ("nam-cab-loader", "EVH 5150 III.wav", include_bytes!("../../../packs/nam-cab-loader/EVH 5150 III.wav")),
+    ("nam-cab-loader", "Engl Retro Tube.wav", include_bytes!("../../../packs/nam-cab-loader/Engl Retro Tube.wav")),
+    (
+        "nam-cab-loader",
+        "Engl Special Edition.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Engl Special Edition.wav"),
+    ),
+    ("nam-cab-loader", "Fortin Natas.wav", include_bytes!("../../../packs/nam-cab-loader/Fortin Natas.wav")),
+    ("nam-cab-loader", "Kaos Sludge 15.wav", include_bytes!("../../../packs/nam-cab-loader/Kaos Sludge 15.wav")),
+    (
+        "nam-cab-loader",
+        "Krank Krankenstein.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Krank Krankenstein.wav"),
+    ),
+    ("nam-cab-loader", "Laney ironheart.wav", include_bytes!("../../../packs/nam-cab-loader/Laney ironheart.wav")),
+    (
+        "nam-cab-loader",
+        "MakosampCustomHatred.wav",
+        include_bytes!("../../../packs/nam-cab-loader/MakosampCustomHatred.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Marshall JMP 2203  Jose Arredondo mod.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Marshall JMP 2203  Jose Arredondo mod.wav"),
+    ),
+    ("nam-cab-loader", "Marshall MG 15.wav", include_bytes!("../../../packs/nam-cab-loader/Marshall MG 15.wav")),
+    (
+        "nam-cab-loader",
+        "Mesa Boogie Mark V.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Mesa Boogie Mark V.wav"),
+    ),
+    ("nam-cab-loader", "Peavey Vypyr 15.wav", include_bytes!("../../../packs/nam-cab-loader/Peavey Vypyr 15.wav")),
+    ("nam-cab-loader", "Randall Satan.wav", include_bytes!("../../../packs/nam-cab-loader/Randall Satan.wav")),
+    ("nam-cab-loader", "Randall thrasher.wav", include_bytes!("../../../packs/nam-cab-loader/Randall thrasher.wav")),
+    ("nam-cab-loader", "Splawn Nitro.wav", include_bytes!("../../../packs/nam-cab-loader/Splawn Nitro.wav")),
+    ("nam-cab-loader", "Splawn Quick Rod.wav", include_bytes!("../../../packs/nam-cab-loader/Splawn Quick Rod.wav")),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Bright.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Bright.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Dark.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Dark.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Off Axis.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Off Axis.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Plain.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Plain.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Room.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Room.wav"),
+    ),
+    (
+        "nam-cab-loader",
+        "Synthetic Cabinet Worse.wav",
+        include_bytes!("../../../packs/nam-cab-loader/Synthetic Cabinet Worse.wav"),
+    ),
+    ("nam-cab-loader", "Taurus Stomphead.wav", include_bytes!("../../../packs/nam-cab-loader/Taurus Stomphead.wav")),
+];
+
+/// The shipped file in the pack's state key ([ADR 0036] · `builtin:<device id>/<file name>`).
+pub fn builtin_file_key(id: &str, name: &str) -> String {
+    format!("builtin:{id}/{name}")
+}
+
+/// The shipped pack's folder inside each device's library folder ([ADR 0036] › the library).
+pub const SHIPPED_PACK: &str = "Suhina";
+
+/// Every shipped file, flat: `(device id, library folder, pack folder, file name, bytes)`.
+/// The device's own library folder and the pack's own folder inside it compose the unpack
+/// path ([ADR 0036] › the library), so an installer or the app unpacks the pack without
+/// naming device ids itself.
+pub fn pack_files_flat() -> Vec<(&'static str, &'static str, &'static str, &'static str, &'static [u8])> {
+    PACK_FILES
+        .iter()
+        .filter_map(|(device, name, bytes)| {
+            file_kind(device).map(|file| (*device, file.library_folder, SHIPPED_PACK, *name, *bytes))
+        })
+        .collect()
+}
+
+/// A device's shipped files, `(name, bytes)`, the pack the panels list first ([ADR 0036]).
+/// An empty list for a device that runs no file or carries none.
+pub fn pack_files(id: &str) -> Vec<(&'static str, &'static [u8])> {
+    PACK_FILES.iter().filter_map(|(device, name, bytes)| (*device == id).then_some((*name, *bytes))).collect()
+}
+
+/// Sizes every shipped file, all of them together (the ADR's ceiling, a test's bound).
+pub fn pack_bytes() -> usize {
+    PACK_FILES.iter().map(|(_, _, bytes)| bytes.len()).sum()
+}
+
+/// The pack's provenance and licence records, `(library folder, pack folder, file name,
+/// bytes)`, written beside the installed files at unpack: the README that says where every
+/// file came from and under what licence, and the licence texts the collected IRs were
+/// published under — a redistribution keeps them beside the files ([ADR 0036] › 6). A record
+/// the user already carries is never overwritten, like a pack file's.
+pub fn pack_records() -> Vec<(&'static str, &'static str, &'static str, &'static [u8])> {
+    vec![
+        ("Amp models", SHIPPED_PACK, "README.md", include_bytes!("../../../packs/README.md")),
+        ("Cabinets", SHIPPED_PACK, "README.md", include_bytes!("../../../packs/README.md")),
+        (
+            "Cabinets",
+            SHIPPED_PACK,
+            "LICENSE.BestPlugins-Amps.txt",
+            include_bytes!("../../../packs/nam-cab-loader/LICENSE.BestPlugins-Amps.txt"),
+        ),
+        (
+            "Cabinets",
+            SHIPPED_PACK,
+            "LICENSE.BestPlugins-Bands.txt",
+            include_bytes!("../../../packs/nam-cab-loader/LICENSE.BestPlugins-Bands.txt"),
+        ),
+    ]
+}
+
+/// Runs the device `id` over the shipped file named `name`, for an engine at `rate` Hz — the
+/// same readers, gates and failure messages as [`load_file`] gave a path, at the pack's bytes
+/// ([ADR 0036]). Reads and allocates: call it off the audio thread.
+pub fn load_builtin_file(id: &str, name: &str, rate: u32) -> Result<DeviceAsset, String> {
+    let Some((entry, file)) = entry(id).and_then(|entry| Some((entry, entry.file.as_ref()?))) else {
+        return Err(format!("{id:?} does not run a file"));
+    };
+    if !name.ends_with(&format!(".{}", file.extension)) {
+        return Err(format!("a {id} runs a .{} file", file.extension));
+    }
+    let Some((_, bytes)) = pack_files(id).into_iter().find(|(file_name, _)| *file_name == name) else {
+        return Err(format!("no shipped file {name:?} for {id:?}; pack_files lists them"));
+    };
+    Ok(DeviceAsset::new(&entry.info.id, (file.read_bytes)(bytes, rate)?))
 }
 
 /// A new device with this id, its defaults, and `asset` already loaded — `None` for an unknown
@@ -357,8 +637,27 @@ fn read_ir(path: &Path, rate: u32) -> Result<Arc<AssetData>, String> {
     Ok(Arc::new(suhina_device_nam_cab_loader::ir::read(path, rate)?))
 }
 
-fn folder_name(path: &Path, _data: &AssetData) -> Option<String> {
-    path.parent().and_then(Path::file_name).map(|folder| folder.to_string_lossy().into_owned())
+fn read_nam_bytes(bytes: &[u8], rate: u32) -> Result<Arc<AssetData>, String> {
+    let model = suhina_device_nam_amp_modeler::model::read_bytes(bytes)?;
+    // The same gates as the path form: what the runtime will not run, and a rate the device
+    // would refuse again at prepare. Read at command or project-load time, off the audio
+    // thread.
+    if let Err(e) = nam_rs::Model::from_nam(&model) {
+        return Err(format!("the model does not run: {e}"));
+    }
+    suhina_device_nam_amp_modeler::model::runnable_rate(f64::from(rate), model.expected_sample_rate())?;
+    Ok(Arc::new(Arc::new(model)))
+}
+
+fn read_ir_bytes(bytes: &[u8], rate: u32) -> Result<Arc<AssetData>, String> {
+    Ok(Arc::new(suhina_device_nam_cab_loader::ir::read_bytes(bytes, rate)?))
+}
+
+fn ir_name(path: &Path, _data: &AssetData) -> Option<String> {
+    // The file's own name without its extension, never the folder's: the pack row already
+    // reads the folder, and a file whose name shares its folder's made the two pickers look
+    // alike (~issue 1289).
+    path.file_stem().map(|stem| stem.to_string_lossy().into_owned())
 }
 
 fn make_cab(data: &AssetData) -> Option<Box<dyn Device>> {
@@ -368,6 +667,13 @@ fn make_cab(data: &AssetData) -> Option<Box<dyn Device>> {
 
 /// Largest preset file read.
 pub const MAX_PRESET_BYTES: usize = 64 * 1024;
+
+/// The file names Windows reserves for its devices, which a preset file's name may not be:
+/// the stem before any dots, any case ([ADR 0014] › 5, the review).
+const RESERVED_FILE_NAMES: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2",
+    "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
 
 /// A device's values from a preset file (`docs/spec/browser.md` › Built-in effects and instruments, presets
 /// and plug-ins).
@@ -379,6 +685,11 @@ pub struct Preset {
     pub name: String,
     /// Every parameter by its id, with the preset's value.
     pub params: Vec<(&'static str, f64)>,
+    /// The file the preset's device selects, for a device that runs one: a shipped file's
+    /// `builtin:<device id>/<file name>` key, or the file's path as the project carries it
+    /// (`device.setNamFile`; the library-relative one is portable, an absolute one opens where
+    /// the file sits). Left out for a device that runs none.
+    pub file: Option<String>,
 }
 
 /// A preset that ships with Suhina (ADR 0014): a file of `presets/` built into the executable.
@@ -398,6 +709,43 @@ const STOCK_FILES: &[(&str, &str)] = &[
     ("fm-synth/struck-fm-keys", include_str!("../../../presets/fm-synth/Struck FM Keys.fm-synth.preset.suhina")),
     ("fm-synth/wide-trance-pad", include_str!("../../../presets/fm-synth/Wide Trance Pad.fm-synth.preset.suhina")),
     ("fm-synth/slow-warm-pad", include_str!("../../../presets/fm-synth/Slow Warm Pad.fm-synth.preset.suhina")),
+    (
+        "nam-amp-modeler/bright-clean",
+        include_str!("../../../presets/nam-amp-modeler/Bright Clean.nam-amp-modeler.preset.suhina"),
+    ),
+    (
+        "nam-amp-modeler/tight-high-gain",
+        include_str!("../../../presets/nam-amp-modeler/Tight High Gain.nam-amp-modeler.preset.suhina"),
+    ),
+    (
+        "nam-amp-modeler/warm-crunch",
+        include_str!("../../../presets/nam-amp-modeler/Warm Crunch.nam-amp-modeler.preset.suhina"),
+    ),
+    (
+        "nam-amp-modeler/dark-lead",
+        include_str!("../../../presets/nam-amp-modeler/Dark Lead.nam-amp-modeler.preset.suhina"),
+    ),
+    (
+        "nam-amp-modeler/clean-boost",
+        include_str!("../../../presets/nam-amp-modeler/Clean Boost.nam-amp-modeler.preset.suhina"),
+    ),
+    (
+        "nam-cab-loader/rumble-cut",
+        include_str!("../../../presets/nam-cab-loader/Rumble Cut.nam-cab-loader.preset.suhina"),
+    ),
+    (
+        "nam-cab-loader/dark-cabinet",
+        include_str!("../../../presets/nam-cab-loader/Dark Cabinet.nam-cab-loader.preset.suhina"),
+    ),
+    (
+        "nam-cab-loader/bright-cabinet",
+        include_str!("../../../presets/nam-cab-loader/Bright Cabinet.nam-cab-loader.preset.suhina"),
+    ),
+    ("nam-cab-loader/mid-dip", include_str!("../../../presets/nam-cab-loader/Mid Dip.nam-cab-loader.preset.suhina")),
+    (
+        "nam-cab-loader/second-cab",
+        include_str!("../../../presets/nam-cab-loader/Second Cab.nam-cab-loader.preset.suhina"),
+    ),
 ];
 
 /// The stock presets, read once. A file that does not read is left out; a test keeps there being none.
@@ -417,6 +765,37 @@ pub fn stock_presets() -> &'static [StockPreset] {
 /// The stock preset with this key.
 pub fn stock_preset(key: &str) -> Option<&'static StockPreset> {
     stock_presets().iter().find(|stock| stock.key == key)
+}
+
+/// The file text a preset carries, checked as both the read and the write check it
+/// ([ADR 0014] › Amendment): a shipped key of the preset's own device, or a library-relative
+/// path — an absolute, a UNC, a root-anchored or a `..`-carrying text is refused, so a device
+/// added from the preset would read another machine's (or another share's) file the moment it
+/// landed. The root-anchored form (`/etc/…`) is absolute on Unix and `is_absolute()` there;
+/// Windows' `is_absolute()` wants a drive prefix, so the root component is matched itself.
+/// One check, so the reader and the writer cannot drift apart.
+fn check_preset_file(file: &str, info: &DeviceInfo) -> Result<(), String> {
+    if let Some((packed_id, _)) = builtin_file_key_parts(file)
+        && packed_id != info.id.as_ref()
+    {
+        return Err(format!("{} runs a shipped file of its own kind, not {packed_id:?}", info.name));
+    }
+    if !file.starts_with("builtin:") {
+        let given = std::path::Path::new(file);
+        if given.is_absolute()
+            || given.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::Prefix(_) | std::path::Component::RootDir
+                )
+            })
+        {
+            return Err(format!(
+                "{file:?} is not a preset's file: a preset names a shipped file's key or a library-relative path"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// A device preset's file (ADR 0014) as a preset and its tags. A parameter it does not name takes
@@ -453,7 +832,92 @@ fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
         params.push((&*param.id, value));
     }
     let tags = file["tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str().map(String::from)).collect();
-    Ok((Preset { device: &info.id, name: name.to_string(), params }, tags))
+    let file = match &file["file"] {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(text) => Some(text.trim()).filter(|f| !f.is_empty()).map(str::to_owned),
+        _ => return Err("a preset file's file is text (the file its device runs)".into()),
+    };
+    if file.is_some() && !is_file_device(&info.id) {
+        return Err(format!("the preset names a file, which {} does not run", info.name));
+    }
+    // A shipped file's key is the preset's own device's, refused at the read as at the write
+    // ([ADR 0014] › Amendment: a preset may name a file); the loader would refuse it later,
+    // but then the device is added without its file instead of the preset being refused here.
+    if let Some(file) = file.as_deref() {
+        check_preset_file(file, info)?;
+    }
+    Ok((Preset { device: &info.id, name: name.to_string(), params, file }, tags))
+}
+
+/// Writes `device`'s values as a preset file's JSON: one name, the file its device selects (for a
+/// device that runs one, [`ADR 0036`] › **A preset may name a file**) and every declared
+/// parameter with the given value. The tags come from the device's presets alone; a saved preset
+/// carries none. [`ADR 0014`] names the shape; `device.savePreset` calls this.
+pub fn write_preset_file(
+    device: &str,
+    name: &str,
+    file: Option<&str>,
+    params: &[(&str, f64)],
+) -> Result<Vec<u8>, String> {
+    let info =
+        info(device).ok_or_else(|| format!("no built-in effect or instrument {device:?}; device.list lists them"))?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("a preset has a name".into());
+    }
+    // The name is the file's stem: the characters a Windows file name refuses and the reserved
+    // device names are refused here, where the message says why — at the write they would fail
+    // only as a file the filesystem would not take ([ADR 0014] › 5, the review).
+    if name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+        || name.trim_matches('.') != name
+        || name.chars().any(char::is_control)
+        || name.split('.').next().is_some_and(|stem| RESERVED_FILE_NAMES.contains(&stem.to_ascii_uppercase().as_str()))
+    {
+        return Err(format!("{name:?} is not a preset file's name"));
+    }
+    // A shipped file's key is the running device's own (load_builtin_file refuses another), and
+    // a device that runs no file names none at all. The file a preset carries is a shipped key
+    // or a library-relative path ([ADR 0014] › Amendment, the review): a state naming a file
+    // outside the library is refused, so every preset this writes is one any machine can
+    // apply — the file it names comes from the library or rides the pack.
+    if let Some(file) = file.map(str::trim).filter(|file| !file.is_empty()) {
+        if !is_file_device(info.id.as_ref()) {
+            return Err(format!("{} runs no file, so the preset names none", info.name));
+        }
+        check_preset_file(file, info)?;
+    }
+    let mut written = serde_json::Map::new();
+    written.insert("format".into(), serde_json::Value::from("suhina-preset"));
+    written.insert("version".into(), serde_json::Value::from(1));
+    written.insert("device".into(), serde_json::Value::from(info.id.clone()));
+    written.insert(
+        "role".into(),
+        serde_json::Value::from(match info.role {
+            suhina_device_api::Role::Effect => "effect",
+            suhina_device_api::Role::MidiEffect => "midi_effect",
+            suhina_device_api::Role::Instrument => "instrument",
+        }),
+    );
+    written.insert("name".into(), serde_json::Value::from(name));
+    if let Some(file) = file.map(str::trim).filter(|file| !file.is_empty()) {
+        written.insert("file".into(), serde_json::Value::from(file));
+    }
+    let mut values = serde_json::Map::new();
+    for param in info.params.iter() {
+        let value = params.iter().find(|(id, _)| *id == param.id).map_or(param.default, |(_, value)| *value);
+        if !(param.min..=param.max).contains(&value) {
+            return Err(format!("{} is {value}, outside {} to {}", param.id, param.min, param.max));
+        }
+        values.insert((*param.id).into(), serde_json::Value::from(value));
+    }
+    written.insert("params".into(), serde_json::Value::Object(values));
+    let mut bytes =
+        serde_json::to_vec_pretty(&serde_json::Value::Object(written)).map_err(|e| format!("not written: {e}"))?;
+    bytes.push(b'\n');
+    if bytes.len() > MAX_PRESET_BYTES {
+        return Err(format!("a preset file is at most {} KiB", MAX_PRESET_BYTES / 1024));
+    }
+    Ok(bytes)
 }
 
 /// Whether a preset file's data is a device preset's JSON rather than DX7 voice data.
@@ -493,7 +957,7 @@ pub fn preset(data: &[u8], voice: usize) -> Result<Preset, String> {
     let info = &suhina_device_fm_synth::INFO;
     let params =
         info.params.iter().enumerate().filter_map(|(i, p)| synth.param(i).map(|value| (&*p.id, value))).collect();
-    Ok(Preset { device: &info.id, name: patch.name().trim().to_string(), params })
+    Ok(Preset { device: &info.id, name: patch.name().trim().to_string(), params, file: None })
 }
 
 fn check_preset_size(data: &[u8]) -> Result<(), String> {
