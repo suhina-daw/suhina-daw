@@ -3210,6 +3210,10 @@ impl App {
         // region the grid gives none is not drawn.
         self.missing.sync(&mut self.projects, self.revision);
         let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
+        // A newer build is offered in a bar over an open project; the start panel has its own
+        // line (`docs/spec/updates.md` › With a project open).
+        let update_bar =
+            self.open_prompt.is_none() && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
         // The browser stays hidden on the start panel (nothing to drop into); its setting keeps
         // its value for when a project opens. It slides in and out from its side, with animations
         // on (#708).
@@ -3219,7 +3223,8 @@ impl App {
         // The grid takes the whole room, as the panels it replaced did: what the window holds
         // reaches its edges, for what is painted behind it.
         ui.advance_cursor_after_rect(room);
-        let input = self.window_input(room.size(), grid.is_some(), self.open_prompt.is_some() || missing_bar);
+        let input =
+            self.window_input(room.size(), grid.is_some(), self.open_prompt.is_some() || missing_bar || update_bar);
         let layout = crate::kit::native_css::window(&input)
             .map(|layout| layout.translated(room.min.to_vec2()))
             .unwrap_or_default();
@@ -3287,6 +3292,12 @@ impl App {
                     ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.open_prompt_bar(ui));
                 } else if missing_bar {
                     ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.missing.bar(ui, inside));
+                } else if update_bar
+                    && let Some(wanted) = ui
+                        .scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.updates.bar(ui, inside))
+                        .inner
+                {
+                    self.updates_wanted(ui.ctx(), wanted);
                 }
             }
             let main = layout.rect(Region::Main).unwrap_or(Rect::from_min_size(room.min, Vec2::ZERO));
