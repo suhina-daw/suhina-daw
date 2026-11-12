@@ -1080,3 +1080,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - Swing (#1221): the project has a swing amount, set with the **Swing** slider beside **Resize all** in the Arrangement, that delays every second sixteenth of each eighth as MIDI clips play (up to half a sixteenth at 100 %, the triplet at about 67 %), live and in renders, the notes themselves unmoved. Every MIDI clip follows it until it gets its own in the clip panel's **Swing** row (the **Global** switch and a slider); turning **Global** back on keeps the clip's own amount for later. `transport.setSwing` and `clip.setSwing` do the same for agents; the project file is version 12.
 - MIDI clip panel (#1222, #1214): a selected MIDI clip's column in the detail area is the same compact panel as an audio clip's (its colour, name, length and the Clip / Devices switch; Start and End, Loop, Position and Length with Set to the playhead, and its scale), with what the tools act on in figures under it (notes, pitch, span, muted, velocity range) and the note tools beside it on two tabs: Notes (Transpose, Fit to scale to the clip's scale, Invert, Reverse, Legato, ×2 and ÷2) and Transform (Quantise, Humanise, Randomise velocity and Ramp velocity, each with its settings and an Apply button that says what it acts on). Humanise moves notes by milliseconds, mostly a little and never past its limit, each note on its own and keeping its length; `note.humanize` takes `ms`. With the detail area stacked the tools go under the Clip part.
 
+- **New nightly available:** a nightly checks once per start whether a newer nightly is out
+  (Settings › Agents and updates › Updates › *Check for updates*, on by default) and says so in a
+  line on the start panel or, with a project open, a bar across the top of the workspace, not a
+  pop-up. **Download update now** downloads the package, checks its SHA-256, puts it in place of
+  the running build and offers **Restart now**; **Later** hides the offer until a newer build is
+  out. A tester never has to look for the new build on GitHub
+  ([spec](https://github.com/suhina-daw/suhina-daw/blob/main/docs/spec/updates.md)).
+
