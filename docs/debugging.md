@@ -3,7 +3,7 @@ description: How to find out what the running app does around a bug: the trace l
 read_when: debugging, bug hunting, trace, SUHINA_TRACE, --trace, diagnostic log, live debugging, UI lag, slow frame, frame time, stutter, plug-in host log, ARA, Melodyne, playhead jumps, flicker, timing, latency, screen recording, video frames, contact sheet, tester, hang, freeze, working a bug through
 type: howto
 status: current
-last_verified: 2026-11-06
+last_verified: 2026-11-10
 covers:
   - crates/ui-gpu/src/liquid.rs
   - apps/suhina/src/main.rs
@@ -86,7 +86,7 @@ host process have their own id, so `grep "\[12345\]"` shows one process. To foll
 | `ara musical context changed` | host | the tempo map or time signatures sent to the plug-in again |
 | `slow frame N ms: part ms, …; what was shown` | app (`kit/frame_trace.rs`) | a frame whose drawing took 25 ms or more, part by part (› UI time) |
 | `frames: N in 1.0 s …` | app | once a second while the window draws: frames, drawing time on average and the longest, the longest wait between frames |
-| `audio: device underruns N (+n), stretched frames late N (+n), … plug-in blocks late N (+n, most <plug-in on track>: n), not sent N (+n), longest trip N µs, engine load …` | app | once a second while playing (including clean intervals); while stopped, when sound went missing since the last look or the engine's load is 70 % or more (› Audio dropouts) |
+| `audio: device underruns N (+n), input underruns N (+n), stretched frames late N (+n), … plug-in blocks late N (+n, most <plug-in on track>: n), not sent N (+n), longest trip N µs, engine load …` | app | once a second while playing (including clean intervals); while stopped, when sound went missing since the last look or the engine's load is 70 % or more (› Audio dropouts) |
 | `slow engine update: N ms (graph …)` | app (`session/src/lib.rs`) | a project change whose new engine graph took 25 ms or more to make, part by part |
 | `slow <work>: N ms` | app | library listings, browser rows, the sample map and its cache, a drop, adding to a track: anything that took 5 ms or more |
 
@@ -120,7 +120,11 @@ meanwhile: `closed project let go in …` says how long it took. Quitting lets e
 once and shows "Closing Suhina" for up to 2 s: `quit: projects let go in …`, or
 `quit: projects not let go, closing anyway after 2s` when a plug-in was still busy (an ARA plug-in
 finishing an analysis can hold its host for many seconds); its host process then ends on its own
-once the plug-in is done.
+once the plug-in is done. After the window closes, `quit: on_exit`, `quit: backups written`,
+`quit: projects let go`, `quit: dropping the window's parts` and `quit: the window is gone` mark
+each step of the end with its time, so a slow quit shows which step it waits on (#823). The
+process ends at most 3 s after the projects were let go, whatever is still running then
+(`quit: still running … ending`): a plug-in still unloading is left to its host.
 
 Once a second a `frames:` line sums up: how many frames, their drawing time on average and the
 longest, and the longest wait between two frames. A long wait with short drawing means the time
@@ -150,18 +154,24 @@ use bounded storage and are printed together only when the enclosing call is slo
 ### Audio dropouts
 
 A sample that sometimes does not sound, or sound that stutters, shows as `audio:` lines while it
-happens. Two counters tell the causes apart:
+happens. The counters tell the causes apart:
 
 - **device underruns:** the engine had not filled the audio device's buffer in time, so the
   device played silence for what was missing. The engine load and the buffer size on the line say
   whether the engine was too slow (a high load) or the buffer too small for the machine.
+- **input underruns:** a block the engine rendered found less input from the input device than
+  it needed, and the rest of that block's input was silence. Counted from when the output last
+  opened (a smaller number than on the line before means it opened again). The time of the
+  rise, next to `track.setArm`, `audio reopen` and the transport, says what the engine was
+  doing when it ran ahead of the input.
 - **stretched frames late:** a warped (stretched) clip's audio, made ahead on a thread of its
   own, was not ready when the engine reached it, so that clip alone played silence. A Live Set
   with many warped clips leans on this.
 - **plug-in blocks late:** a plug-in's block was not back from its host process by the time the
   engine had to hand the device its buffer, so that block passed the sound through unprocessed (a
   crackle on that track). The line names the plug-in late most often and its track. A return's
-  plug-ins run after every track that sends to them, so they have the least time left.
+  plug-ins run once the tracks that send to them are done, with a share of the deadline kept for
+  them (#1261).
 - **not sent** (of the late blocks): the host was still busy with an earlier block when the next
   came, so the engine did not send this one at all — a serve that took longer than a block's
   playing time, not a slow engine.
@@ -169,12 +179,52 @@ happens. Two counters tell the causes apart:
   answered block took at worst. With this and *not sent*, a miss's cause says itself — long
   trips (the host's serve or the machine's scheduling), or a budget the deadline never left.
 
+The `input diagnostics` suffix keeps the latest 32 short reads as
+`[sequence, available frames, wanted frames]`, together with cumulative `backlog_drops`
+and `backlog_frames`. Each row is published atomically; other counters are independently
+sampled and may straddle a callback. Sequence numbers wrap after 2^32 short reads.
+History can overwrite events between trace lines; gaps in the sequence expose this.
+A 2048-frame device block uses chunks of at most 1024 frames, with additional splits at
+transport boundaries. With no additional split,
+`[n, 0, 1024]` followed by `[n+1, 0, 1024]` means both chunks found no input.
+
+`render diagnostics` lists, in order: output callbacks, ASIO input callbacks, render
+blocks, maximum render starts in one observed output cycle, extra starts after the first
+in a cycle, and input-grace expirations (at most once per observed output cycle, even
+when several render blocks refill the queue). Counts restart when output opens. Before the
+first output callback, renders count only in the total; later startup catch-up is included.
+A render is assigned to the output cycle observed just before the engine call, not to a
+hardware timestamp. Multiple renders may be normal with different block/device sizes or
+when disarming refills the output queue. Compare successive lines: increasing `extra`
+alongside short reads supports the catch-up hypothesis; increasing `timeouts` supports
+input arriving beyond the grace period; increasing backlog drops identifies discarded
+input. A historical maximum alone does not show recurring catch-up. ASIO callback-count
+deltas can expose unequal input/output delivery but do not identify a rejected driver
+callback; these counters are downstream of CPAL's duplicate-cycle guard. A short read
+following a backlog drop at a small internal loop-boundary chunk identifies input discarded
+too early. Backlog trimming now runs once per whole render call, so loop
+boundaries cannot reduce its budget; a new trace is still needed to verify the hardware.
+
+`audio.info` exposes the same data as `input_short_reads`, `input_backlog_drops`,
+`input_backlog_frames` and `render_diagnostics`. Histories allocate only when read on the
+control/UI thread; the audio path publishes into fixed atomic storage and never logs.
+
 While playing, a health line is written each second, including zero deltas, so a clean
 interval can be distinguished from a stopped logger. While stopped, lines require a changed
 counter or high load. Each health line identifies the actual host, device, sample rate and
 playhead beat. `audio output:` records format changes even without a dropout, including
 whether the device is a fallback. `audio reopen begin/complete` records the requested choice,
-transport snapshot, elapsed opening time and whether plug-ins carried over.
+transport snapshot, elapsed opening time and whether plug-ins carried over. `audio output
+failed:` comes before a reopen the device caused and says why: the ASIO driver asked for a
+reset, changed its buffer size or its sample rate, its buffer sizes changed when Suhina asked
+it (`audio.checkDriver`), or the device is gone. `audio driver:` is written each time an ASIO
+output opens: what the driver answered about its buffer sizes (`min`, `max`, `preferred`,
+`granularity`), the sizes Suhina lists from that answer and the one that plays by default, the
+size chosen, the size asked of the driver and the engine's block. When the driver could not be
+asked it says `could not be asked; kept answer`, the answer from the last time it was asked.
+`audio driver check:` is written when `audio.checkDriver` asks: the answer before and now when
+it differs (the output then opens again), `answers as when opened` once per opened output when
+it does not, or `could not be asked`.
 
 The last late render diagnostic gives its wall time in microseconds, frames queued before
 rendering, device period and number of render frames. These are atomic diagnostic samples
@@ -182,6 +232,13 @@ published by the engine and read by the UI; no log writes run on the audio threa
 smoothed CPU reading alone does not exclude one long render call or a scheduling delay.
 Counters belong to the current player/graph and may reset on replacement; use the reopen
 records and cumulative values as well as the deltas.
+
+**A second Suhina running** shows in no counter. Two builds in different folders (a test build
+beside an installed one) run side by side, since each build has its own single-instance lock, and
+an ASIO driver may accept both on the same device, which then scratches while every counter of
+the copy playing stays at zero (#1163). As the device opens, the trace says which other Suhina
+apps are running (`other Suhina apps running:`, each one's process id and program, or `none`):
+look there first when crackle comes with clean counters, and close the other copy.
 
 What is normal: a few late plug-in blocks in the first second of playback (every plug-in wakes at
 once), and a few thousand stretched frames late right after a jump of the play position (the

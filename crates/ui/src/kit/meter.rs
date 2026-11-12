@@ -6,7 +6,6 @@
 //! on the volume control's dB scale, with the highest peak of the last moments held as a line
 //! and a clip light that a click turns off (`mixer.resetClip`).
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::TrackId;
@@ -147,11 +146,11 @@ pub fn show(
     }
     let id = Id::unique(("meter", source));
     let response = ui.interact(rect.intersect(painter.clip_rect()), id, Sense::click());
-    let _style = crate::kit::style_class::enter_response("meter", &response);
+    let el = super::element::METER.response(&response).enter();
     // A surrounding CSS gradient has a transparent background-color. The empty
     // rails must retain their native ink unless the meter itself overrides it.
-    let background = crate::kit::style_class::background(ui.visuals().extreme_bg_color);
-    super::native_css::background(painter, rect);
+    let background = el.background_or(ui.visuals().extreme_bg_color);
+    el.paint_background(painter, rect, 0.0);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, describe(name, level)));
     if response.clicked() && level.clipped {
         actions.push(match source {
@@ -162,7 +161,7 @@ pub fn show(
     let hold = held(ui, id, level);
     let skin = super::skin::current();
     let upright = rect.height() > rect.width();
-    let _orientation = super::style_class::enter(if upright { "meter-vertical" } else { "meter-horizontal" });
+    let _orientation = if upright { super::element::METER_VERTICAL } else { super::element::METER_HORIZONTAL }.enter();
     let (light, bars) = if upright {
         let light = Rect::from_min_size(rect.min, Vec2::new(rect.width(), CLIP));
         (light, Rect::from_min_max(Pos2::new(rect.left(), light.bottom() + 1.0), rect.max))
@@ -170,7 +169,7 @@ pub fn show(
         let light = Rect::from_min_max(Pos2::new(rect.right() - CLIP, rect.top()), rect.max);
         (light, Rect::from_min_max(rect.min, Pos2::new(light.left() - 1.0, rect.bottom())))
     };
-    painter.fill_background(light, 0.0, if level.clipped { theme::recording() } else { background });
+    painter.rect_filled(light, 0.0, if level.clipped { theme::recording() } else { background });
     // Intensity changes only measured ink, never rails or the safety indicator.
     let mut ink = painter.clone();
     ink.multiply_opacity(f32::from(skin.meter_intensity.min(100)) / 100.0);
@@ -211,9 +210,9 @@ pub fn show(
                 )
             }
         };
-        painter.fill_background(bar, 0.0, background);
-        let _level = super::style_class::enter("meter-level");
-        let opacity = super::style_class::computed().map_or(1.0, |style| style.opacity);
+        painter.rect_filled(bar, 0.0, background);
+        let level_el = super::element::METER_LEVEL.enter();
+        let opacity = level_el.style().map_or(1.0, |style| style.opacity);
         let mut native_ink = ink.clone();
         native_ink.multiply_opacity(opacity);
         if skin.meter == super::skin::MeterStyle::Needle {
@@ -232,7 +231,7 @@ pub fn show(
         let peak = fraction(level.peak.get(side).copied().unwrap_or(0.0));
         let rms = fraction(level.rms.get(side).copied().unwrap_or(0.0));
         if peak > 0.0 {
-            super::native_css::level_glow(&ink, part(0.0, peak));
+            level_el.level_glow(&ink, part(0.0, peak));
         }
         // The peak dimmer, the RMS level in the full colour over it.
         for (to, alpha) in [(peak, 0.45), (rms, 1.0)] {
@@ -243,7 +242,7 @@ pub fn show(
                 let lit = part(from, to);
                 let mut clipped = ink.with_clip_rect(painter.clip_rect().intersect(lit));
                 clipped.multiply_opacity(alpha);
-                if !super::native_css::level_fill(&clipped, bar) {
+                if !level_el.level_fill(&clipped, bar) {
                     native_ink.rect_filled(lit, 0.0, color.gamma_multiply(alpha));
                 }
             };

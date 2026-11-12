@@ -81,7 +81,11 @@ impl SlotFactory<'_> {
             busy: 0,
             longest_us: 0,
             sent_at: None,
-            params: SlotParams::new(stored, self.frames_per_beat),
+            params: SlotParams::new(
+                stored,
+                self.frames_per_beat,
+                self.plugins.steps.get(&key).map_or(&[][..], |ids| &ids[..]),
+            ),
         };
         let latency = if stored.enabled { info.latency } else { 0 };
         Some(Built {

@@ -69,6 +69,12 @@ pub(crate) trait HostedPlugin {
         Err(format!("no parameter {id}"))
     }
 
+    /// The plug-in's own text for each of `values` of parameter `id` (#1205); empty where it
+    /// gives none, as a plug-in without such a call does.
+    fn param_texts(&mut self, _id: u32, values: &[f64]) -> Vec<String> {
+        vec![String::new(); values.len()]
+    }
+
     /// The component's state and, for VST3, the controller's.
     fn state(&mut self) -> Result<(Vec<u8>, Option<Vec<u8>>), String>;
 
@@ -181,6 +187,9 @@ impl HostedPlugin for clap::ClapPlugin {
     }
     fn set_param(&mut self, id: u32, value: f64) -> Result<ParamInfo, String> {
         clap::ClapPlugin::set_param(self, id, value)
+    }
+    fn param_texts(&mut self, id: u32, values: &[f64]) -> Vec<String> {
+        clap::ClapPlugin::param_texts(self, id, values)
     }
     fn state(&mut self) -> Result<(Vec<u8>, Option<Vec<u8>>), String> {
         Ok((clap::ClapPlugin::state(self)?, None))
@@ -303,6 +312,9 @@ impl HostedPlugin for vst3::Vst3Plugin {
     }
     fn set_param(&mut self, id: u32, value: f64) -> Result<ParamInfo, String> {
         vst3::Vst3Plugin::set_param(self, id, value)
+    }
+    fn param_texts(&mut self, id: u32, values: &[f64]) -> Vec<String> {
+        vst3::Vst3Plugin::param_texts(self, id, values)
     }
     fn state(&mut self) -> Result<(Vec<u8>, Option<Vec<u8>>), String> {
         Ok((vst3::Vst3Plugin::state(self)?, self.controller_state()))

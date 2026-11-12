@@ -539,3 +539,20 @@ fn a_take_stopped_mid_bar_is_as_long_as_what_was_recorded() {
     assert_eq!(clips.len(), 1, "{clips:?}");
     assert!((clips[0].length - 2.5).abs() < 0.02, "{:?}", clips[0]);
 }
+
+/// Record with only a track armed that hears nothing is refused, and the refusal names the
+/// track, so the input can be chosen for it (#682).
+#[test]
+fn record_refused_for_a_track_that_hears_nothing_names_it() {
+    let mut project = project();
+    let mic = project.tracks.iter_mut().find(|t| t.name == "Mic").unwrap();
+    mic.audio_input.channels = InputChannels::None;
+    let mic = mic.id.0;
+    // No output reports an input device and no default is chosen: arming gives it no input.
+    let mut rig = rig(project);
+    let armed = rig.run("track.setArm", json!({ "track": mic, "armed": true })).unwrap();
+    assert_eq!(armed["no_input"], json!(true), "{armed}");
+    let refused = rig.run("transport.record", json!({ "on": true })).unwrap_err();
+    assert!(refused.contains("\"Mic\" hears no audio input"), "{refused}");
+    assert!(refused.contains("track.setAudioInput"), "{refused}");
+}

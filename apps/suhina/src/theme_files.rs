@@ -919,22 +919,12 @@ fn read_variants(dir: &Path, warnings: &mut Vec<String>) -> Vec<(Variant, String
 
 /// Whether two themes look the same: every setting, the name, artwork and layout. Their sheets'
 /// text may differ (a migrated theme's is new), and so may the styles the style engine paints from
-/// the sheet: only the `--suhina-*` ones are the app's own.
+/// the sheet.
 fn same_look(a: &Theme, b: &Theme) -> bool {
     let skin = |theme: &Theme| suhina_ui::kit::skin::Skin {
         css: None,
         variant: None,
         variables: Default::default(),
-        styles: theme
-            .skin
-            .styles
-            .iter()
-            .map(|(selector, properties)| {
-                let own = properties.iter().filter(|(property, _)| property.starts_with("--suhina-"));
-                (selector.clone(), own.map(|(k, v)| (k.clone(), v.clone())).collect())
-            })
-            .filter(|(_, properties): &(String, std::collections::BTreeMap<String, String>)| !properties.is_empty())
-            .collect(),
         ..theme.skin.clone()
     };
     theme_vars::core_values(a) == theme_vars::core_values(b) && a.name == b.name && skin(a) == skin(b)
@@ -1403,6 +1393,12 @@ fn write_files(folder: &Path, mut files: Vec<(String, Vec<u8>)>) -> Result<(), S
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
+        // A copy of `suhina_fs::write_atomic`, on purpose (#1272): that one opens its file beside
+        // the destination with `File::create`, which writes through a symlink already there, and
+        // the checks above refuse every symlink under a theme. `create_new` refuses any file at
+        // the temporary path, a symlink included, so nothing is written outside the theme; and
+        // the name carries the process id, so a file an earlier run left behind does not block
+        // every later save of the theme as a fixed name would.
         let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
         if temporary.exists() {
             return Err(format!("unfinished theme write: {}", temporary.display()));
@@ -1420,8 +1416,8 @@ fn write_files(folder: &Path, mut files: Vec<(String, Vec<u8>)>) -> Result<(), S
 fn portable_package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8>)>, String> {
     let mut portable = theme.clone();
     let mut assets = suhina_ui::kit::skin::inherited_assets();
-    for role in suhina_ui::kit::skin::ROLES {
-        if theme.skin.assets.contains_key(*role) {
+    for role in suhina_ui::kit::skin::roles() {
+        if theme.skin.assets.contains_key(role) {
             for suffix in [".hover", ".active", ".disabled"] {
                 assets.remove(&format!("{role}{suffix}"));
             }

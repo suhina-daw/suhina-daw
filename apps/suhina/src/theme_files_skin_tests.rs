@@ -16,7 +16,7 @@ fn styled() -> Theme {
     theme.skin.toolbar = Some(skin::Toolbar::default());
     theme.skin.toolbar_offsets.insert("transport".into(), 80);
     theme.skin.meter = skin::MeterStyle::Segmented;
-    assert!(theme_css::apply(&mut theme, ".browser { color: #123456; background-color: #111222; }").is_empty());
+    assert!(theme_css::apply(&mut theme, "browser { color: #123456; background-color: #111222; }").is_empty());
     theme
 }
 
@@ -195,7 +195,7 @@ fn portable_packages_include_the_shared_ai_author_guide_and_effective_svg() {
     );
     assert!(theme.skin.assets.is_empty(), "export must not modify sparse local overrides");
     let css = files.iter().find(|(name, _)| name == "plain/theme.css").unwrap();
-    assert!(std::str::from_utf8(&css.1).unwrap().contains("play { image: url(\"assets/play.svg\"); }"));
+    assert!(std::str::from_utf8(&css.1).unwrap().contains("icon[kind=\"play\"] { image: url(\"assets/play.svg\"); }"));
     assert!(files.iter().all(|(name, _)| !name.ends_with(".json") || name == "plain/theme.json"), "packages are CSS");
     assert!(!files.iter().any(|(name, _)| name.ends_with("layout.css")));
 }
@@ -207,8 +207,9 @@ fn an_authors_sheet_is_read_verbatim_and_survives_backups() {
     std::fs::create_dir_all(themes.join("ink")).unwrap();
     let source = "/* Keep my comment */\n\
                   @property --glow { syntax: \"<number>\"; initial-value: 0.5; label: \"Glow\"; range: 0 1; }\n\
-                  :root { --accent: #12AB34; --meter-segments: 32; }\n\
-                  @layer custom { .browser { color: var(--accent); opacity: var(--glow); } }\n\
+                  :root { --accent: #12AB34; }\n\
+                  meter { meter-segments: 32; }\n\
+                  @layer custom { browser { color: var(--accent); opacity: var(--glow); } }\n\
                   @media (width < 800px) { #performance { display: none; } }\n";
     std::fs::write(themes.join("ink/theme.css"), source).unwrap();
     std::fs::write(themes.join("ink/theme.json"), theme::ThemeMeta::new("Ink", "var(--accent)").to_json()).unwrap();
@@ -300,7 +301,7 @@ fn a_json_theme_migrates_keeping_its_comments_and_its_originals() {
     let root = folder("migrate");
     let themes = root.join("themes");
     let mut theme = styled();
-    theme.skin.css = Some(std::sync::Arc::from(".browser { color: #abcdef; }\n"));
+    theme.skin.css = Some(std::sync::Arc::from("browser { color: #abcdef; }\n"));
     theme.liquid = Some(suhina_ui::kit::liquid::Options { panels: 30, tracks: 0, clips: 10 });
     // A theme as earlier versions wrote it: JSON beside a folder with style.css and artwork.
     std::fs::create_dir_all(themes.join("old/assets")).unwrap();
@@ -318,7 +319,7 @@ fn a_json_theme_migrates_keeping_its_comments_and_its_originals() {
     std::fs::write(themes.join("old.json"), &json).unwrap();
     let style = format!("/* Revontuli notes */\n{}", theme_css::export(&theme));
     std::fs::write(themes.join("old/style.css"), &style).unwrap();
-    std::fs::write(themes.join("old/advanced.css"), ".browser { color: #abcdef; }\n").unwrap();
+    std::fs::write(themes.join("old/advanced.css"), "browser { color: #abcdef; }\n").unwrap();
     let mut files = ThemeFiles::new(Some(themes.clone()));
     let (entries, warnings) = files.read_all();
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -326,7 +327,7 @@ fn a_json_theme_migrates_keeping_its_comments_and_its_originals() {
     assert!(same_look(&entries[0].theme, &theme));
     let css = std::fs::read_to_string(themes.join("old/theme.css")).unwrap();
     assert!(css.starts_with("/* Revontuli notes */\n"), "{css}");
-    assert!(css.contains("--liquid: 30 0 10;") && css.contains(".browser { color: #abcdef; }"), "{css}");
+    assert!(css.contains("window { liquid: 30 0 10; }") && css.contains("browser { color: #abcdef; }"), "{css}");
     assert!(!themes.join("old.json").exists() && !themes.join("old/style.css").exists());
     assert_eq!(std::fs::read(themes.join("old/legacy/old.json")).unwrap(), json);
     assert_eq!(std::fs::read_to_string(themes.join("old/legacy/style.css")).unwrap(), style);
@@ -346,7 +347,7 @@ fn a_theme_css_of_the_earlier_form_migrates_with_its_advanced_sheet() {
     theme.skin.segments = 40;
     let previous = format!("@import \"advanced.css\";\n/* My notes */\n{}", theme_css::export(&theme));
     std::fs::write(themes.join("earlier/theme.css"), &previous).unwrap();
-    std::fs::write(themes.join("earlier/advanced.css"), "@layer mine { .browser { opacity: .9; } }\n").unwrap();
+    std::fs::write(themes.join("earlier/advanced.css"), "@layer mine { browser { opacity: .9; } }\n").unwrap();
     std::fs::create_dir_all(themes.join("earlier/assets")).unwrap();
     for (role, source) in &theme.skin.assets {
         std::fs::write(themes.join(format!("earlier/assets/{role}.svg")), source).unwrap();
@@ -522,7 +523,7 @@ fn an_editor_change_is_edited_into_the_authors_sheet_and_a_rename_into_theme_jso
     let root = folder("editor-into-sheet");
     let themes = root.join("themes");
     let source = "/* Mine: keep me */\n:root { --accent: #12AB34; }\n\
-                  @media (width < 800px) { .browser { display: none; } }\n\
+                  @media (width < 800px) { browser { display: none; } }\n\
                   .control-mixer-pan { left: 4px; top: 0px; }\n";
     super::tests::hand_written(&themes.join("ink"), "Ink", source);
     let mut files = ThemeFiles::new(Some(themes.clone()));

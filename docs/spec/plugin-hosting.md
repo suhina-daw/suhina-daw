@@ -3,7 +3,7 @@ description: How Suhina hosts plug-ins in detail - host processes and instances,
 read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade
 type: spec
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-11
 covers:
   - crates/plugins/**
   - crates/plugin-host/**
@@ -11,6 +11,8 @@ covers:
   - crates/engine/src/plugin.rs
   - crates/engine/src/plugin_params.rs
   - crates/session/src/rack.rs
+  - crates/session/src/rack/offline.rs
+  - apps/suhina-cli/src/cmd/plugin.rs
 ---
 
 # Plug-in hosting
@@ -111,9 +113,15 @@ events a block. A parameter value that reaches the processor from the engine (a 
 set, an automation lane) also goes to the edit controller on the main thread
 (`setParamNormalized`: the same call a MIDI controller's mapped parameter gets, #812),
 so the plug-in's editor follows the sound; and the host reports what was changed in its
-editor back (`param_changed`, #828), so the session keeps
+editor back (`param_changed`, #828; each one wakes the window, so its lane and panel follow at once, #1205), so the session keeps
 the project's values in step with it — no undo step of its own, and a change since the
-last save.
+last save. A change there of a parameter an enabled lane plays turns the lane off as one undo
+step, unless it is a value the lane sent (#1205, [automation](automation.md#a-manual-change-turns-the-lane-off)).
+While the transport is stopped, a lane sends its value at the playhead when the playhead moves
+or the lane changes, so the editor follows it stopped too; a plug-in that starts keeps the state
+it was given until then, so opening a project changes nothing in it. For automation lanes the host also names any value of a parameter in the plug-in's own
+words (`get_param_texts`, [the protocol](plugin-protocol.md)), in the background, without setting
+it.
 
 ## Block sync and the deadline
 
@@ -204,15 +212,36 @@ plug-ins *at the same time*: every chain hands its block to its first plug-in
 whose blocks are out in turn (`Link::wait_answered`, `PluginProcessor::poll`), takes each
 answer as it comes (`Link::wait`, `PluginProcessor::wait`) and runs that chain on to its
 next plug-in at once, while the others are still out, until every chain is done (#151); a
-bus runs after the chains that play into it. The budget is then set by the slowest chain,
+bus or a return runs as soon as the chains that play into it (through their output or a send)
+are done, in the same loop, its plug-ins' blocks out with the others', and Main last, once
+every other chain is (#1261): a late track holds up only the buses it plays into. What a done
+chain adds to its bus, its returns, the output and the cue bus is staged first and added in
+chain order, so which plug-in answered first never changes a sum and offline renders stay bit
+for bit as before. A chain with buses with plug-ins after it has its plug-ins waited for a
+quarter of the block's time (from its start to the deadline) sooner per bus level, at most
+three, so those buses have the rest when one of its plug-ins is late; without bus plug-ins
+(a bus whose plug-ins are all switched off counts as one without, since it sends no block)
+the deadline is as before. The quarter is a first value, to be set by measurement. The budget is then set by the slowest chain,
 not the sum: the same project went from 30 to 50 % of blocks late to none, the longest
 wait 6 ms. (Until #151 the chains went a stage at a time, every chain waiting for every
 chain's answer before any went on, so a chain waited once per plug-in for the slowest
 plug-in of that stage elsewhere: measured with three chains of three plug-ins whose heavy
 one, 3 ms a block, is at another place in each, see *Measurements*.) While no answer is in,
-the render thread sleeps on the first chain still out for at most 50 µs at a time
-(`ANSWER_SLICE`): that plug-in's answer wakes it at once, another's is seen at most that
-late. A chain whose plug-in has not answered by the deadline misses that block, as before;
+the render thread sleeps until any of the plug-ins it waits for answers, or the earliest of
+their deadlines (`suhina_ipc::wait_any`, #1256): on Windows on their links' events together
+(63 at a time; with more, a millisecond at a time, so the others are looked at that often)
+and a high-resolution timer, yielding only in the last millisecond, so a late plug-in no
+longer keeps the render thread spinning for the whole wait (without that timer, on Windows 10
+before 1803, on the events with their own timeout, cut a tick short, and with more than 63
+links a millisecond at a time, which may end on the system timer's next tick); on Linux and macOS on the first
+link still out, as a single link waits, which an answer on another link does not wake: on
+Linux, with several links out, it sleeps at most 100 µs at a time (`RECHECK`) and looks at
+all of them again, and on macOS each nap of at most 250 µs ends with a look at all of them. A plug-in the engine cannot watch (a
+stand-in in tests) is waited on for at most 50 µs at a time (`ANSWER_SLICE`), and the others
+looked at again. A wait that Windows refuses (`WAIT_FAILED`) falls back to the event's own,
+coarser timeout instead of returning at once (a wait over several links on the first link's
+event, a millisecond at a time, so the others are still looked at), and
+`suhina_ipc::a_wait_failed` says it happened. A chain whose plug-in has not answered by the deadline misses that block, as before;
 the others are not held up by it. An offline render gives each block out `OFFLINE_TIMEOUT`
 from when it went. `longest_us` is each plug-in's longest round trip, timed from the block's
 hand-over, since the engine may look at other chains before it takes an answer. A plug-in still at a block it was late with (one whose answer
@@ -274,7 +303,12 @@ rule for both formats (`audio::feed_main` and `audio::collect_main` in
 `crates/plugin-host/src/audio.rs`, #767): a channel of the main input the link has none for
 repeats the link's last channel, so a mono source reaches both sides of a stereo input; a
 channel of the link the main output has none for repeats the output's last, so a mono output
-reaches both sides of a stereo link. A
+reaches both sides of a stereo link. Every format keeps a block's buffers in one
+`planar::Planar` (buses × channels × the most frames a block has, allocated once, with the
+channel pointer arrays VST3 and VST2 pass). CLAP and VST3 keep the parameter values waiting
+for the next block in one `planar::ParamQueue`, which the audio thread takes from without
+waiting for its lock, up to each format's limit per block; VST2 calls `setParameter` as the
+value is set (`crates/plugin-host/src/planar.rs`, #764 › 10). A
 plug-in is named `clap:<file>` or
 `clap:<file>#<id>`; the only `unsafe` the host needs for it is opening the file. A CLAP gain
 built into the host (`test:clap`, made with `clack-plugin`) lets the tests run the whole path
@@ -351,6 +385,10 @@ parameters, value `i` to parameter id `i`, the numbering a VST3 version keeps fr
 one, but only when the plug-in has every id from 0 to the last value's: on the controller
 (`setParamNormalized`) and on the processor through the next block's parameter changes
 (`crates/plugin-host/src/vst3/params.rs`). With that the third plays with the project's settings.
+A single program of values (`FxCk`, an `.fxp` file, from the CLI's `--state`) is set as
+parameters the same way; a program chunk (`FPCh`) is refused, since the plug-in may answer
+`setState` without reading it, and the caller is told (#1167;
+[the VST2 interface](plugin-vst2.md) › State: chunks and banks).
 A newer version of an EQ refuses its predecessor's state and runs with its defaults. An
 instrument found by the id convention plays a project's notes with its saved settings. A
 synth's second version refuses the first version's state in every form tried: the bank, a
@@ -541,6 +579,21 @@ tell when a setting was changed in the editor since the project was saved, which
 project unsaved without an undo step ([ADR 0010](../decisions/0010-project-files.md), decision 7). Crashes and hangs are noticed within 250 ms and shown on the
 device; `device.restart` starts it again (one that could not start at all is started from
 scratch with the project's state).
+
+The CLI works on one device of a project the same way (#1155). `suhina-cli plugin
+params-device` and `edit-device` open the project as the app does, trusting what the person's
+library trusts; they decode its audio only for a plug-in that edits clips. They attach an engine
+with no audio output. They run that engine's blocks themselves, a block each time they look at the
+plug-in, so a VST3 plug-in still gets the parameter changes that travel with blocks. They limit
+the rack to the one device (`Rack::only`), so the project's other plug-ins do not start. Then
+they run `device.pluginParams`, `device.openEditor` and `device.closeEditor`, as an agent
+would. They keep no backups of the plug-in's state, so a backup read never finds it busy.
+`--save` asks the plug-in for its state right then (`Rack::state_now`) and fails if it does not
+answer; it never falls back to a state read earlier. `plugin run-device` starts the device as an
+export starts it (`start_offline_device`: the same installed plug-in, saved state, process group
+and clips), with a `--state` file in place of the saved state. It then runs the input and the
+track's notes through it in blocks (`offline::render_started`). Unlike an export, the plug-in
+gets no song position, tempo or transport, and none of the project's automation.
 
 ## Latency
 

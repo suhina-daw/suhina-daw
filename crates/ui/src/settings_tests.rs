@@ -133,7 +133,12 @@ fn settings_survive_a_round_trip() {
     let settings = Settings {
         piano_key_style: PianoKeyStyle::Night,
         piano_key_names: PianoKeyNames::All,
+        note_spelling: NoteSpelling::Flats,
+        default_scale_root: 9,
+        default_scale_mode: suhina_engine::model::ScaleMode::Dorian,
+        highlight_scale: false,
         animations: false,
+        drag_hides_pointer: false,
         setting_descriptions: crate::settings::Descriptions::Icon,
         track_headers: Some(Side::Left),
         graphics: Graphics::OpenGl,

@@ -31,6 +31,7 @@
   --pan-background: color-mix(in oklab, var(--ground), var(--surface) 30%);
   --pan-centre: color-mix(in oklab, var(--ink), var(--surface) 50%);
   --accent: var(--tint);
+  --automation-pin: var(--tint);
   --selection: var(--highlight);
   --text-primary: var(--ink);
   --text-secondary: color-mix(in oklab, var(--ink), var(--surface) 25%);
@@ -48,10 +49,6 @@
   --recording-background: color-mix(in oklab, var(--surface), var(--recording) 22%);
   --meter-normal: #70E0BC;
   --meter-hot: #FFD779;
-  --liquid: var(--glassiness) 0 0;
-  --gradient-panels: 90deg, #FFFFFF2E 0%, #FFFFFF12 38%, #00000008 53%, #0000001C 100%;
-  --gradient-tracks: 90deg, #FFFFFF18 0%, #00000012 100%;
-  --gradient-clips: 90deg, #FFFFFF14 0%, #0000000A 100%;
   --clip-audioDefault: #F5BD72;
   --clip-midiDefault: #74C7ED;
   --track-1: #C99070;
@@ -62,31 +59,19 @@
   --track-6: #C18F9E;
   --track-7: #879BBE;
   --track-8: #80ADA1;
-  --kind-bass: #A84F4F;
-  --kind-clap: #5EC0B0;
-  --kind-closedHat: #C6AC5E;
-  --kind-crash: #E0A0C8;
-  --kind-cymbal: #A497CC;
-  --kind-effect: #9CC49C;
-  --kind-hat: #D8C47A;
-  --kind-kick: #D06E5E;
-  --kind-openHat: #D08F6E;
-  --kind-other: #8A8680;
-  --kind-percussion: #8FC06E;
-  --kind-ride: #C8B8E8;
-  --kind-rim: #8CA8E0;
-  --kind-snare: #73AAC0;
-  --kind-tom: #B074A4;
-  --kind-tonal: #6EB0D0;
-  --kind-vocal: #E8D0A0;
 }
+window { liquid: var(--glassiness) 0 0; panel-gradient: 90deg, #FFFFFF2E 0%, #FFFFFF12 38%, #00000008 53%, #0000001C 100%; track-gradient: 90deg, #FFFFFF18 0%, #00000012 100%; clip-gradient: 90deg, #FFFFFF14 0%, #0000000A 100%; }
 
-/* The views paint at half the bars' strength. Menus and dialogs float over the window, in the
-   panel colour, at its full strength. */
+/* Every background blends over what is under it, so the window itself is transparent and each
+   view and panel carries its own alpha: the views paint at half the bars' strength. A panel inside
+   a view (a mixer strip, a device's panel) only tints the view's colour, whose alpha it already
+   has. Menus and dialogs float over the window, in the panel colour, at its full strength. */
 @layer suhina-glass {
-  .window, .session, .arrangement { background-color: var(--ground-half); }
-  .workspace-panel, .browser, .detail, .clip-editor, .device-panel, .mixer, .scene-column { background-color: var(--surface-half); }
-  .application-bar, .menu-bar, .project-tabs, .toolbar, .status-bar {
+  window { background-color: transparent; }
+  session, arrangement, start-page { background-color: var(--ground-half); }
+  browser, detail, clip-editor { background-color: var(--surface-half); }
+  mixer, device-panel { background-color: color-mix(in srgb, var(--surface), transparent 45%); }
+  application-bar, menu-bar, project-tabs, toolbar, status-bar {
     background-color: color-mix(in srgb, var(--surface), transparent var(--glassiness)%);
   }
 }

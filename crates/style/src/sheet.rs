@@ -29,22 +29,26 @@ pub(crate) enum Shorthand {
     Gap,
     Padding,
     Margin,
+    BorderWidth,
     Flex,
+    Outline,
 }
 
 impl Shorthand {
-    fn from_name(name: &str) -> Option<Self> {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "background" => Self::Background,
             "gap" => Self::Gap,
             "padding" => Self::Padding,
             "margin" => Self::Margin,
+            "border-width" => Self::BorderWidth,
             "flex" => Self::Flex,
+            "outline" => Self::Outline,
             _ => return None,
         })
     }
 
-    fn longhands(self) -> &'static [Property] {
+    pub(crate) fn longhands(self) -> &'static [Property] {
         match self {
             Self::Background => &[Property::BackgroundColor, Property::BackgroundImage],
             Self::Gap => &[Property::RowGap, Property::ColumnGap],
@@ -52,7 +56,14 @@ impl Shorthand {
                 &[Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft]
             }
             Self::Margin => &[Property::MarginTop, Property::MarginRight, Property::MarginBottom, Property::MarginLeft],
+            Self::BorderWidth => &[
+                Property::BorderTopWidth,
+                Property::BorderRightWidth,
+                Property::BorderBottomWidth,
+                Property::BorderLeftWidth,
+            ],
             Self::Flex => &[Property::FlexGrow, Property::FlexShrink, Property::FlexBasis],
+            Self::Outline => &[Property::OutlineWidth, Property::OutlineStyle, Property::OutlineColor],
         }
     }
 
@@ -61,16 +72,19 @@ impl Shorthand {
         if self == Self::Background {
             return background_part(property, value);
         }
-        let words: Vec<&str> = value.split_whitespace().collect();
+        if self == Self::Outline {
+            return outline_part(property, value);
+        }
+        let words = top_level_words(value);
         let index = self.longhands().iter().position(|p| *p == property).ok_or("Not a longhand of this shorthand")?;
         let pick = |order: &[usize]| order.get(index).and_then(|i| words.get(*i)).map(|w| (*w).to_owned());
         let text = match (self, words.len()) {
             (Self::Gap, 1) => pick(&[0, 0]),
             (Self::Gap, 2) => pick(&[0, 1]),
-            (Self::Padding | Self::Margin, 1) => pick(&[0, 0, 0, 0]),
-            (Self::Padding | Self::Margin, 2) => pick(&[0, 1, 0, 1]),
-            (Self::Padding | Self::Margin, 3) => pick(&[0, 1, 2, 1]),
-            (Self::Padding | Self::Margin, 4) => pick(&[0, 1, 2, 3]),
+            (Self::Padding | Self::Margin | Self::BorderWidth, 1) => pick(&[0, 0, 0, 0]),
+            (Self::Padding | Self::Margin | Self::BorderWidth, 2) => pick(&[0, 1, 0, 1]),
+            (Self::Padding | Self::Margin | Self::BorderWidth, 3) => pick(&[0, 1, 2, 1]),
+            (Self::Padding | Self::Margin | Self::BorderWidth, 4) => pick(&[0, 1, 2, 3]),
             (Self::Flex, 1) => match words.first().copied() {
                 Some("none") => Some(["0", "0", "auto"][index].to_owned()),
                 Some("auto") => Some(["1", "1", "auto"][index].to_owned()),
@@ -95,8 +109,81 @@ impl Shorthand {
             Self::Gap => "gap",
             Self::Padding => "padding",
             Self::Margin => "margin",
+            Self::BorderWidth => "border-width",
             Self::Flex => "flex",
+            Self::Outline => "outline",
         }
+    }
+}
+
+/// `value`'s words split at whitespace outside brackets, so a math function (`calc(1px + 1px)`)
+/// stays one word.
+fn top_level_words(value: &str) -> Vec<&str> {
+    let mut words = Vec::new();
+    let (mut depth, mut start) = (0usize, None);
+    for (at, c) in value.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        if c.is_whitespace() && depth == 0 {
+            if let Some(from) = start.take() {
+                words.extend(value.get(from..at));
+            }
+        } else if start.is_none() {
+            start = Some(at);
+        }
+    }
+    if let Some(from) = start {
+        words.extend(value.get(from..));
+    }
+    words
+}
+
+/// Whether the style engine accepts `value` for the property or shorthand `name` (`padding`,
+/// `border-width`) as a sheet's declaration does: a shorthand when each of its longhands takes
+/// its part. For callers that check one declaration on its own, such as a skin of an earlier
+/// version's styles.
+pub fn accepts(name: &str, value: &str) -> bool {
+    let value = crate::value::viewport_units(value.trim(), 1000.0, 1000.0);
+    match Shorthand::from_name(name) {
+        Some(shorthand) => shorthand
+            .longhands()
+            .iter()
+            .all(|property| shorthand.part(*property, &value).and_then(|part| property.parse(&part)).is_ok()),
+        None => Property::from_name(name).is_some_and(|property| property.parse(&value).is_ok()),
+    }
+}
+
+/// The part of an `outline` shorthand (`2px solid #fff`, in any order) that sets `property`. As in
+/// CSS an omitted width is `medium` (3 points), style `none` and colour the current foreground.
+pub(crate) fn outline_part(property: Property, value: &str) -> Result<String, String> {
+    crate::syntax::validate(value)?;
+    let mut parser = Parser::new(value);
+    let (mut width, mut style, mut color) = (None, None, None);
+    while !parser.is_exhausted() {
+        let start = parser.position();
+        let token = parser.next().map_err(|_| "Invalid outline")?.clone();
+        if matches!(token, Token::Function(_)) {
+            nested(&mut parser, consume)?;
+        }
+        let text = parser.slice_from(start).trim().to_owned();
+        if width.is_none() && crate::value::Length::parse(&text).is_ok() {
+            width = Some(text);
+        } else if style.is_none() && Property::OutlineStyle.parse(&text).is_ok() {
+            style = Some(text);
+        } else if color.is_none() && crate::value::Color::parse(&text).is_ok() {
+            color = Some(text);
+        } else {
+            return Err("An outline is a width, a style and a colour".into());
+        }
+    }
+    match property {
+        Property::OutlineWidth => Ok(width.unwrap_or_else(|| "3px".into())),
+        Property::OutlineStyle => Ok(style.unwrap_or_else(|| "none".into())),
+        Property::OutlineColor => Ok(color.unwrap_or_else(|| "currentcolor".into())),
+        _ => Err("Not an outline longhand".into()),
     }
 }
 
@@ -208,10 +295,26 @@ pub struct GroupClass {
 pub const MAX_GROUP_CLASSES: usize = 64;
 
 /// Properties the host application reads from a theme's rules itself; the engine leaves them
-/// alone without a notice. Read by the app, not the engine: artwork, the name, the background material, and the
-/// placement offsets `layout.css` writes (`left`, `top`, `right`, `bottom`).
-pub const HOST_PROPERTIES: &[&str] =
-    &["image", "name", "background-opacity", "background-blur", "left", "top", "right", "bottom"];
+/// alone without a notice. Read by the app, not the engine: artwork, the name and the background
+/// material.
+pub const HOST_PROPERTIES: &[&str] = &["image", "name", "background-opacity", "background-blur"];
+
+/// Properties the host reads only from a control placement's rules (`.control-*`): the placement
+/// offsets `layout.css` writes (`left`, `top`, `right`, `bottom`), the direction and the anchors.
+/// The engine leaves them alone there; anywhere else nothing reads them, and they get a notice.
+pub const PLACEMENT_PROPERTIES: &[&str] =
+    &["left", "top", "right", "bottom", "direction", "anchor-left", "anchor-top", "anchor-right", "anchor-bottom"];
+
+/// The elements whose children the CSS layout places: only there does a padding in percent, which
+/// CSS takes of the width of the box around the element, mean anything. Everywhere else the app
+/// paints the element's content box itself, without that box, so a percentage is refused.
+pub const PERCENT_PADDING_ELEMENTS: &[&str] = &["workspace", "toolbar"];
+
+/// Whether a rule's selector list (`header`) holds a control placement (`.control-play`), whose
+/// [`PLACEMENT_PROPERTIES`] the host reads.
+fn placement(header: &str) -> bool {
+    header.split(',').any(|selector| selector.trim().starts_with(".control-"))
+}
 
 /// The frames of one `@keyframes` rule: offsets from 0 to 1 and their declarations.
 pub(crate) type KeyframeRule = Vec<(f32, Vec<Declaration>)>;
@@ -536,7 +639,11 @@ fn rules(parser: &mut Parser<'_>, source: &str, scope: &Scope, sheet: &mut Sheet
                 } else {
                     match Selector::parse_list(header) {
                         Ok(selectors) => {
-                            let declarations = nested(parser, |parser| declarations(parser, source, sheet))?;
+                            let rule = RuleKind {
+                                placement: placement(header),
+                                layout: selectors.iter().all(|s| s.subject_is(PERCENT_PADDING_ELEMENTS)),
+                            };
+                            let declarations = nested(parser, |parser| declarations(parser, source, sheet, rule))?;
                             if sheet.rules.len() >= 1024 {
                                 return Err("Style sheet exceeds 1024 rules".into());
                             }
@@ -589,7 +696,7 @@ fn frames(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Ve
             Token::CurlyBracketBlock => {
                 let header = source.get(start.unwrap_or(at)..at).ok_or("Invalid keyframe span")?.trim().to_owned();
                 start = None;
-                let declarations = nested(parser, |parser| declarations(parser, source, sheet))?;
+                let declarations = nested(parser, |parser| declarations(parser, source, sheet, RuleKind::default()))?;
                 let mut offsets = Vec::new();
                 for offset in header.split(',').map(str::trim) {
                     let value = match offset {
@@ -624,7 +731,40 @@ fn frames(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Ve
     Ok(result)
 }
 
-fn declarations(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Vec<Declaration>, String> {
+/// What a rule's selectors say about the declarations it may hold.
+#[derive(Clone, Copy, Default)]
+struct RuleKind {
+    /// A control placement's rule ([`placement`]).
+    placement: bool,
+    /// A rule for CSS-layout containers only ([`PERCENT_PADDING_ELEMENTS`]).
+    layout: bool,
+}
+
+/// A padding in percent where `rule` does not style a CSS-layout container: the notice for it.
+fn percent_padding(rule: RuleKind, property: Property, value: &crate::value::Value) -> Option<String> {
+    let padding = matches!(
+        property,
+        Property::PaddingTop | Property::PaddingRight | Property::PaddingBottom | Property::PaddingLeft
+    );
+    (padding && !rule.layout && matches!(value, crate::value::Value::Length(crate::value::Length::Percent(_)))).then(
+        || {
+            format!(
+                "{}: a percentage is read only on a CSS layout container ({}); give points or em",
+                property.name(),
+                PERCENT_PADDING_ELEMENTS.join(", ")
+            )
+        },
+    )
+}
+
+/// The declarations of one rule, of the kind its selectors say ([`RuleKind`]).
+fn declarations(
+    parser: &mut Parser<'_>,
+    source: &str,
+    sheet: &mut Sheet,
+    rule: RuleKind,
+) -> Result<Vec<Declaration>, String> {
+    let placement = rule.placement;
     let mut declarations = Vec::new();
     while !parser.is_exhausted() {
         parser.skip_whitespace();
@@ -677,10 +817,8 @@ fn declarations(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Res
                 let failure = shorthand.longhands().iter().find_map(|property| {
                     shorthand
                         .part(*property, value)
-                        .and_then(|part| {
-                            property.parse(&crate::value::viewport_units(&part, 1000.0, 1000.0)).map(|_| ())
-                        })
-                        .err()
+                        .and_then(|part| property.parse(&crate::value::viewport_units(&part, 1000.0, 1000.0)))
+                        .map_or_else(Some, |parsed| percent_padding(rule, *property, &parsed))
                 });
                 if let Some(message) = failure {
                     sheet.notice(at, format!("{name}: {message}"));
@@ -707,6 +845,12 @@ fn declarations(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Res
         if HOST_PROPERTIES.contains(&name.as_str()) {
             continue;
         }
+        if PLACEMENT_PROPERTIES.contains(&name.as_str()) {
+            if !placement {
+                sheet.notice(at, format!("{name} is read only in a control placement's rule (.control-*)"));
+            }
+            continue;
+        }
         if !name.starts_with("--") && Property::from_name(&name).is_none() {
             sheet.notice(at, format!("Unknown native property {name}"));
             continue;
@@ -721,7 +865,9 @@ fn declarations(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Res
             && !crate::variables::mentions_attr(value)
             && !matches!(value, "inherit" | "initial" | "unset")
             && let Some(property) = Property::from_name(&name)
-            && let Err(message) = property.parse(&crate::value::viewport_units(value, 1000.0, 1000.0))
+            && let Some(message) = property
+                .parse(&crate::value::viewport_units(value, 1000.0, 1000.0))
+                .map_or_else(Some, |parsed| percent_padding(rule, property, &parsed))
         {
             sheet.notice(at, format!("{name}: {message}"));
             continue;
@@ -734,6 +880,57 @@ fn declarations(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Padding in percent is taken only where the CSS layout places an element's children (the
+    /// workspace, the toolbar): elsewhere the app paints the content box without the box around
+    /// the element, so it is refused with a notice rather than read as no padding (#1336).
+    #[test]
+    fn padding_in_percent_is_read_only_on_a_layout_container() {
+        // `:is()` and `:where()` that hold only layout containers name them too; `:not()` does not.
+        let named = Sheet::parse(
+            ":is(toolbar, #workspace) { padding: 1%; } :where(toolbar) { padding-top: 2%; } \
+             :is(toolbar, device) { padding: 1%; } :not(device) { padding: 1%; }",
+        )
+        .unwrap();
+        assert_eq!(named.notices.len(), 2, "{:?}", named.notices);
+        let kept: Vec<_> = named.rules.iter().map(|r| r.declarations.len()).collect();
+        assert_eq!(kept, [4, 1, 0, 0]);
+        let sheet = Sheet::parse(
+            "workspace { padding: 2%; } #workspace, toolbar { padding-left: 5%; } \
+             device { padding: 5%; } browser { padding-top: 10%; } toolbar, device { padding: 1% 4px; } \
+             device { padding: 4px 1em; }",
+        )
+        .unwrap();
+        let messages: Vec<_> = sheet.notices.iter().map(|n| n.message.as_str()).collect();
+        assert_eq!(messages.len(), 3, "{messages:?}");
+        assert!(
+            messages.iter().all(|m| m.contains("percentage is read only on a CSS layout container")),
+            "{messages:?}"
+        );
+        // The refused declarations are dropped; the others stay.
+        let kept: Vec<_> = sheet.rules.iter().map(|r| r.declarations.len()).collect();
+        assert_eq!(kept, [4, 1, 0, 0, 0, 4]);
+    }
+
+    /// One declaration checked on its own, as a sheet checks it: a shorthand by its parts (#1336).
+    #[test]
+    fn a_declaration_is_accepted_as_a_sheet_accepts_it() {
+        assert!(accepts("border-width", "1px"));
+        assert!(accepts("border-width", "0 0 2px"));
+        assert!(accepts("border-top-width", "2px"));
+        assert!(accepts("padding", "4px 8px"));
+        assert!(accepts("gap", "6px"));
+        assert!(accepts("color", "#fff"));
+        // A math function is one side, whatever spaces it holds.
+        assert!(accepts("border-width", "calc(1px + 1px)"));
+        assert!(accepts("border-width", "0 calc(1px + 1px) min(2px, 4px)"));
+        assert!(accepts("padding", "calc(2px * 3) 4px"));
+        assert_eq!(top_level_words(" a  calc(1px + (2px)) b "), ["a", "calc(1px + (2px))", "b"]);
+        assert!(!accepts("border-width", "1px 2px 3px 4px 5px"));
+        assert!(!accepts("border-width", "red"));
+        assert!(!accepts("colour", "#fff"));
+        assert!(!accepts("image", "url(a.svg)"));
+    }
 
     #[test]
     fn group_classes_are_declared_with_a_label_and_checked_for_a_rule() {
@@ -759,5 +956,25 @@ mod tests {
         );
         assert_eq!(sheet.notices.len(), 2, "{:?}", sheet.notices);
         assert_eq!(sheet.unstyled_group_classes(), ["typo"]);
+    }
+
+    #[test]
+    fn a_placement_s_properties_are_left_to_the_host_only_in_a_placement_s_rule() {
+        let sheet = Sheet::parse(
+            ".control-play { direction: vertical; anchor-left: 4px; left: 2px; } \
+             arrangement, .control-stop { anchor-top: 1px; } \
+             button { image: url(\"b.svg\"); }",
+        )
+        .unwrap();
+        assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+        let sheet =
+            Sheet::parse("arrangement { direction: vertical; } button { anchor-left: 4px; top: 1px; }").unwrap();
+        assert_eq!(sheet.notices.len(), 3, "{:?}", sheet.notices);
+        assert!(
+            sheet.notices[0].message.contains("direction is read only in a control placement"),
+            "{:?}",
+            sheet.notices
+        );
+        assert!(sheet.rules.iter().all(|rule| rule.declarations.is_empty()), "the engine keeps none of them");
     }
 }

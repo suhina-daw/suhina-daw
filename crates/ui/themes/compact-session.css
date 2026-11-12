@@ -9,4 +9,4 @@ session {
   header-height: 22px;
   slot-height: 18px;
 }
-.pan { --suhina-appearance: knob; }
+pan { appearance: knob; }

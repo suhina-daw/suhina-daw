@@ -1,0 +1,23 @@
+{
+"format": "suhina-preset",
+"version": 1,
+"device": "nam-cab-loader",
+"role": "effect",
+"name": "Rumble Cut",
+"author": "suhina",
+"tags": [
+"low-end",
+"cut",
+"guitar"
+],
+"params": {
+"phase": 0.0,
+"hpOn": 1.0,
+"cutBass": -6.0,
+"cutMid": 0.0,
+"cutTreble": 0.0,
+"cutMidFreq": 600.0,
+"delay": 0.0,
+"volume": 0.0
+}
+}

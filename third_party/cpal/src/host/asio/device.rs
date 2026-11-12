@@ -1,7 +1,7 @@
 use std::{
     fmt,
     hash::{Hash, Hasher},
-    sync::{atomic::AtomicU32, Arc},
+    sync::{atomic::AtomicU32, Arc, Mutex},
 };
 
 use super::sys;
@@ -21,13 +21,69 @@ pub struct Device {
     channels_in: ChannelCount,
     channels_out: ChannelCount,
     sample_rate: SampleRate,
-    buffer_size_min: FrameCount,
-    buffer_size_max: FrameCount,
+    /// What `ASIOGetBufferSize` answered when last asked, shared by every clone of this
+    /// descriptor so a fresh answer reaches the listing too (Suhina patch).
+    buffer_sizes: Arc<SharedBufferSizes>,
     input_sample_format: Option<SampleFormat>,
     output_sample_format: Option<SampleFormat>,
     supported_sample_rates: Box<[SampleRate]>,
 
     pub(super) current_callback_flag: Arc<AtomicU32>,
+}
+
+/// What `ASIOGetBufferSize` answered: the smallest, largest and preferred buffer size in frames,
+/// and the granularity as the driver gave it (-1: powers of two between the smallest and the
+/// largest; 0 with the smallest equal to the largest: that one size; a positive step otherwise).
+/// Suhina patch: CPAL keeps only the smallest and largest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BufferSizes {
+    pub min: FrameCount,
+    pub max: FrameCount,
+    pub preferred: FrameCount,
+    pub granularity: i32,
+}
+
+impl BufferSizes {
+    fn from_range(range: &sys::BufferSizeRange) -> Self {
+        let (preferred, granularity) = match range.preferred {
+            sys::BufferPreference::Only(preferred) => (preferred, -1),
+            sys::BufferPreference::Preferred(preferred) => (preferred, 0),
+            sys::BufferPreference::Stepped { preferred, step } => (preferred, step as i32),
+        };
+        Self {
+            min: range.min.max(0) as FrameCount,
+            max: range.max.max(0) as FrameCount,
+            preferred,
+            granularity,
+        }
+    }
+}
+
+/// The last answer, behind one lock so a reader never sees half of a new answer. It is never
+/// touched from an audio callback.
+#[derive(Debug)]
+struct SharedBufferSizes(Mutex<BufferSizes>);
+
+impl SharedBufferSizes {
+    fn new(sizes: BufferSizes) -> Self {
+        Self(Mutex::new(sizes))
+    }
+
+    fn store(&self, sizes: BufferSizes) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = sizes;
+    }
+
+    fn load(&self) -> BufferSizes {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Keeps an ASIO driver loaded while it lives (Suhina patch). [`Device::refresh_buffer_sizes`]
+/// hands one back so the stream built next uses the driver that answered, instead of the driver
+/// being exited and loaded again in between. Dropping the last handle exits the driver.
+#[must_use]
+pub struct LoadedDriver {
+    _driver: sys::Driver,
 }
 
 /// All available devices.
@@ -52,6 +108,34 @@ impl Device {
 
     pub fn id(&self) -> Result<DeviceId, Error> {
         Ok(DeviceId::new(crate::platform::HostId::Asio, &self.name))
+    }
+
+    /// What the driver answered about its buffer sizes when last asked: at enumeration, or at the
+    /// last [`Device::refresh_buffer_sizes`] on this descriptor or a clone of it. No driver is
+    /// called.
+    pub fn buffer_sizes(&self) -> BufferSizes {
+        self.buffer_sizes.load()
+    }
+
+    /// Asks the driver for its buffer sizes again and keeps the answer: a size set in the
+    /// driver's control panel since enumeration shows only this way. Uses the driver already
+    /// loaded when it is this one, and otherwise loads it; fails while another driver is
+    /// loaded. The driver stays loaded while the returned [`LoadedDriver`] lives, so a stream
+    /// built meanwhile uses it rather than loading it again.
+    pub fn refresh_buffer_sizes(&self) -> Result<(BufferSizes, LoadedDriver), Error> {
+        com::com_initialized();
+        let asio = super::GLOBAL_ASIO.get().ok_or_else(|| {
+            Error::with_message(ErrorKind::DeviceNotAvailable, "ASIO is not initialized")
+        })?;
+        let driver = asio
+            .load_driver(&self.name)
+            .map_err(|e| Error::with_message(ErrorKind::DeviceNotAvailable, e.to_string()))?;
+        let range = driver
+            .buffersize_range()
+            .map_err(|e| Error::with_message(ErrorKind::BackendError, e.to_string()))?;
+        let sizes = BufferSizes::from_range(&range);
+        self.buffer_sizes.store(sizes);
+        Ok((sizes, LoadedDriver { _driver: driver }))
     }
 
     /// Gets the supported input configs.
@@ -100,9 +184,12 @@ impl Device {
         Ok(SupportedStreamConfig {
             channels,
             sample_rate: self.sample_rate,
-            buffer_size: SupportedBufferSize::Range {
-                min: self.buffer_size_min,
-                max: self.buffer_size_max,
+            buffer_size: {
+                let sizes = self.buffer_sizes.load();
+                SupportedBufferSize::Range {
+                    min: sizes.min,
+                    max: sizes.max,
+                }
             },
             sample_format,
         })
@@ -216,8 +303,9 @@ impl Iterator for Devices {
                         channels_in: channels.ins as ChannelCount,
                         channels_out: channels.outs as ChannelCount,
                         sample_rate: sample_rate as SampleRate,
-                        buffer_size_min: buffer_size_range.min as FrameCount,
-                        buffer_size_max: buffer_size_range.max as FrameCount,
+                        buffer_sizes: Arc::new(SharedBufferSizes::new(BufferSizes::from_range(
+                            &buffer_size_range,
+                        ))),
                         input_sample_format,
                         output_sample_format,
                         supported_sample_rates,

@@ -3,7 +3,6 @@
 
 //! SDK drawing programs are evaluated only on the UI thread.
 use crate::detail::detail_view::GraphParameter;
-use crate::kit::surface::Backgrounds as _;
 use crate::kit::widgets::{Action, fixed};
 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::json;
@@ -222,13 +221,9 @@ fn slice_edit(actions: &mut Vec<Action>, track: TrackId, device: &serde_json::Va
     actions.push(Action::new("device.setSampleSlices", params));
 }
 
-fn sample_marker_color() -> Color32 {
-    color(styled_palette(widget_palette()).accent)
-}
-
-fn sample_marker(painter: &egui::Painter, x: f32, top: f32, bottom: f32) {
+fn sample_marker(painter: &egui::Painter, x: f32, top: f32, bottom: f32, marker_color: Color32) {
     let line = [Pos2::new(x, top), Pos2::new(x, bottom)];
-    painter.line_segment(line, Stroke::new(2., sample_marker_color()));
+    painter.line_segment(line, Stroke::new(2., marker_color));
 }
 
 /// The colour of slice lines: the waveform's accent turned to the opposite hue, fully saturated
@@ -268,7 +263,9 @@ fn sample_waveform(
     address: serde_json::Value,
     actions: &mut Vec<Action>,
     inline_recording: bool,
+    style: Option<&crate::kit::element::Computed>,
 ) {
+    let sample_marker_color = || color(styled_palette(widget_palette(), style).accent);
     let visible = bounds.intersect(ui.clip_rect());
     if visible.is_positive() {
         // MIDI can start a voice while the transport and read head are idle.
@@ -279,13 +276,12 @@ fn sample_waveform(
     });
     let source = ui.ctx().data(|data| data.get_temp::<Arc<suhina_engine::AudioData>>(sample_source_id(track, device)));
     let painter = ui.painter_at(visible);
-    painter.fill_background(bounds, 0., crate::kit::theme::control_background());
     let mut colors = crate::kit::theme::palette();
-    let scoped = styled_palette(widget_palette());
+    let scoped = styled_palette(widget_palette(), style);
     colors.accent = color(scoped.accent);
     colors.text_primary = color(scoped.text);
     colors.border = color(scoped.border);
-    painter.fill_background(bounds, 0., color(scoped.control));
+    painter.rect_filled(bounds, 0., color(scoped.control));
     let compact = bounds.height() < 100. && inline_recording;
     let field = if compact {
         Rect::from_min_max(
@@ -480,7 +476,7 @@ fn sample_waveform(
                 ui.label(format!(
                     "Slice {} · {} (MIDI {key})",
                     selected_index + 1,
-                    crate::detail::piano_roll::key_name(key)
+                    crate::interaction::key_name::key_name(key)
                 ));
             }
             if ui.button("Zoom to selected slice").clicked() {
@@ -848,7 +844,11 @@ fn sample_waveform(
                 )
                 .intersect(field);
                 if index >= playable {
-                    wave_painter.rect_filled(band, 0., crate::kit::theme::panel_background().gamma_multiply(0.6));
+                    wave_painter.rect_filled(
+                        band,
+                        0.,
+                        crate::kit::style_class::surface_or(crate::kit::theme::panel_background()).gamma_multiply(0.6),
+                    );
                     continue;
                 }
                 if index % 2 == 1 {
@@ -924,7 +924,7 @@ fn sample_waveform(
             field.top() + 6. + offset.min(field.height() * 0.5)
         };
         let marker = Rect::from_center_size(Pos2::new(x, y), Vec2::new(12., if compact { 12. } else { 13. }));
-        sample_marker(&painter, x, y, field.bottom());
+        sample_marker(&painter, x, y, field.bottom(), sample_marker_color());
         painter.rect_filled(marker, 0., sample_marker_color());
         painter.text(
             marker.center(),
@@ -1051,6 +1051,7 @@ fn envelope(
     parameters: &[GraphParameter],
     target: (TrackId, usize),
     actions: &mut Vec<Action>,
+    style: Option<&crate::kit::element::Computed>,
 ) {
     let Some(Widget::Envelope { attack, decay, level, release }) = &control.widget else { return };
     let find = |id: &str| parameters.iter().find(|p| p.id == id);
@@ -1061,7 +1062,7 @@ fn envelope(
     let max_time = (a.max + d.max + r.map_or(0., |p| p.max)).max(0.01);
     let plot = EnvelopePlot::new(bounds, values, max_time, adsr);
     let mut palette = crate::kit::theme::palette();
-    let scoped = styled_palette(widget_palette());
+    let scoped = styled_palette(widget_palette(), style);
     palette.accent = color(scoped.accent);
     palette.border = color(scoped.border);
     let painter = ui.painter_at(bounds.intersect(ui.clip_rect()));
@@ -1202,10 +1203,10 @@ fn widget_palette() -> WidgetPalette {
         accent_text: accent_text(colors.accent),
     }
 }
-/// The widget palette of the control whose style scope is open: colours its CSS writes
+/// The widget palette of a control with `style`, its element's: colours its CSS writes
 /// (`color`, `background-color`, `border-color`, `accent-color`) replace the theme's.
-fn styled_palette(mut palette: WidgetPalette) -> WidgetPalette {
-    let Some(style) = crate::kit::style_class::computed() else { return palette };
+fn styled_palette(mut palette: WidgetPalette, style: Option<&crate::kit::element::Computed>) -> WidgetPalette {
+    let Some(style) = style else { return palette };
     if style.authored.color {
         palette.text = rgba(style.color);
     }
@@ -1437,7 +1438,10 @@ fn handle(
             if hollow {
                 painter.circle_stroke(center, if hot { 4.0 } else { 3.0 }, Stroke::new(1.5, color(line_color)));
             } else {
-                let ring = Stroke::new(1.0, crate::kit::theme::palette().panel_background);
+                let ring = Stroke::new(
+                    1.0,
+                    crate::kit::style_class::surface_or(crate::kit::theme::palette().panel_background),
+                );
                 painter.circle(center, if hot { 5.5 } else { 4.0 }, color(line_color), ring);
             }
         }
@@ -1545,10 +1549,10 @@ fn plot_inside(points: &[(f32, f32)], top: f32, bottom: f32) -> Vec<Vec<(f32, f3
 /// Kept unmultiplied, so a translucent token keeps its exact RGB until a drawing's alpha is applied.
 struct Tokens([[u8; 4]; suhina_device_sdk::ui::THEME_TOKENS.len()]);
 impl Tokens {
-    /// The tokens of the style scope open now: a rule on `:root`, `.device-panel` or
+    /// The tokens of the style scope open now: a rule on `:root`, `device-panel` or
     /// `#device-<id>` reaches them.
-    fn resolve() -> Self {
-        let style = crate::kit::style_class::computed();
+    fn resolve(panel: &crate::kit::element::Entered) -> Self {
+        let style = panel.style();
         Self(suhina_device_sdk::ui::THEME_TOKENS.map(|(_, name, [r, g, b])| {
             style
                 .as_ref()
@@ -1604,8 +1608,10 @@ fn normalized(p: &GraphParameter, log: bool) -> f64 {
         0.0
     }
 }
+#[allow(clippy::too_many_arguments)]
 fn paint_scaled(
     painter: &egui::Painter,
+    el: &crate::kit::element::Entered,
     drawings: &[Draw],
     origin: Pos2,
     values: &Values,
@@ -1628,9 +1634,9 @@ fn paint_scaled(
         match draw {
             Draw::Rect { rect, color: c, radius } => {
                 let rect = rectangle(rect);
-                let radius = crate::kit::style_class::radius(*radius * weight);
-                painter.rect_filled(rect, radius, crate::kit::style_class::background(color(*c)));
-                crate::kit::native_css::background_rounded(painter, rect, radius);
+                let radius = el.radius_or(*radius * weight);
+                painter.rect_filled(rect, radius, el.background_or(color(*c)));
+                el.paint_background(painter, rect, radius);
             }
             Draw::Circle { center, radius, color: c } => {
                 painter.circle_filled(
@@ -1702,7 +1708,7 @@ fn paint_scaled(
                     },
                 );
                 let position = point(position);
-                let ink = crate::kit::style_class::foreground(color(*c));
+                let ink = el.color_or(color(*c));
                 let mut font = crate::kit::theme::ui_font((*size * weight).clamp(1.0, 256.0));
                 let mut galley = painter.layout_no_wrap(label.clone(), font.clone(), ink);
                 if parameter.is_some() {
@@ -1726,7 +1732,7 @@ fn paint_scaled(
             }
             Draw::Value { position, value: number, prefix, suffix, color: c, size, decimals, align } => {
                 let label = format!("{prefix}{}{suffix}", fixed(number.number(&lookup), *decimals));
-                let ink = crate::kit::style_class::foreground(color(*c));
+                let ink = el.color_or(color(*c));
                 let font = crate::kit::theme::ui_font((*size * weight).clamp(1.0, 256.0));
                 let galley = painter.layout_no_wrap(label, font, ink);
                 let position = point(position);
@@ -1860,10 +1866,13 @@ fn paint_control(
     accent_on: bool,
 ) {
     let class = control_class(control);
-    let _scope = response
-        .map(|r| crate::kit::style_class::enter_response(class, r))
-        .unwrap_or_else(|| crate::kit::style_class::enter(class));
-    let palette = styled_palette(widget_palette());
+    let element = crate::kit::element::named(class).unwrap_or(crate::kit::element::DEVICE_CONTROL);
+    let scope = match response {
+        Some(response) => element.response(response).enter(),
+        None => element.enter(),
+    };
+    let style = scope.style();
+    let palette = styled_palette(widget_palette(), style.as_ref());
     let restyled;
     let drawings: &[Draw] = if palette != loaded.palette {
         restyled = styled_drawings(painter.ctx(), loaded, control, palette);
@@ -1898,21 +1907,26 @@ fn paint_control(
         && matches!(label.as_str(), "Sample" | "Slice" | "Grain")
         && bounds.height() >= 40.
     {
-        paint_sample_mode(painter, bounds, label, on, state, palette);
+        paint_sample_mode(painter, &scope, bounds, label, on, state, palette);
         return;
     }
-    let ink = crate::kit::style_class::foreground(crate::kit::theme::text_value());
+    let ink = scope.color_or(crate::kit::theme::text_value());
     let mut body = None;
     let mut knob_effects = false;
     for draw in drawings.iter() {
         if let Some((center, radius)) = circle {
             let rect = Rect::from_center_size(center, Vec2::splat(radius * 2.0));
             if matches!(draw, Draw::Circle { .. }) {
-                let replaced =
-                    *body.get_or_insert_with(|| crate::kit::skin::paint(painter, rect, "knob.body", state, ink, 0.0));
+                let replaced = *body.get_or_insert_with(|| {
+                    let body_ink = crate::kit::element::KNOB_BODY
+                        .response_if(response)
+                        .enter()
+                        .computed_color_or(crate::kit::theme::control_background());
+                    crate::kit::skin::paint_as(&scope, painter, rect, "knob.body", state, body_ink)
+                });
                 if replaced {
                     if !knob_effects {
-                        crate::kit::native_css::background_rounded(effects, rect, radius);
+                        scope.paint_background(effects, rect, radius);
                         knob_effects = true;
                     }
                     continue;
@@ -1923,7 +1937,8 @@ fn paint_control(
             {
                 let direction = point(to) - center;
                 let angle = direction.x.atan2(-direction.y);
-                if crate::kit::skin::paint(painter, rect, "knob.pointer", state, ink, angle) {
+                let pointer_ink = crate::kit::element::KNOB_POINTER.response_if(response).enter().color_or(ink);
+                if crate::kit::skin::paint_turned_as(&scope, painter, rect, "knob.pointer", state, pointer_ink, angle) {
                     continue;
                 }
             }
@@ -1934,17 +1949,17 @@ fn paint_control(
             let replaced = *body.get_or_insert_with(|| {
                 // A canvas may fill an on button with the accent, so it reads at a glance and the
                 // SDK's dark label for an on button stays legible on it.
-                let fill = crate::kit::style_class::background(if on && accent_on {
+                let fill = scope.background_or(if on && accent_on {
                     crate::kit::theme::accent()
                 } else if on {
                     crate::kit::theme::control_active()
                 } else {
                     crate::kit::theme::control_background()
                 });
-                let radius = crate::kit::style_class::radius(*radius * scale.x.min(scale.y));
-                let painted = crate::kit::skin::button(painter, bounds, state, fill, radius);
+                let radius = scope.radius_or(*radius * scale.x.min(scale.y));
+                let painted = crate::kit::skin::button(painter, bounds, &scope, state, fill, radius);
                 if painted {
-                    crate::kit::native_css::background_rounded(effects, bounds, radius);
+                    scope.paint_background(effects, bounds, radius);
                 }
                 painted
             });
@@ -1952,16 +1967,12 @@ fn paint_control(
                 continue;
             }
         }
-        paint_scaled(painter, std::slice::from_ref(draw), origin, values, loaded, tokens, scale);
+        paint_scaled(painter, &scope, std::slice::from_ref(draw), origin, values, loaded, tokens, scale);
         if !knob_effects
             && matches!(draw, Draw::Circle { .. })
             && let Some((center, radius)) = circle
         {
-            crate::kit::native_css::background_rounded(
-                effects,
-                Rect::from_center_size(center, Vec2::splat(radius * 2.0)),
-                radius,
-            );
+            scope.paint_background(effects, Rect::from_center_size(center, Vec2::splat(radius * 2.0)), radius);
             knob_effects = true;
         }
     }
@@ -1991,24 +2002,21 @@ fn paint_control(
 /// face for the chosen mode, in the dimmer text colour for the others.
 fn paint_sample_mode(
     painter: &egui::Painter,
+    el: &crate::kit::element::Entered,
     bounds: Rect,
     label: &str,
     selected: bool,
     state: crate::kit::skin::State,
     palette: WidgetPalette,
 ) {
-    let radius = crate::kit::style_class::radius(2.);
+    let radius = el.radius_or(2.);
     let base = color(palette.control);
-    let fill = crate::kit::style_class::background(if selected { base.gamma_multiply(1.35) } else { base });
-    if !crate::kit::skin::button(painter, bounds, state, fill, radius) {
+    let fill = el.background_or(if selected { base.gamma_multiply(1.35) } else { base });
+    if !crate::kit::skin::button(painter, bounds, el, state, fill, radius) {
         painter.rect_filled(bounds.shrink(0.5), radius, fill);
     }
-    crate::kit::native_css::background_rounded(painter, bounds, radius);
-    let ink = crate::kit::style_class::foreground(if selected {
-        color(palette.accent)
-    } else {
-        color(palette.text).gamma_multiply(0.62)
-    });
+    el.paint_background(painter, bounds, radius);
+    let ink = el.color_or(if selected { color(palette.accent) } else { color(palette.text).gamma_multiply(0.62) });
     let center = Pos2::new(bounds.center().x, bounds.top() + bounds.height() * 0.36);
     let stroke = Stroke::new(1.8, ink);
     match label {
@@ -2111,27 +2119,26 @@ pub(crate) fn show(
     actions: &mut Vec<Action>,
 ) {
     let address = at.0.iter().map(usize::to_string).collect::<Vec<_>>().join("-");
-    let _style_class =
-        crate::kit::style_class::enter_named("device-panel", &format!("track-{}-device-{address}", track.0));
+    let panel_id = format!("track-{}-device-{address}", track.0);
     // The panel's own sheet applies inside this scope only, over the application theme.
-    crate::kit::native_css::device_sheet(ui.ctx(), canvas.style.as_deref());
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let panel = crate::kit::element::DEVICE_PANEL.id(&panel_id).sheet(ui.ctx(), canvas.style.as_deref()).enter();
+    let mut styled_ui = panel.ui(ui);
     let ui = &mut *styled_ui;
     // The Sampler's own commands name a device on the track by its index (#600); a device inside
     // a group (#672) is named by its last step.
     let device = at.0.last().copied().unwrap_or(0);
     let loaded = images(ui.ctx(), canvas);
-    let tokens = Tokens::resolve();
+    let tokens = Tokens::resolve(&panel);
     let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
     let background = if canvas.background == DeviceUi::default().background {
-        crate::kit::theme::palette().panel_background
+        crate::kit::style_class::surface_or(crate::kit::theme::palette().panel_background)
     } else {
         tokens.color(canvas.background)
     };
     // A clear background (a header strip's) leaves what is under the canvas showing.
     if canvas.background[3] > 0 {
-        painter.fill_background(rect, 0.0, crate::kit::style_class::background(background));
-        crate::kit::native_css::background_rounded(&painter, rect, 0.);
+        painter.rect_filled(rect, 0.0, panel.background_or(background));
+        panel.paint_background(&painter, rect, 0.);
     }
     // A strip is scaled to the rect it is shown in on each axis, smaller too, as it has no scroll
     // bar. Any other canvas shown larger is stretched the same way; one shown shorter is fitted by
@@ -2143,7 +2150,7 @@ pub(crate) fn show(
     if canvas.animate_when.as_ref().is_some_and(|v| v.evaluate(&|id, norm, log| values.read(id, norm, log)) > 0.0) {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
     }
-    paint_scaled(&painter, &canvas.layers, rect.min, &values, &loaded, &tokens, stretch);
+    paint_scaled(&painter, &panel, &canvas.layers, rect.min, &values, &loaded, &tokens, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;
     let stroke_id = ui.scope_id().with(("sd-draw", track.0, device));
@@ -2173,12 +2180,13 @@ pub(crate) fn show(
             continue;
         }
         let bounds = crate::kit::control_layout::place(&name, bounds, rect);
-        let _control_scope = crate::kit::style_class::enter_named("device-control", &control.id);
+        let _control_scope = crate::kit::element::DEVICE_CONTROL.id(&control.id).enter();
         if matches!(control.widget, Some(Widget::Envelope { .. })) {
-            let _role = crate::kit::style_class::enter("envelope");
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let role = crate::kit::element::ENVELOPE.enter();
+            let style = role.style();
+            let mut styled_ui = role.ui(ui);
             let ui = &mut *styled_ui;
-            envelope(ui, bounds, control, parameters, (track, device), actions);
+            envelope(ui, bounds, control, parameters, (track, device), actions, style.as_ref());
             continue;
         }
         if matches!(control.widget, Some(Widget::SampleRecording)) {
@@ -2186,23 +2194,24 @@ pub(crate) fn show(
             continue;
         }
         if matches!(control.widget, Some(Widget::DeviceSwitch)) {
-            let _role = crate::kit::style_class::enter("button");
+            let _role = crate::kit::element::BUTTON.enter();
             crate::detail::device_widgets::switch(ui, bounds, state, track, at, actions);
             continue;
         }
         if let Some(Widget::DeviceFiles { part, what }) = &control.widget {
-            let _role = crate::kit::style_class::enter("dropdown");
+            let _role = crate::kit::element::DROPDOWN.enter();
             crate::detail::device_widgets::files(ui, bounds, *part, what, state, track, at, actions);
             continue;
         }
         if matches!(control.widget, Some(Widget::DeviceNote)) {
-            let _role = crate::kit::style_class::enter("label");
+            let _role = crate::kit::element::LABEL.enter();
             crate::detail::device_widgets::note(&painter, bounds, state);
             continue;
         }
         if matches!(control.widget, Some(Widget::SampleWaveform)) {
-            let _role = crate::kit::style_class::enter("waveform");
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let role = crate::kit::element::WAVEFORM.enter();
+            let style = role.style();
+            let mut styled_ui = role.ui(ui);
             let ui = &mut *styled_ui;
             sample_waveform(
                 ui,
@@ -2213,15 +2222,14 @@ pub(crate) fn show(
                 at.value(),
                 actions,
                 !canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleRecording))),
+                style.as_ref(),
             );
             continue;
         }
         // The EqCurve is host-drawn: the SDK's validator only lets the built-in EQ's own
         // parameter set claim the shape, so this canvas can only be its panel.
         if matches!(control.widget, Some(Widget::EqCurve)) {
-            let _role = crate::kit::style_class::enter("eq-curve");
-            let mut styled_ui = crate::kit::style_class::ui(ui);
-            let ui = &mut *styled_ui;
+            // `eq-curve` is no element of the registry, so it is drawn in the control's scope.
             super::eq_curve::show(ui, bounds, parameters, track, at, actions);
             continue;
         }
@@ -2469,8 +2477,8 @@ pub(crate) fn show(
             && let Some(binding) = control.y.as_ref().or(control.x.as_ref())
             && let Some(p) = parameters.iter().find(|p| p.id == binding.parameter)
         {
-            let _role = crate::kit::style_class::enter("value");
-            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let role = crate::kit::element::VALUE.enter();
+            let mut styled_ui = role.ui(ui);
             let ui = &mut *styled_ui;
             let mut value = p.value;
             let suffix = if *format == suhina_device_sdk::ui::TextFormat::Frequency { " Hz" } else { suffix.as_str() };
@@ -2566,11 +2574,11 @@ pub(crate) fn show(
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
                 let mut picked = None;
-                // The standard popup frame, as every other dropdown's; `.popup` styles its rows and
-                // `.button:checked` the chosen one (#1239).
+                // The standard popup frame, as every other dropdown's; `popup` styles its rows and
+                // `button[checked]` the chosen one (#1239).
                 popup.show(|ui| {
-                    let _popup = crate::kit::style_class::enter("popup");
-                    let mut styled_ui = crate::kit::style_class::ui(ui);
+                    let popup = crate::kit::element::POPUP.enter();
+                    let mut styled_ui = popup.ui(ui);
                     let ui = &mut *styled_ui;
                     ui.spacing_mut().item_spacing.y = 0.;
                     ui.spacing_mut().scroll =

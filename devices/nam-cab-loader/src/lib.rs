@@ -10,15 +10,18 @@
 //! volume. The convolution is entirely wet. An IR whose rate is not the project's is resampled
 //! once, at load, before the device sees it. Nothing on the audio path allocates.
 //!
-//! The stream runs in fixed chunks of [`CHUNK`] frames counted from a reset, and the output
-//! trails the input by one chunk — [`CHUNK`], told through `latency()` — so a host's block
-//! sizes never change the sound. An IR at another rate than the project's is not run.
+//! The stages run on the frames each call brings, as they arrive, and the output trails the
+//! input by one chunk — [`CHUNK`], told through `latency()` — so a host's block sizes never
+//! change the sound, and no call carries a whole chunk's convolution work: the burst cost a
+//! whole chunk ran with underran armed blocks ([#1290] › 4, whose Amp Modeler fix this
+//! mirrors). An IR at another rate than the project's is not run.
 
 use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
     check_sample_rate,
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
+use suhina_dsp::convolver::PARTITION;
 use suhina_dsp::gain::db_to_gain;
 use suhina_dsp::{Biquad, Coefficients, Convolver, Ir, Smoother, TrimDelay};
 
@@ -240,35 +243,54 @@ impl CabLoader {
         }
     }
 
-    /// The completed chunk's convolutions and tail stages: its frames, in stream order, ready
-    /// where their deliveries will read them.
-    fn complete_chunk(&mut self, base: u64) {
+    /// The stages over the frames staged so far but not yet run: one span per complete
+    /// [`PARTITION`]-frame block, so the convolver's input chunking is fixed and its output
+    /// bit-exact whatever the host's block size is, and no call carries a whole chunk's
+    /// convolution — the burst that underran armed blocks ([#1290] › 4, whose Amp Modeler fix
+    /// this mirrors). A span's remainder waits staged for its partition to fill; the delivery
+    /// reads a whole chunk behind, so it never waits on one.
+    fn run_stages(&mut self) {
+        while self.in_pos - self.out_pos >= PARTITION as u64 {
+            let at = (self.out_pos % CHUNK as u64) as usize;
+            let len = ((self.in_pos - self.out_pos).min((CHUNK - at) as u64) as usize / PARTITION) * PARTITION;
+            if len == 0 {
+                break;
+            }
+            self.run_span(at, len);
+            self.out_pos += len as u64;
+        }
+    }
+
+    /// One span of the stages, the chunk's frames `[at, at+len)`: the convolution (which
+    /// buffers to its own partitions, so the FFT work lands evenly), then the tail stages per
+    /// frame in stream order, landing in the delivery ring at their stream positions. A
+    /// loader with no IR passes the span through.
+    fn run_span(&mut self, at: usize, len: usize) {
         for side in 0..2 {
-            self.conv_in[side].copy_from_slice(&self.chunk[side][..]);
+            self.conv_in[side][at..at + len].copy_from_slice(&self.chunk[side][at..at + len]);
             match self.convs[side].as_mut() {
-                Some(conv) => conv.process(&self.conv_in[side], &mut self.conv_out[side]),
-                _ => self.conv_out[side].copy_from_slice(&self.conv_in[side]),
+                Some(conv) => conv.process(&self.conv_in[side][at..at + len], &mut self.conv_out[side][at..at + len]),
+                None => self.conv_out[side][at..at + len].copy_from_slice(&self.conv_in[side][at..at + len]),
             }
         }
-        for index in 0..CHUNK {
+        for index in at..at + len {
             self.delay_frames.next_value();
             self.volume.next_value();
             for side in 0..2 {
                 self.delay[side].set_frames(f64::from(self.delay_frames.current()));
                 let delayed = self.delay[side].process(f64::from(self.conv_out[side][index]));
                 let value = (delayed * f64::from(self.volume.current())) as f32;
-                let slot = ((base + index as u64) as usize) & (CHUNK - 1);
                 if side == 0 {
-                    self.ready_left[slot] = value;
+                    self.ready_left[index] = value;
                 } else {
-                    self.ready_right[slot] = value;
+                    self.ready_right[index] = value;
                 }
             }
         }
     }
 
-    /// Same as [`Device::process`]'s, as the loop the fixed schedule runs: everything a frame
-    /// does is in position terms, so the host's splits cannot be heard.
+    /// Same as [`Device::process`]'s, per frame in stream order: the delivery reads one chunk
+    /// behind, the heads stage as frames arrive, and the stages run on what each call brought.
     fn stream(&mut self, buffer: &mut [f32]) {
         for pair in buffer.as_chunks_mut::<2>().0 {
             let in_at = self.in_pos;
@@ -284,11 +306,15 @@ impl CabLoader {
             }
             let slot = (in_at as usize) & (CHUNK - 1);
             self.head(input, slot);
-            if slot == CHUNK - 1 {
-                self.complete_chunk(in_at.saturating_sub((CHUNK - 1) as u64));
-            }
             self.in_pos = in_at.wrapping_add(1);
+            // A call longer than the chunk keeps its stages moving inside the call, so the
+            // frames it delivers later in the same call are already produced.
+            if slot == CHUNK - 1 {
+                self.run_stages();
+            }
         }
+        // The stages run over what this call brought, as it brought it.
+        self.run_stages();
     }
 }
 

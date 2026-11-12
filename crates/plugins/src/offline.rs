@@ -65,6 +65,21 @@ pub fn render_with_events(
             Err(other) => return Err(other),
         }
     }
+    let rendered = render_started(&mut plugin, &mut audio, input, events, tail_frames)?;
+    drop(plugin);
+    Ok(Rendered { state_refused, ..rendered })
+}
+
+/// [`render_with_events`] through a plug-in already started (as a project's offline render
+/// starts it) and given its state, in blocks of [`BLOCK_FRAMES`] (its `max_frames` must be at
+/// least that). [`Rendered::state_refused`] is `None`: the caller gave the state.
+pub fn render_started(
+    plugin: &mut Plugin,
+    audio: &mut crate::PluginAudio,
+    input: &[f32],
+    events: &[Event],
+    tail_frames: usize,
+) -> Result<Rendered, PluginError> {
     let latency = plugin.latency();
     let input_frames = input.len() / 2;
     let wanted = input_frames + tail_frames;
@@ -109,10 +124,9 @@ pub fn render_with_events(
         }
         frame += frames;
     }
-    drop(plugin);
     let skip = (latency as usize * 2).min(output.len());
     let mut samples = output.split_off(skip);
     samples.truncate(wanted * 2);
     samples.resize(wanted * 2, 0.0);
-    Ok(Rendered { samples, latency, state_refused })
+    Ok(Rendered { samples, latency, state_refused: None })
 }

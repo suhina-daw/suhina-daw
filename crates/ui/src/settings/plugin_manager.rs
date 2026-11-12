@@ -8,7 +8,6 @@
 //! drawn in the Settings dialog's place until it is closed; what it changes goes through the
 //! `plugin.*` commands, as [`PluginRequest`]s the app runs.
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 
 use crate::kit::theme::{self, PAD};
@@ -185,13 +184,19 @@ pub struct ManagerOut {
 
 /// Draws the manager over `area`.
 pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
-    // `.plugin-manager` styles it; its buttons and fields take the sheet's `.button` and `.text-input`.
-    let _style = crate::kit::style_class::enter("plugin-manager");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    // `plugin-manager` styles it; its buttons and fields take the sheet's `button` and `text-input`.
+    let page = crate::kit::element::PLUGIN_MANAGER
+        .native(crate::kit::element::Native {
+            radius: 0.0,
+            fill: crate::kit::style_class::surface_or(theme::window_background()),
+        })
+        .enter();
+    let mut styled_ui = page.ui(ui);
     let ui = &mut *styled_ui;
     let mut out = ManagerOut::default();
     let painter = ui.painter_at(area);
-    crate::kit::native_css::surface(&painter, area, 0.0, theme::window_background());
+    // What the page holds goes in its content box, inside its border and padding (#1336).
+    let area = page.paint(&painter, area).content;
     let inner = area.shrink(2.0 * PAD);
     let small = theme::ui_font(theme::TEXT_SMALL);
 
@@ -281,8 +286,12 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
             (*name).to_string()
         };
         let color = if sorted == index { theme::text_primary() } else { theme::text_hint() };
-        let fill = motion::mix(theme::window_background(), theme::panel_hover(), widgets::hover(ui, &response));
-        painter.fill_background(rect, 0.0, fill);
+        let fill = motion::mix(
+            crate::kit::style_class::surface_or(theme::window_background()),
+            theme::panel_hover(),
+            widgets::hover(ui, &response),
+        );
+        painter.rect_filled(rect, 0.0, fill);
         widgets::text_in(
             &painter,
             rect.shrink2(Vec2::new(3.0, 0.0)),
@@ -330,9 +339,9 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
                 };
                 let lit = spec.as_ref().is_some_and(|s| picked.contains(s));
                 if lit {
-                    row_painter.fill_background(rect, 0.0, theme::control_active());
+                    row_painter.rect_filled(rect, 0.0, theme::control_active());
                 } else if ui.rect_contains_pointer(rect) {
-                    row_painter.fill_background(rect, 0.0, theme::panel_hover());
+                    row_painter.rect_filled(rect, 0.0, theme::panel_hover());
                 }
                 // A click picks the row (Ctrl adds, Shift takes the run); the right-click menu
                 // switches every picked plug-in off or on (#725).

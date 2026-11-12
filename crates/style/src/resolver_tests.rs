@@ -9,7 +9,7 @@ fn scope(source: &str) -> SheetScope {
 #[test]
 fn cached_snapshot_invalidates_on_dimensions_state_and_source() {
     let tree = Tree::new(vec![Element::new("window", None), Element::new("knob", Some(0)).with_id("cutoff")]).unwrap();
-    let viewport = Viewport { width: 800.0, height: 600.0, dark: true, reduced_motion: false };
+    let viewport = Viewport { width: 800.0, height: 600.0, reduced_motion: false };
     let mut resolver =
         Resolver::new(vec![scope("knob { width: 50%; height: 40px; } knob:hover { width: 25%; }")]).unwrap();
     let first = resolver.resolve(&tree, viewport).unwrap();
@@ -30,7 +30,7 @@ fn cached_snapshot_invalidates_on_dimensions_state_and_source() {
 fn note(colour: &str, selected: bool) -> Element {
     let mut note = Element::new("note", None).with_attribute("color", colour);
     if selected {
-        note.states.push("selected".into());
+        note.attributes.push(("selected".into(), String::new()));
     }
     note
 }
@@ -43,10 +43,10 @@ fn notes_of_one_identity_share_a_style_until_the_snapshot_changes() {
     };
     let css = "piano-roll { --lane: #202020; } \
                    note { background-color: color-mix(in srgb, attr(color type(<color>)), var(--lane)); } \
-                   note:selected { border-color: contrast-color(attr(color type(<color>))); } \
+                   note[selected] { border-color: contrast-color(attr(color type(<color>))); } \
                    piano-roll:hover note { opacity: 0.5; }";
     let tree = Tree::new(vec![Element::new("window", None), Element::new("piano-roll", Some(0))]).unwrap();
-    let viewport = Viewport { width: 800.0, height: 600.0, dark: true, reduced_motion: false };
+    let viewport = Viewport { width: 800.0, height: 600.0, reduced_motion: false };
     let mut resolver = Resolver::new(vec![scope(css)]).unwrap();
     resolver.resolve(&tree, viewport).unwrap();
     let colours = ["#ff0000", "#00ff00", "#0000ff", "#ffff00"];
@@ -90,7 +90,7 @@ fn a_leaf_is_its_parent_s_only_child_and_is_checked_like_a_tree_element() {
     let tree =
         Tree::new(vec![Element::new("window", None), Element::new("lane", Some(0)), Element::new("marker", Some(1))])
             .unwrap();
-    let viewport = Viewport { width: 800.0, height: 600.0, dark: true, reduced_motion: false };
+    let viewport = Viewport { width: 800.0, height: 600.0, reduced_motion: false };
     let css =
         "note:only-child { opacity: 0.5; } marker + note, marker ~ note { opacity: 0.1; } lane:empty { opacity: 0.2; }";
     let mut resolver = Resolver::new(vec![scope(css)]).unwrap();
@@ -126,7 +126,7 @@ fn a_changed_element_drops_only_the_leaves_it_can_reach() {
         }
         Tree::new(elements).unwrap()
     };
-    let viewport = Viewport { width: 800.0, height: 600.0, dark: true, reduced_motion: false };
+    let viewport = Viewport { width: 800.0, height: 600.0, reduced_motion: false };
     let fill = |resolver: &mut Resolver| {
         for lane in 1..4 {
             resolver.leaf_style(lane, &note("#ff0000", false)).unwrap();

@@ -5,6 +5,9 @@
 
 use super::*;
 
+/// How soon a second Escape must follow the first to count as Escape twice, in seconds.
+const DOUBLE_ESCAPE: f64 = 0.45;
+
 impl App {
     /// A double-click on a track (an Arrangement header, a Launcher column's name or channel
     /// strip) selects it and shows its devices, opening the detail area; a clip selected on
@@ -155,8 +158,8 @@ impl App {
         actions: &mut Vec<Action>,
         geometry: Option<(Rect, Rect, bool)>,
     ) -> Rect {
-        let _panel_style = crate::kit::style_class::enter_named("workspace-panel", "panel-detail");
-        let styled_ui = crate::kit::style_class::ui(ui);
+        let panel_style = crate::kit::element::WORKSPACE_PANEL.id("panel-detail").enter();
+        let styled_ui = panel_style.ui(ui);
         // The splitter a theme's layout keeps lies in the gap beside the area: drawn and taking the
         // pointer there too (#1240).
         let css_splitter = geometry.map(|(view, detail, follows)| {
@@ -215,14 +218,14 @@ impl App {
         let editor_needs = embedded
             .iter()
             .filter_map(|(_, embedded)| *embedded)
-            .map(|(_, height)| detail_view::row_height_with_editor(height, scale))
+            .map(|(_, height)| detail_view::row_height_with_editor(height, scale) + self.detail_insets.devices)
             .fold(0.0, f32::max);
         if !stacked {
             let needed = embedded
                 .iter()
                 .filter(|(key, _)| !self.fitted_editors.contains(key))
                 .filter_map(|(_, embedded)| *embedded)
-                .map(|(_, height)| detail_view::row_height_with_editor(height, scale))
+                .map(|(_, height)| detail_view::row_height_with_editor(height, scale) + self.detail_insets.devices)
                 .fold(0.0, f32::max);
             self.detail_height = self.detail_height.max(needed);
         }
@@ -308,27 +311,63 @@ impl App {
             // No bound plug-in shown (a reload, another view): nothing was closed by hand.
             None => self.ara_was_open = None,
         }
-        let least = self.least_detail_height();
+        // Never taller than the room there is, however thick a theme's padding.
+        let least = self.least_detail_height().min((area.height() - SPLITTER).max(0.0));
+        // With the devices stacked, a clip's editor (the piano roll, an ARA plug-in's editor)
+        // still lies along the bottom as in a row: only the devices stack, in a column of their
+        // own beside the view, shown with Devices while the editor stays open (› Stacked in
+        // `docs/spec/ui-clip-editor.md`).
+        // Settings › Devices › Devices beside piano roll does the same in a row.
+        let split = (stacked || self.settings.view.stack_in_piano_roll)
+            && geometry.is_none()
+            && (piano.is_some() || ara.is_some());
+        let side_devices = split && self.detail_showing == detail_view::Showing::Devices;
+        let stacked = stacked && !split;
         // The piano roll, or an ARA plug-in's editor in the clip's place, can be pulled to the
-        // top, the edited track's lane above it (Melodyne as a MIDI clip's notes are).
-        let pullable =
-            geometry.is_none() && !stacked && (piano.is_some() || ara.is_some()) && self.shown == View::Arrangement;
+        // top, the edited track's lane above it (Melodyne as a MIDI clip's notes are). Pulled up,
+        // it stays so while the track's devices show instead: the switch on Devices, or a click on
+        // the track's header (› Pulled to the top in `docs/spec/ui-clip-editor.md`).
+        let track_devices = clip.is_none() && track.is_some();
+        let base = geometry.is_none() && !stacked && self.shown == View::Arrangement;
+        // Escape twice in a row pulls the editor (or the track's devices) to the top and lets it
+        // go again.
+        if std::mem::take(&mut self.escape_twice) && base && (piano.is_some() || ara.is_some() || track_devices) {
+            self.detail_max = !self.detail_max;
+        }
+        let pullable = base && (piano.is_some() || ara.is_some() || (track_devices && self.detail_max));
         let pulled = pullable && self.detail_max;
-        // With the switch on Devices the track's devices take the editor's place, and nothing is
-        // pulled to the top (› Where it opens in `docs/spec/ui-clip-editor.md`).
+        // With the switch on Devices the track's devices take the editor's place, pulled up as it
+        // was (› Where it opens in `docs/spec/ui-clip-editor.md`).
         let switch = (piano.is_some() || ara.is_some()).then_some(self.detail_showing);
-        let ara = ara.filter(|_| self.detail_showing == detail_view::Showing::Clip);
-        let piano = piano.filter(|_| self.detail_showing == detail_view::Showing::Clip);
+        let ara = ara.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
+        let piano = piano.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
         let edits = piano.is_some() || ara.is_some();
-        let (pullable, pulled) = (pullable && edits, pulled && edits);
-        let focus = match clip {
-            Some(detail_view::ClipRef::Arrangement(track, _))
-                if pulled && self.settings.piano_roll_top == PianoRollTop::Track =>
-            {
-                Some(track)
-            }
-            _ => None,
+        // What the boxes add around what they hold (#1336). The area keeps the height of what it
+        // shows when a theme pads it: the height the user set grows by what the padding adds.
+        let boxes = detail_view::box_insets();
+        let [top, _, bottom, _] = panel_style.insets();
+        let shown_device = detail_view::shown_device_insets(ui.ctx(), boxes.device);
+        let editing = if piano.is_some() {
+            Edits::PianoRoll
+        } else if ara.is_some() {
+            Edits::Plugin
+        } else {
+            Edits::None
         };
+        let insets = DetailInsets::around(top + bottom, boxes, shown_device, editing);
+        self.detail_height = (self.detail_height + insets.area - self.detail_insets.area).max(0.0);
+        self.detail_insets = insets;
+        let focus = match clip {
+            _ if !pulled || self.settings.piano_roll_top != PianoRollTop::Track => None,
+            Some(detail_view::ClipRef::Arrangement(track, _)) => Some(track),
+            Some(detail_view::ClipRef::Slot(..)) => None,
+            None => track,
+        };
+        // Leaving the one track pulled to the top (Escape twice, another clip or nothing picked), the
+        // view keeps that track in sight, not the top of the whole list.
+        if focus.is_none() && self.arrangement.focus.is_some() {
+            self.arrangement.reveal = self.arrangement.focus;
+        }
         self.arrangement.focus = focus;
         suhina_plugins::trace::state(
             "detail",
@@ -343,7 +382,7 @@ impl App {
         let (view, splitter, detail) = if let Some((view, detail, _)) = geometry {
             (view, css_splitter.unwrap_or(Rect::NOTHING), detail)
         } else if stacked {
-            self.detail_width = detail_width_in(self.detail_width, area.width());
+            self.detail_width = detail_width_in(detail_view::STACK_WIDTH, area.width());
             let x = area.right() - self.detail_width;
             (
                 Rect::from_min_max(area.min, Pos2::new(x - SPLITTER, area.bottom())),
@@ -359,7 +398,7 @@ impl App {
             // height the user drags is the clip's, its editor's and the devices reached from it.
             let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
             let shown_height = if track_devices {
-                detail_view::device_row_height().min((area.height() - MIN_VIEW).max(least))
+                self.device_row_height().min((area.height() - MIN_VIEW).max(least))
             } else {
                 self.detail_height
             };
@@ -375,6 +414,64 @@ impl App {
                 Rect::from_min_max(Pos2::new(area.left(), y - SPLITTER), Pos2::new(area.right(), y)),
                 Rect::from_min_max(Pos2::new(area.left(), y), area.max),
             )
+        };
+        // The stacked devices beside a clip's editor: a column at the view's right, a stacked
+        // panel wide, with its own splitter. As a track's devices in a row, it is open whole or
+        // closed: a drag past half its width or a double-click closes it.
+        let (view, side) = if side_devices {
+            let width = detail_width_in(detail_view::STACK_WIDTH, view.width());
+            let x = view.right() - width;
+            let side_splitter = Rect::from_min_max(Pos2::new(x - SPLITTER, view.top()), Pos2::new(x, view.bottom()));
+            let response = ui
+                .interact(side_splitter, Id::unique("detail-side-splitter"), Sense::click_and_drag())
+                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Devices column splitter"));
+            if response.double_clicked() {
+                self.detail_showing = detail_view::Showing::Clip;
+            }
+            if response.dragged_by(egui::PointerButton::Primary) {
+                let dragged = self.side_drag.unwrap_or(width) - response.drag_delta().x;
+                self.side_drag = Some(dragged);
+                if dragged < width / 2.0 {
+                    self.detail_showing = detail_view::Showing::Clip;
+                }
+            } else {
+                self.side_drag = None;
+            }
+            paint_splitter(ui, side_splitter, &response, true);
+            (
+                Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())),
+                Some(Rect::from_min_max(Pos2::new(x, view.top()), view.max)),
+            )
+        } else if split {
+            // Closed beside the editor, the column keeps its splitter along the view's right edge:
+            // dragged left past half its width, or double-clicked, it opens, as Devices does.
+            let side_splitter =
+                Rect::from_min_max(Pos2::new((view.right() - SPLITTER).max(view.left()), view.top()), view.max);
+            let response = ui
+                .interact(side_splitter, Id::unique("detail-side-splitter"), Sense::click_and_drag())
+                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+            response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Closed devices column splitter"));
+            let width = detail_view::STACK_WIDTH;
+            if response.double_clicked() {
+                self.detail_showing = detail_view::Showing::Devices;
+            }
+            if response.dragged_by(egui::PointerButton::Primary) {
+                let dragged = self.side_drag.unwrap_or(0.0) - response.drag_delta().x;
+                self.side_drag = Some(dragged);
+                if dragged >= width / 2.0 {
+                    self.detail_showing = detail_view::Showing::Devices;
+                    // The same drag goes on from the open column's width.
+                    self.side_drag = Some(width);
+                }
+            } else {
+                self.side_drag = None;
+            }
+            paint_splitter(ui, side_splitter, &response, true);
+            (Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())), None)
+        } else {
+            (view, None)
         };
 
         // The splitter: dragged to make the detail area bigger or smaller; under the
@@ -395,12 +492,18 @@ impl App {
             if response.dragged_by(egui::PointerButton::Primary) {
                 let delta = response.drag_delta();
                 if stacked {
-                    self.detail_width -= delta.x;
+                    // Stacked, the area is open a panel wide or closed, as a track's devices in
+                    // a row are: past half that width a drag closes it.
+                    let width = self.detail_drag.unwrap_or(detail.width()) - delta.x;
+                    self.detail_drag = Some(width);
+                    if width < detail_view::STACK_WIDTH / 2.0 {
+                        self.hide_editor();
+                    }
                 } else {
                     let height = self.detail_drag.unwrap_or(detail.height()) - delta.y;
                     self.detail_drag = Some(height);
                     self.detail_max = pullable && height > area.height() - MIN_VIEW;
-                    let closes_under = if open_or_closed { detail_view::device_row_height() } else { least };
+                    let closes_under = if open_or_closed { self.device_row_height() } else { least };
                     if height < closes_under / 2.0 {
                         // Dragged down past half its least height, the detail area closes; the same
                         // drag going back up opens it again (`collapsed_splitter`).
@@ -427,9 +530,13 @@ impl App {
             }
             paint_splitter(ui, splitter, &response, stacked);
         }
+        // The panel's own box, its background and border, once its splitter beside it is drawn;
+        // it clips what the detail area paints (`overflow`), and the detail area goes in its
+        // content box (#1336).
+        let detail = panel_style.paint(ui.painter(), detail).content;
 
         if let Some(shown_track) = clip.map(ClipRef::track).or(track) {
-            self.detail_drop = Some((detail, shown_track));
+            self.detail_drop = Some((side.unwrap_or(detail), shown_track));
         }
         let nam_lists = self.nam_lists();
         let mut shown = self.session().map_or(detail_view::Detail::Nothing, |s| {
@@ -442,6 +549,38 @@ impl App {
             // A lane dragged in the Arrangement view: the knob follows the line as it is dragged.
             let dragged = self.arrangement.automation.dragged.as_ref().filter(|_| self.shown == View::Arrangement);
             shown.follow_automation_dragged(session.project(), beat, dragged);
+            // An audio clip's panel: where the playhead is in the clip, for its Set buttons, and
+            // what each source says its tempo is while its Find menu is open
+            // (`docs/spec/clip-panel.md`).
+            if let detail_view::Detail::Clip(info, _) = &mut shown
+                && let Some(ClipRef::Arrangement(track, id)) = info.at
+                && let Some(panel) = info.panel.as_mut()
+            {
+                let placed = session
+                    .project()
+                    .arrangement
+                    .lanes
+                    .iter()
+                    .filter(|l| l.track == Some(track))
+                    .flat_map(|l| &l.clips)
+                    .find(|c| c.id == id);
+                // Only while the playhead is in the clip: before or after it, Set would put a marker
+                // at the clip's edge.
+                panel.playhead = placed
+                    .filter(|c| beat >= c.start && beat < c.start + c.length)
+                    .map(|c| detail_view::content_beat_at(c, beat));
+            }
+            if let detail_view::Detail::Clip(info, _) = &mut shown
+                && let Some(panel) = info.panel.as_mut()
+                && ui.ctx().data(|d| d.get_temp::<ClipId>(detail_view::find_tempo_key())) == Some(panel.clip)
+            {
+                let key = detail_view::tempo_candidates_key(panel.clip);
+                panel.candidates = ui.ctx().data(|d| d.get_temp::<[Option<f64>; 3]>(key)).or_else(|| {
+                    let found = suhina_session::clip_tempo_candidates(session, panel.clip)?;
+                    ui.ctx().data_mut(|d| d.insert_temp(key, found));
+                    Some(found)
+                });
+            }
         }
         // What the host hands devices' canvases: whether the panel is open, and live values (a
         // band's level and gain change) while a player runs.
@@ -548,6 +687,7 @@ impl App {
         }
         if let detail_view::Detail::Clip(info, _) = &mut shown {
             info.switch = switch;
+            info.switch_both = side_devices;
             // Several arrangement clips picked: the column says how many, and its switches turn
             // them all.
             if self.shown == View::Arrangement && self.arrangement.selected_clips().len() > 1 {
@@ -610,8 +750,10 @@ impl App {
             None => detail,
         };
         if piano.is_none() {
-            // A note the audition sounds goes off with the piano roll.
+            // A note the audition sounds goes off with the piano roll, and the notes edited while
+            // selected make room now.
             actions.extend(self.piano_roll.stop_audition());
+            actions.extend(self.piano_roll.settle_on_hide());
             self.piano_roll.hide();
         }
         let mut places = Vec::new();
@@ -640,34 +782,49 @@ impl App {
         let piano_roll = &mut self.piano_roll;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
             if let (Some(piano), detail_view::Detail::Clip(info, _)) = (&piano, &shown) {
-                let (mut rest, picked) = detail_view::show_clip_column(ui, info, stacked, actions);
+                // The clip editor holds the clip's column, its note tools and the piano roll.
+                let editor = crate::kit::element::CLIP_EDITOR.enter();
+                let mut styled_ui = editor.ui(ui);
+                let ui = &mut *styled_ui;
+                // The clip's panel: the Clip part with what the tools act on under it, and the note
+                // tools beside them while they are shown (the toolbar's three-slider button;
+                // › Note tools).
+                let selected = piano_roll.acting().clone();
+                // A time selection with no note in it gives the tools nothing to act on.
+                let nothing = selected.is_empty() && piano_roll.span_end().is_some();
+                let tools = crate::detail::midi_tools::Tools {
+                    address: &piano.address,
+                    notes: &piano.notes,
+                    selected: &selected,
+                    length: piano.length,
+                    nothing,
+                };
+                let show_tools = piano_roll.tools_open;
+                let midi = (!info.audio).then_some(detail_view::MidiTools {
+                    tools: &tools,
+                    state: &mut *piano_roll,
+                    show_tools,
+                });
+                let (rest, picked) = detail_view::show_clip_column(ui, &editor, info, stacked, midi, actions);
                 let picked = detail_view::Picked { showing: picked.showing, ..detail_view::Picked::default() };
-                // The MIDI tools column, between the clip's properties and the note grid. With the
-                // detail area stacked there is no room beside the notes, so it is not drawn there
-                // (the quantise settings and Ctrl+U still work: › Other note tools).
-                if piano_roll.tools_open && !stacked {
-                    let selected = piano_roll.acting().clone();
-                    // A time selection with no note in it gives the tools nothing to act on.
-                    let nothing = selected.is_empty() && piano_roll.span_end().is_some();
-                    let tools = crate::detail::midi_tools::Tools {
-                        address: &piano.address,
-                        notes: &piano.notes,
-                        selected: &selected,
-                        length: piano.length,
-                        nothing,
-                    };
-                    let before = actions.len();
-                    rest = crate::detail::midi_tools::show(ui, rest, &tools, piano_roll, actions);
-                    if nothing {
-                        actions.truncate(before);
-                    }
-                }
                 let seeks = matches!(piano.address.get("clip"), Some(serde_json::Value::Number(_)));
                 let cx = piano_roll::Context { options, keymap: &keymap, copied, playhead, start_marker, seeks };
                 piano_roll::show(ui, rest, piano, piano_roll, cx, actions);
+                // A press anywhere in a MIDI clip's detail area, its panel and note tools too,
+                // keeps the keys with the piano roll: Ctrl+X, Ctrl+D and the others go on acting
+                // on the notes, not on the Arrangement's clips (a typed field still takes them).
+                if !info.audio
+                    && ui.input(|i| i.pointer.any_pressed())
+                    && crate::kit::widgets::pointer_over(ui, detail).is_some()
+                {
+                    piano_roll.focused = true;
+                }
                 picked
             } else if let (Some((_, _, device, _)), detail_view::Detail::Clip(info, chain)) = (ara, &shown) {
-                let (rest, picked) = detail_view::show_clip_column(ui, info, stacked, actions);
+                let editor = crate::kit::element::CLIP_EDITOR.enter();
+                let mut styled_ui = editor.ui(ui);
+                let ui = &mut *styled_ui;
+                let (rest, picked) = detail_view::show_clip_column(ui, &editor, info, stacked, None, actions);
                 detail_view::show_ara_editor(ui, rest, chain, device, actions, &mut places);
                 picked
             } else if stacked {
@@ -676,10 +833,24 @@ impl App {
                 detail_view::show_row(ui, &shown, &picks, actions, &mut places)
             }
         });
+        // The stacked devices' column, beside the editor: above the panel, in the view's place, so
+        // the panel's box is closed first and its `overflow` does not cut the column (#1336).
+        panel_style.close_box();
+        let side_clicked = match (side, &shown) {
+            (Some(side), detail_view::Detail::Clip(_, chain)) => {
+                let devices = detail_view::Detail::Devices(chain.clone());
+                ui.scope_builder(egui::UiBuilder::new().max_rect(side), |ui| {
+                    detail_view::show_stack(ui, &devices, &picks, actions, &mut places)
+                })
+                .inner
+                .clicked
+            }
+            _ => None,
+        };
         if let Some(showing) = picked.inner.showing {
             self.detail_showing = showing;
         }
-        if let Some((track, at)) = picked.inner.clicked {
+        if let Some((track, at)) = picked.inner.clicked.or(side_clicked) {
             let (add, run) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
             self.pick_device(track, at, add, run);
             // A fresh pick says where the user is now: a removal's undo or redo no longer
@@ -710,6 +881,8 @@ impl App {
                 piano_roll::ViewPick::KeyStyle(style) => self.settings.piano_key_style = style,
                 piano_roll::ViewPick::KeyNames(names) => self.settings.piano_key_names = names,
                 piano_roll::ViewPick::AllowStacked(on) => self.settings.view.notes_replace = !on,
+                piano_roll::ViewPick::CoveredWhole(on) => self.settings.view.covered_whole = on,
+                piano_roll::ViewPick::HighlightScale(on) => self.settings.highlight_scale = on,
             }
             self.settings_changed = true;
         }
@@ -734,6 +907,14 @@ impl App {
         view
     }
 
+    /// Whether the detail area lies along the bottom: in a row, or with the devices stacked
+    /// while the shown clip has an editor (the piano roll, an ARA plug-in's), which stays there.
+    pub(super) fn editor_along_bottom(&self) -> bool {
+        self.settings.device_layout != DeviceLayout::Stack
+            || self.piano_clip(self.shown_clip()).is_some()
+            || matches!(self.shown_clip(), Some(ClipRef::Arrangement(t, c)) if self.clip_uses_ara(t, c))
+    }
+
     /// The splitter along the bottom while the detail area is hidden: dragged up past half the
     /// least height, the detail area opens at the height the drag reaches. Returns the room left
     /// above it for the view.
@@ -745,7 +926,8 @@ impl App {
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
         if response.double_clicked() {
             self.show_editor();
-            self.detail_height = DETAIL_HEIGHT;
+            // The default content height, with the area's border and padding round it (#1336).
+            self.detail_height = DETAIL_HEIGHT + self.detail_insets.area;
             self.detail_width = detail_view::STACK_WIDTH;
         }
         if response.dragged_by(egui::PointerButton::Primary) {
@@ -754,7 +936,7 @@ impl App {
             let least = self.least_detail_height();
             // A track's devices open at their one height, at the point a drag down closes them.
             let track_devices = self.shown_clip().is_none();
-            let opens_at = if track_devices { detail_view::device_row_height() } else { least };
+            let opens_at = if track_devices { self.device_row_height() } else { least };
             if height >= opens_at / 2.0 {
                 self.show_editor();
                 // The height dragged is a clip's view's.
@@ -769,21 +951,71 @@ impl App {
         Rect::from_min_max(area.min, Pos2::new(area.right(), splitter.top()))
     }
 
-    /// The least height of the detail area in a row: the piano roll's while it shows one, else
-    /// 80 px.
+    /// The splitter along the right edge while the stacked detail area is hidden: dragged left past
+    /// half a stacked panel's width, or double-clicked, the area opens whole, as the stacked area
+    /// is open a panel wide or closed. Returns the room left beside it for the view.
+    pub(super) fn collapsed_side_splitter(&mut self, ui: &mut Ui, area: Rect) -> Rect {
+        let splitter = Rect::from_min_max(Pos2::new((area.right() - SPLITTER).max(area.left()), area.top()), area.max);
+        let response = ui
+            .interact(splitter, Id::unique("detail-splitter"), Sense::click_and_drag())
+            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Detail area splitter"));
+        if response.double_clicked() {
+            self.show_editor();
+        }
+        if response.dragged_by(egui::PointerButton::Primary) {
+            let width = self.detail_drag.unwrap_or(0.0) - response.drag_delta().x;
+            self.detail_drag = Some(width);
+            if width >= detail_view::STACK_WIDTH / 2.0 {
+                self.show_editor();
+                // The same drag goes on from the open area's width, so it does not close it again.
+                self.detail_drag = Some(detail_view::STACK_WIDTH);
+            }
+        } else {
+            self.detail_drag = None;
+        }
+        paint_splitter(ui, splitter, &response, true);
+        Rect::from_min_max(area.min, Pos2::new(splitter.left(), area.bottom()))
+    }
+
+    /// The least height of the detail area in a row: the device panels' compact height (the
+    /// area's default), so a clip's panel, its piano roll or its editor never gets too short to
+    /// use, or the piano roll's own when that is more (several clips picked add their strip).
+    /// Dragged under half of it, the area closes (› Least height and closing).
     pub(super) fn least_detail_height(&self) -> f32 {
-        let piano = self.settings.device_layout != DeviceLayout::Stack
-            && self.detail_showing == detail_view::Showing::Clip
-            && self.piano_clip(self.shown_clip()).is_some();
+        // Stacked devices leave the piano roll along the bottom, whichever the switch shows.
+        let piano = self.piano_roll_on_show() && self.piano_clip(self.shown_clip()).is_some();
         // Several clips picked: their strip takes room from the rows.
         let picked = self.arrangement.selected_clips().len();
         let rows = if picked > 1 { picked.min(crate::detail::piano_roll_ghosts::MAX_STRIP_ROWS) } else { 0 };
         let strip = piano_roll::CLIP_STRIP * rows as f32;
-        if piano { piano_roll::LEAST_HEIGHT + strip } else { 80.0 }
+        let compact = self.device_row_height();
+        if piano { (piano_roll::LEAST_HEIGHT + strip + self.detail_insets.piano).max(compact) } else { compact }
+    }
+
+    /// The height a track's devices open at: a row of devices, and the boxes around it.
+    fn device_row_height(&self) -> f32 {
+        detail_view::device_row_height() + self.detail_insets.devices
     }
 
     /// The clip the detail area shows: the Arrangement view's selected clip, or the Launcher view's
     /// selected slot's.
+    /// Whether Escape was pressed twice in a row this frame (the second press within
+    /// [`DOUBLE_ESCAPE`] seconds of the first), with no text field taking the keys.
+    pub(super) fn double_escape(&mut self, ui: &egui::Ui) -> bool {
+        let (pressed, now) = ui.input(|i| (i.key_pressed(egui::Key::Escape) && i.modifiers.is_none(), i.time));
+        if !pressed || ui.ctx().egui_wants_keyboard_input() {
+            return false;
+        }
+        match self.last_escape.take() {
+            Some(at) if now - at <= DOUBLE_ESCAPE => true,
+            _ => {
+                self.last_escape = Some(now);
+                false
+            }
+        }
+    }
+
     pub(super) fn shown_clip(&self) -> Option<ClipRef> {
         match self.shown {
             View::Session => self.view.selected_slot.map(|(t, s)| ClipRef::Slot(t, s)),
@@ -820,9 +1052,17 @@ impl App {
         Some(piano)
     }
 
+    /// Whether a MIDI clip's piano roll is on show: with the switch on Clip, or with the devices
+    /// stacked, where Devices opens them beside it and it stays open.
+    pub(super) fn piano_roll_on_show(&self) -> bool {
+        self.detail_showing == detail_view::Showing::Clip
+            || self.settings.device_layout == DeviceLayout::Stack
+            || self.settings.view.stack_in_piano_roll
+    }
+
     /// The params that name the clip the piano roll shows in a `note.*` command, if it shows one.
     pub fn piano_roll_address(&self) -> Option<serde_json::Value> {
-        if self.detail_showing == detail_view::Showing::Devices {
+        if !self.piano_roll_on_show() {
             return None;
         }
         let clip = match self.shown {
@@ -846,21 +1086,35 @@ impl App {
     /// Then an edit key acts on those notes or on nothing, and never on the clip or the view
     /// behind; only a press in another view takes the keyboard from it.
     pub(super) fn piano_has_keyboard(&self) -> bool {
-        self.piano_roll.focused
-            && self.detail_open
-            && self.detail_showing == detail_view::Showing::Clip
-            && match self.shown {
-                View::Session => self
-                    .view
-                    .selected_slot
-                    .is_some_and(|(t, s)| self.piano_clip(Some(detail_view::ClipRef::Slot(t, s))).is_some()),
-                View::Arrangement => {
-                    self.arrangement.selected_clips().len() == 1
-                        && self.arrangement.selected_clip().is_some_and(|(t, i)| {
-                            self.piano_clip(Some(detail_view::ClipRef::Arrangement(t, i))).is_some()
-                        })
-                }
+        self.piano_roll.focused && self.detail_open && self.piano_roll_on_show() && self.piano_shows_the_selection()
+    }
+
+    /// Whether the piano roll shows the one clip selected: the Launcher's slot, or the only clip
+    /// picked in the Arrangement.
+    fn piano_shows_the_selection(&self) -> bool {
+        match self.shown {
+            View::Session => self
+                .view
+                .selected_slot
+                .is_some_and(|(t, s)| self.piano_clip(Some(detail_view::ClipRef::Slot(t, s))).is_some()),
+            View::Arrangement => {
+                self.arrangement.selected_clips().len() == 1
+                    && self
+                        .arrangement
+                        .selected_clip()
+                        .is_some_and(|(t, i)| self.piano_clip(Some(detail_view::ClipRef::Arrangement(t, i))).is_some())
             }
+        }
+    }
+
+    /// Whether Ctrl+V pastes copied notes into the piano roll although it does not have the keys:
+    /// notes were copied last and the piano roll shows the one clip selected.
+    pub(super) fn piano_takes_paste(&self) -> bool {
+        self.copied_last == CopiedLast::Notes
+            && self.session().is_some_and(|s| s.copied_notes().is_some())
+            && self.detail_open
+            && self.piano_roll_on_show()
+            && self.piano_shows_the_selection()
     }
 
     /// Whether the edit keys act on the piano roll's selected notes although several clips are picked:
@@ -870,7 +1124,7 @@ impl App {
         self.piano_roll.focused
             && !self.piano_roll.selected.is_empty()
             && self.detail_open
-            && self.detail_showing == detail_view::Showing::Clip
+            && self.piano_roll_on_show()
             && self.shown == View::Arrangement
             && self.arrangement.selected_clips().len() > 1
             && self.piano_clip(self.shown_clip()).is_some()
@@ -878,7 +1132,7 @@ impl App {
 
     /// What a key does in the piano roll, when it shows a clip and has the keyboard.
     pub(super) fn piano_key(&mut self, action: &str) -> Option<Action> {
-        if self.detail_showing == detail_view::Showing::Devices {
+        if !self.piano_roll_on_show() {
             return None;
         }
         let clip = match self.shown {
@@ -946,16 +1200,51 @@ fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
 }
 
 /// The detail area's splitter: a strip with a grip across its middle, `#detail-splitter` (a
-/// `.divider`, with `:hover` and `:active`). The strip takes the element's `background-color` and
+/// `divider`, with `:hover` and `:active`). The strip takes the element's `background-color` and
 /// the grip its `color`; without them, the control background and the hint colour.
 fn paint_splitter(ui: &Ui, splitter: Rect, response: &egui::Response, stacked: bool) {
-    let _style = crate::kit::style_class::enter_named_response("divider", "detail-splitter", response);
+    let style = crate::kit::element::DIVIDER.id("detail-splitter").response(response).enter();
     let painter = ui.painter_at(splitter);
-    painter.fill_background(splitter, 0.0, crate::kit::style_class::background(theme::control_background()));
+    painter.rect_filled(splitter, 0.0, style.background_or(theme::control_background()));
     let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
-    painter.rect_filled(
-        Rect::from_center_size(splitter.center(), grip),
-        0.0,
-        crate::kit::style_class::foreground(theme::text_hint()),
-    );
+    painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, style.color_or(theme::text_hint()));
+}
+
+/// What the detail area edits a clip in, for [`DetailInsets::around`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Edits {
+    /// Nothing: it shows a row of devices.
+    None,
+    /// The piano roll, in the clip editor.
+    PianoRoll,
+    /// A plug-in's editor that edits clips (ARA), in the clip editor with no piano roll round it.
+    Plugin,
+}
+
+/// What the detail area's boxes add above and below what they hold: their borders and padding.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct DetailInsets {
+    /// Around what the area shows now: [`DetailInsets::devices`] or [`DetailInsets::piano`].
+    pub area: f32,
+    /// Around a row of devices: the workspace panel's, the detail area's and a device panel's.
+    pub devices: f32,
+    /// Around the piano roll: the workspace panel's, the clip editor's and the piano roll's.
+    pub piano: f32,
+}
+
+impl DetailInsets {
+    /// The insets inside a workspace panel whose border and padding take `panel` above and below:
+    /// the detail area's and a device panel's (`device`, as shown) round a row of devices, the
+    /// clip editor's and the piano roll's round the piano roll, and the clip editor's alone round
+    /// a plug-in's editor, which no `piano-roll` box holds.
+    pub(super) fn around(panel: f32, boxes: detail_view::BoxInsets, device: f32, edits: Edits) -> Self {
+        let devices = panel + boxes.detail + device;
+        let piano = panel + boxes.editor + boxes.piano;
+        let area = match edits {
+            Edits::None => devices,
+            Edits::PianoRoll => piano,
+            Edits::Plugin => panel + boxes.editor,
+        };
+        Self { area, devices, piano }
+    }
 }

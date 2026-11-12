@@ -14,8 +14,8 @@ use crate::settings::settings_view::{Entry, Page, block, row};
 use crate::settings::track_sizes::TrackSize;
 use crate::settings::view_settings::{DetailLayout, FolderDrop, WaveformColour};
 use crate::settings::{
-    AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, OnOpen, PianoKeyNames, PianoKeyStyle,
-    PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
+    AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, NoteSpelling, OnOpen, PianoKeyNames,
+    PianoKeyStyle, PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
 };
 use suhina_update::Channel;
 
@@ -260,6 +260,14 @@ pub(crate) static ROWS: &[Entry] = &[
             let options = [("Row", DeviceLayout::Row), ("Stack", DeviceLayout::Stack)];
             cx.choose(r, &options, |s| &mut s.device_layout);
         },
+    ),
+    row(
+        Page::Devices,
+        "Device panels",
+        "Devices beside piano roll",
+        "With the devices in a row, whether Devices opens them in a column beside the piano roll instead of in its place",
+        &["stack_in_piano_roll"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.stack_in_piano_roll),
     ),
     row(
         Page::Devices,
@@ -640,6 +648,75 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Automation",
+        "Group plug-in lanes",
+        "Whether a lane mounted from a plug-in goes into a group of that plug-in's lanes, one group a plug-in",
+        &["automation_group"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.automation_group_plugins),
+    ),
+    row(
+        Page::Arrangement,
+        "Automation",
+        "Top lane shows",
+        "What a track's top automation lane shows when you open its lanes, before you choose a parameter in it or move a control",
+        &["automation_top_lane"],
+        |cx, r| {
+            use crate::arrangement::automation_lanes::TopLane;
+            cx.choose(r, &[("None", TopLane::None), ("Volume", TopLane::Volume), ("Pan", TopLane::Pan)], |s| {
+                &mut s.view.automation_top_lane
+            })
+        },
+    ),
+    row(
+        Page::Arrangement,
+        "Gain envelope",
+        "Show gain envelope",
+        "Audio clips with gain envelope points show the line on their waveform when you are not editing it",
+        &["gain_envelope_show"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.envelope_show),
+    ),
+    row(
+        Page::Arrangement,
+        "Gain envelope",
+        "Gain envelope ceiling",
+        "The most a gain envelope point can raise a clip, so a slip of the mouse cannot make it very loud",
+        &["gain_envelope_ceiling"],
+        |cx, r| {
+            cx.choose(r, &[("+3 dB", 3u8), ("+6 dB", 6), ("+12 dB", 12), ("+24 dB", 24)], |s| {
+                &mut s.view.envelope_ceiling
+            })
+        },
+    ),
+    row(
+        Page::Arrangement,
+        "Gain envelope",
+        "Gain envelope grid",
+        "The steps a gain envelope point moves in, up and down, when it is not moved freely",
+        &["gain_envelope_step"],
+        |cx, r| {
+            cx.choose(r, &[("0.5 dB", 5u8), ("1 dB", 10), ("2 dB", 20), ("3 dB", 30), ("6 dB", 60)], |s| {
+                &mut s.view.envelope_step
+            })
+        },
+    ),
+    row(
+        Page::Arrangement,
+        "Gain envelope",
+        "Envelope points move",
+        "Whether gain envelope points move on the dB grid or freely until you switch the button under the clip name",
+        &["gain_envelope_move"],
+        |cx, r| cx.choose(r, &[("On the grid", false), ("Freely", true)], |s| &mut s.view.envelope_free),
+    ),
+    row(
+        Page::Arrangement,
+        "Gain envelope",
+        "Envelope editing",
+        "Whether Edit gain envelope opens every audio clip's envelope at once, to set several side by side, or one clip's at a time",
+        &["gain_envelope_editing"],
+        |cx, r| cx.choose(r, &[("All audio clips", true), ("One clip at a time", false)], |s| &mut s.view.envelope_all),
+    ),
+    row(
+        Page::Arrangement,
         "Advanced",
         "Edge drag stretches audio",
         "Dragging an audio clip's edge with Ctrl and Alt held stretches its sound to the new length",
@@ -740,6 +817,33 @@ pub(crate) static ROWS: &[Entry] = &[
             let options: Vec<(&str, PianoKeyNames)> = PianoKeyNames::ALL.iter().map(|n| (n.name(), *n)).collect();
             cx.choose(r, &options, |s| &mut s.piano_key_names);
         },
+    ),
+    row(
+        Page::ClipEditor,
+        "Piano roll",
+        "Note names",
+        "Whether a black key is named as a sharp (C#) or a flat (Db)",
+        &["note_spelling"],
+        |cx, r| {
+            let options: Vec<(&str, NoteSpelling)> = NoteSpelling::ALL.iter().map(|n| (n.name(), *n)).collect();
+            cx.choose(r, &options, |s| &mut s.note_spelling);
+        },
+    ),
+    row(
+        Page::ClipEditor,
+        "Piano roll",
+        "Default scale",
+        "The scale a clip's Scale switch turns on when the clip has none of its own",
+        &["default_scale_root", "default_scale_mode"],
+        |cx, r| cx.default_scale(r),
+    ),
+    row(
+        Page::ClipEditor,
+        "Advanced",
+        "Covered notes",
+        "What happens to a note whose start a note placed over it covers, where notes of one pitch do not stack: it goes whole, or keeps what runs on past",
+        &["covered_notes"],
+        |cx, r| cx.choose(r, &[("Delete them", true), ("Keep the rest", false)], |s| &mut s.view.covered_whole),
     ),
     row(
         Page::Browser,
@@ -861,6 +965,14 @@ pub(crate) static ROWS: &[Entry] = &[
         "Things fade and slide briefly when they change",
         &["animations"],
         |cx, r| cx.on_off(r, |s| &mut s.animations),
+    ),
+    row(
+        Page::Appearance,
+        "Window",
+        "Hide pointer while dragging",
+        "The pointer disappears while a knob, fader or value is dragged",
+        &["drag_hides_pointer"],
+        |cx, r| cx.on_off(r, |s| &mut s.drag_hides_pointer),
     ),
     row(
         Page::Appearance,

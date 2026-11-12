@@ -162,9 +162,9 @@ pub fn midi_monitor_explanation(monitor: Monitor) -> &'static str {
 
 /// Input monitoring is independent of record arm and headphone cue.
 pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actions: &mut Vec<Action>) {
-    // `.popup` styles the menu, `button:checked` its chosen row.
-    let _style = crate::kit::style_class::enter("popup");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    // `popup` styles the menu, `button[checked]` its chosen row.
+    let style = crate::kit::element::POPUP.enter();
+    let mut styled_ui = style.ui(ui);
     let ui = &mut *styled_ui;
     ui.set_min_width(280.0);
     ui.set_max_width(280.0);
@@ -200,8 +200,8 @@ pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actio
 /// chosen, if it is not there now), none; then every channel or one. A pick runs
 /// `track.setMidiInput`.
 pub fn midi_input_choices(ui: &mut Ui, track: TrackId, input: &MidiInput, ports: &[String], actions: &mut Vec<Action>) {
-    let _style = crate::kit::style_class::enter("popup");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let style = crate::kit::element::POPUP.enter();
+    let mut styled_ui = style.ui(ui);
     let ui = &mut *styled_ui;
     let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
     let mut pick = |ui: &mut Ui, label: &str, on: bool, params: serde_json::Value| {
@@ -266,7 +266,8 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
 
     // Colour: the palette every colour choice offers.
     // A colour picked with several tracks selected colours them all.
-    if let Some(colour) = colour_picker::swatch_row(ui, Some(menu.colour)) {
+    if let Some(pick) = colour_picker::swatch_row(ui, Some(menu.colour)) {
+        let colour = pick.colour;
         let several = menu.selection.contains(&menu.track) && menu.selection.len() > 1;
         if several {
             for track in menu.selection {
@@ -275,7 +276,7 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         } else if colour != menu.colour {
             actions.push(colour_picker::set_colour(menu.track, colour));
         }
-        ui.close();
+        pick.close_menu(ui);
     }
     // A group's tracks, at any depth, and their clips: its colour, so the group reads as one in
     // every view.
@@ -419,12 +420,12 @@ pub fn clip_menu(
     ui.set_min_width(140.0);
     // The clips' colour: a swatch or any colour, or back to their tracks' colour.
     // One command for them all: one undo step, and a large selection takes it at once.
-    if let Some(colour) = colour_picker::swatch_row(ui, None) {
+    if let Some(pick) = colour_picker::swatch_row(ui, None) {
         actions.push(Action::new(
             "clip.setColorMany",
-            json!({ "clips": list.clone(), "color": colour_picker::hex(colour) }),
+            json!({ "clips": list.clone(), "color": colour_picker::hex(pick.colour) }),
         ));
-        ui.close();
+        pick.close_menu(ui);
     }
     if ui.button("Track colour").clicked() {
         actions.push(Action::new("clip.setColorMany", json!({ "clips": list.clone(), "color": "none" })));
@@ -735,10 +736,30 @@ pub fn device_menu(
     track: TrackId,
     at: &crate::detail::detail_view::DeviceAt,
     branches: Option<usize>,
+    is_builtin: bool,
+    name: &str,
     actions: &mut Vec<Action>,
 ) {
     ui.set_min_width(140.0);
     let device = at.value();
+    // Save as preset (`device.savePreset`, docs/decisions/0036-library-and-shipped-content.md ›
+    // 5): the menu stays open while the name is typed, as a rename's field does.
+    if is_builtin {
+        let id = Id::unique(("save-preset", track, device.clone()));
+        let mut draft: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| name.to_string());
+        let field = crate::kit::widgets::text_input(ui, egui::TextEdit::singleline(&mut draft).desired_width(140.0));
+        ui.ctx().data_mut(|d| d.insert_temp(id, draft.clone()));
+        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Preset name for {name}")));
+        let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+        if (enter || ui.button("Save as preset…").clicked()) && !draft.trim().is_empty() {
+            actions.push(Action::new(
+                "device.savePreset",
+                json!({ "track": track.0, "device": device, "name": draft.trim() }),
+            ));
+            ui.ctx().data_mut(|d| d.remove::<String>(id));
+            ui.close();
+        }
+    }
     if ui.add(egui::Button::new("Group").shortcut_text(shown("Ctrl+G"))).clicked() {
         actions.push(Action::new("device.group", json!({ "track": track.0, "device": device })));
         ui.close();

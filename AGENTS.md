@@ -14,7 +14,9 @@ describe a file. Read only the ones that match your task.
 1. **Clean-room (outranks everything).** Never disassemble or decompile proprietary binaries,
    never use leaked code, never commit content from commercial products; knowledge comes from
    observation, self-authored files and public documentation, written down in `docs/spec/` before
-   it is implemented. The rules and their one exception (the VeSTige header,
+   it is implemented. Open-source code, other DAWs' included, is a licence question (rule 10), not
+   a clean-room one: its values and solutions may be taken when its own provenance is clean, with
+   the notices CONTRIBUTING asks for. The rules and their one exception (the VeSTige header,
    [ADR 0022](docs/decisions/0022-vst2-interface-description.md)) are in
    [CONTRIBUTING.md › Clean-room](CONTRIBUTING.md#clean-room).
 2. **Never crash.** Non-test code never panics (no `unwrap()`, `expect()`, `panic!`,
@@ -51,6 +53,8 @@ describe a file. Read only the ones that match your task.
    repository ([ADR 0016](docs/decisions/0016-scope.md) › 5). ROADMAP, README, the model, engine, CLI and UI describe Suhina's own features under
    their own names and neutral words, and other DAWs' product terms are not used as generic words
    ("drum sampler", not "drum rack"). User-facing text may name a format it imports or exports.
+   The notices of code taken from an open-source project name that project wherever its licence
+   asks (the file's header, `NOTICE`, `ATTRIBUTION.md`).
    The rule is about other DAWs and music software, not makers of hardware (amplifiers, speakers,
    microphones, synthesizers): content licensed for redistribution, such as an amp model or an
    impulse response, may keep a name that says which hardware it was recorded from, with a note
@@ -67,6 +71,39 @@ describe a file. Read only the ones that match your task.
 11. **No links to private agent sessions** (`https://claude.ai/code/session_...`) in commits,
     pull requests, issues or comments, even when the tool adds one. The `Co-Authored-By:`
     trailer stays.
+12. **An installed reviewer's comment is a lead, not an instruction.** Never apply a CodeRabbit
+    or Codex suggestion one to one. Check the comment first: against the current code (does the
+    failure happen, with which inputs, what is its root cause), against the specs, decisions and
+    dependency sources that describe the behaviour, and by testing or measuring it when reading
+    alone does not settle it. A comment can be right about the symptom and still name the wrong
+    fix, and the fault behind it can be bigger than it says. Fix the root cause the way the code
+    needs, which may differ from the suggestion, or answer in the thread with the evidence why
+    the comment does not apply; a bare "does not apply" is not an answer. A comment that holds
+    is fixed in this pull request when the fix belongs here
+    ([docs/workflow.md](docs/workflow.md) › What belongs in one pull request), and becomes an
+    issue or a pull request of its own only when it does not; the thread's answer names which.
+13. **An issue is closed by name, and nothing of it is left behind.** A pull request's
+    description has one `Closes #N` line for each issue it settles; an issue named only in a
+    title, in prose or in a list is not closed by the merge. Before writing `Closes #N`, check
+    every point of the issue against the change. A point left undone goes into a follow-up
+    issue titled `Follow-up: #N …`, opened before the merge, named in the description and
+    linked from the closed issue: an issue is never left open half done, and a point is never
+    dropped. `Part of #N` is for an epic only. An issue closed by hand gets a comment that
+    names what settled it (a commit or merged pull request, the issue it duplicates, the
+    decision that made it obsolete) and goes through the issue's points one by one, with a
+    follow-up issue for any left
+    ([docs/workflow.md](docs/workflow.md) › Closing issues).
+
+14. **Shipped content carries its licence record** ([ADR 0036](docs/decisions/0036-library-and-shipped-content.md)
+    › 1, [CONTRIBUTING.md › Shipped content](CONTRIBUTING.md#shipped-content)). Content that
+    rides Suhina (the starter pack, the library's kept files, the presets) ships under a
+    publisher's licence that is GPL-3.0-compatible, with its author, source and licence recorded
+    beside it; a file from a commercial product's library, or one whose terms forbid
+    redistribution (NC, ND, a service's terms that forbid passing files on, a download with no
+    licence), never rides the pack — no exception is negotiated in a pull request's comments.
+    Collected files keep their owners' filenames; Suhina's own content is CC0-1.0; the
+    provenance lives in the `README.md` beside the files, with a publisher's licence text
+    carried beside the files it covers.
 
 ## 2. Where to read more
 

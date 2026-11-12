@@ -6,6 +6,26 @@
 use super::*;
 
 impl App {
+    /// Asks the ASIO driver for its buffer sizes again (`audio.checkDriver`) when Settings › Audio
+    /// opens or closes, and when the window gets the focus back while it shows: a size set in the
+    /// driver's control panel that the driver did not announce opens the output again, with no
+    /// refresh to press. Asking is cheap: the driver playing is asked on its own thread.
+    pub(super) fn follow_audio_page(&mut self, ctx: &egui::Context) {
+        let shown = self.settings_open && self.page.shows_devices();
+        let viewport =
+            if self.page.window { egui::ViewportId::from_hash_of("settings-window") } else { egui::ViewportId::ROOT };
+        // The root frame receives metadata for every native viewport. Its own focus
+        // need not change when the driver panel returns focus to floating Settings.
+        let focused = ctx.input(|i| i.raw.viewports.get(&viewport).and_then(|v| v.focused).unwrap_or(false));
+        let returned = shown && focused && !self.window_focused;
+        if shown != self.audio_page_shown || returned {
+            // No output open, or not ASIO: nothing to ask.
+            let _ = self.projects.execute("audio.checkDriver", &json!({}));
+        }
+        self.audio_page_shown = shown;
+        self.window_focused = focused;
+    }
+
     /// Lists the audio hosts and devices for Settings › Audio (`audio.devices`).
     pub(super) fn list_audio_devices(&mut self) {
         match self.projects.execute("audio.devices", &json!({})) {
@@ -177,8 +197,10 @@ impl App {
                     let panel = Rect::from_min_max(whole.min, Pos2::new(whole.right(), top));
                     let bar = Rect::from_min_max(Pos2::new(whole.left(), top), whole.max);
                     suhina_plugins::trace::timed("settings native contents", || self.settings_contents(ui, panel));
-                    let _status =
-                        ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| self.status_bar(ui, None));
+                    let status_bar = crate::kit::element::STATUS_BAR.enter();
+                    let _status = ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| {
+                        self.status_bar(ui, &status_bar, None)
+                    });
                     if ui.input(|input| {
                         input.viewport().close_requested()
                             || (self.page.capture.is_none() && input.modifiers.command && input.key_pressed(Key::Comma))
@@ -220,8 +242,14 @@ impl App {
                     // the page is seen while the dialog is open, not only behind it.
                     let top = (window.bottom() - theme::STATUS_BAR).max(window.min.y);
                     let dim = Rect::from_min_max(window.min, Pos2::new(window.right(), top));
-                    ui.painter()
-                        .set(tint, egui::Shape::rect_filled(dim, 0.0, theme::window_background().gamma_multiply(0.6)));
+                    ui.painter().set(
+                        tint,
+                        egui::Shape::rect_filled(
+                            dim,
+                            0.0,
+                            crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
+                        ),
+                    );
                 }
                 ui.painter().rect_stroke(panel, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
             },
@@ -281,7 +309,12 @@ impl App {
                 self.list_midi_inputs();
             }
             let names = self.projects.audio_system().and_then(|system| system.device_names());
-            if self.audio_devices.changed(names) {
+            // An output opened again (after a size set in the ASIO driver's control panel, say)
+            // has asked its driver for its sizes anew, so the list is made again from them. What
+            // the output measures per callback is not followed: it changes from one callback to
+            // the next on some hosts, and the list would be made again many times a second.
+            let opened = self.projects.outputs_opened();
+            if self.audio_devices.changed(names) | self.audio_output_watch.changed(Some(opened)) {
                 self.list_audio_devices();
             }
         }
@@ -342,6 +375,7 @@ impl App {
             self.settings.keep_device_inputs(self.projects.device_inputs());
             self.projects.set_backup_settings(self.settings.backup, self.settings.backup_clean_up);
             motion::set_enabled(ui.ctx(), self.settings.animations);
+            crate::kit::widgets::set_drag_hides_pointer(ui.ctx(), self.settings.drag_hides_pointer);
             self.arrangement.headers_left = headers_left(self.settings.track_headers);
             self.arrangement.returns_hidden = self.settings.view.returns_hidden;
             self.arrangement.waveform_zoom = self.settings.view.waveform_zoom as f32 / 100.0;

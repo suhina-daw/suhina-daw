@@ -131,6 +131,12 @@ impl Renderer {
         // Audio clips that started before `time` and are still playing there start mid-clip.
         self.next_audio = 0;
         self.active_audio_count = 0;
+        // An unwarped clip carried on through a tempo edit (`Renderer::swap`) plays from its
+        // beats again: the carry-over is for the sound that went on, and kept after a start or
+        // a jump the clip played seconds off where it is drawn (silent before its file began).
+        for arranged in &mut self.graph.audio_events {
+            arranged.event.play_from_beats();
+        }
         self.metronome.reset_at(beat);
         self.graph.launcher.beat = beat;
         self.graph.launcher.tempo_from_map();
@@ -151,14 +157,21 @@ impl Renderer {
         crate::tempo::beat_at(&self.graph.tempo, self.time())
     }
 
-    /// Ends every sounding note and device tail that the transport stopping or jumping cuts.
-    pub(crate) fn release_sounding(&mut self) {
+    /// Ends every sounding note and device tail that the transport stopping or jumping cuts. A
+    /// stop (`everything`) also sends the instruments an all-notes-off; a jump or a loop's wrap,
+    /// where notes start again in the same block, releases the held keys one by one
+    /// ([`Chain::release_held`](crate::chain::Chain::release_held)).
+    pub(crate) fn release_sounding(&mut self, everything: bool) {
         for voice in self.voices.iter_mut().filter(|v| v.active) {
             voice.end = voice.end.min(self.transport.position);
         }
         let frame = self.block_frame;
         for chain in &mut self.graph.chains {
-            chain.release_all(frame);
+            if everything {
+                chain.release_all(frame);
+            } else {
+                chain.release_held(frame);
+            }
         }
         self.active_audio_count = 0;
     }
@@ -207,8 +220,9 @@ impl Renderer {
             self.transport.start_beat
         };
         self.transport.running = false;
+        self.path_fade_left = 0;
         self.metronome.reset();
-        self.release_sounding();
+        self.release_sounding(true);
         // Ready for the next start, at the marker.
         self.graph.ahead.move_to(self.start_frame());
         self.stretch_fresh = true;
@@ -335,7 +349,7 @@ impl Renderer {
             return;
         }
         if let Some((start, _)) = self.graph.loop_beats {
-            self.jump_to(start);
+            self.jump_to_with(start, true);
         }
         self.graph.launcher.publish();
     }
@@ -366,10 +380,22 @@ impl Renderer {
 
     /// While running, playback continues from `beat` from the next frame on.
     pub(crate) fn jump_to(&mut self, beat: f64) {
-        self.release_sounding();
+        self.jump_to_with(beat, false);
+    }
+
+    /// [`Renderer::jump_to`]; a loop's `wrap` moves the stretched clips by their own jumps, so the
+    /// ones moved to the loop start ahead of it play at once.
+    fn jump_to_with(&mut self, beat: f64, wrap: bool) {
+        // The sound moves anyway: no fade from where it was.
+        self.path_fade_left = 0;
+        self.release_sounding(false);
         self.locate(beat);
         // Read from the new place; until the worker gets there, stretched clips are silent.
-        self.graph.ahead.move_to(self.transport.time_at_origin);
+        if wrap {
+            self.graph.ahead.wrap_to(self.transport.time_at_origin);
+        } else {
+            self.graph.ahead.move_to(self.transport.time_at_origin);
+        }
         self.stretch_fresh = false;
         let launcher = &mut self.graph.launcher;
         let at_beat = launcher.launch_beat();

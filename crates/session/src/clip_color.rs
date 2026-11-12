@@ -33,11 +33,18 @@ pub(crate) fn parse_color(params: &Value, key: &str) -> Result<Option<Rgb>, Comm
 /// `"none"` makes them show the track's colour again.
 pub(crate) fn set_clip_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let color = parse_color(params, "color")?;
-    let track = track_id(&session.project, params)?;
-    let index = match Args::new(params).value("index") {
-        None => None,
-        Some(v) => Some(
-            v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("index must be a clip index from project.clips")?,
+    let (track, index) = match crate::commands::named_arrangement_clip(&session.project, params)? {
+        Some((track, _, index)) => (track, Some(index)),
+        None => (
+            track_id(&session.project, params)?,
+            match Args::new(params).value("index") {
+                None => None,
+                Some(v) => Some(
+                    v.as_u64()
+                        .and_then(|n| usize::try_from(n).ok())
+                        .ok_or("index must be a clip index from project.clips")?,
+                ),
+            },
         ),
     };
     let p = &mut session.project;

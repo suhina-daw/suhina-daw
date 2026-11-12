@@ -96,7 +96,8 @@ fn a_shift_keeps_values_in_range_and_moves_silence_from_the_bottom() {
     assert_eq!(Scale::Mute.shift(1.0, -0.4), 1.0);
 }
 
-/// A track's lanes, opened the first time, are those with points, or the volume's when none has.
+/// A track's lanes, opened the first time, are the top lane (the volume) and those with points
+/// mounted under it (#1322).
 #[test]
 fn the_first_open_shows_the_lanes_with_points_or_the_volume() {
     let mut project = crate::demo::demo_project();
@@ -117,8 +118,9 @@ fn the_first_open_shows_the_lanes_with_points_or_the_volume() {
     let params = Params::build(&project);
     let track = project.tracks[1].id;
     state.toggle(track, &params);
-    assert_eq!(state.shown(track, &params), [LaneKey::mixer(PAN)]);
-    assert_eq!(state.height(track, &params), LANE + LINE);
+    // The top lane shows the volume, the pan with its points is mounted under it (#1322).
+    assert_eq!(state.shown(track, &params), [LaneKey::mixer(VOLUME), LaneKey::mixer(PAN)]);
+    assert_eq!(state.height(track, &params), 2.0 * (LANE + LINE));
 }
 
 /// A built-in device's parameters are listed under its name, with their lanes' points.
@@ -147,7 +149,11 @@ fn a_built_in_devices_parameters_can_be_shown_with_its_lanes() {
     assert_eq!(gain.map(|p| p.points.len()), Some(1));
     let mut state = LanesState::default();
     state.toggle(track, &params);
-    assert_eq!(state.shown(track, &params), [LaneKey { device: Some(0), param: "gain".into() }]);
+    // Under the top lane's volume, as a lane with points (#1322).
+    assert_eq!(
+        state.shown(track, &params),
+        [LaneKey::mixer(VOLUME), LaneKey { device: Some(0), param: "gain".into() }]
+    );
 }
 
 /// A data-only device's parameters are listed and placed as their controls place them.
@@ -467,4 +473,398 @@ fn the_dragged_text_is_that_of_the_value_the_command_sets() {
     assert_eq!(Scale::Volume.committed(0.0), 0.0);
     assert_eq!(Scale::Volume.committed(10f64.powf(-80.0 / 20.0)), 0.0);
     assert_eq!(Scale::Mute.committed(0.7), 1.0);
+}
+
+/// The parameter list a hosted plug-in gives: a CLAP gain in 0 … 1 with its text for the value
+/// it listed, a 4-step choice in a group, a hidden and a read-only parameter, and one it does not
+/// let be automated.
+fn plugin_list() -> std::sync::Arc<[suhina_plugins::ParamInfo]> {
+    let param = |id: u32, name: &str| suhina_plugins::ParamInfo {
+        id,
+        name: name.into(),
+        group: String::new(),
+        min: 0.0,
+        max: 1.0,
+        default: 0.5,
+        value: 0.5,
+        text: String::new(),
+        steps: 0,
+        automatable: true,
+        read_only: false,
+        hidden: false,
+    };
+    vec![
+        suhina_plugins::ParamInfo { text: "50 %".into(), ..param(0, "Gain") },
+        suhina_plugins::ParamInfo {
+            group: "Osc".into(),
+            min: 0.0,
+            max: 3.0,
+            steps: 3,
+            value: 1.0,
+            ..param(4, "Osc Shape")
+        },
+        suhina_plugins::ParamInfo { hidden: true, ..param(5, "Hidden") },
+        suhina_plugins::ParamInfo { read_only: true, ..param(6, "Meter") },
+        suhina_plugins::ParamInfo { automatable: false, ..param(7, "Bypass") },
+    ]
+    .into()
+}
+
+/// A project whose first track's channel runs a CLAP plug-in, with a lane on parameter 9, which
+/// the plug-in does not list.
+fn plugin_project() -> (Project, TrackId) {
+    let mut project = crate::demo::demo_project();
+    let track = project.tracks[0].id;
+    let channel = project.tracks[0].channel.unwrap();
+    let mut device = suhina_engine::model::Device::new(
+        "Synth",
+        suhina_engine::model::DeviceKind::Clap { id: "com.example.synth".into() },
+    );
+    let mut lane = AutomationLane::new("9");
+    lane.points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, 2.0)].into();
+    device.automation.push(lane);
+    project.channel_mut(channel).unwrap().devices.insert(0, device);
+    (project, track)
+}
+
+/// A hosted plug-in's parameters are rows of the same list as a built-in device's: under the
+/// device's name, in the plug-in's own groups, only those it lets be automated, seen and changed;
+/// a lane on a parameter it does not list stays with its points and says so (#1205).
+#[test]
+fn a_plug_in_s_parameters_are_listed_like_a_device_s() {
+    let (project, track) = plugin_project();
+    // Without the plug-in's list (it has not answered yet) only its lane is there.
+    let alone = Params::build(&project);
+    let names: Vec<String> = alone.of(track).iter().filter(|p| p.key.device == Some(0)).map(Param::label).collect();
+    assert_eq!(names, ["Synth: Parameter 9 (not available)"]);
+    let missing = alone.param(track, &LaneKey { device: Some(0), param: "9".into() }).unwrap();
+    assert_eq!(missing.points.len(), 2, "the lane keeps its points");
+    assert_eq!(missing.scale.position(2.0), 1.0, "its range reaches its points");
+
+    let mut lists = PluginLists::default();
+    lists.lists.insert((track, 0), plugin_list());
+    let params = Params::build_with(&project, lists.clone());
+    let rows: Vec<(String, Option<&str>)> =
+        params.of(track).iter().filter(|p| p.key.device == Some(0)).map(|p| (p.label(), p.group.as_deref())).collect();
+    assert_eq!(
+        rows,
+        [
+            ("Synth: Gain".to_string(), None),
+            ("Synth: Osc Shape".to_string(), Some("Osc")),
+            ("Synth: Parameter 9 (not available)".to_string(), None),
+        ]
+    );
+    // The search finds it by the device and the group, as a device's.
+    let shape = params.param(track, &LaneKey { device: Some(0), param: "4".into() }).unwrap();
+    assert!(shape.search_text().contains("synth osc"));
+    assert_eq!(shape.short_name(), "Shape");
+    assert_eq!(shape.current, 1.0, "the value it listed");
+    // Built again with the very same lists, nothing changes; a new list builds them again.
+    let mut again = params.clone();
+    again.take_plugins(&project, lists);
+    assert_eq!(again, params);
+}
+
+/// A plug-in lane's scale: evenly over the plug-in's range, on its steps for a stepped one, and
+/// the plug-in's own text for a value it named; a value it did not name shows the number and is
+/// asked about (#1205).
+#[test]
+fn a_plug_in_lane_takes_the_plug_in_s_range_steps_and_text() {
+    let (project, track) = plugin_project();
+    let mut lists = PluginLists::default();
+    lists.lists.insert((track, 0), plugin_list());
+    let mut texts = std::collections::HashMap::new();
+    texts.insert((0, 0.25f64.to_bits()), "25 %".to_string());
+    lists.texts.insert((track, 0), std::sync::Arc::new(std::sync::Mutex::new(texts)));
+    let params = Params::build_with(&project, lists);
+    let gain = params.param(track, &LaneKey { device: Some(0), param: "0".into() }).unwrap();
+    assert!(!gain.scale.stepped());
+    assert_eq!(gain.scale.position(0.25), 0.25);
+    assert_eq!(gain.scale.text(0.5), "50 %", "the text it listed");
+    assert_eq!(gain.scale.text(0.25), "25 %", "a text it gave since");
+    assert_eq!(gain.scale.text(0.75), "0.750", "not named yet: the number");
+    assert_eq!(gain.scale.command(1.5), json!(1.0), "kept in range");
+    let shape = params.param(track, &LaneKey { device: Some(0), param: "4".into() }).unwrap();
+    assert!(shape.scale.stepped());
+    assert_eq!(shape.scale.value_at(0.4), 1.0, "on its nearest step");
+    assert_eq!(shape.scale.text(2.0), "2");
+    assert_eq!(shape.scale.nudge_step(), 1.0, "Up and Down move a step");
+    // The values it was asked about and did not name go to the app to ask, once.
+    let asked = params.asked_texts();
+    let mut asked: Vec<(u32, Vec<f64>)> = asked.into_iter().map(|(_, _, id, values)| (id, values)).collect();
+    asked.sort_by_key(|(id, _)| *id);
+    assert_eq!(asked, [(0, vec![0.75]), (4, vec![2.0])]);
+    assert!(params.asked_texts().is_empty());
+}
+
+/// A plug-in's range is not trusted: an empty or upside-down one and numbers that are not finite
+/// stay on the lane (#1205).
+#[test]
+fn a_plug_in_scale_survives_hostile_ranges() {
+    let upside_down = PluginScale { min: 1.0, max: -1.0, ..PluginScale::default() };
+    assert_eq!(upside_down.snap(5.0), 1.0);
+    assert_eq!(Scale::Plugin(Box::new(upside_down)).position(0.0), 0.5);
+    let empty = Scale::Plugin(Box::new(PluginScale { min: 2.0, max: 2.0, steps: 4, ..PluginScale::default() }));
+    assert_eq!((empty.position(2.0), empty.value_at(0.7)), (0.0, 2.0));
+    let wild = Scale::Plugin(Box::new(PluginScale { min: f64::NAN, max: f64::INFINITY, ..PluginScale::default() }));
+    assert_eq!(wild.value_at(0.5), 0.5, "0 … 1 instead");
+    assert_eq!(wild.position(f64::NAN), 0.0);
+}
+
+/// The demo project's first track with `layout` as its lanes' layout, its lanes open, and the
+/// parameters built from it.
+fn laid_out(layout: Option<Layout>) -> (LanesState, TrackId, Params) {
+    let mut project = crate::demo::demo_project();
+    let track = project.tracks[0].id;
+    let channel = project.tracks[0].channel.unwrap();
+    if let Some(layout) = layout {
+        let lanes = layout.lanes.iter().map(|k| suhina_engine::model::LaneRef::mixer(k.param.clone())).collect();
+        let groups = layout
+            .groups
+            .iter()
+            .map(|g| suhina_engine::model::LaneGroup {
+                name: g.name.clone(),
+                lanes: g.keys.iter().map(|k| suhina_engine::model::LaneRef::mixer(k.param.clone())).collect(),
+                folded: g.folded,
+                device: None,
+            })
+            .collect();
+        project.lane_layouts.push(suhina_engine::model::LaneLayout { channel, lanes, groups });
+    }
+    let params = Params::build(&project);
+    let mut lanes = LanesState::default();
+    lanes.open.insert(track);
+    (lanes, track, params)
+}
+
+fn mixer(keys: &[&str]) -> Vec<LaneKey> {
+    keys.iter().map(|k| LaneKey::mixer(k)).collect()
+}
+
+/// The top lane shows the parameter worked on: before anything is chosen, the one the setting
+/// names (the volume by default) unless it is mounted, never the next free one; a control moved
+/// by hand shows there unless its lane is mounted; the top lane's x leaves it empty, never gone
+/// (#1322).
+#[test]
+fn the_top_lane_shows_the_parameter_worked_on() {
+    let (mut lanes, track, params) = laid_out(Some(Layout::default()));
+    assert_eq!(lanes.active(track, &params), Some(LaneKey::mixer(VOLUME)), "the setting's default");
+    lanes.top_lane = TopLane::Pan;
+    assert_eq!(lanes.active(track, &params), Some(LaneKey::mixer(PAN)));
+    lanes.top_lane = TopLane::None;
+    assert_eq!(lanes.rows(track, &params), [LaneRow::Empty]);
+    let (mut lanes, track, params) = laid_out(Some(Layout { lanes: mixer(&[VOLUME]), groups: Vec::new() }));
+    assert_eq!(lanes.active(track, &params), None, "volume is mounted, and the pan is not shown instead");
+    assert_eq!(lanes.rows(track, &params), [LaneRow::Empty, LaneRow::Lane(LaneKey::mixer(VOLUME))]);
+    // Moved by hand: the mute shows at the top; the mounted volume stays in its own lane.
+    lanes.focus(track, LaneKey::mixer(MUTE), &params);
+    assert_eq!(lanes.active(track, &params), Some(LaneKey::mixer(MUTE)));
+    lanes.focus(track, LaneKey::mixer(VOLUME), &params);
+    assert_eq!(lanes.active(track, &params), Some(LaneKey::mixer(MUTE)), "a mounted lane is edited in place");
+    assert_eq!(lanes.last_lane, Some((track, LaneKey::mixer(VOLUME))));
+    // Cleared, the top lane stays as an empty row.
+    lanes.clear_active(track);
+    assert_eq!(lanes.rows(track, &params)[0], LaneRow::Empty);
+    // Closed lanes stay closed.
+    lanes.open.clear();
+    lanes.focus(track, LaneKey::mixer(PAN), &params);
+    assert!(lanes.rows(track, &params).is_empty());
+}
+
+/// A track never laid out shows its automated lanes mounted, and all three of volume, pan and
+/// mute mounted leave the top lane empty (#1322).
+#[test]
+fn a_track_never_laid_out_mounts_its_automated_lanes() {
+    let (lanes, track, params) = laid_out(None);
+    let automated: Vec<LaneKey> =
+        params.of(track).iter().filter(|p| !p.points.is_empty()).map(|p| p.key.clone()).collect();
+    assert_eq!(lanes.mounted(track, &params), automated);
+    let (lanes, track, params) = laid_out(Some(Layout { lanes: mixer(&[VOLUME, PAN, MUTE]), groups: Vec::new() }));
+    assert_eq!(lanes.active(track, &params), None);
+    assert_eq!(lanes.rows(track, &params)[0], LaneRow::Empty);
+}
+
+/// The top lane's plus mounts its parameter right under it, as one command; the top lane is then
+/// empty, not the next of volume, pan and mute; the top lane's height goes with a parameter
+/// chosen in it (#1322).
+#[test]
+fn the_top_lanes_plus_mounts_it() {
+    let (mut lanes, track, params) = laid_out(Some(Layout::default()));
+    let action = lanes.mount(track, &LaneKey::mixer(VOLUME), &params);
+    assert_eq!(action.id, "automation.setLayout");
+    assert_eq!(action.params["lanes"], json!([{ "param": "volume" }]));
+    assert_eq!(lanes.active(track, &params), None, "empty after the plus");
+    lanes.focus(track, LaneKey::mixer(MUTE), &params);
+    assert_eq!(lanes.active(track, &params), Some(LaneKey::mixer(MUTE)), "a control moved shows again");
+    lanes.set_active(track, LaneKey::mixer(PAN), &params);
+    lanes.set_lane_height(track, &LaneKey::mixer(PAN), 90.0);
+    lanes.set_active(track, LaneKey::mixer(MUTE), &params);
+    assert_eq!(lanes.lane_height(track, &LaneKey::mixer(MUTE)), 90.0);
+}
+
+/// A layout's lanes move, group, ungroup and go; groups keep their lanes together; a lane
+/// dropped among a group's joins it, one dragged out leaves it, one dropped on a folded group goes
+/// in at its end; a plug-in's mounted lane goes into its device's group (#1322).
+#[test]
+fn a_layout_moves_groups_and_mounts_lanes() {
+    let (v, p, m) = (LaneKey::mixer(VOLUME), LaneKey::mixer(PAN), LaneKey::mixer(MUTE));
+    let mut layout = Layout { lanes: vec![v.clone(), p.clone(), m.clone()], groups: Vec::new() };
+    layout.move_lanes(std::slice::from_ref(&m), &Place::Before { key: v.clone(), join: false }, false);
+    assert_eq!(layout.lanes, [m.clone(), v.clone(), p.clone()]);
+    let index = layout.group(&[m.clone(), p.clone()]).unwrap();
+    assert_eq!(layout.groups[index].name, "Group 1");
+    assert_eq!(layout.lanes, [m.clone(), p.clone(), v.clone()], "kept together at the first");
+    layout.move_lanes(std::slice::from_ref(&v), &Place::Before { key: p.clone(), join: true }, false);
+    assert!(layout.groups[index].keys.contains(&v));
+    layout.move_lanes(std::slice::from_ref(&v), &Place::End, false);
+    assert!(!layout.groups[index].keys.contains(&v));
+    layout.groups[index].folded = true;
+    layout.move_lanes(std::slice::from_ref(&v), &Place::Into(index), false);
+    assert_eq!(layout.groups[index].keys.last(), Some(&v), "dropped into the folded group");
+    assert_eq!(layout.group(std::slice::from_ref(&v)).map(|i| layout.groups[i].name.clone()), Some("Group 2".into()));
+    layout.ungroup(&[0]);
+    layout.remove(std::slice::from_ref(&m), &[]);
+    assert!(!layout.lanes.contains(&m));
+    // A device's lanes mount into its group, a second device of the same name into its own.
+    let (a, b) = (LaneKey { device: Some(1), param: "7".into() }, LaneKey { device: Some(2), param: "7".into() });
+    let mut layout = Layout::default();
+    layout.mount(&a, Some("Serum 2"));
+    layout.mount(&LaneKey { device: Some(1), param: "8".into() }, Some("Serum 2"));
+    layout.mount(&b, Some("Serum 2"));
+    let names: Vec<&str> = layout.groups.iter().map(|g| g.name.as_str()).collect();
+    assert!(names.contains(&"Serum 2") && names.contains(&"Serum 2 2"), "{names:?}");
+    assert_eq!(layout.groups.iter().find(|g| g.device == Some(1)).map(|g| g.keys.len()), Some(2));
+    // Without the setting, a mounted lane stands on its own.
+    let mut plain = Layout::default();
+    plain.mount(&a, None);
+    assert!(plain.groups.is_empty());
+}
+
+/// A lane dropped on a group's heading lands before the group, outside it, even the group's own
+/// first lane; dropped before one of the group's lanes it joins the group (#1322).
+#[test]
+fn a_lane_dropped_on_a_groups_heading_lands_outside_the_group() {
+    let (v, p, m) = (LaneKey::mixer(VOLUME), LaneKey::mixer(PAN), LaneKey::mixer(MUTE));
+    let gain = LaneKey { device: Some(0), param: "7".into() };
+    let group = |keys: Vec<LaneKey>| LaneGroup { name: "Synth".into(), keys, folded: false, device: Some(0) };
+    // Mute, then the group: pan (its first lane) and the plug-in's lane, then volume.
+    let start = Layout {
+        lanes: vec![m.clone(), p.clone(), gain.clone(), v.clone()],
+        groups: vec![group(vec![p.clone(), gain.clone()])],
+    };
+    // The group's own first lane dropped on its heading leaves the group and stays above it.
+    let mut layout = start.clone();
+    layout.move_lanes(std::slice::from_ref(&p), &Place::BeforeGroup(0), false);
+    assert_eq!(layout.lanes, [m.clone(), p.clone(), gain.clone(), v.clone()]);
+    assert_eq!(layout.groups[0].keys, std::slice::from_ref(&gain));
+    // Another lane dropped on the heading lands above it, outside the group.
+    let mut layout = start.clone();
+    layout.move_lanes(std::slice::from_ref(&v), &Place::BeforeGroup(0), false);
+    assert_eq!(layout.lanes, [m.clone(), v.clone(), p.clone(), gain.clone()]);
+    assert_eq!(layout.groups[0].keys, [p.clone(), gain.clone()]);
+    // Dropped before the group's first lane, under the heading, it joins the group.
+    let mut layout = start.clone();
+    layout.move_lanes(std::slice::from_ref(&m), &Place::Before { key: p.clone(), join: true }, false);
+    assert_eq!(layout.lanes, [m.clone(), p.clone(), gain.clone(), v.clone()]);
+    assert!(layout.groups[0].keys.contains(&m));
+    // A lane dropped where it already is changes nothing.
+    let mut layout = start.clone();
+    layout.move_lanes(std::slice::from_ref(&p), &Place::Before { key: p.clone(), join: true }, false);
+    assert_eq!(layout, start);
+    // The whole group dropped on its own heading stays as it is.
+    let mut layout = start.clone();
+    layout.move_lanes(&[p.clone(), gain.clone()], &Place::BeforeGroup(0), true);
+    assert_eq!(layout, start);
+}
+
+/// Lanes are picked by their headers, groups by their headings; Delete takes the picked out of
+/// the layout as one command (#1322).
+#[test]
+fn picked_lanes_and_groups_are_deleted_in_one_command() {
+    let (v, p, m) = (LaneKey::mixer(VOLUME), LaneKey::mixer(PAN), LaneKey::mixer(MUTE));
+    let group = LaneGroup { name: "G".into(), keys: vec![p.clone(), m.clone()], folded: false, device: None };
+    let (mut lanes, track, params) =
+        laid_out(Some(Layout { lanes: vec![v.clone(), p.clone(), m.clone()], groups: vec![group] }));
+    lanes.pick(track, &v, egui::Modifiers::NONE, &params);
+    lanes.pick(track, &m, egui::Modifiers::SHIFT, &params);
+    assert_eq!(lanes.picked.len(), 3);
+    lanes.pick(track, &p, egui::Modifiers::COMMAND, &params);
+    assert!(!lanes.is_picked(track, &p));
+    assert_eq!(lanes.dragged_with(track, &m, &params), [v.clone(), m.clone()]);
+    let layout = lanes.layout(track, &params);
+    lanes.pick_group(track, 0, egui::Modifiers::NONE, &layout);
+    assert!(lanes.picked.is_empty() && lanes.has_picks());
+    let action = lanes.delete_picked(&params).unwrap();
+    assert_eq!(action.params["lanes"], json!([{ "param": "volume" }]));
+    assert_eq!(action.params["groups"], json!([]));
+    assert!(!lanes.has_picks());
+}
+
+/// A parameter moved in a plug-in's own editor moves its lane's faint line at once, not only when
+/// the plug-in lists its parameters again (#1205).
+#[test]
+fn a_plug_in_parameter_moved_in_its_editor_moves_its_line_at_once() {
+    let (project, track) = plugin_project();
+    let mut lists = PluginLists::default();
+    lists.lists.insert((track, 0), plugin_list());
+    let mut params = Params::build_with(&project, lists.clone());
+    let gain = LaneKey { device: Some(0), param: "0".into() };
+    assert_eq!(params.param(track, &gain).map(|p| p.current), Some(0.5));
+    let mut moved = lists.clone();
+    moved.moved.push((track, 0, 0, 0.8));
+    params.take_plugins(&project, moved);
+    assert_eq!(params.param(track, &gain).map(|p| p.current), Some(0.8));
+    // The same lists: nothing else was built again.
+    assert!(params.param(track, &LaneKey { device: Some(0), param: "4".into() }).is_some());
+}
+
+/// The range a duplicate moved goes back with that duplicate's undo and on again with its redo,
+/// also once the session's history is full and its oldest step goes as each new one comes; an
+/// undo of another step leaves it (#1322).
+#[test]
+fn a_duplicates_undo_brings_the_range_back_with_a_full_history() {
+    let track = TrackId(1);
+    let painted = LaneRange { track, key: LaneKey::mixer(VOLUME), start: 0.0, end: 4.0, more: Vec::new() };
+    let mut lanes = LanesState { range: Some(painted.clone()), ..LanesState::default() };
+    let full = 256;
+    // The duplicate: a new step, the depth staying at the limit.
+    assert_eq!(lanes.range_actions("duplicate").len(), 1);
+    lanes.follow_history("automation.duplicate", (full, 10), (full, 11));
+    let moved = lanes.range.clone();
+    assert_eq!(moved.as_ref().map(|r| (r.start, r.end)), Some((4.0, 8.0)));
+    // Another edit after it, at the limit too.
+    lanes.follow_history("automation.addPoint", (full, 11), (full, 12));
+    // Its undo leaves the range; the next undo, the duplicate's, brings it back.
+    lanes.follow_history("edit.undo", (full, 12), (full - 1, 12));
+    assert_eq!(lanes.range, moved, "the point's undo");
+    lanes.follow_history("edit.undo", (full - 1, 12), (full - 2, 12));
+    assert_eq!(lanes.range, Some(painted.clone()), "the duplicate's undo");
+    lanes.follow_history("edit.redo", (full - 2, 12), (full - 1, 12));
+    assert_eq!(lanes.range, moved, "its redo");
+    // A step another project made (a depth the lanes did not follow) moves nothing.
+    lanes.follow_history("edit.undo", (3, 40), (2, 40));
+    assert_eq!(lanes.range, moved);
+}
+
+/// A group heading picked in one layout is let go of once the track's layout changes (an undo
+/// adds or takes away a group before it), so Delete never acts on another group (#1322).
+#[test]
+fn picked_groups_are_let_go_of_when_the_layout_changes() {
+    let track = TrackId(1);
+    let (v, p) = (LaneKey::mixer(VOLUME), LaneKey::mixer(PAN));
+    let group = |name: &str, key: &LaneKey| LaneGroup {
+        name: name.into(),
+        keys: vec![key.clone()],
+        folded: false,
+        device: None,
+    };
+    let two = Layout { lanes: vec![v.clone(), p.clone()], groups: vec![group("A", &v), group("B", &p)] };
+    let mut lanes = LanesState::default();
+    lanes.pick_group(track, 1, egui::Modifiers::NONE, &two);
+    lanes.keep_picks(track, &two);
+    assert_eq!(lanes.picked_groups, [(track, 1)], "the same layout keeps the pick");
+    // An undo took group A away: index 1 is no group now, and B is index 0.
+    let one = Layout { lanes: vec![v.clone(), p.clone()], groups: vec![group("B", &p)] };
+    lanes.keep_picks(track, &one);
+    assert!(lanes.picked_groups.is_empty());
 }

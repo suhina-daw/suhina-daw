@@ -25,14 +25,20 @@ fn rects_id() -> Id {
 #[derive(Default)]
 pub(super) struct NativeStyles {
     module: String,
-    scope: Option<crate::kit::style_class::Scope>,
+    scope: Option<crate::kit::element::Entered>,
 }
 impl NativeStyles {
     pub(super) fn enter(&mut self, module: &str) {
         if self.module != module {
             self.scope.take();
             self.module = module.into();
-            self.scope = Some(crate::kit::style_class::enter_named("toolbar-module", module));
+            self.scope = Some(crate::kit::element::TOOLBAR_MODULE.id(module).enter());
+        }
+    }
+    /// The module in scope's surface in `rect`, `fill` where the sheet gives none.
+    pub(super) fn paint(&self, painter: &egui::Painter, rect: Rect, fill: egui::Color32) {
+        if let Some(module) = &self.scope {
+            module.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill });
         }
     }
     pub(super) fn place(&mut self, ui: &Ui, module: &str, base: Rect) -> Rect {
@@ -87,9 +93,11 @@ pub(super) fn place(ui: &Ui, module: &str, base: Rect) -> Rect {
 
 impl App {
     /// Returns true when the custom layout has rendered the bar.
+    /// `inside` is the toolbar's content box, in `ui`'s rect, its whole box.
     pub(super) fn themed_toolbar(
         &mut self,
         ui: &mut Ui,
+        inside: Rect,
         grid: Option<&TrackGrid>,
         cpu: Option<u32>,
         ram: Option<u64>,
@@ -150,7 +158,7 @@ impl App {
                 .filter(|id| !toolbar.hidden.contains(id))
                 .map(|id| (id.clone(), self.toolbar_module_width(ui, id)))
                 .collect();
-            if let Some(modules) = crate::kit::native_css::toolbar(&modules, rect.size()) {
+            if let Some(modules) = crate::kit::native_css::toolbar(&modules, rect.size(), inside.height()) {
                 if default_layout && !crate::kit::native_css::toolbar_layout_requested() {
                     return false;
                 }
@@ -198,22 +206,28 @@ impl App {
             }
         }
         let mut hovered_switch = None;
-        egui::ScrollArea::horizontal().id_salt("custom-toolbar-scroll").auto_shrink([false, false]).show(ui, |ui| {
-            ui.set_min_height(rect.height());
-            ui.horizontal(|ui| {
-                for module in &toolbar.order {
-                    let hidden = toolbar.hidden.contains(module);
-                    if hidden {
-                        continue;
-                    }
-                    let width = self.toolbar_module_width(ui, module);
-                    let (_, at) = ui.allocate_space(Vec2::new(width, (rect.height() - 4.0).max(24.0)));
-                    let at = place(ui, module, at);
-                    if let Some(grid) = grid {
-                        self.toolbar_module(ui, at, module, grid, cpu, ram, actions, &mut hovered_switch);
-                    }
-                }
-            });
+        // In the bar's content box, inside its border and padding (#1336).
+        ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+            egui::ScrollArea::horizontal().id_salt("custom-toolbar-scroll").auto_shrink([false, false]).show(
+                ui,
+                |ui| {
+                    ui.set_min_height(inside.height());
+                    ui.horizontal(|ui| {
+                        for module in &toolbar.order {
+                            let hidden = toolbar.hidden.contains(module);
+                            if hidden {
+                                continue;
+                            }
+                            let width = self.toolbar_module_width(ui, module);
+                            let (_, at) = ui.allocate_space(Vec2::new(width, (inside.height() - 4.0).max(24.0)));
+                            let at = place(ui, module, at);
+                            if let Some(grid) = grid {
+                                self.toolbar_module(ui, at, module, grid, cpu, ram, actions, &mut hovered_switch);
+                            }
+                        }
+                    });
+                },
+            );
         });
         self.hover_switch(ui.ctx(), hovered_switch);
         self.toolbar_edit_overlay(ui, rect);
@@ -344,7 +358,7 @@ impl App {
         actions: &mut Vec<Action>,
         hovered_switch: &mut Option<View>,
     ) {
-        let _module_style = crate::kit::style_class::enter_named("toolbar-module", module);
+        let _module_style = crate::kit::element::TOOLBAR_MODULE.id(module).enter();
         let painter = ui.painter_at(rect);
         let middle = |index: f32, width: f32| {
             Rect::from_min_size(egui::pos2(rect.left() + index, rect.top()), Vec2::new(width, rect.height()))
@@ -354,11 +368,11 @@ impl App {
             "tempo" => {
                 measure_field(ui, module, super::control_bar::tempo_width(ui));
                 ui.ctx().data_mut(|d| d.insert_temp(Id::unique("sampler-tempo"), grid.tempo_bpm));
-                self.tempo_field(ui, &painter, rect, grid.tempo_bpm, false, actions);
+                self.tempo_field(ui, &painter, rect, grid.tempo_bpm, None, actions);
             }
             "signature" => {
                 measure_field(ui, module, super::control_bar::signature_width(ui));
-                super::control_bar::signature_field(ui, &painter, rect, grid, false, actions);
+                super::control_bar::signature_field(ui, &painter, rect, grid, None, actions);
             }
             "grid" => {
                 let (caption, rect) = captioned(rect, 26.0);
@@ -420,22 +434,26 @@ impl App {
                     let at = middle(index as f32 * 29.0, 28.0);
                     let at = crate::kit::control_layout::place(&format!("transport-{role}"), at, ui.max_rect());
                     let response = widgets::button_area(ui, at, Id::unique(role), label);
-                    let _style = crate::kit::style_class::enter_named_response("button", role, &response);
+                    let style = crate::kit::element::BUTTON
+                        .id(role)
+                        .response(&response)
+                        .attr(crate::kit::element::Checked, on)
+                        .enter();
                     if response.clicked() {
                         actions.push(if index == 0 { self.play_action() } else { self.stop_action() });
                     }
                     let state = State::response(&response, on);
-                    let ink =
-                        crate::kit::style_class::foreground(if on { theme::accent() } else { theme::text_primary() });
+                    let ink = style.color_or(if on { theme::accent() } else { theme::text_primary() });
                     widgets::button_surface(
                         &painter,
                         at,
+                        &style,
                         &response,
                         on,
                         if on { theme::control_active() } else { theme::control_background() },
                         0.0,
                     );
-                    if !skin::paint(&painter, at, role, state, ink, 0.0) {
+                    if !skin::paint_as(&style, &painter, at, role, state, ink) {
                         if index == 0 {
                             widgets::play_glyph(&painter, at.center(), false, ink, 10.0);
                         } else {

@@ -172,7 +172,7 @@ fn a_backup_left_by_a_crash_is_offered_and_opens_unsaved_tied_to_its_file() {
         (offer.backup.clone(), offer.file.clone(), offer.name()),
         (backup.clone(), Some(file.clone()), "Song".into())
     );
-    let (session, warnings) = Session::recover(&offer.backup, offer.file.as_deref()).unwrap();
+    let (session, warnings) = Session::recover(&offer.backup, offer.file.as_deref(), None).unwrap();
     assert!(warnings.is_empty());
     assert_eq!(session.source(), Some(file.as_path()));
     assert!(session.has_unsaved_changes());

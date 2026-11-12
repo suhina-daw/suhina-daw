@@ -147,7 +147,7 @@ fn changes_after_everything_change_nothing() {
 
 /// Eight seconds of a click every half second (a beat at 120 bpm), each click 5 ms of a full-scale
 /// square wave at 1 kHz, as one file at 48 kHz.
-fn click_track() -> (AudioRegion, AudioPool) {
+fn click_track() -> ((AudioRegion, ClipAudio), AudioPool) {
     let samples: Vec<f32> = (0..8 * SR as usize)
         .map(|i| {
             let into_beat = i % (SR as usize / 2);
@@ -158,20 +158,24 @@ fn click_track() -> (AudioRegion, AudioPool) {
         sample_rate: Some(SR),
         channels: Some(1),
         duration_seconds: Some(8.0),
+        ..AudioRegion::new("clicks.wav")
+    };
+    let region_audio = ClipAudio {
         warped: true,
         stretch: StretchMode::Repitch,
         warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 16.0, audio_time: 8.0 }],
-        ..AudioRegion::new("clicks.wav")
+        ..ClipAudio::default()
     };
     let mut pool = AudioPool::new();
     pool.files.insert("clicks.wav".into(), Arc::new(AudioData { sample_rate: SR, channels: 1, samples }));
-    (region, pool)
+    ((region, region_audio), pool)
 }
 
 #[test]
 fn a_repitched_warped_clip_stays_on_the_grid() {
-    let (region, pool) = click_track();
+    let ((region, audio), pool) = click_track();
     let mut p = project(LaneData::Audio(region), 16.0);
+    p.arrangement.lanes[0].clips[0].audio = audio;
     p.transport.tempo_changes = vec![step(4.0, 80.0), ramp(12.0, 150.0)].into();
     let out =
         render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 256, None)
@@ -181,9 +185,9 @@ fn a_repitched_warped_clip_stays_on_the_grid() {
 
 #[test]
 fn a_stretched_warped_clip_stays_on_the_grid() {
-    let (region, pool) = click_track();
-    let region = AudioRegion { stretch: StretchMode::Rhythmic, ..region };
+    let ((region, audio), pool) = click_track();
     let mut p = project(LaneData::Audio(region), 16.0);
+    p.arrangement.lanes[0].clips[0].audio = ClipAudio { stretch: StretchMode::Rhythmic, ..audio };
     p.transport.tempo_changes = vec![step(4.0, 80.0), ramp(12.0, 150.0)].into();
     let out =
         render_offline_from(&p, RenderInputs::from_audio(&pool, suhina_device_registry::factory()), SR, 256, None)
@@ -195,9 +199,9 @@ fn a_stretched_warped_clip_stays_on_the_grid() {
 
 #[test]
 fn an_unwarped_clip_plays_at_its_own_speed_from_its_beat() {
-    let (region, pool) = click_track();
-    let region = AudioRegion { warped: false, ..region };
+    let ((region, audio), pool) = click_track();
     let mut p = project(LaneData::Audio(region), 16.0);
+    p.arrangement.lanes[0].clips[0].audio = ClipAudio { warped: false, ..audio };
     p.arrangement.lanes[0].clips[0].start = 4.0;
     p.transport.tempo_changes = vec![step(2.0, 60.0)].into();
     let out =

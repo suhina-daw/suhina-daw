@@ -3,7 +3,7 @@ description: Checking for a newer build of Suhina and installing it from inside 
 read_when: update, updates, new version available, check for updates, download update, nightly update, auto update, test build, gh, github cli, developer mode
 type: spec
 status: draft
-last_verified: 2026-11-07
+last_verified: 2026-11-12
 covers:
   - crates/update/src/lib.rs
   - crates/update/src/version.rs
@@ -62,7 +62,7 @@ A local build (`cargo run`) is never told it is behind: it has no channel, and r
 
 ## The start panel
 
-While a newer build is available, a line between the actions and the list says *New version
+While a newer build is available, a line between the actions and the list says *New nightly
 available: Suhina 0.0.1-nightly.20261018+c176a33* with **Download update now** and a link to the
 release page. The button:
 
@@ -77,6 +77,31 @@ release page. The button:
 
 A failure (no space, a folder Suhina may not write to, a checksum that does not match) is shown on
 the same line with the reason, and the running build is left as it was.
+
+When the download cannot start at all (a test build while Suhina is not connected to gh, no folder
+the program is in), the button opens Help › Check for updates…, which says why and has *Connect
+Suhina to your gh* when a sign-in is what is missing. The button never does nothing.
+
+A test build is offered as *New test build available: the test build of #663 (…)*.
+
+Nothing is downloaded or installed until the user presses the button: the check only tells.
+
+## With a project open
+
+The same line shows as a bar across the top of the workspace, under the toolbar, where the
+missing-files bar shows. The prompt to open a project and the missing-files bar go first while
+either has something to say. The bar is part of the window, not a dialog, and does not take the
+keyboard. Besides **Download update now** and **What's new** it has **Later**, which hides the
+offer of that build until a newer one is out or Suhina starts again. The download's progress,
+*Restart now* and a failure show in the same bar. While the bar waits on the person it has
+**Later**:
+
+- on an installed update, beside *Restart now*: the bar goes, and *Restart now* stays in Help ›
+  Check for updates…;
+- on a failure, beside *Try again*: the bar goes until the updater has something new to say (a
+  new install, a new failure, a newer build).
+
+A download or an install in progress has nothing to put off and shows no **Later**.
 
 ## Installing in place
 
