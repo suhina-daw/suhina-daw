@@ -143,7 +143,7 @@ fn variant(engine: &Engine) -> Option<&Sheet> {
 }
 
 /// `html` and under it `body`, or the `window` element when the window is laid out.
-fn roots(window: bool) -> Vec<Element> {
+pub(super) fn roots(window: bool) -> Vec<Element> {
     vec![Element::new("html", None), Element::new(if window { "window" } else { "body" }, Some(0))]
 }
 
@@ -313,24 +313,56 @@ pub(super) fn host_layout(
     sizes: &[Option<[Option<f32>; 2]>],
     size: [f32; 2],
 ) -> Option<Vec<(Option<Rect>, Computed)>> {
-    let count = elements.len();
     let mut all = roots(window);
     if let Some(window) = all.get_mut(1) {
         window.attributes = attributes.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
     }
+    let first = all.len();
     all.extend(elements);
+    let mut measured = vec![None; first];
+    measured.extend_from_slice(sizes);
+    tree_layout(engine, all, first, &measured, size)
+}
+
+/// The style tree's elements from `html` down to `node`, as this frame's tree has them: the
+/// ancestors a bar's items are laid out under, so a rule through the window or a view around the
+/// bar (`clip-editor piano-roll-toolbar`) lays out as it paints (#1372).
+pub(super) fn chain(engine: &Engine, node: usize) -> Option<Vec<Element>> {
+    let mut nodes = vec![node];
+    while let Some(parent) = nodes.last().and_then(|&at| engine.nodes.get(at)).and_then(|at| at.parent) {
+        if nodes.len() > super::MAX_DEPTH * 4 {
+            return None;
+        }
+        nodes.push(parent);
+    }
+    nodes.reverse();
+    let mut elements = roots(false);
+    for (index, &at) in nodes.iter().enumerate() {
+        elements.push(element_of(engine, engine.nodes.get(at)?, index + 1));
+    }
+    Some(elements)
+}
+
+/// Lays out `all` (a tree from its root), each element with its content size in `sizes`, in a box
+/// of `size`, and returns the rectangles and styles of the elements from `first` on. Under the
+/// theme's sheets when it has some and their layout works; otherwise under the user-agent sheet
+/// alone, which is built in and always parses.
+pub(super) fn tree_layout(
+    engine: Option<&Engine>,
+    all: Vec<Element>,
+    first: usize,
+    sizes: &[Option<[Option<f32>; 2]>],
+    size: [f32; 2],
+) -> Option<Vec<(Option<Rect>, Computed)>> {
     let tree = Tree::new(all).ok()?;
     let size = [size[0].clamp(0.0, 16384.0), size[1].clamp(0.0, 16384.0)];
-    let mut measured = vec![None, None];
-    measured.extend_from_slice(sizes);
     let lay = |styles: Vec<ComputedStyle>| -> Option<Vec<(Option<Rect>, Computed)>> {
-        let rectangles = suhina_style::layout::compute(&tree, &styles, size, &measured).ok()?;
+        let rectangles = suhina_style::layout::compute(&tree, &styles, size, sizes).ok()?;
         Some(
             rectangles
                 .iter()
                 .zip(&styles)
-                .skip(2)
-                .take(count)
+                .skip(first)
                 .map(|(rect, style)| {
                     let rect = rect
                         .map(|r| Rect::from_min_size(egui::pos2(r.x, r.y), Vec2::new(r.width, r.height)))

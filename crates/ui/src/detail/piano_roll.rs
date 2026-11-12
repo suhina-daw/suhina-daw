@@ -303,7 +303,7 @@ pub fn show(
     let ruler = Rect::from_min_max(Pos2::new(keys.right(), area.top()), Pos2::new(area.right(), keys.top()));
     let grid_rect = Rect::from_min_max(Pos2::new(keys.right(), keys.top()), Pos2::new(area.right(), keys.bottom()));
     let lane = Rect::from_min_max(Pos2::new(keys.right(), keys.bottom()), area.max);
-    toolbar(ui, toolbar_rect, ToolbarCx { clip, keymap, copied, scale }, state, actions);
+    toolbar(ui, toolbar_rect, ToolbarCx { clip, keymap, copied, scale, size: options.toolbar_size }, state, actions);
     if grid_rect.width() <= 1.0 || grid_rect.height() <= 1.0 {
         state.remember_selection(&clip.notes, selecting_new || sent_edit(&actions[sent_from..]));
         return;

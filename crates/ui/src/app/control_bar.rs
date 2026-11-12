@@ -48,7 +48,7 @@ impl App {
         // all it can (the count-in and the metronome), after which it may run under the middle.
         let start_done = candidates.len().min(3).saturating_sub(1);
         let row = crate::kit::native_css::row::fitting_with(
-            &crate::kit::native_css::row::Bar::new("toolbar", rect.size()),
+            &crate::kit::native_css::row::Bar::of(bar, rect.size()),
             &candidates,
             |index, items, row| {
                 items
@@ -62,13 +62,19 @@ impl App {
         let painter = ui.painter_at(rect);
         let mut hovered_switch = None;
         let mut underline = None;
+        // The groups' boxes first, under their modules.
+        for (index, item) in items.iter().enumerate() {
+            if let (Some(id), Some(at), "group") = (item.id.as_deref(), row.at(index, rect.min), item.name) {
+                crate::kit::element::GROUP.id(id).attribute("kind", id).enter().paint(&painter, at);
+            }
+        }
         for (index, item) in items.iter().enumerate() {
             let (Some(module), Some(laid)) = (item.id.as_deref(), row.at(index, rect.min)) else { continue };
             if item.name != "toolbar-module" {
                 continue;
             }
             let at = themed_toolbar::place(ui, module, laid);
-            let scope = crate::kit::element::TOOLBAR_MODULE.id(module).enter();
+            let scope = crate::kit::element::TOOLBAR_MODULE.id(module).attribute("kind", module).enter();
             let mut module_ui = ui.new_child(egui::UiBuilder::new().id_salt(("toolbar", module)).max_rect(at));
             module_ui.set_clip_rect(ui.clip_rect().intersect(rect));
             let painter = painter.with_clip_rect(painter.clip_rect().intersect(rect));
@@ -570,16 +576,20 @@ impl App {
         if let Some(counts) = &counts {
             items.push(Item::named("bar-item", "status-counts").width(widgets::text_width(ui, counts, font.clone())));
         }
-        let Some(laid) = row::row(&Bar::new("status-bar", bar.size()), &items) else { return };
+        let Some(laid) = row::row(&Bar::of(style_class, bar.size()), &items) else { return };
+        // The message's colour says what it is (an error is red) unless a rule colours the item
+        // itself; the bar's own `color` does not.
         if let Some(rect) = laid.at(0, bar.min) {
-            let item = crate::kit::element::BAR_ITEM.id("status-message").enter();
+            let item = crate::kit::element::BAR_ITEM.id("status-message").attribute("kind", "status-message").enter();
             let content = item.paint(&painter, rect).content;
-            widgets::text_in(&painter, content, Align2::LEFT_CENTER, text, font.clone(), item.color_or(color));
+            let ink = item.own_color_or(style_class, color);
+            widgets::text_in(&painter, content, Align2::LEFT_CENTER, text, font.clone(), ink);
         }
         if let (Some(counts), Some(rect)) = (counts, laid.at(1, bar.min)) {
-            let item = crate::kit::element::BAR_ITEM.id("status-counts").enter();
+            let item = crate::kit::element::BAR_ITEM.id("status-counts").attribute("kind", "status-counts").enter();
             let content = item.paint(&painter, rect).content;
-            widgets::text_in(&painter, content, Align2::RIGHT_CENTER, &counts, font, item.color_or(theme::text_hint()));
+            let ink = item.own_color_or(style_class, theme::text_hint());
+            widgets::text_in(&painter, content, Align2::RIGHT_CENTER, &counts, font, ink);
         }
     }
 }

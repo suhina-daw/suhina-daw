@@ -465,6 +465,20 @@ impl Entered {
         self.style().filter(|s| s.authored.color).map_or(fallback, |s| s.color)
     }
 
+    /// The element's `color` where a rule gives it one of its own, not the one it inherits from
+    /// `around` (a bar's `color` on its items); else `fallback`, a colour the app gives by state
+    /// (an error, the shown tab).
+    pub fn own_color_or(&self, around: &Entered, fallback: Color32) -> Color32 {
+        let Some(own) = self.style().filter(|own| own.authored.color) else { return fallback };
+        let inherited = around.style().is_some_and(|around| around.authored.color && around.color == own.color);
+        if inherited { fallback } else { own.color }
+    }
+
+    /// The element's node in this frame's style tree, while it is entered.
+    pub(crate) fn node(&self) -> Option<usize> {
+        self.scope.node
+    }
+
     /// The element's computed `color`, the user-agent tier's included: for an element whose
     /// colour that tier gives (`knob-body`, `fader-cap`, `sample-point[kind]`), so a colour a
     /// theme gives an element around it does not reach it. `fallback` only where no sheet styles
@@ -597,7 +611,6 @@ names! {
     TOOLBAR = "toolbar";
     TOOLBAR_MODULE = "toolbar-module";
     GROUP = "group";
-    SPACE = "space";
     FLEXIBLE_SPACE = "flexible-space";
     BAR_ITEM = "bar-item";
     STATUS_BAR = "status-bar";

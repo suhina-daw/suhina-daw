@@ -216,6 +216,15 @@ impl ToolbarSize {
         }
     }
 
+    /// Its `piano-roll-toolbar[size]` value.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Large => "large",
+            Self::Larger => "larger",
+        }
+    }
+
     /// The factor the toolbar is drawn at (1.0, 1.25 and 1.5).
     pub fn scale(self) -> f32 {
         match self {

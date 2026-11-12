@@ -14,6 +14,8 @@ pub(super) struct ToolbarCx<'a> {
     pub(super) keymap: &'a crate::settings::keymap::Keymap,
     pub(super) copied: Option<usize>,
     pub(super) scale: f32,
+    /// The Toolbar size setting `scale` comes from: `piano-roll-toolbar[size]`.
+    pub(super) size: crate::settings::ToolbarSize,
 }
 
 /// The toolbar along the top of the piano roll (› Layout): the tools, the note clipboard, quantise,
@@ -30,15 +32,11 @@ pub(super) fn toolbar(
     actions: &mut Vec<Action>,
 ) {
     use crate::kit::native_css::row::{self, Bar};
-    let ToolbarCx { clip, keymap, copied, scale } = cx;
+    let ToolbarCx { clip, keymap, copied, scale, .. } = cx;
     if rect.height() < 4.0 {
         return;
     }
-    let size_word = match scale {
-        s if s >= 1.4 => "larger",
-        s if s >= 1.2 => "large",
-        _ => "normal",
-    };
+    let size_word = cx.size.word();
     let bar_el = crate::kit::element::PIANO_ROLL_TOOLBAR.attribute("size", size_word).enter();
     let painter = ui.painter_at(rect);
     let fill = crate::kit::style_class::surface_or(theme::panel_background());
@@ -73,36 +71,43 @@ pub(super) fn toolbar(
         rows: ROWS.map(|(_, word)| (row_toggle_width(ui, side, Some(word)), row_toggle_width(ui, side, None))),
     };
     let candidates: Vec<_> = Step::ALL.iter().map(|step| items(*step, &widths)).collect();
-    let bar = Bar::new("piano-roll-toolbar", rect.size()).attribute("size", size_word);
+    let bar = Bar::of(&bar_el, rect.size());
     let Some((chosen, laid)) = row::fitting(&bar, &candidates) else { return };
     let (Some(step), Some(items)) = (Step::ALL.get(chosen).copied(), candidates.get(chosen)) else { return };
     let selected = !state.acting().is_empty();
-    let mut rows = Vec::new();
+    let mut rows = [None; 3];
     let mut rows_group = None;
     for (index, item) in items.iter().enumerate() {
         let Some(area) = laid.at(index, rect.min) else { continue };
         let id = item.id.as_deref().unwrap_or("");
         match item.name {
             "separator" => {
-                let _line = crate::kit::element::SEPARATOR.attribute("kind", "bar").enter();
-                painter.vline(
-                    area.center().x,
-                    area.top() + 2.0..=area.bottom() - 2.0,
-                    theme::hairline(theme::border_strong()),
-                );
+                let line = crate::kit::element::SEPARATOR.attribute("kind", "bar").enter();
+                let ink = line.color_or(theme::border_strong());
+                painter.vline(area.center().x, area.top() + 2.0..=area.bottom() - 2.0, theme::hairline(ink));
             }
             "group" => rows_group = Some(area),
-            _ if item.parent.is_some() => rows.push(area),
-            _ => match id {
-                "piano-roll-workflow" => workflow_menu(ui, area, keymap, state, step < Step::Arrows),
-                "piano-roll-ghosts" => {
-                    ghost_view::menu(ui, area, &clip.ghosts, &mut state.ghost_source, step < Step::Arrows);
+            _ if item.parent.is_some() => {
+                let slot = ROWS.iter().position(|(button, _)| button.id() == id).and_then(|at| rows.get_mut(at));
+                if let Some(slot) = slot {
+                    *slot = Some(area);
                 }
-                "piano-roll-grid" => {
-                    if let Some(picked) = grid_menu(ui, area, clip, keymap, step == Step::Full) {
-                        state.grid_picked = Some(picked);
+            }
+            "bar-item" => {
+                let _item = crate::kit::element::BAR_ITEM.id(id).attribute("kind", id).enter();
+                match id {
+                    "piano-roll-workflow" => workflow_menu(ui, area, keymap, state, step < Step::Arrows),
+                    "piano-roll-ghosts" => {
+                        ghost_view::menu(ui, area, &clip.ghosts, &mut state.ghost_source, step < Step::Arrows);
+                    }
+                    _ => {
+                        if let Some(picked) = grid_menu(ui, area, clip, keymap, step == Step::Full) {
+                            state.grid_picked = Some(picked);
+                        }
                     }
                 }
+            }
+            _ => match id {
                 "piano-edit" => {
                     if let Some(button) =
                         edit_menu(&ButtonPaint { ui, painter: &painter, keymap, scale }, area, selected)
@@ -342,14 +347,15 @@ fn rows_toggles(
     ui: &Ui,
     painter: &egui::Painter,
     group: Rect,
-    toggles: &[Rect],
+    toggles: &[Option<Rect>; 3],
     words: bool,
     cx: ToolbarCx<'_>,
     state: &mut PianoRollState,
     actions: &mut Vec<Action>,
 ) {
     let clip = cx.clip;
-    let _group = crate::kit::element::GROUP.id("piano-roll-rows").enter();
+    let element = crate::kit::element::GROUP.id("piano-roll-rows").attribute("kind", "piano-roll-rows").enter();
+    element.paint(painter, group);
     painter.rect_stroke(group, 4.0, theme::hairline(theme::border_strong()), StrokeKind::Inside);
     // Fold folds to the notes, Scale to the clip's scale: each lit while the rows are folded its way.
     let folded = state.fold == Fold::Notes;
@@ -361,6 +367,8 @@ fn rows_toggles(
     ];
     let ons = [folded, scaled, state.highlight_scale];
     for (index, ((button, word), rect)) in ROWS.iter().zip(toggles).enumerate() {
+        // A toggle the sheet hides is gone; the others keep their own places.
+        let Some(rect) = rect else { continue };
         let on = ons.get(index).copied().unwrap_or(false);
         if !row_toggle(
             ui,
@@ -623,6 +631,7 @@ impl ButtonPaint<'_> {
         // chosen tool or an open column. `piano.draw` (`.on`, `.hover`) replaces its shape.
         let el = crate::kit::element::PIANO_TOOL
             .id(button.id())
+            .attribute("kind", button.id())
             .response(&response)
             .attr(crate::kit::element::Checked, chosen)
             .enter();

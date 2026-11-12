@@ -20,9 +20,24 @@ pub(super) fn show(
     let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let whole = ui.max_rect();
+    // The window's buttons, where Suhina draws them (Windows), keep their own room at the right
+    // end: they are the system's, like the title bar, and no sheet moves or hides them.
     let custom_controls = cfg!(target_os = "windows");
-    // The bar's items in one row (#1372): its start, its centre and its end, each a group. The
-    // settings say which group the app's name and the project's information go in.
+    let controls_width = if custom_controls { 3.0 * CONTROL_WIDTH } else { 0.0 };
+    let controls =
+        Rect::from_min_max(egui::pos2((whole.right() - controls_width).max(whole.left()), whole.top()), whole.max);
+    let body = Rect::from_min_max(whole.min, egui::pos2(controls.left(), whole.bottom()));
+    let drag = ui.interact(body, ui.scope_id().with("application-bar-drag"), Sense::click_and_drag());
+    drag.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, "Suhina application bar"));
+    if custom_controls && drag.drag_started() {
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+    }
+    if custom_controls && drag.double_clicked() {
+        let maximized = ui.input(|input| input.viewport().maximized.unwrap_or(false));
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+    }
+    // The bar's items in one row (#1372) across the rest: its start, its centre and its end, each
+    // a group. The settings say which group the app's name and the project's information go in.
     let (mut start, mut centre) = (Vec::new(), Vec::new());
     if settings.app_name_centered {
         centre.push(("app-name", "Suhina"));
@@ -51,52 +66,35 @@ pub(super) fn show(
             texts.push((items.len() - 1, *id, text));
         }
     }
-    let buttons = [
-        ("window-minimize", "Minimize", egui::ViewportCommand::Minimized(true)),
-        (
-            "window-maximize",
-            "Maximize",
-            egui::ViewportCommand::Maximized(!ui.input(|input| input.viewport().maximized.unwrap_or(false))),
-        ),
-        ("window-close", "Close", egui::ViewportCommand::Close),
-    ];
-    let first_button = items.len();
-    if custom_controls {
-        items.extend(buttons.iter().map(|(id, ..)| Item::named("bar-item", id).width(CONTROL_WIDTH).in_group(2)));
-    }
-    let laid = row::row(&Bar::new("application-bar", whole.size()), &items).unwrap_or_default();
-    // The window's buttons are always there: a sheet that hides one leaves it at the bar's end.
-    let control = |index: usize| {
-        laid.at(first_button + index, whole.min).unwrap_or_else(|| {
-            let left = whole.right() - (3 - index.min(3)) as f32 * CONTROL_WIDTH;
-            Rect::from_min_max(egui::pos2(left, whole.top()), egui::pos2(left + CONTROL_WIDTH, whole.bottom()))
-        })
-    };
-    let controls_left = if custom_controls { control(0).left().min(whole.right()) } else { whole.right() };
-    let body = Rect::from_min_max(whole.min, egui::pos2(controls_left.max(whole.left()), whole.bottom()));
-    let drag = ui.interact(body, ui.scope_id().with("application-bar-drag"), Sense::click_and_drag());
-    drag.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, "Suhina application bar"));
-    if custom_controls && drag.drag_started() {
-        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-    }
-    if custom_controls && drag.double_clicked() {
-        let maximized = ui.input(|input| input.viewport().maximized.unwrap_or(false));
-        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+    let laid = row::row(&Bar::of(style_class, body.size()), &items).unwrap_or_default();
+    for (index, item) in items.iter().enumerate().take(3) {
+        if let (Some(id), Some(rect)) = (item.id.as_deref(), laid.at(index, body.min)) {
+            crate::kit::element::GROUP.id(id).attribute("kind", id).enter().paint(ui.painter(), rect);
+        }
     }
     for (index, id, text) in texts {
-        if let Some(rect) = laid.at(index, whole.min) {
-            let item = crate::kit::element::BAR_ITEM.id(id).enter();
+        if let Some(rect) = laid.at(index, body.min) {
+            let item = crate::kit::element::BAR_ITEM.id(id).attribute("kind", id).enter();
             let content = item.paint(ui.painter(), rect).content;
-            group(ui, content, text, item.color_or(theme::text_primary()));
+            group(ui, content, text, item.own_color_or(style_class, theme::text_primary()));
         }
     }
     if !custom_controls {
         return;
     }
-    for (index, (id, label, command)) in buttons.into_iter().enumerate() {
-        let rect = control(index);
+    for (index, (label, command)) in [
+        ("Minimize", egui::ViewportCommand::Minimized(true)),
+        ("Maximize", egui::ViewportCommand::Maximized(!ui.input(|input| input.viewport().maximized.unwrap_or(false)))),
+        ("Close", egui::ViewportCommand::Close),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let rect = Rect::from_min_size(
+            controls.min + egui::vec2(index as f32 * CONTROL_WIDTH, 0.0),
+            egui::vec2(CONTROL_WIDTH, controls.height()),
+        );
         let glyph = ["−", "□", "×"].get(index).copied().unwrap_or("");
-        let _item = crate::kit::element::BAR_ITEM.id(id).enter();
         let response = ui.put(rect, egui::Button::new(glyph).frame(false)).on_hover_text(label);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Window {label}")));
         if response.clicked() {
@@ -119,6 +117,7 @@ fn group(ui: &Ui, rect: Rect, text: String, color: egui::Color32) {
     widgets::paint_text(&ui.painter().with_clip_rect(rect), position, galley, color);
 }
 
+/// The Windows custom title bar keeps all eight native resize directions.
 pub(super) fn resize_edges(ui: &Ui) {
     if !cfg!(target_os = "windows") || ui.input(|input| input.viewport().maximized.unwrap_or(false)) {
         return;
@@ -178,7 +177,14 @@ mod tests {
             let mut harness = Harness::builder().allow_missing_glyphs().with_size((640.0, 28.0)).build_ui(|ui| {
                 let _frame = crate::kit::native_css::frame(ui);
                 let bar = crate::kit::element::APPLICATION_BAR.enter();
-                show(ui, &bar, ViewSettings::default(), "Project", "120 BPM");
+                let settings = ViewSettings {
+                    app_name_centered: false,
+                    bar_project_centered: false,
+                    bar_project_name: true,
+                    bar_project_timing: true,
+                    ..ViewSettings::default()
+                };
+                show(ui, &bar, settings, "Project", "120 BPM");
             });
             harness.run();
             harness.run();
@@ -199,8 +205,12 @@ mod tests {
         let (plain, _) = painted("");
         let (padded, _) = painted("application-bar { padding-left: 30px; }");
         assert_eq!(x(&padded, "Suhina").zip(x(&plain, "Suhina")).map(|(a, b)| a - b), Some(22.0));
-        let (hidden, close) = painted("#project-name { display: none; } #window-close { display: none; }");
+        let (spaced, _) = painted("application-bar group { gap: 14px; }");
+        // Each item after the first of a group: the project's name, then its timing.
+        let gap = |texts: &[(String, f32)]| x(texts, "120 BPM").zip(x(texts, "Project")).map(|(a, b)| a - b);
+        assert_eq!(gap(&spaced).zip(gap(&plain)).map(|(a, b)| a - b), Some(10.0));
+        let (hidden, close) = painted("#project-name { display: none; } bar-item { display: none; }");
         assert!(x(&plain, "Project").is_some() && x(&hidden, "Project").is_none());
-        assert_eq!(close, cfg!(target_os = "windows"), "the window's buttons cannot be hidden");
+        assert_eq!(close, cfg!(target_os = "windows"), "the window's buttons are not the sheet's");
     }
 }

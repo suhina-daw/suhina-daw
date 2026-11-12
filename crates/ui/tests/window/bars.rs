@@ -99,3 +99,45 @@ fn the_status_bar_follows_the_sheet() {
     assert!((counts.right() - padded.right() - 34.0).abs() < 0.5, "{counts:?} {padded:?}");
     assert!(text_at("#status-counts { display: none; }", "scenes").is_none());
 }
+
+/// The rectangle of the node labelled exactly `label`, under `css`, in a window wide enough for
+/// the piano roll's whole toolbar.
+fn exactly(css: &str, label: &str) -> Option<egui::Rect> {
+    let mut h = with_clip(css);
+    h.set_size(egui::vec2(2400.0, 900.0));
+    h.run();
+    let rect = h.query_by_label(label).map(|node| node.rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    rect
+}
+
+#[test]
+fn a_hidden_rows_toggle_leaves_the_others_their_own_buttons() {
+    let fold = exactly("", "Fold").unwrap();
+    assert!(exactly("#piano-scale { display: none; }", "Scale").is_none());
+    // Fold keeps its place, and Highlight is still there as itself.
+    assert_eq!(exactly("#piano-scale { display: none; }", "Fold"), Some(fold));
+    assert!(exactly("#piano-scale { display: none; }", "Highlight scale").is_some());
+}
+
+#[test]
+fn rules_through_the_elements_around_a_bar_lay_it_out() {
+    let select = rect_of("", "Select (").unwrap();
+    let padded = rect_of("window piano-roll-toolbar { padding-left: 20px; }", "Select (").unwrap();
+    assert_eq!(padded.left(), select.left() + 12.0);
+}
+
+#[test]
+fn a_width_the_sheet_gives_does_not_make_the_bar_give_way() {
+    // The Rows toggles keep their words: the toolbar has room for them.
+    let fold = exactly("", "Fold").unwrap();
+    let narrow = exactly("#piano-select { width: 12px; }", "Fold").unwrap();
+    assert_eq!(narrow.width(), fold.width());
+}
+
+#[test]
+fn the_midi_tools_tab_row_s_padding_moves_its_tabs() {
+    let notes = exactly("", "Notes tab").unwrap();
+    let padded = exactly("tab-row { padding-left: 15px; }", "Notes tab").unwrap();
+    assert_eq!(padded.left(), notes.left() + 15.0);
+}

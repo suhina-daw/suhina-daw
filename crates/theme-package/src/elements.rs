@@ -122,9 +122,6 @@ pub const BAR_ITEM_IDS: &[&str] = &[
     "app-name",
     "project-name",
     "project-timing",
-    "window-minimize",
-    "window-maximize",
-    "window-close",
     "piano-roll-workflow",
     "piano-roll-ghosts",
     "piano-roll-grid",
@@ -214,18 +211,18 @@ pub const ELEMENTS: &[Element] = &[
             "backdrop-opacity",
             "backdrop-blur",
         ]),
-    element("application-bar", Region, "The bar at the very top, with the application's menus."),
+    element("application-bar", Region, "The bar at the very top, with the application's menus.")
+        .parts(&["group", "bar-item"]),
     element("menu-bar", Region, "The menu bar."),
     element("menu", Region, "An open menu of the menu bar.").settings(FLOATING),
     element("project-tabs", Region, "The bar of open projects' tabs.").parts(&["project-tab"]),
     element("project-tab", Control, "One open project's tab, its close button inside it.").attributes(&["selected"]),
-    element("toolbar", Region, "The toolbar under the bars, with the transport.").parts(&["toolbar-module"]),
+    element("toolbar", Region, "The toolbar under the bars, with the transport.").parts(&["group", "toolbar-module"]),
     element("toolbar-module", Part, "One area of the toolbar, by its id.")
         .ids(Ids::Listed { prefix: "", names: TOOLBAR_MODULES }),
     element("group", Container, "A group of a bar's items, by id: the toolbar's start and end, the application bar's parts, the piano roll's Rows.")
         .ids(Ids::Listed { prefix: "", names: GROUP_IDS })
         .attributes(&["kind"]),
-    element("space", Drawn, "A gap of fixed size between a bar's items."),
     element("flexible-space", Drawn, "A gap in a bar that takes the room left over."),
     element("bar-item", Part, "An item of the status bar, the application bar or the piano roll's toolbar, by id.")
         .ids(Ids::Listed { prefix: "", names: BAR_ITEM_IDS })

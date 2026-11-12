@@ -127,8 +127,7 @@ toolbar-module,
 bar-item,
 project-tab,
 piano-tool,
-separator,
-space { flex-shrink: 0; }
+separator { flex-shrink: 0; }
 flexible-space { flex: 1; }
 /* The toolbar: its start, the transport and the position in the middle, and its end. The start and
    the end share the room left over, so the middle stays in the middle. */
@@ -138,12 +137,14 @@ group[kind="toolbar-end"] { flex: 1; gap: 6px; }
 group[kind="toolbar-end"] { justify-content: flex-end; }
 toolbar-module[kind="browser"] { margin-right: -2px; }
 /* The application bar: its start, its centre and its end (the window's buttons, where Suhina draws
-   them). The start and the end share the room left, so the centre stays in the middle. */
+   them, keep their own room past it). The start and the end share the room left, so the centre
+   stays in the middle; the centre takes at most half the bar. */
 application-bar { padding-left: 8px; align-items: stretch; }
 application-bar group { align-items: stretch; gap: 4px; min-width: 0; }
 group[kind="app-bar-start"],
 group[kind="app-bar-end"] { flex: 1; }
 group[kind="app-bar-end"] { justify-content: flex-end; }
+group[kind="app-bar-centre"] { max-width: 50%; }
 application-bar bar-item { min-width: 0; flex-shrink: 1; }
 /* The piano roll's toolbar: the tools, the clipboard, quantise, the MIDI tools and the Rows group at
    its start, the menus, the grid value and the × at its end. Its gaps grow with its Toolbar size. */

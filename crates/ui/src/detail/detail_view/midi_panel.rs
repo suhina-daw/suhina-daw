@@ -311,7 +311,7 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
                 .width(widgets::text_width(ui, text, font.clone()) + 16.0)
         })
         .collect();
-    let Some(laid) = row::row(&Bar::new("tab-row", row.size()), &items) else { return };
+    let Some(laid) = row::row(&Bar::of(&element, row.size()), &items) else { return };
     for (index, ((tab, text), id)) in tabs.into_iter().zip(&ids).enumerate() {
         let Some(cell) = laid.at(index, row.min) else { continue };
         let response = widgets::button_area(ui, cell, Id::unique(("midi-tools-tab", text)), format!("{text} tab"));

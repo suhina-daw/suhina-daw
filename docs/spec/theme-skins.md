@@ -34,6 +34,7 @@ covers:
   - crates/ui/src/app/tabs.rs
   - crates/ui/src/app/application_bar.rs
   - crates/ui/src/detail/piano_roll/toolbar.rs
+  - crates/ui/src/detail/detail_view/midi_panel.rs
   - crates/ui/src/app/window_layout.rs
   - crates/ui/src/kit/divider.rs
   - crates/ui/src/kit/native_css/diagnostics.rs
@@ -959,7 +960,10 @@ the MIDI tools' tab row each lay their items out in one CSS row (#1372), through
 (its content box, as for the window's regions), and the sheet sets the geometry: `gap`, `padding`,
 alignment, sizes, margins and `flex-grow`. CSS does not reorder them (no `order`). An item the
 sheet hides (`display: none`) is gone from input as well as painting. A sheet whose layout fails
-is laid out by the user-agent sheet alone, as the window's grid is. The bar's own box is the one
+is laid out by the user-agent sheet alone, as the window's grid is. The items are laid out under
+the same elements around the bar as they paint under (the window, a view), so a rule such as
+`clip-editor piano-roll-toolbar { gap: 8px; }` or `window[menu-bar] #app-name { display: none; }`
+lays out as it paints. The bar's own box is the one
 the window's grid gave it: a `width` or `height` on the bar here changes nothing (set it in the
 grid's tracks).
 
@@ -968,12 +972,14 @@ grid's tracks).
 | Toolbar | `toolbar` | `group#toolbar-start` and `group#toolbar-end` around `toolbar-module#transport` and `#position`; the modules by id (`#browser`, `#tempo`, `#signature`, `#keys`, `#grid`, `#count-in`, `#metronome`, `#mapping`, `#performance`, `#views`, `#agents`) |
 | Status bar | `status-bar` | `bar-item#status-message`, `bar-item#status-counts` |
 | Project tabs | `project-tabs` | a `project-tab` per open project, `[selected]` on the one shown; its close button is inside it |
-| Application bar | `application-bar` | `group#app-bar-start`, `#app-bar-centre`, `#app-bar-end`; `bar-item#app-name`, `#project-name`, `#project-timing`; on Windows `bar-item#window-minimize`, `#window-maximize`, `#window-close` |
+| Application bar | `application-bar` | `group#app-bar-start`, `#app-bar-centre`, `#app-bar-end`; `bar-item#app-name`, `#project-name`, `#project-timing` |
 | Piano roll's toolbar | `piano-roll-toolbar[size]` | `piano-tool` buttons by id (`#piano-select` … `#piano-hide`, `#piano-edit` for the folded clipboard), `separator[kind="bar"]`, `group#piano-roll-rows` with `#piano-fold`, `#piano-scale`, `#piano-highlight`, a `flexible-space`, `bar-item#piano-roll-workflow`, `#piano-roll-ghosts`, `#piano-roll-grid` |
 | MIDI tools' tabs | `tab-row` | `editor-tab#tab-notes`, `#tab-transform`, `[checked]` on the one shown |
 
-Every item has a `kind` attribute equal to its id, which the user-agent sheet selects (it uses no
-ids). The user-agent sheet lays each bar out as Suhina's own layout did: `display: flex` and
+Every item has a `kind` attribute equal to its id, as it lays out and as it paints, which the
+user-agent sheet selects (it uses no ids). An item's text keeps the colour the app gives it by
+state (an error in the status bar, the tab shown) unless a rule gives the item a `color` of its
+own; the bar's `color`, which the items inherit, does not replace it. The user-agent sheet lays each bar out as Suhina's own layout did: `display: flex` and
 `align-items: center` on the bars and groups, `flex-shrink: 0` on items (an item keeps its width),
 `flex: 1` on a `flexible-space`. The toolbar's start and end groups share the room left over
 (`flex: 1`, the end `justify-content: flex-end`), so the transport and the position stay in the
@@ -984,14 +990,16 @@ those items to `#app-bar-centre`. `piano-roll-toolbar[size]` is `normal`, `large
 
 **Giving way.** A bar too narrow for its items takes a sparser set of them, in the app's order,
 until one fits: an item fits when it has the width the app measured and lies inside its group or
-the bar's content box. The toolbar takes away the captions of Quantize and Count-in, then the
+the bar's content box; a `width` the sheet gives an item is its own, not a lack of room. The
+toolbar takes away the captions of Quantize and Count-in, then the
 count-in and the metronome, then the agents, the mapping button, the RAM and the CPU; its start
 may run under the middle once it has left out all it can. The piano roll's toolbar gives way as
 `docs/spec/ui-clip-editor.md` › Layout says. When nothing fits, the sparsest set is drawn and
 clipped. A theme's `toolbar` order (`theme.json`) is laid out as it is, flat, with no giving way.
 
-**What cannot be hidden.** The window's buttons on Windows stay at the bar's end whatever the
-sheet says, so a theme cannot leave the window without a way to close it.
+**What is not an item.** The window's buttons on Windows (minimize, maximize, close) keep their
+own 96 points at the application bar's right end, outside its row, as the title bar is outside the
+window's grid: a theme cannot move, shrink or hide them. The row lies in the rest of the bar.
 
 **Not a row.** The MIDI tools' body is a column of fields, not a row of items: it keeps its own
 layout, styled through `midi-tools` (› the element reference).

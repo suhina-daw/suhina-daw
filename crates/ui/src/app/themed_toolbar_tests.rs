@@ -350,6 +350,11 @@ fn a_theme_s_padding_gap_and_display_move_and_hide_the_modules() {
     harness.state_mut().app.use_test_skin(css("toolbar-module[kind=\"browser\"] { margin-right: 10px; }"));
     harness.run();
     assert_eq!(harness.get_by_label("Tempo").rect().left(), tempo.left() + 12.0);
+    let play = harness.get_by_label("Play").rect();
+    harness.state_mut().app.use_test_skin(css("group[kind=\"toolbar-start\"] { gap: 16px; }"));
+    harness.run();
+    assert_eq!(harness.get_by_label("Tempo").rect().left(), tempo.left() + 10.0, "the gap was 6 points");
+    assert_eq!(harness.get_by_label("Play").rect(), play, "the middle stays in the middle");
     harness.state_mut().app.use_test_skin(css("#tempo { display: none; }"));
     harness.run();
     assert!(harness.query_by_label("Tempo").is_none(), "a hidden module has no input");

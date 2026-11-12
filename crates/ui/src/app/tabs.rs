@@ -187,7 +187,7 @@ impl App {
                 Item::new("project-tab").flag("selected", Some(*id) == active).width(galley.size().x + PAD * 2.0 + 16.0)
             })
             .collect();
-        let Some(laid) = row::row(&Bar::new("project-tabs", whole.size()), &items) else { return };
+        let Some(laid) = row::row(&Bar::of(style_class, whole.size()), &items) else { return };
         for (index, (id, name, galley)) in tabs.into_iter().enumerate() {
             let Some(tab) = laid.at(index, whole.min) else { continue };
             let element =
@@ -209,7 +209,9 @@ impl App {
             );
             let fill = motion::mix(idle, crate::kit::style_class::surface_or(theme::panel_background()), lit);
             element.paint_with(&painter, tab, crate::kit::element::Native { radius: 0.0, fill });
-            let text = element.color_or(motion::mix(theme::text_secondary(), theme::text_primary(), lit));
+            // The shown tab stands out unless a rule colours the tab itself; the row's `color` does not.
+            let text =
+                element.own_color_or(style_class, motion::mix(theme::text_secondary(), theme::text_primary(), lit));
             widgets::paint_text(
                 &painter,
                 Pos2::new(tab.left() + PAD, tab.center().y - galley.size().y / 2.0),
@@ -225,6 +227,7 @@ impl App {
         }
     }
 
+    /// The question asked when a project is dropped while another is open.
     pub(super) fn open_prompt_bar(&mut self, ui: &mut Ui) {
         let Some(path) = self.open_prompt.clone() else { return };
         let bar = ui.max_rect();
