@@ -1387,3 +1387,15 @@ fn a_plug_in_s_clip_editor_takes_no_piano_roll_insets() {
     assert_eq!(around(Edits::Plugin).area, 2.0 + 10.0, "the clip editor's alone");
     assert_eq!(around(Edits::Plugin).piano, around(Edits::PianoRoll).piano, "the piano roll's least height");
 }
+
+/// The ARA editor's × sends `view.editor`: the window hides the editor itself, as the piano
+/// roll's × does, and nothing reaches the session (which would answer "unknown command").
+#[test]
+fn the_ara_editors_x_hides_the_editor_in_the_window() {
+    let mut app = App::new();
+    app.detail_open = true;
+    assert!(app.window_action(&Action::new("view.editor", serde_json::json!({}))));
+    assert!(!app.detail_open && app.editor_closed, "hidden as an editor: selecting a clip opens it again");
+    // A session command is not the window's.
+    assert!(!app.window_action(&Action::new("transport.play", serde_json::json!({}))));
+}
