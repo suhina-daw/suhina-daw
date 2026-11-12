@@ -133,9 +133,11 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
     response.clicked() || ui.input(|i| i.key_pressed(Key::Escape))
 }
 
-/// Names a line of the dialog for screen readers and tests.
+/// Names a line of the dialog for screen readers and tests; two copies of a plug-in give two
+/// lines of the same text, told apart by where they are.
 fn name_for_readers(ui: &Ui, rect: Rect, label: &str) {
-    let response = ui.interact(rect, Id::unique(("plugin-loading-line", label)), Sense::hover());
+    let id = Id::unique(("plugin-loading-line", rect.top().to_bits(), label));
+    let response = ui.interact(rect, id, Sense::hover());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
 }
 
