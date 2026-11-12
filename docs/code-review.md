@@ -3,7 +3,7 @@ description: How to review pull requests for requirements, correctness, performa
 read_when: code review, reviewing a pull request, review feedback, contributor changes, security review, performance review, approval readiness, Codex review
 type: howto
 status: current
-last_verified: 2026-11-08
+last_verified: 2026-11-12
 covers:
   - AGENTS.md
   - CONTRIBUTING.md
@@ -187,10 +187,16 @@ provenance when dependencies or third-party material change, following the clean
 ## 8. Use external references when needed
 
 When a DSP, encoding, routing, scheduling or file-format decision cannot be judged confidently
-from the repository, consult authoritative documentation and permitted public open-source
-implementations. Compare behaviour, settings and constraints; a different implementation alone
-is not a defect. Follow clean-room restrictions and check licence compatibility before reusing
-any material. Never consult disassembled, decompiled or leaked proprietary code.
+from the repository, consult authoritative documentation and public open-source
+implementations, open-source DAWs and plug-in hosts included. Compare behaviour, settings and
+constraints; a different implementation alone is not a defect. A value or a solution from such an
+implementation may be proposed as the fix when its own provenance passes the checks in
+[CONTRIBUTING.md › Taking code from open-source projects](../CONTRIBUTING.md#taking-code-from-open-source-projects);
+code taken over as it is also needs a file licence AGENTS.md rule 10 allows, while a fact
+written anew in Suhina's code does not. The change then carries the notices that section asks
+for, and a missing notice is a finding.
+Never consult disassembled, decompiled or leaked proprietary code, nor values an open-source
+project took from such material.
 
 In review prose, describe Suhina's requirement, the observed problem and the technical principle
 without naming other DAWs. Keep comparison sources available for verification; do not remove

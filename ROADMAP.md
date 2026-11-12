@@ -224,6 +224,25 @@ refused or suspended, never by losing its edits.
 
 - Value drags: the Arrangement's volume and pan bars and Main's volume bar drag up and down or across, whichever way a drag moves first. Settings › Appearance › Hide pointer while dragging (on by default) chooses whether the pointer hides during a value drag or shows the arrow of its direction, and a theme can choose for its own controls with `drag-pointer: hidden | visible`.
 
+- The executable ships the NAM starter pack: the chosen amp models and cabinet impulse
+  responses ride every build and unpack into the library's `Sounds/NAM/Amp models/Suhina` and
+  `…/NAM/Cabinets/Suhina` folders at start, beside the user's own files and never over one; the
+  old defaults `Documents/Suhina/NAM models` and `…/IRs` move into those folders at start. A
+  file device's chosen state can be the pack's file by its `builtin:<device id>/<file name>`
+  key, loading from the executable wherever the app runs. Six of the stock presets now name a
+  shipped file, so adding them brings the model or cabinet with them.
+- `device.savePreset` saves one device's values — and the file it selects — as the user's own
+  preset into the library's `Presets/<device>/` folder; the device panel's menu has
+  **Save as preset…**, the browser lists the user's presets beside the stock ones under their
+  device, and its rows add them like any preset file.
+- The NAM Amp Modeler and NAM Cab Loader have stock presets under *Stock presets* in the browser,
+  five each, that set their controls (the amp's gain, EQ, HQ, delay and volume; the cabinet's
+  phase, high pass, cuts, delay and volume). Four amp presets and two cabinet presets also
+  select a shipped model or impulse response. Adding a preset adds a new device and changes no
+  device already on the track; a preset without a file of its own lands on the folder's first
+  file when dragged or quick-added. `device.add {stock}` and `track.add {stock}` add one by its
+  key, dragging one from the browser does the same, and each is one undo step.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
