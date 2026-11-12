@@ -411,8 +411,9 @@ fn grid_tracks(style: &ComputedStyle, property: Property) -> Vec<GridTemplateCom
 /// Lays out `tree` in `viewport`. `sizes` gives an element's content size where the host
 /// knows it (a bar's height from its text, a panel's saved width), by element index in `sizes`; a missing or
 /// `None` entry is none. Like a replaced element's in CSS, the size is the content box's: an
-/// `auto` size is it plus the element's padding and border, and a size the sheet sets wins. Only
-/// an element with no children has one.
+/// `auto` size is it plus the element's padding and border, and a size the sheet sets wins. On an
+/// element with children the size is its whole box instead, whatever the sheet says: a bar whose
+/// place the window's grid gave lays its items out in that box (#1372).
 pub fn compute(
     tree: &Tree,
     styles: &[ComputedStyle],
@@ -433,6 +434,13 @@ pub fn compute(
     let mut nodes = Vec::with_capacity(styles.len());
     let mut children = vec![Vec::new(); styles.len()];
     let mut visible = Vec::with_capacity(styles.len());
+    let mut parents = vec![false; styles.len()];
+    for parent in tree.elements().iter().filter_map(|element| element.parent) {
+        if let Some(slot) = parents.get_mut(parent) {
+            *slot = true;
+        }
+    }
+    let clean = |n: f32| n.is_finite().then(|| n.clamp(0.0, 16384.0));
     for (index, (element, computed)) in tree.elements().iter().zip(styles).enumerate() {
         // A `grid-area` its parent's template does not name leaves the element out, so a theme's
         // typo or a template without the area hides it rather than adding an implicit track.
@@ -517,18 +525,15 @@ pub fn compute(
                 .unwrap_or_else(|| grid_tracks(computed, Property::Rows)),
             ..Style::default()
         };
-        if computed.authored(Property::FlexGrow)
-            || computed.authored(Property::FlexShrink)
-            || computed.authored(Property::FlexBasis)
-        {
-            if let Value::Number(grow) = computed.get(Property::FlexGrow) {
-                style.flex_grow = grow;
-            }
-            if let Value::Number(shrink) = computed.get(Property::FlexShrink) {
-                style.flex_shrink = shrink;
-            }
-            style.flex_basis = size(computed, Property::FlexBasis);
+        // Their initial values are CSS's, so a sheet at any layer, the user-agent sheet's
+        // included, sets them as a browser would (#1372).
+        if let Value::Number(grow) = computed.get(Property::FlexGrow) {
+            style.flex_grow = grow.clamp(0.0, 1.0e6);
         }
+        if let Value::Number(shrink) = computed.get(Property::FlexShrink) {
+            style.flex_shrink = shrink.clamp(0.0, 1.0e6);
+        }
+        style.flex_basis = size(computed, Property::FlexBasis);
         if let Some(parent) = element.parent {
             let parent_style = styles.get(parent).ok_or("Missing parent style")?;
             let axis = if parent_style.get(Property::Layout) == Value::Layout(Layout::Row) {
@@ -563,6 +568,18 @@ pub fn compute(
             style.size = Size { width: length(viewport[0]), height: length(viewport[1]) };
         }
         let size = sizes.get(index).copied().flatten().unwrap_or([None, None]);
+        if parents.get(index).copied().unwrap_or(false) {
+            if let Some(width) = size[0].and_then(clean) {
+                style.size.width = length(width);
+                style.min_size.width = length(width);
+                style.max_size.width = length(width);
+            }
+            if let Some(height) = size[1].and_then(clean) {
+                style.size.height = length(height);
+                style.min_size.height = length(height);
+                style.max_size.height = length(height);
+            }
+        }
         nodes.push(taffy.new_leaf_with_context(style, size).map_err(|e| e.to_string())?);
     }
     for (index, children) in children.iter_mut().enumerate() {
