@@ -87,6 +87,7 @@ mixer,
 detail,
 clip-editor,
 piano-roll,
+piano-roll-toolbar,
 sample-map,
 popup,
 tooltip,
@@ -119,7 +120,8 @@ group,
 status-bar,
 project-tabs,
 application-bar,
-piano-roll-toolbar { display: flex; align-items: center; }
+piano-roll-toolbar,
+tab-row { display: flex; align-items: center; }
 /* An item keeps the width the app gives it; a group or the bar too narrow for it gives way. */
 toolbar-module,
 bar-item,
@@ -143,6 +145,16 @@ group[kind="app-bar-start"],
 group[kind="app-bar-end"] { flex: 1; }
 group[kind="app-bar-end"] { justify-content: flex-end; }
 application-bar bar-item { min-width: 0; flex-shrink: 1; }
+/* The piano roll's toolbar: the tools, the clipboard, quantise, the MIDI tools and the Rows group at
+   its start, the menus, the grid value and the × at its end. Its gaps grow with its Toolbar size. */
+piano-roll-toolbar { padding: 3px 4px 3px 8px; gap: 3px; }
+piano-roll-toolbar[size="large"] { gap: 3.75px; }
+piano-roll-toolbar[size="larger"] { gap: 4.5px; }
+piano-roll-toolbar separator[kind="bar"] { margin: 0 1.5px; }
+piano-roll-toolbar group { gap: 2px; padding: 1px 2px; align-items: stretch; }
+piano-tool[kind="piano-hide"] { margin-left: 2px; }
+/* A row of tabs, each as wide as its word. */
+tab-row { gap: 2px; align-items: stretch; }
 /* The project tabs, each as wide as its name, a line between them. */
 project-tabs { gap: 1px; align-items: stretch; }
 /* The status bar: its message, which takes the room left and is cut short, and the counts. */

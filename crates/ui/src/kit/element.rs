@@ -658,6 +658,7 @@ names! {
     VELOCITY = "velocity";
     PIANO_TOOL = "piano-tool";
     MIDI_TOOLS = "midi-tools";
+    TAB_ROW = "tab-row";
     CLIP_INFO = "clip-info";
     SAMPLE_MAP = "sample-map";
     SAMPLE_POINT = "sample-point";

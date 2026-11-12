@@ -292,21 +292,33 @@ fn tools_part(
 }
 
 /// The tab row: the Notes and Transform tabs (the one shown `text.primary` over a 2 px `accent`
-/// line, the other `text.hint`).
+/// line, the other `text.hint`), each as wide as its word, in one CSS row (#1372).
 fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRollState) {
+    use crate::kit::native_css::row::{self, Bar, Item};
+    let tabs = [(ToolsTab::Notes, "Notes"), (ToolsTab::Transform, "Transform")];
+    let element = crate::kit::element::TAB_ROW.enter();
+    element.paint(painter, row);
     painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(theme::border()));
     let font = theme::ui_font(theme::TEXT_SMALL);
-    let mut x = row.left();
-    for (tab, text) in [(ToolsTab::Notes, "Notes"), (ToolsTab::Transform, "Transform")] {
-        let width = (widgets::text_width(ui, text, font.clone()) + 16.0).min((row.right() - x).max(0.0));
-        let cell = Rect::from_min_max(Pos2::new(x, row.top()), Pos2::new(x + width, row.bottom()));
-        x = cell.right() + 2.0;
+    let ids = tabs.map(|(_, text)| format!("tab-{}", text.to_ascii_lowercase()));
+    let items: Vec<_> = tabs
+        .iter()
+        .zip(&ids)
+        .map(|((tab, text), id)| {
+            Item::new("editor-tab")
+                .id(id)
+                .flag("checked", state.tools_tab == *tab)
+                .width(widgets::text_width(ui, text, font.clone()) + 16.0)
+        })
+        .collect();
+    let Some(laid) = row::row(&Bar::new("tab-row", row.size()), &items) else { return };
+    for (index, ((tab, text), id)) in tabs.into_iter().zip(&ids).enumerate() {
+        let Some(cell) = laid.at(index, row.min) else { continue };
         let response = widgets::button_area(ui, cell, Id::unique(("midi-tools-tab", text)), format!("{text} tab"));
         // `editor-tab` (`[checked]` for the one shown), `#tab-notes` and `#tab-transform`.
         let on = state.tools_tab == tab;
-        let id = format!("tab-{}", text.to_ascii_lowercase());
         let el =
-            crate::kit::element::EDITOR_TAB.id(&id).response(&response).attr(crate::kit::element::Checked, on).enter();
+            crate::kit::element::EDITOR_TAB.id(id).response(&response).attr(crate::kit::element::Checked, on).enter();
         let ink = if on {
             theme::text_primary()
         } else {
@@ -316,8 +328,8 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, font.clone(), ink);
         if on {
             let line = Rect::from_min_max(
-                Pos2::new(cell.left() + 4.0, row.bottom() - 2.0),
-                Pos2::new(cell.right() - 4.0, row.bottom()),
+                Pos2::new(cell.left() + 4.0, cell.bottom() - 2.0),
+                Pos2::new(cell.right() - 4.0, cell.bottom()),
             );
             painter.rect_filled(line, 0.0, theme::accent());
         }

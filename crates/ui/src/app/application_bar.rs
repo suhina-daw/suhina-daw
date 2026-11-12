@@ -168,4 +168,39 @@ mod tests {
             assert_eq!(harness.query_by_label(label).is_some(), cfg!(target_os = "windows"));
         }
     }
+
+    /// The bar's items lie in one CSS row (#1372): its padding moves them, `display: none` takes
+    /// one away, and the window's buttons stay whatever the sheet says.
+    #[test]
+    fn the_bar_s_items_follow_the_sheet() {
+        let painted = |css: &str| {
+            crate::kit::native_css::set_user_sheet(Some(css.into()));
+            let mut harness = Harness::builder().allow_missing_glyphs().with_size((640.0, 28.0)).build_ui(|ui| {
+                let _frame = crate::kit::native_css::frame(ui);
+                let bar = crate::kit::element::APPLICATION_BAR.enter();
+                show(ui, &bar, ViewSettings::default(), "Project", "120 BPM");
+            });
+            harness.run();
+            harness.run();
+            let texts: Vec<_> = harness
+                .output()
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) => Some((text.galley.text().to_owned(), text.pos.x)),
+                    _ => None,
+                })
+                .collect();
+            let close = harness.query_by_label("Window Close").is_some();
+            crate::kit::native_css::set_user_sheet(None);
+            (texts, close)
+        };
+        let x = |texts: &[(String, f32)], text: &str| texts.iter().find(|(t, _)| t.contains(text)).map(|(_, x)| *x);
+        let (plain, _) = painted("");
+        let (padded, _) = painted("application-bar { padding-left: 30px; }");
+        assert_eq!(x(&padded, "Suhina").zip(x(&plain, "Suhina")).map(|(a, b)| a - b), Some(22.0));
+        let (hidden, close) = painted("#project-name { display: none; } #window-close { display: none; }");
+        assert!(x(&plain, "Project").is_some() && x(&hidden, "Project").is_none());
+        assert_eq!(close, cfg!(target_os = "windows"), "the window's buttons cannot be hidden");
+    }
 }

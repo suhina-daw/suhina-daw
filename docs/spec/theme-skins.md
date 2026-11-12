@@ -29,6 +29,11 @@ covers:
   - crates/ui/src/kit/native_css/shadows.rs
   - crates/ui/src/kit/native_css/text.rs
   - crates/ui/src/kit/native_css/window.rs
+  - crates/ui/src/kit/native_css/row.rs
+  - crates/ui/src/app/control_bar.rs
+  - crates/ui/src/app/tabs.rs
+  - crates/ui/src/app/application_bar.rs
+  - crates/ui/src/detail/piano_roll/toolbar.rs
   - crates/ui/src/app/window_layout.rs
   - crates/ui/src/kit/divider.rs
   - crates/ui/src/kit/native_css/diagnostics.rs
@@ -354,11 +359,11 @@ and click-to-reset work with every style. Segment count is bounded. Needle displ
 use peak for the thin pointer and RMS for the heavier pointer. These are dBFS level
 displays, not calibrated analogue VU or loudness measurements.
 
-Toolbar modules have stable names and a saved order/visibility. The built-in layout
-is used when no toolbar is supplied. Editing exposes labelled drag handles rather
-than stealing normal control gestures. Escape cancels a drag. Hidden modules can be
-restored from the editor, and resetting the layout restores the default. Narrow
-windows scroll the customized toolbar horizontally; controls do not overlap.
+Toolbar modules have stable names and a saved order/visibility. The default arrangement
+(› The bars' rows) is used when no toolbar is supplied. Editing exposes labelled drag handles
+rather than stealing normal control gestures; a module's offset moves it from where the row puts
+it. Escape cancels a drag. Resetting the layout restores the default. A toolbar too narrow for its
+modules is clipped at its end.
 
 Theme ZIP import validates the entire input before writing. Paths must be relative,
 remain within the theme folder, contain no parent traversal or symlinks, and name
@@ -454,11 +459,11 @@ so and changes nothing. *New theme* starts from a
 
 ## Native CSS: controls and the toolbar
 
-The native centred toolbar exposes the same `toolbar-module` ids as the custom
-layout, without opting into new geometry for colour/paint-only rules. Module
-scopes are siblings rather than nested controls; their palette/style changes
-must be restored before painting another module. Native hit rectangles, ids,
-commands and default geometry remain unchanged.
+The toolbar's modules are `toolbar-module` elements by id, laid out in one CSS row whatever the
+theme (› The bars' rows). Module scopes are siblings rather than nested controls; their
+palette/style changes are restored before another module paints. Each module paints its box
+(`background`, border, shadows) and draws its controls in it; its ids and commands are the same in
+every arrangement.
 
 **Control surfaces.** A control paints its own surface through its element
 (`kit::element`, `Entered::paint`): `background-color`, `background-image`, `border-radius`,
@@ -946,6 +951,51 @@ window {
 project-tabs { display: none; }
 ```
 
+### The bars' rows
+
+The toolbar, the status bar, the project tabs, the application bar, the piano roll's toolbar and
+the MIDI tools' tab row each lay their items out in one CSS row (#1372), through one helper
+(`kit::native_css::row`). The app gives the items in its order, each with the size it measured
+(its content box, as for the window's regions), and the sheet sets the geometry: `gap`, `padding`,
+alignment, sizes, margins and `flex-grow`. CSS does not reorder them (no `order`). An item the
+sheet hides (`display: none`) is gone from input as well as painting. A sheet whose layout fails
+is laid out by the user-agent sheet alone, as the window's grid is. The bar's own box is the one
+the window's grid gave it: a `width` or `height` on the bar here changes nothing (set it in the
+grid's tracks).
+
+| Bar | Its element | Its items |
+|---|---|---|
+| Toolbar | `toolbar` | `group#toolbar-start` and `group#toolbar-end` around `toolbar-module#transport` and `#position`; the modules by id (`#browser`, `#tempo`, `#signature`, `#keys`, `#grid`, `#count-in`, `#metronome`, `#mapping`, `#performance`, `#views`, `#agents`) |
+| Status bar | `status-bar` | `bar-item#status-message`, `bar-item#status-counts` |
+| Project tabs | `project-tabs` | a `project-tab` per open project, `[selected]` on the one shown; its close button is inside it |
+| Application bar | `application-bar` | `group#app-bar-start`, `#app-bar-centre`, `#app-bar-end`; `bar-item#app-name`, `#project-name`, `#project-timing`; on Windows `bar-item#window-minimize`, `#window-maximize`, `#window-close` |
+| Piano roll's toolbar | `piano-roll-toolbar[size]` | `piano-tool` buttons by id (`#piano-select` … `#piano-hide`, `#piano-edit` for the folded clipboard), `separator[kind="bar"]`, `group#piano-roll-rows` with `#piano-fold`, `#piano-scale`, `#piano-highlight`, a `flexible-space`, `bar-item#piano-roll-workflow`, `#piano-roll-ghosts`, `#piano-roll-grid` |
+| MIDI tools' tabs | `tab-row` | `editor-tab#tab-notes`, `#tab-transform`, `[checked]` on the one shown |
+
+Every item has a `kind` attribute equal to its id, which the user-agent sheet selects (it uses no
+ids). The user-agent sheet lays each bar out as Suhina's own layout did: `display: flex` and
+`align-items: center` on the bars and groups, `flex-shrink: 0` on items (an item keeps its width),
+`flex: 1` on a `flexible-space`. The toolbar's start and end groups share the room left over
+(`flex: 1`, the end `justify-content: flex-end`), so the transport and the position stay in the
+middle; the application bar's start and end groups do the same round its centre. The settings
+that put the app's name or the project's information in the centre of the application bar move
+those items to `#app-bar-centre`. `piano-roll-toolbar[size]` is `normal`, `large` or `larger`
+(the *Toolbar size* setting), and its gap grows with it.
+
+**Giving way.** A bar too narrow for its items takes a sparser set of them, in the app's order,
+until one fits: an item fits when it has the width the app measured and lies inside its group or
+the bar's content box. The toolbar takes away the captions of Quantize and Count-in, then the
+count-in and the metronome, then the agents, the mapping button, the RAM and the CPU; its start
+may run under the middle once it has left out all it can. The piano roll's toolbar gives way as
+`docs/spec/ui-clip-editor.md` › Layout says. When nothing fits, the sparsest set is drawn and
+clipped. A theme's `toolbar` order (`theme.json`) is laid out as it is, flat, with no giving way.
+
+**What cannot be hidden.** The window's buttons on Windows stay at the bar's end whatever the
+sheet says, so a theme cannot leave the window without a way to close it.
+
+**Not a row.** The MIDI tools' body is a column of fields, not a row of items: it keeps its own
+layout, styled through `midi-tools` (› the element reference).
+
 ### Readable values
 
 Check `text.value` and `text.inverse` against `control.selectedBackground`, aiming
@@ -967,14 +1017,8 @@ stylesheet. The *Theme style sheet* section of the editor lists the sheet's noti
 
 The native engine
 computes variables, layers, inheritance, colours, value expressions and viewport
-media conditions for class scopes. Taffy computes Flex/Grid rectangles for the actual
-visible toolbar modules (`#tempo`, `#transport`, etc.); the same rectangles bound their
-native input targets. The host still defines toolbar height. A stylesheet without
-toolbar layout declarations leaves the ordinary toolbar arrangement intact. The toolbar's own
-`padding` and border are not layout declarations: they pad Suhina's toolbar, whose contents go
-in its content box, and only its other layout properties (`display`, flex and grid properties,
-`gap`, sizes) or its modules' (placement, `order`) switch to the CSS layout (#1336); a customized
-bar scrolls horizontally when it exceeds the window. The bounded retained scope tree
+media conditions for class scopes. Taffy lays out the window's grid and the bars' rows
+(› The bars' rows); the same rectangles bound their native input targets. The bounded retained scope tree
 exposes actual ancestry and siblings. Launcher mixer and track-header scopes carry stable
 `[data-object="track-N"]` identities. Clip, scene and slot roles also expose their native
 project identities. Controls

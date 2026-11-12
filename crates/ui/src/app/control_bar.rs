@@ -153,17 +153,18 @@ impl App {
         // position in the middle, and its end. A narrow window takes the captions first, then the
         // count-in and the metronome, then from the end: the agents, the mapping button, the RAM
         // and the CPU. The view switch always stays.
-        let steps: [(bool, bool, bool, bool, (bool, bool)); 7] = [
-            (true, true, true, true, (cpu, ram)),
-            (false, true, true, true, (cpu, ram)),
-            (false, false, true, true, (cpu, ram)),
-            (false, false, false, true, (cpu, ram)),
-            (false, false, false, false, (cpu, ram)),
-            (false, false, false, false, (cpu, false)),
-            (false, false, false, false, (false, false)),
+        let step = |captions, count_in, agent, map, performance| Step { captions, count_in, agent, map, performance };
+        let steps = [
+            step(true, true, true, true, (cpu, ram)),
+            step(false, true, true, true, (cpu, ram)),
+            step(false, false, true, true, (cpu, ram)),
+            step(false, false, false, true, (cpu, ram)),
+            step(false, false, false, false, (cpu, ram)),
+            step(false, false, false, false, (cpu, false)),
+            step(false, false, false, false, (false, false)),
         ];
         let mut candidates: Vec<Vec<Item>> = Vec::new();
-        for (captions, count_in, agent, map, performance) in steps {
+        for Step { captions, count_in, agent, map, performance } in steps {
             let mut items = vec![Item::named("group", "toolbar-start")];
             let start = ["browser", "tempo", "signature", "keys", "grid"]
                 .into_iter()
@@ -686,6 +687,16 @@ const COUNT_IN_MENU: f32 = 64.0;
 const TRANSPORT: f32 = 28.0 * 3.0 + 2.0;
 const RAM_BLOCK: f32 = 76.0;
 const CPU_BLOCK: f32 = 56.0;
+
+/// What the default toolbar shows at one step of giving way: the captions, the count-in and the
+/// metronome, the agents, the mapping button, and the CPU and the RAM.
+struct Step {
+    captions: bool,
+    count_in: bool,
+    agent: bool,
+    map: bool,
+    performance: (bool, bool),
+}
 
 /// What a toolbar module draws from.
 #[derive(Clone, Copy)]

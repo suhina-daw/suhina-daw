@@ -91,6 +91,7 @@ pub const ATTRIBUTES: &[(&str, &str)] = &[
     ("detail", "where the window has its detail area: below, full-width or beside"),
     ("browser", "the side the window shows its browser on, left or right, while it shows"),
     ("menu-bar", "a window with its own menu bar"),
+    ("size", "the piano roll's toolbar at its Toolbar size: normal, large or larger"),
 ];
 
 /// The toolbar's areas, by id (`#tempo`).
@@ -361,7 +362,10 @@ pub const ELEMENTS: &[Element] = &[
             own("piano.audition"),
             own("piano.hide"),
         ]),
-    element("midi-tools", Container, "The MIDI tools part of a MIDI clip's panel.").settings(&["gap"]),
+    element("midi-tools", Container, "The MIDI tools part of a MIDI clip's panel.")
+        .parts(&["tab-row"])
+        .settings(&["gap"]),
+    element("tab-row", Container, "A row of tabs: the MIDI tools part's Notes and Transform.").parts(&["editor-tab"]),
     element("clip-info", Container, "The clip's column beside the piano roll."),
     element("sample-map", Region, "The sampler's sample map.").parts(&["sample-point"]),
     element("sample-point", Drawn, "A sound on the sample map, coloured by its `kind` attribute (`kick`, `snare`)."),
