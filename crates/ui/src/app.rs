@@ -3258,7 +3258,12 @@ impl App {
             }
             self.missing.sync(&mut self.projects, self.revision);
             let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
-            let prompt_height = if self.open_prompt.is_some() || missing_bar { theme::ROW + 12.0 } else { 0.0 };
+            // A newer build is offered in a bar over an open project; the start panel has its own
+            // line (`docs/spec/updates.md` › With a project open).
+            let update_bar =
+                self.open_prompt.is_none() && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
+            let prompt_height =
+                if self.open_prompt.is_some() || missing_bar || update_bar { theme::ROW + 12.0 } else { 0.0 };
             let (prompt, inner) = (
                 Rect::from_min_size(inner.min, Vec2::new(inner.width(), prompt_height)),
                 Rect::from_min_max(inner.min + Vec2::new(0.0, prompt_height), inner.max),
@@ -3267,6 +3272,11 @@ impl App {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.open_prompt_bar(ui));
             } else if missing_bar {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.missing.bar(ui, prompt));
+            } else if update_bar
+                && let Some(wanted) =
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.updates.bar(ui, prompt)).inner
+            {
+                self.updates_wanted(ui.ctx(), wanted);
             }
             // With the detail area across the full width, the browser takes its side of what is
             // left above it (Settings › Devices › Detail area width).

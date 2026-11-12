@@ -64,7 +64,7 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, waiting: &[S
     let mut line = |label: &str, color| {
         let row = Rect::from_min_size(Pos2::new(rect.left() + PAD, y), Vec2::new(rect.width() - 2.0 * PAD, LINE));
         widgets::text_in(&painter, row, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), color);
-        let response = ui.interact(row, Id::unique(("closing-line", label)), Sense::hover());
+        let response = ui.interact(row, Id::unique(("closing-line", row.top().to_bits(), label)), Sense::hover());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
         y += LINE;
     };
