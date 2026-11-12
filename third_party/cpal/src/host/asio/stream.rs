@@ -1075,8 +1075,25 @@ impl Device {
                             } else {
                                 streams.output.as_mut()
                             };
-                            if let Some(s) = stream {
-                                s.buffer_size = value;
+                            let changed = match stream {
+                                Some(s) => std::mem::replace(&mut s.buffer_size, value) != value,
+                                None => true,
+                            };
+                            drop(streams);
+                            // Suhina patch: the application renders in blocks fitted to the
+                            // driver's size, so a new size (set in the driver's control panel)
+                            // invalidates the stream as kAsioResetRequest does, and the
+                            // application opens it again at the new size. A notice repeating
+                            // the size already playing changes nothing, so it reopens nothing.
+                            // The message is static: no allocation in a driver callback.
+                            if changed
+                                && StreamState::load(&state, Ordering::Acquire)
+                                    != StreamState::Starting
+                            {
+                                let _ = timer_tx.send(Error::with_message(
+                                    ErrorKind::StreamInvalidated,
+                                    "The ASIO driver changed its buffer size",
+                                ));
                             }
                         }
                         true

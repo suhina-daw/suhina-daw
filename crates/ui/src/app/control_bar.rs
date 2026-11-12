@@ -8,59 +8,28 @@ use super::*;
 /// Seconds between the tempo sent while the tempo field is dragged.
 const TEMPO_SEND: f64 = 0.1;
 
-/// `bpm` on the steps of the place a drag holds, counted from where it started (`grab`: the step
-/// and the start), to a thousandth of a BPM, within the tempo's range (#829).
-pub(crate) fn snap_tempo(grab: Option<(f64, f64)>, bpm: f64) -> f64 {
-    let snapped = match grab {
-        Some((step, from)) if step > 0.0 => from + ((bpm - from) / step).round() * step,
-        _ => bpm,
-    };
-    ((snapped * 1000.0).round() / 1000.0).clamp(20.0, 999.0)
-}
-
-/// The step of the place in the tempo `text` (right-aligned at `right`, characters `width`
-/// apart) under `x`: 1 BPM for the integer part, 0.1, 0.01 or 0.001 for the decimals (#829).
-pub(crate) fn tempo_place(text: &str, right: f32, width: f32, x: f32) -> f64 {
-    let len = text.chars().count();
-    let Some(dot) = text.find('.') else { return 1.0 };
-    if width <= 0.0 {
-        return 1.0;
-    }
-    let from_right = ((right - x) / width).floor().max(0.0) as usize;
-    let index = len.saturating_sub(from_right + 1);
-    if index <= dot {
-        return 1.0;
-    }
-    let decimals = (index - dot).min(3);
-    10f64.powi(-(decimals as i32))
-}
-
-/// The characters of the tempo `text` the place of `step` covers, as a range of indices: the
-/// whole integer part for 1 BPM, one decimal otherwise.
-pub(crate) fn tempo_place_span(text: &str, step: f64) -> (usize, usize) {
-    let dot = text.find('.').unwrap_or(text.len());
-    if step >= 1.0 {
-        return (0, dot);
-    }
-    let decimals = (-step.log10()).round().max(1.0) as usize;
-    (dot + decimals, dot + decimals + 1)
-}
+pub(crate) use crate::kit::widgets::{snap_tempo, tempo_place, tempo_place_span};
 
 impl App {
+    /// The toolbar in `ui`'s rect, its whole box (a theme's toolbar layout keeps its border and
+    /// padding itself); Suhina's own layout goes in `inside`, its content box.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn control_bar(
         &mut self,
         ui: &mut Ui,
+        bar: &crate::kit::element::Entered,
+        inside: Rect,
         grid: Option<&TrackGrid>,
         cpu: Option<u32>,
         ram: Option<u64>,
         actions: &mut Vec<Action>,
     ) {
-        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let mut styled_ui = bar.ui(ui);
         let ui = &mut *styled_ui;
-        if self.themed_toolbar(ui, grid, cpu, ram, actions) {
+        if self.themed_toolbar(ui, inside, grid, cpu, ram, actions) {
             return;
         }
-        let bar = ui.max_rect();
+        let bar = inside;
         ui.allocate_rect(bar, Sense::hover());
         let painter = ui.painter_at(bar);
         let Some(grid) = grid else {
@@ -92,7 +61,7 @@ impl App {
         x = tempo_rect.right() + PAD;
         let tempo_rect = native_styles.place(ui, "tempo", tempo_rect);
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("sampler-tempo"), grid.tempo_bpm));
-        self.tempo_field(ui, &painter, tempo_rect, grid.tempo_bpm, true, actions);
+        self.tempo_field(ui, &painter, tempo_rect, grid.tempo_bpm, Some(&native_styles), actions);
         // The time signature playing, like the tempo: a launched scene may have changed it.
         let ts = grid.time_signature();
         let signature =
@@ -201,8 +170,12 @@ impl App {
         let play = crate::kit::control_layout::place("transport-play", play_base, bar);
         if !crate::kit::control_layout::placement("transport-play").hidden {
             let response = widgets::button_area(ui, play, Id::unique("play"), "Play");
-            let play_style = crate::kit::style_class::enter_named_response("button", "play", &response);
-            crate::kit::native_css::mark(crate::kit::native_css::HostState::Playing, grid.running);
+            let play_style = crate::kit::element::BUTTON
+                .id("play")
+                .response(&response)
+                .attr(crate::kit::element::Playing, grid.running)
+                .attr(crate::kit::element::Checked, grid.running)
+                .enter();
             if response.clicked() {
                 actions.push(self.play_action());
             }
@@ -211,6 +184,7 @@ impl App {
             widgets::button_surface(
                 &painter,
                 play,
+                &play_style,
                 &response,
                 grid.running,
                 motion::mix(hover, theme::control_active(), running),
@@ -225,16 +199,16 @@ impl App {
             let glyph = if flash {
                 theme::text_primary()
             } else {
-                crate::kit::style_class::foreground(motion::mix(theme::text_primary(), theme::accent(), running))
+                play_style.color_or(motion::mix(theme::text_primary(), theme::accent(), running))
             };
             let c = play.center();
-            if !crate::kit::skin::paint(
+            if !crate::kit::skin::paint_as(
+                &play_style,
                 &painter,
                 play,
                 "play",
                 crate::kit::skin::State::response(&response, grid.running),
                 glyph,
-                0.0,
             ) {
                 painter.add(egui::Shape::convex_polygon(
                     vec![c + Vec2::new(-3.5, -5.0), c + Vec2::new(5.0, 0.0), c + Vec2::new(-3.5, 5.0)],
@@ -249,25 +223,26 @@ impl App {
         let stop = crate::kit::control_layout::place("transport-stop", stop_base, bar);
         if !crate::kit::control_layout::placement("transport-stop").hidden {
             let response = widgets::button_area(ui, stop, Id::unique("stop"), "Stop");
-            let stop_style = crate::kit::style_class::enter_named_response("button", "stop", &response);
+            let stop_style = crate::kit::element::BUTTON.id("stop").response(&response).enter();
             if response.clicked() {
                 actions.push(self.stop_action());
             }
             widgets::button_surface(
                 &painter,
                 stop,
+                &stop_style,
                 &response,
                 false,
                 motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
                 0.0,
             );
-            if !crate::kit::skin::paint(
+            if !crate::kit::skin::paint_as(
+                &stop_style,
                 &painter,
                 stop,
                 "stop",
                 crate::kit::skin::State::response(&response, false),
                 theme::text_primary(),
-                0.0,
             ) {
                 painter.rect_filled(
                     Rect::from_center_size(stop.center(), Vec2::splat(8.0)),
@@ -281,7 +256,7 @@ impl App {
         let recording = self.session().is_some_and(|s| s.records_arrangement());
         crate::session::record_controls::record_button(ui, &painter, record, recording, actions);
         let position = native_styles.place(ui, "position", position_base);
-        crate::kit::native_css::surface(&painter, position, 0.0, theme::window_background());
+        native_styles.paint(&painter, position, crate::kit::style_class::surface_or(theme::window_background()));
         widgets::text_in(
             &painter,
             position.shrink2(Vec2::new(PAD, 0.0)),
@@ -334,7 +309,7 @@ impl App {
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "performance", rect);
             let percent = f64::from(milli.min(1000)) / 10.0;
-            crate::kit::native_css::surface(&painter, rect, 0.0, theme::window_background());
+            native_styles.paint(&painter, rect, crate::kit::style_class::surface_or(theme::window_background()));
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
                 &painter,
@@ -356,7 +331,7 @@ impl App {
                 Pos2::new(rect.left() + 1.0, rect.bottom() - 3.0),
                 Pos2::new(rect.right() - 1.0, rect.bottom() - 1.0),
             );
-            painter.fill_background(track, 0.0, theme::control_background());
+            painter.rect_filled(track, 0.0, theme::control_background());
             let fill = track.width() * milli.min(1000) as f32 / 1000.0;
             let full = Rect::from_min_max(track.min, Pos2::new(track.left() + fill, track.bottom()));
             let color = if milli >= 800 { theme::meter_hot() } else { theme::meter_normal() };
@@ -370,7 +345,7 @@ impl App {
             let rect = row(right - 76.0, 76.0);
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "performance", rect);
-            crate::kit::native_css::surface(&painter, rect, 0.0, theme::window_background());
+            native_styles.paint(&painter, rect, crate::kit::style_class::surface_or(theme::window_background()));
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
                 &painter,
@@ -441,7 +416,6 @@ impl App {
             let width = motion::value(ctx, Id::unique("view-underline-width"), width, motion::SLIDE);
             painter.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, 1.0)), 0.0, color);
         }
-        painter.hline(bar.x_range(), bar.bottom() - 0.5, theme::hairline(theme::border()));
         self.toolbar_edit_overlay(ui, bar);
     }
 
@@ -454,10 +428,15 @@ impl App {
             Some(keys) => response.on_hover_text(format!("{label} ({keys})")),
             None => response.on_hover_text(label),
         };
-        let browser_style = crate::kit::style_class::enter_named_response("button", "browser-toggle", &response);
+        let browser_style = crate::kit::element::BUTTON
+            .id("browser-toggle")
+            .response(&response)
+            .attr(crate::kit::element::Checked, self.settings.browser_open)
+            .enter();
         widgets::button_surface(
             painter,
             browser_rect,
+            &browser_style,
             &response,
             self.settings.browser_open,
             motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
@@ -465,7 +444,7 @@ impl App {
         );
         // A panel with its left part filled while the browser shows.
         let icon = Rect::from_center_size(browser_rect.center(), Vec2::new(14.0, 11.0));
-        let ink = crate::kit::style_class::foreground(if self.settings.browser_open {
+        let ink = browser_style.color_or(if self.settings.browser_open {
             theme::text_primary()
         } else {
             theme::text_secondary()
@@ -483,9 +462,10 @@ impl App {
         drop(browser_style);
     }
 
-    pub(super) fn status_bar(&self, ui: &mut Ui, grid: Option<&TrackGrid>) {
-        let _style_class = crate::kit::style_class::enter("status-bar");
-        let mut styled_ui = crate::kit::style_class::ui(ui);
+    /// The status bar's contents in `ui`'s rect, its content box: `style_class` is the bar's
+    /// element, which the window entered and painted.
+    pub(super) fn status_bar(&self, ui: &mut Ui, style_class: &crate::kit::element::Entered, grid: Option<&TrackGrid>) {
+        let mut styled_ui = style_class.ui(ui);
         let ui = &mut *styled_ui;
         let bar = ui.max_rect();
         let painter = ui.painter_at(bar);
@@ -546,31 +526,28 @@ impl App {
     /// The tempo field, in the control bar or a theme's toolbar: its value with three decimals, a
     /// drag steps the place under the pointer where it was pressed (the integer part 1 BPM, each
     /// decimal a tenth of the one before, #829), and while it moves the project follows a few times
-    /// a second in one undo step (#916). `native` draws the field's surface, as the plain bar does.
+    /// a second in one undo step (#916). `native`, the plain bar's modules, draws the field's surface as
+    /// the tempo module's.
     pub(super) fn tempo_field(
         &mut self,
         ui: &mut Ui,
         painter: &egui::Painter,
         tempo_rect: Rect,
         bpm_now: f64,
-        native: bool,
+        native: Option<&super::themed_toolbar::NativeStyles>,
         actions: &mut Vec<Action>,
     ) {
         let grab = self.tempo_grab;
         let tempo_shown = self.tempo_drag.map_or(bpm_now, |bpm| snap_tempo(grab, bpm));
         let tempo_text = format!("{tempo_shown:.3}");
         let response = widgets::value_area(ui, tempo_rect, Id::unique("tempo"), "Tempo", tempo_text.clone());
-        if native {
-            crate::kit::native_css::surface(
-                painter,
-                tempo_rect,
-                0.0,
-                motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
-            );
+        if let Some(styles) = native {
+            let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+            styles.paint(painter, tempo_rect, fill);
         }
         let mono = theme::mono_font(theme::TEXT);
         let text_area = tempo_rect.shrink2(Vec2::new(PAD, 0.0));
-        let ink = if native { theme::text_primary() } else { theme::text_value() };
+        let ink = if native.is_some() { theme::text_primary() } else { theme::text_value() };
         widgets::text_in(painter, text_area, Align2::RIGHT_CENTER, &tempo_text, mono.clone(), ink);
         // The place under the pointer, or the one the drag holds: the integer part steps 1 BPM,
         // each decimal a tenth of the one before (#829).

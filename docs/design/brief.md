@@ -3,7 +3,7 @@ description: Suhina's visual language: principles, what stays familiar and what 
 read_when: UI design, colours, tokens, typography, theme, accent, track colours, browser design, squint test, reference mockups
 type: spec
 status: draft
-last_verified: 2026-11-06
+last_verified: 2026-11-11
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/settings/themes.rs
@@ -131,6 +131,7 @@ a theme file can change any of them (see Themes). Current values:
 | `text.onColorLight`, `text.onColorDark` | `#ECE8E1`, `#1D1C1A` | The contrast-selected text on coloured tracks, returns and clips |
 | `browser.text.primary`, `browser.text.secondary`, `browser.text.hint`, `browser.text.value` | `#ECE8E1`, `#B5B2AC`, `#85837E`, `#DAD6D0` | Independent browser names, labels, hints and values; older themes inherit the corresponding text tokens |
 | `accent` | `#A6A3FF` | The playhead, queued clips, a key being set |
+| `automation.pin` | `#A6A3FF` | The pin of an automation lane pinned below its track's top lane; the built-in themes set it to their `accent`, and an older theme file without it gets its `accent` |
 | `recording` | `#E5484D` | Recording and errors |
 | `recording.background` | `#4D2F2B` | Behind an armed track's arm button and a recording clip |
 | `meter.normal` | `#8BC48A` | A level meter below the top |
@@ -141,7 +142,6 @@ a theme file can change any of them (see Themes). Current values:
 | `pan.centre` | `#817F7A` | The centre mark of a pan field |
 | `track.1`–`track.8` | `#FF9A3C` `#F2D541` `#4FC3F7` `#B38BFF` `#7FDB5A` `#FF6FA8` `#5C8DFF` `#2FD9C4` | Eight colour-picker swatches, also used to resolve legacy uncoloured tracks once on opening. New tracks and clips use the MIDI/audio creation defaults; + picks any colour |
 | `track.5`–`track.8` | `#8FA87A` `#C27C8E` `#7F8FB0` `#B9B2A6` | The other colours of the track colour palette (track menu, colour areas, colour tags' menu) |
-| `kind.kick`, `kind.snare`, `kind.clap`, `kind.closedHat`, `kind.openHat`, `kind.hat`, `kind.rim`, `kind.tom`, `kind.crash`, `kind.ride`, `kind.cymbal`, `kind.percussion`, `kind.bass`, `kind.tonal`, `kind.vocal`, `kind.effect`, `kind.other` | `#D06E5E` `#73AAC0` `#5EC0B0` `#C6AC5E` `#D08F6E` `#D8C47A` `#8CA8E0` `#B074A4` `#E0A0C8` `#C8B8E8` `#A497CC` `#8FC06E` `#A84F4F` `#6EB0D0` `#E8D0A0` `#9CC49C` `#8A8680` | Sample-map points of each kind ([spec](../spec/sample-map.md)) |
 | type | 12 px UI, 11 px values, 9 px rulers | |
 | row height | 20 px grid rows and fields, 15–16 px inline fields, 17 px browser rows (`theme::BROWSER_ROW`) | |
 | radius | 0 everywhere | |

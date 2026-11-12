@@ -71,17 +71,18 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setGain",
-        label: "Set an audio clip's gain, an arrangement clip's or a slot's (every clip that plays the same audio content follows)",
+        label: "Set an audio clip's gain, an arrangement clip's or a slot's; only that clip changes",
         params: &[
             CLIP_TRACK,
             CLIP,
             optional(
                 "index",
                 ParamType::Integer,
-                "clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+                "clip index on the track, from project.clips (deprecated, use clip; to be removed, ADR 0025 › 4)",
             ),
             CLIP_SCENE,
             param("db", ParamType::Decibels, "gain in dB, at most +24; \"-inf\" or below -150 is silence"),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: set_clip_gain,
@@ -96,7 +97,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "index",
                 ParamType::Integer,
-                "arrangement clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+                "arrangement clip index on the track, from project.clips (deprecated, use clip; to be removed, ADR 0025 › 4)",
             ),
             optional(
                 "scene",
@@ -340,7 +341,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "index",
                 ParamType::Integer,
-                "clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+                "clip index on the track, from project.clips (deprecated, use clip; to be removed, ADR 0025 › 4)",
             ),
             param("at", ParamType::Number, "where to cut, in beats from the beginning of the song, inside the clip"),
         ],
@@ -374,7 +375,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "index",
                 ParamType::Integer,
-                "clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+                "clip index on the track, from project.clips (deprecated, use clip; to be removed, ADR 0025 › 4)",
             ),
             param("start", ParamType::Number, "new start in beats from the beginning, at least 0"),
             optional(
@@ -449,6 +450,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             optional("start", ParamType::Number, "the loop's start in content beats, 0 to 120000"),
             optional("end", ParamType::Number, "the loop's end in content beats, after start, at most 120000"),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_shape::set_loop,
@@ -456,7 +458,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setAudio",
-        label: "Set an audio clip's warp switch, warp mode or transpose (an arrangement clip, or the clip in a track's slot by scene); every clip that plays the same audio follows, unless warp turned on would fit its markers to another tempo than theirs",
+        label: "Set an audio clip's warp switch, warp mode or transpose (an arrangement clip, or the clip in a track's slot by scene); only that clip changes, another clip of the same audio keeps its own",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -469,9 +471,82 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the warp mode: repitch, rhythmic, tonal, texture, smooth or high-quality",
             ),
             optional("transpose", ParamType::Number, "pitch shift in semitones, -48 to 48 (fractions are cents)"),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_shape::set_audio,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.setEnvelope",
+        label: "Set an audio clip's gain envelope (an arrangement clip, or the clip in a track's slot by scene): points of a content beat and an offset in dB from the clip's gain, straight in dB between them or along each point's curve; an empty list clears it. Only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param(
+                "points",
+                ParamType::Numbers,
+                "the points as pairs, a beat of the content (from 0) and then dB from the clip's gain (-70 to +24): [0, 0, 4, -12] falls 12 dB over the first four beats; two points on one beat make a step; two in one place (same beat and dB) are one, and a third on a beat replaces the second",
+            ),
+            optional(
+                "curves",
+                ParamType::Curves,
+                "each point's curve to the next, in the order of points, as automation.movePoint's curve: a bend from -1 to 1 or [x1, y1, x2, y2] each from -0.5 to 1.5; null or missing for straight",
+            ),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::set_envelope,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.setTempo",
+        label: "Set the tempo an audio clip's audio is warped from, and where that tempo came from: the audio fills the beats it holds at that tempo (a higher tempo plays slower against the song), the clip's length follows and its start stays; warp turns on. Only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param("bpm", ParamType::Number, "the audio's tempo in beats per minute, 20 to 999"),
+            optional(
+                "source",
+                ParamType::Text,
+                "where the tempo came from: metadata, name, detected or manual (the default, a tempo typed, halved or doubled)",
+            ),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::set_tempo,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.setSwing",
+        label: "Set a MIDI clip's own swing, which it then plays instead of the project's, or make it follow the project's swing again (it keeps its own amount for later); only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            optional("amount", ParamType::Number, "the clip's own swing in percent, 0 to 100; the clip then plays it"),
+            optional(
+                "global",
+                ParamType::Bool,
+                "true: the clip follows the project's swing; false: it plays its own amount again",
+            ),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::swing::set_clip_swing,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.findTempo",
+        label: "What each source says an audio clip's tempo is (its file's metadata, its file's name, detection in its sound; null where one finds nothing), and the tempo the clip has now with its source",
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
+        kind: CommandKind::READ,
+        run: crate::clip_audio::find_tempo,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -483,6 +558,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP_INDEX,
             CLIP_SCENE,
             param("length", ParamType::Number, "the new length in beats, above 0 and at most 120000"),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_shape::set_length,
@@ -501,6 +577,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Number,
                 "the start marker in content beats, 0 to 120000; before the loop's end, or the clip's end",
             ),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_shape::set_start,
@@ -641,7 +718,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setScale",
-        label: "Set the scale of a MIDI clip (the piano roll marks its keys), or clear it with off; a content other clips also play is copied for this clip first",
+        label: "Set the scale of a clip: a MIDI clip's marks the piano roll's keys, an audio clip's says the key of its audio; clear it with off; a content other clips also play is copied for this clip first",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -696,9 +773,15 @@ fn audio_overlaps(session: &mut Session, params: &Value) -> Result<Value, Comman
     Ok(json!({ "overlaps": overlaps, "truncated": found.truncated }))
 }
 
-/// The clip `params` names: an arrangement clip by `index`, or the clip in a launcher slot by
-/// `scene`.
+/// The clip `params` names: by `clip`, or an arrangement clip by `index`, or the clip in a
+/// launcher slot by `scene`.
 fn clip_at(p: &Project, params: &Value) -> Result<ClipAt, CommandError> {
+    if let Some(named) = named_clip(p, params)? {
+        return Ok(match named.at {
+            crate::notes::ClipAt::Arrangement(lane, index) => ClipAt::Arrangement { lane, index },
+            crate::notes::ClipAt::Slot(column, scene) => ClipAt::Slot { column, scene },
+        });
+    }
     match (Args::new(params).value("index"), Args::new(params).value("scene")) {
         (Some(_), Some(_)) => Err("give index or scene, not both".into()),
         (None, Some(_)) => {
@@ -719,19 +802,12 @@ fn set_clip_gain(session: &mut Session, params: &Value) -> Result<Value, Command
         return Err(format!("db must be at most +24, got {db}").into());
     }
     let gain = if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) };
-    let (_, content, _) = crate::notes::locate(&session.project, params)?;
-    let content =
-        session.project.contents.iter_mut().find(|c| c.id == content).ok_or("the clip's content is missing")?;
-    let mut audio = false;
-    for lane in &mut content.lanes {
-        if let LaneData::Audio(region) = &mut lane.data {
-            region.gain = gain;
-            audio = true;
-        }
-    }
-    if !audio {
+    let (at, content, _) = crate::notes::locate(&session.project, params)?;
+    if crate::audio_timing::region(&session.project, content).is_none() {
         return Err("only an audio clip has a gain".into());
     }
+    // Only this clip: every clip has its own gain (#742).
+    crate::notes::clip_mut(&mut session.project, at).ok_or("the clip is missing")?.audio.gain = gain;
     Ok(json!({ "gain_db": to_db(gain) }))
 }
 
@@ -830,12 +906,24 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     let p = &session.project;
     let mut copied: Vec<(Clip, ClipContent)> = Vec::new();
     let mut from: Vec<TrackId> = Vec::new();
-    match (Args::new(params).value("clips"), Args::new(params).value("scene")) {
-        (Some(_), None) => {
+    let named = named_clip(p, params)?;
+    let source = match (named, Args::new(params).value("clips"), Args::new(params).value("scene")) {
+        (Some(NamedClip { track, at: crate::notes::ClipAt::Arrangement(_, index), .. }), ..) => {
+            Copied::Clips(vec![(track, index)])
+        }
+        (Some(NamedClip { at: crate::notes::ClipAt::Slot(column, scene), .. }), ..) => Copied::Slot(column, scene),
+        (None, Some(_), None) => {
             if Args::new(params).has("track") {
                 return Err("track goes with scene (a clip slot); clips names arrangement clips".into());
             }
-            for (track, index) in clip_list(p, params)? {
+            Copied::Clips(clip_list(p, params)?)
+        }
+        (None, None, Some(_)) => Copied::Slot(column_index(p, params)?, scene_index(p, params)?),
+        _ => return Err("give either clips (arrangement clips) or track and scene (a clip slot)".into()),
+    };
+    match source {
+        Copied::Clips(clips) => {
+            for (track, index) in clips {
                 let clip = p
                     .arrangement
                     .lanes
@@ -849,15 +937,13 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
                 from.push(track);
             }
         }
-        (None, Some(_)) => {
-            let (column, scene) = (column_index(p, params)?, scene_index(p, params)?);
+        Copied::Slot(column, scene) => {
             let slot = p.launcher.columns.get(column).and_then(|c| c.slots.get(scene));
             let clip =
                 slot.and_then(|s| s.clip.clone()).ok_or_else(|| format!("the slot in scene {} is empty", scene))?;
             let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
             copied.push((clip, content));
         }
-        _ => return Err("give either clips (arrangement clips) or track and scene (a clip slot)".into()),
     }
     let names: Vec<String> = copied.iter().map(|(_, content)| content.name.clone()).collect();
     // The automation under each arrangement clip goes with it.
@@ -869,7 +955,15 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     session.clipboards.clips = copied;
     session.clipboards.tracks = from;
     session.clipboards.under = under;
+    session.clipboards.span = None;
     Ok(json!({ "copied": names }))
+}
+
+/// What `clip.copy` copies: arrangement clips by track and index, or a slot's clip by column and
+/// scene.
+enum Copied {
+    Clips(Vec<(TrackId, usize)>),
+    Slot(usize, usize),
 }
 
 fn cut_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -886,7 +980,9 @@ enum PasteAt {
 }
 
 fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    if session.clipboards.clips.is_empty() {
+    // A time selection copied with only automation in it pastes onto its own tracks.
+    let span_only = session.clipboards.clips.is_empty() && session.clipboards.span.is_some();
+    if session.clipboards.clips.is_empty() && !span_only {
         return Err("nothing has been copied".into());
     }
     let at = match (Args::new(params).value("start"), Args::new(params).value("scene")) {
@@ -913,8 +1009,9 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     if replace.is_some() && (!Args::new(params).has("track") || !matches!(at, PasteAt::Beat(_))) {
         return Err("replace requires an arrangement track and start".into());
     }
-    // No track: each copied clip goes back to the track it came from.
-    if !Args::new(params).has("track")
+    // No track: each copied clip goes back to the track it came from; so does a time
+    // selection's automation, with or without clips.
+    if (!Args::new(params).has("track") || span_only)
         && let PasteAt::Beat(start) = at
     {
         return crate::range::paste_to_sources(session, start, stack);
@@ -1038,7 +1135,28 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
 
 fn delete_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     // A list of arrangement clips goes as one; otherwise a launcher slot's clip is named by
-    // `scene`, an arrangement clip by `index`, the way the note commands name the clip they edit.
+    // `scene`, an arrangement clip by `index`, the way the note commands name the clip they edit;
+    // any one clip by `clip`.
+    match named_clip(&session.project, params)?.map(|named| named.at) {
+        Some(crate::notes::ClipAt::Arrangement(lane, index)) => {
+            if let Some(lane) = session.project.arrangement.lanes.get_mut(lane) {
+                lane.clips.remove(index);
+            }
+            return Ok(json!({ "deleted": index }));
+        }
+        Some(crate::notes::ClipAt::Slot(column, scene)) => {
+            let slot = session
+                .project
+                .launcher
+                .columns
+                .get_mut(column)
+                .and_then(|c| c.slots.get_mut(scene))
+                .ok_or("the slot is missing")?;
+            slot.clip = None;
+            return Ok(json!({ "deleted": scene }));
+        }
+        None => {}
+    }
     if Args::new(params).has("clips") {
         if ["track", "index", "scene"].iter().any(|k| Args::new(params).has(k)) {
             return Err("give clips, or track with index or scene, not both".into());
@@ -1294,11 +1412,16 @@ fn set_clip_enabled(session: &mut Session, params: &Value) -> Result<Value, Comm
 }
 
 fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let track = track_id(&session.project, params)?;
-    let index = Args::new(params)
-        .value("index")
-        .and_then(Value::as_u64)
-        .ok_or("index must be a whole number from project.clips")?;
+    let (track, index) = match named_arrangement_clip(&session.project, params)? {
+        Some((track, _, index)) => (track, u64::try_from(index).map_err(|_| "the clip index is too large")?),
+        None => (
+            track_id(&session.project, params)?,
+            Args::new(params)
+                .value("index")
+                .and_then(Value::as_u64)
+                .ok_or("index must be a whole number from project.clips")?,
+        ),
+    };
     let start = Args::new(params).f64("start")?;
     if start < 0.0 {
         return Err(format!("start must be at least 0, got {start}").into());

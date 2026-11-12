@@ -29,25 +29,37 @@ const BUSY_AFTER_SECONDS: f64 = 0.3;
 /// How far the view's aspect ratio may drift from the grid's (as a fraction) before the grid is
 /// made again.
 const GRID_ASPECT_SLACK: f32 = 0.05;
+/// How many let-go layout or grid workers may still be running when a new one starts: past
+/// it the new one waits for them ([#1254] review: the computations have no point to stop at,
+/// so obsolete ones finish, and only this many at a time).
+const MAX_RETIRED_RUNNING: usize = 2;
 
-/// What a layout was made from, to know when it is out of date.
+/// What a layout was made from, to know when it is out of date. A tag place's scope follows
+/// the tag assignments too: anything tagged in or out of a chosen tag re-lays it
+/// ([#1254] review).
 #[derive(Debug, Clone, PartialEq)]
 struct ScopeKey {
     place: Option<String>,
     max_seconds: u32,
     layout_key: u64,
+    tags_revision: u64,
 }
 
 /// A finished layout: the map, its grid and the view's aspect the grid was made for.
 type Laid = (Map, Grid, f32);
 
-/// A layout being computed on a thread of its own.
+/// A layout being computed on a thread of its own. The thread's handle rides along: an
+/// obsolete job's thread is retired, its answer going to a receiver nobody reads, and
+/// joined once it has finished — never waited for on the window's thread, where a large
+/// map's layout or snap would hold the window for seconds ([#1254] review).
 struct Job {
     key: ScopeKey,
     receiver: Receiver<Laid>,
     progress: Progress,
     /// When it started, in the window's time.
     started: f64,
+    /// The worker's own join, taken once it has finished.
+    worker: std::thread::JoinHandle<()>,
 }
 
 /// The map's state in the window.
@@ -60,8 +72,14 @@ pub struct Panel {
     shown: Option<ScopeKey>,
     job: Option<Job>,
     /// A grid being made again for the view's new shape, on a thread of its own: the aspect it is
-    /// made for, and where it arrives.
-    grid_job: Option<(f32, Receiver<Grid>)>,
+    /// made for, where it arrives, and the thread's own join ([#1254] review).
+    grid_job: Option<(f32, Receiver<Grid>, std::thread::JoinHandle<()>)>,
+    /// Workers whose answers nobody waits for any more, joined as each one finishes: the
+    /// window's thread never waits on one ([#1254] review).
+    retired: Vec<std::thread::JoinHandle<()>>,
+    /// The analysis changes counted when the layout shown was asked for
+    /// ([`Projects::sound_map_changes`]): a count past it lays the map out again.
+    laid_changes: u64,
     last_layout: f64,
     points: Vec<MapPoint>,
     /// What the points' flags were made from: search, tags, selection, pins, project.
@@ -75,6 +93,11 @@ pub struct Panel {
     /// A kind was set by hand since the layout was made: the next refresh lays the scope out
     /// again, so the item moves to its kind's region.
     stale: bool,
+    /// The library generation the shown state belongs to ([`Projects::library_generation`]):
+    /// a replacement through any path — the window's or a caller's `projects_mut` — is
+    /// detected here, where matching scopes and revisions could keep the old map ([#1254]
+    /// review).
+    library_gen: u64,
 }
 
 impl Default for Panel {
@@ -86,7 +109,10 @@ impl Default for Panel {
             grid_aspect: 1.0,
             shown: None,
             job: None,
+            library_gen: 0,
             grid_job: None,
+            retired: Vec::new(),
+            laid_changes: 0,
             last_layout: f64::NEG_INFINITY,
             points: Vec::new(),
             flags_key: None,
@@ -96,6 +122,101 @@ impl Default for Panel {
             stale: false,
         }
     }
+}
+
+impl Panel {
+    /// Ends the layout and the grid jobs that are on: the answers they send from here on go
+    /// to a receiver nobody reads, and their threads are retired, not waited for
+    /// ([#1254] review: joining an unfinished snap held the window until it was done).
+    fn end_jobs(&mut self) {
+        self.end_layout_job();
+        self.end_grid_job();
+    }
+
+    /// Ends the layout job alone, its thread retired.
+    fn end_layout_job(&mut self) {
+        if let Some(Job { worker, .. }) = self.job.take() {
+            self.retire(worker);
+        }
+    }
+
+    /// Ends the grid job alone, its thread retired: a grid's end leaves the layout on.
+    fn end_grid_job(&mut self) {
+        if let Some((_, _, worker)) = self.grid_job.take() {
+            self.retire(worker);
+        }
+    }
+
+    /// Lets a worker go: joined at once when it has finished, else when a later frame finds
+    /// it finished ([`Panel::reap`]).
+    fn retire(&mut self, worker: std::thread::JoinHandle<()>) {
+        self.retired.push(worker);
+        self.reap();
+    }
+
+    /// Lets go the layout being made for a scope that is no longer asked for, before it is
+    /// waited for: its map is never shown, and the asked one starts at once ([#1254] review:
+    /// the old job's map was waited for and shown before the new one started).
+    fn end_stale_layout(&mut self, place: Option<&str>, max_seconds: u32, tags_revision: u64) {
+        let stale = self.job.as_ref().is_some_and(|job| {
+            job.key.place.as_deref() != place
+                || job.key.max_seconds != max_seconds
+                || job.key.tags_revision != tags_revision
+        });
+        if stale {
+            self.end_layout_job();
+        }
+    }
+
+    /// Whether as many let-go workers are still running as may run beside a new one: a new
+    /// layout or grid waits, the frame asking again soon, so obsolete work never piles up
+    /// past [`MAX_RETIRED_RUNNING`] ([#1254] review).
+    fn busy_retiring(&mut self, ui: &Ui) -> bool {
+        self.reap();
+        let busy = self.retired.len() >= MAX_RETIRED_RUNNING;
+        if busy {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        busy
+    }
+
+    /// Joins the retired workers that have finished; the others are left running, their
+    /// answers going nowhere.
+    fn reap(&mut self) {
+        let (finished, running): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut self.retired).into_iter().partition(|worker| worker.is_finished());
+        for worker in finished {
+            let _ = worker.join();
+        }
+        self.retired = running;
+    }
+
+    /// The library went under a replacement (tests set one, and reopening does): the
+    /// layouts the panel kept are for its files and its keys only, and a new library can
+    /// read the same place and the same revisions, so they are dropped with it
+    /// ([#1254] review). What the user holds (the view's largeness, a window) stays.
+    pub fn library_replaced(&mut self) {
+        self.end_jobs();
+        self.map = None;
+        self.grid = None;
+        self.grid_aspect = 1.0;
+        self.shown = None;
+        self.last_layout = f64::NEG_INFINITY;
+        self.points.clear();
+        self.flags_key = None;
+        self.stale = true;
+        // Show similar's list and a hover, a preview or a pressed point are indices into
+        // the old points list; left with a new map's, they read as unrelated samples
+        // ([#1254] review). The view's own largeness and window stay.
+        self.view.forget_points();
+    }
+}
+
+/// Where the point `index` of `old` is in `new`, found by its file; `None` when the file is
+/// not on the new map.
+fn rebound(old: &Map, new: &Map, index: usize) -> Option<usize> {
+    let path = &old.points.get(index)?.path;
+    new.points.iter().position(|point| &point.path == path)
 }
 
 fn item_of(path: &Path) -> BrowserItem {
@@ -128,12 +249,14 @@ fn files_in_use(projects: &Projects) -> HashSet<PathBuf> {
 }
 
 impl Panel {
-    /// The browser's place as the `soundmap.*` commands take it.
+    /// The browser's place as the `soundmap.*` commands take it. A tag's place is one the
+    /// commands take: `tag:#<id>`, joined for a place of several ([#1254] review: the map
+    /// follows the tags, #862).
     fn place(state: &BrowserState) -> Option<String> {
         match &state.place {
             None => None,
             Some(Place::Pinned) => Some("pinned".into()),
-            Some(place @ Place::Recent(_)) => Some(place.param()),
+            Some(place @ (Place::Recent(_) | Place::Tag(_))) => Some(place.param()),
             Some(Place::Folder(path)) => Some(path.display().to_string()),
         }
     }
@@ -141,40 +264,90 @@ impl Panel {
     /// Keeps the layout in line with the place, the analysis and the settings: takes in a
     /// finished layout and starts a new one when it is out of date.
     fn refresh(&mut self, ui: &Ui, state: &BrowserState, projects: &mut Projects, settings: &Settings) {
-        let analysed = projects.poll_sound_map();
+        // A replaced library first, before any of the kept state is read: its scopes and
+        // revisions can read as the new library's own ([#1254] review).
+        let library_gen = projects.library_generation();
+        if self.library_gen != library_gen {
+            self.library_gen = library_gen;
+            self.library_replaced();
+        }
+        projects.poll_sound_map();
+        // Samples analysed since the layout shown was made, whoever polled first: the
+        // window polls every frame too, and the notice that poll took is still seen here
+        // ([#1254] review: the map kept a sample out until something else re-laid it).
+        let changes = projects.sound_map_changes();
+        let analysed = changes != self.laid_changes;
+        self.reap();
+        let place = Self::place(state);
+        // A tag place's map follows the tag assignments as well: anything tagged in or out
+        // of a chosen tag re-lays it ([#1254] review). The revision read once, and only for
+        // the places it matters to; the rest of the tags' doings are none of the map's.
+        let tags_revision = matches!(&state.place, Some(Place::Tag(_)))
+            .then(|| projects.file_library_mut().tag_revision())
+            .unwrap_or_default();
+        self.end_stale_layout(place.as_deref(), settings.map_max_seconds, tags_revision);
         if let Some(job) = &self.job {
             match job.receiver.try_recv() {
                 Ok((map, grid, aspect)) => {
                     projects.sound_map_mut().keep(&map);
                     self.shown = Some(job.key.clone());
+                    // The view's point indices follow their files into the new map: a tag
+                    // dropped or a file analysed shifts the indices, and Show similar's list
+                    // read unrelated samples ([#1254] review).
+                    match &self.map {
+                        Some(old) => self.view.rebind_points(|i| rebound(old, &map, i)),
+                        None => self.view.forget_points(),
+                    }
                     self.map = Some(map);
                     self.grid = Some(grid);
                     self.grid_aspect = aspect;
                     self.flags_key = None;
-                    self.job = None;
-                    self.grid_job = None;
+                    self.end_jobs();
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
                     ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
                     return;
                 }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.job = None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.end_jobs(),
             }
         }
         let now = ui.input(|i| i.time);
-        let place = Self::place(state);
         let scope_changed = self.stale
-            || self.shown.as_ref().is_none_or(|s| s.place != place || s.max_seconds != settings.map_max_seconds);
+            || self.shown.as_ref().is_none_or(|s| {
+                s.place != place || s.max_seconds != settings.map_max_seconds || s.tags_revision != tags_revision
+            });
         if !scope_changed && !(analysed && now - self.last_layout >= RELAYOUT_SECONDS) {
             if analysed {
                 ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(RELAYOUT_SECONDS));
             }
             return;
         }
-        let Ok(files) = suhina_session::scope_files(projects, place.as_deref()) else { return };
+        // Too many let-go workers still running: the next layout waits for them to finish,
+        // a frame at a time, never on the window's thread ([#1254] review: replacing scopes
+        // fast piled workers up beside the new one). The layout asked for stays asked: a
+        // notification of analysed samples comes once, and a frame that waits keeps it
+        // ([#1254] review).
+        if self.busy_retiring(ui) {
+            self.stale = true;
+            return;
+        }
+        let Ok(files) = suhina_session::scope_files(projects, place.as_deref()) else {
+            // The place names a tag or folder the library no longer holds — a caller that
+            // never ran the browser's reconcile (a `projects_mut` removal, [#1254] review).
+            // The map on the wall is none of this place's, so it goes with the jobs; the
+            // next scope that reads lays its own.
+            if self.map.is_some() || self.shown.is_some() {
+                self.map = None;
+                self.end_jobs();
+                self.shown = None;
+            }
+            self.stale = false;
+            return;
+        };
         let prepared = projects.sound_map_mut().prepare(&files, settings.map_max_seconds as f32);
         self.stale = false;
-        let key = ScopeKey { place, max_seconds: settings.map_max_seconds, layout_key: prepared.key() };
+        self.laid_changes = changes;
+        let key = ScopeKey { place, max_seconds: settings.map_max_seconds, layout_key: prepared.key(), tags_revision };
         self.last_layout = now;
         if self.shown.as_ref() == Some(&key) {
             return;
@@ -192,8 +365,19 @@ impl Panel {
             let _ = sender.send((map, grid, aspect));
             ctx.request_repaint();
         });
-        if spawned.is_ok() {
-            self.job = Some(Job { key, receiver, progress, started: now });
+        match spawned {
+            Ok(worker) => {
+                // The job it replaces is obsolete from here on: its thread is retired, its
+                // answer read by nobody, and the window does not wait for it ([#1254] review).
+                self.end_layout_job();
+                self.job = Some(Job { key, receiver, progress, started: now, worker });
+            }
+            Err(_) => {
+                // No thread to lay it out on now: the layout stays asked and is tried again
+                // ([#1254] review: the request was cleared and the old map kept for good).
+                self.stale = true;
+                ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(RELAYOUT_SECONDS));
+            }
         }
     }
 
@@ -202,18 +386,20 @@ impl Panel {
     /// 150 000 samples), so it is done on a thread of its own, one at a time, and only while the
     /// grid is shown; the old grid is drawn stretched meanwhile.
     fn fit_grid(&mut self, ui: &Ui) {
-        if let Some((aspect, receiver)) = &self.grid_job {
-            match receiver.try_recv() {
+        if let Some(borrowed) = self.grid_job.as_ref() {
+            let aspect = borrowed.0;
+            match borrowed.1.try_recv() {
                 Ok(grid) => {
-                    self.grid_aspect = *aspect;
+                    self.grid_aspect = aspect;
                     self.grid = Some(grid);
-                    self.grid_job = None;
+                    self.end_grid_job();
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
                     ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
                     return;
                 }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.grid_job = None,
+                // The grid's worker is gone: its job ends, the layout's goes on.
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.end_grid_job(),
             }
         }
         let aspect = self.view.aspect();
@@ -221,6 +407,9 @@ impl Panel {
             || self.grid.is_none()
             || (aspect / self.grid_aspect - 1.0).abs() <= GRID_ASPECT_SLACK
         {
+            return;
+        }
+        if self.busy_retiring(ui) {
             return;
         }
         let Some(map) = &self.map else { return };
@@ -231,8 +420,9 @@ impl Panel {
             let _ = sender.send(suhina_soundmap::grid::snap(&positions, aspect));
             ctx.request_repaint();
         });
-        if spawned.is_ok() {
-            self.grid_job = Some((aspect, receiver));
+        if let Ok(worker) = spawned {
+            self.end_grid_job();
+            self.grid_job = Some((aspect, receiver, worker));
         }
     }
 
@@ -246,13 +436,16 @@ impl Panel {
         let selected: HashSet<&str> = state.selected().iter().map(|i| i.key.as_str()).collect();
         let pinned: HashSet<String> = projects.file_library_mut().pinned().into_iter().collect();
         let key = format!(
-            "{}\u{1}{:?}\u{1}{:?}\u{1}{}\u{1}{}\u{1}{}",
+            "{}\u{1}{:?}\u{1}{:?}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
             state.search,
             state.tag_filter,
             selected.iter().collect::<std::collections::BTreeSet<_>>(),
             pinned.len(),
             revision,
             projects.file_library_mut().revision(),
+            // A tag drop re-lights (or dims) the matching point even when nothing else in the
+            // library moved (#1196).
+            projects.file_library_mut().tag_revision(),
         );
         if self.flags_key.as_deref() == Some(key.as_str()) && self.points.len() == map.points.len() {
             return;
@@ -260,15 +453,18 @@ impl Panel {
         let words = suhina_library::words(&state.search);
         let in_use = files_in_use(projects);
         let library = projects.file_library_mut();
+        let flat_tags = library.tag_flat();
         self.points = map
             .points
             .iter()
             .map(|p| {
                 let path_key = p.path.display().to_string();
                 let name = p.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                let tags = library.item_tags(&path_key);
+                let carried = library.item_tags(&path_key);
                 let text_matches = words.is_empty() || suhina_library::rank(&words, &name, &path_key).is_some();
-                let tag_matches = state.tag_filter.is_empty() || tags.iter().any(|t| state.tag_filter.contains(t));
+                let tag_matches = state.tag_filter.is_empty() || carried.iter().any(|id| state.tag_filter.contains(id));
+                let tags =
+                    flat_tags.iter().filter(|tag| carried.contains(&tag.id)).map(|tag| tag.name.clone()).collect();
                 let folder = p.path.parent().map(|f| f.display().to_string()).unwrap_or_default();
                 MapPoint {
                     detail: folder,
@@ -423,7 +619,7 @@ impl Panel {
         self.view.dot_size = settings.map_dot_size as f32 / 100.0;
         self.view.label_size = settings.map_label_size as f32 / 100.0;
         self.view.volume = settings.preview_volume;
-        let tags: Vec<String> = projects.file_library_mut().tags().into_iter().map(|t| t.name).collect();
+        let tags: Vec<String> = projects.file_library_mut().tag_flat().into_iter().map(|t| t.name).collect();
         let status = self.status();
         let details = self.status_details(settings.map_max_seconds);
         let busy = self.busy(ui.input(|i| i.time));

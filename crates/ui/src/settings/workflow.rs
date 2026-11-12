@@ -53,6 +53,20 @@ impl Setting {
         }
     }
 
+    /// The gesture in a word or two, for the toolbar's workflow menu, where the setting's value
+    /// stands beside it.
+    pub fn short_name(self) -> &'static str {
+        match self {
+            Self::EmptyClick => "Click empty",
+            Self::RightClick => "Right-click note",
+            Self::ShiftRight => "Shift right-drag",
+            Self::AltRight => "Alt right-hold",
+            Self::Duplicate => "Duplicate",
+            Self::DoubleClickEmpty => "Double-click empty",
+            Self::DoubleClickNote => "Double-click note",
+        }
+    }
+
     /// The choices, in the order the setting's index counts them.
     pub fn choices(self) -> &'static [&'static str] {
         match self {

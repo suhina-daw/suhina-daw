@@ -21,6 +21,11 @@ pub(crate) struct PlayerSync {
     /// Set by a command whose edit changes nothing the engine plays (a send of a muted track):
     /// the playing graph is kept, as for a command whose [`crate::Policy::heard`] is false.
     pub(crate) unheard: bool,
+    /// Set by `clip.setEnvelope` on an arrangement clip (its lane and index): its envelope is all
+    /// the edit changed, so it goes to the playing engine as a message
+    /// (`Controller::set_clip_envelope`) instead of a new graph, which a drag sent every frame and
+    /// which handed every stretched voice over each time.
+    pub(crate) envelope_edit: Option<(usize, usize)>,
     /// Set when a continued edit could not reach the playing engine;
     /// [`crate::Session::catch_up_player`] sends the project again.
     pub(crate) behind: bool,

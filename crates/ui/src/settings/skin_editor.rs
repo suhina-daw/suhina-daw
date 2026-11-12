@@ -58,13 +58,16 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
                         Ok(suhina_style::value::Color::Rgba(rgba)) => rgba,
                         _ => [0, 0, 0, 255],
                     };
-                    let mut color = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
+                    let mut hsva = hsva_of(rgba);
                     let popup = ui.auto_id_with("popup");
-                    let response = ui.color_edit_button_srgba(&mut color);
+                    // Normal blending only: a CSS colour has no additive form, and egui keeps an
+                    // additive one with an alpha of 0, which would save it as transparent black.
+                    let response =
+                        egui::color_picker::color_edit_button_hsva(ui, &mut hsva, egui::color_picker::Alpha::OnlyBlend);
                     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, label));
                     *held |= egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
                     if response.changed() {
-                        next = Some(crate::kit::theme::hex(color));
+                        next = Some(crate::kit::theme::hex_rgba(hsva.to_srgba_unmultiplied()));
                     }
                 }
                 (Some(Component::Number | Component::Integer), _, Some((min, max))) => {
@@ -115,6 +118,14 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
         }
     }
     request
+}
+
+/// A CSS colour (unmultiplied sRGB) for egui's picker, its colour kept apart from its alpha so a
+/// fully transparent colour keeps its hue: egui's other colour types are premultiplied and lose it.
+fn hsva_of([r, g, b, a]: [u8; 4]) -> egui::ecolor::Hsva {
+    let mut hsva = egui::ecolor::Hsva::from_srgba_unmultiplied([r, g, b, 255]);
+    hsva.a = f32::from(a) / 255.0;
+    hsva
 }
 
 impl State {
@@ -177,7 +188,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
             if state.current != themes.current { state.current = themes.current.clone(); state.role.clear(); state.css.clear(); }
             let old = state.role.clone();
             egui::ComboBox::from_id_salt("skin-asset-role").selected_text(if state.role.is_empty() { "Choose control" } else { &state.role }).show_ui(ui, |ui| {
-                for role in skin::ROLES { for suffix in ["", ".hover", ".active", ".disabled"] {
+                for role in skin::roles() { for suffix in ["", ".hover", ".active", ".disabled"] {
                     let role = format!("{role}{suffix}"); ui.selectable_value(&mut state.role, role.clone(), role);
                 } }
             });
@@ -239,4 +250,15 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
         if !state.error.is_empty() { ui.colored_label(crate::kit::theme::recording(), &state.error); }
     });
     request
+}
+
+#[cfg(test)]
+mod tests {
+    /// A colour keeps its hue through the picker at any alpha, 0 included, as CSS keeps it.
+    #[test]
+    fn a_colour_keeps_its_hue_at_every_alpha() {
+        for rgba in [[0xFF, 0x30, 0x00, 0x00], [0xFF, 0x30, 0x00, 0x80], [0x12, 0x34, 0x56, 0xFF]] {
+            assert_eq!(super::hsva_of(rgba).to_srgba_unmultiplied(), rgba);
+        }
+    }
 }

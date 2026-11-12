@@ -63,10 +63,13 @@ pub(crate) enum PreviewCommand {
         gain: f32,
     },
     /// Plays a note now and holds it until a [`PreviewCommand::Release`] names it: the piano
-    /// roll's key column (`preview.noteOn`).
+    /// roll's key column (`preview.noteOn`). A note with a length of its own goes off at its end
+    /// instead. With `add`, the notes join those already held on the same track, which go on
+    /// sounding (the piano roll's selecting rectangle); otherwise what plays stops first.
     Hold {
         notes: Box<PreviewNotes>,
         gain: f32,
+        add: bool,
     },
     /// Releases what [`PreviewCommand::Hold`] holds: one key, or every held key when `key` is
     /// `None`.
@@ -77,6 +80,13 @@ pub(crate) enum PreviewCommand {
     /// milliseconds so it does not click.
     Gain(f32),
     Stop,
+}
+
+/// Whether a note of a held preview ([`PreviewCommand::Hold`]) is held until `preview.noteOff`:
+/// one of no length (a frame), as the key column plays. A note with a length of its own goes off
+/// at its end, as the selecting rectangle's notes do.
+fn held_until_off(note: &PreviewNote) -> bool {
+    note.length <= 1
 }
 
 /// What the voice lets go of, to be freed on the controller's thread.
@@ -259,6 +269,15 @@ impl Preview {
                     None => return,
                 },
             };
+            // Notes that join a held preview wait for the next block while that preview has notes
+            // not yet started (two arrived in one block): joining replaces the notes to start, and
+            // the earlier ones would never sound.
+            if matches!(command, PreviewCommand::Hold { add: true, .. })
+                && self.notes.as_ref().is_some_and(|play| play.held_only && play.next < play.notes.notes.len())
+            {
+                self.waiting = Some(command);
+                return;
+            }
             if let PreviewCommand::Gain(gain) = command {
                 if let Some(play) = self.sample.as_mut() {
                     play.target = gain;
@@ -292,10 +311,19 @@ impl Preview {
                         released: false,
                     });
                 }
-                PreviewCommand::Hold { notes, gain } => {
+                PreviewCommand::Hold { notes, gain, add } => {
+                    let joins =
+                        add && self.sample.is_none()
+                            && self.notes.as_ref().is_some_and(|play| {
+                                play.held_only && !play.released && play.notes.track == notes.track
+                            });
+                    if joins {
+                        self.join(notes, gain);
+                        continue;
+                    }
                     self.stop(chains, 0);
                     let mut held = [NOT_HELD; 128];
-                    for note in &notes.notes {
+                    for note in notes.notes.iter().filter(|n| held_until_off(n)) {
                         if let Some(slot) = held.get_mut(usize::from(note.key)) {
                             *slot = HELD_UNTIL_OFF;
                         }
@@ -320,6 +348,27 @@ impl Preview {
         }
     }
 
+    /// Adds held `notes` to the held preview that plays on the same track: they start in the next
+    /// frame and are held until let go, and the notes already held go on. The instrument that
+    /// sounds stays: a fallback device moves into the new notes, and the one that came with them
+    /// goes back with the old notes, so nothing is made or freed here.
+    fn join(&mut self, mut notes: Box<PreviewNotes>, gain: f32) {
+        let Some(play) = self.notes.as_mut() else { return };
+        std::mem::swap(&mut play.notes.fallback, &mut notes.fallback);
+        for note in notes.notes.iter().filter(|n| held_until_off(n)) {
+            if let Some(held) = play.held.get_mut(usize::from(note.key)) {
+                *held = HELD_UNTIL_OFF;
+            }
+        }
+        let old = std::mem::replace(&mut play.notes, notes);
+        play.next = 0;
+        play.target = gain;
+        if let Some(retired) = self.retired.as_mut() {
+            let _full = retired.push(Retired::Notes(old));
+        }
+        self.monitor.playing.store(true, Ordering::Relaxed);
+    }
+
     /// Releases the held preview keys, at `frame` of the block: one key, or every held key. A
     /// note hold whose last key is let go ends the preview. A preview that plays to an end of its
     /// own (a MIDI file) has no held keys and is left alone.
@@ -332,7 +381,7 @@ impl Preview {
                 continue;
             }
             let Some(held) = play.held.get_mut(usize::from(held_key)) else { continue };
-            if *held != HELD_UNTIL_OFF {
+            if *held == NOT_HELD {
                 continue;
             }
             *held = NOT_HELD;
@@ -413,13 +462,14 @@ impl Preview {
             while let Some(note) = play.notes.notes.get(play.next).filter(|n| n.start <= now) {
                 let end = position + note.length.max(1);
                 chain.note_on(frame, position, note.key, note.velocity, end);
-                if play.held_only {
+                let until_off = play.held_only && held_until_off(note);
+                if until_off {
                     // The key column's note is held until `preview.noteOff`: the chain must not
                     // release it at the frame it was started with.
                     chain.hold_key(note.key, HELD_UNTIL_OFF);
                 }
                 if let Some(held) = play.held.get_mut(usize::from(note.key)) {
-                    *held = if play.held_only { HELD_UNTIL_OFF } else { now + note.length.max(1) };
+                    *held = if until_off { HELD_UNTIL_OFF } else { now + note.length.max(1) };
                 }
                 play.next += 1;
             }
@@ -429,7 +479,9 @@ impl Preview {
                     *held = NOT_HELD;
                 }
             }
-        } else if !play.held_only {
+        } else {
+            // Notes with an end of their own (a held preview's too) go off there; those held
+            // until `preview.noteOff` never reach it.
             for key in 0..=127u8 {
                 if let Some(held) = play.held.get_mut(usize::from(key))
                     && *held != NOT_HELD
@@ -462,6 +514,15 @@ impl Preview {
                 }
                 play.next += 1;
             }
+        }
+        // A held preview whose notes all had an end of their own and have reached it is over.
+        if play.held_only
+            && !play.released
+            && play.next >= play.notes.notes.len()
+            && play.held.iter().all(|h| *h == NOT_HELD)
+        {
+            play.released = true;
+            self.monitor.playing.store(false, Ordering::Relaxed);
         }
         play.frame += 1;
     }

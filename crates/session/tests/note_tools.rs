@@ -4,7 +4,7 @@
 //! The MIDI tools: `note.setMuted`, `note.humanize`, `note.fitToScale`, `note.invert`,
 //! `note.reverse`, `note.legato`, `note.stretch`, `note.randomizeVelocity` and
 //! `note.rampVelocity` — editing a MIDI clip's notes, one undo step each, and refusing bad input
-//! (`docs/spec/ui-clip-editor.md` › Muting, › Other note tools (MIDI tools column)).
+//! (`docs/spec/ui-clip-editor.md` › Muting, › Note tools (the clip panel's tools)).
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers outside #[test] functions
 
@@ -234,7 +234,7 @@ fn fit_to_scale_moves_to_the_nearest_key_and_takes_the_lower_on_a_tie() {
 fn inverting_mirrors_the_keys_around_the_middle_of_the_range() {
     let mut session = Session::new(project(scale_notes()));
     let before = notes_of(&session, 1);
-    // The named notes 0 and 1 span 60 to 64, so the pivot is 62.
+    // The named notes 0 and 1 span 60 to 64: they swap.
     let result = run(&mut session, "note.invert", json!({ "track": 1, "index": 0, "notes": [0, 1] })).unwrap();
     assert_eq!(result, json!({ "notes": [0, 1] }));
     assert_eq!(keys(&session), [64, 60, 67, 71]);
@@ -242,9 +242,14 @@ fn inverting_mirrors_the_keys_around_the_middle_of_the_range() {
     assert_eq!(notes_of(&session, 1), before);
     assert!(!session.can_undo());
 
-    // The whole clip spans 60 to 71: the pivot is 65, and 62 (2 * 65 - 68) stays inside the keys.
+    // The whole clip spans 60 to 71: each key k becomes 60 + 71 - k, so the lowest and the
+    // highest swap and every key stays inside the range.
     run(&mut session, "note.invert", json!({ "track": 1, "index": 0 })).unwrap();
-    assert_eq!(keys(&session), [70, 66, 63, 59]);
+    assert_eq!(keys(&session), [71, 67, 64, 60]);
+    // Inverting again gives the notes back.
+    run(&mut session, "note.invert", json!({ "track": 1, "index": 0 })).unwrap();
+    assert_eq!(keys(&session), [60, 64, 67, 71]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
     // A single note is its own pivot and does not move; no undo step is marked.
     run(&mut session, "edit.undo", json!({})).unwrap();
     let once = session.project().clone();
@@ -257,8 +262,19 @@ fn inverting_mirrors_the_keys_around_the_middle_of_the_range() {
 fn inverting_keeps_the_keys_within_0_to_127() {
     let mut session = Session::new(project(vec![note(0.0, 1.0, 0), note(1.0, 1.0, 1)]));
     run(&mut session, "note.invert", json!({ "track": 1, "index": 0 })).unwrap();
-    // The pivot is 0: note 1 would land on -1 and is kept at 0.
-    assert_eq!(keys(&session), [0, 0]);
+    // The range is 0 to 1: the two keys swap rather than land on one key.
+    assert_eq!(keys(&session), [1, 0]);
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 126), note(1.0, 1.0, 127), note(2.0, 1.0, 60)]));
+    run(&mut session, "note.invert", json!({ "track": 1, "index": 0 })).unwrap();
+    assert_eq!(keys(&session), [61, 60, 127]);
+}
+
+#[test]
+fn inverting_an_odd_range_keeps_its_lowest_and_highest_keys() {
+    // C and E flat (60 and 63) swap; rounding the middle down would give D and B (62 and 59).
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(1.0, 1.0, 63)]));
+    run(&mut session, "note.invert", json!({ "track": 1, "index": 0 })).unwrap();
+    assert_eq!(keys(&session), [63, 60]);
 }
 
 #[test]
@@ -326,6 +342,19 @@ fn legato_lasts_until_the_next_note_on_any_key() {
     let refused = run(&mut far, "note.legato", json!({ "track": 1, "index": 0 }));
     assert!(refused.is_err(), "{refused:?}");
     assert_eq!(notes_of(&far, 1), before);
+}
+
+#[test]
+fn reversing_notes_later_in_the_clip_keeps_them_in_their_span() {
+    // Beats 4 to 5.5: a rising line becomes a falling one in the same place, not at beat 0. Each
+    // start becomes 4 + 5.5 minus the note's end.
+    let mut session = Session::new(project(vec![note(4.0, 1.0, 60), note(5.0, 0.5, 64), note(8.0, 1.0, 67)]));
+    run(&mut session, "note.reverse", json!({ "track": 1, "index": 0, "notes": [0, 1] })).unwrap();
+    close(&times(&session), &[4.5, 4.0, 8.0]);
+    close(&lengths(&session), &[1.0, 0.5, 1.0]);
+    // Reversing again puts them back.
+    run(&mut session, "note.reverse", json!({ "track": 1, "index": 0, "notes": [0, 1] })).unwrap();
+    close(&times(&session), &[4.0, 5.0, 8.0]);
 }
 
 #[test]
@@ -409,6 +438,185 @@ fn ramping_spreads_the_velocities_evenly_in_time_order() {
     run(&mut session, "note.rampVelocity", json!({ "track": 1, "index": 0, "notes": [1], "from": 20, "to": 20 }))
         .unwrap();
     assert_eq!(*session.project(), once);
+}
+
+/// Humanise moves each note on its own and whole: a start no further than its limit in
+/// milliseconds at the project's tempo, the length kept, and a note that would run into the next
+/// one on its key cut at that one's start (#1214).
+#[test]
+fn humanize_moves_each_note_on_its_own_and_keeps_its_length() {
+    // A C major chord at beat 1, then a note on C at beat 2.
+    let chord = vec![note(1.0, 1.0, 60), note(1.0, 1.0, 64), note(1.0, 1.0, 67), note(2.0, 1.0, 60)];
+    let mut built = project_built(chord.clone());
+    built.transport.tempo_bpm = 120.0;
+    let mut session = Session::new(suhina_test_support::with_ids(built));
+    run(&mut session, "note.humanize", json!({ "track": 1, "index": 0, "ms": 50, "velocity": 0, "seed": 3 })).unwrap();
+    let after = notes_of(&session, 1);
+    // Each note has a draw of its own: the chord's notes no longer start at the very same beat.
+    assert!(after[0].time != after[1].time || after[1].time != after[2].time, "{after:?}");
+    // 50 ms at 120 BPM is a tenth of a beat.
+    for (before, after) in chord.iter().zip(&after) {
+        assert!((after.time - before.time).abs() <= 0.1 + 1e-12, "{before:?} {after:?}");
+    }
+    // A note moves whole: the ones with no other note on their key keep their length.
+    assert_eq!((after[1].duration, after[2].duration), (1.0, 1.0), "{after:?}");
+    assert!(after[0].time + after[0].duration <= after[3].time + 1e-9, "no overlap on C: {after:?}");
+}
+
+/// A note at the clip's start moves no earlier than the start, and keeps its length there too.
+#[test]
+fn humanize_moves_no_note_before_the_start() {
+    let early = vec![note(0.0, 1.0, 64), note(0.01, 1.0, 60), note(0.05, 1.0, 57), note(0.1, 1.0, 53)];
+    let mut built = project_built(early.clone());
+    built.transport.tempo_bpm = 120.0;
+    for seed in 1..=20 {
+        let mut session = Session::new(suhina_test_support::with_ids(built.clone()));
+        run(&mut session, "note.humanize", json!({ "track": 1, "index": 0, "ms": 50, "velocity": 0, "seed": seed }))
+            .unwrap();
+        let after = notes_of(&session, 1);
+        assert!(after.iter().all(|n| n.time >= 0.0), "seed {seed}: {after:?}");
+        assert!(after.iter().all(|n| n.duration == 1.0), "seed {seed}: {after:?}");
+    }
+}
+
+#[test]
+fn humanize_takes_ms_or_time_and_refuses_both_or_too_much() {
+    let mut session = Session::new(project(scale_notes()));
+    let base = json!({ "track": 1, "index": 0, "seed": 1 });
+    let with = |extra: Value| {
+        let mut params = base.clone();
+        if let (Some(map), Value::Object(more)) = (params.as_object_mut(), extra) {
+            map.extend(more);
+        }
+        params
+    };
+    assert!(run(&mut session, "note.humanize", with(json!({ "ms": 10, "time": 0.1 }))).is_err());
+    assert!(run(&mut session, "note.humanize", with(json!({ "ms": 51 }))).is_err());
+    assert!(run(&mut session, "note.humanize", with(json!({ "ms": -1 }))).is_err());
+    assert_eq!(notes_of(&session, 1), scale_notes(), "a refused call changes nothing");
+    assert!(run(&mut session, "note.humanize", with(json!({ "time": 0.05 }))).is_ok(), "beats still work");
+    assert!(run(&mut session, "note.humanize", with(json!({ "ms": 0, "velocity": 0 }))).is_ok());
+}
+
+/// A note a hair after the start, moved back by its distance as the window rounded it, lands on
+/// the start instead of being refused.
+#[test]
+fn a_move_to_the_start_lands_on_it_despite_rounding() {
+    let mut session = Session::new(project(vec![note(0.0233, 1.0, 60)]));
+    run(&mut session, "note.move", json!({ "track": 1, "index": 0, "notes": [0], "beats": -0.023_301_8 })).unwrap();
+    assert_eq!(notes_of(&session, 1)[0].time, 0.0);
+    assert!(run(&mut session, "note.move", json!({ "track": 1, "index": 0, "notes": [0], "beats": -0.01 })).is_err());
+}
+
+/// `note.move` with `keys` takes each note to its own key (a move through a scale), in one undo
+/// step; keys and semitones together, a wrong count or a key past 127 are refused.
+#[test]
+fn a_move_with_keys_takes_each_note_to_its_own_key() {
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 64), note(1.0, 1.0, 67)]));
+    run(&mut session, "note.move", json!({ "track": 1, "index": 0, "notes": [2, 0], "keys": [69, 62] })).unwrap();
+    let keys: Vec<u8> = notes_of(&session, 1).iter().map(|n| n.key).collect();
+    assert!(keys.contains(&62) && keys.contains(&64) && keys.contains(&69), "{keys:?}");
+    for bad in [
+        json!({ "track": 1, "index": 0, "notes": [0], "keys": [61], "semitones": 1 }),
+        json!({ "track": 1, "index": 0, "notes": [0, 1], "keys": [61] }),
+        json!({ "track": 1, "index": 0, "notes": [0], "keys": [128] }),
+        json!({ "track": 1, "index": 0, "notes": [0], "keys": 61 }),
+    ] {
+        assert!(run(&mut session, "note.move", bad.clone()).is_err(), "{bad}");
+    }
+}
+
+/// `note.duplicate` with `keys` puts each copy on its own key (a copy through a scale), the
+/// originals untouched; keys with semitones are refused.
+#[test]
+fn a_duplicate_with_keys_puts_each_copy_on_its_own_key() {
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 64)]));
+    run(
+        &mut session,
+        "note.duplicate",
+        json!({ "track": 1, "index": 0, "notes": [0, 1], "beats": 1.0, "keys": [62, 65] }),
+    )
+    .unwrap();
+    let all = notes_of(&session, 1);
+    let copies: Vec<(f64, u8)> = all.iter().filter(|n| n.time == 1.0).map(|n| (n.time, n.key)).collect();
+    assert_eq!(copies, [(1.0, 62), (1.0, 65)], "{all:?}");
+    assert_eq!(all.iter().filter(|n| n.time == 0.0).map(|n| n.key).collect::<Vec<_>>(), [60, 64], "originals stay");
+    let both = json!({ "track": 1, "index": 0, "notes": [0], "beats": 1.0, "keys": [62], "semitones": 1 });
+    assert!(run(&mut session, "note.duplicate", both).is_err());
+}
+
+/// With `replace` (stacked notes off) the note tools that move or lengthen notes make room as a
+/// move does: a note they cover whole on its key goes, and the result names it.
+#[test]
+fn the_note_tools_replace_what_they_cover_when_asked() {
+    // Stretch: the first C, twice as long, covers the second C.
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(1.0, 1.0, 60)]));
+    let out = run(
+        &mut session,
+        "note.stretch",
+        json!({ "track": 1, "index": 0, "notes": [0], "factor": 2, "replace": true }),
+    )
+    .unwrap();
+    assert_eq!(out["replaced"], json!([1]), "{out}");
+    assert_eq!(notes_of(&session, 1).len(), 1);
+    // Fit to scale: C# goes to C, where a C already sounds over it.
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 61)]));
+    let fit = json!({ "track": 1, "index": 0, "notes": [1], "root": "C", "scale": "major", "replace": true });
+    let out = run(&mut session, "note.fitToScale", fit).unwrap();
+    assert_eq!(out["replaced"], json!([0]), "{out}");
+    assert_eq!(notes_of(&session, 1).iter().map(|n| n.key).collect::<Vec<_>>(), [60]);
+    // Without replace they stack, as before.
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(1.0, 1.0, 60)]));
+    run(&mut session, "note.stretch", json!({ "track": 1, "index": 0, "notes": [0], "factor": 2 })).unwrap();
+    assert_eq!(notes_of(&session, 1).len(), 2);
+}
+
+/// A paste where the notes were copied from lays the copies on their originals and replaces
+/// nothing, even with `replace`: the copies are there to be moved off them. Anywhere else
+/// `replace` makes room as usual.
+#[test]
+fn a_paste_in_place_keeps_the_originals() {
+    let mut session = Session::new(project(vec![note(1.0, 1.0, 60), note(3.0, 1.0, 60)]));
+    run(&mut session, "note.copy", json!({ "track": 1, "index": 0, "notes": [0] })).unwrap();
+    run(&mut session, "note.paste", json!({ "track": 1, "index": 0, "time": 1.0, "replace": true })).unwrap();
+    assert_eq!(notes_of(&session, 1).iter().filter(|n| n.time == 1.0).count(), 2, "copy and original");
+    run(&mut session, "note.paste", json!({ "track": 1, "index": 0, "time": 3.0, "replace": true })).unwrap();
+    assert_eq!(notes_of(&session, 1).iter().filter(|n| n.time == 3.0).count(), 1, "elsewhere it replaces");
+}
+
+/// `note.makeRoom` makes room under the notes it names, as `replace` does, and leaves out a note
+/// no longer in the clip.
+#[test]
+fn make_room_clears_under_the_named_notes() {
+    let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 60), note(2.0, 1.0, 60)]));
+    let out =
+        run(&mut session, "note.makeRoom", json!({ "track": 1, "index": 0, "notes": [1, { "id": 999_999 }] })).unwrap();
+    assert_eq!(out["replaced"], json!([0]), "{out}");
+    assert_eq!(notes_of(&session, 1).len(), 2);
+}
+
+/// A note covered from its start that runs on past the named note keeps what runs on by default,
+/// and goes whole with `covered` "delete"; one that starts first is cut back either way.
+#[test]
+fn make_room_keeps_or_deletes_a_note_covered_from_its_start() {
+    let place = |covered: Option<&str>| {
+        // The first note is the one placed: the second starts under it and runs on past it.
+        let mut session = Session::new(project(vec![note(1.0, 1.0, 60), note(1.5, 2.0, 60), note(0.0, 1.5, 60)]));
+        let mut params = json!({ "track": 1, "index": 0, "notes": [0] });
+        if let Some(covered) = covered {
+            params["covered"] = json!(covered);
+        }
+        run(&mut session, "note.makeRoom", params).unwrap();
+        let mut left: Vec<(f64, f64)> = notes_of(&session, 1).iter().map(|n| (n.time, n.duration)).collect();
+        left.sort_by(|a, b| a.0.total_cmp(&b.0));
+        left
+    };
+    // Kept: the one starting first ends where the placed note starts, the covered one starts where
+    // it ends.
+    assert_eq!(place(None), [(0.0, 1.0), (1.0, 1.0), (2.0, 1.5)]);
+    assert_eq!(place(Some("cut")), [(0.0, 1.0), (1.0, 1.0), (2.0, 1.5)]);
+    // Deleted: the covered one goes whole; the one starting first is cut back as before.
+    assert_eq!(place(Some("delete")), [(0.0, 1.0), (1.0, 1.0)]);
 }
 
 #[test]

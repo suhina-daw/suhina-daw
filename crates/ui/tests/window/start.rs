@@ -50,7 +50,7 @@ fn a_backup_a_crash_left_is_offered_on_start_and_opens_tied_to_its_file() {
     let offer = harness.state_mut().take_recovery_request().expect("the backup to open");
     assert_eq!((offer.backup.clone(), offer.file.clone()), (backup.clone(), Some(file.clone())));
     // What the app does with it.
-    let (session, _) = Session::recover(&offer.backup, offer.file.as_deref()).unwrap();
+    let (session, _) = Session::recover(&offer.backup, offer.file.as_deref(), None).unwrap();
     harness.state_mut().open_project(session, &[], OpenAs::NewTab);
     harness.run();
     let session = harness.state().session().unwrap();

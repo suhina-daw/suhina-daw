@@ -3,23 +3,20 @@
 
 //! Parameter changes for a VST3 processor. A processor learns new parameter values only through
 //! `process`: each block carries an `IParameterChanges` list with a queue of values per
-//! parameter. The control thread puts `(id, value)` pairs in a [`Pending`] list; the audio
+//! parameter. The control thread puts `(id, value)` pairs in a [`ParamQueue`]; the audio
 //! thread moves them into a list made before processing starts, so it does not allocate.
 
 use std::cell::Cell;
-use std::sync::{Arc, Mutex};
 
 use vst3::Steinberg::Vst::*;
 use vst3::Steinberg::*;
 use vst3::{Class, ComPtr, ComWrapper};
 
 use crate::param_notes::Notes;
+use crate::planar::ParamQueue;
 
 /// Most parameter changes one block carries; more wait for the next block.
 pub(crate) const MAX_CHANGES: usize = 4096;
-
-/// Values waiting for the next block: parameter id and normalized value.
-pub(crate) type Pending = Arc<Mutex<Vec<(ParamID, ParamValue)>>>;
 
 /// Most values one parameter takes in one block; past that the last one is replaced.
 const MAX_POINTS: usize = 16;
@@ -125,7 +122,7 @@ impl IParameterChangesTrait for Changes {
 pub(crate) struct BlockChanges {
     changes: ComWrapper<Changes>,
     pointer: Option<ComPtr<IParameterChanges>>,
-    pending: Pending,
+    pending: ParamQueue,
     /// What the editor changed and a block took in, for the main thread to report to the
     /// session (which keeps the project's values in step with it).
     applied: Notes,
@@ -137,7 +134,7 @@ pub(crate) struct BlockChanges {
 
 impl BlockChanges {
     /// Made before processing starts; allocates the list for [`MAX_CHANGES`] parameters.
-    pub(crate) fn new(pending: Pending, applied: Notes, engine: Notes) -> Self {
+    pub(crate) fn new(pending: ParamQueue, applied: Notes, engine: Notes) -> Self {
         let queues: Vec<ComWrapper<Queue>> = (0..MAX_CHANGES).map(|_| ComWrapper::new(Queue::new())).collect();
         let pointers = queues.iter().filter_map(|q| q.to_com_ptr::<IParamValueQueue>()).collect();
         let changes = ComWrapper::new(Changes { queues, pointers, count: Cell::new(0) });
@@ -168,14 +165,12 @@ impl BlockChanges {
                 queue.push(offset, value);
             }
         };
-        if let Ok(mut pending) = self.pending.try_lock() {
-            let room = pending.len().min(MAX_CHANGES);
-            for (id, value) in pending.drain(..room) {
-                add(id, 0, value);
-                // Past the room the report loses the rest; the next edit reports again.
-                self.applied.note(id, value);
-            }
-        }
+        let applied = &self.applied;
+        self.pending.take(MAX_CHANGES, |id, value| {
+            add(id, 0, value);
+            // Past the room the report loses the rest; the next edit reports again.
+            applied.note(id, value);
+        });
         for (id, offset, value) in extra {
             add(id, offset, value);
         }
@@ -210,10 +205,8 @@ mod tests {
 
     #[test]
     fn a_parameter_changed_several_times_in_a_block_gets_each_value() {
-        let pending = Pending::default();
-        if let Ok(mut list) = pending.lock() {
-            list.push((5, 0.1));
-        }
+        let pending = ParamQueue::default();
+        pending.push(5, 0.1);
         let applied = Notes::new(ParamNotes::new());
         let engine = Notes::new(ParamNotes::new());
         let mut applied_read = ParamNotes::fresh_reads();

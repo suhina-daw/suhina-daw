@@ -101,6 +101,18 @@ struct Point {
 }
 
 impl Envelope {
+    /// Whether `other` draws the same line: the same points at the same frames, with the same
+    /// values and curves (#1205). Never allocates.
+    pub(crate) fn same_line(&self, other: &Envelope) -> bool {
+        self.stepped == other.stepped
+            && self.points.len() == other.points.len()
+            && self
+                .points
+                .iter()
+                .zip(&other.points)
+                .all(|(a, b)| a.frame == b.frame && a.value.to_bits() == b.value.to_bits() && a.curve == b.curve)
+    }
+
     /// `lane` at `frames_per_beat`, moving evenly in `taper`'s position, or `None` when it is
     /// off or has no point with finite numbers. With `stepped`, each value holds until the next
     /// point (on/off and choices). Allocates.

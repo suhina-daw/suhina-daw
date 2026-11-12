@@ -68,6 +68,12 @@ pub(crate) struct Browser {
     pub(crate) sound_map_started: bool,
     /// The library revision the sound map was last brought in line with.
     pub(crate) sound_map_revision: Option<u64>,
+    /// Counts the polls that found the analysis changed ([`Projects::sound_map_changes`]).
+    pub(crate) sound_map_changes: u64,
+    /// Raised by every [`Projects::set_file_library`]: a view's kept state keys on this
+    /// when a replaced library could read as the same place and revisions ([#1254]
+    /// review).
+    pub(crate) library_generation: u64,
 }
 
 /// How many audio devices keep an input and a default track input of their own.
@@ -112,10 +118,15 @@ struct Devices {
     /// When the audio system was last asked whether the chosen device is back, while the
     /// output plays in its place.
     output_watched: Option<std::time::Instant>,
+    /// How many times an output was opened: each opening asked an ASIO driver for its sizes
+    /// anew, so Settings › Audio lists the devices again when this changes.
+    outputs_opened: u64,
     /// The MIDI input ports and where they send their notes (ADR 0017).
     midi: crate::midi::MidiInputs,
     /// Projects opened read their audio wherever it is on a local disk ([`Projects::read_local_audio`]).
     local_audio: bool,
+    /// The library's root, handed to every session ([`Projects::set_library_base`], ADR 0036).
+    library_base: Option<PathBuf>,
 }
 
 /// The open projects in tab order, and which one is active; and the plug-in library, which
@@ -392,7 +403,15 @@ impl Projects {
         } else {
             session.restart_plugins();
         }
+        self.devices.outputs_opened = self.devices.outputs_opened.wrapping_add(1);
         Ok(notice)
+    }
+
+    /// How many times an output was opened in this run ([`Projects::open_output`],
+    /// [`Projects::reopen_output`]): a list of the devices made before the last opening may be
+    /// out of date.
+    pub fn outputs_opened(&self) -> u64 {
+        self.devices.outputs_opened
     }
 
     /// Moves the active project's output to the one chosen now, keeping the transport where
@@ -440,6 +459,7 @@ impl Projects {
         );
         // Plug-ins that could not carry over start again; retained instances stay alive.
         session.sync_plugins();
+        self.devices.outputs_opened = self.devices.outputs_opened.wrapping_add(1);
         Ok(notice)
     }
 
@@ -470,6 +490,9 @@ impl Projects {
             session.set_trusted(self.trusted_audio_for(source.as_deref()));
         }
         session.set_default_input(self.track_input());
+        if let Some(base) = &self.devices.library_base {
+            session.set_library_base(base.clone());
+        }
         self.tabs.open.push(Open { id, name, session });
         self.activate(id);
         Ok(id)
@@ -505,6 +528,11 @@ impl Projects {
                     CommandError(format!("no audio output: {e}"))
                 })?;
             self.preview = Some(session);
+        }
+        if let Some(session) = self.preview.as_mut()
+            && let Some(base) = &self.devices.library_base
+        {
+            session.set_library_base(base.clone());
         }
         self.preview.as_mut().ok_or_else(no_project)
     }
@@ -562,7 +590,7 @@ impl Projects {
         let mut clipboards = copied.session.clipboards.clone();
         clipboards.tracks.clear();
         // A device's file the person chose in one project is their choice in the others too, so
-        // a copied Amp Modeler runs its model where it is pasted (`Session::device_file_location`).
+        // a copied Amp Modeler runs its model where it is pasted (`Session::resolve_device_file`).
         let chosen = copied.session.device_files.chosen.clone();
         for open in self.tabs.open.iter_mut().filter(|o| Some(o.id) != from) {
             open.session.clipboards = clipboards.clone();
@@ -691,6 +719,31 @@ impl Projects {
         // The sound map keeps its caches beside the library's indexes.
         self.browser.sound_map = None;
         self.browser.sound_map_revision = None;
+        self.browser.library_generation = self.browser.library_generation.wrapping_add(1);
+    }
+
+    /// Raised at every library replacement, whoever asked for it ([#1254] review): a view
+    /// whose kept state could read as the new library's own keys on this instead.
+    pub fn library_generation(&self) -> u64 {
+        self.browser.library_generation
+    }
+
+    /// The library's root (`Documents/Suhina`, [ADR 0036]): where the user's own presets are
+    /// saved, and where the library's folders sit. Given to every project open now and from
+    /// now on, like the default track input is.
+    /// The library's root, when it was set ([`Projects::set_library_base`], ADR 0036).
+    pub fn library_base(&self) -> Option<&Path> {
+        self.devices.library_base.as_deref()
+    }
+
+    pub fn set_library_base(&mut self, base: PathBuf) {
+        self.devices.library_base = Some(base.clone());
+        for open in &mut self.tabs.open {
+            open.session.set_library_base(base.clone());
+        }
+        if let Some(session) = self.preview.as_mut() {
+            session.set_library_base(base);
+        }
     }
 
     /// The browser's library.
@@ -719,7 +772,11 @@ impl Projects {
     /// session is not added to the open projects: the caller adds it ([`Projects::add`]) or shows
     /// it. Returns the session and what could not be read.
     pub fn open_path(&mut self, path: &Path, options: OpenOptions) -> Result<(Session, Vec<String>), CommandError> {
-        let (mut session, mut warnings) = Session::open(path)?;
+        // The library's base is the session's before its first loads ([ADR 0036]): a device's
+        // file state may be a library-relative path, which resolves against it, and a load
+        // that ran without it is built again when the base arrives ([ADR 0036] › 4, the
+        // review).
+        let (mut session, mut warnings) = Session::open_with_base(path, self.devices.library_base.as_deref())?;
         if options.audio {
             warnings.extend(self.load_audio(&mut session));
         }
@@ -806,9 +863,11 @@ impl Projects {
                 return Vec::new();
             }
             self.devices.output_retried = Some(std::time::Instant::now());
+            let why = info.failure.unwrap_or("the audio device reported an error");
+            suhina_plugins::trace!("audio output failed: {why} ({} on {})", info.device, info.host);
             return match self.reopen_output() {
                 Ok(notice) => {
-                    let mut said = vec!["the audio device reported an error; its output was opened again".to_string()];
+                    let mut said = vec![format!("{why}; the audio output was opened again")];
                     said.extend(notice);
                     said
                 }

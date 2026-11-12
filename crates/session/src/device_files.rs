@@ -21,6 +21,9 @@ pub(crate) struct DeviceFiles {
     pub(crate) modified: HashMap<String, Option<SystemTime>>,
     /// The files the person chose for a device in this session (`device.setNamFile`), which are
     /// read wherever they are; a path the project names is read only from where its audio may
-    /// be (`Session::device_file_location`).
+    /// be (`Session::resolve_device_file`).
     pub(crate) chosen: HashSet<String>,
+    /// How many loads the syncs have made: a parse and, for an IR, a resample each, on the
+    /// session's thread. A diagnostic, read by [`crate::Session::device_file_loads`].
+    pub(crate) loads: u64,
 }

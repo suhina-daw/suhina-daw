@@ -16,6 +16,7 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+pub mod elements;
 pub mod meta;
 
 /// The file name ending of a package.
@@ -48,6 +49,97 @@ pub const MAX_FILES: usize = 512;
 /// theme's swatch resolves against, as in the app. A copy of `suhina_ui::kit::theme_vars::
 /// core_sheet()`, which this crate cannot depend on; a test in `suhina-ui` keeps the two equal.
 pub const CORE_SHEET: &str = include_str!("core.css");
+
+/// Suhina's user-agent style sheet: the first sheet of every cascade, under the theme, its variant,
+/// device panel sheets and the user's sheet (`docs/spec/theme-skins.md` › The user-agent sheet).
+/// It styles elements by name, state and attribute only, with no classes, ids or variables, and
+/// holds the default artwork (`knob-body { image: url("suhina:knob.body.svg"); }`).
+pub const USER_AGENT_SHEET: &str = include_str!("user-agent.css");
+
+/// The scheme of a URL that names artwork built into Suhina: `url("suhina:knob.body.svg")`.
+pub const BUILT_IN_SCHEME: &str = "suhina:";
+
+/// The default artwork the user-agent sheet gives, as `(role, svg)`: each of its `image` rules
+/// whose selector is a role's ([`elements::role_of_selector`]) and whose URL names Suhina's own
+/// artwork for it.
+pub fn user_agent_artwork() -> Vec<(&'static str, &'static str)> {
+    let mut artwork = Vec::new();
+    for (selector, url) in image_rules(USER_AGENT_SHEET) {
+        let Some(file) = url.strip_prefix(BUILT_IN_SCHEME) else { continue };
+        let role = elements::role_of_selector(&selector);
+        if let Some((role, svg)) = built_in_artwork(file).filter(|(own, _)| *own == role) {
+            artwork.push((role, svg));
+        }
+    }
+    artwork
+}
+
+/// Suhina's own artwork that `file` names (`knob.body.svg`), as `(role, svg)`.
+pub fn built_in_artwork(file: &str) -> Option<(&'static str, &'static str)> {
+    let role = file.strip_suffix(".svg")?;
+    elements::default_artwork().find(|(own, _)| *own == role)
+}
+
+/// The `image` declarations of `css`'s plain rules, as `(selector, url)`, one per selector of a
+/// list. Comments are skipped, a statement at-rule (`@import "a.css";`) is passed over, and the
+/// rules inside an at-rule's block (`@media`, `@layer`) are not read.
+pub fn image_rules(css: &str) -> Vec<(String, String)> {
+    let mut text = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(start) = rest.find("/*") {
+        text.push_str(&rest[..start]);
+        rest = rest[start + 2..].find("*/").map_or("", |end| &rest[start + 2 + end + 2..]);
+    }
+    text.push_str(rest);
+    let mut rules = Vec::new();
+    let mut rest = text.trim_start();
+    while !rest.is_empty() {
+        let open = rest.find('{');
+        // A statement at-rule ends at its semicolon, before any block.
+        if rest.starts_with('@')
+            && let Some(end) = rest.find(';').filter(|end| open.is_none_or(|open| *end < open))
+        {
+            rest = rest[end + 1..].trim_start();
+            continue;
+        }
+        let Some(open) = open else { break };
+        // The block's end, past any block inside it.
+        let mut depth = 0usize;
+        let close = rest[open..].char_indices().find_map(|(at, c)| {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Some(open + at);
+                    }
+                }
+                _ => {}
+            }
+            None
+        });
+        let Some(close) = close else { break };
+        let selector = rest[..open].trim();
+        let body = &rest[open + 1..close];
+        rest = rest[close + 1..].trim_start();
+        if selector.starts_with('@') || body.contains('{') {
+            continue;
+        }
+        for declaration in body.split(';') {
+            let Some((property, value)) = declaration.split_once(':') else { continue };
+            if property.trim() != "image" {
+                continue;
+            }
+            let value = value.trim();
+            let Some(url) = value.strip_prefix("url(").and_then(|v| v.strip_suffix(')')) else { continue };
+            let url = url.trim().trim_matches(['"', '\'']);
+            for selector in selector.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                rules.push((selector.to_owned(), url.to_owned()));
+            }
+        }
+    }
+    rules
+}
 
 /// A package read and checked: its theme's id and name, its files by path, and what the checks
 /// found that does not stop it from being used.

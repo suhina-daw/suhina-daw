@@ -74,14 +74,21 @@ commands:
   plugin    plugin run: put an audio file through a plug-in (a name or id from plugins list)
             in its own process, offline, and write a 32-bit float stereo WAV; --tail adds
             that many seconds of silence for reverbs and delays to ring out (default 2);
-            plugin run-device does the same with a project's plug-in device (by its name) and
-            the settings the project saved, through the installed plug-in plugins check finds;
-            an instrument plays its track's arrangement notes from --from (a bar, default the
-            first clip) for --seconds (default 16), and `-` as input means silence; --state
-            gives the plug-in a saved state from a file first (its own, or a VST2 .fxb/.fxp);
-            plugin params lists a plug-in's parameters with their values, params-device with
-            the settings a project saved; plugin edit opens a plug-in's editor and waits until
-            its window is closed, then --save writes the state it has to a file
+            plugin run-device does the same with a project's plug-in device (by its name),
+            started as the project's export starts it: the installed plug-in plugins check
+            finds (one switched off in Settings counts as not installed), the settings the
+            project saved, its process group and clips; an instrument plays its track's
+            arrangement notes from --from (a bar, default the first clip) for --seconds
+            (default 16), and `-` as input means silence; it gets no song position, tempo or
+            automation; --state gives the plug-in a saved state from a file in place of the
+            project's (its own, a VST2 .fxb, or a VST2 .fxp, whose chunk only a VST2 plug-in
+            reads: a VST3 one warns and runs with its defaults);
+            plugin params lists a plug-in's parameters with their values; plugin edit opens a
+            plug-in's editor and waits until its window is closed, then --save writes the state
+            it has to a file; params-device and edit-device do the same with a project's
+            plug-in device on the project's own plug-in host, as the app runs it, through the
+            device.pluginParams (no hidden parameters), device.openEditor and
+            device.closeEditor commands
 
 options:
   <project.als>      a Live Set to import, or a Suhina project (.suhina) to open
@@ -366,6 +373,10 @@ fn load_project(args: &Args) -> Result<Loaded, String> {
             // the project's folder: the files they saved projects with, their library folders.
             let mut projects = suhina_session::Projects::new();
             projects.set_file_library(suhina_library::Library::new(suhina_plugins::library::settings_folder()));
+            // The library's base is the session's before its loads: a device's file state may
+            // say a library-relative path ([ADR 0036]), which resolves against it — the open
+            // takes it, so the files load once, from the library and not the working folder.
+            projects.set_library_base(suhina_session::documents_base());
             let (session, warnings) = projects.open_path(path, options).map_err(|e| e.message().to_owned())?;
             for warning in &warnings {
                 eprintln!("warning: {warning}");

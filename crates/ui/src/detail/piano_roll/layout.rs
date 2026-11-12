@@ -133,7 +133,7 @@ const NEAR_COLOR: i32 = 120;
 /// lengths: the end on the grid unless `free`, and no note shorter than [`MIN_LENGTH`].
 pub fn resize_by(raw: f64, grabbed: &Note, resized: &[Note], grid: TimelineGrid, free: bool) -> f64 {
     let end = grabbed.time + grabbed.duration;
-    let mut new_end = grid.place(end + raw, free, false);
+    let mut new_end = end + magnetic_by(end, raw, grid, free);
     if grid.snaps && !free && new_end <= grabbed.time + EPSILON {
         // Snapped onto or before its start: the end goes to the first line after the start.
         new_end = grid.next_line(grabbed.time);
@@ -143,6 +143,34 @@ pub fn resize_by(raw: f64, grabbed: &Note, resized: &[Note], grid: TimelineGrid,
     let by = if shortest.is_finite() { by.max(MIN_LENGTH - shortest) } else { by };
     if by.is_finite() { by } else { 0.0 }
 }
+
+/// How far a drag of `raw` beats takes a start or an end at `from`, the grid snapping
+/// magnetically (› Moving, › Resizing): one on the grid goes to the grid line nearest to where
+/// the pointer is. One off the grid (played in, or humanised) moves freely until it reaches the
+/// first grid line, and from there snaps to whichever is nearer: a grid line, or its own offset
+/// from the grid a whole number of steps away; so it can be put back on the grid by dragging, or
+/// moved keeping its feel. `raw` itself with `free` (Alt held) or a grid that does not snap. The
+/// one rule for a note's move, its copy and the drags of its start and its end.
+pub(crate) fn magnetic_by(from: f64, raw: f64, grid: TimelineGrid, free: bool) -> f64 {
+    if free || !grid.snaps || !raw.is_finite() || !from.is_finite() || raw == 0.0 {
+        return raw;
+    }
+    let target = from + raw;
+    let line = grid.place(target, false, false) - from;
+    if (grid.place(from, false, false) - from).abs() < ON_GRID {
+        return line;
+    }
+    let first = if raw > 0.0 { grid.next_line(from) } else { grid.previous_line(from) };
+    let reached = if raw > 0.0 { target >= first } else { target <= first };
+    if !reached {
+        return raw;
+    }
+    let offset = (raw / grid.step).round() * grid.step;
+    if (line - raw).abs() <= (offset - raw).abs() { line } else { offset }
+}
+
+/// How close to a grid line a start or an end counts as on it, in beats.
+const ON_GRID: f64 = 1e-6;
 
 /// The note at `pos`, the topmost (latest) first, and which part of it `pos` is on.
 pub(super) fn note_at(layout: &Layout, notes: &[Note], pos: Pos2) -> Option<(usize, Part)> {
@@ -179,15 +207,48 @@ pub(super) fn velocity_height(velocity: f32, lane: Rect) -> f32 {
     (lane.height() - 4.0).max(0.0) * v / 127.0
 }
 
-/// The cursor a tool shows over the grid. Erase hides the pointer and draws the eraser button's
-/// shape in its place (`show`), since the windowing layer has no eraser cursor.
+/// The cursor a tool shows over the grid: the arrow for Select, and none for the tools whose
+/// icon is drawn in its place ([`tool_pointer`]).
 pub(super) fn cursor_for(tool: Tool) -> Option<CursorIcon> {
     match tool {
-        Tool::Select | Tool::Mute => None,
-        Tool::Draw | Tool::Paint => Some(CursorIcon::Crosshair),
-        Tool::Erase => Some(CursorIcon::None),
-        Tool::Slice => Some(CursorIcon::Text),
+        Tool::Select => None,
+        Tool::Draw | Tool::Paint | Tool::Erase | Tool::Slice | Tool::Mute => Some(CursorIcon::None),
     }
+}
+
+/// The toolbar icon that stands in for the pointer while a tool is chosen, and its hotspot: the
+/// point of the icon that sits on the pointer, as fractions of its square from the top left (the
+/// pencil's and the brush's tip, the eraser's rubbing edge, the blade's point, the middle of the
+/// mute sign). The windowing layer has no such cursors, so the pointer is hidden and the icon
+/// drawn where it is.
+pub(super) fn tool_pointer(tool: Tool) -> Option<(IconButton, Vec2)> {
+    match tool {
+        Tool::Draw => Some((IconButton::Draw, Vec2::new(0.013, 0.948))),
+        Tool::Paint => Some((IconButton::Paint, Vec2::new(0.045, 0.913))),
+        Tool::Erase => Some((IconButton::Erase, Vec2::new(0.153, 0.847))),
+        Tool::Slice => Some((IconButton::Slice, Vec2::new(0.164, 0.093))),
+        Tool::Mute => Some((IconButton::Mute, Vec2::splat(0.5))),
+        Tool::Select => None,
+    }
+}
+
+/// The square a tool's icon is drawn in for a pointer at `pos`: `size` wide, its hotspot on `pos`.
+pub(super) fn tool_pointer_rect(pos: Pos2, hotspot: Vec2, size: f32) -> Rect {
+    Rect::from_min_size(pos - hotspot * size, Vec2::splat(size))
+}
+
+/// A tool's icon in place of the pointer, in `rect`: in the text colour, ringed with a point of
+/// the window's colour so it reads over a note as well as over the empty grid.
+pub(super) fn draw_tool_pointer(painter: &egui::Painter, icon: IconButton, rect: Rect) {
+    if let Some(svg) = icon.svg() {
+        for (x, y) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+            crate::kit::skin::paint_icon(painter, rect.translate(Vec2::new(x, y)), svg, theme::window_background());
+        }
+        if crate::kit::skin::paint_icon(painter, rect, svg, theme::text_primary()) {
+            return;
+        }
+    }
+    icon.draw(painter, rect, theme::text_primary(), rect.width() / TOOL_ICON);
 }
 
 /// Beats rounded to a millionth, so a value made of steps such as thirds sends no float noise.
@@ -314,4 +375,70 @@ pub(super) fn scroll_and_zoom_by_hand(ui: &Ui, state: &mut PianoRollState, area:
         state.scroll -= delta;
         ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
     }
+}
+
+/// How far from the grid's edge the selected notes are kept, in points.
+const REVEAL_MARGIN: f32 = 24.0;
+
+/// Scrolls so the selected notes of `clip` are in `grid`, once a key has moved or sized them
+/// ([`PianoRollState::reveal_selection`]): the least scroll that brings their span in, with a little
+/// room; a span wider or taller than the grid shows its start or its top row.
+pub(super) fn reveal_selection(state: &mut PianoRollState, clip: &PianoClip, rows: &KeyRows, grid: Rect) {
+    if state.reveal_selection == 0 {
+        return;
+    }
+    state.reveal_selection -= 1;
+    let chosen: Vec<&Note> = state.selected.iter().filter_map(|i| clip.notes.get(*i)).collect();
+    if chosen.is_empty() {
+        return;
+    }
+    let start = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min) as f32 * state.beat_width;
+    let end = chosen.iter().map(|n| n.time + n.duration.max(0.0)).fold(0.0, f64::max) as f32 * state.beat_width;
+    state.scroll.x = shown_span(state.scroll.x, grid.width(), start, end);
+    let shown_rows: Vec<usize> = chosen.iter().filter_map(|n| rows.row_of(n.key)).collect();
+    if let (Some(top), Some(bottom)) = (shown_rows.iter().min(), shown_rows.iter().max()) {
+        let (top, bottom) = (*top as f32 * state.key_height, (*bottom + 1) as f32 * state.key_height);
+        state.scroll.y = shown_span(state.scroll.y, grid.height(), top, bottom);
+        state.scrolled_by_hand = true;
+    }
+}
+
+/// The scroll that shows `from` to `to` (points along the content) in a view `size` long now at
+/// `scroll`: unchanged when it is in view, else the least move, keeping [`REVEAL_MARGIN`] where
+/// there is room; a span longer than the view shows its start.
+fn shown_span(scroll: f32, size: f32, from: f32, to: f32) -> f32 {
+    let margin = REVEAL_MARGIN.min(((size - (to - from)) / 2.0).max(0.0));
+    if to - from + 2.0 * margin > size || from - margin < scroll {
+        (from - margin).max(0.0)
+    } else if to + margin > scroll + size {
+        to + margin - size
+    } else {
+        scroll
+    }
+}
+
+/// While a drag that moves, sizes or draws notes holds the pointer at or past the grid's edge, the
+/// view scrolls that way, faster the further past it is, and the drag's start moves with it so
+/// the notes go on following the pointer.
+pub(super) fn scroll_at_edges(state: &mut PianoRollState, grid: Rect, pointer: Pos2) {
+    let Some(gesture) = state.gesture.as_mut().filter(|g| g.follows_edges()) else { return };
+    let edge = 4.0;
+    let speed = |past: f32| (past.max(0.0) / 2.0 + 2.0).min(40.0);
+    let mut by = Vec2::ZERO;
+    if pointer.x > grid.right() - edge {
+        by.x = speed(pointer.x - grid.right());
+    } else if pointer.x < grid.left() + edge && state.scroll.x > 0.0 {
+        by.x = -speed(grid.left() - pointer.x).min(state.scroll.x);
+    }
+    if pointer.y > grid.bottom() - edge {
+        by.y = speed(pointer.y - grid.bottom());
+    } else if pointer.y < grid.top() + edge && state.scroll.y > 0.0 {
+        by.y = -speed(grid.top() - pointer.y).min(state.scroll.y);
+    }
+    if by == Vec2::ZERO {
+        return;
+    }
+    gesture.scrolled(by);
+    state.scroll += by;
+    state.scrolled_by_hand = true;
 }

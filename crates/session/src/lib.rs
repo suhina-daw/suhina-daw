@@ -35,6 +35,7 @@ mod automation_range;
 pub mod backup;
 mod blank;
 mod clip_ara;
+mod clip_audio;
 mod clip_color;
 mod clip_edges;
 mod clip_shape;
@@ -50,6 +51,7 @@ mod export;
 mod files;
 mod follow;
 mod history;
+mod lane_layout;
 mod launch;
 mod library;
 mod live_input;
@@ -74,6 +76,7 @@ mod relink;
 mod scales;
 mod sends;
 mod soundmap;
+mod swing;
 mod take_carry;
 mod tempo;
 mod track_copy;
@@ -90,14 +93,18 @@ pub use ara::ClipNotes;
 pub use audio::{AudioSystem, InputChoice, LiveOutput, OutputChoice, OutputInfo, audio_commands};
 pub use automation_range::{SHAPES as AUTOMATION_SHAPES, shape_points as automation_shape};
 pub use blank::{blank_project, blank_project_with};
+pub use clip_audio::clip_tempo_candidates;
 pub use commands::{
     After, Agents, CommandKind, CommandSpec, Effect, Param, ParamType, PathKind, Policy, Recent, Run, Target, commands,
     parse_quantization,
 };
 pub use demo::{demo_project, grouped_project};
 pub use export::{ExportData, ExportGather, export_from};
+pub use files::stage_and_rename;
 pub use files::{MAX_FILES, file_tempo};
-pub use library::{Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items};
+pub use library::{
+    Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items, user_presets,
+};
 pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
 pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
@@ -109,8 +116,8 @@ pub use projects::{
     project_commands,
 };
 pub use rack::{
-    BlockCounts, Hosted, OfflinePlugins, PluginEnv, PluginProgress, PluginReport, PluginStatus, ProcessGroup, Rack,
-    is_instrument, plugin_group, start_offline,
+    BlockCounts, Hosted, OfflineDevice, OfflinePlugins, ParamTexts, PluginEnv, PluginProgress, PluginReport,
+    PluginStatus, ProcessGroup, Rack, START_TIMEOUT, is_instrument, plugin_group, start_offline, start_offline_device,
 };
 pub use recording::{COUNT_IN_BARS, LiveTake, RECORDED_FOLDER};
 pub use relink::COLLECTED;
@@ -124,6 +131,19 @@ pub use suhina_project_file::{EXTENSION as PROJECT_EXTENSION, is_project_file};
 pub fn devices() -> suhina_engine::Devices {
     suhina_device_registry::factory()
 }
+
+/// Where projects are saved and templates kept until the settings say otherwise: `Suhina`
+/// in the user's documents folder, or the folder made under the program's old name while only
+/// that one exists (projects there stay where recent lists and links expect them).
+pub fn documents_base() -> PathBuf {
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
+    let documents = home.map(|h| h.join("Documents")).unwrap_or_default();
+    let (new, old) = (documents.join("Suhina"), documents.join(OLD_LIBRARY_ROOT));
+    if !new.exists() && old.is_dir() { old } else { new }
+}
+
+/// The library's root made under the program's old name, while only that one exists.
+const OLD_LIBRARY_ROOT: &str = "Loopwerk"; // rename_suhina: keep
 
 /// Undo steps kept per session; the oldest are dropped first.
 const MAX_UNDO: usize = 256;
@@ -222,6 +242,9 @@ pub struct Session {
     audio: project_audio::ProjectAudio,
     device_files: device_files::DeviceFiles,
     pub(crate) sync: player_sync::PlayerSync,
+    /// Plug-in parameters the user moved in a plug-in's own editor since the window last asked
+    /// (track, device on the track's chain, parameter id), for its lanes to show them (#1205).
+    pub(crate) touched: Vec<(suhina_model::TrackId, usize, u32)>,
     /// When the project was last backed up and where (`backup.rs`).
     pub(crate) backup: backup::SessionBackups,
     pub(crate) live: live_input::LiveInput,
@@ -236,6 +259,8 @@ pub struct Session {
     /// was made or since: they follow the default while the project stays unchanged
     /// ([`Session::set_default_input`]).
     defaulted: Vec<suhina_model::TrackId>,
+    /// The library's root (`Documents/Suhina`, [ADR 0036]), where `device.savePreset` writes.
+    library_base: Option<PathBuf>,
 }
 
 /// Whether `track` records audio from an input: an audio track on a regular mixer strip (a return
@@ -278,12 +303,41 @@ impl Session {
             audio: project_audio::ProjectAudio::default(),
             device_files: device_files::DeviceFiles::default(),
             sync: player_sync::PlayerSync::default(),
+            touched: Vec::new(),
             backup: backup::SessionBackups::default(),
             live: live_input::LiveInput::default(),
             take_solo: None,
             default_input: suhina_model::InputChannels::None,
             defaulted: Vec::new(),
+            library_base: None,
         }
+    }
+
+    /// The library's root (`Documents/Suhina`, [ADR 0036]): where the user's own presets are
+    /// kept and the library's folders sit under (`Sounds/NAM` …). The app sets the library's
+    /// base below, since defaults are built beside it; a session without one cannot save into
+    /// the library. The library-relative device file states load against it from here on:
+    /// what opening tried without the base is tried again.
+    pub fn set_library_base(&mut self, base: PathBuf) {
+        // The same base again: the loads that ran with it stand (a reassignment clears the
+        // relative assets, so a project opened before the base was set keeps them from the
+        // base it was set with once).
+        if self.library_base.as_ref().is_some_and(|current| *current == base) {
+            return;
+        }
+        self.library_base = Some(base);
+        // A load that missed the base left its marks keyed by the relative text; those entries
+        // are built again with the base set (a shipped key and an absolute path stand either
+        // way, so they keep what they have).
+        self.device_files.modified.clear();
+        let keyed = |path: &str| std::path::Path::new(path).is_absolute() || path.starts_with("builtin:");
+        self.device_files.notes.retain(|path, _| keyed(path));
+        self.device_files.assets.entries.retain(|path, _| keyed(path.as_ref()));
+    }
+
+    /// The library's root, when it was set ([`Session::set_library_base`]).
+    pub fn library_base(&self) -> Option<&Path> {
+        self.library_base.as_deref()
     }
 
     /// Sets the audio input new audio tracks take from now on ([`Projects`] keeps it in line
@@ -411,8 +465,10 @@ impl Session {
     }
 
     pub fn copied_from_tracks(&self) -> bool {
-        self.clipboards.tracks.len() == self.clipboards.clips.len()
-            && self.clipboards.tracks.iter().any(|t| Some(t) != self.clipboards.tracks.first())
+        // A time selection's copy, its automation with it, goes back to its own tracks (#1205).
+        self.clipboards.span.is_some()
+            || (self.clipboards.tracks.len() == self.clipboards.clips.len()
+                && self.clipboards.tracks.iter().any(|t| Some(t) != self.clipboards.tracks.first()))
     }
 
     /// The project's decoded audio, which players are started with (ADR 0011).
@@ -491,7 +547,7 @@ impl Session {
             .device_file_paths()
             .into_keys()
             .filter(|path| self.device_files.assets.entries.contains_key(path.as_str()))
-            .filter_map(|path| self.device_file_location(&path))
+            .filter_map(|path| self.resolve_device_file(&path))
             .filter(|file| file.is_absolute())
             .collect();
         out.sort();
@@ -557,16 +613,25 @@ impl Session {
     }
 
     /// What a device's file is called, for a device panel: the model's own name (its metadata)
-    /// for a NAM Amp Modeler, the IR's parent folder's name for a NAM Cab Loader. `None` while
-    /// the file is not in the assets.
+    /// for a NAM Amp Modeler, the IR file's own stem for a NAM Cab Loader — a shipped key's
+    /// stem is its file's, the same name the lists' rows carry ([ADR 0036]). `None` while the
+    /// file is not in the assets.
     pub fn device_asset_name(&self, path: &str) -> Option<String> {
-        suhina_device_registry::asset_name(self.device_files.assets.get(path)?, std::path::Path::new(path))
+        let asset = self.device_files.assets.get(path)?;
+        suhina_device_registry::asset_name(asset, std::path::Path::new(path))
     }
 
     /// Why a device's file is not in the assets, by the path: what a read gave, for a device
     /// panel's note.
     pub fn device_asset_note(&self, path: &str) -> Option<&str> {
         self.device_files.notes.get(path).map(String::as_str)
+    }
+
+    /// How many device-file loads the syncs have made since the session was made: a parse
+    /// and, for an IR, a resample each, on the session's thread. A diagnostic — an open loads
+    /// each file once, and a test counts them to keep it that way.
+    pub fn device_file_loads(&self) -> u64 {
+        self.device_files.loads
     }
 
     /// Puts audio made by a command (a consolidated range) into the pool under `key`, for the
@@ -958,6 +1023,101 @@ impl Session {
         self.plugins.report(key)
     }
 
+    /// Sets parameter `id` of the hosted plug-in at `device` on `track`'s chain to `value` for
+    /// now, from the next audio block, leaving the project and its lanes alone (#1205): while a
+    /// point of the parameter's lane is dragged, the plug-in and its editor follow the line where
+    /// the transport stands. The command that lets go of the point puts the lane in for good. Does
+    /// nothing for a device that is not a hosted plug-in or without a player. Returns whether the
+    /// value went to the engine.
+    pub fn preview_plugin_param(&mut self, track: suhina_model::TrackId, device: usize, id: u32, value: f64) -> bool {
+        let hosted = self.project.channel_of_track(track).and_then(|c| c.devices.get(device)).is_some_and(|d| {
+            matches!(
+                d.kind,
+                suhina_model::DeviceKind::Clap { .. }
+                    | suhina_model::DeviceKind::Vst3 { .. }
+                    | suhina_model::DeviceKind::Vst2 { .. }
+            )
+        });
+        let Ok(param) = usize::try_from(id) else { return false };
+        if hosted
+            && value.is_finite()
+            && let Some(player) = self.sync.player.as_mut()
+        {
+            return player.set_device_param(ParamEdit { track, device, param, value }).is_ok();
+        }
+        false
+    }
+
+    /// What the project plays on parameter `id` of the plug-in device at `device` on `track`'s
+    /// chain at `beat`: its enabled lane's value there (held until the next point when `stepped`),
+    /// else the value set; `None` for a device or parameter the project does not hold.
+    pub fn plugin_param_now(
+        &self,
+        track: suhina_model::TrackId,
+        device: usize,
+        id: u32,
+        beat: f64,
+        stepped: bool,
+    ) -> Option<f64> {
+        let device = self.project.channel_of_track(track)?.devices.get(device)?;
+        let lane = device
+            .automation
+            .iter()
+            .find(|l| suhina_engine::param_id(&l.param) == Some(id) && l.enabled && !l.points.is_empty());
+        if let Some(value) = lane.and_then(|l| l.value_at(beat.max(0.0), stepped, &suhina_model::automation::Plain)) {
+            return Some(value);
+        }
+        device.params.iter().find(|p| suhina_engine::param_id(&p.id) == Some(id)).map(|p| p.value)
+    }
+
+    /// The plug-in parameters the user moved in a plug-in's own editor since the last call
+    /// (track, device on the track's own chain, parameter id), each once, for the window to show
+    /// them in the track's lanes (#1205). A value a lane sent there and the plug-in reported back
+    /// is not one.
+    pub fn take_touched_params(&mut self) -> Vec<(suhina_model::TrackId, usize, u32)> {
+        std::mem::take(&mut self.touched)
+    }
+
+    /// The plug-in devices on the own chains of `tracks` (not inside a device group), for their
+    /// automation lanes (#1205): each one's track and place on the chain, the parameters it
+    /// listed last (asked for again in the background once a couple of seconds old) and its
+    /// texts. The project's plug-in devices are looked up once, whatever the number of tracks.
+    #[allow(clippy::type_complexity)]
+    pub fn lane_plugin_lists(
+        &mut self,
+        tracks: &[suhina_model::TrackId],
+    ) -> Vec<(
+        suhina_model::TrackId,
+        usize,
+        Option<std::sync::Arc<[suhina_plugins::ParamInfo]>>,
+        Option<std::sync::Arc<ParamTexts>>,
+    )> {
+        let mut found = Vec::new();
+        for device in suhina_engine::plugin_devices(&self.project) {
+            let (Some(track), [index]) = (device.track, device.path.as_slice()) else { continue };
+            if !tracks.contains(&track) {
+                continue;
+            }
+            self.plugins.list_params(device.key);
+            found.push((track, *index, self.plugins.listed(device.key), self.plugins.texts(device.key)));
+        }
+        found
+    }
+
+    /// The plug-in device at `path` on `track`'s own texts for values it was asked about
+    /// ([`Session::ask_plugin_texts_at`], #1205).
+    pub fn plugin_texts_at(&self, track: suhina_model::TrackId, path: &[usize]) -> Option<std::sync::Arc<ParamTexts>> {
+        self.plugins.texts(plugin_key_at_path(&self.project, track, path)?)
+    }
+
+    /// Asks the plug-in device at `path` on `track` in the background for its own texts of
+    /// `values` of parameter `id`, for automation lanes to show (#1205).
+    pub fn ask_plugin_texts_at(&mut self, track: suhina_model::TrackId, path: &[usize], id: u32, values: &[f64]) {
+        if let Some(key) = plugin_key_at_path(&self.project, track, path) {
+            self.plugins.ask_texts(key, id, values);
+        }
+    }
+
     /// Has the plug-in device at `path` on `track` list its parameters again in the background,
     /// for its generated panel, when its list is a couple of seconds old
     /// ([`rack::Rack::list_params`]).
@@ -985,6 +1145,15 @@ impl Session {
     /// The NAM devices' files are read here, so the session is ready for the planned audio
     /// before a player is attached.
     pub fn open(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
+        Self::open_with_base(path, None)
+    }
+
+    /// [`Session::open`] with the library's root the caller knows ([ADR 0036]): the base is
+    /// the session's before its first loads, so a device's file state that is a
+    /// library-relative path resolves against it at once, and no load runs to be built again
+    /// when the base arrives later — a load that ran without it is a parse and, for an IR, a
+    /// resample the session's thread spends twice ([`Session::set_library_base`], the review).
+    pub fn open_with_base(path: &Path, base: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
         let (project, warnings) = if suhina_project_file::is_project_file(path) {
             let project = suhina_project_file::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
             (project, Vec::new())
@@ -1002,26 +1171,35 @@ impl Session {
         let mut session = Self::new(project);
         session.source = Some(path.to_path_buf());
         session.audio.folder = path.parent().map(Path::to_path_buf);
+        if let Some(base) = base {
+            session.set_library_base(base.to_path_buf());
+        }
         session.sync_device_files();
         Ok((session, warnings))
     }
 
     /// A new, untitled project made from the template file `path` (any project Suhina opens).
-    /// Its audio is still found where the template's is.
-    pub fn from_template(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
-        let (mut session, warnings) = Self::open(path)?;
+    /// Its audio is still found where the template's is. `base` is the library's root, as
+    /// [`Session::open_with_base`] takes it.
+    pub fn from_template(path: &Path, base: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
+        let (mut session, warnings) = Self::open_with_base(path, base)?;
         session.source = None;
         Ok((session, warnings))
     }
 
     /// Opens a backup (`docs/spec/backups.md` › The offer on start) as an unsaved project tied
     /// to `file`, the project file it is a backup of: saving writes `file`, and the backup is
-    /// left as it is. Without `file` (a project never saved) it opens untitled.
-    pub fn recover(backup: &Path, file: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
+    /// left as it is. Without `file` (a project never saved) it opens untitled. `base` is the
+    /// library's root, as [`Session::open_with_base`] takes it.
+    pub fn recover(
+        backup: &Path,
+        file: Option<&Path>,
+        base: Option<&Path>,
+    ) -> Result<(Self, Vec<String>), CommandError> {
         if !suhina_project_file::is_project_file(backup) {
             return Err(format!("{} is not a Suhina project", backup.display()).into());
         }
-        let (mut session, warnings) = Self::open(backup)?;
+        let (mut session, warnings) = Self::open_with_base(backup, base)?;
         session.source = file.map(Path::to_path_buf);
         // The changes since the project file was saved are in the backup only.
         session.history.changes = 1;
@@ -1165,9 +1343,18 @@ impl Session {
         !self.history.redo.is_empty()
     }
 
+    /// How many steps an undo can go back now, and how many undo steps were ever made: with both,
+    /// the window keeps a step of its own beside each of the session's, to bring back with an
+    /// undo what a step changed in the view (a range moved onto its copy, #1322). At
+    /// [`MAX_UNDO`] the oldest step goes as a new one comes, and the depth stays.
+    pub fn undo_steps(&self) -> (usize, u64) {
+        (self.history.undo.len(), self.history.made)
+    }
+
     /// The colours a track without one of its own shows, by its place among the tracks (the
-    /// window's palette, which follows the theme), and `fixed`, the colour a new track gets
-    /// instead of the palette's, when set. Without a palette, tracks keep no colour of their own.
+    /// window's palette, which follows the theme), and `fixed`, the one colour every new track
+    /// gets, when set. Without a palette, tracks keep no colour of their own. Clears the MIDI and
+    /// audio defaults, so call [`Session::set_track_type_colours`] after it.
     pub fn set_track_colours(&mut self, palette: Vec<suhina_model::Rgb>, fixed: Option<suhina_model::Rgb>) {
         // Resolve legacy inherited colours once, before a later theme/default edit can change them.
         // This is display normalisation, not an undoable project edit.
@@ -1196,8 +1383,9 @@ impl Session {
 
     /// After an edit that adds, removes or moves tracks: every track keeps the colour it showed
     /// (#690, #709). A track without a colour of its own showed its place's colour from the
-    /// palette, so it is given that colour now, before the places shift; a new track gets the
-    /// colour of its place, or the fixed one. Part of the same undo step.
+    /// palette, so it is given that colour now, before the places shift. A new track gets the
+    /// fixed colour, or else the MIDI or audio default for its kind, and only without those its
+    /// place's palette colour. Part of the same undo step.
     fn keep_track_colours(&mut self, before: &Project) {
         let (palette, fixed) = &self.track_colours;
         if palette.is_empty() && self.track_type_colours.is_none() {
@@ -1304,9 +1492,10 @@ impl Session {
         let mut changed = false;
         for (path, kind) in need.iter() {
             // A path the project names is not even looked at unless its audio could be read
-            // from there (#617): a network share would be asked for the person's sign-in. It is
-            // read where that is, a relative path from the project's folder.
-            let Some(file) = self.device_file_location(path) else {
+            // from there (#617): a network share would be asked for the person's sign-in. A
+            // shipped key is no file on the disk and is always read.
+            let file = self.resolve_device_file(path);
+            if file.is_none() && !path.starts_with("builtin:") {
                 self.device_files.modified.remove(path);
                 if self.device_files.assets.entries.remove(path.as_str()).is_some()
                     || self.device_files.notes.get(path.as_str()).map(String::as_str) != Some(DEVICE_FILE_OUTSIDE)
@@ -1315,8 +1504,8 @@ impl Session {
                     changed = true;
                 }
                 continue;
-            };
-            let mtime = std::fs::metadata(&file).ok().and_then(|m| m.modified().ok());
+            }
+            let mtime = file.and_then(|file| std::fs::metadata(file).ok()).and_then(|m| m.modified().ok());
             if (self.device_files.assets.entries.contains_key(path.as_str())
                 || self.device_files.notes.contains_key(path.as_str()))
                 && self.device_files.modified.contains_key(path)
@@ -1324,7 +1513,8 @@ impl Session {
             {
                 continue;
             }
-            let result = self.load_device_file(kind, &file);
+            let result = self.load_device_file(kind, path);
+            self.device_files.loads = self.device_files.loads.wrapping_add(1);
             self.device_files.modified.insert(path.clone(), mtime);
             match result {
                 Ok(asset) => {
@@ -1365,7 +1555,9 @@ impl Session {
             .filter_map(|track| track.channel.and_then(|ch| self.project.channel(ch)))
             .chain(self.project.main_channel());
         for channel in channels {
-            for device in &channel.devices {
+            // Inside a group too: a file-backed device in a group runs its file the same
+            // ([ADR 0036] › it), and the sync reads it the same way it reads a top-level one.
+            for (_, device) in suhina_model::walk_devices(&channel.devices) {
                 let suhina_model::DeviceKind::Builtin(id) = &device.kind else { continue };
                 if !suhina_device_registry::is_file_device(id) {
                     continue;
@@ -1383,36 +1575,162 @@ impl Session {
         need
     }
 
-    /// Where the device file a project names as `path` is read from: as named, for one the person
-    /// chose in this session; otherwise the file [`suhina_media::locate`] finds for audio of that
-    /// name, in the project's folder (a relative path from there, never from the working folder)
-    /// or trusted outside it. `None` when it may not be read, decided before anything outside
-    /// those places is looked at.
-    fn device_file_location(&self, path: &str) -> Option<PathBuf> {
-        if self.device_files.chosen.contains(path) {
-            return Some(PathBuf::from(path));
-        }
-        suhina_media::locate(path, Some(path), &self.audio_from(), &self.audio.trusted)
-    }
-
     /// What a file-backed device of `kind` runs for `file`, read by the device
     /// through the registry (a model for the Amp Modeler, an IR for the Cab Loader). The reads run
     /// here, at command or project-load time, never on the audio thread. The registry refuses a
     /// path without the device's extension and this anything but a plain file (a named pipe would
-    /// block the session). Where a project's stored path may point is decided before this
-    /// (`Session::device_file_location`): the extension alone does not keep out a network share.
+    /// block the session).
+    ///
+    /// A state's text is what the project carries: a shipped file's `builtin:` key, a
+    /// library-relative path ([`ADR 0036`] › it — `Sounds/NAM/…` joins the library's base on
+    /// this machine), or an absolute one. A library-relative file the disk does not carry still
+    /// runs when the pack carries a file of its name: the project opens on another machine
+    /// without the file on disk and renders from the pack. The state keeps the text it was
+    /// given; the resolution is what the loads hear. Where a project's stored path may point is
+    /// decided first ([`Session::resolve_device_file`]): the extension alone does not keep out a
+    /// network share (#617).
     pub(crate) fn load_device_file(
         &self,
         kind: &str,
-        file: &Path,
+        path: &str,
     ) -> Result<suhina_device_registry::DeviceAsset, String> {
         // An IR joins the project at the engine's rate; the session's rate is the player's, or
         // 48 kHz until the first output opens.
         let rate = self.sync.player.as_ref().map_or(48_000, Player::sample_rate);
-        if !file.is_file() {
-            return Err(format!("{} is not a file", file.display()));
+        // A shipped file's key rides the same state slot ([ADR 0036]): `builtin:<device
+        // id>/<file name>`, run against the pack's bytes through the device's own loader. A
+        // key of another device's pack is refused here, as a path of the wrong extension
+        // would be.
+        if path.starts_with("builtin:") {
+            let Some((packed_id, name)) = suhina_device_registry::builtin_file_key_parts(path) else {
+                return Err("a shipped file's key is builtin:<device id>/<file name>".into());
+            };
+            if packed_id != kind {
+                return Err(format!("{kind:?} runs a shipped file of its own kind, not {packed_id:?}"));
+            }
+            return suhina_device_registry::load_builtin_file(kind, name, rate);
         }
-        suhina_device_registry::load_file(kind, file, rate)
+        // A path the project names is read only from where its audio may be (#617).
+        let resolved = self.resolve_device_file(path).ok_or_else(|| DEVICE_FILE_OUTSIDE.to_string())?;
+        if resolved.is_file() {
+            return suhina_device_registry::load_file(kind, &resolved, rate);
+        }
+        // A project that opened before the library's move carries its file by the old place —
+        // the old defaults' folder emptied into the library's device folders at start, and the
+        // project's state still names it there ([ADR 0036] › 4). The old form reads the file's
+        // new place, so the project keeps its sound across the move.
+        if let Some(legacy) = self.legacy_device_file(kind, path)
+            && legacy != resolved
+            && legacy.is_file()
+        {
+            return suhina_device_registry::load_file(kind, &legacy, rate);
+        }
+        // The disk does not carry it; the pack may. A file the state names by the shipped
+        // pack's own place rides the executable — the on-disk copy's stand-in, so a project
+        // that opened on a machine without the file on disk still renders from the pack
+        // ([ADR 0036] › 7). The stand-in is honest only there ([ADR 0036] › 7, the review):
+        // the state's last components must name `<library folder>/Suhina/<name>` — a file of
+        // the same name in the user's own folder proves nothing about the pack, and it would
+        // open elsewhere on the pack's different file with no missing-file note. An absolute
+        // path is the file's own, and a missing one is a missing file, not a sound of the
+        // same name.
+        let shipped = if std::path::Path::new(path).is_absolute() {
+            None
+        } else {
+            Self::pack_standin(kind, path).and_then(|name| {
+                suhina_device_registry::pack_files(kind)
+                    .into_iter()
+                    .find(|(packed, _)| packed.eq_ignore_ascii_case(&name))
+            })
+        };
+        if let Some((packed_name, _)) = shipped {
+            return suhina_device_registry::load_builtin_file(kind, packed_name, rate);
+        }
+        // There but not a plain file (a folder, or a named pipe that would block the session).
+        if resolved.exists() {
+            return Err(format!("{} is not a file", resolved.display()));
+        }
+        suhina_device_registry::load_file(kind, &resolved, rate)
+    }
+
+    /// The shipped pack's file name a relative state's own place names, when it names the
+    /// pack's place: the state's last components must be `<library folder>/Suhina/<name>`
+    /// ([ADR 0036] › 7, the review) — a file of the same name in the user's own folder proves
+    /// nothing about the pack, and it would open elsewhere on the pack's different file with
+    /// no missing-file note. The one rule the load's stand-in and the state's store share, so
+    /// the two cannot drift apart; whether the pack carries the name is the caller's check.
+    pub(crate) fn pack_standin(kind: &str, path: &str) -> Option<String> {
+        let library = suhina_device_registry::library_folder(kind)?;
+        let mut components = std::path::Path::new(path)
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let name = components.pop()?;
+        let pack = components.pop()?;
+        let folder = components.pop()?;
+        (pack.eq_ignore_ascii_case(suhina_device_registry::SHIPPED_PACK) && folder.eq_ignore_ascii_case(library))
+            .then_some(name)
+    }
+
+    /// The file a state's old-form text points at since the library's move: the old defaults
+    /// (`NAM models`, `IRs`) emptied into the library's device folders at start, and a project
+    /// that opened before it carries its file by the old place. The old form — the old
+    /// folder's name as a relative text, or an absolute path inside the base's old folder —
+    /// reads the same tail under the library's device folder, so the project keeps its sound
+    /// ([ADR 0036] › 4). `None` when the state is no old form or the device ran no files then.
+    fn legacy_device_file(&self, kind: &str, path: &str) -> Option<PathBuf> {
+        let old = suhina_device_registry::legacy_folder(kind)?;
+        let new = suhina_device_registry::library_folder(kind)?;
+        let base = self.library_base()?;
+        // Component-wise matching (`Path::strip_prefix`), never a display string: the
+        // state's separators are whatever the saving platform wrote, and a string match on
+        // `/` would miss every Windows one.
+        let given = std::path::Path::new(path);
+        let tail: PathBuf = if given.is_absolute() {
+            given.strip_prefix(base.join(old)).ok()?.to_path_buf()
+        } else {
+            given.strip_prefix(old).ok()?.to_path_buf()
+        };
+        (!tail.as_os_str().is_empty()).then(|| base.join("Sounds").join("NAM").join(new).join(tail))
+    }
+
+    /// The file a state's text points at, when it may be read there; `None` for a shipped key,
+    /// which is no file on the disk, and for a path the project names where its audio may not be
+    /// read from (#617), decided before anything outside those places is looked at. A file the
+    /// person chose in this session (`device.setNamFile`) is read as named, wherever it is. The
+    /// library's folder is Suhina's own: a path in it, or a relative one its base joins to a file
+    /// ([ADR 0036] › 4), is read there. Any other path is the file [`suhina_media::locate`] finds
+    /// for audio of that name: in the project's folder (a relative path from there, never from
+    /// the working folder) or trusted outside it.
+    pub(crate) fn resolve_device_file(&self, path: &str) -> Option<PathBuf> {
+        if path.starts_with("builtin:") {
+            return None;
+        }
+        if self.device_files.chosen.contains(path) {
+            return Some(PathBuf::from(path));
+        }
+        let given = std::path::Path::new(path);
+        if given.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return None;
+        }
+        let base = self.library_base();
+        if given.is_absolute() {
+            if base.is_some_and(|base| given.starts_with(base)) {
+                return Some(given.to_path_buf());
+            }
+            return suhina_media::locate(path, Some(path), &self.audio_from(), &self.audio.trusted);
+        }
+        if let Some(base) = base
+            && base.join(given).is_file()
+        {
+            return Some(base.join(given));
+        }
+        if let Some(file) = suhina_media::locate(path, None, &self.audio_from(), &self.audio.trusted) {
+            return Some(file);
+        }
+        // Not on the disk where it may be: the library's place, where the load looks for the
+        // move's old form and the pack's stand-in, and reports a missing file.
+        Some(base.map_or_else(|| self.audio_from().join(given), |base| base.join(given)))
     }
 
     /// Lets a playing engine hear the project as it is now, with any audio added to the pool.
@@ -1451,6 +1769,7 @@ impl Session {
         }
         self.history.undo.push(before);
         self.history.redo.clear();
+        self.history.made = self.history.made.wrapping_add(1);
     }
 
     fn undo(&mut self) -> bool {

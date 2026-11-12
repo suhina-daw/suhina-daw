@@ -183,3 +183,24 @@ fn the_sample_map_takes_every_recent_item_as_a_place() {
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&samples);
 }
+
+// Every poll that finds the analysis changed is counted, whoever polled: a view that compares
+// the count with its layout's misses no change another poll saw first ([#1254] review: the
+// window's own poll each frame took the notice the map's relayout waited for).
+#[test]
+fn the_analysis_changes_are_counted_whoever_polls() {
+    let settings = temp("changes-settings");
+    let samples = temp("changes");
+    wav(&samples.join("kick.wav"), &kick(0));
+    let mut p = projects(&settings);
+    run(&mut p, "library.addFolder", json!({ "folder": samples.display().to_string() })).unwrap();
+    assert_eq!(p.sound_map_changes(), 0, "nothing analysed, nothing counted");
+    // Starting polls once, and that poll's finding is counted though its answer is dropped.
+    p.start_sound_map();
+    let started = p.sound_map_changes();
+    assert!(started > 0, "the start's poll is counted");
+    p.wait_sound_map();
+    assert!(p.sound_map_changes() >= started, "the count only grows");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&samples);
+}

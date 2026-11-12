@@ -48,7 +48,7 @@ pub(super) fn marker_flags(
         } else {
             theme::control_background()
         };
-        painter.fill_background(tag, 0.0, fill);
+        painter.rect_filled(tag, 0.0, fill);
         painter.vline(x, row.y_range(), theme::hairline(theme::text_secondary()));
         widgets::text_in(
             &painter,
@@ -253,11 +253,10 @@ pub(super) fn loop_brace(
     let Some((start, end)) = shown else { return };
     let enabled = timeline.loop_brace.is_none_or(|b| b.enabled) || state.loop_drag.is_some();
     let (left, right) = (x_of(start).round(), x_of(end).round());
-    // `.loop-region` styles the bar, `:checked` while looping is on; `height` is its thickness
+    // `loop-region` styles the bar, `[checked]` while looping is on; `height` is its thickness
     // and `loop-region` (`.on` while on) its artwork, nine-sliced when the SVG says so.
-    let _style = crate::kit::style_class::enter("loop-region");
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, enabled);
-    let thickness = crate::kit::native_css::thickness(LOOP_BAR).clamp(1.0, row.height());
+    let el = crate::kit::element::LOOP_REGION.attr(crate::kit::element::Checked, enabled).enter();
+    let thickness = el.thickness_or(LOOP_BAR).clamp(1.0, row.height());
     let bar = Rect::from_min_max(
         Pos2::new(left, row.center().y - thickness / 2.0),
         Pos2::new(right.max(left + 1.0), row.center().y + thickness / 2.0),
@@ -268,9 +267,9 @@ pub(super) fn loop_brace(
         (theme::control_background(), theme::text_hint())
     };
     let state = if enabled { crate::kit::skin::State::On } else { crate::kit::skin::State::Normal };
-    if !crate::kit::skin::paint(&painter, bar, "loop-region", state, edge, 0.0) {
-        let authored = crate::kit::style_class::computed().is_some_and(|c| c.authored.border || c.border_width > 0.0);
-        crate::kit::native_css::surface(&painter, bar, 0.0, fill);
+    if !crate::kit::skin::paint_as(&el, &painter, bar, "loop-region", state, edge) {
+        let authored = el.style().is_some_and(|c| c.authored.border || c.border_width > 0.0);
+        el.paint_with(&painter, bar, crate::kit::element::Native { radius: 0.0, fill });
         if !authored {
             painter.rect_stroke(bar, 0.0, theme::hairline(edge), StrokeKind::Inside);
         }

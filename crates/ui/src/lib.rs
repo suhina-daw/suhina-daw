@@ -29,7 +29,7 @@
 //! | The detail area (devices, clip properties) | [`App::detail_area`], [`detail::detail_view::show_row`] | [`App::do_action`] |
 //! | A device's right-click menu | [`interaction::menus::device_menu`] | [`App::do_action`] |
 //! | The piano roll | [`detail::piano_roll::show`] | its edits as `note.*` actions, [`App::do_action`] |
-//! | The MIDI tools beside the piano roll | [`detail::midi_tools::show`] | [`App::do_action`] |
+//! | A MIDI clip's panel and its note tools | [`detail::detail_view::show_clip_column`] | [`App::do_action`] |
 //! | The browser | [`browser::browser_view::show`], [`App::browser_panel`] | [`App::do_action`] |
 //! | The sample map | [`browser::sample_map::show`], [`App::sample_map_window`] | [`App::do_action`] |
 //! | Settings | [`settings::settings_view::show`], [`App::settings_dialog`] | [`App::settings_page`] |

@@ -9,8 +9,10 @@ fn sampler_mode_icons_have_distinct_geometry_and_keep_their_captions() {
     for label in ["Sample", "Slice", "Grain"] {
         let mut output = context.run_ui(Default::default(), |ui| {
             crate::kit::theme::install(ui.ctx());
+            let el = crate::kit::element::BUTTON.enter();
             paint_sample_mode(
                 ui.painter(),
+                &el,
                 Rect::from_min_size(Pos2::new(10., 10.), Vec2::new(60., 46.)),
                 label,
                 true,
@@ -150,7 +152,7 @@ fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
     let skin = crate::kit::skin::Skin {
         assets: [("knob.body".into(), svg("#12AB34")), ("button".into(), svg("#AB1234"))].into(),
         css: Some(Arc::from(
-            ".device-panel .knob { color:rgb(120 40 180); font-size:17px; } .device-panel .button {background:linear-gradient(90deg,red,blue);border-radius:6px;}",
+            "device-panel knob { color:rgb(120 40 180); font-size:17px; } device-panel button {background:linear-gradient(90deg,red,blue);border-radius:6px;}",
         )),
         ..Default::default()
     };
@@ -202,11 +204,60 @@ fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
     assert!(actions.iter().any(|action| action.id == "device.setParam" && action.params["param"] == "enabled"));
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
 }
+/// A token drawing in a translucent theme colour keeps the theme's alpha, times its own (#1235).
+#[test]
+fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
+    let canvas = Arc::new(DeviceUi {
+        size: [100.0, 60.0],
+        layers: vec![
+            Draw::rect([0.0, 0.0, 40.0, 20.0], [3, 1, 4, 255]),
+            Draw::rect([0.0, 30.0, 40.0, 20.0], [3, 1, 4, 128]),
+        ],
+        ..Default::default()
+    });
+    let ctx = egui::Context::default();
+    let faint = Color32::from_rgba_unmultiplied(255, 255, 255, 0x14);
+    crate::kit::theme::set_palette(
+        &ctx,
+        crate::kit::theme::Palette { border: faint, ..crate::kit::theme::Palette::DARK },
+    );
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        show(
+            ui,
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 60.0)),
+            &canvas,
+            &crate::detail::device_widgets::PanelState::none(),
+            &[],
+            TrackId(1),
+            &crate::detail::detail_view::DeviceAt(vec![0]),
+            &mut Vec::new(),
+        )
+    });
+    crate::kit::theme::set_palette(&ctx, crate::kit::theme::Palette::DARK);
+    output.textures_delta.clear();
+    let fill = |at: Rect| {
+        output.shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.rect == at => Some(rect.fill),
+            _ => None,
+        })
+    };
+    let whole = fill(Rect::from_min_size(Pos2::ZERO, Vec2::new(40.0, 20.0)));
+    assert_eq!(whole, Some(faint), "the drawing's full alpha keeps the theme's");
+    let half = fill(Rect::from_min_size(Pos2::new(0.0, 30.0), Vec2::new(40.0, 20.0)));
+    assert_eq!(half, Some(Color32::from_rgba_unmultiplied(255, 255, 255, 10)), "half of the theme's alpha");
+}
+/// A translucent token keeps its exact RGB until the drawing's alpha is applied: rounding it
+/// through a premultiplied colour first would tint a faint dark colour.
+#[test]
+fn a_token_takes_the_drawings_alpha_without_rounding_its_colour_twice() {
+    assert_eq!(with_alpha([7, 0, 0, 0x14], 128), Color32::from_rgba_unmultiplied(7, 0, 0, 10));
+    assert_eq!(with_alpha([200, 100, 50, 255], 255), Color32::from_rgb(200, 100, 50));
+}
 #[test]
 fn sample_markers_have_one_solid_color_without_an_outline() {
     let context = egui::Context::default();
     let mut output = context.run_ui(egui::RawInput::default(), |ui| {
-        sample_marker(&ui.ctx().layer_painter(egui::LayerId::background()), 20., 10., 80.);
+        sample_marker(&ui.ctx().layer_painter(egui::LayerId::background()), 20., 10., 80., marker_color());
     });
     let strokes: Vec<_> = output
         .shapes
@@ -216,7 +267,7 @@ fn sample_markers_have_one_solid_color_without_an_outline() {
             _ => None,
         })
         .collect();
-    assert_eq!(strokes, vec![Stroke::new(2., sample_marker_color())]);
+    assert_eq!(strokes, vec![Stroke::new(2., marker_color())]);
     output.textures_delta.clear();
 }
 
@@ -263,6 +314,7 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
             serde_json::json!(0),
             &mut Vec::new(),
             false,
+            None,
         );
     });
     output.textures_delta.clear();
@@ -290,6 +342,7 @@ fn the_device_widgets_show_state_and_dispatch_their_commands() {
         irs: vec![],
         names: std::collections::HashMap::from([("bad.nam".into(), "Bad amp".into())]),
         notes: std::collections::HashMap::from([("bad.nam".into(), "not a NAM model".into())]),
+        ..crate::detail::device_widgets::Lists::default()
     };
     fn state_of<'a>(
         lists: &'a crate::detail::device_widgets::Lists,
@@ -435,6 +488,143 @@ fn the_device_widgets_show_state_and_dispatch_their_commands() {
         .collect();
     assert_eq!(paths, ["p/Test amp/a.nam", "p/Test amp/b.nam"], "a pack's first file, then a step to a neighbour");
     assert_eq!(actions.len(), 2, "one undo step per choice, not more: {actions:?}");
+}
+
+#[test]
+fn a_folder_and_its_file_read_apart_and_the_folder_carries_the_artwork() {
+    // Issue #1289: the folder picker and the file list must read apart even when the file's
+    // name shares its folder's: the folder picker names the folder (with the folder's
+    // artwork before it), the file list the loaded file's own name, and the arrows step the
+    // files of the chosen folder.
+    use egui_kittest::kittest::Queryable;
+    let lists = crate::detail::device_widgets::Lists {
+        models: vec![],
+        irs: vec![crate::detail::device_widgets::Set {
+            name: "Testi".into(),
+            files: vec![
+                ("p/Testi/Testi cab.wav".into(), "Testi cab".into()),
+                ("p/Testi/K III bright.wav".into(), "K III bright".into()),
+            ],
+        }],
+        names: std::collections::HashMap::new(),
+        notes: std::collections::HashMap::new(),
+        ..crate::detail::device_widgets::Lists::default()
+    };
+    fn state_of<'a>(
+        lists: &'a crate::detail::device_widgets::Lists,
+        file: &'a str,
+    ) -> crate::detail::device_widgets::PanelState<'a> {
+        crate::detail::device_widgets::PanelState {
+            name: "NAM Cab Loader".into(),
+            enabled: true,
+            file,
+            lists: Some(lists),
+        }
+    }
+    let control = |id: &str, bounds: [f32; 4], widget| CustomControl {
+        id: id.into(),
+        name: id.to_owned(),
+        tooltip: String::new(),
+        bounds,
+        widget: Some(widget),
+        gesture: UiGesture::Drag,
+        x: None,
+        y: None,
+        drawing: vec![],
+        visible_when: None,
+    };
+    let canvas = Arc::new(DeviceUi {
+        size: [428., 168.],
+        accent_on: true,
+        controls: vec![
+            control("pack", [0., 0., 384., 22.], Widget::DeviceFiles { part: FileRowPart::Pack, what: "cab".into() }),
+            control(
+                "next-pack",
+                [384., 0., 22., 22.],
+                Widget::DeviceFiles { part: FileRowPart::NextPack, what: "cab".into() },
+            ),
+            control("file", [0., 146., 384., 22.], Widget::DeviceFiles { part: FileRowPart::File, what: "cab".into() }),
+            control(
+                "prev-file",
+                [384., 146., 22., 22.],
+                Widget::DeviceFiles { part: FileRowPart::PreviousFile, what: "cab".into() },
+            ),
+            control(
+                "next-file",
+                [384., 124., 22., 22.],
+                Widget::DeviceFiles { part: FileRowPart::NextFile, what: "cab".into() },
+            ),
+        ],
+        ..Default::default()
+    });
+    let draw = |ui: &mut egui::Ui, state: &mut (Vec<Action>, String, &crate::detail::device_widgets::Lists)| {
+        crate::kit::theme::install(ui.ctx());
+        crate::detail::device_canvas::show(
+            ui,
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(428., 168.)),
+            &canvas,
+            &state_of(state.2, &state.1),
+            &[],
+            TrackId(1),
+            &crate::detail::detail_view::DeviceAt(vec![0]),
+            &mut state.0,
+        );
+    };
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(428., 168.))
+        .build_ui_state(draw, (Vec::new(), "p/Testi/Testi cab.wav".into(), &lists));
+    harness.run_steps(4);
+
+    // Both pickers are found by their own words and never by the other's alone: the folder
+    // picker names the folder, and the loaded file's name is the file's own, folder's share
+    // of it included.
+    assert!(harness.query_by_label("Cab Loader: pack").is_some());
+    assert!(
+        harness.query_by_label_contains("Cab Loader: pack: Testi").is_none(),
+        "the closed picker reads Cab Loader: pack only"
+    );
+    harness.get_by_label("Cab Loader: pack").click();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains("Cab Loader: pack: Testi").is_some(),
+        "the folder picker's list names the folder"
+    );
+    harness.run();
+
+    harness.get_by_label("Cab Loader: cab file").click();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains("Cab Loader: cab file: Testi cab").is_some(),
+        "the file list names the loaded file, whole name, folder's share included"
+    );
+    // Stepping with the arrows changes the file of the chosen folder.
+    harness.get_by_label("Cab Loader: next file").click();
+    harness.run();
+    let paths: Vec<String> = harness
+        .state()
+        .0
+        .iter()
+        .filter(|action| action.id == "device.setNamFile")
+        .filter_map(|a| a.params.get("path").and_then(|p| p.as_str().map(str::to_owned)))
+        .collect();
+    assert_eq!(paths, ["p/Testi/K III bright.wav"], "the next arrow steps to the neighbour file");
+
+    // The folder artwork sits in the pack row's own margin, before its name.
+    let icon_at = Rect::from_min_size(Pos2::new(8.0, 4.0), Vec2::splat(14.0));
+    assert!(
+        harness
+            .output()
+            .shapes
+            .iter()
+            .any(|shape| matches!(&shape.shape, egui::Shape::Mesh(mesh) if mesh.calc_bounds().intersects(icon_at))),
+        "the pack row carries the folder's artwork"
+    );
+
+    // The picker stays inside its row: the icon's own margin comes out of its width, so it
+    // never reaches under the stepper beside it (the stepper starts at x = 384).
+    let picker = harness.get_by_label("Cab Loader: pack").rect();
+    assert!(picker.right() <= 384.0, "the pack picker ends inside its row, not under the stepper: {picker:?}");
 }
 
 #[test]
@@ -1019,6 +1209,65 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     let actions = click(&canvas, &time_parameters, Pos2::new(35., 59.));
     assert!(actions.iter().any(|a| a.params["param"] == "sync_left" && a.params["value"] == 1.0));
 }
+/// A canvas dropdown has the standard popup frame, as every other dropdown, and `popup` styles
+/// its rows (#1239).
+#[test]
+fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
+    use egui_kittest::kittest::Queryable;
+    let graph = super::delay_example::build().unwrap();
+    let parameters: Vec<_> = graph.parameters.iter().map(|p| GraphParameter::new(p, p.default)).collect();
+    let canvas = Arc::new(graph.ui.unwrap());
+    let skin = crate::kit::skin::Skin { css: Some(Arc::from("popup { color: #00ff00; }")), ..Default::default() };
+    crate::kit::skin::configure(&skin);
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 300.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            let _frame = crate::kit::native_css::frame(ui);
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            );
+        });
+    harness.run();
+    harness.get_by_label("Motion waveform").click();
+    harness.run();
+    harness.run();
+    let row = harness.get_by_label("Wander").rect();
+    let visuals = harness.ctx.global_style().visuals.clone();
+    let frames: Vec<_> = harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.rect.contains_rect(row) && rect.rect != shape.clip_rect => {
+                Some(rect.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    assert!(
+        frames.iter().any(|frame| frame.fill == visuals.window_fill
+            && frame.stroke == visuals.window_stroke
+            && frame.corner_radius == visuals.menu_corner_radius),
+        "the menu's frame is egui's popup frame: {frames:?}"
+    );
+    // A row's text without a colour of its own takes the text shape's.
+    let ink = harness.output().shapes.iter().find_map(|shape| match &shape.shape {
+        egui::Shape::Text(text) if text.galley.job.text == "Wander" => {
+            let own = text.galley.job.sections[0].format.color;
+            Some(if own == Color32::PLACEHOLDER { text.fallback_color } else { own })
+        }
+        _ => None,
+    });
+    assert_eq!(ink, Some(Color32::from_rgb(0, 0xFF, 0)), "popup's colour reaches a row");
+}
 #[test]
 fn delay_menus_open_choose_and_cancel_without_spurious_edits() {
     use egui_kittest::kittest::Queryable;
@@ -1291,7 +1540,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
     assert!(
         preview.shapes.iter().any(|s| matches!(&s.shape,
             egui::Shape::LineSegment { points, stroke }
-                if stroke.color == slice_line(sample_marker_color()) && (points[0].x - moved.x).abs() < 0.01
+                if stroke.color == slice_line(marker_color()) && (points[0].x - moved.x).abs() < 0.01
         )),
         "the marker follows the pointer before the command is committed"
     );
@@ -1554,6 +1803,7 @@ fn unknown_tempo_has_a_time_grid_under_its_times_whatever_the_grid() {
                 serde_json::json!(0),
                 &mut Vec::new(),
                 false,
+                None,
             );
         });
         let lines = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::LineSegment { points, stroke } if points[0].x == points[1].x && *stroke == Stroke::new(1., crate::kit::theme::palette().text_primary.gamma_multiply(0.09)))).count();
@@ -2366,4 +2616,9 @@ fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
     // Pressed a quarter along the 40-point line: the value starts there and moves on with the drag.
     assert!(parameters[0].value > 0.25, "the drag moves the value from the press, got {}", parameters[0].value);
     assert!(parameters[0].value <= 0.5 + 1e-6, "no further than the pointer went, got {}", parameters[0].value);
+}
+
+/// The sample markers' colour with no sheet: the palette's accent.
+fn marker_color() -> Color32 {
+    color(styled_palette(widget_palette(), None).accent)
 }

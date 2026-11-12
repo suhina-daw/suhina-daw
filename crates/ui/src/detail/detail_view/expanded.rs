@@ -115,12 +115,16 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     egui::Area::new(Id::unique("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(slice.min).show(
         ui.ctx(),
         |ui| {
+            // In the device's own scope, as its compact panel is: a rule on `#device-<id>` (its
+            // `--device-*` tokens) reaches the expanded canvas too.
+            let device_id = format!("device-{}", device.theme_id);
+            let _device_style = crate::kit::element::DEVICE.id(&device_id).enter();
             // The panel takes the pointer, so the views under it get no clicks.
             let (rect, _) = ui.allocate_exact_size(slice.size(), Sense::click());
             let painter = ui.painter_at(rect);
-            painter.fill_background(rect, 0.0, theme::panel_background());
+            painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
             let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW + PAD));
-            painter.fill_background(header, 0.0, theme::control_background());
+            painter.rect_filled(header, 0.0, theme::control_background());
             if canvas.strip {
                 // The header is the strip's handle: dragged up it grows, down it shrinks; a double
                 // click fits it to its canvas again.
@@ -149,7 +153,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             let response = widgets::button_area(ui, close, Id::unique("device-expanded-close"), "Close expanded panel")
                 .on_hover_text("Close the expanded panel (Esc)");
             let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-            painter.fill_background(close, 0.0, fill);
+            painter.rect_filled(close, 0.0, fill);
             for (from, to) in
                 [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
             {
@@ -209,17 +213,26 @@ pub(super) fn graph_controls(
     state: &crate::detail::device_widgets::PanelState<'_>,
     list_height: f32,
     track: TrackId,
-    at: &DeviceAt,
+    device: &DeviceBox,
+    themed_width: bool,
     actions: &mut Vec<Action>,
 ) {
+    let at = &device.at;
+    // The list's scroll belongs to the device, not its place: with a device added, removed or
+    // moved before it, each list keeps its own (#826). Before the project gives ids, its place.
+    let scroll = if device.id.is_some() {
+        egui::IdSalt::new(("sd-controls", track.0, device.id))
+    } else {
+        egui::IdSalt::new(("sd-controls", track.0, at))
+    };
     ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
         // The list scrolls under nothing: it is cut at its own top, below the header and buttons.
         ui.set_clip_rect(ui.clip_rect().intersect(body));
-        egui::ScrollArea::both().auto_shrink([false, false]).id_salt(("sd-controls", track.0, at)).show(ui, |ui| {
+        egui::ScrollArea::both().auto_shrink([false, false]).id_salt(scroll).show(ui, |ui| {
             let hidden = graph.canvas.as_ref().map_or(&[][..], |c| c.hidden_parameters.as_slice());
             // A list keeps a compact panel's width unless the theme sizes the panel
-            // (`.device { width }`): then it follows the panel, its scroll bar aside.
-            let themed = crate::kit::style_class::computed().is_some_and(|c| c.width.is_some());
+            // (`device { width }`): then it follows the panel, its scroll bar aside.
+            let themed = themed_width;
             let width = if graph.canvas.is_none() && themed { (body.width() - 8.0).max(120.0) } else { COMPACT_WIDTH };
             let mut cells = list_cells(graph, width, list_height);
             let custom_size = graph
@@ -262,7 +275,7 @@ pub(super) fn node_rows(painter: &egui::Painter, body: Rect, graph: &GraphBox) {
             break;
         }
         let node_rect = Rect::from_min_size(row.min, Vec2::new((row.width() - PAD) * 0.78, NODE_ROW - PAD));
-        painter.fill_background(node_rect, 1.0, theme::control_background());
+        painter.rect_filled(node_rect, 1.0, theme::control_background());
         widgets::text_in(
             painter,
             node_rect.shrink(PAD / 2.0),

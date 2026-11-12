@@ -9,6 +9,8 @@ rust-version.workspace = true
 autotests = false
 
 [dependencies]
+# The other Suhina processes running, for the trace (#1163).
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }  # MIT
 suhina-engine.workspace = true
 suhina-session.workspace = true
 suhina-plugins.workspace = true
@@ -40,6 +42,7 @@ egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }  # MIT OR A
 hound.workspace = true
 suhina-output.workspace = true  # tests that preview through a real audio device
 suhina-library.workspace = true
+filetime = "0.2"  # MIT OR Apache-2.0; a test sets a folder's stamp to a known instant
 
 [[test]]
 name = "main"

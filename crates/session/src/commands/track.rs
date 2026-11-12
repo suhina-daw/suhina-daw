@@ -131,10 +131,17 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "track.delete",
-        label: "Delete a track with its clips; a deleted group's tracks stay",
-        params: &[TRACK],
+        label: "Delete a track, or several as one undo step, with their clips; a deleted group's tracks stay",
+        params: &[
+            optional("track", ParamType::Track, "the track to delete: id or name, from project.tracks"),
+            optional(
+                "tracks",
+                ParamType::Tracks,
+                "the tracks to delete (ids or names) as one undo step, instead of track",
+            ),
+        ],
         kind: CommandKind::EDIT,
-        run: delete_track,
+        run: delete_tracks,
         policy: Policy::CRITICAL,
     },
     CommandSpec {
@@ -318,6 +325,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "stock",
                 ParamType::Text,
                 "a preset that ships with Suhina, by its key: what follows stock: in library.search",
+            ),
+            optional(
+                "file",
+                ParamType::Path(PathKind::File),
+                "a .nam model or .wav impulse response the device starts on (the NAM Amp Modeler or Cab Loader only)",
             ),
             optional(
                 "sd",
@@ -807,6 +819,24 @@ fn suffix(params: &Value) -> Result<crate::track_copy::Suffix, CommandError> {
         None => Ok(crate::track_copy::Suffix::default()),
         Some(name) => crate::track_copy::Suffix::parse(name)
             .ok_or_else(|| format!("suffix is \"wrapped\" or \"hash\", not {name:?}").into()),
+    }
+}
+
+/// `track.delete`: one `track`, or the `tracks` of a list in one command, so one undo brings them
+/// all back (#1188).
+fn delete_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let args = Args::new(params);
+    match (args.has("track"), args.has("tracks")) {
+        (true, true) => Err("give track or tracks, not both".into()),
+        (false, false) => Err("give track (one track) or tracks (a list)".into()),
+        (true, false) => delete_track(session, params),
+        (false, true) => {
+            let tracks = track_list(&session.project, params)?;
+            for track in &tracks {
+                delete_track(session, &json!({ "track": track.0 }))?;
+            }
+            Ok(json!({ "deleted": tracks.iter().map(|t| t.0).collect::<Vec<_>>() }))
+        }
     }
 }
 

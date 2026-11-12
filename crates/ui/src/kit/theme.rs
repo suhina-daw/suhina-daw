@@ -108,6 +108,8 @@ palette! {
         "Browser values and active preview controls";
     accent, "accent", 0xA6A3FF,
         "The playhead, queued clips, a key being set";
+    automation_pin, "automation.pin", 0xA6A3FF,
+        "The pin of an automation lane pinned below its track's top lane (older theme files: their accent)";
     selection, "selection", 0xE3C86A,
         "The selected device's outline";
     recording, "recording", 0xE5484D,
@@ -146,40 +148,6 @@ palette! {
         "A colour the track colour palette offers";
     track_color_8, "track.8", 0x2FD9C4,
         "A colour the track colour palette offers";
-    kind_kick, "kind.kick", 0xD06E5E,
-        "Sample-map points of the kind kick";
-    kind_snare, "kind.snare", 0x73AAC0,
-        "Sample-map points of the kind snare";
-    kind_clap, "kind.clap", 0x5EC0B0,
-        "Sample-map points of the kind clap";
-    kind_closed_hat, "kind.closedHat", 0xC6AC5E,
-        "Sample-map points of the kind closed hat";
-    kind_open_hat, "kind.openHat", 0xD08F6E,
-        "Sample-map points of the kind open hat";
-    kind_hat, "kind.hat", 0xD8C47A,
-        "Sample-map points of the kind hat";
-    kind_rim, "kind.rim", 0x8CA8E0,
-        "Sample-map points of the kind rim";
-    kind_tom, "kind.tom", 0xB074A4,
-        "Sample-map points of the kind tom";
-    kind_crash, "kind.crash", 0xE0A0C8,
-        "Sample-map points of the kind crash";
-    kind_ride, "kind.ride", 0xC8B8E8,
-        "Sample-map points of the kind ride";
-    kind_cymbal, "kind.cymbal", 0xA497CC,
-        "Sample-map points of the kind cymbal";
-    kind_percussion, "kind.percussion", 0x8FC06E,
-        "Sample-map points of the kind percussion";
-    kind_bass, "kind.bass", 0xA84F4F,
-        "Sample-map points of the kind bass";
-    kind_tonal, "kind.tonal", 0x6EB0D0,
-        "Sample-map points of the kind tonal";
-    kind_vocal, "kind.vocal", 0xE8D0A0,
-        "Sample-map points of the kind vocal";
-    kind_effect, "kind.effect", 0x9CC49C,
-        "Sample-map points of the kind effect";
-    kind_other, "kind.other", 0x8A8680,
-        "Sample-map points of the kind other";
 }
 
 /// Tokens renamed since the first theme files, old name first; files with the old names still
@@ -302,9 +270,9 @@ const BUILT_IN_FOLDERS: [BuiltInFolder; 10] = [
     folder!("catppuccin-mocha": "theme.json", "theme.css", "thumbnail.svg", "variants/macchiato.json"),
     folder!("catppuccin-latte": "theme.json", "theme.css", "thumbnail.svg"),
     folder!("suhina-glass": "theme.json", "theme.css", "thumbnail.svg", "variants/frost.json", "variants/midnight.json"),
-    folder!("suhina-sheet": "theme.json", "theme.css", "thumbnail.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
-    folder!("suhina-meadow": "theme.json", "theme.css", "thumbnail.svg", "background.png", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
-    folder!("suhina-blocks": "theme.json", "theme.css", "thumbnail.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.color-4fc3f7.svg", "assets/track.body.color-7fdb5a.svg", "assets/track.body.color-80ada1.svg", "assets/track.body.color-a84f4f.svg", "assets/track.body.color-b38bff.svg", "assets/track.body.color-e5484d.svg", "assets/track.body.color-f2d541.svg", "assets/track.body.color-ff9a3c.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
+    folder!("suhina-sheet": "theme.json", "theme.css", "thumbnail.svg", "assets/folder.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
+    folder!("suhina-meadow": "theme.json", "theme.css", "thumbnail.svg", "background.png", "assets/folder.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
+    folder!("suhina-blocks": "theme.json", "theme.css", "thumbnail.svg", "assets/folder.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.color-4fc3f7.svg", "assets/track.body.color-7fdb5a.svg", "assets/track.body.color-80ada1.svg", "assets/track.body.color-a84f4f.svg", "assets/track.body.color-b38bff.svg", "assets/track.body.color-e5484d.svg", "assets/track.body.color-f2d541.svg", "assets/track.body.color-ff9a3c.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
 ];
 
 /// The themes that come with Suhina, Suhina Studio first, with their ids. They do not change;
@@ -448,6 +416,7 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
         }
         Err(error) => warnings.push(error),
     }
+    warnings.extend(theme.vars.base.keys().filter_map(|name| former_kind_token(name.strip_prefix("--kind-")?)));
     warnings.extend(super::theme_css::read_host_rules(&mut theme, sheet));
     if let Some((toolbar, offsets)) = theme.meta.toolbar.as_ref().and_then(read_toolbar) {
         theme.skin.toolbar = Some(toolbar);
@@ -455,6 +424,18 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
     }
     warnings.extend(super::theme_vars::resolve(&mut theme));
     (theme, warnings)
+}
+
+/// The notice for a sample-map colour a theme of an earlier version gives as a palette token
+/// (`--kind-kick`, `"kind.kick"`) for the sound kind `kind`: the `kind.*` tokens are gone, and a
+/// theme colours a kind with a rule for its `sample-point` (#1019). `None` for a name that is not
+/// a kind.
+pub fn former_kind_token(kind: &str) -> Option<String> {
+    suhina_soundmap::kinds::Kind::ALL.iter().find(|k| k.id() == kind)?;
+    Some(format!(
+        "--kind-{kind} is no longer read: the sample map's colours are rules, \
+         sample-point[kind=\"{kind}\"] {{ color: … }}"
+    ))
 }
 
 /// The toolbar arrangement in `theme.json` as the toolbar editor has it: `items` (names only) and
@@ -584,7 +565,21 @@ impl Default for Theme {
     }
 }
 
+/// The sheet a new theme starts with: nothing but a comment, so the user-agent sheet styles every
+/// element until the theme says otherwise.
+pub const NEW_THEME_SHEET: &str = "/* A new theme. Suhina's user-agent sheet styles every element this sheet does not.\n   \
+     Offer quick controls with @property and a label, for example:\n   \
+     @property --accent-glow { syntax: \"<color>\"; initial-value: #A6A3FF; label: \"Glow\"; } */\n";
+
 impl Theme {
+    /// A new theme named `name`, of its own: the starting sheet ([`NEW_THEME_SHEET`]) and
+    /// metadata, and nothing else.
+    pub fn new_blank(name: &str) -> Self {
+        let mut theme = Self { name: name.into(), meta: ThemeMeta::new(name, DEFAULT_SWATCH), ..Self::default() };
+        theme.skin.css = Some(Arc::from(NEW_THEME_SHEET));
+        theme
+    }
+
     pub fn rgba(&self, key: &str, color: Color32) -> [u8; 4] {
         let mut rgba = color.to_srgba_unmultiplied();
         if color.a() == 0
@@ -626,7 +621,11 @@ impl Theme {
                                 theme.transparent_rgb.insert(canonical.to_string(), [r, g, b]);
                             }
                         }
-                        (None, _) => warnings.push(format!("{key} is not a colour token")),
+                        (None, _) => warnings.push(
+                            key.strip_prefix("kind.")
+                                .and_then(former_kind_token)
+                                .unwrap_or_else(|| format!("{key} is not a colour token")),
+                        ),
                         (Some(_), None) => {
                             warnings.push(format!("{key}: {value} is not a #RRGGBB or #RRGGBBAA colour"))
                         }
@@ -656,6 +655,7 @@ impl Theme {
                     ("browser.text.value", "text.value", theme.colors.text_value),
                     ("text.onColorLight", "text.primary", theme.colors.text_primary),
                     ("text.onColorDark", "window.background", theme.colors.window_background),
+                    ("automation.pin", "accent", theme.colors.accent),
                 ] {
                     if !colors.contains_key(key)
                         && let Some(slot) = theme.colors.token_mut(key)
@@ -805,12 +805,23 @@ pub fn contrast(a: Color32, b: Color32) -> f32 {
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
+/// The contrast ratio of `text` drawn over `fill`, 1 … 21: like [`contrast`], but translucent
+/// text is first blended over the fill, so faint text counts as faint.
+pub fn text_contrast(text: Color32, fill: Color32) -> f32 {
+    let [r, g, b, a] = text.to_srgba_unmultiplied();
+    let [fr, fg, fb, _] = fill.to_srgba_unmultiplied();
+    let a = f32::from(a) / 255.0;
+    let blend = |t: u8, f: u8| (f32::from(t) * a + f32::from(f) * (1.0 - a)).round() as u8;
+    contrast(Color32::from_rgb(blend(r, fr), blend(g, fg), blend(b, fb)), fill)
+}
+
 fn luminance(color: Color32) -> f32 {
     let linear = |v: u8| {
         let s = f32::from(v) / 255.0;
         if s <= 0.040_45 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
     };
-    0.2126 * linear(color.r()) + 0.7152 * linear(color.g()) + 0.0722 * linear(color.b())
+    let [r, g, b, _] = color.to_srgba_unmultiplied();
+    0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
 }
 
 /// Grid rows, headers, fields.
@@ -834,12 +845,12 @@ pub const TEXT_SMALL: f32 = 11.0;
 pub const TEXT_TINY: f32 = 9.0;
 
 pub fn ui_font(size: f32) -> FontId {
-    FontId::new(super::style_class::font_size(size), FontFamily::Proportional)
+    FontId::new(super::style_class::inherited_font_size(size), FontFamily::Proportional)
 }
 
 /// Every number, time and position is monospaced.
 pub fn mono_font(size: f32) -> FontId {
-    FontId::new(super::style_class::font_size(size), FontFamily::Monospace)
+    FontId::new(super::style_class::inherited_font_size(size), FontFamily::Monospace)
 }
 
 pub fn hairline(color: Color32) -> Stroke {

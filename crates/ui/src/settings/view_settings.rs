@@ -12,7 +12,7 @@ pub const MIXER_HEIGHTS: (u32, u32, u32) = (46, 166, 2000);
 /// How Arrangement waveforms and note previews choose their ink, independently of clip names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WaveformColour {
-    /// The theme's colour (`.clip-waveform`, `.clip-notes`), or Dark where it gives none.
+    /// The theme's colour (`clip-waveform`, `clip-notes`), or Dark where it gives none.
     #[default]
     Theme,
     Auto,
@@ -104,6 +104,22 @@ impl FolderDrop {
     }
 }
 
+/// The gain envelope's grid steps Settings offers, in tenths of a dB.
+pub const ENVELOPE_STEPS: [u8; 5] = [5, 10, 20, 30, 60];
+
+impl ViewSettings {
+    /// What the Arrangement's gain envelopes are drawn and edited with.
+    pub fn envelope(&self) -> crate::arrangement::envelope::EnvelopeSettings {
+        crate::arrangement::envelope::EnvelopeSettings {
+            show: self.envelope_show,
+            ceiling: f64::from(self.envelope_ceiling),
+            step: f64::from(self.envelope_step) / 10.0,
+            free: self.envelope_free,
+            all: self.envelope_all,
+        }
+    }
+}
+
 /// The settings this module reads and writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewSettings {
@@ -126,11 +142,33 @@ pub struct ViewSettings {
     /// A click anywhere on an automation lane adds a point; off (the default), only a click on or
     /// near the line does, and a double-click adds one anywhere.
     pub automation_click_anywhere: bool,
+    /// A lane mounted from a hosted plug-in goes into a group of that plug-in's lanes, named after
+    /// it, one group a plug-in (on by default, #1322).
+    pub automation_group_plugins: bool,
+    /// What a track's top automation lane shows when its lanes are first opened: none, the
+    /// track's volume (the default) or its pan (#1322).
+    pub automation_top_lane: crate::arrangement::automation_lanes::TopLane,
+    /// Audio clips with gain envelope points show their line while not being edited (on by
+    /// default).
+    pub envelope_show: bool,
+    /// The highest gain a gain envelope point can be dragged to, in dB: 3, 6 (the default), 12
+    /// or 24.
+    pub envelope_ceiling: u8,
+    /// The gain envelope's dB grid, in tenths of a dB (10, 1 dB, by default).
+    pub envelope_step: u8,
+    /// Gain envelope points move freely by default, instead of on the dB grid.
+    pub envelope_free: bool,
+    /// Edit gain envelope opens every audio clip's envelope at once (on by default), rather than
+    /// one clip's at a time.
+    pub envelope_all: bool,
     /// Clip menus carry a name field that renames in place, instead of Rename (off by default).
     pub menu_name_field: bool,
     /// Notes placed over others of their key replace them (on by default); Settings shows it the
     /// other way round, as Allow stacked notes.
     pub notes_replace: bool,
+    /// With stacked notes off, a note covered from its start by notes placed over it goes whole (on
+    /// by default), rather than keeping what runs on past them (Covered notes).
+    pub covered_whole: bool,
     /// Pasting onto a selected arrangement clip replaces that clip at its start.
     pub replace_clip: bool,
     /// How long the crossfade of a part comped from a take is: 10, 20 or 40 milliseconds, or 0
@@ -174,6 +212,10 @@ pub struct ViewSettings {
     /// A long parameter list opened from its device's chevron scrolls down in two columns, instead
     /// of continuing in columns to the right (the default).
     pub device_list_vertical: bool,
+    /// With the devices in a row, a clip's editor (the piano roll) keeps its place when Devices is
+    /// shown: the devices stack in a column beside the view, as with the Stack layout (off by
+    /// default).
+    pub stack_in_piano_roll: bool,
     /// New tracks all get the palette's first colour, instead of the next one in turn (off by
     /// default, #709).
     pub fixed_track_colour: bool,
@@ -235,8 +277,16 @@ impl Default for ViewSettings {
             detail_layout: DetailLayout::Beside,
             double_click_clip: true,
             automation_click_anywhere: false,
+            automation_group_plugins: true,
+            automation_top_lane: crate::arrangement::automation_lanes::TopLane::Volume,
+            envelope_show: true,
+            envelope_ceiling: 6,
+            envelope_step: 10,
+            envelope_free: false,
+            envelope_all: true,
             menu_name_field: false,
             notes_replace: true,
+            covered_whole: true,
             replace_clip: false,
             take_crossfade: 10,
             take_crossfade_custom: 10,
@@ -255,6 +305,7 @@ impl Default for ViewSettings {
             rename_selected: true,
             play_from_clip: true,
             device_list_vertical: false,
+            stack_in_piano_roll: false,
             fixed_track_colour: false,
             new_clip_track_colour: true,
             recent_chips: false,
@@ -284,7 +335,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\n",
+            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ncovered_notes = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\nautomation_group = {}\nautomation_top_lane = {}\n",
             if self.device_list_vertical { "vertical" } else { "horizontal" },
             self.mixer_height,
             self.strip_fader,
@@ -292,6 +343,7 @@ impl ViewSettings {
             if self.double_click_clip { "on" } else { "off" },
             if self.menu_name_field { "on" } else { "off" },
             if self.notes_replace { "on" } else { "off" },
+            if self.covered_whole { "delete" } else { "keep" },
             if self.time_select_ctrl { "ctrl_drag" } else { "clip_lower_half" },
             if self.stretch_alt { "on" } else { "off" },
             if self.rename_selected { "on" } else { "off" },
@@ -309,6 +361,12 @@ impl ViewSettings {
             if self.grid_in_clips { "on" } else { "off" },
             f64::from(self.waveform_zoom) / 100.0,
             if self.automation_click_anywhere { "anywhere" } else { "line" },
+            if self.automation_group_plugins { "on" } else { "off" },
+            match self.automation_top_lane {
+                crate::arrangement::automation_lanes::TopLane::None => "none",
+                crate::arrangement::automation_lanes::TopLane::Volume => "volume",
+                crate::arrangement::automation_lanes::TopLane::Pan => "pan",
+            },
         ) + &format!(
             "waveform_colour = {}\nwaveform_custom_colour = {}\naudio_clip_colour_strength = {}\ntrack_header_colour_strength = {}\n",
             self.waveform.mode.name(),
@@ -319,6 +377,7 @@ impl ViewSettings {
             "liquid_panel_strength = {}\nliquid_track_strength = {}\nliquid_clip_strength = {}\n",
             self.liquid.panels, self.liquid.tracks, self.liquid.clips,
         ) + &format!("replace_clip = {}\n", if self.replace_clip { "on" } else { "off" })
+            + &format!("stack_in_piano_roll = {}\n", if self.stack_in_piano_roll { "on" } else { "off" })
             + &format!(
                 "take_crossfade = {}\ntake_crossfade_custom = {}\n",
                 if self.take_crossfade == 0 { "custom".to_string() } else { self.take_crossfade.to_string() },
@@ -331,6 +390,14 @@ impl ViewSettings {
             )
             + &format!("background_tint = {}\nbackground_blur = {}\n", self.background_tint, self.background_blur)
             + &format!("arrangement_grid = {}\n", self.default_grid)
+            + &format!(
+                "gain_envelope_show = {}\ngain_envelope_ceiling = {}\ngain_envelope_step = {}\ngain_envelope_move = {}\ngain_envelope_editing = {}\n",
+                if self.envelope_show { "on" } else { "off" },
+                self.envelope_ceiling,
+                f64::from(self.envelope_step) / 10.0,
+                if self.envelope_free { "free" } else { "grid" },
+                if self.envelope_all { "all" } else { "one" },
+            )
             + &self.track_sizes.to_text()
     }
 
@@ -414,13 +481,35 @@ impl ViewSettings {
             ("detail_layout", "full_width") => self.detail_layout = DetailLayout::FullWidth,
             ("double_click_clip", "on" | "off") => self.double_click_clip = value == "on",
             ("automation_click", "anywhere" | "line") => self.automation_click_anywhere = value == "anywhere",
+            ("automation_group", "on" | "off") => self.automation_group_plugins = value == "on",
+            ("automation_top_lane", "none") => {
+                self.automation_top_lane = crate::arrangement::automation_lanes::TopLane::None
+            }
+            ("automation_top_lane", "volume") => {
+                self.automation_top_lane = crate::arrangement::automation_lanes::TopLane::Volume
+            }
+            ("automation_top_lane", "pan") => {
+                self.automation_top_lane = crate::arrangement::automation_lanes::TopLane::Pan
+            }
+            ("gain_envelope_show", "on" | "off") => self.envelope_show = value == "on",
+            ("gain_envelope_ceiling", "3" | "6" | "12" | "24") => self.envelope_ceiling = value.parse().unwrap_or(6),
+            ("gain_envelope_step", step) => match step.parse::<f64>() {
+                Ok(db) if ENVELOPE_STEPS.contains(&((db * 10.0).round() as u8)) => {
+                    self.envelope_step = (db * 10.0).round() as u8;
+                }
+                _ => return false,
+            },
+            ("gain_envelope_move", "free" | "grid") => self.envelope_free = value == "free",
+            ("gain_envelope_editing", "all" | "one") => self.envelope_all = value == "all",
             ("menu_name_field", "on" | "off") => self.menu_name_field = value == "on",
             ("notes_replace", "on" | "off") => self.notes_replace = value == "on",
+            ("covered_notes", "delete" | "keep") => self.covered_whole = value == "delete",
             ("time_select", "ctrl_drag" | "clip_lower_half") => self.time_select_ctrl = value == "ctrl_drag",
             ("stretch_alt_drag", "on" | "off") => self.stretch_alt = value == "on",
             ("rename_selected_clips", "on" | "off") => self.rename_selected = value == "on",
             ("play_from_selected_clip", "on" | "off") => self.play_from_clip = value == "on",
             ("device_list_scroll", "horizontal" | "vertical") => self.device_list_vertical = value == "vertical",
+            ("stack_in_piano_roll", "on" | "off") => self.stack_in_piano_roll = value == "on",
             ("new_track_colour", "fixed" | "alternating") => self.fixed_track_colour = value == "fixed",
             ("new_clip_colour", "track" | "theme") => self.new_clip_track_colour = value == "track",
             ("browser_recent", "chips" | "indented") => self.recent_chips = value == "chips",
@@ -475,8 +564,16 @@ mod tests {
             detail_layout: DetailLayout::FullWidth,
             double_click_clip: false,
             automation_click_anywhere: true,
+            automation_group_plugins: false,
+            automation_top_lane: crate::arrangement::automation_lanes::TopLane::Pan,
+            envelope_show: false,
+            envelope_ceiling: 24,
+            envelope_step: 5,
+            envelope_free: true,
+            envelope_all: false,
             menu_name_field: true,
             notes_replace: false,
+            covered_whole: false,
             time_select_ctrl: true,
             clip_halves: true,
             grid_in_clips: false,
@@ -485,6 +582,7 @@ mod tests {
             rename_selected: false,
             play_from_clip: false,
             device_list_vertical: false,
+            stack_in_piano_roll: false,
             fixed_track_colour: true,
             new_clip_track_colour: false,
             recent_chips: true,

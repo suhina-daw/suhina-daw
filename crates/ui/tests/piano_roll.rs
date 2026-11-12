@@ -14,7 +14,7 @@ use serde_json::json;
 use suhina_engine::model::{LaneData, Note};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
-use suhina_ui::detail::piano_roll::key_name;
+use suhina_ui::interaction::key_name::key_name;
 use suhina_ui::kit::widgets::Action;
 use suhina_ui::{App, kit::theme};
 
@@ -459,7 +459,7 @@ fn shift_left_and_right_change_the_selections_length_by_a_grid_step() {
 }
 
 #[test]
-fn copy_and_paste_put_the_notes_after_the_selection_and_select_them() {
+fn copy_and_paste_put_the_notes_on_the_selection_and_select_them() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     let before = notes(&h);
@@ -468,13 +468,15 @@ fn copy_and_paste_put_the_notes_after_the_selection_and_select_them() {
     assert_eq!(notes(&h), before, "copy changes nothing");
     key(&mut h, Modifiers::COMMAND, Key::V);
     let after = notes(&h);
-    assert_eq!(after.len(), before.len() + 1);
+    assert_eq!(after.len(), before.len() + 1, "the original stays under its copy");
     let pasted = after[before.len()];
-    assert_eq!((pasted.time, pasted.key), (before[1].time + before[1].duration, before[1].key));
+    assert_eq!((pasted.time, pasted.key), (before[1].time, before[1].key), "on the copied note");
     assert_eq!(selected(&h), [before.len()]);
-    // Again: after the pasted note, which is now the selection.
-    key(&mut h, Modifiers::COMMAND, Key::V);
-    assert_eq!(notes(&h)[before.len() + 1].time, pasted.time + pasted.duration);
+    // The copy, selected, goes up an octave and the original stays.
+    key(&mut h, Modifiers::SHIFT, Key::ArrowUp);
+    let moved = notes(&h);
+    assert!(moved.contains(&before[1]), "the original is still there");
+    assert!(moved.iter().any(|n| n.time == before[1].time && n.key == before[1].key + 12), "{moved:?}");
     undo(&mut h);
     undo(&mut h);
     assert_eq!(notes(&h), before);
@@ -492,10 +494,10 @@ fn cut_removes_the_notes_and_paste_brings_them_back() {
     assert_eq!(notes(&h), &before[1..]);
     assert_eq!(clips(&h), count, "the clip stays");
     assert!(selected(&h).is_empty());
-    // Nothing selected: the paste goes where the command puts it, right after the cut note.
+    // Nothing selected: the insert mark stays where the cut note was, so the paste puts it back.
     key(&mut h, Modifiers::COMMAND, Key::V);
     let back = *notes(&h).last().unwrap();
-    assert_eq!((back.time, back.key), (before[0].time + before[0].duration, before[0].key));
+    assert_eq!((back.time, back.key), (before[0].time, before[0].key));
     undo(&mut h);
     undo(&mut h);
     assert_eq!(notes(&h), before);
@@ -543,6 +545,57 @@ fn the_keys_leave_the_notes_alone_when_the_piano_roll_does_not_have_the_keyboard
     }
     assert_eq!(notes(&h), before);
     assert!(!h.state().session().unwrap().can_undo());
+}
+
+/// Every arrangement clip and every note in the project: what a paste adds to.
+fn clips_and_notes(h: &Harness<'static, App>) -> (usize, usize) {
+    let project = h.state().session().unwrap().project();
+    let clips = project.arrangement.lanes.iter().map(|l| l.clips.len()).sum();
+    let notes = project
+        .arrangement
+        .lanes
+        .iter()
+        .flat_map(|l| &l.clips)
+        .filter_map(|c| project.content(c.content))
+        .flat_map(|c| &c.lanes)
+        .map(|l| match &l.data {
+            LaneData::Notes(notes) => notes.len(),
+            LaneData::Audio(_) => 0,
+        })
+        .sum();
+    (clips, notes)
+}
+
+/// Notes copied, another clip picked in the view (which takes the other keys from the piano roll),
+/// Ctrl+V: the notes go into the clip the piano roll now shows, not a copy of the clip into the
+/// view. Once a clip is copied, Ctrl+V pastes the clip again.
+#[test]
+fn notes_copied_last_paste_into_the_next_clip_picked_in_the_view() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    pick(&mut h, 0);
+    key(&mut h, Modifiers::COMMAND, Key::C);
+    h.get_by_label("Clip Walk on Bass at bar 17").click();
+    h.run();
+    assert!(!h.state().piano_roll().focused);
+    let (clips, notes) = clips_and_notes(&h);
+    key(&mut h, Modifiers::COMMAND, Key::V);
+    assert_eq!(clips_and_notes(&h), (clips, notes + 1), "a note pasted, no clip");
+    assert!(h.state().piano_roll().focused, "the keys stay with the pasted notes");
+    // A clip copied after the notes: Ctrl+V in the view pastes the clip (after the selected one,
+    // where it may take the place of a clip that was there), not notes.
+    h.get_by_label(CLIP).click();
+    h.run();
+    key(&mut h, Modifiers::COMMAND, Key::C);
+    let before = clip_ids(&h);
+    key(&mut h, Modifiers::COMMAND, Key::V);
+    assert!(clip_ids(&h).iter().any(|id| !before.contains(id)), "the copied clip pasted");
+}
+
+/// The ids of every arrangement clip.
+fn clip_ids(h: &Harness<'static, App>) -> Vec<u64> {
+    let project = h.state().session().unwrap().project();
+    project.arrangement.lanes.iter().flat_map(|l| &l.clips).map(|c| u64::from(c.id.0)).collect()
 }
 
 /// With two clips picked the strip shows both, a click on a bar gives its clip the focus, and the keys
