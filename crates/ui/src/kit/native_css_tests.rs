@@ -71,7 +71,8 @@ fn native_paint_values_resolve_variables_currentcolor_em_and_media() {
             font_size: false,
             radius: true,
             accent: false,
-            border_width: false
+            border_width: false,
+            box_shadow: false
         }
     );
     prepare(

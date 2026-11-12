@@ -173,7 +173,8 @@ pub(crate) struct Restyled {
 /// The contents keep egui's margins: `padding` does not move them.
 pub(crate) fn frame(ctx: &Context, name: Name, frame: &Frame, opacity: f32) -> Option<Restyled> {
     let style = super::native_css::settings_of(&[name])?;
-    let authored = style.authored.background || style.authored.border_width || style.authored.radius;
+    let authored =
+        style.authored.background || style.authored.border_width || style.authored.radius || style.authored.box_shadow;
     if !authored && !style.has_shadow() && !style.has_gradient() && style.outline().is_none() {
         return None;
     }
@@ -202,7 +203,7 @@ pub(crate) fn frame(ctx: &Context, name: Name, frame: &Frame, opacity: f32) -> O
         let stroke = egui::Stroke::new(frame.stroke.width, unfaded(frame.stroke.color));
         painter.rect_stroke(frame.rect, radius, stroke, egui::StrokeKind::Inside);
     }
-    let mut under = if style.has_shadow() { Vec::new() } else { frame.shadow.clone() };
+    let mut under = if style.authored.box_shadow { Vec::new() } else { frame.shadow.clone() };
     under.extend(take());
     super::native_css::box_end(&painter, frame.rect, radius, &style, None);
     Some(Restyled { radius, under, over: take() })

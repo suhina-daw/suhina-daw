@@ -110,47 +110,48 @@ fn entries(ui: &mut Ui, entries: &[Entry], picked: &mut Option<String>) {
             }
             Entry::Submenu { label, enabled, entries: inner } => {
                 ui.add_enabled_ui(*enabled, |ui| {
-                    ui.menu_button(label, |ui| {
-                        // A submenu of the bar's is the bar's menu too (`menu`), on a layer of its own.
-                        crate::kit::floating::declare(ui.ctx(), ui.layer_id().id, crate::kit::floating::Kind::Menu);
-                        self::entries(ui, inner, picked)
-                    });
+                    // A submenu of the bar's is the bar's menu too (`menu`), on a layer of its own.
+                    ui.menu_button(label, |ui| open_menu(ui, |ui| self::entries(ui, inner, picked)));
                 });
             }
         }
     }
 }
 
+/// The contents of an open menu of the bar, or of one of its submenus: its layer is the bar's menu
+/// (blurred as `menu` says), and the menu paints itself.
+fn open_menu<R>(ui: &mut Ui, content: impl FnOnce(&mut Ui) -> R) -> R {
+    // Its layer is the bar's menu: blurred as `menu` says, and framed by the menu itself.
+    crate::kit::floating::declare(ui.ctx(), ui.layer_id().id, crate::kit::floating::Kind::Menu);
+    // `menu` styles the open menu: its background, text colour, corner radius and font size.
+    let menu = crate::kit::element::MENU.enter();
+    // The menu opens over the window, not the bar: text it inherits from the bar (Suhina
+    // Sheet's white on green) must still read on the menu's own background.
+    let background = menu
+        .style()
+        .filter(|style| style.authored.background)
+        .map_or(ui.visuals().window_fill, |style| style.background);
+    let ink = menu.readable_on(background);
+    // The background covers the menu as it was laid out last frame: its own rect, never the
+    // layer's clip, which is the whole window.
+    let id = ui.scope_id().with("menu-rect");
+    if let Some(rect) = ui.ctx().data(|d| d.get_temp::<egui::Rect>(id)) {
+        menu.paint(ui.painter(), rect);
+    }
+    let mut styled = menu.ui(ui);
+    if let Some(ink) = ink {
+        styled.visuals_mut().override_text_color = Some(ink);
+    }
+    let inner = content(&mut styled);
+    drop(styled);
+    let rect = ui.min_rect() + ui.style().spacing.menu_margin;
+    ui.ctx().data_mut(|d| d.insert_temp(id, rect));
+    inner
+}
+
 /// A menu of the bar that opens when the pointer moves onto it while another is open.
 fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
-    let shown = ui.menu_button(title, |ui| {
-        // Its layer is the bar's menu: blurred as `menu` says, and framed by the menu itself.
-        crate::kit::floating::declare(ui.ctx(), ui.layer_id().id, crate::kit::floating::Kind::Menu);
-        // `menu` styles the open menu: its background, text colour, corner radius and font size.
-        let menu = crate::kit::element::MENU.enter();
-        // The menu opens over the window, not the bar: text it inherits from the bar (Suhina
-        // Sheet's white on green) must still read on the menu's own background.
-        let background = menu
-            .style()
-            .filter(|style| style.authored.background)
-            .map_or(ui.visuals().window_fill, |style| style.background);
-        let ink = menu.readable_on(background);
-        // The background covers the menu as it was laid out last frame: its own rect, never the
-        // layer's clip, which is the whole window.
-        let id = ui.scope_id().with("menu-rect");
-        if let Some(rect) = ui.ctx().data(|d| d.get_temp::<egui::Rect>(id)) {
-            menu.paint(ui.painter(), rect);
-        }
-        let mut styled = menu.ui(ui);
-        if let Some(ink) = ink {
-            styled.visuals_mut().override_text_color = Some(ink);
-        }
-        let inner = content(&mut styled);
-        drop(styled);
-        let rect = ui.min_rect() + ui.style().spacing.menu_margin;
-        ui.ctx().data_mut(|d| d.insert_temp(id, rect));
-        inner
-    });
+    let shown = ui.menu_button(title, |ui| open_menu(ui, content));
     let id = egui::Popup::default_response_id(&shown.response);
     if shown.response.hovered() && !egui::Popup::is_id_open(ui.ctx(), id) && egui::Popup::is_any_open(ui.ctx()) {
         egui::Popup::open_id(ui.ctx(), id);

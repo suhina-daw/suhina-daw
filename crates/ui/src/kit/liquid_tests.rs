@@ -302,6 +302,29 @@ fn a_restyled_frame_keeps_egui_s_shadow_and_draws_its_outline_over_the_contents(
     assert!(frame < text && text < outline, "{frame} < {text} < {outline}");
 }
 
+/// `box-shadow: none` takes egui's shadow away, as any other value replaces it.
+#[test]
+fn box_shadow_none_removes_egui_s_shadow() {
+    let css = "popup { background-color: #00ff00; box-shadow: none; }";
+    let (shapes, _, _) =
+        floating_frames(Some(css), |ctx| odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0)));
+    assert!(shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 255, 0))));
+    assert!(!shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.blur_width > 0.0)), "{shapes:?}");
+}
+
+/// `user.css` styles popups and tooltips when the theme has no sheet at all.
+#[test]
+fn user_css_alone_styles_popups() {
+    super::super::native_css::set_user_sheet(Some(
+        "popup { backdrop-filter: none; background-color: #00ff00; }".into(),
+    ));
+    let (shapes, calls, _) =
+        floating_frames(None, |ctx| odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0)));
+    super::super::native_css::set_user_sheet(None);
+    assert_eq!(calls, 0, "left sharp");
+    assert!(shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 255, 0))));
+}
+
 #[test]
 fn a_bar_menu_blurs_as_menu_and_keeps_egui_s_frame() {
     let (shapes, _, _) =
