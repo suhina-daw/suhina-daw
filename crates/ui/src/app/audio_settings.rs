@@ -220,8 +220,13 @@ impl App {
                 let _swallowed = behind.clicked();
                 let tint = ui.painter().add(egui::Shape::Noop);
                 // The panel stays above the status bar, which shows what the page reports.
-                let mut bounds = window.shrink(PAD);
-                bounds.max.y = bounds.max.y.min(window.bottom() - theme::STATUS_BAR);
+                // The status bar's strip, where the window's grid put it, or along the bottom.
+                let status = self.status_bar_rect.unwrap_or_else(|| {
+                    Rect::from_min_max(Pos2::new(window.left(), window.bottom() - theme::STATUS_BAR), window.max)
+                });
+                let clear = clear_of(window, status);
+                let mut bounds = clear.shrink(PAD);
+                bounds = bounds.intersect(window.shrink(PAD));
                 let size = Vec2::new(SETTINGS_SIZE.x.min(bounds.width()), SETTINGS_SIZE.y.min(bounds.height()));
                 let position = ui
                     .ctx()
@@ -241,8 +246,7 @@ impl App {
                 if !previewing {
                     // The status bar stays undimmed at the bottom: an error or a confirmation from
                     // the page is seen while the dialog is open, not only behind it.
-                    let top = (window.bottom() - theme::STATUS_BAR).max(window.min.y);
-                    let dim = Rect::from_min_max(window.min, Pos2::new(window.right(), top));
+                    let dim = clear;
                     ui.painter().set(
                         tint,
                         egui::Shape::rect_filled(
@@ -399,3 +403,15 @@ impl App {
 #[cfg(test)]
 #[path = "audio_settings_tests.rs"]
 mod tests;
+
+/// What of `window` is clear of the status bar's strip `status`: above it when it lies along the
+/// bottom, under it when along the top; all of the window when it lies elsewhere.
+fn clear_of(window: Rect, status: Rect) -> Rect {
+    if status.top() >= window.center().y {
+        Rect::from_min_max(window.min, Pos2::new(window.right(), status.top().max(window.top())))
+    } else if status.bottom() <= window.center().y && status.top() <= window.top() + 1.0 {
+        Rect::from_min_max(Pos2::new(window.left(), status.bottom().min(window.bottom())), window.max)
+    } else {
+        window
+    }
+}

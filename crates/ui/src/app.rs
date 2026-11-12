@@ -442,6 +442,8 @@ pub struct App {
     detail_shown: Vec2,
     /// The size along its axis the detail area asked the grid for last, so it asks once.
     detail_asked: f32,
+    /// Where the window's grid put the status bar last, which Settings keeps clear of.
+    status_bar_rect: Option<Rect>,
     /// Where each frame's time goes, written to the trace log when tracing is on.
     frame_trace: crate::kit::frame_trace::FrameTrace,
     /// What auto-arm (Settings › MIDI) last saw and armed.
@@ -714,6 +716,7 @@ impl App {
             detail_height: DETAIL_HEIGHT,
             detail_shown: Vec2::new(detail_view::STACK_WIDTH, DETAIL_HEIGHT),
             detail_asked: 0.0,
+            status_bar_rect: None,
             frame_trace: crate::kit::frame_trace::FrameTrace::default(),
             auto_arm: AutoArm::default(),
             fitted_editors: std::collections::HashSet::new(),
@@ -3066,6 +3069,7 @@ impl App {
             });
         }
         self.frame_trace.mark("control bar");
+        self.status_bar_rect = region(Region::StatusBar);
         if let Some(rect) = region(Region::StatusBar) {
             let bar = crate::kit::element::STATUS_BAR.enter();
             ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {

@@ -178,3 +178,15 @@ fn audio_page_follows_the_focus_of_its_own_viewport() {
     frame(&mut app, true, false);
     assert_eq!(checks.load(Ordering::Relaxed), 3, "embedded Settings follows root");
 }
+
+/// Settings keeps clear of the status bar where the window's grid put it (#1370).
+#[test]
+fn settings_keeps_clear_of_the_status_bar_at_the_top_or_the_bottom() {
+    let window = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(800.0, 600.0));
+    let bottom = Rect::from_min_max(Pos2::new(0.0, 580.0), Pos2::new(800.0, 600.0));
+    let top = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(800.0, 20.0));
+    assert_eq!(clear_of(window, bottom), Rect::from_min_max(Pos2::ZERO, Pos2::new(800.0, 580.0)));
+    assert_eq!(clear_of(window, top), Rect::from_min_max(Pos2::new(0.0, 20.0), Pos2::new(800.0, 600.0)));
+    let middle = Rect::from_min_max(Pos2::new(0.0, 100.0), Pos2::new(800.0, 120.0));
+    assert_eq!(clear_of(window, middle), window);
+}
