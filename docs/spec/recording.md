@@ -265,10 +265,18 @@ of the speaker. A take is placed where what was played lines up with what was he
   the frame the engine played it at, less the key-to-sound latency. That latency is the fixed
   delay notes are played after their driver timestamp (ADR 0017, decision 10) and the measured
   output latency from the engine to the speaker. Offline, with no device, both are 0.
-- **A recorded sound** is placed at the beat that was sounding when it reached the microphone:
-  the frame the engine read it at, less the output latency, the input device's latency and the
-  frames that waited in the input ring. A loopback (the output played straight into the input)
-  then records the project back exactly on its beats.
+- **A recorded sound** is placed at the beat that was sounding when it reached the microphone.
+  The take's frames run on the input's own clock (its frames arrive in order, whatever the
+  render thread's position does), lined up with the heard beat once at the take's start: the
+  frame the engine read the first of them at, less the output latency, the input device's
+  latency and the frames that waited in the input ring then. A position that followed the
+  ring's depth instead jumped block to block with it — the depth swings as the device's
+  delivery and the render thread's reads trade places — and the writer read the jumps as lost
+  frames and spliced silence in: takes full of clicks and pops with no underrun counted
+  anywhere. A loopback (the output played straight into the input) then records the project
+  back exactly on its beats. A starved block's hold spends its frames' input time either way,
+  so frames the device delivers late — a callback that landed after its read — are skipped at
+  the read (ADR 0017 › the amendment of 2026-11-11), and the rest of the take keeps the beat.
 
 Notes before the take's start (a key a little early) are not kept, nor is sound before it.
 

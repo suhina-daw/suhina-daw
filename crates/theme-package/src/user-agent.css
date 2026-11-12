@@ -59,6 +59,7 @@ fader-rail { image: url("suhina:fader.rail.svg"); }
 knob-body { image: url("suhina:knob.body.svg"); }
 knob-pointer { image: url("suhina:knob.pointer.svg"); }
 meter { image: url("suhina:meter.svg"); }
+icon[kind="folder"] { image: url("suhina:folder.svg"); }
 
 /* The sounds of the sample map, by kind. */
 sample-point[kind="kick"] { color: #D06E5E; }

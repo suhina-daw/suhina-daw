@@ -168,7 +168,11 @@ pub(super) fn group_panel(
     }
     panel.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Device {}", device.name)));
     let clicked = panel.clicked();
-    panel.context_menu(|ui| menus::device_menu(ui, track, &device.at, Some(group.branches.len()), actions));
+    // The device inside a group gets the same menu as one on the track itself, the preset
+    // name's field included (`device.savePreset`).
+    panel.context_menu(|ui| {
+        menus::device_menu(ui, track, &device.at, Some(group.branches.len()), device.is_builtin, &device.name, actions)
+    });
     painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     painter.rect_filled(header, 0.0, theme::control_background());

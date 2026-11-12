@@ -228,6 +228,32 @@ agent that writes Suhina code must never be given decompiled or leaked material.
 
 If you are unsure whether a source is allowed, ask in an issue before using it.
 
+## Shipped content
+
+Content that ships with Suhina — the starter pack built into the executable, the files kept in
+the library's sound folders, the presets — follows
+[ADR 0036](docs/decisions/0036-library-and-shipped-content.md). The rules, in one place:
+
+- **The publisher's licence is enough.** Content another person published under a licence
+  compatible with GPL-3.0-or-later ships as it is, with its author, source and licence recorded
+  beside it. The project does not chase down each capture's original rightsholder beyond that
+  record, and an author asking for their file's removal gets it ([IP.md](IP.md)).
+- **Only two things block content:** it was taken from a commercial product's library, or its
+  licence or terms forbid redistribution — NC, ND, a service's terms that forbid passing files
+  on, a download with no licence. A capture from a share, a forum or a group is fine when its
+  publisher said copying is allowed and never a plug-in pack's or DAW's factory library.
+- **Collected files keep their owners' filenames.** The names say where a capture was recorded
+  from, which a maker of hardware is not another DAW (AGENTS.md rule 9), and they carry the
+  no-affiliation note the same rule asks for.
+- **Suhina's own content is CC0-1.0:** the presets ([ADR 0014](docs/decisions/0014-stock-presets.md)),
+  the synthetic files, and models trained with an MIT trainer (the NAM trainer) from Suhina's
+  own device chains.
+- **Provenance lives beside the files**, in the `README.md` of the file's folder (`packs/` for
+  the pack the build carries): source, author or capturer, licence, what changed. A licence text
+  a file's publisher wrote is carried beside the files it covers.
+- **The pack's size is checked** against its ceiling (16 MiB) by the registry's test, and every
+  file must load, fit and render through its device before it ships.
+
 ## Developer Certificate of Origin
 
 Every commit in a pull request from outside the project ends with a sign-off line:

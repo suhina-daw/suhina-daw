@@ -415,7 +415,7 @@ fn add_default_artwork_on_a_variant_goes_to_its_theme() {
     }
     let actions = themes.take_actions();
     assert!(actions.iter().any(|action| matches!(action, FileAction::Save { id, .. } if id == "ink")), "{actions:?}");
-    assert_eq!(themes.take_notice().as_deref(), Some("Added 16 default images to the theme's assets folder"));
+    assert_eq!(themes.take_notice().as_deref(), Some("Added 17 default images to the theme's assets folder"));
 }
 
 /// Add default artwork on a theme of the user's in use as itself adds the artwork to its variants

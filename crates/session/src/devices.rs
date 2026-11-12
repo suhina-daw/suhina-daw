@@ -536,7 +536,9 @@ fn device_json(path: &[usize], device: &Device) -> Value {
         info.params
             .iter()
             .map(|p| {
-                let value = device.params.iter().find(|v| v.id == p.id).map_or(p.default, |v| p.clamp(v.value));
+                // The engine takes the last value a duplicate parameter id carries (a project
+                // or preset file may name one twice), so the panel shows the same.
+                let value = device.params.iter().rev().find(|v| v.id == p.id).map_or(p.default, |v| p.clamp(v.value));
                 json!({ "id": p.id, "value": value })
             })
             .collect::<Vec<_>>()
@@ -662,10 +664,52 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
         },
         |p| p.params.iter().map(|(id, value)| DeviceParam::new(*id, *value)).collect(),
     );
-    let device =
-        Device { params: params_of_preset, ..Device::new(&*info.name, DeviceKind::Builtin(info.id.to_string())) };
+    // A file-backed device may start on a file ([docs/spec/nam-amp-and-cab.md]): the loaded
+    // model or IR goes into the session's assets, and the device's state carries what the
+    // project opens elsewhere from — a file inside the library stores relative to it
+    // ([ADR 0036] › it), an outside one its absolute path — before the device lands, so one
+    // undo step takes the whole add back. A preset that names a file (its own) does the same;
+    // the `file` parameter wins when both are given, and a preset's file that does not load
+    // leaves the device without one while the result says so.
+    let mut file_missing: Option<String> = None;
+    let preset_file = preset.as_ref().and_then(|p| p.file.clone());
+    let state = match Args::new(params).value("file") {
+        None | Some(Value::Null) => {
+            preset_file.as_ref().and_then(|given| match session.load_device_file(&info.id, given) {
+                Ok(_) => Some(given.clone()),
+                Err(error) => {
+                    file_missing = Some(error);
+                    None
+                }
+            })
+        }
+        Some(v) => {
+            let path = v.as_str().ok_or("file must be a .nam model or a .wav IR file's path")?;
+            let want_extension = suhina_device_registry::file_extension(info.id.as_ref())
+                .ok_or_else(|| format!("{id:?} does not run a file"))?;
+            if !path.to_lowercase().ends_with(&format!(".{want_extension}")) {
+                return Err(format!("a {id} runs a .{want_extension} file").into());
+            }
+            let state_text = device_file_state(session, info.id.as_ref(), path);
+            session.load_device_file(&info.id, &state_text).map_err(CommandError)?;
+            Some(state_text)
+        }
+    };
+    let device = Device {
+        params: params_of_preset,
+        state: state.as_deref().map(|state| state.as_bytes().into()),
+        ..Device::new(&*info.name, DeviceKind::Builtin(info.id.to_string()))
+    };
+    let with_file_result = |mut out: Value| {
+        if let Some(missing) = &file_missing {
+            out["file_missing"] = json!(missing);
+        }
+        out
+    };
     if let Some(value) = crate::device_groups::insert_into_group(session, params, device.clone())? {
-        return Ok(json!({ "device": value, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name) }));
+        return Ok(with_file_result(
+            json!({ "device": value, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name), "file": state }),
+        ));
     }
     let instrument = info.role == Role::Instrument;
     let midi_effect = info.role == Role::MidiEffect;
@@ -712,10 +756,11 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     }
     let position = take_out(&mut channel.devices, replaced.as_ref(), position);
     channel.devices.insert(position, device);
-    Ok(json!({
+    Ok(with_file_result(json!({
         "device": position, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name),
+        "file": state,
         "replaced": replaced.map(|(_, name)| name),
-    }))
+    })))
 }
 
 pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -1081,10 +1126,60 @@ pub(crate) fn set_enabled_many(session: &mut Session, params: &Value) -> Result<
     Ok(json!({ "devices": paths.len(), "enabled": enabled }))
 }
 
-/// `device.setNamFile` ([docs/spec/nam-amp-and-cab.md]): the file a NAM Amp Modeler or a NAM
-/// Cab Loader runs. The device's state becomes the file's absolute path; the parsed model or
-/// decoded IR goes into the session's assets with this command, so the playing engine hears it
-/// with the next edit. One undo step, like the other device edits.
+/// The state text a device's file path stores (`device.add {file}`, `device.setNamFile`):
+/// a shipped file's key stands whole; a file inside the library documents stores relative to
+/// it ([ADR 0036] › it, so the project opens on another machine that has the same pack), one
+/// outside keeps its absolute path, recorded when it is all there is.
+pub(crate) fn device_file_state(session: &Session, kind: &str, path: &str) -> String {
+    if path.starts_with("builtin:") {
+        return path.to_owned();
+    }
+    // A library-relative state text (a path the library's base joins to an existing file, as
+    // `device.file` reads it back) stays one: a caller that hands it back to `setNamFile` or
+    // `device.add` keeps the same reference ([ADR 0036] › 4). So does a relative text the
+    // shipped pack stands in for ([ADR 0036] › 7): the state names the pack's own place, and
+    // the load reads the pack's file of that name when the disk copy is missing — a caller
+    // that read `device.file` of a project opened elsewhere keeps the same reference, where
+    // the working-folder absolute this would otherwise store is a load that fails off this
+    // machine. A relative path that is neither is a working-folder path: its absolute text is
+    // the state.
+    let given = std::path::Path::new(path);
+    if !given.is_absolute()
+        && (session.library_base().is_some_and(|base| base.join(path).exists())
+            || Session::pack_standin(kind, path).is_some())
+    {
+        // The relative form carries forward slashes on every platform, whatever separators
+        // the caller's text had ([ADR 0036] › 4, the review): the same component join the
+        // absolute branch writes, so a Windows caller's `Sounds\NAM\…` stores as
+        // `Sounds/NAM/…` and opens on another machine's base, and a text carrying `.` or
+        // doubled separators stores its plain form.
+        return given
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
+    }
+    let absolute = crate::files::absolute(std::path::Path::new(path));
+    match session.library_base() {
+        Some(base) if absolute.starts_with(base) => match absolute.strip_prefix(base) {
+            // The libraries-relative form carries forward slashes on every platform, so a
+            // project saved on this machine's folders opens on another's, and the stored
+            // text joins a base the same way ([ADR 0036] › 4).
+            Ok(relative) => relative
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/"),
+            Err(_) => absolute.display().to_string(),
+        },
+        _ => absolute.display().to_string(),
+    }
+}
+
+/// `device.setNamFile`: the file a NAM Amp Modeler or a NAM Cab Loader runs. The device's state
+/// becomes the file's path; the parsed model or decoded IR goes into the session's assets with
+/// this command, so the playing engine hears it with the next edit. One undo step, like the
+/// other device edits.
 pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let path = params
         .get("path")
@@ -1108,19 +1203,39 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     if !path.to_lowercase().ends_with(&format!(".{want_extension}")) {
         return Err(format!("a {kind} runs a .{want_extension} file").into());
     }
-    let absolute = crate::files::absolute(std::path::Path::new(path));
-    let absolute_text = absolute.display().to_string();
-    let asset = session.load_device_file(&kind, &absolute_text).map_err(CommandError)?;
-    let name = suhina_device_registry::asset_name(&asset, &absolute).unwrap_or_default();
+    // A shipped file's key is its own state ([ADR 0036]): `builtin:<device id>/<file name>` —
+    // the pack's bytes load through the device's loader, one undo step, the same shown names.
+    // Every other path joins the project at its absolute path, as before.
+    let state_text = if path.starts_with("builtin:") {
+        let Some((packed_id, _)) = suhina_device_registry::builtin_file_key_parts(path) else {
+            return Err("a shipped file's key is builtin:<device id>/<file name>".into());
+        };
+        if packed_id != kind {
+            return Err(format!("{kind:?} runs a shipped file of its own kind, not {packed_id:?}").into());
+        }
+        let asset = session.load_device_file(&kind, path).map_err(CommandError)?;
+        // The shown name reads the key's file stem, like the lists' rows do ([ADR 0036] › it).
+        let name = suhina_device_registry::asset_name(&asset, std::path::Path::new(path)).unwrap_or_default();
+        let channel = device_channel(session, params)?;
+        let device_track = device_path(&channel.devices, params, "device")?;
+        let device = device_at_mut(&mut channel.devices, &device_track).ok_or("the device is missing")?;
+        device.state = Some(path.as_bytes().into());
+        return Ok(json!({ "device": path_value(&device_track), "file": path, "name": name }));
+    } else {
+        device_file_state(session, &kind, path)
+    };
+    let asset = session.load_device_file(&kind, &state_text).map_err(CommandError)?;
+    let name = suhina_device_registry::asset_name(&asset, std::path::Path::new(&state_text)).unwrap_or_default();
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
-    device.state = Some(absolute_text.as_bytes().into());
-    Ok(json!({ "device": path_value(&path), "file": absolute_text, "name": name }))
+    device.state = Some(state_text.as_bytes().into());
+    Ok(json!({ "device": path_value(&path), "file": state_text, "name": name }))
 }
 
 /// `device.file`: the file a NAM device runs — its absolute path (empty when none is set) and
-/// the model's own name or the cab's (the IR's parent folder's name), for a device panel.
+/// the shown name either reads: the model's `metadata` name or the file's own without its
+/// extension, for a device panel.
 pub(crate) fn device_file(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let channel = device_channel_read(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
@@ -1135,6 +1250,101 @@ pub(crate) fn device_file(session: &mut Session, params: &Value) -> Result<Value
     let file = device.state.as_deref().and_then(|state| std::str::from_utf8(state).ok()).unwrap_or_default();
     let name = if file.is_empty() { String::new() } else { session.device_asset_name(file).unwrap_or_default() };
     Ok(json!({ "file": file, "name": name }))
+}
+
+/// The file text a saved preset names for a device's state ([ADR 0014] › Amendment): a
+/// shipped key stands; a file the library carries names its library-relative path — including
+/// one the library's move carried there, whose state still names the old folder
+/// ([ADR 0036] › 4), an absolute text the write would otherwise refuse although the file is
+/// in the library now — and a file outside the library keeps its state, which the write
+/// refuses with its reason ([ADR 0014] › Amendment, the review).
+fn preset_file_state(session: &Session, kind: &str, state: &str) -> String {
+    if state.starts_with("builtin:") {
+        return state.to_owned();
+    }
+    // The file the device actually runs, as the loads resolve it: the state's own place when
+    // it is there, else the move's new place for an old-form state — a kept file's old place
+    // wins, for the new tree's file of that name is another file.
+    let resolved = session
+        .resolve_device_file(state)
+        .filter(|path| path.exists())
+        .or_else(|| session.legacy_device_file(kind, state).filter(|path| path.exists()));
+    let (Some(resolved), Some(base)) = (resolved, session.library_base()) else { return state.to_owned() };
+    match resolved.strip_prefix(base) {
+        // The preset's file carries forward slashes on every platform, like every
+        // library-relative text ([ADR 0036] › 4).
+        Ok(relative) if !relative.as_os_str().is_empty() => relative
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/"),
+        _ => state.to_owned(),
+    }
+}
+
+/// `device.savePreset` ([ADR 0036] › it): a built-in device's values — and, with the file it
+/// selects, one file reference (`device.state`, the NAM devices') — written into the library as
+/// `Presets/<device id>/<name>.<device id>.preset.suhina` ([`ADR 0014`]'s format). A preset of
+/// the same name is replaced: the preset is the user's, and saving again keeps working. Nothing
+/// is written before the preset's bytes are made; the library's base is the one set on the
+/// session (`Session::set_library_base`).
+pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    // The trimmed name is the file's name too ([ADR 0014] › 5, the review): a name typed with
+    // padding writes the same file a plain typing of it replaces.
+    let name = Args::new(params).text("name")?;
+    let name = name.trim();
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at(&channel.devices, &path).ok_or("the device is missing")?;
+    let (info, state, values) = match &device.kind {
+        DeviceKind::Builtin(id) => {
+            let info =
+                suhina_device_registry::info(id).ok_or_else(|| format!("{id:?} is not a device this version knows"))?;
+            let state = if suhina_device_registry::is_file_device(id) {
+                device.state.as_deref().and_then(|state| std::str::from_utf8(state).ok()).map(str::to_owned)
+            } else {
+                None
+            };
+            let values: Vec<(&str, f64)> = info
+                .params
+                .iter()
+                .map(|param| {
+                    let value = device
+                        .params
+                        .iter()
+                        .rev()
+                        .find(|p| p.id == param.id)
+                        .map_or(param.default, |p| param.clamp(p.value));
+                    (&*param.id, value)
+                })
+                .collect();
+            (info, state, values)
+        }
+        _ => return Err("a preset is saved from a built-in effect, instrument or MIDI effect".into()),
+    };
+    // The preset's file names the file the device runs by the form a preset carries ([ADR 0014]
+    // › Amendment): a state the library's move carried reads its new place, so the save works
+    // where the state's own text would be refused.
+    let file = state.map(|state| preset_file_state(session, info.id.as_ref(), &state));
+    let bytes =
+        suhina_device_registry::write_preset_file(&info.id, name, file.as_deref(), &values).map_err(CommandError)?;
+    let base = session.library_base().ok_or("the library's folder is not set")?;
+    let folder = base.join("Presets").join(info.id.as_ref());
+    if std::fs::create_dir_all(&folder).is_err() {
+        return Err(format!("the library's {} folder could not be made", folder.display()).into());
+    }
+    let file_name = format!("{name}.{}.preset.suhina", info.id);
+    // The preset publishes whole or not at all (the unpack's publish is the same shape, one
+    // shared write, [ADR 0036] › 5, the review): the bytes write beside the target first,
+    // then rename into place — a write that fails (or an app that ends mid-write) never
+    // truncates the preset the user saved before.
+    let target = folder.join(&file_name);
+    let staging = folder.join(format!("{file_name}.suhina-new"));
+    crate::files::stage_and_rename(&staging, &target, &bytes)
+        .map_err(|e| CommandError(format!("{}: {e}", target.display())))?;
+    Ok(
+        json!({ "preset": base.join("Presets").join(info.id.as_ref()).join(&file_name).display().to_string(), "name": name }),
+    )
 }
 
 pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

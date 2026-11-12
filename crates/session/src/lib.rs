@@ -100,8 +100,11 @@ pub use commands::{
 };
 pub use demo::{demo_project, grouped_project};
 pub use export::{ExportData, ExportGather, export_from};
+pub use files::stage_and_rename;
 pub use files::{MAX_FILES, file_tempo};
-pub use library::{Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items};
+pub use library::{
+    Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items, user_presets,
+};
 pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
 pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
@@ -128,6 +131,19 @@ pub use suhina_project_file::{EXTENSION as PROJECT_EXTENSION, is_project_file};
 pub fn devices() -> suhina_engine::Devices {
     suhina_device_registry::factory()
 }
+
+/// Where projects are saved and templates kept until the settings say otherwise: `Suhina`
+/// in the user's documents folder, or the folder made under the program's old name while only
+/// that one exists (projects there stay where recent lists and links expect them).
+pub fn documents_base() -> PathBuf {
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
+    let documents = home.map(|h| h.join("Documents")).unwrap_or_default();
+    let (new, old) = (documents.join("Suhina"), documents.join(OLD_LIBRARY_ROOT));
+    if !new.exists() && old.is_dir() { old } else { new }
+}
+
+/// The library's root made under the program's old name, while only that one exists.
+const OLD_LIBRARY_ROOT: &str = "Loopwerk"; // rename_suhina: keep
 
 /// Undo steps kept per session; the oldest are dropped first.
 const MAX_UNDO: usize = 256;
@@ -243,6 +259,8 @@ pub struct Session {
     /// was made or since: they follow the default while the project stays unchanged
     /// ([`Session::set_default_input`]).
     defaulted: Vec<suhina_model::TrackId>,
+    /// The library's root (`Documents/Suhina`, [ADR 0036]), where `device.savePreset` writes.
+    library_base: Option<PathBuf>,
 }
 
 /// Whether `track` records audio from an input: an audio track on a regular mixer strip (a return
@@ -280,7 +298,35 @@ impl Session {
             take_solo: None,
             default_input: suhina_model::InputChannels::None,
             defaulted: Vec::new(),
+            library_base: None,
         }
+    }
+
+    /// The library's root (`Documents/Suhina`, [ADR 0036]): where the user's own presets are
+    /// kept and the library's folders sit under (`Sounds/NAM` …). The app sets the library's
+    /// base below, since defaults are built beside it; a session without one cannot save into
+    /// the library. The library-relative device file states load against it from here on:
+    /// what opening tried without the base is tried again.
+    pub fn set_library_base(&mut self, base: PathBuf) {
+        // The same base again: the loads that ran with it stand (a reassignment clears the
+        // relative assets, so a project opened before the base was set keeps them from the
+        // base it was set with once).
+        if self.library_base.as_ref().is_some_and(|current| *current == base) {
+            return;
+        }
+        self.library_base = Some(base);
+        // A load that missed the base left its marks keyed by the relative text; those entries
+        // are built again with the base set (a shipped key and an absolute path stand either
+        // way, so they keep what they have).
+        self.device_files.modified.clear();
+        let keyed = |path: &str| std::path::Path::new(path).is_absolute() || path.starts_with("builtin:");
+        self.device_files.notes.retain(|path, _| keyed(path));
+        self.device_files.assets.entries.retain(|path, _| keyed(path.as_ref()));
+    }
+
+    /// The library's root, when it was set ([`Session::set_library_base`]).
+    pub fn library_base(&self) -> Option<&Path> {
+        self.library_base.as_deref()
     }
 
     /// Sets the audio input new audio tracks take from now on ([`Projects`] keeps it in line
@@ -495,16 +541,25 @@ impl Session {
     }
 
     /// What a device's file is called, for a device panel: the model's own name (its metadata)
-    /// for a NAM Amp Modeler, the IR's parent folder's name for a NAM Cab Loader. `None` while
-    /// the file is not in the assets.
+    /// for a NAM Amp Modeler, the IR file's own stem for a NAM Cab Loader — a shipped key's
+    /// stem is its file's, the same name the lists' rows carry ([ADR 0036]). `None` while the
+    /// file is not in the assets.
     pub fn device_asset_name(&self, path: &str) -> Option<String> {
-        suhina_device_registry::asset_name(self.device_files.assets.get(path)?, std::path::Path::new(path))
+        let asset = self.device_files.assets.get(path)?;
+        suhina_device_registry::asset_name(asset, std::path::Path::new(path))
     }
 
     /// Why a device's file is not in the assets, by the path: what a read gave, for a device
     /// panel's note.
     pub fn device_asset_note(&self, path: &str) -> Option<&str> {
         self.device_files.notes.get(path).map(String::as_str)
+    }
+
+    /// How many device-file loads the syncs have made since the session was made: a parse
+    /// and, for an IR, a resample each, on the session's thread. A diagnostic — an open loads
+    /// each file once, and a test counts them to keep it that way.
+    pub fn device_file_loads(&self) -> u64 {
+        self.device_files.loads
     }
 
     /// Puts audio made by a command (a consolidated range) into the pool under `key`, for the
@@ -1009,6 +1064,15 @@ impl Session {
     /// The NAM devices' files are read here, so the session is ready for the planned audio
     /// before a player is attached.
     pub fn open(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
+        Self::open_with_base(path, None)
+    }
+
+    /// [`Session::open`] with the library's root the caller knows ([ADR 0036]): the base is
+    /// the session's before its first loads, so a device's file state that is a
+    /// library-relative path resolves against it at once, and no load runs to be built again
+    /// when the base arrives later — a load that ran without it is a parse and, for an IR, a
+    /// resample the session's thread spends twice ([`Session::set_library_base`], the review).
+    pub fn open_with_base(path: &Path, base: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
         let (project, warnings) = if suhina_project_file::is_project_file(path) {
             let project = suhina_project_file::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
             (project, Vec::new())
@@ -1026,26 +1090,35 @@ impl Session {
         let mut session = Self::new(project);
         session.source = Some(path.to_path_buf());
         session.audio.folder = path.parent().map(Path::to_path_buf);
+        if let Some(base) = base {
+            session.set_library_base(base.to_path_buf());
+        }
         session.sync_device_files();
         Ok((session, warnings))
     }
 
     /// A new, untitled project made from the template file `path` (any project Suhina opens).
-    /// Its audio is still found where the template's is.
-    pub fn from_template(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
-        let (mut session, warnings) = Self::open(path)?;
+    /// Its audio is still found where the template's is. `base` is the library's root, as
+    /// [`Session::open_with_base`] takes it.
+    pub fn from_template(path: &Path, base: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
+        let (mut session, warnings) = Self::open_with_base(path, base)?;
         session.source = None;
         Ok((session, warnings))
     }
 
     /// Opens a backup (`docs/spec/backups.md` › The offer on start) as an unsaved project tied
     /// to `file`, the project file it is a backup of: saving writes `file`, and the backup is
-    /// left as it is. Without `file` (a project never saved) it opens untitled.
-    pub fn recover(backup: &Path, file: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
+    /// left as it is. Without `file` (a project never saved) it opens untitled. `base` is the
+    /// library's root, as [`Session::open_with_base`] takes it.
+    pub fn recover(
+        backup: &Path,
+        file: Option<&Path>,
+        base: Option<&Path>,
+    ) -> Result<(Self, Vec<String>), CommandError> {
         if !suhina_project_file::is_project_file(backup) {
             return Err(format!("{} is not a Suhina project", backup.display()).into());
         }
-        let (mut session, warnings) = Self::open(backup)?;
+        let (mut session, warnings) = Self::open_with_base(backup, base)?;
         session.source = file.map(Path::to_path_buf);
         // The changes since the project file was saved are in the backup only.
         session.history.changes = 1;
@@ -1341,7 +1414,9 @@ impl Session {
             .filter_map(|track| track.channel.and_then(|ch| self.project.channel(ch)))
             .chain(self.project.main_channel());
         for channel in channels {
-            for device in &channel.devices {
+            // Inside a group too: a file-backed device in a group runs its file the same
+            // ([ADR 0036] › it), and the sync reads it the same way it reads a top-level one.
+            for (_, device) in suhina_model::walk_devices(&channel.devices) {
                 let suhina_model::DeviceKind::Builtin(id) = &device.kind else { continue };
                 if !suhina_device_registry::is_file_device(id) {
                     continue;
@@ -1361,7 +1436,10 @@ impl Session {
         }
         let mut changed = false;
         for (path, kind) in need.iter() {
-            let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
+            // A library-relative state's file is at the library's base, not the working
+            // folder: the timestamp check sees the same resolved path the load reads.
+            let mtime =
+                self.resolve_device_file(path).and_then(|p| std::fs::metadata(p).ok()).and_then(|m| m.modified().ok());
             if (self.device_files.assets.entries.contains_key(path.as_str())
                 || self.device_files.notes.contains_key(path.as_str()))
                 && self.device_files.modified.get(path).and_then(|seen| *seen) == mtime
@@ -1369,6 +1447,7 @@ impl Session {
                 continue;
             }
             let result = self.load_device_file(kind, path);
+            self.device_files.loads = self.device_files.loads.wrapping_add(1);
             self.device_files.modified.insert(path.clone(), mtime);
             match result {
                 Ok(asset) => {
@@ -1392,6 +1471,13 @@ impl Session {
     /// here, at command or project-load time, never on the audio thread. The registry refuses a
     /// path without the device's extension, so a project's stored path cannot point a device at
     /// some other file (a UNC path, for one).
+    ///
+    /// A state's text is what the project carries: a shipped file's `builtin:` key, a
+    /// library-relative path ([`ADR 0036`] › it — `Sounds/NAM/…` joins the library's base on
+    /// this machine), or an absolute one. A library-relative file the disk does not carry still
+    /// runs when the pack carries a file of its name: the project opens on another machine
+    /// without the file on disk and renders from the pack. The state keeps the text it was
+    /// given; the resolution is what the loads hear.
     pub(crate) fn load_device_file(
         &self,
         kind: &str,
@@ -1400,7 +1486,113 @@ impl Session {
         // An IR joins the project at the engine's rate; the session's rate is the player's, or
         // 48 kHz until the first output opens.
         let rate = self.sync.player.as_ref().map_or(48_000, Player::sample_rate);
-        suhina_device_registry::load_file(kind, std::path::Path::new(path), rate)
+        // A shipped file's key rides the same state slot ([ADR 0036]): `builtin:<device
+        // id>/<file name>`, run against the pack's bytes through the device's own loader. A
+        // key of another device's pack is refused here, as a path of the wrong extension
+        // would be.
+        if path.starts_with("builtin:") {
+            let Some((packed_id, name)) = suhina_device_registry::builtin_file_key_parts(path) else {
+                return Err("a shipped file's key is builtin:<device id>/<file name>".into());
+            };
+            if packed_id != kind {
+                return Err(format!("{kind:?} runs a shipped file of its own kind, not {packed_id:?}"));
+            }
+            return suhina_device_registry::load_builtin_file(kind, name, rate);
+        }
+        let resolved =
+            self.resolve_device_file(path).ok_or("a shipped file's key is builtin:<device id>/<file name>")?;
+        if resolved.exists() {
+            return suhina_device_registry::load_file(kind, &resolved, rate);
+        }
+        // A project that opened before the library's move carries its file by the old place —
+        // the old defaults' folder emptied into the library's device folders at start, and the
+        // project's state still names it there ([ADR 0036] › 4). The old form reads the file's
+        // new place, so the project keeps its sound across the move.
+        if let Some(legacy) = self.legacy_device_file(kind, path)
+            && legacy != resolved
+            && legacy.exists()
+        {
+            return suhina_device_registry::load_file(kind, &legacy, rate);
+        }
+        // The disk does not carry it; the pack may. A file the state names by the shipped
+        // pack's own place rides the executable — the on-disk copy's stand-in, so a project
+        // that opened on a machine without the file on disk still renders from the pack
+        // ([ADR 0036] › 7). The stand-in is honest only there ([ADR 0036] › 7, the review):
+        // the state's last components must name `<library folder>/Suhina/<name>` — a file of
+        // the same name in the user's own folder proves nothing about the pack, and it would
+        // open elsewhere on the pack's different file with no missing-file note. An absolute
+        // path is the file's own, and a missing one is a missing file, not a sound of the
+        // same name.
+        let shipped = if std::path::Path::new(path).is_absolute() {
+            None
+        } else {
+            Self::pack_standin(kind, path).and_then(|name| {
+                suhina_device_registry::pack_files(kind)
+                    .into_iter()
+                    .find(|(packed, _)| packed.eq_ignore_ascii_case(&name))
+            })
+        };
+        if let Some((packed_name, _)) = shipped {
+            return suhina_device_registry::load_builtin_file(kind, packed_name, rate);
+        }
+        suhina_device_registry::load_file(kind, &resolved, rate)
+    }
+
+    /// The shipped pack's file name a relative state's own place names, when it names the
+    /// pack's place: the state's last components must be `<library folder>/Suhina/<name>`
+    /// ([ADR 0036] › 7, the review) — a file of the same name in the user's own folder proves
+    /// nothing about the pack, and it would open elsewhere on the pack's different file with
+    /// no missing-file note. The one rule the load's stand-in and the state's store share, so
+    /// the two cannot drift apart; whether the pack carries the name is the caller's check.
+    pub(crate) fn pack_standin(kind: &str, path: &str) -> Option<String> {
+        let library = suhina_device_registry::library_folder(kind)?;
+        let mut components = std::path::Path::new(path)
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let name = components.pop()?;
+        let pack = components.pop()?;
+        let folder = components.pop()?;
+        (pack.eq_ignore_ascii_case(suhina_device_registry::SHIPPED_PACK) && folder.eq_ignore_ascii_case(library))
+            .then_some(name)
+    }
+
+    /// The file a state's old-form text points at since the library's move: the old defaults
+    /// (`NAM models`, `IRs`) emptied into the library's device folders at start, and a project
+    /// that opened before it carries its file by the old place. The old form — the old
+    /// folder's name as a relative text, or an absolute path inside the base's old folder —
+    /// reads the same tail under the library's device folder, so the project keeps its sound
+    /// ([ADR 0036] › 4). `None` when the state is no old form or the device ran no files then.
+    fn legacy_device_file(&self, kind: &str, path: &str) -> Option<PathBuf> {
+        let old = suhina_device_registry::legacy_folder(kind)?;
+        let new = suhina_device_registry::library_folder(kind)?;
+        let base = self.library_base()?;
+        // Component-wise matching (`Path::strip_prefix`), never a display string: the
+        // state's separators are whatever the saving platform wrote, and a string match on
+        // `/` would miss every Windows one.
+        let given = std::path::Path::new(path);
+        let tail: PathBuf = if given.is_absolute() {
+            given.strip_prefix(base.join(old)).ok()?.to_path_buf()
+        } else {
+            given.strip_prefix(old).ok()?.to_path_buf()
+        };
+        (!tail.as_os_str().is_empty()).then(|| base.join("Sounds").join("NAM").join(new).join(tail))
+    }
+
+    /// The file a state's text points at: an absolute path is itself, a relative one joins the
+    /// library's base ([ADR 0036] › 4), or without a base it resolves against the working
+    /// folder as an absolute one would have been there already. A shipped key is not a file
+    /// on the disk: `None` for it.
+    pub(crate) fn resolve_device_file(&self, path: &str) -> Option<PathBuf> {
+        if path.starts_with("builtin:") {
+            return None;
+        }
+        Some(if std::path::Path::new(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            self.library_base()
+                .map_or_else(|| crate::files::absolute(std::path::Path::new(path)), |base| base.join(path))
+        })
     }
 
     /// Lets a playing engine hear the project as it is now, with any audio added to the pool.

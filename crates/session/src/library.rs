@@ -693,6 +693,30 @@ impl PreparedSearch {
     }
 }
 
+/// The library's own presets ([ADR 0036] › 5): for every device the registry knows, the
+/// `*.preset.suhina` files of its `Presets/<device id>/` folder — the folder
+/// `device.savePreset` writes — each `(device id, path, stem before the suffix, trimmed)`,
+/// sorted by file name without case. One walk for the browser's tree and the search both, so
+/// a change to the naming cannot leave the two reading differently ([ADR 0036] › 5, the
+/// review). Empty when the library carries no Presets folder.
+pub fn user_presets(base: &Path) -> Vec<(&'static str, PathBuf, String)> {
+    let Ok(devices) = std::fs::read_dir(base.join("Presets")) else { return Vec::new() };
+    let mut out = Vec::new();
+    for device in devices.flatten().filter(|d| d.path().is_dir()) {
+        let id = device.file_name().to_string_lossy().into_owned();
+        let Some(info) = suhina_device_registry::info(&id) else { continue };
+        let ends = format!(".{}.preset.suhina", info.id);
+        let mut files = std::fs::read_dir(device.path()).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default();
+        files.sort_by_key(|file| file.file_name().to_string_lossy().to_lowercase());
+        for file in files {
+            let name = file.file_name().to_string_lossy().into_owned();
+            let Some(stem) = name.strip_suffix(&ends) else { continue };
+            out.push((info.id.as_ref(), file.path(), stem.trim().to_owned()));
+        }
+    }
+    out
+}
+
 /// [`search_items`] up to where it looks through the files.
 pub fn prepare_search(
     projects: &mut Projects,
@@ -777,6 +801,31 @@ pub fn prepare_search(
                 && tagged(projects.file_library_mut(), &found.item.key())
             {
                 ranked.push((rank, found));
+            }
+        }
+        // The library's own presets (`device.savePreset` wrote them) find a search like the
+        // stock ones do, so search and quick-add find what the browser's tree lists
+        // ([ADR 0036] › 5): the shared walk reads the Presets folder once for both
+        // ([ADR 0036] › 5, the review), so a change to the naming cannot leave the tree and
+        // the search disagreeing.
+        if let Some(base) = projects.library_base() {
+            for (_, path, stem) in user_presets(base) {
+                let found = Found {
+                    item: Item::File(path),
+                    name: stem,
+                    kind: "preset",
+                    detail: None,
+                    plugin: false,
+                    format: None,
+                    folder: None,
+                };
+                let haystack = found.item.key();
+                if let Some(rank) = suhina_library::rank(&words, &found.name, &haystack)
+                    && fits(&found, category)
+                    && tagged(projects.file_library_mut(), &found.item.key())
+                {
+                    ranked.push((rank, found));
+                }
             }
         }
         let env = projects.plugin_env();

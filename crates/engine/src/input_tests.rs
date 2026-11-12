@@ -152,7 +152,9 @@ fn too_little_input_is_silence_counted_and_too_much_is_dropped() {
     let (mut renderer, mut ring, underruns) = with_input(&project, 1);
     feed(&mut ring, 1, BLOCK / 2, 0, 0.5);
     let out = blocks(&mut renderer, 1, BLOCK);
-    assert!((out[0] - 0.5).abs() < 1e-4 && out[out.len() - 2] == 0.0, "the half there, then silence");
+    // The half there, then the hold that carries its last delivered frame (a splice to
+    // silence would crack through everything downstream).
+    assert!((out[0] - 0.5).abs() < 1e-4 && (out[out.len() - 2] - 0.5).abs() < 1e-4, "the half there, then its hold");
     assert_eq!(underruns.load(Ordering::Relaxed), 1);
 
     // The input's clock ran ahead: ten blocks wait. One block later at most two remain.
@@ -250,6 +252,261 @@ fn input_diagnostics_keep_only_the_latest_32_short_reads() {
     input.read(0);
     assert!(detached.diagnostics.snapshot().short_reads.is_empty());
     assert_eq!(input.diagnostics.snapshot().short_reads, expected);
+}
+
+#[test]
+fn a_starved_pair_holds_each_channels_last_state_not_the_previous_blocks_bytes() {
+    // The hold's span starts `take` samples in — `take` is a sample count, twice the frame a
+    // pair's hold starts at. The old loop took it as a frame index: for a shallow starvation
+    // its range was empty and the block's tail kept the scratch's previous block, for a deep
+    // one the wrong middle span stayed stale. The held slot's channel is its remainder, and
+    // the held state is the last frame the ring delivered, never the scratch's bytes.
+    let (mut ring, consumer) = rtrb::RingBuffer::new(4096);
+    let mut input = crate::input::Input::new();
+    let underruns = Arc::new(AtomicU64::new(0));
+    input.attach(consumer, 2, Arc::clone(&underruns));
+    const FRAMES: usize = 256;
+    // One block of a rising ramp, the sign saying which channel: the scratch now holds the
+    // ramp, so a stale hold would read 128 to 254 at the frames below.
+    for frame in 0..FRAMES {
+        ring.push(f32::from(frame as u16)).unwrap();
+        ring.push(-f32::from(frame as u16)).unwrap();
+    }
+    input.read(FRAMES);
+    // Half a block: the first half reads fresh, the rest holds the fresh half's last
+    // delivered frame (0.75) on both channels — never the scratch's ramp.
+    for _ in 0..FRAMES / 2 {
+        ring.push(0.75).unwrap();
+        ring.push(-0.75).unwrap();
+    }
+    input.read(FRAMES);
+    for frame in 0..FRAMES {
+        let (l, r) = (input.sample(frame, 0), input.sample(frame, 1));
+        assert!((l - 0.75).abs() < 1e-6 && (r + 0.75).abs() < 1e-6, "frame {frame}: {l} {r}");
+    }
+    // A deeper starvation: a quarter block fresh, the rest the hold again — still 0.75 at its
+    // first frame, and the hold's level fades (the starvation sustains): each held frame below
+    // the one before, the last one at nine tenths of the hold.
+    for _ in 0..FRAMES / 4 {
+        ring.push(0.75).unwrap();
+        ring.push(-0.75).unwrap();
+    }
+    input.read(FRAMES);
+    let mut previous_l = 0.75;
+    let mut previous_r = -0.75;
+    for frame in 0..FRAMES {
+        let (l, r) = (input.sample(frame, 0), input.sample(frame, 1));
+        if frame < FRAMES / 4 {
+            assert!((l - 0.75).abs() < 1e-6 && (r + 0.75).abs() < 1e-6, "frame {frame}: {l} {r}");
+        } else {
+            assert!(l <= previous_l + 1e-6 && r >= previous_r - 1e-6, "frame {frame}: {l} {r} fades down");
+        }
+        previous_l = l;
+        previous_r = r;
+    }
+    assert!((previous_l - 0.75 * crate::input::HOLD_DECAY).abs() < 1e-3, "last held {previous_l}");
+    assert_eq!(underruns.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn a_starved_input_that_never_returns_fades_its_hold_to_silence() {
+    // An interface unplugged mid-session stops calling back: every later block holds, and
+    // nothing resets the hold. It fades toward zero block by block, so the DC offset the first
+    // held block carried does not run through monitoring, the chain and the take for as long
+    // as the transport runs.
+    let (mut ring, consumer) = rtrb::RingBuffer::new(4096);
+    let mut input = crate::input::Input::new();
+    let underruns = Arc::new(AtomicU64::new(0));
+    input.attach(consumer, 1, Arc::clone(&underruns));
+    const FRAMES: usize = 256;
+    for _ in 0..FRAMES {
+        ring.push(0.5).unwrap();
+    }
+    input.read(FRAMES);
+    // The first starved block holds the signal's last state whole.
+    input.read(FRAMES);
+    for frame in 0..FRAMES {
+        assert!((input.sample(frame, 0) - 0.5).abs() < 1e-6, "frame {frame}");
+    }
+    // The blocks after fade toward zero, each one continuing the last one's end level: the
+    // span's last held sample is exactly the decayed level, its first one between the levels.
+    let mut level = 1.0;
+    for _ in 0..64 {
+        let start = level;
+        level *= crate::input::HOLD_DECAY;
+        input.read(FRAMES);
+        let first = input.sample(0, 0);
+        let last = input.sample(FRAMES - 1, 0);
+        assert!((last - 0.5 * level).abs() < 1e-6, "last {last}");
+        assert!(first <= 0.5 * start + 1e-6 && first >= 0.5 * level - 1e-6, "first {first}");
+    }
+    // After the fade the hold is at silence for good.
+    for _ in 0..128 {
+        input.read(FRAMES);
+    }
+    assert!(input.sample(0, 0).abs() < 1e-4, "{}", input.sample(0, 0));
+    // Input back: the hold is at full strength again, and the block reads the ring whole.
+    for _ in 0..FRAMES {
+        ring.push(0.25).unwrap();
+    }
+    input.read(FRAMES);
+    for frame in 0..FRAMES {
+        assert!((input.sample(frame, 0) - 0.25).abs() < 1e-6, "frame {frame}");
+    }
+}
+
+/// A starved block's held frames may still be delivered late rather than dropped (driver
+/// jitter): they stay in the ring while every later block reads its own `frames`, so each read
+/// runs that count of device time behind — a take written after it runs that many frames late
+/// against the beat. A block that finds this much more waiting than before the starvation
+/// skips them: the held frames' input time is already covered by the starved block's window.
+#[test]
+fn a_late_delivery_of_held_frames_is_skipped_and_the_rest_runs_on_time() {
+    let (mut ring, consumer) = rtrb::RingBuffer::new(BLOCK * 8);
+    let mut input = crate::input::Input::new();
+    let underruns = Arc::new(AtomicU64::new(0));
+    input.attach(consumer, 1, Arc::clone(&underruns));
+    const HALF: usize = BLOCK / 2;
+    let mut delivered = 0.0f32;
+    let mut feed = |ring: &mut rtrb::Producer<f32>, frames: usize| {
+        for _ in 0..frames {
+            delivered += 1.0;
+            ring.push(delivered * 0.001).unwrap();
+        }
+    };
+    // The device's block: half before the render thread's read, the rest after it. The starved
+    // block reads the first half and holds the rest; the device delivers the rest late.
+    feed(&mut ring, HALF);
+    input.read(BLOCK);
+    assert_eq!(input.sample(0, 0), 0.001, "the first delivered frame");
+    assert_eq!(input.sample(HALF - 1, 0), HALF as f32 * 0.001, "the last delivered frame");
+    for frame in HALF..BLOCK {
+        assert_eq!(input.sample(frame, 0), HALF as f32 * 0.001, "frame {frame} holds the last delivered");
+    }
+    assert_eq!(underruns.load(Ordering::Relaxed), 1);
+    // The device's late delivery: the held frames arrive in the ring, and the next block's
+    // frames arrive after them — the ring is deeper by the held count than before the
+    // starvation.
+    feed(&mut ring, HALF);
+    feed(&mut ring, BLOCK);
+    input.read(BLOCK);
+    // The skip dropped the late frames (the device's frames HALF..BLOCK): the block reads the
+    // device's frames BLOCK..BLOCK + BLOCK, so the rest of the take runs on the beat. Without
+    // the skip it would read the device's frames HALF..BLOCK + HALF, and the rest of the take
+    // would run HALF frames late.
+    assert_eq!(input.sample(0, 0), (BLOCK + 1) as f32 * 0.001, "the device's frames BLOCK..BLOCK + BLOCK");
+    assert_eq!(input.sample(BLOCK - 1, 0), (BLOCK + BLOCK) as f32 * 0.001, "the device's frames BLOCK..BLOCK + BLOCK");
+    assert_eq!(underruns.load(Ordering::Relaxed), 1, "the skip is not a starvation");
+    // The device's next block, whole: the block reads it whole.
+    feed(&mut ring, BLOCK);
+    input.read(BLOCK);
+    assert_eq!(
+        input.sample(0, 0),
+        (BLOCK + BLOCK + 1) as f32 * 0.001,
+        "the device's frames BLOCK + BLOCK..BLOCK + BLOCK + BLOCK"
+    );
+    assert_eq!(
+        input.sample(BLOCK - 1, 0),
+        (BLOCK + BLOCK + BLOCK) as f32 * 0.001,
+        "the device's frames BLOCK + BLOCK..BLOCK + BLOCK + BLOCK"
+    );
+}
+
+/// The late delivery is skipped on a stereo input too: the held count is frames, not their
+/// samples — a hold of half a stereo block makes up half a block's frames, `channels` times
+/// that many samples, and the skip's check and its drop read frames. With the count in
+/// samples the check never passed for more than one channel, and the rest of the take ran
+/// the held count late for good (the second review, finding 1).
+#[test]
+fn a_late_delivery_of_held_frames_is_skipped_on_a_stereo_input_too() {
+    let (mut ring, consumer) = rtrb::RingBuffer::new(BLOCK * 8 * 2);
+    let mut input = crate::input::Input::new();
+    let underruns = Arc::new(AtomicU64::new(0));
+    input.attach(consumer, 2, Arc::clone(&underruns));
+    const HALF: usize = BLOCK / 2;
+    let mut delivered = 0.0f32;
+    let mut feed = |ring: &mut rtrb::Producer<f32>, frames: usize| {
+        for _ in 0..frames {
+            delivered += 1.0;
+            for _ in 0..2 {
+                ring.push(delivered * 0.001).unwrap();
+            }
+        }
+    };
+    // The device's block: half before the render thread's read, the rest after it. The starved
+    // block reads the first half and holds the rest; the device delivers the rest late.
+    feed(&mut ring, HALF);
+    input.read(BLOCK);
+    assert_eq!(input.sample(0, 0), 0.001, "the first delivered frame");
+    assert_eq!(input.sample(HALF - 1, 0), HALF as f32 * 0.001, "the last delivered frame");
+    for frame in HALF..BLOCK {
+        assert_eq!(input.sample(frame, 0), HALF as f32 * 0.001, "frame {frame} holds the last delivered");
+    }
+    assert_eq!(underruns.load(Ordering::Relaxed), 1);
+    // The device's late delivery: the held frames arrive in the ring, and the next block's
+    // frames arrive after them.
+    feed(&mut ring, HALF);
+    feed(&mut ring, BLOCK);
+    input.read(BLOCK);
+    // The skip dropped the late frames (the device's frames HALF..BLOCK): the block reads the
+    // device's frames BLOCK..BLOCK + BLOCK on both channels, so the rest of the take runs on
+    // the beat. With the held count in samples the check never fired here, and every later
+    // block read HALF frames late.
+    assert_eq!(input.sample(0, 0), (BLOCK + 1) as f32 * 0.001, "the device's frames BLOCK..BLOCK + BLOCK");
+    assert_eq!(input.sample(BLOCK - 1, 1), (BLOCK + BLOCK) as f32 * 0.001, "the second channel reads the same frames");
+    assert_eq!(underruns.load(Ordering::Relaxed), 1, "the skip is not a starvation");
+    // The device's next block, whole: the block reads it whole.
+    feed(&mut ring, BLOCK);
+    input.read(BLOCK);
+    assert_eq!(
+        input.sample(0, 0),
+        (BLOCK + BLOCK + 1) as f32 * 0.001,
+        "the device's frames BLOCK + BLOCK..BLOCK + BLOCK + BLOCK"
+    );
+    assert_eq!(
+        input.sample(BLOCK - 1, 0),
+        (BLOCK + BLOCK + BLOCK) as f32 * 0.001,
+        "the device's frames BLOCK + BLOCK..BLOCK + BLOCK + BLOCK"
+    );
+}
+
+/// A real loss is not mistaken for a late delivery: the held frames never come, the ring
+/// carries a block's production over nothing (the starvation emptied it), and the skip — which
+/// fires on a whole block's jump over the leftover a whole read leaves — never does. The read
+/// keeps main's behaviour, the take runs the loss's own shape, and one starvation cannot set a
+/// skip that starves every block after it.
+#[test]
+fn a_lost_holds_frames_are_not_skipped_as_a_late_delivery() {
+    let (mut ring, consumer) = rtrb::RingBuffer::new(BLOCK * 8);
+    let mut input = crate::input::Input::new();
+    let underruns = Arc::new(AtomicU64::new(0));
+    input.attach(consumer, 1, Arc::clone(&underruns));
+    const HALF: usize = BLOCK / 2;
+    let mut delivered = 0.0f32;
+    let mut feed = |ring: &mut rtrb::Producer<f32>, frames: usize| {
+        for _ in 0..frames {
+            delivered += 1.0;
+            ring.push(delivered * 0.001).unwrap();
+        }
+    };
+    // The starved block: half delivered, the rest lost for good.
+    feed(&mut ring, HALF);
+    input.read(BLOCK);
+    assert_eq!(underruns.load(Ordering::Relaxed), 1);
+    // The device moved on without the held frames: the next block's production is a block
+    // deep, which is what a whole read leaves nothing of — the skip does not fire, and the
+    // block reads the whole production.
+    feed(&mut ring, BLOCK);
+    input.read(BLOCK);
+    assert_eq!(input.sample(0, 0), (HALF + 1) as f32 * 0.001, "the device's frames HALF..HALF + BLOCK");
+    assert_eq!(input.sample(BLOCK - 1, 0), (HALF + BLOCK) as f32 * 0.001);
+    assert_eq!(underruns.load(Ordering::Relaxed), 1, "the block was whole, not starved");
+    // The pace goes on whole, and no block starves again: one starvation's owed never makes a
+    // skip that keeps starving.
+    feed(&mut ring, BLOCK);
+    input.read(BLOCK);
+    assert_eq!(input.sample(0, 0), (HALF + BLOCK + 1) as f32 * 0.001);
+    assert_eq!(underruns.load(Ordering::Relaxed), 1, "still one starvation, no skip starving on");
 }
 
 #[test]

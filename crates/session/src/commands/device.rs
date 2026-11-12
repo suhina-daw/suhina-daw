@@ -47,6 +47,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Text,
                 "a preset that ships with Suhina, by its key: what follows stock: in library.search",
             ),
+            optional(
+                "file",
+                ParamType::Path(PathKind::File),
+                "a .nam model or .wav impulse response the device starts on (the NAM Amp Modeler or Cab Loader only; loads it as device.setNamFile does)",
+            ),
             optional("voice", ParamType::Integer, "which voice of a preset bank, from 1 (default 1)"),
         ],
         kind: CommandKind::EDIT,
@@ -322,6 +327,18 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         kind: CommandKind::EDIT,
         run: devices::randomize,
         policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "device.savePreset",
+        label: "Save a built-in device's values — and the file it selects, for the NAM devices — into the library: Presets/<device>/<name>.<device id>.preset.suhina; a preset of the same name is replaced",
+        params: &[DEVICE_TRACK, DEVICE, param("name", ParamType::Text, "the preset's name, also its file's")],
+        kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
+        run: devices::save_preset,
+        policy: Policy {
+            heard: false,
+            agents: Agents::Denied("the user keeps their library's presets"),
+            ..Policy::DEFAULT
+        },
     },
     CommandSpec {
         id: "device.setAutomation",

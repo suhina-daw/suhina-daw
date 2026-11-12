@@ -885,6 +885,65 @@ fn a_device_opens_on_its_presets_and_each_row_adds_what_it_names() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// The library's own presets (`device.savePreset` wrote them) list beside the stock ones under
+/// their device, and a row of theirs adds its preset file onto a track (`docs/decisions/
+/// 0036-library-and-shipped-content.md` › 5).
+#[test]
+fn the_librarys_presets_list_beside_the_stock_ones() {
+    let (settings, folder) = (temp("user-presets-settings"), temp("user-presets"));
+    pack(&folder);
+    let mut app = App::new();
+    let mut library = Library::new(Some(settings.clone()));
+    library.add_folder(&folder).unwrap();
+    app.set_file_library(library);
+    // The saved preset: one the device panel wrote, in the library's Presets folder, with the
+    // file it names inside ([ADR 0036] › the starter pack's preset's file).
+    let library_base = temp("user-presets-library");
+    let preset = library_base.join("Presets/fm-synth/Home Squeeze.fm-synth.preset.suhina");
+    std::fs::create_dir_all(preset.parent().unwrap()).unwrap();
+    std::fs::write(
+        &preset,
+        r#"{ "format": "suhina-preset", "version": 1, "device": "fm-synth", "role": "instrument", "name": "Home Squeeze", "params": { "volume": -3.0 } }"#,
+    )
+    .unwrap();
+    app.set_library_base(library_base.clone());
+    app.set_session(Session::new(demo_project()), &[]);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
+        .with_size(SIZE)
+        .with_step_dt(0.05)
+        .with_max_steps(20)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.run();
+    // FM Synth under Stock presets carries both lists now: open the heading, then the device's.
+    harness.get_by_label(&row("Stock presets")).click();
+    harness.run();
+    harness.get_by_label(&row("FM Synth")).click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Warm FM Bass")).is_some(), "the stock ones");
+    assert!(harness.query_by_label(&row("Home Squeeze")).is_some(), "the user's own along them");
+    // A user preset's row adds like any preset file's: onto Bass at the preset's values.
+    let value_on_bass = |app: &App, id: &str| {
+        app.session().and_then(|s| {
+            let p = s.project();
+            let channel = p.tracks.iter().find(|t| t.name == "Bass").and_then(|t| t.channel)?;
+            let device = p.channels.iter().find(|c| c.id == channel)?.devices.first()?;
+            device.params.iter().find(|param| param.id == id).map(|param| param.value)
+        })
+    };
+    let to = harness.get_by_label("Track Bass").rect().center();
+    let from = harness.get_by_label(&row("Home Squeeze")).rect().center();
+    drag(&mut harness, from, to);
+    // A user preset's row plans a plain device add with no samples, so it runs in the drop's
+    // own frame: the value is there the moment the drag ends, with no deadline to race.
+    assert!(value_on_bass(harness.state(), "volume") == Some(-3.0), "the user preset's row brings its values");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+    let _ = std::fs::remove_dir_all(&library_base);
+}
+
 /// A return's and a group's rows in the Arrangement take devices as a track's do, on the header
 /// and on the lane.
 #[test]
