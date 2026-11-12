@@ -28,20 +28,31 @@ impl CloseChoice for NameClashChoice {
 /// Warns that `taken` of the `count` samples have a name already in `folder`, over `area`.
 /// Returns the answer, or `None` while it stays open.
 pub fn show(ui: &Ui, area: Rect, taken: &[String], count: usize, folder: &str) -> Option<NameClashChoice> {
+    // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("name-clash-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
+            let mut styled_ui = style_class.ui(ui);
+            let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw(ui, area, taken, count, folder)
+            draw(ui, &style_class, area, taken, count, folder)
         })
         .inner
 }
 
-fn draw(ui: &mut Ui, area: Rect, taken: &[String], count: usize, folder: &str) -> Option<NameClashChoice> {
+fn draw(
+    ui: &mut Ui,
+    dialog: &crate::kit::element::Entered,
+    area: Rect,
+    taken: &[String],
+    count: usize,
+    folder: &str,
+) -> Option<NameClashChoice> {
     let mut closed: Option<NameClashChoice> = None;
     let size = Vec2::new(SAVE_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD);
-    let panel = panel(ui, area, size, "Name already taken", &mut closed);
+    let panel = panel(ui, dialog, area, size, "Name already taken", &mut closed);
     let painter = ui.painter_at(area);
     let line = Rect::from_min_size(
         Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD),

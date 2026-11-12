@@ -78,6 +78,7 @@ fn clip(start: f64, length: f64) -> Clip {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
     }
 }
@@ -1654,6 +1655,73 @@ fn a_stretched_clip_starts_each_loop_pass_as_cleanly_as_the_first() {
         }
         assert_eq!(renderer.stretch_underruns(), 0, "{mode:?}");
     }
+}
+
+/// Swing delays the second sixteenth of each eighth on every pass of a loop, by half a sixteenth at
+/// full swing, and leaves the eighths where they are; a note's end swings as its start does, so
+/// sixteenths that touch keep touching (#1221): no gap opens before a delayed note.
+#[test]
+fn swing_moves_the_second_sixteenth_of_every_pass() {
+    let notes = vec![Note::new(0.0, 0.25, 60, 1.0), Note::new(0.25, 0.25, 62, 1.0)];
+    let lane = ContentLane { target: None, data: LaneData::Notes(notes.into()) };
+    let mut placed = clip(0.0, 1.0);
+    placed.loop_range = Some(LoopRange { start: 0.0, end: 0.5 });
+    // 120 BPM at 48 kHz: 24 000 frames a beat.
+    let map = Transport::default().tempo_map(48_000.0);
+    let events = |swing: f64| {
+        let mut events = Vec::new();
+        collect_notes(&placed, &lane, &map, (TrackId(1), 1.0, 1.0, 0, 0, 0), None, swing, &mut events);
+        let mut spans: Vec<(u64, u64)> = events.iter().map(|e| (e.start, e.end)).collect();
+        spans.sort_unstable();
+        spans
+    };
+    assert_eq!(events(0.0), [(0, 6_000), (6_000, 12_000), (12_000, 18_000), (18_000, 24_000)]);
+    // Full swing: the second sixteenth half a sixteenth late, three eighths of a beat in; the first
+    // ends where it starts and it ends on the next eighth, so the line stays unbroken.
+    assert_eq!(events(1.0), [(0, 9_000), (9_000, 12_000), (12_000, 21_000), (21_000, 24_000)]);
+    // Half way.
+    assert_eq!(events(0.5)[..2], [(0, 7_500), (7_500, 12_000)]);
+    for swing in [0.25, 0.5, 0.75, 1.0] {
+        let spans = events(swing);
+        for pair in spans.windows(2) {
+            assert_eq!(pair[0].1, pair[1].0, "{swing}: no gap and no overlap between touching notes");
+        }
+    }
+}
+
+/// A loop that ends off an eighth (on 3.75) with full swing: a note in its last sixteenth would
+/// start past the loop end, in the next pass; it is left out, as a launched clip's loop leaves it.
+#[test]
+fn swing_leaves_out_a_note_it_would_take_past_the_loop_end() {
+    let notes = vec![Note::new(0.0, 0.25, 60, 1.0), Note::new(3.7, 0.05, 62, 1.0)];
+    let lane = ContentLane { target: None, data: LaneData::Notes(notes.into()) };
+    let mut placed = clip(0.0, 7.5);
+    placed.loop_range = Some(LoopRange { start: 0.0, end: 3.75 });
+    let map = Transport::default().tempo_map(48_000.0);
+    let keys = |swing: f64| {
+        let mut events = Vec::new();
+        collect_notes(&placed, &lane, &map, (TrackId(1), 1.0, 1.0, 0, 0, 0), None, swing, &mut events);
+        let mut keys: Vec<(u64, u8)> = events.iter().map(|e| (e.start, e.key)).collect();
+        keys.sort_unstable();
+        keys
+    };
+    // Straight, both play in each pass (3.75 beats are 90 000 frames).
+    assert_eq!(keys(0.0), [(0, 60), (88_800, 62), (90_000, 60), (178_800, 62)]);
+    // Full swing would put the second at 3.8, past the loop end: only the first plays.
+    assert_eq!(keys(1.0), [(0, 60), (90_000, 60)]);
+}
+
+/// Notes that start together go out lowest first, whatever order they were drawn in, so an
+/// instrument that plays one note at a time (the last one it is given) plays the highest of them.
+#[test]
+fn notes_that_start_together_go_out_lowest_first() {
+    let notes =
+        vec![note(0.0, 2.0, 65), note(0.0, 0.25, 64), note(0.25, 0.25, 64), note(0.0, 1.0, 72), note(0.0, 1.0, 60)];
+    let project = project_with(untargeted(notes), vec![clip(0.0, 4.0)], 1);
+    let renderer =
+        Renderer::stopped(&project, &crate::AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let together: Vec<u8> = renderer.graph.events.iter().filter(|e| e.start == 0).map(|e| e.key).collect();
+    assert_eq!(together, [60, 64, 65, 72]);
 }
 
 /// A stretched clip that plays right up to the loop end (the loop drawn over the clip, the most

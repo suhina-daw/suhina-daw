@@ -3,7 +3,7 @@ description: How Suhina hosts plug-ins in detail - host processes and instances,
 read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade
 type: spec
 status: current
-last_verified: 2026-11-09
+last_verified: 2026-11-11
 covers:
   - crates/plugins/**
   - crates/plugin-host/**
@@ -11,6 +11,8 @@ covers:
   - crates/engine/src/plugin.rs
   - crates/engine/src/plugin_params.rs
   - crates/session/src/rack.rs
+  - crates/session/src/rack/offline.rs
+  - apps/suhina-cli/src/cmd/plugin.rs
 ---
 
 # Plug-in hosting
@@ -111,9 +113,15 @@ events a block. A parameter value that reaches the processor from the engine (a 
 set, an automation lane) also goes to the edit controller on the main thread
 (`setParamNormalized`: the same call a MIDI controller's mapped parameter gets, #812),
 so the plug-in's editor follows the sound; and the host reports what was changed in its
-editor back (`param_changed`, #828), so the session keeps
+editor back (`param_changed`, #828; each one wakes the window, so its lane and panel follow at once, #1205), so the session keeps
 the project's values in step with it — no undo step of its own, and a change since the
-last save.
+last save. A change there of a parameter an enabled lane plays turns the lane off as one undo
+step, unless it is a value the lane sent (#1205, [automation](automation.md#a-manual-change-turns-the-lane-off)).
+While the transport is stopped, a lane sends its value at the playhead when the playhead moves
+or the lane changes, so the editor follows it stopped too; a plug-in that starts keeps the state
+it was given until then, so opening a project changes nothing in it. For automation lanes the host also names any value of a parameter in the plug-in's own
+words (`get_param_texts`, [the protocol](plugin-protocol.md)), in the background, without setting
+it.
 
 ## Block sync and the deadline
 
@@ -571,6 +579,21 @@ tell when a setting was changed in the editor since the project was saved, which
 project unsaved without an undo step ([ADR 0010](../decisions/0010-project-files.md), decision 7). Crashes and hangs are noticed within 250 ms and shown on the
 device; `device.restart` starts it again (one that could not start at all is started from
 scratch with the project's state).
+
+The CLI works on one device of a project the same way (#1155). `suhina-cli plugin
+params-device` and `edit-device` open the project as the app does, trusting what the person's
+library trusts; they decode its audio only for a plug-in that edits clips. They attach an engine
+with no audio output. They run that engine's blocks themselves, a block each time they look at the
+plug-in, so a VST3 plug-in still gets the parameter changes that travel with blocks. They limit
+the rack to the one device (`Rack::only`), so the project's other plug-ins do not start. Then
+they run `device.pluginParams`, `device.openEditor` and `device.closeEditor`, as an agent
+would. They keep no backups of the plug-in's state, so a backup read never finds it busy.
+`--save` asks the plug-in for its state right then (`Rack::state_now`) and fails if it does not
+answer; it never falls back to a state read earlier. `plugin run-device` starts the device as an
+export starts it (`start_offline_device`: the same installed plug-in, saved state, process group
+and clips), with a `--state` file in place of the saved state. It then runs the input and the
+track's notes through it in blocks (`offline::render_started`). Unlike an export, the plug-in
+gets no song position, tempo or transport, and none of the project's automation.
 
 ## Latency
 

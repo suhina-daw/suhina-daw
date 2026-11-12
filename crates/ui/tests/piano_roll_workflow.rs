@@ -13,7 +13,7 @@ use egui_kittest::kittest::Queryable;
 use suhina_engine::model::{LaneData, Note};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
-use suhina_ui::detail::piano_roll::key_name;
+use suhina_ui::interaction::key_name::key_name;
 use suhina_ui::settings::Settings;
 use suhina_ui::settings::keymap::shown;
 use suhina_ui::settings::keymap::{Keymap, Preset};
@@ -177,6 +177,42 @@ fn a_double_click_on_empty_grid_adds_one_note_even_right_after_another_click() {
     }
 }
 
+/// The second press of a double-click on an empty spot adds the note as it goes down, and a drag
+/// before letting go sets its length, on the grid: one note, one undo step.
+#[test]
+fn a_double_click_held_and_dragged_draws_the_note_as_long_as_the_drag() {
+    let mut renderer = engine();
+    let mut h = with_preset(&mut renderer, Preset::SelectFirst);
+    let before = notes(&h);
+    let (low, high) = (before.iter().map(|n| n.key).min().unwrap(), before.iter().map(|n| n.key).max().unwrap());
+    let key = (low..=high).find(|k| before.iter().all(|n| n.key != *k)).unwrap_or(low - 1);
+    let start = before[1].time + 0.5;
+    let (at, to) = (spot(&h, start, key), spot(&h, start + 1.5, key));
+    h.hover_at(at);
+    h.step();
+    pointer(&mut h, at, true);
+    pointer(&mut h, at, false);
+    pointer(&mut h, at, true);
+    // The pointer stays the ordinary one while the note is drawn: a cursor of its own flashed
+    // on every double-click.
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Default, "as the press goes down");
+    for step in 1..=6 {
+        h.hover_at(at + (to - at) * (step as f32 / 6.0));
+        h.step();
+        assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Default, "during the drag");
+    }
+    pointer(&mut h, to, false);
+    h.run();
+    let after = notes(&h);
+    assert_eq!(after.len(), before.len() + 1, "{after:?}");
+    let drawn = after.iter().find(|n| n.key == key).unwrap();
+    assert!((drawn.time - start).abs() < 1e-6, "{drawn:?}");
+    assert!((drawn.duration - 1.5).abs() < 1e-6, "as long as the drag: {drawn:?}");
+    assert_eq!(selected(&h), 1, "and selected");
+    undo(&mut h);
+    assert_eq!(notes(&h), before, "one undo step");
+}
+
 #[test]
 fn a_double_click_on_a_note_or_its_edge_deletes_it_in_select() {
     for edge in [false, true] {
@@ -307,6 +343,41 @@ fn the_double_click_settings_turn_adding_and_deleting_off() {
 // The workflow menu in the toolbar.
 // ---------------------------------------------------------------------------------------------
 
+/// The workflow menu holds Allow stacked notes too, under the workflow settings.
+#[test]
+fn the_workflow_menu_switches_stacked_notes() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    assert!(h.state().piano_roll().notes_replace, "stacked notes off at first");
+    h.get_by_label("Workflow Select-first").click();
+    h.run();
+    h.get_by_label("Workflow: Allow stacked notes").click();
+    h.run();
+    assert!(!h.state().piano_roll().notes_replace, "stacked notes allowed");
+    h.get_by_label("Workflow Select-first").click();
+    h.run();
+    h.get_by_label("Workflow: Allow stacked notes").click();
+    h.run();
+    assert!(h.state().piano_roll().notes_replace, "and off again");
+}
+
+/// Covered notes, under Allow stacked notes: a note covered from its start goes whole (the
+/// default), or keeps what runs on past; the choice is kept in Settings.
+#[test]
+fn the_workflow_menu_chooses_what_covered_notes_do() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    assert!(h.state().piano_roll().covered_whole, "deleted whole at first");
+    h.get_by_label("Workflow Select-first").click();
+    h.run();
+    h.get_by_label("Covered notes: Delete them").click();
+    h.run();
+    h.get_by_label("Covered notes: Keep the rest").click();
+    h.run();
+    assert!(!h.state().piano_roll().covered_whole, "keeps the rest now");
+    assert!(!h.state().settings().view.covered_whole, "and Settings keeps it");
+}
+
 #[test]
 fn the_toolbar_menu_switches_the_workflow_and_a_setting_makes_it_custom() {
     let mut renderer = engine();
@@ -349,6 +420,9 @@ fn the_toolbar_menu_switches_the_workflow_and_a_setting_makes_it_custom() {
 fn the_duplicate_setting_in_the_menu_moves_the_key() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
+    // Wide enough that the clipboard's Duplicate button shows rather than the Edit menu.
+    h.set_size(egui::vec2(1600.0, 800.0));
+    h.run();
     h.get_by_label("Workflow Select-first").click();
     h.run();
     h.get_by_label_contains("Duplicate key: Ctrl+D").click();

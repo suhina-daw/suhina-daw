@@ -923,6 +923,7 @@ fn put_clip(
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Default::default(),
     };
     let lane = match p.arrangement.lanes.iter().position(|l| l.track == Some(track)) {

@@ -33,6 +33,7 @@ fn png_roles_reuse_pixels_until_a_live_edit_changes_the_source() {
             assert!(button(
                 ui.painter(),
                 Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(20.0)),
+                &super::super::element::BUTTON.enter(),
                 State::Normal,
                 Color32::RED,
                 0.0
@@ -52,77 +53,38 @@ fn png_roles_reuse_pixels_until_a_live_edit_changes_the_source() {
 }
 
 #[test]
-fn svg_backgrounds_clear_native_alpha_once_and_keep_private_images_underneath() {
+fn artwork_blends_and_never_clears_the_window_under_it() {
     struct Mark;
     impl super::super::surface::Provider for Mark {
-        fn shape(&self, rect: Rect, _: egui::CornerRadius, color: Color32) -> egui::Shape {
-            assert_eq!(color, Color32::TRANSPARENT);
+        fn shape(&self, rect: Rect, _: egui::CornerRadius, _: Color32) -> egui::Shape {
             egui::Shape::circle_filled(rect.center(), 1.0, Color32::BLUE)
         }
     }
     configure(&Skin::default());
     let ctx = egui::Context::default();
     super::super::surface::install(&ctx, Arc::new(Mark));
-    // Only a theme whose surfaces show the desktop clears under its artwork.
+    // A see-through window: under its round artwork, a button leaves what is under it (#1233),
+    // where it used to punch a square hole to the desktop.
     let saved = super::super::theme::palette();
     let mut see_through = saved;
     see_through.window_background = Color32::from_rgba_unmultiplied(20, 20, 20, 160);
+    see_through.panel_background = Color32::from_rgba_unmultiplied(30, 30, 30, 160);
     super::super::theme::set_palette(&ctx, see_through);
-    for private_image in [false, true] {
-        super::super::liquid::set_background_image(
-            &ctx,
-            private_image.then(|| super::super::liquid::BackgroundImage {
-                id: egui::TextureId::Managed(42),
-                pixels: Arc::new(egui::ColorImage::filled([2, 2], Color32::RED)),
-            }),
-        );
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            super::super::surface::begin_frame(ui.ctx());
-            let painter = ui.ctx().layer_painter(egui::LayerId::background());
-            assert!(button(
-                &painter,
-                Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0)),
-                State::Normal,
-                Color32::from_rgba_unmultiplied(50, 60, 70, 128),
-                3.0
-            ));
-            super::super::surface::finish_frame(ui.ctx());
-        });
-        output.textures_delta.clear();
-        assert_eq!(
-            output.shapes.iter().filter(|shape| matches!(shape.shape, egui::Shape::Circle(_))).count(),
-            usize::from(!private_image)
-        );
-        assert!(
-            output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.brush.is_some()))
-        );
-    }
-    // Over opaque surfaces nothing is cleared: the desktop never shows at the artwork's edges.
-    super::super::theme::set_palette(&ctx, saved);
-    super::super::liquid::set_background_image(&ctx, None);
     let mut output = ctx.run_ui(Default::default(), |ui| {
-        super::super::surface::begin_frame(ui.ctx());
         let painter = ui.ctx().layer_painter(egui::LayerId::background());
-        let rect = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0));
-        assert!(button(&painter, rect, State::Normal, Color32::from_rgb(50, 60, 70), 3.0));
-        super::super::surface::finish_frame(ui.ctx());
-    });
-    output.textures_delta.clear();
-    assert!(!output.shapes.iter().any(|shape| matches!(shape.shape, egui::Shape::Circle(_))));
-    // A translucent hover colour is not a see-through window.
-    let mut hover = saved;
-    hover.control_hover = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
-    super::super::theme::set_palette(&ctx, hover);
-    let mut output = ctx.run_ui(Default::default(), |ui| {
-        super::super::surface::begin_frame(ui.ctx());
-        let painter = ui.ctx().layer_painter(egui::LayerId::background());
-        let rect = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0));
-        assert!(button(&painter, rect, State::Normal, Color32::from_rgb(50, 60, 70), 3.0));
-        super::super::surface::finish_frame(ui.ctx());
+        assert!(button(
+            &painter,
+            Rect::from_min_size(egui::pos2(10.0, 10.0), egui::Vec2::splat(30.0)),
+            &super::super::element::BUTTON.enter(),
+            State::Normal,
+            Color32::from_rgba_unmultiplied(50, 60, 70, 128),
+            3.0
+        ));
     });
     output.textures_delta.clear();
     super::super::theme::set_palette(&ctx, saved);
     assert!(!output.shapes.iter().any(|shape| matches!(shape.shape, egui::Shape::Circle(_))));
+    assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.brush.is_some())));
 }
 #[test]
 fn inherited_svg_renders_missing_roles_while_theme_artwork_overrides_one_role() {
@@ -202,7 +164,6 @@ fn skin_round_trip_and_old_defaults() {
         background: None,
         background_opacity: 70,
         background_blur: 0,
-        styles: Default::default(),
         assets: example_assets(),
         session: Default::default(),
         meter: MeterStyle::Segmented,
@@ -324,4 +285,101 @@ fn a_nine_slice_too_big_for_its_rect_shrinks_its_corners_evenly() {
     super::nine_slice(&mut mesh, Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(100.0, 6.0)), slice, [0.0, 0.0]);
     // The top-left corner is 3 by 3, not 4 wide and 3 high.
     assert_eq!(mesh.vertices[3].pos, egui::pos2(3.0, 3.0));
+}
+
+#[test]
+fn a_legacy_skin_s_styles_join_its_sheet_under_today_s_names() {
+    let mut warnings = Vec::new();
+    let skin = Skin::from_json(
+        &serde_json::json!({
+            "css": "browser { color: #123456; }",
+            "styles": {
+                "mixer pan": { "--suhina-appearance": "knob", "color": "#ABCDEF" },
+                "button": { "border-width": "1px", "padding": "2px 4px" },
+                "device": { "--suhina-param-columns": "3", "--suhina-param-row": "48px" },
+                "arrangement": { "--suhina-param-columns": "12" },
+                "nowhere": { "color": "#000000" }
+            }
+        }),
+        &mut warnings,
+    );
+    let css = skin.css.as_deref().unwrap_or_default();
+    assert!(css.starts_with("browser { color: #123456; }"), "{css}");
+    assert!(css.contains("mixer pan { appearance: knob; }") && css.contains("mixer pan { color: #ABCDEF; }"), "{css}");
+    // The device grid's styles become the CSS layout that took their place.
+    assert!(css.contains("device { grid-template-columns: repeat(3, 1fr); }"), "{css}");
+    assert!(css.contains("device device-control { height: 48px; }"), "{css}");
+    // Shorthands (`border-width` since #1336) keep their names.
+    assert!(css.contains("button { border-width: 1px; }") && css.contains("button { padding: 2px 4px; }"), "{css}");
+    assert!(!css.contains("param-columns") && !css.contains("param-row"), "{css}");
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("arrangement --suhina-param-columns") && w.contains("grid-template-columns")),
+        "a value out of range names what replaced the style: {warnings:?}"
+    );
+    assert!(warnings.iter().any(|w| w.contains("nowhere")), "{warnings:?}");
+}
+
+/// Default artwork takes the colour its caller gives as its element's (`currentColor`), with no
+/// palette colour of its own: a knob body drawn in red is red.
+#[test]
+fn default_artwork_takes_its_colour_from_current_color() {
+    configure(&Skin::default());
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let rect = Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(22.0));
+        assert!(paint(ui.painter(), rect, "knob.body", State::Normal, Color32::RED, 0.0));
+    });
+    let image = output
+        .textures_delta
+        .set
+        .values()
+        .flat_map(|deltas| deltas.iter())
+        .map(|delta| match &delta.image {
+            egui::ImageData::Color(image) => image.clone(),
+        })
+        .find(|image| image.size == [22, 22])
+        .expect("the knob's body is rastered");
+    output.textures_delta.clear();
+    let centre = image.pixels[image.width() * (image.height() / 2) + image.width() / 2];
+    let [r, g, b, _] = centre.to_srgba_unmultiplied();
+    assert!(r > 200 && g < 60 && b < 60, "{centre:?}");
+}
+
+/// The default artwork a theme lacks, which Add default artwork copies; a role it has keeps its own.
+#[test]
+fn missing_defaults_leave_a_themes_own_artwork() {
+    let own = BTreeMap::from([("knob.body".to_owned(), "assets/mine.svg".to_owned())]);
+    let missing = missing_defaults(&own);
+    assert_eq!(missing.len(), roles().count() - 1);
+    assert!(!missing.contains_key("knob.body"));
+    assert!(missing.contains_key("knob.pointer"));
+    // Artwork for a state only keeps the role too; another role with the same start does not.
+    let own = BTreeMap::from([
+        ("knob.pointer.hover".to_owned(), "assets/tip.svg".to_owned()),
+        ("track.body.session".to_owned(), "assets/session.svg".to_owned()),
+    ]);
+    let missing = missing_defaults(&own);
+    assert!(!missing.contains_key("knob.pointer"), "{missing:?}");
+    assert!(missing.contains_key("track.body"), "{missing:?}");
+    assert!(missing.contains_key("knob.body"));
+}
+
+#[test]
+fn a_legacy_skin_s_device_grid_lays_its_parameters_out_as_before() {
+    let mut warnings = Vec::new();
+    let skin = Skin::from_json(
+        &serde_json::json!({
+            "css": "",
+            "styles": { "device": { "--suhina-param-columns": "3", "--suhina-param-row": "48px" } }
+        }),
+        &mut warnings,
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+    configure(&skin);
+    let grid = super::super::style_class::theme_param_grid();
+    configure(&Skin::default());
+    assert_eq!(grid, (3, Some(48.0)));
 }

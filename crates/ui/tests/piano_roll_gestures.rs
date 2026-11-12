@@ -13,7 +13,7 @@ use egui_kittest::kittest::Queryable;
 use suhina_engine::model::{LaneData, Note};
 use suhina_session::{Session, midi_velocity};
 use suhina_ui::demo::demo_project;
-use suhina_ui::detail::piano_roll::key_name;
+use suhina_ui::interaction::key_name::key_name;
 use suhina_ui::{App, kit::theme};
 
 const SIZE: (f32, f32) = (1280.0, 800.0);
@@ -225,6 +225,34 @@ fn ctrl_drag_copies_the_selection_and_selects_the_copies() {
     assert_eq!(notes(&h), before, "one undo step");
 }
 
+/// Ctrl pressed during a drag turns the move into a copy, and let go turns it back into a move:
+/// what it is when the button is let go decides (› Moving).
+#[test]
+fn ctrl_during_a_drag_switches_between_moving_and_copying() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let before = notes(&h);
+    let (beat, row) = scale(&h);
+    let from = note_rect(&h, &before[0]).center();
+    let to = from + vec2(beat * 1.3, -row);
+    drag_with(&mut h, from, to, Modifiers::NONE, &mut |h| {
+        h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+        h.step();
+    });
+    let after = notes(&h);
+    assert_eq!(after.len(), before.len() + 1, "pressed half-way: a copy");
+    assert_eq!(&after[..before.len()], &before[..], "the originals stay");
+    undo(&mut h);
+    assert_eq!(notes(&h), before);
+    drag_with(&mut h, from, to, Modifiers::COMMAND, &mut |h| {
+        h.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
+        h.step();
+    });
+    let after = notes(&h);
+    assert_eq!(after.len(), before.len(), "let go half-way: a move");
+    assert_eq!((after[0].time, after[0].key), (before[0].time + 1.5, before[0].key + 1));
+}
+
 #[test]
 fn alt_drag_on_a_note_changes_its_velocity_and_shows_it() {
     let mut renderer = engine();
@@ -327,12 +355,10 @@ fn audition_sounds_moved_and_drawn_notes_once_when_it_is_on() {
     }
     assert!(h.state().piano_roll().auditioning().is_empty(), "the note goes off a moment later");
 
-    // A dragged note sounds too (the scale from the first and third notes: the second is now
-    // above the rows in view).
-    let n = notes(&h);
-    let (a, c) = (note_rect(&h, &n[0]), note_rect(&h, &n[2]));
-    let beat = (c.left() - a.left()) / 2.0;
-    let row = (a.top() - c.top()) / f32::from(n[2].key - n[0].key);
+    // A dragged note sounds too. The view followed the note the keys moved, so the scale comes
+    // from the piano roll's zoom, not from notes that may now be out of view.
+    let beat = h.state().piano_roll().beat_width;
+    let row = h.state().piano_roll().key_height;
     let from = note_rect(&h, &notes(&h)[3]).center();
     let to = from + vec2(-beat, -row);
     h.hover_at(from);
@@ -407,10 +433,10 @@ fn audition_sounds_a_note_on_the_press_and_at_each_pitch_of_a_drag() {
     h.step();
 }
 
-/// With the audition on, the selecting rectangle sounds each note as it reaches it, not when it is
-/// let go.
+/// With the audition on, the selecting rectangle sounds a note as it reaches it, while it is
+/// dragged; letting go of it sounds nothing new.
 #[test]
-fn audition_sounds_notes_as_the_selecting_rectangle_reaches_them() {
+fn audition_sounds_the_notes_the_selecting_rectangle_reaches() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     h.state_mut().piano_roll_mut().audition = true;
@@ -442,6 +468,7 @@ fn audition_sounds_notes_as_the_selecting_rectangle_reaches_them() {
         modifiers: egui::Modifiers::NONE,
     });
     h.step();
+    assert!(h.state().piano_roll().auditioning().is_empty(), "nothing new as it is let go");
 }
 
 /// Alt pressed after the button went down on a note, before the pointer moved far enough for a

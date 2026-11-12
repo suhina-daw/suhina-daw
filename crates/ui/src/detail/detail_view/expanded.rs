@@ -117,13 +117,14 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
         |ui| {
             // In the device's own scope, as its compact panel is: a rule on `#device-<id>` (its
             // `--device-*` tokens) reaches the expanded canvas too.
-            let _device_style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
+            let device_id = format!("device-{}", device.theme_id);
+            let _device_style = crate::kit::element::DEVICE.id(&device_id).enter();
             // The panel takes the pointer, so the views under it get no clicks.
             let (rect, _) = ui.allocate_exact_size(slice.size(), Sense::click());
             let painter = ui.painter_at(rect);
-            painter.fill_background(rect, 0.0, theme::panel_background());
+            painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
             let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW + PAD));
-            painter.fill_background(header, 0.0, theme::control_background());
+            painter.rect_filled(header, 0.0, theme::control_background());
             if canvas.strip {
                 // The header is the strip's handle: dragged up it grows, down it shrinks; a double
                 // click fits it to its canvas again.
@@ -152,7 +153,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             let response = widgets::button_area(ui, close, Id::unique("device-expanded-close"), "Close expanded panel")
                 .on_hover_text("Close the expanded panel (Esc)");
             let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-            painter.fill_background(close, 0.0, fill);
+            painter.rect_filled(close, 0.0, fill);
             for (from, to) in
                 [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
             {
@@ -274,7 +275,7 @@ pub(super) fn node_rows(painter: &egui::Painter, body: Rect, graph: &GraphBox) {
             break;
         }
         let node_rect = Rect::from_min_size(row.min, Vec2::new((row.width() - PAD) * 0.78, NODE_ROW - PAD));
-        painter.fill_background(node_rect, 1.0, theme::control_background());
+        painter.rect_filled(node_rect, 1.0, theme::control_background());
         widgets::text_in(
             painter,
             node_rect.shrink(PAD / 2.0),

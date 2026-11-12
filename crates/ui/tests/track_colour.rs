@@ -452,3 +452,105 @@ fn the_midi_monitor_chip_keeps_clear_of_the_automation_button() {
     h.run();
     assert!(h.query_by_label("Hide automation of Drums").is_some(), "the button takes its click");
 }
+
+/// The "+" in a track's menu opens a colour field: dragging in it keeps the menu open, and the
+/// colour is set once, as one undo step, when the button comes up (#712).
+#[test]
+fn a_colour_dragged_in_the_menus_picker_keeps_the_menu_open_and_is_one_step() {
+    let mut harness = arrangement();
+    let before = drums_colour(&harness);
+    harness.get_by_label("Track Drums").click_secondary();
+    harness.run();
+    harness.get_by_label("Any colour").click();
+    harness.run();
+    // The saturation and value field, under the row of swatches and the colour's own row, from
+    // the swatches' left edge.
+    let first = harness.get_by_label(&format!("Colour {}", colour_picker::hex(colour_picker::swatches()[0]))).rect();
+    let from = egui::pos2(first.left() + 30.0, first.bottom() + 80.0);
+    let to = from + egui::vec2(40.0, 20.0);
+    harness.hover_at(from);
+    harness.run();
+    harness.drag_at(from);
+    harness.step();
+    for step in 1..=4 {
+        harness.hover_at(from + (to - from) * (step as f32 / 4.0));
+        harness.step();
+    }
+    assert!(harness.query_by_label("Any colour").is_some(), "the menu stays open while the colour is dragged");
+    assert_eq!(drums_colour(&harness), before, "nothing is set before the button comes up");
+    harness.drop_at(to);
+    harness.step();
+    harness.run();
+    let picked = drums_colour(&harness);
+    assert_ne!(picked, before, "the colour dragged to is set");
+    assert!(harness.query_by_label("Any colour").is_some(), "the menu stays open when the button comes up");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(drums_colour(&harness), before, "one undo takes the whole drag back");
+}
+
+/// The same in the palette the colour area opens: the palette stays open when the button comes up.
+#[test]
+fn a_colour_dragged_in_the_colour_areas_picker_keeps_the_palette_open_and_is_one_step() {
+    let mut harness = arrangement();
+    let before = drums_colour(&harness);
+    harness.get_by_label("Drums colour").click();
+    harness.run();
+    harness.get_by_label("Any colour").click();
+    harness.run();
+    // The saturation and value field, under the row of swatches and the colour's own row, from
+    // the swatches' left edge.
+    let first = harness.get_by_label(&format!("Colour {}", colour_picker::hex(colour_picker::swatches()[0]))).rect();
+    let from = egui::pos2(first.left() + 30.0, first.bottom() + 80.0);
+    let to = from + egui::vec2(40.0, 20.0);
+    harness.hover_at(from);
+    harness.run();
+    harness.drag_at(from);
+    harness.step();
+    for step in 1..=4 {
+        harness.hover_at(from + (to - from) * (step as f32 / 4.0));
+        harness.step();
+    }
+    assert!(harness.query_by_label("Any colour").is_some(), "the menu stays open while the colour is dragged");
+    assert_eq!(drums_colour(&harness), before, "nothing is set before the button comes up");
+    harness.drop_at(to);
+    harness.step();
+    harness.run();
+    let picked = drums_colour(&harness);
+    assert_ne!(picked, before, "the colour dragged to is set");
+    assert!(harness.query_by_label("Any colour").is_some(), "the menu stays open when the button comes up");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(drums_colour(&harness), before, "one undo takes the whole drag back");
+}
+
+/// A padded track header still folds and resizes by the whole lane: collapsing and expanding
+/// gives back the lane's own height, not its content box's, and the resize edge is on the line
+/// between lanes, not inside the padding (#1336).
+#[test]
+fn a_padded_header_folds_back_to_its_height_and_resizes_from_its_edge() {
+    suhina_ui::kit::native_css::set_user_sheet(Some("track-header { padding: 3px 0 8px; }".into()));
+    let mut h = arrangement();
+    for _ in 0..2 {
+        h.get_by_label("Collapse Drums").click();
+        h.run();
+        h.get_by_label("Expand Drums").click();
+        h.run();
+    }
+    let header = h.get_by_label("Track Drums").rect();
+    assert_eq!(header.height(), 40.0, "folding twice keeps the lane's height");
+    let from = egui::pos2(header.center().x, header.bottom() - 1.0);
+    h.hover_at(from);
+    h.run();
+    h.drag_at(from);
+    h.run();
+    h.hover_at(from + egui::vec2(0.0, 10.0));
+    h.run();
+    h.hover_at(from + egui::vec2(0.0, 20.0));
+    h.run();
+    h.drop_at(from + egui::vec2(0.0, 20.0));
+    h.run();
+    let resized = h.get_by_label("Track Drums").rect().height();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(resized > header.height() + 10.0, "the lane's own edge resizes it: {resized}");
+}

@@ -313,6 +313,62 @@ fn empty_midi_track_drop_adds_sampler_before_loading_source() {
     assert!(app.plan_drop(&[sample], DropTarget::Chain(TrackId(1)), false).is_none());
 }
 
+/// A device row dropped from the browser starts on the file its folder lists first
+/// ([docs/spec/nam-amp-and-cab.md]): the first pack's first file, from the setting or the
+/// default, in the same command one undo step takes back.
+#[test]
+fn a_device_row_dropped_on_a_track_starts_on_the_first_file_of_its_folder() {
+    use suhina_engine::model::*;
+    let dir = std::env::temp_dir().join(format!("suhina-app-drop-nam-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let irs = dir.join("IRs");
+    for (pack, names) in [("Alpha", vec!["catty.wav", "drum.wav"]), ("Beta", vec!["zebra.wav"])] {
+        std::fs::create_dir_all(irs.join(pack)).unwrap();
+        for name in &names {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: 48_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut writer = hound::WavWriter::create(irs.join(pack).join(name), spec).unwrap();
+            writer.write_sample(16_384_i16).unwrap();
+            drop(writer);
+        }
+    }
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(dir.join("models"), irs.clone());
+
+    let cab = drop::BrowserItem {
+        key: "device:nam-cab-loader".into(),
+        name: "Cab Loader".into(),
+        kind: drop::ItemKind::Effect,
+        plugin: false,
+    };
+    app.drop_items(std::slice::from_ref(&cab), DropTarget::Track(TrackId(1)), false);
+    let session = app.session().unwrap();
+    let channel = session.project().tracks.iter().find(|t| t.id.0 == 1).and_then(|t| t.channel).unwrap();
+    let device = session.project().channel(channel).unwrap().devices.first().unwrap();
+    let state =
+        String::from_utf8(device.state.as_ref().map(|b| b.as_ref().to_vec()).unwrap_or_default()).unwrap_or_default();
+    // The pack the executable carries lists first ([ADR 0036]): a dropped device starts on
+    // its first file, by the key that loads anywhere — the test folder's own packs are
+    // *beside* it, after, where the panels and the starts read them.
+    assert_eq!(state, suhina_device_registry::builtin_file_key("nam-cab-loader", "Blackat Leon S7.wav"));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn the_browser_slides_out_and_in_with_animations_on() {
     let mut app = App::new();
@@ -437,6 +493,37 @@ fn the_ara_prompt_and_the_missing_files_panel_hold_the_keys_and_hide_the_editors
     harness.key_press(egui::Key::Delete);
     harness.run();
     assert_eq!(count(&harness), tracks, "Delete waits for the prompt");
+}
+
+/// Settings opened over an embedded plug-in editor hides it, and the editor shows again where it
+/// was when Settings closes (#723). Settings in a window of its own covers nothing.
+#[test]
+fn settings_over_an_embedded_editor_hides_it_until_settings_closes() {
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    let placement = suhina_plugins::Placement { x: 10, y: 20, clip_x: 0, clip_y: 0, clip_width: 300, clip_height: 200 };
+    let places = [detail_view::EditorPlace { track: TrackId(1), device: 0, placement, fit: None }];
+    assert_eq!(harness.state().editors_shown(&places), &places[..], "nothing over the window");
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
+    harness.run();
+    assert!(harness.state().settings_open);
+    assert!(harness.state().editors_shown(&places).is_empty(), "hidden under Settings");
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
+    harness.run();
+    assert!(!harness.state().settings_open);
+    assert_eq!(harness.state().editors_shown(&places), &places[..], "shown again where it was");
+
+    // Settings in a window of its own leaves the editor where it is.
+    harness.state_mut().page.window = true;
+    harness.state_mut().settings_open = true;
+    assert_eq!(harness.state().editors_shown(&places), &places[..]);
 }
 
 #[test]
@@ -667,18 +754,15 @@ fn a_bar_draws_its_separator_in_its_own_border_colour() {
     assert!(found, "the line under the menu bar is red");
 }
 
-#[test]
-fn a_bar_without_a_line_fills_the_line_with_its_background() {
+/// The green rectangles across the window one settled frame paints with `css` as the theme.
+fn wide_green_rects(css: &str) -> Vec<Rect> {
     let ctx = egui::Context::default();
     let mut app = App::new();
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
     app.settings.animations = false;
-    app.use_test_skin(crate::kit::skin::Skin {
-        css: Some(std::sync::Arc::from("menu-bar { background-color: #00FF00; border-width: 0; }")),
-        ..Default::default()
-    });
+    app.use_test_skin(crate::kit::skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() });
     let green = egui::Color32::from_rgb(0, 0xFF, 0);
-    let mut found = false;
+    let mut found = Vec::new();
     for _ in 0..4 {
         let mut output = ctx.run_ui(
             egui::RawInput {
@@ -688,16 +772,75 @@ fn a_bar_without_a_line_fills_the_line_with_its_background() {
             |ui| app.ui(ui),
         );
         output.textures_delta.clear();
-        found = output.shapes.iter().any(|shape| match &shape.shape {
-            egui::Shape::LineSegment { points, stroke } => {
-                stroke.color == green && (points[1].x - points[0].x).abs() > 1000.0
-            }
-            egui::Shape::Rect(rect) => rect.fill == green && rect.rect.width() > 1000.0 && rect.rect.height() <= 2.0,
-            _ => false,
-        });
+        found = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) if rect.fill == green && rect.rect.width() > 1000.0 => Some(rect.rect),
+                _ => None,
+            })
+            .collect();
     }
     app.use_test_skin(crate::kit::skin::Skin::default());
-    assert!(found, "the menu bar's line is its own green");
+    found
+}
+
+/// How far down the window's own bars start: where Suhina draws its title bar (Windows), the
+/// application bar's 28 points, its line included, are above the menu bar.
+fn application_bar() -> f32 {
+    if cfg!(target_os = "windows") { 28.0 } else { 0.0 }
+}
+
+#[test]
+fn a_bar_s_line_is_its_bottom_border_and_without_one_the_bar_is_a_line_shorter() {
+    // The line under the menu bar is its border, in its border colour, inside its box.
+    let lined = wide_green_rects("menu-bar { border-color: #00FF00; }");
+    let line = lined.iter().find(|rect| rect.height() <= 1.0).expect("the line under the bar");
+    assert_eq!(line.bottom(), application_bar() + theme::MENU_BAR, "at the bar's bottom edge: {lined:?}");
+    // Without a border the bar has no line, and is that line shorter.
+    let bare = wide_green_rects("menu-bar { background-color: #00FF00; border-width: 0; }");
+    let bar = bare.iter().find(|rect| rect.height() > 1.0).expect("the bar");
+    assert_eq!(bar.height(), theme::MENU_BAR - 1.0, "{bare:?}");
+    // Padding grows the bar around what it holds.
+    let padded = wide_green_rects("menu-bar { background-color: #00FF00; padding: 3px 0; }");
+    let bar = padded.iter().find(|rect| rect.height() > 1.0).expect("the bar");
+    assert_eq!(bar.height(), theme::MENU_BAR + 6.0, "{padded:?}");
+}
+
+/// Without a sheet the project tabs keep the native line under them, as every other bar does
+/// (#1336).
+#[test]
+fn without_a_sheet_the_project_tabs_have_their_line() {
+    let ctx = egui::Context::default();
+    let mut app = App::new();
+    app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab);
+    app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab);
+    app.settings.animations = false;
+    app.use_test_skin(crate::kit::skin::Skin::default());
+    let mut lines = Vec::new();
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0))),
+                ..Default::default()
+            },
+            |ui| app.ui(ui),
+        );
+        output.textures_delta.clear();
+        lines = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect)
+                    if rect.fill == theme::border() && rect.rect.width() > 1000.0 && rect.rect.height() == 1.0 =>
+                {
+                    Some(rect.rect.bottom())
+                }
+                _ => None,
+            })
+            .collect();
+    }
+    assert!(lines.contains(&(application_bar() + theme::MENU_BAR + TABS)), "a line at the tabs' bottom: {lines:?}");
 }
 
 #[test]
@@ -707,8 +850,8 @@ fn a_theme_keeps_the_header_column_at_its_least_width() {
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
     app.settings.animations = false;
     app.shown = View::Arrangement;
-    // As a theme file is read: the sheet's --suhina-* values are the app's.
-    let css = "arrangement { --suhina-header-min-width: 330px; }";
+    // As a theme file is read.
+    let css = "arrangement { header-min-width: 330px; }";
     let mut theme = crate::kit::theme::Theme::default();
     assert!(crate::kit::theme_css::read_host_rules(&mut theme, css).is_empty());
     theme.skin.css = Some(std::sync::Arc::from(css));
@@ -913,6 +1056,209 @@ fn copies_put_a_line_on_the_system_clipboard() {
     assert_eq!(clipboard_line("automation.paste"), None);
 }
 
+#[test]
+fn the_pack_lists_first() {
+    let set = super::shipped_set("nam-amp-modeler").expect("the Amp Modeler ships files");
+    assert_eq!(set.name, "Suhina");
+    assert!(
+        set.files
+            .iter()
+            .any(|(key, name)| key == "builtin:nam-amp-modeler/Suhina Overdrive.nam" && name == "Suhina Overdrive"),
+        "{set:?}"
+    );
+    let cab = super::shipped_set("nam-cab-loader").expect("the Cab Loader ships files");
+    assert_eq!(cab.name, "Suhina");
+    assert!(
+        cab.files.iter().any(|(key, name)| key == "builtin:nam-cab-loader/Synthetic Cabinet Plain.wav"
+            && name == "Synthetic Cabinet Plain")
+    );
+    assert_eq!(super::shipped_set("compressor"), None, "a device without files lists none");
+}
+
+/// A real library after the unpack: the Suhina folders are on the disk too, so the scan's own
+/// "Suhina" set stands beside the shipped one — a device placed there still starts on a file,
+/// and the lists hold both packs and every file. The hand check that read "not selecting
+/// suhina for amp models or cabinets" ran against a build without this.
+#[test]
+fn a_new_device_starts_on_a_file_in_the_library_the_unpacked_or_else_the_pack() {
+    use suhina_engine::model::*;
+
+    let dir = std::env::temp_dir().join(format!("suhina-app-real-library-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("Amp models"), dir.join("Cabinets"));
+    for (id, folder) in [("nam-amp-modeler", &models), ("nam-cab-loader", &irs)] {
+        let suhina = folder.join("Suhina");
+        std::fs::create_dir_all(&suhina).unwrap();
+        for (name, bytes) in suhina_device_registry::pack_files(id) {
+            std::fs::write(suhina.join(name), bytes).unwrap();
+        }
+    }
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    for id in ["nam-amp-modeler", "nam-cab-loader"] {
+        let file = app.device_default_file(id).unwrap_or_else(|| panic!("{id} starts on a file"));
+        // The rows carry the canonical compare form ([ADR 0036] › 5, the review): the
+        // folders' starts fold the same way the rows do.
+        let starts = |folder: &std::path::Path| {
+            file.starts_with(&crate::detail::device_widgets::canonical_paths(folder.display().to_string().as_str()))
+        };
+        assert!(starts(&models) || starts(&irs), "{id}: {file}");
+    }
+    let lists = app.nam_lists();
+    assert_eq!(
+        lists.models.first().map(|set| (set.name.clone(), set.files.len())),
+        Some(("Suhina".to_owned(), 18)),
+        "the unpacked pack lists first either way"
+    );
+    assert_eq!(lists.irs.first().map(|set| (set.name.clone(), set.files.len())), Some(("Suhina".to_owned(), 26)));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A collection arrives grouped by source: its capture folders sit one level under the folder
+/// the setting names and list as their own packs, named with their group
+/// ([docs/spec/nam-amp-and-cab.md] › Folders › Packs). A capture dropped into a collection
+/// after a read lists again with the next read: the check watches the collection's own
+/// folder, no restart asked ([ADR 0036] › 5, the library's folders are the users').
+#[test]
+fn a_grouped_collection_lists_its_capture_packs_and_a_new_capture_lists_again() {
+    use suhina_engine::model::*;
+
+    let dir = std::env::temp_dir().join(format!("suhina-app-grouped-packs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("Amp models"), dir.join("Cabinets"));
+    let capture = models.join("Live Amp Modeler").join("Albion Chime (Slammin Captures)");
+    std::fs::create_dir_all(&capture).unwrap();
+    std::fs::write(capture.join("Chime Low.nam"), b"capture").unwrap();
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    // The collection's stamp is set to a known past instant: the freshness check reads the
+    // folders' own mtimes, and on a filesystem whose stamps tie between the two writes the
+    // capture dropped in later must still change them (a test never depends on how busy the
+    // machine was between the writes).
+    let group = models.join("Live Amp Modeler");
+    filetime::set_file_mtime(&group, filetime::FileTime::from_unix_time(0, 0)).expect("the collection's stamp is set");
+    filetime::set_file_mtime(&capture, filetime::FileTime::from_unix_time(0, 0)).expect("the capture's stamp is set");
+    let lists = app.nam_lists();
+    assert_eq!(
+        lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)"),
+        Some(&crate::detail::device_widgets::Set {
+            name: "Live Amp Modeler / Albion Chime (Slammin Captures)".into(),
+            // The scan's rows carry the canonical compare form ([ADR 0036] › 5, the review):
+            // the expected file folds the same way.
+            files: vec![(
+                crate::detail::device_widgets::canonical_paths(
+                    capture.join("Chime Low.nam").display().to_string().as_str()
+                ),
+                "Chime Low.nam".into()
+            )],
+        }),
+        "the capture pack lists with its group and its file whole"
+    );
+    // A new capture dropped into the collection later: the collection's own folder changed,
+    // so the check reads anew and the pack lists beside the first. The check is throttled
+    // ([ADR 0036] › 5, the review), so the test makes it due — a test never waits on the
+    // clock.
+    let capture_3 = models.join("Live Amp Modeler").join("British Classic (Slammin Captures)");
+    std::fs::create_dir_all(&capture_3).unwrap();
+    std::fs::write(capture_3.join("Classic Bass.nam"), b"capture").unwrap();
+    app.nam_cache.checked = None;
+    let lists = app.nam_lists();
+    assert!(
+        lists.models.iter().any(|set| set.name == "Live Amp Modeler / British Classic (Slammin Captures)"),
+        "a capture added after a read lists again: {:?}",
+        lists.models
+    );
+    // A file dropped inside an existing capture folder later: only the capture's own stamp
+    // changes (its parents' do not), so the watch holds the capture folders too — the pack
+    // lists its file with the next read.
+    std::fs::write(capture.join("Chime High.nam"), b"capture").unwrap();
+    app.nam_cache.checked = None;
+    let lists = app.nam_lists();
+    let chime = lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)");
+    assert!(
+        chime.is_some_and(|set| set.files.iter().any(|(path, _)| path.ends_with("Chime High.nam"))),
+        "a file added inside a capture folder lists again: {chime:?}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A stock preset that names no file — the trims — lands *loaded* too: the placed Cab Loader
+/// runs the folder's first impulse response with the trim's values beside it, and the undo
+/// takes the whole add back (docs/spec/nam-amp-and-cab.md › The file a device starts on).
+#[test]
+fn a_trim_preset_placed_starts_the_cab_on_the_folders_first_file() {
+    use suhina_engine::model::*;
+
+    let dir = std::env::temp_dir().join(format!("suhina-app-trim-drop-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("Amp models"), dir.join("Cabinets"));
+    for (id, folder) in [("nam-amp-modeler", &models), ("nam-cab-loader", &irs)] {
+        let suhina = folder.join("Suhina");
+        std::fs::create_dir_all(&suhina).unwrap();
+        for (name, bytes) in suhina_device_registry::pack_files(id) {
+            std::fs::write(suhina.join(name), bytes).unwrap();
+        }
+    }
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    app.set_library_base(dir.clone());
+    app.drop_items(
+        std::slice::from_ref(&drop::BrowserItem {
+            key: "stock:nam-cab-loader/rumble-cut".into(),
+            name: "Rumble Cut".into(),
+            kind: drop::ItemKind::Preset,
+            plugin: false,
+        }),
+        DropTarget::Track(TrackId(1)),
+        false,
+    );
+    let session = app.session().unwrap();
+    let channel = session.project().tracks[0].channel.unwrap();
+    let device = session.project().channel(channel).unwrap().devices.first().unwrap();
+    let state = device.state.as_ref().map(|b| String::from_utf8_lossy(b.as_ref()).into_owned()).unwrap_or_default();
+    assert_eq!(state, "Cabinets/Suhina/Blackat Leon S7.wav", "the start file stores relative to the library");
+    let cut = device.params.iter().find(|p| p.id == "cutBass").map(|p| p.value).unwrap_or_default();
+    assert_eq!(cut, -6.0, "the trim's values ride beside the file");
+    // One undo takes the whole add (the file and the values) back.
+    app.run(&crate::kit::widgets::Action::new("edit.undo", serde_json::json!({})));
+    let channel = app.session().unwrap().project().tracks[0].channel.unwrap();
+    assert!(
+        app.session().unwrap().project().channel(channel).unwrap().devices.is_empty(),
+        "the device with its file went"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A time selection painted in one row of a stack: the edit keys name that row's clips, so
 /// Delete, Cut, Copy, Split, Duplicate and Consolidate leave the other rows be (#701).
 #[test]
@@ -997,4 +1343,47 @@ fn ctrl_d_on_a_row_of_a_stack_names_its_clips_where_the_copy_lands_and_follows_s
     assert!(params.get("stack").is_none(), "stacking is off by default");
     app.settings.midi_stacking = true;
     assert_eq!(sent(app)["stack"], json!(true), "MIDI stacking is on");
+}
+
+/// A parameter moved in a plug-in's own editor changes the project, so the timeline is built
+/// again in that frame: its lane is still brought into view, against the timeline built then
+/// (#1205), not lost with the one that was cached.
+#[test]
+fn a_parameter_moved_in_an_editor_shows_in_its_lanes_when_the_timeline_is_rebuilt() {
+    use egui_kittest::kittest::Queryable;
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.get_by_label("Show automation of Drums").click();
+    harness.run();
+    let track = harness.state().session().unwrap().project().tracks.iter().find(|t| t.name == "Drums").unwrap().id;
+    let key = crate::arrangement::automation_lanes::LaneKey::mixer("mute");
+    // As a frame in which an editor's edit came in: the moved parameter waits, and the cached
+    // timeline is gone.
+    harness.state_mut().touched_lanes.push((track, key.clone()));
+    harness.state_mut().timeline = None;
+    harness.run();
+    assert_eq!(harness.state().arrangement.automation.last_lane, Some((track, key)));
+    assert!(harness.state().touched_lanes.is_empty(), "focused once");
+}
+
+/// A plug-in's editor that edits clips (ARA) lies in the clip editor's box with no piano roll's
+/// round it: a theme that pads `piano-roll` does not add to the area around it (#1336).
+#[test]
+fn a_plug_in_s_clip_editor_takes_no_piano_roll_insets() {
+    use detail_area::Edits;
+    let boxes = crate::detail::detail_view::BoxInsets { detail: 4.0, device: 6.0, editor: 10.0, piano: 40.0 };
+    let around = |edits| DetailInsets::around(2.0, boxes, 8.0, edits);
+    assert_eq!(around(Edits::None).area, 2.0 + 4.0 + 8.0, "the panel's, the area's and the shown device's");
+    assert_eq!(around(Edits::PianoRoll).area, 2.0 + 10.0 + 40.0);
+    assert_eq!(around(Edits::Plugin).area, 2.0 + 10.0, "the clip editor's alone");
+    assert_eq!(around(Edits::Plugin).piano, around(Edits::PianoRoll).piano, "the piano roll's least height");
 }

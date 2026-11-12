@@ -205,9 +205,9 @@ fn a_session_sets_and_automates_a_running_plug_ins_parameter() {
     }
 }
 
-/// The window has a shown plug-in list its parameters in the background for its generated
-/// panel (#679): the report carries the list once it answers, and commands meanwhile never find
-/// the plug-in busy.
+/// A plug-in lists its parameters as it starts, on the thread that starts it (#1205), and the
+/// window has a shown plug-in list them again in the background for its generated panel (#679):
+/// the report carries the list, and commands never find the plug-in busy for it.
 #[test]
 fn a_shown_plug_ins_parameters_are_listed_in_the_background_for_its_panel() {
     let mut device = gain("clap", &[]);
@@ -228,7 +228,8 @@ fn a_shown_plug_ins_parameters_are_listed_in_the_background_for_its_panel() {
         std::thread::sleep(Duration::from_millis(5));
     }
     let track = suhina_model::TrackId(1);
-    assert_eq!(session.plugin_report_at(track, &[0]).unwrap().params, None, "nothing listed yet");
+    let started = session.plugin_report_at(track, &[0]).unwrap().params;
+    assert_eq!(started.map(|list| (list[0].id, list[0].min, list[0].max)), Some((0, 0.0, 1.0)), "listed as it started");
     session.list_plugin_params_at(track, &[0]);
     // While it lists, commands still answer.
     assert!(
@@ -261,5 +262,7 @@ fn a_shown_plug_ins_parameters_are_listed_in_the_background_for_its_panel() {
         assert!(Instant::now() < deadline, "the plug-in did not start again");
         std::thread::sleep(Duration::from_millis(5));
     }
-    assert_eq!(session.plugin_report_at(track, &[0]).unwrap().params, None, "the old list is gone");
+    // The new process listed its own parameters as it started.
+    let listed = session.plugin_report_at(track, &[0]).unwrap().params;
+    assert_eq!(listed.map(|list| list[0].id), Some(0), "the new process's list");
 }

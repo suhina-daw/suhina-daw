@@ -481,14 +481,18 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     harness.get_by_label("Amp Modeler: pack: Test amp").click();
     harness.run();
     assert_eq!(channel_device_state(&harness, 0), model_path.display().to_string());
-    // The pack steppers step through the packs (one here: from none, into it).
+    // The pack steppers step through the packs: from the folder's pack into the executable's,
+    // whose file is a shipped one (`builtin:<device id>/<file name>`; the pack rides the
+    // executable, the state holds its key, [ADR 0036]).
     harness.get_by_label("Amp Modeler: next pack").click();
     harness.run();
-    assert_eq!(channel_device_state(&harness, 0), model_path.display().to_string());
-    // One undo takes the file choice back (the Edit › Undo key, Ctrl+Z).
+    let stepped = channel_device_state(&harness, 0);
+    assert!(stepped.starts_with("builtin:nam-amp-modeler/"), "{stepped}");
+    // One undo takes the pack's file choice back into the folder's pack (the Edit › Undo key,
+    // Ctrl+Z).
     harness.key_combination_modifiers(Modifiers::COMMAND, &[Key::Z]);
     harness.run();
-    assert_eq!(channel_device_state(&harness, 0), "");
+    assert_eq!(channel_device_state(&harness, 0), model_path.display().to_string());
     let _ = std::fs::remove_dir_all(&dir);
 }
 

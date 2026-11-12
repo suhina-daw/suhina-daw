@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+use crate::kit::element::test_el;
 #[test]
 fn native_gradients_publish_every_layer_and_their_end_colours() {
     for (image, layers, first, last) in [
@@ -129,8 +130,8 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
         StyleNode {
             key: 1,
             parent: None,
-            class: "toolbar".into(),
-            name: None,
+            element: crate::kit::element::TOOLBAR,
+            id: None,
             state: 0,
             variables: Vec::new(),
             attributes: Vec::new(),
@@ -139,8 +140,8 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
         StyleNode {
             key: 2,
             parent: Some(0),
-            class: "button".into(),
-            name: Some("play".into()),
+            element: crate::kit::element::BUTTON,
+            id: None,
             state: 0,
             variables: Vec::new(),
             attributes: Vec::new(),
@@ -149,11 +150,12 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
     ];
     prepare("toolbar { color:#112233; } toolbar:hover { color:#445566; } #control-play { box-shadow:0 1px; }", 800.0);
     ENGINE.with(|engine| engine.borrow_mut().nodes = nodes.clone());
-    assert_eq!(finish_tree(0.0), (true, false));
+    // Nothing was painted from a style of its own, so no other frame is needed.
+    assert_eq!(finish_tree(0.0), (false, false));
     ENGINE.with(|engine| assert_eq!(engine.borrow().values[&2].color, Color32::from_rgb(0x11, 0x22, 0x33)));
     assert_eq!(finish_tree(0.1), (false, false), "unchanged scopes must use the retained result");
     ENGINE.with(|engine| engine.borrow_mut().nodes[1].state = 1);
-    assert_eq!(finish_tree(0.2), (true, false));
+    assert_eq!(finish_tree(0.2), (false, false));
     ENGINE.with(|engine| {
         let engine = engine.borrow();
         assert_eq!(engine.values[&2].color, Color32::from_rgb(0x44, 0x55, 0x66));
@@ -165,7 +167,7 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
     ] {
         prepare(source, 800.0);
         ENGINE.with(|engine| engine.borrow_mut().nodes = nodes.clone());
-        assert_eq!(finish_tree(0.3), (true, false));
+        assert_eq!(finish_tree(0.3), (false, false));
         ENGINE.with(|engine| {
             let engine = engine.borrow();
             assert_eq!(engine.values[&2].color, Color32::from_rgb(0xab, 0xcd, 0xef), "{source}");
@@ -185,18 +187,16 @@ fn device_controls(theme: &str, device: &str, user: Option<&str>) -> (Computed, 
     for _ in 0..3 {
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = frame(ui);
-            let _window = super::super::style_class::enter("window");
+            let _window = test_el("window").enter();
             let mut found = Vec::new();
             for panel in ["track-1-device-0", "track-1-device-1"] {
-                let _panel = super::super::style_class::enter_named("device-panel", panel);
-                if panel.ends_with('0') {
-                    device_sheet(ui.ctx(), Some(device));
-                }
-                let _control = super::super::style_class::enter_named("device-control", "cutoff");
-                found.push(super::super::style_class::computed().unwrap());
+                let sheet = panel.ends_with('0').then_some(device);
+                let _panel = test_el("device-panel").id(panel).sheet(ui.ctx(), sheet).enter();
+                let control = test_el("device-control").id("cutoff").enter();
+                found.push(control.style().unwrap());
             }
-            let _browser = super::super::style_class::enter("browser");
-            found.push(super::super::style_class::computed().unwrap());
+            let browser = test_el("browser").enter();
+            found.push(browser.style().unwrap());
             if let [a, b, browser] = found.as_slice() {
                 styles = Some((a.clone(), b.clone(), browser.clone()));
             }
@@ -289,12 +289,12 @@ fn responsive_workspace_and_toolbar_survive_resize() {
             egui::RawInput { screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, size)), ..Default::default() },
             |ui| {
                 let _frame = frame(ui);
-                let _window = super::super::style_class::enter("window");
+                let _window = test_el("window").enter();
                 {
-                    let _toolbar = super::super::style_class::enter("toolbar");
+                    let _toolbar = test_el("toolbar").enter();
                     for name in ["transport", "position", "performance", "mapping"] {
-                        let _module = super::super::style_class::enter_named("toolbar-module", name);
-                        let _button = super::super::style_class::enter("button");
+                        let _module = test_el("toolbar-module").id(name).enter();
+                        let _button = test_el("button").enter();
                     }
                 }
                 let modules = toolbar(
@@ -305,6 +305,7 @@ fn responsive_workspace_and_toolbar_survive_resize() {
                         ("mapping".into(), 60.0),
                     ],
                     Vec2::new(size.x, 56.0),
+                    56.0,
                 )
                 .unwrap();
                 assert_eq!(modules.iter().any(|module| module.name == "performance"), size.x > 1000.0);
@@ -312,14 +313,14 @@ fn responsive_workspace_and_toolbar_survive_resize() {
                 let layout = workspace(Vec2::new(size.x, size.y - 100.0), None, Some((false, 200.0))).unwrap();
                 assert!(layout.browser.is_none());
                 assert_eq!(layout.detail.unwrap().height(), if size.y <= 760.0 { 150.0 } else { 200.0 });
-                let _workspace = super::super::style_class::enter_named("workspace", "workspace");
+                let _workspace = test_el("workspace").id("workspace").enter();
                 {
-                    let _main = super::super::style_class::enter_named("workspace-panel", "panel-main");
-                    let _view = super::super::style_class::enter("arrangement");
+                    let _main = test_el("workspace-panel").id("panel-main").enter();
+                    let _view = test_el("arrangement").enter();
                 }
                 {
-                    let _detail = super::super::style_class::enter_named("workspace-panel", "panel-detail");
-                    let _editor = super::super::style_class::enter("clip-editor");
+                    let _detail = test_el("workspace-panel").id("panel-detail").enter();
+                    let _editor = test_el("clip-editor").enter();
                 }
             },
         )
@@ -354,12 +355,12 @@ fn palette_and_resize_restyle_retained_tree_and_preserve_author_colours() {
                         assert!(!engine.values.is_empty(), "live edit forced per-control fallback documents");
                     });
                 }
-                let _window = super::super::style_class::enter("window");
+                let _window = test_el("window").enter();
                 {
-                    let _button = super::super::style_class::enter("button");
+                    let _button = test_el("button").enter();
                 }
                 {
-                    let _browser = super::super::style_class::enter("browser");
+                    let _browser = test_el("browser").enter();
                 }
             },
         )
@@ -367,9 +368,9 @@ fn palette_and_resize_restyle_retained_tree_and_preserve_author_colours() {
         .clear();
         ENGINE.with(|engine| {
             let engine = engine.borrow();
-            let button = engine.nodes.iter().find(|node| node.class == "button").unwrap();
+            let button = engine.nodes.iter().find(|node| node.element.name() == "button").unwrap();
             assert_eq!(engine.values[&button.key].background, palette.text_primary);
-            let browser = engine.nodes.iter().find(|node| node.class == "browser").unwrap();
+            let browser = engine.nodes.iter().find(|node| node.element.name() == "browser").unwrap();
             let expected =
                 if width > 600.0 { Color32::from_rgb(0x12, 0x34, 0x56) } else { Color32::from_rgb(0x65, 0x43, 0x21) };
             assert_eq!(engine.values[&browser.key].color, expected);
@@ -394,11 +395,11 @@ fn measure_primary_colour_edits() {
         let start = std::time::Instant::now();
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = frame(ui);
-            let _window = super::super::style_class::enter("window");
+            let _window = test_el("window").enter();
             for class in ["toolbar", "browser", "session", "mixer", "settings"] {
-                let _scope = super::super::style_class::enter(class);
+                let _scope = test_el(class).enter();
                 for _ in 0..8 {
-                    let _button = super::super::style_class::enter("button");
+                    let _button = test_el("button").enter();
                 }
             }
         })
@@ -423,7 +424,7 @@ fn unreferenced_palette_edits_keep_computed_contexts_but_variables_invalidate() 
     palette.grid_major = Color32::from_rgba_unmultiplied(120, 120, 120, 90);
     theme::local_palette(palette);
     prepare("browser { color: var(--accent); background-color: white; }", 800.0);
-    ENGINE.with(|engine| assert_eq!(engine.borrow().contexts.len(), 1, "unrelated opacity cleared style cache"));
+    ENGINE.with(|engine| assert!(!engine.borrow().styles_changed, "unrelated opacity cleared style cache"));
     assert_eq!(scoped(&stack).unwrap().color, original.color);
     palette.accent = Color32::from_rgb(10, 30, 70);
     theme::local_palette(palette);
@@ -491,6 +492,7 @@ fn taffy_grid_changes_real_module_rectangles_and_hidden_modules() {
     let modules = toolbar(
         &[("tempo".into(), 62.0), ("transport".into(), 86.0), ("mapping".into(), 64.0)],
         Vec2::new(400.0, 32.0),
+        32.0,
     )
     .unwrap();
     assert_eq!(modules.len(), 2);
@@ -509,15 +511,16 @@ fn retained_scopes_match_siblings_and_keep_named_track_identity() {
         let order = if pass < 2 { [1, 2] } else { [2, 1] };
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = frame(ui);
-            let _window = super::super::style_class::enter("window");
-            let _session = super::super::style_class::enter("session");
+            let _window = test_el("window").enter();
+            let _session = test_el("session").enter();
             for (index, track) in order.iter().enumerate() {
-                let _track = super::super::style_class::enter_named("mixer", &format!("track-{track}"));
+                let _track = test_el("mixer").id(&format!("track-{track}")).enter();
                 if pass > 0 && *track == 2 {
                     assert_eq!(theme::text_primary(), Color32::from_rgb(10, 20, 30));
                 }
                 if (pass == 1 || pass == 3) && index == 1 {
-                    assert_eq!(theme::panel_background(), Color32::from_rgb(40, 50, 60));
+                    let own = super::super::style_class::surface_or(Color32::TRANSPARENT);
+                    assert_eq!(own, Color32::from_rgb(40, 50, 60));
                 }
             }
         })
@@ -534,9 +537,9 @@ fn disabled_state_uses_the_native_response_without_changing_its_id() {
     for pass in 0..2 {
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = frame(ui);
-            let _window = super::super::style_class::enter("window");
+            let _window = test_el("window").enter();
             let response = ui.add_enabled(false, egui::Button::new("Disabled"));
-            let _button = super::super::style_class::enter_response("button", &response);
+            let _button = test_el("button").response(&response).enter();
             if let Some(id) = previous_id {
                 assert_eq!(response.id, id);
             }
@@ -639,14 +642,14 @@ fn keyframes_advance_with_the_clock_and_the_motion_setting_suppresses_them() {
                 },
                 |ui| {
                     let _frame = frame_with_motion(ui, motion);
-                    let _browser = super::super::style_class::enter("browser");
+                    let _browser = test_el("browser").enter();
                 },
             )
             .textures_delta
             .clear();
             colors.push(ENGINE.with(|engine| {
                 let engine = engine.borrow();
-                let key = engine.nodes.iter().find(|n| n.class == "browser").unwrap().key;
+                let key = engine.nodes.iter().find(|n| n.element.name() == "browser").unwrap().key;
                 engine.values[&key].color
             }));
         }
@@ -678,14 +681,14 @@ fn native_state_change_starts_a_transition() {
             |ui| {
                 let _frame = frame(ui);
                 let response = ui.add_enabled(index == 0, egui::Button::new("Native state"));
-                let _scope = super::super::style_class::enter_response("button", &response);
+                let _scope = test_el("button").response(&response).enter();
             },
         )
         .textures_delta
         .clear();
         colors.push(ENGINE.with(|engine| {
             let engine = engine.borrow();
-            let key = engine.nodes.iter().find(|n| n.class == "button").unwrap().key;
+            let key = engine.nodes.iter().find(|n| n.element.name() == "button").unwrap().key;
             engine.values[&key].background
         }));
     }
@@ -737,7 +740,7 @@ fn keyframe_only_properties_are_applied_without_a_static_declaration() {
             },
             |ui| {
                 let _frame = frame(ui);
-                let _scope = super::super::style_class::enter("browser");
+                let _scope = test_el("browser").enter();
             },
         )
         .textures_delta
@@ -745,7 +748,7 @@ fn keyframe_only_properties_are_applied_without_a_static_declaration() {
     }
     ENGINE.with(|engine| {
         let engine = engine.borrow();
-        let key = engine.nodes.iter().find(|n| n.class == "browser").unwrap().key;
+        let key = engine.nodes.iter().find(|n| n.element.name() == "browser").unwrap().key;
         assert!(engine.values[&key].authored.color);
         assert_eq!(engine.values[&key].color, Color32::BLUE);
     });
@@ -824,19 +827,20 @@ fn dragging_a_splitter_lays_the_workspace_out_once_a_frame() {
 }
 #[test]
 fn unrelated_css_preserves_native_colours_font_sizes_and_corner_defaults() {
-    prepare("browser { color:rgb(10 20 30); }", 800.0);
     let original = theme::palette();
-    {
-        let _mixer = super::super::style_class::enter("mixer");
-        assert_eq!(theme::palette(), original);
-        assert_eq!(super::super::style_class::font_size(9.0), 9.0);
-        assert_eq!(super::super::style_class::radius(4.0), 4.0);
-    }
-    {
-        let _browser = super::super::style_class::enter("browser");
-        assert_eq!(theme::text_primary(), Color32::from_rgb(10, 20, 30));
-    }
-    skin::configure(&skin::Skin::default());
+    let mut seen = None;
+    painted("browser { color:rgb(10 20 30); }", |_| {
+        let mixer = {
+            let mixer = test_el("mixer").enter();
+            (theme::palette() == original, mixer.font_size_or(9.0), mixer.radius_or(4.0))
+        };
+        let browser = {
+            let _browser = test_el("browser").enter();
+            theme::text_primary()
+        };
+        seen = Some((mixer, browser));
+    });
+    assert_eq!(seen, Some(((true, 9.0, 4.0), Color32::from_rgb(10, 20, 30))));
 }
 
 /// Runs `paint` inside the window for a few frames with `css`, so element ids resolve, and
@@ -853,7 +857,7 @@ fn painted(css: &str, mut paint: impl FnMut(&mut egui::Ui)) -> Vec<egui::epaint:
             },
             |ui| {
                 let _frame = frame(ui);
-                let _window = super::super::style_class::enter("window");
+                let _window = test_el("window").enter();
                 paint(ui);
             },
         );
@@ -878,10 +882,11 @@ fn rects(shapes: &[egui::epaint::ClippedShape]) -> Vec<egui::epaint::RectShape> 
 fn a_level_bar_takes_its_shape_and_thickness_from_the_sheet() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(200.0, 20.0));
     let draw = |ui: &mut egui::Ui| {
-        let _value = super::super::style_class::enter_named("value", "arrangement-volume");
+        let value = test_el("value").id("arrangement-volume").enter();
         crate::kit::mixer_controls::level_bar(
             ui.painter(),
             field,
+            &value,
             "volume",
             (0.0, 0.5),
             0.0,
@@ -914,23 +919,25 @@ fn a_level_bar_takes_its_shape_and_thickness_from_the_sheet() {
 fn a_transparent_control_background_paints_nothing() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(60.0, 20.0));
     let shapes = painted("#tempo { background-color: transparent; }", |ui| {
-        let _toolbar = super::super::style_class::enter("toolbar");
-        let _module = super::super::style_class::enter_named("toolbar-module", "tempo");
-        surface_now(ui.painter(), field, 0.0, theme::window_background());
+        let _toolbar = test_el("toolbar").enter();
+        let module = test_el("toolbar-module").id("tempo").enter();
+        surface_now(ui.painter(), field, 0.0, theme::window_background(), &module);
     });
     assert!(!rects(&shapes).iter().any(|r| r.rect == field), "{shapes:?}");
 }
 
 #[test]
 fn a_view_background_leaves_the_controls_on_it_their_own_fill() {
-    let control = theme::control_background();
+    let (control, window_token) = (theme::control_background(), theme::window_background());
     let mut seen = None;
     painted("arrangement { background-color: #102030; }", |_| {
-        let _view = super::super::style_class::enter("arrangement");
-        seen = Some((theme::window_background(), theme::control_background()));
+        let _view = test_el("arrangement").enter();
+        let own = super::super::style_class::surface_or(egui::Color32::TRANSPARENT);
+        seen = Some((own, theme::window_background(), theme::control_background()));
     });
-    let (window, inside) = seen.unwrap();
-    assert_eq!(window, egui::Color32::from_rgb(0x10, 0x20, 0x30));
+    let (own, window, inside) = seen.unwrap();
+    assert_eq!(own, egui::Color32::from_rgb(0x10, 0x20, 0x30), "what is drawn in the view knows its colour");
+    assert_eq!(window, window_token, "the view's background writes no token (#1233)");
     assert_eq!(inside, control, "the add-track buttons keep the theme's control fill");
 }
 
@@ -944,17 +951,18 @@ fn a_level_bar_or_surface_squeezed_below_a_point_draws_nothing_and_never_panics(
         Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(200.0, f32::NAN)),
     ] {
         painted(css, |ui| {
-            let _value = super::super::style_class::enter_named("value", "arrangement-volume");
+            let value = test_el("value").id("arrangement-volume").enter();
             crate::kit::mixer_controls::level_bar(
                 ui.painter(),
                 field,
+                &value,
                 "volume",
                 (0.0, 0.5),
                 0.0,
                 "0.0",
                 egui::Align2::RIGHT_CENTER,
             );
-            surface_now(ui.painter(), field, 4.0, theme::control_background());
+            surface_now(ui.painter(), field, 4.0, theme::control_background(), &value);
         });
     }
 }
@@ -969,20 +977,20 @@ fn checked_and_selected_states_reach_the_sheet() {
         let shapes = painted(css, |ui| {
             let response = ui.interact(field, egui::Id::unique("solo-test"), egui::Sense::click());
             {
-                let _solo = super::super::style_class::enter_named_response("button", "solo", &response);
-                mark(HostState::Checked, on);
+                let solo =
+                    test_el("button").id("solo").response(&response).attr(crate::kit::element::Checked, on).enter();
                 crate::kit::widgets::button_surface(
                     ui.painter(),
                     field,
+                    &solo,
                     &response,
                     on,
                     theme::control_background(),
                     0.0,
                 );
             }
-            let _header = super::super::style_class::enter_named("track-header", "track-1");
-            mark(HostState::Selected, on);
-            header = Some(theme::window_background());
+            let el = test_el("track-header").id("track-1").attr(crate::kit::element::Selected, on).enter();
+            header = Some(el.background_or(egui::Color32::TRANSPARENT));
         });
         let orange = rects(&shapes).iter().any(|r| r.rect == field && r.fill == egui::Color32::from_rgb(0xFF, 0x88, 0));
         assert_eq!(orange, on, "the solo button is orange only when on");
@@ -998,9 +1006,9 @@ fn checked_and_selected_states_reach_the_sheet() {
 fn a_menu_opened_from_a_light_text_bar_reads_on_its_own_background() {
     let mut seen = None;
     painted("menu-bar { background-color: #217346; color: #ffffff; }", |_| {
-        let _bar = super::super::style_class::enter("menu-bar");
-        let _menu = super::super::style_class::enter("menu");
-        let ink = super::super::style_class::readable_on(egui::Color32::WHITE);
+        let _bar = test_el("menu-bar").enter();
+        let menu = test_el("menu").enter();
+        let ink = menu.readable_on(egui::Color32::WHITE);
         seen = Some((ink, theme::text_primary()));
     });
     let (ink, text) = seen.unwrap();
@@ -1012,10 +1020,9 @@ fn a_menu_opened_from_a_light_text_bar_reads_on_its_own_background() {
 fn a_selected_header_s_background_never_fills_its_buttons() {
     let mut seen = None;
     painted("track-header[selected] { background-color: #304050; }", |_| {
-        let _header = super::super::style_class::enter_named("track-header", "track-1");
-        mark(HostState::Selected, true);
-        let shown = super::super::style_class::background(egui::Color32::BLACK);
-        let _button = super::super::style_class::enter("button");
+        let header = test_el("track-header").id("track-1").attr(crate::kit::element::Selected, true).enter();
+        let shown = header.background_or(egui::Color32::BLACK);
+        let _button = test_el("button").enter();
         seen = Some((shown, theme::control_background()));
     });
     let (shown, control) = seen.unwrap();
@@ -1027,11 +1034,13 @@ fn a_selected_header_s_background_never_fills_its_buttons() {
 fn a_track_gives_its_colour_to_the_sheet_and_each_view_is_known() {
     let mut seen = None;
     painted("mixer track-name { background-color: var(--track-colour); }", |_| {
-        let _session = super::super::style_class::enter("session");
-        let _strip = super::super::style_class::enter_named("mixer", "track-1");
-        set_variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)));
-        let _name = super::super::style_class::enter_named("track-name", "track-1");
-        seen = Some((theme::window_background(), super::super::style_class::view()));
+        let _session = test_el("session").enter();
+        let _strip = test_el("mixer")
+            .id("track-1")
+            .variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)))
+            .enter();
+        let name = test_el("track-name").id("track-1").enter();
+        seen = Some((name.background_or(egui::Color32::TRANSPARENT), super::super::style_class::view()));
     });
     let (fill, view) = seen.unwrap();
     assert_eq!(fill, egui::Color32::from_rgb(0xE8, 0x91, 0x3A));
@@ -1043,9 +1052,11 @@ fn a_track_gives_its_colour_to_the_sheet_and_each_view_is_known() {
 fn artwork_reads_the_variables_of_the_elements_in_scope() {
     let mut seen = Vec::new();
     painted("", |_| {
-        let _header = super::super::style_class::enter_named("track-header", "track-1");
-        set_variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)));
-        let _button = super::super::style_class::enter("button");
+        let _header = test_el("track-header")
+            .id("track-1")
+            .variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)))
+            .enter();
+        let _button = test_el("button").enter();
         seen = scope_variables();
     });
     assert_eq!(seen, [("--track-colour".to_string(), "#e8913a".to_string())]);
@@ -1064,10 +1075,11 @@ fn a_knob_s_value_goes_where_the_sheet_puts_it() {
         let (theme, _) = super::super::theme::from_css(css);
         let shapes = painted("", |ui| {
             skin::configure(&theme.skin);
-            let _pan = super::super::style_class::enter("pan");
+            let pan = test_el("pan").enter();
             crate::kit::widgets::knob_with_value(
                 ui.painter(),
                 field,
+                &pan,
                 0.5,
                 egui::Color32::WHITE,
                 None,
@@ -1084,9 +1096,9 @@ fn a_knob_s_value_goes_where_the_sheet_puts_it() {
     };
     let beside = text_top("").unwrap();
     assert!(beside > field.top() + 10.0, "beside the knob, in the middle of the field");
-    let above = text_top("pan { --suhina-value-position: top; }").unwrap();
+    let above = text_top("pan { value-position: top; }").unwrap();
     assert!(above < field.top() + 4.0, "over the knob: {above}");
-    assert_eq!(text_top("pan { --suhina-value-position: none; }"), None);
+    assert_eq!(text_top("pan { value-position: none; }"), None);
     skin::configure(&skin::Skin::default());
 }
 
@@ -1095,10 +1107,11 @@ fn a_level_bar_s_value_may_sit_left_and_its_lit_part_take_its_own_ink() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(200.0, 20.0));
     let css = "#arrangement-volume { text-align: left; } #arrangement-volume value-fill { color: #00FF00; }";
     let shapes = painted(css, |ui| {
-        let _value = super::super::style_class::enter_named("value", "arrangement-volume");
+        let value = test_el("value").id("arrangement-volume").enter();
         crate::kit::mixer_controls::level_bar(
             ui.painter(),
             field,
+            &value,
             "volume",
             (0.0, 0.9),
             0.0,
@@ -1121,18 +1134,24 @@ fn a_level_bar_s_value_may_sit_left_and_its_lit_part_take_its_own_ink() {
 #[test]
 fn a_sheet_s_border_is_the_ordinary_widgets_outline() {
     let mut strokes = Vec::new();
-    for css in ["dropdown { border-width: 0px; }", "dropdown { border-width: 2px; border-color: #FF0000; }"] {
+    for css in [
+        "dropdown { border-width: 0px; }",
+        "dropdown { border-width: 2px; border-color: #FF0000; }",
+        "dropdown { border-width: 0 0 2px; border-color: #FF0000; }",
+    ] {
         let mut seen = None;
         painted(css, |ui| {
-            let _menu = super::super::style_class::enter("dropdown");
+            let menu = test_el("dropdown").enter();
             let mut child = ui.new_child(egui::UiBuilder::new());
-            let styled = super::super::style_class::ui(&mut child);
+            let styled = menu.ui(&mut child);
             seen = Some(styled.visuals().widgets.inactive.bg_stroke);
         });
         strokes.push(seen.unwrap());
     }
     assert_eq!(strokes[0].width, 0.0);
     assert_eq!(strokes[1], egui::Stroke::new(2.0, egui::Color32::from_rgb(0xFF, 0, 0)));
+    // A line along one side is the element's own, not a box round each widget in it (#1336).
+    assert_ne!(strokes[2], strokes[1], "a one-sided border keeps egui's own outline");
 }
 
 #[test]
@@ -1201,10 +1220,11 @@ fn a_clip_under_the_play_position_is_playing() {
 fn a_level_bar_draws_a_handle_where_its_fill_ends() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(200.0, 20.0));
     let draw = |ui: &mut egui::Ui| {
-        let _value = super::super::style_class::enter_named("value", "arrangement-volume");
+        let value = test_el("value").id("arrangement-volume").enter();
         crate::kit::mixer_controls::level_bar(
             ui.painter(),
             field,
+            &value,
             "volume",
             (0.0, 0.5),
             0.0,
@@ -1222,17 +1242,17 @@ fn a_level_bar_draws_a_handle_where_its_fill_ends() {
 #[test]
 fn piano_roll_notes_take_the_clip_colour_and_their_states() {
     use crate::detail::piano_roll::part_style;
-    use crate::kit::native_css::HostState;
     let css = "piano-note { background-color: var(--clip-colour); } \
                piano-note[selected] { border-color: #FFFFFF; } \
                piano-key-black { background-color: #000000; }";
     let mut seen = None;
     painted(css, |_| {
-        let _roll = super::super::style_class::enter("piano-roll");
-        super::set_variable("--clip-colour", super::hex(egui::Color32::from_rgb(0x12, 0x34, 0x56)));
+        let _roll = test_el("piano-roll")
+            .variable("--clip-colour", super::hex(egui::Color32::from_rgb(0x12, 0x34, 0x56)))
+            .enter();
         seen = Some((
             part_style("piano-note", &[]),
-            part_style("piano-note", &[HostState::Selected]),
+            part_style("piano-note", &[crate::kit::element::Selected]),
             part_style("piano-key-black", &[]),
         ));
     });
@@ -1252,8 +1272,8 @@ fn egui_widgets_in_a_scope_take_the_generic_button_and_input_rules() {
                settings text-input { background-color: #050505; }";
     let mut seen = None;
     painted(css, |ui| {
-        let _settings = super::super::style_class::enter("settings");
-        let styled = super::super::style_class::ui(ui);
+        let settings = test_el("settings").enter();
+        let styled = settings.ui(ui);
         let visuals = styled.style().visuals.clone();
         seen = Some(visuals);
     });
@@ -1266,6 +1286,47 @@ fn egui_widgets_in_a_scope_take_the_generic_button_and_input_rules() {
     assert_eq!(visuals.extreme_bg_color, egui::Color32::from_rgb(5, 5, 5));
 }
 
+/// A `button` rule that sets only a border width (no colour, no fill) still sets the width of
+/// egui's outline: `border-width: 0` removes it (#1336).
+#[test]
+fn a_button_rule_with_only_a_border_width_sets_egui_s_outline() {
+    let mut seen = Vec::new();
+    for css in ["settings button { border-width: 3px; }", "settings button { border-width: 0; }"] {
+        let mut last = None;
+        painted(css, |ui| {
+            let settings = test_el("settings").enter();
+            let styled = settings.ui(ui);
+            last = Some(styled.style().visuals.widgets.inactive.bg_stroke.width);
+        });
+        seen.extend(last);
+    }
+    assert_eq!(seen, [3.0, 0.0]);
+}
+
+/// egui draws one outline all round its widgets: a `button` rule whose sides differ (an
+/// underline) keeps egui's width and takes only its colour, not a box of its widest side (#1336).
+#[test]
+fn a_button_rule_with_uneven_sides_is_not_a_box_round_egui_s_widgets() {
+    let mut seen = Vec::new();
+    for css in [
+        "settings button { background-color: #101010; }",
+        "settings button { border-width: 0 0 2px; border-color: #FF0000; }",
+        "settings button { border-width: 3px; border-color: #FF0000; }",
+    ] {
+        let mut last = None;
+        painted(css, |ui| {
+            let settings = test_el("settings").enter();
+            let styled = settings.ui(ui);
+            last = Some(styled.style().visuals.widgets.inactive.bg_stroke);
+        });
+        seen.extend(last);
+    }
+    let red = egui::Color32::from_rgb(0xFF, 0, 0);
+    let [plain, uneven, even] = seen[..] else { panic!("three strokes: {seen:?}") };
+    assert_eq!(uneven, egui::Stroke::new(plain.width, red), "egui's own width, the rule's colour");
+    assert_eq!(even, egui::Stroke::new(3.0, red));
+}
+
 #[test]
 fn a_built_in_device_s_panel_is_selected_by_its_id() {
     let css = "device { background-color: #00FF00; } #device-compressor { background-color: #FF0000; } \
@@ -1274,13 +1335,10 @@ fn a_built_in_device_s_panel_is_selected_by_its_id() {
     painted(css, |_| {
         seen.clear();
         for id in ["device-compressor", "device-limiter"] {
-            let _device = super::super::style_class::enter_named("device", id);
-            let panel = super::super::style_class::computed().map(|c| c.background);
-            let _header = super::super::style_class::enter("device-header");
-            seen.push((
-                panel,
-                super::super::style_class::computed().filter(|c| c.authored.background).map(|c| c.background),
-            ));
+            let device = test_el("device").id(id).enter();
+            let panel = device.style().map(|c| c.background);
+            let header = test_el("device-header").enter();
+            seen.push((panel, header.style().filter(|c| c.authored.background).map(|c| c.background)));
         }
     });
     assert_eq!(seen[0], (Some(egui::Color32::RED), Some(egui::Color32::BLUE)));
@@ -1308,6 +1366,64 @@ fn the_midi_tools_column_takes_its_width_from_the_sheet() {
 }
 
 #[test]
+fn the_midi_tools_part_takes_its_gap_and_button_height_from_the_sheet() {
+    use crate::detail::detail_view::{ToolsSpacing, tools_spacing};
+    let mut plain = None;
+    painted("", |_| plain = Some(tools_spacing()));
+    assert_eq!(plain, Some(ToolsSpacing { gap: 6.0, button_gap: 4.0, field: 18.0, toggle: 20.0, knob: None }));
+    // `button { height }` inside `midi-tools` sets its fields', buttons', switches' and Apply's height,
+    // within 10 to 40 points.
+    let mut tall = None;
+    painted("midi-tools button { height: 26px; }", |_| tall = Some(tools_spacing()));
+    assert_eq!(tall, Some(ToolsSpacing { gap: 6.0, button_gap: 4.0, field: 26.0, toggle: 26.0, knob: None }));
+    let mut huge = None;
+    painted("midi-tools button { height: 90px; }", |_| huge = Some(tools_spacing()));
+    assert_eq!(huge.map(|s| (s.field, s.toggle)), Some((40.0, 40.0)));
+    // The gap is a host rule, read from the theme's sheet as the app reads it: the room between
+    // the part's rows and between the rows of its buttons.
+    let packed = spacing_in_theme("midi-tools { gap: 2px; }");
+    assert_eq!((packed.gap, packed.button_gap), (2.0, 2.0));
+}
+
+/// `tools_spacing` in a frame of the whole theme of `css`: its host rules and its sheet.
+fn spacing_in_theme(css: &str) -> crate::detail::detail_view::ToolsSpacing {
+    let (theme, _) = super::super::theme::from_css(css);
+    skin::configure(&theme.skin);
+    let ctx = egui::Context::default();
+    let input = || egui::RawInput {
+        screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(800.0, 600.0))),
+        ..Default::default()
+    };
+    ctx.run_ui(input(), |ui| begin_frame(ui)).textures_delta.clear();
+    let mut spacing = None;
+    for _ in 0..3 {
+        ctx.run_ui(input(), |ui| {
+            let _frame = frame(ui);
+            let _window = test_el("window").enter();
+            spacing = Some(crate::detail::detail_view::tools_spacing());
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    spacing.expect("three frames ran")
+}
+
+#[test]
+fn the_midi_tools_part_draws_the_quantise_amount_as_a_knob_where_the_theme_says() {
+    assert_eq!(spacing_in_theme("").knob, None);
+    // `slider { appearance: knob }` inside `midi-tools`: a knob 32 points tall, or as tall
+    // as the slider's `height` (16 to 96).
+    assert_eq!(spacing_in_theme("midi-tools slider { appearance: knob; }").knob, Some(32.0));
+    let tall = "midi-tools slider { appearance: knob; height: 48px; }";
+    assert_eq!(spacing_in_theme(tall).knob, Some(48.0));
+    let huge = "midi-tools slider { appearance: knob; height: 200px; }";
+    assert_eq!(spacing_in_theme(huge).knob, Some(96.0));
+    // A field says the amount stays a field.
+    assert_eq!(spacing_in_theme("midi-tools slider { appearance: field; }").knob, None);
+}
+
+#[test]
 fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_colour_spares_them() {
     use crate::detail::detail_view::{slider_as_knob, themed_slider};
     let mut seen = (true, true);
@@ -1315,15 +1431,12 @@ fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_colour_spares_
     assert_eq!(seen, (false, false));
     painted("slider-handle { background-color: #FF0000; }", |_| seen = (themed_slider(), slider_as_knob()));
     assert_eq!(seen, (true, false));
-    // The appearance is a host rule, read from the theme's sheet as the app reads it.
-    let (theme, _) = super::super::theme::from_css("slider { --suhina-appearance: knob; }");
-    skin::configure(&theme.skin);
-    assert!(slider_as_knob());
-    skin::configure(&skin::Skin::default());
+    painted("slider { appearance: knob; }", |_| seen.1 = slider_as_knob());
+    assert!(seen.1);
     let mut fill = None;
     painted("#device-plugin { background-color: #102030; }", |ui| {
-        let _device = super::super::style_class::enter_named("device", "device-plugin");
-        let styled = super::super::style_class::ui(ui);
+        let device = test_el("device").id("device-plugin").enter();
+        let styled = device.ui(ui);
         fill = Some(styled.style().visuals.widgets.inactive.bg_fill);
     });
     assert_ne!(fill, Some(egui::Color32::from_rgb(0x10, 0x20, 0x30)), "the rails keep their own colour");
@@ -1334,8 +1447,8 @@ fn a_round_button_s_shadow_is_round() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(24.0, 24.0));
     let shapes = painted("#control-stop { border-radius: 50%; background-color: #FF0000; }", |ui| {
         let response = ui.interact(field, egui::Id::unique("stop"), egui::Sense::click());
-        let _stop = super::super::style_class::enter_named_response("button", "stop", &response);
-        crate::kit::widgets::button_surface(ui.painter(), field, &response, false, egui::Color32::GRAY, 0.0);
+        let stop = test_el("button").id("stop").response(&response).enter();
+        crate::kit::widgets::button_surface(ui.painter(), field, &stop, &response, false, egui::Color32::GRAY, 0.0);
     });
     let button = rects(&shapes).into_iter().find(|r| r.fill == egui::Color32::RED).expect("the button");
     assert_eq!(button.corner_radius.nw, 12, "50 % is round");
@@ -1343,7 +1456,7 @@ fn a_round_button_s_shadow_is_round() {
 
 #[test]
 fn a_theme_sets_how_strongly_the_track_colour_tints_its_header() {
-    let (theme, _) = super::super::theme::from_css("arrangement { --suhina-header-tint: 0; }");
+    let (theme, _) = super::super::theme::from_css("arrangement { header-tint: 0; }");
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_header_tint(), Some(0));
     skin::configure(&skin::Skin::default());
@@ -1355,18 +1468,18 @@ fn the_native_toolbar_paints_its_gradient() {
     let bar = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(400.0, 40.0));
     let mut painted_any = false;
     let shapes = painted("toolbar { background-image: linear-gradient(90deg, #ff0000, #0000ff); }", |ui| {
-        let _toolbar = super::super::style_class::enter("toolbar");
-        painted_any = background(ui.painter(), bar);
+        let toolbar = test_el("toolbar").enter();
+        painted_any = toolbar.paint_background(ui.painter(), bar, 0.0);
     });
     assert!(painted_any, "{shapes:?}");
 }
 
 #[test]
 fn a_theme_gives_tracks_without_a_height_its_own() {
-    let (theme, _) = super::super::theme::from_css("arrangement { --suhina-track-height: 96px; }");
+    let (theme, _) = super::super::theme::from_css("arrangement { track-height: 96px; }");
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_track_height(), Some(96.0));
-    let (theme, _) = super::super::theme::from_css("arrangement { --suhina-track-height: 4px; }");
+    let (theme, _) = super::super::theme::from_css("arrangement { track-height: 4px; }");
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_track_height(), None, "out of range is left out");
     skin::configure(&skin::Skin::default());
@@ -1374,15 +1487,12 @@ fn a_theme_gives_tracks_without_a_height_its_own() {
 
 #[test]
 fn a_value_s_number_and_unit_follow_the_sheet() {
-    let (theme, warnings) =
-        super::super::theme::from_css("pan { --suhina-value-decimals: 0; --suhina-value-unit: \" dB\"; }");
     let mut seen = Vec::new();
-    painted("", |_| {
-        skin::configure(&theme.skin);
-        let _pan = super::super::style_class::enter("pan");
-        seen = ["-3.6", "-inf", "C"].map(crate::kit::widgets::formatted_value).to_vec();
+    painted("pan { value-decimals: 0; value-unit: \" dB\"; }", |_| {
+        let pan = test_el("pan").enter();
+        seen = ["-3.6", "-inf", "C"].map(|text| crate::kit::widgets::formatted_value(&pan, text)).to_vec();
     });
-    assert_eq!(seen, ["-4 dB", "-inf", "C"], "{warnings:?}");
+    assert_eq!(seen, ["-4 dB", "-inf", "C"]);
 }
 
 #[test]
@@ -1392,12 +1502,12 @@ fn a_family_class_reaches_every_part_of_its_kind() {
     let mut pan = None;
     let shapes = painted(css, |ui| {
         {
-            let _pan = super::super::style_class::enter("pan");
-            pan = Some(super::super::style_class::background(egui::Color32::BLACK));
+            let el = test_el("pan").enter();
+            pan = Some(el.background_or(egui::Color32::BLACK));
         }
         let response = ui.interact(field, egui::Id::unique("solo"), egui::Sense::click());
-        let _solo = super::super::style_class::enter_named_response("button", "solo", &response);
-        surface_now(ui.painter(), field, 0.0, egui::Color32::BLACK);
+        let solo = test_el("button").id("solo").response(&response).enter();
+        surface_now(ui.painter(), field, 0.0, egui::Color32::BLACK, &solo);
     });
     assert_eq!(
         pan,
@@ -1408,15 +1518,13 @@ fn a_family_class_reaches_every_part_of_its_kind() {
         rects(&shapes).iter().any(|r| r.fill == egui::Color32::from_rgb(0, 0xFF, 0)),
         "button:is(#control-solo, #control-cue, #control-arm, #control-track-on, #control-monitor, #control-automation) reaches #control-solo"
     );
-    // Host rules read the family too.
-    let (theme, _) = super::super::theme::from_css(
-        ":is(value, pan, fader, send, knob, slider, device-control, clip-gain) { --suhina-appearance: knob; }",
-    );
-    skin::configure(&theme.skin);
-    let _send = super::super::style_class::enter("send");
-    assert!(super::super::style_class::knob_preference(false));
-    drop(_send);
-    skin::configure(&skin::Skin::default());
+    // Settings take the family too.
+    let mut knob = false;
+    painted(":is(value, pan, fader, send, knob, slider, device-control, clip-gain) { appearance: knob; }", |_| {
+        let send = test_el("send").enter();
+        knob = super::super::style_class::knob_preference(&send, false);
+    });
+    assert!(knob);
 }
 
 #[test]
@@ -1424,12 +1532,15 @@ fn a_level_bar_s_fill_can_take_the_track_s_colour() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(200.0, 20.0));
     let css = "value-fill { background-color: var(--track-colour); }";
     let shapes = painted(css, |ui| {
-        let _header = super::super::style_class::enter_named("track-header", "track-1");
-        set_variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)));
-        let _value = super::super::style_class::enter_named("value", "arrangement-volume");
+        let _header = test_el("track-header")
+            .id("track-1")
+            .variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)))
+            .enter();
+        let value = test_el("value").id("arrangement-volume").enter();
         crate::kit::mixer_controls::level_bar(
             ui.painter(),
             field,
+            &value,
             "volume",
             (0.0, 0.7),
             0.0,
@@ -1445,7 +1556,7 @@ fn a_level_bar_s_fill_can_take_the_track_s_colour() {
 fn a_low_track_keeps_its_native_layout() {
     use crate::kit::control_layout::{native_only, placement};
     let (theme, _) = super::super::theme::from_css(
-        "arrangement { --suhina-compact-below: 48px; }\n.control-arrangement-enable { left: -30px; }",
+        "arrangement { compact-below: 48px; }\n.control-arrangement-enable { left: -30px; }",
     );
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_compact_below(), Some(48.0));
@@ -1459,7 +1570,42 @@ fn a_low_track_keeps_its_native_layout() {
     skin::configure(&skin::Skin::default());
 }
 
-/// The surface of the element in scope, as a control painted inside it draws it.
-fn surface_now(painter: &egui::Painter, rect: Rect, radius: f32, fill: Color32) -> f32 {
-    surface_with(painter, rect, radius, fill, super::super::style_class::computed())
+/// The surface of `el`, as a control painted inside it draws it.
+fn surface_now(
+    painter: &egui::Painter,
+    rect: Rect,
+    radius: f32,
+    fill: Color32,
+    el: &crate::kit::element::Entered,
+) -> f32 {
+    surface_with(painter, rect, radius, fill, el.style())
+}
+#[test]
+fn a_full_id_table_keeps_the_names_of_the_elements_already_entered_and_starts_again_next_frame() {
+    prepare("button { color: red; }", 800.0);
+    let ctx = egui::Context::default();
+    let mut names = Vec::new();
+    for _ in 0..2 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = frame_with_motion(ui, false);
+            let first = test_el("button").id("first").enter();
+            // Fill what is left of the table, as a frame with thousands of named elements does.
+            ENGINE.with(|engine| {
+                let mut engine = engine.borrow_mut();
+                while engine.ids.len() < MAX_IDS {
+                    let name: Arc<str> = Arc::from(format!("filler-{}", engine.ids.len()));
+                    let id = u32::try_from(engine.ids.len()).unwrap();
+                    engine.ids.push(Arc::clone(&name));
+                    engine.id_index.insert(name, id);
+                }
+            });
+            let second = test_el("button").id("second").enter();
+            names.push((first.id(), second.id()));
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    let expected = (Some("first".to_owned()), None);
+    assert_eq!(names, [expected.clone(), expected], "an earlier element keeps its name; a new one gets none");
 }

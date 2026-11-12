@@ -94,7 +94,17 @@ fn native_bar() -> Harness<'static, Fixture> {
             let _frame = crate::kit::native_css::frame(ui);
             let rect = Rect::from_min_size(ui.max_rect().min, Vec2::new(ui.available_width(), 56.0));
             ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                fixture.app.control_bar(ui, Some(&fixture.grid), Some(10), Some(1024), &mut fixture.actions);
+                let bar = crate::kit::element::TOOLBAR.enter();
+                let inside = ui.max_rect();
+                fixture.app.control_bar(
+                    ui,
+                    &bar,
+                    inside,
+                    Some(&fixture.grid),
+                    Some(10),
+                    Some(1024),
+                    &mut fixture.actions,
+                );
             });
         },
         fixture,
@@ -284,7 +294,9 @@ fn css_toolbar_targets_keep_native_commands_with_svg_artwork() {
                 fixture.app.themes.get(&fixture.app.settings.theme).map(|theme| theme.skin.clone()).unwrap_or_default();
             skin::configure(&skin);
             let _frame = crate::kit::native_css::frame(ui);
-            fixture.app.control_bar(ui, Some(&fixture.grid), None, None, &mut fixture.actions);
+            let bar = crate::kit::element::TOOLBAR.enter();
+            let inside = ui.max_rect();
+            fixture.app.control_bar(ui, &bar, inside, Some(&fixture.grid), None, None, &mut fixture.actions);
         },
         fixture,
     );
@@ -324,4 +336,27 @@ fn toolbar_module_backgrounds_follow_the_sheet() {
         .collect();
     skin::configure(&skin::Skin::default());
     assert!(fills.iter().any(|(_, fill)| *fill == egui::Color32::from_rgb(0x10, 0x20, 0x30)), "{fills:?}");
+}
+
+/// Padding on the toolbar pads Suhina's own toolbar, in its content box: it does not switch to
+/// the theme's layout, whose view switches are framed buttons. Layout properties still do
+/// (#1336).
+#[test]
+fn padding_pads_the_native_toolbar_and_layout_properties_still_switch() {
+    let mut harness = native_bar();
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    harness.state_mut().app.use_test_skin(css("toolbar { padding: 0 20px; border-width: 0 0 2px; }"));
+    harness.run();
+    assert!(!crate::kit::native_css::toolbar_layout_requested(), "padding keeps Suhina's layout");
+    let launcher = harness.get_by_label("Launcher view").rect();
+    let framed = harness.output().shapes.iter().any(
+        |shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == launcher && rect.stroke.width > 0.0),
+    );
+    assert!(!framed, "the view switches keep their own look");
+    for layout in ["toolbar { gap: 12px; }", "toolbar { display: flex; padding: 4px; }", "#transport { order: 3; }"] {
+        harness.state_mut().app.use_test_skin(css(layout));
+        harness.run();
+        assert!(crate::kit::native_css::toolbar_layout_requested(), "{layout} asks for the theme's layout");
+    }
+    skin::configure(&skin::Skin::default());
 }

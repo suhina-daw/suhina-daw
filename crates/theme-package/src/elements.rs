@@ -53,6 +53,10 @@ pub enum Ids {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Artwork {
     pub role: &'static str,
+    /// What a sheet writes to give the role its image: `knob-body { image: url(…); }`. A role
+    /// with artwork of Suhina's own has the element (and attribute) that draws it; the others
+    /// are written as their role (`piano.draw { image: url(…); }`).
+    pub selector: &'static str,
     pub default: Option<&'static str>,
 }
 
@@ -119,16 +123,20 @@ const CONTROL_IDS: &[&str] = &[
 const LEVEL_FIELDS: &[&str] = &["arrangement-volume", "arrangement-pan", "main-volume", "mixer-volume", "mixer-pan"];
 
 /// Settings of a value a person drags, inherited from its ancestors.
-const VALUE_SETTINGS: &[&str] = &["appearance", "value-position", "value-decimals", "value-unit"];
+const VALUE_SETTINGS: &[&str] = &["appearance", "value-position", "value-decimals", "value-unit", "drag-pointer"];
 
 macro_rules! default_svg {
-    ($role:literal) => {
-        Artwork { role: $role, default: Some(include_str!(concat!("../../../assets/themes/default/", $role, ".svg"))) }
+    ($role:literal, $selector:literal) => {
+        Artwork {
+            role: $role,
+            selector: $selector,
+            default: Some(include_str!(concat!("../../../assets/themes/default/", $role, ".svg"))),
+        }
     };
 }
 
 const fn own(role: &'static str) -> Artwork {
-    Artwork { role, default: None }
+    Artwork { role, selector: role, default: None }
 }
 
 const NO: &[&str] = &[];
@@ -219,14 +227,14 @@ pub const ELEMENTS: &[Element] = &[
         .parts(&["track-name", "track-number", "fold"])
         .attributes(&["selected", "armed", "muted"])
         .artwork(&[
-            default_svg!("track.midi"),
-            default_svg!("track.audio"),
-            default_svg!("track.body"),
+            default_svg!("track.midi", "icon[kind=\"midi\"]"),
+            default_svg!("track.audio", "icon[kind=\"audio\"]"),
+            default_svg!("track.body", "track-header"),
             own("track.body.session"),
             own("track.body.arrangement"),
         ]),
     element("track-name", Part, "A track's name.").attributes(&["selected"]).artwork(&[
-        default_svg!("track.name"),
+        default_svg!("track.name", "track-name"),
         own("track.name.session"),
         own("track.name.mixer"),
         own("track.name.arrangement"),
@@ -260,9 +268,13 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["selected", "muted"]),
     element("detail", Region, "The detail area under the main view."),
     element("clip-editor", Region, "The clip editor in the detail area.").parts(&["editor-tab"]),
-    element("editor-tab", Control, "The clip editor's Clip and Devices tabs.")
-        .ids(Ids::Prefixed("tab-"))
-        .attributes(&["checked"]),
+    element(
+        "editor-tab",
+        Control,
+        "The clip editor's Clip and Devices tabs, and the MIDI tools part's Notes and Transform tabs.",
+    )
+    .ids(Ids::Prefixed("tab-"))
+    .attributes(&["checked"]),
     element("piano-roll", Region, "The piano roll.").parts(&[
         "piano-grid",
         "piano-key",
@@ -308,9 +320,10 @@ pub const ELEMENTS: &[Element] = &[
             own("piano.audition"),
             own("piano.hide"),
         ]),
-    element("midi-tools", Container, "The MIDI tools column.").settings(&["gap"]),
+    element("midi-tools", Container, "The MIDI tools part of a MIDI clip's panel.").settings(&["gap"]),
     element("clip-info", Container, "The clip's column beside the piano roll."),
-    element("sample-map", Region, "The sampler's sample map."),
+    element("sample-map", Region, "The sampler's sample map.").parts(&["sample-point"]),
+    element("sample-point", Drawn, "A sound on the sample map, coloured by its `kind` attribute (`kick`, `snare`)."),
     // Devices.
     element("device-panel", Container, "The device chain's panel.").parts(&["device"]),
     element("device", Container, "A device's panel in the device chain.")
@@ -324,30 +337,31 @@ pub const ELEMENTS: &[Element] = &[
     element("xy-control", Control, "A two-dimensional control of a device panel."),
     element("envelope", Drawn, "An envelope a device panel shows."),
     element("waveform", Drawn, "A waveform a panel shows."),
-    element("slider", Control, "A parameter's slider.")
+    element("slider", Control, "A parameter's slider; the MIDI tools' quantise amount, as a knob.")
         .parts(&["slider-rail", "slider-fill", "slider-handle"])
+        .ids(Ids::Listed { prefix: "", names: &["quantise-amount"] })
         .settings(VALUE_SETTINGS)
         .artwork(&[own("slider.rail"), own("slider.fill"), own("slider.handle")]),
     element("slider-rail", Part, "A slider's rail."),
     element("slider-fill", Part, "A slider's fill up to its value."),
     element("slider-handle", Part, "A slider's handle."),
     // Controls everywhere.
-    element("button", Control, "A button; also egui's check boxes and drop-downs.")
+    element("button", Control, "A button or switch; also egui's check boxes and drop-downs.")
         .ids(Ids::Listed { prefix: "control-", names: CONTROL_IDS })
         .attributes(&["checked", "playing", "recording", "armed", "muted"])
         .artwork(&[
-            default_svg!("button"),
-            default_svg!("play"),
-            default_svg!("stop"),
-            default_svg!("record"),
-            default_svg!("solo"),
-            default_svg!("arm"),
-            default_svg!("cue"),
+            default_svg!("button", "button"),
+            default_svg!("play", "icon[kind=\"play\"]"),
+            default_svg!("stop", "icon[kind=\"stop\"]"),
+            default_svg!("record", "icon[kind=\"record\"]"),
+            default_svg!("solo", "icon[kind=\"solo\"]"),
+            default_svg!("arm", "icon[kind=\"arm\"]"),
+            default_svg!("cue", "icon[kind=\"cue\"]"),
             own("track-on"),
             own("automation"),
             own("monitor"),
         ]),
-    element("value", Control, "A value field, such as a volume bar.")
+    element("value", Control, "A value field, such as a volume bar or a clip panel's number field.")
         .parts(&["value-fill", "value-handle"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
         .settings(VALUE_SETTINGS)
@@ -368,25 +382,30 @@ pub const ELEMENTS: &[Element] = &[
         .parts(&["fader-cap", "fader-rail", "fader-scale"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
         .settings(VALUE_SETTINGS)
-        .artwork(&[default_svg!("fader.cap"), default_svg!("fader.rail")]),
-    element("fader-cap", Part, "A fader's cap."),
-    element("fader-rail", Part, "A fader's rail."),
+        .artwork(&[default_svg!("fader.cap", "fader-cap"), default_svg!("fader.rail", "fader-rail")]),
+    element("fader-cap", Part, "A fader's cap; its artwork takes its `color`."),
+    element("fader-rail", Part, "A fader's rail; its artwork takes its `color`."),
     element("fader-scale", Part, "The scale beside a fader."),
     element("send", Control, "A send, in a mixer strip and in a track header.")
         .ids(Ids::Prefixed("mixer-send-"))
         .settings(VALUE_SETTINGS)
         .artwork(&[own("send"), own("send.fill"), own("send.knob.body"), own("send.knob.pointer")]),
     element("knob", Control, "A knob.")
+        .parts(&["knob-body", "knob-pointer"])
         .settings(VALUE_SETTINGS)
-        .artwork(&[default_svg!("knob.body"), default_svg!("knob.pointer")]),
+        .artwork(&[default_svg!("knob.body", "knob-body"), default_svg!("knob.pointer", "knob-pointer")]),
+    element("knob-body", Part, "A knob's body; its artwork takes its `color`."),
+    element("knob-pointer", Part, "A knob's pointer, turned to its value; its artwork takes its `color`."),
+    element("icon", Part, "The symbol on a button or a track header, by its `kind` attribute (`play`, `midi`)."),
     element("meter", Control, "A level meter.")
         .parts(&["meter-level"])
         .settings(&["meter-style", "meter-segments", "meter-intensity"])
-        .artwork(&[default_svg!("meter")]),
+        .artwork(&[default_svg!("meter", "meter")]),
     element("meter-level", Part, "A meter's lit part."),
     element("meter-vertical", Part, "A meter standing up, around its level."),
     element("meter-horizontal", Part, "A meter lying down, around its level."),
-    element("dropdown", Control, "A drop-down menu's button."),
+    element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists.")
+        .artwork(&[default_svg!("folder", "icon[kind=\"folder\"]")]),
     element("text-input", Control, "A text field."),
     element("label", Drawn, "A label."),
     element("separator", Drawn, "A rule between parts."),
@@ -467,6 +486,78 @@ pub const DEFAULT_ARTWORK: usize = {
     count
 };
 
+/// The role a sheet's `image` rule gives artwork to, by its selector: an element of a role's
+/// (`knob-body`, `icon[kind="play"]`) or a role as written (`knob.body`, `piano.draw`), with a
+/// state after it (`knob-body:hover` is `knob.body.hover`, `button[checked]` and `button:on`
+/// are `button.on`). An attribute's value may be written with or without quotes and with spaces
+/// (`icon[kind=play]`, `icon[ kind = 'play' ]`). A selector that names no role of Suhina's is
+/// returned as it is, for the caller to refuse.
+pub fn role_of_selector(selector: &str) -> String {
+    let selector = canonical_attributes(selector.trim());
+    let (base, state) = [
+        (":hover", ".hover"),
+        (":active", ".active"),
+        (":disabled", ".disabled"),
+        (":on", ".on"),
+        ("[checked]", ".on"),
+    ]
+    .iter()
+    .find_map(|(written, state)| selector.strip_suffix(written).map(|base| (base, *state)))
+    .unwrap_or((selector.as_str(), ""));
+    let role = artwork()
+        .find(|art| art.default.is_some() && art.selector == base)
+        .map_or_else(|| base.to_owned(), |art| art.role.to_owned());
+    format!("{role}{state}")
+}
+
+/// `selector` with each attribute selector written as Suhina writes it: `[kind="play"]` for
+/// `[kind=play]`, `[kind='play']` or `[ kind = "play" ]`, and `[checked]` for `[ checked ]`.
+fn canonical_attributes(selector: &str) -> String {
+    let mut canonical = String::with_capacity(selector.len() + 4);
+    let mut rest = selector;
+    while let Some(open) = rest.find('[') {
+        canonical.push_str(&rest[..open]);
+        let Some(close) = rest[open..].find(']').map(|close| open + close) else {
+            canonical.push_str(&rest[open..]);
+            return canonical;
+        };
+        let inner = rest[open + 1..close].trim();
+        match inner.split_once('=') {
+            Some((name, value)) => {
+                let value = value.trim();
+                let unquoted = ['"', '\'']
+                    .iter()
+                    .find_map(|quote| value.strip_prefix(*quote).and_then(|v| v.strip_suffix(*quote)))
+                    .unwrap_or(value);
+                canonical.push_str(&format!("[{}=\"{unquoted}\"]", name.trim()));
+            }
+            None => canonical.push_str(&format!("[{inner}]")),
+        }
+        rest = &rest[close + 1..];
+    }
+    canonical.push_str(rest);
+    canonical
+}
+
+/// The selector a sheet writes for `role`'s artwork, with its state (`knob.body.hover` is
+/// `knob-body:hover`, `button.on` is `button[checked]`); a role without artwork of Suhina's own,
+/// or with a colour or frame in it, is written as it is, states as pseudo-classes.
+pub fn selector_of_role(role: &str) -> String {
+    for (suffix, written) in
+        [(".hover", ":hover"), (".active", ":active"), (".disabled", ":disabled"), (".on", "[checked]")]
+    {
+        if let Some(base) = role.strip_suffix(suffix) {
+            return match artwork().find(|art| art.default.is_some() && art.role == base) {
+                Some(art) => format!("{}{written}", art.selector),
+                None => format!("{base}{}", if suffix == ".on" { ":on" } else { written }),
+            };
+        }
+    }
+    artwork()
+        .find(|art| art.default.is_some() && art.role == role)
+        .map_or_else(|| role.to_owned(), |art| art.selector.to_owned())
+}
+
 /// The element a role belongs to: `knob` for `knob.body`.
 pub fn role_element(role: &str) -> Option<&'static Element> {
     ELEMENTS.iter().find(|element| element.artwork.iter().any(|art| art.role == role))
@@ -498,7 +589,40 @@ mod tests {
             assert!(!roles[..at].contains(role), "the role {role} twice");
         }
         assert_eq!(default_artwork().count(), DEFAULT_ARTWORK);
-        assert_eq!(DEFAULT_ARTWORK, 16);
+        assert_eq!(DEFAULT_ARTWORK, 17);
+        // The element that draws a role's default artwork is in the registry.
+        for art in artwork().filter(|art| art.default.is_some()) {
+            let name = art.selector.split(['[', ':']).next().unwrap_or_default();
+            assert!(is_element(name), "{} is drawn by {}, which is not an element", art.role, art.selector);
+        }
+    }
+
+    #[test]
+    fn artwork_selectors_and_roles_turn_into_each_other() {
+        for (selector, role) in [
+            ("knob-body", "knob.body"),
+            ("knob-body:hover", "knob.body.hover"),
+            ("icon[kind=\"play\"]", "play"),
+            ("button[checked]", "button.on"),
+            ("fader-cap:active", "fader.cap.active"),
+            ("track-header", "track.body"),
+        ] {
+            assert_eq!(role_of_selector(selector), role, "{selector}");
+            assert_eq!(selector_of_role(role), selector, "{role}");
+        }
+        // Roles of an earlier form and roles without default artwork stay as they are written.
+        assert_eq!(role_of_selector("knob.body:hover"), "knob.body.hover");
+        assert_eq!(role_of_selector("solo:on"), "solo.on");
+        assert_eq!(role_of_selector("piano.draw"), "piano.draw");
+        // An attribute's value without quotes, in single quotes or with spaces names the same role.
+        for selector in ["icon[kind=play]", "icon[kind='play']", "icon[ kind = \"play\" ]"] {
+            assert_eq!(role_of_selector(selector), "play", "{selector}");
+        }
+        assert_eq!(role_of_selector("icon[kind=solo][ checked ]"), "solo.on");
+        assert_eq!(role_of_selector("icon[kind=stop]:hover"), "stop.hover");
+        assert_eq!(selector_of_role("piano.draw:on"), "piano.draw:on");
+        assert_eq!(selector_of_role("piano.draw.on"), "piano.draw:on");
+        assert_eq!(selector_of_role("track.body.color-ff9a3c"), "track.body.color-ff9a3c");
     }
 
     #[test]

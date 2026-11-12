@@ -189,6 +189,9 @@ fn a_clips_tempo_is_set_halved_and_doubled_and_its_length_follows() {
     // Refused: out of range, an unknown source.
     assert!(run(&mut session, "clip.setTempo", json!({ "clip": clip.id.0, "bpm": 5.0 })).is_err());
     assert!(run(&mut session, "clip.setTempo", json!({ "clip": clip.id.0, "bpm": 90.0, "source": "x" })).is_err());
+    // A selector that names no clip says so, not "only an audio clip has a tempo".
+    let err = run(&mut session, "clip.setTempo", json!({ "clip": 999_999, "bpm": 90.0 })).unwrap_err();
+    assert!(!err.contains("only an audio clip"), "{err}");
 }
 
 #[test]

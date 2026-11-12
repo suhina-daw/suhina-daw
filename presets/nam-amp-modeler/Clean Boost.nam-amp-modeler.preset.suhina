@@ -1,0 +1,24 @@
+{
+"format": "suhina-preset",
+"version": 1,
+"device": "nam-amp-modeler",
+"role": "effect",
+"name": "Clean Boost",
+"author": "suhina",
+"tags": [
+"boost",
+"pedal",
+"lift"
+],
+"params": {
+"inputGain": 6.0,
+"eqBass": 0.0,
+"eqMid": 0.0,
+"eqTreble": 0.0,
+"eqMidFreq": 600.0,
+"eqOn": 0.0,
+"delay": 0.0,
+"hq": 1.0,
+"outputVolume": 0.0
+}
+}

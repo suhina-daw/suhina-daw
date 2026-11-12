@@ -85,7 +85,7 @@ fn a_copy_leaves_the_project_with_its_own_file() {
     assert!(session.has_unsaved_changes(), "a copy is not the project saved");
 
     // A project made from the template is untitled and the same.
-    let (made, _) = Session::from_template(&copy).unwrap_or_else(|e| panic!("{e}"));
+    let (made, _) = Session::from_template(&copy, None).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(made.source(), None);
     assert_eq!(made.project(), session.project());
     assert!(!made.has_unsaved_changes());
@@ -123,6 +123,6 @@ fn what_cannot_be_saved_or_opened_is_an_error() {
     std::fs::copy(dir.join("good.suhina"), &old).unwrap_or_default();
     let error = Session::open(&old).err().map(String::from).unwrap_or_default();
     assert!(error.contains("Suhina opens a Suhina project (.suhina) or a Live Set (.als)"), "{error}");
-    assert!(Session::from_template(&old).is_err());
+    assert!(Session::from_template(&old, None).is_err());
     let _clean = std::fs::remove_dir_all(&dir);
 }

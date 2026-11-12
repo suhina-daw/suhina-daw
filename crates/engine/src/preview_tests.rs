@@ -227,6 +227,75 @@ fn a_held_note_plays_until_it_is_let_go() {
     assert!(!controller.preview_monitor().playing());
 }
 
+/// Notes added to the held ones join them: the first goes on sounding after the added one is let
+/// go, through the track's instrument and through the fallback, and only letting go of it ends the
+/// preview (the piano roll's selecting rectangle builds a chord this way).
+#[test]
+fn added_held_notes_join_those_already_held() {
+    let (synth, empty) = (project(Vec::new(), 1.0, vec![device("fm-synth", &[])]), empty_project());
+    for track in [Some(TrackId(1)), None] {
+        let mut renderer = stopped(if track.is_some() { &synth } else { &empty });
+        let mut controller = renderer.controller();
+        let hold = |controller: &mut crate::Controller, key: u8, add: bool| {
+            let fallback = controller.preview_instrument();
+            let notes = preview_notes([(0.0, 0.0, key, 1.0)], 120.0, SR, track, fallback);
+            if add {
+                controller.preview_note_add(notes, 1.0).unwrap();
+            } else {
+                controller.preview_note_on(notes, 1.0).unwrap();
+            }
+        };
+        hold(&mut controller, 60, false);
+        let held = peak(&blocks(&mut renderer, 20, 1024));
+        assert!(held > 0.01, "{track:?}: the first key sounds");
+        hold(&mut controller, 67, true);
+        blocks(&mut renderer, 20, 1024);
+        controller.preview_note_off(Some(67)).unwrap();
+        let after = blocks(&mut renderer, 200, 1024);
+        // The track's FM synth holds a note at its level; the fallback's may fade by itself, so
+        // there the monitor says the preview still holds a key.
+        if track.is_some() {
+            assert!(peak(&after[190 * 2048..]) > held * 0.05, "the first key still sounds");
+        }
+        assert!(controller.preview_monitor().playing(), "{track:?}: the first key is still held");
+        controller.preview_note_off(Some(60)).unwrap();
+        let after = blocks(&mut renderer, 200, 1024);
+        assert!(peak(&after[190 * 2048..]) < held * 0.05, "{track:?}: letting it go ends it");
+        assert!(!controller.preview_monitor().playing(), "{track:?}");
+    }
+}
+
+/// A held preview's note with a length of its own goes off at its end by itself, through the
+/// track's instrument and through the fallback, and that ends the preview; added to a held one
+/// it leaves that one sounding.
+#[test]
+fn a_held_previews_note_with_a_length_ends_by_itself() {
+    let (synth, empty) = (project(Vec::new(), 1.0, vec![device("fm-synth", &[])]), empty_project());
+    for track in [Some(TrackId(1)), None] {
+        let mut renderer = stopped(if track.is_some() { &synth } else { &empty });
+        let mut controller = renderer.controller();
+        // Half a beat at 120 BPM: a quarter of a second.
+        let fallback = controller.preview_instrument();
+        let notes = preview_notes([(0.0, 0.5, 60, 1.0)], 120.0, SR, track, fallback);
+        controller.preview_note_on(notes, 1.0).unwrap();
+        let start = blocks(&mut renderer, 4, 1024);
+        assert!(peak(&start) > 0.01, "{track:?}: it sounds");
+        blocks(&mut renderer, 200, 1024);
+        assert!(!controller.preview_monitor().playing(), "{track:?}: over at its end");
+        assert!(peak(&blocks(&mut renderer, 4, 1024)) < peak(&start) * 0.05, "{track:?}: and silent");
+        // One with an end added to a key held until it is let go: the held key goes on.
+        let fallback = controller.preview_instrument();
+        controller.preview_note_on(preview_notes([(0.0, 0.0, 60, 1.0)], 120.0, SR, track, fallback), 1.0).unwrap();
+        let fallback = controller.preview_instrument();
+        controller.preview_note_add(preview_notes([(0.0, 0.5, 67, 1.0)], 120.0, SR, track, fallback), 1.0).unwrap();
+        blocks(&mut renderer, 200, 1024);
+        assert!(controller.preview_monitor().playing(), "{track:?}: the held key goes on");
+        controller.preview_note_off(None).unwrap();
+        blocks(&mut renderer, 4, 1024);
+        assert!(!controller.preview_monitor().playing(), "{track:?}");
+    }
+}
+
 #[test]
 fn a_held_note_through_the_fallback_ends_and_a_key_off_without_one_changes_nothing() {
     let mut renderer = stopped(&empty_project());

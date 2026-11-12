@@ -12,8 +12,11 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
 - *What is on screen, in code*, at the top of `crates/ui/src/lib.rs`: the function that draws
   each part of the window and the one that handles its result.
 - The views live in `crates/ui/src/<view>/` (`app/`, `arrangement/`, `browser/`, `detail/`,
-  `session/`, `settings/`; `interaction/` has menus, drops and the keymap; `kit/` the theme,
-  widgets and motion), with a module file beside each folder (`app.rs`, `browser.rs`, ...).
+  `session/`, `settings/`; `interaction/` has menus, drops and the keymap, and what several
+  views share: the grid menu, the toolbars' icon buttons, a key's name and how far a timeline
+  scrolls; `kit/` the theme, widgets and motion), with a module file beside each folder
+  (`app.rs`, `browser.rs`, ...). A helper two views use goes in `interaction/`, not in one
+  view's module for the other to reach into.
 
 ## The house style
 
@@ -25,9 +28,21 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   `crates/ui/themes/`; the theme tests check that.
 - **What a theme styles is an element** of the registry (`suhina_theme_package::elements`):
   enter it with `kit::element` (`KNOB.id("send").response(&response).attr(Checked, on).enter()`)
-  and read its style with `el.style()` or paint its surface with `el.paint(&painter, rect)`.
-  That is the only way to a computed style outside `kit`; a part drawn without its own element
-  would paint with its parent's. A new element goes in the registry first.
+  and read its style with `el.style()`, `el.color_or(..)`, `el.background_or(..)` and the other
+  readers of `Entered`, or paint its box with `el.paint(&painter, rect)` and draw its contents
+  in the returned `content` (its box less its border and padding, the content box: lay children
+  out there, not in the rect you painted). Keep `el` alive while they are drawn: when it is
+  dropped, what they painted in its layer is cut at its padding box if it hides its overflow
+  (regions do), and its outline is painted. A size worked out from what an element holds adds
+  `el.insets()`; a size the user drags is the whole box. A bar or panel whose background is
+  painted another way (window corners, artwork) uses `el.paint_border` for the rest of its box.
+  `kit::element::overflow_cuts()` counts shapes such a cut hid (debug builds), for window tests
+  that check a view stays inside its regions (`padded_regions_hold_their_views_inside…`). Give its
+  states (`.attr`), pointer states and variables to the builder, before `.enter()`: its style
+  is worked out as it is entered. A shared painter takes the caller's `&Entered`; nothing reads
+  "the innermost scope". A setting a theme gives (`appearance`, `track-height`) is a registered
+  property in `suhina_style::property`, read from its element's style. A new element goes in the
+  registry first.
 - `motion::mix`/`toward`/`pulse` for hovers and fills, `widgets::button_area` for clickable
   rects, `Status::Hint` for status-bar hints.
 - **A menu with a text field** (a rename): egui's context menu closes on a click inside it, which

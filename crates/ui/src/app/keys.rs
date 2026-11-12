@@ -104,6 +104,9 @@ impl App {
         if self.browser_part > 0.001 {
             crate::browser::browser_view::list_keys(ui, &mut self.browser);
         }
+        // Escape twice in a row (the focus mode, › Pulled to the top), seen before the piano
+        // roll's Escape takes the key.
+        self.escape_twice = self.double_escape(ui);
         // The piano roll's own keys only while it has the keyboard; the selected slot's keys
         // only while it does not, as the two share keys.
         let notes = self.piano_roll.focused;

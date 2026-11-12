@@ -5,7 +5,6 @@
 //! along the bottom (`docs/spec/ui-session-view.md`, sizes in `docs/design/components.md`).
 //! It draws a [`TrackGrid`] and turns clicks into [`Action`]s; it never changes the project itself.
 
-use crate::kit::surface::Backgrounds as _;
 use std::collections::BTreeSet;
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Response, Sense, StrokeKind, Ui, Vec2};
@@ -18,6 +17,7 @@ use crate::interaction::empty_space::empty_space;
 use crate::interaction::grid::{Column, ColumnKind, SlotState, TrackGrid};
 use crate::interaction::menus::{self, TrackMenu};
 use crate::interaction::nesting::{self, Place};
+use crate::kit::element::{Muted, Selected};
 use crate::kit::meter::{self, Meters};
 use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
@@ -243,18 +243,28 @@ pub fn show(
     state: &mut SessionViewState,
     actions: &mut Vec<Action>,
 ) {
-    let _style_class = crate::kit::style_class::enter("session");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let style_class = crate::kit::element::SESSION.enter();
+    let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
-    let area = ui.available_rect_before_wrap();
-    ui.allocate_rect(area, Sense::hover());
-    let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
-    crate::kit::native_css::background(&painter, area);
+    let whole = ui.available_rect_before_wrap();
+    ui.allocate_rect(whole, Sense::hover());
+    let painter = ui.painter_at(whole);
+    // The view's own background, over the window's (#1233); the view is laid out in its content
+    // box, inside its border and padding (#1336).
+    let area = style_class.paint(&painter, whole).content;
 
     // Fixed bands: header on top, mixer at the bottom, scene column on the right.
     let header = Rect::from_min_size(area.min, Vec2::new(area.width(), header_height()));
-    let mixer_height = mixer_height(state, area.height(), grid.scenes.len());
+    // The slots are rows shared by every column and the scene column: they start below a track
+    // column's top border and padding and end above its bottom ones, as a plain `track-column`
+    // has them, so the rows line up whatever a column's state (#1336).
+    let (rows_top, rows_bottom, rows_border) = {
+        let plain = crate::kit::element::TRACK_COLUMN.enter();
+        let [top, _, bottom, _] = plain.insets();
+        let [border_top, _, border_bottom, _] = plain.style().map_or([0.0; 4], |style| style.border_sides);
+        (top, bottom, (border_top, border_bottom))
+    };
+    let mixer_height = mixer_height(state, area.height(), grid.scenes.len(), rows_top + rows_bottom);
     let mixer =
         Rect::from_min_max(Pos2::new(area.left(), (area.bottom() - mixer_height).max(header.bottom())), area.max);
     let body =
@@ -280,7 +290,7 @@ pub fn show(
         .filter(|c| c.kind != ColumnKind::Return && !hidden.contains(&c.track))
         .map(|c| column_width(c) + 1.0)
         .sum();
-    let content_height = (grid.scenes.len() as f32 + 1.0) * slot_pitch();
+    let content_height = (grid.scenes.len() as f32 + 1.0) * slot_pitch() + rows_top + rows_bottom;
     let fields = std::mem::take(&mut state.value_areas);
     let lists = std::mem::take(&mut state.scroll_areas);
     if ui.rect_contains_pointer(area) {
@@ -349,7 +359,8 @@ pub fn show(
         header,
         body,
         mixer,
-        top: body.top() - state.scroll.y,
+        top: body.top() - state.scroll.y + rows_top,
+        rows: egui::Rangef::new(body.top() + rows_border.0, body.bottom() - rows_border.1),
         scenes: grid.scenes.len(),
         places,
         groups,
@@ -484,7 +495,7 @@ pub fn show(
     painter.vline(scenes_x - 0.5, area.y_range(), theme::hairline(theme::border_strong()));
     let scene_span = egui::Rangef::new(scenes_x, area.right());
     let header_rect = Rect::from_x_y_ranges(scene_span, header.y_range());
-    painter.fill_background(header_rect, 0.0, theme::control_background());
+    painter.rect_filled(header_rect, 0.0, theme::control_background());
     widgets::text_in(
         &painter,
         header_rect.shrink2(Vec2::new(PAD, 0.0)),
@@ -497,7 +508,7 @@ pub fn show(
         ui,
         &painter.with_clip_rect(Rect::from_x_y_ranges(scene_span, body.y_range())),
         scene_span,
-        body.top() - state.scroll.y,
+        bands.top,
         grid,
         &mut state.launch_keys,
         actions,
@@ -524,8 +535,9 @@ pub fn show(
     {
         probe.offer(header_rect.union(main_mixer), DropTarget::Track(TrackId::MAIN));
     }
-    painter.fill_background(main_mixer, 0.0, theme::panel_background());
-    crate::kit::liquid::paint(&painter, main_mixer, theme::panel_background(), crate::kit::liquid::Surface::Track);
+    let main_fill = crate::kit::style_class::surface_or(theme::panel_background());
+    painter.rect_filled(main_mixer, 0.0, main_fill);
+    crate::kit::liquid::paint(&painter, main_mixer, &style_class, main_fill, crate::kit::liquid::Surface::Track);
     if main_selected {
         painter.rect_stroke(header_rect.shrink(0.5), 0.0, egui::Stroke::new(1.0, theme::accent()), StrokeKind::Inside);
     }
@@ -536,7 +548,13 @@ pub fn show(
         crate::session::mixer_strip::Shared { reserve_input: state.reserve_input, fader: state.strip_fader_shown() };
     let parts = crate::session::mixer_strip::layout_main(main_mixer, shared);
     if let Some(list) = parts.devices {
-        crate::session::mixer_strip::main_devices(&painter.with_clip_rect(main_mixer), list, &grid.main_devices);
+        crate::session::mixer_strip::main_devices(
+            ui,
+            &painter.with_clip_rect(main_mixer),
+            list,
+            &grid.main_devices,
+            state,
+        );
     }
     if let Some(fader) = parts.fader {
         let main_painter = painter.with_clip_rect(main_mixer);
@@ -586,7 +604,7 @@ fn main_metronome(
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
     let fill = if on { theme::control_active() } else { theme::control_background() };
-    painter.fill_background(rect, 0.0, fill);
+    painter.rect_filled(rect, 0.0, fill);
     let glyph = if on { theme::accent() } else { theme::text_primary() };
     crate::session::record_controls::metronome_glyph(painter, rect, glyph);
     // Held: the level's slider beside the button, where there is room.
@@ -594,15 +612,16 @@ fn main_metronome(
 }
 
 /// The mixer's height this frame: the one being dragged to, else the saved one, kept between the
-/// least height and the most this view allows (`docs/design/components.md` › Mixer strip).
-fn mixer_height(state: &SessionViewState, view_height: f32, scenes: usize) -> f32 {
+/// least height and the most this view allows (`docs/design/components.md` › Mixer strip). The
+/// slots' rows are `rows_insets` taller than their pitch (a track column's border and padding).
+fn mixer_height(state: &SessionViewState, view_height: f32, scenes: usize, rows_insets: f32) -> f32 {
     let (least, default, _) = crate::settings::view_settings::MIXER_HEIGHTS;
     let (least, default) = (least as f32, default as f32);
     let saved = if state.mixer_height > 0.0 { state.mixer_height } else { default };
     let wanted = state.mixer_dragged.unwrap_or(saved);
     // Up to just under the stop row under the last scene, and always up to the default height;
     // never over the header.
-    let under_slots = view_height - header_height() - 1.0 - (scenes as f32 + 1.0) * slot_pitch() - 1.0;
+    let under_slots = view_height - header_height() - 1.0 - (scenes as f32 + 1.0) * slot_pitch() - rows_insets - 1.0;
     let most = under_slots.max(default).min(view_height - header_height() - 1.0).max(least);
     wanted.clamp(least, most)
 }
@@ -643,7 +662,12 @@ struct Bands<'a> {
     header: Rect,
     body: Rect,
     mixer: Rect,
+    /// Where the first scene's row starts, scrolled, inside a track column's top border and
+    /// padding.
     top: f32,
+    /// Where the rows show, scrolling: the body inside a plain track column's top and bottom
+    /// border, the box every column's rows are laid out for.
+    rows: egui::Rangef,
     scenes: usize,
     /// Every track but the returns, in track order, and the group tracks with their names.
     places: Vec<Place>,
@@ -786,10 +810,13 @@ fn column_header(
     actions: &mut Vec<Action>,
 ) {
     let _artwork = crate::kit::artwork::track_color(rgb(column.color));
-    let own = crate::kit::element::TRACK_HEADER.id(&format!("track-{}", column.track.0)).enter();
-    crate::kit::native_css::set_variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)));
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, state.selected == Some(column.track));
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, column.mute);
+    let track_id = format!("track-{}", column.track.0);
+    let own = crate::kit::element::TRACK_HEADER
+        .id(&track_id)
+        .variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)))
+        .attr(Selected, state.selected == Some(column.track))
+        .attr(Muted, column.mute)
+        .enter();
     if rect.width() <= 0.0 {
         return;
     }
@@ -825,19 +852,22 @@ fn column_header(
         fill,
         rgb(column.color),
     ) {
-        painter.fill_background(rect, 0.0, fill);
+        painter.rect_filled(rect, 0.0, fill);
     }
-    crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Track);
+    crate::kit::liquid::paint(painter, rect, &own, fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`track-header[selected]`) over the native one;
     // the name's ink reads on whichever is shown.
-    let shown = crate::kit::style_class::background(fill);
-    own.paint(painter, rect);
-    let _name_style =
-        crate::kit::style_class::enter_named_response("track-name", &format!("track-{}", column.track.0), &response);
-    crate::kit::native_css::set_variable("--track-fill", crate::kit::native_css::hex(fill));
-    crate::kit::native_css::background(painter, rect);
+    let shown = own.background_or(fill);
+    // What the header holds goes in its content box, inside its border and padding (#1336).
+    let rect = own.paint(painter, rect).content;
+    let name_style = crate::kit::element::TRACK_NAME
+        .id(&track_id)
+        .response(&response)
+        .variable("--track-fill", crate::kit::native_css::hex(fill))
+        .enter();
+    name_style.paint_background(painter, rect, 0.0);
     // Ink that reads on the fill, unless the sheet gives the name a colour.
-    let color = crate::kit::style_class::foreground(theme::text_on(shown));
+    let color = name_style.color_or(theme::text_on(shown));
     if state.selected == Some(column.track) || state.selected_tracks.contains(&column.track) {
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.5, color), StrokeKind::Inside);
     }
@@ -890,12 +920,15 @@ fn column_body(
     // A track's slots can be selected, copied, pasted into and dragged; a group's only launch.
     let editable = column.kind == ColumnKind::Track;
     let can_paste = state.can_paste;
-    let _column_style = crate::kit::style_class::enter_named("track-column", &format!("track-{}", column.track.0));
-    crate::kit::native_css::set_variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)));
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, state.selected == Some(column.track));
+    let track_id = format!("track-{}", column.track.0);
+    let column_style = crate::kit::element::TRACK_COLUMN
+        .id(&track_id)
+        .variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)))
+        .attr(Selected, state.selected == Some(column.track))
+        .enter();
     // The column's own background from the sheet, under its slots.
-    crate::kit::native_css::background(painter, Rect::from_x_y_ranges(span, bands.body.y_range()).intersect(clip));
-    if crate::kit::style_class::property("--suhina-track-artwork").as_deref() == Some("on") {
+    column_style.paint_background(painter, Rect::from_x_y_ranges(span, bands.body.y_range()).intersect(clip), 0.0);
+    if crate::kit::style_class::track_artwork(&column_style) {
         let body = Rect::from_x_y_ranges(span, bands.body.y_range());
         crate::kit::skin::paint_colored(
             painter,
@@ -910,7 +943,22 @@ fn column_body(
             rgb(column.color),
         );
     }
-    let (top, scenes) = (bands.top, bands.scenes);
+    // Its border, and its slots in its content box, inside its border and padding (#1336); the
+    // rows' top is the one every column shares (`Bands::top`). The column stays while its rows
+    // scroll, as a CSS scroll container: they are cut at its padding box, so they never draw
+    // over its border nor take the pointer there. Across, its own; up and down, a plain
+    // column's (`Bands::rows`), the box the shared rows are laid out for, so a state's thicker
+    // top or bottom border is drawn under the rows' ends rather than cutting a slot.
+    let column_box = Rect::from_x_y_ranges(span, bands.body.y_range());
+    let (span, top) = (column_style.paint_border(painter, column_box).x_range(), bands.top);
+    let [_, border_right, _, border_left] = column_style.style().map_or([0.0; 4], |style| style.border_sides);
+    let padding_box = Rect::from_x_y_ranges(
+        egui::Rangef::new(column_box.left() + border_left, column_box.right() - border_right),
+        bands.rows,
+    );
+    let clip = clip.intersect(padding_box);
+    let painter = &painter.with_clip_rect(painter.clip_rect().intersect(padding_box));
+    let scenes = bands.scenes;
     let mapping = state.launch_keys.mode.on && column.kind != ColumnKind::Return;
     let label = |target: MappingTarget| bands.mapped.iter().find(|(t, _)| *t == target).map(|(_, l)| l.as_str());
     for (scene, slot) in column.slots.iter().enumerate() {
@@ -922,9 +970,8 @@ fn column_body(
             continue;
         }
         let number = scene + 1;
-        let _slot_style = crate::kit::style_class::enter_named("slot", &format!("slot-{}-{number}", column.track.0));
-        let clip_style =
-            (!matches!(slot.state, SlotState::Empty | SlotState::EmptyStop)).then(|| crate::kit::element::CLIP.enter());
+        let slot_style = crate::kit::element::SLOT.id(&format!("slot-{}-{number}", column.track.0)).enter();
+        let has_clip = !matches!(slot.state, SlotState::Empty | SlotState::EmptyStop);
         let target = MappingTarget::Slot { track: column.track, scene };
         if mapping {
             // The mapping mode: a click picks the slot, empty or not, and launches nothing.
@@ -937,7 +984,9 @@ fn column_body(
             if response.clicked() {
                 state.launch_keys.pick(target);
             }
-            slot_cell(painter, rect, column, slot, (0.0, None), 1.0, progress, false);
+            let clip_style = has_clip.then(|| crate::kit::element::CLIP.enter());
+            let el = clip_style.as_ref().unwrap_or(&slot_style);
+            slot_cell(painter, rect, el, column, slot, (0.0, None), 1.0, progress, false);
             crate::session::launch_keys::overlay(
                 painter,
                 rect,
@@ -948,7 +997,6 @@ fn column_body(
             painter.hline(span, rect.bottom() + 0.5, theme::hairline(theme::border()));
             continue;
         }
-        let has_clip = !matches!(slot.state, SlotState::Empty | SlotState::EmptyStop);
         let key = (column.track, scene);
         // A clip on a track: its mark launches it, its name selects it. A group's slot launches
         // the tracks inside it from anywhere.
@@ -1004,13 +1052,12 @@ fn column_body(
             state.select_slot(column.track, scene);
         }
         let hover = [&launch, &select].into_iter().flatten().map(|r| widgets::hover(ui, r)).fold(0.0, f32::max);
-        // The clip's element is entered before its responses exist: it takes their hover now, so
+        // The clip's element is entered once its responses exist, with their hover, so
         // `clip:hover` matches it (#1241).
-        let hover_fill = clip_style.as_ref().and_then(|clip| {
-            let hovered = [&launch, &select].into_iter().flatten().any(egui::Response::hovered);
-            crate::kit::native_css::mark_pointer(hovered, false, false);
-            hover_fill(ui, clip, id.with(("hover-fill", scene)), hovered, hover)
-        });
+        let hovered = [&launch, &select].into_iter().flatten().any(egui::Response::hovered);
+        let clip_style = has_clip.then(|| crate::kit::element::CLIP.pointer(hovered, false, false).enter());
+        let hover_fill =
+            clip_style.as_ref().and_then(|clip| hover_fill(ui, clip, id.with(("hover-fill", scene)), hovered, hover));
         let pulse = if slot.state == SlotState::Queued { motion::pulse(ui.ctx()) } else { 1.0 };
         // The launch button launches as the pointer goes down, and releases a gate or repeat
         // clip as it goes up. A playing trigger clip's press stops it instead.
@@ -1120,7 +1167,8 @@ fn column_body(
                 },
             );
         });
-        slot_cell(painter, rect, column, slot, (hover, hover_fill), pulse, progress, selectable && selected);
+        let el = clip_style.as_ref().unwrap_or(&slot_style);
+        slot_cell(painter, rect, el, column, slot, (hover, hover_fill), pulse, progress, selectable && selected);
         if column.armed && !has_clip && column.kind == ColumnKind::Track {
             let recording = column.recording == Some(scene);
             let (track, name) = (column.track.0, column.name.as_str());
@@ -1169,8 +1217,12 @@ fn column_body(
             actions.push(Action::new("track.stop", json!({ "track": column.track.0 })));
         }
     }
-    let fill = motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response));
-    painter.fill_background(stop_rect, 0.0, fill);
+    let fill = motion::mix(
+        crate::kit::style_class::surface_or(theme::panel_background()),
+        theme::panel_hover(),
+        widgets::hover(ui, &response),
+    );
+    painter.rect_filled(stop_rect, 0.0, fill);
     let square = Rect::from_center_size(stop_rect.center(), Vec2::splat(7.0));
     let color = if column.stop_queued { theme::accent() } else { theme::text_secondary() };
     painter.rect_stroke(square, 0.0, theme::hairline(color), StrokeKind::Inside);
@@ -1185,11 +1237,10 @@ fn column_body(
     }
 }
 
-/// What a clip's hover keeps while it lasts: the clip's background as the pointer came, and the
-/// theme's background for the hovered clip, if it gives one.
+/// What a clip's hover keeps while it fades out: the theme's background for the hovered clip, if
+/// it gives one.
 #[derive(Clone, Copy, PartialEq)]
 struct HoverFill {
-    rest: Color32,
     fill: Option<Color32>,
 }
 
@@ -1216,11 +1267,11 @@ fn hover_fill(
         return None;
     }
     let style = clip.style()?;
-    // In the frame the pointer comes the clip's style is still the one resolved without it (the
-    // pointer's state takes effect as the frame's styles resolve): its background is the rest's.
-    let rest = stored.map_or(style.background, |s| s.rest);
-    let fill = (style.authored.background && style.background != rest).then_some(style.background);
-    let now = HoverFill { rest, fill };
+    // The clip's style at rest, beside it under the same slot: a background that is the same is
+    // the clip's own, not the hover's.
+    let rest = crate::kit::element::CLIP.style().map(|rest| rest.background);
+    let fill = (style.authored.background && Some(style.background) != rest).then_some(style.background);
+    let now = HoverFill { fill };
     if stored != Some(now) {
         ui.data_mut(|d| d.insert_temp(key, now));
     }
@@ -1228,11 +1279,12 @@ fn hover_fill(
 }
 
 /// `hover` is how far the pointer's hover has come (0 to 1), with the theme's hovered background
-/// if it gives one.
+/// if it gives one. `el` is the slot's clip, or the slot where it has none.
 #[allow(clippy::too_many_arguments)]
 fn slot_cell(
     painter: &egui::Painter,
     rect: Rect,
+    el: &crate::kit::element::Entered,
     column: &Column,
     slot: &crate::interaction::grid::Slot,
     (hover, hover_fill): (f32, Option<Color32>),
@@ -1243,11 +1295,11 @@ fn slot_cell(
     let track_color = rgb(column.color);
     // A clip slot is filled with the clip's colour (its track's unless it has its own).
     let clip_color = slot.color.map_or(track_color, rgb);
-    let textured = crate::kit::style_class::property("--suhina-track-artwork").as_deref() == Some("on");
+    let textured = crate::kit::style_class::track_artwork(el);
     // An empty slot is tinted with its track's colour, unless the sheet gives it a background
     // (`slot { background-color }`).
-    let empty = crate::kit::style_class::background(motion::mix(
-        theme::window_background(),
+    let empty = el.background_or(motion::mix(
+        crate::kit::style_class::surface_or(theme::window_background()),
         track_color,
         if column.mute { EMPTY_TINT / 2.0 } else { EMPTY_TINT },
     ));
@@ -1266,16 +1318,24 @@ fn slot_cell(
     match slot.state {
         SlotState::Empty => {
             if !textured {
-                painter.fill_background(rect, 0.0, empty);
+                painter.rect_filled(rect, 0.0, empty);
             }
         }
         SlotState::EmptyStop => {
             if textured {
                 // Blend hover over artwork; a replacement-alpha background fill
                 // would erase the texture on native GPU surfaces.
-                painter.rect_filled(rect, 0.0, theme::panel_background().gamma_multiply(hover));
+                painter.rect_filled(
+                    rect,
+                    0.0,
+                    crate::kit::style_class::surface_or(theme::panel_background()).gamma_multiply(hover),
+                );
             } else {
-                painter.fill_background(rect, 0.0, motion::mix(empty, theme::panel_background(), hover));
+                painter.rect_filled(
+                    rect,
+                    0.0,
+                    motion::mix(empty, crate::kit::style_class::surface_or(theme::panel_background()), hover),
+                );
             }
             painter.rect_filled(mark_rect(EMPTY_MARK), 0.0, theme::slot_empty());
         }
@@ -1284,8 +1344,8 @@ fn slot_cell(
             let base = if slot.enabled { clip_color } else { theme::control_background() };
             let fill = lit(base, 0.0);
             let fill = if column.mute { motion::mix(theme::control_background(), fill, 0.45) } else { fill };
-            painter.fill_background(rect, 0.0, fill);
-            crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Clip);
+            painter.rect_filled(rect, 0.0, fill);
+            crate::kit::liquid::paint(painter, rect, el, fill, crate::kit::liquid::Surface::Clip);
             let (mark, text) = if slot.enabled {
                 (theme::text_on(fill), theme::text_on(fill))
             } else {
@@ -1316,8 +1376,8 @@ fn slot_cell(
             // A playing clip keeps its colour, brighter, so the column still reads as its track.
             let fill = lit(clip_color, 0.10);
             let fill = if column.mute { motion::mix(theme::control_background(), fill, 0.45) } else { fill };
-            painter.fill_background(rect, 0.0, fill);
-            crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Clip);
+            painter.rect_filled(rect, 0.0, fill);
+            crate::kit::liquid::paint(painter, rect, el, fill, crate::kit::liquid::Surface::Clip);
             let ink = theme::text_on(fill);
             // The mark is the shape its click does: a stop square while playing. A stopped
             // clip's mark is the play triangle the same way, for its click's launch.
@@ -1349,7 +1409,7 @@ fn scene_column(
     keys: &mut crate::session::launch_keys::LaunchKeys,
     actions: &mut Vec<Action>,
 ) {
-    let _style_class = crate::kit::style_class::enter("scene-column");
+    let _style_class = crate::kit::element::SCENE_COLUMN.enter();
     let clip = painter.clip_rect();
     for scene in &grid.scenes {
         let y = top + (scene.number - 1) as f32 * slot_pitch();
@@ -1357,7 +1417,7 @@ fn scene_column(
         if !rect.intersects(clip) {
             continue;
         }
-        let _scene_style = crate::kit::style_class::enter_named("scene", &format!("scene-{}", scene.number));
+        let _scene_style = crate::kit::element::SCENE.id(&format!("scene-{}", scene.number)).enter();
         let label = if scene.name.is_empty() {
             format!("{} scene {}", if scene.playing { "Stop" } else { "Launch" }, scene.number)
         } else {
@@ -1382,7 +1442,7 @@ fn scene_column(
         let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         let playing = motion::toward(ui.ctx(), response.id.with("playing"), scene.playing, motion::VALUE);
         let fill = motion::mix(hover, theme::control_playing(), playing);
-        painter.fill_background(rect, 0.0, fill);
+        painter.rect_filled(rect, 0.0, fill);
         // The row's glyph: the play arrow while its clips wait for a launch, the stop square
         // while the row plays — the click does what the glyph says.
         let glyph = Rect::from_min_size(
@@ -1443,10 +1503,14 @@ fn scene_column(
         if response.clicked() {
             actions.push(Action::new("launcher.stopAll", json!({})));
         }
-        painter.fill_background(
+        painter.rect_filled(
             rect,
             0.0,
-            motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response)),
+            motion::mix(
+                crate::kit::style_class::surface_or(theme::panel_background()),
+                theme::panel_hover(),
+                widgets::hover(ui, &response),
+            ),
         );
         let square = Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.center().y - 3.5), Vec2::splat(7.0));
         painter.rect_stroke(square, 0.0, theme::hairline(theme::text_secondary()), StrokeKind::Inside);
@@ -1461,3 +1525,7 @@ fn scene_column(
         );
     }
 }
+
+#[cfg(test)]
+#[path = "session_view_tests.rs"]
+mod tests;

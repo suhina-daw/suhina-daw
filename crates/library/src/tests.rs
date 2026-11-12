@@ -85,10 +85,12 @@ fn search_ranks_exact_then_prefix_then_word_start_then_the_rest() {
     let within = Query { text: "kick".into(), within: Some(samples.join("Drums")), ..Query::default() };
     assert_eq!(names(&mut library, within).len(), 3);
     assert_eq!(names(&mut library, Query { limit: 2, ..Query::default() }).len(), 2);
-    // Tags.
+    // Tags ([#1254]: a query's tags are the tag ids).
     let kick = samples.join("Loops").join("kick.wav").display().to_string();
-    library.tag(&kick, "Red", true).unwrap();
-    assert_eq!(names(&mut library, Query { tags: vec!["Red".into()], ..Query::default() }), ["kick.wav"]);
+    library.set_tag("Red", None, None, None).unwrap();
+    let red = library.tag_id_of("Red").unwrap();
+    library.tag(&kick, red, true).unwrap();
+    assert_eq!(names(&mut library, Query { tags: vec![red], ..Query::default() }), ["kick.wav"]);
     let _ = std::fs::remove_dir_all(&samples);
 }
 
@@ -203,20 +205,21 @@ fn pins_recent_and_tags_are_kept() {
     let mut library = Library::new(Some(settings.clone()));
     library.pin("device:overdrive").unwrap();
     library.record(Group::Instruments, "device:fm-synth").unwrap();
-    library.set_tag("Vocals", Some("#AA00AA"), None).unwrap();
-    library.tag("/x.wav", "Vocals", true).unwrap();
+    library.set_tag("Vocals", Some("#AA00AA"), None, None).unwrap();
+    let vocals = library.tag_id_of("Vocals").unwrap();
+    library.tag("/x.wav", vocals, true).unwrap();
     let mut again = Library::new(Some(settings.clone()));
     assert_eq!(again.pinned(), ["device:overdrive"]);
     assert_eq!(again.recent(Group::Instruments), ["device:fm-synth"]);
-    assert_eq!(again.item_tags("/x.wav"), ["Vocals"]);
-    assert!(again.tags().iter().any(|t| t.name == "Vocals"));
+    assert_eq!(again.item_tags("/x.wav"), [vocals]);
+    assert!(again.tag_flat().iter().any(|t| t.name == "Vocals"));
     // The count the footer's dot hovers with, without copying the tagged items.
-    assert_eq!(again.tagged_count("Vocals"), 1);
-    assert_eq!(again.tagged_count("Nothing"), 0);
-    again.tag("/y.wav", "Vocals", true).unwrap();
-    assert_eq!(again.tagged_count("Vocals"), 2);
-    again.tag("/y.wav", "Vocals", false).unwrap();
-    assert_eq!(again.tagged_count("Vocals"), 1);
+    assert_eq!(again.tagged_count(vocals), 1);
+    assert_eq!(again.tagged_count(99999), 0);
+    again.tag("/y.wav", vocals, true).unwrap();
+    assert_eq!(again.tagged_count(vocals), 2);
+    again.tag("/y.wav", vocals, false).unwrap();
+    assert_eq!(again.tagged_count(vocals), 1);
     assert!(again.take_warnings().is_empty());
     let _ = std::fs::remove_dir_all(&settings);
 }
@@ -267,4 +270,27 @@ fn the_same_name_in_several_folders_keeps_the_folders_order_under_a_limit() {
     for folder in &folders {
         let _ = std::fs::remove_dir_all(folder);
     }
+}
+
+#[test]
+fn a_moved_files_tag_records_move_with_it_and_the_revision_advances() {
+    let settings = temp("relocate-tags");
+    let mut library = Library::new(Some(settings.clone()));
+    library.set_tag("Vocals", Some("#AA00AA"), None, None).unwrap();
+    // The store's own tags carry ids; the first one drawn is Vocals here.
+    let vocals = store::tags_iter(&library.tags().clone()).find(|t| t.name == "Vocals").map(|t| t.id).unwrap_or(1);
+    library.tag("/a/loop.wav", vocals, true).unwrap();
+    let before = library.tag_revision();
+    library.relocate(Path::new("/a/loop.wav"), Path::new("/b/loop.wav")).unwrap();
+    assert_eq!(library.item_tags("/b/loop.wav"), [vocals]);
+    assert!(library.item_tags("/a/loop.wav").is_empty());
+    assert_ne!(
+        library.tag_revision(),
+        before,
+        "the sidebar's caches read the move as a change (a now-unused tag must dim again)"
+    );
+    // The counts go with the move: the file the tag carries is the moved one.
+    assert_eq!(library.tagged_count(vocals), 1);
+    assert!(library.take_warnings().is_empty());
+    let _ = std::fs::remove_dir_all(&settings);
 }

@@ -315,7 +315,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                     }
                 }
                 _ if property == "image" => {
-                    let role = control_selector.replace(':', ".").replace(" .", ".");
+                    let role = artwork_role(control_selector);
                     if !skin::valid_role(&role) {
                         Err("unsupported control selector")
                     } else if value == "none" {
@@ -323,7 +323,16 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                         Ok(())
                     } else if let Some(path) = value.strip_prefix("url(").and_then(|v| v.strip_suffix(')')) {
                         let path = path.trim().trim_matches(['\'', '"']);
-                        if skin::asset_path(path) {
+                        if let Some(file) = path.strip_prefix(suhina_theme_package::BUILT_IN_SCHEME) {
+                            // Suhina's own artwork, by its file (`suhina:knob.body.svg`).
+                            match suhina_theme_package::built_in_artwork(file) {
+                                Some((_, svg)) => {
+                                    theme.skin.assets.insert(role, svg.into());
+                                    Ok(())
+                                }
+                                None => Err("suhina: names no artwork built into Suhina"),
+                            }
+                        } else if skin::asset_path(path) {
                             theme.skin.assets.insert(role, path.into());
                             Ok(())
                         } else {
@@ -333,16 +342,13 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                         Err("image requires url(relative.svg) or none")
                     }
                 }
-                _ if super::style_class::valid_selector(selector)
-                    && super::style_class::valid_property(property, value) =>
-                {
-                    theme
-                        .skin
-                        .styles
-                        .entry(selector.to_string())
-                        .or_default()
-                        .insert(property.to_string(), value.to_string());
-                    Ok(())
+                // The style engine reads an element's properties from the sheet itself.
+                _ if element_selector(selector) && legacy_rule(selector, property, value).is_some() => {
+                    if property.starts_with("--suhina-") {
+                        Err("a --suhina-* property is no longer read")
+                    } else {
+                        Ok(())
+                    }
                 }
                 _ => Err("unsupported selector or property"),
             };
@@ -418,7 +424,7 @@ pub fn export(theme: &Theme) -> String {
             css.push_str(&format!(" {key}: {};", value.map_or("auto".into(), |v| format!("{v}px"))));
         }
         css.push_str(&format!(
-            " --suhina-direction: {};",
+            " direction: {};",
             if placement.direction == super::control_layout::Direction::Horizontal { "horizontal" } else { "vertical" }
         ));
         for (edge, anchor) in placement.anchors.iter() {
@@ -442,13 +448,6 @@ pub fn export(theme: &Theme) -> String {
             theme.skin.background_opacity, theme.skin.background_blur
         ));
     }
-    for (selector, properties) in &theme.skin.styles {
-        css.push_str(&format!("{selector} {{"));
-        for (key, value) in properties {
-            css.push_str(&format!(" {key}: {value};"));
-        }
-        css.push_str(" }\n");
-    }
     for (role, asset) in &theme.skin.assets {
         // Package export writes each inline SVG under this stable relative name.
         let path = if asset.trim_start().starts_with('<') || skin::png_artwork(asset) {
@@ -456,25 +455,28 @@ pub fn export(theme: &Theme) -> String {
         } else {
             asset.clone()
         };
-        css.push_str(&format!(
-            "{} {{ image: url(\"{path}\"); }}\n",
-            role.replace(".hover", ":hover")
-                .replace(".active", ":active")
-                .replace(".disabled", ":disabled")
-                .replace(".on", ":on"),
-        ));
+        css.push_str(&format!("{} {{ image: url(\"{path}\"); }}\n", artwork_selector(role)));
     }
     css
 }
 
 /// A theme's own style sheet (`theme.css`) written from the model, for a theme that has none
-/// yet (one migrated from an earlier version, or a copy of Suhina Studio): its core property values
-/// in a `:root` rule, its artwork, then `advanced`, the free-form CSS it carried. Its name is in
+/// yet (one migrated from an earlier version, or a copy of Suhina Studio): its colours in a `:root`
+/// rule and its settings in rules of their elements, its artwork, then `advanced`, the free-form CSS it carried. Its name is in
 /// `theme.json`.
 pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
-    let mut css = String::from("/* Suhina theme. Settings are custom properties; see README.md. */\n:root {\n");
+    let mut css = String::from(
+        "/* Suhina theme. Colours are custom properties, settings properties of their elements; see README.md. */\n:root {\n",
+    );
     let defaults = super::theme_vars::core_values(&Theme::default());
+    let mut settings = std::collections::BTreeMap::new();
     for (name, value) in super::theme_vars::core_values(theme) {
+        if super::theme_vars::is_setting(&name) {
+            if defaults.get(&name) != Some(&value) {
+                settings.insert(name, value);
+            }
+            continue;
+        }
         // Palette tokens are always written, so a theme shows every colour it uses.
         let palette = theme.colors.tokens().iter().any(|(key, _, _)| super::theme_vars::token_property(key) == name);
         if palette || defaults.get(&name) != Some(&value) {
@@ -482,6 +484,7 @@ pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
         }
     }
     css.push_str("}\n");
+    css.push_str(&super::theme_vars::setting_rules(&settings));
     for (role, asset) in &theme.skin.assets {
         css.push_str(&artwork_rule(role, asset));
     }
@@ -500,13 +503,22 @@ fn artwork_rule(role: &str, asset: &str) -> String {
     } else {
         asset.to_owned()
     };
-    format!(
-        "{} {{ image: url(\"{path}\"); }}\n",
-        role.replace(".hover", ":hover")
-            .replace(".active", ":active")
-            .replace(".disabled", ":disabled")
-            .replace(".on", ":on"),
-    )
+    format!("{} {{ image: url(\"{path}\"); }}\n", artwork_selector(role))
+}
+
+/// The artwork role an `image` rule's selector names: the element that draws a role's default
+/// artwork (`knob-body:hover`, `icon[kind="play"]`, `button[checked]`) or the role as written in
+/// the earlier form (`knob.body:hover`, `solo:on`, `button .record`).
+pub fn artwork_role(selector: &str) -> String {
+    let selector = selector.trim().trim_start_matches('.').replace(" .", ".");
+    suhina_theme_package::elements::role_of_selector(&selector)
+}
+
+/// The selector Suhina writes for `role`'s artwork: its element's where Suhina ships artwork for
+/// it (`knob-body`, `icon[kind="play"]:hover`), otherwise the role with its state as a
+/// pseudo-class (`piano.draw:hover`).
+pub fn artwork_selector(role: &str) -> String {
+    suhina_theme_package::elements::selector_of_role(role)
 }
 
 /// What Suhina's own editors set beyond settings and `sheet_theme` does not say: control
@@ -555,7 +567,7 @@ pub fn edit_sheet(source: &str, before: &str, after: &str) -> Result<String, Str
 
 fn is_style_line(line: &str) -> bool {
     line.split_once(" {").is_some_and(|(selector, rest)| {
-        !rest.contains("image:") && super::style_class::valid_selector(selector) && !selector.starts_with(".control-")
+        !rest.contains("image:") && element_selector(selector) && !selector.starts_with(".control-")
     }) && !line.starts_with(":root")
         && !line.starts_with("meter ")
         && !line.starts_with("artwork ")
@@ -616,8 +628,68 @@ fn unlayer(css: &str, depth: usize) -> String {
     out
 }
 
+/// The element names that took the place of the `--suhina-*` properties (#1273); `None` for the
+/// ones a CSS layout replaced ([`layout_replacement`]).
+pub fn former_property(property: &str) -> Option<&'static str> {
+    Some(match property {
+        "--suhina-appearance" => "appearance",
+        "--suhina-value-position" => "value-position",
+        "--suhina-value-decimals" => "value-decimals",
+        "--suhina-value-unit" => "value-unit",
+        "--suhina-track-artwork" => "track-artwork",
+        "--suhina-track-headers" => "track-headers",
+        "--suhina-track-height" => "track-height",
+        "--suhina-header-min-width" => "header-min-width",
+        "--suhina-header-tint" => "header-tint",
+        "--suhina-compact-below" => "compact-below",
+        "--suhina-param-label" => "param-label",
+        "--suhina-gap" => "gap",
+        _ => return None,
+    })
+}
+
+/// Whether `selector` is one to four element names, each inside the one before (`mixer pan`):
+/// the selectors of the styles of a skin of an earlier version.
+pub fn element_selector(selector: &str) -> bool {
+    let parts: Vec<_> = selector.split_whitespace().collect();
+    !parts.is_empty() && parts.len() <= 4 && parts.iter().all(|part| suhina_theme_package::elements::is_element(part))
+}
+
+/// What took the place of a `--suhina-*` property a CSS layout replaced (#1273), for a notice:
+/// `--suhina-param-columns` and `--suhina-param-row`.
+pub fn layout_replacement(property: &str) -> Option<&'static str> {
+    Some(match property {
+        "--suhina-param-columns" => "device { grid-template-columns: repeat(<columns>, 1fr) }",
+        "--suhina-param-row" => "device device-control { height: <row> }",
+        _ => return None,
+    })
+}
+
+/// A style of a skin of an earlier version as a rule of today's sheet: `key` under the name that
+/// took its place, when the style engine accepts `value` for it. `--suhina-param-columns: 3`
+/// becomes `selector { grid-template-columns: repeat(3, 1fr); }`, and `--suhina-param-row: 48px`
+/// the height of the `device-control`s inside `selector`, as a CSS layout says them now.
+pub fn legacy_rule(selector: &str, key: &str, value: &str) -> Option<String> {
+    let value = value.trim();
+    let (selector, name, value) = match key {
+        "--suhina-param-columns" => {
+            let columns = value.parse::<u8>().ok().filter(|columns| (1..=8).contains(columns))?;
+            (selector.to_owned(), "grid-template-columns", format!("repeat({columns}, 1fr)"))
+        }
+        "--suhina-param-row" => (format!("{selector} device-control"), "height", value.to_owned()),
+        _ => {
+            let name = if key.starts_with("--suhina-") { former_property(key)? } else { key };
+            (selector.to_owned(), name, value.to_owned())
+        }
+    };
+    // A shorthand (`padding`, `gap`, `border-width` since #1336) is checked by its parts, as the
+    // sheet checks it.
+    suhina_style::sheet::accepts(if name == "border-radius" { "radius" } else { name }, &value)
+        .then(|| format!("{selector} {{ {name}: {value}; }}"))
+}
+
 /// Reads the rules of a theme's own sheet that Suhina reads itself (its name, artwork, control
-/// placements, the toolbar and `--suhina-*` styles); everything else is for the style engine
+/// placements and the toolbar); everything else is for the style engine
 /// and is left alone. Rules inside `@layer` blocks count like the rest (a layer orders rules, it
 /// does not make them conditional); conditional groups (`@media`, `@supports`) are skipped.
 pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
@@ -680,11 +752,21 @@ pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
                     }
                     continue;
                 }
-                let wanted = property == "image"
-                    || match selector {
-                        _ if selector.starts_with(".control-") => true,
-                        _ => super::style_class::valid_selector(selector) && property.starts_with("--suhina-"),
-                    };
+                if property.starts_with("--suhina-") && element_selector(selector) {
+                    warnings.push(match former_property(property) {
+                        Some(now) => {
+                            format!("{selector} {{ {property} }} is no longer read: the property is now {now}")
+                        }
+                        None => match layout_replacement(property) {
+                            Some(now) => format!(
+                                "{selector} {{ {property} }} is no longer read: a CSS layout replaces it, {now}"
+                            ),
+                            None => format!("{selector} {{ {property} }} is no longer read"),
+                        },
+                    });
+                    continue;
+                }
+                let wanted = property == "image" || selector.starts_with(".control-");
                 if wanted {
                     host.push_str(&format!("{selector} {{ {declaration}; }}\n"));
                 }

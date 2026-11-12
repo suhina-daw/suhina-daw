@@ -114,6 +114,43 @@ fn the_clip_column_edits_the_clip() {
     );
 }
 
+/// Several arrangement clips selected: Loop turns every one of them as it turns the one shown, one
+/// `clip.setLoop` each, all with one gesture so they are one undo step.
+#[test]
+fn the_loop_switch_turns_every_selected_clip() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let project = demo_project();
+    let beat_b = project.arrangement.lanes[0].clips[1].id;
+    let Detail::Clip(mut info, chain) =
+        build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)))
+    else {
+        panic!("expected the clip")
+    };
+    info.audio = true;
+    info.gain_db = Some(0.0);
+    info.others = vec![41, 42];
+    let detail = Detail::Clip(info, chain);
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 400.0)).build_ui_state(
+        |ui, actions: &mut Vec<Action>| {
+            show_row(ui, &detail, &[], actions, &mut Vec::new());
+        },
+        Vec::new(),
+    );
+    harness.get_by_label("Loop: On").click();
+    harness.run();
+    let actions = harness.state();
+    let clips: Vec<serde_json::Value> =
+        actions.iter().filter(|a| a.id == "clip.setLoop").map(|a| a.params["clip"].clone()).collect();
+    assert_eq!(clips, [json!(41), json!(42), json!(beat_b.0)]);
+    assert!(actions.iter().all(|a| a.params["loop"] == json!(false)), "all of them off: {actions:?}");
+    let gesture = &actions[0].params["gesture"];
+    assert!(
+        gesture.is_string() && actions.iter().all(|a| &a.params["gesture"] == gesture),
+        "one undo step: {actions:?}"
+    );
+}
+
 /// An audio clip's column shows its start marker, and its end marker when it does not loop; a
 /// slot's clip edits its gain too (#699).
 #[test]
@@ -725,6 +762,108 @@ fn a_plug_ins_generated_list_sets_its_parameters_by_id() {
     }
 }
 
+/// A plug-in's button is painted in its panel's scope, in a row and stacked: a panel that hides
+/// its overflow cuts it at its padding box, as it does the rest of what it holds (#1336).
+#[test]
+fn a_plug_in_s_button_is_cut_by_its_panel_s_overflow() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let project = with_plugin();
+    let Detail::Devices(chain) = build_with(
+        &project,
+        Some(TrackId(1)),
+        None,
+        &mut |_, _| Some(report(PluginStatus::Running, false)),
+        crate::detail::device_widgets::Lists::default(),
+    ) else {
+        panic!()
+    };
+    let detail = Detail::Devices(chain);
+    crate::kit::native_css::set_user_sheet(Some("device { overflow: hidden; border-width: 3px; }".into()));
+    for stacked in [false, true] {
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(600.0, 260.0)).build_ui_state(
+            |ui, actions: &mut Vec<Action>| {
+                let _frame = crate::kit::native_css::frame(ui);
+                let _window = crate::kit::element::WINDOW.enter();
+                let mut places = Vec::new();
+                if stacked {
+                    show_stack(ui, &detail, &[], actions, &mut places);
+                } else {
+                    show_row(ui, &detail, &[], actions, &mut places);
+                }
+            },
+            Vec::new(),
+        );
+        harness.run_steps(3);
+        let button = harness.get_by_label("Open editor Verb").rect();
+        let panel = harness.get_by_label("Device Verb").rect().shrink(3.0);
+        let clips: Vec<_> = harness
+            .output()
+            .shapes
+            .iter()
+            .filter(|s| matches!(&s.shape, egui::Shape::Rect(r) if r.rect == button))
+            .map(|s| s.clip_rect)
+            .collect();
+        assert!(!clips.is_empty(), "stacked {stacked}: the button is painted");
+        assert!(
+            clips.iter().all(|clip| panel.contains_rect(*clip)),
+            "stacked {stacked}: cut at the panel's padding box {panel:?}: {clips:?}"
+        );
+    }
+    crate::kit::native_css::set_user_sheet(None);
+}
+
+/// A selected device's outline runs along its panel's edge, round its border box, as it did
+/// before panels had padding, and a panel that hides its overflow does not cut it (#1336).
+#[test]
+fn a_selected_device_s_outline_runs_along_its_panel_s_edge() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let project = with_plugin();
+    let Detail::Devices(chain) = build_with(
+        &project,
+        Some(TrackId(1)),
+        None,
+        &mut |_, _| Some(report(PluginStatus::Running, false)),
+        crate::detail::device_widgets::Lists::default(),
+    ) else {
+        panic!()
+    };
+    let at = chain.devices.iter().find(|d| d.name == "Verb").map(|d| d.at.clone()).expect("the plug-in");
+    let selected = [(TrackId(1), at)];
+    let detail = Detail::Devices(chain);
+    crate::kit::native_css::set_user_sheet(Some(
+        "device { padding: 10px; border-width: 2px; overflow: hidden; }".into(),
+    ));
+    for stacked in [false, true] {
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(600.0, 300.0)).build_ui_state(
+            |ui, actions: &mut Vec<Action>| {
+                let _frame = crate::kit::native_css::frame(ui);
+                let _window = crate::kit::element::WINDOW.enter();
+                let mut places = Vec::new();
+                if stacked {
+                    show_stack(ui, &detail, &selected, actions, &mut places);
+                } else {
+                    show_row(ui, &detail, &selected, actions, &mut places);
+                }
+            },
+            Vec::new(),
+        );
+        harness.run_steps(3);
+        let panel = harness.get_by_label("Device Verb").rect();
+        let outline = harness.output().shapes.iter().find_map(|s| match &s.shape {
+            egui::Shape::Rect(r) if r.stroke.color == theme::selection() && r.stroke.width > 0.0 => {
+                Some((r.rect, s.clip_rect))
+            }
+            _ => None,
+        });
+        let (rect, clip) = outline.unwrap_or_else(|| panic!("stacked {stacked}: the selected device's outline"));
+        assert_eq!(rect, panel, "stacked {stacked}: along the panel's edge");
+        assert!(clip.contains_rect(panel), "stacked {stacked}: not cut at the padding box: {clip:?}");
+    }
+    crate::kit::native_css::set_user_sheet(None);
+}
+
 fn with_plugin() -> Project {
     let mut project = demo_project();
     project.channels[0]
@@ -946,7 +1085,9 @@ fn a_theme_lays_a_generated_list_side_by_side() {
     project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
     let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
     let graph = chain.devices[0].graph.as_ref().unwrap();
-    let (theme, _) = crate::kit::theme::from_css("device { --suhina-param-columns: 3; --suhina-param-row: 48px; }");
+    let (theme, _) = crate::kit::theme::from_css(
+        "device { grid-template-columns: repeat(3, 1fr); } device-control { height: 48px; }",
+    );
     crate::kit::skin::configure(&theme.skin);
     let cells = parameter_layout(&graph.parameters, 300.0, f32::INFINITY, &[]);
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
@@ -1351,15 +1492,17 @@ fn the_panels_fields_do_not_touch() {
     assert!(mode.top() - warp.bottom() >= 4.0, "{warp:?} {mode:?}");
 }
 
-/// The scale's root and mode are lists under their fields; a pick sets the clip's scale.
+/// The scale: a switch, then its root and mode as lists under their fields. Off, the fields show
+/// the scale the switch turns on (the default, C major); a pick turns the scale on with it.
 #[test]
-fn the_scale_is_picked_from_lists_under_its_fields() {
+fn the_scale_is_switched_and_picked_from_lists_under_its_fields() {
     use egui_kittest::kittest::Queryable;
     let (detail, beat_b) = audio_detail(AudioPanel::default(), 0.0, 0.0);
     // Tall enough for the list to open under its field (with no room it opens over it).
     let mut harness = panel_harness_tall(detail, 600.0);
-    let field = harness.get_by_label("Scale: None").rect();
-    harness.get_by_label("Scale: None").click();
+    assert!(harness.query_by_label("Scale switch: Off").is_some());
+    let field = harness.get_by_label("Scale mode: Major").rect();
+    harness.get_by_label("Scale mode: Major").click();
     harness.run();
     let minor = harness.get_by_label("Minor").rect();
     assert!(
@@ -1368,14 +1511,18 @@ fn the_scale_is_picked_from_lists_under_its_fields() {
     );
     harness.get_by_label("Minor").click();
     harness.run();
-    harness.get_by_label("Scale root: —").click();
+    harness.get_by_label("Scale root: C").click();
     harness.run();
-    harness.get_by_label("F#/Gb").click();
+    harness.get_by_label("F#").click();
+    harness.run();
+    harness.get_by_label("Scale switch: Off").click();
     harness.run();
     let actions = harness.state();
-    assert_eq!(actions.len(), 2, "{actions:?}");
-    assert_eq!((actions[0].id, &actions[0].params["mode"]), ("clip.setScale", &json!("minor")));
-    assert_eq!((actions[1].id, &actions[1].params["root"]), ("clip.setScale", &json!("F#")));
+    assert_eq!(actions.len(), 3, "{actions:?}");
+    let set = |i: usize| (actions[i].id, actions[i].params["root"].clone(), actions[i].params["mode"].clone());
+    assert_eq!(set(0), ("clip.setScale", json!("C"), json!("minor")));
+    assert_eq!(set(1), ("clip.setScale", json!("F#"), json!("major")));
+    assert_eq!(set(2), ("clip.setScale", json!("C"), json!("major")), "the switch turns on the default");
     assert!(actions.iter().all(|a| a.params["clip"] == json!(beat_b.0)));
 }
 
@@ -1477,6 +1624,177 @@ fn set_buttons_stay_greyed_while_the_playhead_is_outside_the_clip() {
     assert!(harness.state().is_empty());
 }
 
+/// A MIDI clip's panel with its note tools, as the detail area shows it beside the piano roll:
+/// the demo's Beat B (four notes), `scale` its scale, `stacked` the layout.
+fn midi_harness(
+    scale: Option<suhina_engine::model::Scale>,
+    selected: &[usize],
+    size: egui::Vec2,
+    stacked: bool,
+) -> egui_kittest::Harness<'static, (Vec<Action>, crate::detail::piano_roll::PianoRollState)> {
+    let project = demo_project();
+    let beat_b = project.arrangement.lanes[0].clips[1].id;
+    let notes: Vec<Note> = project
+        .content(project.arrangement.lanes[0].clips[1].content)
+        .and_then(|c| {
+            c.lanes.iter().find_map(|l| match &l.data {
+                LaneData::Notes(notes) => Some(notes.to_vec()),
+                LaneData::Audio(_) => None,
+            })
+        })
+        .unwrap_or_default();
+    let Detail::Clip(mut info, _) = build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)))
+    else {
+        panic!("expected the clip")
+    };
+    if let Some(panel) = info.panel.as_mut() {
+        panel.scale = scale;
+    }
+    let selected: std::collections::BTreeSet<usize> = selected.iter().copied().collect();
+    let address = json!({ "clip": beat_b.0 });
+    egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(size)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(
+            move |ui, (actions, state): &mut (Vec<Action>, crate::detail::piano_roll::PianoRollState)| {
+                let tools = crate::detail::midi_tools::Tools {
+                    address: &address,
+                    notes: &notes,
+                    selected: &selected,
+                    length: 16.0,
+                    nothing: false,
+                };
+                let midi = MidiTools { tools: &tools, state, show_tools: true };
+                let editor = crate::kit::element::CLIP_EDITOR.enter();
+                show_clip_column(ui, &editor, &info, stacked, Some(midi), actions);
+            },
+            (Vec::new(), crate::detail::piano_roll::PianoRollState::default()),
+        )
+}
+
+/// The tools' tabs: the Notes tab's one-click tools, then the Transform tab's Humanise with its
+/// settings in milliseconds, applied with a button that says to what
+/// (#1214, #1222).
+#[test]
+fn the_midi_panels_tabs_run_the_note_tools() {
+    use egui_kittest::kittest::Queryable;
+    let mut harness = midi_harness(None, &[1, 2], egui::vec2(1000.0, 320.0), false);
+    assert!(harness.query_by_label("Selection").is_some(), "the chip says what the tools act on");
+    assert!(harness.query_by_label("2 of 4").is_some(), "and how many");
+    // The figures are under the Clip part, the tools beside them.
+    let scale = harness.get_by_label_contains("Scale mode: ").rect();
+    let chip = harness.get_by_label("Selection").rect();
+    let reverse = harness.get_by_label("Reverse").rect();
+    assert!(chip.top() >= scale.bottom() && chip.right() <= reverse.left(), "{scale:?} {chip:?} {reverse:?}");
+    harness.get_by_label("Reverse").click();
+    harness.run();
+    let reversed = harness.state().0.last().cloned();
+    assert_eq!(reversed.as_ref().map(|a| a.id), Some("note.reverse"));
+    assert_eq!(reversed.map(|a| a.params["notes"].clone()), Some(json!([1, 2])));
+    harness.get_by_label("Transform tab").click();
+    harness.run();
+    assert!(harness.query_by_label("Reverse").is_none(), "the Notes tab's tools are away");
+    assert!(harness.query_by_label_contains("Keep chords").is_none(), "Humanise has no chords setting");
+    harness.get_by_label("Humanise 2 notes").click();
+    harness.run();
+    let humanise = harness.state().0.last().cloned();
+    assert_eq!(humanise.as_ref().map(|a| a.id), Some("note.humanize"));
+    let params = humanise.map(|a| a.params).unwrap_or_default();
+    assert_eq!((&params["ms"], &params["velocity"]), (&json!(10.0), &json!(8.0)));
+    assert!(params.get("chords").is_none(), "each note moves on its own: {params}");
+    // Ramp velocity from the list: its own settings and its own command.
+    harness.get_by_label("Transformation: Humanise").click();
+    harness.run();
+    harness.get_by_label("Ramp velocity").click();
+    harness.run();
+    assert!(harness.query_by_label("Ramp from: 20").is_some(), "{:?}", harness.state().1.transform);
+    harness.get_by_label("Ramp 2 notes").click();
+    harness.run();
+    assert_eq!(harness.state().0.last().map(|a| a.id), Some("note.rampVelocity"));
+}
+
+/// Dragging Humanise's Timing changes the setting and leaves the panel where it is (#1214).
+#[test]
+fn dragging_humanises_timing_does_not_move_the_panel() {
+    use egui_kittest::kittest::Queryable;
+    let mut harness = midi_harness(None, &[], egui::vec2(1000.0, 260.0), false);
+    harness.state_mut().1.tools_tab = crate::detail::midi_tools::ToolsTab::Transform;
+    harness.run();
+    let field = harness.get_by_label("Timing: 10 ms").rect();
+    let apply = harness.get_by_label("Humanise clip").rect();
+    harness.hover_at(field.center());
+    harness.run();
+    harness.drag_at(field.center());
+    harness.run();
+    for dy in [8.0, 16.0, 24.0] {
+        harness.hover_at(field.center() - egui::vec2(0.0, dy));
+        harness.run();
+    }
+    harness.drop_at(field.center() - egui::vec2(0.0, 24.0));
+    harness.run();
+    assert!(harness.state().1.tools.humanize_ms > 10.0, "dragged up, the timing grows");
+    assert!(harness.state().0.is_empty(), "a setting is no command");
+    assert_eq!(harness.get_by_label("Humanise clip").rect(), apply, "nothing moved");
+}
+
+/// Fit to scale fits to the clip's own scale: the command names no root or mode.
+#[test]
+fn fit_to_scale_uses_the_clips_scale() {
+    use egui_kittest::kittest::Queryable;
+    let scale = suhina_engine::model::Scale::new(2, suhina_engine::model::ScaleMode::Minor);
+    let mut harness = midi_harness(scale, &[], egui::vec2(1000.0, 260.0), false);
+    assert!(harness.query_by_label("Scale mode: Minor").is_some(), "the Clip part shows the scale");
+    harness.get_by_label("Fit to scale").click();
+    harness.run();
+    let fit = harness.state().0.last().cloned();
+    assert_eq!(fit.as_ref().map(|a| a.id), Some("note.fitToScale"));
+    let params = fit.map(|a| a.params).unwrap_or_default();
+    assert!(params.get("root").is_none() && params.get("scale").is_none(), "{params}");
+}
+
+/// Stacked, the tools part goes under the Clip part, the two not overlapping.
+#[test]
+fn a_stacked_midi_panel_puts_the_tools_under_the_clip_part() {
+    use egui_kittest::kittest::Queryable;
+    let harness = midi_harness(None, &[], egui::vec2(260.0, 700.0), true);
+    let scale = harness.get_by_label("Scale mode: Major").rect();
+    let head = harness.get_by_label("Whole clip").rect();
+    assert!(head.top() >= scale.bottom(), "{scale:?} {head:?}");
+    assert!(harness.query_by_label("Fit to scale").is_some());
+}
+
+/// The Swing row: following the project's swing, its slider sets the project's (every clip that
+/// follows changes with it); the Global switch gives the clip its own (#1221).
+#[test]
+fn the_swing_row_sets_the_projects_swing_or_the_clips_own() {
+    use egui_kittest::kittest::Queryable;
+    let mut harness = midi_harness(None, &[], egui::vec2(1000.0, 320.0), false);
+    assert!(harness.query_by_label("Use global swing: On").is_some(), "a clip follows the project's swing");
+    let slider = harness.get_by_label("Swing (global): 0 %").rect();
+    harness.hover_at(slider.center());
+    harness.run();
+    harness.drag_at(slider.center());
+    harness.run();
+    // Past egui's drag threshold, so it is a drag and not a click.
+    for dx in [10.0, 20.0, 30.0] {
+        harness.hover_at(slider.center() + egui::vec2(dx, 0.0));
+        harness.run();
+    }
+    harness.drop_at(slider.center() + egui::vec2(30.0, 0.0));
+    harness.run();
+    let sets: Vec<Action> = harness.state().0.iter().filter(|a| a.id == "transport.setSwing").cloned().collect();
+    assert!(!sets.is_empty(), "{:?}", harness.state().0);
+    assert!(sets.iter().all(|a| a.params["amount"].as_f64().is_some_and(|v| v > 0.0)));
+    assert!(sets.iter().all(|a| a.params.get("gesture").is_some()), "a drag is one gesture, one undo step");
+    harness.get_by_label("Use global swing: On").click();
+    harness.run();
+    let last = harness.state().0.last().cloned();
+    assert_eq!(last.as_ref().map(|a| a.id), Some("clip.setSwing"));
+    assert_eq!(last.map(|a| a.params["global"].clone()), Some(json!(false)));
+}
+
 /// A plug-in's panel, a generated list and a canvas panel in one row are as tall as each other,
 /// the tallest's height, never under a compact panel's (#1238).
 #[test]
@@ -1500,7 +1818,8 @@ fn the_panels_in_a_row_are_one_height() {
 }
 
 /// Stacked lists each keep their own scroll, also when a device before them goes: the scroll is
-/// the device's, not its place's (#826).
+/// the device's, not its place's (#826). Stacked, a list shows one column, and opened it scrolls
+/// down.
 #[test]
 fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
     use egui_kittest::Harness;
@@ -1519,26 +1838,142 @@ fn a_stacked_list_keeps_its_scroll_when_a_device_before_it_goes() {
             build(&project, Some(TrackId(1)), None),
         );
     harness.run_steps(10);
-    let gains =
-        |harness: &Harness<'_, Detail>| harness.query_all_by_label("Gain").map(|n| n.rect().left()).collect::<Vec<_>>();
+    // Stacked, a list shows its first page; its chevron opens the rest down the column, where it
+    // scrolls.
+    for _ in 0..3 {
+        let clicked = harness.query_all_by_label_contains("more parameters").next().map(|chevron| chevron.click());
+        if clicked.is_some() {
+            harness.run_steps(5);
+        }
+    }
+    let gains = |harness: &Harness<'_, Detail>| {
+        // Each Gain from the top of its own panel: the panels move up when one before them goes.
+        let panels: Vec<f32> = harness.query_all_by_label("Device Utility").map(|n| n.rect().top()).collect();
+        harness.query_all_by_label("Gain").zip(panels).map(|(n, top)| n.rect().top() - top).collect::<Vec<_>>()
+    };
     let start = gains(&harness);
-    // The second Utility's list, scrolled sideways.
+    // The second Utility's list, scrolled down.
     let second = harness.query_all_by_label("Device Utility").nth(1).unwrap().rect().center();
     harness.hover_at(second);
     harness.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(-150.0, 0.0),
+        delta: egui::vec2(0.0, -150.0),
         modifiers: egui::Modifiers::NONE,
         phase: egui::TouchPhase::Move,
         source: egui::MouseWheelSource::Unknown,
     });
     harness.run_steps(10);
     let scrolled = gains(&harness);
-    assert!(scrolled[1] < start[1] - 50.0 && scrolled[0] == start[0], "only the second list scrolls: {scrolled:?}");
+    assert!(
+        scrolled[1] < start[1] - 10.0 && scrolled[0] == start[0],
+        "only the second list scrolls: {start:?} {scrolled:?}"
+    );
     // Pitch goes: the Utilities move up a place each and keep their own scroll.
     project.channels[0].devices.remove(0);
     *harness.state_mut() = build(&project, Some(TrackId(1)), None);
     harness.hover_at(egui::pos2(1.0, 699.0));
     harness.run_steps(10);
     assert_eq!(gains(&harness), scrolled, "each list keeps its own scroll");
+}
+
+/// The fills a clip panel's switch paints under the theme `css`, on or off.
+fn switch_fills(css: &str, on: bool) -> Vec<egui::Color32> {
+    use egui::{Pos2, Rect, Vec2};
+    let (theme, _) = crate::kit::theme::from_css(css);
+    crate::kit::skin::configure(&theme.skin);
+    let ctx = egui::Context::default();
+    let input = || egui::RawInput {
+        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 300.0))),
+        ..Default::default()
+    };
+    ctx.run_ui(input(), |ui| crate::kit::native_css::begin_frame(ui)).textures_delta.clear();
+    let mut shapes = Vec::new();
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(input(), |ui| {
+            let _frame = crate::kit::native_css::frame(ui);
+            let _window = crate::kit::element::WINDOW.enter();
+            let painter = ui.painter().clone();
+            let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(80.0, 20.0));
+            super::clip_panel::toggle(ui, &painter, rect, "Loop", "Loop", on);
+        });
+        output.textures_delta.clear();
+        shapes = std::mem::take(&mut output.shapes);
+    }
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) => Some(rect.fill),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_clip_panel_switch_takes_the_theme_s_button_and_stays_lit_while_on() {
+    let red = egui::Color32::from_rgb(0xFF, 0, 0);
+    let green = egui::Color32::from_rgb(0, 0xFF, 0);
+    // A rule for every button paints a switch that is off.
+    let every = "button { background-color: #FF0000; }";
+    assert!(switch_fills(every, false).contains(&red), "off takes the button's background");
+    // One that is on keeps its lit fill, so it still shows it is on.
+    assert!(!switch_fills(every, true).contains(&red), "on keeps its lit fill");
+    // Unless the sheet gives `[checked]` a background of its own.
+    let checked = "button { background-color: #FF0000; } button[checked] { background-color: #00FF00; }";
+    let fills = switch_fills(checked, true);
+    assert!(fills.contains(&green) && !fills.contains(&red), "{fills:?}");
+}
+
+/// A check box shows its whole name where it fits and its short one where it does not, so a
+/// narrow tools part never cuts the name with an ellipsis.
+#[test]
+fn a_check_box_shows_its_short_name_where_the_whole_one_does_not_fit() {
+    let width = |text: &str| text.chars().count() as f32 * 6.0;
+    let (name, short) = ("Move ends too", "Ends too");
+    assert_eq!(midi_panel::check_text(name, short, 78.0, width), name);
+    assert_eq!(midi_panel::check_text(name, short, 77.0, width), short);
+}
+
+/// A stacked chain taller than its column scrolls, and a list in it shows its first page with
+/// the chevron for the rest, as in a row.
+#[test]
+fn a_stacked_chain_taller_than_its_column_scrolls() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let mut project = demo_project();
+    project.channels[0].devices =
+        (0..5).map(|_| Device::new("Utility", DeviceKind::Builtin("utility".into()))).collect();
+    let _ = project.assign_ids();
+    let mut harness =
+        Harness::builder().allow_missing_glyphs().with_size(egui::vec2(STACK_WIDTH, 400.0)).build_ui_state(
+            |ui, detail: &mut Detail| {
+                show_stack(ui, detail, &[], &mut Vec::new(), &mut Vec::new());
+            },
+            build(&project, Some(TrackId(1)), None),
+        );
+    harness.run_steps(10);
+    assert!(harness.query_all_by_label_contains("more parameters").next().is_some(), "a first page and a chevron");
+    let first = harness.query_all_by_label("Device Utility").next().unwrap().rect();
+    // Over the first panel's header, away from its list.
+    harness.hover_at(egui::pos2(first.center().x, first.top() + 6.0));
+    harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -100.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    harness.run_steps(10);
+    let moved = harness.query_all_by_label("Device Utility").next().map(|n| n.rect().top());
+    assert!(moved.is_some_and(|top| top < first.top() - 50.0), "the column scrolls: {first:?} to {moved:?}");
+}
+
+/// The extra height a padded device panel asks for lasts one frame: a frame that shows no chain
+/// with devices (an empty track, a clip editor) leaves none, so the detail area shrinks back.
+#[test]
+fn the_height_a_padded_panel_asks_for_does_not_outlive_its_frame() {
+    let ctx = egui::Context::default();
+    ctx.data_mut(|d| d.insert_temp(shown_device_extra_id(), 40.0_f32));
+    assert_eq!(shown_device_insets(&ctx, 6.0), 40.0, "the frame after the panel was shown");
+    assert_eq!(shown_device_insets(&ctx, 6.0), 6.0, "gone when nothing leaves it again");
 }
