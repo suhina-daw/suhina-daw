@@ -275,7 +275,7 @@ fn a_background_picture_in_the_assets_folder_is_read() {
     std::fs::create_dir_all(theme.join("assets")).unwrap();
     let png = b"\x89PNG\r\n\x1a\nfake-data-for-the-path-only".to_vec();
     std::fs::write(theme.join("assets/bg-4k.png"), &png).unwrap();
-    hand_written(&theme, "Pictured", ":root { --background-image: url(\"assets/bg-4k.png\"); }");
+    hand_written(&theme, "Pictured", "window { backdrop-image: url(\"assets/bg-4k.png\"); }");
     let mut files = ThemeFiles::new(Some(dir.join("themes")));
     let (themes, warnings) = files.read_all();
     let pictured = themes.iter().find(|e| e.id == "pictured").expect("the theme reads");

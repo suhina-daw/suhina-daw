@@ -3,7 +3,7 @@ description: The NAM Amp Modeler and NAM Cab Loader devices: what a .nam model f
 read_when: NAM, Neural Amp Modeler, nam, amp modeler, cab loader, neural amp, .nam file, impulse response, IR, cab, model file, device.setNamFile, nam models folder, IR folder
 type: spec
 status: draft
-last_verified: 2026-11-02
+last_verified: 2026-11-12
 covers:
   - devices/nam-amp-modeler/**
   - devices/nam-cab-loader/**
@@ -101,9 +101,9 @@ EQ and delay still work.
 - **Volume** sets the output level, after the model.
 - **No bypass of its own** (decided 2026-10-18, #645): a device has one on/off state, the
   header's square and the 0 key (`device.setEnabled`), which turns the whole device off.
-- **Latency:** the model adds none. The resampler adds its own few frames when it runs; the
-  device reports them in `latency()` so the engine's compensation keeps parallel chains in
-  phase. The **Delay** knob's frames are not reported.
+- **Latency:** the model adds none. The device reports its 512-frame chunk in `latency()`, plus
+  the resamplers' holdback when they run (about a millisecond), so the engine's compensation
+  keeps parallel chains in phase. The **Delay** knob's frames are not reported.
 
 ### NAM Cab Loader (`nam-cab-loader`)
 
@@ -133,10 +133,16 @@ not a mix.
   paths, as with the limiter's look-ahead. Longer IRs are handled inside the same delay with the
   partition's tail buffers. The **Delay** knob is not reported.
 
-Both devices process in fixed 256-frame internal blocks counted from `reset` — like the FM
-synth's internal blocks — so the output never depends on how a stream is divided, whatever the
-host's buffer size or the conformance tests throw at them, and nothing on the audio path
-allocates ([ADR 0004] › rules 3 and 6). Both pass the contract tests (`device_api::conformance`),
+Both devices run their stages on the frames each call brings, as they arrive: the Amp
+Modeler's model, its DC blocker and the resampler legs, and the Cab Loader's convolution
+(whose convolver buffers to its own 256-frame partitions, so its input chunking — and its
+output — stay fixed) and tail stages. All keep streaming state whose output never depends on
+how a stream is divided into calls, and spreading the work over the call keeps its cost even
+(a whole chunk's convolution or model run inside one small block leaves the render thread no
+room for anything else, and cracks as an underrun while the track is armed). Either way
+the output never depends on how a stream is divided, whatever the host's buffer size or the
+conformance tests throw at them, and nothing on the audio path allocates
+([ADR 0004] › rules 3 and 6). Both pass the contract tests (`device_api::conformance`),
 which run hostile parameter values, hostile buffers, every block size and 8…384 kHz.
 
 ## Model and IR files
@@ -163,13 +169,21 @@ which run hostile parameter values, hostile buffers, every block size and 8…38
 
 ## Sample rates
 
-A model runs at `expected_sample_rate()`. When the project runs at another rate, each side's
+A model runs at `expected_sample_rate()`. A model whose rate the project cannot share with it
+is kept but refused: a rate that is not a number, outside Suhina's own rate range (8–384 kHz)
+or more than sixteen times the project's on either side asks for staging that grows with the
+ratio (unbounded vs the audio thread's rules) and outgrows the delivery ring, so the device
+plays as if switched off and the note row says why — checked when the file is chosen and again
+whenever the project's rate changes. When the project runs at another rate, each side's
 signal is resampled into the model's rate before the model and back after it, by a windowed-sinc
 polyphase resampler (`crates/dsp::resampler`, a fixed kernel table, no allocation): the input
 under-runs nothing and the output is not silent when the project starts mid-stream. At the same
-rate, both resamplers pass through untouched. The device reports the resampler's added frames —
-about a millisecond — as latency; the offline render and the live engine run the same code, so a
-render of a 44.1 kHz project with a 48 kHz model is what playback sounds like.
+rate, both resamplers pass through untouched. The device holds the stream back its 512-frame
+chunk plus the resamplers' holdback — a few dozen frames, about a millisecond — and reports that
+sum in `latency()`: the legs' produced frames trail the chunked feed by that much, and a delivery
+that ran any sooner would read slots the legs had not reached yet, as loud crackle. The offline
+render and the live engine run the same code, so a render of a 44.1 kHz project with a 48 kHz
+model is what playback sounds like.
 
 ## Folders
 
@@ -181,11 +195,17 @@ Projects folder row (a field on the right, the default shown when the setting is
 | NAM | **Amp models folder** | The folder the NAM Amp Modeler lists its amp models from | `nam_models_folder` |
 | NAM | **Cabinet sounds folder** | The folder the NAM Cab Loader lists its speaker cabinet recordings from | `irs_folder` |
 
-- **Defaults:** `Suhina/NAM models` and `Suhina/IRs` in the user's documents folder — beside the
-  default Projects and Templates folders, with the same old-folder fallback. The desktop app
-  makes both default folders at start when they do not exist, so a user's first step is only to
-  drop files in; a chosen (non-default) folder is left as the user's, and the device panels'
-  list of a folder that is not there is empty, with the path and a note to put files in it.
+- **Defaults:** `Suhina/Sounds/NAM/Amp models` and `Suhina/Sounds/NAM/Cabinets` in the user's
+  documents folder — the library's Sounds folders ([issue
+  1279](https://github.com/suhina-daw/suhina-daw/issues/1279)). The desktop app makes both
+  default folders at start when they do not exist, so a user's first step is only to drop
+  files in; a chosen (non-default) folder is left as the user's, and the device panels' list
+  of a folder that is not there is empty, with the path and a note to put files in it. The
+  *old* defaults `Suhina/NAM models` and `Suhina/IRs` move into these folders at start — a
+  pack carried whole, a name moved only where it is missing, a moved-empty old folder
+  removed, leftovers kept, and the move told in the start-up warnings. An old folder a
+  setting names stays as it is: the panels list from it, and a move would empty and remove a
+  folder the lists go on reading.
 - The pick bridge gets two fields (`PickField::NamModelsFolder`, `PickField::IrFolder`) so the
   system dialog opens for them like for the Projects folder (macOS waits on the main thread, as
   those already do).
@@ -205,21 +225,31 @@ are two levels deep, the same for both devices:
 
 ```text
 NAM models/
-├── British Plexi (Slammin Captures)/   ← a pack: one subfolder
-│   ├── Bright Cranked.nam
-│   ├── Crunch.nam
+├── Live Amp Modeler/                        ← a collection grouped by source
+│   ├── Albion Chime (Slammin Captures)/     ← its captures list as their own packs
+│   │   ├── Bright Cranked.nam
+│   │   └── …
+│   └── British Classic (Slammin Captures)/
+├── Suhina/                                  ← a pack-sized folder, files right in it
 │   └── …
-├── Fender Super Reverb 1965/
-│   └── …
-└── Loose capture.nam                  ← files beside the packs
+└── Loose capture.nam                        ← files beside the packs
 ```
 
-- A **pack** is a subfolder of the folder in Settings. Its name is the subfolder's
-  (case-insensitive sorted). The pack's files are its `.nam` or `.wav` files, name-sorted,
-  same 2000 cap per pack.
+- A **pack** is a folder directly under the folder in Settings whose `.nam` or `.wav` files
+  sit right in it (a pack-sized capture, like the shipped pack's unpacked folders), its name
+  the subfolder's (case-insensitive sorted); or a **capture folder** one level deeper, inside
+  a group a collection was fetched with, its name the group's ending in the capture's, joined
+  ` / ` (`Live Amp Modeler / Albion Chime (Slammin Captures)`), name-sorted inside its group.
+  Each pack's files are its `.nam` or `.wav` files, name-sorted, same 2000 cap per pack.
+- The check reads the listing again when the folder in Settings, its top-level folders or a
+  pack folder changed. A capture folder made inside a collection lists with the next read; a
+  file added inside an existing capture folder lists after any other folder change (a start,
+  the next capture dropped anywhere), not before.
 - Files that sit beside the packs form a pack of their own, shown as **(entered directly)**.
 - The panels show the pack and the file at the two dropdown rows:
-  - **The pack row** (the name row): the current file's pack's name (the file's parent folder;
+  - **The pack row** (the name row): a folder icon before it (the design system's folder
+    artwork, so a theme supplies its own) and the current file's pack's name (the file's parent
+    folder;
     **(entered directly)** for a loose file), "No model" / "No IR" when none is set. Its
     dropdown lists every pack's name; its ▲ ▼ steppers step through the packs.
   - **The file row**: the current file's own name, its dropdown lists the current pack's files
@@ -228,9 +258,15 @@ NAM models/
     the file row is `Amp Modeler: model file` with `previous file` / `next file` (the Cab
     Loader likewise, with `cab file`). Choosing a pack loads its **first** file; both choices
     run `device.setNamFile`, one undo step each, as everything else on the panel.
-- The shown name of a model is still its `metadata` name ("Fender Super Reverb 1965") or its
-  file's name without the extension; a cab file's shown name is its pack's name. The pack row
-  itself always shows the pack's folder name.
+- **The shipped pack first:** the top of every device's pack row lists the pack the executable
+  carries — "Suhina", a handful of files each, inside the build with nothing on disk
+  ([issue 1279]). Its files load anywhere, offline, with no folder set: a fresh install picks a
+  model and a cabinet from there before anything else is arranged. Its file rows show the
+  files' names the same way a folder's rows do.
+- The shown name is the file's own, without the extension — for a model, its `metadata` name
+  ("Fender Super Reverb 1965") in place of the file's name — and never the folder's, so a file
+  whose name shares its folder's reads apart from the pack row. The pack row itself always
+  shows the pack's folder name, with the folder's icon before it.
 - The scan reads the folder's and each pack's write time, re-reading the folder when its own
   writes change and a pack when its writes change — the app reads it once per frame, and file
   loading stays on the session thread (the session re-reads at open or by command only).
@@ -239,19 +275,46 @@ NAM models/
 
 Everything the user does is one of the existing device commands plus one new `Edit` command:
 
-- `device.add{id, position?}` — unchanged; `"nam-amp-modeler"` and `"nam-cab-loader"` are
-  ordinary effects. A fresh NAM Amp Modeler has no model: it passes the audio through and its
-  panel says to choose a file. (There is no `device.addNam`; choosing a file is its own step.)
-- `device.setNamFile{track, device, path}` — the file a device runs.
+- `device.add{id, position?, file?}` — a file-backed device added **with** a `file` runs it at
+  once, as `device.setNamFile` gives it: the path passes the extension check, the parsed model
+  or decoded IR goes into the session's assets and the device's state becomes the file's
+  library-relative or absolute path ([ADR 0036] › it), all inside the add's own undo step. A
+  wrong extension, a device that runs no file, and a file that cannot run are refused, changing
+  nothing. Without `file`, a fresh NAM Amp Modeler has no model: it passes the audio through
+  and its panel says to choose a file. (There is no `device.addNam`; `file` is how a device
+  starts on one.) `track.add` takes the same `file` with its `device`/`preset`/`stock`.
+- **The file a device starts on**, from the app: a drag from the browser's device folders and a
+  quick-add choice of a device give it `file` — the first pack's **first** file of the folder
+  the device lists from (the setting's or the default's, the same one the pack row reads), so a
+  new Amp Modeler or Cab Loader lands loaded when that folder holds any, and without files
+  lands empty as above. A stock preset that names a file brings that one
+  ([ADR 0036] › **A preset may name a file**); a stock preset that names none — the trims —
+  lands on the same first file, its values beside, so a placed Cab Loader is heard. A user's
+  preset file decides its own: a preset is values, the file the device runs is its state
+  ([ADR 0014] › the loader), and the add's `file` would write over what the preset's own named.
+- `device.setNamFile{track, device, path}` — the file a device runs:
+  — a pack's file by its library key (`builtin:<device id>/<file name>`), or a path.
   - The device must be one of the two; the path must end in `.nam` for an Amp Modeler and
-    `.wav` for a Cab Loader (message otherwise).
+    `.wav` for a Cab Loader (message otherwise). A key of the other device's pack is refused.
   - The reading, parsing or decoding and the running model's construction run at command time,
     off the audio thread, bounded by the caps above. The command errors with what the file's
     fault is ("…is not a NAM model", "…is unreadable", "…is more than 256 MiB"). The parsed
     model or decoded IR goes into the session's cache.
-  - The device's `state` becomes the file's absolute path; the chain's device id hashes it
-    (`.sd`'s trick), so changing the file rebuilds that one device and a project replay keeps
-    its state. One undo step, as `device.setParam` takes.
+  - The device's `state` carries what the project opens elsewhere from: a shipped file's key;
+    a file inside the library — library-relative ([ADR 0036] › 4, for example
+    `Sounds/NAM/Amp models/Suhina/<file>.nam`), resolved against the library's base wherever
+    the project opens, with the pack's file of the same name standing in when this machine's
+    disk (and its unpacked copy) is not there; a file outside the library — its absolute path,
+    recorded when it is all there is. A relative text the pack stands in for stores as the
+    relative text it was read by, so a caller that hands it back keeps the same reference
+    ([ADR 0036] › 7). One undo step, as `device.setParam` takes.
+- `device.savePreset{track, device, name}` — the device's values, and the file it selects, into
+  the library's `Presets/<device id>/<name>.<device id>.preset.suhina`
+  ([ADR 0036] › 5, [ADR 0014]'s format with its `file` field). A same-name preset is replaced.
+  A state the library's move carried — the file in the library now, the state still naming the
+  old folder — saves by the file's library-relative place ([ADR 0014] › Amendment); a file
+  outside the library is refused. Not a project change: no undo step, nothing to save; the
+  panel's menu runs it.
 
 The session keeps the parsed models and decoded IRs keyed by path — the same road the decoded
 audio files take ([ADR 0011](../decisions/0011-preview-and-added-audio.md); the session fills a
@@ -260,6 +323,43 @@ engine): a new `Player::provide_device_asset` and the same map at constructor ti
 render (`render_offline…`) and a live player see the identical assets. Loading runs where the
 audio pool's does — at command or project-open time, in the session's thread (as `.sd` graphs
 are read and validated at command time) — never on the audio thread.
+
+## Stock presets
+
+The two devices' stock presets live under `presets/nam-amp-modeler/` and `presets/nam-cab-loader/`
+([ADR 0014](../decisions/0014-stock-presets.md)), built into the executable and named
+`<preset name>.<device id>.preset.suhina`. The browser lists them under *Stock presets*, by device,
+and the search finds them; they are also added with `device.add {stock}` and `track.add {stock}`,
+or dragged from the browser onto a track — one undo step each.
+
+A preset of the shared preset format holds the device's parameter values — the controls
+([§ The devices' parameters](#the-devices-parameters)) and, since
+[ADR 0036] › **A preset may name a file**, the file the device runs in its optional `file` field.
+A stock preset's `file` names a shipped file by its key (`builtin:<device id>/<file name>`), and a
+user preset's may name the user's own file. Adding a preset adds a separate device with the
+preset's values; it changes no device that is already there, and the file such a one runs stays
+as it is. A preset that names a file starts the new device on it — a stock preset's from the
+pack, the user's with a file that does not load leaving the device without one (the add says
+so). A preset without `file` starts the new device with none through `device.add {stock}`; from
+the app it lands on the folder's first file ([§ Commands](#commands) › The file a device starts
+on). The Amp Modeler's five; four of them pair a shipped model, which
+the file's key carries alongside the trimming values ([issue 1279]; the pack's files
+[§ Limits](#limits)):
+
+- **NAM Amp Modeler:** Bright Clean (with the pack's Tim R Fender TwinVerb Vibrato Bright model),
+  Tight High Gain (with the pack's Helga B 5150 model), Warm Crunch (with Tim R JCM2000 Crunch),
+  Dark Lead (with Tudor N Driftwood Low Gain, a darker top and a short rise in the delay),
+  Clean Boost (the gain up, the EQ off, no file of its own).
+- **NAM Cab Loader:** Bright Cabinet and Dark Cabinet (with the pack's synthetic cabinets of the
+  same names), Rumble Cut, Mid Dip (a dip at 900 Hz), Second Cab (the phase reversed and the
+  volume a step down, to blend under a first cabinet) — the last three name no file: they are
+  cuts around whatever impulse response the user loads.
+
+`device.savePreset{name}` ([ADR 0036] › 5) saves one device's values — and, with the file it
+selects, one file reference — into the library's `Presets/<device id>/` as
+`<name>.<device id>.preset.suhina` ([ADR 0014]'s format), a preset of the same name replaced.
+The device panel has **Save as preset…** on it; the name is typed into the panel's menu field.
+The browser lists the library's presets beside the stock ones, under their device.
 
 ## The panels
 
@@ -331,8 +431,10 @@ the panel's Model missing note.
 
 ## Limits
 
-- The missing-files view and relink do not know the NAM and IR paths yet; joining them (the
-  panel then benefits from a fetched file and the one-click relink) is its own issue.
+- The missing-files view and relink do not read the NAM and IR paths yet; a library-relative
+  state opens against this machine's library root, with the pack's file standing in by name,
+  and the panels' note says when a load missed — but the *relink* story (a fetched file, a
+  one-click relink, the missing-files view listing the NAM and IR paths) is its own issue.
 - A2's width dial is run at its widest by **HQ**; a graduated quality choice (a knob over the
   sub-models) comes with a model that shows the trade-off, not with this pair.
 - Models are fed per side through their own running instance; a mono signal both sides share
@@ -344,3 +446,5 @@ the panel's Model missing note.
 [issue 489]: https://github.com/suhina-daw/suhina-daw/issues/489
 [ADR 0004]: ../decisions/0004-built-in-devices.md
 [ADR 0021]: ../decisions/0021-device-graph-files.md
+[ADR 0036]: ../decisions/0036-library-and-shipped-content.md
+[ADR 0014]: ../decisions/0014-stock-presets.md

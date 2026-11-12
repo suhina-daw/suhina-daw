@@ -13,14 +13,42 @@ use crate::commands::{Args, clip_list, make_room, new_content_id, track_at, trac
 use crate::editing::{content_rate, split};
 use crate::{CommandError, Session};
 
-/// The span a command names: `tracks`, and `start` before `end`, both at least 0.
-fn span(p: &Project, params: &Value) -> Result<(Vec<TrackId>, f64, f64), CommandError> {
+/// The span a command names: `tracks`, `start` before `end`, both at least 0, and the clips it
+/// keeps to.
+fn span(p: &Project, params: &Value) -> Result<(Vec<TrackId>, f64, f64, Only), CommandError> {
     let tracks = track_list(p, params)?;
     let (start, end) = (Args::new(params).f64("start")?, Args::new(params).f64("end")?);
     if !(start >= 0.0 && end > start && end.is_finite()) {
         return Err(format!("start and end must be beats with 0 ≤ start < end, got {start} and {end}").into());
     }
-    Ok((tracks, start, end))
+    Ok((tracks, start, end, Only(Args::new(params).opt_ids("clips")?)))
+}
+
+/// The clips a command acts on: those named in `clips` (one row of a stack, #701), or all.
+#[derive(Debug, Clone, Default)]
+struct Only(Option<Vec<u32>>);
+
+impl Only {
+    fn holds(&self, clip: &Clip) -> bool {
+        self.0.as_ref().is_none_or(|ids| ids.contains(&clip.id.0))
+    }
+
+    /// Clears `from..to` of `clips` as `make_room` does, for the clips held alone: the others
+    /// (another row of a stack) stay as they are.
+    fn make_room(&self, clips: &mut Vec<Clip>, from: f64, to: f64) {
+        let (mut held, others): (Vec<Clip>, Vec<Clip>) = clips.drain(..).partition(|c| self.holds(c));
+        make_room(&mut held, from, to);
+        *clips = others;
+        clips.append(&mut held);
+        clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+    }
+
+    /// A part split off a held clip is held too.
+    fn add(&mut self, clip: &Clip) {
+        if let Some(ids) = &mut self.0 {
+            ids.push(clip.id.0);
+        }
+    }
 }
 
 /// The arrangement lane of `track`, made (with an id of its own) when it has none.
@@ -34,16 +62,17 @@ fn lane_of(p: &mut Project, track: TrackId) -> Result<usize, CommandError> {
     Ok(p.arrangement.lanes.len() - 1)
 }
 
-/// Splits every clip of lane `lane` that crosses `at`; each second part is a new clip with an id
-/// of its own (ADR 0025).
-fn split_lane_at(p: &mut Project, lane: usize, at: f64) -> Result<(), CommandError> {
+/// Splits every clip of lane `lane` that `only` holds and that crosses `at`; each second part is
+/// a new clip with an id of its own (ADR 0025), held as its clip was.
+fn split_lane_at(p: &mut Project, lane: usize, at: f64, only: &mut Only) -> Result<(), CommandError> {
     let clips: Vec<Clip> = p.arrangement.lanes.get(lane).map(|l| l.clips.clone()).unwrap_or_default();
     let mut out = Vec::with_capacity(clips.len() + 1);
     for clip in clips {
-        if clip.start + 1e-6 < at && at < clip.start + clip.length - 1e-6 {
+        if only.holds(&clip) && clip.start + 1e-6 < at && at < clip.start + clip.length - 1e-6 {
             let rate = content_rate(p, &clip);
             let (first, mut second) = split(&clip, at, rate);
             second.id = p.new_clip_id()?;
+            only.add(&second);
             out.push(first);
             out.push(second);
         } else {
@@ -57,12 +86,14 @@ fn split_lane_at(p: &mut Project, lane: usize, at: f64) -> Result<(), CommandErr
     Ok(())
 }
 
-/// The clips of the span, each cut to it, with their contents and tracks: what a copy holds.
-fn pieces(p: &Project, tracks: &[TrackId], start: f64, end: f64) -> Vec<(TrackId, Clip, ClipContent)> {
+/// The clips of the span that `only` holds, each cut to it, with their contents and tracks: what
+/// a copy holds.
+fn pieces(p: &Project, tracks: &[TrackId], start: f64, end: f64, only: &Only) -> Vec<(TrackId, Clip, ClipContent)> {
     let mut out = Vec::new();
     for &track in tracks {
         let Some(lane) = p.arrangement.lanes.iter().find(|l| l.track == Some(track)) else { continue };
-        out.extend(lane.clips.iter().filter_map(|c| cut_to_span(p, c, start, end)).map(|(c, cc)| (track, c, cc)));
+        let held = lane.clips.iter().filter(|c| only.holds(c));
+        out.extend(held.filter_map(|c| cut_to_span(p, c, start, end)).map(|(c, cc)| (track, c, cc)));
     }
     out
 }
@@ -87,12 +118,14 @@ fn cut_to_span(p: &Project, clip: &Clip, start: f64, end: f64) -> Option<(Clip, 
 }
 
 /// Places copies of `pieces` (each on its own track), moved by `offset` beats, replacing what
-/// they cover unless `stack`; each copy plays content of its own. Returns where they went.
+/// they cover unless `stack`, of the clips `row` holds alone (one row of a stack, #701; over a
+/// take, all); each copy plays content of its own. Returns where they went.
 fn place(
     p: &mut Project,
     pieces: Vec<(TrackId, Clip, ClipContent)>,
     offset: f64,
     stack: bool,
+    row: &Only,
 ) -> Result<Vec<Value>, CommandError> {
     let mut placed = Vec::with_capacity(pieces.len());
     let mut spans = Vec::new();
@@ -115,11 +148,13 @@ fn place(
         let at = clip.start + offset;
         let mut copy = Clip { id: p.new_clip_id()?, content: id, start: at, ..clip };
         copy.fit_fades();
-        let stack = stack && !p.takes_cover(track, at, at + copy.length);
+        let over_takes = p.takes_cover(track, at, at + copy.length);
         let lane = lane_of(p, track)?;
         let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
-        if !stack {
+        if over_takes {
             make_room(&mut lane.clips, at, at + copy.length);
+        } else if !stack {
+            row.make_room(&mut lane.clips, at, at + copy.length);
         }
         lane.clips.push(copy.clone());
         lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
@@ -130,13 +165,13 @@ fn place(
     Ok(placed)
 }
 
-/// The clips lying inside the span after a split, as `{clip, track, index}`.
-fn inside(p: &Project, tracks: &[TrackId], start: f64, end: f64) -> Vec<Value> {
+/// The clips `only` holds lying inside the span after a split, as `{clip, track, index}`.
+fn inside(p: &Project, tracks: &[TrackId], start: f64, end: f64, only: &Only) -> Vec<Value> {
     let mut out = Vec::new();
     for &track in tracks {
         let Some(lane) = p.arrangement.lanes.iter().find(|l| l.track == Some(track)) else { continue };
         for (index, clip) in lane.clips.iter().enumerate() {
-            if clip.start >= start - 1e-6 && clip.start + clip.length <= end + 1e-6 {
+            if only.holds(clip) && clip.start >= start - 1e-6 && clip.start + clip.length <= end + 1e-6 {
                 out.push(json!({ "clip": clip.id.0, "track": track.0, "index": index }));
             }
         }
@@ -192,7 +227,7 @@ pub(crate) fn insert_time(session: &mut Session, params: &Value) -> Result<Value
     }
     // Clips crossing the start are split there; what starts from it on moves later.
     for lane in 0..p.arrangement.lanes.len() {
-        split_lane_at(p, lane, start)?;
+        split_lane_at(p, lane, start, &mut Only::default())?;
     }
     for clip in p.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
         if after(clip.start) {
@@ -251,42 +286,73 @@ pub(crate) fn insert_time(session: &mut Session, params: &Value) -> Result<Value
 }
 
 pub(crate) fn split_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (tracks, start, end) = span(&session.project, params)?;
+    let (tracks, start, end, mut only) = span(&session.project, params)?;
     let p = &mut session.project;
     for &track in &tracks {
         let Some(lane) = p.arrangement.lanes.iter().position(|l| l.track == Some(track)) else { continue };
-        split_lane_at(p, lane, start)?;
-        split_lane_at(p, lane, end)?;
+        split_lane_at(p, lane, start, &mut only)?;
+        split_lane_at(p, lane, end, &mut only)?;
     }
-    Ok(json!({ "clips": inside(p, &tracks, start, end) }))
+    Ok(json!({ "clips": inside(p, &tracks, start, end, &only) }))
 }
 
-/// `range.delete {tracks, start, end}`: what plays inside the span goes; the clips crossing an
-/// edge keep their parts outside it, and the gap stays.
+/// `range.delete {tracks, start, end, clips?}`: what plays inside the span goes; the clips
+/// crossing an edge keep their parts outside it, and the gap stays.
 pub(crate) fn delete_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (tracks, start, end) = span(&session.project, params)?;
-    let p = &mut session.project;
+    let (tracks, start, end, only) = span(&session.project, params)?;
     let mut removed = 0usize;
     for &track in &tracks {
-        let Some(lane) = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)) else { continue };
-        let before = lane.clips.len();
-        make_room(&mut lane.clips, start, end);
-        removed += before.saturating_sub(lane.clips.len());
+        let p = &mut session.project;
+        if let Some(lane) = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)) {
+            let before = lane.clips.len();
+            only.make_room(&mut lane.clips, start, end);
+            removed += before.saturating_sub(lane.clips.len());
+        }
+        // The track's automation inside the span goes too, clips or none; the values at its
+        // edges stay, so the envelope outside it does not change (#1205). A selection of one row
+        // of a stack (`clips`) leaves the automation alone, as its other rows still play over it.
+        if only.0.is_none() {
+            let lanes = crate::automation_range::under(session, track, start, end);
+            crate::automation_range::clear_under(session, track, start, end, &lanes)?;
+        }
     }
     Ok(
         json!({ "start": start, "end": end, "tracks": tracks.iter().map(|t| t.0).collect::<Vec<_>>(), "removed": removed }),
     )
 }
 
+/// Each of `tracks`' automation lanes with a point inside the span, from its start (#1205).
+fn span_automation(session: &Session, tracks: &[TrackId], start: f64, end: f64) -> crate::clipboards::SpanAutomation {
+    let lanes = tracks
+        .iter()
+        .map(|track| (*track, crate::automation_range::under(session, *track, start, end)))
+        .filter(|(_, lanes)| !lanes.is_empty())
+        .collect();
+    crate::clipboards::SpanAutomation { start, lanes }
+}
+
 /// `range.copy {tracks, start, end}`: copies what plays inside the span, cut to it, for
 /// `clip.paste`; a paste with no track puts each part back on its own track.
 pub(crate) fn copy_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (tracks, start, end) = span(&session.project, params)?;
-    let parts = pieces(&session.project, &tracks, start, end);
-    if parts.is_empty() {
+    let (tracks, start, end, only) = span(&session.project, params)?;
+    let parts = pieces(&session.project, &tracks, start, end, &only);
+    // The selection's automation goes with it, over the whole span, clips or none (#1205); one
+    // row of a stack (`clips`) takes the automation under its clips only.
+    let automation = if only.0.is_none() {
+        span_automation(session, &tracks, start, end)
+    } else {
+        crate::clipboards::SpanAutomation { start, lanes: Vec::new() }
+    };
+    if parts.is_empty() && automation.lanes.is_empty() {
         return Err("nothing plays in the selection".into());
     }
     let count = copy_parts(session, parts);
+    // The span's automation, laid once by a paste back on the copied tracks; a paste on a track
+    // of its own choosing lays the automation under each clip instead (one row of a stack keeps
+    // only that).
+    if only.0.is_none() {
+        session.clipboards.span = Some(automation);
+    }
     Ok(json!({ "copied": count, "start": start, "end": end }))
 }
 
@@ -299,6 +365,7 @@ fn copy_parts(session: &mut Session, parts: Vec<(TrackId, Clip, ClipContent)>) -
         .collect();
     session.clipboards.tracks = parts.iter().map(|(track, _, _)| *track).collect();
     session.clipboards.clips = parts.into_iter().map(|(_, clip, content)| (clip, content)).collect();
+    session.clipboards.span = None;
     count
 }
 
@@ -323,24 +390,40 @@ pub(crate) fn cut_range(session: &mut Session, params: &Value) -> Result<Value, 
     Ok(copied)
 }
 
-/// `range.duplicate {tracks, start, end, stack?}`: a copy of the span goes right after it, on
-/// the same tracks; answers with the copies.
+/// `range.duplicate {tracks, start, end, clips?, stack?}`: a copy of the span goes right after
+/// it, on the same tracks; with `clips`, of those clips, replacing only them (one row of a stack,
+/// #701); answers with the copies.
 pub(crate) fn duplicate_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (tracks, start, end) = span(&session.project, params)?;
+    let (tracks, start, end, only) = span(&session.project, params)?;
     let stack = Args::new(params).flag("stack")?;
-    let parts = pieces(&session.project, &tracks, start, end);
-    if parts.is_empty() {
+    let parts = pieces(&session.project, &tracks, start, end, &only);
+    // The selection's automation goes right after it too, over the whole span, clips or none:
+    // under each clip's copy and wherever else it has points (#916, #1205). One row of a stack
+    // (`clips`) carries the automation under its clips only.
+    let automation = if only.0.is_none() {
+        span_automation(session, &tracks, start, end)
+    } else {
+        crate::clipboards::SpanAutomation { start, lanes: Vec::new() }
+    };
+    if parts.is_empty() && automation.lanes.is_empty() {
         return Err("nothing plays in the selection".into());
     }
-    // The automation under each part goes under its copy (#916).
-    let carried: Vec<_> = parts
-        .iter()
-        .map(|(track, clip, _)| {
-            let lanes = crate::automation_range::under(session, *track, clip.start, clip.start + clip.length);
-            (*track, clip.start + (end - start), lanes)
-        })
-        .collect();
-    let placed = place(&mut session.project, parts, end - start, stack)?;
+    let carried: Vec<_> = if only.0.is_none() {
+        Vec::new()
+    } else {
+        parts
+            .iter()
+            .map(|(track, clip, _)| {
+                let lanes = crate::automation_range::under(session, *track, clip.start, clip.start + clip.length);
+                (*track, clip.start + (end - start), lanes)
+            })
+            .collect()
+    };
+    let placed =
+        if parts.is_empty() { Vec::new() } else { place(&mut session.project, parts, end - start, stack, &only)? };
+    for (track, lanes) in &automation.lanes {
+        crate::automation_range::lay_under(session, *track, end, lanes, true)?;
+    }
     for (track, at, lanes) in &carried {
         crate::automation_range::lay_under(session, *track, *at, lanes, true)?;
     }
@@ -350,10 +433,17 @@ pub(crate) fn duplicate_range(session: &mut Session, params: &Value) -> Result<V
 /// `clip.paste {start, stack?}` with no track, after a copy that knows its tracks: each copied
 /// clip goes back to the track it came from, the earliest at `start`.
 pub(crate) fn paste_to_sources(session: &mut Session, start: f64, stack: bool) -> Result<Value, CommandError> {
-    if session.clipboards.tracks.len() != session.clipboards.clips.len() || session.clipboards.clips.is_empty() {
+    let span = session.clipboards.span.clone();
+    if session.clipboards.tracks.len() != session.clipboards.clips.len()
+        || (session.clipboards.clips.is_empty() && span.is_none())
+    {
         return Err("give a track: the copied clips do not know their tracks".into());
     }
-    let earliest = session.clipboards.clips.iter().map(|(clip, _)| clip.start).fold(f64::INFINITY, f64::min);
+    // A copied time selection's start lands where the paste starts; else the earliest clip's.
+    let earliest = match &span {
+        Some(span) => span.start,
+        None => session.clipboards.clips.iter().map(|(clip, _)| clip.start).fold(f64::INFINITY, f64::min),
+    };
     let offset = if earliest.is_finite() { start - earliest } else { 0.0 };
     let parts: Vec<(TrackId, Clip, ClipContent)> = session
         .clipboards
@@ -363,9 +453,20 @@ pub(crate) fn paste_to_sources(session: &mut Session, start: f64, stack: bool) -
         .map(|(track, (clip, content))| (*track, clip.clone(), content.clone()))
         .collect();
     let starts: Vec<(TrackId, f64)> = parts.iter().map(|(track, clip, _)| (*track, clip.start + offset)).collect();
-    let placed = place(&mut session.project, parts, offset, stack)?;
-    // The automation that was under each clip, under its copy on the same track.
-    let under = session.clipboards.under.clone();
+    let placed = if parts.is_empty() {
+        Vec::new()
+    } else {
+        place(&mut session.project, parts, offset, stack, &Only::default())?
+    };
+    // A copied time selection's automation, on its own tracks from where the paste starts.
+    if let Some(span) = &span {
+        for (track, lanes) in &span.lanes {
+            crate::automation_range::lay_under(session, *track, span.start + offset, lanes, true)?;
+        }
+    }
+    // The automation that was under each clip, under its copy on the same track: the span's
+    // automation holds it already when a time selection was copied.
+    let under = if span.is_some() { Vec::new() } else { session.clipboards.under.clone() };
     for ((track, at), lanes) in starts.iter().zip(&under) {
         crate::automation_range::lay_under(session, *track, *at, lanes, true)?;
     }

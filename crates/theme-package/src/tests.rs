@@ -250,3 +250,97 @@ fn rewriting_theme_json_keeps_the_schema_and_keys_it_does_not_read() {
     assert_eq!(again.extra["$schema"], "https://example.com/theme.json");
     assert_eq!(again.extra["next"]["a"], 1);
 }
+
+/// The user-agent sheet styles elements by name, state and attribute only: no class, no id and
+/// no variable, no `@media` (and so no `prefers-color-scheme`), and every element it names is in
+/// the registry.
+#[test]
+fn the_user_agent_sheet_selects_by_name_state_and_attribute_only() {
+    assert!(suhina_style::sheet::Sheet::parse(USER_AGENT_SHEET).is_ok(), "the user-agent sheet parses");
+    assert!(!USER_AGENT_SHEET.contains("var("), "the user-agent sheet uses no variables");
+    assert!(!USER_AGENT_SHEET.contains("--"), "the user-agent sheet declares no custom properties");
+    assert!(!USER_AGENT_SHEET.contains('@'), "the user-agent sheet has no at-rules");
+    let mut text = USER_AGENT_SHEET.to_owned();
+    while let Some(start) = text.find("/*") {
+        let end = text[start..].find("*/").unwrap() + start + 2;
+        text.replace_range(start..end, "");
+    }
+    let mut rest = text.as_str();
+    let mut rules = 0;
+    while let Some(open) = rest.find('{') {
+        let close = rest.find('}').unwrap();
+        for selector in rest[..open].split(',').map(str::trim) {
+            rules += 1;
+            let name = selector.split(['[', ':']).next().unwrap();
+            assert!(elements::is_element(name), "{selector}: {name} is not an element");
+            // No classes yet: the standard toolbar group classes the spec allows come with the
+            // toolbar's groups (#995 § 7).
+            assert!(!selector.contains('.'), "{selector} has a class");
+            assert!(!selector.contains('#'), "{selector} has an id");
+        }
+        rest = &rest[close + 1..];
+    }
+    assert!(rules > 30);
+}
+
+/// Every region keeps what its children paint (`overflow: hidden`), and only regions do.
+#[test]
+fn the_user_agent_sheet_clips_regions() {
+    let rule = USER_AGENT_SHEET.split("*/").find(|part| part.contains("overflow: hidden")).unwrap();
+    let listed: Vec<&str> = rule[..rule.find('{').unwrap()].split(',').map(str::trim).collect();
+    let regions: Vec<&str> = elements::ELEMENTS
+        .iter()
+        .filter(|element| element.kind == elements::Kind::Region)
+        .map(|element| element.name)
+        .collect();
+    assert_eq!(listed, regions);
+}
+
+/// The default artwork lives in the user-agent sheet: a rule for each role Suhina ships artwork
+/// for, on the element that draws it, naming the built-in file.
+#[test]
+fn the_user_agent_sheet_gives_every_default_artwork() {
+    let given = user_agent_artwork();
+    let shipped: Vec<_> = elements::default_artwork().collect();
+    assert_eq!(given, shipped);
+    for art in elements::artwork().filter(|art| art.default.is_some()) {
+        let rule = format!("{} {{ image: url(\"suhina:{}.svg\"); }}", art.selector, art.role);
+        assert!(USER_AGENT_SHEET.contains(&rule), "the user-agent sheet lacks {rule}");
+    }
+    assert_eq!(built_in_artwork("knob.body.svg").map(|(role, _)| role), Some("knob.body"));
+    assert_eq!(built_in_artwork("nothing.svg"), None);
+}
+
+/// Suhina's own artwork takes its colour only from `currentColor`: no attribute of Suhina's own
+/// keeps a palette colour in it.
+#[test]
+fn default_artwork_is_coloured_by_current_color_alone() {
+    for (role, svg) in elements::default_artwork() {
+        assert!(!svg.contains("data-suhina-ink"), "{role} still names a palette colour");
+        assert!(!svg.contains("var("), "{role} uses a variable");
+    }
+}
+
+/// Sample points are styled by kind in the user-agent sheet, one rule per kind.
+#[test]
+fn the_user_agent_sheet_colours_sample_points_by_kind() {
+    let kinds = USER_AGENT_SHEET.matches("sample-point[kind=").count();
+    assert_eq!(kinds, 17);
+}
+
+#[test]
+fn image_rules_read_selector_lists_and_skip_comments_and_at_rules() {
+    let css = "/* a { image: url(x.svg); } */ a, b:hover { image: url('y.svg'); color: red; }\n\
+               @media (max-width: 1px) { c { image: url(z.svg); } }";
+    assert_eq!(
+        image_rules(css),
+        vec![("a".to_owned(), "y.svg".to_owned()), ("b:hover".to_owned(), "y.svg".to_owned())]
+    );
+    // A rule after an at-rule's block with rules in it is read as a rule of its own, and the
+    // rules inside the block are not; a statement at-rule does not swallow the selector after it.
+    let css = "@media (max-width: 1px) { c { image: url(z.svg); } d { color: red; } }
+               e { image: url(e.svg); }
+               @import \"more.css\";
+               f { image: url(f.svg); }";
+    assert_eq!(image_rules(css), vec![("e".to_owned(), "e.svg".to_owned()), ("f".to_owned(), "f.svg".to_owned())]);
+}

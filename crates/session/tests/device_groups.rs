@@ -371,3 +371,50 @@ fn devices_in_groups_are_removed_copied_and_pasted_by_path() {
     run(&mut session, "device.removeMany", json!({ "track": 1, "devices": [1, "1/0/0"] })).unwrap();
     assert_eq!(names(devices(&session)), ["Utility"]);
 }
+
+/// A file-backed device inside a group runs its file the same as a top-level one: the sync
+/// reads it (`docs/spec/nam-amp-and-cab.md` › The device panels).
+#[test]
+fn a_nam_device_in_a_group_loads_its_file() {
+    let dir = std::env::temp_dir().join(format!("suhina-groups-nam-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let model_json = r#"{
+        "version": "0.5.4", "architecture": "WaveNet",
+        "config": {
+            "layers": [{
+                "input_size": 1, "condition_size": 1, "channels": 1, "head_size": 1,
+                "kernel_size": 1, "dilations": [1], "activation": "ReLU",
+                "gated": false, "head_bias": false
+            }],
+            "head": null, "head_scale": 1.0
+        },
+        "weights": [1.0, 2.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+        "metadata": { "name": "Test amp 1965" }
+    }"#;
+    let model_path = dir.join("test-amp.nam");
+    std::fs::write(&model_path, model_json).unwrap();
+
+    let mut session = Session::new(project(false));
+    run(&mut session, "device.addGroup", json!({ "track": 1 })).unwrap();
+    let added = run(
+        &mut session,
+        "device.add",
+        json!({ "track": 1, "id": "nam-amp-modeler", "position": "0/0/0", "file": model_path.display().to_string() }),
+    )
+    .unwrap();
+    assert!(added["file"].is_string(), "{added}");
+    let group = devices(&session)[0].as_group().unwrap();
+    let state = group.branches[0].devices[0]
+        .state
+        .as_deref()
+        .map(|s| std::str::from_utf8(s).map(str::to_owned).unwrap_or_default());
+    assert_eq!(state, Some(model_path.display().to_string()));
+    session.sync_device_files();
+    assert_eq!(
+        session.device_asset(&model_path.display().to_string()).map(|a| a.device()),
+        Some("nam-amp-modeler"),
+        "the sync reads a file-backed device inside a group too"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

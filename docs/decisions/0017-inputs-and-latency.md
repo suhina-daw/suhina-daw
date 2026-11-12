@@ -4,7 +4,7 @@ read_when: MIDI input, default track input, audio.setTrackInput, MIDI controller
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-06
+last_verified: 2026-11-12
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/live.rs
@@ -208,6 +208,37 @@ engine code.
     transport stopped and starts the transport on the frame it ends. A loopback test (the
     output fed back into the input offline, with a known delay) checks that a recorded frame
     lands on the frame it was played at.
+
+## Amendment: a take's frames run on the input's own clock (2026-11-10)
+
+The body's arithmetic for an input frame's stamp — its frame less the output's latency, the
+input device's and the frames that waited in the input ring — is right for the block, but the
+ring's depth swings block to block as the device's delivery and the render thread's reads
+trade places, and a stamp that followed it jumped with every swing. The record writer reads a
+forward jump as frames lost and fills them with silence, and a backward one as frames to
+skip: a take recorded through the swings came out full of exact-zero runs of one block, heard
+as clicks and pops, with no underrun counted anywhere (the ring never starved; its depth only
+oscillated). A take's frames run on the input's own clock now — its frames arrive in order,
+so they never jump — lined up once at the take's start by the body's arithmetic, from the
+input's consumed-frame count the render thread reads each block
+([`docs/spec/recording.md`](../spec/recording.md) › Lined up with what was heard). A loopback
+still records the project back exactly on its frames.
+
+## Amendment: a hold's frames delivered late are skipped (2026-11-11)
+
+[#1290](https://github.com/suhina-daw/suhina-daw/issues/1290) › the second review. The clock
+amendment spends a starved block's input time whole — the hold made up what the ring did not
+deliver, and the take's positions count the block's frames either way. When the device
+delivers the held frames after all (a callback that landed after its read), they stay in the
+ring while every later block reads its own `frames`: the rest of the take ran that count late
+against the beat, and each further underrun added to it. The read now skips them when the ring
+carries a whole block more than the last whole read left it: the starvation emptied the ring,
+so the front frames are the late delivery, and the input time their content belongs to is
+already spent — the hold is the content the take carries for it. A real loss leaves the ring
+at its own pace (a block's production over the leftover a whole read leaves) and never trips
+the skip, and a steady depth — drift, the backlog drop's kept block — is not a late delivery.
+A loopback whose callback lands half a block late, then delivers, records the rest of the take
+on its beats.
 
 ## Amendment: default track input (2026-11-05)
 

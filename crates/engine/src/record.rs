@@ -11,8 +11,11 @@
 //!   heard when it was played: its frame less the key-to-sound latency (the live notes' fixed
 //!   delay and the output's latency);
 //! - **audio**: every armed track's input channel or pair, in chunks of [`RECORD_CHUNK`] frames,
-//!   at the beat that was heard when it reached the input: its frame less the output's latency,
-//!   the input device's and what waited in the input ring.
+//!   at the beat that was heard when it reached the input. Its frame runs on the input's own
+//!   clock, lined up with the heard beat once at the take's start: the input ring's depth
+//!   swings block to block as the device's delivery and the reads trade places, and a position
+//!   that followed it jumped against its neighbours — the writer read the jumps as lost frames
+//!   and spliced silence in, the takes' crackle.
 //!
 //! - **jumps**: where the arrangement's playhead jumped while recording (the loop wrapping, a
 //!   click on the ruler), so the session can keep each pass over the same beats as a take of its
@@ -162,6 +165,14 @@ pub(crate) struct Recorder {
     /// the beat heard when it was captured.
     note_latency: u64,
     audio_latency: u64,
+    /// The take's line-up, pinned at its first chunk: the position the heard beat stamped then,
+    /// and the input's frame index then. The chunks after run on the input's own clock from
+    /// the anchor — its frames arrive in order, so the positions follow one another without
+    /// jumping, where a position recomputed against the render's clock jumped with the input
+    /// ring's depth and the writer spliced silence into the take at every jump.
+    audio_anchor: Option<(u64, u64)>,
+    /// The input's frame clock at this block's end (`Input::frames_consumed`, read each block).
+    input_consumed: u64,
     /// Frames still to record after the transport stopped or recording went off: what was
     /// played before is still on its way through the output and the input (`audio_latency`),
     /// and a take ends where it was heard, so its last frames come in after the stop.
@@ -186,6 +197,8 @@ impl Recorder {
             beats_per_frame: 0.0,
             note_latency: 0,
             audio_latency: 0,
+            audio_anchor: None,
+            input_consumed: 0,
             tail: 0,
         }
     }
@@ -199,6 +212,8 @@ impl Recorder {
         self.notes = Some(notes);
         self.audio = Some(audio);
         self.jumps = Some(jumps);
+        // A new recording lines up afresh: its first chunk pins the anchor.
+        self.audio_anchor = None;
         RecordReceiver {
             notes: note_reader,
             audio: audio_reader,
@@ -209,6 +224,10 @@ impl Recorder {
     }
 
     pub(crate) fn set(&mut self, on: bool) {
+        if on && !self.on {
+            // A new take lines up afresh at its first chunk.
+            self.audio_anchor = None;
+        }
         if self.on && !on && self.running {
             self.tail = self.audio_latency;
         }
@@ -229,7 +248,8 @@ impl Recorder {
     /// Where a block starting at renderer frame `position` is: the launcher clock's beat and the
     /// arrangement's there, and beats per frame. `live_delay` is the frames a stamped note
     /// plays after it was played; `input_waiting` the frames that waited in the input ring
-    /// before this block's were read.
+    /// before this block's were read; `input_consumed` the input's frame clock at the block's
+    /// end.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn begin(
         &mut self,
@@ -240,7 +260,9 @@ impl Recorder {
         beats_per_frame: f64,
         live_delay: u64,
         input_waiting: u64,
+        input_consumed: u64,
     ) {
+        self.input_consumed = input_consumed;
         // A block that does not start where the last one's beats led: the playhead jumped.
         if self.on && self.running && running && position > self.position {
             let from = self.beat + (position - self.position) as f64 * self.beats_per_frame;
@@ -312,16 +334,42 @@ impl Recorder {
         if !self.takes_audio() {
             return;
         }
+        // This block's frames, before the tail's clip: the block spent this much of the input's
+        // clock.
+        let block_frames = frames;
         // After a stop, only the frames still to come in.
         let frames =
             if self.on && self.running { frames } else { frames.min(usize::try_from(self.tail).unwrap_or(usize::MAX)) };
+        // The input's frame index of this block's first frame: the block's frames were
+        // consumed ending at `input_consumed`.
+        let block_first = self.input_consumed.saturating_sub(block_frames as u64);
         let channels = channels.clamp(1, 2);
         let mut done = 0;
         while done < frames {
             let count = (frames - done).min(RECORD_CHUNK);
             let first = from + done;
-            let position = (self.position + first as u64).saturating_sub(self.audio_latency);
-            let (clock, beat) = self.beats_at(self.position + first as u64, self.audio_latency);
+            let index = block_first + first as u64;
+            let first_frame = self.position + first as u64;
+            // The take's line-up is pinned at its first chunk the arithmetic can stamp: the
+            // frame less the latencies and the input ring's depth as they stood then, against
+            // the input's frame index then. The chunks after run on the input's own clock from
+            // the anchor — its frames arrive in order, so the positions follow one another
+            // without jumping, where a position recomputed against the render's clock jumped
+            // with the ring's depth, and the writer read the jumps as lost frames and spliced
+            // silence in, the takes' crackle. Before the transport has run a latency's worth
+            // the stamp saturates at 0, as it always did, and the anchor waits for one it
+            // cannot poison.
+            let stamp = first_frame.saturating_sub(self.audio_latency);
+            if self.audio_anchor.is_none() && first_frame >= self.audio_latency {
+                self.audio_anchor = Some((stamp, index));
+            }
+            let position = match self.audio_anchor {
+                Some((anchor_position, anchor_index)) => {
+                    anchor_position.saturating_add(index.saturating_sub(anchor_index))
+                }
+                None => stamp,
+            };
+            let (clock, beat) = self.beats_at(first_frame, self.audio_latency);
             let mut chunk = RecordedAudio {
                 track,
                 position,

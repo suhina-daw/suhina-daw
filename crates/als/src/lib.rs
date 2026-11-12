@@ -219,6 +219,7 @@ impl Reader {
             default_scale: None,
             // A Live Set brings no mappings with it (`docs/spec/midi-mapping.md`).
             controller_mappings: Vec::new(),
+            lane_layouts: Vec::new(),
             next_id: 0,
         };
         self.untangle_groups(&mut project);
@@ -870,6 +871,7 @@ impl Reader {
             color: None,
             ara: false,
             audio,
+            swing: Default::default(),
             extensions: Extensions::default(),
         })
     }

@@ -54,25 +54,68 @@ type Range = Option<(f32, f32)>;
 /// root, and the sheet's notices.
 pub type SheetValues = (Vec<Registered>, BTreeMap<String, String>, Vec<String>);
 
-/// The core settings beyond the palette: name, syntax and range.
-const SETTINGS: &[(&str, &str, Range)] = &[
-    ("--meter-style", "continuous | segmented | needle | frames", None),
-    ("--meter-segments", "<integer>", Some((4.0, 64.0))),
-    ("--meter-intensity", "<integer>", Some((0.0, 100.0))),
-    ("--artwork-fps", "<integer>", Some((1.0, 30.0))),
-    ("--liquid", "auto | <integer>+", None),
-    ("--gradient-panels", "*", None),
-    ("--gradient-tracks", "*", None),
-    ("--gradient-clips", "*", None),
-    ("--background-image", "*", None),
-    ("--background-opacity", "<integer>", Some((0.0, 100.0))),
-    ("--background-blur", "<integer>", Some((0.0, 100.0))),
-    ("--session-track-width", "auto | <length>", None),
-    ("--session-return-width", "auto | <length>", None),
-    ("--session-scene-width", "auto | <length>", None),
-    ("--session-slot-height", "auto | <length>", None),
-    ("--session-header-height", "auto | <length>", None),
+/// The theme's settings beyond the palette: registered properties of their elements
+/// (`meter { meter-style: segmented; }`), read from the theme's sheet and its variant's. Element and name.
+pub const SETTINGS: &[(&str, &str)] = &[
+    ("meter", "meter-style"),
+    ("meter", "meter-segments"),
+    ("meter", "meter-intensity"),
+    ("window", "artwork-fps"),
+    ("window", "liquid"),
+    ("window", "panel-gradient"),
+    ("window", "track-gradient"),
+    ("window", "clip-gradient"),
+    ("window", "backdrop-image"),
+    ("window", "backdrop-opacity"),
+    ("window", "backdrop-blur"),
+    ("session", "track-width"),
+    ("session", "return-width"),
+    ("session", "scene-width"),
+    ("session", "slot-height"),
+    ("session", "header-height"),
 ];
+
+/// The custom properties that held the settings before they were properties of their elements
+/// (#1273), and the element rule that sets each now.
+const FORMER: &[(&str, &str)] = &[
+    ("--meter-style", "meter { meter-style }"),
+    ("--meter-segments", "meter { meter-segments }"),
+    ("--meter-intensity", "meter { meter-intensity }"),
+    ("--artwork-fps", "window { artwork-fps }"),
+    ("--liquid", "window { liquid }"),
+    ("--gradient-panels", "window { panel-gradient }"),
+    ("--gradient-tracks", "window { track-gradient }"),
+    ("--gradient-clips", "window { clip-gradient }"),
+    ("--background-image", "window { backdrop-image }"),
+    ("--background-opacity", "window { backdrop-opacity }"),
+    ("--background-blur", "window { backdrop-blur }"),
+    ("--session-track-width", "session { track-width }"),
+    ("--session-return-width", "session { return-width }"),
+    ("--session-scene-width", "session { scene-width }"),
+    ("--session-slot-height", "session { slot-height }"),
+    ("--session-header-height", "session { header-height }"),
+];
+
+/// Whether `name` is one of the theme's settings ([`SETTINGS`]).
+pub fn is_setting(name: &str) -> bool {
+    SETTINGS.iter().any(|(_, setting)| *setting == name)
+}
+
+/// The settings among `values` as rules of their elements, for a sheet.
+pub fn setting_rules(values: &BTreeMap<String, String>) -> String {
+    let mut css = String::new();
+    for element in ["window", "session", "meter"] {
+        let own: Vec<String> = SETTINGS
+            .iter()
+            .filter(|(of, _)| *of == element)
+            .filter_map(|(_, name)| values.get(*name).map(|value| format!(" {name}: {value};")))
+            .collect();
+        if !own.is_empty() {
+            css.push_str(&format!("{element} {{{} }}\n", own.concat()));
+        }
+    }
+    css
+}
 
 /// A palette token's custom property: `accent` is `--accent`, `track.headerBackground` is
 /// `--track-headerBackground`.
@@ -99,9 +142,7 @@ pub fn core_sheet() -> &'static str {
 }
 
 fn core_syntaxes() -> Vec<(String, &'static str, Range)> {
-    let palette =
-        super::theme::Palette::DARK.tokens().into_iter().map(|(key, _, _)| (token_property(key), "<color>", None));
-    palette.chain(SETTINGS.iter().map(|(name, syntax, range)| ((*name).to_owned(), *syntax, *range))).collect()
+    super::theme::Palette::DARK.tokens().into_iter().map(|(key, _, _)| (token_property(key), "<color>", None)).collect()
 }
 
 fn core_parsed() -> Option<&'static Sheet> {
@@ -126,18 +167,18 @@ pub fn core_values(theme: &Theme) -> BTreeMap<String, String> {
         values.insert(token_property(key), hex_rgba(theme.rgba(key, color)));
     }
     let skin = &theme.skin;
-    values.insert("--meter-style".into(), skin.meter.name().into());
-    values.insert("--meter-segments".into(), skin.segments.to_string());
-    values.insert("--meter-intensity".into(), skin.meter_intensity.to_string());
-    values.insert("--artwork-fps".into(), skin.artwork_fps.to_string());
+    values.insert("meter-style".into(), skin.meter.name().into());
+    values.insert("meter-segments".into(), skin.segments.to_string());
+    values.insert("meter-intensity".into(), skin.meter_intensity.to_string());
+    values.insert("artwork-fps".into(), skin.artwork_fps.to_string());
     values.insert(
-        "--liquid".into(),
+        "liquid".into(),
         theme.liquid.map_or_else(|| "auto".into(), |l| format!("{} {} {}", l.panels, l.tracks, l.clips)),
     );
     for (name, gradient) in [
-        ("--gradient-panels", &theme.gradients.panels),
-        ("--gradient-tracks", &theme.gradients.tracks),
-        ("--gradient-clips", &theme.gradients.clips),
+        ("panel-gradient", &theme.gradients.panels),
+        ("track-gradient", &theme.gradients.tracks),
+        ("clip-gradient", &theme.gradients.clips),
     ] {
         let text = gradient.as_ref().map_or_else(
             || "none".into(),
@@ -150,13 +191,13 @@ pub fn core_values(theme: &Theme) -> BTreeMap<String, String> {
         values.insert(name.into(), text);
     }
     values.insert(
-        "--background-image".into(),
+        "backdrop-image".into(),
         if skin.background.is_some() { "url(\"background.png\")".into() } else { "none".into() },
     );
-    values.insert("--background-opacity".into(), skin.background_opacity.to_string());
-    values.insert("--background-blur".into(), skin.background_blur.to_string());
+    values.insert("backdrop-opacity".into(), skin.background_opacity.to_string());
+    values.insert("backdrop-blur".into(), skin.background_blur.to_string());
     for (name, value) in skin.session.entries() {
-        values.insert(format!("--session-{name}"), value.map_or_else(|| "auto".into(), |v| format!("{v}px")));
+        values.insert(name.to_owned(), value.map_or_else(|| "auto".into(), |v| format!("{v}px")));
     }
     values
 }
@@ -200,31 +241,31 @@ pub fn apply_core(theme: &mut Theme, values: &BTreeMap<String, String>) -> Vec<S
         None => {}
     };
     let skin = &mut theme.skin;
-    set(number("--meter-segments", 4, 64), &mut skin.segments);
-    set(number("--meter-intensity", 0, 100), &mut skin.meter_intensity);
-    set(number("--artwork-fps", 1, 30), &mut skin.artwork_fps);
-    set(number("--background-opacity", 0, 100), &mut skin.background_opacity);
-    set(number("--background-blur", 0, 100), &mut skin.background_blur);
-    if let Some(value) = values.get("--meter-style") {
+    set(number("meter-segments", 4, 64), &mut skin.segments);
+    set(number("meter-intensity", 0, 100), &mut skin.meter_intensity);
+    set(number("artwork-fps", 1, 30), &mut skin.artwork_fps);
+    set(number("backdrop-opacity", 0, 100), &mut skin.background_opacity);
+    set(number("backdrop-blur", 0, 100), &mut skin.background_blur);
+    if let Some(value) = values.get("meter-style") {
         skin.meter = match value.trim() {
             "continuous" => super::skin::MeterStyle::Continuous,
             "segmented" => super::skin::MeterStyle::Segmented,
             "needle" => super::skin::MeterStyle::Needle,
             "frames" => super::skin::MeterStyle::Frames,
             other => {
-                warnings.push(format!("--meter-style: unknown style {other}"));
+                warnings.push(format!("meter-style: unknown style {other}"));
                 skin.meter
             }
         };
     }
     for (name, _) in skin.session.entries() {
-        if let Some(value) = values.get(&format!("--session-{name}"))
+        if let Some(value) = values.get(name)
             && let Err(error) = skin.session.set(name, value.trim())
         {
-            warnings.push(format!("--session-{name}: {error}"));
+            warnings.push(format!("{name}: {error}"));
         }
     }
-    if let Some(value) = values.get("--background-image") {
+    if let Some(value) = values.get("backdrop-image") {
         match value.trim() {
             "none" => skin.background = None,
             image => match background_path(image) {
@@ -233,11 +274,11 @@ pub fn apply_core(theme: &mut Theme, values: &BTreeMap<String, String>) -> Vec<S
                     skin.background = Some(Arc::from(path))
                 }
                 Some(_) => {}
-                None => warnings.push(format!("--background-image: {image} is not url(\"<file>.png\")")),
+                None => warnings.push(format!("backdrop-image: {image} is not url(\"<file>.png\")")),
             },
         }
     }
-    if let Some(value) = values.get("--liquid") {
+    if let Some(value) = values.get("liquid") {
         let parts: Vec<Option<u8>> =
             value.split_whitespace().map(|n| n.parse::<u8>().ok().filter(|n| *n <= 100)).collect();
         match parts[..] {
@@ -245,13 +286,13 @@ pub fn apply_core(theme: &mut Theme, values: &BTreeMap<String, String>) -> Vec<S
             [Some(panels), Some(tracks), Some(clips)] => {
                 theme.liquid = Some(super::liquid::Options { panels, tracks, clips })
             }
-            _ => warnings.push(format!("--liquid: {value} is auto or three strengths from 0 to 100")),
+            _ => warnings.push(format!("liquid: {value} is auto or three strengths from 0 to 100")),
         }
     }
     for (name, slot) in [
-        ("--gradient-panels", &mut theme.gradients.panels),
-        ("--gradient-tracks", &mut theme.gradients.tracks),
-        ("--gradient-clips", &mut theme.gradients.clips),
+        ("panel-gradient", &mut theme.gradients.panels),
+        ("track-gradient", &mut theme.gradients.tracks),
+        ("clip-gradient", &mut theme.gradients.clips),
     ] {
         let Some(value) = values.get(name) else { continue };
         match gradient(value) {
@@ -262,10 +303,10 @@ pub fn apply_core(theme: &mut Theme, values: &BTreeMap<String, String>) -> Vec<S
     warnings
 }
 
-/// The relative PNG `url("…")` names, inside the theme's folder.
+/// The relative PNG `url("…")` names, inside the theme's folder: the style engine's own check of
+/// `backdrop-image`, so a value it takes is one the theme loads.
 fn background_path(value: &str) -> Option<String> {
-    let path = value.strip_prefix("url(")?.strip_suffix(')')?.trim().trim_matches(['"', '\'']);
-    (path.ends_with(".png") && super::skin::asset_path(&path.replace(".png", ".svg"))).then(|| path.to_owned())
+    suhina_style::property::backdrop_path(value).map(str::to_owned)
 }
 
 /// `none`, or `<angle>deg, <colour> <position>%, ...` with 2 to 8 stops (0 degrees runs left to
@@ -299,8 +340,10 @@ pub fn read(text: &str) -> Result<SheetValues, String> {
     let sheet = Sheet::parse(text)?;
     let declared: Vec<Registered> = sheet.properties.iter().filter(|p| !is_core(&p.name)).cloned().collect();
     // Every variable the root sees, so a variant's value may refer to the theme's own.
-    let base = root_variables(&sheet, None)?;
-    let notices = sheet.notices.iter().map(|n| format!("line {}:{}: {}", n.line, n.column, n.message)).collect();
+    let base = sheet_values(&sheet, None)?;
+    let mut notices: Vec<String> =
+        sheet.notices.iter().map(|n| format!("line {}:{}: {}", n.line, n.column, n.message)).collect();
+    notices.extend(former_settings(&sheet));
     Ok((declared, base, notices))
 }
 
@@ -311,9 +354,9 @@ fn root_variables(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<Str
     use suhina_style::selector::{Element, Tree};
     let core = core_parsed().ok_or("the core theme properties do not parse")?;
     let tree = Tree::new(vec![Element::new("html", None)])?;
-    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, dark: true, reduced_motion: false };
+    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
     let mut sheets = vec![
-        AppliedSheet { sheet: core, layer: Layer::Default, root: None },
+        AppliedSheet { sheet: core, layer: Layer::UserAgent, root: None },
         AppliedSheet { sheet, layer: Layer::Theme, root: None },
     ];
     if let Some(variant) = variant {
@@ -321,6 +364,100 @@ fn root_variables(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<Str
     }
     let styles = compute(&tree, viewport, &sheets)?;
     Ok(styles.first().map(|style| style.variables().clone()).unwrap_or_default())
+}
+
+/// The styles the core sheet, `sheet`, `variant`'s and `user`'s give the element at the end of
+/// each of `paths` (element names from `window` inward, each path its own line of elements under
+/// one `window`), as a 1280 by 800 dark window sees them: the settings Suhina reads outside a
+/// frame (`native_css::settings_of`) and the ones the theme editor shows ([`setting_values`]).
+pub(in crate::kit) fn element_styles(
+    sheet: &Sheet,
+    variant: Option<&Sheet>,
+    user: Option<&Sheet>,
+    paths: &[&[&str]],
+) -> Result<Vec<suhina_style::cascade::ComputedStyle>, String> {
+    use suhina_style::cascade::{AppliedSheet, Layer, compute};
+    use suhina_style::selector::{Element, Tree};
+    let core = core_parsed().ok_or("the core theme properties do not parse")?;
+    let mut elements = vec![Element::new("html", None), Element::new("window", Some(0))];
+    let mut ends = Vec::with_capacity(paths.len());
+    for path in paths {
+        let mut parent = 1;
+        for name in path.iter().filter(|name| **name != "window") {
+            elements.push(Element::new(name, Some(parent)));
+            parent = elements.len() - 1;
+        }
+        ends.push(parent);
+    }
+    let tree = Tree::new(elements)?;
+    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
+    let mut sheets = vec![AppliedSheet { sheet: core, layer: Layer::UserAgent, root: None }];
+    if let Some(agent) = super::native_css::user_agent() {
+        sheets.push(AppliedSheet { sheet: agent, layer: Layer::UserAgent, root: None });
+    }
+    sheets.push(AppliedSheet { sheet, layer: Layer::Theme, root: None });
+    if let Some(variant) = variant {
+        sheets.push(AppliedSheet { sheet: variant, layer: Layer::Variant, root: None });
+    }
+    if let Some(user) = user {
+        sheets.push(AppliedSheet { sheet: user, layer: Layer::User, root: None });
+    }
+    let styles = compute(&tree, viewport, &sheets)?;
+    ends.iter().map(|&at| styles.get(at).cloned().ok_or_else(|| "a path's element has no style".to_owned())).collect()
+}
+
+/// The settings `sheet` gives its elements ([`SETTINGS`]), with `variant`'s sheet above it, as
+/// text, as a 1280 by 800 dark window sees them: Suhina Studio's value for a setting the sheets
+/// do not give. The user's sheet is not the theme's, and is left out.
+fn setting_values(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<String, String>, String> {
+    use suhina_style::property::Property;
+    use suhina_style::value::{Length, Value};
+    let elements = ["window", "session", "meter"];
+    let paths: Vec<&[&str]> = elements.iter().map(std::slice::from_ref).collect();
+    let styles = element_styles(sheet, variant, None, &paths)?;
+    let mut values = setting_defaults();
+    for (element, name) in SETTINGS {
+        let Some(style) = elements.iter().position(|e| e == element).and_then(|at| styles.get(at)) else {
+            continue;
+        };
+        let Some(property) = Property::from_name(name).filter(|p| style.authored(*p)) else { continue };
+        let text = match style.get(property) {
+            Value::Keyword(word) if !word.is_empty() => word.to_owned(),
+            Value::Integer(n) => n.to_string(),
+            Value::Length(Length::Px(n)) => format!("{n}px"),
+            Value::Length(Length::Auto) => "auto".to_owned(),
+            Value::Text(text) => text,
+            _ => continue,
+        };
+        values.insert((*name).to_owned(), text);
+    }
+    Ok(values)
+}
+
+/// Suhina Studio's settings, as text.
+fn setting_defaults() -> BTreeMap<String, String> {
+    static DEFAULTS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
+    DEFAULTS
+        .get_or_init(|| core_values(&Theme::default()).into_iter().filter(|(name, _)| is_setting(name)).collect())
+        .clone()
+}
+
+/// What `sheet`, under `variant`, gives the root's custom properties and the elements' settings.
+fn sheet_values(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<String, String>, String> {
+    let mut values = root_variables(sheet, variant)?;
+    values.extend(setting_values(sheet, variant)?);
+    Ok(values)
+}
+
+/// Warnings for the settings `sheet` still gives as custom properties of the root, which are
+/// no longer read (#1273), each naming the rule that sets it now.
+fn former_settings(sheet: &Sheet) -> Vec<String> {
+    let Ok(root) = root_variables(sheet, None) else { return Vec::new() };
+    FORMER
+        .iter()
+        .filter(|(name, _)| root.contains_key(*name))
+        .map(|(name, now)| format!("{name} is no longer read: the setting is now {now}"))
+        .collect()
 }
 
 /// The registered property `name`: a core one or one `theme` declares.
@@ -358,7 +495,7 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
     for (name, value) in &theme.vars.values {
         // A variant holds values for the theme's declared controls (and Suhina's core
         // properties) only, no variables of its own.
-        if registered(theme, name).is_none() {
+        if registered(theme, name).is_none() && !is_setting(name) {
             warnings.push(format!("{name}: the theme declares no such control"));
             continue;
         }
@@ -376,7 +513,14 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
     for name in chosen.keys().cloned().collect::<Vec<_>>() {
         let name = &name;
         let value = resolved.get(name).cloned().unwrap_or_default();
-        if registered(theme, name).map_or(!value.trim().is_empty(), |p| p.accepts(&value)) {
+        // A setting is checked as the model reads it (`meter-segments` from 4 to 64).
+        let valid = if is_setting(name) {
+            let one = [(name.clone(), value.clone())].into();
+            apply_core(&mut Theme::default(), &one).is_empty()
+        } else {
+            registered(theme, name).map_or(!value.trim().is_empty(), |p| p.accepts(&value))
+        };
+        if valid {
             values.insert(name.clone(), value);
         } else {
             warnings.push(format!("{name}: {value} does not match the property's syntax"));
@@ -389,11 +533,14 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
     // in the painted sheet.
     if let (Some(css), Some(variant)) = (theme.skin.css.as_ref(), theme.skin.variant.as_deref())
         && let (Ok(sheet), Ok(variant)) = (theme_sheet(css), Sheet::parse(variant))
-        && let Ok(full) = root_variables(&sheet, Some(&variant))
+        && let Ok(full) = sheet_values(&sheet, Some(&variant))
     {
         values = full;
     }
-    theme.skin.variables = Arc::new(values.clone());
+    // Artwork's `var()` sees the root's custom properties, not the elements' settings.
+    theme.skin.variables = Arc::new(
+        values.iter().filter(|(name, _)| name.starts_with("--")).map(|(k, v)| (k.clone(), v.clone())).collect(),
+    );
     warnings.extend(apply_core(theme, &values));
     theme.picture = picture(theme);
     match swatch(theme) {
@@ -420,6 +567,7 @@ pub fn refresh_view(theme: &mut Theme) {
         None => {
             let mut merged = (*theme.vars.base).clone();
             merged.extend(theme.vars.values.clone());
+            merged.retain(|name, _| name.starts_with("--"));
             if let Ok(resolved) = suhina_style::resolve_variables(&merged) {
                 theme.skin.variables = Arc::new(resolved);
             }
@@ -449,16 +597,22 @@ pub fn swatch(theme: &Theme) -> Result<[u8; 4], String> {
     suhina_theme_package::meta::swatch_color(&theme.meta.swatch, &[core], &sheet, variant.as_ref())
 }
 
-/// The variant's values as a `:root` rule, or nothing when it sets none.
+/// The variant's values as a `:root` rule and its settings as rules of their elements, or
+/// nothing when it sets none.
 pub fn variant_sheet(values: &BTreeMap<String, String>) -> Option<Arc<str>> {
     if values.is_empty() {
         return None;
     }
     let mut css = String::from(":root {");
-    for (name, value) in values {
+    for (name, value) in values.iter().filter(|(name, _)| name.starts_with("--")) {
         css.push_str(&format!(" {name}: {value};"));
     }
     css.push_str(" }");
+    let settings = setting_rules(values);
+    if !settings.is_empty() {
+        css.push('\n');
+        css.push_str(&settings);
+    }
     Some(Arc::from(css))
 }
 
@@ -468,7 +622,7 @@ pub fn variant_sheet(values: &BTreeMap<String, String>) -> Option<Arc<str>> {
 /// change of that setting.
 pub fn sync(theme: &mut Theme) {
     let model = core_values(theme);
-    theme.vars.values.retain(|name, _| !is_core(name));
+    theme.vars.values.retain(|name, _| !is_core(name) && !is_setting(name));
     let sheet_values = values_with_declared(theme);
     for (name, value) in model {
         // A value written as `var(--x)` or `oklch(…)` that gives the same model stays as written.
@@ -485,7 +639,7 @@ pub fn sync(theme: &mut Theme) {
 fn values_with_declared(theme: &Theme) -> Arc<BTreeMap<String, String>> {
     if let (Some(css), Some(variant)) = (theme.skin.css.as_deref(), variant_sheet(&theme.vars.values))
         && let (Ok(sheet), Ok(variant)) = (Sheet::parse(css), Sheet::parse(&variant))
-        && let Ok(values) = root_variables(&sheet, Some(&variant))
+        && let Ok(values) = sheet_values(&sheet, Some(&variant))
     {
         return Arc::new(values);
     }
@@ -550,14 +704,14 @@ impl Variant {
             for (name, value) in object.iter().take(MAX_VALUES) {
                 match value.as_str() {
                     Some(value)
-                        if name.starts_with("--")
+                        if (name.starts_with("--") || is_setting(name))
                             && name.len() <= 128
                             && value.len() <= MAX_VALUE_BYTES
                             && !value.contains([';', '{', '}']) =>
                     {
                         values.insert(name.clone(), value.trim().to_owned());
                     }
-                    _ => warnings.push(format!("{id}: {name} is not a custom property with a text value")),
+                    _ => warnings.push(format!("{id}: {name} is not a custom property or a setting with a text value")),
                 }
             }
             if object.len() > MAX_VALUES {

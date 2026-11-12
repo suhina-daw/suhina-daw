@@ -41,8 +41,9 @@ use suhina_plugins::ParamInfo;
 use suhina_plugins::scan::PluginInfo;
 
 use crate::param_notes::{Notes, ParamNotes, Reads};
+use crate::planar::{ParamQueue, Planar};
 use crate::vst3::events::{BlockEvents, MidiMapping, Shown};
-use crate::vst3::params::{BlockChanges, Pending};
+use crate::vst3::params::BlockChanges;
 use vst3::Steinberg::Vst::*;
 use vst3::Steinberg::*;
 use vst3::{Class, ComPtr, ComWrapper, Interface};
@@ -525,7 +526,7 @@ impl IHostApplicationTrait for HostApplication {
 /// What the controller tells the host: the user moving a control in the editor. Each edit goes
 /// to the processor with its next block, as the SDK asks the host to do.
 struct ComponentHandler {
-    pending: Pending,
+    pending: ParamQueue,
     /// The `restartComponent` flags the plug-in asked with, not yet served (from any thread).
     restart: Arc<AtomicI32>,
 }
@@ -543,10 +544,7 @@ impl IComponentHandlerTrait for ComponentHandler {
         if !value.is_finite() {
             return kInvalidArgument;
         }
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.retain(|(other, _)| *other != id);
-            pending.push((id, value.clamp(0.0, 1.0)));
-        }
+        self.pending.replace(id, value.clamp(0.0, 1.0));
         kResultOk
     }
 
@@ -691,7 +689,7 @@ pub(crate) struct Vst3Plugin {
     controller: Option<ComPtr<IEditController>>,
     separate_controller: bool,
     /// Parameter values for the processor's next block.
-    pending: Pending,
+    pending: ParamQueue,
     /// What the editor changed and the audio thread took in, for [`Vst3Plugin::tick`] to give
     /// the controller and report to the session.
     applied: Notes,
@@ -750,7 +748,7 @@ impl Vst3Plugin {
 
         let component = module.create::<IComponent>(&cid).ok_or("could not make the plug-in's component")?;
         let host = ComWrapper::new(HostApplication);
-        let pending = Pending::default();
+        let pending = ParamQueue::default();
         let applied = Notes::new(ParamNotes::new());
         let engine = Notes::new(ParamNotes::new());
         let reads = (ParamNotes::fresh_reads(), ParamNotes::fresh_reads());
@@ -1080,6 +1078,12 @@ impl Vst3Plugin {
     /// is also set as parameters, since not every plug-in reads one.
     pub(crate) fn set_state(&mut self, data: &[u8], controller_state: Option<&[u8]>) -> Result<(), String> {
         let (data, archive) = crate::ara::unwrap_state(data);
+        // A VST2 program chunk (an `.fxp` file's): a plug-in may answer yes to it and read nothing,
+        // so it is refused here and the caller hears so (#1167). A program of values is set as
+        // parameters below.
+        if let Some(suhina_plugins::vst2::Program::Chunk(_)) = suhina_plugins::vst2::single_program(data) {
+            return Err("a VST3 plug-in does not read a VST2 program chunk (.fxp); give it a bank (.fxb) or its own saved state".into());
+        }
         let stream = ComWrapper::new(MemoryStream::new(data.to_vec()));
         let raw = stream.to_com_ptr::<IBStream>().ok_or("stream")?;
         // SAFETY: a live component reading from a live stream.
@@ -1317,6 +1321,24 @@ impl Vst3Plugin {
             .collect()
     }
 
+    /// The controller's own text for each of `values` (normalized) of parameter `id` (#1205);
+    /// empty where it gives none.
+    pub(crate) fn param_texts(&self, id: u32, values: &[f64]) -> Vec<String> {
+        let Some(controller) = &self.controller else { return vec![String::new(); values.len()] };
+        values
+            .iter()
+            .map(|value| {
+                let mut shown: String128 = [0; 128];
+                // SAFETY: a live controller, writing at most 128 UTF-16 units into `shown`.
+                if ok(unsafe { controller.getParamStringByValue(id, *value, &mut shown) }) {
+                    utf16(&shown)
+                } else {
+                    String::new()
+                }
+            })
+            .collect()
+    }
+
     /// Parameter `info` with its current value and text.
     fn param(&self, controller: &ComPtr<IEditController>, info: &ParameterInfo) -> ParamInfo {
         use ParameterInfo_::ParameterFlags_ as Flags;
@@ -1362,9 +1384,7 @@ impl Vst3Plugin {
         let value = value.clamp(0.0, 1.0);
         // SAFETY: a live controller, for a parameter it listed.
         let _ = unsafe { controller.setParamNormalized(id, value) };
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.push((id, value));
-        }
+        self.pending.push(id, value);
         Ok(self.param(controller, &info))
     }
 
@@ -1397,9 +1417,7 @@ impl Vst3Plugin {
             let _ = unsafe { controller.setParamNormalized(*id, *value) };
         }
         let set = changes.len();
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.extend(changes);
-        }
+        self.pending.extend(changes);
         set
     }
 }
@@ -1458,7 +1476,7 @@ fn serve(
     mut served: Served,
     buses: (Vec<usize>, Vec<usize>),
     sample_rate: f64,
-    (pending, applied, engine, mapping, midi_watch): (Pending, Notes, Notes, MidiMapping, Option<Arc<MidiWatch>>),
+    (pending, applied, engine, mapping, midi_watch): (ParamQueue, Notes, Notes, MidiMapping, Option<Arc<MidiWatch>>),
     (stop, flush): (&AtomicBool, &AtomicBool),
     watch: Option<Arc<Watch>>,
 ) -> Served {
@@ -1470,7 +1488,7 @@ fn serve(
     block.watch = watch;
     block.midi_watch = midi_watch;
     if let Some(mut block) = crate::audio::serve(instance, block, &mut served, stop) {
-        if flush.load(Ordering::Acquire) && waiting.lock().is_ok_and(|w| !w.is_empty()) {
+        if flush.load(Ordering::Acquire) && !waiting.is_empty() {
             block.flush();
         }
         suhina_plugins::trace!("vst3 audio: setProcessing(0)");
@@ -1490,12 +1508,9 @@ struct Vst3Block {
     max_frames: usize,
     link_channels: usize,
     /// One buffer per channel of every bus; the pointers in `inputs` and `outputs` point into
-    /// these and stay valid, because the buffers are never resized (moving the vectors does not
-    /// move what they hold).
-    in_buffers: Vec<Vec<Vec<f32>>>,
-    out_buffers: Vec<Vec<Vec<f32>>>,
-    _in_pointers: Vec<Vec<*mut f32>>,
-    _out_pointers: Vec<Vec<*mut f32>>,
+    /// these and stay valid while the block lives ([`Planar`]).
+    in_buffers: Planar,
+    out_buffers: Planar,
     inputs: Vec<AudioBusBuffers>,
     outputs: Vec<AudioBusBuffers>,
     context: ProcessContext,
@@ -1612,29 +1627,23 @@ impl Vst3Block {
         served: &Served,
         buses: (Vec<usize>, Vec<usize>),
         sample_rate: f64,
-        (pending, applied, engine, mapping): (Pending, Notes, Notes, MidiMapping),
+        (pending, applied, engine, mapping): (ParamQueue, Notes, Notes, MidiMapping),
     ) -> Self {
         let max_frames = served.max_frames() as usize;
         let (in_channels, out_channels) = buses;
-        let mut in_buffers: Vec<Vec<Vec<f32>>> = in_channels.iter().map(|c| vec![vec![0.0; max_frames]; *c]).collect();
-        let mut out_buffers: Vec<Vec<Vec<f32>>> =
-            out_channels.iter().map(|c| vec![vec![0.0; max_frames]; *c]).collect();
-        let mut in_pointers: Vec<Vec<*mut f32>> =
-            in_buffers.iter_mut().map(|bus| bus.iter_mut().map(|c| c.as_mut_ptr()).collect()).collect();
-        let mut out_pointers: Vec<Vec<*mut f32>> =
-            out_buffers.iter_mut().map(|bus| bus.iter_mut().map(|c| c.as_mut_ptr()).collect()).collect();
-        let bus_buffers = |pointers: &mut Vec<Vec<*mut f32>>| -> Vec<AudioBusBuffers> {
-            pointers
-                .iter_mut()
-                .map(|channels| AudioBusBuffers {
-                    numChannels: channels.len() as int32,
+        let mut in_buffers = Planar::new(in_channels, max_frames);
+        let mut out_buffers = Planar::new(out_channels, max_frames);
+        let bus_buffers = |buffers: &mut Planar| -> Vec<AudioBusBuffers> {
+            (0..buffers.bus_count())
+                .map(|bus| AudioBusBuffers {
+                    numChannels: buffers.channels(bus) as int32,
                     silenceFlags: 0,
-                    __field0: AudioBusBuffers__type0 { channelBuffers32: channels.as_mut_ptr() },
+                    __field0: AudioBusBuffers__type0 { channelBuffers32: buffers.pointers(bus) },
                 })
                 .collect()
         };
-        let inputs = bus_buffers(&mut in_pointers);
-        let outputs = bus_buffers(&mut out_pointers);
+        let inputs = bus_buffers(&mut in_buffers);
+        let outputs = bus_buffers(&mut out_buffers);
         let mut context: ProcessContext = blank();
         context.sampleRate = sample_rate;
         context.tempo = 120.0;
@@ -1649,8 +1658,6 @@ impl Vst3Block {
             link_channels: served.channels() as usize,
             in_buffers,
             out_buffers,
-            _in_pointers: in_pointers,
-            _out_pointers: out_pointers,
             inputs,
             outputs,
             context,
@@ -1783,14 +1790,10 @@ impl crate::audio::Block for Vst3Block {
     fn process(&mut self, input: &[f32], events: &[suhina_ipc::Event], output: &mut [f32]) {
         let link_channels = self.link_channels;
         let frames = (input.len() / link_channels.max(1)).min(self.max_frames);
-        for bus in self.in_buffers.iter_mut() {
-            for channel in bus.iter_mut() {
-                channel.fill(0.0);
-            }
+        for bus in 0..self.in_buffers.bus_count() {
+            self.in_buffers.silence(bus, frames);
         }
-        if let Some(main) = self.in_buffers.first_mut() {
-            crate::audio::feed_main(input, link_channels, frames, main);
-        }
+        crate::audio::feed_main(input, link_channels, frames, self.in_buffers.bus_mut(0));
         follow_song(&mut self.context, events);
         self.watch_events(events, frames);
         let mapping = &self.mapping;
@@ -1818,9 +1821,7 @@ impl crate::audio::Block for Vst3Block {
         if !ok(result) {
             return;
         }
-        if let Some(main) = self.out_buffers.first() {
-            crate::audio::collect_main(main, link_channels, frames, output);
-        }
+        crate::audio::collect_main(self.out_buffers.bus(0), link_channels, frames, output);
         self.watch_output(output, frames);
     }
 }

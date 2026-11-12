@@ -15,11 +15,16 @@ use crate::notes::{ClipAt, clip_mut, locate};
 use crate::{CommandError, Session};
 
 /// The clip `params` names, where it is, and the audio region it plays; fails for a clip without
-/// audio.
-fn audio_clip(session: &Session, params: &Value) -> Result<(ClipAt, Clip, suhina_model::AudioRegion), CommandError> {
+/// audio, with "only an audio clip {what}"; a selector that names no clip keeps its own error.
+fn audio_clip(
+    session: &Session,
+    params: &Value,
+    what: &str,
+) -> Result<(ClipAt, Clip, suhina_model::AudioRegion), CommandError> {
     let (at, content, track) = locate(&session.project, params)?;
-    let region =
-        crate::audio_timing::region_on(&session.project, content, track).cloned().ok_or("only an audio clip")?;
+    let region = crate::audio_timing::region_on(&session.project, content, track)
+        .cloned()
+        .ok_or_else(|| format!("only an audio clip {what}"))?;
     let clip = crate::notes::clip_at(&session.project, at).cloned().ok_or("the clip is missing")?;
     Ok((at, clip, region))
 }
@@ -67,7 +72,7 @@ pub(crate) fn set_envelope(session: &mut Session, params: &Value) -> Result<Valu
     // In beat order; points on one beat keep the order they were given in, so a step can be made.
     points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
     let points = merged(points);
-    let (at, _, _) = audio_clip(session, params).map_err(|_| "only an audio clip has a gain envelope")?;
+    let (at, _, _) = audio_clip(session, params, "has a gain envelope")?;
     let clip = clip_mut(&mut session.project, at).ok_or("the clip is missing")?;
     clip.audio.gain_envelope = points;
     // Only the envelope changed: an arrangement clip's goes to the playing engine as a message.
@@ -123,7 +128,7 @@ pub(crate) fn set_tempo(session: &mut Session, params: &Value) -> Result<Value, 
         return Err(format!("bpm must be from {low} to {high}, got {bpm}").into());
     }
     let source = source_named(params)?;
-    let (at, mut clip, region) = audio_clip(session, params).map_err(|_| "only an audio clip has a tempo")?;
+    let (at, mut clip, region) = audio_clip(session, params, "has a tempo")?;
     let content_length = session.project.content(clip.content).map_or(0.0, |c| c.length);
     let seconds = region.duration_seconds.filter(|s| s.is_finite() && *s > 0.0);
     // A clip that is not warped plays its file at its own speed: its content beats are its seconds
@@ -219,7 +224,7 @@ pub fn clip_tempo_candidates(session: &Session, id: suhina_model::ClipId) -> Opt
 /// them (its metadata, its name, detection), and the tempo the clip has now with its source. A
 /// source that finds nothing says null. Changes nothing.
 pub(crate) fn find_tempo(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (_, clip, region) = audio_clip(session, params).map_err(|_| "only an audio clip has a tempo")?;
+    let (_, clip, region) = audio_clip(session, params, "has a tempo")?;
     let path = PathBuf::from(region.absolute_file.as_deref().unwrap_or(&region.file));
     let data = session.audio().files.get(region.pool_key().as_ref()).cloned();
     let [metadata, name, detected] = tempo_candidates(&path, data.as_deref());

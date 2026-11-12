@@ -135,6 +135,7 @@ pub(crate) struct Updater {
     param_seq: u64,
     /// What is known about the project's plug-in devices; every graph is built with it.
     plugin_info: HashMap<u64, PluginSlotInfo>,
+    plugin_steps: crate::PluginSteps,
     plugins: Producer<(u64, Processor)>,
     retired_plugins: Consumer<Processor>,
     /// The tempo map of the last graph sent, which plays once the swaps before it are done.
@@ -201,6 +202,7 @@ impl Renderer {
             params,
             param_seq: 0,
             plugin_info: self.plugin_info.clone(),
+            plugin_steps: self.plugin_steps.clone(),
             plugins,
             retired_plugins,
             tempo: Arc::clone(&self.graph.tempo),
@@ -778,7 +780,12 @@ impl Controller {
         let collect_began = std::time::Instant::now();
         updater.collect();
         let collect_took = collect_began.elapsed();
-        let mut plugins = Plugins { info: updater.plugin_info.clone(), processors: HashMap::new(), carried: false };
+        let mut plugins = Plugins {
+            info: updater.plugin_info.clone(),
+            steps: updater.plugin_steps.clone(),
+            processors: HashMap::new(),
+            carried: false,
+        };
         let mut graph = Graph::build(
             project,
             &updater.audio,
@@ -914,6 +921,12 @@ impl Controller {
         self.updater.plugin_info = info;
     }
 
+    /// Tells the graphs built from now on which parameters of each plug-in device take steps
+    /// ([`Plugins::steps`]). Takes effect with the next [`Controller::update`].
+    pub fn set_plugin_steps(&mut self, steps: crate::PluginSteps) {
+        self.updater.plugin_steps = steps;
+    }
+
     /// What the graphs are built with about plug-in devices.
     pub fn plugin_info(&self) -> &HashMap<u64, PluginSlotInfo> {
         &self.updater.plugin_info
@@ -984,7 +997,15 @@ impl Controller {
     /// Replaces any preview. Fails if the queue is full.
     pub fn preview_note_on(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), crate::ControlError> {
         let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
-        self.preview.send(crate::preview::PreviewCommand::Hold { notes: Box::new(notes), gain })
+        self.preview.send(crate::preview::PreviewCommand::Hold { notes: Box::new(notes), gain, add: false })
+    }
+
+    /// Holds `notes` as [`Self::preview_note_on`] does, but alongside the notes already held on
+    /// the same track, which go on sounding; with nothing held there it is the same as
+    /// [`Self::preview_note_on`]. Fails if the queue is full.
+    pub fn preview_note_add(&mut self, notes: crate::PreviewNotes, gain: f32) -> Result<(), crate::ControlError> {
+        let gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
+        self.preview.send(crate::preview::PreviewCommand::Hold { notes: Box::new(notes), gain, add: true })
     }
 
     /// Releases the held note of `key`, or every held note when `key` is `None`. Fails if the

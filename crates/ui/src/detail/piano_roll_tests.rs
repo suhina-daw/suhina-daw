@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+use crate::detail::piano_roll_grid::{GridMode, Width};
 
 fn note(time: f64, duration: f64, key: u8) -> Note {
     Note { time, duration, key, velocity: 100.0 / 127.0, release_velocity: 0.5, channel: 0, muted: false }
@@ -16,6 +17,25 @@ fn the_editor_spans_the_loop_or_the_clips_part_of_its_content() {
     assert_eq!(content_end(None, 0.0, 1e300, 16.0), 120_000.0);
 }
 
+/// Every toolbar icon drawn from artwork parses and rasters, so none falls back unseen.
+#[test]
+fn the_toolbar_icons_raster_from_their_artwork() {
+    use crate::detail::piano_roll::IconButton::*;
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        for button in
+            [Select, Draw, Paint, Erase, Slice, Mute, Cut, Copy, Paste, Duplicate, Quantise, MidiTools, Audition]
+        {
+            let svg = button.svg().unwrap_or_default();
+            assert!(crate::kit::skin::parse_svg(svg).is_ok(), "{:?}", button.name());
+            let rect = Rect::from_min_size(Pos2::ZERO, Vec2::splat(14.0));
+            assert!(crate::kit::skin::paint_icon(ui.painter(), rect, svg, Color32::WHITE), "{}", button.name());
+        }
+        assert!(Hide.svg().is_none(), "the × is drawn in code");
+    });
+    output.textures_delta.clear();
+}
+
 #[test]
 fn keys_are_named_with_60_as_c3() {
     assert_eq!(key_name(60), "C3");
@@ -23,6 +43,18 @@ fn keys_are_named_with_60_as_c3() {
     assert_eq!(key_name(127), "G8");
     assert_eq!(key_name(61), "C#3");
     assert!(is_black(61) && !is_black(60));
+}
+
+/// With the setting at flats, black keys are named as the flat of the key above, everywhere
+/// `key_name` and `pitch_class_name` name them; white keys are named as before.
+#[test]
+fn black_keys_are_named_as_sharps_or_flats_by_the_setting() {
+    use crate::settings::NoteSpelling;
+    set_note_spelling(NoteSpelling::Flats);
+    let flats = ([key_name(61), key_name(70), key_name(60)], pitch_class_name(6));
+    set_note_spelling(NoteSpelling::Sharps);
+    assert_eq!(flats, (["Db3".to_string(), "Bb3".to_string(), "C3".to_string()], "Gb"));
+    assert_eq!((key_name(61), pitch_class_name(6)), ("C#3".to_string(), "F#"));
 }
 
 /// A sixteenth grid in 4/4 at 40 points a beat.
@@ -181,13 +213,27 @@ fn the_sixth_tool_is_mute_and_the_tools_stop_at_it() {
 }
 
 #[test]
-fn the_eraser_cursor_is_hidden_so_its_shape_can_be_drawn() {
-    // The windowing layer has no eraser, so the pointer is hidden over the grid and the
-    // Erase button's shape is drawn in its place.
-    assert_eq!(cursor_for(Tool::Erase), Some(CursorIcon::None));
-    assert_eq!(cursor_for(Tool::Mute), None);
+fn the_drawing_tools_hide_the_pointer_for_their_icon() {
+    // The windowing layer has no pencil, brush, eraser, blade or mute cursor, so the pointer is
+    // hidden over the grid and the tool's toolbar icon is drawn in its place.
+    for (tool, icon) in [
+        (Tool::Draw, IconButton::Draw),
+        (Tool::Paint, IconButton::Paint),
+        (Tool::Erase, IconButton::Erase),
+        (Tool::Slice, IconButton::Slice),
+        (Tool::Mute, IconButton::Mute),
+    ] {
+        assert_eq!(cursor_for(tool), Some(CursorIcon::None), "{tool:?}");
+        let (drawn, hotspot) = tool_pointer(tool).unwrap();
+        assert_eq!(drawn, icon);
+        assert!((0.0..=1.0).contains(&hotspot.x) && (0.0..=1.0).contains(&hotspot.y), "{tool:?}");
+    }
     assert_eq!(cursor_for(Tool::Select), None);
-    assert_eq!(cursor_for(Tool::Draw), Some(CursorIcon::Crosshair));
+    assert!(tool_pointer(Tool::Select).is_none());
+    // The pencil's tip is at the bottom left: its square stands up and to the right of the pointer.
+    let (_, hotspot) = tool_pointer(Tool::Draw).unwrap();
+    let rect = tool_pointer_rect(Pos2::new(100.0, 100.0), hotspot, 18.0);
+    assert!(rect.left() < 100.0 && rect.right() > 115.0 && rect.bottom() > 100.0 && rect.top() < 85.0, "{rect:?}");
 }
 
 fn clip(notes: Vec<Note>) -> PianoClip {
@@ -250,9 +296,9 @@ fn a_fold_maps_heights_to_the_shown_keys_and_back() {
         &c,
         &c.notes[..1],
         grid,
-        false,
+        Inputs::default(),
     );
-    assert!(matches!(moved, Effect::Move(_, 20)), "{moved:?}");
+    assert!(matches!(moved, Effect::Move(_, 20, Some(_))), "{moved:?}");
     // Fold to scale: C major's keys and every key with a note; without a scale, every key.
     assert_eq!(scale_view::rows(&c, Fold::Scale).len(), 128);
     c.scale = Scale::new(0, ScaleMode::Major);
@@ -266,6 +312,64 @@ fn a_fold_maps_heights_to_the_shown_keys_and_back() {
     let layout = folded_layout(KeyRows::default());
     assert_eq!(layout.y_of(127), 24.0);
     assert_eq!(layout.key_at(24.0 + 67.0 * 10.0 + 1.0), Some(60));
+}
+
+/// Folded to the scale, Up and Down take each selected note to the next key the rows show, so
+/// a note never lands on a key the fold hides; unfolded they go a semitone.
+#[test]
+fn folded_up_and_down_keep_the_notes_in_the_scale() {
+    let mut c = clip(vec![note(0.0, 1.0, 60), note(0.0, 1.0, 64), note(0.0, 1.0, 67)]);
+    c.scale = Scale::new(0, suhina_engine::model::ScaleMode::Major);
+    let mut state = focused_on(&c);
+    state.selected = BTreeSet::from([0, 1, 2]);
+    // The toolbar's Scale folds the rows to the clip's scale.
+    state.fold = Fold::Scale;
+    state.audition = true;
+    let up = state.key_action("pianoRoll.up", &c, 0.0, None).map(|a| a.params);
+    assert_eq!(state.audition_pending, [62, 65, 69], "the notes sound where they go");
+    state.audition_pending.clear();
+    // C, E, G go to D, F, A: two, one and two semitones.
+    assert_eq!(up.as_ref().and_then(|p| p.get("keys")).cloned(), Some(json!([62, 65, 69])), "{up:?}");
+    let down = state.key_action("pianoRoll.down", &c, 0.0, None).map(|a| a.params);
+    assert_eq!(down.as_ref().and_then(|p| p.get("keys")).cloned(), Some(json!([59, 62, 65])), "{down:?}");
+    // A drag folded: each note steps the same number of shown rows from its own key.
+    let rows = scale_view::rows(&c, Fold::Scale);
+    let dragged: Vec<u8> = [57u8, 60, 64].iter().map(|k| edits::moved_key(&rows, *k, 1, Some(1))).collect();
+    assert_eq!(dragged, [59, 62, 65], "A, C, E up a row: B, D, F");
+    assert_eq!(edits::moved_key(&rows, 60, 1, None), 61, "unfolded, the semitones");
+    let mut plain_clip = c.clone();
+    plain_clip.scale = None;
+    let plain = state.key_action("pianoRoll.up", &plain_clip, 0.0, None).map(|a| a.params);
+    assert_eq!(plain.as_ref().and_then(|p| p.get("semitones")).cloned(), Some(json!(1)), "{plain:?}");
+}
+
+/// A drag of a note off the grid is magnetic: free until the first grid line, then it snaps to a
+/// line or to its own offset, whichever is nearer; a note on the grid goes by grid steps.
+#[test]
+fn a_note_off_the_grid_drags_magnetically() {
+    let c = clip(vec![note(1.03, 1.0, 60)]);
+    // A sixteenth grid in 4/4.
+    let grid = TimelineGrid { step: 0.25, bar_beats: 4.0, snaps: true };
+    let notes = &c.notes;
+    let moved = |raw: f64| edits::magnetic(1.03, raw, notes, grid);
+    // Before the first line (1.25) it moves freely.
+    assert!((moved(0.1) - 0.1).abs() < 1e-9);
+    // Past it, near a line it lands on the line.
+    assert!((moved(0.225) - 0.22).abs() < 1e-9, "onto 1.25: {}", moved(0.225));
+    // Near its own offset a step on (1.28), it keeps the offset.
+    assert!((moved(0.26) - 0.25).abs() < 1e-9, "1.28 keeps the feel: {}", moved(0.26));
+    // Back to the left it lands on 1.0.
+    assert!((moved(-0.04) + 0.03).abs() < 1e-9, "onto 1.0: {}", moved(-0.04));
+    // A note on the grid goes by whole steps.
+    let on = clip(vec![note(1.0, 1.0, 60)]);
+    assert_eq!(edits::magnetic(1.0, 0.3, &on.notes, grid), 0.25);
+    // The end of an off-grid note is dragged the same way: free, then onto a line or its offset.
+    let humanised = note(1.0, 1.03, 60);
+    assert!((resize_by(0.1, &humanised, &[humanised], grid, false) - 0.1).abs() < 1e-9, "free first");
+    assert!((resize_by(0.225, &humanised, &[humanised], grid, false) - 0.22).abs() < 1e-9, "onto 2.25");
+    // And its start.
+    let late = note(1.03, 1.0, 60);
+    assert!((start_by(-0.04, &late, &[late], grid, false) + 0.03).abs() < 1e-9, "onto 1.0");
 }
 
 #[test]
@@ -325,13 +429,13 @@ fn the_grid_keys_leave_a_new_grid_for_the_window_and_snap_off_snaps_nothing() {
 }
 
 #[test]
-fn paste_goes_after_the_selection_else_at_the_playhead_inside_the_clip() {
+fn paste_goes_to_the_selections_start_else_at_the_playhead_inside_the_clip() {
     let clip = clip(vec![note(1.0, 0.5, 60), note(2.0, 1.0, 64)]);
     // Stacked notes allowed, so the params are only where the notes go.
     let mut state = PianoRollState { notes_replace: false, ..focused_on(&clip) };
     state.selected = BTreeSet::from([0]);
     let paste = state.key_action("selection.paste", &clip, 0.0, Some(2)).map(|a| a.params);
-    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.5 })));
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.0 })), "on the selected note");
     assert_eq!(state.selected, BTreeSet::from([2, 3]));
     // Nothing selected: the playhead at beat 19 of the arrangement is beat 3 of the clip.
     state.selected.clear();
@@ -375,24 +479,46 @@ fn keys_stop_at_the_limits_and_never_make_notes_shorter_than_a_step() {
     assert!(state.selected.is_empty());
 }
 
+/// Shift+Right goes to the next grid line over the next note of the key, as far as a step goes:
+/// with stacked notes off that note makes room once the selection is let go.
 #[test]
-fn a_longer_key_goes_to_the_next_line_or_the_next_note_of_the_key() {
-    let notes = [note(0.0, 0.3, 60), note(0.4, 0.25, 60), note(1.0, 0.25, 60), note(0.2, 1.0, 62)];
+fn a_longer_key_goes_to_the_next_line_over_the_next_note_of_the_key() {
+    let notes = [note(0.0, 0.3, 60), note(0.4, 0.25, 60), note(0.2, 1.0, 62)];
     let grid = TimelineGrid::new(0.25, 400.0, 4.0, MIN_LINE_SPACING);
-    let end = |index: usize, longer, stops| key_step_end(&notes[index], &notes, grid, longer, stops);
-    // Off the grid at 0.3: the next line would be 0.5, and the next note of its key is at 0.4.
-    assert!((end(0, true, true) - 0.4).abs() < 1e-9);
-    // Allowed to stack, the next note does not stop it.
-    assert!((end(0, true, false) - 0.5).abs() < 1e-9);
-    // Off the grid at 0.65, the next line is 0.75 and the next note far enough.
-    assert!((end(1, true, true) - 0.75).abs() < 1e-9);
-    // Touching the next note, or the last of its key: it stays, or goes on to the line.
-    let touching = [note(0.0, 0.4, 60), note(0.4, 0.25, 60)];
-    assert!((key_step_end(&touching[0], &touching, grid, true, true) - 0.4).abs() < 1e-9);
-    assert!((end(3, true, true) - 1.25).abs() < 1e-9);
+    let end = |index: usize, longer| key_step_end(&notes[index], grid, longer);
+    // Off the grid at 0.3: the next line is 0.5, over the next note of its key at 0.4.
+    assert!((end(0, true) - 0.5).abs() < 1e-9);
+    // Off the grid at 0.65, the next line is 0.75.
+    assert!((end(1, true) - 0.75).abs() < 1e-9);
+    // Touching the next note: it goes on to the line all the same.
+    let touching = note(0.0, 0.4, 60);
+    assert!((key_step_end(&touching, grid, true) - 0.5).abs() < 1e-9);
+    assert!((end(2, true) - 1.25).abs() < 1e-9);
     // Shorter: the line before, and never less than a step from the start.
-    assert!((end(3, false, true) - 0.75 - 0.25).abs() < 1e-9);
-    assert!((end(1, false, true) - 0.65).abs() < 1e-9, "a step long already");
+    assert!((end(2, false) - 0.75 - 0.25).abs() < 1e-9);
+    assert!((end(1, false) - 0.65).abs() < 1e-9, "a step long already");
+}
+
+/// A note under selected notes that are to make room shows what `note.makeRoom` will leave of it.
+#[test]
+fn notes_under_selected_ones_show_what_making_room_leaves() {
+    let n = note(1.0, 2.0, 60);
+    let cover = |from: f64, to: f64| (60u8, from, to);
+    for whole in [false, true] {
+        assert_eq!(left_after(&n, &[], whole), Some(n));
+        assert_eq!(left_after(&n, &[(62, 0.0, 4.0)], whole), Some(n), "another key's note covers nothing");
+        assert_eq!(left_after(&n, &[cover(0.5, 3.5)], whole), None, "covered whole");
+        assert_eq!(left_after(&n, &[cover(1.0, 3.0)], whole), None, "covered exactly");
+        // Starting first: what comes before the first that covers it.
+        let head = left_after(&n, &[cover(2.5, 4.0), cover(1.5, 2.0)], whole).unwrap();
+        assert!((head.time - 1.0).abs() < 1e-9 && (head.duration - 0.5).abs() < 1e-9, "{head:?}");
+        // Touching it, not covering it.
+        assert_eq!(left_after(&n, &[cover(3.0, 4.0), cover(0.0, 1.0)], whole), Some(n));
+    }
+    // Covered from its start: what runs on past it, or (Delete them) nothing.
+    let tail = left_after(&n, &[cover(1.0, 2.0)], false).unwrap();
+    assert!((tail.time - 2.0).abs() < 1e-9 && (tail.duration - 1.0).abs() < 1e-9, "{tail:?}");
+    assert_eq!(left_after(&n, &[cover(1.0, 2.0)], true), None);
 }
 
 #[test]
@@ -418,7 +544,20 @@ fn with_stacked_notes_off_what_a_key_places_replaces_what_is_under_it() {
     let mut state = focused_on(&clip);
     state.selected = BTreeSet::from([0]);
     let paste = state.key_action("selection.paste", &clip, 0.0, Some(2)).map(|a| a.params);
-    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.5, "replace": true })));
+    // A paste lands on the notes it copies, to be moved off them: it makes room once it is let go.
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.0 })));
+    assert!(state.settle_pending);
+    // A duplicate goes after its notes, onto whatever is there, and replaces it at once.
+    let mut state = focused_on(&clip);
+    state.selected = BTreeSet::from([0]);
+    let duplicate = state.key_action("selection.duplicate", &clip, 0.0, None).map(|a| a.params);
+    assert_eq!(duplicate.map(|p| p["replace"].clone()), Some(json!(true)));
+    assert!(!state.settle_pending);
+    // With nothing selected a command replaces at once.
+    let mut state = focused_on(&clip);
+    let quantise = state.quantize_selected().map(|a| a.params);
+    assert_eq!(quantise.map(|p| p["replace"].clone()), Some(json!(true)));
+    assert!(!state.settle_pending);
 }
 
 fn span_state(clip: &PianoClip, start: f64, end: f64) -> PianoRollState {
@@ -490,12 +629,12 @@ fn selecting_something_else_ends_the_time_selection() {
 }
 
 #[test]
-fn a_paste_goes_on_from_a_time_selection_as_far_in_as_the_notes_were() {
+fn a_paste_goes_to_a_time_selections_first_note() {
     let clip = clip(vec![note(1.0, 0.5, 60)]);
     let mut state = PianoRollState { notes_replace: false, ..span_state(&clip, 0.0, 2.0) };
     let paste = state.key_action("selection.paste", &clip, 0.0, Some(1)).map(|a| a.params);
-    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 3.0 })));
-    assert_eq!(state.span.as_ref().map(|s| s.start), Some(2.0));
+    assert_eq!(paste, Some(json!({ "track": 1, "index": 0, "time": 1.0 })));
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 2.0)), "the time selection stays");
 }
 
 #[test]
@@ -608,12 +747,49 @@ fn a_rectangle_that_reached_notes_copies_by_its_whole_stretch() {
     assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((2.0, 4.0)));
 }
 
+/// The stretch a rectangle selected follows the notes selected with it: made longer or shorter,
+/// an end on theirs goes along; an empty part before them stays, growing to take in a note that
+/// now starts earlier; moved by a key, it goes along once, not again when the notes land.
+#[test]
+fn a_time_selection_follows_the_notes_selected_with_it() {
+    let chord = |length: f64| clip(vec![note(1.0, length, 60), note(1.0, length, 64)]);
+    let selected = |start: f64, end: f64| {
+        let mut state = focused_on(&chord(0.25));
+        state.selected = BTreeSet::from([0, 1]);
+        state.select_span(start, end);
+        state.settle_selection(&chord(0.25).notes);
+        state
+    };
+    let span = |state: &PianoRollState| state.span.as_ref().map(|s| (s.start, s.end));
+    let mut state = selected(1.0, 1.25);
+    // Shift and Right made both a beat longer, then shorter again.
+    state.settle_selection(&chord(1.25).notes);
+    assert_eq!(span(&state), Some((1.0, 2.25)), "the end follows the notes'");
+    assert_eq!(state.span_shown(&chord(1.25)), Some((1.0, 2.25)), "and so does the bar");
+    state.settle_selection(&chord(0.25).notes);
+    assert_eq!(span(&state), Some((1.0, 1.25)));
+
+    // An empty part before the notes stays, and the stretch grows to keep a note now earlier in.
+    let mut state = selected(0.5, 1.25);
+    state.settle_selection(&clip(vec![note(0.25, 1.0, 60), note(1.0, 0.25, 64)]).notes);
+    assert_eq!(span(&state), Some((0.25, 1.25)));
+
+    // A key moves it along at once; the notes landing there move it no further.
+    let mut state = selected(1.0, 1.25);
+    let beats = state.key_action("pianoRoll.later", &chord(0.25), 0.0, None).and_then(|a| a.params["beats"].as_f64());
+    let beats = beats.unwrap_or_default();
+    assert!(beats > 0.0);
+    assert_eq!(span(&state), Some((1.0 + beats, 1.25 + beats)));
+    state.settle_selection(&clip(vec![note(1.0 + beats, 0.25, 60), note(1.0 + beats, 0.25, 64)]).notes);
+    assert_eq!(span(&state), Some((1.0 + beats, 1.25 + beats)), "moved once");
+}
+
 /// A longer key from a triplet line a command rounded goes on to the next line.
 #[test]
 fn a_longer_key_goes_on_along_triplet_lines() {
     let grid = TimelineGrid { step: 1.0 / 3.0, bar_beats: 4.0, snaps: true };
     let first = note(0.0, 0.333333, 60);
-    assert!((key_step_end(&first, &[first], grid, true, true) - 2.0 / 3.0).abs() < 1e-9);
+    assert!((key_step_end(&first, grid, true) - 2.0 / 3.0).abs() < 1e-9);
 }
 
 /// Alt and an arrow key goes a fine step, off the grid; with Shift it changes the length that way.
@@ -633,25 +809,168 @@ fn alt_and_an_arrow_key_go_a_fine_step_off_the_grid() {
     assert_eq!(shorter["lengths"][0].as_f64(), Some(0.96875));
 }
 
+/// A step longer runs over the next note of the key, which, with stacked notes off, makes room once
+/// the note is let go.
 #[test]
-fn a_fine_step_longer_stops_at_the_next_note_of_the_key() {
+fn a_fine_step_longer_runs_over_the_next_note_of_the_key() {
     let clip = clip(vec![note(1.0, 1.24, 60), note(2.25, 1.0, 60)]);
     let mut state = focused_on(&clip);
     state.selected = BTreeSet::from([0]);
     let longer = state.key_action("pianoRoll.longerFine", &clip, 0.0, None).map(|a| a.params);
-    assert_eq!(longer.and_then(|p| p["lengths"][0].as_f64()), Some(1.25));
+    let length = longer.and_then(|p| p["lengths"][0].as_f64()).unwrap_or(0.0);
+    assert!((length - 1.27125).abs() < 1e-6, "{length}");
+    assert!(state.settle_pending, "the next note makes room once it is let go");
 }
 
 #[test]
-fn a_key_resize_replaces_what_is_under_it_unless_notes_stack() {
+fn a_key_resize_makes_room_once_let_go_unless_notes_stack() {
     let clip = clip(vec![note(0.0, 1.0, 60)]);
     let mut state = focused_on(&clip);
     state.selected = BTreeSet::from([0]);
     let longer = state.key_action("pianoRoll.longer", &clip, 0.0, None).map(|a| a.params);
-    assert_eq!(longer.map(|p| p["replace"].clone()), Some(json!(true)));
+    assert_eq!(longer.map(|p| p["replace"].clone()), Some(Value::Null), "not while selected");
+    assert!(state.settle_pending, "but once let go");
+    state.settle_pending = false;
     state.notes_replace = false;
     let longer = state.key_action("pianoRoll.longer", &clip, 0.0, None).map(|a| a.params);
     assert_eq!(longer.map(|p| p["replace"].clone()), Some(Value::Null));
+    assert!(!state.settle_pending, "stacked notes allowed: nothing to make room for");
+}
+
+/// Selected notes edited with stacked notes off make room under them once they are let go, and
+/// only where they overlap a note of their key: a move through other notes erases nothing on
+/// the way.
+#[test]
+fn selected_notes_make_room_once_let_go_and_only_where_they_overlap() {
+    let on_top = clip(vec![note(0.0, 1.0, 62), note(0.0, 1.0, 62)]);
+    let mut state = focused_on(&on_top);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&on_top, &mut actions);
+    state.settle_frame(&on_top, &mut actions);
+    assert!(actions.is_empty(), "nothing while the note stays selected");
+    state.selected.clear();
+    state.settle_frame(&on_top, &mut actions);
+    assert_eq!(actions.iter().map(|a| a.id).collect::<Vec<_>>(), ["note.makeRoom"]);
+    assert_eq!(actions[0].params["notes"].as_array().map(Vec::len), Some(1), "by id");
+    // Moved off again before being let go: nothing to make room for.
+    let apart = clip(vec![note(0.0, 1.0, 62), note(0.0, 1.0, 60)]);
+    let mut state = focused_on(&apart);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&apart, &mut actions);
+    state.settle_frame(&apart, &mut actions);
+    state.selected.clear();
+    state.settle_frame(&apart, &mut actions);
+    assert!(actions.is_empty(), "no overlap, no command");
+    // Deleted while waiting: nothing to make room for.
+    let mut state = focused_on(&on_top);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&on_top, &mut actions);
+    state.settle_frame(&on_top, &mut actions);
+    assert!(state.delete_selected().is_some());
+    state.settle_frame(&on_top, &mut actions);
+    assert!(actions.is_empty(), "a deleted note makes no room");
+}
+
+/// Notes a key moves out of the grid are scrolled back into view, on the frame the move lands and
+/// the one after; notes in view leave the scroll alone.
+#[test]
+fn notes_a_key_moves_stay_in_view() {
+    let far = clip(vec![note(30.0, 1.0, 20)]);
+    let mut state = focused_on(&far);
+    state.selected = BTreeSet::from([0]);
+    let grid = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0));
+    let rows = KeyRows::default();
+    assert!(state.key_action("pianoRoll.later", &far, 0.0, None).is_some());
+    assert_eq!(state.reveal_selection, 2);
+    layout::reveal_selection(&mut state, &far, &rows, grid);
+    let (x, y) = (state.scroll.x, state.scroll.y);
+    let end = 31.0 * state.beat_width;
+    assert!(x <= 30.0 * state.beat_width && end <= x + 400.0, "beats 30 to 31 in view: {x}");
+    let row = rows.row_of(20).unwrap_or(0) as f32 * state.key_height;
+    assert!(y <= row && row + state.key_height <= y + 200.0, "the key's row in view: {y}");
+    // Once it is in view, the next frame leaves the scroll as it is; then nothing follows.
+    layout::reveal_selection(&mut state, &far, &rows, grid);
+    assert_eq!((state.scroll.x, state.scroll.y), (x, y));
+    assert_eq!(state.reveal_selection, 0);
+}
+
+/// A move dragged past the grid's right edge scrolls the view, and the drag's start moves back by as
+/// much, so the notes go on following the pointer; a drag inside the grid scrolls nothing.
+#[test]
+fn a_drag_at_the_grid_edge_scrolls_and_its_start_follows() {
+    let grid = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0));
+    let mut state = PianoRollState {
+        gesture: Some(Gesture::Move { from: Pos2::new(100.0, 50.0), grabbed: 0, copy: false }),
+        ..PianoRollState::default()
+    };
+    layout::scroll_at_edges(&mut state, grid, Pos2::new(200.0, 100.0));
+    assert_eq!(state.scroll, Vec2::ZERO, "inside: nothing");
+    layout::scroll_at_edges(&mut state, grid, Pos2::new(440.0, 100.0));
+    assert!(state.scroll.x > 0.0);
+    let Some(Gesture::Move { from, .. }) = state.gesture else { panic!("still moving") };
+    assert_eq!(from.x, 100.0 - state.scroll.x, "the start moves back by the scroll");
+    // A paint stroke does not scroll.
+    state.gesture = Some(Gesture::Paint);
+    let before = state.scroll;
+    layout::scroll_at_edges(&mut state, grid, Pos2::new(440.0, 100.0));
+    assert_eq!(state.scroll, before);
+}
+
+/// Stacked notes turned on while edited notes wait to make room: once let go, they make none, and
+/// nothing waits for a later let-go either.
+#[test]
+fn turning_stacked_notes_on_drops_the_room_waiting_to_be_made() {
+    let on_top = clip(vec![note(0.0, 1.0, 62), note(0.0, 1.0, 62)]);
+    let mut state = focused_on(&on_top);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&on_top, &mut actions);
+    state.settle_frame(&on_top, &mut actions);
+    state.notes_replace = false;
+    state.selected.clear();
+    state.settle_frame(&on_top, &mut actions);
+    assert!(actions.is_empty(), "{actions:?}");
+    state.notes_replace = true;
+    state.settle_frame(&on_top, &mut actions);
+    assert!(actions.is_empty(), "nothing left to settle later: {actions:?}");
+    assert!(state.settle_on_hide().is_none());
+}
+
+/// Notes let go on the first frame after their edit still make room, and so do notes whose clip
+/// is no longer shown (another clip picked): by id, in their own clip.
+#[test]
+fn edited_notes_make_room_when_let_go_at_once_or_when_another_clip_shows() {
+    let on_top = clip(vec![note(0.0, 1.0, 62), note(0.0, 1.0, 62)]);
+    // Let go (Escape) on the very first frame after the edit.
+    let mut state = focused_on(&on_top);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&on_top, &mut actions);
+    state.selected.clear();
+    state.settle_frame(&on_top, &mut actions);
+    assert_eq!(actions.iter().map(|a| a.id).collect::<Vec<_>>(), ["note.makeRoom"]);
+    // Another clip shown before the notes were let go.
+    let mut state = focused_on(&on_top);
+    state.selected = BTreeSet::from([0]);
+    state.settle_pending = true;
+    let mut actions = Vec::new();
+    state.settle_frame(&on_top, &mut actions);
+    state.settle_frame(&on_top, &mut actions);
+    let mut other = clip(vec![note(0.0, 1.0, 62)]);
+    other.address = json!({ "track": 2, "index": 0 });
+    state.selected.clear();
+    state.settle_frame(&other, &mut actions);
+    assert_eq!(actions.iter().map(|a| a.id).collect::<Vec<_>>(), ["note.makeRoom"]);
+    assert_eq!(actions[0].params["track"], json!(1), "in the clip the notes are in");
+    assert_eq!(actions[0].params["notes"].as_array().map(Vec::len), Some(1), "by id");
 }
 
 /// An arrow key takes the first note to the next line, the rest keeping their distance to it, and
@@ -770,4 +1089,63 @@ fn a_selected_note_stands_out_from_its_colour() {
     assert_eq!(selected_note_color(Color32::from_rgb(0xF2, 0xD5, 0x41), accent, plain), accent);
     assert_eq!(selected_note_color(Color32::from_rgb(0xE0, 0x30, 0x30), accent, plain), accent);
     assert_eq!(selected_note_color(Color32::from_rgb(0x90, 0x90, 0xF0), accent, plain), plain);
+}
+
+/// Alt+L is the Notes tab's Legato: the selected notes until the next note after them, or every
+/// note of the clip with none selected, the last until the clip's end.
+#[test]
+fn the_legato_key_acts_on_the_selection_or_the_whole_clip() {
+    let two = clip_of_two();
+    let mut state = focused_on(&two);
+    state.selected = BTreeSet::from([0]);
+    let legato = state.key_action("pianoRoll.legato", &two, 0.0, None).expect("a command");
+    assert_eq!(legato.id, "note.legato");
+    assert_eq!((&legato.params["notes"], &legato.params["until"]), (&json!([0]), &json!(5.0)));
+    state.selected.clear();
+    let whole = state.key_action("pianoRoll.legato", &two, 0.0, None).expect("a command");
+    assert!(whole.params.get("notes").is_none(), "the whole clip: {}", whole.params);
+    assert_eq!(whole.params["until"], json!(8.0));
+    // An empty clip gives it nothing to do.
+    let empty = clip(Vec::new());
+    let mut state = focused_on(&empty);
+    assert!(state.key_action("pianoRoll.legato", &empty, 0.0, None).is_none());
+}
+
+/// Ctrl+L in the piano roll is the clip's own loop: over the time selection, off again when the
+/// loop is on over that very stretch, and with no time selection the clip's loop on or off.
+#[test]
+fn the_loop_key_loops_the_clip_over_the_time_selection_or_switches_its_loop() {
+    let mut two = clip_of_two();
+    let mut state = focused_on(&two);
+    let on = state.key_action("pianoRoll.loop", &two, 0.0, None).expect("a command");
+    assert_eq!(on.id, "clip.setLoop");
+    assert_eq!(on.params["loop"], json!(true), "no loop yet: on");
+    assert!(on.params.get("start").is_none());
+    two.shape.loop_range = Some((0.0, 8.0));
+    let off = state.key_action("pianoRoll.loop", &two, 0.0, None).expect("a command");
+    assert_eq!(off.params["loop"], json!(false), "looping: off");
+
+    let mut state = span_state(&two, 2.0, 4.0);
+    let over = state.key_action("pianoRoll.loop", &two, 0.0, None).expect("a command");
+    assert_eq!((&over.params["start"], &over.params["end"]), (&json!(2.0), &json!(4.0)));
+    assert!(over.params.get("loop").is_none(), "a range turns the loop on by itself: {}", over.params);
+    two.shape.loop_range = Some((2.0, 4.0));
+    let again = state.key_action("pianoRoll.loop", &two, 0.0, None).expect("a command");
+    assert_eq!(again.params["loop"], json!(false), "the same stretch again takes the loop away");
+    assert!(again.params.get("start").is_none());
+}
+
+/// What the Arrangement lights on the clip: a rectangle still being drawn as it covers now, else
+/// the time selection; nothing without either.
+#[test]
+fn the_time_span_is_the_rectangle_while_it_is_drawn() {
+    let one = clip(vec![note(1.0, 0.5, 60)]);
+    let mut state = focused_on(&one);
+    assert_eq!(state.time_span(), None);
+    state.live_span = Some((0.5, 1.5));
+    assert_eq!(state.time_span(), Some((0.5, 1.5)), "as the rectangle grows");
+    let mut state = span_state(&one, 2.0, 4.0);
+    assert_eq!(state.time_span(), Some((2.0, 4.0)), "let go: the time selection");
+    state.live_span = Some((0.0, 1.0));
+    assert_eq!(state.time_span(), Some((0.0, 1.0)), "a new rectangle over it");
 }

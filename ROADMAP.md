@@ -11,7 +11,7 @@ primary platform; Windows and macOS are supported.
 | M3 | **Commands and agents:** command registry with undo; CLI and MCP server on the same commands | in progress: commands, undo, MCP, edits heard while playing, and saving projects in Suhina's own format (`.suhina`) work; more commands to come |
 | M4 | **Clip launching:** launch quantisation, scenes, stop buttons, follow actions | in progress: launching, scenes, stops, quantisation, follow actions, the metronome, launch modes, legato, per-clip quantisation and launch keys work; launching from live MIDI notes to come |
 | M5 | **Audio playback:** imported audio clips with gain, transpose, warping and time-stretching | done (verified by ear on a heavily warped set) |
-| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); still to do: automation lanes in the UI, Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
+| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); their parameters automated from lanes in the Arrangement view; still to do: Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
 | M7 | **More formats:** DAWproject import and export | not started |
 | M8 | **UI:** Launcher and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Launcher and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
@@ -221,6 +221,27 @@ refused or suspended, never by losing its edits.
   between parts show on the track and are set by a handle (`take.setCrossfade`), with their default
   in Settings; and a part moved or copied on the track takes its takes along
   ([#1078](https://github.com/suhina-daw/suhina-daw/issues/1078)).
+
+- Value drags: the Arrangement's volume and pan bars and Main's volume bar drag up and down or across, whichever way a drag moves first. Settings › Appearance › Hide pointer while dragging (on by default) chooses whether the pointer hides during a value drag or shows the arrow of its direction, and a theme can choose for its own controls with `drag-pointer: hidden | visible`.
+
+- The executable ships the NAM starter pack: the chosen amp models and cabinet impulse
+  responses ride every build and unpack into the library's `Sounds/NAM/Amp models/Suhina` and
+  `…/NAM/Cabinets/Suhina` folders at start, beside the user's own files and never over one; the
+  old defaults `Documents/Suhina/NAM models` and `…/IRs` move into those folders at start. A
+  file device's chosen state can be the pack's file by its `builtin:<device id>/<file name>`
+  key, loading from the executable wherever the app runs. Six of the stock presets now name a
+  shipped file, so adding them brings the model or cabinet with them.
+- `device.savePreset` saves one device's values — and the file it selects — as the user's own
+  preset into the library's `Presets/<device>/` folder; the device panel's menu has
+  **Save as preset…**, the browser lists the user's presets beside the stock ones under their
+  device, and its rows add them like any preset file.
+- The NAM Amp Modeler and NAM Cab Loader have stock presets under *Stock presets* in the browser,
+  five each, that set their controls (the amp's gain, EQ, HQ, delay and volume; the cabinet's
+  phase, high pass, cuts, delay and volume). Four amp presets and two cabinet presets also
+  select a shipped model or impulse response. Adding a preset adds a new device and changes no
+  device already on the track; a preset without a file of its own lands on the folder's first
+  file when dragged or quick-added. `device.add {stock}` and `track.add {stock}` add one by its
+  key, dragging one from the browser does the same, and each is one undo step.
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
@@ -510,6 +531,19 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   ([#1066](https://github.com/suhina-daw/suhina-daw/issues/1066),
   [spec](docs/spec/plugin-vst2.md)).
 
+- A hosted plug-in's parameters (CLAP, VST3, VST2) are automated from lanes in the Arrangement
+  view: the lane's parameter list shows each plug-in on the track under its name, with its own
+  groups and the same search as a built-in device; a lane shows the plug-in's own text for its
+  values, a move in the plug-in's editor turns the lane off, and the editor follows the lane
+  playing and stopped. A lane whose plug-in is missing keeps its points.
+- A track's top automation lane shows the parameter being worked on: a control moved by hand (a
+  track's volume, pan or mute, a device's knob, a knob in a plug-in's own editor) shows there,
+  ready to draw on, and its + mounts it as a lane of its own. Mounted lanes are reordered, picked,
+  grouped (each plug-in's lanes in a group of their own, a setting) and deleted, with undo, and
+  their layout is saved with the project.
+- A time range painted over several automation lanes, or over a track where no clip plays, is
+  copied, duplicated and deleted with its automation on every lane.
+
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it
   stopped on the output chosen in Settings › Audio and shows the **Launcher view**: tracks as
@@ -586,7 +620,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   about a minute, and closing or quitting asks whether to save it.
 - The **browser** (Ctrl+B shows and hides it, left or right of the view): search (Ctrl+F),
   category filters (All, Samples, MIDI, Instruments, Effects, Presets, Plug-ins), a sidebar of
-  Pinned, Recent (by kind) and the folders the user added (a path, or a folder dropped on the
+  Pinned, Recent (by kind), the Tags and the folders the user added (a path, or a folder dropped on the
   window), a tree with type icons, lengths and colour tags, a preview strip with the waveform,
   length, tempo and key, and a footer with the tags as filters. Samples and MIDI files preview
   through the engine (auto-play, or the play button; MIDI through the selected track's
@@ -1029,4 +1063,20 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   and a click on a bar or a faint note gives that clip the focus.
 
 - Audio clip panel (#1190, #742, #824): a selected audio clip's column in the detail area is laid out in groups, Clip (colour, markers and loop with Set to the playhead), Audio (warp, a stretch mode drop-down, the clip's tempo with ÷2 and ×2 and where it came from, Find to pick another source's tempo), Gain (a fader, −70 to +24 dB) and Pitch (a knob in semitones and a cents field). Every number can be typed after a double-click. Every audio clip has its own gain, pitch and warp, also two clips of the same file, and a gain envelope drawn on its waveform in the Arrangement (a double-click adds a point, a drag moves it, a double-click removes it); `clip.setTempo`, `clip.findTempo` and `clip.setEnvelope` do the same for agents.
+
+- The browser's **Tags section** in the sidebar reaches a tag's items again (#1196): one row
+  per tag with its colour dot, its name and how many items carry it (a tag with none dimmed),
+  clicked as a place lists every item that carries it of any kind (`library.search` takes it
+  as `tag:<name>`), Ctrl-click combines tags, the row's right-click menu adds (a New tag…
+  field with an Add tag button, taking the colour the menu's own tag shows), renames live as
+  the name is typed, recolours
+  (the palette or the theme editor's picker in the menu) and removes it (asking first while
+  items carry it);
+  items dropped on a row are tagged with it, and a tag dragged from its row tags the item it
+  lands on (its whole selection when the row is one of them). The section is where the tags
+  live now, so the footer's tag editor and its Edit tags button are gone and the footer's
+  dots stay only as the quick filter of the list shown.
+
+- Swing (#1221): the project has a swing amount, set with the **Swing** slider beside **Resize all** in the Arrangement, that delays every second sixteenth of each eighth as MIDI clips play (up to half a sixteenth at 100 %, the triplet at about 67 %), live and in renders, the notes themselves unmoved. Every MIDI clip follows it until it gets its own in the clip panel's **Swing** row (the **Global** switch and a slider); turning **Global** back on keeps the clip's own amount for later. `transport.setSwing` and `clip.setSwing` do the same for agents; the project file is version 12.
+- MIDI clip panel (#1222, #1214): a selected MIDI clip's column in the detail area is the same compact panel as an audio clip's (its colour, name, length and the Clip / Devices switch; Start and End, Loop, Position and Length with Set to the playhead, and its scale), with what the tools act on in figures under it (notes, pitch, span, muted, velocity range) and the note tools beside it on two tabs: Notes (Transpose, Fit to scale to the clip's scale, Invert, Reverse, Legato, ×2 and ÷2) and Transform (Quantise, Humanise, Randomise velocity and Ramp velocity, each with its settings and an Apply button that says what it acts on). Humanise moves notes by milliseconds, mostly a little and never past its limit, each note on its own and keeping its length; `note.humanize` takes `ms`. With the detail area stacked the tools go under the Clip part.
 

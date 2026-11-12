@@ -3,7 +3,7 @@ description: The VST2 interface as Suhina holds it — the entry points, the AEf
 read_when: VST2, VST 2, AEffect, opcode, op-code, dispatcher, audioMaster, VstEvents, VstMidiEvent, VstTimeInfo, state chunk, effGetChunk, effSetChunk, VSTPluginMain, main_macho, vestige, mock VST2, probe, vst2 feature, test:vst2, --vst2-probe, SUHINA_TEST_VST2
 type: spec
 status: draft
-last_verified: 2026-11-02
+last_verified: 2026-11-12
 covers:
   - crates/plugin-host/src/vst2/**
   - crates/plugin-host/tests/vst2.rs
@@ -33,10 +33,17 @@ interface: VeSTige, as Ardour distributes it, at the commit the ADR pins
 [`crates/plugin-host/src/vst2/vestige.rs`](../../crates/plugin-host/src/vst2/vestige.rs) with
 its copyright and licence notice kept (`GPL-2.0-or-later`, the one named exception to the
 clean-room rule), and no other header, SDK, binding or write-up may be read for a fact of
-this interface. Every fact below carries one of three marks:
+this interface. Another open-source host's own code may be, within the limits of
+[ADR 0022 › Amendment: other hosts' code as a source](../decisions/0022-vst2-interface-description.md#amendment-other-hosts-code-as-a-source-2026-11-12):
+the value traces to VeSTige, to that project's own observation or to public documentation, and
+code taken from it, as opposed to a fact written here in our own words, comes from a file whose
+licence is compatible with GPL-3.0-or-later. Every fact below carries one of four marks:
 
 - **(from VeSTige)** the pinned header states it — the value, the field, the layout. The
   port transcribes it and the tests pin the transcription.
+- **(from <project>)** another host's code states it, and the provenance check traced it to an
+  allowed origin; the mark names the file's path and the commit, and what the check found. A
+  value a host uses that cannot be traced is not marked so: it is **(assumed)** until observed.
 - **(assumed)** the pinned header lacks it, and the layer had to choose something to write
   code at all: an op-code number it does not list, which argument of a call carries what,
   what an answer means. The choice is ours, named here, and *it is not established*: only a
@@ -51,7 +58,8 @@ this interface. Every fact below carries one of three marks:
   it is settled.
 
 A fact marked (assumed) that a later run disagrees with is a bug in this spec's assumption,
-to be fixed with what the run showed — never by reading another header.
+to be fixed with what the run showed — never by reading another header, and never by another
+host's value whose origin is unknown.
 
 ## The entry points
 
@@ -224,6 +232,21 @@ describes (MIT), which the Live Set importer already reads and writes
 A plug-in's chunk is copied out at once and capped, at 256 MiB in the host and 1 MiB in the
 probe's round trip; a chunk's size is the plug-in's own claim, not trusted.
 
+A single program, an `.fxp` file's contents, has the same header word and size, then its kind,
+from the same `vst2persistence.h`: `FxCk` for a program of values (version, the plug-in's id and
+version, the number of parameters, the 28-byte name, then each value as a big-endian 32-bit
+float, as a program inside an `FxBk` bank), or `FPCh` for a program chunk (the same fields up to
+the name, then the chunk's size and the chunk). A project never saves one; the CLI's `--state`
+takes one (#1167). Loading a single program sets an `FxCk` program's values as parameters (a program that declares
+more than 65,536 parameters, or more values than its size covers, is cut short and not read; one
+made for another plug-in id, or for another number of parameters than the plug-in has, sets
+nothing and is refused, since its values would be unrelated or only a prefix), and
+hands an `FPCh` program's chunk to `effSetChunk` with `index` 1, the current program (assumed,
+above). A VST3 plug-in that stands in for a VST2 one reads banks (ADR 0006, decision 8), not
+program chunks: an `FPCh` given to one is refused before it reaches `setState`, so the caller
+is told it ran with its defaults; an `FxCk` program's values are set as parameters there as a
+program bank's are ([plug-in hosting](plugin-hosting.md) › Handing over the state).
+
 ## The mock plug-in and the probe
 
 `test:vst2` ([`crates/plugin-host/src/vst2/test_vst2.rs`](../../crates/plugin-host/src/vst2/test_vst2.rs))
@@ -302,9 +325,9 @@ contract, as every host gives*).
   chunk-less one's parameters as one program in a `CcnK`…`FxBk` bank (the other programs are
   not saved — a limit, below). Loading takes the chunk bank's chunk (`effSetChunk`), a
   program bank's current program (set as the program, then its values as parameters,
-  *(assumed)* order), or a bare chunk. What `effSetChunk` answers is not observed, so
+  *(assumed)* order), a single program (above), or a bare chunk. What `effSetChunk` answers is not observed, so
   no answer fails the restore: the trace and the probe's report show it (*Open questions*). A payload whose shape is a standard bank's own (`CcnK` and a bank kind
-  in their places) that neither reader took is refused too: a cut-short bank is an error, not
+  in their places) (or a single program's) that no reader took is refused too: a cut-short bank is an error, not
   raw bytes the plug-in would take for its own state.
 
 ## What keeps each fact true
@@ -504,7 +527,8 @@ another header (ADR 0022 decision 2).
 
 - The pinned VeSTige header, as Ardour distributes it: <https://github.com/Ardour/ardour/blob/365cc92cba0e016c30fea34aed168a0957aeeca0/libs/ardour/ardour/vestige/vestige.h>
 - [ADR 0022](../decisions/0022-vst2-interface-description.md): the source decision, the
-  pinning, and the rule that nothing else may be read.
+  pinning, the rule that no other header may be read, and when another host's code may be a
+  source.
 - [ADR 0006](../decisions/0006-plug-in-hosting.md): the hosting the interface layer serves.
 - The VST2 bank layouts in the VST3 SDK's `vst2persistence.h` (MIT), as
   [`crates/plugins/src/vst2.rs`](../../crates/plugins/src/vst2.rs) holds them, one home for the importer, the VST3 hand-over and this host.

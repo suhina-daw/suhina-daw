@@ -60,6 +60,7 @@ mod audio;
 mod clap;
 mod hosted;
 mod param_notes;
+mod planar;
 mod processors;
 mod run_loop;
 mod test_clap;
@@ -756,6 +757,12 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
             Some(Err(message)) => failed(instance, message),
             None => missing(instance),
         },
+        Message::GetParamTexts { instance, id, values } => {
+            match instances.get_mut(&instance).map(|p| p.param_texts(id, &values)) {
+                Some(texts) => Message::ParamTexts { instance, id, texts },
+                None => missing(instance),
+            }
+        }
         Message::SetParam { instance, id, value } => {
             match instances.get_mut(&instance).map(|p| p.set_param(id, value)) {
                 Some(Ok(param)) => Message::Param { instance, param },

@@ -47,7 +47,7 @@ fn responsive_theme_survives_live_reload_and_resize() {
                     if sample == 0 || sample == 2 {
                         let mut replacement = theme::Theme::default();
                         replacement.skin.css = Some(std::sync::Arc::from(if sample == 0 {
-                            ".window { background-color:#0A1120; }"
+                            "window { background-color:#0A1120; }"
                         } else {
                             css
                         }));
@@ -94,7 +94,17 @@ fn native_bar() -> Harness<'static, Fixture> {
             let _frame = crate::kit::native_css::frame(ui);
             let rect = Rect::from_min_size(ui.max_rect().min, Vec2::new(ui.available_width(), 56.0));
             ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                fixture.app.control_bar(ui, Some(&fixture.grid), Some(10), Some(1024), &mut fixture.actions);
+                let bar = crate::kit::element::TOOLBAR.enter();
+                let inside = ui.max_rect();
+                fixture.app.control_bar(
+                    ui,
+                    &bar,
+                    inside,
+                    Some(&fixture.grid),
+                    Some(10),
+                    Some(1024),
+                    &mut fixture.actions,
+                );
             });
         },
         fixture,
@@ -200,7 +210,7 @@ fn editing_keeps_real_controls_and_done_without_changes_preserves_native_layout(
 fn edit_overlay_preserves_css_grid_geometry_without_writing_a_layout() {
     let mut harness = native_bar();
     harness.state_mut().app.use_test_skin(skin::Skin {
-            css: Some(std::sync::Arc::from(".toolbar {display:grid;grid-template-columns:100px 120px 90px;gap:8px;} #tempo {grid-column:1;grid-row:1;} #transport {grid-column:2;grid-row:1;} #position {grid-column:3;grid-row:1;} #browser,#signature,#grid,#count-in,#metronome,#mapping,#performance,#views,#agents {display:none;}")),
+            css: Some(std::sync::Arc::from("toolbar {display:grid;grid-template-columns:100px 120px 90px;gap:8px;} #tempo {grid-column:1;grid-row:1;} #transport {grid-column:2;grid-row:1;} #position {grid-column:3;grid-row:1;} #browser,#signature,#grid,#count-in,#metronome,#mapping,#performance,#views,#agents {display:none;}")),
             ..Default::default()
         });
     harness.run();
@@ -276,7 +286,7 @@ fn css_toolbar_targets_keep_native_commands_with_svg_artwork() {
             .collect(),
         ..Default::default()
     };
-    app.use_test_skin(skin::Skin { assets:skin::example_assets(),toolbar:Some(layout),css:Some(std::sync::Arc::from(".toolbar { display:grid; grid-template-columns:80px 120px; gap:8px; } #tempo { grid-column:1; grid-row:1; width:auto; } #transport { grid-column:2; width:auto; } #mapping { display:none; }")),..Default::default() });
+    app.use_test_skin(skin::Skin { assets:skin::example_assets(),toolbar:Some(layout),css:Some(std::sync::Arc::from("toolbar { display:grid; grid-template-columns:80px 120px; gap:8px; } #tempo { grid-column:1; grid-row:1; width:auto; } #transport { grid-column:2; width:auto; } #mapping { display:none; }")),..Default::default() });
     let fixture = Fixture { app, grid: TrackGrid::build(&crate::demo::demo_project(), None), actions: Vec::new() };
     let mut harness = Harness::builder().allow_missing_glyphs().with_size((640.0, 56.0)).build_ui_state(
         |ui, fixture: &mut Fixture| {
@@ -284,7 +294,9 @@ fn css_toolbar_targets_keep_native_commands_with_svg_artwork() {
                 fixture.app.themes.get(&fixture.app.settings.theme).map(|theme| theme.skin.clone()).unwrap_or_default();
             skin::configure(&skin);
             let _frame = crate::kit::native_css::frame(ui);
-            fixture.app.control_bar(ui, Some(&fixture.grid), None, None, &mut fixture.actions);
+            let bar = crate::kit::element::TOOLBAR.enter();
+            let inside = ui.max_rect();
+            fixture.app.control_bar(ui, &bar, inside, Some(&fixture.grid), None, None, &mut fixture.actions);
         },
         fixture,
     );
@@ -324,4 +336,27 @@ fn toolbar_module_backgrounds_follow_the_sheet() {
         .collect();
     skin::configure(&skin::Skin::default());
     assert!(fills.iter().any(|(_, fill)| *fill == egui::Color32::from_rgb(0x10, 0x20, 0x30)), "{fills:?}");
+}
+
+/// Padding on the toolbar pads Suhina's own toolbar, in its content box: it does not switch to
+/// the theme's layout, whose view switches are framed buttons. Layout properties still do
+/// (#1336).
+#[test]
+fn padding_pads_the_native_toolbar_and_layout_properties_still_switch() {
+    let mut harness = native_bar();
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    harness.state_mut().app.use_test_skin(css("toolbar { padding: 0 20px; border-width: 0 0 2px; }"));
+    harness.run();
+    assert!(!crate::kit::native_css::toolbar_layout_requested(), "padding keeps Suhina's layout");
+    let launcher = harness.get_by_label("Launcher view").rect();
+    let framed = harness.output().shapes.iter().any(
+        |shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == launcher && rect.stroke.width > 0.0),
+    );
+    assert!(!framed, "the view switches keep their own look");
+    for layout in ["toolbar { gap: 12px; }", "toolbar { display: flex; padding: 4px; }", "#transport { order: 3; }"] {
+        harness.state_mut().app.use_test_skin(css(layout));
+        harness.run();
+        assert!(crate::kit::native_css::toolbar_layout_requested(), "{layout} asks for the theme's layout");
+    }
+    skin::configure(&skin::Skin::default());
 }

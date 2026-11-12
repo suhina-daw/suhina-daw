@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+use crate::kit::element::test_el;
 
 #[test]
 #[ignore = "manual performance comparison; run without a simultaneous interactive test"]
@@ -11,12 +12,8 @@ fn measure_short_moving_meter_glow() {
         theme::install(&ctx);
         super::super::skin::configure(&super::super::skin::Skin {
             css: Some(
-                if glow {
-                    ".meter-level { box-shadow: 0 0 2px #83d82b55; }"
-                } else {
-                    ".meter-level { color: #83d82b; }"
-                }
-                .into(),
+                if glow { "meter-level { box-shadow: 0 0 2px #83d82b55; }" } else { "meter-level { color: #83d82b; }" }
+                    .into(),
             ),
             ..Default::default()
         });
@@ -100,10 +97,10 @@ fn intensity_dims_native_ink_without_changing_geometry_or_clip_light() {
             };
             let full = render(100, None);
             let dim = render(50, None);
-            let opacity = render(100, Some(".meter-level { opacity: 0.5; }"));
+            let opacity = render(100, Some("meter-level { opacity: 0.5; }"));
             assert_eq!(dim, opacity, "native CSS and theme intensity agree");
             let zero = render(0, None);
-            assert_eq!(zero, render(100, Some(".meter-level { opacity: 0; }")));
+            assert_eq!(zero, render(100, Some("meter-level { opacity: 0; }")));
             assert!(zero.iter().any(|(_, color)| *color == theme::recording()));
             assert_eq!(full.len(), dim.len());
             let mut changed = 0;
@@ -117,7 +114,7 @@ fn intensity_dims_native_ink_without_changing_geometry_or_clip_light() {
             assert!(changed >= 2, "both channels dim");
             assert!(dim.iter().any(|(_, color)| *color == theme::recording()), "clip warning stays visible");
             if meter != skin::MeterStyle::Needle {
-                let transparent = render(100, Some(".meter-level { background-color: transparent; }"));
+                let transparent = render(100, Some("meter-level { background-color: transparent; }"));
                 assert!(
                     !transparent.iter().any(|(_, color)| *color == theme::meter_normal().gamma_multiply(0.45)),
                     "transparent fill must not revive native peak ink"
@@ -134,7 +131,7 @@ fn css_meter_ramps_keep_the_full_scale_anchor_when_signal_and_orientation_change
     for upright in [true, false] {
         let ctx = egui::Context::default();
         theme::install(&ctx);
-        skin::configure(&skin::Skin { meter_intensity: 50, css: Some(".meter-vertical .meter-level { background: linear-gradient(to top, #00ff00, #ffff00 80%, #ff0000); } .meter-horizontal .meter-level { background: linear-gradient(to right, #00ff00, #ffff00 80%, #ff0000); }".into()), ..Default::default() });
+        skin::configure(&skin::Skin { meter_intensity: 50, css: Some("meter-vertical meter-level { background: linear-gradient(to top, #00ff00, #ffff00 80%, #ff0000); } meter-horizontal meter-level { background: linear-gradient(to right, #00ff00, #ffff00 80%, #ff0000); }".into()), ..Default::default() });
         let mut observed = Vec::new();
         for frame in 0..4 {
             let peak = if frame == 3 { 1.0 } else { 0.1 };
@@ -233,21 +230,21 @@ fn custom_frames_follow_signal_and_keep_native_clip_reset() {
 
 #[test]
 fn silent_rails_survive_parent_gradients_and_accept_their_own_background() {
-    use crate::kit::{native_css, skin, style_class};
+    use crate::kit::{native_css, skin};
     for override_color in [None, Some("#081014")] {
         let ctx = egui::Context::default();
         theme::install(&ctx);
         let native = theme::palette().window_background;
         let css = format!(
-            ".session {{ background: linear-gradient(red, blue); }} {}",
-            override_color.map_or(String::new(), |color| format!(".meter {{ background-color: {color}; }}"))
+            "session {{ background: linear-gradient(red, blue); }} {}",
+            override_color.map_or(String::new(), |color| format!("meter {{ background-color: {color}; }}"))
         );
         skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
         for frame in 0..3 {
             let mut output =
                 ctx.run_ui(egui::RawInput { time: Some(frame as f64 * 0.01), ..Default::default() }, |ui| {
                     let _frame = native_css::frame(ui);
-                    let _parent = style_class::enter("session");
+                    let _parent = test_el("session").enter();
                     show(
                         ui,
                         ui.painter(),

@@ -1158,3 +1158,126 @@ fn a_failed_replacing_call_keeps_the_run_and_ending_the_gesture_starts_another()
     let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
     assert_eq!(values, [0.375, -0.375, 0.375], "a new gesture builds on the result");
 }
+
+/// Track 1's lane `param` as (beat, value) pairs.
+fn points_of(session: &Session, param: &str) -> Vec<(f64, f64)> {
+    lanes(session)
+        .iter()
+        .find(|l| l.param == param)
+        .map_or_else(Vec::new, |l| l.points.iter().map(|p| (p.beat, p.value)).collect())
+}
+
+/// A dragged point's preview sets a hosted plug-in's parameter in the playing engine, and only
+/// there: not a built-in device's, not without a player, not a value that is no number, and the
+/// project is left as it was (#1205).
+#[test]
+fn a_preview_reaches_a_hosted_plug_in_in_the_engine_only() {
+    let mut project = project();
+    project.channels[0].devices.push(Device::new("Synth", DeviceKind::Clap { id: "x".into() }));
+    let mut session = Session::new(project.clone());
+    assert!(!session.preview_plugin_param(TrackId(1), 0, 3, 0.5), "no player");
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    let before = session.project().clone();
+    assert!(session.preview_plugin_param(TrackId(1), 0, 3, 0.5), "the plug-in");
+    assert!(!session.preview_plugin_param(TrackId(1), 0, 3, f64::NAN), "no number");
+    assert!(!session.preview_plugin_param(TrackId(1), 1, 3, 0.5), "a built-in device");
+    assert_eq!(session.project(), &before, "the project is left as it was");
+}
+
+/// Lanes copied together and pasted on another track go to a device of the same kind there, not
+/// to whatever device sits at the same place on its chain (#1322).
+#[test]
+fn lanes_copied_together_go_to_the_same_kind_of_device_on_another_track() {
+    let mut session = Session::new(project());
+    run(&mut session, "track.add", json!({ "kind": "midi", "name": "Other" })).unwrap();
+    let other = session.project().tracks.iter().find(|t| t.name == "Other").map(|t| t.id.0).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    // On the other track the utility comes second, after an instrument.
+    run(&mut session, "device.add", json!({ "track": other, "id": "sampler" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": other, "id": "utility" })).unwrap();
+    let kinds = |track: u32| -> Vec<String> {
+        let channel = session.project().channel_of_track(TrackId(track)).unwrap();
+        channel.devices.iter().map(|d| format!("{:?}", d.kind)).collect()
+    };
+    assert_eq!(kinds(other).len(), 2, "{:?}", kinds(other));
+    for beat in [0, 4] {
+        let gain = json!({ "track": 1, "device": 0, "param": "gain", "beat": beat, "value": beat });
+        run(&mut session, "automation.addPoint", gain).unwrap();
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": 0.5 }))
+            .unwrap();
+    }
+    let lanes_too = json!([{ "device": 0, "param": "gain" }]);
+    run(
+        &mut session,
+        "automation.copy",
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "lanes": lanes_too }),
+    )
+    .unwrap();
+    run(&mut session, "automation.paste", json!({ "track": other, "param": "pan", "start": 8 })).unwrap();
+    let channel = session.project().channel_of_track(TrackId(other)).unwrap();
+    assert!(
+        channel.devices[1].automation.iter().any(|l| l.param == "gain" && !l.points.is_empty()),
+        "the utility's gain"
+    );
+    assert!(channel.devices[0].automation.is_empty(), "nothing on the instrument at the same place");
+}
+
+/// A range painted over several lanes acts on all of them in one step (#1322): duplicated,
+/// deleted, copied and pasted back on each lane; a lane without automation there is left out.
+#[test]
+fn a_range_over_several_lanes_acts_on_each_in_one_step() {
+    let mut session = Session::new(project());
+    for (param, value) in [("pan", -1.0), ("volume", 0.5)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": param, "beat": 0, "value": value }))
+            .unwrap();
+        let top = if param == "pan" { json!(1.0) } else { json!(0.0) };
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": param, "beat": 4, "value": top }))
+            .unwrap();
+    }
+    let lanes_too = json!([{ "param": "volume" }, { "param": "mute" }]);
+    run(
+        &mut session,
+        "automation.duplicate",
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "lanes": lanes_too }),
+    )
+    .unwrap();
+    assert!(points_of(&session, "pan").contains(&(8.0, 1.0)), "{:?}", points_of(&session, "pan"));
+    assert!(points_of(&session, "volume").iter().any(|(beat, _)| *beat == 8.0), "{:?}", points_of(&session, "volume"));
+    // One undo step takes both back.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(!points_of(&session, "pan").iter().any(|(beat, _)| *beat > 4.0));
+    assert!(!points_of(&session, "volume").iter().any(|(beat, _)| *beat > 4.0));
+    // Copied together, pasted back on each lane from beat 20.
+    run(
+        &mut session,
+        "automation.copy",
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "lanes": lanes_too }),
+    )
+    .unwrap();
+    run(&mut session, "automation.paste", json!({ "track": 1, "param": "pan", "start": 20 })).unwrap();
+    assert!(points_of(&session, "pan").contains(&(24.0, 1.0)));
+    assert!(points_of(&session, "volume").iter().any(|(beat, _)| *beat == 24.0));
+    // Deleted together inside 1 to 3.
+    run(
+        &mut session,
+        "automation.deleteRange",
+        json!({ "track": 1, "param": "pan", "start": 1, "end": 3, "lanes": lanes_too }),
+    )
+    .unwrap();
+    for param in ["pan", "volume"] {
+        assert!(!points_of(&session, param).iter().any(|(beat, _)| *beat > 1.0 && *beat < 3.0), "{param}");
+    }
+    // A malformed list is refused.
+    assert!(
+        run(
+            &mut session,
+            "automation.duplicate",
+            json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "lanes": [{}] })
+        )
+        .is_err()
+    );
+}

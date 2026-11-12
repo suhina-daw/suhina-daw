@@ -130,3 +130,51 @@ fn switching_after_a_failed_open_preserves_the_previous_drivers_working_device()
     assert_eq!(app.settings.audio_devices.get("asio"), Some(&working.device));
     assert_eq!(app.settings.audio_devices.get("wasapi"), Some(&next.device));
 }
+
+#[test]
+fn audio_page_follows_the_focus_of_its_own_viewport() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Checking(Arc<AtomicUsize>);
+    impl LiveOutput for Checking {
+        fn info(&self) -> OutputInfo {
+            OutputInfo::default()
+        }
+        fn check_driver(&self) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    let checks = Arc::new(AtomicUsize::new(0));
+    let mut app = App::new();
+    let mut session = Session::new(suhina_engine::model::Project::default());
+    let mut renderer =
+        suhina_engine::Renderer::stopped(session.project(), &Default::default(), 48_000, suhina_session::devices())
+            .unwrap();
+    session.attach_player(Player::with_output(renderer.controller(), None, Arc::new(Checking(Arc::clone(&checks)))));
+    app.projects.add(session, None).unwrap();
+    app.settings_open = true;
+    app.page.page = settings_view::Page::Audio;
+    app.page.window = true;
+    let ctx = egui::Context::default();
+    let settings = egui::ViewportId::from_hash_of("settings-window");
+    let frame = |app: &mut App, root_focus: bool, settings_focus: bool| {
+        let mut raw = egui::RawInput::default();
+        raw.viewports
+            .insert(egui::ViewportId::ROOT, egui::ViewportInfo { focused: Some(root_focus), ..Default::default() });
+        raw.viewports.insert(settings, egui::ViewportInfo { focused: Some(settings_focus), ..Default::default() });
+        // The first frame carries the font atlas: a test with no painter clears it, as epaint
+        // asks of a dropped `TexturesDelta`.
+        let mut output = ctx.run_ui(raw, |ui| app.follow_audio_page(ui.ctx()));
+        output.textures_delta.clear();
+    };
+    frame(&mut app, false, true);
+    assert_eq!(checks.load(Ordering::Relaxed), 1, "opening Audio");
+    frame(&mut app, false, false);
+    frame(&mut app, false, true);
+    assert_eq!(checks.load(Ordering::Relaxed), 2, "return to floating Settings");
+    frame(&mut app, false, true);
+    assert_eq!(checks.load(Ordering::Relaxed), 2, "no repeat while focused");
+    app.page.window = false;
+    frame(&mut app, false, true);
+    frame(&mut app, true, false);
+    assert_eq!(checks.load(Ordering::Relaxed), 3, "embedded Settings follows root");
+}

@@ -434,3 +434,48 @@ fn the_wheel_zooms_only_when_no_dialog_is_on_top() {
     harness.run();
     assert!(wheel(&mut harness) > 1.0, "without it the map zooms");
 }
+
+/// A new layout puts the points in a new order: Show similar's list, the hover, the preview
+/// and the pressed point follow their items, and an item not on the new map drops out
+/// ([#1254] review: the list kept the old indices and showed unrelated samples).
+#[test]
+fn a_new_layout_rebinds_the_point_states_to_their_items() {
+    let mut view = MapView::default();
+    view.show_similar(2, vec![0, 1, 3]);
+    view.hovered = Some((3, 1.5));
+    view.previewed = Some(1);
+    view.pressed = Some(0);
+    view.rubber_band = Some(Pos2::new(4.0, 4.0));
+    // The old points 0..4 land at 3, 2, gone, 0 in the new order.
+    let moved = |old: usize| match old {
+        0 => Some(3),
+        1 => Some(2),
+        3 => Some(0),
+        _ => None,
+    };
+    view.rebind_points(moved);
+    assert_eq!(view.similar(), None, "the point it was asked for is gone, so the list ends");
+    assert_eq!(view.hovered, Some((0, 1.5)));
+    assert_eq!((view.previewed, view.pressed, view.rubber_band), (Some(2), Some(3), None));
+    view.show_similar(1, vec![0, 2, 3]);
+    view.rebind_points(moved);
+    assert_eq!(view.similar(), Some(&(2, vec![3, 0])), "the list follows its items, the gone one dropped");
+    // The hovered point's waveform follows its point, and goes with a point that is gone.
+    let peaks = std::sync::Arc::new(crate::kit::waveform::Peaks::default());
+    view.hover_waveform = Some((3, std::sync::Arc::clone(&peaks)));
+    view.rebind_points(moved);
+    assert_eq!(view.hover_waveform.as_ref().map(|(i, _)| *i), Some(0));
+    view.hover_waveform = Some((2, peaks));
+    view.rebind_points(moved);
+    assert!(view.hover_waveform.is_none(), "the gone point's waveform goes");
+}
+
+/// Without a theme sheet each kind takes the colour the user-agent sheet's own cascade gives it,
+/// whatever form its rules are written in; no kind falls back to grey.
+#[test]
+fn every_kind_has_the_user_agent_sheets_colour() {
+    let colours = user_agent_kind_colours();
+    assert_eq!(colours[kind_index(Kind::Kick)], Color32::from_rgb(0xD0, 0x6E, 0x5E));
+    assert_eq!(colours[kind_index(Kind::Other)], Color32::from_rgb(0x8A, 0x86, 0x80));
+    assert!(colours.iter().all(|colour| *colour != Color32::GRAY), "{colours:?}");
+}

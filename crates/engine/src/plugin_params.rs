@@ -17,8 +17,11 @@
 //! - **A lane** sends its value at the start of every block while the transport runs (so a
 //!   jump or a loop lands at once), then, inside the block, a value at every point and every
 //!   [`RAMP_STEP`] frames while it moves. A VST3 plug-in ramps between the values itself; a
-//!   CLAP plug-in gets them as steps. While the transport is stopped a lane sends nothing and
-//!   the plug-in keeps the last value.
+//!   CLAP plug-in gets them as steps. While the transport is stopped a lane sends its value at
+//!   the playhead when the playhead moves or the lanes change, so the plug-in's editor shows what
+//!   plays there (#1205); otherwise it sends nothing. A processor that starts (the project
+//!   opened, a restart) keeps the state it was given until then: opening a project changes
+//!   nothing in its plug-ins.
 
 use suhina_model::{Device, DeviceParam};
 
@@ -65,6 +68,21 @@ pub(crate) struct SlotParams {
     block: Vec<ParamEvent>,
     /// The events of the span running now, frames from the span's start.
     span: Vec<ParamEvent>,
+    /// What the lanes sent while the transport was stopped.
+    parked: Parked,
+}
+
+/// What a slot's lanes sent while the transport was stopped (#1205).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Parked {
+    /// A processor just started with the state it was given: the first place the transport
+    /// stands at is taken as sent, so starting changes nothing in the plug-in's state (and a
+    /// project just opened has no unsaved changes).
+    Fresh,
+    /// The lanes' values where the transport stands at this frame went out.
+    Sent(u64),
+    /// Playing, or the lanes changed: the next stopped block sends their values.
+    Due,
 }
 
 /// The plug-in parameter id a project names, `None` when it is not one.
@@ -73,9 +91,10 @@ pub fn param_id(id: &str) -> Option<u32> {
 }
 
 impl SlotParams {
-    /// The values and lanes of `device`, its lanes in frames at `frames_per_beat`. Allocates:
-    /// call it off the audio thread.
-    pub(crate) fn new(device: &Device, frames_per_beat: f64) -> Self {
+    /// The values and lanes of `device`, its lanes in frames at `frames_per_beat`; the lanes of
+    /// the parameters in `stepped` hold each value until the next point. Allocates: call it off
+    /// the audio thread.
+    pub(crate) fn new(device: &Device, frames_per_beat: f64, stepped: &[u32]) -> Self {
         let mut base: Vec<(u32, f64)> = Vec::new();
         for DeviceParam { id, value } in &device.params {
             let (Some(id), true) = (param_id(id), value.is_finite()) else { continue };
@@ -92,7 +111,7 @@ impl SlotParams {
                 continue;
             }
             // A lane that is off (#395) or has no points is left out.
-            if let Some(envelope) = Envelope::new(lane, frames_per_beat, false, Position::Value) {
+            if let Some(envelope) = Envelope::new(lane, frames_per_beat, stepped.contains(&id), Position::Value) {
                 lanes.push(Lane { id, envelope });
             }
         }
@@ -105,12 +124,15 @@ impl SlotParams {
             queued: Vec::with_capacity(MAX_QUEUED),
             block: Vec::with_capacity(MAX_BLOCK_PARAMS),
             span: Vec::with_capacity(MAX_BLOCK_PARAMS),
+            parked: Parked::Fresh,
         }
     }
 
-    /// A new processor runs the slot: it gets the set values again. Never allocates.
+    /// A new processor runs the slot: it gets the set values again; the lanes, while stopped,
+    /// once the transport moves. Never allocates.
     pub(crate) fn restart(&mut self) {
         self.base_sent = 0;
+        self.parked = Parked::Fresh;
     }
 
     /// Sets parameter `id` to `value` from the next block, and keeps it for a restart. Never
@@ -151,15 +173,23 @@ impl SlotParams {
                 set_in(&mut self.queued, id, value);
             }
         }
+        // A graph built again for another reason keeps the same lanes: they send nothing new.
+        let same_lanes = self.lanes.len() == fresh.lanes.len()
+            && self.lanes.iter().zip(&fresh.lanes).all(|(a, b)| a.id == b.id && a.envelope.same_line(&b.envelope));
         std::mem::swap(&mut self.base, &mut fresh.base);
         std::mem::swap(&mut self.lanes, &mut fresh.lanes);
         self.base_sent = if all_sent { self.base.len() } else { self.base_sent.min(self.base.len()) };
+        // Stopped, lanes that changed send their values at the playhead.
+        if !same_lanes {
+            self.parked = Parked::Due;
+        }
     }
 
     /// Plans the events of a block of `frames` frames that starts at arrangement frame `time`
-    /// (`None` while the transport is stopped). Never allocates.
-    pub(crate) fn plan(&mut self, time: Option<u64>, frames: usize) {
-        let Self { base, base_sent, lanes, queued, block, .. } = self;
+    /// (`None` while the transport is stopped, standing at arrangement frame `parked`). Never
+    /// allocates.
+    pub(crate) fn plan(&mut self, time: Option<u64>, parked: u64, frames: usize) {
+        let Self { base, base_sent, lanes, queued, block, parked: parked_state, .. } = self;
         block.clear();
         let room = block.capacity().min(MAX_BLOCK_PARAMS);
         let mut push = |event: ParamEvent| {
@@ -175,12 +205,28 @@ impl SlotParams {
         for (id, value) in queued.drain(..) {
             push(ParamEvent { frame: 0, id, value });
         }
-        if let Some(time) = time {
-            for lane in lanes.iter() {
-                lane_events(&lane.envelope, time, frames, |frame, value| {
-                    push(ParamEvent { frame, id: lane.id, value })
-                });
+        match time {
+            Some(time) => {
+                for lane in lanes.iter() {
+                    lane_events(&lane.envelope, time, frames, |frame, value| {
+                        push(ParamEvent { frame, id: lane.id, value })
+                    });
+                }
+                *parked_state = Parked::Due;
             }
+            // Stopped: each lane's value where the transport stands, once, so the plug-in and
+            // its editor show what plays there (#1205); a processor that just started keeps its
+            // state until the transport moves.
+            None => match *parked_state {
+                Parked::Fresh => *parked_state = Parked::Sent(parked),
+                Parked::Sent(at) if at == parked => {}
+                Parked::Sent(_) | Parked::Due => {
+                    for lane in lanes.iter() {
+                        push(ParamEvent { frame: 0, id: lane.id, value: lane.envelope.value_at(parked) });
+                    }
+                    *parked_state = Parked::Sent(parked);
+                }
+            },
         }
         // In frame order, keeping the order of events at one frame (a lane after a set value).
         // An insertion sort: no allocation, and nearly sorted already.
@@ -294,15 +340,16 @@ mod tests {
     fn set_values_go_first_then_the_lanes_at_their_frames() {
         // 1 beat = 100 frames.
         let mut params =
-            SlotParams::new(&device(&[("7", 0.5), ("x", 1.0)], &[("3", &[(1.0, 0.0), (2.0, 1.0)])]), 100.0);
-        params.plan(None, 256);
-        // Stopped: the set value only (the id that is not a number is left out).
+            SlotParams::new(&device(&[("7", 0.5), ("x", 1.0)], &[("3", &[(1.0, 0.0), (2.0, 1.0)])]), 100.0, &[]);
+        params.plan(None, 0, 256);
+        // Stopped: the set value only (the id that is not a number is left out); the lane waits
+        // for the transport to move.
         assert_eq!(params.block(), [ParamEvent { frame: 0, id: 7, value: 0.5 }]);
-        params.plan(None, 256);
+        params.plan(None, 0, 256);
         assert!(params.block().is_empty(), "sent once");
         // Playing from frame 0: flat until frame 100, then a ramp to frame 200, sent every
         // RAMP_STEP frames and at the points.
-        params.plan(Some(0), 256);
+        params.plan(Some(0), 0, 256);
         let frames: Vec<usize> = params.block().iter().map(|e| e.frame).collect();
         assert_eq!(frames, [0, 128, 192, 200]);
         let values: Vec<f64> = params.block().iter().map(|e| e.value).collect();
@@ -315,7 +362,7 @@ mod tests {
         // A restart sends the set values again; a value set while playing goes next block.
         params.restart();
         params.set(9, 0.75);
-        params.plan(None, 64);
+        params.plan(None, 150, 64);
         assert_eq!(
             params.block(),
             [
@@ -326,13 +373,61 @@ mod tests {
         );
     }
 
+    /// A parameter that takes steps holds each point's value until the next, as drawn (#1205).
+    #[test]
+    fn a_stepped_parameters_lane_holds_each_value() {
+        let lane: &[(f64, f64)] = &[(0.0, 0.0), (2.0, 1.0)];
+        for (stepped, value) in [(&[4][..], 0.0), (&[][..], 0.75)] {
+            let mut params = SlotParams::new(&device(&[], &[("4", lane)]), 100.0, stepped);
+            params.plan(None, 50, 64);
+            params.plan(None, 150, 64);
+            assert_eq!(params.block(), [ParamEvent { frame: 0, id: 4, value }], "{stepped:?}");
+        }
+    }
+
+    /// Stopped, a lane sends its value where the transport stands when the transport is moved
+    /// and when the lanes change, so the plug-in's editor follows the lane while stopped too; a
+    /// processor that just started keeps the state it was given until then, so opening a
+    /// project changes nothing in its plug-ins (#1205).
+    #[test]
+    fn a_stopped_lane_sends_its_value_at_the_playhead_when_it_changes() {
+        let lane: &[(f64, f64)] = &[(0.0, 0.0), (2.0, 1.0)];
+        let mut params = SlotParams::new(&device(&[], &[("4", lane)]), 100.0, &[]);
+        params.plan(None, 50, 64);
+        assert!(params.block().is_empty(), "a processor just started keeps its state");
+        params.plan(None, 150, 64);
+        assert_eq!(params.block(), [ParamEvent { frame: 0, id: 4, value: 0.75 }], "the playhead moved");
+        params.plan(None, 150, 64);
+        assert!(params.block().is_empty(), "standing still sends nothing more");
+        // A graph built again with the same lane sends nothing; an edit of the lane sends the new
+        // line's value there.
+        let mut same = SlotParams::new(&device(&[], &[("4", lane)]), 100.0, &[]);
+        params.adopt(&mut same);
+        params.plan(None, 150, 64);
+        assert!(params.block().is_empty(), "the same lane");
+        let mut fresh = SlotParams::new(&device(&[], &[("4", &[(0.0, 1.0)])]), 100.0, &[]);
+        params.adopt(&mut fresh);
+        params.plan(None, 150, 64);
+        assert_eq!(params.block(), [ParamEvent { frame: 0, id: 4, value: 1.0 }]);
+        // A new processor keeps the state it starts with until the transport moves.
+        params.restart();
+        params.plan(None, 150, 64);
+        assert!(params.block().is_empty());
+        params.plan(None, 50, 64);
+        assert_eq!(params.block(), [ParamEvent { frame: 0, id: 4, value: 1.0 }]);
+        // Stopping where it played to sends the value there once more.
+        params.plan(Some(150), 150, 64);
+        params.plan(None, 214, 64);
+        assert_eq!(params.block().len(), 1);
+    }
+
     #[test]
     fn an_edit_sends_only_what_changed() {
-        let mut running = SlotParams::new(&device(&[("1", 0.5), ("2", 0.5)], &[]), 100.0);
-        running.plan(None, 64);
-        let mut fresh = SlotParams::new(&device(&[("1", 0.5), ("2", 0.9)], &[("1", &[(0.0, 0.1)])]), 100.0);
+        let mut running = SlotParams::new(&device(&[("1", 0.5), ("2", 0.5)], &[]), 100.0, &[]);
+        running.plan(None, 0, 64);
+        let mut fresh = SlotParams::new(&device(&[("1", 0.5), ("2", 0.9)], &[("1", &[(0.0, 0.1)])]), 100.0, &[]);
         running.adopt(&mut fresh);
-        running.plan(Some(0), 64);
+        running.plan(Some(0), 0, 64);
         assert_eq!(
             running.block(),
             [ParamEvent { frame: 0, id: 2, value: 0.9 }, ParamEvent { frame: 0, id: 1, value: 0.1 }]
@@ -346,9 +441,9 @@ mod tests {
         let lanes: Vec<(String, &[(f64, f64)])> =
             (0..300).map(|i| (i.to_string(), if i == 0 { wild } else { many.as_slice() })).collect();
         let lanes: Vec<(&str, &[(f64, f64)])> = lanes.iter().map(|(p, l)| (p.as_str(), *l)).collect();
-        let mut params = SlotParams::new(&device(&[], &lanes), 22_050.0);
+        let mut params = SlotParams::new(&device(&[], &lanes), 22_050.0, &[]);
         for time in [0, 1, u64::MAX / 2, u64::MAX - 10] {
-            params.plan(Some(time), 1024);
+            params.plan(Some(time), time, 1024);
             assert!(params.block().len() <= MAX_BLOCK_PARAMS);
             assert!(params.block().windows(2).all(|w| w[0].frame <= w[1].frame));
             assert!(params.block().iter().all(|e| e.frame < 1024 && e.value.is_finite()));

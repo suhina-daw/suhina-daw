@@ -6,10 +6,10 @@
 //! (`transport.setCountIn`), and the record button an armed track's empty slots show
 //! (`clip.record`; a click on a slot that records ends its take with `clip.launch`).
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Painter, Pos2, Rect, Stroke, Ui, Vec2};
 use serde_json::json;
 
+use crate::kit::element::{BUTTON, Checked, POPUP, Recording};
 use crate::kit::widgets::{self, Action};
 use crate::kit::{motion, theme};
 
@@ -27,8 +27,7 @@ pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, ac
     let rect = crate::kit::control_layout::place("transport-record", rect, ui.max_rect());
     let label = if recording { "Stop recording" } else { "Record into the arrangement" };
     let response = widgets::button_area(ui, rect, Id::unique("record"), label);
-    let _style = crate::kit::style_class::enter_named_response("button", "record", &response);
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Recording, recording);
+    let el = BUTTON.id("record").response(&response).attr(Recording, recording).attr(Checked, recording).enter();
     if response.clicked() {
         actions.push(Action::new("transport.record", json!({ "on": !recording })));
     }
@@ -37,6 +36,7 @@ pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, ac
     widgets::button_surface(
         painter,
         rect,
+        &el,
         &response,
         recording,
         motion::mix(hover, theme::recording_background(), lit),
@@ -48,7 +48,7 @@ pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, ac
         rect,
         "record",
         crate::kit::skin::State::response(&response, recording),
-        crate::kit::style_class::foreground(theme::recording()),
+        el.color_or(theme::recording()),
         0.0,
     ) {
         return;
@@ -81,7 +81,7 @@ pub fn metronome_button(
         "Metronome: a click on every beat while playing. Hold and drag up or down: its level. Right-click: its sound",
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
-    let style = crate::kit::style_class::enter_named_response("button", "metronome-toggle", &response);
+    let style = BUTTON.id("metronome-toggle").response(&response).attr(Checked, on).enter();
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
@@ -101,15 +101,15 @@ pub fn metronome_button(
     let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
     let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
     let fill = motion::mix(hover, theme::control_active(), lit);
-    widgets::button_surface(painter, rect, &response, on, fill, 0.0);
-    // The glyph keeps reading on a fill the sheet gives (`:checked { background-color }`).
-    let shown = crate::kit::style_class::background(fill);
+    widgets::button_surface(painter, rect, &style, &response, on, fill, 0.0);
+    // The glyph keeps reading on a fill the sheet gives (`[checked] { background-color }`).
+    let shown = style.background_or(fill);
     let ink = motion::mix(theme::text_primary(), theme::accent(), lit);
     let ink = if theme::contrast(shown, ink) < 3.0 { theme::text_on(shown) } else { ink };
-    metronome_glyph(painter, rect, crate::kit::style_class::foreground(ink));
+    metronome_glyph(painter, rect, style.color_or(ink));
     drop(style);
     // The level's slider is a popup of its own (`#metronome-level`), not part of the button.
-    let _popup = crate::kit::style_class::enter_named("popup", "metronome-level");
+    let _popup = POPUP.id("metronome-level").enter();
     metronome_level(ui, &response, rect, (on, db), actions);
 }
 
@@ -157,12 +157,12 @@ pub fn metronome_level(
         }
     }
     let over = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, response.id.with("level")));
-    over.fill_background(slider, 0.0, theme::panel_background());
+    over.rect_filled(slider, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     over.rect_stroke(slider, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-    over.fill_background(track, 0.0, theme::control_background());
+    over.rect_filled(track, 0.0, theme::control_background());
     let position = ((level - low) / (high - low)) as f32;
     let y = track.bottom() - track.height() * position;
-    over.fill_background(Rect::from_min_max(Pos2::new(track.left(), y), track.max), 0.0, theme::control_playing());
+    over.rect_filled(Rect::from_min_max(Pos2::new(track.left(), y), track.max), 0.0, theme::control_playing());
     over.rect_filled(
         Rect::from_center_size(Pos2::new(track.center().x, y), Vec2::new(18.0, 5.0)),
         0.0,
@@ -241,7 +241,7 @@ pub fn slot_record(
     }
     let pulse = if recording { motion::pulse(ui.ctx()) } else { 1.0 };
     if recording {
-        painter.fill_background(rect, 0.0, theme::recording_background());
+        painter.rect_filled(rect, 0.0, theme::recording_background());
         widgets::text_in(
             painter,
             rect.shrink2(Vec2::new(width, 0.0)),

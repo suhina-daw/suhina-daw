@@ -6,7 +6,6 @@ mod filter;
 mod placement;
 mod source;
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{ColorImage, TextureHandle, TextureOptions, Ui, Vec2};
 use std::sync::{
     Arc,
@@ -164,7 +163,7 @@ impl Background {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
         if let Some(texture) = &self.texture {
-            ui.painter().fill_background(rect, 0.0, crate::kit::theme::window_background().to_opaque());
+            ui.painter().rect_filled(rect, 0.0, crate::kit::theme::window_background().to_opaque());
             ui.painter().image(
                 texture.id(),
                 rect,

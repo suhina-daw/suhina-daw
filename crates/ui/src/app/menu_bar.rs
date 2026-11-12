@@ -7,8 +7,8 @@ use super::*;
 
 impl App {
     /// The menu bar: the same actions as the shortcuts and the views' controls.
-    pub(super) fn menu_bar(&mut self, ui: &mut Ui, actions: &mut Vec<Action>) {
-        let mut styled_ui = crate::kit::style_class::ui(ui);
+    pub(super) fn menu_bar(&mut self, ui: &mut Ui, bar: &crate::kit::element::Entered, actions: &mut Vec<Action>) {
+        let mut styled_ui = bar.ui(ui);
         let ui = &mut *styled_ui;
         // Whether the File menu showed last frame, so its recent list is read once as it opens.
         let file_menu_was_open = std::mem::take(&mut self.file_menu_open);

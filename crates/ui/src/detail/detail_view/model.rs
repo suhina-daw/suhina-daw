@@ -38,6 +38,9 @@ pub struct DeviceBox {
     pub at: DeviceAt,
     /// Which device it is, wherever it moves (`DeviceId::NONE` before the project gives ids).
     pub id: suhina_engine::model::DeviceId,
+    /// A built-in effect, instrument or MIDI effect: its values one preset saves
+    /// (`device.savePreset`, [docs/spec/nam-amp-and-cab.md] › Presets).
+    pub is_builtin: bool,
     /// For a device group: its settings and branches.
     pub group: Option<GroupBox>,
     pub name: String,
@@ -316,19 +319,21 @@ pub struct ClipInfo {
     /// The Clip / Devices switch at the end of the title row, and which part is on: only for a
     /// clip with an editor (› Where it opens in `docs/spec/ui-clip-editor.md`).
     pub switch: Option<Showing>,
+    /// Both parts are on: the devices are stacked beside the clip's editor, which stays open.
+    pub switch_both: bool,
     /// The other arrangement clips selected with it, by id: the title says how many are
     /// selected, and a switch (Loop) turns all of them as it turns this one.
     pub others: Vec<u32>,
     /// Every picked MIDI clip, for its row in the column that gives it the piano roll's focus
     /// (#1054): its track and clip, what the row says ("Bass · Riff") and whether it has the focus.
     pub picked: Vec<(TrackId, ClipId, String, bool)>,
-    /// The audio clip's own state the panel's groups show (`docs/spec/clip-panel.md`); none for a
-    /// MIDI clip.
+    /// What the clip's panel shows beyond the rows (`docs/spec/clip-panel.md`): its colour, length,
+    /// scale and Set buttons for every clip, and an audio clip's own state.
     pub panel: Option<AudioPanel>,
 }
 
-/// What an audio clip's panel shows beyond the rows: its id, colour, tempo and envelope, and
-/// where the playhead is in it.
+/// What a clip's panel shows beyond the rows: its id, colour, length, scale and where the playhead
+/// is in it, and for an audio clip its tempo and envelope.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AudioPanel {
     pub clip: ClipId,
@@ -352,8 +357,11 @@ pub struct AudioPanel {
     pub bar_beats: f64,
     /// The clip's length in beats, as its title says it.
     pub length_beats: f64,
-    /// The key of its audio, when one was given (`clip.setScale`).
+    /// Its scale (an audio clip's key), when one was given (`clip.setScale`).
     pub scale: Option<suhina_engine::model::Scale>,
+    /// A MIDI clip's swing (its own, or following the project's), and the project's (#1221).
+    pub swing: suhina_engine::model::ClipSwing,
+    pub global_swing: f64,
 }
 
 /// What the detail area shows for a clip that has an editor: the editor, or its track's devices.
@@ -687,20 +695,23 @@ pub fn build_with(
                 notes,
                 selection: SelectionInfo::default(),
                 switch: None,
+                switch_both: false,
                 others: Vec::new(),
                 picked: Vec::new(),
-                panel: audio.map(|_| AudioPanel {
+                panel: Some(AudioPanel {
                     clip: placed.id,
                     color: placed.color.or_else(|| project.track(id).and_then(|t| t.color)),
-                    tempo: placed.audio.tempo().filter(|_| placed.audio.warped),
-                    tempo_source: placed.audio.tempo_source,
-                    envelope_points: placed.audio.gain_envelope.len(),
+                    tempo: placed.audio.tempo().filter(|_| audio.is_some() && placed.audio.warped),
+                    tempo_source: placed.audio.tempo_source.filter(|_| audio.is_some()),
+                    envelope_points: if audio.is_some() { placed.audio.gain_envelope.len() } else { 0 },
                     playhead: None,
                     set_buttons: scene.is_none(),
                     candidates: None,
                     bar_beats: bar,
                     length_beats: placed.length,
                     scale: content.and_then(|c| c.scale),
+                    swing: placed.swing,
+                    global_swing: project.transport.swing,
                 }),
             }),
             chain(project, id, plugins, nam.clone()),
@@ -749,6 +760,7 @@ pub(super) fn device_box(
         index: path.last().copied().unwrap_or(0),
         at: DeviceAt(path.to_vec()),
         id: d.id,
+        is_builtin: matches!(d.kind, DeviceKind::Builtin(_)),
         group: d.as_group().map(|g| group_box(g, d, path, id, plugins)),
         name: device_display_name(d),
         theme_id: match &d.kind {

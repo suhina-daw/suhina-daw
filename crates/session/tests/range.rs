@@ -280,3 +280,194 @@ fn keeping_ara_edits_moves_plain_clips_as_ever() {
             .is_err()
     );
 }
+
+/// The blank project's clips, with track 1's volume automated from beat 8 to 12 where no clip
+/// plays: up to full at beat 10 and down again.
+fn with_volume_lane() -> Session {
+    let mut p = project();
+    let channel = p.track(TrackId(1)).and_then(|t| t.channel).unwrap();
+    p.channel_mut(channel).unwrap().automation.push(AutomationLane {
+        param: "volume".into(),
+        points: vec![
+            AutomationPoint::new(8.0, 0.25),
+            AutomationPoint::new(10.0, 1.0),
+            AutomationPoint::new(12.0, 0.25),
+        ]
+        .into(),
+        enabled: true,
+    });
+    Session::new(p)
+}
+
+/// Track 1's volume at `beat`.
+fn volume_at(session: &Session, beat: f64) -> f64 {
+    let lane = session.project().channel_of_track(TrackId(1)).unwrap().lane("volume").unwrap();
+    lane.value_at(beat, false, &automation::VolumeTaper).unwrap()
+}
+
+/// A time selection carries its tracks' automation over its whole span, where no clip plays too:
+/// Ctrl+D puts it right after, Ctrl+C and Ctrl+V on its own track from the paste's start, and
+/// Delete clears it, the values at its edges kept (#1205).
+#[test]
+fn a_range_carries_its_automation_with_or_without_clips() {
+    let mut session = with_volume_lane();
+    run(&mut session, "range.duplicate", json!({ "tracks": [1], "start": 8.0, "end": 12.0 })).unwrap();
+    assert!((volume_at(&session, 14.0) - 1.0).abs() < 1e-9, "the peak copied to beat 14");
+    assert_eq!(spans(&session, 1), [(0.0, 4.0)], "no clip was made");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+
+    run(&mut session, "range.copy", json!({ "tracks": [1], "start": 8.0, "end": 12.0 })).unwrap();
+    assert!(session.copied_from_tracks(), "back onto its own track");
+    run(&mut session, "clip.paste", json!({ "start": 20.0 })).unwrap();
+    assert!((volume_at(&session, 22.0) - 1.0).abs() < 1e-9, "the peak pasted at beat 22");
+    assert!((volume_at(&session, 10.0) - 1.0).abs() < 1e-9, "the original stays");
+
+    run(&mut session, "range.delete", json!({ "tracks": [1], "start": 8.0, "end": 12.0 })).unwrap();
+    assert!((volume_at(&session, 10.0) - 0.25).abs() < 1e-9, "the peak inside is gone");
+    assert!((volume_at(&session, 22.0) - 1.0).abs() < 1e-9, "outside the span stays");
+}
+
+/// A time selection copied and pasted on a track of the paste's own choosing takes the automation
+/// under its clips along, as a copy of the clips does (#1205).
+#[test]
+fn a_range_pasted_on_a_chosen_track_keeps_the_automation_under_its_clips() {
+    let mut session = with_volume_lane();
+    let peak = json!({ "track": 1, "param": "volume", "beat": 2.0, "value": 0.0 });
+    run(&mut session, "automation.addPoint", peak).unwrap();
+    assert!((volume_at(&session, 2.0) - 1.0).abs() < 1e-9, "0 dB under the clip");
+    run(&mut session, "range.copy", json!({ "tracks": [1], "start": 0.0, "end": 4.0 })).unwrap();
+    run(&mut session, "clip.paste", json!({ "track": 1, "start": 20.0 })).unwrap();
+    assert!(spans(&session, 1).contains(&(20.0, 4.0)), "the clip is pasted");
+    assert!((volume_at(&session, 22.0) - 1.0).abs() < 1e-9, "its automation came with it");
+}
+
+/// A range copied with a clip in it lays the automation once, not again under the clip (#1205).
+#[test]
+fn a_range_with_a_clip_lays_its_automation_once() {
+    let mut session = with_volume_lane();
+    run(&mut session, "range.duplicate", json!({ "tracks": [1], "start": 0.0, "end": 12.0 })).unwrap();
+    assert_eq!(spans(&session, 1), [(0.0, 4.0), (12.0, 4.0)]);
+    assert!((volume_at(&session, 22.0) - 1.0).abs() < 1e-9, "the peak at 10 copied to 22");
+}
+
+/// Track 1 with a stack of two clips: one from beat 0 and one from beat 2, each 4 beats long.
+fn stacked() -> (Session, ClipId, ClipId) {
+    let project = ProjectBuilder::from(blank_project())
+        .notes(1, "Riff 1", 4.0, vec![Note::new(0.0, 4.0, 60, 0.8)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .clip(1, Clip::new(ContentId(1), 2.0, 4.0))
+        .build_without_ids();
+    let session = Session::new(project);
+    let lane = session.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap();
+    let (lower, upper) = (lane.clips[0].id, lane.clips[1].id);
+    (session, lower, upper)
+}
+
+/// The clip `id` of track 1 is still there as it was: from beat 0, 4 beats long.
+fn untouched(session: &Session, id: ClipId) -> bool {
+    let p = session.project();
+    let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap();
+    lane.clips.iter().any(|c| c.id == id && c.start == 0.0 && c.length == 4.0)
+}
+
+/// A time selection painted in one row of a stack names that row's clips (`clips`): Delete,
+/// Cut, Copy, Split and Duplicate act on them alone, the other row stays as it was (#701).
+#[test]
+fn a_range_kept_to_some_clips_leaves_the_other_rows_of_a_stack() {
+    let only = |upper: ClipId| json!({ "tracks": [1], "start": 2.0, "end": 4.0, "clips": [upper.0] });
+
+    let (mut session, lower, upper) = stacked();
+    run(&mut session, "range.delete", only(upper)).unwrap();
+    assert!(untouched(&session, lower), "{:?}", spans(&session, 1));
+    assert_eq!(spans(&session, 1), [(0.0, 4.0), (4.0, 2.0)]);
+
+    let (mut session, lower, upper) = stacked();
+    let copied = run(&mut session, "range.cut", only(upper)).unwrap();
+    assert_eq!(copied["copied"], 1);
+    assert!(untouched(&session, lower));
+    assert_eq!(spans(&session, 1), [(0.0, 4.0), (4.0, 2.0)]);
+
+    let (mut session, lower, upper) = stacked();
+    assert_eq!(run(&mut session, "range.copy", only(upper)).unwrap()["copied"], 1);
+    assert!(untouched(&session, lower));
+
+    let (mut session, lower, upper) = stacked();
+    let split = run(&mut session, "range.split", only(upper)).unwrap();
+    assert!(untouched(&session, lower), "{:?}", spans(&session, 1));
+    assert_eq!(spans(&session, 1), [(0.0, 4.0), (2.0, 2.0), (4.0, 2.0)]);
+    assert_eq!(split["clips"].as_array().unwrap().len(), 1, "only the upper row's part is inside: {split}");
+
+    let (mut session, lower, upper) = stacked();
+    let mut params = only(upper);
+    params["stack"] = json!(true);
+    let copies = run(&mut session, "range.duplicate", params).unwrap();
+    assert_eq!(copies["clips"].as_array().unwrap().len(), 1, "{copies}");
+    assert!(untouched(&session, lower));
+
+    // Without `clips`, every row: both clips lose the span.
+    let (mut session, _, _) = stacked();
+    run(&mut session, "range.delete", json!({ "tracks": [1], "start": 2.0, "end": 4.0 })).unwrap();
+    assert_eq!(spans(&session, 1), [(0.0, 2.0), (4.0, 2.0)]);
+    // A malformed list is refused.
+    let (mut session, _, _) = stacked();
+    assert!(
+        run(&mut session, "range.delete", json!({ "tracks": [1], "start": 2.0, "end": 4.0, "clips": "x" })).is_err()
+    );
+}
+
+/// Duplicating a span painted in one row of a stack, without `stack`: the copy replaces what it
+/// covers in that row only, and a clip of another row under it stays as it was (#701). Without
+/// `clips` the copy replaces what it covers on every row, as ever.
+#[test]
+fn a_row_duplicate_landing_on_another_row_leaves_that_row() {
+    let (mut session, lower, upper) = stacked();
+    let span = json!({ "tracks": [1], "start": 0.0, "end": 2.0, "clips": [lower.0] });
+    let copies = run(&mut session, "range.duplicate", span).unwrap();
+    assert_eq!(copies["clips"].as_array().unwrap().len(), 1, "{copies}");
+    let p = session.project();
+    let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap();
+    assert!(lane.clips.iter().any(|c| c.id == upper && c.start == 2.0 && c.length == 4.0), "{:?}", spans(&session, 1));
+    // The lower row's own clip gives way to the copy.
+    assert!(lane.clips.iter().any(|c| c.id == lower && c.start == 0.0 && c.length == 2.0), "{:?}", spans(&session, 1));
+    let mut all = spans(&session, 1);
+    all.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    assert_eq!(all, [(0.0, 2.0), (2.0, 2.0), (2.0, 4.0)]);
+
+    let (mut session, _, _) = stacked();
+    run(&mut session, "range.duplicate", json!({ "tracks": [1], "start": 0.0, "end": 2.0 })).unwrap();
+    assert_eq!(spans(&session, 1), [(0.0, 2.0), (2.0, 2.0), (4.0, 2.0)]);
+}
+
+/// A copy kept to one row's clips replaces that row's clips it lands on (the window names them in
+/// `clips` too), not only the ones it was taken from, and no other row's; stacked, it replaces
+/// nothing (#701).
+#[test]
+fn a_row_duplicate_replaces_its_own_rows_clips_in_the_landing_span() {
+    let build = || {
+        let project = ProjectBuilder::from(blank_project())
+            .notes(1, "Riff 1", 4.0, vec![Note::new(0.0, 4.0, 60, 0.8)])
+            .clip(1, Clip::new(ContentId(1), 0.0, 2.0))
+            .clip(1, Clip::new(ContentId(1), 1.0, 5.0))
+            .clip(1, Clip::new(ContentId(1), 3.0, 2.0))
+            .build_without_ids();
+        let session = Session::new(project);
+        let lane = session.project().arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap();
+        let ids: Vec<u32> = lane.clips.iter().map(|c| c.id.0).collect();
+        (session, ids)
+    };
+    // The first row holds the clips from 0 and from 3; the clip from 1 is the other row's.
+    let (mut session, ids) = build();
+    let params = json!({ "tracks": [1], "start": 0.0, "end": 2.0, "clips": [ids[0], ids[2]] });
+    run(&mut session, "range.duplicate", params.clone()).unwrap();
+    let mut all = spans(&session, 1);
+    all.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    assert_eq!(all, [(0.0, 2.0), (1.0, 5.0), (2.0, 2.0), (4.0, 1.0)], "its own row's clip gave way");
+
+    let (mut session, ids) = build();
+    let mut stacked = json!({ "tracks": [1], "start": 0.0, "end": 2.0, "clips": [ids[0], ids[2]] });
+    stacked["stack"] = json!(true);
+    run(&mut session, "range.duplicate", stacked).unwrap();
+    let mut all = spans(&session, 1);
+    all.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    assert_eq!(all, [(0.0, 2.0), (1.0, 5.0), (2.0, 2.0), (3.0, 2.0)], "stacked, nothing gave way");
+}

@@ -187,6 +187,7 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     let preset = Args::new(params).opt_text("preset")?;
     let sd = Args::new(params).opt_text("sd")?;
     let stock = Args::new(params).opt_text("stock")?;
+    let file = Args::new(params).opt_text("file")?;
     // A preset's own values, for what it is for and, in a file that names it, what it is called.
     let preset_values = match (preset, stock) {
         (Some(_), Some(_)) => return Err("name a preset file or a stock preset, not both".into()),
@@ -199,6 +200,16 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         ),
         (None, None) => None,
     };
+    // A file-backed device only runs a file; a plug-in and an .sd graph do not.
+    if file.is_some() && sd.is_some() {
+        return Err("an .sd graph does not run a file".into());
+    }
+    if file.is_some()
+        && let (Some(id), None, None) = (device, preset_values.as_ref(), sd)
+        && suhina_device_registry::info(id).is_none()
+    {
+        return Err("a plug-in does not run a file".into());
+    }
     // What the device is decides the kind when none is given.
     let device_role = match (device, preset, sd) {
         _ if preset_values.is_some() => {
@@ -284,8 +295,8 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
             .ok_or_else(|| format!("count must be a whole number from 1 to {MAX_INSERT}"))?,
     };
     if count > 1 {
-        if device.is_some() || preset_values.is_some() || sd.is_some() {
-            return Err("count adds empty tracks; leave out device, preset, stock and sd".into());
+        if device.is_some() || preset_values.is_some() || sd.is_some() || file.is_some() {
+            return Err("count adds empty tracks; leave out device, preset, stock, sd and file".into());
         }
         let input = session.default_input();
         let mut tracks = Vec::with_capacity(count);
@@ -304,7 +315,7 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     let input = session.default_input();
     let track = insert_track(&mut session.project, kind, &name, after, input)?;
     let mut added = Value::Null;
-    if device.is_some() || preset_values.is_some() || sd.is_some() {
+    if device.is_some() || preset_values.is_some() || sd.is_some() || file.is_some() {
         let mut device_params = json!({ "track": track.0 });
         if let Some(path) = preset {
             device_params["preset"] = json!(path);
@@ -317,6 +328,9 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         }
         if let Some(path) = sd {
             device_params["path"] = json!(path);
+        }
+        if let Some(path) = file {
+            device_params["file"] = json!(path);
         }
         if sd.is_some()
             && let Some(sample) = Args::new(params).opt_text("sample")?
@@ -699,6 +713,7 @@ pub(crate) fn place_clip(
         color: None,
         ara: false,
         audio: source.audio,
+        swing: Default::default(),
         extensions: Default::default(),
     };
     match row {
@@ -890,6 +905,26 @@ pub(crate) fn clip_tempo_source(source: TempoSource) -> suhina_model::TempoSourc
 /// `path` made absolute against the working folder, without touching the disk.
 pub(crate) fn absolute(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Writes `bytes` to `staging` and renames the completed file onto `target` — a write that
+/// fails (or an app that ends mid-write) leaves no partial file at the target, and the rename
+/// publishes the completed bytes only. The rename replaces a file the target already carries —
+/// the caller that must not replace checks `target.exists()` first. Staging is removed
+/// whatever the outcome. The pack unpack's publish and `device.savePreset`'s write are the
+/// same shape ([ADR 0036] › 5, the review).
+pub fn stage_and_rename(staging: &Path, target: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
+    if let Err(e) = std::fs::write(staging, bytes) {
+        let _ = std::fs::remove_file(staging);
+        return Err(e);
+    }
+    match std::fs::rename(staging, target) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(staging);
+            Err(e)
+        }
+    }
 }
 
 /// Whether `track` is a group track.

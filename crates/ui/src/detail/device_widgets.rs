@@ -8,13 +8,13 @@
 //! still a `device.*` command ([docs/spec/nam-amp-and-cab.md] › The panels).
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
-use egui::{Align2, Rect, Sense, Ui};
+use egui::{Align2, Pos2, Rect, Sense, Ui, Vec2};
 use suhina_device_sdk::ui::FileRowPart;
 use suhina_engine::model::TrackId;
 
 use crate::detail::detail_view::DeviceAt;
-use crate::kit::surface::Backgrounds as _;
 use crate::kit::theme;
 use crate::kit::widgets::{self, Action};
 
@@ -44,6 +44,10 @@ pub struct Lists {
     pub names: HashMap<String, String>,
     /// Why a device's file does not run, by path: what a load gave.
     pub notes: HashMap<String, String>,
+    /// The library's root (`Documents/Suhina`), where a device's file state can be a name
+    /// relative to it (`Sounds/NAM/…`, [ADR 0036] › it) — the rows read that state the way
+    /// this machine's lists carry it (`state_as_listed`).
+    pub library: Option<PathBuf>,
 }
 
 /// What a canvas's device widgets read beside its parameters: the device's own state and,
@@ -113,11 +117,30 @@ fn packs_of<'a>(lists: &'a Lists, what: &str) -> &'a [Set] {
 /// loose files' "(entered directly)"), or nothing when no pack lists it (a changed folder,
 /// a missing file). Membership, not the parent's name: the folders' loose files form the
 /// loose pack, and a file somewhere else that shares a pack's folder name lists nowhere.
+/// The current state reads the way the lists carry its file (`state_as_listed`): a relative
+/// one joins the library's root, a shipped key stands whole against the shipped pack's rows
+/// and, beside the unpacked copy that scan pinned, reads its own file's name there. The
+/// texts compare by `canonical_paths`: this platform's join and the scan may fold their
+/// own separators in, and the texts must read the same file ([ADR 0036] › 4).
 fn pack_of_current<'a>(current: &str, sets: &'a [Set]) -> Option<&'a Set> {
     if current.is_empty() {
         return None;
     }
-    sets.iter().find(|pack| pack.files.iter().any(|(path, _)| path == current))
+    let current = canonical_paths(current);
+    // The rows carry the canonical form already ([ADR 0036] › 5, the review): the compare is
+    // the plain one.
+    if let Some(pack) = sets.iter().find(|pack| pack.files.iter().any(|(path, _)| path == &current)) {
+        return Some(pack);
+    }
+    let (_, file) = suhina_device_registry::builtin_file_key_parts(&current)?;
+    let file_name = Path::new(file).file_name()?.to_string_lossy().into_owned();
+    sets.iter().find(|pack| {
+        pack.name == suhina_device_registry::SHIPPED_PACK
+            && pack
+                .files
+                .iter()
+                .any(|(path, _)| Path::new(path).file_name().is_some_and(|n| n.to_string_lossy() == file_name))
+    })
 }
 
 /// The salt a device widget scopes its state and popups by: the device on the track, the
@@ -126,9 +149,72 @@ fn salt(track: TrackId, at: &DeviceAt, part: FileRowPart) -> egui::Id {
     egui::Id::unique(("device-files", track.0, &at.0, part))
 }
 
-/// Where `current` sits in `files`.
+/// A shipped key beside the unpacked copy reads its disk row: the dropdown's own row and the
+/// file steps match the disk path, not the key — a stock preset's Next file steps to the
+/// successor, not the pack's first. Without the copy the pack's rows are the keys, and the
+/// lookup finds the key's own.
+fn listed_of_disk_row(listed: String, in_pack: Option<&Set>) -> String {
+    let Some((_, file)) = suhina_device_registry::builtin_file_key_parts(&listed) else {
+        return listed;
+    };
+    let Some(pack) = in_pack else { return listed };
+    let file_name = Path::new(file).file_name().map_or_else(|| file.to_owned(), |n| n.to_string_lossy().into_owned());
+    pack.files
+        .iter()
+        .find(|(path, _)| Path::new(path).file_name().is_some_and(|n| n.to_string_lossy() == file_name))
+        .map_or_else(|| listed, |(path, _)| path.clone())
+}
+
+/// Where `current` sits in `files`. The rows carry the canonical form already
+/// ([ADR 0036] › 5, the review), so the compare folds the state's joined form alone — the
+/// two texts read the same file whatever separators their own platform made in
+/// ([ADR 0036] › 4).
 fn index_of(files: &[(String, String)], current: &str) -> Option<usize> {
-    files.iter().position(|(path, _)| path == current)
+    let current = canonical_paths(current);
+    files.iter().position(|(path, _)| path == &current)
+}
+
+/// The device's file state as the lists carry its file: a shipped key stands whole (the
+/// shipped pack's rows and the pack lookup read it), a name relative to the library joins
+/// this machine's root — the state a project carries names the same file wherever it opens,
+/// [ADR 0036] › it — an absolute one stands. The panel rows compare this form by
+/// `canonical_paths`, both sides; the row's own reads (the shown name, the fault note) stay
+/// on the state as the project holds it.
+fn state_as_listed(state: &str, lists: &Lists) -> String {
+    if state.starts_with("builtin:") || Path::new(state).is_absolute() {
+        return state.to_owned();
+    }
+    lists.library.as_ref().map_or_else(|| state.to_owned(), |base| base.join(state).display().to_string())
+}
+
+/// The texts the lists' whole paths and a state's joined form compare by: path components
+/// joined with `/` ([ADR 0036] › 4, the portable form). A Windows join folds backslashes
+/// in, the mac's does not, and both must read the same file; the compare does not care
+/// which separator either text was quoted with. The root's own separator is written once,
+/// at the front — a plain join of the components would double it — and a `.` step is left
+/// out, so the form is a path that reads the same file it came from. The scan writes the
+/// lists' rows in this form ([ADR 0036] › 5, the review), so a panel's per-frame compares
+/// read the rows as they are and fold only the state's side.
+pub(crate) fn canonical_paths(text: &str) -> String {
+    let mut canonical = String::new();
+    for component in std::path::Path::new(text).components() {
+        match component {
+            std::path::Component::RootDir => {
+                if !canonical.ends_with('/') {
+                    canonical.push('/');
+                }
+            }
+            std::path::Component::Prefix(prefix) => canonical.push_str(prefix.as_os_str().to_string_lossy().as_ref()),
+            std::path::Component::CurDir => {}
+            other => {
+                if !canonical.is_empty() && !canonical.ends_with('/') {
+                    canonical.push('/');
+                }
+                canonical.push_str(other.as_os_str().to_string_lossy().as_ref());
+            }
+        }
+    }
+    canonical
 }
 
 /// Steps `current` through `files` by `by` (wrapping); a file that is not in the list steps
@@ -203,7 +289,7 @@ pub(crate) fn switch(
         format!("Click to enable the {} again", label)
     });
     let (fill, text) = widgets::toggle_colors(ui, &response, state.enabled);
-    ui.painter().fill_background(rect, 3.0, fill);
+    ui.painter().rect_filled(rect, 3.0, fill);
     let word = if state.enabled { "On" } else { "Off" };
     widgets::text_in(ui.painter(), rect, Align2::CENTER_CENTER, word, theme::ui_font(theme::TEXT_SMALL), text);
     if response.clicked() {
@@ -240,7 +326,12 @@ pub(crate) fn files(
     // one control each, so a panel's two dropdowns never share a salt.
     let salt = salt(track, at, part);
     let packs = packs_of(lists, what);
-    let in_pack = pack_of_current(current, packs);
+    // The state reads as the lists carry it, for every lookup between the rows and them.
+    let listed = state_as_listed(current, lists);
+    let in_pack = pack_of_current(&listed, packs);
+    // A shipped key beside the unpacked copy reads its disk row: the dropdown's own row and
+    // the file steps match the disk path, not the key.
+    let listed = listed_of_disk_row(listed, in_pack);
     let shown_pack = in_pack.map_or(String::new(), |pack| pack.name.clone());
     let files: &[(String, String)] = in_pack.map_or(&[], |pack| pack.files.as_slice());
     let packs_rows = || packs.iter().map(|pack| (pack.name.clone(), pack.name.clone())).collect::<Vec<_>>();
@@ -253,13 +344,22 @@ pub(crate) fn files(
     let ask: Option<String> = match part {
         FileRowPart::Pack => {
             let rows = packs_rows();
-            let picked =
-                dropdown(ui, rect, salt, &rows, &shown_pack, &shown_pack, words.pack, &format!("{label}: pack"));
+            let picked = dropdown(
+                ui,
+                rect,
+                salt,
+                &rows,
+                &shown_pack,
+                &shown_pack,
+                words.pack,
+                &format!("{label}: pack"),
+                Some("folder"),
+            );
             picked.as_deref().and_then(first_of)
         }
         FileRowPart::File => {
             let shown = file_shown(current, lists);
-            dropdown(ui, rect, salt, files, current, &shown, words.file, &format!("{label}: {what} file"))
+            dropdown(ui, rect, salt, files, &listed, &shown, words.file, &format!("{label}: {what} file"), None)
         }
         FileRowPart::PreviousPack | FileRowPart::NextPack => {
             let up = part == FileRowPart::PreviousPack;
@@ -274,7 +374,7 @@ pub(crate) fn files(
             let step = if up { -1 } else { 1 };
             let label = if up { format!("{label}: previous file") } else { format!("{label}: next file") };
             let clicked = stepper(ui, rect, salt, up, label).clicked();
-            clicked.then(|| step_through(files, current, step)).flatten()
+            clicked.then(|| step_through(files, &listed, step)).flatten()
         }
     };
     set_file(actions, track, at, current, ask);
@@ -282,9 +382,10 @@ pub(crate) fn files(
 
 /// A dropdown pill in `rect`, its shown text and the rows under it (`rows` lists each as
 /// (path, label); the pack row's paths are the packs' names). The shown text falls back to
-/// the path's own name; with no rows, the empty text alone. Returns the row's path a click
-/// asked for.
-#[allow(clippy::too_many_arguments)] // the labels, current value and rows of one dropdown
+/// the path's own name; with no rows, the empty text alone. The pack row draws the design
+/// system's folder artwork before its name (`icon`), so the two pickers read apart. Returns
+/// the row's path a click asked for.
+#[allow(clippy::too_many_arguments)] // the labels, current value, rows and artwork of one dropdown
 fn dropdown(
     ui: &mut Ui,
     rect: Rect,
@@ -294,8 +395,25 @@ fn dropdown(
     shown: &str,
     empty: &str,
     label: &str,
+    icon: Option<&str>,
 ) -> Option<String> {
-    let mut row = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    let mut row = match icon {
+        Some(role) => {
+            // The folder's icon sits in the row's own margin: artwork a theme keeps
+            // changeable (nam spec › The panels), the size the pill's text starts after.
+            let icon_rect = Rect::from_min_size(Pos2::new(rect.left() + 8.0, rect.center().y - 7.0), Vec2::splat(14.0));
+            crate::kit::skin::paint(
+                ui.painter(),
+                icon_rect,
+                role,
+                crate::kit::skin::State::Normal,
+                theme::text_secondary(),
+                0.0,
+            );
+            ui.new_child(egui::UiBuilder::new().max_rect(rect.with_min_x(rect.left() + 24.0)))
+        }
+        None => ui.new_child(egui::UiBuilder::new().max_rect(rect)),
+    };
     let current_name = if current.is_empty() {
         empty.to_owned()
     } else if shown.is_empty() {
@@ -304,11 +422,13 @@ fn dropdown(
         shown.to_owned()
     };
     let mut choice: Option<String> = None;
-    // Cut short to the row, never drawn under the steppers beside it.
+    // Cut short to the row, never drawn under the steppers beside it: the icon's own margin,
+    // when the row draws one, comes out of the same bounds.
+    let width = rect.width() - 16.0 - if icon.is_some() { 24.0 } else { 0.0 };
     let response = crate::kit::widgets::combo_box(
         &mut row,
         egui::ComboBox::from_id_salt(id_salt)
-            .width((rect.width() - 16.0).max(24.0))
+            .width(width.max(24.0))
             .truncate()
             .selected_text(egui::RichText::new(current_name).font(theme::ui_font(theme::TEXT_SMALL))),
         |ui| {
@@ -318,8 +438,11 @@ fn dropdown(
                 empty_label
                     .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{label}: {empty}")));
             }
+            // The rows carry the canonical form ([ADR 0036] › 5, the review): the compare
+            // folds the state's side alone, once, not per row.
+            let current = canonical_paths(current);
             for (path, name) in rows {
-                let mut on = path == current;
+                let mut on = path == &current;
                 let item = ui.selectable_value(
                     &mut on,
                     true,
@@ -342,7 +465,7 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
     let painter = ui.painter();
     let (fill, _) = widgets::toggle_colors(ui, &ui.interact(rect, egui::Id::unique(id_salt), Sense::click()), false);
     let response = ui.interact(rect, egui::Id::unique(id_salt), Sense::click());
-    painter.fill_background(rect, 2.0, if response.hovered() { theme::control_hover() } else { fill });
+    painter.rect_filled(rect, 2.0, if response.hovered() { theme::control_hover() } else { fill });
     let inner = rect.shrink(5.0);
     let center = inner.center();
     let dir = if up { -1.0 } else { 1.0 };

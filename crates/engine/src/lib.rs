@@ -21,6 +21,8 @@
 mod ahead;
 pub use assets::DeviceAssets;
 pub use control_error::ControlError;
+/// What a plug-in's link waits for, handed to the engine to wait for several at once (#1256).
+pub use suhina_ipc::Watch;
 mod control_error;
 pub use suhina_device_sdk::{DeviceAsset, DeviceFactory, Devices};
 mod assets;
@@ -108,11 +110,11 @@ use ahead::AheadReader;
 pub use ahead::StretchWorker;
 pub use audio::{AudioData, AudioPool};
 use audio::{AudioEvent, Fades};
-use chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK, run_as_answered};
+use chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK};
 pub use cpu::CpuMonitor;
 pub use cue::MAX_CUE_GAIN;
 pub use group::{GROUP_PARAMS, SILENT_DB, group_param_index, group_param_values};
-pub use input::MAX_INPUT_CHANNELS;
+pub use input::{InputDiagnostics, InputSnapshot, MAX_INPUT_CHANNELS};
 use launcher::ClipLauncher;
 pub use launcher::{
     ColumnStatus, Controller, LaunchCommand, LauncherMonitor, MAX_START_BEAT, PlayingMeter, Quantization, Queued,
@@ -126,8 +128,8 @@ pub use meters::{Level, MAX_METERED_TRACKS, MAX_READOUT_DEVICES, MeterMonitor, P
 pub use metronome::ClickSound;
 use plugin::{DEADLINE_SHARE, Delay};
 pub use plugin::{
-    Followed, Joint, MAX_JOINED, OFFLINE_TIMEOUT, PluginDevice, PluginProcessor, PluginSlotInfo, Plugins, Sent,
-    SongPosition, plugin_devices, plugin_key,
+    Followed, Joint, MAX_JOINED, OFFLINE_TIMEOUT, PluginDevice, PluginProcessor, PluginSlotInfo, PluginSteps, Plugins,
+    Sent, SongPosition, plugin_devices, plugin_key,
 };
 pub use plugin_params::{MAX_BLOCK_PARAMS, ParamEvent, RAMP_STEP, param_id};
 pub use preview::{PreviewMonitor, PreviewNote, PreviewNotes, preview_notes};
@@ -518,6 +520,7 @@ pub struct Renderer {
     observed_deadlines: (usize, [Option<Instant>; 2]),
     /// What is known about the project's plug-in devices, for the graphs built after edits.
     plugin_info: HashMap<u64, PluginSlotInfo>,
+    plugin_steps: PluginSteps,
     /// The browser's preview voice (ADR 0011).
     preview: preview::Preview,
     /// The cue bus: cued tracks and the preview, for headphones (`cue.rs`).
@@ -743,6 +746,7 @@ impl Renderer {
             #[cfg(test)]
             observed_deadlines: (0, [None; 2]),
             plugin_info: plugins.info,
+            plugin_steps: plugins.steps,
             preview: preview::Preview::new(sample_rate),
             cue: cue::Cue::new(),
             live: live::Live::new(sample_rate),
@@ -784,7 +788,7 @@ impl Renderer {
         for key in processors.keys() {
             info.entry(*key).or_default();
         }
-        Plugins { info, processors, carried: true }
+        Plugins { info, steps: std::mem::take(&mut self.plugin_steps), processors, carried: true }
     }
 
     /// The delay latency compensation adds to everything, in frames: the most any track's
@@ -832,6 +836,11 @@ impl Renderer {
         underruns: Arc<std::sync::atomic::AtomicU64>,
     ) {
         self.input.attach(ring, channels, underruns);
+    }
+
+    /// Shared input diagnostics; obtain before moving the renderer to the audio thread.
+    pub fn input_diagnostics(&self) -> Arc<InputDiagnostics> {
+        Arc::clone(&self.input.diagnostics)
     }
 
     /// Whether a track is armed to play the live input (ADR 0017): someone may be playing, so
@@ -960,6 +969,7 @@ impl Renderer {
         self.receive_plugins();
         let misses_before = self.plugin_misses();
         let render_frames = out.len() / 2;
+        self.input.begin_block(render_frames);
         let mut rest = out;
         let mut cue_rest = cue;
         // Every new graph whose frame falls in this block takes over at its frame: the frames
@@ -1093,8 +1103,12 @@ impl Renderer {
             }
             self.observed_deadlines.0 = self.observed_deadlines.0.saturating_add(1);
         }
+        // A chain with buses with plug-ins after it has less of the deadline, so they have the
+        // rest when one of its plug-ins is late (#1261).
+        let start = crate::clock::now();
         for chain in &mut self.graph.chains {
-            chain.begin(frames, deadline);
+            let limit = deadline.map(|deadline| chain.turn.limit(start, deadline));
+            chain.begin(frames, limit);
         }
         self.block_frame = 0;
         // Preview commands apply once the chains have begun the block, so a stopped preview's
@@ -1118,6 +1132,7 @@ impl Renderer {
             beats_per_frame,
             self.live.delay(),
             self.input.waiting(),
+            self.input.frames_consumed(),
         );
         // Live notes after the commands, so a track armed in this block hears them.
         self.live.receive(&mut self.graph.chains, &mut self.recorder, self.transport.position);
@@ -1174,7 +1189,7 @@ impl Renderer {
         };
         for chain in &mut self.graph.chains {
             chain.transport(&song);
-            chain.automate(at, frames);
+            chain.automate(at, time, frames);
             chain.automate_mix(time, frames, self.transport.running);
         }
         let attack = (ATTACK_SECONDS * f64::from(self.sample_rate)).max(1.0);
@@ -1307,25 +1322,16 @@ impl Renderer {
         {
             self.graph.click_delay.run(click);
         }
-        // The chains no chain plays into run their plug-ins at the same time, so the block's
-        // deadline is shared by the slowest chain rather than by all of them in turn: each
-        // chain runs until it hands a block to a plug-in, and goes on as soon as that plug-in
-        // answers, while the others are still out (#151). A bus runs after the chains that play
-        // into it, in order below.
-        let chains = &mut self.graph.chains;
-        for chain in chains.iter_mut().filter(|c| !c.is_bus) {
-            chain.advance(frames, &context);
-        }
-        run_as_answered(chains, frames, &context);
-        // In order, so a bus or a return has every chain that plays into it before it runs.
-        // With a source render's capture, the source chain's output is mixed into the capture
-        // buffer instead of where it plays.
+        // Every chain runs as soon as the chains that play into it are done, its plug-ins' blocks
+        // out together with the others', and goes on as soon as its own plug-in answers (#151,
+        // #1261). With a source render's capture, the source chain's output is mixed into the
+        // capture buffer instead of where it plays.
         let capture = self.graph.capture.as_mut().map(|capture| sends::Capture {
             chain: capture.chain,
             keep: &capture.keep,
             buffer: &mut capture.buffer,
         });
-        sends::finish(&mut self.graph.chains, out, &mut self.cue.bus, frames, &context, capture);
+        sends::run(&mut self.graph.chains, out, &mut self.cue.bus, frames, &context, capture);
         // The main fader's move since the graph was built, then the click it leaves alone. With
         // the fader still, the click is in the mix already and this changes nothing.
         if let Some((_, fader)) = self.graph.main_fader.as_ref()
@@ -1859,13 +1865,19 @@ fn heard_with_solo(project: &Project, channel: &suhina_model::Channel, chain: &[
 }
 
 /// Adds the notes of one content lane, as placed by `clip`, to `events`. Notes outside the clip's
-/// window are skipped; with a loop range the loop repeats until the clip ends.
+/// window are skipped; with a loop range the loop repeats until the clip ends. With `swing`, from
+/// 0 to 1, each note starts and ends where [`suhina_model::swung`] puts its start and its end in
+/// the content's beats, so every pass of a loop swings the same and notes that touch keep touching
+/// (#1221): a gap before a delayed note would let a mono instrument fall back to a note held under
+/// it.
+#[allow(clippy::too_many_arguments)]
 fn collect_notes(
     clip: &Clip,
     lane: &ContentLane,
     map: &TempoMap,
     (track, gain_left, gain_right, column, bus, meter): (TrackId, f32, f32, u32, u32, u32),
     scale: Option<MusicalScale>,
+    swing: f64,
     events: &mut Vec<ArrangedNote>,
 ) {
     let LaneData::Notes(notes) = &lane.data else { return };
@@ -1885,12 +1897,20 @@ fn collect_notes(
             if !(note.time.is_finite() && note.duration.is_finite()) || note.time < from || note.time >= to {
                 continue;
             }
-            let start = clip.start + at + (note.time - from);
+            let time = suhina_model::swung(note.time, swing);
+            // Swing that would take a note past the end of its loop pass leaves it out, as a
+            // launched clip's loop does: a pass ends where the loop does (a loop ending off an
+            // eighth, a note in its last sixteenth).
+            if time >= to {
+                continue;
+            }
+            let length = (suhina_model::swung(note.time + note.duration.max(0.0), swing) - time).max(0.0);
+            let start = clip.start + at + (time - from);
             let clip_end = clip.start + clip.length;
             if start >= clip_end {
                 continue;
             }
-            let end = (start + note.duration.max(0.0)).min(clip_end);
+            let end = (start + length).min(clip_end);
             events.push(ArrangedNote {
                 start: to_frame(start),
                 end: to_frame(end),

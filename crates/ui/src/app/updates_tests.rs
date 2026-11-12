@@ -118,7 +118,30 @@ fn a_newer_nightly_is_offered_in_the_bar_over_a_project() {
     assert_eq!(harness.state(), &Some(BarChoice::Page(build().page)));
     harness.get_by_label("Hide the update offer").click();
     harness.run();
-    assert_eq!(harness.state(), &Some(BarChoice::Later(build().version)));
+    assert_eq!(harness.state(), &Some(BarChoice::Later));
+}
+
+/// An installed update and a failed one can be put away with *Later* too; a download or an
+/// install has nothing to put off.
+#[test]
+fn the_bar_has_later_while_it_waits_on_the_person() {
+    for (phase, label) in [
+        (Phase::Installed(build()), "Restart later"),
+        (Phase::InstallFailed { build: build(), reason: "no space".into() }, "Hide the failed update"),
+    ] {
+        let mut harness = bar(phase);
+        harness.run();
+        harness.get_by_label(label).click();
+        harness.run();
+        assert_eq!(harness.state(), &Some(BarChoice::Later), "{label}");
+    }
+    for phase in [Phase::Downloading { build: build(), done: 0 }, Phase::Installing(build())] {
+        let mut harness = bar(phase.clone());
+        harness.run();
+        for label in ["Hide the update offer", "Restart later", "Hide the failed update"] {
+            assert!(harness.query_by_label(label).is_none(), "{label} in {phase:?}");
+        }
+    }
 }
 
 /// A test build is not called a nightly.
@@ -137,7 +160,7 @@ fn later_hides_only_the_offer_it_was_pressed_on() {
     let mut updates = Updates::default();
     let offer = Phase::Checked { newer: Some(build()), builds: vec![build()] };
     assert!(updates.bar_shows_for(&offer));
-    updates.hidden = Some(build().version);
+    updates.later(offer.clone());
     assert!(!updates.bar_shows_for(&offer));
     let newer = Build { version: "0.0.1-nightly.20261107+1234567".into(), ..build() };
     assert!(updates.bar_shows_for(&Phase::Checked { newer: Some(newer.clone()), builds: vec![newer] }));
@@ -145,4 +168,33 @@ fn later_hides_only_the_offer_it_was_pressed_on() {
     assert!(updates.bar_shows_for(&Phase::Installed(build())));
     assert!(!updates.bar_shows_for(&Phase::Checked { newer: None, builds: vec![build()] }));
     assert!(!updates.bar_shows_for(&Phase::Idle));
+}
+
+/// *Later* on an installed or failed update hides that state only: a new failure, a new install
+/// or a new offer shows again.
+#[test]
+fn later_hides_an_installed_or_failed_update_until_the_updater_moves_on() {
+    let mut updates = Updates::default();
+    let installed = Phase::Installed(build());
+    updates.later(installed.clone());
+    assert!(!updates.bar_shows_for(&installed));
+    let failed = Phase::InstallFailed { build: build(), reason: "no space".into() };
+    assert!(updates.bar_shows_for(&failed));
+    updates.later(failed.clone());
+    assert!(!updates.bar_shows_for(&failed));
+    assert!(updates.bar_shows_for(&Phase::InstallFailed { build: build(), reason: "no connection".into() }));
+    assert!(updates.bar_shows_for(&Phase::Checked { newer: Some(build()), builds: vec![build()] }));
+}
+
+/// #1229 again: when the install cannot start (a test build with no gh sign-in), the bar's and the
+/// start panel's button opens Help › Check for updates…, which says why and offers *Connect
+/// Suhina to your gh*, instead of doing nothing.
+#[test]
+fn a_press_that_cannot_install_opens_the_dialog_with_the_reason() {
+    let mut updates = Updates::default();
+    let test_build = Build { pr: Some(663), needs_sign_in: true, ..build() };
+    let offer = Phase::Checked { newer: Some(test_build.clone()), builds: vec![test_build] };
+    assert_eq!(updates.pressed(&egui::Context::default(), offer), None);
+    assert!(updates.open);
+    assert!(updates.note.as_deref().is_some_and(|note| note.contains("gh")), "{:?}", updates.note);
 }

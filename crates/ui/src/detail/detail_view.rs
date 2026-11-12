@@ -10,7 +10,6 @@
 //! takes the room under that line, and where it lands in the window is reported each frame
 //! ([`EditorPlace`]) for the host process to put it there.
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_device_sdk::builtin::{COMPACT_HEIGHT, COMPACT_WIDTH};
@@ -29,6 +28,7 @@ mod clip_panel;
 mod clip_properties;
 mod expanded;
 mod group_panel;
+mod midi_panel;
 mod model;
 mod parameters;
 
@@ -36,6 +36,9 @@ pub use self::clip_panel::{find_tempo_key, tempo_candidates_key};
 use self::clip_properties::*;
 pub use self::expanded::*;
 use self::group_panel::*;
+pub use self::midi_panel::MidiTools;
+#[cfg(test)]
+pub(crate) use self::midi_panel::{ToolsSpacing, tools_spacing};
 pub use self::model::*;
 use self::parameters::*;
 #[cfg(test)]
@@ -78,19 +81,20 @@ pub fn show_row(
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
-    let _style_class = crate::kit::style_class::enter("detail");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let el = crate::kit::element::DETAIL.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
-    crate::kit::native_css::background(&painter, area);
+    // The area's own background, over the window's (#1233); what it shows goes in its content
+    // box, inside its border and padding (#1336).
+    let area = el.paint(&painter, area).content;
     match detail {
         Detail::Nothing => hint(&painter, area, "Select a track or a clip to see it here"),
         Detail::Devices(chain) => return chain_row(ui, &painter, area, chain, selected, actions, places),
         Detail::Clip(info, chain) => {
-            let (column, picked) = clip_properties(ui, &painter, area, info, false, actions);
+            let (column, picked) = clip_properties(ui, &painter, area, info, false, None, actions);
             clip_for_readers(ui, column, info);
             let rest = Rect::from_min_max(Pos2::new(column.right() + 1.0, area.top()), area.max);
             // The chain is drawn beside the clip's properties: a click on one of its panels
@@ -108,7 +112,7 @@ pub fn show_row(
 
 /// A chain's devices side by side in `area`; one with an embedded editor is as wide as it. The
 /// panels are as tall as the tallest of them shows, at least a compact panel's height and at most
-/// the area's, their contents at the top (#1238); one the theme gives a height (`.device { height }`)
+/// the area's, their contents at the top (#1238); one the theme gives a height (`device { height }`)
 /// keeps it, and one with an embedded editor takes the area's height. A chain wider than the area
 /// scrolls sideways with the wheel's sideways turn (Shift and the wheel) or the bar along its bottom.
 fn chain_row(
@@ -133,11 +137,12 @@ fn chain_row(
     let entries: Vec<&DeviceBox> = entries.iter().zip(&limited).map(|(d, l)| l.as_ref().unwrap_or(d)).collect();
     // Each panel's width and height first, so the scroll knows how wide the chain is, and whether
     // its height is its own (a theme's height or an embedded editor) rather than the row's.
-    let boxes: Vec<(f32, f32, bool)> = entries
+    // Each also carries its own border and padding above and below.
+    let boxes: Vec<(f32, f32, bool, f32)> = entries
         .iter()
         .map(|device| {
             if let Some(group) = &device.group {
-                return (GROUP_WIDTH, group_height(group), false);
+                return (GROUP_WIDTH, group_height(group), false, 0.0);
             }
             // An editor embedded in the panel is placed for devices on the track itself.
             let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
@@ -151,32 +156,50 @@ fn chain_row(
                 )
             });
             let width = editor.map_or(authored_width, |e| authored_width.max(e.x + PAD * 2.0));
-            // `.device { width }` or `#device-<id> { width }` widens the panel (up to 1600 points).
-            let (width, themed_height) = {
-                let _style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
-                let computed = crate::kit::style_class::computed();
+            // `device { width }` or `#device-<id> { width }` widens the panel (up to 1600 points).
+            // A size worked out from what the panel holds takes its border and padding too
+            // (#1336); a theme's `width` or `height` is the whole panel's.
+            let (width, themed_height, [top, _, bottom, _]) = {
+                // In the state it is painted in: `device[selected]` may pad it more.
+                let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
+                let el = crate::kit::element::DEVICE
+                    .id(&format!("device-{}", device.theme_id))
+                    .attr(crate::kit::element::Selected, lit)
+                    .attr(crate::kit::element::Muted, !device.enabled)
+                    .enter();
+                let computed = el.style();
+                let insets = el.insets();
+                let width = width + insets[1] + insets[3];
                 let width = computed
                     .as_ref()
                     .and_then(|c| c.width)
                     .map_or(width, |themed| width.max(themed.clamp(120.0, 1600.0)));
-                (width, computed.and_then(|c| c.height))
+                (width, computed.and_then(|c| c.height), insets)
             };
-            let height = sdk_viewport(device).map_or_else(|| panel_height(device, editor), |v| ROW + PAD * 2.0 + v[1]);
-            // `.device { height }` or `#device-<id> { height }` sets the panel's height (60 to 1200
+            let height = top
+                + bottom
+                + sdk_viewport(device).map_or_else(|| panel_height(device, editor), |v| ROW + PAD * 2.0 + v[1]);
+            // `device { height }` or `#device-<id> { height }` sets the panel's height (60 to 1200
             // points); what does not fit scrolls. An embedded editor keeps its own room.
             match (themed_height, editor) {
-                (Some(themed), None) => (width, themed.clamp(60.0, 1200.0), true),
-                (_, Some(_)) => (width, height, true),
-                (None, None) => (width, height, false),
+                (Some(themed), None) => (width, themed.clamp(60.0, 1200.0), true, top + bottom),
+                (_, Some(_)) => (width, height, true, top + bottom),
+                (None, None) => (width, height, false, top + bottom),
             }
         })
         .collect();
     let row_height = boxes
         .iter()
-        .filter(|(.., own)| !own)
-        .map(|(_, height, _)| *height)
-        .fold(device_row_height(), f32::max)
+        .filter(|(_, _, own, _)| !own)
+        .map(|(_, height, ..)| *height)
+        .fold(device_row_height() + vertical(crate::kit::element::DEVICE.enter().insets()), f32::max)
         .min(area.height());
+    // The most border and padding a panel of the row has, as painted (its id and state): the
+    // detail area opens that much taller from the next frame. Only the boxes: a panel whose
+    // content is taller than a compact one (a group with many branches) does not change the
+    // height the user set, as before the boxes had insets.
+    let needs = boxes.iter().filter(|(_, _, own, _)| !own).map(|(.., insets)| *insets).fold(0.0, f32::max);
+    ui.data_mut(|d| d.insert_temp(shown_device_extra_id(), needs));
     let total = boxes.iter().map(|(w, ..)| w + 1.0).sum::<f32>();
     let scroll_id = Id::unique(("chain-scroll", chain.track.0));
     let most = (total - area.width()).max(0.0);
@@ -200,7 +223,7 @@ fn chain_row(
     let mut x = area.left() - offset;
     let mut tallest: f32 = 0.0;
     let mut slots = Vec::new();
-    for (device, (width, height, own)) in entries.iter().zip(boxes) {
+    for (device, (width, height, own, _)) in entries.iter().zip(boxes) {
         let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
         // A panel with its editor embedded takes the area's whole height, and the editor is
         // fitted to it (#689).
@@ -223,9 +246,10 @@ fn chain_row(
         }
         // Picks are of any device, inside a group too (Ctrl+G groups them, Delete removes them).
         let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
-        let clicked = match &device.group {
+        // A plug-in's button and editor go in the panel's content box.
+        let (clicked, content) = match &device.group {
             Some(group) => {
-                group_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, group, lit, actions)
+                (group_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, group, lit, actions), rect)
             }
             None => {
                 device_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, lit, actions, &chain.nam)
@@ -236,10 +260,9 @@ fn chain_row(
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
         }
-        plugin_button(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
         if let Some(editor) = editor {
-            let origin = Pos2::new(rect.left() + PAD, rect.top() + EDITOR_TOP);
-            places.push(editor_place(ui, area, rect, editor, chain.track, device, origin));
+            let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
+            places.push(editor_place(ui, area, content, editor, chain.track, device, origin));
         }
     }
     ui.set_clip_rect(outer_clip);
@@ -265,7 +288,7 @@ fn chain_row(
     let list = crate::interaction::drop::DeviceSlots { track: chain.track, area, slots, vertical: false, pass };
     crate::interaction::drop::note_device_slots(ui.ctx(), list);
     if let Some(bar) = bar {
-        painter.fill_background(bar, 0.0, theme::control_background());
+        painter.rect_filled(bar, 0.0, theme::control_background());
         let thumb_width = (area.width() / total * bar.width()).max(24.0);
         let thumb_left = bar.left() + offset / most * (bar.width() - thumb_width);
         let thumb =
@@ -307,8 +330,59 @@ pub fn device_row_height() -> f32 {
     ROW + PAD * 2.0 + COMPACT_HEIGHT
 }
 
+/// The room the boxes of the detail area take above and below what they hold (their borders and
+/// padding): the detail area's own (`detail`) and a device panel's, around a row of devices; the
+/// clip editor's and the piano roll's, around the piano roll. Asked inside the detail area's
+/// workspace panel, as they are drawn (#1336).
+pub fn box_insets() -> BoxInsets {
+    use crate::kit::element::{CLIP_EDITOR, DETAIL, PIANO_ROLL};
+    let (detail, device) = {
+        let detail = DETAIL.enter();
+        (vertical(detail.insets()), vertical(crate::kit::element::DEVICE.enter().insets()))
+    };
+    let (editor, piano) = {
+        let editor = CLIP_EDITOR.enter();
+        (vertical(editor.insets()), vertical(PIANO_ROLL.enter().insets()))
+    };
+    BoxInsets { detail, device, editor, piano }
+}
+
+/// Where [`chain_row`] leaves the most border and padding above and below one of its panels has
+/// (as painted: `#device-<id>` and `device[selected]` may pad more than `device`), for the detail
+/// area to open as tall as the panels' boxes need.
+fn shown_device_extra_id() -> Id {
+    Id::unique("detail-device-extra")
+}
+
+/// What the panels of the devices shown last frame add above and below a compact one, if they
+/// add more than a plain `device` panel does (`insets`, from [`box_insets`]). Reading takes the
+/// value: only a frame that shows a chain with devices leaves one, so an empty chain, a clip
+/// editor or a hidden row asks for nothing extra.
+pub fn shown_device_insets(ctx: &egui::Context, insets: f32) -> f32 {
+    ctx.data_mut(|d| d.remove_temp::<f32>(shown_device_extra_id())).unwrap_or(0.0).max(insets)
+}
+
+/// [`box_insets`]: each box's top and bottom together.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct BoxInsets {
+    pub detail: f32,
+    pub device: f32,
+    pub editor: f32,
+    pub piano: f32,
+}
+
+/// The top and bottom of `insets` (top, right, bottom, left) together.
+fn vertical([top, _, bottom, _]: [f32; 4]) -> f32 {
+    top + bottom
+}
+
 /// How many columns of a long generated list a panel shows until the header's chevron opens the rest.
 const LIST_COLUMNS: f32 = 2.0;
+
+/// [`LIST_COLUMNS`], or one while the stacked chain is drawn, so a panel fits the column.
+fn list_columns() -> f32 {
+    if ONE_COLUMN.with(std::cell::Cell::get) { 1.0 } else { LIST_COLUMNS }
+}
 
 /// The state of a panel's list, for the chevron in its header: how many parameters are left out, or the same count
 /// and that they show.
@@ -350,12 +424,12 @@ pub fn set_list_project(ctx: &egui::Context, project: u32) {
 fn tall_list_height(parameters: &[GraphParameter]) -> f32 {
     let height = |p: &GraphParameter| parameter_height(p);
     let total: f32 = parameters.iter().map(height).sum();
-    total / LIST_COLUMNS + parameters.iter().map(height).fold(0.0, f32::max)
+    total / list_columns() + parameters.iter().map(height).fold(0.0, f32::max)
 }
 
 /// How many of `parameters` fit the first columns of a list `max_height` tall; `None` when all do.
 fn list_fit(parameters: &[GraphParameter], max_height: f32) -> Option<usize> {
-    let limit = COMPACT_WIDTH * LIST_COLUMNS - 0.5;
+    let limit = COMPACT_WIDTH * list_columns() - 0.5;
     let cells = parameter_layout(parameters, COMPACT_WIDTH, max_height, &[]);
     let fit = cells.iter().take_while(|c| c.left() < limit).count();
     (fit < cells.len()).then_some(fit)
@@ -381,7 +455,9 @@ fn limited_list(ui: &Ui, track: TrackId, device: &DeviceBox) -> Option<DeviceBox
     ui.ctx().data_mut(|d| d.insert_temp(id, ListFold { more, open }));
     let mut limited = device.clone();
     if open {
-        if !ui.data(|d| d.get_temp::<bool>(list_vertical_id())).unwrap_or(false) {
+        // Stacked, an opened list goes down in its one column whatever the setting says.
+        let vertical = ui.data(|d| d.get_temp::<bool>(list_vertical_id())).unwrap_or(false);
+        if !vertical && !ONE_COLUMN.with(std::cell::Cell::get) {
             return None;
         }
         limited.list_tall = true;
@@ -420,12 +496,12 @@ fn list_right(device: &DeviceBox, graph: &GraphBox) -> f32 {
 
 /// How tall a device's stock-control list may grow before it continues in a new column: the
 /// compact panel's body less a plug-in's rows above the list and the graph's node rows, or a
-/// taller canvas beside it. A list in a panel the theme sizes (`.device { width }`) keeps one
+/// taller canvas beside it. A list in a panel the theme sizes (`device { width }`) keeps one
 /// column that follows that width and scrolls.
 fn list_height(device: &DeviceBox, graph: &GraphBox) -> f32 {
     if graph.canvas.is_none() {
-        let _style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
-        if crate::kit::style_class::computed().is_some_and(|c| c.width.is_some()) {
+        let el = crate::kit::element::DEVICE.id(&format!("device-{}", device.theme_id)).enter();
+        if el.style().is_some_and(|c| c.width.is_some()) {
             return f32::INFINITY;
         }
     }
@@ -450,19 +526,20 @@ pub fn show_stack(
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
-    let _style_class = crate::kit::style_class::enter("detail");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let el = crate::kit::element::DETAIL.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
-    crate::kit::native_css::background(&painter, area);
+    // The area's own background, over the window's (#1233); what it shows goes in its content
+    // box, inside its border and padding (#1336).
+    let area = el.paint(&painter, area).content;
     match detail {
         Detail::Nothing => hint(&painter, area, "Select a track or a clip"),
         Detail::Devices(chain) => return chain_stack(ui, &painter, area, chain, selected, actions, places),
         Detail::Clip(info, chain) => {
-            let (column, picked) = clip_properties(ui, &painter, area, info, true, actions);
+            let (column, picked) = clip_properties(ui, &painter, area, info, true, None, actions);
             clip_for_readers(ui, column, info);
             let rest = Rect::from_min_max(Pos2::new(area.left(), column.bottom() + 1.0), area.max);
             // The chain is drawn under the clip's properties: its panels pick as they do with
@@ -479,20 +556,29 @@ pub fn show_stack(
 }
 
 /// The clip's properties column for a clip whose editor fills the rest of the detail area (the
-/// piano roll): on the left in a row, on top when `stacked`. Returns the rest. The quantise
-/// controls and the MIDI tools live in the column beside this one
-/// (› Other note tools in `docs/spec/ui-clip-editor.md`). With it, the part the Clip / Devices
-/// switch was clicked to, if it was.
-pub fn show_clip_column(ui: &mut Ui, info: &ClipInfo, stacked: bool, actions: &mut Vec<Action>) -> (Rect, Picked) {
-    let _style_class = crate::kit::style_class::enter("clip-editor");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
-    let ui = &mut *styled_ui;
+/// piano roll): on the left in a row, on top when `stacked`. Returns the rest. With `midi` a MIDI
+/// clip's panel shows its note tools beside its Clip part (› Note tools in
+/// `docs/spec/ui-clip-editor.md`). With the rest, the part the Clip / Devices switch was clicked
+/// to, if it was.
+///
+/// `el` is the clip editor's element, which the caller enters and keeps in scope while it draws
+/// the editor in the rest, so they are in its box and its clip; `ui` is styled
+/// by it.
+pub fn show_clip_column(
+    ui: &mut Ui,
+    el: &crate::kit::element::Entered,
+    info: &ClipInfo,
+    stacked: bool,
+    midi: Option<MidiTools<'_, '_>>,
+    actions: &mut Vec<Action>,
+) -> (Rect, Picked) {
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
-    crate::kit::native_css::background(&painter, area);
-    let (column, picked) = clip_properties(ui, &painter, area, info, stacked, actions);
+    // The area's own background, over the window's (#1233); the column and the editor go in its
+    // content box, inside its border and padding (#1336).
+    let area = el.paint(&painter, area).content;
+    let (column, picked) = clip_properties(ui, &painter, area, info, stacked, midi, actions);
     clip_for_readers(ui, column, info);
     let rest = if stacked {
         Rect::from_min_max(Pos2::new(area.left(), column.bottom() + 1.0), area.max)
@@ -502,8 +588,31 @@ pub fn show_clip_column(ui: &mut Ui, info: &ClipInfo, stacked: bool, actions: &m
     (rest, Picked { showing: picked, ..Picked::default() })
 }
 
-/// A chain's devices one under another in `area`; one with an embedded editor is as tall as
-/// it needs (the editor is cut off at the column's right edge when it is wider).
+thread_local! {
+    /// While the stacked chain is drawn: a list shows one column, so a panel fits the column's
+    /// width, and its chevron opens the rest down that column.
+    static ONE_COLUMN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Sets [`ONE_COLUMN`] until it is dropped.
+struct OneColumn;
+
+impl OneColumn {
+    fn new() -> Self {
+        ONE_COLUMN.with(|c| c.set(true));
+        Self
+    }
+}
+
+impl Drop for OneColumn {
+    fn drop(&mut self) {
+        ONE_COLUMN.with(|c| c.set(false));
+    }
+}
+
+/// A chain's devices one under another in `area`, each list in one column so the panel fits the
+/// column; one with an embedded editor is as tall as it needs (the editor is cut off at the
+/// column's right edge when it is wider).
 fn chain_stack(
     ui: &mut Ui,
     painter: &egui::Painter,
@@ -517,6 +626,43 @@ fn chain_stack(
         hint(painter, area, &format!("No devices on {} yet", chain.name));
         return Picked::default();
     }
+    // The column scrolls when its devices are taller than it, and nothing it draws leaves it. The
+    // devices' height is the last frame's, the first frame's the column's own.
+    let tall_id = Id::unique(("stack-chain-height", chain.track.0));
+    let tall = ui.data(|d| d.get_temp::<f32>(tall_id)).unwrap_or(area.height()).max(area.height());
+    let mut picked = Picked::default();
+    ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
+        egui::ScrollArea::vertical().id_salt(("stack-chain", chain.track.0)).auto_shrink([false, false]).show_viewport(
+            ui,
+            |ui, _| {
+                let content = Rect::from_min_size(ui.max_rect().min, Vec2::new(area.width(), tall));
+                ui.allocate_rect(content, Sense::hover());
+                let painter = ui.painter().clone();
+                let (inner, used) = chain_stack_in(ui, &painter, content, area, chain, selected, actions, places);
+                picked = inner;
+                ui.data_mut(|d| d.insert_temp(tall_id, used));
+            },
+        );
+    });
+    picked
+}
+
+/// [`chain_stack`]'s devices in `area`, the column's whole height scrolled into place, of which
+/// `visible` shows: those wholly outside it are measured, not drawn. Returns what was picked and
+/// how tall the devices are.
+#[allow(clippy::too_many_arguments)]
+fn chain_stack_in(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    area: Rect,
+    visible: Rect,
+    chain: &Chain,
+    selected: &[(TrackId, DeviceAt)],
+    actions: &mut Vec<Action>,
+    places: &mut Vec<EditorPlace>,
+) -> (Picked, f32) {
+    let _ = painter;
+    let _one_column = OneColumn::new();
     let scale = ui.ctx().pixels_per_point();
     let mut picked = Picked::default();
     let mut y = area.top();
@@ -528,8 +674,8 @@ fn chain_stack(
         if let Some(group) = &device.group {
             let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), group_height(group)));
             y = rect.bottom() + 1.0;
-            if rect.top() > area.bottom() {
-                break;
+            if rect.top() > visible.bottom() || rect.bottom() < visible.top() {
+                continue;
             }
             let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
             let clicked =
@@ -541,29 +687,37 @@ fn chain_stack(
             continue;
         }
         let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
+        let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
+        // The panel's border and padding round what it holds, as in a row (#1336): in the state
+        // it is painted in.
+        let [top, side_right, bottom, side_left] = crate::kit::element::DEVICE
+            .id(&format!("device-{}", device.theme_id))
+            .attr(crate::kit::element::Selected, lit)
+            .attr(crate::kit::element::Muted, !device.enabled)
+            .enter()
+            .insets();
         let height = panel_height(device, editor);
-        let height = sdk_viewport(device).map_or(height, |v| ROW + PAD * 2.0 + v[1]);
-        let right = sdk_viewport(device).map_or(area.right(), |v| (area.left() + v[0] + PAD * 2.0).min(area.right()));
+        let height = top + bottom + sdk_viewport(device).map_or(height, |v| ROW + PAD * 2.0 + v[1]);
+        let right = sdk_viewport(device)
+            .map_or(area.right(), |v| (area.left() + side_left + side_right + v[0] + PAD * 2.0).min(area.right()));
         let rect = Rect::from_min_max(Pos2::new(area.left(), y), Pos2::new(right, y + height));
         y = rect.bottom() + 1.0;
-        if rect.top() > area.bottom() {
-            break;
+        if rect.top() > visible.bottom() || rect.bottom() < visible.top() {
+            continue;
         }
-        let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
-        let clicked =
+        let (clicked, content) =
             device_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, lit, actions, &chain.nam);
         inside_group_mark(&painter.with_clip_rect(area), rect, &device.at);
         // Keep a device an earlier iteration clicked: the later panels were not clicked.
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
         }
-        plugin_button(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
         if let Some(editor) = editor {
-            let origin = Pos2::new(rect.left() + PAD, rect.top() + EDITOR_TOP);
-            places.push(editor_place(ui, area, rect, editor, chain.track, device, origin));
+            let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
+            places.push(editor_place(ui, visible, content, editor, chain.track, device, origin));
         }
     }
-    picked
+    (picked, y - area.top())
 }
 
 /// Where a plug-in's embedded editor of `editor` points goes under its line and button in the
@@ -624,7 +778,7 @@ fn plugin_button(
     );
     let hover = widgets::hover(ui, &response);
     let fill = crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover);
-    painter.fill_background(button, 0.0, fill);
+    painter.rect_filled(button, 0.0, fill);
     painter.rect_stroke(button, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     widgets::text_in(
         painter,
@@ -652,8 +806,8 @@ pub fn show_ara_editor(
     places: &mut Vec<EditorPlace>,
 ) {
     ui.allocate_rect(area, Sense::hover());
+    // On the detail area's own background.
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
     // The clip host is not among the chain's devices (#990): its editor is found as the host.
     let found = chain.devices.iter().find(|d| d.index == device && d.at.top());
     let Some(device) = found.or(chain.host.as_ref().filter(|h| h.index == device)) else { return };
@@ -689,7 +843,7 @@ pub fn show_ara_editor(
             crate::kit::widgets::hover(ui, &response),
         );
         painter.rect_filled(hide, 0.0, fill);
-        crate::detail::piano_roll::IconButton::Hide.draw(&painter, hide, theme::text_secondary(), 1.0);
+        crate::interaction::toolbar::IconButton::Hide.draw(&painter, hide, theme::text_secondary(), 1.0);
         if response.clicked() {
             actions.push(Action::new("view.editor", json!({})));
         }
@@ -750,11 +904,7 @@ fn ara_button(
     let response =
         widgets::button_area(ui, rect, egui::Id::unique(("ara-button", id.0.0, id.1)), format!("{label} {plugin}"));
     let hover = widgets::hover(ui, &response);
-    painter.fill_background(
-        rect,
-        0.0,
-        crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover),
-    );
+    painter.rect_filled(rect, 0.0, crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover));
     painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     widgets::text_in(
         painter,
@@ -784,7 +934,9 @@ fn hint(painter: &egui::Painter, area: Rect, text: &str) {
     painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), theme::text_hint());
 }
 
-/// One device: a header with its on switch and name, then its parameters, one per row.
+/// One device: a header with its on switch and name, then its parameters, one per row. Returns
+/// whether it was clicked, and its content box (inside its border and padding, #1336), where a
+/// plug-in's embedded editor goes.
 #[allow(clippy::too_many_arguments)]
 fn device_panel(
     ui: &mut Ui,
@@ -795,10 +947,11 @@ fn device_panel(
     selected: bool,
     actions: &mut Vec<Action>,
     nam: &crate::detail::device_widgets::Lists,
-) -> bool {
-    // The panel answers a right-click with its menu (the device's remove); its label is the
-    // screen-reader and test name the chain drew for it before. A click selects the device, so
-    // the Delete key takes it off the track.
+) -> (bool, Rect) {
+    // The panel answers a right-click with its menu; the menu stays open on a click inside, so
+    // the preset name's field and button live here (the slot menu does the same). Its label is
+    // the screen-reader and test name the chain drew for it before. A click selects the device,
+    // so the Delete key takes it off the track.
     let panel = ui
         .interact(rect, Id::unique(("device-panel", track.0, &device.at)), Sense::click_and_drag())
         .on_hover_text("Right-click for the device's menu; drag onto another track to move it there, Ctrl to copy it");
@@ -807,28 +960,59 @@ fn device_panel(
     }
     panel.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Device {}", device.name)));
     let clicked = panel.clicked();
-    panel.context_menu(|ui| {
-        menus::device_menu(ui, track, &device.at, device.group.as_ref().map(|g| g.branches.len()), actions)
+    egui::Popup::context_menu(&panel).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+        menus::device_menu(
+            ui,
+            track,
+            &device.at,
+            device.group.as_ref().map(|g| g.branches.len()),
+            device.is_builtin,
+            &device.name,
+            actions,
+        )
     });
-    // The selection outline, over everything the panel draws — on every path out of here.
+    // `device` styles every device's panel and `#device-compressor` (a built-in device's id)
+    // one kind of them; `device-header` its header row. Everything inside (`device-control`,
+    // the generated parameter list's widgets) is in that scope.
+    let device_id = format!("device-{}", device.theme_id);
+    let device_style = crate::kit::element::DEVICE
+        .id(&device_id)
+        .attr(crate::kit::element::Selected, selected)
+        .attr(crate::kit::element::Muted, !device.enabled)
+        .enter();
+    // A list keeps a compact panel's width unless the theme sizes the panel (`device { width }`).
+    let themed_width = device_style.style().is_some_and(|c| c.width.is_some());
+    let mut styled_ui = device_style.ui(ui);
+    let ui = &mut *styled_ui;
+    // What the panel holds goes in its content box, inside its border and padding (#1336).
+    let panel_box = rect;
+    let rect = device_style
+        .paint_with(
+            painter,
+            rect,
+            crate::kit::element::Native {
+                radius: 0.0,
+                fill: crate::kit::style_class::surface_or(theme::panel_background()),
+            },
+        )
+        .content;
+    // The selection outline, over everything the panel draws — on every path out of here. Along
+    // the panel's edge, its whole box, as an outline goes round the border box: once the box is
+    // closed, so a panel that hides its overflow does not cut it at its padding box.
     let outline = |painter: &egui::Painter| {
         if selected {
-            painter.rect_stroke(rect, 1.0, theme::hairline(theme::selection()), egui::StrokeKind::Inside);
+            device_style.close_box();
+            painter.rect_stroke(panel_box, 1.0, theme::hairline(theme::selection()), egui::StrokeKind::Inside);
         }
     };
-    // `.device` styles every device's panel and `#device-compressor` (a built-in device's id)
-    // one kind of them; `.device-header` its header row. Everything inside (`.device-control`,
-    // the generated parameter list's widgets) is in that scope.
-    let _device_style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
-    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, !device.enabled);
-    let mut styled_ui = crate::kit::style_class::ui(ui);
-    let ui = &mut *styled_ui;
-    crate::kit::native_css::surface(painter, rect, 0.0, theme::panel_background());
     let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     {
-        let _header = crate::kit::style_class::enter("device-header");
-        crate::kit::native_css::surface(painter, header, 0.0, theme::control_background());
+        let header_el = crate::kit::element::DEVICE_HEADER.enter();
+        header_el.paint_with(
+            painter,
+            header,
+            crate::kit::element::Native { radius: 0.0, fill: theme::control_background() },
+        );
     }
     let switch = Rect::from_min_size(
         Pos2::new(header.left() + PAD, header.center().y - ON_SWITCH / 2.0),
@@ -974,11 +1158,24 @@ fn device_panel(
         {
             let list = Rect::from_min_max(Pos2::new(body.left(), rect.top() + EDITOR_TOP), body.max);
             if list.height() >= PARAM_ROW {
-                graph_controls(ui, list, graph, &state, list_height(device, graph), track, device, actions);
+                graph_controls(
+                    ui,
+                    list,
+                    graph,
+                    &state,
+                    list_height(device, graph),
+                    track,
+                    device,
+                    themed_width,
+                    actions,
+                );
             }
         }
+        // Its button in the panel's scope, so the panel's `overflow` cuts it and the outline
+        // goes over it.
+        plugin_button(ui, painter, rect, track, device, actions);
         outline(painter);
-        return clicked;
+        return (clicked, rect);
     }
     if device.params.is_empty() && device.graph.is_none() {
         let text = if device.kind.starts_with("Not supported") {
@@ -995,12 +1192,12 @@ fn device_panel(
             theme::text_hint(),
         );
         outline(painter);
-        return clicked;
+        return (clicked, rect);
     }
     if let Some(graph) = &device.graph {
-        graph_controls(ui, body, graph, &state, list_height(device, graph), track, device, actions);
+        graph_controls(ui, body, graph, &state, list_height(device, graph), track, device, themed_width, actions);
         outline(painter);
-        return clicked;
+        return (clicked, rect);
     }
     for (index, (id, value)) in device.params.iter().enumerate() {
         let row = Rect::from_min_size(
@@ -1028,7 +1225,7 @@ fn device_panel(
         );
     }
     outline(painter);
-    clicked
+    (clicked, rect)
 }
 
 #[cfg(test)]
