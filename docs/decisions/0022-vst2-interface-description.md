@@ -1,6 +1,6 @@
 ---
-description: Where the VST2 interface description comes from — the VeSTige header as Ardour distributes it, pinned to one commit, ported to Rust with its notice kept, as the one named exception to the clean-room rule; checked by our own mock plug-in, probe and tests; amended 2026-10-31 to allow shipping VST2-enabled builds
-read_when: VST2, VST 2, AEffect, ABI, opcode, dispatcher, audioMaster, clean-room, reverse engineering, VeSTige, vestige.h, Ardour, LMMS, vst2sdk, FST, yabridge, plug-in interface description, VST trademark, provenance
+description: Where the VST2 interface description comes from — the VeSTige header as Ardour distributes it, pinned to one commit, ported to Rust with its notice kept, as the one named exception to the clean-room rule; checked by our own mock plug-in, probe and tests; amended 2026-10-31 to allow shipping VST2-enabled builds, and 2026-11-12 to let other GPL-compatible hosts' code be a source, values included, when the value's provenance is known and allowed
+read_when: VST2, VST 2, AEffect, ABI, opcode, dispatcher, audioMaster, clean-room, reverse engineering, VeSTige, vestige.h, Ardour, LMMS, vst2sdk, FST, yabridge, plug-in interface description, VST trademark, provenance, open-source host code, attribution
 type: decision
 status: accepted
 built: partly
@@ -70,6 +70,7 @@ has approved their use.
    not leaked code and no other reverse-engineering result — not as a dependency, not vendored, not
    quoted in the spec, not in a summary handed to an agent. yabridge may still be read for how a host
    solves the same problems (ADR 0006), not as a second source of interface facts.
+   *Amended 2026-11-12, see Amendment: other hosts' code as a source.*
 3. **Ported to Rust, notice kept.** `crates/plugin-host` holds the Rust definitions behind the `vst2`
    feature (`unsafe` is allowed there, ADR 0006 decisions 1 and 7). A file ported from the header
    keeps its copyright and licence notice and the SPDX line `GPL-2.0-or-later`, and is listed in
@@ -119,11 +120,52 @@ amendment, it does not stop distribution by itself; legal advice against shippin
 
 ## Amendment: reading another host's behaviour (2026-11-02)
 
+*Replaced on 2026-11-12 by Amendment: other hosts' code as a source; kept here as the record.*
+
 Ardour's host code may be read as yabridge's may, for how a host behaves where a plug-in fails: which
 calls it makes and in what order, and what it hands a plug-in. It is no source of interface facts:
 nothing is copied from it, no value or op-code comes from it, and what it suggests counts only once
 our own probe has shown it against a plug-in, marked *observed* as decision 4 asks. Decided by the
 maintainer for the crashes in `docs/spec/plugin-vst2.md` › *Open questions*.
+
+## Amendment: other hosts' code as a source (2026-11-12)
+
+Decided by the maintainer. It replaces the amendment of 2026-11-02 and the last sentence of
+decision 2; [`CONTRIBUTING.md`](../../CONTRIBUTING.md) › Clean-room states the rule for the whole
+project.
+
+The clean-room rule is about proprietary binaries, leaked code and the content of commercial
+products. Code that an open-source DAW or host publishes under a licence compatible with
+GPL-3.0-or-later is none of those: using it is a licence question, which AGENTS.md rule 10
+answers, and CONTRIBUTING already allowed porting such code. The amendment of 2026-11-02 kept
+Ardour's and yabridge's host code to how a host behaves. Their code, and that of any other
+open-source host under such a licence, may now also be a source of values and solutions: which
+calls a host makes and in what order, what it hands a plug-in, how it works around a plug-in that
+misbehaves, the sizes and constants it uses, and code ported from it. Three limits stay.
+
+1. **The file's licence decides.** Ardour is GPL-2.0-or-later and yabridge GPL-3.0-or-later, but
+   what counts is the licence the file read states in its own notice, checked as CONTRIBUTING
+   says. Code from a file under GPL-2.0-only, or another licence rule 10 leaves out, is not taken,
+   whatever the rest of the project uses; a fact read from it is handled like any other, under
+   limit 2.
+2. **The value's provenance decides, not its distributor.** A value is usable only when where it
+   came from is known and allowed: VeSTige (decision 1), the project's own observation of
+   plug-ins from the outside, or public documentation. A value that came from Steinberg's VST2
+   SDK, FST, `vst2sdk`, `vst2-sys`, leaked code or anyone's debugging or disassembly of a
+   plug-in stays forbidden, even when a GPL host carries it: decision 2 is about where a fact
+   came from. Hosts written before VeSTige existed could be built against Steinberg's SDK, so an
+   op-code or field a host uses that the pinned header lacks is not taken on the host's word.
+   When the host's history, comments, commit messages and documentation do not trace it to an
+   allowed origin, it is a lead only: it enters the spec as *assumed* and counts once our probe
+   or an ignored test against a real plug-in has shown it (*observed*), as decision 4 asks.
+3. **The spec records it.** A fact taken from another host is marked *(from <project>)* in
+   `docs/spec/plugin-vst2.md`, with the file's path, the commit and what the provenance check
+   found. Code taken over as it is carries the notices CONTRIBUTING › Clean-room › *Taking code
+   from open-source projects* asks for.
+
+The rest of decision 2 stands: no other header, SDK, binding or reverse-engineering write-up is a
+source. Where a host's code only restates VeSTige, the pinned header stays the source the spec
+cites.
 
 ## Alternatives considered
 
@@ -149,6 +191,9 @@ maintainer for the crashes in `docs/spec/plugin-vst2.md` › *Open questions*.
   (Apache-2.0) and Signalsmith (MIT) ports carry theirs.
 - VST2-enabled builds may ship (amendment of 2026-10-31). The trademark line stays, and a claim
   or legal advice against shipping is handled as decision 6 says.
+- Other open-source hosts' code may be a source of values and solutions within the limits of
+  the amendment of 2026-11-12, recorded in the spec with its provenance; a value whose origin
+  cannot be traced stays *assumed* until observed.
 - ADR 0006's *Not decided yet* item for VST2 moves here; the format, scanning, editor and process
   decisions in 0006 are unchanged.
 
