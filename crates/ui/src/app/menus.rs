@@ -232,9 +232,11 @@ mod tests {
                 |ui| {
                     crate::kit::native_css::begin_frame(ui);
                     let _frame = crate::kit::native_css::frame(ui);
-                    egui::Area::new(egui::Id::new("submenu")).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
-                        open_menu(ui, |ui| ui.label("Item"));
-                    });
+                    crate::kit::floating::area(ui.ctx(), egui::Id::unique("submenu"), crate::kit::floating::Kind::Menu)
+                        .order(egui::Order::Foreground)
+                        .show(ui.ctx(), |ui| {
+                            open_menu(ui, |ui| ui.label("Item"));
+                        });
                 },
             );
             output.textures_delta.clear();
