@@ -3772,35 +3772,7 @@ impl App {
             if let Some(project) = closing {
                 self.check_plugin_edits(project);
             }
-            // A picked clip's row in the clip column: it gets the piano roll's focus (#1054).
-            if action.id == "view.focusClip" {
-                let number = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
-                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
-                    self.arrangement.focus_clip((TrackId(track), ClipId(clip)));
-                    self.piano_roll.selected.clear();
-                }
-                continue;
-            }
-            // The ARA editor's Float and Dock: the window's own, not an undo step.
-            if action.id == "view.araFloat" {
-                let number = |key: &str| action.params[key].as_u64();
-                let track = number("track").and_then(|t| u32::try_from(t).ok()).map(TrackId);
-                let device = number("device").and_then(|d| usize::try_from(d).ok());
-                let float = action.params["float"].as_bool().unwrap_or(false);
-                if let (Some(track), Some(device), Ok(session)) = (track, device, self.projects.session_mut(None))
-                    && let Err(e) = session.set_ara_floating(track, device, float)
-                {
-                    self.status = Status::Error(e.message().to_owned());
-                }
-                continue;
-            }
-            // A clip's menu opens it in its track's plug-in that edits clips: the window does it.
-            if action.id == "view.araEditor" {
-                let id = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
-                if let (Some(track), Some(clip)) = (id("track"), id("clip")) {
-                    self.arrangement.select_clip(TrackId(track), ClipId(clip));
-                }
-                self.open_ara_editor();
+            if self.window_action(action) {
                 continue;
             }
             if let Some(project) = closing
@@ -3904,6 +3876,45 @@ impl App {
 
     /// What the Launcher view asked for this frame that the window keeps: the mixer's height,
     /// saved in Settings, and the detail area opened from a strip's device list.
+    /// Runs `action` when it is the window's own, not a session command (no undo step), and says
+    /// whether it was: the views put these among their actions, and the session does not know
+    /// them ("unknown command").
+    fn window_action(&mut self, action: &Action) -> bool {
+        let number = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
+        match action.id {
+            // A picked clip's row in the clip column: it gets the piano roll's focus (#1054).
+            "view.focusClip" => {
+                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
+                    self.arrangement.focus_clip((TrackId(track), ClipId(clip)));
+                    self.piano_roll.selected.clear();
+                }
+            }
+            // The ARA editor's Float and Dock.
+            "view.araFloat" => {
+                let device = action.params["device"].as_u64().and_then(|d| usize::try_from(d).ok());
+                let float = action.params["float"].as_bool().unwrap_or(false);
+                if let (Some(track), Some(device), Ok(session)) =
+                    (number("track").map(TrackId), device, self.projects.session_mut(None))
+                    && let Err(e) = session.set_ara_floating(track, device, float)
+                {
+                    self.status = Status::Error(e.message().to_owned());
+                }
+            }
+            // The ARA editor's ×: hides the editor as the piano roll's × does (View › Hide
+            // editor); the plug-in keeps the clip and its edits.
+            "view.editor" => self.hide_editor(),
+            // A clip's menu opens it in its track's plug-in that edits clips.
+            "view.araEditor" => {
+                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
+                    self.arrangement.select_clip(TrackId(track), ClipId(clip));
+                }
+                self.open_ara_editor();
+            }
+            _ => return false,
+        }
+        true
+    }
+
     fn session_view_done(&mut self) {
         let height = self.view.mixer_height.round() as u32;
         if height != self.settings.view.mixer_height {
