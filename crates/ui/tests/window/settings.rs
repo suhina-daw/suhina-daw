@@ -104,7 +104,11 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     // A copy to change becomes the theme in use, and is handed out to be written.
     harness.get_by_label("More").click();
     harness.run();
-    harness.get_by_label("Duplicate theme").click();
+    harness.get_by_label("Duplicate theme…").click();
+    harness.run();
+    // It asks first, with the default artwork left out unless it is ticked.
+    assert!(harness.query_by_label("Include the default artwork").is_some());
+    harness.get_by_label("Duplicate").click();
     harness.run();
     let saved: Vec<_> = harness
         .state_mut()
@@ -117,6 +121,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
         .collect();
     assert_eq!(saved, [("night-copy".to_string(), "Night copy".to_string())]);
     assert_eq!(harness.state().settings().theme, "night-copy");
+
     for button in ["Reload themes", "Open the themes folder", "Back up themes", "Export the theme template"] {
         harness.get_by_label("More").click();
         harness.run();
@@ -150,6 +155,28 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     };
     harness.state_mut().put_theme(&ctx, edited);
     assert_eq!(theme::accent(), colors.accent);
+
+    // New theme, with the default artwork: every built-in image goes to the theme's assets.
+    harness.get_by_label("More").click();
+    harness.run();
+    harness.get_by_label("New theme…").click();
+    harness.run();
+    harness.get_by_label("Include the default artwork").click();
+    harness.run();
+    harness.get_by_label("Create theme").click();
+    harness.run();
+    let made: Vec<_> = harness
+        .state_mut()
+        .take_theme_actions()
+        .into_iter()
+        .filter_map(|a| match a {
+            FileAction::Save { id, theme } => Some((id, theme.name, theme.skin.assets.len())),
+            _ => None,
+        })
+        .collect();
+    let defaults = suhina_ui::kit::skin::roles().count();
+    assert_eq!(made, [("new-theme".to_string(), "New theme".to_string(), defaults)]);
+    assert_eq!(harness.state().settings().theme, "new-theme");
 }
 
 #[test]

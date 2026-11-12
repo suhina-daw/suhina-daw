@@ -255,9 +255,40 @@ fn size(style: &ComputedStyle, property: Property) -> Dimension {
 }
 fn spacing(style: &ComputedStyle, property: Property) -> LengthPercentage {
     match style.get(property) {
-        Value::Length(Length::Px(n)) => length(n),
-        Value::Length(Length::Em(n)) => length((n * font(style)).min(16384.0)),
         Value::Length(Length::Percent(n)) => percent(n),
+        _ => length(spacing_points(style, property).unwrap_or(0.0)),
+    }
+}
+
+/// [`spacing_points`], with a percentage taken of `basis`: the width of the box around the
+/// element, as the layout takes it. For the CSS layout containers the sheet lets pad in percent
+/// (`workspace`, `toolbar`) that is their own box's width, the size they are laid out in.
+pub fn spacing_points_of(style: &ComputedStyle, property: Property, basis: f32) -> f32 {
+    match style.get(property) {
+        Value::Length(Length::Percent(n)) if basis.is_finite() => (n * basis.max(0.0)).clamp(0.0, MAX_SPACING),
+        _ => spacing_points(style, property).unwrap_or(0.0),
+    }
+}
+
+/// The most a padding or gap side resolves to, in points, for the layout and for painters alike.
+pub const MAX_SPACING: f32 = 16384.0;
+
+/// A padding (or gap) side in points as the layout resolves it, for painters that need the same
+/// box without laying the element out: a length in points, or in `em` of the element's own font
+/// size, 0 to [`MAX_SPACING`]. `None` for a percentage, which takes the size of the box around
+/// the element.
+pub fn spacing_points(style: &ComputedStyle, property: Property) -> Option<f32> {
+    match style.get(property) {
+        Value::Length(Length::Px(n)) if n.is_finite() => Some(n.clamp(0.0, MAX_SPACING)),
+        Value::Length(Length::Em(n)) if n.is_finite() => Some((n * font(style)).clamp(0.0, MAX_SPACING)),
+        Value::Length(Length::Percent(_)) => None,
+        _ => Some(0.0),
+    }
+}
+/// A border side's width, 0 to 16 px as it is painted.
+fn border(style: &ComputedStyle, property: Property) -> LengthPercentage {
+    match style.get(property) {
+        Value::Length(Length::Px(n)) if n.is_finite() => length(n.clamp(0.0, 16.0)),
         _ => length(0.0),
     }
 }
@@ -439,6 +470,13 @@ pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Res
                 top: spacing(computed, Property::PaddingTop),
                 bottom: spacing(computed, Property::PaddingBottom),
             },
+            // A box's border takes room inside it, as its padding does: children go in its content box.
+            border: taffy::Rect {
+                left: border(computed, Property::BorderLeftWidth),
+                right: border(computed, Property::BorderRightWidth),
+                top: border(computed, Property::BorderTopWidth),
+                bottom: border(computed, Property::BorderBottomWidth),
+            },
             margin: taffy::Rect {
                 left: margin(computed, Property::MarginLeft),
                 right: margin(computed, Property::MarginRight),
@@ -552,118 +590,5 @@ pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Res
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        cascade::{self, AppliedSheet, Layer},
-        media::Viewport,
-        selector::Element,
-        sheet::Sheet,
-    };
-    fn layout(source: &str, elements: Vec<Element>, width: f32) -> Vec<Option<Rect>> {
-        let sheet = Sheet::parse(source).unwrap();
-        assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
-        let tree = Tree::new(elements).unwrap();
-        let styles = cascade::compute(
-            &tree,
-            Viewport { width, height: 600.0, dark: true, reduced_motion: false },
-            &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }],
-        )
-        .unwrap();
-        compute(&tree, &styles, [width, 600.0]).unwrap()
-    }
-    #[test]
-    fn absent_panel_auto_track_collapses_and_resize_keeps_real_bounds() {
-        let css = "window { layout: grid; columns: auto 1fr; rows: 1fr; areas: 'browser main'; } #browser { area: browser; width: 248px; } #main { area: main; }";
-        let tree = vec![Element::new("window", None), Element::new("pane", Some(0)).with_id("main")];
-        for width in [1138.0, 800.0, 1.0, 0.0, 1138.0] {
-            let rects = layout(css, tree.clone(), width);
-            assert_eq!(rects[1].unwrap().width, width);
-            assert_eq!(rects[1].unwrap().x, 0.0);
-        }
-        let mut open = tree;
-        open.push(Element::new("pane", Some(0)).with_id("browser"));
-        let rects = layout(css, open, 800.0);
-        assert_eq!(rects[1].unwrap().x, 248.0);
-        assert_eq!(rects[1].unwrap().width, 552.0);
-    }
-    #[test]
-    fn proportional_row_and_order_preserve_control_identity() {
-        let elements = vec![
-            Element::new("device-panel", None),
-            Element::new("knob", Some(0)).with_id("cutoff"),
-            Element::new("knob", Some(0)).with_id("resonance"),
-        ];
-        let rects = layout(
-            "device-panel { layout: row; } #cutoff { width: 1fr; } #resonance { width: 4fr; order: -1; }",
-            elements,
-            500.0,
-        );
-        assert_eq!(rects[1].unwrap().width, 100.0);
-        assert_eq!(rects[1].unwrap().x, 400.0);
-        assert_eq!(rects[2].unwrap().width, 400.0);
-        assert_eq!(rects[2].unwrap().x, 0.0);
-    }
-    #[test]
-    fn standard_grid_places_panels_by_lines_and_collapses_auto_tracks() {
-        let css = "#workspace { display:grid; grid-template-columns:minmax(0, 1fr) auto; grid-template-rows:minmax(0, 1fr) auto; gap:8px; } #panel-browser { grid-column:2; grid-row:1 / -1; width:240px; } #panel-main { grid-column:1; grid-row:1; } #panel-detail { grid-column:1; grid-row:2; height:180px; }";
-        let mut elements = vec![
-            Element::new("div", None).with_id("workspace"),
-            Element::new("div", Some(0)).with_id("panel-main"),
-            Element::new("div", Some(0)).with_id("panel-browser"),
-            Element::new("div", Some(0)).with_id("panel-detail"),
-        ];
-        let rects = layout(css, elements.clone(), 800.0);
-        let (main, browser, detail) = (rects[1].unwrap(), rects[2].unwrap(), rects[3].unwrap());
-        assert_eq!(browser.width, 240.0);
-        assert_eq!(browser.x, 800.0 - 240.0);
-        assert_eq!(browser.height, 600.0);
-        assert_eq!(main.width, 800.0 - 240.0 - 8.0);
-        assert_eq!(detail.height, 180.0);
-        assert_eq!(detail.y, 600.0 - 180.0);
-        assert_eq!(main.height, 600.0 - 180.0 - 8.0);
-        // Closed panels leave no track behind.
-        elements.truncate(2);
-        let main = layout(css, elements, 800.0)[1].unwrap();
-        assert!(main.width >= 790.0 && main.height >= 590.0, "{main:?}");
-    }
-
-    #[test]
-    fn standard_flex_row_with_auto_margin_padding_and_display_none() {
-        let css = ".toolbar { display:flex; align-items:center; gap:6px; padding:0 6px; } #transport { margin-left:auto; } .module { width:100px; height:20px; flex-shrink:0; } @media (max-width:500px) { #mapping { display:none; } }";
-        let module = |id: &str| {
-            let mut element = Element::new("div", Some(0)).with_id(id);
-            element.classes.push("module".into());
-            element
-        };
-        let mut toolbar = Element::new("div", None);
-        toolbar.classes.push("toolbar".into());
-        let elements = vec![toolbar, module("position"), module("transport"), module("mapping")];
-        let rects = layout(css, elements.clone(), 800.0);
-        assert_eq!(rects[1].unwrap().x, 6.0);
-        // The auto margin takes the free space: transport and mapping sit at the right edge.
-        assert_eq!(rects[3].unwrap().x + 100.0, 800.0 - 6.0);
-        assert_eq!(rects[2].unwrap().x + 100.0 + 6.0, rects[3].unwrap().x);
-        assert_eq!(rects[2].unwrap().y, 290.0, "centred across the row");
-        let narrow = layout(css, elements, 400.0);
-        assert!(narrow[3].is_none(), "display:none in a media query hides it");
-    }
-
-    #[test]
-    fn track_lists_and_placements_are_bounded() {
-        assert_eq!(track_list("repeat(3, 10px) minmax(0, 1fr)").unwrap().len(), 4);
-        for bad in ["repeat(40, 1px)", "minmax(1fr, 2fr)", "repeat(2, repeat(2, 1px))", "-1px", "(", ""] {
-            assert!(track_list(bad).is_err(), "{bad}");
-        }
-        assert_eq!(placement("1 / -1").unwrap(), [GridLine::Line(1), GridLine::Line(-1)]);
-        assert_eq!(placement("span 2").unwrap(), [GridLine::Span(2), GridLine::Auto]);
-        for bad in ["0", "1 / 2 / 3", "span 0", "999"] {
-            assert!(placement(bad).is_err(), "{bad}");
-        }
-    }
-
-    #[test]
-    fn disjoint_named_area_is_refused() {
-        assert!(Areas::parse("'a b' 'b a'").is_err());
-    }
-}
+#[path = "layout_tests.rs"]
+mod tests;

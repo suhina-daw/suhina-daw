@@ -14,6 +14,7 @@ mod browser_panel;
 pub mod closing_dialog;
 mod control_bar;
 mod detail_area;
+use detail_area::DetailInsets;
 mod drops;
 pub use drops::is_theme_package;
 pub mod export_dialog;
@@ -28,6 +29,7 @@ pub mod name_clash_dialog;
 mod plugin_host;
 pub mod project_dialog;
 mod quick_add;
+mod running_copies;
 pub mod splash;
 pub mod start_panel;
 mod tabs;
@@ -38,7 +40,6 @@ pub mod updates;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::kit::surface::Backgrounds;
 use egui::{Align2, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::{Value, json};
 use suhina_engine::model::{ClipId, TrackId};
@@ -216,12 +217,21 @@ enum AfterLeaving {
 /// with its `extension` files name-sorted (the pack is skipped when it holds none), then the
 /// files beside the packs as `(entered directly)`. At most 2000 files a pack. The folder is
 /// re-read only when `folder_writes` changed; a pack, when its own writes changed.
+/// The folder's packs, the two shapes the everyday library carries
+/// ([docs/spec/nam-amp-and-cab.md] › Folders › Packs): a pack-sized folder directly under the
+/// folder in Settings, files right in it (the unpacked shipped pack); or a collection that
+/// arrives grouped by source, whose capture folders sit one level deeper and list as their
+/// own packs, named with their group (`Live Amp Modeler / Albion Chime (Slammin Captures)`)
+/// — no rearranging for the tool. The files beside the packs at the top form the loose pack.
+/// Also returns the folder and its top-level folders, each with their write time at the read:
+/// the check below reads them again, so a capture added inside a collection lists again
+/// ([ADR 0036] › 5, the library's folders are the users').
 fn scan_sets(
     folder: &std::path::Path,
     extension: &str,
     previous: &[crate::detail::device_widgets::Set],
     pack_writes: &mut HashMap<String, Option<std::time::SystemTime>>,
-) -> Vec<crate::detail::device_widgets::Set> {
+) -> (Vec<crate::detail::device_widgets::Set>, Vec<(String, Option<std::time::SystemTime>)>) {
     const CAP: usize = 2000;
     let files_of = |dir: &std::path::Path| -> Vec<(String, String)> {
         let mut entries =
@@ -237,37 +247,89 @@ fn scan_sets(
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
-                right.then_some((path.display().to_string(), name))
+                // The rows carry the canonical form ([ADR 0036] › 5, the review): a panel's
+                // per-frame compares read them as they are, and the state's joined form is
+                // the only side that folds.
+                right.then_some((
+                    crate::detail::device_widgets::canonical_paths(path.display().to_string().as_str()),
+                    name,
+                ))
             })
             .take(CAP)
             .collect()
     };
-    let mut packs: Vec<(String, Vec<(String, String)>)> = Vec::new();
-    let mut folders_here: Vec<std::path::PathBuf> = std::fs::read_dir(folder)
-        .map(|entries| entries.flatten().map(|entry| entry.path()).filter(|path| path.is_dir()).collect())
-        .unwrap_or_default();
-    folders_here
-        .sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default());
-    for pack_folder in folders_here {
-        let name = pack_folder.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-        let writes = std::fs::metadata(&pack_folder).ok().and_then(|m| m.modified().ok());
-        let key = pack_folder.display().to_string();
+    let mut pack_of = |dir: &std::path::Path, name: String| -> Option<crate::detail::device_widgets::Set> {
+        let writes = std::fs::metadata(dir).ok().and_then(|m| m.modified().ok());
+        let key = dir.display().to_string();
         let scan = pack_writes.get(&key) != Some(&writes);
         pack_writes.insert(key, writes);
         let files = if scan {
-            files_of(&pack_folder)
+            files_of(dir)
         } else {
-            previous.iter().find(|pack| pack.name == name).map(|pack| pack.files.clone()).unwrap_or_default()
+            previous.iter().find(|pack| pack.name == name).map_or_else(Vec::new, |pack| pack.files.clone())
         };
-        if let Some(files) = (!files.is_empty()).then_some(files) {
-            packs.push((name, files));
+        (!files.is_empty()).then_some(crate::detail::device_widgets::Set { name, files })
+    };
+    let mut watch =
+        vec![(folder.display().to_string(), std::fs::metadata(folder).ok().and_then(|m| m.modified().ok()))];
+    let mut packs: Vec<crate::detail::device_widgets::Set> = Vec::new();
+    let mut groups: Vec<std::path::PathBuf> = std::fs::read_dir(folder)
+        .map(|entries| entries.flatten().map(|entry| entry.path()).filter(|path| path.is_dir()).collect())
+        .unwrap_or_default();
+    groups.sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default());
+    for group in groups {
+        let group_name = group.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        watch.push((group.display().to_string(), std::fs::metadata(&group).ok().and_then(|m| m.modified().ok())));
+        if let Some(pack) = pack_of(&group, group_name.clone()) {
+            packs.push(pack);
+        }
+        let mut here: Vec<std::path::PathBuf> = std::fs::read_dir(&group)
+            .map(|entries| entries.flatten().map(|entry| entry.path()).filter(|path| path.is_dir()).collect())
+            .unwrap_or_default();
+        here.sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default());
+        for capture in here {
+            let capture_name = capture.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+            // A capture folder's own writes (a file the user dropped in it) are watched too:
+            // its mtime is what changes, its parents' do not.
+            watch.push((
+                capture.display().to_string(),
+                std::fs::metadata(&capture).ok().and_then(|m| m.modified().ok()),
+            ));
+            if let Some(pack) = pack_of(&capture, format!("{group_name} / {capture_name}")) {
+                packs.push(pack);
+            }
         }
     }
     let loose = files_of(folder);
     if !loose.is_empty() {
-        packs.push((crate::detail::device_widgets::LOOSE_PACK.to_owned(), loose));
+        packs.push(crate::detail::device_widgets::Set {
+            name: crate::detail::device_widgets::LOOSE_PACK.to_owned(),
+            files: loose,
+        });
     }
-    packs.into_iter().map(|(name, files)| crate::detail::device_widgets::Set { name, files }).collect()
+    (packs, watch)
+}
+
+/// The shipped pack's name, what the panels always list first ([ADR 0036]).
+/// The shipped files of the device `id`, `(key, shown name)` ([ADR 0036]): the key the file
+/// command takes (a shipped file's state), the name the file's own shows in the lists.
+fn shipped_files(id: &str) -> Vec<(String, String)> {
+    let extension = format!(".{}", suhina_device_registry::file_extension(id).unwrap_or_default());
+    suhina_device_registry::pack_files(id)
+        .into_iter()
+        .map(|(name, _)| {
+            let key = suhina_device_registry::builtin_file_key(id, name);
+            (key, name.strip_suffix(&extension).unwrap_or(name).to_string())
+        })
+        .collect()
+}
+
+/// The shipped pack as one Set, for `nam_lists` ([ADR 0036] › the starter pack). `None` when
+/// the device ships no files.
+fn shipped_set(id: &str) -> Option<crate::detail::device_widgets::Set> {
+    let files = shipped_files(id);
+    (!files.is_empty())
+        .then_some(crate::detail::device_widgets::Set { name: suhina_device_registry::SHIPPED_PACK.to_string(), files })
 }
 
 /// A device's file path (its state as UTF-8), when it is a file-running one
@@ -289,18 +351,33 @@ fn device_file_path(device: &suhina_engine::model::Device) -> Option<String> {
 const METERS_SETTLE_SECONDS: f64 = 0.3;
 
 /// The NAM folders' packs the panels list ([docs/spec/nam-amp-and-cab.md] › Folders › Packs),
-/// with each folder's writes when they were read and each pack's files keyed by the pack's
-/// path with its writes.
+/// and, per folder, the directories the last walk visited with their write times at the
+/// visit: the check below reads each again, so a change inside any of them (a capture
+/// dropped in a group's folder, a pack rename) lists again.
 #[derive(Default)]
 struct NamCache {
     models: Vec<crate::detail::device_widgets::Set>,
     irs: Vec<crate::detail::device_widgets::Set>,
-    models_writes: Option<std::time::SystemTime>,
-    irs_writes: Option<std::time::SystemTime>,
-    /// A pack's write time by its folder's path, so a new capture in one pack re-reads only
-    /// that pack.
+    /// The listing folders the last read saw, each with its write time then: the folder in
+    /// Settings and its top-level folders. The next check reads them again; a change inside
+    /// any of them (a capture dropped into a collection, a pack folder made) reads again.
+    models_watch: Vec<(String, Option<std::time::SystemTime>)>,
+    irs_watch: Vec<(String, Option<std::time::SystemTime>)>,
+    /// A pack folder's write time by its path, so a scan re-reads only the packs that
+    /// changed.
     pack_writes: HashMap<String, Option<std::time::SystemTime>>,
+    /// When the watch was last checked: the check stats every watched folder, and the detail
+    /// area draws the lists every frame, so the check runs at most
+    /// [`NAM_WATCH_INTERVAL`] apart ([ADR 0036] › 5, the review). `None` until the first
+    /// check, and cleared again by the tests, which must see a write the moment they make it.
+    checked: Option<std::time::Instant>,
 }
+
+/// How long a watch check waits before it reads the watched folders' stamps again: a change
+/// inside any of them shows in the panels within a quarter of a second, and a frame does not
+/// spend a syscall per watched folder on folders that did not change ([ADR 0036] › 5, the
+/// review).
+const NAM_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// The window's state.
 /// What auto-arm (Settings › MIDI, #834) last acted on.
@@ -376,6 +453,13 @@ pub struct App {
     /// The Arrangement view's data, the revision it was built from and the folds it was built
     /// with: folding a group changes what the lanes are, without changing the project.
     timeline: Option<(u64, Folds, Timeline)>,
+    /// The value a dragged plug-in lane last sent its plug-in (track, device, parameter id, the
+    /// value's bits), so a drag that holds still sends nothing more (#1205).
+    lane_preview: Option<(TrackId, usize, u32, u64)>,
+    /// Parameters moved in plug-ins' own editors this frame, for their tracks' lanes to show
+    /// once the timeline is built: such an edit changes the project, so the timeline is
+    /// rebuilt in the same frame (#1205).
+    touched_lanes: Vec<(TrackId, crate::arrangement::automation_lanes::LaneKey)>,
     /// Waveforms of the open project's audio files.
     waveforms: std::sync::Arc<crate::kit::waveform::Waveforms>,
     /// The plug-in library as Settings shows it, and a scan running in the background.
@@ -434,6 +518,9 @@ pub struct App {
     fitted_editors: std::collections::HashSet<(TrackId, Vec<usize>)>,
     /// An editor is embedded in the chain shown: the area may be taller than the panels.
     editor_in_chain: bool,
+    /// What the detail area's boxes add around a row of devices and around the piano roll: their
+    /// borders and padding, top and bottom, as the last frame's style gave them (#1336).
+    detail_insets: DetailInsets,
     /// A clip being renamed (Rename in its menu, Ctrl+R): the command's target, the name typed
     /// so far, and whether the field has had the keyboard yet.
     rename: Option<(serde_json::Value, String, bool)>,
@@ -453,6 +540,16 @@ pub struct App {
     /// and the detail area's height a splitter drag has reached so far, unclamped.
     detail_max: bool,
     detail_drag: Option<f32>,
+    /// The width a drag of the stacked devices' column splitter has reached so far.
+    side_drag: Option<f32>,
+    /// What was copied or cut last: Ctrl+V pastes notes into the clip the piano roll shows and
+    /// devices into the selected track's chain, although a click in the view took the other edit
+    /// keys.
+    copied_last: CopiedLast,
+    /// When Escape was last pressed, and whether it was pressed twice in a row this frame (the
+    /// focus mode, read before the shortcuts take the key).
+    last_escape: Option<f64>,
+    escape_twice: bool,
     /// The app's own window (`set_editor_owner`): a press on its controls takes the keyboard
     /// back from an embedded plug-in editor (`kit::keyboard`).
     window: Option<u64>,
@@ -483,6 +580,14 @@ pub struct App {
     midi_listed: Option<std::time::Instant>,
     /// Follows the audio devices while Settings › Audio shows, so headphones connected later show up.
     audio_devices: suhina_session::audio::DeviceWatch,
+    /// Follows how many times an output was opened while Settings › Audio shows: each opening
+    /// asked an ASIO driver for its buffer sizes anew, so the list is made again.
+    audio_output_watch: suhina_session::audio::Watch<u64>,
+    /// Settings › Audio showed in the last frame, and the window had the focus: when the page
+    /// opens or closes, or the window gets the focus back while it shows (from a driver's control
+    /// panel, say), the ASIO driver is asked for its sizes again (`audio.checkDriver`).
+    audio_page_shown: bool,
+    window_focused: bool,
     /// The themes to pick from; the settings say which is in use.
     themes: Themes,
     /// The project dialog (File › New or open) while it shows, and what it lists.
@@ -539,9 +644,15 @@ pub struct App {
     data_default_folder: PathBuf,
     /// The NAM models' and IR folders while the settings leave them empty.
     nam_default_folders: (PathBuf, PathBuf),
+    /// The library's root, where a set-library-relative device file state reads ([ADR 0036] ›
+    /// it); the panel rows resolve a relative state against it.
+    library_base: Option<PathBuf>,
     /// The NAM folders' files, read again when either folder's writes change
     /// ([docs/spec/nam-amp-and-cab.md] › Folders).
     nam_cache: NamCache,
+    /// The audio output as the trace last said it, so the other running apps are listed once
+    /// each time it opens (#1163).
+    traced_output: Option<String>,
     /// The window's title as last set: the active project, marked when it has unsaved changes.
     window_title: String,
     /// The browser panel (`docs/spec/browser.md`), the same for every project.
@@ -575,8 +686,9 @@ pub struct App {
     /// bar shows it and once a second is often enough for a number that moves that slowly.
     ram: Option<u64>,
     next_ram: Option<f64>,
-    /// The audio's health counters last traced: device underruns, late stretched frames and late plug-in blocks.
-    audio_traced: (u64, u64, u64, u64),
+    /// The audio's health counters last traced: device underruns, late stretched frames and late
+    /// plug-in blocks, and the input's.
+    audio_traced: (u64, u64, u64, u64, u64),
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
     /// A device carried from a chain or a strip's list onto another track (#688): its track and
@@ -621,6 +733,7 @@ impl App {
             stashes: HashMap::new(),
             open_prompt: None,
             unsaved_prompt: None,
+            traced_output: None,
             ara_prompt: None,
             folder_drop: None,
             name_clash: None,
@@ -647,6 +760,8 @@ impl App {
             open_request: None,
             revision: 0,
             timeline: None,
+            lane_preview: None,
+            touched_lanes: Vec::new(),
             waveforms: std::sync::Arc::default(),
             plugins: PluginsView::default(),
             plugins_read: false,
@@ -672,6 +787,7 @@ impl App {
             auto_arm: AutoArm::default(),
             fitted_editors: std::collections::HashSet::new(),
             editor_in_chain: false,
+            detail_insets: DetailInsets::default(),
             rename: None,
             tab_switcher: None,
             quick_add: None,
@@ -679,7 +795,11 @@ impl App {
             quick_add_kept: String::new(),
             clips_before: Vec::new(),
             detail_max: false,
+            last_escape: None,
+            escape_twice: false,
             detail_drag: None,
+            side_drag: None,
+            copied_last: CopiedLast::Other,
             window: None,
             title_bar: 0.0,
             window_corner: 0,
@@ -695,6 +815,9 @@ impl App {
             about: About::default(),
             midi_listed: None,
             audio_devices: suhina_session::audio::DeviceWatch::default(),
+            audio_output_watch: suhina_session::audio::Watch::default(),
+            audio_page_shown: false,
+            window_focused: true,
             themes: Themes::default(),
             project_dialog: None,
             project_lists: Lists::default(),
@@ -720,7 +843,8 @@ impl App {
             default_folders: (PathBuf::from("Projects"), PathBuf::from("Templates")),
             themes_default_folder: PathBuf::from("themes"),
             data_default_folder: PathBuf::new(),
-            nam_default_folders: (PathBuf::from("NAM models"), PathBuf::from("IRs")),
+            nam_default_folders: (PathBuf::from("Sounds/NAM/Amp models"), PathBuf::from("Sounds/NAM/Cabinets")),
+            library_base: None,
             nam_cache: NamCache::default(),
             window_title: String::new(),
             browser: BrowserState::default(),
@@ -738,7 +862,7 @@ impl App {
             reveal: None,
             ram: None,
             next_ram: None,
-            audio_traced: (0, 0, 0, 0),
+            audio_traced: (0, 0, 0, 0, 0),
             carry: None,
             device_carry: None,
             applied_grid: None,
@@ -785,13 +909,28 @@ impl App {
     /// views keep from them is read again.
     pub fn note_outside_change(&mut self) {
         self.revision += 1;
+        self.browser.reconcile(&mut self.projects);
     }
 
     /// Uses `library` for the browser and the `library.*` commands (ADR 0012); the app gives
     /// it Suhina's settings folder and starts it.
     pub fn set_file_library(&mut self, library: suhina_library::Library) {
         self.projects.set_file_library(library);
-        self.browser.relist();
+        // The map's kept layouts key on the old library's files; a replacement can read the
+        // same place and the same revisions, so they are dropped with it ([#1254] review).
+        self.sample_map.library_replaced();
+        // Its tag ids are the new library's own: a number the old one used can name another
+        // tag there, so the browser keeps nothing by id ([#1254] review).
+        self.browser.forget_tags();
+    }
+
+    /// The library's root (`Documents/Suhina`, docs/decisions/0036-library-and-shipped-content.md › 5):
+    /// the user's own presets save into its `Presets/<device id>/` folders, and the browser
+    /// lists them beside the stock ones.
+    pub fn set_library_base(&mut self, base: PathBuf) {
+        self.library_base = Some(base.clone());
+        self.browser.set_library(Some(base.clone()));
+        self.projects.set_library_base(base);
     }
 
     /// The open projects, to change (the browser's library, for the app).
@@ -1216,24 +1355,35 @@ impl App {
         if !suhina_plugins::trace::on() {
             return;
         }
-        let Some(player) = self.session().and_then(Session::player) else { return };
-        let info = player.output_info();
-        if let Some(info) = &info {
-            suhina_plugins::trace::state(
-                "audio output",
-                format!(
-                    "host={:?}, device={:?}, sample_rate={}, device_buffer={}, engine_block={}, fallback={}, exclusive={}",
-                    info.host,
-                    info.device,
-                    info.sample_rate,
-                    info.buffer_frames,
-                    info.engine_block,
-                    info.fallback,
-                    info.exclusive
-                ),
-            );
+        // Once: the render thread then waits for plug-ins on a coarser timeout (#1256).
+        if suhina_plugins::a_wait_failed() {
+            suhina_plugins::trace::state("plug-in waits", "a wait failed; waiting on the event's own timeout".into());
         }
+        let Some(info) = self.session().and_then(Session::player).map(|player| player.output_info()) else { return };
+        if let Some(info) = &info {
+            let output = format!(
+                "host={:?}, device={:?}, sample_rate={}, device_buffer={}, engine_block={}, fallback={}, exclusive={}",
+                info.host,
+                info.device,
+                info.sample_rate,
+                info.buffer_frames,
+                info.engine_block,
+                info.fallback,
+                info.exclusive
+            );
+            // As the device opens: the other Suhina apps running, which can make playback
+            // scratch on the same device with no counter showing it (#1163).
+            if self.traced_output.as_deref() != Some(output.as_str()) {
+                suhina_plugins::trace::state("other Suhina apps running", running_copies::describe());
+                self.traced_output = Some(output.clone());
+            }
+            suhina_plugins::trace::state("audio output", output);
+        }
+        let Some(player) = self.session().and_then(Session::player) else { return };
         let device = info.as_ref().map_or(0, |i| i.underruns);
+        // Blocks that found too little input from the input device; counted from when the
+        // output last opened, so a smaller number than before means it opened again.
+        let input = info.as_ref().map_or(0, |i| i.input_underruns);
         let stretched = player.stretch_underruns();
         let moves = player.stretch_moves();
         let (misses, worst, worst_misses) = player.plugin_misses();
@@ -1244,17 +1394,19 @@ impl App {
             .unwrap_or_else(|| "none".into());
         let cpu = player.cpu_monitor().load_milli();
         let running = player.monitor().running();
-        let (was_device, was_stretched, was_misses, was_blocked) = self.audio_traced;
+        let (was_device, was_stretched, was_misses, was_blocked, was_input) = self.audio_traced;
         if running
             || device > was_device
+            || input > was_input
             || stretched > was_stretched
             || misses > was_misses
             || blocked > was_blocked
             || cpu >= 700
         {
             suhina_plugins::trace!(
-                "audio: device underruns {device} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}",
+                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
                 device.saturating_sub(was_device),
+                input.saturating_sub(was_input),
                 stretched.saturating_sub(was_stretched),
                 misses.saturating_sub(was_misses),
                 blocked.saturating_sub(was_blocked),
@@ -1267,15 +1419,18 @@ impl App {
                 info.as_ref().map(|i| (&i.host, &i.device, i.sample_rate)),
                 player.monitor().beat(),
                 player.cpu_monitor().late_render(),
+                info.as_ref().map(|i| &i.input_diagnostics),
+                info.as_ref().map(|i| i.render_diagnostics),
             );
         }
-        self.audio_traced = (device, stretched, misses, blocked);
+        self.audio_traced = (device, stretched, misses, blocked, input);
     }
 
     /// Uses `settings` from now on, as loaded from the settings file.
     pub fn set_settings(&mut self, ctx: &egui::Context, settings: Settings) {
         self.projects.set_backup_settings(settings.backup, settings.backup_clean_up);
         motion::set_enabled(ctx, settings.animations);
+        crate::kit::widgets::set_drag_hides_pointer(ctx, settings.drag_hides_pointer);
         self.arrangement.headers_left = headers_left(settings.track_headers);
         self.arrangement.returns_hidden = settings.view.returns_hidden;
         self.arrangement.waveform_zoom = settings.view.waveform_zoom as f32 / 100.0;
@@ -1335,9 +1490,25 @@ impl App {
         self.default_folders = (projects, templates);
     }
 
+    /// The file a file-backed device starts on ([docs/spec/nam-amp-and-cab.md]): the first
+    /// pack's first file from the folder it lists from — the setting's or the default's — when
+    /// that folder holds any. A drag or a quick add offers it with the device, so a new NAM Amp
+    /// Modeler or Cab Loader lands loaded.
+    pub fn device_default_file(&mut self, id: &str) -> Option<String> {
+        let extension = suhina_device_registry::file_extension(id)?;
+        let lists = self.nam_lists();
+        let packs = match extension {
+            "nam" => lists.models.as_slice(),
+            "wav" => lists.irs.as_slice(),
+            _ => return None,
+        };
+        packs.first()?.files.first().map(|(path, _)| path.clone())
+    }
+
     /// Where the NAM models' and IR folders sit when the settings leave them empty
-    /// ([docs/spec/nam-amp-and-cab.md]): `Suhina/NAM models` and `Suhina/IRs` in the user's
-    /// documents. The app makes both at start when they are not there.
+    /// ([docs/spec/nam-amp-and-cab.md]): `Suhina/Sounds/NAM/Amp models` and
+    /// `Suhina/Sounds/NAM/Cabinets` in the user's documents folder. The app makes both at
+    /// start when they are not there.
     pub fn set_nam_default_folders(&mut self, models: PathBuf, irs: PathBuf) {
         self.nam_default_folders = (models, irs);
     }
@@ -1349,23 +1520,86 @@ impl App {
         let (models_folder, irs_folder) = (self.nam_models_folder(), self.ir_folder());
         let mut cache = std::mem::take(&mut self.nam_cache);
         let mut folders = [
-            (&models_folder, "nam", &mut cache.models, &mut cache.models_writes),
-            (&irs_folder, "wav", &mut cache.irs, &mut cache.irs_writes),
+            (&models_folder, "nam", &mut cache.models, &mut cache.models_watch),
+            (&irs_folder, "wav", &mut cache.irs, &mut cache.irs_watch),
         ];
-        for (folder, extension, sets, cache_writes) in folders.iter_mut() {
-            let writes = std::fs::metadata(&**folder).ok().and_then(|m| m.modified().ok());
-            let scan = writes != **cache_writes || (**sets).is_empty();
-            **cache_writes = writes;
+        // The stamps' read runs at most [`NAM_WATCH_INTERVAL`] apart — the detail area draws
+        // these lists every frame, and a frame does not stat every watched folder
+        // ([ADR 0036] › 5, the review). The cheap checks stay every frame: empty lists (a
+        // device just added reads at once) and the folder the settings name.
+        let due = cache.checked.is_none_or(|at| at.elapsed() >= NAM_WATCH_INTERVAL);
+        for (folder, extension, sets, watch) in folders.iter_mut() {
+            // The watch holds the folder, its top-level folders and their capture folders with
+            // their write times at the last read; a change inside any of them (a new pack, a
+            // capture in a collection, a file in a capture) reads the listing anew. A pack's
+            // files re-read only when the pack's own folder changed
+            // ([docs/spec/nam-amp-and-cab.md] › Folders › Packs). The
+            // folder itself changed since the last read (the setting moved, or the default
+            // folder went): the listing reads again, not the last read's folder's files.
+            let reading = due.then(|| {
+                (**watch)
+                    .iter()
+                    .map(|(path, _)| (path.clone(), std::fs::metadata(path).ok().and_then(|m| m.modified().ok())))
+                    .collect::<Vec<_>>()
+            });
+            let scan = (**sets).is_empty()
+                || reading.as_ref().is_some_and(|reading| reading != &**watch)
+                || (**watch).first().is_some_and(|w| w.0 != folder.display().to_string());
+            let previous = std::mem::take(&mut **sets);
             if scan {
-                let previous = std::mem::take(&mut **sets);
-                **sets = scan_sets(folder, extension, &previous, &mut cache.pack_writes);
+                let (fresh, seen) = scan_sets(folder, extension, &previous, &mut cache.pack_writes);
+                **sets = fresh;
+                **watch = seen;
+            } else {
+                **sets = previous;
             }
         }
+        if due {
+            cache.checked = Some(std::time::Instant::now());
+        }
+        // The shipped pack lists first, before every folder's own, whatever the settings say
+        // ([ADR 0036] › the starter pack). Its key is what the file command takes. A folder that
+        // already holds part of it (the unpack did, or the user carried them) gives its own
+        // "Suhina" rows: those stand for the files the folder holds, and every factory file it
+        // does not hold joins them after, keyed so the embedded copy runs it.
+        let shipped_first = |rows: &mut Vec<crate::detail::device_widgets::Set>, id: &str| {
+            let Some(shipped) = shipped_set(id) else { return };
+            match rows.iter().position(|set| set.name == suhina_device_registry::SHIPPED_PACK) {
+                Some(at) => {
+                    let mut set = rows.remove(at);
+                    // The disk rows keep their names; a factory file the folder does not carry
+                    // goes after them under its `builtin:` key.
+                    let held: Vec<String> = set
+                        .files
+                        .iter()
+                        .map(|(path, _)| {
+                            std::path::Path::new(path)
+                                .file_name()
+                                .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned())
+                        })
+                        .collect();
+                    set.files.extend(shipped.files.into_iter().filter(|(key, _)| {
+                        let name =
+                            std::path::Path::new(key).file_name().unwrap_or_default().to_string_lossy().into_owned();
+                        !held.contains(&name)
+                    }));
+                    rows.insert(0, set);
+                }
+                None => {
+                    let mut ahead = vec![shipped];
+                    ahead.extend(std::mem::take(rows));
+                    *rows = ahead;
+                }
+            }
+        };
+        shipped_first(&mut cache.models, "nam-amp-modeler");
+        shipped_first(&mut cache.irs, "nam-cab-loader");
         let lists = crate::detail::device_widgets::Lists {
             models: cache.models.clone(),
             irs: cache.irs.clone(),
             names: self.nam_names(),
             notes: self.nam_notes(),
+            library: self.library_base.clone(),
         };
         self.nam_cache = cache;
         lists
@@ -2391,6 +2625,8 @@ impl App {
         if let Some(gesture) = action.params.get("gesture").and_then(serde_json::Value::as_str) {
             self.open_gesture = Some(gesture.to_owned());
         }
+        // A control moved by hand shows its parameter in the track's open lanes (#1205).
+        self.focus_touched_lane(action);
         // A fader or a send dragged on one of several selected tracks moves them together.
         if let Some(wider) = self.drag_to_selection(action) {
             return self.run(&wider);
@@ -2403,6 +2639,15 @@ impl App {
         // of what was there before, so it lets go.
         if matches!(action.id, "edit.undo" | "edit.redo") {
             self.carry = None;
+        }
+        // Which copy came last decides what Ctrl+V pastes (› `CopiedLast`).
+        match action.id {
+            "note.copy" | "note.cut" => self.copied_last = CopiedLast::Notes,
+            "device.copy" => self.copied_last = CopiedLast::Devices,
+            "clip.copy" | "clip.cut" | "range.copy" | "range.cut" | "track.copy" | "track.cut" | "automation.copy" => {
+                self.copied_last = CopiedLast::Other
+            }
+            _ => {}
         }
         if action.id == "ui.renameClip" {
             let mut target = action.params.clone();
@@ -2460,7 +2705,14 @@ impl App {
             }
             _ => None,
         };
-        match session.execute(action.id, params) {
+        let depth = session.undo_steps();
+        let ran = session.execute(action.id, params);
+        // A range a duplicate moved onto its copy goes back with its undo (#1322).
+        if ran.is_ok() {
+            let after = session.undo_steps();
+            self.arrangement.automation.follow_history(action.id, depth, after);
+        }
+        match ran {
             Ok(result) if result["no_input"].as_bool() == Some(true) => {
                 self.revision += 1;
                 self.status = Status::Hint(
@@ -2515,6 +2767,13 @@ impl App {
                         }
                     }
                     self.select_tracks(tracks);
+                }
+                // A saved preset is said in the status bar, where the library writes land
+                // (`device.savePreset`, docs/decisions/0036-library-and-shipped-content.md › 5).
+                if action.id == "device.savePreset" {
+                    self.browser.refresh();
+                    let name = result["name"].as_str().unwrap_or_default();
+                    self.status = Status::Hint(format!("Preset {name} saved into the library's Presets folder"));
                 }
                 // A new track is selected and scrolled into view (#918).
                 if action.id == "track.add" {
@@ -2629,7 +2888,7 @@ impl App {
         if self.settings.track_headers.is_none() {
             self.arrangement.headers_left = headers_left(None);
         }
-        // The frame's placed controls, for anchors between them (`--suhina-anchor-*`).
+        // The frame's placed controls, for anchors between them (`anchor-*`).
         let _capture = crate::kit::control_layout::Capture::begin(ui.ctx());
         self.ui_content(ui);
         crate::kit::widgets::hide_pointer_during_value_drag(ui.ctx());
@@ -2646,16 +2905,22 @@ impl App {
             ui,
             self.settings.animations && self.settings.theme != "high-contrast",
         );
-        let _window_style = crate::kit::style_class::enter("window");
-        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let window_style = crate::kit::element::WINDOW.enter();
+        let mut styled_ui = window_style.ui(ui);
         let ui = &mut *styled_ui;
         if let Err(error) = self.background.update(ui, &self.settings, self.themes.palette(&self.settings.theme)) {
             self.status = Status::Error(error);
         }
+        // The root: the window's background, painted once under everything (over a private
+        // image, at its strength). Each view, panel and bar paints only its own over it (#1233).
+        let full_screen = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
+        let corner = if full_screen { 0 } else { self.window_corner };
+        let root = window_style.background_or(theme::window_background());
+        ui.painter().rect_filled(ui.max_rect(), corner, root);
+        window_style.paint_background(ui.painter(), ui.max_rect(), f32::from(corner));
         let liquid =
             self.themes.get(&self.settings.theme).and_then(|theme| theme.liquid).unwrap_or(self.settings.view.liquid);
         crate::kit::liquid::configure(ui.ctx(), liquid);
-        crate::kit::surface::begin_frame(ui.ctx());
         crate::kit::liquid::begin_frame(
             ui.ctx(),
             self.themes.get(&self.settings.theme).map(|theme| theme.gradients.clone()).unwrap_or_default(),
@@ -2688,8 +2953,15 @@ impl App {
             d.insert_temp(egui::Id::unique(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)
         });
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
+        self.piano_roll.covered_whole = self.settings.view.covered_whole;
         self.piano_roll.key_style = self.settings.piano_key_style;
         self.piano_roll.key_names = self.settings.piano_key_names;
+        crate::detail::piano_roll::set_note_spelling(self.settings.note_spelling);
+        crate::detail::piano_roll::set_default_scale(
+            self.settings.default_scale_root,
+            self.settings.default_scale_mode,
+        );
+        self.piano_roll.highlight_scale = self.settings.highlight_scale;
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;
@@ -2719,7 +2991,7 @@ impl App {
         }
         if self.arrangement.grid_keys[0].is_empty() {
             self.arrangement.grid_keys =
-                crate::detail::piano_roll::grid_key_labels(&self.keymap, &arrangement_view::GRID_KEYS);
+                crate::interaction::grid_menu::grid_key_labels(&self.keymap, &arrangement_view::GRID_KEYS);
         }
         if self.arrangement.toolbar && self.arrangement.tool_keys.is_empty() {
             self.arrangement.tool_keys =
@@ -2850,16 +3122,18 @@ impl App {
         }
         self.frame_trace.mark("plug-in requests");
 
-        // Under the system's title bar: the window's background, as behind the bars below it.
+        // Under the system's title bar: the toolbar's background, as behind the bars below it.
         // Full screen hides the title bar, and the room with it.
-        let full_screen = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
-        let corner = if full_screen { 0 } else { self.window_corner };
         if self.title_bar > 0.0 && !full_screen {
             egui::Panel::top("title-bar").exact_size(self.title_bar).frame(egui::Frame::NONE).show(ui, |ui| {
                 // The strip reads as the top of the toolbar under it, in the toolbar's colour.
-                let _style_class = crate::kit::style_class::enter("toolbar");
+                let _style_class = crate::kit::element::TOOLBAR.enter();
                 let top = egui::CornerRadius { nw: corner, ne: corner, sw: 0, se: 0 };
-                ui.painter().fill_background(ui.max_rect(), top, theme::panel_background());
+                ui.painter().rect_filled(
+                    ui.max_rect(),
+                    top,
+                    crate::kit::style_class::surface_or(theme::panel_background()),
+                );
             });
         }
         let project_info = self
@@ -2884,53 +3158,65 @@ impl App {
         // The application bar is the window's title bar where Suhina draws its own (Windows); where
         // the system draws one, it would be a second.
         if cfg!(target_os = "windows") {
-            with_bar_line(ui, "application-bar", |ui| {
-                egui::Panel::top("application-bar")
-                    .exact_size(28.0)
-                    .frame(egui::Frame::NONE)
-                    .show(ui, |ui| application_bar::show(ui, self.settings.view, &project_info, &timing))
-            });
+            let bar = crate::kit::element::APPLICATION_BAR.enter();
+            egui::Panel::top("application-bar")
+                .exact_size(bar_height(ui, &bar, 28.0))
+                .show_separator_line(false)
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| {
+                    let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO);
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+                        application_bar::show(ui, &bar, self.settings.view, &project_info, &timing)
+                    })
+                });
         }
         // The window's own menu bar, unless Settings turns it off (by default on macOS, whose bar
         // at the top of the screen has the same menus).
         if self.settings.view.menu_bar {
-            with_bar_line(ui, "menu-bar", |ui| {
-                egui::Panel::top("menu-bar")
-                    .exact_size(theme::MENU_BAR)
-                    .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(4, 0)))
-                    .show(ui, |ui| {
-                        let _style_class = crate::kit::style_class::enter("menu-bar");
-                        let bar = ui.max_rect().expand2(Vec2::new(4.0, 0.0));
-                        ui.painter().fill_background(bar, 0.0, theme::panel_background());
-                        crate::kit::native_css::background(ui.painter(), bar);
-                        self.menu_bar(ui, &mut actions)
+            let bar = crate::kit::element::MENU_BAR.enter();
+            egui::Panel::top("menu-bar")
+                .exact_size(bar_height(ui, &bar, theme::MENU_BAR))
+                .show_separator_line(false)
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| {
+                    // The menus keep 4 points from the bar's sides.
+                    let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO).shrink2(Vec2::new(4.0, 0.0));
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+                        self.menu_bar(ui, &bar, &mut actions)
                     })
-            });
+                });
         }
         self.frame_trace.mark("menu bar");
         if self.projects.len() >= 2 {
-            egui::Panel::top("tabs").exact_size(TABS).frame(egui::Frame::NONE).show(ui, |ui| {
-                ui.painter().fill_background(ui.max_rect(), 0.0, theme::window_background());
-                self.tab_row(ui, &mut actions)
-            });
+            let bar = crate::kit::element::PROJECT_TABS.enter();
+            egui::Panel::top("tabs")
+                .exact_size(bar_height(ui, &bar, TABS))
+                .show_separator_line(false)
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| self.tab_row(ui, &bar, &mut actions));
         }
-        with_bar_line(ui, "toolbar", |ui| {
-            egui::Panel::top("control-bar").exact_size(theme::CONTROL_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
-                let _style_class = crate::kit::style_class::enter("toolbar");
-                ui.painter().fill_background(ui.max_rect(), 0.0, theme::panel_background());
-                crate::kit::native_css::background(ui.painter(), ui.max_rect());
-                self.control_bar(ui, grid.as_ref(), cpu, ram, &mut actions)
-            })
-        });
+        let bar = crate::kit::element::TOOLBAR.enter();
+        egui::Panel::top("control-bar")
+            .exact_size(bar_height(ui, &bar, theme::CONTROL_BAR))
+            .show_separator_line(false)
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO);
+                self.control_bar(ui, &bar, inside, grid.as_ref(), cpu, ram, &mut actions)
+            });
+        drop(bar);
         self.frame_trace.mark("control bar");
-        egui::Panel::bottom("status-bar").exact_size(theme::STATUS_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
-            let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
-            {
-                let _style_class = crate::kit::style_class::enter("status-bar");
-                ui.painter().fill_background(ui.max_rect(), bottom, theme::panel_background());
-            }
-            self.status_bar(ui, grid.as_ref())
-        });
+        let bar = crate::kit::element::STATUS_BAR.enter();
+        egui::Panel::bottom("status-bar")
+            .exact_size(bar_height(ui, &bar, theme::STATUS_BAR))
+            .show_separator_line(false)
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
+                let inside = bar_box(ui, &bar, bottom);
+                ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.status_bar(ui, &bar, grid.as_ref()))
+            });
+        drop(bar);
         self.frame_trace.mark("bars");
         // Samples and MIDI files from the system: dropped this frame, or still over the window.
         let system = match (self.browser.drag.is_some(), dropped.is_empty()) {
@@ -2940,21 +3226,31 @@ impl App {
         };
         // A private image is already painted underneath the workspace. Keep its
         // transparent regions visible instead of covering them with separator ink.
-        let workspace_base = if crate::kit::liquid::background_image(ui.ctx()).is_some() {
+        let workspace_line = if crate::kit::liquid::background_image(ui.ctx()).is_some() {
             egui::Color32::TRANSPARENT
         } else {
             // `#workspace { border-color }` is this line's own colour.
-            let _workspace = crate::kit::style_class::enter_named("workspace", "workspace");
+            let _workspace = crate::kit::element::WORKSPACE.id("workspace").enter();
             theme::border()
         };
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(workspace_base)).show(ui, |ui| {
-            let _workspace_style = crate::kit::style_class::enter_named("workspace", "workspace");
+        egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
+            let _workspace_style = crate::kit::element::WORKSPACE.id("workspace").enter();
             let area = ui.available_rect_before_wrap();
-            // A 1 px gap shows the line colour between the bars and the view.
+            // A 1 px line between the bars and the view, in the line colour: drawn in the gap
+            // only, since a fill under the views would show through a translucent one.
             let inner = Rect::from_min_max(area.min + Vec2::new(0.0, 1.0), area.max - Vec2::new(0.0, 1.0));
+            for y in [area.top(), inner.bottom()] {
+                let line = Rect::from_x_y_ranges(area.x_range(), egui::Rangef::new(y, y + 1.0));
+                ui.painter().rect_filled(line, 0.0, workspace_line);
+            }
             self.missing.sync(&mut self.projects, self.revision);
             let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
-            let prompt_height = if self.open_prompt.is_some() || missing_bar { theme::ROW + 12.0 } else { 0.0 };
+            // A newer build is offered in a bar over an open project; the start panel has its own
+            // line (`docs/spec/updates.md` › With a project open).
+            let update_bar =
+                self.open_prompt.is_none() && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
+            let prompt_height =
+                if self.open_prompt.is_some() || missing_bar || update_bar { theme::ROW + 12.0 } else { 0.0 };
             let (prompt, inner) = (
                 Rect::from_min_size(inner.min, Vec2::new(inner.width(), prompt_height)),
                 Rect::from_min_max(inner.min + Vec2::new(0.0, prompt_height), inner.max),
@@ -2963,6 +3259,11 @@ impl App {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.open_prompt_bar(ui));
             } else if missing_bar {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.missing.bar(ui, prompt));
+            } else if update_bar
+                && let Some(wanted) =
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.updates.bar(ui, prompt)).inner
+            {
+                self.updates_wanted(ui.ctx(), wanted);
             }
             // With the detail area across the full width, the browser takes its side of what is
             // left above it (Settings › Devices › Detail area width).
@@ -3062,12 +3363,16 @@ impl App {
                 // a note its audition sounds goes off.
                 self.piano_roll.focused = false;
                 actions.extend(self.piano_roll.stop_audition());
+                actions.extend(self.piano_roll.settle_on_hide());
                 self.arrangement.focus = None;
                 // In a row under the view, the splitter stays along the bottom, to drag it open.
                 if let Some(layout) = &css_workspace {
                     layout.main
-                } else if grid.is_some() && self.settings.device_layout != DeviceLayout::Stack {
+                } else if grid.is_some() && self.editor_along_bottom() {
                     self.collapsed_splitter(ui, inner)
+                } else if grid.is_some() {
+                    // Stacked beside the view, it stays along the right edge, to drag it open.
+                    self.collapsed_side_splitter(ui, inner)
                 } else {
                     inner
                 }
@@ -3087,7 +3392,11 @@ impl App {
                 view_area = inner;
             }
             self.frame_trace.mark("browser");
-            let _main_style = crate::kit::style_class::enter_named("workspace-panel", "panel-main");
+            let main_style = crate::kit::element::WORKSPACE_PANEL.id("panel-main").enter();
+            // The panel's own box, as every element's: its background and border (none unless the
+            // sheet gives them), then it clips what the view paints (`overflow`); the view goes in
+            // its content box (#1336).
+            let inner = main_style.paint(ui.painter(), inner).content;
             // A clip whose drag or held press the view switch carried becomes the carry first,
             // so the probe below reads it on the switch's first frame.
             self.begin_clip_carry(ui.ctx());
@@ -3139,7 +3448,7 @@ impl App {
             self.arrangement.meters = meters;
             // The large sample map takes the main area, except while something is dragged, so
             // the drop can land on a track.
-            let styled_ui = crate::kit::style_class::ui(ui);
+            let styled_ui = main_style.ui(ui);
             let mut styled_ui = if css_workspace.is_some() { styled_ui.clipped_to(inner) } else { styled_ui };
             let ui = &mut *styled_ui;
             if self.sample_map.view.large && dragged.is_none() && inner.is_positive() {
@@ -3157,7 +3466,7 @@ impl App {
                     .on_hover_text("Close the sample map (Esc)");
                 let fill =
                     motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-                over.fill_background(close, 0.0, fill);
+                over.rect_filled(close, 0.0, fill);
                 let ink = theme::text_primary();
                 for (from, to) in
                     [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
@@ -3236,11 +3545,16 @@ impl App {
                                 })
                                 .collect()
                         });
+                        // What the plug-ins on tracks with open lanes listed, for the lanes'
+                        // parameter chooser (#1205); read before the session is borrowed.
+                        let plugin_lists = self.plugin_lists_for_lanes();
                         if let Some(session) = self.projects.active().and_then(|id| self.projects.get(id)) {
                             self.arrangement.stack_audio = self.settings.sample_stacking;
                             self.arrangement.stack_midi = self.settings.midi_stacking;
                             self.arrangement.double_click_does_nothing = !self.settings.view.double_click_clip;
                             self.arrangement.automation.click_anywhere = self.settings.view.automation_click_anywhere;
+                            self.arrangement.automation.group_plugins = self.settings.view.automation_group_plugins;
+                            self.arrangement.automation.top_lane = self.settings.view.automation_top_lane;
                             self.arrangement.knobs = self.settings.mixer_controls == MixerControls::Knob;
                             let monitor = session.player().map(|p| p.monitor());
                             // A folded group's row shows the track being worked on, so the folds
@@ -3292,6 +3606,12 @@ impl App {
                                 }
                             };
                             let mut timeline = timeline;
+                            timeline.automation.take_plugins(session.project(), plugin_lists);
+                            // A parameter moved in a plug-in's own editor shows in its track's
+                            // lanes, against the parameters just built (#1205).
+                            for (track, key) in std::mem::take(&mut self.touched_lanes) {
+                                self.arrangement.automation.focus(track, key, &timeline.automation);
+                            }
                             timeline.follow_automation(session.project());
                             timeline.follow_drag(self.arrangement.automation.dragged.as_ref());
                             timeline.recording_spans = session.arrangement_recording_spans();
@@ -3321,6 +3641,13 @@ impl App {
                                 .and_then(suhina_session::Player::output_info)
                                 .map_or(0, |i| i.input_channels);
                             self.frame_trace.mark("timeline");
+                            // The piano roll's time selection, lit on the clip it edits.
+                            self.arrangement.editor_span = match self.shown_clip() {
+                                Some(ClipRef::Arrangement(_, clip)) if self.detail_open => {
+                                    self.piano_roll.time_span().map(|(from, to)| (clip, from, to))
+                                }
+                                _ => None,
+                            };
                             arrangement_view::show(ui, &timeline, &mut self.arrangement, &mut actions);
                             self.frame_trace.mark("arrangement view");
                             self.frame_trace.note(|| {
@@ -3403,6 +3730,7 @@ impl App {
             drop_overlay(ui, view_area);
         });
         self.browser_drag(ui);
+        self.tag_drag(ui);
         self.device_drag(ui);
         if let Some((items, dropped)) = system {
             self.system_drag(ui, items, dropped);
@@ -3418,6 +3746,7 @@ impl App {
         let actions_held = self.dialog_holds_actions();
         self.plugin_dialog(ui, window);
         self.project_dialogs(ui, window);
+        self.follow_audio_page(ui.ctx());
         if self.settings_open {
             // Embedded plug-in editors are windows of their own and would cover the dialog.
             if !self.page.window {
@@ -3596,6 +3925,108 @@ impl App {
     fn session_mut_report(&mut self, track: TrackId, device: usize) -> Option<suhina_session::PluginReport> {
         self.projects.session_mut(None).ok()?.plugin_report(track, device)
     }
+
+    /// The parameters each hosted plug-in on a track with open lanes (Main's too) listed last,
+    /// and its texts for the lanes' values, for the lanes' parameter chooser (#1205). A list a
+    /// couple of seconds old is asked for again in the background, as the device's panel asks.
+    fn plugin_lists_for_lanes(&mut self) -> crate::arrangement::automation_lanes::PluginLists {
+        let mut lists = crate::arrangement::automation_lanes::PluginLists::default();
+        let lanes = &self.arrangement.automation;
+        // The texts the lanes wanted last frame and did not know are asked for now.
+        let asked = self.timeline.as_ref().map(|(_, _, t)| t.automation.asked_texts()).unwrap_or_default();
+        // A plug-in lane whose point is dragged: the plug-in and its editor follow the line where
+        // the transport stands, before the point is let go of (#1205). A range being painted
+        // sends nothing.
+        let dragged = lanes.dragged.clone().filter(|d| d.at.is_none());
+        // A parameter that takes steps holds each value until the next point, as the engine plays it.
+        let stepped_of = |track: TrackId, key: &crate::arrangement::automation_lanes::LaneKey| {
+            self.timeline
+                .as_ref()
+                .and_then(|(_, _, t)| t.automation.param(track, key))
+                .is_some_and(|p| p.scale.stepped())
+        };
+        let stepped = dragged.as_ref().is_some_and(|d| stepped_of(d.track, &d.key));
+        let stepped_now = self.lane_preview.is_some_and(|(track, device, id, _)| {
+            stepped_of(
+                track,
+                &crate::arrangement::automation_lanes::LaneKey { device: Some(device), param: id.to_string() },
+            )
+        });
+        let Ok(session) = self.projects.session_mut(None) else { return lists };
+        let preview = dragged.and_then(|d| {
+            let device = d.key.device?;
+            let id = suhina_engine::param_id(&d.key.param)?;
+            let beat = session.player().map_or(0.0, |p| p.monitor().beat());
+            let value = suhina_engine::model::automation::value_at(
+                &d.points,
+                beat,
+                stepped,
+                &suhina_engine::model::automation::Plain,
+            )?;
+            Some((d.track, device, id, value))
+        });
+        match preview {
+            Some((track, device, id, value)) if self.lane_preview != Some((track, device, id, value.to_bits())) => {
+                let _sent = session.preview_plugin_param(track, device, id, value);
+                self.lane_preview = Some((track, device, id, value.to_bits()));
+            }
+            Some(_) => {}
+            None => {
+                // The drag is over, let go of or given up: the plug-in goes back to what the
+                // project plays there now, the lane's value where the transport stands (its new
+                // line, when the drag changed it) or the value set, so a drag that changed
+                // nothing does not leave the plug-in at the value it previewed.
+                if let Some((track, device, id, _)) = self.lane_preview.take() {
+                    let beat = session.player().map_or(0.0, |p| p.monitor().beat());
+                    if let Some(value) = session.plugin_param_now(track, device, id, beat, stepped_now) {
+                        let _sent = session.preview_plugin_param(track, device, id, value);
+                    }
+                }
+            }
+        }
+        for (track, index, id, values) in asked {
+            session.ask_plugin_texts_at(track, &[index], id, &values);
+        }
+        // A parameter moved in a plug-in's own editor shows in its track's open lanes (#1205),
+        // and their faint lines follow the value it has now at once.
+        let touched = session.take_touched_params();
+        for &(track, index, id) in &touched {
+            let value = session
+                .project()
+                .channel_of_track(track)
+                .and_then(|c| c.devices.get(index))
+                .and_then(|d| d.params.iter().find(|p| suhina_engine::param_id(&p.id) == Some(id)))
+                .map(|p| p.value);
+            if let Some(value) = value {
+                lists.moved.push((track, index, id, value));
+            }
+        }
+        let open: Vec<TrackId> = session
+            .project()
+            .tracks
+            .iter()
+            .map(|t| t.id)
+            .chain([TrackId::MAIN])
+            .filter(|t| lanes.is_open(*t))
+            .collect();
+        for (track, index, list, texts) in session.lane_plugin_lists(&open) {
+            if let Some(list) = list {
+                lists.lists.insert((track, index), list);
+            }
+            if let Some(texts) = texts {
+                lists.texts.insert((track, index), texts);
+            }
+        }
+        // Focused once the timeline is built: the edit changed the project, so the timeline
+        // this frame is a new one, not the one cached (that is gone).
+        for (track, index, id) in touched {
+            let key = crate::arrangement::automation_lanes::LaneKey { device: Some(index), param: id.to_string() };
+            if !self.touched_lanes.contains(&(track, key.clone())) {
+                self.touched_lanes.push((track, key));
+            }
+        }
+        lists
+    }
 }
 
 /// The label beside the pointer while something is dragged: outlined in the accent colour when
@@ -3606,7 +4037,7 @@ fn drag_label(ctx: &egui::Context, pointer: Pos2, text: &str, lands: bool) {
     let font = theme::ui_font(theme::TEXT_SMALL);
     let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);
     let rect = Rect::from_min_size(pointer + Vec2::new(14.0, 10.0), galley.size() + Vec2::new(PAD * 2.0, 6.0));
-    painter.fill_background(rect, 0.0, theme::control_active());
+    painter.rect_filled(rect, 0.0, theme::control_active());
     painter.rect_stroke(
         rect,
         0.0,
@@ -3651,28 +4082,51 @@ pub(crate) fn clipboard_line(command: &str) -> Option<String> {
     Some(format!("Suhina: {what} copied"))
 }
 
-/// Shows a bar with `show`, its separator line in the bar's own `border-color` (`.toolbar {
-/// border-color }`), else the theme's border.
-fn with_bar_line<R>(ui: &mut Ui, class: &str, show: impl FnOnce(&mut Ui) -> R) -> R {
-    let line = {
-        let _bar = crate::kit::style_class::enter(class);
-        let own = crate::kit::style_class::computed();
-        // A bar with no line (`border-width: 0`, or a transparent border) fills the line's pixel
-        // with its own background, so no gap shows the window behind it.
-        let lineless = own.as_ref().is_some_and(|c| {
-            (c.authored.border_width && c.border_width <= 0.0) || (c.authored.border && c.border.a() == 0)
-        });
-        if lineless {
-            own.as_ref().filter(|c| c.authored.background).map_or_else(theme::panel_background, |c| c.background)
-        } else {
-            theme::border()
-        }
-    };
-    let saved = ui.visuals().widgets.noninteractive.bg_stroke;
-    ui.visuals_mut().widgets.noninteractive.bg_stroke.color = line;
-    let shown = show(ui);
-    ui.visuals_mut().widgets.noninteractive.bg_stroke = saved;
-    shown
+/// A bar along the top or the bottom of the window (`application-bar`, `menu-bar`,
+/// `project-tabs`, `toolbar`, `status-bar`) in the panel `ui` gives it: its background (with the
+/// window's `corners` where it meets them), gradients and inset shadows, then its border, in
+/// CSS's order. Returns the content box what the bar holds goes in (#1336). The line between a bar
+/// and the view is the bar's border: the user-agent sheet gives each a 1 px one in `--border`, and
+/// without a sheet that line is drawn the same.
+fn bar_box(ui: &Ui, bar: &crate::kit::element::Entered, corners: egui::CornerRadius) -> Rect {
+    let rect = ui.max_rect();
+    let painter = ui.painter();
+    painter.rect_filled(rect, corners, crate::kit::style_class::surface_or(theme::panel_background()));
+    bar.paint_background(painter, rect, 0.0);
+    if bar.style().is_some() {
+        return bar.paint_border(painter, rect);
+    }
+    native_line(painter, bar, rect)
+}
+
+/// Without a sheet, a bar's native line along `rect` (`native_bar_line`), and what is inside it.
+fn native_line(painter: &egui::Painter, bar: &crate::kit::element::Entered, rect: Rect) -> Rect {
+    let [top, _, bottom, _] = native_bar_line(bar);
+    let line = |y: f32| Rect::from_x_y_ranges(rect.x_range(), egui::Rangef::new(y, y + 1.0));
+    if top > 0.0 {
+        painter.rect_filled(line(rect.top()), 0.0, theme::border());
+    }
+    if bottom > 0.0 {
+        painter.rect_filled(line(rect.bottom() - 1.0), 0.0, theme::border());
+    }
+    Rect::from_min_max(rect.min + Vec2::new(0.0, top), rect.max - Vec2::new(0.0, bottom))
+}
+
+/// How tall a bar is whose native height, its line included, is `height`: what it holds, and its
+/// border and padding around that. The bar is as wide as `ui`'s room for it, which a padding in
+/// percent is taken of, as the toolbar's layout and its content box take it (#1336).
+fn bar_height(ui: &Ui, bar: &crate::kit::element::Entered, height: f32) -> f32 {
+    let [line_top, _, line_bottom, _] = native_bar_line(bar);
+    let width = ui.available_rect_before_wrap().width();
+    let [top, _, bottom, _] =
+        if bar.style().is_some() { bar.insets_in(width) } else { [line_top, 0.0, line_bottom, 0.0] };
+    height - line_top - line_bottom + top + bottom
+}
+
+/// The line a bar has without a sheet, as the user-agent sheet gives it: under a bar over the
+/// views, over the status bar. Top, right, bottom, left.
+fn native_bar_line(bar: &crate::kit::element::Entered) -> [f32; 4] {
+    if bar.name() == crate::kit::element::STATUS_BAR { [1.0, 0.0, 0.0, 0.0] } else { [0.0, 0.0, 1.0, 0.0] }
 }
 
 /// Draws a workspace panel with `draw`; when the theme's grid lays `panel` over the `main` view
@@ -3698,3 +4152,14 @@ fn headers_left(side: Option<Side>) -> bool {
 #[cfg(test)]
 #[path = "app_tests.rs"]
 mod tests;
+
+/// What a copy or cut put on the clipboards last, for Ctrl+V.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CopiedLast {
+    /// Notes: pasted into the clip the piano roll shows.
+    Notes,
+    /// Devices: pasted into the selected track's chain.
+    Devices,
+    /// Anything else: Ctrl+V goes where the last click put the keys.
+    Other,
+}

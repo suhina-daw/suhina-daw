@@ -60,19 +60,21 @@ pub fn paint_text(painter: &Painter, pos: Pos2, galley: Arc<Galley>, fallback_co
     if !pos.is_finite() || galley.is_empty() {
         return;
     }
-    if let Some(style) = super::super::style_class::computed() {
+    // `text-shadow` is inherited: the text takes the shadows of the element it is drawn in.
+    super::super::style_class::with_inherited(|style| {
         // CSS lists the frontmost text shadow first, like background/shadow layers.
-        for shadow in style.text_shadows.iter().rev() {
+        for shadow in style.iter().flat_map(|style| style.text_shadows.iter().rev()) {
             shadow.paint(painter, pos, &galley);
         }
-    }
+    });
     painter.galley(pos, galley, fallback_color);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kit::{skin, style_class};
+    use crate::kit::element::test_el;
+    use crate::kit::skin;
 
     fn draw(css: &str) -> Vec<egui::epaint::TextShape> {
         skin::configure(&skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
@@ -90,8 +92,8 @@ mod tests {
                 },
                 |ui| {
                     let _frame = super::super::frame(ui);
-                    let _parent = style_class::enter("browser");
-                    let _control = style_class::enter("button");
+                    let _parent = test_el("browser").enter();
+                    let _control = test_el("button").enter();
                     let galley =
                         ui.painter().layout_no_wrap("Native".into(), egui::FontId::proportional(12.0), Color32::WHITE);
                     paint_text(ui.painter(), Pos2::new(40.0, 40.0), galley, Color32::WHITE);
@@ -114,7 +116,7 @@ mod tests {
 
     #[test]
     fn inherited_shadow_lists_resolve_current_color_and_keep_native_glyph_layout() {
-        let text = draw(".browser {text-shadow:3px 4px #aabbcc, -2px -1px currentColor;} .button {color:#112233;}");
+        let text = draw("browser {text-shadow:3px 4px #aabbcc, -2px -1px currentColor;} button {color:#112233;}");
         assert_eq!(text.len(), 3);
         assert_eq!(text[0].pos, Pos2::new(38.0, 39.0));
         assert_eq!(text[0].override_text_color, Some(Color32::from_rgb(0x11, 0x22, 0x33)));
@@ -127,7 +129,7 @@ mod tests {
 
     #[test]
     fn a_blurred_shadow_stays_close_to_small_text() {
-        let text = draw(".button {text-shadow:0 0 8px #000000;}");
+        let text = draw("button {text-shadow:0 0 8px #000000;}");
         assert_eq!(text.len(), 10);
         for shadow in &text[..9] {
             assert!((shadow.pos - Pos2::new(40.0, 40.0)).length() < 3.0, "{:?}", shadow.pos);
@@ -137,7 +139,7 @@ mod tests {
     #[test]
     fn hostile_blur_offsets_and_layer_counts_have_fixed_paint_work() {
         let list = std::iter::repeat_n("10000px 10000px 10000px red", 8).collect::<Vec<_>>().join(",");
-        let text = draw(&format!(".button {{text-shadow:{list};}}"));
+        let text = draw(&format!("button {{text-shadow:{list};}}"));
         assert_eq!(text.len(), 4 * 9 + 1);
         for shadow in &text[..36] {
             assert!((280.0..=312.0).contains(&shadow.pos.x));
@@ -148,16 +150,14 @@ mod tests {
 
     #[test]
     fn none_and_invalid_shadows_do_not_add_drawing() {
-        assert_eq!(draw(".browser {text-shadow:1px 1px black;} .button {text-shadow:none;}").len(), 1);
-        assert_eq!(draw(".button {text-shadow:1px 2px -5px red;}").len(), 1);
-        assert!(
-            draw(".button {text-shadow:calc(infinity * 1px) 0 2px black;}").iter().all(|text| text.pos.is_finite())
-        );
+        assert_eq!(draw("browser {text-shadow:1px 1px black;} button {text-shadow:none;}").len(), 1);
+        assert_eq!(draw("button {text-shadow:1px 2px -5px red;}").len(), 1);
+        assert!(draw("button {text-shadow:calc(infinity * 1px) 0 2px black;}").iter().all(|text| text.pos.is_finite()));
     }
 
     #[test]
     fn text_shadow_keyframes_follow_native_time_and_motion_suppression() {
-        let css = ".browser {text-shadow:0 0 red;animation:glow 1s linear forwards;} @keyframes glow {from{text-shadow:0 0 red;}to{text-shadow:10px 0 blue;}}";
+        let css = "browser {text-shadow:0 0 red;animation:glow 1s linear forwards;} @keyframes glow {from{text-shadow:0 0 red;}to{text-shadow:10px 0 blue;}}";
         for motion in [true, false] {
             skin::configure(&skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
             let ctx = egui::Context::default();
@@ -171,14 +171,14 @@ mod tests {
                     },
                     |ui| {
                         let _frame = super::super::frame_with_motion(ui, motion);
-                        let _scope = style_class::enter("browser");
+                        let _scope = test_el("browser").enter();
                     },
                 )
                 .textures_delta
                 .clear();
                 samples.push(super::super::ENGINE.with(|engine| {
                     let engine = engine.borrow();
-                    let key = engine.nodes.iter().find(|node| node.class == "browser").unwrap().key;
+                    let key = engine.nodes.iter().find(|node| node.element.name() == "browser").unwrap().key;
                     engine.values[&key].text_shadows[0].clone()
                 }));
             }

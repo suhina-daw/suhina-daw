@@ -1,9 +1,9 @@
 ---
 description: The plug-in host protocol - the control messages, the shared-memory regions and where they live, reconfiguring an instance, and the version history of the protocol, the region, the ARA source and the plug-in catalog
-read_when: plug-in protocol, protocol version, hello, load, unload, get_params, set_param, param_changed, open_editor, place_editor, latency_changed, ara_update, reconfigure, shared memory, region version, memfd, OpenFileMappingW, sweep, catalog format
+read_when: plug-in protocol, protocol version, hello, load, unload, get_params, set_param, get_param_texts, param_texts, param_changed, open_editor, place_editor, latency_changed, ara_update, reconfigure, shared memory, region version, memfd, OpenFileMappingW, sweep, catalog format
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-11
 covers:
   - crates/plugins/src/protocol.rs
   - crates/ipc/**
@@ -38,6 +38,7 @@ raises its version and adds a row here.
 | 13 | ARA: `ara_export` and `ara_import`, a clip's edits carried to another track |
 | 14 | `param_changed`, unasked (#828); `ara_playback`'s `cycle` and `cycle_on`; `reconfigure` and `reconfigured` |
 | 15 | `open_editor` may carry the `title` of the editor's own window; `editor_title` changes it later (not answered) |
+| 16 | `get_param_texts` asks for the plug-in's own text of up to 256 values of one parameter; `param_texts` answers (#1205) |
 
 **Block region** (`ipc::region`): 2, events as fixed 16-byte records with their frame; 3, the
 block's followers ([plug-in hosting](plugin-hosting.md) › One round trip). **ARA audio source**
@@ -67,13 +68,22 @@ Messages go over a local socket or pipe, one JSON object per message with an `op
   total; `transport_key` when Space is pressed in a plug-in's window, so the engine starts or
   stops playback; `ara_playback` when an ARA plug-in asks the transport to play, stop, move or
   loop (`cycle`, `cycle_on`); `ara_notes` when the notes it found in a region change; and
-  `param_changed` (below).
+  `param_changed` (below). The lines the window shows (`transport_key`, a typed key,
+  `ara_playback`, `ara_notes`, the ARA analysis and `editor_closed`) wake Suhina's window as
+  they are read, so it answers at once even while it is in the background (`set_waker`, #714).
+  A `transport_key`, a typed key or an `ara_playback` is taken in on the reading thread before
+  the wake, so the frame it wakes already plays, stops or moves.
 
 **Parameters.** `get_params` lists each with its id, name, group, range, default,
 current value, the plug-in's own text for it, steps and flags; `set_param` sets one in its
 own range (a VST3 plug-in's normalized, a CLAP plug-in's plain), on a VST3 controller at
 once and on the processor (VST3 parameter changes, CLAP parameter events) at the start of
-the next block. The engine side keeps values set since the state was last read and sets
+the next block. `get_param_texts {instance, id, values}` asks for the plug-in's own text of
+each of up to 256 values of one parameter, in its own range, without setting any;
+`param_texts {instance, id, texts}` answers with one text a value, empty where the plug-in
+gives none (CLAP `value_to_text`, VST3 `getParamStringByValue`; a VST2 plug-in names only its
+current value, so its texts are empty). Automation lanes show these texts for their points
+and for a value being dragged (#1205). The engine side keeps values set since the state was last read and sets
 them again after a restart. `param_changed` (unasked, #828) tells the
 session what the user moved in the plug-in's editor: the value the plug-in runs with now,
 which the session keeps the project's values in step with — no undo step of its own, and

@@ -10,15 +10,11 @@
 //! through it, so a folded view draws, hits and adds notes on the rows it shows.
 
 use egui::{Id, Pos2, Rect, Sense, Ui, Vec2};
-use serde_json::json;
-use suhina_engine::model::{ROOT_NAMES, Scale, ScaleMode};
+use suhina_engine::model::Scale;
 
-use crate::detail::piano_roll::{PianoClip, key_name};
+use crate::detail::piano_roll::PianoClip;
+use crate::interaction::key_name::key_name;
 use crate::kit::theme;
-use crate::kit::widgets::Action;
-
-/// How wide the toolbar's Scale menu button is, in points.
-pub const MENU_WIDTH: f32 = 56.0;
 
 /// Which key rows the piano roll shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -143,16 +139,43 @@ pub fn rows(clip: &PianoClip, fold: Fold) -> KeyRows {
     }
 }
 
-/// How a key row is filled: with a scale, the keys in it lighter and its root lighter still;
-/// without one, white keys lighter than black keys.
-pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool) -> egui::Color32 {
+/// How a key row is filled: with a scale, every row dark and the keys in it tinted with the
+/// clip's `color` (a little, [`SCALE_TINT`]; the root more, [`ROOT_TINT`]); without one, white
+/// keys lighter than black keys.
+pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool, color: egui::Color32) -> egui::Color32 {
+    let tinted = |amount: f32| theme::window_background().lerp_to_gamma(color.to_opaque(), amount);
     match scale {
-        Some(scale) if scale.contains(key) && key % 12 == scale.root() => theme::control_hover(),
-        Some(scale) if scale.contains(key) => theme::control_background(),
-        Some(_) => theme::window_background(),
-        None if black => theme::window_background(),
-        None => theme::panel_background(),
+        Some(scale) if scale.contains(key) && key % 12 == scale.root() => tinted(ROOT_TINT),
+        Some(scale) if scale.contains(key) => tinted(SCALE_TINT),
+        Some(_) => dark_row(),
+        None if black => dark_row(),
+        None => light_row(),
     }
+}
+
+/// How much of the clip's colour a row in the clip's scale takes, and its root's row.
+const SCALE_TINT: f32 = 0.08;
+const ROOT_TINT: f32 = 0.14;
+
+/// The lighter plain row. Under an authored surface it paints nothing: the region already painted
+/// that surface, and painting it again would stack its alpha; else it is the panel colour.
+fn light_row() -> egui::Color32 {
+    if crate::kit::style_class::has_surface() { egui::Color32::TRANSPARENT } else { theme::panel_background() }
+}
+
+/// The darker plain row: the window colour; under an authored surface, that surface pulled toward
+/// the window colour (black, then white, where that leaves it as it is), painted over it so it reads
+/// darker than the light row, which paints nothing.
+fn dark_row() -> egui::Color32 {
+    if !crate::kit::style_class::has_surface() {
+        return theme::window_background();
+    }
+    let surface = crate::kit::style_class::surface_or(theme::window_background());
+    [theme::window_background(), egui::Color32::BLACK, egui::Color32::WHITE]
+        .into_iter()
+        .map(|toward| surface.lerp_to_gamma(toward, 0.5))
+        .find(|row| *row != egui::Color32::TRANSPARENT && *row != surface)
+        .unwrap_or(surface)
 }
 
 /// The 2 px mark at the right of the key column on a key in the scale (the root's brighter).
@@ -194,99 +217,10 @@ pub(crate) fn key_readers(
     }
 }
 
-/// What the Scale menu's button says: "Scale C major", or "Scale off".
-pub fn menu_label(scale: Option<Scale>) -> String {
-    match scale {
-        Some(scale) => format!("Scale {}", scale.describe()),
-        None => "Scale off".to_string(),
-    }
-}
-
-/// The toolbar's Scale menu: Off, a Root submenu with the twelve roots and a Mode submenu with the
-/// modes, each a `clip.setScale`; then Fold and Fold to scale, window state. Its button reads
-/// "Scale", dimmed while the clip has none; its accessible label and tooltip name the scale.
-/// Returns the button's rect.
-pub(crate) fn menu(ui: &mut Ui, rect: Rect, clip: &PianoClip, fold: &mut Fold, actions: &mut Vec<Action>) -> Rect {
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    let scale = clip.scale;
-    let mut picked: Option<serde_json::Value> = None;
-    let mut folded = None;
-    let mut shown = rect;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-        let color = if scale.is_none() { theme::text_hint() } else { theme::text_value() };
-        let text = egui::RichText::new("Scale   ").font(font.clone()).color(color);
-        let menu = ui.menu_button(text, |ui| {
-            let entry = |ui: &mut Ui, on: bool, shown: &str, label: &str, enabled: bool| -> bool {
-                let response = ui
-                    .add_enabled(enabled, egui::Button::selectable(on, egui::RichText::new(shown).font(font.clone())));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, on, label));
-                let clicked = response.clicked();
-                if clicked {
-                    ui.close();
-                }
-                clicked
-            };
-            if entry(ui, scale.is_none(), "Off", "Scale: Off", true) && scale.is_some() {
-                picked = Some(json!({ "off": true }));
-            }
-            ui.separator();
-            let root = scale.map_or("C", Scale::root_name);
-            let roots = ui.menu_button(egui::RichText::new(format!("Root: {root}")).font(font.clone()), |ui| {
-                for (index, name) in ROOT_NAMES.iter().enumerate() {
-                    let on = scale.is_some_and(|s| usize::from(s.root()) == index);
-                    if entry(ui, on, name, &format!("Scale root {name}"), true) && !on {
-                        picked = Some(json!({ "root": index }));
-                    }
-                }
-            });
-            roots
-                .response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Scale root: {root}")));
-            let mode = scale.map_or(ScaleMode::Major, |s| s.mode).label();
-            let modes = ui.menu_button(egui::RichText::new(format!("Mode: {mode}")).font(font.clone()), |ui| {
-                for choice in ScaleMode::ALL {
-                    let on = scale.is_some_and(|s| s.mode == choice);
-                    if entry(ui, on, choice.label(), &format!("Scale mode {}", choice.label()), true) && !on {
-                        picked = Some(json!({ "mode": choice.name() }));
-                    }
-                }
-            });
-            modes
-                .response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Scale mode: {mode}")));
-            ui.separator();
-            if entry(ui, *fold == Fold::Notes, "Fold", "Fold", true) {
-                folded = Some(if *fold == Fold::Notes { Fold::Off } else { Fold::Notes });
-            }
-            if entry(ui, *fold == Fold::Scale, "Fold to scale", "Fold to scale", scale.is_some()) {
-                folded = Some(if *fold == Fold::Scale { Fold::Off } else { Fold::Scale });
-            }
-        });
-        let label = menu_label(scale);
-        crate::detail::piano_roll::menu_arrow(ui, menu.response.rect, color);
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-        shown = menu.response.rect;
-        let named = scale.map_or_else(|| "none".to_string(), Scale::describe);
-        menu.response
-            .on_hover_text(format!("Scale: {named}. Marks the keys in the clip's scale; Fold shows fewer rows"));
-    });
-    if let Some(mut params) = picked {
-        if let (Some(params), Some(address)) = (params.as_object_mut(), clip.address.as_object()) {
-            for (key, value) in address {
-                params.insert(key.clone(), value.clone());
-            }
-        }
-        actions.push(Action::new("clip.setScale", params));
-    }
-    if let Some(next) = folded {
-        *fold = next;
-    }
-    shown
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use suhina_engine::model::ScaleMode;
 
     fn scale(root: u8, mode: ScaleMode) -> Scale {
         Scale::new(root, mode).unwrap()
@@ -331,16 +265,61 @@ mod tests {
     #[test]
     fn row_colours_follow_the_scale() {
         let c = Some(scale(0, ScaleMode::Major));
-        assert_eq!(row_fill(c, 60, false), theme::control_hover(), "the root");
-        assert_eq!(row_fill(c, 62, false), theme::control_background(), "in the scale");
-        assert_eq!(row_fill(c, 61, true), theme::window_background(), "outside it");
-        assert_eq!(row_fill(None, 61, true), theme::window_background());
-        assert_eq!(row_fill(None, 60, false), theme::panel_background());
+        let red = egui::Color32::from_rgb(220, 40, 40);
+        let dark = theme::window_background();
+        let (root, inside) = (row_fill(c, 60, false, red), row_fill(c, 62, false, red));
+        assert_eq!(root, dark.lerp_to_gamma(red, ROOT_TINT), "the root, the clip's colour a little more");
+        assert_eq!(inside, dark.lerp_to_gamma(red, SCALE_TINT), "in the scale, a little of the clip's colour");
+        assert_ne!(root, inside, "the root stands out");
+        assert_eq!(row_fill(c, 61, true, red), dark, "outside it");
+        assert_eq!(row_fill(c, 61, false, red), dark, "white or black alike");
+        assert_eq!(row_fill(None, 61, true, red), theme::window_background());
+        assert_eq!(row_fill(None, 60, false, red), theme::panel_background());
     }
 
     #[test]
-    fn the_menu_label_names_the_scale() {
-        assert_eq!(menu_label(None), "Scale off");
-        assert_eq!(menu_label(Some(scale(6, ScaleMode::HarmonicMinor))), "Scale F# harmonic minor");
+    fn plain_rows_stay_distinct_under_an_authored_surface() {
+        let surface = egui::Color32::from_rgba_unmultiplied(20, 30, 40, 100);
+        crate::kit::style_class::with_surface(surface, || {
+            let (white, black) =
+                (row_fill(None, 60, false, egui::Color32::RED), row_fill(None, 61, true, egui::Color32::RED));
+            assert_eq!(white, egui::Color32::TRANSPARENT, "the light row paints nothing over the surface");
+            assert_ne!(white, black, "the dark row is a tint");
+            assert_eq!(
+                row_fill(Some(scale(0, ScaleMode::Major)), 61, true, egui::Color32::RED),
+                black,
+                "outside a scale too"
+            );
+        });
+    }
+
+    /// `top` painted over `under`, both premultiplied: what the screen shows.
+    fn over(top: egui::Color32, under: egui::Color32) -> egui::Color32 {
+        let (top, under) = (top.to_array(), under.to_array());
+        let keep = 255 - u32::from(top[3]);
+        let mix =
+            |channel: usize| (u32::from(top[channel]) + (u32::from(under[channel]) * keep + 127) / 255).min(255) as u8;
+        egui::Color32::from_rgba_premultiplied(mix(0), mix(1), mix(2), mix(3))
+    }
+
+    #[test]
+    fn plain_rows_look_different_on_any_surface() {
+        let opaque_window = theme::window_background().to_opaque();
+        let surfaces = [
+            theme::window_background(),
+            opaque_window,
+            egui::Color32::BLACK,
+            egui::Color32::WHITE,
+            egui::Color32::TRANSPARENT,
+            egui::Color32::from_rgba_unmultiplied(20, 30, 40, 100),
+        ];
+        for surface in surfaces {
+            crate::kit::style_class::with_surface(surface, || {
+                // The region paints the surface, then each row paints its fill over it.
+                let white = over(row_fill(None, 60, false, egui::Color32::RED), surface);
+                let black = over(row_fill(None, 61, true, egui::Color32::RED), surface);
+                assert_ne!(white, black, "surface {surface:?}");
+            });
+        }
     }
 }

@@ -23,8 +23,8 @@ fn the_core_set_registers_every_token_and_setting_with_suhina_studios_values() {
     for (key, _, _) in crate::kit::theme::Palette::DARK.tokens() {
         assert!(is_core(&token_property(key)), "{key}");
     }
-    for name in ["--meter-style", "--liquid", "--gradient-panels", "--background-image", "--session-slot-height"] {
-        assert!(is_core(name), "{name}");
+    for name in ["meter-style", "liquid", "panel-gradient", "backdrop-image", "slot-height"] {
+        assert!(is_setting(name) && !is_core(name), "{name}");
     }
     assert!(core.iter().all(|p| p.label.is_none()), "core properties have their own editors");
     let mut theme = Theme::default();
@@ -46,7 +46,7 @@ fn every_built_in_theme_reads_back_from_its_own_sheet() {
 fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     let text = "@property --glow { syntax: \"<number>\"; initial-value: 0.6; label: \"Glow\"; range: 0 1; }\n\
                 :root { --nord-blue: #88C0D0; --accent: #5E81AC; }\n\
-                .button:hover { opacity: var(--glow); }";
+                button:hover { opacity: var(--glow); }";
     let (theme, warnings) = from_sheet(text);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(theme.vars.declared.len(), 1);
@@ -54,7 +54,7 @@ fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     let (frost, warnings) = Variant::from_json(
         "frost",
         r##"{ "name": "Frost",
-              "values": { "--accent": "var(--nord-blue)", "--glow": "0.2", "--meter-segments": "99" } }"##,
+              "values": { "--accent": "var(--nord-blue)", "--glow": "0.2", "meter-segments": "99" } }"##,
     )
     .unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -62,10 +62,10 @@ fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     assert_eq!(chosen.colors.accent, parse_hex("#88C0D0").unwrap());
     assert_eq!(chosen.vars.variant.as_deref(), Some("frost"));
     // A value outside its property's range is left out, with a warning.
-    assert!(warnings.iter().any(|w| w.contains("--meter-segments")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.contains("meter-segments")), "{warnings:?}");
     assert_eq!(chosen.skin.segments, theme.skin.segments);
     let sheet = chosen.skin.variant.as_deref().unwrap();
-    assert!(sheet.contains("--glow: 0.2") && !sheet.contains("--meter-segments"), "{sheet}");
+    assert!(sheet.contains("--glow: 0.2") && !sheet.contains("meter-segments"), "{sheet}");
     // Without a variant, the theme's own values.
     let (own, _) = with_variant(&chosen, None);
     assert_eq!(own.colors.accent, theme.colors.accent);
@@ -86,17 +86,17 @@ fn a_variant_value_for_an_undeclared_property_is_refused() {
 
 #[test]
 fn editing_the_model_writes_only_the_values_that_differ_from_the_theme() {
-    let (mut theme, _) = from_sheet(":root { --accent: #123456; --meter-style: needle; }");
+    let (mut theme, _) = from_sheet(":root { --accent: #123456; } meter { meter-style: needle; }");
     sync(&mut theme);
     assert!(theme.vars.values.is_empty(), "{:?}", theme.vars.values);
     theme.colors.accent = parse_hex("#ABCDEF").unwrap();
     theme.skin.segments = 32;
     sync(&mut theme);
-    assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--accent", "--meter-segments"]);
+    assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--accent", "meter-segments"]);
     // Back to the theme's own value: the variant no longer sets it.
     theme.colors.accent = parse_hex("#123456").unwrap();
     sync(&mut theme);
-    assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--meter-segments"]);
+    assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["meter-segments"]);
 }
 
 #[test]
@@ -147,11 +147,11 @@ fn variant_files_round_trip_and_bad_ones_are_named() {
 fn host_rules_are_read_from_a_sheet_and_the_rest_is_left_to_the_engine() {
     let text = "/* notes */ theme { name: \"Night\"; }\n\
                 @media (width < 600px) { .control-mixer-pan { display: none; } }\n\
-                @layer x { .browser { color: red; } }\n\
+                @layer x { browser { color: red; } }\n\
                 knob.body { image: url(\"assets/knob.body.svg\"); }\n\
                 .control-mixer-pan { left: 4px; top: 0px; }\n\
-                .pan { --suhina-appearance: knob; color: #123456; }\n\
-                .button:hover { opacity: .8; }";
+                pan { appearance: knob; color: #123456; }\n\
+                button:hover { opacity: .8; }";
     let mut theme = Theme::default();
     let warnings = theme_css::read_host_rules(&mut theme, text);
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -159,7 +159,6 @@ fn host_rules_are_read_from_a_sheet_and_the_rest_is_left_to_the_engine() {
     assert_eq!(theme.skin.assets.get("knob.body").map(String::as_str), Some("assets/knob.body.svg"));
     assert_eq!(theme.skin.controls["mixer-pan"].offset().x, 4.0);
     assert!(!theme.skin.controls["mixer-pan"].hidden, "a rule in @media is not a placement");
-    assert_eq!(theme.skin.styles[".pan"].len(), 1, "only --suhina-* styles are the app's");
 }
 
 #[test]
@@ -198,9 +197,8 @@ fn the_swatch_and_thumbnail_follow_the_variant() {
 
 #[test]
 fn a_theme_may_put_the_track_headers_on_a_side() {
-    let mut theme = Theme::default();
-    assert!(theme_css::read_host_rules(&mut theme, ".arrangement { --suhina-track-headers: left; }").is_empty());
-    crate::kit::skin::configure(&theme.skin);
+    let css = "arrangement { track-headers: left; }";
+    crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() });
     assert_eq!(crate::kit::style_class::theme_track_headers_left(), Some(true));
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
     assert_eq!(crate::kit::style_class::theme_track_headers_left(), None);
@@ -238,16 +236,11 @@ fn track_artwork_of_one_view_is_a_role_of_its_own() {
 
 #[test]
 fn a_theme_may_keep_the_header_column_wide_enough_for_its_placements() {
-    let mut theme = Theme::default();
-    let css = ".arrangement { --suhina-header-min-width: 330px; }";
-    assert!(theme_css::read_host_rules(&mut theme, css).is_empty());
-    crate::kit::skin::configure(&theme.skin);
+    let sheet = |css: &str| crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() };
+    crate::kit::skin::configure(&sheet("arrangement { header-min-width: 330px; }"));
     assert_eq!(crate::kit::style_class::theme_header_min_width(), Some(330.0));
-    let mut out_of_range = Theme::default();
-    assert!(
-        !theme_css::read_host_rules(&mut out_of_range, ".arrangement { --suhina-header-min-width: 9000px; }")
-            .is_empty()
-    );
+    crate::kit::skin::configure(&sheet("arrangement { header-min-width: 9000px; }"));
+    assert_eq!(crate::kit::style_class::theme_header_min_width(), None, "out of range is left out");
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
     assert_eq!(crate::kit::style_class::theme_header_min_width(), None);
 }
@@ -269,7 +262,7 @@ fn a_button_may_have_artwork_of_its_own_per_state() {
 
 #[test]
 fn layout_css_holds_only_the_placements_that_differ_from_the_sheet() {
-    let sheet = ".control-mixer-pan { --suhina-anchor-bottom: mixer-toggles top 6px; }\n\
+    let sheet = ".control-mixer-pan { anchor-bottom: mixer-toggles top 6px; }\n\
                  .control-mixer-name { width: 80px; }";
     let (from_sheet, _) = crate::kit::theme::from_css(sheet);
     let mut moved = from_sheet.clone();

@@ -1,0 +1,25 @@
+{
+  "format": "suhina-preset",
+  "version": 1,
+  "device": "nam-amp-modeler",
+  "role": "effect",
+  "name": "Warm Crunch",
+  "author": "suhina",
+  "tags": [
+    "crunch",
+    "rhythm",
+    "guitar"
+  ],
+  "params": {
+    "inputGain": 0.0,
+    "eqBass": -1.5,
+    "eqMid": 0.5,
+    "eqTreble": 0.5,
+    "eqMidFreq": 400.0,
+    "eqOn": 1.0,
+    "delay": 0.0,
+    "hq": 1.0,
+    "outputVolume": 0.0
+  },
+  "file": "builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam"
+}

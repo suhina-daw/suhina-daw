@@ -28,20 +28,31 @@ impl CloseChoice for FolderDropChoice {
 /// Asks whether `count` samples go to `folder` moved or copied, over `area`; `remember` is the
 /// Remember my choice box. Returns the answer, or `None` while it stays open.
 pub fn show(ui: &Ui, area: Rect, count: usize, folder: &str, remember: &mut bool) -> Option<FolderDropChoice> {
+    // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
+    let style_class = crate::kit::element::DIALOG.enter();
     egui::Area::new(Id::unique("folder-drop-prompt"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
+            let mut styled_ui = style_class.ui(ui);
+            let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw(ui, area, count, folder, remember)
+            draw(ui, &style_class, area, count, folder, remember)
         })
         .inner
 }
 
-fn draw(ui: &mut Ui, area: Rect, count: usize, folder: &str, remember: &mut bool) -> Option<FolderDropChoice> {
+fn draw(
+    ui: &mut Ui,
+    dialog: &crate::kit::element::Entered,
+    area: Rect,
+    count: usize,
+    folder: &str,
+    remember: &mut bool,
+) -> Option<FolderDropChoice> {
     let mut closed: Option<FolderDropChoice> = None;
     let size = Vec2::new(SAVE_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD);
-    let panel = panel(ui, area, size, "Move or copy", &mut closed);
+    let panel = panel(ui, dialog, area, size, "Move or copy", &mut closed);
     let painter = ui.painter_at(area);
     let samples = if count == 1 { "the sample".to_string() } else { format!("the {count} samples") };
     let line = Rect::from_min_size(

@@ -7,7 +7,6 @@
 //! disk as tab-separated lines.
 
 use std::collections::BTreeMap;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -244,14 +243,10 @@ impl FolderIndex {
         *self != snapshot
     }
 
-    /// Writes the index for `root` to `file`, through a file beside it that is moved over it.
+    /// Writes the index for `root` to `file` whole or not at all, through `suhina-fs`: a save
+    /// that fails leaves the old index as it was, with nothing beside it.
     pub fn save(&self, root: &Path, file: &Path) -> std::io::Result<()> {
-        if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let temp = file.with_extension("tsv.part");
-        {
-            let mut out = std::io::BufWriter::new(std::fs::File::create(&temp)?);
+        suhina_fs::write_atomic_with(file, |out| {
             writeln!(out, "{HEADER}")?;
             writeln!(out, "root\t{}", root.display())?;
             if let Some(note) = &self.note {
@@ -263,9 +258,8 @@ impl FolderIndex {
             for (rel, e) in &self.files {
                 writeln!(out, "f\t{rel}\t{}\t{}\t{}", e.kind.name(), e.size, e.modified)?;
             }
-            out.flush()?;
-        }
-        std::fs::rename(&temp, file)
+            Ok(())
+        })
     }
 
     /// Reads an index saved for `root`; `None` when the file is missing, too large, of another
@@ -317,131 +311,5 @@ impl FolderIndex {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("suhina-index-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    fn touch(path: &Path) {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).unwrap();
-        }
-        std::fs::write(path, b"x").unwrap();
-    }
-
-    #[test]
-    fn indexes_files_of_known_kinds_and_every_folder() {
-        let root = temp("scan");
-        touch(&root.join("Kick.wav"));
-        touch(&root.join("Loops/Drums/break 120bpm.flac"));
-        touch(&root.join("Loops/readme.txt"));
-        touch(&root.join("MIDI/groove.MID"));
-        touch(&root.join("bank.syx"));
-        std::fs::create_dir_all(root.join("Empty")).unwrap();
-        let index = FolderIndex::scan(&root);
-        let files: Vec<(&str, FileKind)> = index.files.iter().map(|(k, e)| (k.as_str(), e.kind)).collect();
-        assert_eq!(
-            files,
-            [
-                ("Kick.wav", FileKind::Sample),
-                ("Loops/Drums/break 120bpm.flac", FileKind::Sample),
-                ("MIDI/groove.MID", FileKind::Midi),
-                ("bank.syx", FileKind::Preset),
-            ]
-        );
-        let dirs: Vec<&str> = index.dirs.keys().map(String::as_str).collect();
-        assert_eq!(dirs, ["", "Empty", "Loops", "Loops/Drums", "MIDI"]);
-        assert_eq!(index.note, None);
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn saves_and_loads_and_refuses_another_folders_or_a_damaged_index() {
-        let root = temp("save");
-        touch(&root.join("a/b.wav"));
-        let index = FolderIndex::scan(&root);
-        let file = root.join("index.tsv");
-        index.save(&root, &file).unwrap();
-        assert_eq!(FolderIndex::load(&root, &file), Some(index.clone()));
-        assert_eq!(FolderIndex::load(&root.join("a"), &file), None, "another folder's");
-        std::fs::write(&file, "something else\n").unwrap();
-        assert_eq!(FolderIndex::load(&root, &file), None);
-        std::fs::write(
-            &file,
-            format!(
-                "{HEADER}\nroot\t{}\nf\tx.wav\tsample\tnot-a-size\t0\nf\ty.wav\tsample\t3\t4\nzzz\n",
-                root.display()
-            ),
-        )
-        .unwrap();
-        let loaded = FolderIndex::load(&root, &file).unwrap();
-        assert_eq!(loaded.files.keys().collect::<Vec<_>>(), ["y.wav"], "bad lines are skipped");
-        let saved = std::fs::read_to_string(&file).unwrap();
-        std::fs::write(&file, saved.replacen(HEADER, OLD_HEADER, 1)).unwrap();
-        assert_eq!(FolderIndex::load(&root, &file), Some(loaded), "an index from before the rename");
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn refresh_reads_changed_folders_and_drops_removed_ones() {
-        let root = temp("refresh");
-        touch(&root.join("keep/one.wav"));
-        touch(&root.join("gone/two.wav"));
-        let mut index = FolderIndex::scan(&root);
-        assert!(!index.refresh(&root), "nothing changed");
-        std::fs::remove_dir_all(root.join("gone")).unwrap();
-        touch(&root.join("new/deep/three.mid"));
-        // Folder times have a resolution of a second on some systems; the root's entry list
-        // changed, so make sure its time moves.
-        index.dirs.insert(String::new(), 0);
-        assert!(index.refresh(&root));
-        let files: Vec<&str> = index.files.keys().map(String::as_str).collect();
-        assert_eq!(files, ["keep/one.wav", "new/deep/three.mid"]);
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn an_event_updates_the_folder_it_names() {
-        let root = temp("event");
-        touch(&root.join("pack/a.wav"));
-        let mut index = FolderIndex::scan(&root);
-        touch(&root.join("pack/b.wav"));
-        touch(&root.join("pack/sub/c.wav"));
-        assert!(index.update_paths(&root, &[root.join("pack/b.wav"), root.join("pack/sub")]));
-        assert_eq!(index.files.keys().collect::<Vec<_>>(), ["pack/a.wav", "pack/b.wav", "pack/sub/c.wav"]);
-        std::fs::remove_file(root.join("pack/a.wav")).unwrap();
-        assert!(index.update_paths(&root, &[root.join("pack/a.wav"), std::env::temp_dir().join("elsewhere")]));
-        assert!(!index.files.contains_key("pack/a.wav"));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn deep_and_huge_folders_stop_at_the_limits() {
-        let root = temp("deep");
-        let mut deep = root.clone();
-        for i in 0..MAX_DEPTH + 3 {
-            deep = deep.join(format!("d{i}"));
-        }
-        touch(&deep.join("lost.wav"));
-        touch(&root.join("d0/found.wav"));
-        let index = FolderIndex::scan(&root);
-        assert!(index.files.contains_key("d0/found.wav"));
-        assert!(!index.files.keys().any(|k| k.ends_with("lost.wav")));
-        assert!(index.note.is_some());
-        assert!(index.dirs.keys().all(|k| depth(k) <= MAX_DEPTH));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn a_missing_folder_has_an_empty_index() {
-        let root = std::env::temp_dir().join("suhina-index-does-not-exist");
-        let mut index = FolderIndex::scan(&root);
-        assert!(index.files.is_empty() && index.dirs.is_empty());
-        assert!(!index.refresh(&root));
-    }
-}
+#[path = "index_tests.rs"]
+mod tests;

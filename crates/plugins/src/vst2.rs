@@ -1,7 +1,8 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The standard VST2 bank (an `.fxb` file's contents): the form the model keeps for a VST2
+//! The standard VST2 bank (an `.fxb` file's contents), and a single program (an `.fxp` file's,
+//! read only, for the CLI's `--state`): the bank is the form the model keeps for a VST2
 //! plug-in's state, the form a VST3 version of the plug-in reads when it stands in for the
 //! VST2 one (ADR 0006, decision 8), and the form the VST2 host saves and loads (ADR 0022,
 //! `docs/spec/plugin-vst2.md` › state). The layout is the VST3 SDK's `vst2persistence.h`
@@ -27,6 +28,8 @@ const NAME: usize = 28;
 const MAX_COUNT: usize = 1 << 16;
 /// Size of a bank's header, before its programs or chunk.
 const BANK_HEADER: usize = 156;
+/// Offset of a program's plug-in id.
+const PROGRAM_ID: usize = 16;
 /// Offset of a program's parameter count, and of its values.
 const PROGRAM_COUNT: usize = 24;
 const PROGRAM_VALUES: usize = 56;
@@ -159,12 +162,7 @@ pub fn program(bank: &[u8]) -> Option<(u32, Vec<f32>)> {
             if program.get(8..12)? != b"FxCk" {
                 return None;
             }
-            let count = (word(program, PROGRAM_COUNT)? as usize).min(MAX_COUNT);
-            let values = program.get(PROGRAM_VALUES..PROGRAM_VALUES.checked_add(count.checked_mul(4)?)?)?;
-            return Some((
-                wanted as u32,
-                values.as_chunks::<4>().0.iter().map(|v| f32::from_bits(u32::from_be_bytes(*v))).collect(),
-            ));
+            return Some((wanted as u32, program_values_of(program)?));
         }
         at = at.checked_add(8)?.checked_add(size)?;
     }
@@ -172,91 +170,80 @@ pub fn program(bank: &[u8]) -> Option<(u32, Vec<f32>)> {
 }
 
 /// The current program's parameter values, in parameter order, when `bank` is a bank of
-/// programs; `None` for a chunk bank or anything else. See [`program`].
+/// programs or a single program of values; `None` for a chunk bank or anything else. See
+/// [`program`] and [`single_program`].
 pub fn program_values(bank: &[u8]) -> Option<Vec<f32>> {
-    program(bank).map(|(_, values)| values)
+    program(bank).map(|(_, values)| values).or_else(|| match single_program(bank)? {
+        Program::Values(values) => Some(values),
+        Program::Chunk(_) => None,
+    })
+}
+
+/// A single program, an `.fxp` file's contents (`CcnK`, the size of the rest, its kind, version
+/// 1, the plug-in's id and version, the number of parameters, the 28-byte name, then the values
+/// or the chunk's size and the chunk).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Program<'a> {
+    /// `FxCk`: each parameter's value, in parameter order.
+    Values(Vec<f32>),
+    /// `FPCh`: the plug-in's own chunk for one program, as it gave it.
+    Chunk(&'a [u8]),
+}
+
+/// `FxCk`: a single program of parameter values.
+const VALUES_PROGRAM: &[u8; 4] = b"FxCk";
+/// `FPCh`: a single program holding the plug-in's own chunk.
+const CHUNK_PROGRAM: &[u8; 4] = b"FPCh";
+/// Offset of a program chunk's size, and of the chunk.
+const PROGRAM_CHUNK: usize = 56;
+
+/// The values of the `FxCk` program that starts `program`: `None` when it declares more than
+/// [`MAX_COUNT`] parameters, or more values than its declared size (the word after `CcnK`) or the
+/// bytes there hold; bytes past the declared size are not read.
+fn program_values_of(program: &[u8]) -> Option<Vec<f32>> {
+    let count = word(program, PROGRAM_COUNT)? as usize;
+    if count > MAX_COUNT {
+        return None;
+    }
+    let end = PROGRAM_VALUES.checked_add(count.checked_mul(4)?)?;
+    if (word(program, 4)? as usize).checked_add(8)? < end {
+        return None;
+    }
+    let values = program.get(PROGRAM_VALUES..end)?;
+    Some(values.as_chunks::<4>().0.iter().map(|v| f32::from_bits(u32::from_be_bytes(*v))).collect())
+}
+
+/// The plug-in id and the number of parameters that the single program `file` declares (#1167):
+/// the plug-in it was made for, and how many values it holds; `None` for anything that is not
+/// [shaped as one](program_shaped).
+pub fn program_header(file: &[u8]) -> Option<(u32, u32)> {
+    program_shaped(file).then_some(())?;
+    Some((word(file, PROGRAM_ID)?, word(file, PROGRAM_COUNT)?))
+}
+
+/// The single program `file` holds (#1167); `None` for a bank, a program cut short or anything
+/// else.
+pub fn single_program(file: &[u8]) -> Option<Program<'_>> {
+    if !program_shaped(file) {
+        return None;
+    }
+    match file.get(8..12)? {
+        kind if kind == VALUES_PROGRAM => program_values_of(file).map(Program::Values),
+        _ => {
+            let size = word(file, PROGRAM_CHUNK)? as usize;
+            let from = PROGRAM_CHUNK + 4;
+            file.get(from..from.checked_add(size)?).map(Program::Chunk)
+        }
+    }
+}
+
+/// Whether `data` begins as a single program does: `CcnK`, then `FxCk` or `FPCh` in its place.
+/// One that [`single_program`] does not read is cut short or lies about its size.
+pub fn program_shaped(data: &[u8]) -> bool {
+    data.get(..4) == Some(b"CcnK".as_slice())
+        && (data.get(8..12) == Some(VALUES_PROGRAM.as_slice()) || data.get(8..12) == Some(CHUNK_PROGRAM.as_slice()))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn word(bytes: &[u8], at: usize) -> u32 {
-        u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap())
-    }
-
-    #[test]
-    fn a_chunk_becomes_a_chunk_bank_and_back() {
-        let preset = Preset {
-            kind: CHUNK_BANK,
-            id: 0x5465_7374,
-            version: 3,
-            programs: 0,
-            current: 0,
-            parameters: 9,
-            little_endian: true,
-        };
-        let out = bank(&preset, &[1, 2, 3]).unwrap();
-        assert_eq!(&out[..4], b"CcnK");
-        assert_eq!(word(&out, 4) as usize, out.len() - 8);
-        assert_eq!(&out[8..12], b"FBCh");
-        assert_eq!((word(&out, 12), word(&out, 16), word(&out, 20), word(&out, 24)), (2, 0x5465_7374, 3, 1));
-        assert!(out[32..156].iter().all(|b| *b == 0));
-        assert_eq!(word(&out, 156), 3);
-        assert_eq!(&out[160..], [1, 2, 3]);
-        // And the chunk a host hands a plug-in is the same bytes back.
-        assert_eq!(chunk(&out), Some(&[1u8, 2, 3][..]));
-        assert_eq!(program(&out), None);
-    }
-
-    #[test]
-    fn programs_become_a_program_bank_and_the_current_one_reads_back() {
-        let preset = Preset {
-            kind: PROGRAM_BANK,
-            id: 7,
-            version: 1,
-            programs: 2,
-            current: 1,
-            parameters: 2,
-            little_endian: true,
-        };
-        let mut buffer = Vec::new();
-        for (name, values) in [("One", [0.25f32, 1.0]), ("Two", [0.5, 0.0])] {
-            let mut field = [0u8; 28];
-            field[..name.len()].copy_from_slice(name.as_bytes());
-            buffer.extend_from_slice(&field);
-            values.iter().for_each(|v| buffer.extend_from_slice(&v.to_le_bytes()));
-        }
-        let out = bank(&preset, &buffer).unwrap();
-        assert_eq!(&out[8..12], b"FxBk");
-        assert_eq!((word(&out, 24), word(&out, 28)), (2, 1));
-        // The first program after the bank header: CcnK, size, FxCk, 1, id, version, count, name.
-        let first = &out[156..];
-        assert_eq!(&first[..4], b"CcnK");
-        // The current program reads back with its number.
-        assert_eq!(program(&out).map(|(current, values)| (current, values.len())), Some((1, 2)));
-        let (_, values) = program(&out).unwrap();
-        assert_eq!(values, vec![0.5, 0.0]);
-        assert_eq!(program_values(&out), Some(vec![0.5, 0.0]));
-        assert_eq!(chunk(&out), None);
-    }
-
-    /// A bank whose current program is past its programs falls back to the first.
-    #[test]
-    fn a_current_program_past_the_programs_reads_the_first() {
-        let preset = Preset {
-            kind: PROGRAM_BANK,
-            id: 7,
-            version: 1,
-            programs: 1,
-            current: 5,
-            parameters: 1,
-            little_endian: true,
-        };
-        let mut buffer = Vec::new();
-        buffer.extend_from_slice(&[0u8; 28]);
-        buffer.extend_from_slice(&0.75f32.to_le_bytes());
-        let out = bank(&preset, &buffer).unwrap();
-        assert_eq!(program_values(&out), Some(vec![0.75]));
-    }
-}
+#[path = "vst2_tests.rs"]
+mod tests;

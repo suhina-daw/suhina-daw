@@ -183,10 +183,10 @@ pub fn valid_name(name: &str) -> bool {
 /// The CSS property that anchors `edge`.
 pub fn anchor_property(edge: Edge) -> &'static str {
     match edge {
-        Edge::Left => "--suhina-anchor-left",
-        Edge::Top => "--suhina-anchor-top",
-        Edge::Right => "--suhina-anchor-right",
-        Edge::Bottom => "--suhina-anchor-bottom",
+        Edge::Left => "anchor-left",
+        Edge::Top => "anchor-top",
+        Edge::Right => "anchor-right",
+        Edge::Bottom => "anchor-bottom",
     }
 }
 
@@ -250,7 +250,7 @@ impl Placement {
     }
 
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), &'static str> {
-        if let Some(edge) = key.strip_prefix("--suhina-anchor-").and_then(Edge::parse) {
+        if let Some(edge) = key.strip_prefix("anchor-").and_then(Edge::parse) {
             let anchor = if value == "none" { None } else { Some(Anchor::parse(edge, value)?) };
             self.anchors.set(edge, anchor);
             return Ok(());
@@ -322,7 +322,7 @@ impl Placement {
                     self.full_height = false;
                 }
             }
-            "--suhina-direction" => {
+            "direction" => {
                 self.direction = match value {
                     "vertical" => Direction::Vertical,
                     "horizontal" => Direction::Horizontal,
@@ -336,6 +336,9 @@ impl Placement {
                     _ => return Err("display must be none or block"),
                 }
             }
+            // The names before 2026-11 (#1273).
+            "--suhina-direction" => return Err("--suhina-direction is now direction"),
+            _ if key.starts_with("--suhina-anchor-") => return Err("--suhina-anchor-* is now anchor-*"),
             _ => return Err("unsupported native control placement property"),
         }
         Ok(())
@@ -371,7 +374,7 @@ impl Placement {
                     continue;
                 };
                 for (edge, anchor) in anchors {
-                    let property = format!("--suhina-anchor-{edge}");
+                    let property = format!("anchor-{edge}");
                     if let Err(error) = result.set(&property, anchor.as_str().unwrap_or("")) {
                         warnings.push(format!("control anchors.{edge}: {error}"));
                     }
@@ -392,7 +395,7 @@ impl Placement {
             let (key, text) = if matches!(key.as_str(), "width" | "height") && value.as_str() == Some("100%") {
                 (key.as_str(), "100%".to_owned())
             } else if key == "direction" {
-                ("--suhina-direction", value.as_str().unwrap_or("").to_owned())
+                ("direction", value.as_str().unwrap_or("").to_owned())
             } else {
                 (key.as_str(), value.as_f64().map_or(String::new(), |v| format!("{v}px")))
             };
@@ -407,7 +410,7 @@ impl Placement {
 thread_local! { static NATIVE_ONLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
 
 /// While it lives, every control keeps its native place: for a part too small for the theme's
-/// placements (a low track, `--suhina-compact-below`), which would otherwise overlap.
+/// placements (a low track, `compact-below`), which would otherwise overlap.
 pub struct NativeOnly(bool);
 
 impl Drop for NativeOnly {

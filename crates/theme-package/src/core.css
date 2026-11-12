@@ -26,6 +26,7 @@
 @property --browser-text-hint { syntax: "<color>"; initial-value: #85837E; }
 @property --browser-text-value { syntax: "<color>"; initial-value: #DAD6D0; }
 @property --accent { syntax: "<color>"; initial-value: #A6A3FF; }
+@property --automation-pin { syntax: "<color>"; initial-value: #A6A3FF; }
 @property --selection { syntax: "<color>"; initial-value: #E3C86A; }
 @property --recording { syntax: "<color>"; initial-value: #E5484D; }
 @property --recording-background { syntax: "<color>"; initial-value: #4D2F2B; }
@@ -45,36 +46,3 @@
 @property --track-6 { syntax: "<color>"; initial-value: #FF6FA8; }
 @property --track-7 { syntax: "<color>"; initial-value: #5C8DFF; }
 @property --track-8 { syntax: "<color>"; initial-value: #2FD9C4; }
-@property --kind-kick { syntax: "<color>"; initial-value: #D06E5E; }
-@property --kind-snare { syntax: "<color>"; initial-value: #73AAC0; }
-@property --kind-clap { syntax: "<color>"; initial-value: #5EC0B0; }
-@property --kind-closedHat { syntax: "<color>"; initial-value: #C6AC5E; }
-@property --kind-openHat { syntax: "<color>"; initial-value: #D08F6E; }
-@property --kind-hat { syntax: "<color>"; initial-value: #D8C47A; }
-@property --kind-rim { syntax: "<color>"; initial-value: #8CA8E0; }
-@property --kind-tom { syntax: "<color>"; initial-value: #B074A4; }
-@property --kind-crash { syntax: "<color>"; initial-value: #E0A0C8; }
-@property --kind-ride { syntax: "<color>"; initial-value: #C8B8E8; }
-@property --kind-cymbal { syntax: "<color>"; initial-value: #A497CC; }
-@property --kind-percussion { syntax: "<color>"; initial-value: #8FC06E; }
-@property --kind-bass { syntax: "<color>"; initial-value: #A84F4F; }
-@property --kind-tonal { syntax: "<color>"; initial-value: #6EB0D0; }
-@property --kind-vocal { syntax: "<color>"; initial-value: #E8D0A0; }
-@property --kind-effect { syntax: "<color>"; initial-value: #9CC49C; }
-@property --kind-other { syntax: "<color>"; initial-value: #8A8680; }
-@property --meter-style { syntax: "continuous | segmented | needle | frames"; initial-value: continuous; }
-@property --meter-segments { syntax: "<integer>"; initial-value: 24; range: 4 64; }
-@property --meter-intensity { syntax: "<integer>"; initial-value: 100; range: 0 100; }
-@property --artwork-fps { syntax: "<integer>"; initial-value: 12; range: 1 30; }
-@property --liquid { syntax: "auto | <integer>+"; initial-value: auto; }
-@property --gradient-panels { syntax: "*"; initial-value: none; }
-@property --gradient-tracks { syntax: "*"; initial-value: none; }
-@property --gradient-clips { syntax: "*"; initial-value: none; }
-@property --background-image { syntax: "*"; initial-value: none; }
-@property --background-opacity { syntax: "<integer>"; initial-value: 70; range: 0 100; }
-@property --background-blur { syntax: "<integer>"; initial-value: 0; range: 0 100; }
-@property --session-track-width { syntax: "auto | <length>"; initial-value: auto; }
-@property --session-return-width { syntax: "auto | <length>"; initial-value: auto; }
-@property --session-scene-width { syntax: "auto | <length>"; initial-value: auto; }
-@property --session-slot-height { syntax: "auto | <length>"; initial-value: auto; }
-@property --session-header-height { syntax: "auto | <length>"; initial-value: auto; }

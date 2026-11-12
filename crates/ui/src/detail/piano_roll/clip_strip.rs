@@ -21,7 +21,11 @@ pub(super) fn show(
 ) {
     let painter = ui.painter_at(row);
     let style = part_style("piano-clip-strip", &[]);
-    painter.rect_filled(row, 0.0, style.background.unwrap_or_else(theme::panel_background));
+    painter.rect_filled(
+        row,
+        0.0,
+        style.background.unwrap_or_else(|| crate::kit::style_class::surface_or(theme::panel_background())),
+    );
 
     // The Focus switch, over the keys.
     let switch = Rect::from_min_max(row.min, Pos2::new(layout.grid.left(), row.bottom())).shrink(1.0);

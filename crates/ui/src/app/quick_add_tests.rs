@@ -156,6 +156,56 @@ fn a_device_from_the_palette_lands_as_a_drag_from_the_browser_does() {
     }
 }
 
+/// A Cab Loader from the palette and one dragged start on the file its folder lists first
+/// ([docs/spec/nam-amp-and-cab.md]): the same commands, so the same state.
+#[test]
+fn the_palette_and_the_drag_start_the_cab_loader_on_its_folders_first_file() {
+    use suhina_engine::model::*;
+    let dir = std::env::temp_dir().join(format!("suhina-quick-add-nam-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let irs = dir.join("IRs");
+    std::fs::create_dir_all(irs.join("Suhina")).unwrap();
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(irs.join("Suhina").join("green.wav"), spec).unwrap();
+    writer.write_sample(16_384_i16).unwrap();
+    drop(writer);
+
+    let found = Found {
+        item: Item::Device("nam-cab-loader".into()),
+        name: "Cab Loader".into(),
+        kind: "effect",
+        detail: None,
+        plugin: false,
+        format: None,
+        folder: None,
+    };
+    let dragged =
+        |found: &Found, kind| BrowserItem { key: found.item.key(), name: found.name.clone(), kind, plugin: false };
+    let (mut palette, mut drag) = (blank_app(), blank_app());
+    for app in [&mut palette, &mut drag] {
+        app.set_nam_default_folders(dir.join("models"), irs.clone());
+    }
+    palette.quick_add_choose(&found, Some(TrackId(3)), 0.0);
+    drag.drop_items(&[dragged(&found, drop::ItemKind::Effect)], DropTarget::Track(TrackId(3)), false);
+    assert_eq!(tracks_and_devices(&palette), tracks_and_devices(&drag), "the palette matches the drag");
+    let file_of = |app: &App| {
+        let session = app.session().unwrap();
+        let channel = session.project().tracks.iter().find(|t| t.id.0 == 3).and_then(|t| t.channel).unwrap();
+        let device = session.project().channel(channel).unwrap().devices.last().unwrap();
+        String::from_utf8(device.state.as_ref().map(|b| b.as_ref().to_vec()).unwrap_or_default()).unwrap_or_default()
+    };
+    let wanted = irs.join("Suhina").join("green.wav").display().to_string();
+    assert_eq!(file_of(&palette), wanted, "the palette's cab runs the folder's first file");
+    assert_eq!(file_of(&drag), wanted, "the drag's cab runs the folder's first file");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn an_effect_with_no_track_selected_says_to_select_one_and_adds_nothing() {
     let mut app = blank_app();

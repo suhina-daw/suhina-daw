@@ -211,11 +211,13 @@ fn confine_collect(workspace: &Workspace, params: &mut Value, source: Option<&Pa
     Ok(())
 }
 
-/// A folder `place` must be below the read root; `pinned` and `recent:…` are the library's own.
+/// A folder `place` must be below the read root; `pinned`, `recent:…` and `tag:…` are the
+/// library's own, no matter where the settings folder is.
 fn confine_place(workspace: &Workspace, params: &mut Value, name: &str) -> Result<(), String> {
     if let Some(place) = params.get(name).and_then(Value::as_str)
         && place != "pinned"
         && !place.starts_with("recent:")
+        && !place.starts_with("tag:")
     {
         params[name] = json!(display_path(&workspace.readable_folder(place)?));
     }

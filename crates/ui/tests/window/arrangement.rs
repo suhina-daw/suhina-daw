@@ -2906,3 +2906,97 @@ fn deleting_several_tracks_is_one_undo_step() {
         assert!(gone.iter().all(|n| !has(&harness, n)), "menu {menu}: one redo deletes them again");
     }
 }
+
+/// While a clip's right edge is held, its fade-out handle goes along with it on every frame, not
+/// only once the edge is let go (#698).
+#[test]
+fn the_fade_handles_follow_a_right_edge_while_it_is_dragged() {
+    let mut harness = window_with_step(audio_app(), 1.0 / 60.0);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.get_by_label("Clip Loop on Loop at bar 1").click();
+    harness.run();
+    let handle = |h: &Harness<'static, App>| h.get_by_label("Fade-out of Loop on Loop").rect().center().x;
+    let before = handle(&harness);
+    // Left a bar: 32 points at 8 points a beat.
+    let edge = harness.get_by_label("Right edge of Loop on Loop").rect().center();
+    let to = edge - egui::vec2(32.0, 0.0);
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge - egui::vec2(16.0, 0.0));
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    let held = handle(&harness);
+    assert!((before - held - 32.0).abs() < 2.0, "the handle moved with the held edge: {before} → {held}");
+    harness.drop_at(to);
+    harness.run();
+    assert!((handle(&harness) - held).abs() < 2.0, "and stays there once it is let go");
+}
+
+/// A click on another clip of the same track moves the highlight in the frames the click makes:
+/// the clip drawn before the clicked one shows it is no longer selected without the pointer
+/// having to move again (#695). egui draws a frame after any input by itself, so here the frame
+/// the click's own repaint asks for (`arrangement_view/clip.rs`) comes either way; this checks
+/// what those frames show.
+#[test]
+fn the_selection_moves_at_once_to_another_clip_on_the_same_track() {
+    let mut harness = arrangement_app();
+    use egui_kittest::kittest::NodeT as _;
+    let selected = |h: &Harness<'static, App>, label: &str| {
+        h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+    };
+    let (first, later) = ("Clip Beat A on Drums at bar 1", "Clip Beat B on Drums at bar 17");
+    click_name_bar(&mut harness, later);
+    assert!(selected(&harness, later) && !selected(&harness, first));
+    click_name_bar(&mut harness, first);
+    assert!(selected(&harness, first), "the clicked clip shows it is selected");
+    assert!(!selected(&harness, later), "the one before it no longer does");
+    click_name_bar(&mut harness, later);
+    assert!(selected(&harness, later) && !selected(&harness, first));
+}
+
+/// A selection rectangle dragged past the lanes' edge scrolls them along and picks the clips it
+/// reaches that were out of view when the drag began (#691).
+#[test]
+fn a_selection_rectangle_past_the_edge_scrolls_and_picks_clips_out_of_view() {
+    let mut harness = arrangement_app();
+    harness.set_size(egui::vec2(900.0, 800.0));
+    harness.run();
+    // A clip by its track and the beat it starts on.
+    let id = |h: &Harness<'static, App>, track: &str, start: f64| {
+        let p = h.state().session().unwrap().project();
+        let track = p.tracks.iter().find(|t| t.name == track).map(|t| t.id);
+        let lane = p.arrangement.lanes.iter().find(|l| l.track == track).unwrap();
+        lane.clips.iter().find(|c| (c.start - start).abs() < 1e-6).map(|c| c.id).unwrap()
+    };
+    // Root at bar 9, Chords 2 at bar 25.
+    let (root, chords) = (id(&harness, "Bass", 32.0), id(&harness, "Keys", 96.0));
+    assert!(harness.query_by_label("Clip Chords 2 on Keys at bar 25").is_none_or(|n| n.rect().left() > 900.0));
+    // From the empty lower half of Bass's lane before Root, down to Keys and past the right edge.
+    let bass = harness.get_by_label("Track Bass").rect();
+    let keys = harness.get_by_label("Track Keys").rect();
+    let from = egui::pos2(bass.right() + 40.0, bass.bottom() - 6.0);
+    let past = egui::pos2(899.0, keys.center().y);
+    harness.hover_at(from);
+    harness.run();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(egui::pos2(from.x + 40.0, past.y));
+    harness.step();
+    // Held past the edge, each frame scrolls a little further.
+    for _ in 0..120 {
+        harness.hover_at(past);
+        harness.step();
+    }
+    let scrolled = harness.state().arrangement().scroll.x;
+    assert!(scrolled > 200.0, "the lanes scrolled along: {scrolled}");
+    harness.drop_at(past);
+    harness.step();
+    harness.run();
+    let picked: Vec<_> = harness.state().arrangement().selected_clips().iter().map(|(_, c)| *c).collect();
+    assert!(picked.contains(&root), "the clip where it began: {picked:?}");
+    assert!(picked.contains(&chords), "a clip out of view when it began: {picked:?}");
+}

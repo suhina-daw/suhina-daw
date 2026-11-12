@@ -22,7 +22,9 @@ pub use suhina_media::info::FileKind;
 
 pub use crate::index::FolderIndex;
 use crate::store::Store;
-pub use crate::store::{Group, MAX_FOLDERS, MAX_RECENT, MAX_TAG_LIMIT, Tag};
+pub use crate::store::{
+    Group, MAX_FOLDERS, MAX_RECENT, MAX_TAG_DEPTH, MAX_TAG_LIMIT, Section, SectionKind, Tag, TagEntry, TagFolder,
+};
 pub use crate::worker::{FolderState, POLL_EVERY, on_network_drive};
 use crate::worker::{FromWorker, ToWorker};
 
@@ -154,8 +156,8 @@ pub struct Query {
     pub kinds: Vec<FileKind>,
     /// Only files in this folder (one of the library's, or a folder inside one).
     pub within: Option<PathBuf>,
-    /// Only items carrying any of these tags.
-    pub tags: Vec<String>,
+    /// Only items carrying any of these tags' ids ([#1254]).
+    pub tags: Vec<u32>,
     pub limit: usize,
 }
 
@@ -163,7 +165,7 @@ pub struct Query {
 /// not walk a large library at every key (`docs/spec/browser.md` › Results).
 pub struct FileSearch {
     folders: Vec<(PathBuf, Arc<index::FolderIndex>)>,
-    tagged: std::collections::BTreeMap<String, Vec<String>>,
+    tagged: std::collections::BTreeMap<String, Vec<u32>>,
     query: Query,
 }
 
@@ -180,8 +182,7 @@ impl FileSearch {
         let words = words(&query.text);
         let limit = if query.limit == 0 { MAX_RESULTS } else { query.limit.min(MAX_RESULTS) };
         let tagged = |key: &str| {
-            query.tags.is_empty()
-                || self.tagged.get(key).is_some_and(|names| names.iter().any(|n| query.tags.contains(n)))
+            query.tags.is_empty() || self.tagged.get(key).is_some_and(|ids| query.tags.iter().any(|n| ids.contains(n)))
         };
         let mut hits: Vec<(u8, usize, IndexedFile)> = Vec::new();
         for (folder, index) in &self.folders {
@@ -254,6 +255,9 @@ pub struct Library {
     folders: Vec<Folder>,
     running: Option<Running>,
     revision: u64,
+    /// Bumped when the tags change (added, removed, renamed, set on items), so what shows the
+    /// tags can count them once instead of at every frame.
+    tag_revision: u64,
 }
 
 impl Default for Library {
@@ -292,6 +296,7 @@ impl Library {
             folders: Vec::new(),
             running: None,
             revision: 0,
+            tag_revision: 0,
         }
     }
 
@@ -408,6 +413,12 @@ impl Library {
     /// Bumped whenever any folder's index or state changes.
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Bumped when the tags change, so counts of tagged items are read once, not at every frame.
+    pub fn tag_revision(&mut self) -> u64 {
+        self.load();
+        self.tag_revision
     }
 
     pub fn folders(&mut self) -> Vec<FolderStatus> {
@@ -564,6 +575,19 @@ impl Library {
         )
     }
 
+    /// The library folder `path` is a folder of: `path` itself when it is one of the library's
+    /// folders, or the one whose index holds `path` as a sub-folder. `None` for anything else,
+    /// a file among them. Read from the index, no disk is asked: a pinned or tagged folder
+    /// lists as a folder by it ([#1254] review: a tagged folder was counted but not listed).
+    pub fn folder_root_of(&mut self, path: &Path) -> Option<PathBuf> {
+        self.load();
+        self.folders.iter().find_map(|folder| {
+            let rest = path.strip_prefix(&folder.path).ok()?;
+            let rel = rest.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+            (rel.is_empty() || folder.index.dirs.contains_key(&rel)).then(|| folder.path.clone())
+        })
+    }
+
     /// The files matching `query`, best first (`docs/spec/browser.md` › Results).
     pub fn search(&mut self, query: &Query) -> Vec<IndexedFile> {
         self.prepare_search(query).run(&AtomicBool::new(false))
@@ -687,7 +711,11 @@ impl Library {
     /// the folders that held it and hold it now are read again, so the index follows.
     pub fn relocate(&mut self, from: &Path, to: &Path) -> Result<(), String> {
         self.load();
-        if self.store.relocate(&Item::File(from.to_path_buf()).key(), &Item::File(to.to_path_buf()).key()) {
+        let moved = self.store.relocate(&Item::File(from.to_path_buf()).key(), &Item::File(to.to_path_buf()).key());
+        if moved {
+            // The tag records moved with the file: the rows' caches read the same
+            // revision the tag commands do ([#1196]).
+            self.tag_revision = self.tag_revision.wrapping_add(1);
             self.save()?;
         }
         let roots: Vec<PathBuf> = self
@@ -714,7 +742,8 @@ impl Library {
         self.save()
     }
 
-    pub fn tags(&mut self) -> Vec<Tag> {
+    /// The Tags section's rows, in the order shown: tags and folders ([#1254]).
+    pub fn tags(&mut self) -> Vec<TagEntry> {
         self.load();
         self.store.tags.clone()
     }
@@ -730,28 +759,160 @@ impl Library {
         self.save()
     }
 
-    pub fn set_tag(&mut self, name: &str, color: Option<&str>, rename: Option<&str>) -> Result<(), String> {
+    pub fn set_tag(
+        &mut self,
+        name: &str,
+        color: Option<&str>,
+        rename: Option<&str>,
+        folder: Option<u32>,
+    ) -> Result<(), String> {
         self.load();
-        self.store.set_tag(name, color, rename)?;
+        self.store.set_tag(name, color, rename, folder)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
         self.save()
     }
 
-    pub fn remove_tag(&mut self, name: &str) -> Result<(), String> {
+    /// The tag `id`, wherever it sits ([#1254]: the session's commands resolve ids).
+    pub fn tag_by_id(&mut self, id: u32) -> Option<crate::Tag> {
         self.load();
-        self.store.remove_tag(name)?;
+        crate::store::tag_by_id(&self.store.tags, id).cloned()
+    }
+
+    /// Renames the tag `id`; the name stays unique in the library ([#1254]).
+    pub fn rename_tag(&mut self, id: u32, name: &str) -> Result<(), String> {
+        self.load();
+        self.store.rename_tag(id, name)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
         self.save()
     }
 
-    pub fn tag(&mut self, item: &str, tag: &str, on: bool) -> Result<(), String> {
+    /// Changes the colour of the tag `id` ([#1254]: a colour may repeat across tags).
+    pub fn set_tag_color(&mut self, id: u32, color: Option<&str>) -> Result<(), String> {
         self.load();
-        self.store.tag(item, tag, on)?;
+        self.store.set_tag_color(id, color)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
         self.save()
     }
 
-    /// The names of the tags `item` carries.
-    pub fn item_tags(&mut self, item: &str) -> Vec<String> {
+    /// The name of the tag `id` ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+    pub fn tag_name_of(&mut self, id: u32) -> Option<String> {
+        self.load();
+        self.tag_by_id(id).map(|tag| tag.name)
+    }
+
+    /// Adds a tag folder named `name` (`Folder`, then `Folder 2` when None) under `parent`,
+    /// returning its id ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+    pub fn add_tag_folder(&mut self, name: Option<&str>, parent: Option<u32>) -> Result<u32, String> {
+        self.load();
+        let id = self.store.add_tag_folder(name, parent)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
+        self.save()?;
+        Ok(id)
+    }
+
+    /// Renames the tag folder `id`, unique among the folders of its level ([#1254]).
+    pub fn rename_tag_folder(&mut self, id: u32, name: &str) -> Result<(), String> {
+        self.load();
+        self.store.rename_tag_folder(id, name)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
+        self.save()
+    }
+
+    /// Removes the tag folder `id`, its tags and folders moving up; the count returned is
+    /// what it carried, for the asking-first of the menus ([#1254]).
+    pub fn remove_tag_folder(&mut self, id: u32) -> Result<usize, String> {
+        self.load();
+        let carried = self.store.remove_tag_folder(id)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
+        self.save()?;
+        Ok(carried)
+    }
+
+    /// Sets whether the tag folder `id` shows open, remembered between runs ([#1254]).
+    pub fn set_tag_folder_open(&mut self, id: u32, open: bool) -> Result<(), String> {
+        self.load();
+        self.store.set_tag_folder_open(id, open)?;
+        self.save()
+    }
+
+    /// Moves the tag or tag folder `id` under `parent` (the top when None), at `position`
+    /// of that level ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+    pub fn move_tag_node(&mut self, id: u32, parent: Option<u32>, position: usize) -> Result<(), String> {
+        self.load();
+        self.store.move_tag_node(id, parent, position)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
+        self.save()
+    }
+
+    /// All tags in the section's order, folders flattened ([#1254]): the footer's dots and
+    /// an item's Tag menu read this, not the tree.
+    pub fn tag_flat(&mut self) -> Vec<Tag> {
+        self.load();
+        crate::store::tags_iter(&self.store.tags).cloned().collect()
+    }
+
+    /// The folder `id`'s tags and folders move up when it is removed ([#1254]); the count
+    /// comes back for the menus' asking, the same [`Library::remove_tag_folder`] answers
+    /// with ([#1254] review).
+    pub fn folder_carried(&mut self, id: u32) -> usize {
+        self.load();
+        crate::store::folder_carried(&self.store.tags, id)
+    }
+
+    /// The sidebar's sections, in the order they show ([#1254]).
+    pub fn sections(&mut self) -> Vec<Section> {
+        self.load();
+        self.store.sections.clone()
+    }
+
+    /// Sets the sections' order (Folders stays last, whatever the caller asks) ([#1254]).
+    pub fn set_sections(&mut self, order: Vec<Section>) -> Result<(), String> {
+        self.load();
+        self.store.set_sections(Some(&order));
+        self.save()
+    }
+
+    /// Sets whether a section shows open ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+    pub fn set_section_open(&mut self, kind: SectionKind, open: bool) -> Result<(), String> {
+        self.load();
+        self.store.set_section_open(kind, open);
+        self.save()
+    }
+
+    /// The id of the tag `name` names ([#1254]: the session's commands take an id or a name;
+    /// names are unique).
+    pub fn tag_id_of(&mut self, name: &str) -> Option<u32> {
+        self.load();
+        crate::store::tags_iter(&self.store.tags).find(|tag| tag.name == name).map(|tag| tag.id)
+    }
+
+    /// Removes the tag `id`, from the list and from every item that carries it ([#1254]).
+    pub fn remove_tag(&mut self, id: u32) -> Result<(), String> {
+        self.load();
+        self.store.remove_tag(id)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
+        self.save()
+    }
+
+    /// Sets or clears the tag `id` on `item` ([#1254]: items carry ids).
+    pub fn tag(&mut self, item: &str, id: u32, on: bool) -> Result<(), String> {
+        self.load();
+        self.store.tag(item, id, on)?;
+        self.tag_revision = self.tag_revision.wrapping_add(1);
+        self.save()
+    }
+
+    /// The ids of the tags `item` carries ([#1254]: items carry ids).
+    pub fn item_tags(&mut self, item: &str) -> Vec<u32> {
         self.load();
         self.store.tagged.get(item).cloned().unwrap_or_default()
+    }
+
+    /// The items that carry the tag `id`, as `Item`s keys, in the store's order. A tag place
+    /// lists them no matter which folder they are in or whether they still exist ([#1254]).
+    pub fn items_tagged(&mut self, id: u32) -> Vec<String> {
+        self.load();
+        self.store.tagged.iter().filter(|(_, ids)| ids.contains(&id)).map(|(k, _)| k.clone()).collect()
     }
 
     /// How the browser shows the installed plug-ins.
@@ -767,17 +928,17 @@ impl Library {
         self.save()
     }
 
-    /// Every tagged item with its tags.
-    pub fn tagged(&mut self) -> Vec<(String, Vec<String>)> {
+    /// Every tagged item with the ids of its tags ([#1254]).
+    pub fn tagged(&mut self) -> Vec<(String, Vec<u32>)> {
         self.load();
         self.store.tagged.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 
-    /// How many items carry the tag `name`, counted where the tags are kept: no item key and no
-    /// tag list is copied, so a hover over a tag's dot costs no allocation.
-    pub fn tagged_count(&mut self, name: &str) -> usize {
+    /// How many items carry the tag `id`, counted where the tags are kept: no item key and no
+    /// tag list is copied, so a hover over a tag's dot costs no allocation ([#1254]).
+    pub fn tagged_count(&mut self, id: u32) -> usize {
         self.load();
-        self.store.tagged.values().filter(|names| names.iter().any(|n| n == name)).count()
+        self.store.tagged.values().filter(|ids| ids.contains(&id)).count()
     }
 }
 

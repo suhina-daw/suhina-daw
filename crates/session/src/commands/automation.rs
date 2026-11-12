@@ -7,6 +7,11 @@ use super::*;
 
 const RANGE_START: Param = param("start", ParamType::Number, "the range's first arrangement beat, from 0");
 const RANGE_END: Param = param("end", ParamType::Number, "the range's end, an arrangement beat after start");
+const LANES: Param = optional(
+    "lanes",
+    ParamType::Items,
+    "more lanes of the same track to act on together, in one step: [{\"device\": n, \"param\": id}] or [{\"param\": \"pan\"}]",
+);
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
@@ -145,6 +150,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Items,
                 "instead of a range: points by index, from 0, or {\"id\": n}, as in automation.list; pasted, they go in among the lane's points from the first of them",
             ),
+            LANES,
         ],
         kind: CommandKind::READ,
         run: crate::automation_range::copy,
@@ -166,7 +172,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "automation.duplicate",
         label: "Copy a time range of a parameter's automation right after itself, over what is there; answers the copy's range; the clipboard stays as it was",
-        params: &[DEVICE_TRACK, AUTOMATED_DEVICE, AUTOMATED, RANGE_START, RANGE_END],
+        params: &[DEVICE_TRACK, AUTOMATED_DEVICE, AUTOMATED, RANGE_START, RANGE_END, LANES],
         kind: CommandKind::EDIT,
         run: crate::automation_range::duplicate,
         policy: Policy::DEFAULT,
@@ -174,7 +180,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "automation.deleteRange",
         label: "Delete the points of a parameter's automation inside a time range; the values at the range's edges stay, so the envelope outside it does not change",
-        params: &[DEVICE_TRACK, AUTOMATED_DEVICE, AUTOMATED, RANGE_START, RANGE_END],
+        params: &[DEVICE_TRACK, AUTOMATED_DEVICE, AUTOMATED, RANGE_START, RANGE_END, LANES],
         kind: CommandKind::EDIT,
         run: crate::automation_range::delete_range,
         policy: Policy::DEFAULT,
@@ -296,5 +302,25 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         kind: CommandKind::READ,
         run: crate::automation::list,
         policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "automation.setLayout",
+        label: "Set how a track's automation lanes are laid out in the Arrangement view, whole: the lanes mounted under its top lane, top to bottom, and groups of them under a heading of their own (folded or open); one undo step, saved with the project",
+        params: &[
+            DEVICE_TRACK,
+            optional(
+                "lanes",
+                ParamType::Items,
+                "the mounted lanes, top to bottom: [{\"param\": \"volume\"}, {\"device\": n, \"param\": id}], a device by its index on the track",
+            ),
+            optional(
+                "groups",
+                ParamType::Items,
+                "groups of those lanes: [{\"name\": \"Synth\", \"lanes\": [...], \"folded\": false, \"device\": n}], each lane in one group at most",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::lane_layout::set_layout,
+        policy: Policy::UNHEARD,
     },
 ];

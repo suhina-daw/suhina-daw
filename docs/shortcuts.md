@@ -3,7 +3,7 @@ description: Keyboard shortcuts in the desktop app: the default keys, the keymap
 read_when: shortcuts, keys, keymap, Ctrl+drag copies notes, Alt+drag velocity, left edge, keymap.json, keymap preset, workflow mode, workflow menu, workflow settings, Custom mode, double-click, Draw-first, Select-first, Mouse-first, mouse switches, right click deletes, left click draws, Alt right plays, rebind, cut copy paste, duplicate, mute clips, hotkeys, quantise, Ctrl+U, piano roll keys, tool keys, number keys choose a tool, arrow keys, select all, mute tool key, grid keys, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, narrow grid, widen grid, triplet grid, snap to grid, Z, Shift+Z, zoom to selection, zoom to clip, ruler zoom
 type: howto
 status: current
-last_verified: 2026-11-06
+last_verified: 2026-11-11
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -49,7 +49,7 @@ can be changed while editing ([spec](spec/ui-clip-editor.md) › Workflow modes)
 | **Mouse-first** | working with the mouse | the four mouse switches below are all on, so the left button draws in the Select tool, the right button deletes a note (a drag deletes the notes it passes over), Shift+right slices the notes under a short drag, and Alt (Option on macOS) with the right button held plays the clip from the point under the pointer; duplicate is **Ctrl+D** |
 
 Every behaviour that differs between the presets is a **workflow setting** of its own, a row in
-Settings › Keys › Mouse and key behaviour and an entry in the toolbar's workflow menu: **Click on empty
+Settings › Keys › Mouse and key behaviour and an entry in the piano roll toolbar's workflow menu: **Click on empty
 grid**, **Right click on a note**, **Shift+right drag**, **Alt+right button**, **Duplicate key**,
 **Double-click on empty grid** and **Double-click on a note**. Changing one makes the mode
 **Custom** and keeps the others; choosing a preset again fills them all in. They are kept in
@@ -91,12 +91,18 @@ status bar.
 
 ## Default keys
 
+While the piano roll has the keyboard (after a click in it), a key that edits or shows the
+Arrangement or the Launcher (the clip and slot keys below, the Arrangement's tools and grid,
+**A**, **M**, Insert MIDI clip) does nothing, even where the piano roll has no key of its own on it
+([spec](spec/ui-clip-editor.md) › Shortcuts); the window's own keys go on working.
+
 | Action | Keys |
 |---|---|
 | Play or stop (`transport.toggle`; Play starts from the play start marker or the selected clip, as Settings › Arrangement › Time and play › Play from says; Stop goes back to the marker or stays, as Settings › Arrangement › Time and play › Playhead after Stop says) | Space |
 | Switch between Launcher and Arrangement (`view.toggle`) | Tab |
 | Show or hide the detail area (`view.detail`) | Shift+Tab |
 | Hide the clip editor, or show it again (`view.editor`; [spec](spec/ui-clip-editor.md) › Least height and closing). Escape in the piano roll keeps clearing the note selection | Ctrl+Shift+E |
+| Pull the clip editor (or the track's devices) to the top of the Arrangement, or let it go again ([spec](spec/ui-clip-editor.md) › Pulled to the top); not a rebindable shortcut | Escape twice |
 | Show the selected clip's track devices in the detail area, or the clip again: the detail area's Clip / Devices switch, for a MIDI clip; opens the detail area when it is hidden (`view.devices`; [spec](spec/ui-clip-editor.md) › Where it opens). A double-click on a track's header, a Launcher column's name or its channel strip shows that track's devices too | Ctrl+Shift+D |
 | Open the selected audio clip in its track's plug-in that edits clips, such as a pitch editor (`view.araEditor`; [spec](spec/ui-clip-editor.md) › Where it opens): the detail area shows the clip with the plug-in's editor, and the plug-in shows that clip. On a track without one, the installed one (Melodyne first) is added to the track first. The clip's right-click menu has the same as **Open in** and the plug-in's name | Alt+M |
 | Play notes from the computer keyboard, or stop (`view.computerKeyboard`; the control bar's Keys button): A W S E D F T G Y H U J K and O L P ; play the armed tracks, Z and X move the octave, C and V the velocity, and while it is on those keys run no shortcut ([recording](spec/recording.md)) | Ctrl+K |
@@ -127,13 +133,15 @@ status bar.
 | In the piano roll: move the selected notes to the previous, the next grid line, the first of them on the line and the others keeping their distance to it (`pianoRoll.earlier`, `.later`) | Left; Right |
 | In the piano roll: move the selected notes a fine step (a 1/128 note) earlier, later, off the grid (`pianoRoll.earlierFine`, `.laterFine`) | Alt+Left; Alt+Right |
 | In the piano roll: move the selected notes a semitone, an octave up or down (`pianoRoll.up`, `.down`, `.octaveUp`, `.octaveDown`) | Up, Down; Shift+Up, Shift+Down |
-| In the piano roll: take the selected notes' ends to the previous, the next grid line, or to the next note of the key (`pianoRoll.shorter`, `.longer`; never shorter than a step) | Shift+Left; Shift+Right |
-| In the piano roll: make the selected notes a fine step shorter, longer, off the grid, stopping at the next note of the key unless stacked notes are allowed (`pianoRoll.shorterFine`, `.longerFine`) | Alt+Shift+Left; Alt+Shift+Right |
+| In the piano roll: take the selected notes' ends to the previous, the next grid line, over the next note of the key too (`pianoRoll.shorter`, `.longer`; never shorter than a step) | Shift+Left; Shift+Right |
+| In the piano roll: make the selected notes a fine step shorter, longer, off the grid, over the next note of the key too (`pianoRoll.shorterFine`, `.longerFine`) | Alt+Shift+Left; Alt+Shift+Right |
 | In the piano roll: switch between the Select and Draw tools (`pianoRoll.draw`, [spec](spec/ui-clip-editor.md) › Drawing notes) | B |
 | In the piano roll: make the grid finer, coarser (`pianoRoll.gridNarrow`, `.gridWiden`, [spec](spec/ui-clip-editor.md) › Grid and snapping) | Ctrl+1; Ctrl+2 |
 | In the piano roll: turn the triplet grid on or off (`pianoRoll.gridTriplet`) | Ctrl+3 |
 | In the piano roll: turn snapping to the grid on or off (`pianoRoll.gridSnap`) | Ctrl+4 |
 | In the piano roll: zoom time to the selected notes (the whole clip when none is selected); to the whole clip (`pianoRoll.zoomSelection`, `.zoomClip`, [spec](spec/ui-clip-editor.md) › Zoom and scroll) | Z; Shift+Z |
+| In the piano roll: loop the clip over the time selection (again on the same stretch: off), or turn the clip's loop on or off (`pianoRoll.loop`, `clip.setLoop`, [spec](spec/ui-clip-editor.md) › Shortcuts) | Ctrl+L |
+| In the piano roll: Legato on the selected notes, or on every note when none is selected (`pianoRoll.legato`, [spec](spec/ui-clip-editor.md) › Other note tools) | Alt+L |
 | In the piano roll: move the loop's start or end, the loop, the clip's start or end marker (on the grid; Alt free); zoom time, scroll it ([spec](spec/ui-clip-editor.md) › Layout) | drag a handle, the loop bar or a marker on the ruler; drag the ruler up and down, sideways |
 | In the piano roll: play a key of the key column through the track's instrument while it is held; Ctrl+click, Ctrl+drag select the notes of that pitch or those pitches ([spec](spec/ui-clip-editor.md) › Playing the keys) | click, drag on the key column; Ctrl+click, Ctrl+drag |
 | In the piano roll: move the selected notes' starts and keep their ends; copy the selection to where it is let go; change the selection's velocity ([spec](spec/ui-clip-editor.md) › Resizing, › Moving, › Velocity) | drag a note's left edge; Ctrl+drag a note (Cmd on macOS); Alt+drag a note up or down (Option on macOS) |
@@ -143,10 +151,10 @@ status bar.
 | Group the selected tracks (`selection.group`); with devices picked in a strip's list or the chain, put them into a device group ([spec](spec/device-groups.md)) | Ctrl+G |
 | Take the picked device group of one branch apart (`selection.ungroup`) | Ctrl+Shift+G |
 | In the Launcher view, with a clip slot selected: launch it (`selection.launch`); select the slot above, below, in the track to the left or right (`selection.up`, `.down`, `.left`, `.right`; [spec](spec/ui-session-view.md) › Launching and selecting) | Enter; Up, Down, Left, Right |
-| Quantise the piano roll's selected notes, the notes that start in its time selection, or all its notes, with the settings the quantise block in the MIDI tools column keeps (`pianoRoll.quantize`, [spec](spec/ui-clip-editor.md) › Quantise) | Ctrl+U |
+| Quantise the piano roll's selected notes, the notes that start in its time selection, or all its notes, with the settings Quantise in the note tools' Transform tab keeps (`pianoRoll.quantize`, [spec](spec/ui-clip-editor.md) › Quantise) | Ctrl+U |
 | Open or close the shown track's plug-in editor — the device the chain panel selects, else the track's first running plug-in (`view.plugin`; [spec](spec/ui-clip-editor.md) › The device chain) | P |
 | Add an arrangement marker at the playhead, or at the play start marker while stopped (`marker.addAtPlayhead`; [spec](spec/arrangement-editing.md#markers)) | M |
-| Turn arrangement looping on or off; on without a loop region makes one over the first 4 bars (`transport.setLoopEnabled`; [spec](spec/arrangement-editing.md#loop-region)) | Ctrl+L |
+| Turn arrangement looping on or off; on without a loop region makes one over the first 4 bars (`transport.setLoopEnabled`; [spec](spec/arrangement-editing.md#loop-region)); while the piano roll has the keyboard the key is the clip's own loop instead | Ctrl+L |
 | Next, previous project (`project.next`, `project.previous`) | Ctrl+Tab, Ctrl+Shift+Tab |
 | New project or open one (`file.new`), open one (`file.open`) | Ctrl+N, Ctrl+O |
 | Save, save as (`file.save`, `file.saveAs`); save as template (`file.saveTemplate`) | Ctrl+S, Ctrl+Shift+S; none |

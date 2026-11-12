@@ -86,6 +86,7 @@ fn project_built() -> Project {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
     };
     let slot = |clip: Option<Clip>, has_stop: bool| Slot { clip, has_stop };
@@ -379,6 +380,7 @@ fn a_drag_that_the_engine_cannot_build_is_an_error() {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     };
@@ -583,6 +585,7 @@ fn playing_with_clips() -> (Session, Renderer) {
         color: None,
         ara: false,
         audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     };
@@ -710,6 +713,35 @@ fn a_chord_plays_until_it_is_let_go() {
     assert!(tail < held * 0.05, "released: {tail} of {held}");
     assert!(!session.player().unwrap().preview_monitor().playing());
     assert_eq!(session.project(), &before);
+}
+
+/// Keys added with `add` join the held chord: letting go of the added key leaves the first one
+/// sounding, and without `add` a new key replaces what is held.
+#[test]
+fn added_keys_join_the_held_ones() {
+    let (mut session, mut renderer) = playing();
+    run(&mut session, "device.add", json!({ "track": "Drums", "id": "fm-synth" })).unwrap();
+    advance(&mut renderer, 2);
+    run(&mut session, "preview.noteOn", json!({ "track": "Drums", "key": 60 })).unwrap();
+    let held = beat_peaks(&mut renderer, 2)[1];
+    assert!(held > 0.01, "the first key plays: {held}");
+    run(&mut session, "preview.noteOn", json!({ "track": "Drums", "keys": [67], "add": true })).unwrap();
+    beat_peaks(&mut renderer, 1);
+    run(&mut session, "preview.noteOff", json!({ "track": "Drums", "key": 67 })).unwrap();
+    let still = beat_peaks(&mut renderer, 2)[1];
+    assert!(still > held * 0.2, "the first key still sounds: {still} of {held}");
+    run(&mut session, "preview.noteOff", json!({ "track": "Drums", "key": 60 })).unwrap();
+    let tail = beat_peaks(&mut renderer, 2)[1];
+    assert!(tail < held * 0.05, "released: {tail} of {held}");
+    assert!(run(&mut session, "preview.noteOn", json!({ "track": "Drums", "key": 60, "add": "yes" })).is_err());
+    // With a length the keys go off at its end by themselves.
+    run(&mut session, "preview.noteOn", json!({ "track": "Drums", "keys": [60], "length": 0.5 })).unwrap();
+    assert!(beat_peaks(&mut renderer, 1)[0] > 0.01, "it sounds");
+    beat_peaks(&mut renderer, 4);
+    assert!(!session.player().unwrap().preview_monitor().playing(), "over at its end");
+    for bad in [json!(0.0), json!(-1.0), json!(65.0), json!("long")] {
+        assert!(run(&mut session, "preview.noteOn", json!({ "track": "Drums", "key": 60, "length": bad })).is_err());
+    }
 }
 
 #[test]

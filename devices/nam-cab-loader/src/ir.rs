@@ -31,20 +31,29 @@ pub fn read(path: impl AsRef<Path>, project_rate: u32) -> Result<Ir, String> {
             MAX_BYTES >> 20
         ));
     }
-    let mut reader = hound::WavReader::open(path).map_err(|e| format!("{} is not a wav file ({e})", path.display()))?;
+    let data = std::fs::read(path).map_err(|e| format!("{} ({e})", path.display()))?;
+    read_bytes(&data, project_rate).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The IR in `data`, decoded and, when the project runs at another rate, resampled to
+/// `project_rate`. The pack's irs reach the device this way ([ADR 0036]: the starter pack is
+/// inside the executable), and a file the user drops in names a path that [`read`] calls
+/// [`read_bytes`] through.
+pub fn read_bytes(data: &[u8], project_rate: u32) -> Result<Ir, String> {
+    if data.len() > MAX_BYTES {
+        return Err(format!("the IR is larger than the {} MiB Suhina reads", MAX_BYTES >> 20));
+    }
+    let mut reader = hound::WavReader::new(std::io::Cursor::new(data)).map_err(|e| format!("not a wav file ({e})"))?;
     let spec = reader.spec();
     let channels = usize::from(spec.channels.max(1));
     let frames = reader.duration() as usize;
     if frames > MAX_FRAMES {
-        return Err(format!("{} is longer than the {MAX_FRAMES} frames Suhina reads", path.display()));
+        return Err(format!("the IR is longer than the {MAX_FRAMES} frames Suhina reads"));
     }
     let mut samples: Vec<f32> = Vec::with_capacity(frames.saturating_mul(channels));
     let mut push = |value: Result<f32, hound::Error>| -> Result<(), String> {
         if samples.len() < frames.saturating_mul(channels) {
-            samples.push(match value {
-                Ok(v) => v,
-                Err(e) => return Err(format!("{} is not a wav file Suhina reads ({e})", path.display())),
-            });
+            samples.push(value.map_err(|e| format!("not a wav file Suhina reads ({e})"))?);
         }
         Ok(())
     };
@@ -63,7 +72,7 @@ pub fn read(path: impl AsRef<Path>, project_rate: u32) -> Result<Ir, String> {
                 push(sample.map(|v| (f64::from(v) / scale) as f32))?;
             }
         }
-        _ => return Err(format!("{} is a wav format Suhina does not read", path.display())),
+        _ => return Err("a wav format Suhina does not read".into()),
     }
     let mut ir = Ir::from_interleaved(spec.channels.max(1), frames, spec.sample_rate, &samples);
     if ir.sample_rate != project_rate.max(1) {

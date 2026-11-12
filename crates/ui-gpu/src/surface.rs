@@ -1,10 +1,10 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Backgrounds that set the window's pixels (`suhina_ui::kit::surface`): each fill is a paint
-//! callback drawn with no blending, so its colour and alpha replace what is under it and the
-//! window's alpha shows the desktop through. All of a frame's fills share one instance buffer,
-//! written once after every callback has been prepared.
+//! The clears of `suhina_ui::kit::surface`: a paint callback drawn with no blending, so its colour
+//! and alpha replace what is under it. Only a menu's or dialog's blurred backdrop asks for one, to
+//! clear the window's pixels under it; every background blends. All of a frame's clears share one
+//! instance buffer, written once after every callback has been prepared.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};

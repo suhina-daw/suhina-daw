@@ -26,7 +26,7 @@ impl App {
     /// left for the view. With `geometry` the theme's layout places it: its rectangle, the view's,
     /// and whether its width follows the handle (`Workspace::browser_follows`).
     pub(super) fn browser_panel(&mut self, ui: &mut Ui, area: Rect, geometry: Option<(Rect, Rect, bool)>) -> Rect {
-        let _panel_style = crate::kit::style_class::enter_named("workspace-panel", "panel-browser");
+        let panel_style = crate::kit::element::WORKSPACE_PANEL.id("panel-browser").enter();
         let (low, high) = crate::settings::BROWSER_WIDTHS;
         let widest = (high as f32).min(area.width() * crate::settings::BROWSER_SHARE).max(low as f32);
         let width = (self.settings.browser_width as f32).clamp(low as f32, widest);
@@ -76,6 +76,9 @@ impl App {
             let new = new.round().clamp(low as f32, widest) as u32;
             self.settings.browser_width = new;
         }
+        // The panel's own box, its background and border, once its handle beside it is drawn; it
+        // clips what the browser paints (`overflow`), and the browser goes in its content box.
+        let inside = panel_style.paint(ui.painter(), panel).content;
         // Saved once the handle is let go: writing the settings file on every frame of a drag
         // made the drag lag.
         if done {
@@ -84,6 +87,11 @@ impl App {
         let search_key = self.keymap.label("browser.search").unwrap_or_default();
         let selected_track = self.selected_track();
         let revision = self.revision;
+        // A drag that started in the map's own window carries through to the main window's
+        // views with the drag's own position: the main window's pointer is unset or stale
+        // while the map window has it ([#1254] review). Otherwise the hits test the pointer
+        // as ever.
+        self.browser.drag_pointer = if self.map_window.drag.is_some() { self.drag_pointer(ui.ctx()) } else { None };
         let mut map_settings = self.settings.clone();
         let map_panel = &mut self.sample_map;
         let mut draw_map = |ui: &mut Ui, rect: Rect, state: &mut BrowserState, projects: &mut Projects| {
@@ -92,7 +100,11 @@ impl App {
             });
         };
         let out = ui
-            .scope_builder(egui::UiBuilder::new().max_rect(panel), |ui| {
+            .scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+                // The panel bounds the browser's input as its drawing, on the panel's edge so
+                // padding a child paints over stays (spec › Overflow: the same rectangles for
+                // drawing and input); the area's edge is the viewport's while the browser slides
+                // in. A panel that hides its overflow clips the painting further (`paint`).
                 ui.set_clip_rect(panel.intersect(area).intersect(ui.clip_rect()));
                 let cx = browser_view::Context {
                     projects: &mut self.projects,
@@ -101,7 +113,7 @@ impl App {
                     search_key,
                     other_results: Some(&mut draw_map),
                 };
-                browser_view::show(ui, panel, &mut self.browser, cx)
+                browser_view::show(ui, inside, &mut self.browser, cx)
             })
             .inner;
         // A press anywhere outside the browser gives the arrow keys back to the window.
@@ -241,7 +253,7 @@ impl App {
                 ui.max_rect()
             };
             ui.allocate_rect(rect, egui::Sense::hover());
-            ui.painter().fill_background(rect, 0.0, theme::window_background());
+            ui.painter().rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
             let changed = panel.show(ui, rect, browser, projects, &mut settings, revision);
             // The window has its own keyboard: its keys run the same actions as the main window's,
             // unless a field in it is being typed in. Embedded, the main window reads them.

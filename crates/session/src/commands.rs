@@ -363,7 +363,7 @@ const CLIP_TRACK: Param =
 const CLIP_INDEX: Param = optional(
     "index",
     ParamType::Integer,
-    "an arrangement clip's index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+    "an arrangement clip's index on the track, from project.clips (deprecated, use clip; to be removed, ADR 0025 › 4)",
 );
 const CLIP_SCENE: Param = optional(
     "scene",
@@ -983,13 +983,28 @@ pub(crate) fn remove_track(p: &mut Project, track: TrackId, channel: ChannelId) 
     }
 }
 
-/// The clips `params.clips` names, each `{ "track": …, "index": n }` as `project.clips` lists
-/// them: at least one, without duplicates, every one of them there.
+/// The arrangement clips `params.clips` names, each `{ "clip": id }` or (deprecated)
+/// `{ "track": …, "index": n }` as `project.clips` lists them: at least one, without duplicates,
+/// every one of them there.
 pub(crate) fn clip_list(p: &Project, params: &Value) -> Result<Vec<(TrackId, usize)>, CommandError> {
     let list =
         Args::new(params).value("clips").and_then(Value::as_array).ok_or("clips must be a list of {track, index}")?;
     let mut out: Vec<(TrackId, usize)> = Vec::new();
     for entry in list {
+        if let Some(value) = entry.get("clip") {
+            if entry.get("track").is_some() || entry.get("index").is_some() {
+                return Err("each clip in clips is { \"clip\": id }, or { \"track\", \"index\" }, not both".into());
+            }
+            let id = clip_param(p, value)?;
+            match clip_track(p, id)? {
+                (track, ClipPlace::Lane { index, .. }) if !out.contains(&(track, index)) => out.push((track, index)),
+                (_, ClipPlace::Lane { .. }) => {}
+                (_, ClipPlace::Slot { .. }) => {
+                    return Err(format!("clip {id} is in a clip slot; clips names arrangement clips").into());
+                }
+            }
+            continue;
+        }
         let track = track_at(p, entry, "track")?;
         let index = entry.get("index").and_then(Value::as_u64).ok_or("each clip needs an index from project.clips")?;
         let lane = p
@@ -1013,8 +1028,12 @@ pub(crate) fn clip_list(p: &Project, params: &Value) -> Result<Vec<(TrackId, usi
     Ok(out)
 }
 
-/// The lane of `params.track` and the clip index in it, checked.
+/// The lane and index of the arrangement clip `params` names: by `clip`, or by `track` with
+/// `index`, checked.
 pub(crate) fn lane_and_index(p: &Project, params: &Value) -> Result<(usize, usize), CommandError> {
+    if let Some((_, lane, index)) = named_arrangement_clip(p, params)? {
+        return Ok((lane, index));
+    }
     let track = track_id(p, params)?;
     let index = Args::new(params)
         .value("index")
@@ -1200,8 +1219,9 @@ fn play(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
         Some(Value::String(s)) if s == "clip" => Some(clip_start(&session.project, params)?),
         Some(other) => return Err(format!("from must be \"marker\" or \"clip\", got {other}").into()),
     };
-    if start.is_none() && (Args::new(params).has("track") || Args::new(params).has("index")) {
-        return Err("track and index go with from: \"clip\"".into());
+    let args = Args::new(params);
+    if start.is_none() && (args.has("clip") || args.has("track") || args.has("index")) {
+        return Err("clip, track and index go with from: \"clip\"".into());
     }
     // The marker moves first, so playback starts there; while playing, that is a jump.
     if let Some(beat) = start {
@@ -1214,7 +1234,7 @@ fn play(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     })
 }
 
-/// Where the arrangement clip `track` and `index` name starts, in beats, as a play start marker.
+/// Where the arrangement clip `clip`, or `track` and `index`, names starts, in beats, as a play start marker.
 fn clip_start(p: &Project, params: &Value) -> Result<f64, CommandError> {
     let (lane, index) = lane_and_index(p, params)?;
     let start = p.arrangement.lanes.get(lane).and_then(|l| l.clips.get(index)).ok_or("the clip is missing")?.start;
@@ -1483,74 +1503,57 @@ fn clip_track(p: &Project, id: ClipId) -> Result<(TrackId, ClipPlace), CommandEr
     Ok((track, place))
 }
 
-/// `params` with the clips it names by id (`clip`, and `clip` in the items of a `clips` list)
-/// written as the commands read them: `track` with `index` (an arrangement clip) or `scene` (a
-/// clip slot), looked up in the project as it is now, so a clip is found wherever earlier
-/// edits moved it (ADR 0025). `None` when `params` names no clip by id.
+/// A clip a command names by its id, and where it is now: its track, and its place as the
+/// positional form gives it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NamedClip {
+    pub(crate) id: ClipId,
+    pub(crate) track: TrackId,
+    pub(crate) at: crate::notes::ClipAt,
+}
+
+/// The clip `params.clip` names (its id, or a name only one clip has), found where it is now,
+/// so it is the same clip whatever earlier edits moved (ADR 0025). `None` when `params` gives no
+/// `clip`: the command then reads the positional form, `track` with `scene` (a clip slot, a place
+/// in the launcher's grid that stays) or `track` with `index` (an arrangement clip, deprecated:
+/// ADR 0025 › 4).
 ///
-/// During the deprecation window a command still takes `track` with `index`; that form is
-/// removed with the project format's next version ([ADR 0025](../../docs/decisions/0025-object-identity.md) › 4).
-pub(crate) fn resolve_clip_ids<T>(
+/// Every reader of a command's clip starts here ([`lane_and_index`], [`clip_list`],
+/// `notes::locate` and the commands that read their clip themselves), so a clip named by id is
+/// read once, where the command reads its parameters (#1157).
+pub(crate) fn named_clip(p: &Project, params: &Value) -> Result<Option<NamedClip>, CommandError> {
+    let args = Args::new(params);
+    let Some(value) = args.value("clip") else { return Ok(None) };
+    for key in ["index", "scene", "clips"] {
+        if args.has(key) {
+            return Err(format!("give clip or {key}, not both").into());
+        }
+    }
+    let id = clip_param(p, value)?;
+    let (track, place) = clip_track(p, id)?;
+    if args.has("track") && track_id(p, params)? != track {
+        return Err(format!("clip {id} is not on that track").into());
+    }
+    let at = match place {
+        ClipPlace::Lane { lane, index } => crate::notes::ClipAt::Arrangement(lane, index),
+        ClipPlace::Slot { column, slot } => crate::notes::ClipAt::Slot(column, slot),
+    };
+    Ok(Some(NamedClip { id, track, at }))
+}
+
+/// The arrangement clip `params.clip` names: its track, lane and index. `None` when `params`
+/// gives no `clip`; an error when the clip is in a clip slot.
+pub(crate) fn named_arrangement_clip(
     p: &Project,
-    spec: &CommandSpec<T>,
     params: &Value,
-) -> Result<Option<Value>, CommandError> {
-    let takes = |name: &str| spec.params.iter().any(|q| q.name == name);
-    let Some(object) = params.as_object() else { return Ok(None) };
-    let given = |key: &str| object.get(key).filter(|v| !v.is_null());
-    let single = given("clip").filter(|_| spec.params.iter().any(|q| q.ty == ParamType::Clip));
-    let listed = spec.params.iter().any(|q| q.ty == ParamType::Clips)
-        && given("clips").and_then(Value::as_array).is_some_and(|l| l.iter().any(|e| e.get("clip").is_some()));
-    if single.is_none() && !listed {
-        return Ok(None);
-    }
-    let mut out = object.clone();
-    if let Some(value) = single {
-        for key in ["index", "scene", "clips"] {
-            if given(key).is_some() {
-                return Err(format!("give clip or {key}, not both").into());
-            }
+) -> Result<Option<(TrackId, usize, usize)>, CommandError> {
+    match named_clip(p, params)? {
+        None => Ok(None),
+        Some(NamedClip { track, at: crate::notes::ClipAt::Arrangement(lane, index), .. }) => {
+            Ok(Some((track, lane, index)))
         }
-        let id = clip_param(p, value)?;
-        let (track, place) = clip_track(p, id)?;
-        if given("track").is_some() && track_id(p, params)? != track {
-            return Err(format!("clip {id} is not on that track").into());
-        }
-        out.remove("clip");
-        out.insert("track".into(), json!(track.0));
-        match place {
-            ClipPlace::Lane { index, .. } if takes("index") => {
-                out.insert("index".into(), json!(index));
-            }
-            ClipPlace::Lane { index, .. } if takes("clips") => {
-                out.remove("track");
-                out.insert("clips".into(), json!([{ "track": track.0, "index": index }]));
-            }
-            ClipPlace::Slot { slot, .. } if takes("scene") => {
-                out.insert("scene".into(), json!(slot));
-            }
-            ClipPlace::Lane { .. } => {
-                return Err(format!("clip {id} is on the arrangement; {} takes a clip slot's clip", spec.id).into());
-            }
-            ClipPlace::Slot { .. } => {
-                return Err(format!("clip {id} is in a clip slot; {} takes arrangement clips", spec.id).into());
-            }
+        Some(NamedClip { id, .. }) => {
+            Err(format!("clip {id} is in a clip slot; this command takes arrangement clips").into())
         }
     }
-    if listed && let Some(Value::Array(entries)) = out.get_mut("clips") {
-        for entry in entries.iter_mut() {
-            let Some(value) = entry.get("clip") else { continue };
-            if entry.get("track").is_some() || entry.get("index").is_some() {
-                return Err("each clip in clips is { \"clip\": id }, or { \"track\", \"index\" }, not both".into());
-            }
-            let id = clip_param(p, value)?;
-            match clip_track(p, id)? {
-                (track, ClipPlace::Lane { index, .. }) => *entry = json!({ "track": track.0, "index": index }),
-                (_, ClipPlace::Slot { .. }) => {
-                    return Err(format!("clip {id} is in a clip slot; clips names arrangement clips").into());
-                }
-            }
-        }
-    }
-    Ok(Some(Value::Object(out)))
 }

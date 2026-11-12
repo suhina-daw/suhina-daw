@@ -14,8 +14,8 @@ use crate::settings::settings_view::{Entry, Page, block, row};
 use crate::settings::track_sizes::TrackSize;
 use crate::settings::view_settings::{DetailLayout, FolderDrop, WaveformColour};
 use crate::settings::{
-    AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, OnOpen, PianoKeyNames, PianoKeyStyle,
-    PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
+    AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, NoteSpelling, OnOpen, PianoKeyNames,
+    PianoKeyStyle, PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
 };
 use suhina_update::Channel;
 
@@ -260,6 +260,14 @@ pub(crate) static ROWS: &[Entry] = &[
             let options = [("Row", DeviceLayout::Row), ("Stack", DeviceLayout::Stack)];
             cx.choose(r, &options, |s| &mut s.device_layout);
         },
+    ),
+    row(
+        Page::Devices,
+        "Device panels",
+        "Devices beside piano roll",
+        "With the devices in a row, whether Devices opens them in a column beside the piano roll instead of in its place",
+        &["stack_in_piano_roll"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.stack_in_piano_roll),
     ),
     row(
         Page::Devices,
@@ -640,6 +648,27 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Automation",
+        "Group plug-in lanes",
+        "Whether a lane mounted from a plug-in goes into a group of that plug-in's lanes, one group a plug-in",
+        &["automation_group"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.automation_group_plugins),
+    ),
+    row(
+        Page::Arrangement,
+        "Automation",
+        "Top lane shows",
+        "What a track's top automation lane shows when you open its lanes, before you choose a parameter in it or move a control",
+        &["automation_top_lane"],
+        |cx, r| {
+            use crate::arrangement::automation_lanes::TopLane;
+            cx.choose(r, &[("None", TopLane::None), ("Volume", TopLane::Volume), ("Pan", TopLane::Pan)], |s| {
+                &mut s.view.automation_top_lane
+            })
+        },
+    ),
+    row(
+        Page::Arrangement,
         "Gain envelope",
         "Show gain envelope",
         "Audio clips with gain envelope points show the line on their waveform when you are not editing it",
@@ -790,6 +819,33 @@ pub(crate) static ROWS: &[Entry] = &[
         },
     ),
     row(
+        Page::ClipEditor,
+        "Piano roll",
+        "Note names",
+        "Whether a black key is named as a sharp (C#) or a flat (Db)",
+        &["note_spelling"],
+        |cx, r| {
+            let options: Vec<(&str, NoteSpelling)> = NoteSpelling::ALL.iter().map(|n| (n.name(), *n)).collect();
+            cx.choose(r, &options, |s| &mut s.note_spelling);
+        },
+    ),
+    row(
+        Page::ClipEditor,
+        "Piano roll",
+        "Default scale",
+        "The scale a clip's Scale switch turns on when the clip has none of its own",
+        &["default_scale_root", "default_scale_mode"],
+        |cx, r| cx.default_scale(r),
+    ),
+    row(
+        Page::ClipEditor,
+        "Advanced",
+        "Covered notes",
+        "What happens to a note whose start a note placed over it covers, where notes of one pitch do not stack: it goes whole, or keeps what runs on past",
+        &["covered_notes"],
+        |cx, r| cx.choose(r, &[("Delete them", true), ("Keep the rest", false)], |s| &mut s.view.covered_whole),
+    ),
+    row(
         Page::Browser,
         "Browser",
         "Browser side",
@@ -909,6 +965,14 @@ pub(crate) static ROWS: &[Entry] = &[
         "Things fade and slide briefly when they change",
         &["animations"],
         |cx, r| cx.on_off(r, |s| &mut s.animations),
+    ),
+    row(
+        Page::Appearance,
+        "Window",
+        "Hide pointer while dragging",
+        "The pointer disappears while a knob, fader or value is dragged",
+        &["drag_hides_pointer"],
+        |cx, r| cx.on_off(r, |s| &mut s.drag_hides_pointer),
     ),
     row(
         Page::Appearance,

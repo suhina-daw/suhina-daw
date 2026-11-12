@@ -4,7 +4,7 @@ read_when: .sd, Suhina device SDK, device graph, community device, graph effect
 type: decision
 status: accepted
 built: partly
-last_verified: 2026-11-02
+last_verified: 2026-11-09
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs
@@ -212,4 +212,5 @@ The chain already scrolls sideways, so a wide device needs nothing new; a detail
 than the panel still scrolls it, and the expanded panel is unchanged. Cells an `.sd` file places
 itself keep their position, under the canvas when there is one. An embedded plug-in editor hides
 the list, so the list does not widen its panel. A theme that sizes the panel (`.device { width }`)
-keeps one column that follows that width and scrolls; its `--suhina-param-columns` divide a column.
+keeps one column that follows that width and scrolls; the columns of its `grid-template-columns`
+divide a column.

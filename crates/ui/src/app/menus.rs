@@ -120,21 +120,22 @@ fn entries(ui: &mut Ui, entries: &[Entry], picked: &mut Option<String>) {
 /// A menu of the bar that opens when the pointer moves onto it while another is open.
 fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
     let shown = ui.menu_button(title, |ui| {
-        // `.menu` styles the open menu: its background, text colour, corner radius and font size.
-        let _menu = crate::kit::style_class::enter("menu");
+        // `menu` styles the open menu: its background, text colour, corner radius and font size.
+        let menu = crate::kit::element::MENU.enter();
         // The menu opens over the window, not the bar: text it inherits from the bar (Suhina
         // Sheet's white on green) must still read on the menu's own background.
-        let background = crate::kit::style_class::computed()
+        let background = menu
+            .style()
             .filter(|style| style.authored.background)
             .map_or(ui.visuals().window_fill, |style| style.background);
-        let ink = crate::kit::style_class::readable_on(background);
+        let ink = menu.readable_on(background);
         // The background covers the menu as it was laid out last frame: its own rect, never the
         // layer's clip, which is the whole window.
         let id = ui.scope_id().with("menu-rect");
         if let Some(rect) = ui.ctx().data(|d| d.get_temp::<egui::Rect>(id)) {
-            crate::kit::native_css::surface(ui.painter(), rect, 0.0, egui::Color32::TRANSPARENT);
+            menu.paint(ui.painter(), rect);
         }
-        let mut styled = crate::kit::style_class::ui(ui);
+        let mut styled = menu.ui(ui);
         if let Some(ink) = ink {
             styled.visuals_mut().override_text_color = Some(ink);
         }
@@ -167,7 +168,7 @@ mod tests {
     fn an_open_menu_s_background_covers_the_menu_not_the_window() {
         let ctx = egui::Context::default();
         let skin = crate::kit::skin::Skin {
-            css: Some(std::sync::Arc::from(".menu { background-color: #FF0000; }")),
+            css: Some(std::sync::Arc::from("menu { background-color: #FF0000; }")),
             ..Default::default()
         };
         crate::kit::skin::configure(&skin);

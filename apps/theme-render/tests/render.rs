@@ -7,14 +7,13 @@
 use egui_kittest::kittest::Queryable;
 use suhina_theme_render::{Gpu, Subject, render_all, rendered, scenes, shoot};
 
-/// The see-through test theme's buttons have round artwork on a translucent toolbar. The real
-/// window shows a square hole around each: the button's background replaces the toolbar's pixels
-/// with its own alpha, and the artwork's corners leave them so. The render shows it as the window
-/// does: around the Play button's circle, inside its square, less of the window is left than on
-/// the toolbar beside it.
+/// The see-through test theme's buttons have round artwork on a translucent toolbar. Its button
+/// background used to replace the toolbar's pixels with its own alpha, leaving a square hole
+/// around the circle; every background now blends (#1233), so around the Play button's circle,
+/// inside its square, as much of the window is left as on the toolbar beside it.
 #[test]
 #[ignore = "needs a GPU adapter; run with --ignored"]
-fn the_see_through_themes_square_holes_under_artwork_show_in_its_render() {
+fn the_see_through_theme_has_no_holes_under_artwork() {
     let theme = super::see_through().unwrap();
     let scene = scenes::find("launcher").expect("the launcher scene");
     let mut h = rendered((scene.app)().unwrap(), &theme, scene.width, 1.0, &Gpu::new().unwrap());
@@ -26,7 +25,42 @@ fn the_see_through_themes_square_holes_under_artwork_show_in_its_render() {
     // A corner of the button's square, outside its round artwork; and the toolbar just above it.
     let corner = alpha(play.left() + 1.5, play.top() + 1.5);
     let toolbar = alpha(play.center().x, play.top() - 3.0);
-    assert!(corner + 16 < toolbar, "a hole at the corner: alpha {corner} there, {toolbar} on the toolbar");
+    assert!(corner + 4 >= toolbar, "no hole at the corner: alpha {corner} there, {toolbar} on the toolbar");
+}
+
+/// Scrolled content never shows through the headers that stay where they are: in the see-through
+/// test theme, the launcher's Main header (over the scene column) and the Arrangement view's
+/// header corner (over the track headers) are the same, pixel for pixel, scrolled or not.
+#[test]
+#[ignore = "needs a GPU adapter; run with --ignored"]
+fn nothing_scrolled_shows_through_a_frozen_header() {
+    let theme = super::see_through().unwrap();
+    let gpu = Gpu::new().unwrap();
+    for (scene, header) in [("launcher-scrolled", "Select Main"), ("arrangement-scrolled", "Hide returns")] {
+        let scene = scenes::find(scene).expect("the scene");
+        let mut h = rendered((scene.app)().unwrap(), &theme, scene.width, 1.0, &gpu);
+        if scene.name == "arrangement-scrolled" {
+            h.get_by_label("Arrangement view").click();
+            h.run_steps(4);
+        }
+        let rect = h.query_all_by_label(header).next().unwrap_or_else(|| panic!("no {header}")).rect();
+        let pixels = |shot: &suhina_theme_render::Shot| -> Vec<[u8; 4]> {
+            let (x, y) = (rect.left().ceil() as u32, rect.top().ceil() as u32);
+            let (w, h) = (rect.width().floor() as u32, rect.height().floor() as u32);
+            (y..y + h)
+                .flat_map(|y| (x..x + w).map(move |x| (x, y)))
+                .map(|(x, y)| shot.pixels.get_pixel(x, y).0)
+                .collect()
+        };
+        let before = pixels(&shoot(&mut h).unwrap_or_else(|e| panic!("{e}")));
+        (scene.drive)(&mut h).unwrap_or_else(|e| panic!("{e}"));
+        let moved = h.query_all_by_label(header).next().map(|n| n.rect());
+        assert_eq!(moved, Some(rect), "{}: {header} stays where it is", scene.name);
+        let after = pixels(&shoot(&mut h).unwrap_or_else(|e| panic!("{e}")));
+        let changed =
+            before.iter().zip(&after).filter(|(a, b)| a.iter().zip(b.iter()).any(|(a, b)| a.abs_diff(*b) > 2)).count();
+        assert_eq!(changed, 0, "{}: {changed} pixels of {header} changed when the view scrolled", scene.name);
+    }
 }
 
 /// Every bundled theme renders in every scene, to `target/theme-shots/<theme>/`.

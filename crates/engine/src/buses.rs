@@ -269,6 +269,8 @@ pub(crate) fn build(
     {
         chains.push(main);
     }
+    // When each chain runs in a block, and with how much of the deadline (#1261).
+    sends::plan_turns(&mut chains);
     (chains, latency)
 }
 

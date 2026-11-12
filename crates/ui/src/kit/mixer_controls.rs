@@ -2,25 +2,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Shared Launcher and Arrangement channel control faces; interaction belongs to each view.
+use super::element::{Entered, Native};
 use super::{motion, theme, widgets};
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Color32, Pos2, Rect, Vec2};
 
-pub fn pan_field(painter: &egui::Painter, rect: Rect, pan: f64, hover: f32) {
+/// A pan as a field in `rect`, drawn as `el`, the pan control its caller entered (`pan`,
+/// `#mixer-pan`).
+pub fn pan_field(painter: &egui::Painter, rect: Rect, el: &Entered, pan: f64, hover: f32) {
     let to = (0.5 + 0.5 * pan.clamp(-1.0, 1.0)) as f32;
     let span = (0.5f32.min(to), 0.5f32.max(to));
-    if crate::kit::skin::has_own("pan.track") || authored_shape() {
-        level_bar(painter, rect, "pan", span, hover, &widgets::format_pan(pan), Align2::CENTER_CENTER);
+    if crate::kit::skin::has_own("pan.track") || authored_shape(el) {
+        level_bar(painter, rect, el, "pan", span, hover, &widgets::format_pan(pan), Align2::CENTER_CENTER);
         return;
     }
     // The native look: a flat field with centre ticks and a thin bar along its bottom.
-    // `.pan` and `#mixer-pan` colour it as well: the theme's background, border and text.
-    crate::kit::native_css::surface(
-        painter,
-        rect,
-        0.0,
-        motion::mix(theme::pan_background(), theme::panel_hover(), hover),
-    );
+    // `pan` and `#mixer-pan` colour it as well: the theme's background, border and text.
+    let fill = motion::mix(theme::pan_background(), theme::panel_hover(), hover);
+    el.paint_with(painter, rect, Native { radius: 0.0, fill });
     let centre = rect.center().x.round() - 0.5;
     painter.vline(centre, egui::Rangef::new(rect.top(), rect.top() + 2.0), theme::hairline(theme::pan_centre()));
     painter.vline(centre, egui::Rangef::new(rect.bottom() - 2.0, rect.bottom()), theme::hairline(theme::pan_centre()));
@@ -34,25 +32,29 @@ pub fn pan_field(painter: &egui::Painter, rect: Rect, pan: f64, hover: f32) {
         Align2::CENTER_CENTER,
         &widgets::format_pan(pan),
         theme::mono_font(theme::TEXT_SMALL),
-        crate::kit::style_class::foreground(theme::text_primary()),
+        el.color_or(theme::text_primary()),
     );
 }
 
-/// Whether the sheet gives the element in scope a shape of its own.
-fn authored_shape() -> bool {
-    crate::kit::style_class::computed().is_some_and(|style| {
+/// Whether the sheet gives `el` a shape of its own. The level fields are drawn inside their
+/// control's own element (`#arrangement-volume`, `#mixer-pan`), which their callers enter.
+fn authored_shape(el: &Entered) -> bool {
+    el.style().is_some_and(|style| {
         style.authored.background || style.authored.radius || style.authored.border_width || style.height.is_some()
     })
 }
 
 /// A level as a bar in `rect`: a track, and over it a fill from `span.0` to `span.1` (fractions of
 /// the width), with `text` on top. `kind` names its artwork (`volume.track`, `volume.fill`). The
-/// shape comes from the sheet: the element in scope is the track and `.value-fill` the fill
+/// shape comes from the sheet: `el`, the control its caller entered, is the track and
+/// `value-fill` the fill
 /// (background, border, radius, `height` for the thickness); the native look is a capsule as tall
 /// as the field. Artwork of the theme's own replaces either.
+#[allow(clippy::too_many_arguments)]
 pub fn level_bar(
     painter: &egui::Painter,
     rect: Rect,
+    el: &Entered,
     kind: &str,
     span: (f32, f32),
     hover: f32,
@@ -65,9 +67,9 @@ pub fn level_bar(
     if !rect.is_finite() || rect.height() < 1.0 || rect.width() < 1.0 {
         return;
     }
-    let text = &widgets::formatted_value(text);
+    let text = &widgets::formatted_value(el, text);
     let state = if hover > 0.5 { State::Hover } else { State::Normal };
-    let height = crate::kit::native_css::thickness(rect.height()).clamp(1.0, rect.height());
+    let height = el.thickness_or(rect.height()).clamp(1.0, rect.height());
     let track = Rect::from_center_size(rect.center(), Vec2::new(rect.width(), height));
     let back = motion::mix(theme::control_background(), theme::control_hover(), hover);
     let radius = if skin::has_own(&format!("{kind}.track"))
@@ -75,15 +77,15 @@ pub fn level_bar(
     {
         0.0
     } else {
-        crate::kit::native_css::surface(painter, track, height * 0.5, back)
+        el.paint_with(painter, track, Native { radius: height * 0.5, fill: back }).radius
     };
     let x = |at: f32| track.left() + track.width() * at.clamp(0.0, 1.0);
     let filled = Rect::from_min_max(Pos2::new(x(span.0), track.top()), Pos2::new(x(span.1), track.bottom()));
     let fill = {
-        let _fill = crate::kit::style_class::enter("value-fill");
-        let fill = crate::kit::style_class::background(theme::control_selected());
+        let fill_el = super::element::VALUE_FILL.enter();
+        let fill = fill_el.background_or(theme::control_selected());
         if filled.width() > 0.0 {
-            let fill_height = crate::kit::native_css::thickness(height).clamp(1.0, rect.height());
+            let fill_height = fill_el.thickness_or(height).clamp(1.0, rect.height());
             let bar = Rect::from_center_size(track.center(), Vec2::new(track.width(), fill_height));
             // Clipped rather than shrunk, so the fill keeps the track's rounded ends.
             let clipped = painter
@@ -91,38 +93,34 @@ pub fn level_bar(
             if !(skin::has_own(&format!("{kind}.fill"))
                 && skin::paint(&clipped, bar, &format!("{kind}.fill"), state, fill, 0.0))
             {
-                crate::kit::native_css::surface(&clipped, bar, radius, fill);
+                fill_el.paint_with(&clipped, bar, Native { radius, fill });
             }
         }
         fill
     };
-    // A handle where the fill ends, when the sheet gives `.value-handle` a width (or artwork
+    // A handle where the fill ends, when the sheet gives `value-handle` a width (or artwork
     // `{kind}.handle`): its background, border and radius, as tall as the field.
     {
-        let _handle = crate::kit::style_class::enter("value-handle");
-        let width = crate::kit::style_class::computed().and_then(|style| style.width);
+        let handle_el = super::element::VALUE_HANDLE.enter();
+        let width = handle_el.style().and_then(|style| style.width);
         let role = format!("{kind}.handle");
         if let Some(width) = width.filter(|w| *w >= 1.0).or_else(|| skin::has_own(&role).then_some(8.0)) {
             // The end that moves: a volume's right end, a pan's end away from the centre.
             let at = if span.0 > 0.0 && span.0 < 0.5 { x(span.0) } else { x(span.1) };
             let handle = Rect::from_center_size(
                 Pos2::new(at.clamp(track.left() + width / 2.0, track.right() - width / 2.0), rect.center().y),
-                Vec2::new(width.min(rect.width()), crate::kit::native_css::thickness(rect.height()).min(rect.height())),
+                Vec2::new(width.min(rect.width()), handle_el.thickness_or(rect.height()).min(rect.height())),
             );
             if !(skin::has_own(&role) && skin::paint(painter, handle, &role, state, fill, 0.0)) {
-                crate::kit::native_css::surface(painter, handle, 2.0, theme::text_primary());
+                handle_el.paint_with(painter, handle, Native { radius: 2.0, fill: theme::text_primary() });
             }
         }
     }
     // The value's size from the sheet (`font-size`).
-    let font = theme::mono_font(
-        crate::kit::style_class::computed()
-            .filter(|style| style.authored.font_size)
-            .map_or(theme::TEXT_SMALL, |s| s.font_size),
-    );
+    let font = theme::mono_font(el.font_size_or(theme::TEXT_SMALL));
     // A narrow field (a header at its least width) gives up its inset before its value is cut.
-    // `--suhina-value-position: none` keeps the bar without its value.
-    if widgets::ValuePosition::current() == widgets::ValuePosition::None {
+    // `value-position: none` keeps the bar without its value.
+    if widgets::ValuePosition::of(el, widgets::ValuePosition::Right) == widgets::ValuePosition::None {
         return;
     }
     let inset = ((rect.width() - 32.0) / 2.0).clamp(2.0, 8.0);
@@ -132,22 +130,22 @@ pub fn level_bar(
     if track.height() < font.size {
         let above = Rect::from_min_max(inner.min, Pos2::new(inner.right(), track.top()));
         if above.height() >= font.size {
-            let ink = crate::kit::style_class::foreground(theme::text_primary());
+            let ink = el.color_or(theme::text_primary());
             widgets::text_in(painter, above, align, text, font, ink);
         }
         return;
     }
     // The sheet may move the value (`text-align`) and give the lit part's text its own colour
-    // (`.value-fill { color }`).
-    let align = match crate::kit::style_class::computed().and_then(|style| style.text_align) {
+    // (`value-fill { color }`).
+    let align = match el.style().and_then(|style| style.text_align) {
         Some(-1) => Align2::LEFT_CENTER,
         Some(0) => Align2::CENTER_CENTER,
         Some(_) => Align2::RIGHT_CENTER,
         None => align,
     };
     let lit_ink = {
-        let _fill = crate::kit::style_class::enter("value-fill");
-        crate::kit::style_class::computed().filter(|style| style.authored.color).map(|style| style.color)
+        let fill = super::element::VALUE_FILL.enter();
+        fill.style().filter(|style| style.authored.color).map(|style| style.color)
     };
     // The value can cross the fill's edge; each part keeps the ink that reads on what is under it.
     let unfilled = Rect::from_min_max(Pos2::new(filled.right(), rect.top()), rect.max);
@@ -159,7 +157,7 @@ pub fn level_bar(
             align,
             text,
             font.clone(),
-            crate::kit::style_class::foreground(theme::text_primary()),
+            el.color_or(theme::text_primary()),
         );
     }
     let on_fill = lit_ink.unwrap_or_else(|| {
@@ -190,7 +188,7 @@ pub fn send_field(
         Pos2::new(rect.right() - 4.0, rect.bottom() - 1.5),
     );
     let quiet = motion::mix(theme::control_background(), pointer, 0.25);
-    painter.fill_background(rail, 1.0, quiet);
+    painter.rect_filled(rail, 1.0, quiet);
     let level = Rect::from_min_size(rail.min, Vec2::new(rail.width() * position.clamp(0.0, 1.0), rail.height()));
     if level.width() >= 1.0
         && !super::skin::paint(painter, level, "send.fill", super::skin::State::Normal, pointer, 0.0)
@@ -236,11 +234,36 @@ pub fn send_field(
     }
 }
 
-/// A tactile vertical fader cap. Its centre marker, rather than its edges, indicates the gain.
-pub fn fader_cap(painter: &egui::Painter, cap: Rect, hover: f32, state: super::skin::State) {
-    let _style = super::style_class::enter("fader-cap");
-    super::native_css::background_rounded(painter, cap, 2.0);
-    if super::skin::paint(painter, cap, "fader.cap", state, theme::text_value(), 0.0) {
+/// The colour of a fader cap's artwork (its `currentColor`): the computed colour of `el`, the
+/// `fader-cap` in `state`, which the palette's tier gives (`native_css::native::PART_COLOURS`);
+/// where no sheet styles the window, the same: the control colour lit a little by the values' text.
+pub fn cap_ink(el: &super::element::Entered, state: super::skin::State) -> Color32 {
+    let lit = matches!(state, super::skin::State::Hover | super::skin::State::Active);
+    el.computed_color_or(motion::mix(
+        if lit { theme::control_hover() } else { theme::control_background() },
+        theme::text_value(),
+        0.28,
+    ))
+}
+
+/// The control colour darkened into a recess: a fader rail's colour where a theme gives none.
+pub fn recess() -> Color32 {
+    motion::mix(theme::control_background(), Color32::BLACK, 0.65)
+}
+
+/// The colour of a fader rail's artwork (its `currentColor`): the computed colour of `el`, the
+/// `fader-rail`, which the palette's tier gives; where no sheet styles the window, [`recess`].
+pub fn rail_ink(el: &super::element::Entered) -> Color32 {
+    el.computed_color_or(recess())
+}
+
+/// A tactile vertical fader cap, drawn as `response`'s widget. Its centre marker, rather than its
+/// edges, indicates the gain.
+pub fn fader_cap(painter: &egui::Painter, cap: Rect, hover: f32, response: &egui::Response) {
+    let state = super::skin::State::response(response, false);
+    let el = super::element::FADER_CAP.response(response).enter();
+    el.paint_background(painter, cap, 2.0);
+    if super::skin::paint(painter, cap, "fader.cap", state, cap_ink(&el, state), 0.0) {
         return;
     }
     let base = motion::mix(theme::control_background(), theme::control_hover(), hover);
