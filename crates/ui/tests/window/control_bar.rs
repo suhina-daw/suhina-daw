@@ -278,3 +278,134 @@ fn ctrl_k_turns_the_computer_keyboard_on_and_x_raises_its_octave() {
     harness.run();
     assert!(harness.query_by_label("Computer keyboard").is_some(), "a click turns it off");
 }
+
+/// The project's start signature, as numerator and denominator.
+fn start_signature(harness: &Harness<'static, App>) -> Option<(u8, u8)> {
+    harness.state().session().map(|s| {
+        let ts = s.project().transport.time_signature;
+        (ts.numerator, ts.denominator)
+    })
+}
+
+/// The control bar's time signature works like the tempo field: each number drags on its own
+/// (the denominator in steps of 1, 2, 4, 8, 16), clicked the arrows step it and a typed signature
+/// is set on Enter: `/`, `-` or a space goes on to the denominator, Backspace in an empty one back
+/// to the numerator, one number sets the one clicked. Only the chevron opens the common ones;
+/// each change is one undo step (#1259, #1264).
+#[test]
+fn the_control_bar_sets_the_time_signature() {
+    let mut harness = window(demo_app());
+    assert_eq!(start_signature(&harness), Some((4, 4)));
+
+    // The chevron's list.
+    harness.get_by_label("Time signatures").click();
+    harness.run();
+    harness.get_by_label("6/8").click();
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((6, 8)));
+    assert!(harness.query_by_label("12/8").is_none(), "a pick closes the list");
+    // A click on a number opens no list.
+    harness.get_by_label("Time signature numerator").click();
+    harness.run();
+    assert!(harness.query_by_label("12/8").is_none(), "only the chevron opens the list");
+
+    // Typed into a number: both parts with a slash or a dash.
+    harness.get_by_label("Time signature numerator").type_text("15/16");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((15, 16)));
+    harness.get_by_label("Time signature numerator").click();
+    harness.run();
+    harness.get_by_label("Time signature numerator").type_text("3-4");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((3, 4)));
+    // One number sets the part typed into.
+    harness.get_by_label("Time signature denominator").click();
+    harness.run();
+    harness.get_by_label("Time signature denominator").type_text("8");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((3, 8)));
+
+    // The arrows step the number clicked: the denominator to the next of 1, 2, 4, 8, 16.
+    harness.get_by_label("Time signature numerator").click();
+    harness.run();
+    harness.key_press(Key::ArrowUp);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((4, 8)));
+    harness.get_by_label("Time signature denominator").click();
+    harness.run();
+    harness.key_press(Key::ArrowUp);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((4, 16)));
+    harness.key_press(Key::ArrowDown);
+    harness.run();
+    harness.key_press(Key::ArrowDown);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((4, 4)));
+
+    // Backspace in the empty denominator goes back to the numerator; a space goes on again.
+    harness.get_by_label("Time signature numerator").click();
+    harness.run();
+    harness.get_by_label("Time signature numerator").type_text("12/1");
+    harness.run();
+    harness.key_press(Key::Backspace);
+    harness.run();
+    harness.key_press(Key::Backspace);
+    harness.run();
+    harness.get_by_label("Time signature numerator").type_text(" 4");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((12, 4)));
+
+    // Not a signature: the command refuses it and nothing changes.
+    harness.get_by_label("Time signature numerator").click();
+    harness.run();
+    harness.get_by_label("Time signature numerator").type_text("7/5");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((12, 4)));
+    assert!(matches!(harness.state().status(), Status::Error(_)), "{:?}", harness.state().status());
+
+    // Undo goes back one change at a time.
+    for want in [(4, 4), (4, 8), (4, 16), (4, 8), (3, 8), (3, 4), (15, 16), (6, 8), (4, 4)] {
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run();
+        assert_eq!(start_signature(&harness), Some(want));
+    }
+}
+
+/// Dragging a number of the time signature up raises only that number, the project following
+/// while it moves (the grids change with it), and the whole drag is one undo step (#1259).
+#[test]
+fn a_drag_on_a_time_signature_number_changes_that_number() {
+    let mut harness = window(demo_app());
+    for (label, raised) in [
+        ("Time signature numerator", (|(n, d): (u8, u8)| n > 4 && d == 4) as fn((u8, u8)) -> bool),
+        ("Time signature denominator", |(n, d): (u8, u8)| n == 4 && d > 4),
+    ] {
+        harness.run_steps(30);
+        let at = harness.get_by_label(label).rect().center();
+        harness.hover_at(at);
+        harness.drag_at(at);
+        for up in [10.0, 30.0, 50.0] {
+            harness.hover_at(at - egui::vec2(0.0, up));
+            harness.run_steps(1);
+        }
+        let moving = start_signature(&harness).unwrap_or((0, 0));
+        assert!(raised(moving), "{label}: the project follows while it moves: {moving:?}");
+        harness.drop_at(at - egui::vec2(0.0, 50.0));
+        harness.run_steps(2);
+        let after = start_signature(&harness).unwrap_or((0, 0));
+        assert!(raised(after), "{label}: {after:?}");
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run_steps(2);
+        assert_eq!(start_signature(&harness), Some((4, 4)), "{label}: one undo step");
+    }
+}

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use suhina_engine::LauncherMonitor;
 
 use suhina_engine::model::{
-    ChannelRole, Clip, ClipContent, ClipId, FadeCurve, LaneData, LoopRange, Meter, Project, Rgb, TrackId,
+    ChannelRole, Clip, ClipContent, ClipId, FadeCurve, LaneData, LoopRange, Meter, Project, Rgb, TimeSignature, TrackId,
 };
 
 use crate::interaction::grid::{ColumnKind, gain_to_db, track_colour};
@@ -327,6 +327,21 @@ impl Lane {
 pub struct RulerMark {
     pub beat: f64,
     pub text: String,
+    /// The bar (counted from 0) of the time-signature change marked here, which a drag of the
+    /// mark moves; `None` for a mark of a tempo change only.
+    pub signature_bar: Option<u32>,
+}
+
+/// The bar line nearest `beat` (its bar counted from 0), the signature from there and whether a
+/// time-signature change starts on it: where the ruler's menu sets a signature and a dragged
+/// signature change lands (`docs/spec/tempo-map.md` › Editing in the window).
+pub fn bar_line_near(meter: &Meter, beat: f64) -> (u32, TimeSignature, bool) {
+    let beat = if beat.is_finite() { beat.max(0.0) } else { 0.0 };
+    let at = meter.position(beat);
+    let bar = if beat - at.bar_start > at.bar_beats / 2.0 { at.bar.saturating_add(1) } else { at.bar };
+    let time_signature = meter.position(meter.bar_start(bar)).time_signature;
+    let changed = bar > 0 && meter.changes().any(|(b, _, _)| b == bar);
+    (bar, time_signature, changed)
 }
 
 /// The ruler's marks for `project`'s tempo and time-signature changes, in beat order.
@@ -340,18 +355,20 @@ fn ruler_marks(project: &Project, meter: &Meter) -> Vec<RulerMark> {
         .tempo_changes
         .iter()
         .filter(|p| p.beat.is_finite() && p.beat > 0.0)
-        .map(|p| (p.beat, if p.ramp { format!("→ {}", bpm(p.bpm)) } else { bpm(p.bpm) }));
-    let signatures = meter.changes().map(|(_, beat, ts)| (beat, format!("{}/{}", ts.numerator, ts.denominator)));
-    let mut all: Vec<(f64, String)> = tempo.chain(signatures).collect();
+        .map(|p| (p.beat, if p.ramp { format!("→ {}", bpm(p.bpm)) } else { bpm(p.bpm) }, None));
+    let signatures =
+        meter.changes().map(|(bar, beat, ts)| (beat, format!("{}/{}", ts.numerator, ts.denominator), Some(bar)));
+    let mut all: Vec<(f64, String, Option<u32>)> = tempo.chain(signatures).collect();
     all.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut marks: Vec<RulerMark> = Vec::new();
-    for (beat, text) in all {
+    for (beat, text, signature_bar) in all {
         match marks.last_mut() {
             Some(last) if last.beat == beat => {
                 last.text.push_str("  ");
                 last.text.push_str(&text);
+                last.signature_bar = last.signature_bar.or(signature_bar);
             }
-            _ => marks.push(RulerMark { beat, text }),
+            _ => marks.push(RulerMark { beat, text, signature_bar }),
         }
     }
     marks

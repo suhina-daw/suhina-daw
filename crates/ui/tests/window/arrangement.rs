@@ -2568,6 +2568,74 @@ fn parts_of_two_midi_takes_show_no_crossfade() {
     assert!(harness.query_by_label("Crossfade end on Drums").is_none());
 }
 
+/// The ruler's right-click menu sets a time signature from the bar line there, a change's line
+/// drags to another bar, and the menu removes it; each is one undo step (#1259, #1264).
+#[test]
+fn the_ruler_adds_moves_and_removes_a_time_signature_change() {
+    let mut harness = arrangement_app();
+    let changes = |h: &Harness<'static, App>| -> Vec<(u32, u8, u8)> {
+        h.state().session().map_or(Vec::new(), |s| {
+            let t = &s.project().transport;
+            t.time_signature_changes
+                .iter()
+                .map(|c| (c.bar, c.time_signature.numerator, c.time_signature.denominator))
+                .collect()
+        })
+    };
+    // A right-click in the middle of the marker row: the bar line nearest it (8 points a beat,
+    // 4/4), counted from 0.
+    let row = harness.get_by_label("Markers").rect();
+    let bar = (f64::from(row.center().x - row.left()) / 8.0 / 4.0).round() as u32;
+    assert!(bar > 4, "{bar}");
+    harness.get_by_label("Markers").click_secondary();
+    harness.run();
+    harness.get_by_label(&format!("Time signature from bar {}", bar + 1)).click();
+    harness.run();
+    harness.get_by_label("3/4").click();
+    harness.run();
+    assert_eq!(changes(&harness), [(bar, 3, 4)]);
+
+    // Its line on the ruler drags two bars to the left.
+    let line = harness.get_by_label(&format!("Time-signature change at bar {}", bar + 1)).rect().center();
+    let to = line - egui::vec2(64.0, 0.0);
+    harness.hover_at(line);
+    harness.run();
+    harness.drag_at(line);
+    harness.run();
+    harness.hover_at(line - egui::vec2(30.0, 0.0));
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(changes(&harness), [(bar - 2, 3, 4)]);
+
+    // The menu at that bar removes it.
+    let x = harness.get_by_label(&format!("Time-signature change at bar {}", bar - 1)).rect().center().x;
+    let at = egui::pos2(x, row.center().y);
+    harness.hover_at(at);
+    harness.run();
+    for pressed in [true, false] {
+        harness.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+    }
+    harness.run();
+    harness.get_by_label(&format!("Remove the time-signature change at bar {}", bar - 1)).click();
+    harness.run();
+    assert!(changes(&harness).is_empty());
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(changes(&harness), [(bar - 2, 3, 4)]);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(changes(&harness), [(bar, 3, 4)]);
+}
+
 /// A clip carried onto another track takes its gain envelope's button (and line) with it while it
 /// is dragged, not leaving them on the track it came from until it is let go of.
 #[test]

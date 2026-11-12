@@ -777,24 +777,57 @@ pub fn value_active(ctx: &egui::Context) -> bool {
     let active = ctx
         .data(|d| d.get_temp::<(egui::Id, u64)>(egui::Id::unique(ACTIVE_VALUE)))
         .is_some_and(|(_, drawn)| pass.saturating_sub(drawn) <= 2);
+    // A control that reads separators too (a time signature, `3/4`) takes `/` and Space.
+    let separators = active && ctx.data(|d| d.get_temp::<bool>(egui::Id::unique(SEPARATORS))).unwrap_or(false);
     active
         && ctx.input(|i| {
             i.events.iter().any(|event| match event {
                 egui::Event::Key { key, pressed: true, modifiers, .. } => {
                     !modifiers.command
-                        && matches!(
+                        && (matches!(
                             key,
                             egui::Key::ArrowUp
                                 | egui::Key::ArrowDown
                                 | egui::Key::Enter
                                 | egui::Key::Escape
                                 | egui::Key::Backspace
-                        )
+                        ) || (separators && *key == egui::Key::Space))
                 }
-                egui::Event::Text(text) => text.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | ',')),
+                egui::Event::Text(text) => text.chars().all(|c| {
+                    c.is_ascii_digit() || matches!(c, '-' | '.' | ',') || (separators && matches!(c, '/' | ' '))
+                }),
                 _ => false,
             })
         })
+}
+
+/// Whether the control holding the keys reads `/` and Space as separators: see [`hold_value_keys`].
+const SEPARATORS: &str = "active-value-separators";
+
+/// Makes `id` the value control that takes this frame's keys, for a control that reads them
+/// itself rather than through [`drag_value`]; `separators` says it reads `/` and Space too, so
+/// the window's shortcuts leave them to it. Called each frame it holds them.
+pub fn hold_value_keys(ctx: &egui::Context, id: egui::Id, separators: bool) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::unique(ACTIVE_VALUE), (id, pass));
+        d.insert_temp(egui::Id::unique(SEPARATORS), separators);
+    });
+}
+
+/// Whether `id` holds the keys: no other value control was clicked since it took them.
+pub fn holds_value_keys(ctx: &egui::Context, id: egui::Id) -> bool {
+    ctx.data(|d| d.get_temp::<(egui::Id, u64)>(egui::Id::unique(ACTIVE_VALUE))).is_some_and(|(held, _)| held == id)
+}
+
+/// Lets the keys go, when `id` still holds them.
+pub fn release_value_keys(ctx: &egui::Context, id: egui::Id) {
+    if holds_value_keys(ctx, id) {
+        ctx.data_mut(|d| {
+            d.remove::<(egui::Id, u64)>(egui::Id::unique(ACTIVE_VALUE));
+            d.remove::<bool>(egui::Id::unique(SEPARATORS));
+        });
+    }
 }
 
 /// The keys a drop-down field takes this frame once it is clicked (as a value control does, until a
@@ -865,6 +898,7 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
         suhina_plugins::trace!("value control takes the keys: {:?}", response.id);
         ctx.data_mut(|d| {
             d.insert_temp(key, (response.id, pass));
+            d.remove::<bool>(egui::Id::unique(SEPARATORS));
             d.remove::<String>(typed_id);
         });
     }
@@ -1076,9 +1110,41 @@ pub fn drag_value_axis(
     default: f64,
     axis: DragAxis,
 ) -> Drag {
+    drag_value_inner(ui, response, preview, value, per_point, per_tick, range, default, axis, true)
+}
+
+/// [`drag_value`] for a control that reads its keys itself (a time signature, typed as `3/4`
+/// across its two numbers, [`hold_value_keys`]): the drag, the wheel and a double-click only.
+#[allow(clippy::too_many_arguments)]
+pub fn drag_value_without_keys(
+    ui: &Ui,
+    response: &Response,
+    preview: &mut Option<f64>,
+    value: f64,
+    per_point: f64,
+    per_tick: f64,
+    range: (f64, f64),
+    default: f64,
+) -> Drag {
+    drag_value_inner(ui, response, preview, value, per_point, per_tick, range, default, DragAxis::Vertical, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn drag_value_inner(
+    ui: &Ui,
+    response: &Response,
+    preview: &mut Option<f64>,
+    value: f64,
+    per_point: f64,
+    per_tick: f64,
+    range: (f64, f64),
+    default: f64,
+    axis: DragAxis,
+    keys: bool,
+) -> Drag {
     let _el = VALUE.response(response).enter();
     // Keys to the control clicked last: the arrows step it, Enter sets what was typed.
-    let (steps, fine, typed) = value_keys(ui, response);
+    let (steps, fine, typed) = if keys { value_keys(ui, response) } else { (0, false, None) };
     if let Some(typed) = typed
         && let Ok(number) = typed.replace(',', ".").trim().parse::<f64>()
         && number.is_finite()

@@ -392,6 +392,9 @@ pub struct ArrangementViewState {
     pub(super) marker_drag: Option<(usize, f64)>,
     /// The beat a right-click on the ruler or the marker row would add a marker at.
     pub(super) marker_menu_beat: f64,
+    /// The beat of that right-click as it was, not snapped to the grid: the bar line nearest it
+    /// is the one its time-signature entries are for.
+    pub(super) signature_menu_beat: f64,
     /// The name being typed for a marker in its menu.
     pub(super) marker_name: Option<(usize, String)>,
     /// A drag in the loop brace row: what it changes and where the pointer is, in beats before
@@ -507,6 +510,7 @@ impl Default for ArrangementViewState {
             automation: LanesState::default(),
             marker_drag: None,
             marker_menu_beat: 0.0,
+            signature_menu_beat: 0.0,
             marker_name: None,
             loop_drag: None,
         }
