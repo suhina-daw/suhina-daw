@@ -188,12 +188,13 @@ provenance when dependencies or third-party material change, following the clean
 
 When a DSP, encoding, routing, scheduling or file-format decision cannot be judged confidently
 from the repository, consult authoritative documentation and public open-source
-implementations under a licence AGENTS.md rule 10 allows, open-source DAWs and plug-in hosts
-included. Compare behaviour, settings and constraints; a different implementation alone is not a
-defect. A value or a solution from such an implementation may be proposed as the fix, also taken
-over as it is, when the file's licence and the value's own provenance pass the checks in
+implementations, open-source DAWs and plug-in hosts included. Compare behaviour, settings and
+constraints; a different implementation alone is not a defect. A value or a solution from such an
+implementation may be proposed as the fix when its own provenance passes the checks in
 [CONTRIBUTING.md › Taking code from open-source projects](../CONTRIBUTING.md#taking-code-from-open-source-projects);
-the change then carries the notices that section asks for, and a missing notice is a finding.
+code taken over as it is also needs a file licence AGENTS.md rule 10 allows, while a fact
+written anew in Suhina's code does not. The change then carries the notices that section asks
+for, and a missing notice is a finding.
 Never consult disassembled, decompiled or leaked proprietary code, nor values an open-source
 project took from such material.
 

@@ -35,8 +35,9 @@ its copyright and licence notice kept (`GPL-2.0-or-later`, the one named excepti
 clean-room rule), and no other header, SDK, binding or write-up may be read for a fact of
 this interface. Another open-source host's own code may be, within the limits of
 [ADR 0022 › Amendment: other hosts' code as a source](../decisions/0022-vst2-interface-description.md#amendment-other-hosts-code-as-a-source-2026-11-12):
-the file's licence is compatible with GPL-3.0-or-later and the value traces to VeSTige, to that
-project's own observation or to public documentation. Every fact below carries one of four marks:
+the value traces to VeSTige, to that project's own observation or to public documentation, and
+code taken from it, as opposed to a fact written here in our own words, comes from a file whose
+licence is compatible with GPL-3.0-or-later. Every fact below carries one of four marks:
 
 - **(from VeSTige)** the pinned header states it — the value, the field, the layout. The
   port transcribes it and the tests pin the transcription.

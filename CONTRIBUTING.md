@@ -264,7 +264,11 @@ included, when three things hold.
      SPDX line of that licence in place of Suhina's header, names the project, the path and the
      commit it was ported from and what the port changed, and is listed in
      `scripts/license_header.py`'s `PORTED`, in [`ATTRIBUTION.md`](ATTRIBUTION.md) › Ported code
-     and in [`NOTICE`](NOTICE). `crates/plugin-host/src/vst2/vestige.rs` is an example.
+     and in [`NOTICE`](NOTICE). The licence's full text sits next to the port
+     (`crates/stretch/LICENSE-signalsmith.txt`, `devices/fm-synth/LICENSE-APACHE`), since an SPDX
+     line only names it; the GPL-3.0's text in [`LICENSE`](LICENSE) already serves GPL code. What
+     an upstream `NOTICE` file says (Apache-2.0 § 4) goes into ours.
+     `crates/plugin-host/src/vst2/vestige.rs` is an example.
    - *A smaller piece taken over as it is* (a function, a table of values, a few lines) into a file
      of Suhina's own: the file keeps Suhina's header, and the piece is wrapped in
      [REUSE](https://reuse.software/spec-3.3/) snippet tags that carry its copyright holders and
