@@ -536,6 +536,10 @@ pub struct App {
     /// The Arrangement's clip selection last frame: when it changes while stopped, the play
     /// start marker goes to its first clip.
     clips_before: Vec<(TrackId, ClipId)>,
+    /// Where the last pick of clips put the play start marker (`None`: it left the marker
+    /// alone), and whether something else has moved the marker since: a click on a ruler, a
+    /// marker, a lane. Moved, Play starts at the marker and not at the selected clip.
+    pick_start: (Option<f64>, bool),
     /// The piano roll is pulled to the top (`docs/spec/ui-clip-editor.md` › Pulled to the top),
     /// and the detail area's height a splitter drag has reached so far, unclamped.
     detail_max: bool,
@@ -794,6 +798,7 @@ impl App {
             quick_add_filter: quick_add::Filter::default(),
             quick_add_kept: String::new(),
             clips_before: Vec::new(),
+            pick_start: (None, false),
             detail_max: false,
             last_escape: None,
             escape_twice: false,
@@ -1263,7 +1268,10 @@ impl App {
         // Picking clips clears the time selection, so one there now was painted after the pick:
         // Play starts at it (#937).
         let painted = self.shown == View::Arrangement && self.arrangement.time_selection().is_some();
-        let clip = (self.settings.play_from == PlayFrom::Clip && !painted)
+        // The marker moved since the pick (a click on the ruler, a marker, a lane): the user chose
+        // where play starts after picking the clip, and Play starts there.
+        let moved = self.pick_start.1;
+        let clip = (self.settings.play_from == PlayFrom::Clip && !painted && !moved)
             .then(|| self.selected_arrangement_clip())
             .flatten()
             .filter(|_| self.arrangement.picked_whole)
@@ -1271,6 +1279,23 @@ impl App {
         match clip {
             Some((_, clip)) => Action::new("transport.play", json!({ "from": "clip", "clip": clip.0 })),
             None => Action::new("transport.play", json!({})),
+        }
+    }
+
+    /// Notes a command that moves the play start marker anywhere but where the last pick of
+    /// clips put it: from then on Play starts at the marker, not at the selected clip.
+    fn note_marker_moved(&mut self, action: &Action) {
+        let beats = action.params.get("beats").and_then(serde_json::Value::as_f64);
+        let moved = match action.id {
+            "transport.jump" | "transport.setStart" | "transport.setPosition" => {
+                // The pick's own move to its first clip is not one.
+                !matches!((self.pick_start.0, beats), (Some(pick), Some(beats)) if (pick - beats).abs() <= 1e-9)
+            }
+            "marker.jump" => true,
+            _ => false,
+        };
+        if moved {
+            self.pick_start.1 = true;
         }
     }
 
@@ -2627,6 +2652,7 @@ impl App {
         }
         // A control moved by hand shows its parameter in the track's open lanes (#1205).
         self.focus_touched_lane(action);
+        self.note_marker_moved(action);
         // A fader or a send dragged on one of several selected tracks moves them together.
         if let Some(wider) = self.drag_to_selection(action) {
             return self.run(&wider);
@@ -3671,6 +3697,10 @@ impl App {
                             // that click put it.
                             let body = !self.arrangement.picked_whole;
                             let changed = clicked || picked != self.clips_before.as_slice();
+                            // A new pick: Play starts at it again until the marker moves elsewhere.
+                            if changed {
+                                self.pick_start = (None, false);
+                            }
                             if changed && (!self.settings.view.play_from_clip || body) {
                                 self.clips_before = picked.to_vec();
                             } else if changed {
@@ -3688,6 +3718,7 @@ impl App {
                                             .map(|c| c.start)
                                     })
                                     .fold(f64::INFINITY, f64::min);
+                                self.pick_start.0 = first.is_finite().then_some(first);
                                 if first.is_finite() && (first - timeline.start_beat).abs() > 1e-9 {
                                     // While playing, playback goes on and the next start begins there.
                                     let id =
