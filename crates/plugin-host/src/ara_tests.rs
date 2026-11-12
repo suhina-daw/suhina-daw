@@ -269,3 +269,21 @@ fn the_selection_is_told_again_once_when_its_time_comes() {
     assert!(!again.due(start + SELECT_AGAIN_AFTER));
     assert!(again.due(start + SELECT_AGAIN_AFTER * 2));
 }
+
+/// The view is told the selection each time its window comes to show: an embedded editor placed
+/// where it shows after being hidden, a floating one opened after being closed (it is never
+/// placed); placing it again where it already shows tells nothing.
+#[test]
+fn the_selection_is_told_each_time_the_editor_comes_to_show() {
+    // (shown before, shown now, told): embedded, placed, moved, hidden, placed again.
+    for (was, shown, told) in [(false, true, true), (true, true, false), (true, false, false), (false, true, true)] {
+        assert_eq!(shows_again(was, shown), told, "{was} -> {shown}");
+    }
+    // A floating editor: opened (shown), closed (`close_editor`: not shown), opened again.
+    let mut view_shown = false;
+    let told: Vec<bool> = [true, false, true]
+        .into_iter()
+        .map(|shown| shows_again(std::mem::replace(&mut view_shown, shown), shown))
+        .collect();
+    assert_eq!(told, [true, false, true]);
+}

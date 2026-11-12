@@ -1117,8 +1117,7 @@ impl Document {
     /// was hidden, the view is told the selection again, as the ARA API asks of a view that is
     /// opened again.
     pub(crate) fn view_placed(&self, shown: bool) {
-        let was = self.view_shown.replace(shown);
-        if shown && !was {
+        if shows_again(self.view_shown.replace(shown), shown) {
             self.tell_selection(self.selected_region());
             self.select_again.ask(Instant::now() + SELECT_AGAIN_AFTER);
         }
@@ -1507,6 +1506,12 @@ impl SelectAgain {
             _ => false,
         }
     }
+}
+
+/// Whether the editor's window, `was` shown before, shows again now that it is placed or opened
+/// `shown`: only a change from hidden (or closed) to shown tells the view the selection.
+fn shows_again(was: bool, shown: bool) -> bool {
+    shown && !was
 }
 
 /// Whether `edited` takes out the selected region `selected`.

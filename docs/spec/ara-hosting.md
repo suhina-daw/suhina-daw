@@ -204,7 +204,8 @@ the list below, in a first form). Where it differs from the decisions above it i
   answered), and the host passes it to the editor view's `notifySelection`. The host keeps the
   selected clip's id: a selected region that an edit takes out (Stop editing) is unselected
   before it is destroyed, and when the region is made again (editing the clip again) or the
-  hidden editor is shown again, the selection is told at once and once more 0.4 s later, when
+  hidden editor is shown again (an embedded editor placed where it shows, a floating one
+  opened), the selection is told at once and once more 0.4 s later, when
   the plug-in has taken in the new region (the ARA API asks a host to send the selection when
   a view opens again). The editor is
   embedded whatever the embedding setting says for other editors; **Float** takes it out to a

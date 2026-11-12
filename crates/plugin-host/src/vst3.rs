@@ -1124,9 +1124,16 @@ impl Vst3Plugin {
             return Ok(editor.size());
         }
         let controller = self.controller.as_ref().ok_or("the plug-in has no editor")?;
+        let floating = matches!(mode, crate::window::Mode::Floating);
         let editor = crate::vst3::editor::Editor::open(controller, mode, title.unwrap_or(&self.name))?;
         let size = editor.size();
         self.editor = Some(editor);
+        // A floating window shows as it opens and is never placed (always so on macOS), so the
+        // ARA view is told here that it shows, and so the selection, as the ARA API asks of a
+        // view opened again; an embedded one is told when it is placed where it shows.
+        if floating && let Some(ara) = &self.ara {
+            ara.view_placed(true);
+        }
         Ok(size)
     }
 
