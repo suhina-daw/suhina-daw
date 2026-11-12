@@ -14,11 +14,12 @@ use suhina_engine::model::Note;
 /// The tools part's width in a row, beside the Clip part.
 pub const TOOLS_WIDTH: f32 = 128.0;
 
-/// The tools part's width: `midi-tools { width }` in the theme (120 to 480 points), else
-/// [`TOOLS_WIDTH`].
+/// The tools part's whole width: `midi-tools { width }` in the theme (120 to 480 points), else
+/// [`TOOLS_WIDTH`] and the part's border and padding round it (#1336).
 pub fn tools_width() -> f32 {
     let el = crate::kit::element::MIDI_TOOLS.enter();
-    el.style().and_then(|c| c.width).map_or(TOOLS_WIDTH, |w| w.clamp(120.0, 480.0))
+    let [_, right, _, left] = el.insets();
+    el.style().and_then(|c| c.width).map_or(TOOLS_WIDTH + left + right, |w| w.clamp(120.0, 480.0))
 }
 
 /// The tools part's tabs: one-click tools on the notes, or a transformation with its settings.

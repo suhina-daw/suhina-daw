@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-11
+last_verified: 2026-11-12
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -379,7 +379,10 @@ like before a theme styles it.
   colour of `html, body` and the palette colours of the parts below sit beside the user-agent
   sheet in its tier; they are the host's, not the sheet's. A rule of this tier on an element
   replaces what the element inherited from a theme's rule on an element around it.
-- **What it holds:** `overflow: hidden` on every region (the registry's `Region` kind); the default
+- **What it holds:** `overflow: hidden` on every region (the registry's `Region` kind); a 1 px
+  `border-bottom-width` on the bars over the views (`application-bar`, `menu-bar`,
+  `project-tabs`, `toolbar`) and a 1 px `border-top-width` on `status-bar`, in `--border` from
+  the palette's tier (the lines above and under the view are `#workspace`'s); the default
   artwork; the sample map's colours; the theme swatch's rounded square.
 - **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
   `suhina:` URL names an SVG built into Suhina (`assets/themes/default/`), and a theme may use one
@@ -462,20 +465,63 @@ shapes (background, radius or border width) is not covered by the artwork Suhina
 a theme's own `button` artwork still wins. The toolbar's tempo, position and RAM/CPU
 fields paint the same way.
 
-**Paint order.** Every element `Entered::paint` draws paints in CSS's order: its outer
-`box-shadow`, its `background-color`, its `background-image` (or the artwork its caller draws),
-then for a control (or a part, or a drawn item) its border and inset shadows before its
-contents, and for a region or a container (the registry's kinds) its border and inset shadows
-after its contents, when the element leaves scope; then its `outline` (`outline-width`,
-`outline-style: solid`, `outline-color`, `outline-offset`, or the `outline` shorthand) outside
-its border, last. `Boxed::content` is the box less its `padding`. The outer shadows and the
-outline are clipped by the box of the nearest element with `overflow: hidden` (or `clip`)
-around the element, not by the painter in use, so a toolbar control's glow passes its
-section's edge and stops at the toolbar's; regions are `hidden` by the host's own sheet, other
-elements `visible`. They pass the painter's clip only as far as they reach, and only on a side
-where the element is whole inside that clip: a side that cuts the element is a viewport's edge (a
-scroll area scrolled part of it out of view), which they do not pass. Without such an element
-the painter's clip holds.
+**Paint order.** Every element `Entered::paint` draws paints in CSS's order, whatever its kind:
+its outer `box-shadow`, its `background-color`, its `background-image` (or the artwork its caller
+draws), its inset shadows and its border, then its contents, then, when the element leaves scope,
+its `outline` (`outline-width`, `outline-style: solid`, `outline-color`, `outline-offset`, or the
+`outline` shorthand) outside its border, over its contents. A row or highlight that reaches a
+region's edge is therefore drawn over the region's inset shadows, as in a browser, and over its
+border only where the element's `overflow` is `visible`: a region's is `hidden`, which cuts its
+children at the padding box (› Overflow), so its border stays whole.
+
+**The content box.** An element's contents go in `Boxed::content`: its box less its border
+widths and its `padding`. Padding in points and in `em` (of the element's own font size) is
+resolved as the CSS layout resolves it. A percentage, which CSS takes of the width of the box
+around the element, is read only on the elements whose children the CSS layout places
+(`workspace`, `toolbar`), each laid out in its own box: there it is a percentage of that box's
+width, for the layout and for the sizes Suhina works out (the toolbar's height grows by it, and
+its content box keeps it), so they agree. Anywhere else Suhina paints the content box without that box, so the
+sheet refuses the declaration with a notice instead of reading it as no padding. Every view lays its children out there, not in the rectangle it
+painted; a view that draws to its edge on purpose (a grid line, a selection band) says so in its
+code. A size the app works out from what an element holds is its content box's size, and the
+element adds its border and padding around it, as a CSS box with `height: auto` does: the detail
+area's heights (a device row, an embedded editor, the piano roll's least height), each bar's
+height and each dialog's size. The detail area opens taller by the most border and padding a
+shown device panel has, as painted (`device[selected]` or `#device-<id>` may pad more), from the
+frame after the panel shows; a panel whose contents are taller than a compact one's (a group with
+many branches) does not change the area's height. A size the user drags
+(the detail splitter, the browser's width) is the whole box, and so is a `width` or `height` the sheet gives (`border-box`); when a theme
+changes the detail area's border or padding, the area grows or shrinks by that change, so what it
+shows keeps its height. A box whose
+border and padding leave no room has an empty content box at its centre.
+
+**Overflow.** `overflow: hidden` (or `clip`) clips everything an element's children paint to its
+padding box (its box less its border), as in CSS; `overflow: visible`, the default for every
+element but a region, lets them pass. Regions are `hidden` by the user-agent sheet. The clip is
+rectangular: a rounded region does not round its children's corners (pad the region and give the
+children their own `border-radius`). It clips painting only: a child cut off still takes the
+pointer where it is, so a view keeps its children inside its content box. Menus, popups,
+tooltips and dragged items are drawn above the window's views, as CSS's top layer, and no region
+clips them; egui lays a menu's and a popup's contents out in its own margins, so their `padding`
+is not used yet. The outer shadows and the outline of an element pass the painter's own clip (a
+toolbar section's edge) as far as they reach and up to the nearest element around them that hides
+its overflow, so a toolbar control's glow passes its section's edge and stops at the toolbar's;
+only on a side where the element is whole inside that clip, though: a side that cuts the element
+is a viewport's edge (a scroll area scrolled part of it out of view), which they do not pass.
+A Launcher `track-column` stays while its slots scroll under it, as a CSS scroll container: they
+are cut at its padding box whatever its `overflow`, so they never cover its border. Its top and
+bottom border and padding are those of a plain `track-column` rule, because every column and the
+scene column share the rows: a track's or a state's rule (`#track-3`, `track-column[selected]`)
+that changes them draws its border but does not move the rows, and the rows are cut at a plain
+column's top and bottom border, so a thicker one shows under the ends of the rows rather than
+cutting a slot.
+
+**Borders.** `border-width` is a shorthand of `border-top-width`, `border-right-width`,
+`border-bottom-width` and `border-left-width` (one to four lengths, as `padding`), each 0 to
+16 px; `border-color` is one colour for all four sides. Sides of one width follow the element's
+`border-radius`; sides of different widths are drawn straight. egui's ordinary widgets (in
+Settings, dialogs and the browser, styled by the generic `button` rules) draw one outline all round: a rule whose sides differ gives them its
+`border-color` and leaves their outline's width as it was, rather than a box of its widest side.
 
 **One paint model (#1233).** Every background blends with what is under it. The window clears
 once (to nothing in a see-through window), `window` paints its background once over the whole
@@ -789,7 +835,9 @@ absent elements; put sizes on the optional panels and use `auto` tracks instead:
 
 The native workspace exposes `workspace` / `#workspace`, with `workspace-panel`
 children `#panel-browser`, `#panel-main`, `#panel-detail`. They contain the browser,
-Launcher/Arrangement and detail scopes respectively. Authored layout declarations on
+Launcher/Arrangement and detail scopes respectively. Each panel paints its own box as every
+element does: a `background-color` under the view it holds and a border round it, in the room the
+border takes (none unless the sheet gives one), and the view goes in its content box. Authored layout declarations on
 these containers opt into CSS Flex/Grid geometry. With none, native splitters and layout
 remain in charge. Closed native panels do not become visible merely through CSS.
 In CSS layout mode, placement comes from the stylesheet. A panel whose size the sheet sets has no
@@ -828,7 +876,10 @@ computes variables, layers, inheritance, colours, value expressions and viewport
 media conditions for class scopes. Taffy computes Flex/Grid rectangles for the actual
 visible toolbar modules (`#tempo`, `#transport`, etc.); the same rectangles bound their
 native input targets. The host still defines toolbar height. A stylesheet without
-toolbar layout declarations leaves the ordinary toolbar arrangement intact; a customized
+toolbar layout declarations leaves the ordinary toolbar arrangement intact. The toolbar's own
+`padding` and border are not layout declarations: they pad Suhina's toolbar, whose contents go
+in its content box, and only its other layout properties (`display`, flex and grid properties,
+`gap`, sizes) or its modules' (placement, `order`) switch to the CSS layout (#1336); a customized
 bar scrolls horizontally when it exceeds the window. The bounded retained scope tree
 exposes actual ancestry and siblings. Launcher mixer and track-header scopes carry stable
 `[data-object="track-N"]` identities. Clip, scene and slot roles also expose their native
@@ -1034,8 +1085,9 @@ audio track while the audio device has no input says so in the status bar.
   side when painted (so 50 % is round); a shadow's radius is clamped the same way.
 - **Header tint:** `arrangement { header-tint: 0–100 }` overrides the user's header
   colour strength for the track's tint.
-- **Bars:** a bar with `border-width: 0` or a transparent border fills its separator line with
-  its own background.
+- **Bars:** a bar's border is a box around it, as any element's. The line under each bar is its
+  `border-bottom-width` (1 px from the user-agent sheet) in its `border-color` (`--border` by
+  default); `border-width: 0` leaves no line, and the bar is 1 px shorter (#1336).
 - **Lit toggles:** the inverse ink gives way to the readable one when its contrast with the lit
   fill is under 3:1.
 

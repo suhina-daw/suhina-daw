@@ -246,15 +246,25 @@ pub fn show(
     let style_class = crate::kit::element::SESSION.enter();
     let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
-    let area = ui.available_rect_before_wrap();
-    ui.allocate_rect(area, Sense::hover());
-    let painter = ui.painter_at(area);
-    // The view's own background, over the window's (#1233).
-    let _ = style_class.paint(&painter, area);
+    let whole = ui.available_rect_before_wrap();
+    ui.allocate_rect(whole, Sense::hover());
+    let painter = ui.painter_at(whole);
+    // The view's own background, over the window's (#1233); the view is laid out in its content
+    // box, inside its border and padding (#1336).
+    let area = style_class.paint(&painter, whole).content;
 
     // Fixed bands: header on top, mixer at the bottom, scene column on the right.
     let header = Rect::from_min_size(area.min, Vec2::new(area.width(), header_height()));
-    let mixer_height = mixer_height(state, area.height(), grid.scenes.len());
+    // The slots are rows shared by every column and the scene column: they start below a track
+    // column's top border and padding and end above its bottom ones, as a plain `track-column`
+    // has them, so the rows line up whatever a column's state (#1336).
+    let (rows_top, rows_bottom, rows_border) = {
+        let plain = crate::kit::element::TRACK_COLUMN.enter();
+        let [top, _, bottom, _] = plain.insets();
+        let [border_top, _, border_bottom, _] = plain.style().map_or([0.0; 4], |style| style.border_sides);
+        (top, bottom, (border_top, border_bottom))
+    };
+    let mixer_height = mixer_height(state, area.height(), grid.scenes.len(), rows_top + rows_bottom);
     let mixer =
         Rect::from_min_max(Pos2::new(area.left(), (area.bottom() - mixer_height).max(header.bottom())), area.max);
     let body =
@@ -280,7 +290,7 @@ pub fn show(
         .filter(|c| c.kind != ColumnKind::Return && !hidden.contains(&c.track))
         .map(|c| column_width(c) + 1.0)
         .sum();
-    let content_height = (grid.scenes.len() as f32 + 1.0) * slot_pitch();
+    let content_height = (grid.scenes.len() as f32 + 1.0) * slot_pitch() + rows_top + rows_bottom;
     let fields = std::mem::take(&mut state.value_areas);
     let lists = std::mem::take(&mut state.scroll_areas);
     if ui.rect_contains_pointer(area) {
@@ -349,7 +359,8 @@ pub fn show(
         header,
         body,
         mixer,
-        top: body.top() - state.scroll.y,
+        top: body.top() - state.scroll.y + rows_top,
+        rows: egui::Rangef::new(body.top() + rows_border.0, body.bottom() - rows_border.1),
         scenes: grid.scenes.len(),
         places,
         groups,
@@ -497,7 +508,7 @@ pub fn show(
         ui,
         &painter.with_clip_rect(Rect::from_x_y_ranges(scene_span, body.y_range())),
         scene_span,
-        body.top() - state.scroll.y,
+        bands.top,
         grid,
         &mut state.launch_keys,
         actions,
@@ -601,15 +612,16 @@ fn main_metronome(
 }
 
 /// The mixer's height this frame: the one being dragged to, else the saved one, kept between the
-/// least height and the most this view allows (`docs/design/components.md` › Mixer strip).
-fn mixer_height(state: &SessionViewState, view_height: f32, scenes: usize) -> f32 {
+/// least height and the most this view allows (`docs/design/components.md` › Mixer strip). The
+/// slots' rows are `rows_insets` taller than their pitch (a track column's border and padding).
+fn mixer_height(state: &SessionViewState, view_height: f32, scenes: usize, rows_insets: f32) -> f32 {
     let (least, default, _) = crate::settings::view_settings::MIXER_HEIGHTS;
     let (least, default) = (least as f32, default as f32);
     let saved = if state.mixer_height > 0.0 { state.mixer_height } else { default };
     let wanted = state.mixer_dragged.unwrap_or(saved);
     // Up to just under the stop row under the last scene, and always up to the default height;
     // never over the header.
-    let under_slots = view_height - header_height() - 1.0 - (scenes as f32 + 1.0) * slot_pitch() - 1.0;
+    let under_slots = view_height - header_height() - 1.0 - (scenes as f32 + 1.0) * slot_pitch() - rows_insets - 1.0;
     let most = under_slots.max(default).min(view_height - header_height() - 1.0).max(least);
     wanted.clamp(least, most)
 }
@@ -650,7 +662,12 @@ struct Bands<'a> {
     header: Rect,
     body: Rect,
     mixer: Rect,
+    /// Where the first scene's row starts, scrolled, inside a track column's top border and
+    /// padding.
     top: f32,
+    /// Where the rows show, scrolling: the body inside a plain track column's top and bottom
+    /// border, the box every column's rows are laid out for.
+    rows: egui::Rangef,
     scenes: usize,
     /// Every track but the returns, in track order, and the group tracks with their names.
     places: Vec<Place>,
@@ -841,7 +858,8 @@ fn column_header(
     // The sheet's own background for the header (`track-header[selected]`) over the native one;
     // the name's ink reads on whichever is shown.
     let shown = own.background_or(fill);
-    own.paint(painter, rect);
+    // What the header holds goes in its content box, inside its border and padding (#1336).
+    let rect = own.paint(painter, rect).content;
     let name_style = crate::kit::element::TRACK_NAME
         .id(&track_id)
         .response(&response)
@@ -925,7 +943,22 @@ fn column_body(
             rgb(column.color),
         );
     }
-    let (top, scenes) = (bands.top, bands.scenes);
+    // Its border, and its slots in its content box, inside its border and padding (#1336); the
+    // rows' top is the one every column shares (`Bands::top`). The column stays while its rows
+    // scroll, as a CSS scroll container: they are cut at its padding box, so they never draw
+    // over its border nor take the pointer there. Across, its own; up and down, a plain
+    // column's (`Bands::rows`), the box the shared rows are laid out for, so a state's thicker
+    // top or bottom border is drawn under the rows' ends rather than cutting a slot.
+    let column_box = Rect::from_x_y_ranges(span, bands.body.y_range());
+    let (span, top) = (column_style.paint_border(painter, column_box).x_range(), bands.top);
+    let [_, border_right, _, border_left] = column_style.style().map_or([0.0; 4], |style| style.border_sides);
+    let padding_box = Rect::from_x_y_ranges(
+        egui::Rangef::new(column_box.left() + border_left, column_box.right() - border_right),
+        bands.rows,
+    );
+    let clip = clip.intersect(padding_box);
+    let painter = &painter.with_clip_rect(painter.clip_rect().intersect(padding_box));
+    let scenes = bands.scenes;
     let mapping = state.launch_keys.mode.on && column.kind != ColumnKind::Return;
     let label = |target: MappingTarget| bands.mapped.iter().find(|(t, _)| *t == target).map(|(_, l)| l.as_str());
     for (scene, slot) in column.slots.iter().enumerate() {
@@ -1492,3 +1525,7 @@ fn scene_column(
         );
     }
 }
+
+#[cfg(test)]
+#[path = "session_view_tests.rs"]
+mod tests;

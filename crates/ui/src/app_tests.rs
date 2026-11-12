@@ -754,18 +754,15 @@ fn a_bar_draws_its_separator_in_its_own_border_colour() {
     assert!(found, "the line under the menu bar is red");
 }
 
-#[test]
-fn a_bar_without_a_line_fills_the_line_with_its_background() {
+/// The green rectangles across the window one settled frame paints with `css` as the theme.
+fn wide_green_rects(css: &str) -> Vec<Rect> {
     let ctx = egui::Context::default();
     let mut app = App::new();
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
     app.settings.animations = false;
-    app.use_test_skin(crate::kit::skin::Skin {
-        css: Some(std::sync::Arc::from("menu-bar { background-color: #00FF00; border-width: 0; }")),
-        ..Default::default()
-    });
+    app.use_test_skin(crate::kit::skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() });
     let green = egui::Color32::from_rgb(0, 0xFF, 0);
-    let mut found = false;
+    let mut found = Vec::new();
     for _ in 0..4 {
         let mut output = ctx.run_ui(
             egui::RawInput {
@@ -775,16 +772,75 @@ fn a_bar_without_a_line_fills_the_line_with_its_background() {
             |ui| app.ui(ui),
         );
         output.textures_delta.clear();
-        found = output.shapes.iter().any(|shape| match &shape.shape {
-            egui::Shape::LineSegment { points, stroke } => {
-                stroke.color == green && (points[1].x - points[0].x).abs() > 1000.0
-            }
-            egui::Shape::Rect(rect) => rect.fill == green && rect.rect.width() > 1000.0 && rect.rect.height() <= 2.0,
-            _ => false,
-        });
+        found = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) if rect.fill == green && rect.rect.width() > 1000.0 => Some(rect.rect),
+                _ => None,
+            })
+            .collect();
     }
     app.use_test_skin(crate::kit::skin::Skin::default());
-    assert!(found, "the menu bar's line is its own green");
+    found
+}
+
+/// How far down the window's own bars start: where Suhina draws its title bar (Windows), the
+/// application bar's 28 points, its line included, are above the menu bar.
+fn application_bar() -> f32 {
+    if cfg!(target_os = "windows") { 28.0 } else { 0.0 }
+}
+
+#[test]
+fn a_bar_s_line_is_its_bottom_border_and_without_one_the_bar_is_a_line_shorter() {
+    // The line under the menu bar is its border, in its border colour, inside its box.
+    let lined = wide_green_rects("menu-bar { border-color: #00FF00; }");
+    let line = lined.iter().find(|rect| rect.height() <= 1.0).expect("the line under the bar");
+    assert_eq!(line.bottom(), application_bar() + theme::MENU_BAR, "at the bar's bottom edge: {lined:?}");
+    // Without a border the bar has no line, and is that line shorter.
+    let bare = wide_green_rects("menu-bar { background-color: #00FF00; border-width: 0; }");
+    let bar = bare.iter().find(|rect| rect.height() > 1.0).expect("the bar");
+    assert_eq!(bar.height(), theme::MENU_BAR - 1.0, "{bare:?}");
+    // Padding grows the bar around what it holds.
+    let padded = wide_green_rects("menu-bar { background-color: #00FF00; padding: 3px 0; }");
+    let bar = padded.iter().find(|rect| rect.height() > 1.0).expect("the bar");
+    assert_eq!(bar.height(), theme::MENU_BAR + 6.0, "{padded:?}");
+}
+
+/// Without a sheet the project tabs keep the native line under them, as every other bar does
+/// (#1336).
+#[test]
+fn without_a_sheet_the_project_tabs_have_their_line() {
+    let ctx = egui::Context::default();
+    let mut app = App::new();
+    app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab);
+    app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab);
+    app.settings.animations = false;
+    app.use_test_skin(crate::kit::skin::Skin::default());
+    let mut lines = Vec::new();
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0))),
+                ..Default::default()
+            },
+            |ui| app.ui(ui),
+        );
+        output.textures_delta.clear();
+        lines = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect)
+                    if rect.fill == theme::border() && rect.rect.width() > 1000.0 && rect.rect.height() == 1.0 =>
+                {
+                    Some(rect.rect.bottom())
+                }
+                _ => None,
+            })
+            .collect();
+    }
+    assert!(lines.contains(&(application_bar() + theme::MENU_BAR + TABS)), "a line at the tabs' bottom: {lines:?}");
 }
 
 #[test]
@@ -1317,4 +1373,17 @@ fn a_parameter_moved_in_an_editor_shows_in_its_lanes_when_the_timeline_is_rebuil
     harness.run();
     assert_eq!(harness.state().arrangement.automation.last_lane, Some((track, key)));
     assert!(harness.state().touched_lanes.is_empty(), "focused once");
+}
+
+/// A plug-in's editor that edits clips (ARA) lies in the clip editor's box with no piano roll's
+/// round it: a theme that pads `piano-roll` does not add to the area around it (#1336).
+#[test]
+fn a_plug_in_s_clip_editor_takes_no_piano_roll_insets() {
+    use detail_area::Edits;
+    let boxes = crate::detail::detail_view::BoxInsets { detail: 4.0, device: 6.0, editor: 10.0, piano: 40.0 };
+    let around = |edits| DetailInsets::around(2.0, boxes, 8.0, edits);
+    assert_eq!(around(Edits::None).area, 2.0 + 4.0 + 8.0, "the panel's, the area's and the shown device's");
+    assert_eq!(around(Edits::PianoRoll).area, 2.0 + 10.0 + 40.0);
+    assert_eq!(around(Edits::Plugin).area, 2.0 + 10.0, "the clip editor's alone");
+    assert_eq!(around(Edits::Plugin).piano, around(Edits::PianoRoll).piano, "the piano roll's least height");
 }

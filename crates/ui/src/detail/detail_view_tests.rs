@@ -762,6 +762,108 @@ fn a_plug_ins_generated_list_sets_its_parameters_by_id() {
     }
 }
 
+/// A plug-in's button is painted in its panel's scope, in a row and stacked: a panel that hides
+/// its overflow cuts it at its padding box, as it does the rest of what it holds (#1336).
+#[test]
+fn a_plug_in_s_button_is_cut_by_its_panel_s_overflow() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let project = with_plugin();
+    let Detail::Devices(chain) = build_with(
+        &project,
+        Some(TrackId(1)),
+        None,
+        &mut |_, _| Some(report(PluginStatus::Running, false)),
+        crate::detail::device_widgets::Lists::default(),
+    ) else {
+        panic!()
+    };
+    let detail = Detail::Devices(chain);
+    crate::kit::native_css::set_user_sheet(Some("device { overflow: hidden; border-width: 3px; }".into()));
+    for stacked in [false, true] {
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(600.0, 260.0)).build_ui_state(
+            |ui, actions: &mut Vec<Action>| {
+                let _frame = crate::kit::native_css::frame(ui);
+                let _window = crate::kit::element::WINDOW.enter();
+                let mut places = Vec::new();
+                if stacked {
+                    show_stack(ui, &detail, &[], actions, &mut places);
+                } else {
+                    show_row(ui, &detail, &[], actions, &mut places);
+                }
+            },
+            Vec::new(),
+        );
+        harness.run_steps(3);
+        let button = harness.get_by_label("Open editor Verb").rect();
+        let panel = harness.get_by_label("Device Verb").rect().shrink(3.0);
+        let clips: Vec<_> = harness
+            .output()
+            .shapes
+            .iter()
+            .filter(|s| matches!(&s.shape, egui::Shape::Rect(r) if r.rect == button))
+            .map(|s| s.clip_rect)
+            .collect();
+        assert!(!clips.is_empty(), "stacked {stacked}: the button is painted");
+        assert!(
+            clips.iter().all(|clip| panel.contains_rect(*clip)),
+            "stacked {stacked}: cut at the panel's padding box {panel:?}: {clips:?}"
+        );
+    }
+    crate::kit::native_css::set_user_sheet(None);
+}
+
+/// A selected device's outline runs along its panel's edge, round its border box, as it did
+/// before panels had padding, and a panel that hides its overflow does not cut it (#1336).
+#[test]
+fn a_selected_device_s_outline_runs_along_its_panel_s_edge() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let project = with_plugin();
+    let Detail::Devices(chain) = build_with(
+        &project,
+        Some(TrackId(1)),
+        None,
+        &mut |_, _| Some(report(PluginStatus::Running, false)),
+        crate::detail::device_widgets::Lists::default(),
+    ) else {
+        panic!()
+    };
+    let at = chain.devices.iter().find(|d| d.name == "Verb").map(|d| d.at.clone()).expect("the plug-in");
+    let selected = [(TrackId(1), at)];
+    let detail = Detail::Devices(chain);
+    crate::kit::native_css::set_user_sheet(Some(
+        "device { padding: 10px; border-width: 2px; overflow: hidden; }".into(),
+    ));
+    for stacked in [false, true] {
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(600.0, 300.0)).build_ui_state(
+            |ui, actions: &mut Vec<Action>| {
+                let _frame = crate::kit::native_css::frame(ui);
+                let _window = crate::kit::element::WINDOW.enter();
+                let mut places = Vec::new();
+                if stacked {
+                    show_stack(ui, &detail, &selected, actions, &mut places);
+                } else {
+                    show_row(ui, &detail, &selected, actions, &mut places);
+                }
+            },
+            Vec::new(),
+        );
+        harness.run_steps(3);
+        let panel = harness.get_by_label("Device Verb").rect();
+        let outline = harness.output().shapes.iter().find_map(|s| match &s.shape {
+            egui::Shape::Rect(r) if r.stroke.color == theme::selection() && r.stroke.width > 0.0 => {
+                Some((r.rect, s.clip_rect))
+            }
+            _ => None,
+        });
+        let (rect, clip) = outline.unwrap_or_else(|| panic!("stacked {stacked}: the selected device's outline"));
+        assert_eq!(rect, panel, "stacked {stacked}: along the panel's edge");
+        assert!(clip.contains_rect(panel), "stacked {stacked}: not cut at the padding box: {clip:?}");
+    }
+    crate::kit::native_css::set_user_sheet(None);
+}
+
 fn with_plugin() -> Project {
     let mut project = demo_project();
     project.channels[0]
@@ -1565,7 +1667,8 @@ fn midi_harness(
                     nothing: false,
                 };
                 let midi = MidiTools { tools: &tools, state, show_tools: true };
-                show_clip_column(ui, &info, stacked, Some(midi), actions);
+                let editor = crate::kit::element::CLIP_EDITOR.enter();
+                show_clip_column(ui, &editor, &info, stacked, Some(midi), actions);
             },
             (Vec::new(), crate::detail::piano_roll::PianoRollState::default()),
         )
@@ -1863,4 +1966,14 @@ fn a_stacked_chain_taller_than_its_column_scrolls() {
     harness.run_steps(10);
     let moved = harness.query_all_by_label("Device Utility").next().map(|n| n.rect().top());
     assert!(moved.is_some_and(|top| top < first.top() - 50.0), "the column scrolls: {first:?} to {moved:?}");
+}
+
+/// The extra height a padded device panel asks for lasts one frame: a frame that shows no chain
+/// with devices (an empty track, a clip editor) leaves none, so the detail area shrinks back.
+#[test]
+fn the_height_a_padded_panel_asks_for_does_not_outlive_its_frame() {
+    let ctx = egui::Context::default();
+    ctx.data_mut(|d| d.insert_temp(shown_device_extra_id(), 40.0_f32));
+    assert_eq!(shown_device_insets(&ctx, 6.0), 40.0, "the frame after the panel was shown");
+    assert_eq!(shown_device_insets(&ctx, 6.0), 6.0, "gone when nothing leaves it again");
 }

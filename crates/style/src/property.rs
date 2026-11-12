@@ -123,7 +123,10 @@ properties! {
     AccentColor, "accent-color", Color, Value::Color(Color::Current), true, "Accent of controls: a knob's arc, a switched-on button; inherited.";
     BorderColor, "border-color", Color, Value::Color(Color::Current), false, "Border ink, defaulting to the current foreground.";
     Radius, "radius", Length, Value::Length(Length::Px(0.0)), false, "Corner radius.";
-    BorderWidth, "border-width", Length, Value::Length(Length::Px(0.0)), false, "Width of a control's border; none is drawn at 0.";
+    BorderTopWidth, "border-top-width", Length, Value::Length(Length::Px(0.0)), false, "Width of an element's top border; `border-width` sets all four sides, and none is drawn at 0.";
+    BorderRightWidth, "border-right-width", Length, Value::Length(Length::Px(0.0)), false, "Width of an element's right border.";
+    BorderBottomWidth, "border-bottom-width", Length, Value::Length(Length::Px(0.0)), false, "Width of an element's bottom border.";
+    BorderLeftWidth, "border-left-width", Length, Value::Length(Length::Px(0.0)), false, "Width of an element's left border.";
     FontSize, "font-size", Length, Value::Length(Length::Px(11.0)), true, "Inherited text size.";
     Opacity, "opacity", Number, Value::Number(1.0), false, "Paint opacity from zero to one.";
     Width, "width", Length, Value::Length(Length::Auto), false, "Preferred element width.";

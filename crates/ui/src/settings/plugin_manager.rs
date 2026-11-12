@@ -195,7 +195,8 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     let ui = &mut *styled_ui;
     let mut out = ManagerOut::default();
     let painter = ui.painter_at(area);
-    page.paint(&painter, area);
+    // What the page holds goes in its content box, inside its border and padding (#1336).
+    let area = page.paint(&painter, area).content;
     let inner = area.shrink(2.0 * PAD);
     let small = theme::ui_font(theme::TEXT_SMALL);
 

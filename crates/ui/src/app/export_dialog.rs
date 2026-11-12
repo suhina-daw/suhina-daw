@@ -249,18 +249,24 @@ pub fn show_export(ui: &Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
             let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw_export(ui, area, state)
+            draw_export(ui, &style_class, area, state)
         })
         .inner
 }
 
-fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<ExportChoice> {
+fn draw_export(
+    ui: &mut Ui,
+    dialog: &crate::kit::element::Entered,
+    area: Rect,
+    state: &mut ExportDialog,
+) -> Option<ExportChoice> {
     let mut closed: Option<ExportChoice> = None;
     // Title row, then file, format, rate, depth, the mp3 rate when the format is mp3, the
     // checkboxes, the note, and the buttons.
     let mp3 = state.resolved_format() == Some("mp3");
     let rows = if mp3 { 7.0 * LINE + LINE + 4.0 } else { 7.0 * LINE };
-    let panel = panel(ui, area, Vec2::new(SAVE_WIDTH, ROW + rows + BUTTON.y + 3.0 * PAD), "Export audio", &mut closed);
+    let panel =
+        panel(ui, dialog, area, Vec2::new(SAVE_WIDTH, ROW + rows + BUTTON.y + 3.0 * PAD), "Export audio", &mut closed);
     let painter = ui.painter_at(area);
     let small = theme::ui_font(theme::TEXT_SMALL);
     let label_width = 76.0;

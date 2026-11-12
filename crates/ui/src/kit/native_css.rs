@@ -32,10 +32,11 @@ mod text;
 mod workspace;
 pub use diagnostics::{Notice, inspect};
 pub use paint::background_with;
+pub(crate) use paint::border;
 #[cfg(test)]
 pub(in crate::kit) use paint::surface_with;
 pub(in crate::kit) use paint::{artwork_shadows, background_rounded, gradients_rounded, level_fill, level_glow};
-pub(in crate::kit) use paint::{box_begin, box_end, has_end};
+pub(in crate::kit) use paint::{box_begin, box_end};
 pub use text::paint_text;
 pub use workspace::{Workspace, splitter_between, workspace};
 
@@ -63,8 +64,11 @@ pub struct Computed {
     pub border: Color32,
     pub font_size: f32,
     pub radius: f32,
-    /// `border-width`; a control draws a border only when the sheet sets one.
+    /// The widest of the border's sides: the width of a border drawn the same all round (an egui
+    /// widget's stroke). A control draws a border only when the sheet sets one.
     pub border_width: f32,
+    /// The border's widths, top, right, bottom, left (`border-width`, `border-bottom-width`).
+    pub border_sides: [f32; 4],
     /// `height` in pixels, when the sheet sets one: the thickness of a bar such as a volume field's.
     pub height: Option<f32>,
     /// `width` in pixels, when the sheet sets one: the size of a fader's cap or rail.
@@ -99,16 +103,40 @@ impl Computed {
         matches!(self.value(Property::Overflow), Value::Keyword("hidden" | "clip"))
     }
 
-    /// The element's `padding` in points: top, right, bottom, left.
+    /// The border's width when its four sides are one width: the outline an egui widget can draw,
+    /// all round. `None` when the sides differ (`border-width: 0 0 2px`).
+    pub fn even_border(&self) -> Option<f32> {
+        let [top, ..] = self.border_sides;
+        self.border_sides.iter().all(|side| *side == top).then_some(top)
+    }
+
+    /// The element's `padding` in points: top, right, bottom, left. A percentage, which the sheet
+    /// takes only on a CSS layout container, is none here: [`Computed::padding_in`] knows its box.
     pub fn padding(&self) -> [f32; 4] {
+        self.padding_in(0.0)
+    }
+
+    /// [`Computed::padding`] in a box `width` wide: a percentage is of that width, as the layout
+    /// takes it for the containers the sheet lets pad in percent (`workspace`, `toolbar`), which
+    /// are laid out in their own box (#1336). Points and `em` resolve as the layout's do.
+    pub fn padding_in(&self, width: f32) -> [f32; 4] {
         [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft].map(|side| {
-            match self.value(side) {
-                Value::Length(suhina_style::value::Length::Px(points)) if points.is_finite() => {
-                    points.clamp(0.0, 512.0)
-                }
-                _ => 0.0,
-            }
+            // The layout's own limit, so the two boxes agree however large the padding.
+            let points = suhina_style::layout::spacing_points_of(&self.resolved, side, width);
+            if points.is_finite() { points } else { 0.0 }
         })
+    }
+
+    /// The room the element's border and `padding` take inside its box, top, right, bottom, left:
+    /// what is left is its content box.
+    pub fn insets(&self) -> [f32; 4] {
+        self.insets_in(0.0)
+    }
+
+    /// [`Computed::insets`] in a box `width` wide ([`Computed::padding_in`]).
+    pub fn insets_in(&self, width: f32) -> [f32; 4] {
+        let padding = self.padding_in(width);
+        std::array::from_fn(|side| padding[side] + self.border_sides[side])
     }
 
     /// The element's outline, when it has one: its width, colour and offset in points.
@@ -1216,7 +1244,10 @@ pub fn toolbar_layout_requested() -> bool {
 }
 
 /// Flex/Grid layout for actual ordered, visible module ids. No theme-supplied markup.
-pub fn toolbar(order: &[(String, f32)], size: Vec2) -> Option<Vec<Module>> {
+///
+/// `size` is the toolbar's whole box; a module is `module_height` tall where the sheet gives no
+/// height, the height of the toolbar's content box (its box less its border and padding).
+pub fn toolbar(order: &[(String, f32)], size: Vec2, module_height: f32) -> Option<Vec<Module>> {
     if order.len() > skin::MODULES.len()
         || order.iter().any(|(id, _)| !skin::MODULES.contains(&id.as_str()))
         || !size.is_finite()
@@ -1229,7 +1260,7 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2) -> Option<Vec<Module>> {
         if !same_source(engine.source.as_ref()) {
             return None;
         }
-        let key = format!("{order:?}:{size:?}");
+        let key = format!("{order:?}:{size:?}:{module_height:?}");
         if let Some((previous, modules)) = &engine.toolbar
             && previous == &key
         {
@@ -1239,7 +1270,7 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2) -> Option<Vec<Module>> {
             "toolbar {{ display:flex; width:{}px; height:{}px; gap:4px; align-items:center; }} toolbar-module {{ flex-shrink:0; height:{}px; }}",
             size.x.clamp(1.0, 16384.0),
             size.y.clamp(1.0, 16384.0),
-            size.y.clamp(24.0, 16384.0)
+            module_height.clamp(24.0, 16384.0)
         );
         for (id, width) in order {
             defaults.push_str(&format!("#{id} {{ width:{}px; }}", width.clamp(1.0, 4096.0)));
@@ -1249,7 +1280,16 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2) -> Option<Vec<Module>> {
             elements.push(native::element("toolbar-module", Some(id), None, Some(2)));
         }
         let laid = native::layout(&engine, elements, &defaults, [size.x, size.y])?;
-        engine.toolbar_layout = laid.requested;
+        // The toolbar's own padding pads Suhina's toolbar, in its content box, as its border does
+        // (#1336): only its layout properties (display, flex, grid, gap, sizes) and its modules'
+        // ask for the theme's layout.
+        const PADDING: [Property; 4] =
+            [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft];
+        engine.toolbar_layout = laid
+            .items
+            .iter()
+            .enumerate()
+            .any(|(index, (_, style))| native::requests_layout(style, if index == 0 { &PADDING } else { &[] }));
         let mut modules = Vec::new();
         for ((name, _), (rect, style)) in order.iter().zip(laid.items.into_iter().skip(1)) {
             let Some(rect) = rect else { continue };

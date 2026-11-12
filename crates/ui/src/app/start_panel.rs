@@ -103,7 +103,8 @@ pub fn show(
     let ui = &mut *styled_ui;
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    page.paint(&painter, area);
+    // What the page holds goes in its content box, inside its border and padding (#1336).
+    let area = page.paint(&painter, area).content;
     let width = (area.width() - 4.0 * PAD).min(MAX_WIDTH);
     let content = Rect::from_min_max(
         Pos2::new(area.center().x - width / 2.0, area.top() + 4.0 * PAD),

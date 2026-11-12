@@ -72,14 +72,20 @@ pub fn show(ui: &Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Opti
             let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw(ui, area, state, lists)
+            draw(ui, &style_class, area, state, lists)
         })
         .inner
 }
 
-fn draw(ui: &mut Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Option<Choice> {
+fn draw(
+    ui: &mut Ui,
+    dialog: &crate::kit::element::Entered,
+    area: Rect,
+    state: &mut DialogState,
+    lists: &Lists,
+) -> Option<Choice> {
     let mut choice = None;
-    let panel = panel(ui, area, Vec2::new(WIDTH, HEIGHT), "New or open a project", &mut choice);
+    let panel = panel(ui, dialog, area, Vec2::new(WIDTH, HEIGHT), "New or open a project", &mut choice);
     let painter = ui.painter_at(area);
     let small = theme::ui_font(theme::TEXT_SMALL);
     let half = (panel.width() - 3.0 * PAD) / 2.0;
@@ -218,15 +224,20 @@ pub fn show_save(ui: &Ui, area: Rect, prompt: &mut SavePrompt) -> Option<SaveCho
             let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw_save(ui, area, prompt)
+            draw_save(ui, &style_class, area, prompt)
         })
         .inner
 }
 
-fn draw_save(ui: &mut Ui, area: Rect, prompt: &mut SavePrompt) -> Option<SaveChoice> {
+fn draw_save(
+    ui: &mut Ui,
+    dialog: &crate::kit::element::Entered,
+    area: Rect,
+    prompt: &mut SavePrompt,
+) -> Option<SaveChoice> {
     let mut closed: Option<SaveChoice> = None;
     let title = if prompt.template { "Save as template" } else { "Save project" };
-    let panel = panel(ui, area, Vec2::new(SAVE_WIDTH, ROW + 4.0 * LINE + 2.0 * PAD), title, &mut closed);
+    let panel = panel(ui, dialog, area, Vec2::new(SAVE_WIDTH, ROW + 4.0 * LINE + 2.0 * PAD), title, &mut closed);
     let painter = ui.painter_at(area);
     let small = theme::ui_font(theme::TEXT_SMALL);
     let label_width = 52.0;
@@ -300,7 +311,7 @@ pub fn show_unsaved(ui: &Ui, area: Rect, name: &str, doing: &str) -> Option<Unsa
             let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw_unsaved(ui, area, name, doing)
+            draw_unsaved(ui, &style_class, area, name, doing)
         })
         .inner
 }
@@ -342,12 +353,12 @@ pub fn show_about(ui: &Ui, area: Rect) -> Option<AboutChoice> {
             let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw_about(ui, area)
+            draw_about(ui, &style_class, area)
         })
         .inner
 }
 
-fn draw_about(ui: &mut Ui, area: Rect) -> Option<AboutChoice> {
+fn draw_about(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect) -> Option<AboutChoice> {
     let mut closed: Option<AboutChoice> = None;
     let platform = platform();
     let facts = [
@@ -359,7 +370,7 @@ fn draw_about(ui: &mut Ui, area: Rect) -> Option<AboutChoice> {
     let logo_height = ABOUT_LOGO_WIDTH / crate::kit::logo::aspect();
     let facts_top = ROW + 2.0 * PAD + logo_height + PAD;
     let height = facts_top + facts.len() as f32 * LINE + BUTTON.y + 2.0 * PAD;
-    let panel = panel(ui, area, Vec2::new(SAVE_WIDTH, height), "About Suhina", &mut closed);
+    let panel = panel(ui, dialog, area, Vec2::new(SAVE_WIDTH, height), "About Suhina", &mut closed);
     let painter = ui.painter_at(area);
     // The logo, as on the splash, above what names the build.
     let logo = Rect::from_center_size(
@@ -388,10 +399,22 @@ fn draw_about(ui: &mut Ui, area: Rect) -> Option<AboutChoice> {
     closed
 }
 
-fn draw_unsaved(ui: &mut Ui, area: Rect, name: &str, doing: &str) -> Option<UnsavedChoice> {
+fn draw_unsaved(
+    ui: &mut Ui,
+    dialog: &crate::kit::element::Entered,
+    area: Rect,
+    name: &str,
+    doing: &str,
+) -> Option<UnsavedChoice> {
     let mut closed: Option<UnsavedChoice> = None;
-    let panel =
-        panel(ui, area, Vec2::new(SAVE_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD), "Unsaved changes", &mut closed);
+    let panel = panel(
+        ui,
+        dialog,
+        area,
+        Vec2::new(SAVE_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD),
+        "Unsaved changes",
+        &mut closed,
+    );
     let painter = ui.painter_at(area);
     let text = Rect::from_min_size(
         Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD),
@@ -437,15 +460,26 @@ pub fn show_ara_edits(ui: &Ui, area: Rect, plugin: &str) -> Option<AraEditsChoic
             let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw_ara_edits(ui, area, plugin)
+            draw_ara_edits(ui, &style_class, area, plugin)
         })
         .inner
 }
 
-fn draw_ara_edits(ui: &mut Ui, area: Rect, plugin: &str) -> Option<AraEditsChoice> {
+fn draw_ara_edits(
+    ui: &mut Ui,
+    dialog: &crate::kit::element::Entered,
+    area: Rect,
+    plugin: &str,
+) -> Option<AraEditsChoice> {
     let mut closed: Option<AraEditsChoice> = None;
-    let panel =
-        panel(ui, area, Vec2::new(SAVE_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD), "Another track", &mut closed);
+    let panel = panel(
+        ui,
+        dialog,
+        area,
+        Vec2::new(SAVE_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD),
+        "Another track",
+        &mut closed,
+    );
     let painter = ui.painter_at(area);
     for (i, line) in [
         format!("Keep the {plugin} edits on the track the clips go to?"),
@@ -506,15 +540,22 @@ pub fn show_recovery(ui: &Ui, area: Rect, name: &str, written: &str, saved: bool
             let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw_recovery(ui, area, name, written, saved)
+            draw_recovery(ui, &style_class, area, name, written, saved)
         })
         .inner
 }
 
-fn draw_recovery(ui: &mut Ui, area: Rect, name: &str, written: &str, saved: bool) -> Option<RecoveryChoice> {
+fn draw_recovery(
+    ui: &mut Ui,
+    dialog: &crate::kit::element::Entered,
+    area: Rect,
+    name: &str,
+    written: &str,
+    saved: bool,
+) -> Option<RecoveryChoice> {
     let mut closed: Option<RecoveryChoice> = None;
     let size = Vec2::new(RECOVERY_WIDTH, ROW + 3.0 * LINE + RECOVERY_BUTTON.y + 3.0 * PAD);
-    let panel = panel(ui, area, size, "Backup found", &mut closed);
+    let panel = panel(ui, dialog, area, size, "Backup found", &mut closed);
     let painter = ui.painter_at(area);
     let lines = [
         format!("Suhina closed before {name} was saved."),
@@ -566,15 +607,15 @@ pub fn show_agent(ui: &Ui, area: Rect, client: &str) -> Option<AgentChoice> {
             let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw_agent(ui, area, client)
+            draw_agent(ui, &style_class, area, client)
         })
         .inner
 }
 
-fn draw_agent(ui: &mut Ui, area: Rect, client: &str) -> Option<AgentChoice> {
+fn draw_agent(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect, client: &str) -> Option<AgentChoice> {
     let mut closed: Option<AgentChoice> = None;
     let size = Vec2::new(RECOVERY_WIDTH, ROW + 3.0 * LINE + BUTTON.y + 3.0 * PAD);
-    let panel = panel(ui, area, size, "An agent wants to connect", &mut closed);
+    let panel = panel(ui, dialog, area, size, "An agent wants to connect", &mut closed);
     let painter = ui.painter_at(area);
     let lines = [
         format!("{client} wants to work on your open projects."),
@@ -615,7 +656,7 @@ pub fn show_folder_move(ui: &Ui, area: Rect, what: &str, to: &str) -> Option<boo
             ui.set_min_size(area.size());
             let mut closed: Option<AgentChoice> = None;
             let size = Vec2::new(RECOVERY_WIDTH, ROW + 3.0 * LINE + BUTTON.y + 3.0 * PAD);
-            let panel = panel(ui, area, size, "Move the folder?", &mut closed);
+            let panel = panel(ui, &style_class, area, size, "Move the folder?", &mut closed);
             let painter = ui.painter_at(area);
             let lines = [
                 format!("Move your {what} to {to}?"),
@@ -674,7 +715,7 @@ pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice
             ui.set_min_size(area.size());
             let mut closed: Option<ImportChoice> = None;
             let size = Vec2::new(RECOVERY_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD);
-            let panel = panel(ui, area, size, "The theme is here already", &mut closed);
+            let panel = panel(ui, &style_class, area, size, "The theme is here already", &mut closed);
             let painter = ui.painter_at(area);
             let lines = [
                 format!("{name} is one of your themes already."),
@@ -707,7 +748,14 @@ pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice
 
 /// A panel in the middle of `area` with a title row and a Close button, the area behind dimmed
 /// and its clicks swallowed. Returns the panel; `closed` is set when Close is clicked.
-pub(crate) fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str, closed: &mut Option<T>) -> Rect {
+pub(crate) fn panel<T: CloseChoice>(
+    ui: &Ui,
+    dialog: &crate::kit::element::Entered,
+    area: Rect,
+    size: Vec2,
+    title: &str,
+    closed: &mut Option<T>,
+) -> Rect {
     let behind = ui.interact(area, Id::unique(("dialog-behind", title)), Sense::click_and_drag());
     let _swallowed = behind.clicked();
     let painter = ui.painter_at(area);
@@ -716,12 +764,11 @@ pub(crate) fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str
         0.0,
         crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
     );
-    let size = Vec2::new(size.x.min(area.width() - 2.0 * PAD), size.y.min(area.height() - 2.0 * PAD));
-    let rect = Rect::from_center_size(area.center(), size);
+    let rect = Rect::from_center_size(area.center(), dialog_size(dialog, area, size));
     // The window's content, blurred, under the panel.
     crate::kit::liquid::backdrop(&painter, rect);
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::own_background_or(theme::panel_background()));
-    painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    let rect =
+        dialog_box(&painter, dialog, rect, crate::kit::style_class::own_background_or(theme::panel_background()));
     let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     painter.rect_filled(bar, 0.0, theme::control_background());
     let font = theme::ui_font(theme::TEXT);
@@ -743,6 +790,30 @@ pub(crate) fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str
         *closed = Some(T::close());
     }
     rect
+}
+
+/// How big a dialog is in `area` that holds `size`: that, and its border and padding around it
+/// (#1336), never closer than [`PAD`] to the window's edges.
+pub(crate) fn dialog_size(dialog: &crate::kit::element::Entered, area: Rect, size: Vec2) -> Vec2 {
+    let [top, right, bottom, left] = dialog.insets();
+    let size = size + Vec2::new(left + right, top + bottom);
+    Vec2::new(size.x.min(area.width() - 2.0 * PAD), size.y.min(area.height() - 2.0 * PAD))
+}
+
+/// A dialog's box in `rect` over `fill`, its own background, in CSS's order, with Suhina's hairline
+/// round it where the sheet gives it no border; returns the content box what it holds goes in
+/// (#1336).
+pub(crate) fn dialog_box(
+    painter: &egui::Painter,
+    dialog: &crate::kit::element::Entered,
+    rect: Rect,
+    fill: egui::Color32,
+) -> Rect {
+    let content = dialog.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill }).content;
+    if !dialog.style().is_some_and(|style| style.authored.border_width) {
+        painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    }
+    content
 }
 
 /// The choice that closes a dialog.

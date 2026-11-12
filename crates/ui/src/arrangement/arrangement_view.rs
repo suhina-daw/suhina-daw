@@ -381,21 +381,18 @@ fn show_lanes(
     if whole.height() < 1.0 {
         return;
     }
+    // The view's own background, over the window's (#1233), under its toolbar too; the view is
+    // laid out in its content box, inside its border and padding (#1336).
+    let inside = arrangement.paint(&ui.painter_at(whole), whole).content;
     // The toolbar along the top, when it is on (#991); the view under it.
-    let area = if state.toolbar && whole.height() > tools::TOOLBAR * 2.0 {
-        let bar = Rect::from_min_size(whole.min, Vec2::new(whole.width(), tools::TOOLBAR));
+    let area = if state.toolbar && inside.height() > tools::TOOLBAR * 2.0 {
+        let bar = Rect::from_min_size(inside.min, Vec2::new(inside.width(), tools::TOOLBAR));
         tools::toolbar(ui, bar, state);
-        Rect::from_min_max(Pos2::new(whole.left(), bar.bottom() + 1.0), whole.max)
+        Rect::from_min_max(Pos2::new(inside.left(), bar.bottom() + 1.0), inside.max)
     } else {
-        whole
+        inside
     };
-    // With the toolbar on, the view says when it has the focus: the tool keys act on it.
-    if state.toolbar && state.has_focus {
-        ui.painter().rect_stroke(whole, 0.0, Stroke::new(1.0, theme::accent()), StrokeKind::Inside);
-    }
     let painter = ui.painter_at(area);
-    // The view's own background, over the window's (#1233).
-    let _ = arrangement.paint(&painter, area);
 
     // The header column, on either side, and the timeline beside it.
     let max_header = (area.width() - 120.0).max(HEADER_COLUMN_RANGE.0);
@@ -1934,6 +1931,11 @@ fn show_lanes(
                 }
             }
         }
+    }
+    // With the toolbar on, the view says when it has the focus (the tool keys act on it): a ring
+    // over its contents, all round.
+    if state.toolbar && state.has_focus {
+        ui.painter().rect_stroke(inside, 0.0, Stroke::new(1.0, theme::accent()), StrokeKind::Inside);
     }
 }
 

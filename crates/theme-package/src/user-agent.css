@@ -33,6 +33,14 @@ start-page,
 plugin-manager,
 export { overflow: hidden; }
 
+/* The line between a bar and the view is the bar's border: under each bar over the views, over the
+   status bar. Its colour, the palette's line colour, comes with the palette. */
+application-bar,
+menu-bar,
+project-tabs,
+toolbar { border-width: 0 0 1px; }
+status-bar { border-width: 1px 0 0; }
+
 /* Default artwork. Each image takes its colour only from its element's `color` (currentColor), so a
    copy of it works in any theme. A theme replaces one with its own rule for the same element. */
 icon[kind="midi"] { image: url("suhina:track.midi.svg"); }

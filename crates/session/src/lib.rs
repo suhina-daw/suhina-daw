@@ -116,8 +116,8 @@ pub use projects::{
     project_commands,
 };
 pub use rack::{
-    BlockCounts, Hosted, OfflinePlugins, ParamTexts, PluginEnv, PluginProgress, PluginReport, PluginStatus,
-    ProcessGroup, Rack, is_instrument, plugin_group, start_offline,
+    BlockCounts, Hosted, OfflineDevice, OfflinePlugins, ParamTexts, PluginEnv, PluginProgress, PluginReport,
+    PluginStatus, ProcessGroup, Rack, START_TIMEOUT, is_instrument, plugin_group, start_offline, start_offline_device,
 };
 pub use recording::{COUNT_IN_BARS, LiveTake, RECORDED_FOLDER};
 pub use relink::COLLECTED;

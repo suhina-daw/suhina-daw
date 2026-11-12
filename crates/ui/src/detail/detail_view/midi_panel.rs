@@ -129,7 +129,9 @@ pub(super) fn stacked_height(midi: bool, tools: bool) -> f32 {
     let figures = if midi { FIGURES_GAP + FIGURES } else { 0.0 };
     let tools = if midi && tools {
         let s = tools_spacing();
-        14.0 + TAB_ROW + s.gap + tools_body(s)
+        // The part's border and padding round what it holds (#1336).
+        let [top, _, bottom, _] = crate::kit::element::MIDI_TOOLS.enter().insets();
+        14.0 + TAB_ROW + s.gap + tools_body(s) + top + bottom
     } else {
         0.0
     };
@@ -250,14 +252,18 @@ fn tools_part(
     midi: MidiTools<'_, '_>,
     actions: &mut Vec<Action>,
 ) {
-    if part.height() < TAB_ROW || part.width() < 40.0 {
-        return;
-    }
     let MidiTools { tools, state, .. } = midi;
     let spacing = tools_spacing();
     // `midi-tools` styles the part: its background and, through the scope, its controls' text.
     let el = crate::kit::element::MIDI_TOOLS.enter();
-    el.paint_with(painter, part, crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() });
+    let [top, right, bottom, left] = el.insets();
+    if part.height() < TAB_ROW + top + bottom || part.width() < 40.0 + left + right {
+        return;
+    }
+    // What it holds goes in its content box, inside its border and padding (#1336).
+    let part = el
+        .paint_with(painter, part, crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() })
+        .content;
     let tab_row = Rect::from_min_size(part.min, Vec2::new(part.width(), TAB_ROW));
     tab_row_of(ui, painter, tab_row, state);
     let body = Rect::from_min_max(Pos2::new(part.left(), tab_row.bottom() + spacing.gap), part.max);

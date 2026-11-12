@@ -124,7 +124,7 @@ pub fn finish_surfaces(ctx: &Context) {
         {
             for lens in &mut surfaces.lenses {
                 let mesh = refraction_mesh(lens.rect, backdrop, lens.strength);
-                let mut painter = ctx.layer_painter(lens.layer).with_clip_rect(lens.clip);
+                let mut painter = lens_painter(ctx, lens);
                 painter.set_opacity(lens.opacity);
                 painter.set(lens.index, mesh.clone());
                 lens.mesh = Some(mesh);
@@ -264,10 +264,17 @@ pub fn finish_backdrops(ctx: &Context) {
     ctx.graphics_mut(|layers| {
         for (marked, cut, image) in dialogs {
             let list = layers.entry(marked.layer);
+            // Each slot keeps its clip as it is now: a region that hides its overflow may have
+            // narrowed it since it was reserved (#1336).
+            let clip_of = |list: &egui::layers::PaintList, slot: egui::layers::ShapeIdx| {
+                list.all_entries().nth(slot.0).map_or(marked.clip, |shape| shape.clip_rect)
+            };
             if let Some(cut) = cut {
-                list.set(marked.cut, marked.clip, cut);
+                let clip = clip_of(list, marked.cut);
+                list.set(marked.cut, clip, cut);
             }
-            list.set(marked.image, marked.clip, image);
+            let clip = clip_of(list, marked.image);
+            list.set(marked.image, clip, image);
         }
         for (layer, index, shapes) in under {
             let list = layers.entry(layer);
@@ -323,6 +330,18 @@ pub fn configure(ctx: &Context, options: Options) {
     ctx.data_mut(|data| data.insert_temp(Id::unique(OPTIONS), options));
 }
 
+/// A painter for `lens`'s reserved slot, clipped as the slot is now: a region that hides its
+/// overflow may have narrowed the slot's clip since it was reserved, and setting the slot would
+/// otherwise put back the wider one.
+fn lens_painter(ctx: &Context, lens: &Lens) -> egui::Painter {
+    let clip = ctx
+        .graphics(|layers| {
+            layers.get(lens.layer).and_then(|list| list.all_entries().nth(lens.index.0)).map(|s| s.clip_rect)
+        })
+        .unwrap_or(lens.clip);
+    ctx.layer_painter(lens.layer).with_clip_rect(clip)
+}
+
 /// Forget the previous panel's image, then capture this frame before any modal chrome.
 pub fn prepare(ctx: &Context) {
     ctx.data_mut(|data| data.remove::<Backdrop>(Id::unique(BACKDROP)));
@@ -335,12 +354,12 @@ pub fn prepare(ctx: &Context) {
     // backdrop never holds glass drawn from another capture.
     let surfaces = ctx.data_mut(|data| data.remove_temp::<Surfaces>(Id::unique(SURFACES))).unwrap_or_default();
     for lens in &surfaces.lenses {
-        ctx.layer_painter(lens.layer).with_clip_rect(lens.clip).set(lens.index, egui::Shape::Noop);
+        lens_painter(ctx, lens).set(lens.index, egui::Shape::Noop);
     }
     let backdrop = host.and_then(|host| host.0.capture(ctx));
     for lens in &surfaces.lenses {
         if let Some(mesh) = &lens.mesh {
-            let mut painter = ctx.layer_painter(lens.layer).with_clip_rect(lens.clip);
+            let mut painter = lens_painter(ctx, lens);
             painter.set_opacity(lens.opacity);
             painter.set(lens.index, mesh.clone());
         }
