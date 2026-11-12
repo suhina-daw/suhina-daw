@@ -33,10 +33,16 @@ interface: VeSTige, as Ardour distributes it, at the commit the ADR pins
 [`crates/plugin-host/src/vst2/vestige.rs`](../../crates/plugin-host/src/vst2/vestige.rs) with
 its copyright and licence notice kept (`GPL-2.0-or-later`, the one named exception to the
 clean-room rule), and no other header, SDK, binding or write-up may be read for a fact of
-this interface. Every fact below carries one of three marks:
+this interface. Another open-source host's own code may be, within the limits of
+[ADR 0022 › Amendment: other hosts' code as a source](../decisions/0022-vst2-interface-description.md#amendment-other-hosts-code-as-a-source-2026-11-12):
+the file's licence is compatible with GPL-3.0-or-later and the value traces to VeSTige, to that
+project's own observation or to public documentation. Every fact below carries one of four marks:
 
 - **(from VeSTige)** the pinned header states it — the value, the field, the layout. The
   port transcribes it and the tests pin the transcription.
+- **(from <project>)** another host's code states it, and the provenance check traced it to an
+  allowed origin; the mark names the file's path and the commit, and what the check found. A
+  value a host uses that cannot be traced is not marked so: it is **(assumed)** until observed.
 - **(assumed)** the pinned header lacks it, and the layer had to choose something to write
   code at all: an op-code number it does not list, which argument of a call carries what,
   what an answer means. The choice is ours, named here, and *it is not established*: only a
@@ -51,7 +57,8 @@ this interface. Every fact below carries one of three marks:
   it is settled.
 
 A fact marked (assumed) that a later run disagrees with is a bug in this spec's assumption,
-to be fixed with what the run showed — never by reading another header.
+to be fixed with what the run showed — never by reading another header, and never by another
+host's value whose origin is unknown.
 
 ## The entry points
 
@@ -519,7 +526,8 @@ another header (ADR 0022 decision 2).
 
 - The pinned VeSTige header, as Ardour distributes it: <https://github.com/Ardour/ardour/blob/365cc92cba0e016c30fea34aed168a0957aeeca0/libs/ardour/ardour/vestige/vestige.h>
 - [ADR 0022](../decisions/0022-vst2-interface-description.md): the source decision, the
-  pinning, and the rule that nothing else may be read.
+  pinning, the rule that no other header may be read, and when another host's code may be a
+  source.
 - [ADR 0006](../decisions/0006-plug-in-hosting.md): the hosting the interface layer serves.
 - The VST2 bank layouts in the VST3 SDK's `vst2persistence.h` (MIT), as
   [`crates/plugins/src/vst2.rs`](../../crates/plugins/src/vst2.rs) holds them, one home for the importer, the VST3 hand-over and this host.
