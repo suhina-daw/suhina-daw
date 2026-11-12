@@ -1574,9 +1574,9 @@ pub(super) fn paint_clip(
             let left = rect.left().max(view.left()) + 7.0;
             let name_rect =
                 Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
-            let _name = crate::kit::style_class::enter("clip-name");
-            let size = crate::kit::style_class::font_size(theme::TEXT).min((rect.height() - 2.0).max(6.0));
-            let ink = crate::kit::style_class::foreground(text_color).gamma_multiply(1.0 - notes_fade);
+            let el = crate::kit::element::CLIP_NAME.enter();
+            let size = el.font_size_or(theme::TEXT).min((rect.height() - 2.0).max(6.0));
+            let ink = el.color_or(text_color).gamma_multiply(1.0 - notes_fade);
             widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, name, theme::ui_font(size), ink);
         }
     }
