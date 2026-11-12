@@ -3,7 +3,7 @@ description: What of ARA hosting is built and how it behaves - scanning, the cli
 read_when: ARA, ARA plug-in, clip host, Edit with, clip.setAra, araEdits, ara_update, ara_notes, ara_playback, ara_export, ara_import, test:ara, ARA archive, audio source region, suspended region, ARA editor
 type: spec
 status: draft
-last_verified: 2026-11-02
+last_verified: 2026-11-13
 covers:
   - crates/plugin-host/src/ara.rs
   - crates/session/src/ara.rs
