@@ -306,7 +306,7 @@ pub fn blurred(ctx: &Context) -> usize {
 /// replay those).
 pub fn finish_backdrops(ctx: &Context) {
     let marked = ctx.data_mut(|data| data.remove_temp::<Vec<Marked>>(Id::unique(MARKED))).unwrap_or_default();
-    let order: Vec<egui::LayerId> = ctx.memory(|memory| memory.layer_ids().collect());
+    let order = super::floating::with_window_layers(ctx, ctx.memory(|memory| memory.layer_ids().collect()));
     let (mut surfaces, floating_layers) = floating(ctx, &order);
     let host = ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST))).filter(|_| effects_allowed(ctx));
     if suhina_plugins::trace::on() {

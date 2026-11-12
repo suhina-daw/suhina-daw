@@ -171,6 +171,28 @@ fn popups_and_tooltips_get_the_window_blurred_under_their_frames_whatever_their_
     assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 200, 0))));
 }
 
+/// A workspace panel the theme lays over a view is painted on a layer without an area: said to
+/// be the window's, it is in the capture behind a menu; a drag's preview, not said, never is.
+#[test]
+fn a_window_layer_without_an_area_is_in_the_capture_and_a_drag_s_preview_is_not() {
+    let panel = Color32::from_rgb(0, 0, 250);
+    let (_, _, host) = floating_frames(None, |ctx| {
+        let layer = egui::LayerId::new(egui::Order::Middle, Id::unique("workspace-overlay"));
+        super::super::floating::window_layer(ctx, layer);
+        ctx.layer_painter(layer).rect_filled(Rect::from_min_size(pos2(5.0, 5.0), egui::vec2(50.0, 50.0)), 0.0, panel);
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, Id::unique("preview"))).rect_filled(
+            Rect::from_min_size(pos2(100.0, 5.0), egui::vec2(50.0, 50.0)),
+            0.0,
+            Color32::from_rgb(0, 200, 0),
+        );
+        odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0));
+    });
+    let seen = host.seen.lock().map(|seen| seen.clone()).unwrap_or_default();
+    let has = |color: Color32| seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == color));
+    assert!(has(panel), "the panel is behind the menu: {seen:?}");
+    assert!(!has(Color32::from_rgb(0, 200, 0)), "a preview is not");
+}
+
 #[test]
 fn the_app_s_own_layers_are_not_blurred_and_nothing_floating_means_no_capture() {
     use super::super::floating::{Kind, area};

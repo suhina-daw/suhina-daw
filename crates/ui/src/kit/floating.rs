@@ -43,7 +43,10 @@ const MAX_DECLARED: usize = 256;
 
 /// Forgets last frame's declarations; called at the start of each frame.
 pub fn begin_frame(ctx: &Context) {
-    ctx.data_mut(|data| data.remove_temp::<HashMap<Id, Kind>>(Id::unique(DECLARED)));
+    ctx.data_mut(|data| {
+        data.remove_temp::<HashMap<Id, Kind>>(Id::unique(DECLARED));
+        data.remove_temp::<Vec<egui::LayerId>>(Id::unique(OVERLAYS));
+    });
 }
 
 /// Says that the layer with `id` (at any order) is the app's own, and what it is.
@@ -68,6 +71,33 @@ pub fn modal(ctx: &Context, id: Id) -> egui::Modal {
     declare(ctx, id, Kind::Own);
     #[allow(clippy::disallowed_methods)]
     egui::Modal::new(id)
+}
+
+const OVERLAYS: &str = "floating-overlays";
+
+/// Says that `layer`, painted on without an area (a workspace panel the theme lays over a view),
+/// is part of the window this frame: the captures behind a menu or dialog hold it, as they hold
+/// the window's areas.
+pub fn window_layer(ctx: &Context, layer: egui::LayerId) {
+    ctx.data_mut(|data| {
+        let layers = data.get_temp_mut_or_default::<Vec<egui::LayerId>>(Id::unique(OVERLAYS));
+        if layers.len() < MAX_DECLARED && !layers.contains(&layer) {
+            layers.push(layer);
+        }
+    });
+}
+
+/// `order` (the layers from back to front) with the layers said to be the window's, each after
+/// the last layer at its own order or below.
+pub(crate) fn with_window_layers(ctx: &Context, mut order: Vec<egui::LayerId>) -> Vec<egui::LayerId> {
+    let layers = ctx.data(|data| data.get_temp::<Vec<egui::LayerId>>(Id::unique(OVERLAYS))).unwrap_or_default();
+    for layer in layers {
+        if !order.contains(&layer) {
+            let at = order.iter().rposition(|other| other.order <= layer.order).map_or(0, |at| at + 1);
+            order.insert(at, layer);
+        }
+    }
+    order
 }
 
 /// What the app said the layer with `id` is this frame, if it said.
