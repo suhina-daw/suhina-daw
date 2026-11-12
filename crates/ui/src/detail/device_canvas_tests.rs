@@ -342,6 +342,7 @@ fn the_device_widgets_show_state_and_dispatch_their_commands() {
         irs: vec![],
         names: std::collections::HashMap::from([("bad.nam".into(), "Bad amp".into())]),
         notes: std::collections::HashMap::from([("bad.nam".into(), "not a NAM model".into())]),
+        ..crate::detail::device_widgets::Lists::default()
     };
     fn state_of<'a>(
         lists: &'a crate::detail::device_widgets::Lists,
@@ -487,6 +488,143 @@ fn the_device_widgets_show_state_and_dispatch_their_commands() {
         .collect();
     assert_eq!(paths, ["p/Test amp/a.nam", "p/Test amp/b.nam"], "a pack's first file, then a step to a neighbour");
     assert_eq!(actions.len(), 2, "one undo step per choice, not more: {actions:?}");
+}
+
+#[test]
+fn a_folder_and_its_file_read_apart_and_the_folder_carries_the_artwork() {
+    // Issue #1289: the folder picker and the file list must read apart even when the file's
+    // name shares its folder's: the folder picker names the folder (with the folder's
+    // artwork before it), the file list the loaded file's own name, and the arrows step the
+    // files of the chosen folder.
+    use egui_kittest::kittest::Queryable;
+    let lists = crate::detail::device_widgets::Lists {
+        models: vec![],
+        irs: vec![crate::detail::device_widgets::Set {
+            name: "Testi".into(),
+            files: vec![
+                ("p/Testi/Testi cab.wav".into(), "Testi cab".into()),
+                ("p/Testi/K III bright.wav".into(), "K III bright".into()),
+            ],
+        }],
+        names: std::collections::HashMap::new(),
+        notes: std::collections::HashMap::new(),
+        ..crate::detail::device_widgets::Lists::default()
+    };
+    fn state_of<'a>(
+        lists: &'a crate::detail::device_widgets::Lists,
+        file: &'a str,
+    ) -> crate::detail::device_widgets::PanelState<'a> {
+        crate::detail::device_widgets::PanelState {
+            name: "NAM Cab Loader".into(),
+            enabled: true,
+            file,
+            lists: Some(lists),
+        }
+    }
+    let control = |id: &str, bounds: [f32; 4], widget| CustomControl {
+        id: id.into(),
+        name: id.to_owned(),
+        tooltip: String::new(),
+        bounds,
+        widget: Some(widget),
+        gesture: UiGesture::Drag,
+        x: None,
+        y: None,
+        drawing: vec![],
+        visible_when: None,
+    };
+    let canvas = Arc::new(DeviceUi {
+        size: [428., 168.],
+        accent_on: true,
+        controls: vec![
+            control("pack", [0., 0., 384., 22.], Widget::DeviceFiles { part: FileRowPart::Pack, what: "cab".into() }),
+            control(
+                "next-pack",
+                [384., 0., 22., 22.],
+                Widget::DeviceFiles { part: FileRowPart::NextPack, what: "cab".into() },
+            ),
+            control("file", [0., 146., 384., 22.], Widget::DeviceFiles { part: FileRowPart::File, what: "cab".into() }),
+            control(
+                "prev-file",
+                [384., 146., 22., 22.],
+                Widget::DeviceFiles { part: FileRowPart::PreviousFile, what: "cab".into() },
+            ),
+            control(
+                "next-file",
+                [384., 124., 22., 22.],
+                Widget::DeviceFiles { part: FileRowPart::NextFile, what: "cab".into() },
+            ),
+        ],
+        ..Default::default()
+    });
+    let draw = |ui: &mut egui::Ui, state: &mut (Vec<Action>, String, &crate::detail::device_widgets::Lists)| {
+        crate::kit::theme::install(ui.ctx());
+        crate::detail::device_canvas::show(
+            ui,
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(428., 168.)),
+            &canvas,
+            &state_of(state.2, &state.1),
+            &[],
+            TrackId(1),
+            &crate::detail::detail_view::DeviceAt(vec![0]),
+            &mut state.0,
+        );
+    };
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(428., 168.))
+        .build_ui_state(draw, (Vec::new(), "p/Testi/Testi cab.wav".into(), &lists));
+    harness.run_steps(4);
+
+    // Both pickers are found by their own words and never by the other's alone: the folder
+    // picker names the folder, and the loaded file's name is the file's own, folder's share
+    // of it included.
+    assert!(harness.query_by_label("Cab Loader: pack").is_some());
+    assert!(
+        harness.query_by_label_contains("Cab Loader: pack: Testi").is_none(),
+        "the closed picker reads Cab Loader: pack only"
+    );
+    harness.get_by_label("Cab Loader: pack").click();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains("Cab Loader: pack: Testi").is_some(),
+        "the folder picker's list names the folder"
+    );
+    harness.run();
+
+    harness.get_by_label("Cab Loader: cab file").click();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains("Cab Loader: cab file: Testi cab").is_some(),
+        "the file list names the loaded file, whole name, folder's share included"
+    );
+    // Stepping with the arrows changes the file of the chosen folder.
+    harness.get_by_label("Cab Loader: next file").click();
+    harness.run();
+    let paths: Vec<String> = harness
+        .state()
+        .0
+        .iter()
+        .filter(|action| action.id == "device.setNamFile")
+        .filter_map(|a| a.params.get("path").and_then(|p| p.as_str().map(str::to_owned)))
+        .collect();
+    assert_eq!(paths, ["p/Testi/K III bright.wav"], "the next arrow steps to the neighbour file");
+
+    // The folder artwork sits in the pack row's own margin, before its name.
+    let icon_at = Rect::from_min_size(Pos2::new(8.0, 4.0), Vec2::splat(14.0));
+    assert!(
+        harness
+            .output()
+            .shapes
+            .iter()
+            .any(|shape| matches!(&shape.shape, egui::Shape::Mesh(mesh) if mesh.calc_bounds().intersects(icon_at))),
+        "the pack row carries the folder's artwork"
+    );
+
+    // The picker stays inside its row: the icon's own margin comes out of its width, so it
+    // never reaches under the stepper beside it (the stepper starts at x = 384).
+    let picker = harness.get_by_label("Cab Loader: pack").rect();
+    assert!(picker.right() <= 384.0, "the pack picker ends inside its row, not under the stepper: {picker:?}");
 }
 
 #[test]

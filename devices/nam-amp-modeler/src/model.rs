@@ -71,6 +71,19 @@ pub fn read(path: impl AsRef<Path>) -> Result<NamModel, String> {
     NamModel::from_json_str(&text).map_err(|e| format!("{} is not a NAM model ({e})", path.display()))
 }
 
+/// The model in `data`, parsed. A file over [`MAX_BYTES`] or one that is not a `.nam` JSON
+/// comes back as the message the panel shows. The pack's models reach the device this way
+/// ([ADR 0036]: the starter pack is inside the executable); [`read`] names the path the same
+/// parse ran through.
+pub fn read_bytes(data: &[u8]) -> Result<NamModel, String> {
+    if data.len() > MAX_BYTES {
+        let megabytes = (data.len() as f64 / f64::from(1u32 << 20) * 10.0).round() / 10.0;
+        return Err(format!("the model is {megabytes} MiB, larger than Suhina reads ({} MiB)", MAX_BYTES >> 20));
+    }
+    let text = String::from_utf8(data.to_vec()).map_err(|_| "the model is not a UTF-8 file".to_string())?;
+    NamModel::from_json_str(&text).map_err(|e| format!("not a NAM model ({e})"))
+}
+
 /// The model's own name from its metadata, as the panel shows it.
 pub fn display_name(model: &NamModel) -> Option<String> {
     model.metadata_typed().name

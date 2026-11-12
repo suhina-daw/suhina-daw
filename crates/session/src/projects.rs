@@ -125,6 +125,8 @@ struct Devices {
     midi: crate::midi::MidiInputs,
     /// Projects opened read their audio wherever it is on a local disk ([`Projects::read_local_audio`]).
     local_audio: bool,
+    /// The library's root, handed to every session ([`Projects::set_library_base`], ADR 0036).
+    library_base: Option<PathBuf>,
 }
 
 /// The open projects in tab order, and which one is active; and the plug-in library, which
@@ -488,6 +490,9 @@ impl Projects {
             session.set_trusted(self.trusted_audio_for(source.as_deref()));
         }
         session.set_default_input(self.track_input());
+        if let Some(base) = &self.devices.library_base {
+            session.set_library_base(base.clone());
+        }
         self.tabs.open.push(Open { id, name, session });
         self.activate(id);
         Ok(id)
@@ -523,6 +528,11 @@ impl Projects {
                     CommandError(format!("no audio output: {e}"))
                 })?;
             self.preview = Some(session);
+        }
+        if let Some(session) = self.preview.as_mut()
+            && let Some(base) = &self.devices.library_base
+        {
+            session.set_library_base(base.clone());
         }
         self.preview.as_mut().ok_or_else(no_project)
     }
@@ -714,6 +724,24 @@ impl Projects {
         self.browser.library_generation
     }
 
+    /// The library's root (`Documents/Suhina`, [ADR 0036]): where the user's own presets are
+    /// saved, and where the library's folders sit. Given to every project open now and from
+    /// now on, like the default track input is.
+    /// The library's root, when it was set ([`Projects::set_library_base`], ADR 0036).
+    pub fn library_base(&self) -> Option<&Path> {
+        self.devices.library_base.as_deref()
+    }
+
+    pub fn set_library_base(&mut self, base: PathBuf) {
+        self.devices.library_base = Some(base.clone());
+        for open in &mut self.tabs.open {
+            open.session.set_library_base(base.clone());
+        }
+        if let Some(session) = self.preview.as_mut() {
+            session.set_library_base(base);
+        }
+    }
+
     /// The browser's library.
     pub fn file_library_mut(&mut self) -> &mut suhina_library::Library {
         &mut self.browser.files
@@ -740,7 +768,11 @@ impl Projects {
     /// session is not added to the open projects: the caller adds it ([`Projects::add`]) or shows
     /// it. Returns the session and what could not be read.
     pub fn open_path(&mut self, path: &Path, options: OpenOptions) -> Result<(Session, Vec<String>), CommandError> {
-        let (mut session, mut warnings) = Session::open(path)?;
+        // The library's base is the session's before its first loads ([ADR 0036]): a device's
+        // file state may be a library-relative path, which resolves against it, and a load
+        // that ran without it is built again when the base arrives ([ADR 0036] › 4, the
+        // review).
+        let (mut session, mut warnings) = Session::open_with_base(path, self.devices.library_base.as_deref())?;
         if options.audio {
             warnings.extend(self.load_audio(&mut session));
         }

@@ -127,9 +127,29 @@ fn stock_of(id: &str) -> impl Iterator<Item = &'static suhina_device_registry::S
     suhina_device_registry::stock_presets().iter().filter(move |stock| stock.preset.device == id)
 }
 
+/// The library's own presets for every device (docs/decisions/0036-library-and-shipped-content.md
+/// › 5): the shared walk ([`suhina_session::user_presets`]) mapped by device, so the tree's
+/// rows read the same files in the same order the search does, and a change to the naming
+/// cannot leave the two disagreeing ([ADR 0036] › 5, the review). Read when the tree's rows
+/// are built; a preset saved from a device panel reaches the browser on its next build.
+fn user_presets(library: Option<&Path>) -> HashMap<&'static str, Vec<(PathBuf, String)>> {
+    let Some(library) = library else { return HashMap::new() };
+    let mut out: HashMap<&'static str, Vec<(PathBuf, String)>> = HashMap::new();
+    for (id, path, stem) in suhina_session::user_presets(library) {
+        out.entry(id).or_default().push((path, stem));
+    }
+    out
+}
+
 /// Adds a row per stock preset of the device `id`, inside the node `parent`: a preset is listed under
 /// its device and among the presets, and each row has a node of its own.
-fn stock_rows_of(id: &str, parent: &str, depth: usize, rows: &mut Vec<Row>) {
+fn stock_rows_of(
+    id: &str,
+    parent: &str,
+    depth: usize,
+    user: &HashMap<&str, Vec<(PathBuf, String)>>,
+    rows: &mut Vec<Row>,
+) {
     for stock in stock_of(id) {
         let item = BrowserItem {
             key: format!("stock:{}", stock.key),
@@ -137,6 +157,13 @@ fn stock_rows_of(id: &str, parent: &str, depth: usize, rows: &mut Vec<Row>) {
             kind: ItemKind::Preset,
             plugin: false,
         };
+        let node = child_node(parent, &item.key);
+        rows.push(Row { item, depth, opens: false, open: false, context: None, columns: None, node: Some(node) });
+    }
+    // The user's own presets of the same device, beside the stock ones.
+    for (path, name) in user.get(id).into_iter().flatten() {
+        let item =
+            BrowserItem { key: path.display().to_string(), name: name.clone(), kind: ItemKind::Preset, plugin: false };
         let node = child_node(parent, &item.key);
         rows.push(Row { item, depth, opens: false, open: false, context: None, columns: None, node: Some(node) });
     }
@@ -319,6 +346,10 @@ pub struct BrowserState {
     pub search: String,
     pub category: Category,
     pub place: Option<Place>,
+    /// The library's root (`Documents/Suhina`), where the user's own presets save into
+    /// `Presets/<device id>/` (docs/decisions/0036-library-and-shipped-content.md › 5) and the
+    /// browser lists them beside the stock ones.
+    library: Option<PathBuf>,
     /// Open nodes: folders by path, headings and vendors by name.
     pub open: HashSet<String>,
     pub selected: Vec<BrowserItem>,
@@ -447,6 +478,7 @@ impl Default for BrowserState {
             search: String::new(),
             category: Category::All,
             place: None,
+            library: None,
             open: HashSet::new(),
             selected: Vec::new(),
             anchor: None,
@@ -543,6 +575,18 @@ impl BrowserState {
         self.voices.clear();
         self.tag_counts_revision = None;
         self.generation = self.generation.wrapping_add(1);
+        self.rows_key = None;
+    }
+
+    /// Where the library's own presets save ([`crate::app::App::set_library_base`]); the
+    /// browser's tree reads them when it builds rows.
+    pub fn set_library(&mut self, base: Option<PathBuf>) {
+        self.library = base;
+        self.rows_key = None;
+    }
+
+    /// The rows build again after a user's own preset saved into the library.
+    pub fn refresh(&mut self) {
         self.rows_key = None;
     }
 
@@ -779,16 +823,17 @@ impl BrowserState {
                 self.folder_rows(projects, &folder, &node, 0, &mut rows);
             }
             _ => {
+                let user = user_presets(self.library.as_deref());
                 let devices = matches!(category, Category::All | Category::Instruments | Category::Effects);
                 if devices && category != Category::Effects {
-                    self.device_rows("group:instruments", "Instruments", Role::Instrument, &mut rows);
+                    self.device_rows("group:instruments", "Instruments", Role::Instrument, &user, &mut rows);
                 }
                 if devices && category != Category::Instruments {
-                    self.device_rows("group:effects", "Effects", Role::Effect, &mut rows);
-                    self.device_rows("group:midi-effects", "MIDI Effects", Role::MidiEffect, &mut rows);
+                    self.device_rows("group:effects", "Effects", Role::Effect, &user, &mut rows);
+                    self.device_rows("group:midi-effects", "MIDI Effects", Role::MidiEffect, &user, &mut rows);
                 }
                 if matches!(category, Category::All | Category::Presets) {
-                    self.stock_rows(&mut rows);
+                    self.stock_rows(&user, &mut rows);
                 }
                 // The Plug-ins category lists the instruments or the effects as one list; the
                 // other categories keep the plug-ins in the tree under their vendors.
@@ -820,7 +865,14 @@ impl BrowserState {
 
     /// Adds the heading `name` for the built-in devices of `role` and, when it is open, a row per
     /// device under it.
-    fn device_rows(&self, node: &str, name: &str, role: Role, rows: &mut Vec<Row>) {
+    fn device_rows(
+        &self,
+        node: &str,
+        name: &str,
+        role: Role,
+        user: &HashMap<&str, Vec<(PathBuf, String)>>,
+        rows: &mut Vec<Row>,
+    ) {
         let open = self.open.contains(node);
         rows.push(Row {
             item: heading(node, name),
@@ -843,19 +895,19 @@ impl BrowserState {
             let item =
                 BrowserItem { key: format!("device:{}", info.id), name: info.name.to_string(), kind, plugin: false };
             // A device opens on its presets; the row itself stays the device at its defaults.
-            let has_presets = stock_of(&info.id).next().is_some();
+            let has_presets = stock_of(&info.id).next().is_some() || user.get(&*info.id).is_some_and(|v| !v.is_empty());
             let open = has_presets && self.open.contains(&item.key);
             let parent = item.key.clone();
             rows.push(Row { item, depth: 1, opens: has_presets, open, context: None, columns: None, node: None });
             if open {
-                stock_rows_of(&info.id, &parent, 2, rows);
+                stock_rows_of(&info.id, &parent, 2, user, rows);
             }
         }
     }
 
     /// Adds the heading for the presets that ship with Suhina and, when it is open, a heading per
     /// device that has any and, under an open one, a row per preset.
-    fn stock_rows(&self, rows: &mut Vec<Row>) {
+    fn stock_rows(&self, user: &HashMap<&str, Vec<(PathBuf, String)>>, rows: &mut Vec<Row>) {
         const NODE: &str = "group:stock-presets";
         let open = self.open.contains(NODE);
         rows.push(Row {
@@ -870,7 +922,10 @@ impl BrowserState {
         if !open {
             return;
         }
-        for info in suhina_device_registry::DEVICES.iter().filter(|info| stock_of(&info.id).next().is_some()) {
+        for info in suhina_device_registry::DEVICES
+            .iter()
+            .filter(|info| stock_of(&info.id).next().is_some() || user.get(&*info.id).is_some_and(|v| !v.is_empty()))
+        {
             let node = child_node(NODE, &info.id);
             let open = self.open.contains(&node);
             rows.push(Row {
@@ -883,7 +938,7 @@ impl BrowserState {
                 node: None,
             });
             if open {
-                stock_rows_of(&info.id, &node, 2, rows);
+                stock_rows_of(&info.id, &node, 2, user, rows);
             }
         }
     }

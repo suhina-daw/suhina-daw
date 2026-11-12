@@ -1326,12 +1326,15 @@ pub fn open_chosen(
                 )
                 .map_err(|e| e.to_string())?;
                 // The input device, when one is chosen: a failure leaves the output playing.
+                // Its buffer rides the render thread's block (or, on ASIO, the output's), so
+                // the input's delivery and the engine's reads share the device's cycle.
                 let input = match input::open(
                     &output.host,
                     &choice.input,
                     output.sample_rate,
                     output.asked,
                     Arc::clone(&progress),
+                    output.block,
                 ) {
                     Ok(Some((stream, ring))) => {
                         renderer.set_audio_input(ring, stream.channels, Arc::clone(&stream.underruns));

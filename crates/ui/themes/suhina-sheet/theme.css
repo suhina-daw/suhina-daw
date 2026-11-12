@@ -114,6 +114,7 @@ pan { appearance: knob; }
 icon[kind="arm"] { image: url("assets/arm.svg"); }
 button { image: url("assets/button.svg"); }
 icon[kind="cue"] { image: url("assets/cue.svg"); }
+icon[kind="folder"] { image: url("assets/folder.svg"); }
 fader-cap { image: url("assets/fader.cap.svg"); }
 fader-rail { image: url("assets/fader.rail.svg"); }
 knob-body { image: url("assets/knob.body.svg"); }

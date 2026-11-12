@@ -90,6 +90,17 @@ describe a file. Read only the ones that match your task.
     follow-up issue for any left
     ([docs/workflow.md](docs/workflow.md) › Closing issues).
 
+14. **Shipped content carries its licence record** ([ADR 0036](docs/decisions/0036-library-and-shipped-content.md)
+    › 1, [CONTRIBUTING.md › Shipped content](CONTRIBUTING.md#shipped-content)). Content that
+    rides Suhina (the starter pack, the library's kept files, the presets) ships under a
+    publisher's licence that is GPL-3.0-compatible, with its author, source and licence recorded
+    beside it; a file from a commercial product's library, or one whose terms forbid
+    redistribution (NC, ND, a service's terms that forbid passing files on, a download with no
+    licence), never rides the pack — no exception is negotiated in a pull request's comments.
+    Collected files keep their owners' filenames; Suhina's own content is CC0-1.0; the
+    provenance lives in the `README.md` beside the files, with a publisher's licence text
+    carried beside the files it covers.
+
 ## 2. Where to read more
 
 | When | Read |

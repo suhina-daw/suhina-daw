@@ -1132,6 +1132,7 @@ impl Renderer {
             beats_per_frame,
             self.live.delay(),
             self.input.waiting(),
+            self.input.frames_consumed(),
         );
         // Live notes after the commands, so a track armed in this block hears them.
         self.live.receive(&mut self.graph.chains, &mut self.recorder, self.transport.position);

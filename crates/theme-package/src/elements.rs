@@ -413,7 +413,8 @@ pub const ELEMENTS: &[Element] = &[
     element("meter-level", Part, "A meter's lit part."),
     element("meter-vertical", Part, "A meter standing up, around its level."),
     element("meter-horizontal", Part, "A meter lying down, around its level."),
-    element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists."),
+    element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists.")
+        .artwork(&[default_svg!("folder", "icon[kind=\"folder\"]")]),
     element("text-input", Control, "A text field."),
     element("label", Drawn, "A label."),
     element("separator", Drawn, "A rule between parts; the window's lines over and under the views.")
@@ -602,7 +603,7 @@ mod tests {
             assert!(!roles[..at].contains(role), "the role {role} twice");
         }
         assert_eq!(default_artwork().count(), DEFAULT_ARTWORK);
-        assert_eq!(DEFAULT_ARTWORK, 16);
+        assert_eq!(DEFAULT_ARTWORK, 17);
         // The element that draws a role's default artwork is in the registry.
         for art in artwork().filter(|art| art.default.is_some()) {
             let name = art.selector.split(['[', ':']).next().unwrap_or_default();

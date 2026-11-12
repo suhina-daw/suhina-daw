@@ -313,6 +313,62 @@ fn empty_midi_track_drop_adds_sampler_before_loading_source() {
     assert!(app.plan_drop(&[sample], DropTarget::Chain(TrackId(1)), false).is_none());
 }
 
+/// A device row dropped from the browser starts on the file its folder lists first
+/// ([docs/spec/nam-amp-and-cab.md]): the first pack's first file, from the setting or the
+/// default, in the same command one undo step takes back.
+#[test]
+fn a_device_row_dropped_on_a_track_starts_on_the_first_file_of_its_folder() {
+    use suhina_engine::model::*;
+    let dir = std::env::temp_dir().join(format!("suhina-app-drop-nam-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let irs = dir.join("IRs");
+    for (pack, names) in [("Alpha", vec!["catty.wav", "drum.wav"]), ("Beta", vec!["zebra.wav"])] {
+        std::fs::create_dir_all(irs.join(pack)).unwrap();
+        for name in &names {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: 48_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut writer = hound::WavWriter::create(irs.join(pack).join(name), spec).unwrap();
+            writer.write_sample(16_384_i16).unwrap();
+            drop(writer);
+        }
+    }
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(dir.join("models"), irs.clone());
+
+    let cab = drop::BrowserItem {
+        key: "device:nam-cab-loader".into(),
+        name: "Cab Loader".into(),
+        kind: drop::ItemKind::Effect,
+        plugin: false,
+    };
+    app.drop_items(std::slice::from_ref(&cab), DropTarget::Track(TrackId(1)), false);
+    let session = app.session().unwrap();
+    let channel = session.project().tracks.iter().find(|t| t.id.0 == 1).and_then(|t| t.channel).unwrap();
+    let device = session.project().channel(channel).unwrap().devices.first().unwrap();
+    let state =
+        String::from_utf8(device.state.as_ref().map(|b| b.as_ref().to_vec()).unwrap_or_default()).unwrap_or_default();
+    // The pack the executable carries lists first ([ADR 0036]): a dropped device starts on
+    // its first file, by the key that loads anywhere — the test folder's own packs are
+    // *beside* it, after, where the panels and the starts read them.
+    assert_eq!(state, suhina_device_registry::builtin_file_key("nam-cab-loader", "Blackat Leon S7.wav"));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn the_browser_slides_out_and_in_with_animations_on() {
     let mut app = App::new();
@@ -996,6 +1052,209 @@ fn copies_put_a_line_on_the_system_clipboard() {
         assert!(clipboard_line(command).is_some_and(|line| line.starts_with("Suhina: ")), "{command}");
     }
     assert_eq!(clipboard_line("automation.paste"), None);
+}
+
+#[test]
+fn the_pack_lists_first() {
+    let set = super::shipped_set("nam-amp-modeler").expect("the Amp Modeler ships files");
+    assert_eq!(set.name, "Suhina");
+    assert!(
+        set.files
+            .iter()
+            .any(|(key, name)| key == "builtin:nam-amp-modeler/Suhina Overdrive.nam" && name == "Suhina Overdrive"),
+        "{set:?}"
+    );
+    let cab = super::shipped_set("nam-cab-loader").expect("the Cab Loader ships files");
+    assert_eq!(cab.name, "Suhina");
+    assert!(
+        cab.files.iter().any(|(key, name)| key == "builtin:nam-cab-loader/Synthetic Cabinet Plain.wav"
+            && name == "Synthetic Cabinet Plain")
+    );
+    assert_eq!(super::shipped_set("compressor"), None, "a device without files lists none");
+}
+
+/// A real library after the unpack: the Suhina folders are on the disk too, so the scan's own
+/// "Suhina" set stands beside the shipped one — a device placed there still starts on a file,
+/// and the lists hold both packs and every file. The hand check that read "not selecting
+/// suhina for amp models or cabinets" ran against a build without this.
+#[test]
+fn a_new_device_starts_on_a_file_in_the_library_the_unpacked_or_else_the_pack() {
+    use suhina_engine::model::*;
+
+    let dir = std::env::temp_dir().join(format!("suhina-app-real-library-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("Amp models"), dir.join("Cabinets"));
+    for (id, folder) in [("nam-amp-modeler", &models), ("nam-cab-loader", &irs)] {
+        let suhina = folder.join("Suhina");
+        std::fs::create_dir_all(&suhina).unwrap();
+        for (name, bytes) in suhina_device_registry::pack_files(id) {
+            std::fs::write(suhina.join(name), bytes).unwrap();
+        }
+    }
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    for id in ["nam-amp-modeler", "nam-cab-loader"] {
+        let file = app.device_default_file(id).unwrap_or_else(|| panic!("{id} starts on a file"));
+        // The rows carry the canonical compare form ([ADR 0036] › 5, the review): the
+        // folders' starts fold the same way the rows do.
+        let starts = |folder: &std::path::Path| {
+            file.starts_with(&crate::detail::device_widgets::canonical_paths(folder.display().to_string().as_str()))
+        };
+        assert!(starts(&models) || starts(&irs), "{id}: {file}");
+    }
+    let lists = app.nam_lists();
+    assert_eq!(
+        lists.models.first().map(|set| (set.name.clone(), set.files.len())),
+        Some(("Suhina".to_owned(), 18)),
+        "the unpacked pack lists first either way"
+    );
+    assert_eq!(lists.irs.first().map(|set| (set.name.clone(), set.files.len())), Some(("Suhina".to_owned(), 26)));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A collection arrives grouped by source: its capture folders sit one level under the folder
+/// the setting names and list as their own packs, named with their group
+/// ([docs/spec/nam-amp-and-cab.md] › Folders › Packs). A capture dropped into a collection
+/// after a read lists again with the next read: the check watches the collection's own
+/// folder, no restart asked ([ADR 0036] › 5, the library's folders are the users').
+#[test]
+fn a_grouped_collection_lists_its_capture_packs_and_a_new_capture_lists_again() {
+    use suhina_engine::model::*;
+
+    let dir = std::env::temp_dir().join(format!("suhina-app-grouped-packs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("Amp models"), dir.join("Cabinets"));
+    let capture = models.join("Live Amp Modeler").join("Albion Chime (Slammin Captures)");
+    std::fs::create_dir_all(&capture).unwrap();
+    std::fs::write(capture.join("Chime Low.nam"), b"capture").unwrap();
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    // The collection's stamp is set to a known past instant: the freshness check reads the
+    // folders' own mtimes, and on a filesystem whose stamps tie between the two writes the
+    // capture dropped in later must still change them (a test never depends on how busy the
+    // machine was between the writes).
+    let group = models.join("Live Amp Modeler");
+    filetime::set_file_mtime(&group, filetime::FileTime::from_unix_time(0, 0)).expect("the collection's stamp is set");
+    filetime::set_file_mtime(&capture, filetime::FileTime::from_unix_time(0, 0)).expect("the capture's stamp is set");
+    let lists = app.nam_lists();
+    assert_eq!(
+        lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)"),
+        Some(&crate::detail::device_widgets::Set {
+            name: "Live Amp Modeler / Albion Chime (Slammin Captures)".into(),
+            // The scan's rows carry the canonical compare form ([ADR 0036] › 5, the review):
+            // the expected file folds the same way.
+            files: vec![(
+                crate::detail::device_widgets::canonical_paths(
+                    capture.join("Chime Low.nam").display().to_string().as_str()
+                ),
+                "Chime Low.nam".into()
+            )],
+        }),
+        "the capture pack lists with its group and its file whole"
+    );
+    // A new capture dropped into the collection later: the collection's own folder changed,
+    // so the check reads anew and the pack lists beside the first. The check is throttled
+    // ([ADR 0036] › 5, the review), so the test makes it due — a test never waits on the
+    // clock.
+    let capture_3 = models.join("Live Amp Modeler").join("British Classic (Slammin Captures)");
+    std::fs::create_dir_all(&capture_3).unwrap();
+    std::fs::write(capture_3.join("Classic Bass.nam"), b"capture").unwrap();
+    app.nam_cache.checked = None;
+    let lists = app.nam_lists();
+    assert!(
+        lists.models.iter().any(|set| set.name == "Live Amp Modeler / British Classic (Slammin Captures)"),
+        "a capture added after a read lists again: {:?}",
+        lists.models
+    );
+    // A file dropped inside an existing capture folder later: only the capture's own stamp
+    // changes (its parents' do not), so the watch holds the capture folders too — the pack
+    // lists its file with the next read.
+    std::fs::write(capture.join("Chime High.nam"), b"capture").unwrap();
+    app.nam_cache.checked = None;
+    let lists = app.nam_lists();
+    let chime = lists.models.iter().find(|set| set.name == "Live Amp Modeler / Albion Chime (Slammin Captures)");
+    assert!(
+        chime.is_some_and(|set| set.files.iter().any(|(path, _)| path.ends_with("Chime High.nam"))),
+        "a file added inside a capture folder lists again: {chime:?}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A stock preset that names no file — the trims — lands *loaded* too: the placed Cab Loader
+/// runs the folder's first impulse response with the trim's values beside it, and the undo
+/// takes the whole add back (docs/spec/nam-amp-and-cab.md › The file a device starts on).
+#[test]
+fn a_trim_preset_placed_starts_the_cab_on_the_folders_first_file() {
+    use suhina_engine::model::*;
+
+    let dir = std::env::temp_dir().join(format!("suhina-app-trim-drop-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("Amp models"), dir.join("Cabinets"));
+    for (id, folder) in [("nam-amp-modeler", &models), ("nam-cab-loader", &irs)] {
+        let suhina = folder.join("Suhina");
+        std::fs::create_dir_all(&suhina).unwrap();
+        for (name, bytes) in suhina_device_registry::pack_files(id) {
+            std::fs::write(suhina.join(name), bytes).unwrap();
+        }
+    }
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Audio")],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    app.set_library_base(dir.clone());
+    app.drop_items(
+        std::slice::from_ref(&drop::BrowserItem {
+            key: "stock:nam-cab-loader/rumble-cut".into(),
+            name: "Rumble Cut".into(),
+            kind: drop::ItemKind::Preset,
+            plugin: false,
+        }),
+        DropTarget::Track(TrackId(1)),
+        false,
+    );
+    let session = app.session().unwrap();
+    let channel = session.project().tracks[0].channel.unwrap();
+    let device = session.project().channel(channel).unwrap().devices.first().unwrap();
+    let state = device.state.as_ref().map(|b| String::from_utf8_lossy(b.as_ref()).into_owned()).unwrap_or_default();
+    assert_eq!(state, "Cabinets/Suhina/Blackat Leon S7.wav", "the start file stores relative to the library");
+    let cut = device.params.iter().find(|p| p.id == "cutBass").map(|p| p.value).unwrap_or_default();
+    assert_eq!(cut, -6.0, "the trim's values ride beside the file");
+    // One undo takes the whole add (the file and the values) back.
+    app.run(&crate::kit::widgets::Action::new("edit.undo", serde_json::json!({})));
+    let channel = app.session().unwrap().project().tracks[0].channel.unwrap();
+    assert!(
+        app.session().unwrap().project().channel(channel).unwrap().devices.is_empty(),
+        "the device with its file went"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 /// A time selection painted in one row of a stack: the edit keys name that row's clips, so

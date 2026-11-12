@@ -220,12 +220,21 @@ enum AfterLeaving {
 /// with its `extension` files name-sorted (the pack is skipped when it holds none), then the
 /// files beside the packs as `(entered directly)`. At most 2000 files a pack. The folder is
 /// re-read only when `folder_writes` changed; a pack, when its own writes changed.
+/// The folder's packs, the two shapes the everyday library carries
+/// ([docs/spec/nam-amp-and-cab.md] › Folders › Packs): a pack-sized folder directly under the
+/// folder in Settings, files right in it (the unpacked shipped pack); or a collection that
+/// arrives grouped by source, whose capture folders sit one level deeper and list as their
+/// own packs, named with their group (`Live Amp Modeler / Albion Chime (Slammin Captures)`)
+/// — no rearranging for the tool. The files beside the packs at the top form the loose pack.
+/// Also returns the folder and its top-level folders, each with their write time at the read:
+/// the check below reads them again, so a capture added inside a collection lists again
+/// ([ADR 0036] › 5, the library's folders are the users').
 fn scan_sets(
     folder: &std::path::Path,
     extension: &str,
     previous: &[crate::detail::device_widgets::Set],
     pack_writes: &mut HashMap<String, Option<std::time::SystemTime>>,
-) -> Vec<crate::detail::device_widgets::Set> {
+) -> (Vec<crate::detail::device_widgets::Set>, Vec<(String, Option<std::time::SystemTime>)>) {
     const CAP: usize = 2000;
     let files_of = |dir: &std::path::Path| -> Vec<(String, String)> {
         let mut entries =
@@ -241,37 +250,89 @@ fn scan_sets(
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
-                right.then_some((path.display().to_string(), name))
+                // The rows carry the canonical form ([ADR 0036] › 5, the review): a panel's
+                // per-frame compares read them as they are, and the state's joined form is
+                // the only side that folds.
+                right.then_some((
+                    crate::detail::device_widgets::canonical_paths(path.display().to_string().as_str()),
+                    name,
+                ))
             })
             .take(CAP)
             .collect()
     };
-    let mut packs: Vec<(String, Vec<(String, String)>)> = Vec::new();
-    let mut folders_here: Vec<std::path::PathBuf> = std::fs::read_dir(folder)
-        .map(|entries| entries.flatten().map(|entry| entry.path()).filter(|path| path.is_dir()).collect())
-        .unwrap_or_default();
-    folders_here
-        .sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default());
-    for pack_folder in folders_here {
-        let name = pack_folder.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-        let writes = std::fs::metadata(&pack_folder).ok().and_then(|m| m.modified().ok());
-        let key = pack_folder.display().to_string();
+    let mut pack_of = |dir: &std::path::Path, name: String| -> Option<crate::detail::device_widgets::Set> {
+        let writes = std::fs::metadata(dir).ok().and_then(|m| m.modified().ok());
+        let key = dir.display().to_string();
         let scan = pack_writes.get(&key) != Some(&writes);
         pack_writes.insert(key, writes);
         let files = if scan {
-            files_of(&pack_folder)
+            files_of(dir)
         } else {
-            previous.iter().find(|pack| pack.name == name).map(|pack| pack.files.clone()).unwrap_or_default()
+            previous.iter().find(|pack| pack.name == name).map_or_else(Vec::new, |pack| pack.files.clone())
         };
-        if let Some(files) = (!files.is_empty()).then_some(files) {
-            packs.push((name, files));
+        (!files.is_empty()).then_some(crate::detail::device_widgets::Set { name, files })
+    };
+    let mut watch =
+        vec![(folder.display().to_string(), std::fs::metadata(folder).ok().and_then(|m| m.modified().ok()))];
+    let mut packs: Vec<crate::detail::device_widgets::Set> = Vec::new();
+    let mut groups: Vec<std::path::PathBuf> = std::fs::read_dir(folder)
+        .map(|entries| entries.flatten().map(|entry| entry.path()).filter(|path| path.is_dir()).collect())
+        .unwrap_or_default();
+    groups.sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default());
+    for group in groups {
+        let group_name = group.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        watch.push((group.display().to_string(), std::fs::metadata(&group).ok().and_then(|m| m.modified().ok())));
+        if let Some(pack) = pack_of(&group, group_name.clone()) {
+            packs.push(pack);
+        }
+        let mut here: Vec<std::path::PathBuf> = std::fs::read_dir(&group)
+            .map(|entries| entries.flatten().map(|entry| entry.path()).filter(|path| path.is_dir()).collect())
+            .unwrap_or_default();
+        here.sort_by_key(|path| path.file_name().map(|name| name.to_string_lossy().to_lowercase()).unwrap_or_default());
+        for capture in here {
+            let capture_name = capture.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+            // A capture folder's own writes (a file the user dropped in it) are watched too:
+            // its mtime is what changes, its parents' do not.
+            watch.push((
+                capture.display().to_string(),
+                std::fs::metadata(&capture).ok().and_then(|m| m.modified().ok()),
+            ));
+            if let Some(pack) = pack_of(&capture, format!("{group_name} / {capture_name}")) {
+                packs.push(pack);
+            }
         }
     }
     let loose = files_of(folder);
     if !loose.is_empty() {
-        packs.push((crate::detail::device_widgets::LOOSE_PACK.to_owned(), loose));
+        packs.push(crate::detail::device_widgets::Set {
+            name: crate::detail::device_widgets::LOOSE_PACK.to_owned(),
+            files: loose,
+        });
     }
-    packs.into_iter().map(|(name, files)| crate::detail::device_widgets::Set { name, files }).collect()
+    (packs, watch)
+}
+
+/// The shipped pack's name, what the panels always list first ([ADR 0036]).
+/// The shipped files of the device `id`, `(key, shown name)` ([ADR 0036]): the key the file
+/// command takes (a shipped file's state), the name the file's own shows in the lists.
+fn shipped_files(id: &str) -> Vec<(String, String)> {
+    let extension = format!(".{}", suhina_device_registry::file_extension(id).unwrap_or_default());
+    suhina_device_registry::pack_files(id)
+        .into_iter()
+        .map(|(name, _)| {
+            let key = suhina_device_registry::builtin_file_key(id, name);
+            (key, name.strip_suffix(&extension).unwrap_or(name).to_string())
+        })
+        .collect()
+}
+
+/// The shipped pack as one Set, for `nam_lists` ([ADR 0036] › the starter pack). `None` when
+/// the device ships no files.
+fn shipped_set(id: &str) -> Option<crate::detail::device_widgets::Set> {
+    let files = shipped_files(id);
+    (!files.is_empty())
+        .then_some(crate::detail::device_widgets::Set { name: suhina_device_registry::SHIPPED_PACK.to_string(), files })
 }
 
 /// A device's file path (its state as UTF-8), when it is a file-running one
@@ -293,18 +354,33 @@ fn device_file_path(device: &suhina_engine::model::Device) -> Option<String> {
 const METERS_SETTLE_SECONDS: f64 = 0.3;
 
 /// The NAM folders' packs the panels list ([docs/spec/nam-amp-and-cab.md] › Folders › Packs),
-/// with each folder's writes when they were read and each pack's files keyed by the pack's
-/// path with its writes.
+/// and, per folder, the directories the last walk visited with their write times at the
+/// visit: the check below reads each again, so a change inside any of them (a capture
+/// dropped in a group's folder, a pack rename) lists again.
 #[derive(Default)]
 struct NamCache {
     models: Vec<crate::detail::device_widgets::Set>,
     irs: Vec<crate::detail::device_widgets::Set>,
-    models_writes: Option<std::time::SystemTime>,
-    irs_writes: Option<std::time::SystemTime>,
-    /// A pack's write time by its folder's path, so a new capture in one pack re-reads only
-    /// that pack.
+    /// The listing folders the last read saw, each with its write time then: the folder in
+    /// Settings and its top-level folders. The next check reads them again; a change inside
+    /// any of them (a capture dropped into a collection, a pack folder made) reads again.
+    models_watch: Vec<(String, Option<std::time::SystemTime>)>,
+    irs_watch: Vec<(String, Option<std::time::SystemTime>)>,
+    /// A pack folder's write time by its path, so a scan re-reads only the packs that
+    /// changed.
     pack_writes: HashMap<String, Option<std::time::SystemTime>>,
+    /// When the watch was last checked: the check stats every watched folder, and the detail
+    /// area draws the lists every frame, so the check runs at most
+    /// [`NAM_WATCH_INTERVAL`] apart ([ADR 0036] › 5, the review). `None` until the first
+    /// check, and cleared again by the tests, which must see a write the moment they make it.
+    checked: Option<std::time::Instant>,
 }
+
+/// How long a watch check waits before it reads the watched folders' stamps again: a change
+/// inside any of them shows in the panels within a quarter of a second, and a frame does not
+/// spend a syscall per watched folder on folders that did not change ([ADR 0036] › 5, the
+/// review).
+const NAM_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// The window's state.
 /// What auto-arm (Settings › MIDI, #834) last acted on.
@@ -577,6 +653,9 @@ pub struct App {
     data_default_folder: PathBuf,
     /// The NAM models' and IR folders while the settings leave them empty.
     nam_default_folders: (PathBuf, PathBuf),
+    /// The library's root, where a set-library-relative device file state reads ([ADR 0036] ›
+    /// it); the panel rows resolve a relative state against it.
+    library_base: Option<PathBuf>,
     /// The NAM folders' files, read again when either folder's writes change
     /// ([docs/spec/nam-amp-and-cab.md] › Folders).
     nam_cache: NamCache,
@@ -618,7 +697,8 @@ pub struct App {
     next_ram: Option<f64>,
     /// Blur and glass even with animations off (`suhina-theme-render`, whose scenes are still).
     effects_when_still: bool,
-    /// The audio's health counters last traced: device underruns, late stretched frames and late plug-in blocks.
+    /// The audio's health counters last traced: device underruns, late stretched frames and late
+    /// plug-in blocks, and the input's.
     audio_traced: (u64, u64, u64, u64, u64),
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
@@ -776,7 +856,8 @@ impl App {
             default_folders: (PathBuf::from("Projects"), PathBuf::from("Templates")),
             themes_default_folder: PathBuf::from("themes"),
             data_default_folder: PathBuf::new(),
-            nam_default_folders: (PathBuf::from("NAM models"), PathBuf::from("IRs")),
+            nam_default_folders: (PathBuf::from("Sounds/NAM/Amp models"), PathBuf::from("Sounds/NAM/Cabinets")),
+            library_base: None,
             nam_cache: NamCache::default(),
             window_title: String::new(),
             browser: BrowserState::default(),
@@ -855,6 +936,15 @@ impl App {
         // Its tag ids are the new library's own: a number the old one used can name another
         // tag there, so the browser keeps nothing by id ([#1254] review).
         self.browser.forget_tags();
+    }
+
+    /// The library's root (`Documents/Suhina`, docs/decisions/0036-library-and-shipped-content.md › 5):
+    /// the user's own presets save into its `Presets/<device id>/` folders, and the browser
+    /// lists them beside the stock ones.
+    pub fn set_library_base(&mut self, base: PathBuf) {
+        self.library_base = Some(base.clone());
+        self.browser.set_library(Some(base.clone()));
+        self.projects.set_library_base(base);
     }
 
     /// The open projects, to change (the browser's library, for the app).
@@ -1327,10 +1417,10 @@ impl App {
         let (was_device, was_stretched, was_misses, was_blocked, was_input) = self.audio_traced;
         if running
             || device > was_device
+            || input > was_input
             || stretched > was_stretched
             || misses > was_misses
             || blocked > was_blocked
-            || input > was_input
             || cpu >= 700
         {
             suhina_plugins::trace!(
@@ -1420,9 +1510,25 @@ impl App {
         self.default_folders = (projects, templates);
     }
 
+    /// The file a file-backed device starts on ([docs/spec/nam-amp-and-cab.md]): the first
+    /// pack's first file from the folder it lists from — the setting's or the default's — when
+    /// that folder holds any. A drag or a quick add offers it with the device, so a new NAM Amp
+    /// Modeler or Cab Loader lands loaded.
+    pub fn device_default_file(&mut self, id: &str) -> Option<String> {
+        let extension = suhina_device_registry::file_extension(id)?;
+        let lists = self.nam_lists();
+        let packs = match extension {
+            "nam" => lists.models.as_slice(),
+            "wav" => lists.irs.as_slice(),
+            _ => return None,
+        };
+        packs.first()?.files.first().map(|(path, _)| path.clone())
+    }
+
     /// Where the NAM models' and IR folders sit when the settings leave them empty
-    /// ([docs/spec/nam-amp-and-cab.md]): `Suhina/NAM models` and `Suhina/IRs` in the user's
-    /// documents. The app makes both at start when they are not there.
+    /// ([docs/spec/nam-amp-and-cab.md]): `Suhina/Sounds/NAM/Amp models` and
+    /// `Suhina/Sounds/NAM/Cabinets` in the user's documents folder. The app makes both at
+    /// start when they are not there.
     pub fn set_nam_default_folders(&mut self, models: PathBuf, irs: PathBuf) {
         self.nam_default_folders = (models, irs);
     }
@@ -1434,23 +1540,86 @@ impl App {
         let (models_folder, irs_folder) = (self.nam_models_folder(), self.ir_folder());
         let mut cache = std::mem::take(&mut self.nam_cache);
         let mut folders = [
-            (&models_folder, "nam", &mut cache.models, &mut cache.models_writes),
-            (&irs_folder, "wav", &mut cache.irs, &mut cache.irs_writes),
+            (&models_folder, "nam", &mut cache.models, &mut cache.models_watch),
+            (&irs_folder, "wav", &mut cache.irs, &mut cache.irs_watch),
         ];
-        for (folder, extension, sets, cache_writes) in folders.iter_mut() {
-            let writes = std::fs::metadata(&**folder).ok().and_then(|m| m.modified().ok());
-            let scan = writes != **cache_writes || (**sets).is_empty();
-            **cache_writes = writes;
+        // The stamps' read runs at most [`NAM_WATCH_INTERVAL`] apart — the detail area draws
+        // these lists every frame, and a frame does not stat every watched folder
+        // ([ADR 0036] › 5, the review). The cheap checks stay every frame: empty lists (a
+        // device just added reads at once) and the folder the settings name.
+        let due = cache.checked.is_none_or(|at| at.elapsed() >= NAM_WATCH_INTERVAL);
+        for (folder, extension, sets, watch) in folders.iter_mut() {
+            // The watch holds the folder, its top-level folders and their capture folders with
+            // their write times at the last read; a change inside any of them (a new pack, a
+            // capture in a collection, a file in a capture) reads the listing anew. A pack's
+            // files re-read only when the pack's own folder changed
+            // ([docs/spec/nam-amp-and-cab.md] › Folders › Packs). The
+            // folder itself changed since the last read (the setting moved, or the default
+            // folder went): the listing reads again, not the last read's folder's files.
+            let reading = due.then(|| {
+                (**watch)
+                    .iter()
+                    .map(|(path, _)| (path.clone(), std::fs::metadata(path).ok().and_then(|m| m.modified().ok())))
+                    .collect::<Vec<_>>()
+            });
+            let scan = (**sets).is_empty()
+                || reading.as_ref().is_some_and(|reading| reading != &**watch)
+                || (**watch).first().is_some_and(|w| w.0 != folder.display().to_string());
+            let previous = std::mem::take(&mut **sets);
             if scan {
-                let previous = std::mem::take(&mut **sets);
-                **sets = scan_sets(folder, extension, &previous, &mut cache.pack_writes);
+                let (fresh, seen) = scan_sets(folder, extension, &previous, &mut cache.pack_writes);
+                **sets = fresh;
+                **watch = seen;
+            } else {
+                **sets = previous;
             }
         }
+        if due {
+            cache.checked = Some(std::time::Instant::now());
+        }
+        // The shipped pack lists first, before every folder's own, whatever the settings say
+        // ([ADR 0036] › the starter pack). Its key is what the file command takes. A folder that
+        // already holds part of it (the unpack did, or the user carried them) gives its own
+        // "Suhina" rows: those stand for the files the folder holds, and every factory file it
+        // does not hold joins them after, keyed so the embedded copy runs it.
+        let shipped_first = |rows: &mut Vec<crate::detail::device_widgets::Set>, id: &str| {
+            let Some(shipped) = shipped_set(id) else { return };
+            match rows.iter().position(|set| set.name == suhina_device_registry::SHIPPED_PACK) {
+                Some(at) => {
+                    let mut set = rows.remove(at);
+                    // The disk rows keep their names; a factory file the folder does not carry
+                    // goes after them under its `builtin:` key.
+                    let held: Vec<String> = set
+                        .files
+                        .iter()
+                        .map(|(path, _)| {
+                            std::path::Path::new(path)
+                                .file_name()
+                                .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned())
+                        })
+                        .collect();
+                    set.files.extend(shipped.files.into_iter().filter(|(key, _)| {
+                        let name =
+                            std::path::Path::new(key).file_name().unwrap_or_default().to_string_lossy().into_owned();
+                        !held.contains(&name)
+                    }));
+                    rows.insert(0, set);
+                }
+                None => {
+                    let mut ahead = vec![shipped];
+                    ahead.extend(std::mem::take(rows));
+                    *rows = ahead;
+                }
+            }
+        };
+        shipped_first(&mut cache.models, "nam-amp-modeler");
+        shipped_first(&mut cache.irs, "nam-cab-loader");
         let lists = crate::detail::device_widgets::Lists {
             models: cache.models.clone(),
             irs: cache.irs.clone(),
             names: self.nam_names(),
             notes: self.nam_notes(),
+            library: self.library_base.clone(),
         };
         self.nam_cache = cache;
         lists
@@ -2622,6 +2791,13 @@ impl App {
                         }
                     }
                     self.select_tracks(tracks);
+                }
+                // A saved preset is said in the status bar, where the library writes land
+                // (`device.savePreset`, docs/decisions/0036-library-and-shipped-content.md › 5).
+                if action.id == "device.savePreset" {
+                    self.browser.refresh();
+                    let name = result["name"].as_str().unwrap_or_default();
+                    self.status = Status::Hint(format!("Preset {name} saved into the library's Presets folder"));
                 }
                 // A new track is selected and scrolled into view (#918).
                 if action.id == "track.add" {
