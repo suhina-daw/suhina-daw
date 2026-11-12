@@ -4,7 +4,7 @@ read_when: library, Documents Suhina, Suhina pack, factory pack, starter pack, P
 type: decision
 status: accepted
 built: partly
-last_verified: 2026-11-08
+last_verified: 2026-11-12
 ---
 
 # 0036: The library and the shipped content

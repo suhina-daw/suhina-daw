@@ -4,7 +4,7 @@ read_when: VST2, VST 2, AEffect, ABI, opcode, dispatcher, audioMaster, clean-roo
 type: decision
 status: accepted
 built: partly
-last_verified: 2026-11-02
+last_verified: 2026-11-12
 ---
 
 # 0022: VST2: where the interface description comes from

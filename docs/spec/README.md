@@ -3,7 +3,7 @@ description: What the specs are and how they are written (clean-room, observed v
 read_when: writing a spec, clean-room observation, where specs go
 type: spec
 status: current
-last_verified: 2026-10-11
+last_verified: 2026-11-12
 ---
 
 # Specs
