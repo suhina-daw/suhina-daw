@@ -110,6 +110,46 @@ project-tabs,
 toolbar { border-width: 0 0 1px; }
 status-bar { border-width: 1px 0 0; }
 
+/* The bars lay their items out in a row (#1372): the app gives the items in its order, each as wide
+   as it draws, and the sheet places them. `display: none` takes an item away, its input with it. A
+   narrow bar gives way in the app's order: it takes the next, sparser set of items until one fits.
+   A divider between items is a `separator[kind="bar"]`. */
+toolbar,
+group,
+status-bar,
+project-tabs,
+application-bar,
+piano-roll-toolbar { display: flex; align-items: center; }
+/* An item keeps the width the app gives it; a group or the bar too narrow for it gives way. */
+toolbar-module,
+bar-item,
+project-tab,
+piano-tool,
+separator,
+space { flex-shrink: 0; }
+flexible-space { flex: 1; }
+/* The toolbar: its start, the transport and the position in the middle, and its end. The start and
+   the end share the room left over, so the middle stays in the middle. */
+toolbar { padding: 0 6px; gap: 6px; }
+group[kind="toolbar-start"],
+group[kind="toolbar-end"] { flex: 1; gap: 6px; }
+group[kind="toolbar-end"] { justify-content: flex-end; }
+toolbar-module[kind="browser"] { margin-right: -2px; }
+/* The application bar: its start, its centre and its end (the window's buttons, where Suhina draws
+   them). The start and the end share the room left, so the centre stays in the middle. */
+application-bar { padding-left: 8px; align-items: stretch; }
+application-bar group { align-items: stretch; gap: 4px; min-width: 0; }
+group[kind="app-bar-start"],
+group[kind="app-bar-end"] { flex: 1; }
+group[kind="app-bar-end"] { justify-content: flex-end; }
+application-bar bar-item { min-width: 0; flex-shrink: 1; }
+/* The project tabs, each as wide as its name, a line between them. */
+project-tabs { gap: 1px; align-items: stretch; }
+/* The status bar: its message, which takes the room left and is cut short, and the counts. */
+status-bar { padding: 0 6px; gap: 6px; }
+bar-item[kind="status-message"] { flex: 1; min-width: 0; align-self: stretch; }
+bar-item[kind="status-counts"] { align-self: stretch; }
+
 /* Default artwork. Each image takes its colour only from its element's `color` (currentColor), so a
    copy of it works in any theme. A theme replaces one with its own rule for the same element. */
 icon[kind="midi"] { image: url("suhina:track.midi.svg"); }

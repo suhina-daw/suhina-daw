@@ -153,28 +153,45 @@ impl App {
         style_class: &crate::kit::element::Entered,
         actions: &mut Vec<Action>,
     ) {
+        use crate::kit::native_css::row::{self, Bar, Item};
         let mut styled_ui = style_class.ui(ui);
         let ui = &mut *styled_ui;
-        // The row's own background, over the window's (#1233); the tabs in its content box (#1336).
-        // Without a sheet, the native line under the row.
-        let bar = if style_class.style().is_some() {
-            style_class.paint(ui.painter(), ui.max_rect()).content
+        // The row's own background, over the window's (#1233); without a sheet, the native line
+        // under the row. The tabs are laid out in its whole box, inside its border and padding.
+        let whole = ui.max_rect();
+        if style_class.style().is_some() {
+            style_class.paint(ui.painter(), whole);
         } else {
-            super::native_line(ui.painter(), style_class, ui.max_rect())
-        };
-        ui.allocate_rect(bar, Sense::hover());
-        let painter = ui.painter_at(bar);
+            super::native_line(ui.painter(), style_class, whole);
+        }
+        ui.allocate_rect(whole, Sense::hover());
+        let painter = ui.painter_at(whole);
         let active = self.projects.active();
-        let mut x = bar.left();
-        for id in self.projects.ids() {
-            let name = self.projects.name(id).unwrap_or("Untitled").to_string();
-            // A dot after the name while the project has unsaved changes.
-            let unsaved = self.projects.get(id).is_some_and(Session::has_unsaved_changes);
-            let shown = if unsaved { format!("{name} •") } else { name.clone() };
-            let galley = widgets::fitted(&painter, &shown, theme::ui_font(theme::TEXT), theme::text_primary(), 180.0);
-            let width = galley.size().x + PAD * 2.0 + 16.0;
-            let tab = Rect::from_min_size(Pos2::new(x, bar.top()), Vec2::new(width, bar.height()));
-            x = tab.right() + 1.0;
+        // Each tab as wide as its name, its close button inside it, in one row (#1372).
+        let tabs: Vec<_> = self
+            .projects
+            .ids()
+            .into_iter()
+            .map(|id| {
+                let name = self.projects.name(id).unwrap_or("Untitled").to_string();
+                let unsaved = self.projects.get(id).is_some_and(Session::has_unsaved_changes);
+                let shown = if unsaved { format!("{name} •") } else { name.clone() };
+                let galley =
+                    widgets::fitted(&painter, &shown, theme::ui_font(theme::TEXT), theme::text_primary(), 180.0);
+                (id, name, galley)
+            })
+            .collect();
+        let items: Vec<_> = tabs
+            .iter()
+            .map(|(id, _, galley)| {
+                Item::new("project-tab").flag("selected", Some(*id) == active).width(galley.size().x + PAD * 2.0 + 16.0)
+            })
+            .collect();
+        let Some(laid) = row::row(&Bar::new("project-tabs", whole.size()), &items) else { return };
+        for (index, (id, name, galley)) in tabs.into_iter().enumerate() {
+            let Some(tab) = laid.at(index, whole.min) else { continue };
+            let element =
+                crate::kit::element::PROJECT_TAB.attr(crate::kit::element::Selected, Some(id) == active).enter();
             let close = Rect::from_center_size(Pos2::new(tab.right() - PAD - 4.0, tab.center().y), Vec2::splat(12.0));
             let response = widgets::button_area(ui, tab, Id::unique(("tab", id.0)), format!("Tab {name}"));
             let close_response =
@@ -190,12 +207,9 @@ impl App {
                 theme::panel_hover(),
                 widgets::hover(ui, &response),
             );
-            painter.rect_filled(
-                tab,
-                0.0,
-                motion::mix(idle, crate::kit::style_class::surface_or(theme::panel_background()), lit),
-            );
-            let text = motion::mix(theme::text_secondary(), theme::text_primary(), lit);
+            let fill = motion::mix(idle, crate::kit::style_class::surface_or(theme::panel_background()), lit);
+            element.paint_with(&painter, tab, crate::kit::element::Native { radius: 0.0, fill });
+            let text = element.color_or(motion::mix(theme::text_secondary(), theme::text_primary(), lit));
             widgets::paint_text(
                 &painter,
                 Pos2::new(tab.left() + PAD, tab.center().y - galley.size().y / 2.0),
@@ -207,11 +221,10 @@ impl App {
             for (a, b) in [(Vec2::new(-3.0, -3.0), Vec2::new(3.0, 3.0)), (Vec2::new(-3.0, 3.0), Vec2::new(3.0, -3.0))] {
                 painter.line_segment([c + a, c + b], theme::hairline(cross));
             }
-            painter.vline(tab.right() + 0.5, bar.y_range(), theme::hairline(theme::border()));
+            painter.vline(tab.right() + 0.5, tab.y_range(), theme::hairline(theme::border()));
         }
     }
 
-    /// The question asked when a project is dropped while another is open.
     pub(super) fn open_prompt_bar(&mut self, ui: &mut Ui) {
         let Some(path) = self.open_prompt.clone() else { return };
         let bar = ui.max_rect();

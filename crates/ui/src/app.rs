@@ -81,7 +81,8 @@ use crate::settings::{
 
 use self::actions::*;
 use self::browser_panel::*;
-use self::control_bar::*;
+#[cfg(test)]
+use self::control_bar::ram_text;
 use self::drops::*;
 use self::keys::*;
 
@@ -3198,8 +3199,9 @@ impl App {
                 .show_separator_line(false)
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
-                    let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO);
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+                    // Its items are laid out in its whole box, inside its border and padding (#1372).
+                    bar_box(ui, &bar, egui::CornerRadius::ZERO);
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(ui.max_rect()), |ui| {
                         application_bar::show(ui, &bar, self.settings.view, &project_info, &timing)
                     })
                 });
@@ -3255,8 +3257,9 @@ impl App {
                 } else {
                     egui::CornerRadius::ZERO
                 };
-                let inside = bar_box(ui, &bar, bottom);
-                ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.status_bar(ui, &bar, grid.as_ref()))
+                // Its items are laid out in its whole box, inside its border and padding (#1372).
+                bar_box(ui, &bar, bottom);
+                self.status_bar(ui, &bar, grid.as_ref())
             });
         }
         self.frame_trace.mark("bars");

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use egui::{Color32, Rect, Vec2};
+use egui::{Color32, Rect};
 use suhina_style::{
     motion::{self, Animation, Frames, Transition},
     property::Property,
@@ -27,6 +27,7 @@ mod native;
 pub(super) use native::user_agent;
 pub use native::user_agent_color;
 mod paint;
+pub mod row;
 mod shadows;
 mod text;
 mod window;
@@ -356,13 +357,13 @@ struct Engine {
     resolved: HashMap<u64, u64>,
     /// Whether this frame hit a limit of the tree, which the trace was told of.
     limited: bool,
-    toolbar: Option<(String, Vec<Module>)>,
+    /// Laid-out bar rows by their input (#1372), bounded.
+    rows: HashMap<String, row::Row>,
     window: Option<(String, Window)>,
     /// Whether the browser and the detail area follow their splitters, by the window's size and
     /// which regions are there: a splitter drag changes only the content sizes, which lays the
     /// window out again without probing the flags anew.
     window_follows: Option<(String, (bool, bool))>,
-    toolbar_layout: bool,
     collecting: bool,
     nodes: Vec<StyleNode>,
     parents: Vec<usize>,
@@ -1038,7 +1039,7 @@ impl Engine {
         self.swatches.clear();
         self.body = None;
         self.resolved.clear();
-        self.toolbar = None;
+        self.rows.clear();
         self.window = None;
         self.window_follows = None;
     }
@@ -1233,80 +1234,6 @@ pub fn settings_of(path: &[super::element::Name]) -> Option<Computed> {
             cache.found.insert(key, found.clone());
         }
         found
-    })
-}
-
-/// One real toolbar child. Drawing and input use this same Taffy rectangle.
-#[derive(Clone, Debug)]
-pub struct Module {
-    pub name: String,
-    pub rect: Rect,
-    pub style: Computed,
-}
-
-pub fn toolbar_layout_requested() -> bool {
-    ENGINE.with(|engine| engine.borrow().toolbar_layout)
-}
-
-/// Flex/Grid layout for actual ordered, visible module ids. No theme-supplied markup.
-///
-/// `size` is the toolbar's whole box; a module is `module_height` tall where the sheet gives no
-/// height, the height of the toolbar's content box (its box less its border and padding).
-pub fn toolbar(order: &[(String, f32)], size: Vec2, module_height: f32) -> Option<Vec<Module>> {
-    if order.len() > skin::MODULES.len()
-        || order.iter().any(|(id, _)| !skin::MODULES.contains(&id.as_str()))
-        || !size.is_finite()
-    {
-        return None;
-    }
-    ENGINE.with(|engine| {
-        let mut engine = engine.borrow_mut();
-        engine.source.as_ref()?;
-        if !same_source(engine.source.as_ref()) {
-            return None;
-        }
-        let key = format!("{order:?}:{size:?}:{module_height:?}");
-        if let Some((previous, modules)) = &engine.toolbar
-            && previous == &key
-        {
-            return Some(modules.clone());
-        }
-        let mut defaults = format!(
-            "toolbar {{ display:flex; width:{}px; height:{}px; gap:4px; align-items:center; }} toolbar-module {{ flex-shrink:0; height:{}px; }}",
-            size.x.clamp(1.0, 16384.0),
-            size.y.clamp(1.0, 16384.0),
-            module_height.clamp(24.0, 16384.0)
-        );
-        for (id, width) in order {
-            defaults.push_str(&format!("#{id} {{ width:{}px; }}", width.clamp(1.0, 4096.0)));
-        }
-        let mut elements = vec![native::element("toolbar", Some("toolbar"), None, Some(1))];
-        for (id, _) in order {
-            elements.push(native::element("toolbar-module", Some(id), None, Some(2)));
-        }
-        let laid = native::layout(&engine, elements, &defaults, [size.x, size.y])?;
-        // The toolbar's own padding pads Suhina's toolbar, in its content box, as its border does
-        // (#1336): only its layout properties (display, flex, grid, gap, sizes) and its modules'
-        // ask for the theme's layout.
-        const PADDING: [Property; 4] =
-            [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft];
-        engine.toolbar_layout = laid
-            .items
-            .iter()
-            .enumerate()
-            .any(|(index, (_, style))| native::requests_layout(style, if index == 0 { &PADDING } else { &[] }));
-        // The modules' places in the toolbar's own box: the toolbar lies in the window's grid,
-        // whose padding, gaps and rows above it say nothing about where its modules go.
-        let origin = laid.items.first().and_then(|(rect, _)| *rect).map_or(Vec2::ZERO, |rect| rect.min.to_vec2());
-        let mut modules = Vec::new();
-        for ((name, _), (rect, style)) in order.iter().zip(laid.items.into_iter().skip(1)) {
-            let Some(rect) = rect.map(|rect| rect.translate(-origin)) else { continue };
-            if style.visible {
-                modules.push(Module { name: name.clone(), rect, style });
-            }
-        }
-        engine.toolbar = Some((key, modules.clone()));
-        Some(modules)
     })
 }
 

@@ -593,8 +593,13 @@ names! {
     MENU_BAR = "menu-bar";
     MENU = "menu";
     PROJECT_TABS = "project-tabs";
+    PROJECT_TAB = "project-tab";
     TOOLBAR = "toolbar";
     TOOLBAR_MODULE = "toolbar-module";
+    GROUP = "group";
+    SPACE = "space";
+    FLEXIBLE_SPACE = "flexible-space";
+    BAR_ITEM = "bar-item";
     STATUS_BAR = "status-bar";
     NOTICE_BAR = "notice-bar";
     WORKSPACE_PANEL = "workspace-panel";
@@ -633,6 +638,7 @@ names! {
     CLIP_EDITOR = "clip-editor";
     EDITOR_TAB = "editor-tab";
     PIANO_ROLL = "piano-roll";
+    PIANO_ROLL_TOOLBAR = "piano-roll-toolbar";
     PIANO_GRID = "piano-grid";
     PIANO_ROW = "piano-row";
     PIANO_ROW_BLACK = "piano-row-black";

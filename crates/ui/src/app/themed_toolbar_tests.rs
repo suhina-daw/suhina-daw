@@ -178,7 +178,6 @@ fn dark_gloss_example_keeps_native_layout_and_transport_commands() {
     harness.run();
     assert_eq!(play, harness.get_by_label("Play").rect());
     assert_eq!(tempo, harness.get_by_label("Tempo").rect());
-    assert!(!crate::kit::native_css::toolbar_layout_requested());
     harness.get_by_label("Play").click();
     harness.run();
     assert!(harness.state().actions.iter().any(|action| action.id == "transport.play"));
@@ -278,7 +277,7 @@ fn dragging_real_transport_snaps_and_saves_only_on_done_and_cancel_discards() {
 #[test]
 fn css_toolbar_targets_keep_native_commands_with_svg_artwork() {
     let mut app = App::new();
-    let layout = Toolbar {
+    let layout = skin::Toolbar {
         hidden: skin::MODULES
             .iter()
             .filter(|id| !["tempo", "transport", "mapping"].contains(id))
@@ -338,25 +337,46 @@ fn toolbar_module_backgrounds_follow_the_sheet() {
     assert!(fills.iter().any(|(_, fill)| *fill == egui::Color32::from_rgb(0x10, 0x20, 0x30)), "{fills:?}");
 }
 
-/// Padding on the toolbar pads Suhina's own toolbar, in its content box: it does not switch to
-/// the theme's layout, whose view switches are framed buttons. Layout properties still do
-/// (#1336).
+/// The toolbar's modules lie in one CSS row (#1372): a theme's padding and gap move them, and
+/// `display: none` takes a module away with its input.
 #[test]
-fn padding_pads_the_native_toolbar_and_layout_properties_still_switch() {
+fn a_theme_s_padding_gap_and_display_move_and_hide_the_modules() {
     let mut harness = native_bar();
+    let tempo = harness.get_by_label("Tempo").rect();
     let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
-    harness.state_mut().app.use_test_skin(css("toolbar { padding: 0 20px; border-width: 0 0 2px; }"));
+    harness.state_mut().app.use_test_skin(css("toolbar { padding: 0 20px; }"));
     harness.run();
-    assert!(!crate::kit::native_css::toolbar_layout_requested(), "padding keeps Suhina's layout");
-    let launcher = harness.get_by_label("Launcher view").rect();
-    let framed = harness.output().shapes.iter().any(
-        |shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == launcher && rect.stroke.width > 0.0),
-    );
-    assert!(!framed, "the view switches keep their own look");
-    for layout in ["toolbar { gap: 12px; }", "toolbar { display: flex; padding: 4px; }", "#transport { order: 3; }"] {
-        harness.state_mut().app.use_test_skin(css(layout));
-        harness.run();
-        assert!(crate::kit::native_css::toolbar_layout_requested(), "{layout} asks for the theme's layout");
-    }
+    assert_eq!(harness.get_by_label("Tempo").rect().left(), tempo.left() + 14.0, "20 points of padding, not 6");
+    harness.state_mut().app.use_test_skin(css("toolbar-module[kind=\"browser\"] { margin-right: 10px; }"));
+    harness.run();
+    assert_eq!(harness.get_by_label("Tempo").rect().left(), tempo.left() + 12.0);
+    harness.state_mut().app.use_test_skin(css("#tempo { display: none; }"));
+    harness.run();
+    assert!(harness.query_by_label("Tempo").is_none(), "a hidden module has no input");
     skin::configure(&skin::Skin::default());
 }
+
+/// The default toolbar keeps the transport in the middle of the bar, however wide its two sides
+/// are, and gives way at its end first as the window narrows.
+#[test]
+fn the_transport_stays_in_the_middle_and_a_narrow_toolbar_gives_way() {
+    let mut harness = native_bar();
+    let middle = |harness: &Harness<'static, Fixture>| {
+        let play = harness.get_by_label("Play").rect();
+        let bar = harness.ctx.content_rect().shrink(8.0);
+        (play.left() + TRANSPORT_AND_POSITION / 2.0 - bar.center().x).abs()
+    };
+    assert!(middle(&harness) < 0.5, "{}", middle(&harness));
+    assert!(harness.query_by_label("RAM usage 0 MB").is_some());
+    harness.set_size(Vec2::new(1100.0, 240.0));
+    harness.run();
+    assert!(middle(&harness) < 0.5, "{}", middle(&harness));
+    harness.set_size(Vec2::new(480.0, 240.0));
+    harness.run();
+    assert!(harness.query_by_label("CPU load 1.0%").is_none(), "the CPU gives way");
+    assert!(harness.get_by_label("Play").rect().left() > harness.get_by_label("Tempo").rect().right());
+    skin::configure(&skin::Skin::default());
+}
+
+/// The transport, a gap and the position: the toolbar's middle.
+const TRANSPORT_AND_POSITION: f32 = 28.0 * 3.0 + 2.0 + 6.0 + 64.0;

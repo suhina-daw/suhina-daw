@@ -11,8 +11,10 @@ const TEMPO_SEND: f64 = 0.1;
 pub(crate) use crate::kit::widgets::{snap_tempo, tempo_place, tempo_place_span};
 
 impl App {
-    /// The toolbar in `ui`'s rect, its whole box (a theme's toolbar layout keeps its border and
-    /// padding itself); Suhina's own layout goes in `inside`, its content box.
+    /// The toolbar in `ui`'s rect, its whole box, which the window painted; `inside` is its content
+    /// box. Its modules are laid out in one CSS row (#1372): the default arrangement, or the
+    /// order a theme's `toolbar` gives, each module as wide as it draws. In a narrow window the
+    /// toolbar gives way in steps ([`App::toolbar_candidates`]) until a step fits.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn control_bar(
         &mut self,
@@ -26,148 +28,391 @@ impl App {
     ) {
         let mut styled_ui = bar.ui(ui);
         let ui = &mut *styled_ui;
-        if self.themed_toolbar(ui, inside, grid, cpu, ram, actions) {
-            return;
-        }
-        let bar = inside;
-        ui.allocate_rect(bar, Sense::hover());
-        let painter = ui.painter_at(bar);
+        let rect = ui.max_rect();
+        let theme_skin = self.toolbar_menu(ui, rect);
         let Some(grid) = grid else {
+            ui.allocate_rect(inside, Sense::hover());
             widgets::text_in(
-                &painter,
-                bar.shrink2(Vec2::new(PAD, 0.0)),
+                &ui.painter_at(inside),
+                inside,
                 Align2::LEFT_CENTER,
                 "Suhina",
                 theme::ui_font(theme::TEXT),
                 theme::text_secondary(),
             );
-            self.toolbar_edit_overlay(ui, bar);
+            self.toolbar_edit_overlay(ui, rect);
             return;
         };
-        // The transport has its own comfortable hit height, independent of dense list rows.
-        let row = |x: f32, width: f32| {
-            let height = theme::CONTROL_BAR - 2.0 * PAD;
-            Rect::from_min_size(Pos2::new(x, bar.center().y - height / 2.0), Vec2::new(width, height))
-        };
-
-        // Left: the browser's show/hide button, tempo, time signature, launch quantisation.
-        let mut native_styles = themed_toolbar::NativeStyles::default();
-        let mut x = bar.left() + PAD;
-        let browser_rect = row(x, theme::ROW);
-        x = browser_rect.right() + 4.0;
-        let browser_rect = native_styles.place(ui, "browser", browser_rect);
-        self.browser_toggle(ui, &painter, browser_rect);
-        let tempo_rect = row(x, 56.0);
-        x = tempo_rect.right() + PAD;
-        let tempo_rect = native_styles.place(ui, "tempo", tempo_rect);
-        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("sampler-tempo"), grid.tempo_bpm));
-        self.tempo_field(ui, &painter, tempo_rect, grid.tempo_bpm, Some(&native_styles), actions);
-        // The time signature playing, like the tempo: a launched scene may have changed it.
-        let ts = grid.time_signature();
-        let signature =
-            if self.session().is_some() { format!("{} / {}", ts.numerator, ts.denominator) } else { String::new() };
-        let ts_rect = row(x, 40.0);
-        x = ts_rect.right() + PAD;
-        let ts_rect = native_styles.place(ui, "signature", ts_rect);
-        widgets::text_in(
-            &painter,
-            ts_rect,
-            Align2::CENTER_CENTER,
-            &signature,
-            theme::mono_font(theme::TEXT),
-            theme::text_secondary(),
+        let candidates = self.toolbar_candidates(ui, &theme_skin, inside.height(), cpu.is_some(), ram.is_some());
+        // A step fits when the end and the middle have room; the start's, until it has left out
+        // all it can (the count-in and the metronome), after which it may run under the middle.
+        let start_done = candidates.len().min(3).saturating_sub(1);
+        let row = crate::kit::native_css::row::fitting_with(
+            &crate::kit::native_css::row::Bar::new("toolbar", rect.size()),
+            &candidates,
+            |index, items, row| {
+                items
+                    .iter()
+                    .enumerate()
+                    .all(|(at, item)| row.inside(at) || (index >= start_done && item.parent == Some(0)))
+            },
         );
-        // The computer keyboard: lit while its keys play notes, with the octave of A (#944).
-        let keys_rect = row(x, 44.0);
-        let label = if self.typing.on {
-            format!("Computer keyboard on, {}", self.typing.label())
-        } else {
-            "Computer keyboard".into()
-        };
-        let response = widgets::button_area(ui, keys_rect, Id::unique("computer-keyboard"), label);
-        if response.clicked() {
-            self.toggle_typing_keys();
+        let Some((chosen, row)) = row else { return };
+        let Some(items) = candidates.get(chosen) else { return };
+        let painter = ui.painter_at(rect);
+        let mut hovered_switch = None;
+        let mut underline = None;
+        for (index, item) in items.iter().enumerate() {
+            let (Some(module), Some(laid)) = (item.id.as_deref(), row.at(index, rect.min)) else { continue };
+            if item.name != "toolbar-module" {
+                continue;
+            }
+            let at = themed_toolbar::place(ui, module, laid);
+            let scope = crate::kit::element::TOOLBAR_MODULE.id(module).enter();
+            let mut module_ui = ui.new_child(egui::UiBuilder::new().id_salt(("toolbar", module)).max_rect(at));
+            module_ui.set_clip_rect(ui.clip_rect().intersect(rect));
+            let painter = painter.with_clip_rect(painter.clip_rect().intersect(rect));
+            let cx = ModuleCx { grid, cpu, ram, scope: &scope };
+            self.toolbar_module(&mut module_ui, &painter, at, module, cx, actions, &mut hovered_switch, &mut underline);
         }
-        let (fill, ink) = widgets::toggle_colors(ui, &response, self.typing.on);
-        painter.rect_filled(keys_rect, 0.0, fill);
-        let text = if self.typing.on { self.typing.label() } else { "Keys".into() };
-        widgets::text_in(&painter, keys_rect, Align2::CENTER_CENTER, &text, theme::ui_font(theme::TEXT_SMALL), ink);
-        x = keys_rect.right() + PAD;
-        // At narrow widths the captions go, then the count-in and the metronome (the main strip
-        // has one too), so nothing runs under the transport in the middle.
-        let transport_left = bar.center().x - (28.0 * 3.0 + 2.0 + PAD + 64.0) / 2.0 - PAD;
-        let captions = x + 26.0 + 64.0 + PAD + 50.0 + 64.0 + PAD + 28.0 <= transport_left;
-        let grid_caption = row(x, if captions { 26.0 } else { 0.0 });
-        if captions {
-            let grid_caption = native_styles.place(ui, "grid", grid_caption);
-            widgets::text_in(
-                &painter,
-                grid_caption,
-                Align2::LEFT_CENTER,
-                "Quantize",
-                theme::ui_font(theme::TEXT_SMALL),
-                theme::text_hint(),
-            );
+        self.hover_switch(ui.ctx(), hovered_switch);
+        // The underline slides to the view that was picked.
+        if let Some((x, y, width, color)) = underline {
+            let ctx = ui.ctx();
+            let x = motion::value(ctx, Id::unique("view-underline-x"), x, motion::SLIDE);
+            let width = motion::value(ctx, Id::unique("view-underline-width"), width, motion::SLIDE);
+            painter.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, 1.0)), 0.0, color);
         }
-        let quant_rect = row(grid_caption.right(), 64.0);
-        let quant_base = quant_rect;
-        let quant_rect = native_styles.place(ui, "grid", quant_rect);
-        let mono = theme::mono_font(theme::TEXT);
-        // When launched clips start; the Arrangement has a grid of its own (its toolbar, Ctrl+1 to 4).
-        let current = self.session().map_or(DEFAULT_QUANTIZATION, |s| quantization_label(s.quantization()));
-        let mut chosen = current;
-        ui.scope_builder(egui::UiBuilder::new().max_rect(quant_rect), |ui| {
-            let response = crate::kit::widgets::combo_box(
-                ui,
-                egui::ComboBox::from_id_salt("quantization")
-                    .width(quant_rect.width())
-                    // Tall enough for every value at once, without a scroll bar.
-                    .height(QUANTIZATION.len() as f32 * 2.0 * theme::ROW)
-                    .selected_text(egui::RichText::new(chosen).font(mono.clone()).color(theme::text_value())),
-                |ui| {
-                    for q in QUANTIZATION {
-                        ui.selectable_value(&mut chosen, q, egui::RichText::new(q).font(mono.clone()));
-                    }
-                },
-            )
-            .response;
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, QUANTIZATION_LABEL));
-            response.on_hover_text("Launch quantisation: when launched clips start");
-        });
-        if chosen != current {
-            actions.push(Action::new("launcher.setQuantization", json!({ "value": chosen })));
-        }
-        let count_caption = row(quant_base.right() + PAD, if captions { 50.0 } else { 0.0 });
-        if captions {
-            let count_caption = native_styles.place(ui, "count-in", count_caption);
-            widgets::text_in(
-                &painter,
-                count_caption,
-                Align2::LEFT_CENTER,
-                "Count-in",
-                theme::ui_font(theme::TEXT_SMALL),
-                theme::text_hint(),
-            );
-        }
-        let count_in = row(count_caption.right(), 64.0);
-        let metronome = row(count_in.right() + PAD, 28.0);
-        if metronome.right() <= transport_left {
-            let count_in = native_styles.place(ui, "count-in", count_in);
-            let bars = self.session().map_or(0, |s| s.count_in_bars());
-            crate::session::record_controls::count_in_menu(ui, count_in, bars, actions);
-            let metronome = native_styles.place(ui, "metronome", metronome);
-            crate::session::record_controls::metronome_button(ui, &painter, metronome, grid.metronome, actions);
-        }
+        self.toolbar_edit_overlay(ui, rect);
+    }
 
-        // Centre: play, stop, record, position.
-        let transport_width = 28.0 * 3.0 + 2.0 + PAD + 64.0;
-        let mut x = bar.center().x - transport_width / 2.0;
-        let transport = native_styles.place(ui, "transport", row(x, 86.0));
-        let transport_offset = transport.left() - x;
-        let position_base = row(x + 86.0 + PAD, 64.0);
-        x += transport_offset;
-        let play_base = row(x, 28.0);
-        let play = crate::kit::control_layout::place("transport-play", play_base, bar);
+    /// The toolbar's layouts this frame, from the fullest to the sparsest: the order a theme
+    /// gives as it is, or the default arrangement giving way in the order the toolbar always has
+    /// (the captions, then the count-in and the metronome, the agents, the mapping button, the RAM
+    /// and the CPU). `height` is the toolbar's content box's.
+    fn toolbar_candidates(
+        &self,
+        ui: &Ui,
+        theme_skin: &crate::kit::skin::Skin,
+        height: f32,
+        cpu: bool,
+        ram: bool,
+    ) -> Vec<Vec<crate::kit::native_css::row::Item>> {
+        use crate::kit::native_css::row::Item;
+        let control = (theme::CONTROL_BAR - 2.0 * PAD).min(height.max(1.0));
+        let font = theme::ui_font(theme::TEXT);
+        let views = widgets::text_width(ui, "Launcher", font.clone())
+            + 12.0
+            + widgets::text_width(ui, "Arrangement", font.clone());
+        let mapping = widgets::text_width(ui, "Map", font.clone());
+        let agents: Vec<f32> = self
+            .agents
+            .iter()
+            .map(|(_, client)| widgets::text_width(ui, &format!("Disconnect {client}"), font.clone()))
+            .collect();
+        let agents_width = agents.iter().sum::<f32>() + PAD * agents.len().saturating_sub(1) as f32;
+        let module = |id: &str, width: f32| Item::named("toolbar-module", id).width(width.max(1.0)).height(control);
+        let full =
+            |id: &str, width: f32| Item::named("toolbar-module", id).width(width.max(1.0)).height(height.max(1.0));
+        let width = |id: &str, captions: bool, performance: (bool, bool)| -> Option<f32> {
+            Some(match id {
+                "browser" => theme::ROW,
+                "tempo" => 56.0,
+                "signature" => 40.0,
+                "keys" => 44.0,
+                "grid" => GRID_MENU + if captions { GRID_CAPTION } else { 0.0 },
+                "count-in" => COUNT_IN_MENU + if captions { COUNT_IN_CAPTION } else { 0.0 },
+                "metronome" => 28.0,
+                "transport" => TRANSPORT,
+                "position" => 64.0,
+                "mapping" if !self.projects.is_empty() => mapping,
+                "performance" => match performance {
+                    (true, true) => RAM_BLOCK + PAD + CPU_BLOCK,
+                    (true, false) => CPU_BLOCK,
+                    (false, true) => RAM_BLOCK,
+                    (false, false) => return None,
+                },
+                "views" => views,
+                "agents" if !agents.is_empty() => agents_width,
+                _ => return None,
+            })
+        };
+        let item = |id: &str, captions: bool, performance: (bool, bool)| {
+            width(id, captions, performance).map(|w| if id == "views" { full(id, w) } else { module(id, w) })
+        };
+        if let Some(order) = &theme_skin.toolbar {
+            let items = order
+                .order
+                .iter()
+                .filter(|id| !order.hidden.contains(id))
+                .filter_map(|id| item(id, true, (cpu, ram)))
+                .collect();
+            return vec![items];
+        }
+        // The default arrangement: what the toolbar has at its start, the transport and the
+        // position in the middle, and its end. A narrow window takes the captions first, then the
+        // count-in and the metronome, then from the end: the agents, the mapping button, the RAM
+        // and the CPU. The view switch always stays.
+        let steps: [(bool, bool, bool, bool, (bool, bool)); 7] = [
+            (true, true, true, true, (cpu, ram)),
+            (false, true, true, true, (cpu, ram)),
+            (false, false, true, true, (cpu, ram)),
+            (false, false, false, true, (cpu, ram)),
+            (false, false, false, false, (cpu, ram)),
+            (false, false, false, false, (cpu, false)),
+            (false, false, false, false, (false, false)),
+        ];
+        let mut candidates: Vec<Vec<Item>> = Vec::new();
+        for (captions, count_in, agent, map, performance) in steps {
+            let mut items = vec![Item::named("group", "toolbar-start")];
+            let start = ["browser", "tempo", "signature", "keys", "grid"]
+                .into_iter()
+                .chain(count_in.then_some(["count-in", "metronome"]).into_iter().flatten());
+            items.extend(start.filter_map(|id| item(id, captions, performance)).map(|i| i.in_group(0)));
+            items.extend(["transport", "position"].into_iter().filter_map(|id| item(id, captions, performance)));
+            let end = items.len();
+            items.push(Item::named("group", "toolbar-end"));
+            let shown = [("agents", agent), ("mapping", map), ("performance", true), ("views", true)];
+            items.extend(
+                shown
+                    .into_iter()
+                    .filter(|(_, on)| *on)
+                    .filter_map(|(id, _)| item(id, captions, performance))
+                    .map(|i| i.in_group(end)),
+            );
+            if candidates.last() != Some(&items) {
+                candidates.push(items);
+            }
+        }
+        candidates
+    }
+
+    /// One module of the toolbar in `rect`, drawn the same wherever the row puts it.
+    #[allow(clippy::too_many_arguments)]
+    fn toolbar_module(
+        &mut self,
+        ui: &mut Ui,
+        painter: &egui::Painter,
+        rect: Rect,
+        module: &str,
+        cx: ModuleCx<'_>,
+        actions: &mut Vec<Action>,
+        hovered_switch: &mut Option<View>,
+        underline: &mut Option<(f32, f32, f32, egui::Color32)>,
+    ) {
+        let ModuleCx { grid, cpu, ram, scope } = cx;
+        let surface = |fill| crate::kit::element::Native { radius: 0.0, fill };
+        let box_fill = crate::kit::style_class::surface_or(theme::window_background());
+        match module {
+            "browser" => {
+                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                self.browser_toggle(ui, painter, rect);
+            }
+            "tempo" => {
+                ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("sampler-tempo"), grid.tempo_bpm));
+                self.tempo_field(ui, painter, rect, grid.tempo_bpm, Some(scope), actions);
+            }
+            "signature" => {
+                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                // The time signature playing, like the tempo: a launched scene may have changed it.
+                let ts = grid.time_signature();
+                widgets::text_in(
+                    painter,
+                    rect,
+                    Align2::CENTER_CENTER,
+                    &format!("{} / {}", ts.numerator, ts.denominator),
+                    theme::mono_font(theme::TEXT),
+                    theme::text_secondary(),
+                );
+            }
+            "keys" => {
+                // The computer keyboard: lit while its keys play notes, with the octave of A (#944).
+                let label = if self.typing.on {
+                    format!("Computer keyboard on, {}", self.typing.label())
+                } else {
+                    "Computer keyboard".into()
+                };
+                let response = widgets::button_area(ui, rect, Id::unique("computer-keyboard"), label);
+                if response.clicked() {
+                    self.toggle_typing_keys();
+                }
+                let (fill, ink) = widgets::toggle_colors(ui, &response, self.typing.on);
+                scope.paint_with(painter, rect, surface(fill));
+                let text = if self.typing.on { self.typing.label() } else { "Keys".into() };
+                widgets::text_in(painter, rect, Align2::CENTER_CENTER, &text, theme::ui_font(theme::TEXT_SMALL), ink);
+            }
+            "grid" => {
+                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                let (caption, menu) = captioned(rect, GRID_CAPTION, GRID_MENU);
+                widgets::text_in(
+                    painter,
+                    caption,
+                    Align2::LEFT_CENTER,
+                    "Quantize",
+                    theme::ui_font(theme::TEXT_SMALL),
+                    theme::text_hint(),
+                );
+                let mono = theme::mono_font(theme::TEXT);
+                // When launched clips start; the Arrangement has a grid of its own (its toolbar, Ctrl+1 to 4).
+                let current = self.session().map_or(DEFAULT_QUANTIZATION, |s| quantization_label(s.quantization()));
+                let mut chosen = current;
+                ui.scope_builder(egui::UiBuilder::new().max_rect(menu), |ui| {
+                    let response = widgets::combo_box(
+                        ui,
+                        egui::ComboBox::from_id_salt("quantization")
+                            .width(menu.width())
+                            // Tall enough for every value at once, without a scroll bar.
+                            .height(QUANTIZATION.len() as f32 * 2.0 * theme::ROW)
+                            .selected_text(egui::RichText::new(chosen).font(mono.clone()).color(theme::text_value())),
+                        |ui| {
+                            for q in QUANTIZATION {
+                                ui.selectable_value(&mut chosen, q, egui::RichText::new(q).font(mono.clone()));
+                            }
+                        },
+                    )
+                    .response;
+                    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, QUANTIZATION_LABEL));
+                    response.on_hover_text("Launch quantisation: when launched clips start");
+                });
+                if chosen != current {
+                    actions.push(Action::new("launcher.setQuantization", json!({ "value": chosen })));
+                }
+            }
+            "count-in" => {
+                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                let (caption, menu) = captioned(rect, COUNT_IN_CAPTION, COUNT_IN_MENU);
+                widgets::text_in(
+                    painter,
+                    caption,
+                    Align2::LEFT_CENTER,
+                    "Count-in",
+                    theme::ui_font(theme::TEXT_SMALL),
+                    theme::text_hint(),
+                );
+                let bars = self.session().map_or(0, |s| s.count_in_bars());
+                crate::session::record_controls::count_in_menu(ui, menu, bars, actions);
+            }
+            "metronome" => {
+                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                crate::session::record_controls::metronome_button(ui, painter, rect, grid.metronome, actions);
+            }
+            "transport" => {
+                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                self.transport(ui, painter, rect, grid, actions);
+            }
+            "position" => {
+                scope.paint_with(painter, rect, surface(box_fill));
+                widgets::text_in(
+                    painter,
+                    rect.shrink2(Vec2::new(PAD, 0.0)),
+                    Align2::LEFT_CENTER,
+                    &grid.position(),
+                    theme::mono_font(theme::TEXT),
+                    theme::text_primary(),
+                );
+            }
+            "mapping" => {
+                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                // The mapping mode's button, lit while the mode is on.
+                let on = self.view.launch_keys.mode.on;
+                let color = if on { theme::accent() } else { theme::text_secondary() };
+                let response = widgets::button_area(ui, rect, Id::unique("map-keys"), "Map keys to slots and scenes");
+                if response.clicked() {
+                    self.toggle_mapping_mode();
+                }
+                let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
+                widgets::text_in(painter, rect, Align2::LEFT_CENTER, "Map", theme::ui_font(theme::TEXT), color);
+            }
+            "performance" => {
+                // The program's own RAM (its resident memory), then the CPU load from the engine's
+                // monitor (per mille, smoothed): how much of the time the audio engine spends
+                // rendering. With room for one, the CPU.
+                let both = rect.width() + 0.5 >= RAM_BLOCK + PAD + CPU_BLOCK;
+                let mut left = rect.left();
+                if let Some(bytes) = ram.filter(|_| both || cpu.is_none()) {
+                    let block =
+                        Rect::from_min_max(rect.min, Pos2::new((left + RAM_BLOCK).min(rect.right()), rect.bottom()));
+                    left = block.right() + PAD;
+                    scope.paint_with(painter, block, surface(box_fill));
+                    ram_block(ui, painter, block, bytes);
+                }
+                if let Some(milli) = cpu {
+                    let block = Rect::from_min_max(Pos2::new(left.min(rect.right()), rect.top()), rect.max);
+                    scope.paint_with(painter, block, surface(box_fill));
+                    cpu_block(ui, painter, block, milli);
+                }
+            }
+            "views" => {
+                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                // The view switch, the current view underlined. A clip dragged in the Arrangement
+                // view, or carried, switches the view when it hovers over the other view's name for
+                // a moment.
+                let carrying = self.carrying_clip(ui.ctx());
+                let pointer = ui.ctx().pointer_latest_pos();
+                let mut left = rect.left();
+                for (view, name) in [(View::Session, "Launcher"), (View::Arrangement, "Arrangement")] {
+                    let color = if self.shown == view { theme::text_primary() } else { theme::text_secondary() };
+                    let galley = widgets::fitted(painter, name, theme::ui_font(theme::TEXT), color, 120.0);
+                    let size = galley.size();
+                    let at = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(left + size.x, rect.bottom()));
+                    left = at.right() + 12.0;
+                    let response = widgets::button_area(ui, at, Id::unique(("view", name)), format!("{name} view"));
+                    if response.clicked() {
+                        self.shown = view;
+                    }
+                    if carrying && self.shown != view && pointer.is_some_and(|p| at.expand(4.0).contains(p)) {
+                        *hovered_switch = Some(view);
+                        painter.rect_stroke(
+                            at.expand(3.0),
+                            0.0,
+                            theme::hairline(theme::accent()),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
+                    let pos = Pos2::new(at.left(), at.center().y - size.y / 2.0);
+                    widgets::paint_text(painter, pos, galley, color);
+                    if self.shown == view {
+                        *underline = Some((pos.x, pos.y + size.y + 1.0, size.x, theme::text_primary()));
+                    }
+                }
+            }
+            "agents" => {
+                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                // Each agent the person let in (ADR 0028), lit; a click disconnects it.
+                let mut left = rect.left();
+                for (connection, client) in self.agents.clone() {
+                    let text = format!("Disconnect {client}");
+                    let galley = widgets::fitted(painter, &text, theme::ui_font(theme::TEXT), theme::accent(), 200.0);
+                    let size = galley.size();
+                    let at = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(left + size.x, rect.bottom()));
+                    left = at.right() + PAD;
+                    let response = widgets::button_area(ui, at, Id::unique(("agent", connection)), text.clone());
+                    if response.clicked() {
+                        self.agent_disconnects.push(connection);
+                        self.status = Status::Done(format!("Disconnected {client}"));
+                    }
+                    let color = motion::mix(theme::accent(), theme::text_primary(), widgets::hover(ui, &response));
+                    widgets::paint_text(painter, Pos2::new(at.left(), at.center().y - size.y / 2.0), galley, color);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Play, stop and record in the transport module's `rect`.
+    fn transport(
+        &mut self,
+        ui: &mut Ui,
+        painter: &egui::Painter,
+        rect: Rect,
+        grid: &TrackGrid,
+        actions: &mut Vec<Action>,
+    ) {
+        let button = |index: f32| {
+            Rect::from_min_size(Pos2::new(rect.left() + index * 29.0, rect.top()), Vec2::new(28.0, rect.height()))
+        };
+        let play = crate::kit::control_layout::place("transport-play", button(0.0), rect);
         if !crate::kit::control_layout::placement("transport-play").hidden {
             let response = widgets::button_area(ui, play, Id::unique("play"), "Play");
             let play_style = crate::kit::element::BUTTON
@@ -182,7 +427,7 @@ impl App {
             let running = motion::toward(ui.ctx(), response.id.with("running"), grid.running, motion::VALUE);
             let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
             widgets::button_surface(
-                &painter,
+                painter,
                 play,
                 &play_style,
                 &response,
@@ -204,7 +449,7 @@ impl App {
             let c = play.center();
             if !crate::kit::skin::paint_as(
                 &play_style,
-                &painter,
+                painter,
                 play,
                 "play",
                 crate::kit::skin::State::response(&response, grid.running),
@@ -218,9 +463,7 @@ impl App {
             }
             drop(play_style);
         }
-        x = play_base.right() + 1.0;
-        let stop_base = row(x, 28.0);
-        let stop = crate::kit::control_layout::place("transport-stop", stop_base, bar);
+        let stop = crate::kit::control_layout::place("transport-stop", button(1.0), rect);
         if !crate::kit::control_layout::placement("transport-stop").hidden {
             let response = widgets::button_area(ui, stop, Id::unique("stop"), "Stop");
             let stop_style = crate::kit::element::BUTTON.id("stop").response(&response).enter();
@@ -228,7 +471,7 @@ impl App {
                 actions.push(self.stop_action());
             }
             widgets::button_surface(
-                &painter,
+                painter,
                 stop,
                 &stop_style,
                 &response,
@@ -238,7 +481,7 @@ impl App {
             );
             if !crate::kit::skin::paint_as(
                 &stop_style,
-                &painter,
+                painter,
                 stop,
                 "stop",
                 crate::kit::skin::State::response(&response, false),
@@ -252,171 +495,8 @@ impl App {
             }
             drop(stop_style);
         }
-        let record = row(stop_base.right() + 1.0, 28.0);
         let recording = self.session().is_some_and(|s| s.records_arrangement());
-        crate::session::record_controls::record_button(ui, &painter, record, recording, actions);
-        let position = native_styles.place(ui, "position", position_base);
-        native_styles.paint(&painter, position, crate::kit::style_class::surface_or(theme::window_background()));
-        widgets::text_in(
-            &painter,
-            position.shrink2(Vec2::new(PAD, 0.0)),
-            Align2::LEFT_CENTER,
-            &grid.position(),
-            theme::mono_font(theme::TEXT),
-            theme::text_primary(),
-        );
-
-        // Right, from the edge in: the view switch, the current view underlined, so it is
-        // the last control at the right end. Left of it the CPU load, from the engine's monitor
-        // (per mille, smoothed): how much of the time the audio engine spends rendering. In a
-        // narrow window a block that would reach the position readout is left out, the RAM
-        // first, so nothing overlaps and the order stays.
-        let centre_end = position_base.right() + PAD;
-        let fits = |right: f32, width: f32| right - width >= centre_end;
-        let mut right = bar.right() - PAD;
-        let mut underline_at = None;
-        // A clip dragged in the Arrangement view, or carried, switches the view when it hovers
-        // over the other view's name for a moment.
-        let carrying = self.carrying_clip(ui.ctx());
-        let pointer = ui.ctx().pointer_latest_pos();
-        let mut hovered_switch = None;
-        for (view, name) in [(View::Arrangement, "Arrangement"), (View::Session, "Launcher")] {
-            native_styles.enter("views");
-            let color = if self.shown == view { theme::text_primary() } else { theme::text_secondary() };
-            let galley = widgets::fitted(&painter, name, theme::ui_font(theme::TEXT), color, 120.0);
-            let size = galley.size();
-            let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
-            right = rect.left() - 12.0;
-            let rect = native_styles.place(ui, "views", rect);
-            let response = widgets::button_area(ui, rect, Id::unique(("view", name)), format!("{name} view"));
-            if response.clicked() {
-                self.shown = view;
-            }
-            if carrying && self.shown != view && pointer.is_some_and(|p| rect.expand(4.0).contains(p)) {
-                hovered_switch = Some(view);
-                painter.rect_stroke(rect.expand(3.0), 0.0, theme::hairline(theme::accent()), egui::StrokeKind::Inside);
-            }
-            let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
-            let pos = Pos2::new(rect.left(), rect.center().y - size.y / 2.0);
-            widgets::paint_text(&painter, pos, galley, color);
-            if self.shown == view {
-                underline_at = Some((pos.x, pos.y + size.y + 1.0, size.x, theme::text_primary()));
-            }
-        }
-        right += 12.0 - PAD;
-        if let Some(milli) = cpu.filter(|_| fits(right, 56.0)) {
-            let rect = row(right - 56.0, 56.0);
-            right = rect.left() - PAD;
-            let rect = native_styles.place(ui, "performance", rect);
-            let percent = f64::from(milli.min(1000)) / 10.0;
-            native_styles.paint(&painter, rect, crate::kit::style_class::surface_or(theme::window_background()));
-            let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
-            widgets::text_in(
-                &painter,
-                inner,
-                Align2::LEFT_CENTER,
-                "CPU",
-                theme::ui_font(theme::TEXT_TINY),
-                theme::text_hint(),
-            );
-            widgets::text_in(
-                &painter,
-                inner,
-                Align2::RIGHT_CENTER,
-                &format!("{percent:.0}%"),
-                theme::mono_font(theme::TEXT_SMALL),
-                theme::text_secondary(),
-            );
-            let track = Rect::from_min_max(
-                Pos2::new(rect.left() + 1.0, rect.bottom() - 3.0),
-                Pos2::new(rect.right() - 1.0, rect.bottom() - 1.0),
-            );
-            painter.rect_filled(track, 0.0, theme::control_background());
-            let fill = track.width() * milli.min(1000) as f32 / 1000.0;
-            let full = Rect::from_min_max(track.min, Pos2::new(track.left() + fill, track.bottom()));
-            let color = if milli >= 800 { theme::meter_hot() } else { theme::meter_normal() };
-            painter.rect_filled(full, 0.0, color);
-            let response = ui.interact(rect, Id::unique("cpu-load"), Sense::hover());
-            response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("CPU load {percent:.1}%")));
-        }
-        // Left of that, the program's own RAM (its resident memory), in megabytes or gigabytes.
-        if let Some(bytes) = ram.filter(|_| fits(right, 76.0)) {
-            let rect = row(right - 76.0, 76.0);
-            right = rect.left() - PAD;
-            let rect = native_styles.place(ui, "performance", rect);
-            native_styles.paint(&painter, rect, crate::kit::style_class::surface_or(theme::window_background()));
-            let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
-            widgets::text_in(
-                &painter,
-                inner,
-                Align2::LEFT_CENTER,
-                "RAM",
-                theme::ui_font(theme::TEXT_TINY),
-                theme::text_hint(),
-            );
-            widgets::text_in(
-                &painter,
-                inner,
-                Align2::RIGHT_CENTER,
-                &ram_text(bytes),
-                theme::mono_font(theme::TEXT_SMALL),
-                theme::text_secondary(),
-            );
-            let response = ui.interact(rect, Id::unique("ram-usage"), Sense::hover());
-            response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::Role::Label, true, format!("RAM usage {}", ram_text(bytes)))
-            });
-        }
-        // Left of that, the mapping mode's button, lit while the mode is on.
-        if !self.projects.is_empty() {
-            native_styles.enter("mapping");
-            let on = self.view.launch_keys.mode.on;
-            let color = if on { theme::accent() } else { theme::text_secondary() };
-            let galley = widgets::fitted(&painter, "Map", theme::ui_font(theme::TEXT), color, 80.0);
-            let size = galley.size();
-            if fits(right, size.x) {
-                let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
-                right = rect.left() - PAD;
-                let rect = native_styles.place(ui, "mapping", rect);
-                let response = widgets::button_area(ui, rect, Id::unique("map-keys"), "Map keys to slots and scenes");
-                if response.clicked() {
-                    self.toggle_mapping_mode();
-                }
-                let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
-                widgets::paint_text(&painter, Pos2::new(rect.left(), rect.center().y - size.y / 2.0), galley, color);
-            }
-        }
-        // Left of that, each agent the person let in (ADR 0028), lit; a click disconnects it.
-        for (connection, client) in self.agents.clone() {
-            native_styles.enter("agents");
-            let text = format!("Disconnect {client}");
-            let galley = widgets::fitted(&painter, &text, theme::ui_font(theme::TEXT), theme::accent(), 200.0);
-            let size = galley.size();
-            if !fits(right, size.x) {
-                break;
-            }
-            let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
-            right = rect.left() - PAD;
-            let rect = native_styles.place(ui, "agents", rect);
-            let response = widgets::button_area(ui, rect, Id::unique(("agent", connection)), text.clone());
-            if response.clicked() {
-                self.agent_disconnects.push(connection);
-                self.status = Status::Done(format!("Disconnected {client}"));
-            }
-            let color = motion::mix(theme::accent(), theme::text_primary(), widgets::hover(ui, &response));
-            widgets::paint_text(&painter, Pos2::new(rect.left(), rect.center().y - size.y / 2.0), galley, color);
-        }
-        drop(native_styles);
-        self.hover_switch(ui.ctx(), hovered_switch);
-        // The underline slides to the view that was picked.
-        if let Some((x, y, width, color)) = underline_at {
-            let ctx = ui.ctx();
-            let x = motion::value(ctx, Id::unique("view-underline-x"), x, motion::SLIDE);
-            let width = motion::value(ctx, Id::unique("view-underline-width"), width, motion::SLIDE);
-            painter.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, 1.0)), 0.0, color);
-        }
-        self.toolbar_edit_overlay(ui, bar);
+        crate::session::record_controls::record_button(ui, painter, button(2.0), recording, actions);
     }
 
     /// The toolbar's button that shows or hides the browser (`#control-browser-toggle`), the same
@@ -462,9 +542,10 @@ impl App {
         drop(browser_style);
     }
 
-    /// The status bar's contents in `ui`'s rect, its content box: `style_class` is the bar's
-    /// element, which the window entered and painted.
+    /// The status bar's items in `ui`'s rect, its whole box: `style_class` is the bar's element,
+    /// which the window entered and painted. The message and the counts are laid out in a row.
     pub(super) fn status_bar(&self, ui: &mut Ui, style_class: &crate::kit::element::Entered, grid: Option<&TrackGrid>) {
+        use crate::kit::native_css::row::{self, Bar, Item};
         let mut styled_ui = style_class.ui(ui);
         let ui = &mut *styled_ui;
         let bar = ui.max_rect();
@@ -478,29 +559,26 @@ impl App {
             .session()
             .and_then(Session::last_backup)
             .map(|b| format!(" · backed up {}", suhina_session::backup::clock_time(b.written)));
-        let right = grid.map(|g| {
+        let counts = grid.map(|g| {
             let tracks = g.columns.iter().filter(|c| c.kind != crate::interaction::grid::ColumnKind::Return).count();
             format!("{tracks} tracks · {} scenes{}", g.scenes.len(), backed_up.as_deref().unwrap_or(""))
         });
-        let right_width = match (&right, &backed_up) {
-            (None, _) => 0.0,
-            (Some(_), None) => 140.0,
-            (Some(_), Some(_)) => 240.0,
-        };
-        let left =
-            Rect::from_min_max(bar.min + Vec2::new(PAD, 0.0), Pos2::new(bar.right() - right_width - PAD, bar.bottom()));
-        widgets::text_in(&painter, left, Align2::LEFT_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
-        if let Some(right) = right {
-            let rect =
-                Rect::from_min_max(Pos2::new(bar.right() - right_width, bar.top()), bar.max - Vec2::new(PAD, 0.0));
-            widgets::text_in(
-                &painter,
-                rect,
-                Align2::RIGHT_CENTER,
-                &right,
-                theme::ui_font(theme::TEXT_SMALL),
-                theme::text_hint(),
-            );
+        // The message takes the room left; the counts are as wide as their text.
+        let font = theme::ui_font(theme::TEXT_SMALL);
+        let mut items = vec![Item::named("bar-item", "status-message")];
+        if let Some(counts) = &counts {
+            items.push(Item::named("bar-item", "status-counts").width(widgets::text_width(ui, counts, font.clone())));
+        }
+        let Some(laid) = row::row(&Bar::new("status-bar", bar.size()), &items) else { return };
+        if let Some(rect) = laid.at(0, bar.min) {
+            let item = crate::kit::element::BAR_ITEM.id("status-message").enter();
+            let content = item.paint(&painter, rect).content;
+            widgets::text_in(&painter, content, Align2::LEFT_CENTER, text, font.clone(), item.color_or(color));
+        }
+        if let (Some(counts), Some(rect)) = (counts, laid.at(1, bar.min)) {
+            let item = crate::kit::element::BAR_ITEM.id("status-counts").enter();
+            let content = item.paint(&painter, rect).content;
+            widgets::text_in(&painter, content, Align2::RIGHT_CENTER, &counts, font, item.color_or(theme::text_hint()));
         }
     }
 }
@@ -526,7 +604,7 @@ impl App {
     /// The tempo field, in the control bar or a theme's toolbar: its value with three decimals, a
     /// drag steps the place under the pointer where it was pressed (the integer part 1 BPM, each
     /// decimal a tenth of the one before, #829), and while it moves the project follows a few times
-    /// a second in one undo step (#916). `native`, the plain bar's modules, draws the field's surface as
+    /// a second in one undo step (#916). `native`, the tempo module's element, paints the field's surface
     /// the tempo module's.
     pub(super) fn tempo_field(
         &mut self,
@@ -534,16 +612,16 @@ impl App {
         painter: &egui::Painter,
         tempo_rect: Rect,
         bpm_now: f64,
-        native: Option<&super::themed_toolbar::NativeStyles>,
+        native: Option<&crate::kit::element::Entered>,
         actions: &mut Vec<Action>,
     ) {
         let grab = self.tempo_grab;
         let tempo_shown = self.tempo_drag.map_or(bpm_now, |bpm| snap_tempo(grab, bpm));
         let tempo_text = format!("{tempo_shown:.3}");
         let response = widgets::value_area(ui, tempo_rect, Id::unique("tempo"), "Tempo", tempo_text.clone());
-        if let Some(styles) = native {
+        if let Some(module) = native {
             let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-            styles.paint(painter, tempo_rect, fill);
+            module.paint_with(painter, tempo_rect, crate::kit::element::Native { radius: 0.0, fill });
         }
         let mono = theme::mono_font(theme::TEXT);
         let text_area = tempo_rect.shrink2(Vec2::new(PAD, 0.0));
@@ -597,6 +675,77 @@ impl App {
             Drag::None => {}
         }
     }
+}
+
+/// The toolbar's measures, in points: its menus and their captions, the transport, the RAM and
+/// CPU blocks.
+const GRID_CAPTION: f32 = 26.0;
+const GRID_MENU: f32 = 64.0;
+const COUNT_IN_CAPTION: f32 = 50.0;
+const COUNT_IN_MENU: f32 = 64.0;
+const TRANSPORT: f32 = 28.0 * 3.0 + 2.0;
+const RAM_BLOCK: f32 = 76.0;
+const CPU_BLOCK: f32 = 56.0;
+
+/// What a toolbar module draws from.
+#[derive(Clone, Copy)]
+struct ModuleCx<'a> {
+    grid: &'a TrackGrid,
+    cpu: Option<u32>,
+    ram: Option<u64>,
+    /// The module's element, entered.
+    scope: &'a crate::kit::element::Entered,
+}
+
+/// A module's caption, `caption` wide at its left when the module has room for it beside a menu
+/// `menu` wide, and the menu in the rest.
+fn captioned(rect: Rect, caption: f32, menu: f32) -> (Rect, Rect) {
+    let caption = if rect.width() + 0.5 >= caption + menu { caption } else { 0.0 };
+    let left = Rect::from_min_size(rect.min, Vec2::new(caption, rect.height()));
+    (left, Rect::from_min_max(Pos2::new(left.right(), rect.top()), rect.max))
+}
+
+/// The RAM block in `rect`: the program's resident memory.
+fn ram_block(ui: &Ui, painter: &egui::Painter, rect: Rect, bytes: u64) {
+    let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
+    widgets::text_in(painter, inner, Align2::LEFT_CENTER, "RAM", theme::ui_font(theme::TEXT_TINY), theme::text_hint());
+    widgets::text_in(
+        painter,
+        inner,
+        Align2::RIGHT_CENTER,
+        &ram_text(bytes),
+        theme::mono_font(theme::TEXT_SMALL),
+        theme::text_secondary(),
+    );
+    let response = ui.interact(rect, Id::unique("ram-usage"), Sense::hover());
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("RAM usage {}", ram_text(bytes))));
+}
+
+/// The CPU block in `rect`: the engine's load, `milli` per mille, and a bar of it.
+fn cpu_block(ui: &Ui, painter: &egui::Painter, rect: Rect, milli: u32) {
+    let percent = f64::from(milli.min(1000)) / 10.0;
+    let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
+    widgets::text_in(painter, inner, Align2::LEFT_CENTER, "CPU", theme::ui_font(theme::TEXT_TINY), theme::text_hint());
+    widgets::text_in(
+        painter,
+        inner,
+        Align2::RIGHT_CENTER,
+        &format!("{percent:.0}%"),
+        theme::mono_font(theme::TEXT_SMALL),
+        theme::text_secondary(),
+    );
+    let track = Rect::from_min_max(
+        Pos2::new(rect.left() + 1.0, rect.bottom() - 3.0),
+        Pos2::new(rect.right() - 1.0, rect.bottom() - 1.0),
+    );
+    painter.rect_filled(track, 0.0, theme::control_background());
+    let fill = track.width() * milli.min(1000) as f32 / 1000.0;
+    let full = Rect::from_min_max(track.min, Pos2::new(track.left() + fill, track.bottom()));
+    let color = if milli >= 800 { theme::meter_hot() } else { theme::meter_normal() };
+    painter.rect_filled(full, 0.0, color);
+    let response = ui.interact(rect, Id::unique("cpu-load"), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("CPU load {percent:.1}%")));
 }
 
 #[cfg(test)]
