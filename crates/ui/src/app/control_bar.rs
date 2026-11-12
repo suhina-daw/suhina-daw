@@ -11,20 +11,25 @@ const TEMPO_SEND: f64 = 0.1;
 pub(crate) use crate::kit::widgets::{snap_tempo, tempo_place, tempo_place_span};
 
 impl App {
+    /// The toolbar in `ui`'s rect, its whole box (a theme's toolbar layout keeps its border and
+    /// padding itself); Suhina's own layout goes in `inside`, its content box.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn control_bar(
         &mut self,
         ui: &mut Ui,
+        bar: &crate::kit::element::Entered,
+        inside: Rect,
         grid: Option<&TrackGrid>,
         cpu: Option<u32>,
         ram: Option<u64>,
         actions: &mut Vec<Action>,
     ) {
-        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let mut styled_ui = bar.ui(ui);
         let ui = &mut *styled_ui;
-        if self.themed_toolbar(ui, grid, cpu, ram, actions) {
+        if self.themed_toolbar(ui, inside, grid, cpu, ram, actions) {
             return;
         }
-        let bar = ui.max_rect();
+        let bar = inside;
         ui.allocate_rect(bar, Sense::hover());
         let painter = ui.painter_at(bar);
         let Some(grid) = grid else {
@@ -165,8 +170,12 @@ impl App {
         let play = crate::kit::control_layout::place("transport-play", play_base, bar);
         if !crate::kit::control_layout::placement("transport-play").hidden {
             let response = widgets::button_area(ui, play, Id::unique("play"), "Play");
-            let play_style = crate::kit::style_class::enter_named_response("button", "play", &response);
-            crate::kit::native_css::mark(crate::kit::native_css::HostState::Playing, grid.running);
+            let play_style = crate::kit::element::BUTTON
+                .id("play")
+                .response(&response)
+                .attr(crate::kit::element::Playing, grid.running)
+                .attr(crate::kit::element::Checked, grid.running)
+                .enter();
             if response.clicked() {
                 actions.push(self.play_action());
             }
@@ -175,6 +184,7 @@ impl App {
             widgets::button_surface(
                 &painter,
                 play,
+                &play_style,
                 &response,
                 grid.running,
                 motion::mix(hover, theme::control_active(), running),
@@ -189,16 +199,16 @@ impl App {
             let glyph = if flash {
                 theme::text_primary()
             } else {
-                crate::kit::style_class::foreground(motion::mix(theme::text_primary(), theme::accent(), running))
+                play_style.color_or(motion::mix(theme::text_primary(), theme::accent(), running))
             };
             let c = play.center();
-            if !crate::kit::skin::paint(
+            if !crate::kit::skin::paint_as(
+                &play_style,
                 &painter,
                 play,
                 "play",
                 crate::kit::skin::State::response(&response, grid.running),
                 glyph,
-                0.0,
             ) {
                 painter.add(egui::Shape::convex_polygon(
                     vec![c + Vec2::new(-3.5, -5.0), c + Vec2::new(5.0, 0.0), c + Vec2::new(-3.5, 5.0)],
@@ -213,25 +223,26 @@ impl App {
         let stop = crate::kit::control_layout::place("transport-stop", stop_base, bar);
         if !crate::kit::control_layout::placement("transport-stop").hidden {
             let response = widgets::button_area(ui, stop, Id::unique("stop"), "Stop");
-            let stop_style = crate::kit::style_class::enter_named_response("button", "stop", &response);
+            let stop_style = crate::kit::element::BUTTON.id("stop").response(&response).enter();
             if response.clicked() {
                 actions.push(self.stop_action());
             }
             widgets::button_surface(
                 &painter,
                 stop,
+                &stop_style,
                 &response,
                 false,
                 motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
                 0.0,
             );
-            if !crate::kit::skin::paint(
+            if !crate::kit::skin::paint_as(
+                &stop_style,
                 &painter,
                 stop,
                 "stop",
                 crate::kit::skin::State::response(&response, false),
                 theme::text_primary(),
-                0.0,
             ) {
                 painter.rect_filled(
                     Rect::from_center_size(stop.center(), Vec2::splat(8.0)),
@@ -245,7 +256,7 @@ impl App {
         let recording = self.session().is_some_and(|s| s.records_arrangement());
         crate::session::record_controls::record_button(ui, &painter, record, recording, actions);
         let position = native_styles.place(ui, "position", position_base);
-        native_styles.paint(&painter, position, theme::window_background());
+        native_styles.paint(&painter, position, crate::kit::style_class::surface_or(theme::window_background()));
         widgets::text_in(
             &painter,
             position.shrink2(Vec2::new(PAD, 0.0)),
@@ -298,7 +309,7 @@ impl App {
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "performance", rect);
             let percent = f64::from(milli.min(1000)) / 10.0;
-            native_styles.paint(&painter, rect, theme::window_background());
+            native_styles.paint(&painter, rect, crate::kit::style_class::surface_or(theme::window_background()));
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
                 &painter,
@@ -320,7 +331,7 @@ impl App {
                 Pos2::new(rect.left() + 1.0, rect.bottom() - 3.0),
                 Pos2::new(rect.right() - 1.0, rect.bottom() - 1.0),
             );
-            painter.fill_background(track, 0.0, theme::control_background());
+            painter.rect_filled(track, 0.0, theme::control_background());
             let fill = track.width() * milli.min(1000) as f32 / 1000.0;
             let full = Rect::from_min_max(track.min, Pos2::new(track.left() + fill, track.bottom()));
             let color = if milli >= 800 { theme::meter_hot() } else { theme::meter_normal() };
@@ -334,7 +345,7 @@ impl App {
             let rect = row(right - 76.0, 76.0);
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "performance", rect);
-            native_styles.paint(&painter, rect, theme::window_background());
+            native_styles.paint(&painter, rect, crate::kit::style_class::surface_or(theme::window_background()));
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
                 &painter,
@@ -405,7 +416,6 @@ impl App {
             let width = motion::value(ctx, Id::unique("view-underline-width"), width, motion::SLIDE);
             painter.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, 1.0)), 0.0, color);
         }
-        painter.hline(bar.x_range(), bar.bottom() - 0.5, theme::hairline(theme::border()));
         self.toolbar_edit_overlay(ui, bar);
     }
 
@@ -418,10 +428,15 @@ impl App {
             Some(keys) => response.on_hover_text(format!("{label} ({keys})")),
             None => response.on_hover_text(label),
         };
-        let browser_style = crate::kit::style_class::enter_named_response("button", "browser-toggle", &response);
+        let browser_style = crate::kit::element::BUTTON
+            .id("browser-toggle")
+            .response(&response)
+            .attr(crate::kit::element::Checked, self.settings.browser_open)
+            .enter();
         widgets::button_surface(
             painter,
             browser_rect,
+            &browser_style,
             &response,
             self.settings.browser_open,
             motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
@@ -429,7 +444,7 @@ impl App {
         );
         // A panel with its left part filled while the browser shows.
         let icon = Rect::from_center_size(browser_rect.center(), Vec2::new(14.0, 11.0));
-        let ink = crate::kit::style_class::foreground(if self.settings.browser_open {
+        let ink = browser_style.color_or(if self.settings.browser_open {
             theme::text_primary()
         } else {
             theme::text_secondary()
@@ -447,9 +462,10 @@ impl App {
         drop(browser_style);
     }
 
-    pub(super) fn status_bar(&self, ui: &mut Ui, grid: Option<&TrackGrid>) {
-        let _style_class = crate::kit::style_class::enter("status-bar");
-        let mut styled_ui = crate::kit::style_class::ui(ui);
+    /// The status bar's contents in `ui`'s rect, its content box: `style_class` is the bar's
+    /// element, which the window entered and painted.
+    pub(super) fn status_bar(&self, ui: &mut Ui, style_class: &crate::kit::element::Entered, grid: Option<&TrackGrid>) {
+        let mut styled_ui = style_class.ui(ui);
         let ui = &mut *styled_ui;
         let bar = ui.max_rect();
         let painter = ui.painter_at(bar);

@@ -40,17 +40,15 @@ fn name_liquid_and_surface_gradients_round_trip_through_canonical_css() {
 #[test]
 fn control_anchors_round_trip_through_css_and_cycles_warn() {
     let mut theme = Theme::default();
-    let warnings = apply(
-        &mut theme,
-        ".control-arrangement-meter { height: 100%; --suhina-anchor-bottom: arrangement-volume top 4px; }",
-    );
+    let warnings =
+        apply(&mut theme, ".control-arrangement-meter { height: 100%; anchor-bottom: arrangement-volume top 4px; }");
     assert!(warnings.is_empty(), "{warnings:?}");
     let css = export(&theme);
-    assert!(css.contains("--suhina-anchor-bottom: arrangement-volume top 4px;"), "{css}");
+    assert!(css.contains("anchor-bottom: arrangement-volume top 4px;"), "{css}");
     let mut again = Theme::default();
     assert!(apply(&mut again, &css).is_empty());
     assert_eq!(again.skin.controls, theme.skin.controls);
-    let warnings = apply(&mut theme, ".control-arrangement-volume { --suhina-anchor-top: arrangement-meter bottom; }");
+    let warnings = apply(&mut theme, ".control-arrangement-volume { anchor-top: arrangement-meter bottom; }");
     assert!(warnings.iter().any(|w| w.contains("cycle")), "{warnings:?}");
     assert!(theme.skin.controls["arrangement-volume"].anchors.is_empty());
     assert!(theme.skin.controls["arrangement-meter"].anchors.is_empty());
@@ -59,7 +57,7 @@ fn control_anchors_round_trip_through_css_and_cycles_warn() {
 #[test]
 fn control_geometry_round_trips_between_css_and_json_with_hostile_values_bounded() {
     let mut theme = Theme::default();
-    let css = ".control-mixer-volume { left: 8.25px; width: 90px; height: 20px; --suhina-direction: horizontal; } .control-mixer-name { bottom: 0px; } .control-mixer-color { display: none; }";
+    let css = ".control-mixer-volume { left: 8.25px; width: 90px; height: 20px; direction: horizontal; } .control-mixer-name { bottom: 0px; } .control-mixer-color { display: none; }";
     assert!(apply(&mut theme, css).is_empty());
     assert_eq!(theme.skin.controls["mixer-volume"].direction, super::super::control_layout::Direction::Horizontal);
     assert_eq!(theme.skin.controls["mixer-name"].bottom, Some(0));
@@ -72,7 +70,7 @@ fn control_geometry_round_trips_between_css_and_json_with_hostile_values_bounded
     assert!(warnings.is_empty());
     let before = theme.skin.controls.clone();
     assert_eq!(
-        apply(&mut theme, ".control-mixer-volume { width: 999999px; top: NaNpx; --suhina-direction: sideways; }").len(),
+        apply(&mut theme, ".control-mixer-volume { width: 999999px; top: NaNpx; direction: sideways; }").len(),
         3
     );
     assert_eq!(theme.skin.controls, before);
@@ -92,11 +90,11 @@ fn toolbar_offsets_mirror_without_replacing_the_native_layout() {
     );
 }
 #[test]
-fn a_style_rule_on_the_toolbar_is_written_but_its_arrangement_is_not() {
+fn a_style_rule_on_the_toolbar_is_the_style_engine_s_and_its_arrangement_is_not_written() {
     let mut theme = Theme::default();
     assert!(apply(&mut theme, "toolbar { background-color: #222222; offset-transport: 8px; }").is_empty());
     let written = layout(&theme, &Theme::default());
-    assert!(written.contains("toolbar { background-color: #222222; }"), "{written}");
+    assert!(!written.contains("background-color"), "the sheet keeps its own styles: {written}");
     assert!(!written.contains("offset-"), "{written}");
 }
 #[test]
@@ -152,6 +150,17 @@ fn css_changes_native_model_and_reports_unsupported_rules() {
     assert!(apply(&mut restored, &export(&theme)).is_empty());
     assert_eq!(restored, theme);
 }
+/// An element's border width, padding and gap are shorthands of the style engine; the editor takes
+/// them as it takes a longhand, and refuses a value none of their sides accepts (#1336).
+#[test]
+fn the_editor_takes_shorthands_of_an_element() {
+    let css = "button { border-width: 1px; } button { border-width: 0 0 2px; } mixer pan { padding: 2px 4px; } \
+               device { gap: 6px; } button { border-top-width: 3px; } button { border-radius: 4px; }";
+    assert!(apply(&mut Theme::default(), css).is_empty(), "{:?}", apply(&mut Theme::default(), css));
+    for bad in ["button { border-width: red; }", "button { border-width: 1px 2px 3px 4px 5px; }"] {
+        assert_eq!(apply(&mut Theme::default(), bad).len(), 1, "{bad}");
+    }
+}
 #[test]
 fn only_relative_css_imports_are_read() {
     assert_eq!(
@@ -180,11 +189,99 @@ fn malformed_css_does_not_panic_or_load_resources() {
 #[test]
 fn host_rules_inside_a_layer_count_and_media_rules_do_not() {
     let mut theme = Theme::default();
-    let css = "@layer base, theme;\n@layer theme { pan { --suhina-appearance: knob; } @layer inner { knob { --suhina-value-position: none; } } }\n@media (max-width: 400px) { slider { --suhina-appearance: knob; } }";
+    let css = "@layer base, theme;\n@layer theme { .control-mixer-pan { left: 4px; } @layer inner { .control-arm { top: 2px; } } }\n@media (max-width: 400px) { .control-cue { left: 9px; } }";
     let warnings = read_host_rules(&mut theme, css);
     assert!(warnings.is_empty(), "{warnings:?}");
-    let get = |selector: &str, key: &str| theme.skin.styles.get(selector).and_then(|p| p.get(key)).cloned();
-    assert_eq!(get("pan", "--suhina-appearance").as_deref(), Some("knob"));
-    assert_eq!(get("knob", "--suhina-value-position").as_deref(), Some("none"));
-    assert_eq!(get("slider", "--suhina-appearance"), None, "a conditional rule is the style engine's");
+    assert_eq!(theme.skin.controls["mixer-pan"].offset().x, 4.0);
+    assert_eq!(theme.skin.controls["arm"].offset().y, 2.0);
+    assert!(!theme.skin.controls.contains_key("cue"), "a conditional rule is the style engine's");
+}
+
+#[test]
+fn a_former_suhina_property_is_not_read_and_its_notice_names_what_took_its_place() {
+    let mut theme = Theme::default();
+    let css = "pan { --suhina-appearance: knob; } device { --suhina-param-columns: 3; } \
+               .control-mixer-pan { --suhina-direction: horizontal; } meter { meter-style: needle; }";
+    let warnings = read_host_rules(&mut theme, css);
+    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    assert!(warnings[0].contains("now appearance"), "{warnings:?}");
+    assert!(warnings[1].contains("a CSS layout replaces it, device { grid-template-columns"), "{warnings:?}");
+    assert!(warnings[2].contains("now direction"), "{warnings:?}");
+}
+
+/// Artwork rules name the element that draws a role's default artwork (`knob-body`,
+/// `icon[kind="play"]`, `button[checked]`); the earlier role form still reads, and Suhina writes
+/// the element form.
+#[test]
+fn artwork_rules_name_elements_and_read_the_earlier_role_form() {
+    let mut theme = Theme::default();
+    let css = "knob-body { image: url(\"assets/body.svg\"); }\n\
+               knob-pointer:hover { image: url(\"assets/tip.svg\"); }\n\
+               icon[kind=\"play\"] { image: url(\"assets/play.svg\"); }\n\
+               button[checked] { image: url(\"assets/on.svg\"); }\n\
+               fader.cap { image: url(\"assets/cap.svg\"); }\n\
+               solo:on { image: url(\"assets/solo.on.svg\"); }";
+    assert!(apply(&mut theme, css).is_empty());
+    for (role, path) in [
+        ("knob.body", "assets/body.svg"),
+        ("knob.pointer.hover", "assets/tip.svg"),
+        ("play", "assets/play.svg"),
+        ("button.on", "assets/on.svg"),
+        ("fader.cap", "assets/cap.svg"),
+        ("solo.on", "assets/solo.on.svg"),
+    ] {
+        assert_eq!(theme.skin.assets.get(role).map(String::as_str), Some(path), "{role}");
+    }
+    let written = export(&theme);
+    for rule in [
+        "knob-body { image: url(\"assets/body.svg\"); }",
+        "knob-pointer:hover { image: url(\"assets/tip.svg\"); }",
+        "icon[kind=\"play\"] { image: url(\"assets/play.svg\"); }",
+        "button[checked] { image: url(\"assets/on.svg\"); }",
+        "fader-cap { image: url(\"assets/cap.svg\"); }",
+        "icon[kind=\"solo\"][checked] { image: url(\"assets/solo.on.svg\"); }",
+    ] {
+        assert!(written.contains(rule), "{rule} in\n{written}");
+    }
+    let mut restored = Theme::default();
+    assert!(apply(&mut restored, &written).is_empty());
+    assert_eq!(restored.skin.assets, theme.skin.assets);
+}
+
+/// `url("suhina:…")` names artwork built into Suhina, as the user-agent sheet does; a name it
+/// does not ship is refused.
+#[test]
+fn a_suhina_url_names_built_in_artwork() {
+    let mut theme = Theme::default();
+    assert!(apply(&mut theme, "knob-pointer:hover { image: url(\"suhina:knob.body.svg\"); }").is_empty());
+    let body = suhina_theme_package::elements::default_artwork().find(|(role, _)| *role == "knob.body").unwrap().1;
+    assert_eq!(theme.skin.assets.get("knob.pointer.hover").map(String::as_str), Some(body));
+    let warnings = apply(&mut Theme::default(), "knob-body { image: url(\"suhina:nothing.svg\"); }");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+}
+
+/// An artwork rule's attribute may be written without quotes, in single quotes or with spaces,
+/// as CSS allows: each names the same role and gets no notice.
+#[test]
+fn an_artwork_rules_attribute_reads_in_any_form_css_allows() {
+    let mut theme = Theme::default();
+    let css = "icon[kind=play] { image: url(\"assets/play.svg\"); }\n\
+               icon[kind='stop']:hover { image: url(\"assets/stop.svg\"); }\n\
+               icon[ kind = \"solo\" ][checked] { image: url(\"assets/solo.svg\"); }";
+    assert_eq!(apply(&mut theme, css), Vec::<String>::new());
+    for (role, path) in [("play", "assets/play.svg"), ("stop.hover", "assets/stop.svg"), ("solo.on", "assets/solo.svg")]
+    {
+        assert_eq!(theme.skin.assets.get(role).map(String::as_str), Some(path), "{role}");
+    }
+}
+
+/// A theme that pads a painted element in percent is told so when it loads, and the padding is
+/// not used; on the workspace, laid out by the CSS layout, it is taken (#1336).
+#[test]
+fn a_theme_is_told_a_painted_element_takes_no_padding_in_percent() {
+    let meta = || crate::kit::theme::ThemeMeta::new("Padded", "#123456");
+    let (_, warnings) = crate::kit::theme::from_folder(meta(), "device { padding: 5%; }");
+    assert!(warnings.iter().any(|w| w.contains("percentage is read only on a CSS layout container")), "{warnings:?}");
+    let (_, warnings) = crate::kit::theme::from_folder(meta(), "#workspace { padding: 1%; }");
+    assert!(warnings.is_empty(), "{warnings:?}");
 }

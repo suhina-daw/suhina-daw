@@ -26,4 +26,18 @@ pub(crate) struct Clipboards {
     pub(crate) whole_tracks: crate::track_copy::TrackClipboard,
     /// A range of an automation lane copied for `automation.paste`.
     pub(crate) automation: Option<crate::automation_range::AutomationClip>,
+    /// Ranges of several lanes copied together (`automation.copy` with `lanes`, #1322): each
+    /// lane's device and parameter and its range; `automation.paste` puts each back on its lane.
+    pub(crate) automation_lanes: Vec<crate::automation_range::CopiedLane>,
+    /// The automation of a time selection copied with `range.copy`, clips or none: where the
+    /// selection started and each track's lanes over it (#1205). `clip.paste` with no track lays
+    /// it back on its tracks, the selection's start where the paste starts.
+    pub(crate) span: Option<SpanAutomation>,
+}
+
+/// The automation of a copied time selection, each track's lanes from the selection's start.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SpanAutomation {
+    pub(crate) start: f64,
+    pub(crate) lanes: Vec<(TrackId, Vec<crate::automation_range::Under>)>,
 }

@@ -7,7 +7,7 @@
 //! menu.
 
 use super::*;
-use crate::kit::native_css::HostState;
+use crate::kit::element::Attr;
 use crate::settings::{PianoKeyNames, PianoKeyStyle};
 
 /// How wide a black key is, as a share of the key column.
@@ -31,8 +31,12 @@ const RANGE_TINT: f32 = 0.11;
 pub enum ViewPick {
     KeyStyle(PianoKeyStyle),
     KeyNames(PianoKeyNames),
+    /// Whether the rows of the clip's scale are tinted (the toolbar's Highlight).
+    HighlightScale(bool),
     /// Whether notes of one key may overlap.
     AllowStacked(bool),
+    /// Whether a note covered from its start goes whole (Covered notes).
+    CoveredWhole(bool),
 }
 
 /// What the key column is painted with: a key style's values, and over them what the theme sets.
@@ -162,7 +166,7 @@ fn has_gradient(class: &str) -> bool {
 
 /// A state's colour from the sheet, when it differs from the base rule's: a rule for `piano-key`
 /// alone also answers for `piano-key[selected]`, and must not hide the state.
-fn state_colour(class: &str, state: HostState, base: Option<Color32>) -> Option<Color32> {
+fn state_colour(class: &str, state: Attr, base: Option<Color32>) -> Option<Color32> {
     part_style(class, &[state]).background.filter(|c| Some(*c) != base)
 }
 
@@ -190,10 +194,10 @@ pub(super) fn key_colours(style: PianoKeyStyle) -> KeyColours {
     set(&mut c.white_c, part_style("piano-key-c", &[]).background);
     set(&mut c.white_hover, part_style("piano-key-hover", &[]).background);
     set(&mut c.black_hover, part_style("piano-key-black-hover", &[]).background);
-    set(&mut c.white_selected, state_colour("piano-key", HostState::Selected, key.background));
-    set(&mut c.black_selected, state_colour("piano-key-black", HostState::Selected, black.background));
-    set(&mut c.white_playing, state_colour("piano-key", HostState::Playing, key.background));
-    set(&mut c.black_playing, state_colour("piano-key-black", HostState::Playing, black.background));
+    set(&mut c.white_selected, state_colour("piano-key", Attr::Selected, key.background));
+    set(&mut c.black_selected, state_colour("piano-key-black", Attr::Selected, black.background));
+    set(&mut c.white_playing, state_colour("piano-key", Attr::Playing, key.background));
+    set(&mut c.black_playing, state_colour("piano-key-black", Attr::Playing, black.background));
     set(&mut c.line, part_style("piano-key-line", &[]).background);
     set(&mut c.scale, part_style("piano-scale-mark", &[]).background);
     c
@@ -212,9 +216,8 @@ fn shade(painter: &egui::Painter, rect: Rect, left: Color32, right: Color32) {
 }
 
 /// Paints what the sheet's gradient for `class` gives `rect`.
-fn sheet_gradient(painter: &egui::Painter, class: &str, rect: Rect) {
-    let _style = crate::kit::style_class::enter(class);
-    crate::kit::native_css::background(painter, rect);
+fn sheet_gradient(painter: &egui::Painter, element: crate::kit::element::Name, rect: Rect) {
+    element.enter().paint_background(painter, rect, 0.0);
 }
 
 /// What state each key is in this frame.
@@ -326,21 +329,21 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
             key_painter.rect_filled(below, 0.0, states.white(key.saturating_sub(1)));
             let tip = Rect::from_min_max(Pos2::new(black_right, row.top()), row.max);
             if white_gradient {
-                sheet_gradient(&key_painter, "piano-key", tip);
+                sheet_gradient(&key_painter, crate::kit::element::PIANO_KEY, tip);
             } else {
                 shade(&key_painter, tip, Color32::TRANSPARENT, colours.sheen_right);
             }
             let cap = Rect::from_min_max(row.min, Pos2::new(black_right, row.bottom()));
             key_painter.rect_filled(cap, 0.0, states.black(key));
             if black_gradient {
-                sheet_gradient(&key_painter, "piano-key-black", cap);
+                sheet_gradient(&key_painter, crate::kit::element::PIANO_KEY_BLACK, cap);
             } else {
                 shade(&key_painter, cap, Color32::TRANSPARENT, colours.black_sheen);
             }
         } else {
             key_painter.rect_filled(row, 0.0, states.white(key));
             if white_gradient {
-                sheet_gradient(&key_painter, "piano-key", row);
+                sheet_gradient(&key_painter, crate::kit::element::PIANO_KEY, row);
             } else {
                 let split = row.left() + row.width() * edge;
                 shade(
@@ -361,7 +364,7 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
                 key_painter.hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, colours.line));
             }
         }
-        scale_view::key_mark(&key_painter, clip.scale, key, row, colours.scale);
+        scale_view::key_mark(&key_painter, clip.scale.filter(|_| state.highlight_scale), key, row, colours.scale);
         if named(key, state.key_names, folded, layout.key_height) {
             let right = if black && !folded { black_right - BLACK_NAME_INSET } else { row.right() - NAME_INSET };
             key_painter.text(
@@ -383,7 +386,11 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
     }
     let style = part_style("piano-scale-strip", &[]);
     let painter = ui.painter_at(strip);
-    painter.rect_filled(strip, 0.0, style.background.unwrap_or_else(theme::panel_background));
+    painter.rect_filled(
+        strip,
+        0.0,
+        style.background.unwrap_or_else(|| crate::kit::style_class::surface_or(theme::panel_background())),
+    );
     painter.vline(strip.right() - 0.5, strip.y_range(), theme::hairline(style.border.unwrap_or_else(theme::border)));
     let text = style.color.unwrap_or_else(theme::text_secondary);
     let font = theme::mono_font(theme::TEXT_TINY);
@@ -448,11 +455,11 @@ pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRoll
 }
 
 /// The pointer where a drag zooms: the windowing layer has no magnifier cursor on every system, so
-/// the pointer is hidden and a magnifier is drawn where it is, as the eraser is.
+/// the pointer is hidden and a magnifier is drawn where it is, as the drawing tools' icons are.
 pub(super) fn draw_magnifier(ui: &Ui, pos: Pos2) {
     ui.ctx().set_cursor_icon(CursorIcon::None);
     let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("piano-roll-magnifier")));
-    let (halo, line) = (theme::window_background(), theme::text_primary());
+    let (halo, line) = (crate::kit::style_class::surface_or(theme::window_background()), theme::text_primary());
     let handle = [pos + Vec2::splat(MAGNIFIER_RADIUS * 0.7), pos + Vec2::splat(MAGNIFIER_RADIUS * 1.7)];
     painter.line_segment(handle, Stroke::new(4.0, halo));
     painter.circle_stroke(pos, MAGNIFIER_RADIUS, Stroke::new(3.5, halo));
@@ -484,25 +491,52 @@ pub(super) fn draw_ranges(painter: &egui::Painter, layout: &Layout, state: &Pian
     }
 }
 
-/// The menu in the corner over the keys: how the keys look and name themselves, and whether notes
-/// of a key may overlap. What is picked is kept in the settings by the window.
-pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
+/// The corner above the keys (› Layout): at its left the three dots of the piano roll's own
+/// settings, Key style and Key names, each a submenu with its value dim at the right; at its right
+/// the audition headphones (› Playing the keys). The workflow and Allow stacked notes are in the
+/// toolbar's workflow menu.
+pub(super) fn corner(
+    ui: &mut Ui,
+    corner: Rect,
+    state: &mut PianoRollState,
+    keymap: &crate::settings::keymap::Keymap,
+    scale: f32,
+) {
     if corner.width() < 1.0 || corner.height() < 1.0 {
         return;
     }
+    let painter = ui.painter_at(corner);
+    let side = (TOOL_ICON * scale).min(corner.height() - 4.0).max(8.0);
+    let more = Rect::from_min_size(Pos2::new(corner.left() + 3.0, corner.center().y - side / 2.0), Vec2::splat(side));
+    let audition = Rect::from_min_size(Pos2::new(corner.right() - 3.0 - side, more.top()), Vec2::splat(side));
+    let paint = super::ButtonPaint { ui, painter: &painter, keymap, scale };
+    if audition.left() > more.right() && paint.place(audition, IconButton::Audition, state.audition, true) {
+        state.audition = !state.audition;
+        if !state.audition {
+            state.audition_pending.clear();
+        }
+    }
+    let response = widgets::button_area(ui, more, Id::unique("piano-roll-settings"), IconButton::More.name());
+    let fill = crate::kit::motion::mix(Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response));
+    let ink = theme::text_secondary();
+    painter.rect_filled(more, 3.0, fill);
+    IconButton::More.draw(&painter, more, ink, scale);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let theme_keys = theme_sets_keys();
     let mut picked = None;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(corner), |ui| {
-        let text = egui::RichText::new("View   ").font(font.clone()).color(theme::text_value());
-        let menu = ui.menu_button(text, |ui| {
-            let heading = |ui: &mut Ui, text: &str| {
-                ui.label(egui::RichText::new(text).font(font.clone()).color(theme::text_secondary()));
-            };
-            heading(ui, "Key style");
+    egui::Popup::menu(&response).show(|ui| {
+        let submenu = |ui: &mut Ui, name: &str, value: &str, label: String, entries: &mut dyn FnMut(&mut Ui)| {
+            let button = egui::Button::new(egui::RichText::new(name).font(font.clone())).right_text((
+                egui::RichText::new(value).font(font.clone()).color(theme::text_hint()),
+                egui::containers::menu::SubMenuButton::arrow_atom(None),
+            ));
+            let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| entries(ui));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+        };
+        let style = if theme_keys { "Theme" } else { state.key_style.name() };
+        submenu(ui, "Key style", style, format!("Key style ({style})"), &mut |ui| {
             if theme_keys {
-                let theme_label = egui::RichText::new("Theme").font(font.clone());
-                let response = ui.selectable_label(true, theme_label);
+                let response = ui.selectable_label(true, egui::RichText::new("Theme").font(font.clone()));
                 response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, true, "Key style: Theme"));
             }
             for style in PianoKeyStyle::ALL {
@@ -518,8 +552,9 @@ pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
                     ui.close();
                 }
             }
-            ui.separator();
-            heading(ui, "Key names");
+        });
+        let names = state.key_names.name();
+        submenu(ui, "Key names", names, format!("Key names ({names})"), &mut |ui| {
             for names in PianoKeyNames::ALL {
                 let on = state.key_names == names;
                 let response = ui.selectable_label(on, egui::RichText::new(names.name()).font(font.clone()));
@@ -530,20 +565,9 @@ pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
                     ui.close();
                 }
             }
-            ui.separator();
-            let stacked = !state.notes_replace;
-            let response = ui.selectable_label(stacked, egui::RichText::new("Allow stacked notes").font(font.clone()));
-            response
-                .widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, stacked, "Allow stacked notes"));
-            if response.clicked() {
-                picked = Some(ViewPick::AllowStacked(!stacked));
-                ui.close();
-            }
         });
-        menu_arrow(ui, menu.response.rect, theme::text_value());
-        menu.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Piano roll view"));
-        menu.response.on_hover_text("How the keys look, which keys are named, and whether notes may overlap");
     });
+    response.on_hover_text("Piano roll settings: how the keys look and are named");
     if picked.is_some() {
         state.view_picked = picked;
     }
@@ -575,33 +599,102 @@ impl PianoRollState {
         self.key_live = None;
     }
 
-    /// The rectangle a drag is selecting with is at `rect`: the notes it has just reached sound at
-    /// once, each key once.
+    /// The rectangle a drag is selecting with is at `rect`: the keys of the notes it covers, lowest
+    /// first, each once, for the audition to sound (see `audition_frame`).
     pub(super) fn audition_swept(&mut self, layout: &Layout, clip: &PianoClip, rect: Rect) {
-        let inside: BTreeSet<usize> = clip
-            .notes
-            .iter()
-            .enumerate()
-            .filter(|(_, n)| layout.note_rect(n).intersects(rect))
-            .map(|(i, _)| i)
-            .collect();
-        let reached: Vec<u8> =
-            inside.difference(&self.swept).filter_map(|i| clip.notes.get(*i)).map(|n| n.key).collect();
-        self.audition_keys(reached);
-        self.swept = inside;
+        let mut keys: Vec<u8> =
+            clip.notes.iter().filter(|n| layout.note_rect(n).intersects(rect)).map(|n| n.key).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        self.sweep_wanted = Some(keys);
     }
 
-    /// Whether notes this command places replace what is under them (Allow stacked notes off).
-    pub(crate) fn replacing(&self, params: &mut Value) {
+    /// With stacked notes off, what an edit of the selected notes does to the notes under them: it
+    /// makes no room while they stay selected (a move through other notes erases nothing on the
+    /// way), only once they are let go ([`Self::settle_frame`]). With nothing selected, the
+    /// command replaces at once (`replace`).
+    pub(crate) fn replacing(&mut self, params: &mut Value) {
+        if !self.notes_replace {
+            return;
+        }
+        if self.acting().is_empty() {
+            self.replacing_now(params);
+        } else {
+            self.settle_pending = true;
+        }
+    }
+
+    /// `replace` at once, for notes that are not left selected (a note drawn, a paint stroke), and
+    /// what happens to a note covered from its start (Covered notes).
+    pub(crate) fn replacing_now(&self, params: &mut Value) {
         if self.notes_replace {
             params["replace"] = json!(true);
+            params["covered"] = json!(self.covered());
         }
+    }
+
+    /// The `covered` a command or `note.makeRoom` takes: "delete" or "cut".
+    pub(super) fn covered(&self) -> &'static str {
+        if self.covered_whole { "delete" } else { "cut" }
+    }
+
+    /// Once a frame: the notes edited while selected, once let go (another selection, none, another
+    /// clip), make room under them with one `note.makeRoom`, when they overlap a note of their key.
+    /// They are named by id, taken once the clip shows them (a paste's copies a frame later), so a
+    /// note deleted meanwhile is left out.
+    pub(super) fn settle_frame(&mut self, clip: &PianoClip, actions: &mut Vec<Action>) {
+        // Stacked notes allowed (turned on while notes waited): nothing makes room, then or later.
+        if !self.notes_replace {
+            self.settling = None;
+            self.settle_pending = false;
+            return;
+        }
+        let acting = self.acting().clone();
+        if let Some(settling) = &mut self.settling {
+            let same_clip = settling.address == clip.address;
+            let let_go = !same_clip || settling.notes != acting;
+            // The ids are taken on the first frame the clip shows, even when the notes are let go
+            // on that very frame (Escape right after an arrow key), so the room is still made.
+            if settling.ids.is_empty() && same_clip {
+                settling.ids = settling.notes.iter().filter_map(|i| clip.notes.id(*i)).collect();
+            }
+            if let_go && let Some(settling) = self.settling.take() {
+                // Another clip shown now: the notes are not in it to check, so the room is made by
+                // id in their own clip; a command that changes nothing makes no undo step.
+                actions.extend(if same_clip {
+                    settling.action(clip)
+                } else {
+                    (!settling.ids.is_empty()).then(|| settling.make_room())
+                });
+            }
+        }
+        if std::mem::take(&mut self.settle_pending) && !self.acting().is_empty() {
+            let notes = self.acting().clone();
+            match &self.settling {
+                Some(settling) if settling.notes == notes && settling.address == clip.address => {}
+                _ => {
+                    self.settling = Some(Settling {
+                        address: clip.address.clone(),
+                        notes,
+                        ids: Vec::new(),
+                        covered: self.covered(),
+                    })
+                }
+            }
+        }
+    }
+
+    /// For a piano roll no longer shown: the notes edited while selected make room now.
+    pub fn settle_on_hide(&mut self) -> Option<Action> {
+        self.settle_pending = false;
+        let settling = self.settling.take()?;
+        (self.notes_replace && !settling.ids.is_empty()).then(|| settling.make_room())
     }
 
     /// `note.add` for `notes`, under the rule for stacked notes.
     pub(super) fn add_action(&self, clip: &PianoClip, notes: &[Note]) -> Action {
         let mut params = add_params(clip, notes);
-        self.replacing(&mut params);
+        self.replacing_now(&mut params);
         Action::new("note.add", params)
     }
 

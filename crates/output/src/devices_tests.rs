@@ -255,3 +255,206 @@ fn only_a_sound_server_is_asked_for_the_engines_block_unasked() {
     assert_eq!(wanted_buffer("ALSA", None, 1024), None);
     assert_eq!(wanted_buffer("ALSA", Some(256), 1024), Some(256));
 }
+
+fn driver(min: u32, max: u32, preferred: u32, granularity: i32) -> DriverBuffers {
+    DriverBuffers::new(min, max, preferred, granularity)
+}
+
+/// A driver whose size is set in its own control panel answers with that one size as smallest,
+/// largest and preferred: the list holds it alone, and it plays by default.
+#[test]
+fn a_driver_fixed_to_its_control_panels_size_offers_that_size_by_default() {
+    let fixed = driver(128, 128, 128, 0);
+    assert_eq!(fixed.sizes(), vec![128]);
+    assert_eq!(fixed.default_size(), Some(128));
+    assert_eq!(fit_to_driver(128, &fixed), (128, Some(128)));
+    // A size saved before the control panel changed comes to the driver's one size.
+    assert_eq!(fit_to_driver(2048, &fixed), (128, Some(128)));
+    // A size outside what the engine renders in is asked for no size: the driver keeps its own.
+    let tiny = driver(32, 32, 32, 0);
+    assert!(tiny.sizes().is_empty());
+    assert_eq!(tiny.default_size(), None);
+    assert_eq!(fit_to_driver(1024, &tiny).1, None);
+}
+
+/// A driver answering one size with a granularity of -1 or a step, as real drivers fixed to their
+/// control panel's size do, takes that size even when it is no power of two or step: it is the
+/// only size the driver plays, and the engine renders in it.
+#[test]
+fn a_driver_answering_one_size_takes_it_whatever_granularity_it_states() {
+    for granularity in [-1, 0, 48, -2] {
+        let fixed = driver(480, 480, 480, granularity);
+        assert_eq!(fixed.sizes(), vec![480], "granularity {granularity}");
+        assert_eq!(fixed.default_size(), Some(480), "granularity {granularity}");
+        assert_eq!(fit_to_driver(1024, &fixed), (480, Some(480)), "granularity {granularity}");
+    }
+    let fixed = driver(480, 480, 480, -1);
+    let listed = listed_outputs([Driven(fixed)], "ASIO", None);
+    assert_eq!(listed[0].buffer_sizes, vec![480]);
+    assert_eq!(listed[0].default_buffer, Some(480));
+    let (block, asked) = fit_to_driver(256, &fixed);
+    assert_eq!(
+        driver_notice("Interface", 256, block, asked, &fixed).as_deref(),
+        Some("Interface plays only 480 frames, the size set in its control panel")
+    );
+    // Still within what the engine renders in.
+    assert!(driver(32, 32, 32, -1).sizes().is_empty());
+}
+
+#[test]
+fn powers_of_two_are_every_power_in_the_drivers_range() {
+    let powers = driver(32, 8192, 256, -1);
+    assert_eq!(powers.sizes(), vec![64, 128, 256, 512, 1024, 2048, 4096]);
+    assert_eq!(powers.default_size(), Some(256));
+    // Ends that are not powers of two are not sizes such a driver takes.
+    assert_eq!(driver(96, 1000, 128, -1).sizes(), vec![128, 256, 512]);
+    assert_eq!(fit_to_driver(300, &driver(96, 1000, 128, -1)), (256, Some(256)));
+}
+
+#[test]
+fn a_stepped_driver_offers_every_size_on_its_steps() {
+    // 48 to 480 in steps of 48: 96, 144 and 192 are offered, though they are no powers of two.
+    let stepped = driver(48, 480, 144, 48);
+    assert_eq!(stepped.sizes(), vec![96, 144, 192, 240, 288, 336, 384, 432, 480]);
+    assert_eq!(stepped.default_size(), Some(144));
+    assert_eq!(fit_to_driver(200, &stepped), (192, Some(192)));
+    // A size off its steps is never asked for.
+    assert_eq!(fit_to_driver(256, &stepped), (240, Some(240)));
+    // Fine-grained drivers retain every permitted size, including past 64 entries.
+    let fine = driver(16, 4096, 200, 8);
+    assert_eq!(fine.sizes(), (64..=4096).step_by(8).collect::<Vec<_>>());
+    // Steps that never land on a common size still give a list, every size on them.
+    let coarse = driver(48, 8192, 192, 48);
+    assert_eq!(coarse.sizes(), (96..=4080).step_by(48).collect::<Vec<_>>());
+    assert!(coarse.sizes().iter().all(|n| (n - 48).is_multiple_of(48)));
+    // A granularity below -1 is a step no size but the smallest is on, as the stream checks it.
+    assert_eq!(driver(64, 2048, 64, -2).sizes(), vec![64]);
+}
+
+#[test]
+fn an_unstated_granularity_offers_the_preferred_size_alone() {
+    assert_eq!(driver(96, 2000, 333, 0).sizes(), vec![333]);
+    assert_eq!(fit_to_driver(1024, &driver(96, 2000, 333, 0)), (333, Some(333)));
+    // A preferred size outside the range says nothing: only the two ends it declared, never a
+    // size between them it did not promise. With none chosen the one nearest the engine's block
+    // plays, so the engine renders in the size the driver plays.
+    let odd = driver(256, 2048, 4096, 0);
+    assert_eq!(odd.sizes(), vec![256, 2048]);
+    assert_eq!(odd.default_size(), Some(256));
+    assert_eq!(plan_for_driver(None, &odd), Some((256, Some(256))));
+}
+
+#[test]
+fn a_driver_answer_that_makes_no_sense_counts_as_none() {
+    for broken in [driver(0, 0, 0, 0), driver(2048, 64, 128, -1)] {
+        assert_eq!(broken.range(), None);
+        assert!(broken.sizes().is_empty());
+        assert_eq!(broken.default_size(), None);
+        assert_eq!(fit_to_driver(512, &broken), (512, None), "never asked for a size it did not declare");
+        assert_eq!(plan_for_driver(None, &broken), None, "it keeps its own and the engine its block");
+    }
+}
+
+/// An ASIO device as the list reads it: its offers say only the range, the driver says the rest.
+#[derive(Clone)]
+struct Driven(DriverBuffers);
+
+impl Listed for Driven {
+    fn name(&self) -> Option<String> {
+        Some("Interface".into())
+    }
+
+    fn plays(&self) -> bool {
+        true
+    }
+
+    fn offers(&self) -> Vec<Offer> {
+        vec![Offer { rates: (44_100, 44_100), channels: 2, buffer: self.0.range() }]
+    }
+
+    fn own(&self) -> Option<Offer> {
+        self.offers().first().copied()
+    }
+
+    fn driver(&self) -> Option<DriverBuffers> {
+        Some(self.0)
+    }
+}
+
+#[test]
+fn the_list_holds_what_the_asio_driver_allows_and_its_preferred_size() {
+    let listed = listed_outputs([Driven(driver(128, 128, 128, 0))], "ASIO", None);
+    assert_eq!(listed[0].buffer_sizes, vec![128]);
+    assert_eq!(listed[0].buffer_range, Some((128, 128)));
+    assert_eq!(listed[0].default_buffer, Some(128));
+    let listed = listed_outputs([Driven(driver(32, 2048, 256, -1))], "ASIO", None);
+    assert_eq!(listed[0].buffer_sizes, vec![64, 128, 256, 512, 1024, 2048]);
+    assert_eq!(listed[0].default_buffer, Some(256));
+    // Other hosts say no preferred size.
+    let own = Offer { rates: (48_000, 48_000), channels: 2, buffer: Some((256, 512)) };
+    let card = Stand { name: Some("Card"), plays: true, offers: vec![own], own: Some(own) };
+    assert_eq!(listed_outputs([card], "ALSA", None)[0].default_buffer, None);
+}
+
+/// A driver whose preferred size is off its steps still gets a size asked of it with none chosen:
+/// the one nearest the engine's block, so the block and the driver's buffer are the same size.
+#[test]
+fn with_no_usable_preferred_size_the_size_nearest_the_engine_block_plays() {
+    let stepped = driver(96, 2016, 100, 96);
+    assert_eq!(stepped.default_size(), Some(1056));
+    assert_eq!(plan_for_driver(None, &stepped), Some((1056, Some(1056))));
+    // A size chosen wins over the default.
+    assert_eq!(plan_for_driver(Some(200), &stepped), Some((192, Some(192))));
+}
+
+#[test]
+fn a_notice_says_what_the_driver_takes() {
+    let fixed = driver(128, 128, 128, 0);
+    let (block, asked) = fit_to_driver(2048, &fixed);
+    assert_eq!(
+        driver_notice("Interface", 2048, block, asked, &fixed).as_deref(),
+        Some("Interface plays only 128 frames, the size set in its control panel")
+    );
+    let powers = driver(64, 2048, 256, -1);
+    let (block, asked) = fit_to_driver(300, &powers);
+    assert_eq!(
+        driver_notice("Interface", 300, block, asked, &powers).as_deref(),
+        Some("Interface takes 64 to 2048 frames in powers of two; 256 frames play")
+    );
+    assert_eq!(driver(48, 480, 144, 48).describe(), "48 to 480 frames in steps of 48");
+    assert_eq!(driver(96, 2000, 333, 0).describe(), "only 333 frames");
+    // What was chosen plays: nothing to say.
+    let (block, asked) = fit_to_driver(256, &powers);
+    assert_eq!(driver_notice("Interface", 256, block, asked, &powers), None);
+    // A driver whose sizes the engine cannot render in keeps its own.
+    let tiny = driver(32, 32, 32, 0);
+    let (block, asked) = fit_to_driver(1024, &tiny);
+    assert_eq!(
+        driver_notice("Interface", 1024, block, asked, &tiny).as_deref(),
+        Some("Interface takes only 32 frames, which Suhina cannot render in; it keeps its own buffer size")
+    );
+}
+
+/// A driver whose answer makes no sense is listed with the engine's own sizes, as one that
+/// declared nothing, and asked for none.
+#[test]
+fn a_broken_driver_is_listed_with_the_engines_sizes() {
+    let listed = listed_outputs([Driven(driver(0, 0, 0, 0))], "ASIO", None);
+    assert_eq!(listed[0].buffer_sizes, BUFFER_SIZES.to_vec());
+    assert_eq!(listed[0].buffer_range, None);
+    assert_eq!(listed[0].default_buffer, None);
+}
+
+/// The trace line names the driver's raw answer and what Suhina makes of it, so a log from a
+/// driver that answers oddly says why a size played.
+#[test]
+fn the_trace_text_names_the_answer_and_the_sizes_made_from_it() {
+    assert_eq!(
+        driver(2048, 2048, 2048, 0).trace_text(),
+        "min=2048 max=2048 preferred=2048 granularity=Unstated; sizes [2048], default Some(2048)"
+    );
+    assert_eq!(
+        driver(64, 256, 128, -1).trace_text(),
+        "min=64 max=256 preferred=128 granularity=PowersOfTwo; sizes [64, 128, 256], default Some(128)"
+    );
+}

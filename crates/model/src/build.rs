@@ -91,6 +91,7 @@ impl Clip {
             color: None,
             ara: false,
             audio: ClipAudio::default(),
+            swing: crate::ClipSwing::default(),
             extensions: Extensions::default(),
         }
     }

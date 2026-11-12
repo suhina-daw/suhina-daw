@@ -24,6 +24,14 @@ impl App {
             "file.new" => self.open_project_dialog(false),
             // With clips selected in the Arrangement, the loop is exactly their span; with none,
             // Ctrl+L turns looping on or off as before.
+            // A range painted on automation lanes, over one lane or several, loops its span (#1322).
+            "transport.setLoopEnabled"
+                if self.shown == View::Arrangement && self.arrangement.automation.range.is_some() =>
+            {
+                if let Some(range) = &self.arrangement.automation.range {
+                    actions.push(self.loop_or_unloop(range.start, range.end));
+                }
+            }
             // A time selection loops exactly its span; a click on a clip ends it, so then the
             // clips' span is looped (below).
             "transport.setLoopEnabled"
@@ -201,6 +209,15 @@ impl App {
             {
                 actions.extend(self.piano_key(action))
             }
+            // Notes copied last paste into the clip the piano roll shows, even when a click on
+            // that clip in the view took the other keys: copy notes, pick another clip, paste.
+            "selection.paste" if self.piano_takes_paste() => {
+                // The paste gives the piano roll the keys; it acts only with them.
+                self.piano_roll.focused = true;
+                let paste = self.piano_key(action);
+                self.piano_roll.focused = paste.is_some();
+                actions.extend(paste)
+            }
             "selection.mute"
             | "selection.rename"
             | "selection.split"
@@ -209,6 +226,15 @@ impl App {
             | "selection.takeDown"
                 if self.piano_has_keyboard() => {}
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
+            // Lane headers or group headings picked: Delete takes them out of the track's layout,
+            // one undo step (#1322).
+            "selection.delete" if self.shown == View::Arrangement && self.arrangement.automation.has_picks() => {
+                if let Some((_, _, timeline)) = self.timeline.as_ref()
+                    && let Some(action) = self.arrangement.automation.delete_picked(&timeline.automation)
+                {
+                    actions.push(action);
+                }
+            }
             // A range painted on an automation lane: copy, cut, paste (from its start), duplicate
             // (right after it) and delete act on it (#916).
             "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate" | "selection.delete"
@@ -256,6 +282,17 @@ impl App {
                 // its group).
                 let after = picks.iter().filter_map(|(_, at)| at.0.first().copied()).max().unwrap_or(0) + 1;
                 actions.push(Action::new("device.paste", json!({ "track": track.0, "position": after })));
+            }
+            // Devices copied last, none picked: Ctrl+V puts them at the end of the selected
+            // track's chain, never a copy of a track or a clip (#871). A clip or slot clicked
+            // last picks its track.
+            "selection.paste"
+                if self.copied_last == CopiedLast::Devices
+                    && self.session().is_some_and(|s| s.copied_devices() > 0)
+                    && self.paste_track().is_some() =>
+            {
+                let Some(track) = self.paste_track() else { return };
+                actions.push(Action::new("device.paste", json!({ "track": track.0 })));
             }
             // Ctrl+D copies the picked devices right after the last of them (#685).
             "selection.duplicate" if self.device_focus && self.selected_device.is_some() => {
@@ -417,13 +454,10 @@ impl App {
                 if action == "selection.delete"
                     && (self.detail_shows_devices() || self.device_focus)
                     && let Some((track, at)) = self.selected_device.clone()
+                    // Main's chain too, which has no track of its own (#690).
                     && self.session().is_some_and(|s| {
-                        let p = s.project();
-                        p.tracks
-                            .iter()
-                            .find(|t| t.id == track)
-                            .and_then(|t| t.channel)
-                            .and_then(|c| p.channels.iter().find(|ch| ch.id == c))
+                        s.project()
+                            .channel_of_track(track)
                             .is_some_and(|ch| suhina_engine::model::device_at(&ch.devices, &at.0).is_some())
                     })
                 {
@@ -603,9 +637,9 @@ impl App {
                 if (self.detail_shows_devices() || self.device_focus)
                     && let Some((track, at)) = self.selected_device.clone()
                     && let Some(enabled) = self.session().and_then(|s| {
-                        let p = s.project();
-                        let channel = p.track(track).and_then(|t| t.channel)?;
-                        suhina_engine::model::device_at(&p.channel(channel)?.devices, &at.0).map(|d| d.enabled)
+                        // Main's chain too (#690).
+                        let devices = &s.project().channel_of_track(track)?.devices;
+                        suhina_engine::model::device_at(devices, &at.0).map(|d| d.enabled)
                     })
                 {
                     // Every picked device follows the one clicked last (#948).
@@ -679,8 +713,7 @@ impl App {
                 let siblings: Vec<usize> = self
                     .session()
                     .and_then(|s| {
-                        let p = s.project();
-                        let devices = &p.channel(p.track(track)?.channel?)?.devices;
+                        let devices = &s.project().channel_of_track(track)?.devices;
                         let list = match parent.split_last() {
                             None => devices.as_slice(),
                             Some((branch, group)) => {
@@ -1120,6 +1153,53 @@ impl App {
         }
     }
 
+    /// A control moved by hand brings its parameter into view in its track's open lanes, the top
+    /// lane showing it ready to be drawn on (#1205): a track's volume, pan or mute (Main's too),
+    /// a parameter of a device on the track's own chain, a built-in's, an `.sd` device's or a
+    /// plug-in's.
+    pub(super) fn focus_touched_lane(&mut self, action: &Action) {
+        use crate::arrangement::automation_lanes::LaneKey;
+        let id = |v: &serde_json::Value| v.as_u64().and_then(|n| u32::try_from(n).ok()).map(TrackId);
+        let touched: Vec<(TrackId, LaneKey)> = match action.id {
+            "track.setVolume" | "track.setPan" | "track.setMute" => {
+                let param = match action.id {
+                    "track.setVolume" => suhina_engine::model::automation::VOLUME,
+                    "track.setPan" => suhina_engine::model::automation::PAN,
+                    _ => suhina_engine::model::automation::MUTE,
+                };
+                // One track moved by hand; a value set on many at once brings none forward.
+                match action.params["tracks"].as_array().map(Vec::as_slice) {
+                    Some([one]) => id(one).map(|track| (track, LaneKey::mixer(param))).into_iter().collect(),
+                    _ => Vec::new(),
+                }
+            }
+            "device.setParam" => {
+                let track = id(&action.params["track"]);
+                let device = detail_view::DeviceAt::parse(&action.params["device"]);
+                let param = match &action.params["param"] {
+                    serde_json::Value::String(text) => Some(text.clone()),
+                    serde_json::Value::Number(number) => Some(number.to_string()),
+                    _ => None,
+                };
+                // Lanes are of the devices on the track's own chain, not inside a device group.
+                match (track, device, param) {
+                    (Some(track), Some(device), Some(param)) if device.0.len() == 1 => device
+                        .0
+                        .first()
+                        .map(|&index| (track, LaneKey { device: Some(index), param }))
+                        .into_iter()
+                        .collect(),
+                    _ => Vec::new(),
+                }
+            }
+            _ => return,
+        };
+        let Some((_, _, timeline)) = self.timeline.as_ref() else { return };
+        for (track, key) in touched {
+            self.arrangement.automation.focus(track, key, &timeline.automation);
+        }
+    }
+
     /// Ends the window's open gesture once no mouse button is down, so a drag is one undo step
     /// that closes on mouse up (#1146), and the next drag of a selection counts from where it
     /// stands then. A range tool's gesture ([`crate::arrangement::automation_lanes::RANGE_GESTURE`])
@@ -1256,6 +1336,20 @@ impl App {
         self.view.selected_slot = None;
         self.view.track_focus = true;
         self.view.reveal = Some(first);
+    }
+
+    /// The track copied devices are pasted on: the track of the clip or slot clicked last, else
+    /// the selected track.
+    pub(super) fn paste_track(&self) -> Option<TrackId> {
+        match self.shown {
+            View::Session if !self.view.track_focus => {
+                self.view.selected_slot.map(|(track, _)| track).or(self.view.selected)
+            }
+            View::Arrangement if !self.arrangement.track_focus => {
+                self.arrangement.selected_clip().map(|(track, _)| track).or_else(|| self.selected_track())
+            }
+            _ => self.selected_track(),
+        }
     }
 
     /// The track selected in the view shown.

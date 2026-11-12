@@ -1,18 +1,18 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Updates in the window (`docs/spec/updates.md`): the check once per start, the start panel's
-//! *New version available* line, and Help › Check for updates…, which checks now, lists test
-//! builds in developer mode and connects to the GitHub CLI only when asked to.
+//! Updates in the window (`docs/spec/updates.md`): the check once per start, the *New nightly
+//! available* line on the start panel and in the bar over an open project, and Help › Check for
+//! updates…, which checks now, lists test builds in developer mode and connects to the GitHub CLI
+//! only when asked to.
 
-use crate::kit::surface::Backgrounds as _;
 use std::path::PathBuf;
 
 use egui::{Align2, Id, Key, Pos2, Rect, Ui, Vec2};
 use suhina_update::{Build, BuildKind, Channel, Phase, Updater};
 
 use crate::app::project_dialog::{self, BUTTON, LINE, VERSION};
-use crate::app::start_panel::Notice;
+use crate::app::start_panel::{self, Notice, StartChoice};
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, button};
 use crate::settings::update_settings::UpdateSettings;
@@ -65,6 +65,11 @@ pub struct Updates {
     note: Option<String>,
     /// The channel the last check asked.
     channel: Channel,
+    /// The build whose offer the bar over a project was told to hide (*Later*).
+    hidden: Option<String>,
+    /// The installed or failed update the bar over a project was told to hide (*Later*); the bar
+    /// shows again once the updater has moved on from it.
+    put_off: Option<Phase>,
 }
 
 impl Updates {
@@ -93,6 +98,7 @@ impl Updates {
         match suhina_update::program_folder() {
             Ok(dir) => {
                 self.note = None;
+                self.put_off = None;
                 let ctx = ctx.clone();
                 self.updater.install(build, dir, self.token.clone(), move || ctx.request_repaint());
             }
@@ -108,58 +114,64 @@ impl Updates {
 
     /// The start panel's line: a newer build, its download, or what became of it.
     pub fn notice(&self) -> Option<Notice> {
-        let name = |b: &Build| match b.pr {
-            Some(pr) => format!("the test build of #{pr} ({})", b.version),
-            None => format!("Suhina {}", b.version),
-        };
-        Some(match self.updater.phase() {
-            Phase::Checked { newer: Some(build), .. } => Notice {
-                text: format!("New version available: {}", name(&build)),
-                button: Some("Download update now"),
-                progress: None,
-                error: false,
-                page: Some(build.page),
-            },
-            Phase::Downloading { build, done } => {
-                let part = if build.size > 0 { (done as f32 / build.size as f32).clamp(0.0, 1.0) } else { 0.0 };
-                Notice {
-                    text: format!("Downloading {}: {:.0} %", name(&build), part * 100.0),
-                    button: None,
-                    progress: Some(part),
-                    error: false,
-                    page: None,
-                }
+        notice_of(self.updater.phase())
+    }
+
+    /// Whether the bar over an open project shows: there is a line to show, and it was not
+    /// hidden with *Later*.
+    pub fn bar_shows(&self) -> bool {
+        self.bar_shows_for(&self.updater.phase())
+    }
+
+    fn bar_shows_for(&self, phase: &Phase) -> bool {
+        match phase {
+            Phase::Checked { newer: Some(build), .. } => self.hidden.as_deref() != Some(build.version.as_str()),
+            Phase::Installed(_) | Phase::InstallFailed { .. } => self.put_off.as_ref() != Some(phase),
+            phase => notice_of(phase.clone()).is_some(),
+        }
+    }
+
+    /// The bar over an open project, in `rect`: the start panel's line with *Later* at its end
+    /// while it waits on the person (an offer, an installed update, a failure).
+    pub fn bar(&mut self, ui: &mut Ui, rect: Rect) -> Option<Wanted> {
+        let phase = self.updater.phase();
+        match bar_line(ui, rect, phase.clone())? {
+            BarChoice::Later => {
+                self.later(phase);
+                None
             }
-            Phase::Installing(build) => Notice {
-                text: format!("Installing {}…", name(&build)),
-                button: None,
-                progress: Some(1.0),
-                error: false,
-                page: None,
-            },
-            Phase::Installed(build) => Notice {
-                text: format!("{} is installed: restart Suhina to use it", name(&build)),
-                button: Some("Restart now"),
-                progress: None,
-                error: false,
-                page: None,
-            },
-            Phase::InstallFailed { reason, .. } => Notice {
-                text: format!("The update was not installed: {reason}"),
-                button: Some("Try again"),
-                progress: None,
-                error: true,
-                page: None,
-            },
-            _ => return None,
-        })
+            BarChoice::Page(url) => Some(Wanted::Open(url)),
+            BarChoice::Button => self.pressed(ui.ctx(), phase),
+        }
+    }
+
+    /// *Later* in the bar, pressed in `phase`: an offer stays hidden until a newer build is out or
+    /// the next start; an installed or failed update until the updater moves on (a new install, a
+    /// new check).
+    fn later(&mut self, phase: Phase) {
+        match phase {
+            Phase::Checked { newer: Some(build), .. } => self.hidden = Some(build.version),
+            phase @ (Phase::Installed(_) | Phase::InstallFailed { .. }) => self.put_off = Some(phase),
+            _ => {}
+        }
     }
 
     /// The start panel line's button was pressed.
     pub fn notice_pressed(&mut self, ctx: &egui::Context) -> Option<Wanted> {
-        match self.updater.phase() {
+        self.pressed(ctx, self.updater.phase())
+    }
+
+    /// The button of the start panel's line or of the bar over a project, pressed in `phase`.
+    fn pressed(&mut self, ctx: &egui::Context, phase: Phase) -> Option<Wanted> {
+        match phase {
             Phase::Checked { newer: Some(build), .. } | Phase::InstallFailed { build, .. } => {
                 self.install(ctx, build);
+                // The line has no room for why the install could not start, nor for *Connect
+                // Suhina to your gh* when a sign-in is why: Help › Check for updates… has both,
+                // so the button never does nothing (#1229).
+                if self.note.is_some() {
+                    self.open_dialog();
+                }
                 None
             }
             Phase::Installed(_) => Some(Wanted::Restart),
@@ -169,15 +181,7 @@ impl Updates {
 
     /// Draws Help › Check for updates… over `area`.
     pub fn show(&mut self, ui: &Ui, area: Rect, settings: &UpdateSettings) -> Option<Wanted> {
-        let channel = settings.channel();
-        let choice = egui::Area::new(Id::unique("updates-dialog"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(area.min)
-            .show(ui.ctx(), |ui| {
-                ui.set_min_size(area.size());
-                self.draw(ui, area, channel)
-            })
-            .inner;
+        let choice = self.dialog(ui.ctx(), area, settings.channel(), self.updater.phase());
         match choice? {
             Choice::Close => self.open = false,
             Choice::Check => self.check(ui.ctx(), settings),
@@ -197,9 +201,31 @@ impl Updates {
         None
     }
 
-    fn draw(&self, ui: &mut Ui, area: Rect, channel: Channel) -> Option<Choice> {
+    /// The dialog in a layer of its own over the window, the updater in `phase`.
+    fn dialog(&self, ctx: &egui::Context, area: Rect, channel: Channel, phase: Phase) -> Option<Choice> {
+        // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
+        let style_class = crate::kit::element::DIALOG.enter();
+        egui::Area::new(Id::unique("updates-dialog"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(area.min)
+            .show(ctx, |ui| {
+                let mut styled_ui = style_class.ui(ui);
+                let ui = &mut *styled_ui;
+                ui.set_min_size(area.size());
+                self.draw(ui, &style_class, area, channel, phase)
+            })
+            .inner
+    }
+
+    fn draw(
+        &self,
+        ui: &mut Ui,
+        dialog: &crate::kit::element::Entered,
+        area: Rect,
+        channel: Channel,
+        phase: Phase,
+    ) -> Option<Choice> {
         let mut chosen: Option<Choice> = None;
-        let phase = self.updater.phase();
         let test_builds = match (&phase, channel) {
             (Phase::Checked { builds, .. }, Channel::TestBuilds) if self.channel == Channel::TestBuilds => {
                 builds.iter().take(LISTED).cloned().collect()
@@ -209,7 +235,7 @@ impl Updates {
         let gh_lines = if channel == Channel::TestBuilds { 1.0 } else { 0.0 };
         let lines = 4.0 + gh_lines + test_builds.len() as f32 + f32::from(u8::from(self.note.is_some()));
         let height = ROW + lines * LINE + BUTTON.y + 4.0 * PAD;
-        let panel = project_dialog::panel(ui, area, Vec2::new(WIDTH, height), "Updates", &mut chosen);
+        let panel = project_dialog::panel(ui, dialog, area, Vec2::new(WIDTH, height), "Updates", &mut chosen);
         let painter = ui.painter_at(area);
         let font = theme::ui_font(theme::TEXT);
         let mut y = panel.top() + ROW + PAD;
@@ -237,7 +263,7 @@ impl Updates {
             Phase::Checking => ("Checking…".into(), None),
             Phase::CheckFailed(reason) => (format!("The check failed: {reason}"), None),
             Phase::Checked { newer: Some(build), .. } => (
-                format!("New version available: {}", build.version),
+                format!("{}: {}", available(build), build.version),
                 Some(("Download update now", Choice::Install(build.clone()))),
             ),
             Phase::Checked { newer: None, builds } => match (builds.first(), self.channel) {
@@ -273,7 +299,7 @@ impl Updates {
             && build.size > 0
         {
             let bar = line(&mut y).shrink2(Vec2::new(0.0, 7.0));
-            painter.fill_background(bar, 0.0, theme::control_background());
+            painter.rect_filled(bar, 0.0, theme::control_background());
             let part = (*done as f32 / build.size as f32).clamp(0.0, 1.0);
             painter.rect_filled(
                 Rect::from_min_size(bar.min, Vec2::new(bar.width() * part, bar.height())),
@@ -360,3 +386,102 @@ impl Updates {
         chosen
     }
 }
+
+/// What was chosen in the bar over an open project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BarChoice {
+    /// *Later*: hide what the bar says now.
+    Later,
+    /// *What's new*.
+    Page(String),
+    /// The line's own button: *Download update now*, *Restart now* or *Try again*.
+    Button,
+}
+
+/// Draws the bar over an open project for `phase` in `rect`.
+fn bar_line(ui: &Ui, rect: Rect, phase: Phase) -> Option<BarChoice> {
+    // *Later* while the bar waits on the person; a download or an install has nothing to put off.
+    let later_label = match &phase {
+        Phase::Checked { newer: Some(_), .. } => Some("Hide the update offer"),
+        Phase::Installed(_) => Some("Restart later"),
+        Phase::InstallFailed { .. } => Some("Hide the failed update"),
+        _ => None,
+    };
+    let notice = notice_of(phase)?;
+    let painter = ui.painter_at(rect);
+    // Painted as the missing-files bar beside it, so a theme styles both alike.
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    let inner = rect.shrink2(Vec2::new(PAD, 6.0));
+    let later = Rect::from_min_size(Pos2::new(inner.right() - BUTTON.x, inner.center().y - BUTTON.y / 2.0), BUTTON);
+    let line = match later_label {
+        Some(_) => Rect::from_min_max(inner.min, Pos2::new(later.left() - PAD, inner.bottom())),
+        None => inner,
+    };
+    if let Some(label) = later_label
+        && button(ui, &painter, later, "Later", label)
+    {
+        return Some(BarChoice::Later);
+    }
+    match start_panel::notice_line(ui, &painter, line, &notice)? {
+        StartChoice::UpdatePage(url) => Some(BarChoice::Page(url)),
+        _ => Some(BarChoice::Button),
+    }
+}
+
+/// What a newer `build` is called in the line that offers it.
+fn available(build: &Build) -> &'static str {
+    if build.pr.is_some() { "New test build available" } else { "New nightly available" }
+}
+
+/// The start panel's line (and the bar over an open project) for `phase`.
+fn notice_of(phase: Phase) -> Option<Notice> {
+    let name = |b: &Build| match b.pr {
+        Some(pr) => format!("the test build of #{pr} ({})", b.version),
+        None => format!("Suhina {}", b.version),
+    };
+    Some(match phase {
+        Phase::Checked { newer: Some(build), .. } => Notice {
+            text: format!("{}: {}", available(&build), name(&build)),
+            button: Some("Download update now"),
+            progress: None,
+            error: false,
+            page: Some(build.page),
+        },
+        Phase::Downloading { build, done } => {
+            let part = if build.size > 0 { (done as f32 / build.size as f32).clamp(0.0, 1.0) } else { 0.0 };
+            Notice {
+                text: format!("Downloading {}: {:.0} %", name(&build), part * 100.0),
+                button: None,
+                progress: Some(part),
+                error: false,
+                page: None,
+            }
+        }
+        Phase::Installing(build) => Notice {
+            text: format!("Installing {}…", name(&build)),
+            button: None,
+            progress: Some(1.0),
+            error: false,
+            page: None,
+        },
+        Phase::Installed(build) => Notice {
+            text: format!("{} is installed: restart Suhina to use it", name(&build)),
+            button: Some("Restart now"),
+            progress: None,
+            error: false,
+            page: None,
+        },
+        Phase::InstallFailed { reason, .. } => Notice {
+            text: format!("The update was not installed: {reason}"),
+            button: Some("Try again"),
+            progress: None,
+            error: true,
+            page: None,
+        },
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+#[path = "updates_tests.rs"]
+mod tests;

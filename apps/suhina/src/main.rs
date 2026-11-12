@@ -19,8 +19,9 @@
 //! runs the same item as the window's bar. With the GPU renderer the window is asked to be
 //! transparent; on the first frame `suhina_ui_gpu::surface` asks the GPU whether the swapchain hands alpha to
 //! the compositor (macOS always, DX12 through a DirectComposition visual on Windows, a probe
-//! surface for Vulkan and OpenGL). Where it does, it draws `kit::surface`'s backgrounds
-//! with a wgpu pipeline that writes their colour and alpha unblended, and the system blurs what is
+//! surface for Vulkan and OpenGL). Where it does, the window clears to nothing, every background
+//! blends over it, `kit::surface`'s clears (under a menu's backdrop) are drawn with a wgpu
+//! pipeline that writes their alpha unblended, and the system blurs what is
 //! behind while the theme has a see-through background (winit's blur on macOS and Wayland, DWM
 //! acrylic through `window-vibrancy` on Windows); on macOS the content runs under the title bar.
 //! Starting, it reads the settings, keymap and themes, opens the window and shows the splash
@@ -36,6 +37,7 @@ mod crash_log;
 mod data_folder;
 #[cfg(target_os = "macos")]
 mod mac_menu;
+mod pack_materialize;
 mod recent;
 mod save_error;
 mod theme_files;
@@ -193,11 +195,10 @@ fn main() -> ExitCode {
         eframe::Renderer::Glow => Graphics::OpenGl,
         eframe::Renderer::Wgpu => Graphics::Gpu,
     };
-    // The window shows the desktop through its backgrounds' alpha where the GPU renderer sets the
-    // pixels directly and the system composites the window's alpha. It is asked for with the GPU
-    // renderer; whether the swapchain hands the alpha on is known on the first frame
-    // (`surface::composites_alpha`), and until then, or without it, the window stays opaque and
-    // backgrounds blend as before. On macOS it always does, and the content runs under the title
+    // The window shows the desktop through its backgrounds' alpha where the system composites the
+    // window's alpha. It is asked for with the GPU renderer; whether the swapchain hands the alpha
+    // on is known on the first frame (`surface::composites_alpha`), and until then, or without
+    // it, the window clears opaque and its backgrounds blend over that. On macOS it always does, and the content runs under the title
     // bar, which has to be chosen before the window opens.
     let see_through_asked = renderer == eframe::Renderer::Wgpu;
     let under_title_bar = cfg!(target_os = "macos") && see_through_asked;
@@ -260,12 +261,32 @@ fn main() -> ExitCode {
     window.app.set_default_themes_folder(themes_env().or(default_themes).unwrap_or_default());
     window.app.set_default_data_folder(default_data_dir().unwrap_or_default());
     // The NAM devices' folders: the defaults exist from the start, so a user's first step is
-    // only to drop files in ([docs/spec/nam-amp-and-cab.md]).
+    // only to drop files in ([docs/spec/nam-amp-and-cab.md]). The defaults are the library's
+    // Sounds folders ([issue 1279]).
     let nam_base = documents_base();
-    let (nam_models, irs) = (nam_base.join("NAM models"), nam_base.join("IRs"));
+    let nam_sounds = nam_base.join("Sounds").join("NAM");
+    let nam_models = nam_sounds.join("Amp models");
+    let irs = nam_sounds.join("Cabinets");
     let _ = std::fs::create_dir_all(&nam_models);
     let _ = std::fs::create_dir_all(&irs);
     window.app.set_nam_default_folders(nam_models, irs);
+    // The shipped pack unpacks beside the user's own files in the library's Suhina folders —
+    // only where a file is missing, never over one ([issue 1279]). The old defaults' contents
+    // move into the library first, packs carried whole, and their move lands in the start-up
+    // warnings.
+    // The move leaves alone a folder the Settings name: the user's panels list from it, and
+    // its files are where they are (the defaults are the library's folders, so only a setting
+    // typed before the library's move, or typed to the old place by hand, names one).
+    let keep = [window.app.nam_models_folder(), window.app.ir_folder()];
+    let old_warnings = pack_materialize::migrate_old_folders(&nam_base, &nam_sounds, &keep);
+    pack_materialize::unpack_pack(&nam_sounds);
+    if let Some(start_up) = window.start_up.as_mut() {
+        start_up.warnings.extend(old_warnings);
+    }
+    // The user's own presets save into the library's Presets folders (`device.savePreset`,
+    // docs/decisions/0036-library-and-shipped-content.md › 5), and the browser lists them
+    // beside the stock ones.
+    window.app.set_library_base(nam_base.clone());
     // Backups of projects never saved, and the journal of the newest backups, beside the
     // settings; what a crash left there is offered once the window starts (`docs/spec/backups.md`).
     let backups = data_dir().map(|d| d.join(suhina_session::backup::SETTINGS_SUBFOLDER));
@@ -458,7 +479,6 @@ impl eframe::App for Window {
         }
         self.draw(ui, frame);
         suhina_ui::kit::liquid::finish_backdrops(ui.ctx());
-        suhina_ui::kit::surface::finish_frame(ui.ctx());
         self.blur(frame);
     }
 
@@ -550,7 +570,7 @@ impl Window {
             self.new_project(new);
         }
         if let Some(offer) = self.app.take_recovery_request() {
-            match Session::recover(&offer.backup, offer.file.as_deref()) {
+            match Session::recover(&offer.backup, offer.file.as_deref(), Some(&documents_base())) {
                 Ok((session, warnings)) => {
                     self.show_session(session, warnings, OpenAs::NewTab);
                 }
@@ -723,7 +743,7 @@ impl Window {
             self.app.request_open(path.to_path_buf());
             return;
         }
-        match Session::open(path) {
+        match Session::open_with_base(path, Some(&documents_base())) {
             Ok((session, warnings)) => {
                 if self.show_session(session, warnings, how) {
                     self.remember(path);
@@ -739,7 +759,7 @@ impl Window {
             NewProject::Blank { returns } => {
                 Ok((Session::new(suhina_session::blank_project_with(returns)), Vec::new()))
             }
-            NewProject::Template(path) => Session::from_template(&path),
+            NewProject::Template(path) => Session::from_template(&path, Some(&documents_base())),
         };
         match made {
             Ok((session, warnings)) => {
@@ -751,6 +771,12 @@ impl Window {
 
     /// Decodes a session's audio, starts it playing (stopped) and shows it.
     fn show_session(&mut self, mut session: Session, mut warnings: Vec<String>, how: OpenAs) -> bool {
+        // The library's base is the session's before its first loads: a device's file state
+        // may say a library-relative path ([ADR 0036]), which resolves against it. A load that
+        // ran before the base was set missed, so the files are built again with it — before
+        // the output opens, and the player hears them from the start.
+        session.set_library_base(documents_base());
+        session.sync_device_files();
         if let Err(error) = self.app.projects().ensure_output_can_close() {
             self.app.set_status(Status::Error(error.to_string()));
             return false;
@@ -1056,10 +1082,7 @@ fn default_folders() -> (PathBuf, PathBuf) {
 /// `Suhina` in the user's documents folder, or the folder made under the program's old name
 /// while only that one exists; defaults are built beside it.
 fn documents_base() -> PathBuf {
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
-    let documents = home.map(|h| h.join("Documents")).unwrap_or_default();
-    let (new, old) = (documents.join("Suhina"), documents.join(OLD_APP_ID));
-    if !new.exists() && old.is_dir() { old } else { new }
+    suhina_session::documents_base()
 }
 
 /// Connects the output `choice` names to `session`, playing its audio; a device that is gone

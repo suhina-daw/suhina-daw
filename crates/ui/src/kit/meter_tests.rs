@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+use crate::kit::element::test_el;
 
 #[test]
 #[ignore = "manual performance comparison; run without a simultaneous interactive test"]
@@ -229,7 +230,7 @@ fn custom_frames_follow_signal_and_keep_native_clip_reset() {
 
 #[test]
 fn silent_rails_survive_parent_gradients_and_accept_their_own_background() {
-    use crate::kit::{native_css, skin, style_class};
+    use crate::kit::{native_css, skin};
     for override_color in [None, Some("#081014")] {
         let ctx = egui::Context::default();
         theme::install(&ctx);
@@ -243,7 +244,7 @@ fn silent_rails_survive_parent_gradients_and_accept_their_own_background() {
             let mut output =
                 ctx.run_ui(egui::RawInput { time: Some(frame as f64 * 0.01), ..Default::default() }, |ui| {
                     let _frame = native_css::frame(ui);
-                    let _parent = style_class::enter("session");
+                    let _parent = test_el("session").enter();
                     show(
                         ui,
                         ui.painter(),

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+use crate::kit::element::test_el;
 
 #[test]
 fn a_pan_and_a_send_take_their_own_knob_artwork_and_other_knobs_do_not() {
@@ -12,15 +13,15 @@ fn a_pan_and_a_send_take_their_own_knob_artwork_and_other_knobs_do_not() {
     super::super::skin::configure(&skin);
     assert_eq!(knob_roles().0, "knob.body", "a device's knob");
     {
-        let _pan = super::super::style_class::enter("pan");
+        let _pan = test_el("pan").enter();
         assert_eq!(knob_roles(), ("pan.knob.body", "pan.knob.pointer"));
     }
     {
-        let _send = super::super::style_class::enter("send");
+        let _send = test_el("send").enter();
         assert_eq!(knob_roles(), ("send.knob.body", "send.knob.pointer"));
     }
     super::super::skin::configure(&super::super::skin::Skin::default());
-    let _pan = super::super::style_class::enter("pan");
+    let _pan = test_el("pan").enter();
     assert_eq!(knob_roles().0, "knob.body", "without the theme's own artwork");
 }
 
@@ -183,6 +184,86 @@ fn a_value_drag_hides_the_pointer_until_the_button_is_up_or_the_window_loses_foc
     assert_eq!(moved.get(), before, "a drag that lost the pointer moves nothing");
 }
 
+/// One press and a drag up on a knob, with the setting `setting` and the knob's own answer
+/// `own` ([`value_drag_hides`]): the commands it sent and the pointer it showed while dragged.
+fn drag_with(setting: bool, own: Option<bool>) -> (Vec<egui::ViewportCommand>, egui::CursorIcon) {
+    use egui::{Event, PointerButton, ViewportId};
+    let ctx = egui::Context::default();
+    set_drag_hides_pointer(&ctx, setting);
+    let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(20.0));
+    let frame = |pos: Pos2, pressed: Option<bool>| {
+        let mut events = vec![Event::PointerMoved(pos)];
+        if let Some(pressed) = pressed {
+            events.push(Event::PointerButton {
+                pos,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            });
+        }
+        let mut output = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+            release_value_drag(ui.ctx());
+            let response =
+                ui.interact(rect, Id::unique("knob"), Sense::drag()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            if let Some(hides) = own {
+                value_drag_hides(ui.ctx(), &response, hides);
+            }
+            let mut preview = None;
+            drag_value_axis(ui, &response, &mut preview, 0.0, 1.0, 1.0, (-100.0, 100.0), 0.0, DragAxis::Vertical);
+            hide_pointer_during_value_drag(ui.ctx());
+        });
+        output.textures_delta.clear();
+        let commands = output.viewport_output.get(&ViewportId::ROOT).map(|v| v.commands.clone()).unwrap_or_default();
+        (commands, output.platform_output.cursor_icon)
+    };
+    frame(Pos2::new(20.0, 20.0), None);
+    let (mut commands, _) = frame(Pos2::new(20.0, 20.0), Some(true));
+    let (more, _) = frame(Pos2::new(20.0, 10.0), None);
+    commands.extend(more);
+    let (more, icon) = frame(Pos2::new(20.0, 0.0), None);
+    commands.extend(more);
+    (commands, icon)
+}
+
+#[test]
+fn a_value_drag_shows_the_pointer_when_the_setting_or_its_control_says_so() {
+    let hidden = egui::ViewportCommand::CursorVisible(false);
+    // The setting, on by default: hidden.
+    let (commands, icon) = drag_with(true, None);
+    assert!(commands.contains(&hidden), "{commands:?}");
+    assert_eq!(icon, egui::CursorIcon::None);
+    // Off: the pointer stays, with the arrow of the drag's axis.
+    let (commands, icon) = drag_with(false, None);
+    assert!(!commands.contains(&hidden), "{commands:?}");
+    assert_eq!(icon, egui::CursorIcon::ResizeVertical);
+    // The control's own answer (its element's `drag-pointer`) wins over the setting, both ways.
+    let (commands, icon) = drag_with(false, Some(true));
+    assert!(commands.contains(&hidden), "{commands:?}");
+    assert_eq!(icon, egui::CursorIcon::None);
+    let (commands, icon) = drag_with(true, Some(false));
+    assert!(!commands.contains(&hidden), "{commands:?}");
+    assert_eq!(icon, egui::CursorIcon::ResizeVertical);
+}
+
+/// Wayland moves a pointer only while it is locked: the pointer goes back before the lock ends.
+#[test]
+fn a_value_drag_puts_the_pointer_back_before_it_unlocks_it() {
+    use egui::ViewportCommand;
+    let ctx = egui::Context::default();
+    let back = Pos2::new(5.0, 6.0);
+    let held = ValueDrag { raw: true, back: Some(back), released: false, hides: true, icon: egui::CursorIcon::None };
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        ui.ctx().data_mut(|d| d.insert_temp(value_drag_id(), held));
+        release_value_drag(ui.ctx());
+    });
+    output.textures_delta.clear();
+    let commands = output.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.commands.clone()).unwrap_or_default();
+    let at = |command: &ViewportCommand| commands.iter().position(|c| c == command);
+    let moved = at(&ViewportCommand::CursorPosition(back)).expect("moved back");
+    let unlocked = at(&ViewportCommand::CursorGrab(egui::CursorGrab::None)).expect("unlocked");
+    assert!(moved < unlocked, "{commands:?}");
+}
+
 #[test]
 fn raw_motion_locks_the_pointer_and_is_scaled_to_points() {
     use egui::{Event, PointerButton, ViewportCommand, ViewportId};
@@ -229,8 +310,12 @@ fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
     let run = |hold: bool, after: bool| {
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             if hold {
-                ui.ctx()
-                    .data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { raw: true, back: None, released: false }));
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(
+                        value_drag_id(),
+                        ValueDrag { raw: true, back: None, released: false, hides: true, icon: egui::CursorIcon::None },
+                    )
+                });
             }
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
             if after {
@@ -249,7 +334,7 @@ fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
 #[test]
 fn the_frame_a_value_drag_lets_go_the_icon_shows_the_pointer() {
     let ctx = egui::Context::default();
-    let held = |released| ValueDrag { raw: true, back: None, released };
+    let held = |released| ValueDrag { raw: true, back: None, released, hides: true, icon: egui::CursorIcon::None };
     let icon = |drag: Option<ValueDrag>| {
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             if let Some(drag) = drag {

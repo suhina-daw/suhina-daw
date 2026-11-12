@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The native style engine's adapter: sheets in, `Computed` paint values and rectangles out.
-use super::{Authored, Computed, Engine, element_id, shadows, text};
+use super::{Authored, Computed, Engine, StyleNode, Styled, element_id, name_of, shadows, text};
 use egui::{Color32, Rect, Vec2};
+use std::sync::Arc;
 use suhina_style::{
     cascade::{self, AppliedSheet, ComputedStyle, Layer},
     media::Viewport,
@@ -12,6 +13,10 @@ use suhina_style::{
     sheet::Sheet,
     value::{Color, Length, Value},
 };
+
+/// The border's side widths, in `padding`'s order: top, right, bottom, left.
+const BORDER_SIDES: [Property; 4] =
+    [Property::BorderTopWidth, Property::BorderRightWidth, Property::BorderBottomWidth, Property::BorderLeftWidth];
 
 pub(super) struct Paint {
     sheet: Sheet,
@@ -35,7 +40,7 @@ impl Paint {
         Some(())
     }
 
-    /// The cascade of host defaults, the theme, the chosen variant's values, device panel sheets (each bounded to its
+    /// The cascade of the user-agent sheet (and the palette's defaults beside it), the theme, the chosen variant's values, device panel sheets (each bounded to its
     /// panel's element) and the user's sheet, in that order of precedence.
     fn styles(
         &self,
@@ -46,9 +51,24 @@ impl Paint {
         devices: &[(&Sheet, usize)],
         user: Option<&Sheet>,
     ) -> Option<Vec<ComputedStyle>> {
-        let mut sheets = vec![AppliedSheet { sheet: &self.defaults, layer: Layer::Default, root: None }];
+        cascade::compute(tree, viewport, &self.applied(extra, variant, devices, user)).ok()
+    }
+
+    /// The sheets of [`Paint::styles`], in their order.
+    fn applied<'s>(
+        &'s self,
+        extra: Option<&'s Sheet>,
+        variant: Option<&'s Sheet>,
+        devices: &[(&'s Sheet, usize)],
+        user: Option<&'s Sheet>,
+    ) -> Vec<AppliedSheet<'s>> {
+        let mut sheets = Vec::with_capacity(5 + devices.len().min(16));
+        if let Some(agent) = user_agent() {
+            sheets.push(AppliedSheet { sheet: agent, layer: Layer::UserAgent, root: None });
+        }
+        sheets.push(AppliedSheet { sheet: &self.defaults, layer: Layer::UserAgent, root: None });
         if let Some(extra) = extra {
-            sheets.push(AppliedSheet { sheet: extra, layer: Layer::Default, root: None });
+            sheets.push(AppliedSheet { sheet: extra, layer: Layer::UserAgent, root: None });
         }
         sheets.push(AppliedSheet { sheet: &self.sheet, layer: Layer::Theme, root: None });
         if let Some(variant) = variant {
@@ -60,22 +80,62 @@ impl Paint {
         if let Some(user) = user {
             sheets.push(AppliedSheet { sheet: user, layer: Layer::User, root: None });
         }
-        cascade::compute(tree, viewport, &sheets).ok()
+        sheets
     }
 }
 
+/// Suhina's user-agent sheet, parsed once: the first tier of every cascade.
+pub(in crate::kit) fn user_agent() -> Option<&'static Sheet> {
+    static SHEET: std::sync::OnceLock<Option<Sheet>> = std::sync::OnceLock::new();
+    SHEET.get_or_init(|| Sheet::parse(suhina_theme_package::USER_AGENT_SHEET).ok()).as_ref()
+}
+
+/// The colour the user-agent sheet alone gives the element `name` with `attributes`
+/// (`sample-point[kind="kick"]`), as the element's own rule: what it looks like where no sheet
+/// styles the window. `None` where the sheet gives it no colour.
+pub fn user_agent_color(name: &str, attributes: &[(&str, &str)]) -> Option<Color32> {
+    let sheet = user_agent()?;
+    let element =
+        attributes.iter().fold(Element::new(name, None), |element, (name, value)| element.with_attribute(name, value));
+    let tree = Tree::new(vec![element]).ok()?;
+    let viewport = Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
+    let style =
+        cascade::last_style(&tree, None, viewport, &[AppliedSheet { sheet, layer: Layer::UserAgent, root: None }])
+            .ok()?;
+    match style.get(Property::Color) {
+        color if color == Property::Color.initial() => None,
+        Value::Color(Color::Rgba([r, g, b, a])) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
+        _ => None,
+    }
+}
+
+/// The palette colours of the parts whose artwork takes their `color` (`currentColor`) where a
+/// theme gives them none: a knob's body, a fader's rail and its cap, lit a little by the values'
+/// text while the pointer is on it. Each is a rule on the part itself, so a colour a theme gives
+/// an element around it (`knob`, `mixer`) is not inherited into the artwork. A knob's pointer
+/// has none: it takes the knob's colour. And the colour of the bars' borders, the lines between
+/// them and the view, which the user-agent sheet draws.
+pub(super) const PART_COLOURS: &str = "\
+application-bar, menu-bar, project-tabs, toolbar, status-bar { border-color: var(--border); }
+knob-body { color: var(--control-background); }
+fader-rail { color: color-mix(in srgb, var(--control-background), black 65%); }
+fader-cap { color: color-mix(in srgb, var(--control-background), var(--text-value) 28%); }
+fader-cap:hover, fader-cap:active { color: color-mix(in srgb, var(--control-hoverBackground), var(--text-value) 28%); }
+";
+
+/// The palette's values, the text they colour and [`PART_COLOURS`], beside the user-agent sheet
+/// in its tier. Not part of the user-agent sheet, which has no variables: it goes with the palette
+/// (#995 § 10).
 fn defaults(palette: &str) -> Option<Sheet> {
-    Sheet::parse(&format!("{palette}\nhtml, body {{ color:var(--text-primary); font-size:{}px; }}", super::theme::TEXT))
-        .ok()
+    Sheet::parse(&format!(
+        "{palette}\nhtml, body {{ color:var(--text-primary); font-size:{}px; }}\n{PART_COLOURS}",
+        super::theme::TEXT
+    ))
+    .ok()
 }
 
 fn viewport(engine: &Engine) -> Viewport {
-    Viewport {
-        width: engine.size[0] as f32,
-        height: engine.size[1] as f32,
-        dark: engine.dark,
-        reduced_motion: !engine.motion,
-    }
+    Viewport { width: engine.size[0] as f32, height: engine.size[1] as f32, reduced_motion: !engine.motion }
 }
 
 fn variant(engine: &Engine) -> Option<&Sheet> {
@@ -96,28 +156,75 @@ pub(super) fn element(name: &str, id: Option<&str>, object: Option<&str>, parent
     element
 }
 
+/// The style tree's element for `node`, under the element at `parent`.
+fn element_of(engine: &Engine, node: &StyleNode, parent: usize) -> Element {
+    let mut element = Element::new(node.element.name(), Some(parent));
+    element.id = Some(element_id(engine, node));
+    element.object = name_of(engine, node).map(str::to_owned);
+    element.variables.clone_from(&node.variables);
+    element.attributes.clone_from(&node.attributes);
+    element.states.push(if node.state & 4 != 0 { "disabled" } else { "enabled" }.into());
+    for (bit, state) in [(1, "hover"), (2, "active"), (8, "focus"), (8, "focus-visible")] {
+        if node.state & bit != 0 {
+            element.states.push(state.into());
+        }
+    }
+    // What the app knows about the element is an attribute: `[checked]`, `[selected]`.
+    for (bit, attribute) in super::HOST_STATES {
+        if node.state & bit != 0 {
+            element.attributes.push((attribute.into(), String::new()));
+        }
+    }
+    element
+}
+
+/// The style of the element at `at` in this frame's tree, worked out from its parent's and the
+/// elements it is in, without its siblings: as `Resolver::leaf_style` styles a leaf.
+pub(super) fn fresh(engine: &mut Engine, at: usize) -> Option<Styled> {
+    let mut chain = vec![at];
+    while let Some(parent) = chain.last().and_then(|&node| engine.nodes.get(node)).and_then(|node| node.parent) {
+        chain.push(parent);
+    }
+    chain.reverse();
+    let parent = match chain.len().checked_sub(2).and_then(|p| chain.get(p)) {
+        Some(&parent) => engine.served.get(parent).cloned().flatten()?,
+        None => body(engine)?,
+    };
+    let mut elements = roots(false);
+    let mut devices = Vec::new();
+    for (index, &node) in chain.iter().enumerate() {
+        let node = engine.nodes.get(node)?;
+        elements.push(element_of(engine, node, index + 1));
+        if let Some(sheet) = (node.sheet != 0).then(|| engine.device_sheets.get(&node.sheet)).flatten() {
+            devices.push((sheet.as_ref(), index + 2));
+        }
+    }
+    let tree = Tree::new(elements).ok()?;
+    let paint = engine.native.as_ref()?;
+    let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
+    let sheets = paint.applied(None, variant(engine), &devices, user);
+    let raw = Arc::new(cascade::last_style(&tree, Some(&parent), viewport(engine), &sheets).ok()?);
+    Some(Styled { computed: computed_from(Arc::clone(&raw)), raw })
+}
+
+/// `html` and `body` under it, the parent of the tree's outermost elements, worked out once.
+fn body(engine: &mut Engine) -> Option<Arc<ComputedStyle>> {
+    if let Some(body) = &engine.body {
+        return Some(Arc::clone(body));
+    }
+    let tree = Tree::new(roots(false)).ok()?;
+    let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
+    let paint = engine.native.as_ref()?;
+    let body = Arc::new(paint.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.pop()?);
+    engine.body = Some(Arc::clone(&body));
+    Some(body)
+}
+
 pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
     let paint = engine.native.as_ref()?;
     let mut elements = roots(false);
     for node in &engine.nodes {
-        let mut element = Element::new(&node.class, Some(node.parent.map_or(1, |parent| parent + 2)));
-        element.id = Some(element_id(node));
-        element.object = node.name.clone();
-        element.variables.clone_from(&node.variables);
-        element.attributes.clone_from(&node.attributes);
-        element.states.push(if node.state & 4 != 0 { "disabled" } else { "enabled" }.into());
-        for (bit, state) in [(1, "hover"), (2, "active"), (8, "focus"), (8, "focus-visible")] {
-            if node.state & bit != 0 {
-                element.states.push(state.into());
-            }
-        }
-        // What the app knows about the element is an attribute: `[checked]`, `[selected]`.
-        for (bit, attribute) in super::HOST_STATES {
-            if node.state & bit != 0 {
-                element.attributes.push((attribute.into(), String::new()));
-            }
-        }
-        elements.push(element);
+        elements.push(element_of(engine, node, node.parent.map_or(1, |parent| parent + 2)));
     }
     // CSS :hover applies to the ancestors of the pointer target as well.
     for (index, node) in engine.nodes.iter().enumerate().rev() {
@@ -146,6 +253,7 @@ pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
     Some(engine.nodes.iter().zip(values.iter().skip(2)).map(|(node, value)| (node.key, computed(value))).collect())
 }
 
+#[cfg(test)]
 pub(super) fn scoped(engine: &Engine, stack: &[String]) -> Option<Computed> {
     let mut elements = roots(false);
     for (index, class) in stack.iter().enumerate() {
@@ -156,23 +264,32 @@ pub(super) fn scoped(engine: &Engine, stack: &[String]) -> Option<Computed> {
     engine.native.as_ref()?.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.last().map(computed)
 }
 
-/// What the host gives a theme's swatch before any theme styles it.
-const SWATCH_DEFAULTS: &str = "theme-swatch { background-color: attr(color type(<color>)); border-radius: 6px; }";
+/// The style of the last of `path` (element names from `window` inward) under the theme's
+/// `sheet`, the variant's and the user's, at the window's usual size
+/// ([`crate::kit::theme_vars::element_styles`]).
+pub(super) fn settings_of(
+    sheet: &Sheet,
+    variant: Option<&Sheet>,
+    user: Option<&Sheet>,
+    path: &[&str],
+) -> Option<Computed> {
+    crate::kit::theme_vars::element_styles(sheet, variant, user, &[path]).ok()?.first().map(computed)
+}
 
-/// A `theme-swatch` element whose `color` attribute is `color`, as the theme in use styles it.
+/// A `theme-swatch` element whose `color` attribute is `color`, as the theme in use styles it
+/// over the user-agent sheet's rounded square.
 pub(super) fn theme_swatch(engine: &Engine, color: &str) -> Option<Computed> {
-    static DEFAULTS: std::sync::OnceLock<Option<Sheet>> = std::sync::OnceLock::new();
-    let defaults = DEFAULTS.get_or_init(|| Sheet::parse(SWATCH_DEFAULTS).ok()).as_ref()?;
     let mut elements = roots(false);
     elements.push(Element::new("theme-swatch", Some(1)).with_attribute("color", color));
     let tree = Tree::new(elements).ok()?;
     let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
-    engine
-        .native
-        .as_ref()?
-        .styles(&tree, viewport(engine), Some(defaults), variant(engine), &[], user)?
-        .last()
-        .map(computed)
+    engine.native.as_ref()?.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.last().map(computed)
+}
+
+/// Whether the theme writes on `style`'s element one of the properties that ask for theme layout,
+/// other than those in `except`.
+pub(super) fn requests_layout(style: &super::Computed, except: &[Property]) -> bool {
+    LAYOUT.iter().any(|property| !except.contains(property) && style.resolved.authored(*property))
 }
 
 /// Properties that ask for theme layout when a theme writes them on a laid-out element.
@@ -255,6 +372,12 @@ pub(super) fn layout(engine: &Engine, elements: Vec<Element>, defaults: &str, si
 }
 
 pub(super) fn computed(style: &ComputedStyle) -> Computed {
+    computed_from(Arc::new(style.clone()))
+}
+
+/// [`computed`], keeping `style` itself.
+fn computed_from(resolved: Arc<ComputedStyle>) -> Computed {
+    let style = resolved.as_ref();
     let color = |property| match style.get(property) {
         Value::Color(Color::Rgba([r, g, b, a])) => Color32::from_rgba_unmultiplied(r, g, b, a),
         _ => Color32::TRANSPARENT,
@@ -287,16 +410,18 @@ pub(super) fn computed(style: &ComputedStyle) -> Computed {
         Value::Shadows(values) => values.iter().map(|shadow| shadow.resolve(font, foreground)).collect::<Vec<_>>(),
         _ => Vec::new(),
     };
+    let border_sides = BORDER_SIDES.map(|side| match style.get(side) {
+        Value::Length(Length::Px(value)) if value.is_finite() => value.clamp(0.0, 16.0),
+        _ => 0.0,
+    });
     Computed {
         color: color(Property::Color),
         background: ink(Property::BackgroundColor),
         border: ink(Property::BorderColor),
         font_size: font.clamp(7.0, 96.0),
         radius: radius.clamp(0.0, 128.0),
-        border_width: match style.get(Property::BorderWidth) {
-            Value::Length(Length::Px(value)) => value.clamp(0.0, 16.0),
-            _ => 0.0,
-        },
+        border_width: border_sides.into_iter().fold(0.0, f32::max),
+        border_sides,
         text_align: match style.get(Property::TextAlign) {
             _ if !style.authored(Property::TextAlign) => None,
             Value::Keyword("left" | "start") => Some(-1),
@@ -326,7 +451,7 @@ pub(super) fn computed(style: &ComputedStyle) -> Computed {
             font_size: style.authored(Property::FontSize),
             radius: style.authored(Property::Radius),
             accent: style.authored(Property::AccentColor),
-            border_width: style.authored(Property::BorderWidth),
+            border_width: BORDER_SIDES.into_iter().any(|side| style.authored(side)),
         },
         variables: style.shared_variables(),
         gradients: match style.get(Property::BackgroundImage) {
@@ -352,5 +477,6 @@ pub(super) fn computed(style: &ComputedStyle) -> Computed {
             _ => Vec::new().into(),
         },
         animations: style.animations().to_vec().into(),
+        resolved: Arc::clone(&resolved),
     }
 }

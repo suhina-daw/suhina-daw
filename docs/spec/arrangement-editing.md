@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-09
+last_verified: 2026-11-11
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -171,8 +171,14 @@ afterwards, in the lanes or on the ruler, or a click in a lane takes these keys 
 tracks: they then act on the painted time, until a header is clicked again (#1199). The
 header shows its track's colour strongly (60 % over the panel); a selected track's is brighter
 and more saturated, with an outline in it. A track keeps the colour it shows when tracks are
-added, removed or moved: one without a colour of its own gets its place's palette colour stored
-then, in the same undo step, and a new track gets its place's colour stored as it is made.
+added, removed or moved: one without a colour of its own (from a project saved before tracks
+stored theirs) gets its place's palette colour stored then, in the same undo step. A new track
+gets a colour stored as it is made, by Settings › Arrangement › Tracks › **New track colour**:
+*By clip type* gives an audio track the default audio clip colour and every other track the
+default MIDI clip colour; *One colour* gives every new track the default MIDI clip colour. These
+two defaults are the theme's `clip.midiDefault` and `clip.audioDefault` for now; #1020 takes
+them out of the theme. A track never takes its colour from its place, so tracks made one after
+another can share a colour.
 
 ## Clip colours
 
@@ -191,7 +197,10 @@ moves the clip (a hand cursor) and a drag from its body below paints a time sele
 cursor) over the tracks it crosses. **Lower half** (`clip_drag = halves`) splits the clip in two
 instead: its upper half paints time and its lower half moves it. An empty spot of a lane is split
 in two either way: its upper half paints time, its lower half draws a rectangle that picks whole
-clips and paints no time. A clip on a lane under 36 px moves from its lower half.
+clips and paints no time. A clip on a lane under 36 px moves from its lower half. Either drag
+held past the lanes' edge (left, right, top or bottom) scrolls them that way on every frame, the
+further past the faster (up to 30 px a frame), and its start stays where the drag began. The
+rectangle picks every clip it reaches, also those that were out of view when it began (#691).
 
 A click on a clip's name bar picks the whole clip. A click in its body picks it too and sets the
 play start where it was clicked, on the grid (Alt: free), as a click on an empty spot of a lane
@@ -219,6 +228,11 @@ tracks, the display only, never the sound or a clip's gain. Drag it up or down (
 double it), scroll over it a step at a time (×1.25), double-click it for ×1; Ctrl+Alt+Up and
 Ctrl+Alt+Down step it too. It is kept as a setting (Settings › Arrangement › *Waveform zoom*,
 `waveform_zoom`, the factor).
+
+**Swing.** On the same lower line of the corner, opposite the waveform zoom, a **Swing** slider
+sets the project's swing, 0 to 100 %, which every MIDI clip without a swing of its own plays with
+([swing spec](swing.md); `transport.setSwing`). It is left out when the corner is too narrow for it
+beside the zoom.
 
 The **Hide returns** button in the header column's top corner, by the ruler, takes the return
 tracks' rows out of the view and **Show returns** brings them back; it is kept as a setting
@@ -304,12 +318,12 @@ With a time selection:
 
 | Key | Command | What it does |
 |---|---|---|
-| Delete | `range.delete` | Removes what plays inside; clips crossing an edge keep their parts outside it, and the gap stays. |
+| Delete | `range.delete` | Removes what plays inside, the tracks' automation inside too (its values at the edges kept); clips crossing an edge keep their parts outside it, and the gap stays. |
 | Ctrl+X | `range.cut` | Copies what plays inside, cut to it, and removes it. |
-| Ctrl+C | `range.copy` | Copies what plays inside, cut to it. |
+| Ctrl+C | `range.copy` | Copies what plays inside, cut to it, with the tracks' automation over the whole span; Ctrl+V puts it back on its own tracks from the play start marker. |
 | Ctrl+V | `clip.paste {start}` | A copy from several tracks goes back to its own tracks, from the play start marker. |
 | Ctrl+E | `range.split` | Splits the clips at both edges: the span becomes clips of its own. |
-| Ctrl+D | `range.duplicate` | Puts a copy right after the span on the same tracks; the selection moves onto the copy. |
+| Ctrl+D | `range.duplicate` | Puts a copy right after the span on the same tracks, the tracks' automation over the whole span with it; the selection moves onto the copy. |
 | Ctrl+J | `clip.consolidate` | Consolidates the span on each of its tracks. |
 
 Each takes `{tracks, start, end}` and is one undo step. A span painted in one row of a stack lights
@@ -319,7 +333,8 @@ that row only, and every key above acts on that row's clips alone, the other row
 names the row's clips under the copy in `clips` too), landing over the other rows' clips without
 changing them (over a take it replaces what it covers, as anywhere). Like a copied clip, it
 stacks, replacing nothing, when the stacking setting for the kind of every clip it copies is on
-(`stack`). Closing the gap (deleting the time
+(`stack`). In one row of a stack the tracks' automation is not cleared or laid over the whole
+span: Delete leaves it, and copies carry the automation under the row's clips only. Closing the gap (deleting the time
 itself) is not built yet.
 
 ## Duplicating and deleting
@@ -468,9 +483,12 @@ The render of the project before and after a consolidation is the same, apart fr
 guard at the range's edges when audio is playing there, since the new clip starts and ends
 there. An audio clip consolidated plays at the tempo it was rendered at.
 
-In the Arrangement view **Ctrl+J** consolidates the selected clip (its own start to its end,
-with any clips stacked over it), and a clip's right-click menu has **Consolidate**. Consolidating
-a single clip makes its loop, start marker, fades and warping one plain clip.
+In the Arrangement view **Ctrl+J** consolidates the selected clips on the track of the clip
+clicked last: the range runs from the first one's start to the last one's end, so the clips
+between them and any stacked over them are joined too. Selected clips on other tracks are left
+as they are. A clip's right-click menu has **Consolidate**. Consolidating a single clip makes its
+loop, start marker, fades and warping one plain clip. With a time selection, Ctrl+J consolidates
+the selected time on each of its tracks instead ([Time selection](#time-selection)).
 
 ## Fades
 
@@ -723,7 +741,9 @@ turning it on again repeats the same span. It is separate from a clip's own loop
 **Playing.** While looping is on and the playhead reaches the loop end, playback goes on from the
 loop start on the very next frame: the frame after the loop end's last one is the loop start's
 first, whatever the audio block size. The wrap is a jump while playing ([Play
-position](#play-position)): notes that sound are released, notes that start at the loop start or
+position](#play-position)): notes that sound are released, each key on its own, and the sustain
+pedal is lifted, with no all-notes-off (an instrument plug-in takes that as controller changes,
+which many apply to the whole block, so it would silence the notes that start in it), notes that start at the loop start or
 later play again, and audio clips play on from where they are at the loop start, sample for
 sample. The play start marker does not move, so Stop goes back to it as usual. A playhead that is
 already at or past the loop end (the play start marker set there, or a jump there) plays on
@@ -758,6 +778,9 @@ end; dragging its middle moves the whole region, keeping its length. A click on 
 **Ctrl+L** (`transport.setLoopEnabled`, in the keymap) and a right-click on the row (**Turn loop
 on** or **Turn loop off**) turn looping on or off. With a time selection or clips selected, Ctrl+L
 loops their span; pressed again while the loop is on over that very span, it turns looping off.
+While the piano roll has the keyboard (after a click in it) Ctrl+L leaves this loop alone, as the
+Arrangement's other keys do, and is the clip's own loop instead ([clip editor spec](ui-clip-editor.md)
+› Shortcuts).
 
 A time-stretched audio clip plays the loop start at once after each wrap, in real time as offline.
 Its stretched audio is rendered ahead (ADR 0003), so it is ready at the loop start before the wrap
@@ -880,6 +903,17 @@ level controls together; on the second, the automation lanes button under the to
 and the send knobs at its end, as many as leave the name its room. A shorter lane has one row:
 the buttons, the name and the automation button at its end. Taller still, the routing and the
 input lines follow below.
+
+A header's volume and pan fields, and the main row's volume bar, are dragged either up and down
+or across: up or right raises the value (pans it right), down or left lowers it, a quarter of a
+decibel (or 0.01 of pan) a point, ten times finer with Shift. The first few points a drag moves
+choose its direction, which it keeps until it is let go, so a drag across that wavers up or down
+does not change the value twice. The pointer over the field stays as it is. While it is dragged
+the pointer hides, as on every value control (Settings › Appearance › **Hide pointer while
+dragging**, on by default, or a theme's `drag-pointer: hidden`); with the setting off or
+`drag-pointer: visible` it shows the arrow of the direction chosen (left-right or up-down). Shown as knobs
+(Settings › Launcher and mixer › **Mixer controls** on Knob) they turn with an up or down drag instead, unless the theme
+lays the control out horizontally (`direction: horizontal`).
 
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Data-only theme skins. Interaction stays with the original widgets.
+use super::element::Entered;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
@@ -24,10 +25,23 @@ pub fn roles() -> impl Iterator<Item = &'static str> {
     suhina_theme_package::elements::default_artwork().map(|(role, _)| role)
 }
 
-/// Suhina's own artwork for each of [`roles`]: the very same SVG sources are embedded and
-/// distributed as editable files.
+/// The default artwork, as the user-agent sheet gives it (`knob-body { image:
+/// url("suhina:knob.body.svg"); }`): the very same SVG sources are embedded and distributed as
+/// editable files. Each takes its colour only from `currentColor`, its element's `color`.
 pub fn default_svgs() -> impl Iterator<Item = (&'static str, &'static str)> {
-    suhina_theme_package::elements::default_artwork()
+    static ARTWORK: std::sync::OnceLock<Vec<(&'static str, &'static str)>> = std::sync::OnceLock::new();
+    ARTWORK.get_or_init(suhina_theme_package::user_agent_artwork).iter().copied()
+}
+
+/// The default artwork that `theme` lacks, by role: what *Include the default artwork* and *Add
+/// default artwork* copy into the theme's `assets/`, with a rule for each in its `theme.css`. A role
+/// the theme has artwork for in any state (`knob.body`, `knob.body.hover`) keeps it; a role of its
+/// own that merely starts with the same name (`track.body.session`) is another role.
+pub fn missing_defaults(assets: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let has = |role: &str| {
+        ["", ".hover", ".active", ".disabled", ".on"].iter().any(|state| assets.contains_key(&format!("{role}{state}")))
+    };
+    default_svgs().filter(|(role, _)| !has(role)).map(|(role, svg)| (role.to_owned(), svg.to_owned())).collect()
 }
 
 pub fn default_assets() -> BTreeMap<String, String> {
@@ -104,7 +118,6 @@ pub struct Skin {
     pub background_blur: u8,
     /// Inline SVG/PNG data, or a relative image path resolved by the theme file loader.
     pub assets: BTreeMap<String, String>,
-    pub styles: BTreeMap<String, BTreeMap<String, String>>,
     pub meter: MeterStyle,
     pub segments: u8,
     pub meter_intensity: u8,
@@ -128,7 +141,6 @@ impl Default for Skin {
             background_opacity: 70,
             background_blur: 0,
             assets: BTreeMap::new(),
-            styles: BTreeMap::new(),
             meter: MeterStyle::Continuous,
             segments: 24,
             meter_intensity: 100,
@@ -307,23 +319,39 @@ impl Skin {
                 }
             }
         }
+        // The styles of a skin of an earlier version become rules of its sheet, under the
+        // properties that took the place of its `--suhina-*` ones (#1273).
         if let Some(value) = root.get("styles") {
             if let Some(styles) = value.as_object().filter(|v| v.len() <= 128) {
+                let mut rules = String::new();
                 for (selector, properties) in styles {
-                    if !super::style_class::valid_selector(selector) {
+                    if !super::theme_css::element_selector(selector) {
                         warnings.push(format!("unknown CSS class {selector}"));
                         continue;
                     }
-                    if let Some(properties) = properties.as_object().filter(|v| v.len() <= 8) {
-                        for (key, value) in properties {
-                            if let Some(value) = value.as_str().filter(|v| super::style_class::valid_property(key, v)) {
-                                skin.styles.entry(selector.clone()).or_default().insert(key.clone(), value.into());
-                            } else {
-                                warnings.push(format!("invalid style {selector} {key}"));
-                            }
-                        }
-                    } else {
+                    let Some(properties) = properties.as_object().filter(|v| v.len() <= 8) else {
                         warnings.push(format!("{selector}: styles must be a bounded object"));
+                        continue;
+                    };
+                    for (key, value) in properties {
+                        match value.as_str().and_then(|value| super::theme_css::legacy_rule(selector, key, value)) {
+                            Some(rule) => {
+                                rules.push_str(&rule);
+                                rules.push('\n');
+                            }
+                            None => warnings.push(match super::theme_css::layout_replacement(key) {
+                                Some(now) => format!("invalid style {selector} {key}: it is now {now}"),
+                                None => format!("invalid style {selector} {key}"),
+                            }),
+                        }
+                    }
+                }
+                if !rules.is_empty() {
+                    let css = format!("{}\n{rules}", skin.css.as_deref().unwrap_or(""));
+                    if css.len() <= super::theme_css::MAX_CSS {
+                        skin.css = Some(Arc::from(css.trim_start()));
+                    } else {
+                        warnings.push("skin.styles do not fit in the sheet's 128 KiB".into());
                     }
                 }
             } else {
@@ -462,7 +490,7 @@ impl Skin {
     }
 
     pub fn to_json(&self) -> Value {
-        let mut value = json!({"styles":self.styles,"assets":self.assets,"meter":self.meter.name(),"segments":self.segments,"meter-intensity":self.meter_intensity,"artwork-fps":self.artwork_fps});
+        let mut value = json!({"assets":self.assets,"meter":self.meter.name(),"segments":self.segments,"meter-intensity":self.meter_intensity,"artwork-fps":self.artwork_fps});
         if self.session != Default::default() {
             value["session"] = self.session.to_json();
         }
@@ -663,17 +691,34 @@ pub fn paint(painter: &Painter, rect: Rect, role: &str, state: State, ink: Color
     paint_inner(painter, rect, role, state, ink, angle, 0.0)
 }
 
-pub fn button(painter: &Painter, rect: Rect, state: State, fill: Color32, radius: f32) -> bool {
-    let role = button_role();
+/// The artwork of `el`, a button, in `rect`: its own role's ([`button_role`]) or every
+/// button's, rounded by `radius` where the sheet gives none, and casting `el`'s shadows.
+pub fn button(painter: &Painter, rect: Rect, el: &Entered, state: State, fill: Color32, radius: f32) -> bool {
+    let role = button_role(el);
+    let style = el.style();
+    let radius = el.radius_or(radius);
     // A state the button's own artwork leaves out is every button's.
-    (role != "button" && paint_inner(painter, rect, &role, state, fill, 0.0, radius))
-        || paint_inner(painter, rect, "button", state, fill, 0.0, radius)
+    let paint = |role: &str| {
+        paint_variant(
+            painter,
+            rect,
+            role,
+            state,
+            fill,
+            0.0,
+            radius,
+            super::artwork::current_color(),
+            None,
+            style.as_ref(),
+        )
+    };
+    (role != "button" && paint(&role)) || paint("button")
 }
 
-/// The artwork role of the button now in scope: its own (`button.play`, with any of its states)
-/// when the theme has one, else every button's.
-pub fn button_role() -> String {
-    super::native_css::current_name()
+/// The artwork role of `el`, a button: its own (`button.play`, with any of its states) when the
+/// theme has one, else every button's.
+pub fn button_role(el: &Entered) -> String {
+    el.id()
         .filter(|name| suhina_theme_package::elements::control_ids().contains(&name.as_str()))
         .map(|name| format!("button.{name}"))
         .filter(|role| {
@@ -686,7 +731,28 @@ pub fn button_role() -> String {
 }
 
 fn paint_inner(painter: &Painter, rect: Rect, role: &str, state: State, ink: Color32, angle: f32, radius: f32) -> bool {
-    paint_variant(painter, rect, role, state, ink, angle, radius, super::artwork::current_color(), None)
+    paint_variant(painter, rect, role, state, ink, angle, radius, super::artwork::current_color(), None, None)
+}
+
+/// [`paint`], with the artwork casting `el`'s shadows (`box-shadow`) in its own shape and a
+/// button's artwork rounded by `el`'s radius.
+pub fn paint_as(el: &Entered, painter: &Painter, rect: Rect, role: &str, state: State, ink: Color32) -> bool {
+    paint_turned_as(el, painter, rect, role, state, ink, 0.0)
+}
+
+/// [`paint_as`], turned by `angle` (radians) about the rectangle's centre: a knob's pointer.
+pub fn paint_turned_as(
+    el: &Entered,
+    painter: &Painter,
+    rect: Rect,
+    role: &str,
+    state: State,
+    ink: Color32,
+    angle: f32,
+) -> bool {
+    let style = el.style();
+    let radius = el.radius_or(0.0);
+    paint_variant(painter, rect, role, state, ink, angle, radius, super::artwork::current_color(), None, style.as_ref())
 }
 
 /// Raw track colour chooses artwork independently of the muted/selected paint tint.
@@ -701,12 +767,23 @@ pub fn paint_colored(
     // The view's own artwork for the role, when the theme has one (`track.name.mixer`).
     let view = super::style_class::view().map(|view| format!("{role}.{view}"));
     let role = view.as_deref().filter(|role| has_own(role)).unwrap_or(role);
-    paint_variant(painter, rect, role, state, ink, 0.0, 0.0, Some(track_color), None)
+    paint_variant(painter, rect, role, state, ink, 0.0, 0.0, Some(track_color), None, None)
 }
 
 /// A missing or invalid signal-driven sequence lets the native meter draw normally.
 pub fn meter_frame(painter: &Painter, rect: Rect, state: State, level: f32) -> bool {
-    paint_variant(painter, rect, "meter", state, Color32::WHITE, 0.0, 0.0, super::artwork::current_color(), Some(level))
+    paint_variant(
+        painter,
+        rect,
+        "meter",
+        state,
+        Color32::WHITE,
+        0.0,
+        0.0,
+        super::artwork::current_color(),
+        Some(level),
+        None,
+    )
 }
 
 /// `var(--name)` and `var(--name, fallback)` in artwork take the theme's resolved values, colours
@@ -726,6 +803,7 @@ fn paint_variant(
     radius: f32,
     track_color: Option<Color32>,
     level: Option<f32>,
+    shadows: Option<&super::native_css::Computed>,
 ) -> bool {
     if !rect.is_positive() || !rect.is_finite() || !angle.is_finite() {
         return false;
@@ -780,28 +858,9 @@ fn paint_variant(
     if matches!(role, "track.name" | "track.body") && defaults.get(role).map(String::as_str) == Some(source) {
         return false;
     }
-    // Semantic ink travels with the SVG, so exported inherited artwork retains its colour.
+    // `currentColor` is the element's colour, which its caller gives as `ink`; a PNG has none.
     let png = png_artwork(source);
-    let ink = if png {
-        Color32::WHITE
-    } else if source.contains(&format!("data-suhina-ink=\"{role}\"")) {
-        match role {
-            "knob.body" => super::theme::control_background(),
-            "fader.rail" => super::motion::mix(super::theme::control_background(), Color32::BLACK, 0.65),
-            "fader.cap" => super::motion::mix(
-                if matches!(state, State::Hover | State::Active | State::On) {
-                    super::theme::control_hover()
-                } else {
-                    super::theme::control_background()
-                },
-                ink,
-                0.28,
-            ),
-            _ => ink,
-        }
-    } else {
-        ink
-    };
+    let ink = if png { Color32::WHITE } else { ink };
     let scale = painter.ctx().pixels_per_point();
     let w = (rect.width() * scale).ceil().clamp(1.0, 1024.0) as u32;
     let h = (rect.height() * scale).ceil().clamp(1.0, 1024.0) as u32;
@@ -879,35 +938,13 @@ fn paint_variant(
     let Some(Some(texture)) = textures.images.get(&key) else {
         return false;
     };
-    // The native see-through host writes a background's alpha rather than blending
-    // it twice. Clear the covered background before compositing its artwork; private
-    // image backdrops and the opaque/OpenGL path keep ordinary blending. Only a theme whose
-    // surfaces show the desktop needs it: over an opaque one, clearing would let the desktop
-    // show through wherever the artwork leaves a pixel uncovered (rounded corners, edges).
-    if (matches!(role, "button" | "fader.rail" | "fader.cap" | "track.name" | "track.body")
-        || role.starts_with("button."))
-        && super::surface::available(painter.ctx())
-        && desktop_shows()
-    {
-        let (sin, cos) = angle.sin_cos();
-        let size = egui::vec2(
-            rect.width() * cos.abs() + rect.height() * sin.abs(),
-            rect.width() * sin.abs() + rect.height() * cos.abs(),
-        );
-        super::surface::Backgrounds::fill_background(
-            painter,
-            Rect::from_center_size(rect.center(), size),
-            radius,
-            Color32::TRANSPARENT,
-        );
-    }
     if let Some(slice) = slice {
         let mut mesh = egui::Mesh::with_texture(texture.id());
         let size = texture.size();
         let texel = [1.0 / size[0].max(1) as f32, 1.0 / size[1].max(1) as f32];
         nine_slice(&mut mesh, rect, slice, texel);
         mesh.rotate(egui::emath::Rot2::from_angle(angle), rect.center());
-        cast_shadows(painter, &mesh);
+        cast_shadows(painter, &mesh, shadows);
         painter.add(egui::Shape::mesh(mesh));
         return true;
     }
@@ -915,9 +952,9 @@ fn paint_variant(
         let mut outline = egui::Mesh::with_texture(texture.id());
         outline.add_rect_with_uv(rect, Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
         outline.rotate(egui::emath::Rot2::from_angle(angle), rect.center());
-        cast_shadows(painter, &outline);
+        cast_shadows(painter, &outline, shadows);
         painter.add(
-            egui::epaint::RectShape::filled(rect, super::style_class::radius(radius), Color32::WHITE)
+            egui::epaint::RectShape::filled(rect, radius, Color32::WHITE)
                 .with_texture(texture.id(), Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)))
                 .with_angle(angle),
         );
@@ -963,20 +1000,46 @@ pub fn paint_svg(painter: &Painter, rect: Rect, source: &str, radius: f32) -> bo
     true
 }
 
-/// The element in scope's `box-shadow` (a glow is one without an offset), cast by a surface's
-/// artwork about to be drawn as `mesh`, under it and in its shape, in place of the rectangle's.
-fn cast_shadows(painter: &Painter, mesh: &egui::Mesh) {
-    let slot = painter.add(egui::Shape::Noop);
-    super::native_css::artwork_shadows(painter, slot, mesh);
+/// Draws an icon's SVG (its shapes in `currentColor`) into `rect`, kept in proportion, in `ink`:
+/// rastered once per size in white and tinted, so every colour shares the one picture. Returns
+/// whether it drew.
+pub fn paint_icon(painter: &Painter, rect: Rect, source: &str, ink: Color32) -> bool {
+    if !rect.is_positive() || !rect.is_finite() {
+        return false;
+    }
+    let scale = painter.ctx().pixels_per_point();
+    let w = (rect.width() * scale).ceil().clamp(1.0, 1024.0) as u32;
+    let h = (rect.height() * scale).ceil().clamp(1.0, 1024.0) as u32;
+    let mut hash = std::hash::DefaultHasher::new();
+    (source, w, h).hash(&mut hash);
+    let key = hash.finish();
+    let cache_id = egui::Id::unique("svg-icons");
+    let cache = painter
+        .ctx()
+        .data_mut(|data| data.get_temp_mut_or_default::<Arc<std::sync::Mutex<Textures>>>(cache_id).clone());
+    let Ok(mut textures) = cache.lock() else { return false };
+    if !textures.images.contains_key(&key) {
+        if textures.images.len() >= 128 {
+            textures.images.clear();
+        }
+        let texture = raster_artwork(source, Color32::WHITE, w, h, true)
+            .map(|image| painter.ctx().load_texture(format!("icon-{key}"), image, egui::TextureOptions::LINEAR));
+        textures.images.insert(key, texture);
+    }
+    let Some(Some(texture)) = textures.images.get(&key) else { return false };
+    painter.add(
+        egui::epaint::RectShape::filled(rect, 0.0, ink)
+            .with_texture(texture.id(), Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0))),
+    );
+    true
 }
 
-/// Whether the surfaces artwork stands on let the desktop show through: the window's, the
-/// panels' and the track headers'. A translucent hover or selection colour does not count.
-fn desktop_shows() -> bool {
-    use super::theme;
-    [theme::window_background(), theme::panel_background(), theme::track_header_background()]
-        .iter()
-        .any(|color| color.a() < 255)
+/// An element's `box-shadow` (a glow is one without an offset), cast by a surface's artwork about
+/// to be drawn as `mesh`, under it and in its shape, in place of the rectangle's.
+fn cast_shadows(painter: &Painter, mesh: &egui::Mesh, style: Option<&super::native_css::Computed>) {
+    let Some(style) = style else { return };
+    let slot = painter.add(egui::Shape::Noop);
+    super::native_css::artwork_shadows(painter, slot, mesh, style);
 }
 
 /// Original editable artwork supplied with the theme template.

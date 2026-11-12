@@ -218,7 +218,7 @@ pub(super) fn parameter_widget(
                 .max_decimals(style.decimals),
         ),
         ParameterControl::Knob | ParameterControl::LogKnob => knob(ui, parameter, rect, accent, value),
-        // `slider { --suhina-appearance: knob }` draws a slider as a knob.
+        // `slider { appearance: knob }` draws a slider as a knob.
         ParameterControl::Slider | ParameterControl::LogSlider | ParameterControl::Integer if slider_as_knob() => {
             knob(ui, parameter, rect, accent, value)
         }
@@ -263,10 +263,10 @@ pub(super) fn parameter_widget(
     }
 }
 
-/// Whether the theme draws parameter sliders as knobs (`slider { --suhina-appearance: knob }`).
+/// Whether the theme draws parameter sliders as knobs (`slider { appearance: knob }`).
 pub(crate) fn slider_as_knob() -> bool {
-    let _style = crate::kit::style_class::enter("slider");
-    crate::kit::style_class::knob_preference(false)
+    let slider = crate::kit::element::SLIDER.enter();
+    crate::kit::style_class::knob_preference(&slider, false)
 }
 
 /// A click or drag on a horizontal slider in `rect`, `handle` wide, as a fader's: a click sets the
@@ -353,7 +353,8 @@ fn themed_slider_widget(
     let logarithmic = control == ParameterControl::LogSlider && min > 0.0 && max > min;
     let height = ui.spacing().interact_size.y.min(rect.height()).max(8.0);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(rect.width(), height), Sense::click_and_drag());
-    let _style = crate::kit::style_class::enter_response("slider", &response);
+    let slider_el = crate::kit::element::SLIDER.response(&response).enter();
+    widgets::value_drag_pointer(ui.ctx(), &response, &slider_el);
     let to_position = |v: f64| {
         if logarithmic { (v / min).ln() / (max / min).ln() } else { (v - min) / (max - min).max(f64::EPSILON) }
     };
@@ -369,9 +370,10 @@ fn themed_slider_widget(
     let painter = ui.painter_at(rect);
     let rail = {
         let rail_el = crate::kit::element::SLIDER_RAIL.enter();
-        let thickness = crate::kit::native_css::thickness(4.0).clamp(1.0, rect.height());
+        let thickness = rail_el.thickness_or(4.0).clamp(1.0, rect.height());
         let rail = Rect::from_center_size(rect.center(), Vec2::new(rect.width(), thickness));
-        if !(skin::has_own("slider.rail") && skin::paint(&painter, rail, "slider.rail", state, theme::text_hint(), 0.0))
+        if !(skin::has_own("slider.rail")
+            && skin::paint_as(&rail_el, &painter, rail, "slider.rail", state, theme::text_hint()))
         {
             rail_el.paint_with(
                 &painter,
@@ -387,7 +389,7 @@ fn themed_slider_widget(
         let fill = Rect::from_min_max(rail.min, Pos2::new(at, rail.bottom()));
         if fill.width() >= 1.0
             && !(skin::has_own("slider.fill")
-                && skin::paint(&painter, fill, "slider.fill", state, theme::accent(), 0.0))
+                && skin::paint_as(&fill_el, &painter, fill, "slider.fill", state, theme::accent()))
         {
             fill_el.paint_with(
                 &painter,
@@ -400,7 +402,7 @@ fn themed_slider_widget(
         let handle_el = crate::kit::element::SLIDER_HANDLE.response(&response).enter();
         let handle = Rect::from_center_size(Pos2::new(at, rect.center().y), Vec2::new(handle_width, rect.height()));
         if !(skin::has_own("slider.handle")
-            && skin::paint(&painter, handle, "slider.handle", state, theme::text_primary(), 0.0))
+            && skin::paint_as(&handle_el, &painter, handle, "slider.handle", state, theme::text_primary()))
         {
             handle_el.paint_with(
                 &painter,
@@ -427,15 +429,21 @@ pub(super) fn knob(
     // `device knob { width }` (or height) sets the knob's size, within its cell; with
     // `--suhina-param-row` taller rows give it room. Its `accent-color` colours its ring and
     // pointer, unless the device gives an accent of its own.
-    let (themed, sheet_accent) = {
+    let (themed, sheet_accent, hides_pointer) = {
         let knob = crate::kit::element::KNOB.enter();
+        let hides = crate::kit::style_class::drag_hides_pointer(&knob, widgets::drag_hides_pointer(ui.ctx()));
         let computed = knob.style();
-        (computed.as_ref().and_then(|c| c.width.or(c.height)), computed.filter(|c| c.authored.accent).map(|c| c.accent))
+        (
+            computed.as_ref().and_then(|c| c.width.or(c.height)),
+            computed.filter(|c| c.authored.accent).map(|c| c.accent),
+            hides,
+        )
     };
     let accent = accent.or(sheet_accent);
     let room = rect.width().min(rect.height()).max(8.0);
     let size = themed.map_or(room, |s| s.clamp(8.0, room));
     let (rect, mut response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click_and_drag());
+    widgets::value_drag_hides(ui.ctx(), &response, hides_pointer);
     if response.clicked() {
         response.request_focus();
     }
@@ -465,7 +473,7 @@ pub(super) fn knob(
     let painter = ui.painter();
     if style.shape == ControlShape::Square {
         let square = Rect::from_center_size(center, Vec2::splat(radius * 2.0));
-        painter.fill_background(square, 0.0, background);
+        painter.rect_filled(square, 0.0, background);
         painter.rect_stroke(square, 0.0, border, egui::StrokeKind::Inside);
     } else {
         painter.circle_filled(center, radius, background);
@@ -480,7 +488,9 @@ pub(super) fn knob(
 
 /// The Clip / Devices switch in `rect`: two equal parts 1 px apart, the one on light
 /// (`docs/design/components.md` › Clip properties). Returns the part clicked, when it was off.
-pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Showing) -> Option<Showing> {
+/// With `both` the two are on (the stacked devices beside the editor), and Devices clicked again
+/// closes them, as Clip does.
+pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Showing, both: bool) -> Option<Showing> {
     let part = (rect.width() - 1.0) / 2.0;
     let mut picked = None;
     for (index, (text, value)) in [("Clip", Showing::Clip), ("Devices", Showing::Devices)].into_iter().enumerate() {
@@ -490,22 +500,21 @@ pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Show
         );
         let response =
             widgets::button_area(ui, cell, egui::Id::unique(("detail-switch", index)), format!("Show {text}"));
+        let on = both || value == showing;
         if response.clicked() && value != showing {
             picked = Some(value);
+        } else if response.clicked() && both {
+            picked = Some(Showing::Clip);
         }
         // `editor-tab` (`[checked]` for the one shown), `#tab-clip` and `#tab-devices`.
         let tab = format!("tab-{}", text.to_ascii_lowercase());
-        let el = crate::kit::element::EDITOR_TAB
-            .id(&tab)
-            .response(&response)
-            .attr(crate::kit::element::Checked, value == showing)
-            .enter();
-        let on = motion::toward(ui.ctx(), response.id.with("on"), value == showing, motion::VALUE);
+        let el =
+            crate::kit::element::EDITOR_TAB.id(&tab).response(&response).attr(crate::kit::element::Checked, on).enter();
+        let on = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         let fill = motion::mix(idle, theme::control_selected(), on);
         el.paint_with(painter, cell, crate::kit::element::Native { radius: 0.0, fill });
-        let color =
-            crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), on));
+        let color = el.color_or(motion::mix(theme::text_secondary(), theme::text_inverse(), on));
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked

@@ -3,7 +3,7 @@ description: How the sample map behaves: samples laid out by how they sound, col
 read_when: sample map, similarity, sound map, browse by sound, t-SNE, UMAP, point cloud, grid layout, similar samples, kick snare hat categories, audio features, MFCC, NKS, preset previews, soundmap commands
 type: spec
 status: draft
-last_verified: 2026-11-07
+last_verified: 2026-11-10
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs
@@ -58,7 +58,9 @@ Both play a sample as soon as the pointer is over it.
 - **Map:** the plane with one **point** per item. An item is a sample file from the library or
   an NKS preset with a preview (see *NKS presets*).
 - **Scope:** the items a map holds: those of the place selected in the browser (a folder, Pinned,
-  a Recent group or every recent item), or of every folder when no place is selected.
+  a Recent group, a tag's place (`tag:<name>`, by id `tag:#<id>`, the ids joined
+  `tag:#<id>+#<id>` for a place of several, [#1254] review), or every recent item), or of every
+  folder when no place is selected.
 - **Features:** numbers computed from an item's audio that describe its sound
   ([ADR 0013](../decisions/0013-sample-map-analysis.md) lists them). Two items are **similar**
   when their features are close.
@@ -97,8 +99,9 @@ Both play a sample as soon as the pointer is over it.
 
 The map holds the samples of the browser's place, whichever category filter is chosen (the
 filters choose what the list shows). The **List** / **Sample map** switch over the list shows wherever the
-place can hold samples: Library › Samples, a folder, Pinned, and Recent of every kind or of
-samples; Plug-ins, Instruments, Effects and Presets have none (#862).
+place can hold samples: Library › Samples, a folder, Pinned, Recent of every kind or of
+samples, and a tag's place ([#1254] review: the tags that hold samples map with it);
+Plug-ins, Instruments, Effects and Presets have none (#862).
 
 **Suhina:** analysis starts with the desktop app and the MCP server, as indexing does; tests
 and the command line never analyse a user's folders unasked.
@@ -244,6 +247,13 @@ Every item has a kind. The kinds and the words in names that give them:
 | Vocal | vox, vocal, voice, chant |
 | Effect | fx, sfx, riser, impact, sweep, noise |
 | Other | anything else |
+
+**Colours.** Each dot is a `sample-point` element with a `kind` attribute (`kick`, `snare`,
+`clap`, `closedHat`, `openHat`, `hat`, `rim`, `tom`, `crash`, `ride`, `cymbal`, `percussion`,
+`bass`, `tonal`, `vocal`, `effect`, `other`), and its colour is the element's `color`. Suhina's
+user-agent sheet gives each kind its colour (`sample-point[kind="kick"] { color: #D06E5E; }`,
+[theme skins](theme-skins.md) › The user-agent sheet); a theme may restyle them. They are not
+theme settings or palette tokens.
 
 - Names are split into words at spaces, punctuation, changes of case and between letters and
   digits (`KickHard_02` → kick, hard, 02); a word with a trailing *s* also counts as the word

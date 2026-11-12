@@ -5,7 +5,6 @@
 //! (`key = value` lines, so a person can read and fix it). The app decides where the file lives.
 
 mod fields;
-mod gradient_editor;
 pub mod keymap;
 pub mod plugin_manager;
 mod settings_rows;
@@ -168,6 +167,40 @@ impl PianoKeyNames {
 
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|names| names.param() == value)
+    }
+}
+
+/// How a black key is named: as a sharp of the key below it or a flat of the key above.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NoteSpelling {
+    /// C#, D#, F#, G#, A#, the default.
+    #[default]
+    Sharps,
+    /// Db, Eb, Gb, Ab, Bb.
+    Flats,
+}
+
+impl NoteSpelling {
+    pub const ALL: [Self; 2] = [Self::Sharps, Self::Flats];
+
+    /// The name the Settings row shows.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Sharps => "Sharps (C#)",
+            Self::Flats => "Flats (Db)",
+        }
+    }
+
+    /// The value the settings file keeps.
+    pub fn param(self) -> &'static str {
+        match self {
+            Self::Sharps => "sharps",
+            Self::Flats => "flats",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|spelling| spelling.param() == value)
     }
 }
 
@@ -368,6 +401,9 @@ pub struct Settings {
     /// User-owned PNG beneath translucent surfaces; never captures the desktop.
     pub background_image: String,
     pub animations: bool,
+    /// The pointer hides while a value control is dragged (on by default); off, it shows the
+    /// arrow of the drag's direction. A theme's `drag-pointer` overrides it for its elements.
+    pub drag_hides_pointer: bool,
     /// How the Settings window explains each setting (Help, beside Close): a tooltip on its name,
     /// a ? beside it, or the sentence under it.
     pub setting_descriptions: Descriptions,
@@ -403,6 +439,14 @@ pub struct Settings {
     /// How the piano roll's keys are drawn, and which of them are named.
     pub piano_key_style: PianoKeyStyle,
     pub piano_key_names: PianoKeyNames,
+    /// Whether black keys are named as sharps or flats, wherever a note or a scale's root is named.
+    pub note_spelling: NoteSpelling,
+    /// The scale a clip's Scale switch turns on when the clip has none of its own: its root (0 is
+    /// C) and its mode (Settings › Clip editor › Default scale).
+    pub default_scale_root: u8,
+    pub default_scale_mode: suhina_engine::model::ScaleMode,
+    /// Whether the piano roll tints the rows of the clip's scale (the toolbar's Highlight).
+    pub highlight_scale: bool,
     /// A track's volume and pan as a field or as a knob (Settings › Launcher and mixer).
     pub mixer_controls: MixerControls,
     /// Where plug-in editors open.
@@ -501,6 +545,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             animations: true,
+            drag_hides_pointer: true,
             setting_descriptions: Descriptions::Tooltip,
             background_image: String::new(),
             track_headers: None,
@@ -520,6 +565,10 @@ impl Default for Settings {
             toolbar_size: ToolbarSize::Large,
             piano_key_style: PianoKeyStyle::default(),
             piano_key_names: PianoKeyNames::default(),
+            note_spelling: NoteSpelling::default(),
+            default_scale_root: 0,
+            default_scale_mode: suhina_engine::model::ScaleMode::Major,
+            highlight_scale: true,
             mixer_controls: MixerControls::Field,
             plugin_editors: EditorPlacement::Window,
             theme: crate::kit::theme::BUILT_IN.into(),

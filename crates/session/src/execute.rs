@@ -17,8 +17,6 @@ use crate::{CommandError, Session, unknown_command};
 /// What [`Session::prepare`] works out before a command runs.
 struct Prepared<'a> {
     spec: &'static CommandSpec,
-    /// `params` with clips named by id resolved to where they are now, when any were.
-    resolved: Option<Value>,
     /// The gesture the call names (#1146): one drag's calls make one undo step.
     gesture: Option<&'a str>,
     /// Whether the call joins the gesture that is open.
@@ -44,7 +42,6 @@ impl Session {
 
     fn run(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
         let prepared = self.prepare(id, params)?;
-        let params = prepared.resolved.as_ref().unwrap_or(params);
         let spec = prepared.spec;
         match spec.kind {
             CommandKind::HISTORY => {
@@ -120,8 +117,9 @@ impl Session {
         Ok(value)
     }
 
-    /// Before a command runs: finds it, checks its parameters, resolves the clips they name by
-    /// id, and for an edit, works out which undo step and which drag it belongs to.
+    /// Before a command runs: finds it, checks its parameters, and for an edit, works out which
+    /// undo step and which drag it belongs to. A clip named by id is found by the command itself,
+    /// where it reads its parameters (`commands::named_clip`).
     fn prepare<'a>(&mut self, id: &str, params: &'a Value) -> Result<Prepared<'a>, CommandError> {
         let spec = commands().iter().find(|c| c.id == id).ok_or_else(|| unknown_command(id))?;
         // A command that takes `gesture` makes one undo step of a drag's calls (#1146).
@@ -130,10 +128,8 @@ impl Session {
             false => None,
         };
         commands::check_params(id, spec.params, params)?;
-        // A clip named by its id is found where it is now and handed to the command by position.
-        let resolved = commands::resolve_clip_ids(&self.project, spec, params)?;
-        let target = replace_target(spec, resolved.as_ref().unwrap_or(params));
-        let mut prepared = Prepared { spec, resolved, gesture, target, joins: false, replaces: false };
+        let target = replace_target(spec, params);
+        let mut prepared = Prepared { spec, gesture, target, joins: false, replaces: false };
         match spec.kind {
             // Undo and redo end the gesture first, then undo or redo it as one step.
             CommandKind::HISTORY => self.history.gesture = None,

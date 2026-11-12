@@ -96,6 +96,61 @@ fn the_grid_keys_are_ctrl_and_one_to_four_in_the_piano_roll() {
     assert!(Keymap::default().conflicts().is_empty());
 }
 
+/// Legato has a key of its own in the piano roll, and Ctrl+L, which loops the clips selected in
+/// the Arrangement, is left alone while the notes have the keyboard.
+#[test]
+fn alt_l_is_legato_and_the_loop_key_is_left_alone_in_the_piano_roll() {
+    let known = actions();
+    let action = known.iter().find(|a| a.id == "pianoRoll.legato").expect("pianoRoll.legato");
+    assert_eq!(action.group, PIANO_ROLL);
+    assert!(piano_roll_only("pianoRoll.legato"));
+    assert_eq!(Keymap::default().binding_text("pianoRoll.legato").as_deref(), Some("Alt+L"));
+    assert!(not_in_piano_roll("transport.setLoopEnabled"));
+    // Its key is the clip's own loop there, so the two share Ctrl+L without a conflict.
+    assert!(piano_roll_only("pianoRoll.loop"));
+    assert_eq!(Keymap::default().binding_text("pianoRoll.loop").as_deref(), Some("Ctrl+L"));
+    // What runs there is listed, so the rest is left alone without being named: the keys of
+    // the views behind the notes, and an action nobody has listed yet.
+    for id in [
+        "selection.mute",
+        "selection.selectAll",
+        "selection.launch",
+        "arrangement.tool3",
+        "arrangement.gridSnap",
+        "marker.addAtPlayhead",
+        "clip.insertMidi",
+        "track.addMidi",
+        "view.automation",
+        "view.gainEnvelope",
+        "view.mappingMode",
+        "transport.setLoop",
+        "some.newAction",
+    ] {
+        assert!(not_in_piano_roll(id), "{id} is left alone in the piano roll");
+    }
+    for id in [
+        "pianoRoll.legato",
+        "selection.delete",
+        "selection.copy",
+        "edit.undo",
+        "edit.redo",
+        "file.save",
+        "transport.toggle",
+        "transport.play",
+        "view.toggle",
+        "view.browser",
+        "settings.open",
+        "project.next",
+    ] {
+        assert!(in_piano_roll(id), "{id} runs in the piano roll");
+    }
+    // Every listed action exists, so a renamed one does not stay listed by mistake.
+    for id in IN_PIANO_ROLL {
+        assert!(known.iter().any(|a| a.id == id), "{id} is an action");
+    }
+    assert!(Keymap::default().conflicts().is_empty());
+}
+
 #[test]
 fn z_and_shift_z_zoom_the_piano_roll() {
     let known = actions();

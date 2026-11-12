@@ -23,6 +23,11 @@ Third-party material
   Dexed: Copyright 2012-2013 Google Inc., Copyright 2016-2025 Pascal Gauthier, Copyright 2019
   Jean Pierre Cimalando, Apache License 2.0 (devices/fm-synth/LICENSE-APACHE); each ported file
   names its source and what was changed.
+- crates/plugin-host/src/vst2/vestige.rs ports the VeSTige header, written for LMMS, as Ardour
+  distributes it (libs/ardour/ardour/vestige/vestige.h at commit
+  365cc92cba0e016c30fea34aed168a0957aeeca0): Copyright (c) 2006 Javier Serrano Polo, GNU General
+  Public License version 2 or any later version, used under version 3. The file keeps the
+  original notice and says what was changed.
 - third_party/asiosdk holds the host part of the Steinberg ASIO SDK 2.3.4, Copyright (c) 2025
   Steinberg Media Technologies GmbH, used under the GNU General Public License version 3
   (third_party/asiosdk/LICENSE.txt, VENDORED.md). It is built only with the `asio` feature; such

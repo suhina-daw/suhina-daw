@@ -54,6 +54,7 @@ impl AudioSystem for Interface {
                 default_sample_rate: Some(SR),
                 buffer_sizes: vec![512],
                 buffer_range: None,
+                default_buffer: None,
                 exclusive: false,
             }],
             inputs: Vec::new(),

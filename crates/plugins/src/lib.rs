@@ -29,7 +29,8 @@
 //! without loading them and load the rest in a few long-lived `--scan-worker` processes with
 //! per-file timeouts, into a catalog that can be saved. `PluginAudio::process_with_events` sends an
 //! instrument its notes. `offline::render` runs audio (and `render_with_events` notes) through a
-//! plug-in without a deadline (`suhina-cli plugin run`, `plugin run-device`). The session starts a
+//! plug-in without a deadline (`suhina-cli plugin run`), and `render_started` through one the
+//! session started as a project's render starts it (`plugin run-device`). The session starts a
 //! project's plug-ins with it and hands their audio halves to the engine.
 
 pub mod arch;
@@ -384,6 +385,54 @@ struct HostProcess {
     /// ([`EditorPlacer`]) goes out while another request waits for its answer.
     control: std::sync::Arc<Mutex<Stream>>,
     replies: Receiver<Message>,
+    /// Parameters the user moved in the process's plug-in editors, put here by the reader thread
+    /// as the lines come: taken without the group's lock, which a request holds while it waits
+    /// for its answer (#1205).
+    edits: EditInbox,
+}
+
+/// Parameters the host said the user moved in a plug-in's editor (instance, id, value), the
+/// latest per instance and id, not yet taken in.
+type EditInbox = Arc<Mutex<Vec<(u32, u32, f64)>>>;
+
+/// Takes what the user moved in one instance's editor out of its process's inbox, without the
+/// control half and without waiting for a request the process is busy with: a lane follows a
+/// knob turned in the editor while its parameters are being listed or a value's text is being
+/// asked for (#1205).
+#[derive(Clone)]
+pub struct EditWatch {
+    inbox: EditInbox,
+    instance: u32,
+    /// The instance's parameters set since its state was last read, shared with its control
+    /// half, which sets them again after a restart.
+    since: Arc<Mutex<Vec<(u32, f64)>>>,
+}
+
+impl EditWatch {
+    /// What the user moved in the plug-in's editor since the last call, as (id, value) pairs in
+    /// the plug-in's own range: each once, the latest per id.
+    pub fn take_param_edits(&self) -> Vec<(u32, f64)> {
+        let mut taken = Vec::new();
+        lock(&self.inbox).retain(|(i, id, value)| {
+            if *i != self.instance {
+                return true;
+            }
+            taken.push((*id, *value));
+            false
+        });
+        // An edit the session keeps the project's values in step with is also a value set
+        // since the state was last read: a restart sets it again, the latest of a parameter
+        // winning (ADR 0006, decision 3). Kept only until the state is read again, which
+        // holds it.
+        let mut since = lock(&self.since);
+        for (id, value) in &taken {
+            since.retain(|(other, _)| *other != *id);
+            if since.len() < protocol::MAX_PARAMS {
+                since.push((*id, *value));
+            }
+        }
+        taken
+    }
 }
 
 /// Sends an embedded editor's placement and size to its host, without the plug-in's control
@@ -454,8 +503,9 @@ impl HostProcess {
         };
         crate::trace!("host process connected after {:?}", began.elapsed());
         control.set_nonblocking(false)?;
-        let replies = read_lines(control.try_clone()?);
-        Ok(Self { child, control: std::sync::Arc::new(Mutex::new(control)), replies })
+        let edits = EditInbox::default();
+        let replies = read_lines_into(control.try_clone()?, Some(Arc::clone(&edits)));
+        Ok(Self { child, control: std::sync::Arc::new(Mutex::new(control)), replies, edits })
     }
 
     fn alive(&mut self) -> bool {
@@ -502,9 +552,6 @@ struct Group {
     resized_editors: Vec<(u32, (u32, u32))>,
     /// Instances whose plug-in reported another latency (the latest), not yet taken in.
     latencies: Vec<(u32, u32)>,
-    /// Parameters the host said the user moved in a plug-in's editor (the latest per instance
-    /// and id), not yet taken in.
-    param_edits: Vec<(u32, u32, f64)>,
     /// The notes ARA plug-ins found in their regions (the latest per instance and region), not
     /// yet taken in (#720).
     ara_notes: Vec<(u32, String, Vec<protocol::AraNote>)>,
@@ -524,7 +571,6 @@ impl Group {
             closed_editors: Vec::new(),
             resized_editors: Vec::new(),
             latencies: Vec::new(),
-            param_edits: Vec::new(),
             ara_notes: Vec::new(),
             ara_analysis: Vec::new(),
             ram: None,
@@ -544,7 +590,6 @@ impl Group {
         self.closed_editors.clear();
         self.resized_editors.clear();
         self.latencies.clear();
-        self.param_edits.clear();
         self.ara_notes.clear();
         self.ram = None;
     }
@@ -588,14 +633,6 @@ impl Group {
                 self.latencies.retain(|(i, _)| i != instance);
                 if self.latencies.len() < MAX_CLOSED_EDITORS {
                     self.latencies.push((*instance, *latency));
-                }
-            }
-            Message::ParamChanged { instance, id, value } => {
-                // The last value of a parameter wins; one that already moved a step keeps its
-                // latest.
-                self.param_edits.retain(|(i, other, _)| !(i == instance && other == id));
-                if self.param_edits.len() < MAX_CLOSED_EDITORS {
-                    self.param_edits.push((*instance, *id, *value));
                 }
             }
             Message::AraNotes { instance, region, notes, .. } => {
@@ -671,18 +708,9 @@ impl Group {
         Some(self.latencies.swap_remove(at).1)
     }
 
-    /// What the host said the user moved in `instance`'s editor since the last call (and
-    /// forgets it): each (id, value) once, the latest per id.
-    fn take_param_edits(&mut self, instance: u32) -> Vec<(u32, f64)> {
-        let mut taken = Vec::new();
-        self.param_edits.retain_mut(|(i, id, value)| {
-            if *i != instance {
-                return true;
-            }
-            taken.push((*id, *value));
-            false
-        });
-        taken
+    /// The inbox of the running process's editor edits; a new, empty one without a process.
+    fn edit_inbox(&self) -> EditInbox {
+        self.process.as_ref().map(|p| Arc::clone(&p.edits)).unwrap_or_default()
     }
 
     /// Sends `message` (about `instance`, or the process) and waits for the reply `wanted`
@@ -824,7 +852,9 @@ pub struct Plugin {
     last_state: Option<SavedState>,
     /// Parameters set since the state was last read or loaded, in order; set again after a
     /// restart, on top of that state.
-    params_since: Vec<(u32, f64)>,
+    params_since: Arc<Mutex<Vec<(u32, f64)>>>,
+    /// The inbox of its process's editor edits ([`EditWatch`]).
+    edits: EditInbox,
     /// Whether the plug-in's editor window is open.
     editor_open: bool,
     /// The size of the open editor's inside, as the host last said.
@@ -840,7 +870,11 @@ impl Plugin {
     pub fn start(launch: Launch) -> Result<(Self, PluginAudio), PluginError> {
         let group = group_for_launch(&launch);
         let instance = next_instance();
-        let (generation, latency, edits_clips, link) = lock(&group).load(&launch, instance)?;
+        let (generation, latency, edits_clips, link, edits) = {
+            let mut locked = lock(&group);
+            let (generation, latency, edits_clips, link) = locked.load(&launch, instance)?;
+            (generation, latency, edits_clips, link, locked.edit_inbox())
+        };
         let unanswered = Arc::new(AtomicU32::new(0));
         let sample_rate = Arc::new(AtomicU64::new(launch.sample_rate.to_bits()));
         let audio_group = Arc::downgrade(&group);
@@ -854,7 +888,8 @@ impl Plugin {
             latency,
             edits_clips,
             last_state: None,
-            params_since: Vec::new(),
+            params_since: Arc::default(),
+            edits,
             editor_open: false,
             editor_size: None,
             last_health: Health::Running,
@@ -891,26 +926,17 @@ impl Plugin {
 
     /// What the user moved in the plug-in's editor since the last call, as (id, value) pairs
     /// in the plug-in's own range (see [`ParamInfo`]): the session keeps the project's values
-    /// in step with them. Never waits: while the process is busy with another request,
-    /// nothing yet.
+    /// in step with them. Never waits, also while the process is busy with another request
+    /// ([`EditWatch`]).
     pub fn take_param_edits(&mut self) -> Vec<(u32, f64)> {
-        let Some(mut group) = try_lock(&self.group) else { return Vec::new() };
-        if group.generation != self.generation {
-            return Vec::new();
-        }
-        group.drain();
-        let taken = group.take_param_edits(self.instance);
-        // An edit the session keeps the project's values in step with is also a value set
-        // since the state was last read: a restart sets it again, the latest of a parameter
-        // winning (ADR 0006, decision 3). Kept only until the state is read again, which
-        // holds it.
-        for (id, value) in &taken {
-            self.params_since.retain(|(other, _)| *other != *id);
-            if self.params_since.len() < protocol::MAX_PARAMS {
-                self.params_since.push((*id, *value));
-            }
-        }
-        taken
+        self.edit_watch().take_param_edits()
+    }
+
+    /// What takes this instance's editor edits while the control half is lent out to a thread
+    /// of its own ([`EditWatch`]). One taken before a restart takes nothing after it: the
+    /// restarted instance has another id, and maybe another process.
+    pub fn edit_watch(&self) -> EditWatch {
+        EditWatch { inbox: Arc::clone(&self.edits), instance: self.instance, since: Arc::clone(&self.params_since) }
     }
 
     /// The notes the ARA plug-in found in its regions since the last call, by region id
@@ -1039,7 +1065,7 @@ impl Plugin {
         };
         let state = SavedState { data, controller };
         self.last_state = Some(state.clone());
-        self.params_since.clear();
+        lock(&self.params_since).clear();
         Ok(state)
     }
 
@@ -1051,7 +1077,7 @@ impl Plugin {
         let message = Message::SetState { instance, data: state.data.clone(), controller: state.controller.clone() };
         self.request(&message, "set_state", |m| matches!(m, Message::State { instance: i, .. } if *i == instance))?;
         self.last_state = Some(state);
-        self.params_since.clear();
+        lock(&self.params_since).clear();
         Ok(())
     }
 
@@ -1101,6 +1127,32 @@ impl Plugin {
         }
     }
 
+    /// The plug-in's own text for each of `values` of parameter `id`, in its own range (#1205):
+    /// one text a value, empty where it gives none. At most [`protocol::MAX_PARAM_TEXTS`]
+    /// values are asked about; the rest get no text.
+    pub fn param_texts_within(
+        &mut self,
+        id: u32,
+        values: &[f64],
+        timeout: Duration,
+    ) -> Result<Vec<String>, PluginError> {
+        let instance = self.instance;
+        let asked: Vec<f64> = values.iter().copied().take(protocol::MAX_PARAM_TEXTS).collect();
+        let reply = self.request_within(
+            timeout,
+            &Message::GetParamTexts { instance, id, values: asked },
+            "param_texts",
+            |m| matches!(m, Message::ParamTexts { instance: i, id: p, .. } if *i == instance && *p == id),
+        )?;
+        match reply {
+            Message::ParamTexts { mut texts, .. } => {
+                texts.resize(values.len(), String::new());
+                Ok(texts)
+            }
+            _ => Err(PluginError::Protocol("expected parameter texts".into())),
+        }
+    }
+
     /// Sets parameter `id` to `value`, in its own range (see [`ParamInfo`]); the plug-in's
     /// audio follows from its next block. Returns the parameter as it is now. Kept for a
     /// restart.
@@ -1114,9 +1166,10 @@ impl Plugin {
         let Message::Param { param, .. } = reply else {
             return Err(PluginError::Protocol("expected a parameter".into()));
         };
-        self.params_since.retain(|(other, _)| *other != id);
-        if self.params_since.len() < protocol::MAX_PARAMS {
-            self.params_since.push((id, param.value));
+        let mut since = lock(&self.params_since);
+        since.retain(|(other, _)| *other != id);
+        if since.len() < protocol::MAX_PARAMS {
+            since.push((id, param.value));
         }
         Ok(param)
     }
@@ -1355,8 +1408,13 @@ impl Plugin {
                 locked.end();
             }
         }
+        // What the old instance's editor sent last, its unload's report among it, is set again
+        // after the restart with the other values set since its state was read; none of it
+        // stays in the inbox, where no instance would ever take it.
+        let _ = self.edit_watch().take_param_edits();
         let instance = next_instance();
         let (generation, latency, edits_clips, link) = locked.load(&self.launch, instance)?;
+        self.edits = locked.edit_inbox();
         drop(locked);
         self.edits_clips = edits_clips;
         self.instance = instance;
@@ -1376,7 +1434,7 @@ impl Plugin {
             group: Arc::downgrade(&self.group),
             sample_rate: Arc::clone(&self.sample_rate),
         };
-        let params = std::mem::take(&mut self.params_since);
+        let params = std::mem::take(&mut *lock(&self.params_since));
         if let Some(state) = self.last_state.clone() {
             self.load_state(state)?;
         }
@@ -1390,6 +1448,7 @@ impl Plugin {
 impl Drop for Plugin {
     /// Lets go of the instance; the process quits when its last instance is gone.
     fn drop(&mut self) {
+        let _forgotten = Forget { edits: Arc::clone(&self.edits), instance: self.instance };
         let mut group = lock(&self.group);
         if self.launch.group.is_none() || group.generation != self.generation || !group.alive() {
             return;
@@ -1575,6 +1634,30 @@ fn take_in_transport(message: &Message) {
     }
 }
 
+/// Takes an instance's edits out of its process's inbox when dropped: once the instance is gone,
+/// what its editor reported, its unload's report among it, would stay there for good, and a full
+/// inbox drops the edits of the instances still running.
+struct Forget {
+    edits: EditInbox,
+    instance: u32,
+}
+
+impl Drop for Forget {
+    fn drop(&mut self) {
+        lock(&self.edits).retain(|(i, _, _)| *i != self.instance);
+    }
+}
+
+/// Keeps a parameter the user moved in an editor until it is taken: the last value of a
+/// parameter wins, one that already moved a step keeps its latest.
+fn take_in_edit(edits: &EditInbox, instance: u32, id: u32, value: f64) {
+    let mut edits = lock(edits);
+    edits.retain(|(i, other, _)| !(*i == instance && *other == id));
+    if edits.len() < MAX_CLOSED_EDITORS {
+        edits.push((instance, id, value));
+    }
+}
+
 fn wake() {
     if let Some(waker) = lock(&WAKER).clone() {
         waker();
@@ -1584,6 +1667,13 @@ fn wake() {
 /// Reads messages from `stream` on a thread of its own, so replies can be waited for with a
 /// timeout. Unknown lines are skipped; the channel closes when the stream ends.
 pub fn read_lines(stream: Stream) -> Receiver<Message> {
+    read_lines_into(stream, None)
+}
+
+/// [`read_lines`], with the parameters the user moved in the plug-ins' editors put in `edits`
+/// rather than in the channel, when there is one: a request waiting for its answer holds the
+/// channel, and a lane follows the editor at once all the same (#1205).
+fn read_lines_into(stream: Stream, edits: Option<EditInbox>) -> Receiver<Message> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         let mut reader = BufReader::new(stream);
@@ -1594,6 +1684,8 @@ pub fn read_lines(stream: Stream) -> Receiver<Message> {
                 Ok(0) | Err(_) => return,
                 Ok(_) => {
                     if let Some(message) = Message::decode(line.trim_end()) {
+                        // A parameter moved in the plug-in's own editor too: its lane and its
+                        // panel follow it at once, not at the window's next look (#1205).
                         let shown = matches!(
                             message,
                             Message::TransportKey
@@ -1602,10 +1694,16 @@ pub fn read_lines(stream: Stream) -> Receiver<Message> {
                                 | Message::AraNotes { .. }
                                 | Message::AraAnalysis { .. }
                                 | Message::EditorClosed { .. }
+                                | Message::ParamChanged { .. }
                         );
                         if matches!(message, Message::TransportKey | Message::TypedKey { .. } | Message::AraPlayback(_))
                         {
                             take_in_transport(&message);
+                            wake();
+                            continue;
+                        }
+                        if let (Message::ParamChanged { instance, id, value }, Some(edits)) = (&message, &edits) {
+                            take_in_edit(edits, *instance, *id, *value);
                             wake();
                             continue;
                         }
@@ -1651,6 +1749,36 @@ mod tests {
         });
     }
 
+    /// Space in a plug-in's window: the host's unasked `transport_key` line is counted and wakes
+    /// the window, in that order, so the frame it wakes plays at once (#714). It is not left in
+    /// the replies for a request to find.
+    #[test]
+    fn a_transport_key_from_a_host_is_counted_then_wakes_the_window() {
+        let (address, name) = control_name().unwrap();
+        let listener = ListenerOptions::new().name(name).create_sync().unwrap();
+        let mut remote = connect(&address).unwrap();
+        let control = listener.accept().unwrap();
+        let replies = read_lines(control);
+        // The waker says how many keys were counted when it was called.
+        let (woken, wakes) = mpsc::channel();
+        set_waker(move || {
+            let _ = woken.send(TRANSPORT_KEYS.load(Ordering::Relaxed));
+        });
+        let line = format!("{}\n", Message::TransportKey.encode());
+        remote.write_all(line.as_bytes()).unwrap();
+        remote.flush().unwrap();
+        // Another test's host may wake the window too; this key's wake is the one with it counted.
+        let counted = loop {
+            let keys = wakes.recv_timeout(Duration::from_secs(60)).expect("the window was not woken");
+            if keys > 0 {
+                break keys;
+            }
+        };
+        assert!(counted >= 1);
+        assert!(take_transport_keys() >= 1);
+        assert!(matches!(replies.try_recv(), Err(mpsc::TryRecvError::Empty)), "not queued as a reply");
+    }
+
     /// A host process that is alive but runs nothing: a real child and a control socket, with
     /// what the test `feed`s a group, so `host_memory` can be tried without the executable.
     fn living_process() -> (HostProcess, Sender<Message>) {
@@ -1672,7 +1800,43 @@ mod tests {
         }
         let child = child.stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
         let (feed, replies) = mpsc::channel();
-        (HostProcess { child, control: std::sync::Arc::new(Mutex::new(control)), replies }, feed)
+        (HostProcess { child, control: std::sync::Arc::new(Mutex::new(control)), replies, edits: Arc::default() }, feed)
+    }
+
+    /// An instance let go of takes its edits out of the inbox, the others' stay (#1205).
+    #[test]
+    fn an_instance_let_go_of_leaves_no_edits_in_the_inbox() {
+        let inbox = EditInbox::default();
+        take_in_edit(&inbox, 4, 1, 0.25);
+        take_in_edit(&inbox, 7, 1, 0.75);
+        drop(Forget { edits: Arc::clone(&inbox), instance: 4 });
+        assert_eq!(*lock(&inbox), vec![(7, 1, 0.75)]);
+    }
+
+    /// What the user moved in an editor is taken while the group is busy with a request (its
+    /// lock held), each parameter once at its latest value and only by its own instance, and is
+    /// kept to be set again after a restart (#1205).
+    #[test]
+    fn editor_edits_are_taken_while_a_request_holds_the_group() {
+        let (process, _feed) = living_process();
+        let inbox = Arc::clone(&process.edits);
+        let mut group = Group::new();
+        group.process = Some(process);
+        let group = Mutex::new(group);
+        let since = Arc::new(Mutex::new(vec![(9, 0.5)]));
+        let watch = EditWatch { inbox: lock(&group).edit_inbox(), instance: 4, since: Arc::clone(&since) };
+
+        let busy = lock(&group);
+        take_in_edit(&inbox, 4, 1, 0.25);
+        take_in_edit(&inbox, 7, 1, 0.75);
+        take_in_edit(&inbox, 4, 1, 0.5);
+        take_in_edit(&inbox, 4, 2, 1.0);
+        assert_eq!(watch.take_param_edits(), vec![(1, 0.5), (2, 1.0)]);
+        assert!(watch.take_param_edits().is_empty(), "each edit is taken once");
+        drop(busy);
+
+        assert_eq!(*lock(&inbox), vec![(7, 1, 0.75)], "another instance's edit waits for it");
+        assert_eq!(*lock(&since), vec![(9, 0.5), (1, 0.5), (2, 1.0)]);
     }
 
     #[test]

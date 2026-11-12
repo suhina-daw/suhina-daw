@@ -545,6 +545,66 @@ fn alt_and_the_wheel_can_change_only_the_lane_under_the_pointer() {
     assert_eq!(state.height(tracks[0]), DEFAULT_LANE * 2.0);
 }
 
+/// Alt and the wheel over the returns at the bottom change the return under the pointer, not a
+/// track of the scrolling lanes above them, and a track's lane says where it is now, so the view
+/// can keep a lane made taller near the bottom in sight (#1322).
+#[test]
+fn alt_and_the_wheel_over_the_returns_change_the_return() {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let tracks: Vec<&Lane> = timeline.lanes.iter().filter(|l| l.kind != ColumnKind::Return).collect();
+    let returns: Vec<&Lane> = timeline.lanes.iter().filter(|l| l.kind == ColumnKind::Return).collect();
+    assert!(!returns.is_empty(), "the demo has a return");
+    let mut state = ArrangementViewState::default();
+    state.zoom_one = true;
+    let before = state.height(returns[0]);
+    state.zoom_fixed(&returns, &timeline, 2.0, before / 2.0, 300.0);
+    assert_eq!(state.height(returns[0]), (before * 2.0).clamp(MIN_LANE, MAX_LANE));
+    assert!(tracks.iter().all(|l| state.height(l) == DEFAULT_LANE), "the tracks keep their height");
+
+    // The second track's lane, made taller: its top and its new height.
+    let top = state.height(tracks[0]) + 1.0;
+    let at = state.zoom_wheel(&tracks, &timeline, 2.0, top + 2.0);
+    assert_eq!(at, Some((top, DEFAULT_LANE * 2.0)));
+}
+
+/// One selection at a time (#1322): a range painted on automation lanes lets go of the time
+/// selection and the picked clips, and a time selection or a clip picked after it lets go of it.
+#[test]
+fn the_last_selection_made_is_the_only_one() {
+    use crate::arrangement::automation_lanes::{LaneKey, LaneRange};
+    let range = || LaneRange {
+        track: TrackId(1),
+        key: LaneKey { device: None, param: "volume".into() },
+        start: 4.0,
+        end: 8.0,
+        more: Vec::new(),
+    };
+    let time = || TimeSelection { tracks: vec![TrackId(2)], start: 0.0, end: 4.0, row: None };
+    let mut state = ArrangementViewState::default();
+    state.set_time_selection(Some(time()));
+    state.selected = vec![(TrackId(2), ClipId(5))];
+    state.settle_selections();
+    assert!(state.time_selection().is_some() && !state.selected.is_empty(), "nothing else was there");
+
+    state.automation.range = Some(range());
+    state.settle_selections();
+    assert!(state.time_selection().is_none() && state.selected.is_empty(), "the range came last");
+    assert!(state.automation.range.is_some());
+    state.settle_selections();
+    assert!(state.automation.range.is_some(), "it stays as long as nothing else is made");
+
+    state.set_time_selection(Some(time()));
+    state.settle_selections();
+    assert!(state.automation.range.is_none(), "the time selection came last");
+    assert!(state.time_selection().is_some());
+
+    state.automation.range = Some(range());
+    state.settle_selections();
+    state.select_clips(vec![(TrackId(2), ClipId(5))]);
+    state.settle_selections();
+    assert!(state.automation.range.is_none(), "a clip picked came last");
+}
+
 #[test]
 fn a_stretch_goes_past_the_audio_and_a_midi_clip_before_its_notes() {
     use suhina_engine::model::{AudioRegion, ClipContent, ContentId, ContentLane, Extensions, LaneData};
@@ -719,4 +779,57 @@ fn a_narrow_clip_draws_no_name_and_nothing_outside_itself() {
     assert!(!shapes.iter().any(|s| matches!(s.shape, egui::Shape::Text(_))), "no name, no lone ellipsis");
     let (_, shapes) = draw(240.0);
     assert!(shapes.iter().any(|s| matches!(s.shape, egui::Shape::Text(_))), "a wide clip shows its name");
+}
+
+/// The piano roll's time selection is lit on the clip it edits, where those beats of the content
+/// play from the clip's start, within the clip, and on no other clip.
+#[test]
+fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let mut clip = timeline.lanes.iter().flat_map(|l| l.clips.iter()).find(|c| !c.audio).cloned().unwrap();
+    clip.offset = 1.0;
+    clip.length = 8.0;
+    assert_eq!(editor_span_in(Some((clip.id, 2.0, 4.0)), &clip), Some((1.0, 3.0)), "from where it plays");
+    assert_eq!(editor_span_in(Some((clip.id, 0.0, 20.0)), &clip), Some((0.0, 8.0)), "within the clip");
+    assert_eq!(editor_span_in(Some((clip.id, 0.0, 1.0)), &clip), None, "before it plays");
+    assert_eq!(editor_span_in(Some((ClipId(clip.id.0 + 1), 2.0, 4.0)), &clip), None, "another clip");
+    assert_eq!(editor_span_in(None, &clip), None);
+
+    let lane = timeline.lanes.iter().find(|l| l.clips.iter().any(|c| c.id == clip.id)).unwrap();
+    let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(160.0, 60.0));
+    let tint = theme::accent().gamma_multiply(0.45);
+    let lit = |span: Option<(ClipId, f64, f64)>| {
+        let ctx = egui::Context::default();
+        let mut found = Vec::new();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * 20.0;
+            let look = ClipLook { editor_span: span, ..ArrangementViewState::default().clip_look() };
+            paint_clip(
+                ui.painter(),
+                rect,
+                lane,
+                &clip,
+                Shown::of(&clip),
+                clip.start,
+                &x_of,
+                20.0,
+                &timeline,
+                true,
+                &look,
+            );
+        });
+        output.textures_delta.clear();
+        for shape in output.shapes {
+            if let egui::Shape::Rect(r) = shape.shape
+                && r.fill == tint
+            {
+                found.push(r.rect);
+            }
+        }
+        found
+    };
+    let shown = lit(Some((clip.id, 2.0, 4.0)));
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!((shown[0].left(), shown[0].right()), (120.0, 160.0), "beats 1 to 3 of the clip");
+    assert!(lit(None).is_empty());
 }

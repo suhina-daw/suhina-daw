@@ -327,6 +327,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "a preset that ships with Suhina, by its key: what follows stock: in library.search",
             ),
             optional(
+                "file",
+                ParamType::Path(PathKind::File),
+                "a .nam model or .wav impulse response the device starts on (the NAM Amp Modeler or Cab Loader only)",
+            ),
+            optional(
                 "sd",
                 ParamType::Path(PathKind::File),
                 "a data-only .sd AudioEffect graph to add to the new audio track",

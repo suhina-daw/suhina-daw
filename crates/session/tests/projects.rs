@@ -20,6 +20,23 @@ fn tempo(projects: &mut Projects, project: ProjectId) -> f64 {
     projects.get(project).unwrap().project().transport.tempo_bpm
 }
 
+// A library replacement raises the generation whoever asked for it, so a view whose kept
+// state could read as the new library's own keys on it ([#1254] review).
+#[test]
+fn a_replaced_library_raises_its_generation() {
+    let dir = std::env::temp_dir().join(format!("suhina-library-generation-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut projects = Projects::new();
+    let was = projects.library_generation();
+    projects.set_file_library(suhina_library::Library::new(Some(dir.clone())));
+    assert_ne!(projects.library_generation(), was, "the replacement raised it");
+    let again = projects.library_generation();
+    projects.set_file_library(suhina_library::Library::new(Some(dir.clone())));
+    assert_ne!(projects.library_generation(), again, "each replacement raises it once more");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn an_added_project_becomes_active_with_a_fresh_id() {
     let mut projects = Projects::new();
