@@ -157,21 +157,30 @@ struct Marked {
     cut: egui::layers::ShapeIdx,
     image: egui::layers::ShapeIdx,
     rect: Rect,
+    /// The panel's corner radius, which the blur and the cut under it take.
+    radius: f32,
     opacity: f32,
 }
 
 /// Marks `rect` for the window's content, blurred, under what `painter` paints next: a dialog's
 /// panel, called just before its fill. `finish_backdrops` puts the image there once the frame is
-/// painted.
-pub fn backdrop(painter: &Painter, rect: Rect) {
+/// painted. `radius` is the panel's corner radius.
+pub fn backdrop(painter: &Painter, rect: Rect, radius: f32) {
     let ctx = painter.ctx();
     if !effects_allowed(ctx) || !available(ctx) || !rect.is_finite() {
         return;
     }
     let cut = painter.add(egui::Shape::Noop);
     let image = painter.add(egui::Shape::Noop);
-    let marked =
-        Marked { layer: painter.layer_id(), clip: painter.clip_rect(), cut, image, rect, opacity: painter.opacity() };
+    let marked = Marked {
+        layer: painter.layer_id(),
+        clip: painter.clip_rect(),
+        cut,
+        image,
+        rect,
+        radius: radius.clamp(0.0, 128.0),
+        opacity: painter.opacity(),
+    };
     ctx.data_mut(|data| {
         let all = data.get_temp_mut_or_default::<Vec<Marked>>(Id::unique(MARKED));
         if all.len() < 64 {
@@ -347,7 +356,12 @@ pub fn finish_backdrops(ctx: &Context) {
         let dialogs: Vec<(Marked, Vec<egui::Shape>)> = marked
             .into_iter()
             .map(|marked| {
-                let shapes = under(backdrop, marked.rect, egui::CornerRadius::ZERO, marked.opacity.clamp(0.0, 1.0));
+                let shapes = under(
+                    backdrop,
+                    marked.rect,
+                    egui::CornerRadius::from(marked.radius),
+                    marked.opacity.clamp(0.0, 1.0),
+                );
                 (marked, shapes)
             })
             .collect();

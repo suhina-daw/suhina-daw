@@ -27,7 +27,7 @@ fn a_dialog_that_marks_its_panel_gets_the_window_blurred_under_it() {
         begin_frame(&ctx, Default::default());
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("dialog")));
         let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(120.0, 80.0));
-        backdrop(&painter, rect);
+        backdrop(&painter, rect, 0.0);
         painter.rect_filled(rect, 0.0, panel);
         finish_backdrops(&ctx);
     });
@@ -216,6 +216,23 @@ fn the_app_s_own_layers_are_not_blurred_and_nothing_floating_means_no_capture() 
     assert!(!shapes.iter().any(is_image), "{shapes:?}");
 }
 
+/// A dialog with rounded corners has its blur cut to them.
+#[test]
+fn a_dialog_s_blur_takes_its_corner_radius() {
+    let panel = Color32::from_rgb(4, 5, 6);
+    let (shapes, _, _) = floating_frames(None, |ctx| {
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("dialog")));
+        let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(120.0, 80.0));
+        backdrop(&painter, rect, 24.0);
+        painter.rect_filled(rect, 24.0, panel);
+    });
+    let image = shapes.iter().find_map(|s| match s {
+        egui::Shape::Rect(r) if is_image(s) => Some(r.corner_radius),
+        _ => None,
+    });
+    assert_eq!(image, Some(egui::CornerRadius::same(24)), "{shapes:?}");
+}
+
 /// A menu opened over a dialog (a dropdown in Export audio, Settings' More) shows the dialog
 /// blurred behind it, with the dialog's own blur in it; the dialog's blur is the window alone.
 #[test]
@@ -227,7 +244,7 @@ fn a_menu_over_a_dialog_gets_the_dialog_blurred_behind_it() {
             ctx,
             |ui| {
                 let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(200.0, 150.0));
-                backdrop(ui.painter(), rect);
+                backdrop(ui.painter(), rect, 0.0);
                 ui.painter().rect_filled(rect, 0.0, panel);
                 ui.allocate_rect(rect, egui::Sense::hover());
             },

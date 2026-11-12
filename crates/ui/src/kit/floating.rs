@@ -148,7 +148,8 @@ pub(crate) fn dialog_size(dialog: &Entered, area: Rect, size: Vec2) -> Vec2 {
 /// where the sheet gives it no border. Returns the content box what it holds goes in (#1336).
 pub(crate) fn dialog(painter: &Painter, dialog: &Entered, rect: Rect, fill: Color32) -> Rect {
     if style_blurs(dialog.style()) {
-        super::liquid::backdrop(painter, rect);
+        let radius = dialog.style().filter(|style| style.authored.radius).map_or(0.0, |style| style.radius);
+        super::liquid::backdrop(painter, rect, radius);
     }
     let content = dialog.paint_with(painter, rect, element::Native { radius: 0.0, fill }).content;
     if !dialog.style().is_some_and(|style| style.authored.border_width) {
