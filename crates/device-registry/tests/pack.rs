@@ -38,6 +38,21 @@ fn phrase_from(file: &str) -> Vec<f32> {
     out
 }
 
+/// The passage of the phrase from `start` seconds, `seconds` long, as interleaved stereo.
+fn passage(phrase: &[f32], start: usize, seconds: usize) -> Vec<f32> {
+    let rate = RATE as usize;
+    phrase[start * rate * 2..(start + seconds) * rate * 2].to_vec()
+}
+
+/// The two passages a check of every shipped model renders, in place of the whole 90 s phrase:
+/// 18 models over the whole phrase took 11 to 19 minutes of a CI run. 37 s to 43 s holds the
+/// phrase's peak (−1.9 dBFS at 39.84 s, the whole phrase's own), so the full-scale bound sees
+/// the loudest input; 55 s to 61 s has the whole phrase's level (−21.6 dB RMS against −21.5 dB),
+/// so the loudness bound reads what it read over the whole phrase.
+fn peak_and_level_passages(phrase: &[f32]) -> [Vec<f32>; 2] {
+    [passage(phrase, 37, 6), passage(phrase, 55, 6)]
+}
+
 /// Runs `device` over the phrase, and drops the lead the device's own `latency()` declares.
 fn rendered(device: &mut dyn Device, frames: &mut [f32]) -> Vec<f32> {
     device.prepare(f64::from(RATE)).unwrap();
@@ -196,19 +211,21 @@ fn every_pack_ir_runs_stereo() {
     }
 }
 
-/// Every shipped amp model runs the device: each pack model renders the phrase through the
-/// normal device path, and its output stays finite and off silence ([ADR 0036] › 7, the
-/// offline render is the oracle).
+/// Every shipped amp model runs the device: each pack model renders the phrase's peak and level
+/// passages through the normal device path, and its output stays finite and off silence
+/// ([ADR 0036] › 7, the offline render is the oracle).
 #[test]
 fn every_pack_amp_model_runs_the_device() {
-    let phrase = phrase();
+    let passages = peak_and_level_passages(&phrase());
     for (name, _) in pack_files("nam-amp-modeler") {
         let asset = load_builtin_file("nam-amp-modeler", name, RATE).unwrap();
         let mut device = create_with("nam-amp-modeler", Some(&asset)).unwrap();
-        let out = rendered(device.as_mut(), &mut phrase.clone());
-        assert!(out.iter().all(|s| s.is_finite()), "{name} renders a non-finite sample");
-        let peak = out.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-        assert!(peak > 1e-3, "{name} renders silence (peak {peak:.2e}) — the pack must not ship an unusable model");
+        for passage in &passages {
+            let out = rendered(device.as_mut(), &mut passage.clone());
+            assert!(out.iter().all(|s| s.is_finite()), "{name} renders a non-finite sample");
+            let peak = out.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+            assert!(peak > 1e-3, "{name} renders silence (peak {peak:.2e}) — the pack must not ship an unusable model");
+        }
     }
 }
 
@@ -216,10 +233,12 @@ fn every_pack_amp_model_runs_the_device() {
 /// asset, as `device.add {}` runs them): the pair makes up the model's own level — the clean
 /// pairing reads quieter than the loud ones — the peak stays under full scale, and the
 /// loudness is not the model's silent tail. The bounds hold the balance: until 2026-11-08
-/// Bright Clean sat −18 dB under the crunch pairings and rode over full scale once raised.
+/// Bright Clean sat −18 dB under the crunch pairings and rode over full scale once raised. The
+/// peak is read over both passages of [`peak_and_level_passages`], the loudness over the level
+/// passage.
 #[test]
 fn every_stock_preset_naming_a_file_renders_heard_and_under_full_scale() {
-    let phrase = phrase();
+    let [peak_passage, level_passage] = peak_and_level_passages(&phrase());
     for stock in stock_presets() {
         let Some(file) = stock.preset.file.as_deref() else { continue };
         let Some((id, name)) = file.strip_prefix("builtin:").and_then(|s| s.split_once('/')) else {
@@ -232,9 +251,9 @@ fn every_stock_preset_naming_a_file_renders_heard_and_under_full_scale() {
             let index = info.param_index(param).unwrap_or_else(|| panic!("{}: {param:?}", stock.key));
             device.set_param(index, *value);
         }
-        let mut clone = phrase.clone();
-        let out = rendered(device.as_mut(), &mut clone);
-        let peak = out.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        let loud = rendered(device.as_mut(), &mut peak_passage.clone());
+        let out = rendered(device.as_mut(), &mut level_passage.clone());
+        let peak = loud.iter().chain(&out).map(|s| s.abs()).fold(0.0f32, f32::max);
         let peak_db = 20.0 * f64::from(peak).log10().max(-96.0);
         let rms = out.iter().map(|s| f64::from(*s) * f64::from(*s)).sum::<f64>() / out.len().max(1) as f64;
         let loudness_db = 10.0 * rms.log10().max(-96.0);
