@@ -312,6 +312,19 @@ fn box_shadow_none_removes_egui_s_shadow() {
     assert!(!shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.blur_width > 0.0)), "{shapes:?}");
 }
 
+/// A `border-color` alone colours egui's own stroke: the width stays egui's.
+#[test]
+fn border_color_alone_colours_egui_s_stroke() {
+    let (shapes, _, _) = floating_frames(Some("popup { border-color: #ff0000; }"), |ctx| {
+        odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0))
+    });
+    let stroke = shapes.iter().find_map(|s| match s {
+        egui::Shape::Rect(r) if r.stroke.width > 0.0 && r.fill_texture_id() != TextureId::User(7) => Some(r.stroke),
+        _ => None,
+    });
+    assert!(stroke.is_some_and(|stroke| matches!(stroke.color.to_array(), [r, 0, 0, _] if r > 0)), "{shapes:?}");
+}
+
 /// `user.css` styles popups and tooltips when the theme has no sheet at all.
 #[test]
 fn user_css_alone_styles_popups() {

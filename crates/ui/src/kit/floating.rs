@@ -173,8 +173,11 @@ pub(crate) struct Restyled {
 /// The contents keep egui's margins: `padding` does not move them.
 pub(crate) fn frame(ctx: &Context, name: Name, frame: &Frame, opacity: f32) -> Option<Restyled> {
     let style = super::native_css::settings_of(&[name])?;
-    let authored =
-        style.authored.background || style.authored.border_width || style.authored.radius || style.authored.box_shadow;
+    let authored = style.authored.background
+        || style.authored.border
+        || style.authored.border_width
+        || style.authored.radius
+        || style.authored.box_shadow;
     if !authored && !style.has_shadow() && !style.has_gradient() && style.outline().is_none() {
         return None;
     }
@@ -200,7 +203,9 @@ pub(crate) fn frame(ctx: &Context, name: Name, frame: &Frame, opacity: f32) -> O
         None,
     );
     if !style.authored.border_width && frame.stroke.width > 0.0 {
-        let stroke = egui::Stroke::new(frame.stroke.width, unfaded(frame.stroke.color));
+        // egui's stroke, in the sheet's `border-color` when it sets one without a width.
+        let color = if style.authored.border { style.border } else { unfaded(frame.stroke.color) };
+        let stroke = egui::Stroke::new(frame.stroke.width, color);
         painter.rect_stroke(frame.rect, radius, stroke, egui::StrokeKind::Inside);
     }
     let mut under = if style.authored.box_shadow { Vec::new() } else { frame.shadow.clone() };
