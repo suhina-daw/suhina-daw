@@ -213,6 +213,43 @@ mod tests {
         assert!(biggest < 1280.0 * 800.0 / 4.0, "only the menu's area: {biggest}");
     }
 
+    /// A submenu is `open_menu` on a layer of its own, as the bar's menu is: what `menu` gives
+    /// the one it gives the other, an outline included.
+    #[test]
+    fn open_menu_in_a_layer_of_its_own_paints_the_menu_s_background_and_outline() {
+        let ctx = egui::Context::default();
+        crate::kit::skin::configure(&crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from("menu { background-color: #FF0000; outline: 2px solid #00FF00; }")),
+            ..Default::default()
+        });
+        let (mut background, mut outline) = (false, false);
+        for _ in 0..5 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    crate::kit::native_css::begin_frame(ui);
+                    let _frame = crate::kit::native_css::frame(ui);
+                    egui::Area::new(egui::Id::new("submenu")).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
+                        open_menu(ui, |ui| ui.label("Item"));
+                    });
+                },
+            );
+            output.textures_delta.clear();
+            for shape in &output.shapes {
+                if let egui::Shape::Rect(rect) = &shape.shape {
+                    background |= matches!(rect.fill.to_array(), [r, 0, 0, _] if r > 0);
+                    outline |= matches!(rect.stroke.color.to_array(), [0, g, 0, _] if g > 0);
+                }
+            }
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        assert!(background, "the menu's background");
+        assert!(outline, "the menu's outline");
+    }
+
     #[test]
     fn without_a_project_saving_is_greyed_out_and_opening_is_not() {
         let menus = crate::App::new().menus();
