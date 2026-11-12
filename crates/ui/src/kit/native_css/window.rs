@@ -39,18 +39,18 @@ impl Region {
     ];
 
     /// Its element's name, id and `kind` attribute, as a theme selects it.
-    pub fn element(self) -> (&'static str, &'static str, Option<&'static str>) {
+    pub fn element(self) -> (&'static str, Option<&'static str>, Option<&'static str>) {
         match self {
-            Region::MenuBar => ("menu-bar", "menu-bar", None),
-            Region::Tabs => ("project-tabs", "project-tabs", None),
-            Region::Toolbar => ("toolbar", "toolbar", None),
-            Region::TopLine => ("separator", "views-top", Some("views-top")),
-            Region::Notice => ("notice-bar", "notice-bar", None),
-            Region::Browser => ("workspace-panel", "panel-browser", Some("browser")),
-            Region::Main => ("workspace-panel", "panel-main", Some("main")),
-            Region::Detail => ("workspace-panel", "panel-detail", Some("detail")),
-            Region::BottomLine => ("separator", "views-bottom", Some("views-bottom")),
-            Region::StatusBar => ("status-bar", "status-bar", None),
+            Region::MenuBar => ("menu-bar", None, None),
+            Region::Tabs => ("project-tabs", None, None),
+            Region::Toolbar => ("toolbar", None, None),
+            Region::TopLine => ("separator", Some("views-top"), Some("views-top")),
+            Region::Notice => ("notice-bar", None, None),
+            Region::Browser => ("workspace-panel", Some("panel-browser"), Some("browser")),
+            Region::Main => ("workspace-panel", Some("panel-main"), Some("main")),
+            Region::Detail => ("workspace-panel", Some("panel-detail"), Some("detail")),
+            Region::BottomLine => ("separator", Some("views-bottom"), Some("views-bottom")),
+            Region::StatusBar => ("status-bar", None, None),
         }
     }
 
@@ -182,7 +182,7 @@ pub fn window(input: &Input) -> Option<Window> {
             for (region, size) in Region::ALL.iter().zip(&input.regions) {
                 let Some(size) = size else { continue };
                 let (name, id, kind) = region.element();
-                let mut element = super::native::element(name, Some(id), None, Some(1));
+                let mut element = super::native::element(name, id, None, Some(1));
                 if let Some(kind) = kind {
                     element.attributes.push(("kind".into(), kind.into()));
                 }
@@ -217,7 +217,20 @@ pub fn window(input: &Input) -> Option<Window> {
             }
             Some(rects)
         };
-        let rects = lay(input)?;
+        let mut rects = lay(input)?;
+        // A closed detail area keeps its place, with no size, for its splitter; one whose size
+        // the sheet sets would leave an empty hole instead, so it is left out of the grid.
+        if input.detail_closed
+            && rects
+                .get(Region::Detail.index())
+                .copied()
+                .flatten()
+                .is_some_and(|rect| rect.width().min(rect.height()) > 0.5)
+        {
+            let mut without = input.clone();
+            without.regions[Region::Detail.index()] = None;
+            rects = lay(&without)?;
+        }
         // Laid out again with one panel's content size a point larger at a time: a panel the sheet
         // does not size grows with it, and keeps its splitter. No list of properties says which:
         // the layout does. One at a time, so a sheet that swaps the panels' tracks does not count

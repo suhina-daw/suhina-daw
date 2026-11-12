@@ -48,11 +48,14 @@ impl App {
             if follows { crate::kit::native_css::splitter_between(panel, main, BROWSER_HANDLE) } else { Rect::NOTHING };
         // Sliding, the browser is drawn whole at its width, its inner edge at the panel's.
         let area = panel;
+        // Its width is its content's: its own padding and border come round it.
+        let [_, right, _, left_inset] = panel_style.insets();
+        let whole = width + right + left_inset;
         let panel = if follows && part < 1.0 {
             if left {
-                Rect::from_min_max(Pos2::new(panel.right() - width, panel.top()), panel.max)
+                Rect::from_min_max(Pos2::new(panel.right() - whole, panel.top()), panel.max)
             } else {
-                Rect::from_min_max(panel.min, Pos2::new(panel.left() + width, panel.bottom()))
+                Rect::from_min_max(panel.min, Pos2::new(panel.left() + whole, panel.bottom()))
             }
         } else {
             panel

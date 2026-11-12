@@ -1690,3 +1690,34 @@ fn a_failing_theme_layout_falls_back_to_the_user_agent_sheet() {
     assert!(window(&full_window(Vec2::new(f32::NAN, 700.0))).is_none());
     skin::configure(&skin::Skin::default());
 }
+/// A closed detail area the sheet sizes leaves no empty hole: it is left out of the grid, and has
+/// no splitter.
+#[test]
+fn a_closed_detail_area_the_sheet_sizes_leaves_no_hole() {
+    prepare("#panel-detail { height: 200px; }", 1000.0);
+    let mut input = full_window(Vec2::new(1000.0, 700.0));
+    input.set(Region::Detail, [None, Some(0.0)]);
+    input.detail_closed = true;
+    let laid = window(&input).unwrap();
+    assert_eq!(laid.rect(Region::Detail), None);
+    assert_eq!(laid.rect(Region::Main).unwrap().bottom(), 679.0, "the view reaches the line under it");
+    assert!(!laid.detail_follows);
+    // `grid-area: auto` places nothing and hides nothing.
+    prepare("project-tabs { grid-area: auto; grid-row: 9; }", 1000.0);
+    let laid = window(&full_window(Vec2::new(1000.0, 700.0))).unwrap();
+    assert_eq!(laid.rect(Region::Tabs).map(|r| r.height()), Some(22.0));
+    skin::configure(&skin::Skin::default());
+}
+/// The toolbar's modules lie in the toolbar's own box, wherever the window's grid puts it.
+#[test]
+fn the_toolbar_s_modules_ignore_the_window_s_padding_and_gaps() {
+    let modules = |css: &str| {
+        prepare(css, 800.0);
+        toolbar(&[("transport".into(), 100.0)], Vec2::new(800.0, 40.0), 40.0).map(|m| m[0].rect)
+    };
+    let plain = modules("toolbar { display: flex; }");
+    let padded = modules("toolbar { display: flex; } window { padding: 6px; gap: 10px; }");
+    skin::configure(&skin::Skin::default());
+    assert!(plain.is_some());
+    assert_eq!(plain, padded);
+}

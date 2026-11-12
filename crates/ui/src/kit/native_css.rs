@@ -1295,9 +1295,12 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2, module_height: f32) -> Optio
             .iter()
             .enumerate()
             .any(|(index, (_, style))| native::requests_layout(style, if index == 0 { &PADDING } else { &[] }));
+        // The modules' places in the toolbar's own box: the toolbar lies in the window's grid,
+        // whose padding, gaps and rows above it say nothing about where its modules go.
+        let origin = laid.items.first().and_then(|(rect, _)| *rect).map_or(Vec2::ZERO, |rect| rect.min.to_vec2());
         let mut modules = Vec::new();
         for ((name, _), (rect, style)) in order.iter().zip(laid.items.into_iter().skip(1)) {
-            let Some(rect) = rect else { continue };
+            let Some(rect) = rect.map(|rect| rect.translate(-origin)) else { continue };
             if style.visible {
                 modules.push(Module { name: name.clone(), rect, style });
             }

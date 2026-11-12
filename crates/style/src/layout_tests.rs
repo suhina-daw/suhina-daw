@@ -34,6 +34,17 @@ fn an_area_the_template_does_not_name_leaves_the_element_out() {
     ];
     let rects = layout(css, tree, 800.0);
     assert_eq!(rects[2], None, "no implicit track for a name the template lacks");
+    // Without a template, or as `auto`, the name places nothing and hides nothing.
+    let free = layout(
+        "window { display: flex; } #a { grid-area: somewhere; height: 10px; } #b { grid-area: auto; height: 10px; }",
+        vec![
+            Element::new("window", None),
+            Element::new("pane", Some(0)).with_id("a"),
+            Element::new("pane", Some(0)).with_id("b"),
+        ],
+        800.0,
+    );
+    assert!(free[1].is_some() && free[2].is_some(), "{free:?}");
     let main = rects[3].unwrap();
     assert_eq!((main.y, main.height), (20.0, 580.0));
 }

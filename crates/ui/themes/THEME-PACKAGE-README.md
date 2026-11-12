@@ -1042,7 +1042,7 @@ skipped with a notice (line and column) and the rest of the sheet applies; a she
 does not parse at all keeps the last working one. Some raw widgets still need integration. Transforms,
 filters, downloadable fonts, full typography, geometry animation and
 the reduced-motion media feature are not connected. Floating windows stay host-managed; the
-inside of each bar is laid out by Suhina, and the toolbar's height stays native. Do not claim universal browser CSS
+inside of each bar is laid out by Suhina, and its controls keep their native height. Do not claim universal browser CSS
 or container-query support. Notices are useful but are not a complete CSS validator.
 Use the editor's Flex/Grid examples and check the current support specification.
 

@@ -437,16 +437,16 @@ pub fn compute(
         // A `grid-area` its parent's template does not name leaves the element out, so a theme's
         // typo or a template without the area hides it rather than adding an implicit track.
         let area = match computed.get(Property::GridArea) {
-            Value::Name(area) if !area.is_empty() => Some(area),
+            Value::Name(area) if !area.is_empty() && area != "auto" => Some(area),
             _ => None,
         };
         let parent_areas =
             element.parent.and_then(|parent| match styles.get(parent)?.get(Property::GridTemplateAreas) {
-                Value::Areas(areas) => Some(areas),
+                Value::Areas(areas) if areas != Areas::default() => Some(areas),
                 _ => None,
             });
-        let placed =
-            area.as_ref().map(|area| parent_areas.as_ref().and_then(|areas| areas.bounds().get(area).copied()));
+        // Under a parent without a template, the name means nothing and is ignored.
+        let placed = area.as_ref().zip(parent_areas.as_ref()).map(|(area, areas)| areas.bounds().get(area).copied());
         let shown = computed.get(Property::Visible) != Value::Bool(false)
             && computed.get(Property::Display) != Value::Keyword("none")
             && !matches!(placed, Some(None))

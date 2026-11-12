@@ -225,7 +225,7 @@ session track { width: 86px; }
 session slot { height: 18px; }
 
 @media (max-width: 900px) {
-  window { areas: "menu" "control" "views" "detail" "status"; }   /* the browser moves out */
+  window { grid-template-areas: "menu" "toolbar" "main" "detail" "status"; }   /* the browser moves out */
   #browser { visible: false; }
 }
 @media (desktop-blur: off) { #browser { glass: 0.9 inset; } }

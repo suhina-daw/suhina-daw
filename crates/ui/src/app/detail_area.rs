@@ -391,7 +391,9 @@ impl App {
                 if pulled {
                     // Above it only the edited track, or nothing.
                     let above = focus.map_or(0.0, |t| self.arrangement.focus_height(t));
-                    (area.height() - above.min(area.height() - least) - SPLITTER).max(least)
+                    // The gap the grid leaves over the area, where its splitter is.
+                    let gap = (laid.top() - main.bottom()).max(0.0);
+                    (area.height() - above.min(area.height() - least) - gap).max(least)
                 } else if track_devices {
                     self.device_row_height().min((area.height() - MIN_VIEW).max(least))
                 } else {
@@ -406,9 +408,12 @@ impl App {
                 self.detail_shown.y = (shown - top - bottom).max(0.0);
             }
             let laid_size = if stacked { laid.width() } else { laid.height() };
-            if (shown - laid_size).abs() > 0.5 {
+            // Once for each size: a sheet that holds the area to another (a `max-height`) does not
+            // keep the window repainting.
+            if (shown - laid_size).abs() > 0.5 && (shown - self.detail_asked).abs() > 0.5 {
                 ui.ctx().request_repaint();
             }
+            self.detail_asked = shown;
         }
         let (view, detail) = (main, laid);
         // The stacked devices beside a clip's editor: a column at the view's right, a stacked
@@ -486,7 +491,12 @@ impl App {
                     across: stacked,
                     label: "Detail area splitter",
                     size: if stacked { detail.width() } else { detail.height() },
-                    grows_forward: false,
+                    // Towards the view grows it, wherever the sheet puts the area.
+                    grows_forward: if stacked {
+                        detail.center().x < view.center().x
+                    } else {
+                        detail.center().y < view.center().y
+                    },
                     bounds: (0.0, if stacked { area.width() } else { area.height() }),
                 },
             );
@@ -937,7 +947,11 @@ impl App {
                 across: side,
                 label: "Detail area splitter",
                 size: 0.0,
-                grows_forward: false,
+                grows_forward: if side {
+                    detail.center().x < main.center().x
+                } else {
+                    detail.center().y < main.center().y
+                },
                 bounds: (0.0, if side { room.width() } else { room.height() }),
             },
         );
@@ -952,6 +966,9 @@ impl App {
             if side {
                 if size >= detail_view::STACK_WIDTH / 2.0 {
                     self.show_editor();
+                    // The same drag goes on from the open area's width, so it does not close it
+                    // again.
+                    crate::kit::divider::restart(ui, Id::unique("detail-splitter"), detail_view::STACK_WIDTH, true);
                 }
             } else {
                 let least = self.least_detail_height();

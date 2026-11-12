@@ -864,16 +864,16 @@ Its children, by element, id and `kind`:
 
 | Element | Id | Area | What it is |
 |---|---|---|---|
-| `menu-bar` | `#menu-bar` | `menu` | the window's own menu bar, while Settings shows it |
-| `project-tabs` | `#project-tabs` | `tabs` | the tabs, while two or more projects are open |
-| `toolbar` | `#toolbar` | `toolbar` | the toolbar |
+| `menu-bar` | — | `menu` | the window's own menu bar, while Settings shows it |
+| `project-tabs` | — | `tabs` | the tabs, while two or more projects are open |
+| `toolbar` | — | `toolbar` | the toolbar |
 | `separator[kind="views-top"]` | `#views-top` | `top` | the 1 px line over the views |
-| `notice-bar` | `#notice-bar` | `notice` | the strip asking about an opened project or naming missing files |
+| `notice-bar` | — | `notice` | the strip asking about an opened project or naming missing files |
 | `workspace-panel[kind="browser"]` | `#panel-browser` | `left` (`right` with the browser on the right) | the browser |
 | `workspace-panel[kind="main"]` | `#panel-main` | `main` | the Launcher or the Arrangement |
 | `workspace-panel[kind="detail"]` | `#panel-detail` | `detail` | the detail area |
 | `separator[kind="views-bottom"]` | `#views-bottom` | `bottom` | the 1 px line under the views |
-| `status-bar` | `#status-bar` | `status` | the status bar |
+| `status-bar` | — | `status` | the status bar |
 
 The default grid has four columns (the browser on the left, the views, the detail area stacked
 beside them, the browser on the right) and nine rows, one per area:
@@ -899,6 +899,10 @@ or `[browser="right"]` while the browser shows; `[menu-bar]` while the window ha
 bar. The user-agent sheet's grid reads them, and a theme's rules can too
 (`window[detail="beside"] #panel-detail { … }`). The closed detail area is
 `#panel-detail[closed]`.
+
+A closed detail area whose size the sheet sets is left out of the grid instead, since it would
+leave an empty hole: it then has no splitter, and opens again with its key or menu item. A
+`grid-area` of `auto`, or one under an element without a template, places nothing.
 
 **A region that is not there has no element** (the menu bar turned off, the tabs of a single
 project, the hidden browser, the browser and the detail area on the start page), so its `auto`

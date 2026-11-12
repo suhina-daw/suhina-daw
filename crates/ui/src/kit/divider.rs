@@ -68,6 +68,15 @@ pub fn show(ui: &Ui, divider: Divider<'_>) -> Dragged {
     Dragged { response, size, style }
 }
 
+/// Makes the drag of the divider `key` go on from `size` where the pointer is now: a divider
+/// that changed what it resizes in the middle of a drag (a closed area that opened whole).
+pub fn restart(ui: &Ui, key: Id, size: f32, across: bool) {
+    if let Some(pointer) = ui.input(|i| i.pointer.latest_pos()) {
+        let at = if across { pointer.x } else { pointer.y };
+        ui.ctx().data_mut(|d| d.insert_temp(key.with("drag-start"), (size, at)));
+    }
+}
+
 #[cfg(test)]
 #[path = "divider_tests.rs"]
 mod tests;

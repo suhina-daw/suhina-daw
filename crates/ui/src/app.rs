@@ -440,6 +440,8 @@ pub struct App {
     /// under it), under the Arrangement view's pull to the top or a track's one height for its
     /// devices: what the window's grid lays it out at.
     detail_shown: Vec2,
+    /// The size along its axis the detail area asked the grid for last, so it asks once.
+    detail_asked: f32,
     /// Where each frame's time goes, written to the trace log when tracing is on.
     frame_trace: crate::kit::frame_trace::FrameTrace,
     /// What auto-arm (Settings › MIDI) last saw and armed.
@@ -711,6 +713,7 @@ impl App {
             detail_open: true,
             detail_height: DETAIL_HEIGHT,
             detail_shown: Vec2::new(detail_view::STACK_WIDTH, DETAIL_HEIGHT),
+            detail_asked: 0.0,
             frame_trace: crate::kit::frame_trace::FrameTrace::default(),
             auto_arm: AutoArm::default(),
             fitted_editors: std::collections::HashSet::new(),
@@ -3181,8 +3184,11 @@ impl App {
             };
             self.frame_trace.mark("detail");
             // What a drop over the views lands on: the view and the detail area under it.
-            let view_area =
-                detail_rect.filter(|rect| self.detail_open && rect.is_positive()).map_or(main, |d| main.union(d));
+            // The room beside the browser only, as a detail area across the full width also lies
+            // under it.
+            let view_area = detail_rect
+                .filter(|rect| self.detail_open && rect.is_positive())
+                .map_or(main, |d| Rect::from_x_y_ranges(main.x_range(), main.union(d).y_range()));
             let main_style = crate::kit::element::WORKSPACE_PANEL.id("panel-main").attribute("kind", "main").enter();
             // The panel's own box, as every element's: its background and border (none unless the
             // sheet gives them), then it clips what the view paints (`overflow`); the view goes in
