@@ -816,7 +816,9 @@ pub(super) fn signature_field(
         }
     }
     match &typing {
-        Some(typed) => ctx.data_mut(|d| d.insert_temp(typing_id, typed.clone())),
+        Some(typed) => {
+            ctx.data_mut(|d| d.insert_temp(typing_id, typed.clone()));
+        }
         None => {
             ctx.data_mut(|d| d.remove::<SignatureTyping>(typing_id));
             widgets::release_value_keys(&ctx, typing_id);
@@ -880,7 +882,7 @@ pub(super) fn signature_field(
 
     // The numbers: while one is typed into, what was typed (the other dimmed until typed).
     let mono = theme::mono_font(theme::TEXT);
-    let ink = if native { theme::text_primary() } else { theme::text_secondary() };
+    let ink = if native.is_some() { theme::text_primary() } else { theme::text_secondary() };
     let half_slash = widgets::text_width(ui, " / ", mono.clone()) / 2.0;
     let left = Rect::from_min_max(numbers.min, Pos2::new(middle - half_slash, numbers.bottom()));
     let right = Rect::from_min_max(Pos2::new(middle + half_slash, numbers.top()), numbers.max);
