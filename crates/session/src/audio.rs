@@ -318,6 +318,9 @@ pub struct DeviceInfo {
     pub buffer_sizes: Vec<u32>,
     /// The driver's own range, when it reports one.
     pub buffer_range: Option<(u32, u32)>,
+    /// The buffer size that plays when none is chosen, when the driver says: the one an ASIO
+    /// driver prefers, which is the size set in its control panel.
+    pub default_buffer: Option<u32>,
     /// Whether it can be opened in exclusive mode (WASAPI).
     pub exclusive: bool,
 }
@@ -355,6 +358,9 @@ pub struct OutputInfo {
     pub underruns: u64,
     /// The device reported an error (unplugged, taken by another program).
     pub failed: bool,
+    /// Why, in words, when it said: "the driver asked for a reset", "the driver's buffer sizes
+    /// changed"…
+    pub failure: Option<&'static str>,
     /// The chosen host or device was not there when the output opened, so another one (the
     /// default) plays in its place until it is back.
     pub fallback: bool,
@@ -368,6 +374,11 @@ pub struct OutputInfo {
     pub input_channels: u16,
     /// Blocks the engine found too little input for.
     pub input_underruns: u64,
+    /// Recent short reads and cumulative backlog drops; sampled independently.
+    pub input_diagnostics: suhina_engine::InputSnapshot,
+    /// Output cycles, ASIO input callbacks, render blocks, maximum blocks per cycle,
+    /// extra blocks in a cycle, and input-grace expirations. Reset on output reopen.
+    pub render_diagnostics: [u64; 6],
 }
 
 impl OutputInfo {
@@ -384,12 +395,17 @@ impl OutputInfo {
             "live_latency_ms": (self.live_latency_ms * 100.0).round() / 100.0,
             "underruns": self.underruns,
             "failed": self.failed,
+            "failure": self.failure,
             "fallback": self.fallback,
             "channels": self.channels,
             "cue_pair": self.cue_pair,
             "input": self.input,
             "input_channels": self.input_channels,
             "input_underruns": self.input_underruns,
+            "input_short_reads": self.input_diagnostics.short_reads,
+            "input_backlog_drops": self.input_diagnostics.backlog_drops,
+            "input_backlog_frames": self.input_diagnostics.backlog_frames,
+            "render_diagnostics": self.render_diagnostics,
         })
     }
 
@@ -424,6 +440,10 @@ pub trait LiveOutput: Send + Sync {
     fn open_control_panel(&self) -> Result<(), String> {
         Err("this output has no native control panel".into())
     }
+    /// Asks the active ASIO driver for its buffer sizes again, on the thread that holds it: when
+    /// they changed without the driver saying so (a size set in its control panel), the output
+    /// reports a failure and is opened again. Nothing to ask on other hosts.
+    fn check_driver(&self) {}
 }
 
 /// A player on the output a choice names.
@@ -480,14 +500,24 @@ pub trait AudioSystem: Send + Sync {
 /// Follows the answers of [`AudioSystem::device_names`]: says when the devices are no longer the
 /// ones the last answer named. The first answer only sets what is known: the list it would be
 /// compared with was made when the list first showed.
-#[derive(Debug, Default)]
-pub struct DeviceWatch {
-    known: Option<Vec<String>>,
+pub type DeviceWatch = Watch<Vec<String>>;
+
+/// Follows a value read again and again, such as the devices there or the output playing: says
+/// when it is no longer the one last read. The first answer only sets what is known.
+#[derive(Debug)]
+pub struct Watch<T> {
+    known: Option<T>,
 }
 
-impl DeviceWatch {
-    /// Takes an answer; true when the devices have changed since the last one.
-    pub fn changed(&mut self, answer: Option<Vec<String>>) -> bool {
+impl<T> Default for Watch<T> {
+    fn default() -> Self {
+        Self { known: None }
+    }
+}
+
+impl<T: PartialEq> Watch<T> {
+    /// Takes an answer (`None` when there is none to take); true when it differs from the last.
+    pub fn changed(&mut self, answer: Option<T>) -> bool {
         let Some(names) = answer else { return false };
         let changed = self.known.as_ref().is_some_and(|known| *known != names);
         self.known = Some(names);
@@ -502,6 +532,14 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[],
         kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
         run: open_control_panel,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "audio.checkDriver",
+        label: "Ask the active ASIO driver for its buffer sizes again; when a size set in its control panel changed them, the output opens again at the new size. Does nothing on other hosts",
+        params: &[],
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
+        run: check_driver,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -601,6 +639,7 @@ pub(crate) fn hosts_json(hosts: &[HostInfo]) -> Value {
                         "default_sample_rate": d.default_sample_rate,
                         "buffer_sizes": d.buffer_sizes,
                         "buffer_range": d.buffer_range.map(|(min, max)| json!({ "min": min, "max": max })),
+                        "default_buffer": d.default_buffer,
                         "exclusive": d.exclusive,
                     })).collect::<Vec<_>>(),
                     "inputs": h.inputs.iter().map(|d| json!({
@@ -702,6 +741,15 @@ fn open_control_panel(projects: &mut Projects, _: &Value) -> Result<Value, Comma
     let session = projects.session_mut(None)?;
     let player = session.player().ok_or_else(|| CommandError("no audio output is open".into()))?;
     player.open_control_panel().map_err(CommandError)?;
+    Ok(json!({ "requested": true }))
+}
+
+/// `audio.checkDriver`: the playing output asks its driver on its own thread; a change shows as a
+/// failure, and the output is opened again as after one ([`Projects::check_output`]).
+fn check_driver(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
+    let session = projects.session_mut(None)?;
+    let player = session.player().ok_or_else(|| CommandError("no audio output is open".into()))?;
+    player.check_driver();
     Ok(json!({ "requested": true }))
 }
 
@@ -813,6 +861,14 @@ mod tests {
     }
 
     #[test]
+    fn checking_the_driver_requires_an_active_output() {
+        let mut projects = Projects::new();
+        projects.add(crate::Session::new(crate::blank_project()), None).unwrap();
+        let error = projects.execute("audio.checkDriver", &json!({})).unwrap_err();
+        assert_eq!(error.to_string(), "no audio output is open");
+    }
+
+    #[test]
     fn a_choice_changes_only_what_is_given() {
         let start = OutputChoice {
             host: Some("WASAPI".into()),
@@ -885,5 +941,19 @@ mod tests {
         let cued = OutputInfo { cue_pair: Some(1), ..info.clone() };
         assert_eq!(cued.describe(), "Speakers (WASAPI, exclusive, 44100 Hz, 512 frames, cue on 3/4)");
         assert_eq!(info.to_json()["latency_ms"], json!(23.46));
+        let diagnostics = OutputInfo {
+            input_diagnostics: suhina_engine::InputSnapshot {
+                short_reads: vec![[1, 256, 1024]],
+                backlog_drops: 2,
+                backlog_frames: 4096,
+            },
+            render_diagnostics: [100, 99, 104, 3, 4, 1],
+            ..OutputInfo::default()
+        }
+        .to_json();
+        assert_eq!(diagnostics["input_short_reads"], json!([[1, 256, 1024]]));
+        assert_eq!(diagnostics["input_backlog_drops"], json!(2));
+        assert_eq!(diagnostics["input_backlog_frames"], json!(4096));
+        assert_eq!(diagnostics["render_diagnostics"], json!([100, 99, 104, 3, 4, 1]));
     }
 }

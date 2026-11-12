@@ -10,7 +10,7 @@
 //! each pass through its loop, all of the same modification, so an edit plays in every repeat.
 
 use suhina_engine::AudioPool;
-use suhina_model::{AudioRegion, Clip, LaneData, Project, TrackId};
+use suhina_model::{Clip, ClipAudio, LaneData, Project, TrackId};
 use suhina_plugins::AudioSource;
 use suhina_plugins::protocol::{AraDocument, AraNote, AraRegion, AraSource, MAX_ARA_OBJECTS};
 
@@ -83,7 +83,7 @@ impl Layout {
                 }
                 let start = map.time_at(clip.start + from);
                 let duration = map.time_at(clip.start + from + length) - start;
-                let offset = file_seconds(region, beat, project.transport.tempo_bpm);
+                let offset = file_seconds(&clip.audio, beat, project.transport.tempo_bpm);
                 if !(start.is_finite() && duration.is_finite() && duration > 0.0 && offset.is_finite()) {
                     continue;
                 }
@@ -276,8 +276,8 @@ fn passes(clip: &Clip) -> Vec<(f64, f64, f64)> {
 
 /// Seconds into the file at the content's `beat`, as the engine reads it: through the warp
 /// markers of a warped region that has two or more, otherwise at `tempo_bpm`.
-fn file_seconds(region: &AudioRegion, beat: f64, tempo_bpm: f64) -> f64 {
-    let mut markers: Vec<(f64, f64)> = region
+fn file_seconds(audio: &ClipAudio, beat: f64, tempo_bpm: f64) -> f64 {
+    let mut markers: Vec<(f64, f64)> = audio
         .warp_markers
         .iter()
         .filter(|m| m.time.is_finite() && m.audio_time.is_finite())
@@ -285,7 +285,7 @@ fn file_seconds(region: &AudioRegion, beat: f64, tempo_bpm: f64) -> f64 {
         .collect();
     markers.sort_by(|a, b| a.0.total_cmp(&b.0));
     markers.dedup_by(|a, b| a.0 == b.0);
-    if region.warped && markers.len() >= 2 {
+    if audio.warped && markers.len() >= 2 {
         let i = markers.partition_point(|(b, _)| *b <= beat).clamp(1, markers.len() - 1);
         let (Some(&(b0, s0)), Some(&(b1, s1))) = (markers.get(i - 1), markers.get(i)) else { return 0.0 };
         return if b1 > b0 { s0 + (beat - b0) * (s1 - s0) / (b1 - b0) } else { s0 };

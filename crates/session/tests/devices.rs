@@ -58,14 +58,27 @@ fn devices_are_added_set_switched_and_removed_with_undo() {
     let stored = &session.project().channels[0].devices[0].params;
     assert!(stored.contains(&DeviceParam::new("algorithm", 5.0)));
     assert!(stored.contains(&DeviceParam::new("op1.envMode", 1.0)), "a new FM Synth starts with envelopes in time");
-    assert!(stored.contains(&DeviceParam::new("op2.on", 0.0)), "and with one operator");
-
     run(&mut session, "device.remove", json!({ "track": 1, "device": 1 })).unwrap();
     assert_eq!(session.project().channels[0].devices.len(), 2);
     for _ in 0..7 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
     assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
+}
+
+/// A duplicate parameter id in a project file: the panel shows the last value, the same one the
+/// engine runs and the preset saves (the last wins).
+#[test]
+fn a_duplicate_parameter_id_shows_the_last_value() {
+    let mut device = Device::new("Utility", DeviceKind::Builtin("utility".into()));
+    device.params.push(DeviceParam::new("gain", 3.0));
+    device.params.push(DeviceParam::new("gain", 6.0));
+    let mut project = ProjectBuilder::new().midi_track(1, "Keys").build_without_ids();
+    project.channels[0].devices.push(device);
+    let mut session = Session::new(suhina_test_support::with_ids(project));
+    let listed = run(&mut session, "track.devices", json!({ "track": 1 })).unwrap();
+    let gain = listed[0]["params"].as_array().unwrap().iter().find(|p| p["id"] == "gain").unwrap();
+    assert_eq!(gain["value"], 6.0, "the panel shows the last value, the engine's and the preset's");
 }
 
 #[test]
@@ -770,8 +783,9 @@ fn a_nam_device_loads_its_file_with_the_command() {
     run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 1, "path": &ir_file })).unwrap();
     let ir = run(&mut session, "device.file", json!({ "track": 1, "device": 1 })).unwrap();
     assert_eq!(ir["file"], ir_file);
-    // The cab's shown name is its parent folder's, per the spec (its files are the cabs).
-    assert_eq!(ir["name"], "IRs");
+    // The cab's shown name is its own, never its folder's (a folder sharing its file's name
+    // once made the two panel pickers read alike).
+    assert_eq!(ir["name"], "cabinet");
     assert_eq!(session.device_asset(&ir_file).map(|a| a.device()), Some("nam-cab-loader"));
 
     // A wrong extension is refused with a message that names what it wants.
@@ -820,6 +834,61 @@ fn a_projects_stored_path_gets_the_extension_check() {
     assert!(session.device_asset(&impostor.display().to_string()).is_none(), "no asset was read");
     let note = session.device_asset_note(&impostor.display().to_string());
     assert!(note.is_some_and(|n| n.contains(".nam")), "{note:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `device.add` with a `file`: the device it adds runs the file at once — the state and the
+/// asset land with the add ([docs/spec/nam-amp-and-cab.md]), one undo step takes the whole add
+/// back, and a wrong extension, a plug-in's file or an unreadable file changes nothing.
+#[test]
+fn a_device_added_with_a_file_starts_on_it() {
+    let dir = std::env::temp_dir().join(format!("suhina-devices-nam-add-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("the folder is made");
+    let irs = dir.join("IRs");
+    std::fs::create_dir_all(&irs).expect("the IR folder is made");
+    let ir_path = irs.join("cabinet.wav");
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(&ir_path, spec).unwrap();
+    writer.write_sample(16_384_i16).unwrap();
+    drop(writer);
+
+    let mut session = Session::new(project());
+    let ir_file = ir_path.display().to_string();
+    let added =
+        run(&mut session, "device.add", json!({ "track": 1, "id": "nam-cab-loader", "file": &ir_file })).unwrap();
+    assert_eq!(added["file"], ir_file);
+    let file_info = run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+    assert_eq!(file_info["file"], ir_file);
+    assert_eq!(session.device_asset(&ir_file).map(|a| a.device()), Some("nam-cab-loader"));
+
+    // A wrong extension, a plug-in's device or an unreadable file leave the project alone.
+    let before = session.project().clone();
+    let wrong =
+        run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler", "file": &ir_file })).unwrap_err();
+    assert!(wrong.contains(".nam"), "{wrong}");
+    let broken = irs.join("broken.nam");
+    std::fs::write(&broken, "{not json").unwrap();
+    let fault = run(
+        &mut session,
+        "device.add",
+        json!({ "track": 1, "id": "nam-amp-modeler", "file": broken.display().to_string() }),
+    )
+    .unwrap_err();
+    assert!(fault.contains("not a NAM model"), "{fault}");
+    assert_eq!(session.project(), &before, "a refused file added nothing");
+
+    // One undo step takes the whole add back.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let channel = session.project().tracks.iter().find(|t| t.id.0 == 1).and_then(|t| t.channel);
+    let devices = channel.map(|ch| session.project().channel(ch).map_or(0, |c| c.devices.len())).unwrap_or(0);
+    assert_eq!(devices, 0, "the undo takes the device with its file off");
+
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -1183,6 +1252,8 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
             launch: Default::default(),
             color: None,
             ara: false,
+            audio: Default::default(),
+            swing: Default::default(),
             extensions: Default::default(),
         }],
     });

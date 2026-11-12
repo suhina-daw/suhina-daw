@@ -65,6 +65,13 @@ impl Player {
         self.output.as_ref().ok_or("no audio output is open")?.open_control_panel()
     }
 
+    /// Asks the output's ASIO driver for its buffer sizes again ([`LiveOutput::check_driver`]).
+    pub fn check_driver(&self) {
+        if let Some(output) = &self.output {
+            output.check_driver();
+        }
+    }
+
     /// The controller and whatever keeps the output open, for the output layer to close it in
     /// its own way (taking its plug-ins back) before opening another.
     pub fn into_parts(self) -> (Controller, Option<Box<dyn OutputHandle>>) {
@@ -117,6 +124,17 @@ impl Player {
             .map_err(CommandError::from)
     }
 
+    /// Puts a clip's gain envelope, the clip at `index` on arrangement lane `lane`, in place on
+    /// what plays, without building a new graph.
+    pub fn set_clip_envelope(
+        &mut self,
+        lane: usize,
+        index: usize,
+        clip: &suhina_model::Clip,
+    ) -> Result<(), CommandError> {
+        self.controller.set_clip_envelope(lane, index, clip).map_err(CommandError::from)
+    }
+
     /// Builds the engine's graphs from now on with the project's file-backed devices' parsed
     /// models and IRs ([docs/spec/nam-amp-and-cab.md]).
     pub fn set_device_assets(&mut self, assets: std::sync::Arc<suhina_engine::DeviceAssets>) {
@@ -131,6 +149,12 @@ impl Player {
     /// What graphs built from now on know about the project's plug-in devices (ADR 0006).
     pub fn set_plugin_info(&mut self, info: std::collections::HashMap<u64, suhina_engine::PluginSlotInfo>) {
         self.controller.set_plugin_info(info);
+    }
+
+    /// Which parameters of each plug-in device take steps, for the graphs built from now on: their
+    /// lanes hold each value until the next point (#1205).
+    pub fn set_plugin_steps(&mut self, steps: suhina_engine::PluginSteps) {
+        self.controller.set_plugin_steps(steps);
     }
 
     /// Builds the engine's graphs from now on with `audio` (ADR 0011).

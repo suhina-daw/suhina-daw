@@ -130,6 +130,9 @@ impl IComponentTrait for Processor {
                 Some([a, b, c, d]) => f32::from_le_bytes([*a, *b, *c, *d]),
                 _ => return kResultFalse,
             },
+            // As a plug-in seen in #1167 does: a single program's chunk is answered yes and read
+            // not at all, so only the host can tell the caller it did not take.
+            program if program.starts_with(b"CcnK") && program.get(8..12) == Some(b"FPCh") => return kResultOk,
             _ => return kResultFalse,
         };
         if !gain.is_finite() {

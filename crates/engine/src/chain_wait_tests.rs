@@ -480,3 +480,109 @@ fn internal_chunks_share_the_device_deadline_instead_of_restarting_it() {
     assert!(renderer.observed_deadlines.1[0].is_some());
     assert_eq!(renderer.observed_deadlines.1[0], renderer.observed_deadlines.1[1], "chunks share an absolute deadline");
 }
+
+/// `p` with a return track after its tracks, its channel holding `devices`, fed by a send at
+/// unity from each track in `from`.
+fn with_return(mut p: Project, from: &[u32], devices: Vec<Device>) -> Project {
+    let id = p.tracks.len() as u32 + 1;
+    for channel in p.channels.iter_mut().filter(|c| from.contains(&c.id.0)) {
+        channel.sends.push(Send { target: ChannelId(id), level: 1.0, pre_fader: true });
+    }
+    let track = Track { id: TrackId(id), channel: Some(ChannelId(id)), ..p.tracks[0].clone() };
+    let channel =
+        Channel { id: ChannelId(id), role: ChannelRole::Effect, devices, sends: Vec::new(), ..p.channels[0].clone() };
+    p.tracks.push(Track { content: ContentKinds { notes: false, audio: false }, ..track });
+    p.channels.push(channel);
+    p
+}
+
+/// Builds the renderer of `p` with `stands` for its plug-ins, in real time on the manual clock.
+fn playing(p: &Project, stands: Vec<Timed>) -> Renderer {
+    Renderer::build(
+        p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(p, stands)),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap()
+}
+
+/// The blocks chain `track`'s plug-ins missed.
+fn missed_on(renderer: &mut Renderer, track: u32) -> u64 {
+    renderer.graph.chains.iter_mut().find(|c| c.track == TrackId(track)).map_or(u64::MAX, |c| c.missed())
+}
+
+/// A return fed only by a track whose plug-in answers in time runs its own plug-in while
+/// another track's plug-in is still out: a bus waits for the chains that play into it, not
+/// for every chain (#1261).
+#[test]
+fn a_return_runs_once_the_chains_that_play_into_it_are_done() {
+    let p = with_return(tracks(vec![vec![plug()], vec![plug()]]), &[2], vec![plug()]);
+    let log = Arc::default();
+    let stands = vec![
+        Timed::new("hung", 0.5, HUNG, &log),
+        Timed::new("quick", 0.5, QUICK, &log),
+        Timed::new("ret", 0.5, QUICK, &log),
+    ];
+    let mut renderer = playing(&p, stands);
+    let started = clock::now();
+    play(&mut renderer, 1);
+    let log = log.lock().unwrap().clone();
+    assert!(find(&log, "ret").sent < started + QUICK * 8, "the return waited for the hung track: {log:?}");
+    assert_eq!(missed_on(&mut renderer, 3), 0, "the return's plug-in answered in time");
+    assert!(missed_on(&mut renderer, 1) >= 1);
+}
+
+/// A return fed by a track whose plug-in hangs still has time for its own plug-in: the track's
+/// plug-in is waited for only until a share of the deadline before it (#1261).
+#[test]
+fn a_bus_after_a_late_chain_keeps_part_of_the_deadline() {
+    let p = with_return(tracks(vec![vec![plug()]]), &[1], vec![plug()]);
+    let log = Arc::default();
+    let stands = vec![Timed::new("hung", 0.5, HUNG, &log), Timed::new("ret", 0.5, QUICK, &log)];
+    let mut renderer = playing(&p, stands);
+    let deadline = Duration::from_secs_f64(FRAMES as f64 / f64::from(SR) * crate::plugin::DEADLINE_SHARE);
+    let started = clock::now();
+    let (_, longest) = play(&mut renderer, 1);
+    let log = log.lock().unwrap().clone();
+    let ret = find(&log, "ret");
+    assert!(ret.sent + QUICK * 4 < started + deadline, "the return had no time left: {log:?}");
+    assert_eq!(missed_on(&mut renderer, 2), 0, "the return's plug-in answered in time");
+    assert!(missed_on(&mut renderer, 1) >= 1, "the hung plug-in missed");
+    assert!(longest <= deadline + QUICK, "{longest:?}");
+}
+
+/// A return whose only plug-in is switched off sends no block, so it takes no share of the
+/// deadline from the track that feeds it: that track's plug-in, answering after the share a
+/// return with a plug-in switched on would keep, is still in time.
+#[test]
+fn a_bus_whose_plug_ins_are_off_keeps_no_share_of_the_deadline() {
+    let deadline = Duration::from_secs_f64(FRAMES as f64 / f64::from(SR) * crate::plugin::DEADLINE_SHARE);
+    let mut off = plug();
+    off.enabled = false;
+    let p = with_return(tracks(vec![vec![plug()]]), &[1], vec![off]);
+    let log = Arc::default();
+    let stands = vec![Timed::new("track", 0.5, deadline * 9 / 10, &log), Timed::new("off", 0.5, QUICK, &log)];
+    let mut renderer = playing(&p, stands);
+    let levels = renderer.graph.chains.iter().find(|c| c.track == TrackId(1)).map(|c| c.turn.levels_after);
+    assert_eq!(levels, Some(0), "no bus level with a plug-in switched on after the track");
+    play(&mut renderer, 1);
+    let log = log.lock().unwrap().clone();
+    assert!(log.iter().any(|hand| hand.name == "track"), "the track's plug-in was sent no block: {log:?}");
+    assert!(log.iter().all(|hand| hand.name != "off"), "the switched-off plug-in was sent a block: {log:?}");
+    assert_eq!(missed_on(&mut renderer, 1), 0, "the track's plug-in had the whole deadline");
+}
+
+/// Two returns, each fed by a track of its own: their plug-ins have their blocks out at the same
+/// time, so neither waits for the other's (#1261).
+#[test]
+fn independent_returns_run_their_plug_ins_together() {
+    let p = with_return(with_return(tracks(vec![vec![], vec![]]), &[1], vec![plug()]), &[2], vec![plug()]);
+    let log = Arc::default();
+    let stands = vec![Timed::new("r1", 0.5, SLOW, &log), Timed::new("r2", 0.5, SLOW, &log)];
+    let mut renderer = playing(&p, stands);
+    play(&mut renderer, 1);
+    let log = log.lock().unwrap().clone();
+    assert!(find(&log, "r2").sent < find(&log, "r1").due, "the second return waited for the first: {log:?}");
+    assert_eq!(missed_on(&mut renderer, 3) + missed_on(&mut renderer, 4), 0);
+}

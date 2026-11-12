@@ -772,6 +772,55 @@ fn malformed_splits_are_refused_and_change_nothing() {
     assert!(!session.can_undo());
 }
 
+/// `times` cuts each note at a beat of its own (the piano roll's slanted cut), and `keepLonger`
+/// keeps only the longer piece of each in the note's place, the first when they are as long (the
+/// right button's slice): nothing is added, one undo step.
+#[test]
+fn a_split_takes_a_beat_per_note_and_can_keep_only_the_longer_piece() {
+    let mut session = Session::new(project());
+    // The clip's notes are at beats 0, 1 and 2, each a beat long.
+    let before = session.project().clone();
+    let kept = notes(&session, 1);
+    let cut = run(&mut session, "note.split", json!({ "track": 1, "index": 0, "notes": [2, 0], "times": [2.5, 0.25] }))
+        .unwrap();
+    assert_eq!(without_ids(&cut), json!({ "notes": [3, 4], "count": 2 }));
+    let now = notes(&session, 1);
+    assert_eq!((now[0].time, now[0].duration), (0.0, 0.25));
+    assert_eq!((now[2].time, now[2].duration), (2.0, 0.5));
+    assert_eq!((now[3].time, now[3].duration), (0.25, 0.75), "each note at its own beat");
+    assert_eq!((now[4].time, now[4].duration), (2.5, 0.5));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(*session.project(), before);
+
+    let cut = run(
+        &mut session,
+        "note.split",
+        json!({ "track": 1, "index": 0, "notes": [0, 2], "times": [0.25, 2.5], "keepLonger": true }),
+    )
+    .unwrap();
+    assert_eq!(without_ids(&cut), json!({ "notes": [], "count": 0, "trimmed": [0, 2] }));
+    let now = notes(&session, 1);
+    assert_eq!(now.len(), 3, "nothing added");
+    assert_eq!((now[0].time, now[0].duration), (0.25, 0.75), "the later piece is the longer");
+    assert_eq!((now[2].time, now[2].duration), (2.0, 0.5), "as long: the first piece stays");
+    assert_eq!(now[1], kept[1]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(*session.project(), before);
+
+    let cases = [
+        (json!({ "track": 1, "index": 0, "notes": [0], "at": 0.5, "times": [0.5] }), "not both"),
+        (json!({ "track": 1, "index": 0, "notes": [0, 2], "times": [0.5] }), "one entry per note"),
+        (json!({ "track": 1, "index": 0, "notes": [0], "times": [-1.0] }), "each of times must be 0 to"),
+        (json!({ "track": 1, "index": 0, "notes": [0], "times": "soon" }), "times must be a list"),
+        (json!({ "track": 1, "index": 0, "notes": [0], "at": 0.5, "keepLonger": 1 }), "keepLonger must be"),
+    ];
+    for (params, error) in cases {
+        let got = run(&mut session, "note.split", params.clone());
+        assert!(got.as_ref().is_err_and(|e| e.contains(error)), "{params}: {got:?}");
+    }
+    assert_eq!(*session.project(), before);
+}
+
 /// The last notes reach the beat a time selection ends at, and stay as they are without one.
 #[test]
 fn legato_takes_the_last_notes_to_until() {

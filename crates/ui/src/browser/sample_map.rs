@@ -5,7 +5,6 @@
 //! kind, as a cloud or a grid. The view draws and reports what the user did as [`MapEvent`]s;
 //! the browser turns them into its own selection, previews and drags.
 
-use crate::kit::surface::Backgrounds as _;
 use std::collections::HashSet;
 
 use egui::{Color32, CornerRadius, Key, PointerButton, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
@@ -147,6 +146,9 @@ pub struct MapView {
     /// Shift-drag rectangle, from where it started.
     rubber_band: Option<Pos2>,
     similar: Option<(usize, Vec<usize>)>,
+    /// The point a right-click opened the menu for: the menu acts on it alone, never on a
+    /// point the pointer passes over later, and closes when it is gone ([#1254] review).
+    menu_point: Option<usize>,
     /// Where the points were drawn last frame.
     area: Rect,
     /// The area the density was last asked for, and since when it has had that size.
@@ -262,6 +264,7 @@ impl Default for MapView {
             legend: HashSet::new(),
             rubber_band: None,
             similar: None,
+            menu_point: None,
             area: Rect::NOTHING,
             resized: (Rect::NOTHING, 0.0),
             revision: 0,
@@ -299,6 +302,46 @@ impl MapView {
     /// The width over the height of where the points were drawn last frame; 1 before the first.
     pub fn aspect(&self) -> f32 {
         aspect_of(self.area)
+    }
+
+    /// The map's points are gone (the library they came from went under a replacement, and
+    /// the next one's are laid out in their place): the point-index states — the shown
+    /// similar ones and who they are for, a hover, a preview, the pressed point — are
+    /// indices into a points list that no longer is, and they read as unrelated samples of
+    /// the new layout ([#1254] review). The sizes, layout, zoom and centre are kept.
+    pub fn forget_points(&mut self) {
+        self.similar = None;
+        self.hovered = None;
+        self.previewed = None;
+        self.pressed = None;
+        self.menu_point = None;
+        // The waveform read for the hovered point goes with it ([#1254] review: a caller
+        // drawing new points directly showed it on another point of that index).
+        self.hover_waveform = None;
+        // A rubber band held over the old layout selects nothing of the new one's: the
+        // gesture ends here before a stretched release can pick by the old indices
+        // ([#1254] review).
+        self.rubber_band = None;
+    }
+
+    /// The map was laid out again, its points in a new order: the point-index states follow
+    /// their items to `moved(old index)`, and one whose item is not on the new map goes
+    /// ([#1254] review: Show similar's list kept the old indices and showed, and previewed,
+    /// unrelated samples). The hovered point's waveform follows it too. Show similar ends when the point it was asked for is gone; a
+    /// rubber band ends, as the points under it moved.
+    pub fn rebind_points(&mut self, moved: impl Fn(usize) -> Option<usize>) {
+        self.similar = self.similar.take().and_then(|(of, items)| {
+            let of = moved(of)?;
+            Some((of, items.into_iter().filter_map(&moved).collect()))
+        });
+        self.hovered = self.hovered.and_then(|(i, since)| Some((moved(i)?, since)));
+        self.previewed = self.previewed.and_then(&moved);
+        self.pressed = self.pressed.and_then(&moved);
+        self.menu_point = self.menu_point.and_then(&moved);
+        // The waveform read for the hovered point goes with it: a caller that keeps it a frame
+        // longer shows it for the same sample, or not at all ([#1254] review).
+        self.hover_waveform = self.hover_waveform.take().and_then(|(i, peaks)| Some((moved(i)?, peaks)));
+        self.rubber_band = None;
     }
 
     /// Shows the answer to [`MapEvent::Similar`]: rings these items and lists them at the side.
@@ -452,27 +495,42 @@ fn step(positions: &[[f32; 2]], from: usize, direction: [f32; 2]) -> Option<usiz
         .map(|(i, _)| i)
 }
 
-/// A kind's colour: Suhina's muted palette, extended, with neighbouring kinds told apart.
+/// A kind's colour: its `sample-point[kind="…"]` element's `color`, which the user-agent sheet
+/// gives (Suhina's muted palette, extended, with neighbouring kinds told apart) and a theme may
+/// change. Worked out once a frame, when the map is drawn ([`refresh_kind_colours`]).
 pub fn kind_colour(kind: Kind) -> Color32 {
-    match kind {
-        Kind::Kick => theme::kind_kick(),
-        Kind::Snare => theme::kind_snare(),
-        Kind::Clap => theme::kind_clap(),
-        Kind::ClosedHat => theme::kind_closed_hat(),
-        Kind::OpenHat => theme::kind_open_hat(),
-        Kind::Hat => theme::kind_hat(),
-        Kind::Rim => theme::kind_rim(),
-        Kind::Tom => theme::kind_tom(),
-        Kind::Crash => theme::kind_crash(),
-        Kind::Ride => theme::kind_ride(),
-        Kind::Cymbal => theme::kind_cymbal(),
-        Kind::Percussion => theme::kind_percussion(),
-        Kind::Bass => theme::kind_bass(),
-        Kind::Tonal => theme::kind_tonal(),
-        Kind::Vocal => theme::kind_vocal(),
-        Kind::Effect => theme::kind_effect(),
-        Kind::Other => theme::kind_other(),
-    }
+    KIND_COLOURS.with(|colours| colours.get()[kind_index(kind)])
+}
+
+fn kind_index(kind: Kind) -> usize {
+    Kind::ALL.iter().position(|k| *k == kind).unwrap_or(Kind::ALL.len() - 1)
+}
+
+thread_local! {
+    static KIND_COLOURS: std::cell::Cell<[Color32; Kind::ALL.len()]> =
+        std::cell::Cell::new(user_agent_kind_colours());
+}
+
+/// Each kind's colour as the user-agent sheet alone gives it, for where no sheet styles the
+/// window: the sheet's own cascade, so its rules may be written in any form.
+pub(crate) fn user_agent_kind_colours() -> [Color32; Kind::ALL.len()] {
+    static COLOURS: std::sync::OnceLock<[Color32; Kind::ALL.len()]> = std::sync::OnceLock::new();
+    *COLOURS.get_or_init(|| {
+        Kind::ALL.map(|kind| {
+            crate::kit::native_css::user_agent_color("sample-point", &[("kind", kind.id())]).unwrap_or(Color32::GRAY)
+        })
+    })
+}
+
+/// Works out each kind's colour for this frame, inside the map's element: one `sample-point`
+/// element per kind, styled by the sheets in use, the user-agent sheet's rules included.
+fn refresh_kind_colours() {
+    let defaults = user_agent_kind_colours();
+    let colours = std::array::from_fn(|at| {
+        let kind = Kind::ALL[at];
+        crate::kit::element::SAMPLE_POINT.attribute("kind", kind.id()).enter().computed_color_or(defaults[at])
+    });
+    KIND_COLOURS.with(|cell| cell.set(colours));
 }
 
 /// One part of the status's tooltip: a heading ("4 955 could not be read") and lines under it.
@@ -504,11 +562,15 @@ pub fn show(
     tags: &[String],
     events: &mut Vec<MapEvent>,
 ) {
-    let _style_class = crate::kit::style_class::enter("sample-map");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let style_class = crate::kit::element::SAMPLE_MAP.enter();
+    refresh_kind_colours();
+    let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
-    let full = ui.available_rect_before_wrap();
-    ui.allocate_rect(full, Sense::hover());
+    let whole = ui.available_rect_before_wrap();
+    ui.allocate_rect(whole, Sense::hover());
+    // Its own box, which no bundled theme paints; the map goes in its content box, inside its
+    // border and padding (#1336).
+    let full = style_class.paint(&ui.painter_at(whole), whole).content;
     let height = top_bar(ui, full, view, status, details, events);
     let top = Rect::from_min_size(full.min, Vec2::new(full.width(), height));
     let bottom = Rect::from_min_max(Pos2::new(full.min.x, full.max.y - LEGEND), full.max);
@@ -557,7 +619,7 @@ fn busy_card(ui: &Ui, area: Rect, busy: &Busy) {
     }
     let card = Rect::from_center_size(area.center(), Vec2::new(width, HEIGHT));
     let painter = ui.painter().with_clip_rect(area);
-    painter.fill_background(card, CornerRadius::ZERO, theme::panel_background());
+    painter.rect_filled(card, CornerRadius::ZERO, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.rect_stroke(card, CornerRadius::ZERO, Stroke::new(1.0, theme::border_strong()), StrokeKind::Inside);
     let inner = card.shrink(2.0 * theme::PAD);
     painter.text(
@@ -568,7 +630,7 @@ fn busy_card(ui: &Ui, area: Rect, busy: &Busy) {
         theme::text_primary(),
     );
     let bar = Rect::from_min_size(Pos2::new(inner.min.x, inner.center().y - BAR / 2.0), Vec2::new(inner.width(), BAR));
-    painter.fill_background(bar, CornerRadius::ZERO, theme::control_background());
+    painter.rect_filled(bar, CornerRadius::ZERO, theme::control_background());
     let done = Rect::from_min_size(bar.min, Vec2::new(bar.width() * busy.fraction.clamp(0.0, 1.0), BAR));
     painter.rect_filled(done, CornerRadius::ZERO, theme::accent());
     painter.text(
@@ -721,8 +783,8 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
     view.area = rect;
     let id = ui.scope_id().with("sample-map");
     let response = ui.interact(rect, id, Sense::click_and_drag());
+    // On the window's background, which its root painted.
     let painter = ui.painter_at(rect);
-    painter.fill_background(rect, CornerRadius::ZERO, theme::window_background());
 
     // Zoom and pan.
     if let Some(pointer) = response.hover_pos() {
@@ -816,10 +878,17 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
     }
     if response.secondary_clicked() {
         view.hovered = under.map(|i| (i, 0.0));
+        view.menu_point = under;
     }
-    let menu_item = view.hovered.map(|(i, _)| i).or(under);
+    let menu_item = view.menu_point;
     response.context_menu(|ui| {
-        if let Some(i) = menu_item {
+        // The menu's own point, gone with a new layout: the menu closes rather than act on
+        // whatever point is under the pointer then ([#1254] review).
+        let Some(i) = menu_item else {
+            ui.close();
+            return;
+        };
+        {
             if ui.button("Show similar").clicked() {
                 events.push(MapEvent::Similar(i));
                 ui.close();
@@ -1119,7 +1188,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
         .collect();
     let sizes: Vec<(Pos2, Vec2)> =
         clusters.iter().zip(&galleys).map(|(c, g)| (transform.to_screen(c.spot), g.size())).collect();
-    let shadow = theme::window_background().gamma_multiply(fade);
+    let shadow = crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(fade);
     for (spot, galley) in crowd::place_labels(&sizes, painter.clip_rect()).into_iter().zip(galleys) {
         let Some(spot) = spot else { continue };
         // A shadow keeps the label readable over the points.
@@ -1130,7 +1199,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
 
 fn similar_strip(ui: &mut Ui, rect: Rect, view: &mut MapView, points: &[MapPoint], events: &mut Vec<MapEvent>) {
     let Some((of, items)) = view.similar.clone() else { return };
-    ui.painter().fill_background(rect, CornerRadius::ZERO, theme::panel_background());
+    ui.painter().rect_filled(rect, CornerRadius::ZERO, crate::kit::style_class::surface_or(theme::panel_background()));
     let mut child = ui.new_child(
         egui::UiBuilder::new().max_rect(rect.shrink(theme::PAD)).layout(egui::Layout::top_down(egui::Align::Min)),
     );

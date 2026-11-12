@@ -315,7 +315,8 @@ fn gpu_refracting_surfaces_preserve_foreground_and_current_background() {
                 }
                 let base = egui::Color32::from_rgb(65, 75, 90);
                 painter.rect_filled(panel, 0.0, base);
-                material::paint(painter, panel, base, surface);
+                let el = suhina_ui::kit::element::WORKSPACE_PANEL.enter();
+                material::paint(painter, panel, &el, base, surface);
                 painter.rect_filled(
                     egui::Rect::from_center_size(panel.center(), egui::vec2(16.0, 16.0)),
                     0.0,

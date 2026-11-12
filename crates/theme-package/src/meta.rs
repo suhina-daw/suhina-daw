@@ -40,7 +40,7 @@ const MAX_DESCRIPTION: usize = 500;
 /// A swatch value: at most this many bytes.
 const MAX_SWATCH: usize = 512;
 /// How a theme is checked when there is no window to ask: the size `theme_vars` reads a sheet at.
-pub const CHECK_VIEWPORT: Viewport = Viewport { width: 1280.0, height: 800.0, dark: true, reduced_motion: false };
+pub const CHECK_VIEWPORT: Viewport = Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
 
 /// A theme's `theme.json`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,7 +199,7 @@ pub fn swatch_color_at(
     viewport: Viewport,
 ) -> Result<[u8; 4], String> {
     let mut sheets: Vec<AppliedSheet<'_>> =
-        defaults.iter().map(|sheet| AppliedSheet { sheet, layer: Layer::Default, root: None }).collect();
+        defaults.iter().map(|sheet| AppliedSheet { sheet, layer: Layer::UserAgent, root: None }).collect();
     sheets.push(AppliedSheet { sheet: theme, layer: Layer::Theme, root: None });
     sheets.extend(variant.map(|sheet| AppliedSheet { sheet, layer: Layer::Variant, root: None }));
     suhina_style::cascade::resolve_color(swatch, viewport, &sheets).map_err(|error| {

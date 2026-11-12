@@ -10,7 +10,6 @@
 //! need its own GL or wgpu context, the slowest part of starting, and one window that shrinks
 //! and grows would fight the main window's remembered size and position.
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Color32, Context, Id, Rect, Sense, Ui, Vec2};
 
 use crate::kit::motion;
@@ -124,10 +123,10 @@ impl Splash {
         let _swallowed = behind.clicked();
         let fade = |color: Color32| color.gamma_multiply(opacity);
         let painter = ui.painter_at(area);
-        painter.fill_background(area, 0.0, fade(theme::window_background()));
+        painter.rect_filled(area, 0.0, fade(crate::kit::style_class::surface_or(theme::window_background())));
 
         let rect = Rect::from_center_size(area.center(), SIZE.min(area.size()));
-        painter.fill_background(rect, 0.0, fade(theme::panel_background()));
+        painter.rect_filled(rect, 0.0, fade(crate::kit::style_class::surface_or(theme::panel_background())));
         painter.rect_stroke(rect, 0.0, theme::hairline(fade(theme::border_strong())), egui::StrokeKind::Inside);
 
         let line = |center_y: f32, height: f32| {

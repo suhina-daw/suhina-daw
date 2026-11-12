@@ -17,18 +17,18 @@ const SHEET: &str = "
     :root { --background: #16181c; --line: #2a2e35; --accent: #79e2bd; }
     window { color: #e8e8e8; background-color: var(--background); }
     track-lane { --track: attr(color type(<color>)); background-color: color-mix(in oklab, var(--track), var(--background) 90%); }
-    track-lane:selected { background-color: color-mix(in oklab, var(--track), var(--background) 80%); }
+    track-lane[selected] { background-color: color-mix(in oklab, var(--track), var(--background) 80%); }
     clip { background-color: color-mix(in oklab, attr(color type(<color>)), black 30%);
            border-color: attr(color type(<color>)); color: contrast-color(attr(color type(<color>))); radius: 3px; }
-    clip:selected { border-color: white; box-shadow: 0 0 0 1px var(--accent); }
-    clip:playing { opacity: 0.9; }
-    clip:muted { opacity: 0.4; background-color: color-mix(in srgb, attr(color type(<color>)), #808080 70%); }
+    clip[selected] { border-color: white; box-shadow: 0 0 0 1px var(--accent); }
+    clip[playing] { opacity: 0.9; }
+    clip[muted] { opacity: 0.4; background-color: color-mix(in srgb, attr(color type(<color>)), #808080 70%); }
     clip[kind=audio] { radius: 2px; }
     piano-roll { --clip: attr(color type(<color>)); background-color: #101114; }
     note { background-color: var(--clip); border-color: color-mix(in oklab, var(--clip), black 40%); radius: 2px; }
-    note:selected { background-color: color-mix(in oklab, var(--clip), white 35%); border-color: var(--accent); }
-    note:playing { box-shadow: 0 0 4px var(--clip); }
-    note:muted { opacity: 0.35; }
+    note[selected] { background-color: color-mix(in oklab, var(--clip), white 35%); border-color: var(--accent); }
+    note[playing] { box-shadow: 0 0 4px var(--clip); }
+    note[muted] { opacity: 0.35; }
     note[kind=ghost] { opacity: 0.2; }
 ";
 
@@ -38,7 +38,7 @@ const PALETTE: [&str; 16] = [
 ];
 
 fn viewport() -> Viewport {
-    Viewport { width: 1600.0, height: 1000.0, dark: true, reduced_motion: false }
+    Viewport { width: 1600.0, height: 1000.0, reduced_motion: false }
 }
 
 fn time(label: &str, frames: u32, mut frame: impl FnMut()) -> Duration {

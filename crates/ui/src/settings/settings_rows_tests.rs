@@ -6,7 +6,9 @@ use crate::settings::Settings;
 
 /// Kept in `settings.json` but changed outside the Settings window: the browser and the map
 /// window as they were left.
-const NOT_IN_THE_WINDOW: [&str; 8] = [
+const NOT_IN_THE_WINDOW: [&str; 9] = [
+    // The piano roll toolbar's Highlight switches it.
+    "highlight_scale",
     "setting_descriptions",
     "browser",
     "browser_width",

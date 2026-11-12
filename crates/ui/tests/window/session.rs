@@ -1318,3 +1318,91 @@ fn a_launch_marks_click_takes_the_focus_off_a_selected_track() {
     harness.run();
     assert_eq!(tracks(&harness), before, "Delete after the launch removed the track selected before it");
 }
+
+/// A theme that pads the track columns moves every column's slots and the scene buttons down
+/// together, so a scene's row still lines up with its slots (#1336).
+#[test]
+fn padded_track_columns_keep_their_slots_in_line_with_the_scenes() {
+    let plain = view().get_by_label("Launch Walk on Bass (scene 2)").rect();
+    suhina_ui::kit::native_css::set_user_sheet(Some("track-column { padding: 10px 2px 4px; }".into()));
+    let harness = view();
+    let slot = harness.get_by_label("Launch Walk on Bass (scene 2)").rect();
+    let scene = harness.query_all_by_label_contains("Launch scene 2").next().map(|n| n.rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_eq!(slot.top(), plain.top() + 10.0, "below the column's top padding");
+    assert_eq!(scene.map(|r| r.top()), Some(slot.top()), "the scene's row lines up with its slots");
+}
+
+/// A track column stays while its rows scroll: scrolled up, the rows are cut at its padding box,
+/// so they neither draw over its top border nor take the pointer there (#1336).
+#[test]
+fn scrolled_slots_stay_inside_a_track_column_s_border() {
+    let mut session = Session::new(demo_project());
+    for _ in 0..30 {
+        session.execute("scene.insert", &json!({ "scene": 0 })).unwrap();
+    }
+    let tall = SessionHarness {
+        grid: TrackGrid::build(session.project(), None),
+        state: SessionViewState::default(),
+        actions: Vec::new(),
+    };
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        "track-column { border-width: 6px; border-color: #FF00FF; }".into(),
+    ));
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
+        |ui, v: &mut SessionHarness| {
+            let _frame = suhina_ui::kit::native_css::frame(ui);
+            session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions)
+        },
+        tall,
+    );
+    theme::install(&harness.ctx);
+    harness.run();
+    let slots = |h: &Harness<'static, SessionHarness>| {
+        h.ctx
+            .viewport(|v| v.prev_pass.widgets.layers().flat_map(|(_, rects)| rects.iter()).copied().collect::<Vec<_>>())
+    };
+    // The highest slot under the column's top border, unscrolled: the body's top is 6 above it.
+    let label = harness.query_all_by_label_contains("(scene 1)").next().map(|n| n.rect()).expect("a slot of scene 1");
+    let inside = label.top();
+    harness.state_mut().state.scroll.y = 4.0;
+    harness.run();
+    let moved = slots(&harness)
+        .into_iter()
+        .find(|w| w.rect.x_range() == label.x_range() && (w.rect.bottom() - (label.bottom() - 4.0)).abs() < 0.5);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let moved = moved.expect("the slot, scrolled 4 points up");
+    assert!(moved.interact_rect.top() >= inside - 0.5, "it takes the pointer only below the border: {moved:?}");
+    assert!(moved.interact_rect.height() > 0.0, "and still where it shows: {moved:?}");
+}
+
+/// A selected column whose state rule gives it a thicker top border than a plain column: its first
+/// slot is as tall as the other columns' first slots, whole and clickable (#1336).
+#[test]
+fn a_selected_column_s_thicker_top_border_keeps_its_first_slot_whole() {
+    let mut harness = view();
+    let selected = harness.state().grid.columns[0].track;
+    harness.state_mut().state.selected = Some(selected);
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        "track-column { border-width: 2px; border-color: #FF00FF; } \
+         track-column[selected] { border-top-width: 8px; }"
+            .into(),
+    ));
+    harness.run();
+    harness.run();
+    let widgets = harness
+        .ctx
+        .viewport(|v| v.prev_pass.widgets.layers().flat_map(|(_, rects)| rects.iter()).copied().collect::<Vec<_>>());
+    // Scene 1's launch buttons, left to right: the selected column's, then the next column's.
+    let mut buttons: Vec<egui::Rect> = harness.query_all_by_label_contains("(scene 1)").map(|n| n.rect()).collect();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    buttons.sort_by(|a, b| a.left().total_cmp(&b.left()));
+    let (selected, other) = (buttons[0], buttons[2]);
+    let pointer = |rect: egui::Rect| widgets.iter().find(|w| w.rect == rect).map(|w| w.interact_rect);
+    assert_eq!(
+        selected.height(),
+        other.height(),
+        "the selected column's first slot is cut: {selected:?} against {other:?}"
+    );
+    assert_eq!(pointer(selected).map(|r| r.height()), Some(other.height()), "and takes the pointer whole");
+}

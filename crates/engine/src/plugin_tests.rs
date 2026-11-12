@@ -837,6 +837,38 @@ fn a_stopped_preview_releases_its_note_on_the_frame_the_stop_applies() {
     }
 }
 
+/// Notes added to a held preview in quick succession, so that several arrive before the audio
+/// thread's next block, all reach the plug-in instrument: none is replaced before it started (the
+/// selecting rectangle swept fast over a chord).
+#[test]
+fn held_notes_added_within_one_block_all_reach_the_plug_in() {
+    let p = project(Vec::new(), 8.0, vec![plug(vst3())]);
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    for (key, add) in [(72, false), (76, true), (79, true)] {
+        let notes = crate::preview_notes([(0.0, 0.5, key, 1.0)], 120.0, SR, Some(TrackId(1)), None);
+        if add {
+            controller.preview_note_add(notes, 1.0).unwrap();
+        } else {
+            controller.preview_note_on(notes, 1.0).unwrap();
+        }
+    }
+    blocks(&mut renderer, 8, 512);
+    let seen = seen.lock().unwrap();
+    let on: Vec<u8> =
+        seen.iter().filter_map(|(_, e)| if let NoteEvent::On { key, .. } = e { Some(*key) } else { None }).collect();
+    assert_eq!(on, [72, 76, 79], "{seen:?}");
+}
+
 #[test]
 fn a_plug_in_instrument_is_released_when_the_transport_stops() {
     let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![plug(vst3())]);
@@ -859,6 +891,39 @@ fn a_plug_in_instrument_is_released_when_the_transport_stops() {
     let off = seen.iter().position(|(_, e)| matches!(e, NoteEvent::Off { key: 60, .. }));
     let all = seen.iter().position(|(_, e)| *e == NoteEvent::AllNotesOff);
     assert!(off.is_some() && all.is_some() && off < all, "{seen:?}");
+}
+
+/// At the arrangement loop's wrap the held keys are released one by one and the notes at the
+/// loop start play again in the same block, with no all-notes-off among them: a plug-in takes
+/// that as controller changes, which many apply to the whole block, silencing the new notes.
+#[test]
+fn the_notes_at_the_loop_start_play_on_every_pass_with_no_all_notes_off() {
+    let mut p = project(vec![note(0.0, 2.0, 60), note(2.0, 2.0, 62)], 4.0, vec![plug(vst3())]);
+    p.transport.loop_range = Some(LoopRange { start: 0.0, end: 4.0 });
+    p.transport.loop_enabled = true;
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    // Three passes of four beats exactly (the fourth starts on the next frame), in blocks of 576
+    // frames: three passes are 500 blocks, and the first two wraps fall inside a block.
+    assert!((3 * 4 * BEAT).is_multiple_of(576) && !(4 * BEAT).is_multiple_of(576));
+    blocks(&mut renderer, 3 * 4 * BEAT / 576, 576);
+    let seen = seen.lock().unwrap();
+    let starts = seen.iter().filter(|(_, e)| matches!(e, NoteEvent::On { key: 60, .. })).count();
+    assert_eq!(starts, 3, "{seen:?}");
+    assert!(!seen.iter().any(|(_, e)| *e == NoteEvent::AllNotesOff), "{seen:?}");
+    let ends = seen.iter().filter(|(_, e)| matches!(e, NoteEvent::Off { key: 62, .. })).count();
+    assert!(ends >= 2, "key 62 released at each wrap: {seen:?}");
+    // The sustain pedal is lifted at each wrap, which stops nothing that starts after it.
+    let lifted = seen.iter().filter(|(_, e)| *e == NoteEvent::Controller { number: 64, value: 0.0 }).count();
+    assert_eq!(lifted, 2, "{seen:?}");
 }
 
 /// A new audio output (another buffer size, the same sample rate) builds a new renderer: the
@@ -1540,7 +1605,7 @@ fn diagnostic_slot(processor: Box<dyn PluginProcessor>) -> crate::plugin::Plugin
         busy: 0,
         longest_us: 0,
         sent_at: None,
-        params: crate::plugin_params::SlotParams::new(&plug(vst3()), BEAT as f64),
+        params: crate::plugin_params::SlotParams::new(&plug(vst3()), BEAT as f64, &[]),
     }
 }
 

@@ -29,6 +29,8 @@ fn clip(content: u32, start: f64) -> Clip {
         follow_action: Default::default(),
         color: None,
         ara: false,
+        audio: Default::default(),
+        swing: Default::default(),
         extensions: Extensions::default(),
         launch: Default::default(),
     }

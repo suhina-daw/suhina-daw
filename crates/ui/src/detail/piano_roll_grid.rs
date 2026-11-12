@@ -197,6 +197,15 @@ impl PianoGrid {
     }
 }
 
+/// Fixed value `index` of [`FIXED_VALUES`] in beats, at `bar_beats` a bar: what a grid of its
+/// own (the gain envelope's) puts its points on.
+pub(crate) fn fixed_value_beats(index: usize, bar_beats: f64) -> f64 {
+    fixed_beats(index.min(FIXED_VALUES.len() - 1), bar_beats, false)
+}
+
+/// The index of 1/16 in [`FIXED_VALUES`], the default of a grid of its own.
+pub(crate) const FIXED_SIXTEENTH: usize = SIXTEENTH;
+
 /// Fixed value `index` in beats.
 fn fixed_beats(index: usize, bar_beats: f64, triplet: bool) -> f64 {
     let bar = timeline_grid::bar_length(bar_beats);
@@ -237,7 +246,7 @@ mod tests {
         assert_eq!(grid.step(10.0, 4.0), 4.0, "a bar at 10 points per beat");
         assert_eq!(grid.step(40.0, 4.0), 1.0, "a quarter at 40");
         assert_eq!(grid.step(100.0, 4.0), 0.25, "a sixteenth at 100");
-        assert_eq!(grid.step(1000.0, 4.0), 0.125, "never finer than 1/32");
+        assert_eq!(grid.step(1000.0, 4.0), 0.031_25, "a 1/128 at 1000, never finer");
         assert_eq!(grid.step(1.0, 4.0), 32.0, "bars double when zoomed far out");
         // A narrower width is finer at the same zoom.
         assert!(adaptive(Width::Narrowest).step(40.0, 4.0) < adaptive(Width::Widest).step(40.0, 4.0));

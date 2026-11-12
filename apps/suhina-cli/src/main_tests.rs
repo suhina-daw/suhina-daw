@@ -263,3 +263,29 @@ fn theme_pack_and_validate_work_on_a_folder_and_its_package() {
     assert!(theme(&args(&["pack"])).is_err());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// `plugin params-device`, `edit-device` and `run-device` name a project's device; with no such
+/// device, or none of its plug-in installed, they say so as before (#1155), before starting
+/// anything. The catalog here is empty, so nothing on this machine is looked at.
+#[test]
+fn a_device_command_says_when_the_device_or_its_plug_in_is_not_there() {
+    let dir = std::env::temp_dir().join(format!("suhina-cli-device-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("p.suhina");
+    let plugin = Device::new("Some Reverb", DeviceKind::Vst3 { id: "0123456789ABCDEF0123456789ABCDEF".into() });
+    let project = Project {
+        tracks: vec![Track { channel: Some(ChannelId(1)), ..Track::new(TrackId(1), "T") }],
+        channels: vec![Channel { devices: vec![plugin], ..Channel::new(ChannelId(1), "C") }],
+        ..Project::default()
+    };
+    suhina_project_file::write_file(&path, &project).unwrap();
+    let file = path.to_string_lossy().into_owned();
+    let env = suhina_session::PluginEnv::new(suhina_plugins::scan::Catalog::new(), dir.join("no-host"));
+
+    let no_device = cmd::plugin::project_device(&env, &file, "Delay").err().unwrap_or_default();
+    let not_installed = cmd::plugin::project_device(&env, &file, "Some Reverb").err().unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(no_device.starts_with("no device \"Delay\" in "), "{no_device}");
+    assert!(no_device.ends_with("`suhina-cli plugins check` lists them"), "{no_device}");
+    assert_eq!(not_installed, "no installed plug-in stands for \"Some Reverb\"; `suhina-cli plugins check` says why");
+}

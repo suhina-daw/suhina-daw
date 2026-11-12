@@ -130,7 +130,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 89] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 92] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -177,6 +177,7 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 89] = [
     ("track.addMidi", "Add a MIDI track", "Tracks"),
     ("clip.insertMidi", "Insert an empty MIDI clip over the time selection", "Edit"),
     ("view.automation", "Show or hide every track's automation lanes", "View"),
+    ("view.gainEnvelope", "Edit the selected audio clip's gain envelope, or stop", "View"),
     ("selection.launch", "Launch the selected clip slot", "Launcher"),
     ("selection.up", "Select the clip slot above", "Launcher"),
     ("selection.down", "Select the clip slot below", "Launcher"),
@@ -194,11 +195,7 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 89] = [
     ("pianoRoll.octaveUp", "Move the selected notes an octave up", PIANO_ROLL),
     ("pianoRoll.octaveDown", "Move the selected notes an octave down", PIANO_ROLL),
     ("pianoRoll.shorter", "Make the selected notes one grid step shorter", PIANO_ROLL),
-    (
-        "pianoRoll.longer",
-        "Make the selected notes longer, to the next grid line or the next note of the key",
-        PIANO_ROLL,
-    ),
+    ("pianoRoll.longer", "Make the selected notes longer, to the next grid line", PIANO_ROLL),
     ("pianoRoll.shorterFine", "Make the selected notes a fine step shorter, off the grid", PIANO_ROLL),
     ("pianoRoll.longerFine", "Make the selected notes a fine step longer, off the grid", PIANO_ROLL),
     ("pianoRoll.draw", "Switch the piano roll between the Select and Draw tools", PIANO_ROLL),
@@ -227,6 +224,8 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 89] = [
     ("pianoRoll.gridSnap", "Turn snapping to the piano roll's grid on or off", PIANO_ROLL),
     ("pianoRoll.zoomSelection", "Zoom the piano roll to the selected notes, or the whole clip", PIANO_ROLL),
     ("pianoRoll.zoomClip", "Zoom the piano roll to the whole clip", PIANO_ROLL),
+    ("pianoRoll.legato", "Make the selected notes, or all the notes, last until the next one starts", PIANO_ROLL),
+    ("pianoRoll.loop", "Loop the piano roll's clip over the time selection, or turn its loop on or off", PIANO_ROLL),
     ("help.about", "Show which version of Suhina this is", "Help"),
 ];
 
@@ -255,10 +254,53 @@ pub fn slot_only(action: &str) -> bool {
     matches!(action, "selection.launch" | "selection.up" | "selection.down" | "selection.left" | "selection.right")
 }
 
-/// Whether `action` is left alone while the piano roll has the keyboard: the selected slot's keys,
-/// and selecting every arrangement clip, whose key selects every note there instead.
+/// The actions whose every id runs while the piano roll has the keyboard: its own, and the window's
+/// that have nothing to do with what a view shows or has selected.
+const IN_PIANO_ROLL_NAMESPACES: [&str; 6] = ["pianoRoll.", "file.", "edit.", "project.", "help.", "settings."];
+
+/// The other actions that run while the piano roll has the keyboard: the edit keys, which act on
+/// its notes there, playback, and the window's views and panes.
+const IN_PIANO_ROLL: [&str; 25] = [
+    "selection.copy",
+    "selection.cut",
+    "selection.paste",
+    "selection.duplicate",
+    "selection.delete",
+    "transport.toggle",
+    "transport.play",
+    "transport.stop",
+    "transport.followTempoMap",
+    "view.computerKeyboard",
+    "view.toggle",
+    "view.session",
+    "view.arrangement",
+    "view.detail",
+    "view.editor",
+    "view.devices",
+    "view.plugin",
+    "view.browser",
+    "browser.search",
+    "view.quickAdd",
+    "view.sampleMap",
+    "view.sampleMapWindow",
+    "view.zoomIn",
+    "view.zoomOut",
+    "view.zoomReset",
+];
+
+/// Whether `action` runs while the piano roll has the keyboard. The lists above name what does,
+/// and everything else is left alone there: whatever edits or shows the Arrangement or the
+/// Launcher behind the notes (the selected slot's and clips' keys, tracks, markers, the loop, the
+/// Arrangement's tools, grid and lanes), and any action added later until it is listed. So a key
+/// pressed while editing notes never acts on the view behind them, and a new action cannot do so
+/// by being forgotten (the loop key was, with a list of what to leave alone).
+pub fn in_piano_roll(action: &str) -> bool {
+    IN_PIANO_ROLL_NAMESPACES.iter().any(|namespace| action.starts_with(namespace)) || IN_PIANO_ROLL.contains(&action)
+}
+
+/// Whether `action` is left alone while the piano roll has the keyboard ([`in_piano_roll`]).
 pub fn not_in_piano_roll(action: &str) -> bool {
-    slot_only(action) || action == "selection.selectAll" || arrangement_only(action)
+    !in_piano_roll(action)
 }
 
 /// Whether `a` and `b` can both run on the same key press, so one key for both is a conflict.
@@ -476,12 +518,13 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 89] = [
+const DEFAULTS: [(&str, &[&str]); 92] = [
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
     ("clip.insertMidi", &["Ctrl+Shift+M"]),
     ("view.automation", &["A"]),
+    ("view.gainEnvelope", &["Alt+E"]),
     ("file.open", &["Ctrl+O"]),
     ("file.save", &["Ctrl+S"]),
     ("file.saveAs", &["Ctrl+Shift+S"]),
@@ -566,6 +609,8 @@ const DEFAULTS: [(&str, &[&str]); 89] = [
     ("pianoRoll.gridSnap", &["Ctrl+4"]),
     ("pianoRoll.zoomSelection", &["Z"]),
     ("pianoRoll.zoomClip", &["Shift+Z"]),
+    ("pianoRoll.legato", &["Alt+L"]),
+    ("pianoRoll.loop", &["Ctrl+L"]),
 ];
 
 impl Default for Keymap {

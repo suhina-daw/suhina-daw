@@ -3,7 +3,7 @@ description: User guide to the keyboard shortcuts, one entry per action with its
 read_when: user guide, keyboard shortcuts, what does this key do, list of keys, every shortcut explained, keybindings, hotkeys, action ids, which action a key runs, back up keys, share keymap, keymap.json, rebind a key, keys for agents
 type: howto
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-11
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -45,6 +45,7 @@ A key does nothing while you type in a text field, such as the browser's search 
 | Ctrl+Shift+T | `track.addMidi` | A project | Adds a MIDI track. |
 | Ctrl+Shift+M | `clip.insertMidi` | Arrangement, a time selection | Puts an empty MIDI clip over the time selection on each of its MIDI tracks. |
 | A | `view.automation` | Arrangement | Shows every track's automation lanes, or hides them all when they all show. |
+| Alt+E | `view.gainEnvelope` | Arrangement, an audio clip selected | Opens the clip's gain envelope for editing on its waveform, or closes it: a click on the line adds a point, a drag moves one. |
 | Ctrl+O | `file.open` | Anywhere | Opens the same project dialog with the cursor in its file path field, ready to open a project file. The project opens in a tab of its own. |
 | Ctrl+S | `file.save` | Anywhere | Saves the project in the file it came from. A project that has never been saved asks for a name and a place first. |
 | Ctrl+Shift+S | `file.saveAs` | Anywhere | Saves the project under a new name or in a new place. From then on, Ctrl+S saves into the new file. |
@@ -67,7 +68,7 @@ The project you leave stops playing.
 |---|---|---|---|
 | Space | `transport.toggle` | Anywhere | Starts playback, or stops it when it is playing. Where playback starts and where the playhead goes when it stops are set in Settings › Arrangement › Time and play › **Play from** and **Stop**. |
 | F9 | `transport.toggleRecord` | Anywhere | Starts recording into the arrangement from the playhead, or stops it, as the record button right of play and stop does. Every armed track records, MIDI and audio tracks alike; with no track armed, the status bar says to arm one. |
-| Ctrl+L | `transport.setLoopEnabled` | Anywhere | Turns looping on or off. While looping is on, the arrangement plays the loop region over and over. If there is no loop region yet, turning it on makes one over the first 4 bars. |
+| Ctrl+L | `transport.setLoopEnabled` | Anywhere but the piano roll | Turns looping on or off. While looping is on, the arrangement plays the loop region over and over. If there is no loop region yet, turning it on makes one over the first 4 bars. After a click in the piano roll the same key loops the clip you are editing instead (see [Piano roll](#piano-roll)), so it never changes the arrangement's loop behind the notes. |
 | M | `marker.addAtPlayhead` | Anywhere | Adds a marker (a named point in the arrangement) where the playhead is. While stopped, it adds the marker at the play start marker. |
 
 ## Views and windows
@@ -109,7 +110,7 @@ The zoom level is remembered the next time Suhina starts.
 | 0 | `selection.mute` | Selection | Mutes the selected clips, or unmutes them if they are muted. A muted clip stays in place but makes no sound. |
 | Ctrl+A | `selection.selectAll` | Anywhere | Selects every clip in the arrangement. In the piano roll, after a click in it, selects every note instead. |
 | Ctrl+E | `selection.split` | Selection | Splits the selected clip in two where you clicked inside it, while playing too. It never splits at the playhead. |
-| Ctrl+J | `selection.consolidate` | Selection | Joins the selected clips, and the space between them, into one new clip. |
+| Ctrl+J | `selection.consolidate` | Selection | Joins the selected clips on the track of the clip clicked last, and the space between them, into one new clip. With a time selection, consolidates the selected time on each of its tracks. |
 
 Every key that acts on clips acts on the whole selection, and all of it is one undo step.
 
@@ -158,6 +159,12 @@ The piano roll is the editor that shows a MIDI clip's notes, with pitch from low
 from left to right. Its keys work only after you have clicked inside it. A grid step is the length
 of one square of the grid, which follows the zoom and the grid setting.
 
+After a click inside the piano roll, the keys of the Arrangement and the Launcher behind it do
+nothing, also the ones listed as **Anywhere**: adding a track, a marker, the arrangement's loop, key
+mapping and the selected clips' keys. So a key pressed while you edit notes never changes
+something else by accident. Play and stop, undo and redo, save, the views, the browser and
+Settings go on working. Click in the Arrangement or the Launcher to give the keys back to it.
+
 | Key | Action | Where | What it does |
 |---|---|---|---|
 | 1 | `pianoRoll.tool1` | Piano roll | Chooses the **Select** tool: click a note to select it, drag to move it or to draw a selection box. |
@@ -181,7 +188,9 @@ of one square of the grid, which follows the zoom and the grid setting.
 | Shift+Right | `pianoRoll.longer` | Piano roll | Takes each selected note's end to the next grid line, or to the start of the next note of its key when that comes first (unless stacked notes are allowed). |
 | Alt+Shift+Left | `pianoRoll.shorterFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) shorter, off the grid. |
 | Alt+Shift+Right | `pianoRoll.longerFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) longer, off the grid, stopping at the next note of their key unless stacked notes are allowed. |
-| Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings in the quantise block of the MIDI tools column. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
+| Ctrl+L | `pianoRoll.loop` | Piano roll | Loops the clip you are editing. With a time selection (a stretch of time dragged in the piano roll) the clip's loop goes exactly over it; press again on the same stretch to turn the loop off. With no time selection it turns the clip's loop on or off, like a click on the loop bar in the piano roll's ruler. |
+| Alt+L | `pianoRoll.legato` | Piano roll | Legato: makes each selected note last until the next one starts, so there are no gaps between them. With no note selected it does this to every note in the clip. The same as **Legato** in the Notes tab of the clip panel's note tools. |
+| Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings of Quantise in the Transform tab of the clip panel's note tools. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
 
 Copy, cut, paste, duplicate and delete in the piano roll use the [Editing](#editing) keys. With no
 note selected (or nothing copied, for paste) they act on the clip instead.

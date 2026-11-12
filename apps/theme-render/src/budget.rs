@@ -18,29 +18,34 @@ use crate::Subject;
 pub struct Counts {
     /// Style nodes in a frame.
     pub nodes: usize,
-    /// Distinct scope stacks kept with an approximate style.
-    pub contexts: usize,
-    /// Styles served in a frame to scopes with no style resolved for them.
-    pub approximations: usize,
-    /// Of those, the ones worked out afresh in that frame.
-    pub context_misses: usize,
-    /// Paint callbacks in a frame: background fills that set the window's pixels.
+    /// Element identities whose styles are kept.
+    pub identities: usize,
+    /// Styles asked for by elements past the style tree's limits, which got none.
+    pub unstyled: usize,
+    /// Styles worked out afresh in a settled frame.
+    pub fresh: usize,
+    /// Paint callbacks in a frame: the clears under a menu's or dialog's backdrop, which set the
+    /// window's pixels. Every background blends, so nothing else is one (#1233).
     pub paint_callbacks: usize,
     /// Frames from choosing the theme to a still window.
     pub theme_change_frames: u64,
-    /// Styles served from an approximation over those frames.
-    pub theme_change_approximations: usize,
+    /// Of those, the frames after which the style engine asked for another (#1273: none).
+    pub theme_change_style_frames: u64,
+    /// Styles worked out afresh over those frames.
+    pub theme_change_fresh: usize,
     /// Frames from moving the pointer onto a clip (or a clip slot) to a still window.
     pub hover_frames: u64,
-    /// Styles served from an approximation over those frames.
-    pub hover_approximations: usize,
+    /// Of those, the frames after which the style engine asked for another (#1273: none).
+    pub hover_style_frames: u64,
+    /// Styles worked out afresh over those frames.
+    pub hover_fresh: usize,
 }
 
-/// A stand-in for the GPU's background fills: each fill becomes a callback as on the GPU, so the
-/// callbacks can be counted without one.
-struct CountedFills;
+/// A stand-in for the GPU's clears: each becomes a callback as on the GPU, so the callbacks can be
+/// counted without one.
+struct CountedClears;
 
-impl suhina_ui::kit::surface::Provider for CountedFills {
+impl suhina_ui::kit::surface::Provider for CountedClears {
     fn shape(&self, rect: egui::Rect, _: egui::CornerRadius, _: egui::Color32) -> egui::Shape {
         egui::Shape::Callback(egui::PaintCallback { rect, callback: Arc::new(()) })
     }
@@ -57,19 +62,22 @@ fn callbacks(shapes: &[egui::epaint::ClippedShape]) -> usize {
     shapes.iter().map(|clipped| count(&clipped.shape)).sum()
 }
 
-/// Frames a change takes to settle, as kittest's `run` counts them (the still frame included),
-/// and the approximate styles served over them. Past the most a scene may take, that most.
-fn frames(h: &mut Harness<'static, App>) -> (u64, usize) {
-    let mut approximations = 0;
+/// Frames a change takes to settle, as kittest's `run` counts them (the still frame included), the
+/// frames after which the style engine itself asked for another, and the styles worked out
+/// afresh over them. Past the most a scene may take, that most.
+fn frames(h: &mut Harness<'static, App>) -> (u64, u64, usize) {
+    let (mut fresh, mut asked) = (0, 0);
     for frame in 1..=crate::MAX_STEPS {
         h.step();
-        approximations += native_css::budget().approximations;
+        let budget = native_css::budget();
+        fresh += budget.fresh;
+        asked += u64::from(budget.asked);
         let still = h.output().viewport_output.get(&egui::ViewportId::ROOT).is_none_or(|v| !v.repaint_delay.is_zero());
         if still {
-            return (frame, approximations);
+            return (frame, asked, fresh);
         }
     }
-    (crate::MAX_STEPS, approximations)
+    (crate::MAX_STEPS, asked, fresh)
 }
 
 /// The counts for `subject` in `scene`: the scene driven with the built-in theme, `subject`
@@ -77,25 +85,27 @@ fn frames(h: &mut Harness<'static, App>) -> (u64, usize) {
 pub fn count(subject: &Subject, scene: &crate::scenes::Scene) -> Result<Counts, String> {
     let built_in = Subject { id: suhina_ui::kit::theme::BUILT_IN.to_owned(), theme: None };
     let mut h = crate::headless((scene.app)()?, &built_in, scene.width);
-    suhina_ui::kit::surface::install(&h.ctx, Arc::new(CountedFills));
+    suhina_ui::kit::surface::install(&h.ctx, Arc::new(CountedClears));
     (scene.drive)(&mut h)?;
     frames(&mut h);
     crate::choose(&mut h, subject);
-    let (theme_change_frames, theme_change_approximations) = frames(&mut h);
+    let (theme_change_frames, theme_change_style_frames, theme_change_fresh) = frames(&mut h);
     // One more frame, so the counts are a settled frame's.
     h.step();
     let style = native_css::budget();
     let paint_callbacks = callbacks(&h.output().shapes);
     let mut counts = Counts {
         nodes: style.nodes,
-        contexts: style.contexts,
-        approximations: style.approximations,
-        context_misses: style.context_misses,
+        identities: style.identities,
+        unstyled: style.unstyled,
+        fresh: style.fresh,
         paint_callbacks,
         theme_change_frames,
-        theme_change_approximations,
+        theme_change_style_frames,
+        theme_change_fresh,
         hover_frames: 0,
-        hover_approximations: 0,
+        hover_style_frames: 0,
+        hover_fresh: 0,
     };
     // A clip in the Arrangement view, or a clip slot in the launcher.
     let clip = ["Clip ", "Launch "]
@@ -103,7 +113,7 @@ pub fn count(subject: &Subject, scene: &crate::scenes::Scene) -> Result<Counts, 
         .find_map(|label| h.query_all_by_label_contains(label).next().map(|n| n.rect().center()));
     if let Some(at) = clip {
         h.hover_at(at);
-        (counts.hover_frames, counts.hover_approximations) = frames(&mut h);
+        (counts.hover_frames, counts.hover_style_frames, counts.hover_fresh) = frames(&mut h);
     }
     Ok(counts)
 }

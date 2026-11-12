@@ -38,6 +38,43 @@ fn a_devices_menu_removes_it_and_undo_brings_it_back() {
     assert_eq!(device_count(&harness), 1, "the device is back");
 }
 
+/// Save as preset… on the device's menu (`device.savePreset`, docs/decisions/
+/// 0036-library-and-shipped-content.md › 5): the field comes with the device's name, a typed
+/// name saves the device's values into the library, and the status bar says where.
+#[test]
+fn a_devices_menu_saves_a_preset_under_the_typed_name() {
+    let dir = std::env::temp_dir().join(format!("suhina-ui-save-preset-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut session = Session::new(project_with_a_device());
+    session.set_library_base(dir.clone());
+    let mut app = App::new();
+    app.set_session(session, &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Device Utility").click_secondary();
+    harness.run();
+    harness.get_by_label("Preset name for Utility").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.get_by_label("Preset name for Utility").type_text("Home Squeeze");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    let path = dir.join("Presets/utility/Home Squeeze.utility.preset.suhina");
+    assert!(path.exists(), "the preset saved into the library, but the status bar says {:?}", harness.state().status());
+    let read = suhina_device_registry::preset(&std::fs::read(&path).unwrap(), 1).unwrap();
+    assert_eq!(read.name, "Home Squeeze");
+    assert!(read.params.iter().any(|(id, value)| *id == "gain" && *value == -3.5), "{read:?}");
+    assert!(
+        matches!(harness.state().status(), Status::Hint(text) if text.contains("saved into the library's Presets folder")),
+        "{:?}",
+        harness.state().status()
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn clicking_a_second_device_moves_the_selection_so_delete_takes_it() {
     use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions};
@@ -153,6 +190,9 @@ fn the_detail_area_shows_the_selected_tracks_devices_in_a_row_or_stacked() {
     harness.key_press_modifiers(Modifiers::SHIFT, Key::Tab);
     harness.run();
     assert!(harness.query_by_label("Device Utility").is_none(), "Shift+Tab hides the detail area");
+    // Closed stacked, it keeps its splitter along the window's right edge, to drag it open again.
+    let splitter = harness.get_by_label("Detail area splitter").rect();
+    assert!(splitter.height() > splitter.width(), "an upright splitter at the right: {splitter:?}");
 }
 
 #[test]

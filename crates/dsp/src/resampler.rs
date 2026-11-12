@@ -45,8 +45,9 @@ impl Resampler {
         let mut table = vec![0.0; PHASES * TAPS].into_boxed_slice();
         // The cutoff keeps whatever the lower of the two rates can carry, in cycles per input
         // sample: the input's full range when upsampling, the target rate's Nyquist when
-        // downsampling.
-        let cutoff = 0.5f64.min(to / from);
+        // downsampling — half the target's rate over the input's, so nothing above the
+        // target's Nyquist survives to be folded back in as an alias.
+        let cutoff = (0.5 * to / from).min(0.5);
         let width = HALF_TAPS as f64;
         for phase in 0..PHASES {
             let mut row = [0.0; TAPS];
@@ -238,6 +239,29 @@ mod tests {
         for &y in out.iter().skip(64).take(200) {
             assert!((y - 0.5).abs() < 1e-9, "{y}");
         }
+    }
+
+    #[test]
+    fn a_tone_above_the_target_rate_is_not_aliased_in() {
+        // A 30 kHz tone at 96 kHz resampled to 48 kHz: above the target's Nyquist, so it has
+        // to come out as near-silence. With the cutoff left at the input's Nyquist it came
+        // through at full amplitude, folded to 18 kHz.
+        let input: Vec<f64> =
+            (0..24_000).map(|i| (std::f64::consts::TAU * 30_000.0 * i as f64 / 96_000.0).sin() * 0.5).collect();
+        let out = run(&mut Resampler::new(96_000.0, 48_000.0), &input, 512);
+        let steady = &out[out.len() / 2..];
+        let peak = steady.iter().fold(0.0f64, |a, v| a.max(v.abs()));
+        assert!(peak < 0.02, "the out-of-band tone survived at {peak}");
+    }
+
+    #[test]
+    fn a_tone_below_both_nyquists_comes_through() {
+        let input: Vec<f64> =
+            (0..24_000).map(|i| (std::f64::consts::TAU * 5_000.0 * i as f64 / 96_000.0).sin() * 0.5).collect();
+        let out = run(&mut Resampler::new(96_000.0, 48_000.0), &input, 512);
+        let steady = &out[out.len() / 2..];
+        let peak = steady.iter().fold(0.0f64, |a, v| a.max(v.abs()));
+        assert!(peak > 0.45, "the in-band tone lost level: {peak}");
     }
 
     #[test]

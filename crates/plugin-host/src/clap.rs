@@ -35,6 +35,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::param_notes::{Notes, ParamNotes, Reads};
+use crate::planar::{ParamQueue, Planar};
 use clack_extensions::audio_ports::{AudioPortFlags, AudioPortInfoBuffer, PluginAudioPorts};
 use clack_extensions::gui::{GuiApiType, GuiConfiguration, GuiSize, HostGui, HostGuiImpl, PluginGui};
 use clack_extensions::latency::{HostLatency, HostLatencyImpl, PluginLatency};
@@ -173,13 +174,11 @@ impl Ports {
     }
 
     /// One zeroed buffer of `frames` for each channel of each port.
-    fn buffers(&self, frames: usize) -> Vec<Vec<Vec<f32>>> {
-        self.channels.iter().map(|c| vec![vec![0.0f32; frames]; *c as usize]).collect()
+    fn buffers(&self, frames: usize) -> Planar {
+        Planar::new(self.channels.iter().map(|c| *c as usize), frames)
     }
 }
 
-/// Parameter values waiting for the next block: id and plain value.
-type PendingParams = Arc<Mutex<Vec<(u32, f64)>>>;
 /// Most values one block carries; more wait for the next.
 const MAX_PARAM_CHANGES: usize = 1024;
 
@@ -323,7 +322,7 @@ pub(crate) struct ClapPlugin {
     configuration: PluginAudioConfiguration,
     /// Its audio ports (inputs, outputs), as they were when it was activated.
     ports: (Ports, Ports),
-    pending: PendingParams,
+    pending: ParamQueue,
     /// What the plug-in changed itself (its own editor, its internal mapping), taken out of
     /// the blocks' output parameter events, for [`ClapPlugin::tick`] to report to the session.
     edited: Notes,
@@ -442,7 +441,7 @@ impl ClapPlugin {
             configuration,
             ports,
             number,
-            pending: PendingParams::default(),
+            pending: ParamQueue::default(),
             edited: Notes::new(ParamNotes::new()),
             edited_reads: ParamNotes::fresh_reads(),
             editor: None,
@@ -735,6 +734,24 @@ impl ClapPlugin {
             .collect()
     }
 
+    /// The plug-in's own text for each of `values` of parameter `id`, in its plain range
+    /// (#1205); empty where it gives none.
+    pub(crate) fn param_texts(&mut self, id: u32, values: &[f64]) -> Vec<String> {
+        let (Some(params), Some(id)) = (self.params_extension(), ClapId::from_raw(id)) else {
+            return vec![String::new(); values.len()];
+        };
+        let handle = self.instance.plugin_handle();
+        let text =
+            |bytes: &[u8]| String::from_utf8_lossy(bytes.split(|b| *b == 0).next().unwrap_or_default()).into_owned();
+        values
+            .iter()
+            .map(|value| {
+                let mut shown = [0u8; 256];
+                params.value_to_text(&handle, id, *value, &mut shown).map(|t| text(t)).unwrap_or_default()
+            })
+            .collect()
+    }
+
     /// Sets parameter `id` to `value` (kept within its range); the plug-in gets it at the start
     /// of the next block.
     pub(crate) fn set_param(&mut self, id: u32, value: f64) -> Result<ParamInfo, String> {
@@ -752,10 +769,7 @@ impl ClapPlugin {
             .ok_or_else(|| format!("no parameter {id}"))?;
         let (low, high) = (crate::vst3::finite(info.min_value, 0.0), crate::vst3::finite(info.max_value, 1.0));
         let value = value.clamp(low.min(high), high.max(low));
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.retain(|(other, _)| *other != id);
-            pending.push((id, value));
-        }
+        self.pending.replace(id, value);
         Ok(describe_param(&params, &handle, &info, value))
     }
 
@@ -794,7 +808,7 @@ fn serve(
     stopped: StoppedPluginAudioProcessor<Host>,
     mut served: Served,
     (input_ports, output_ports): (Ports, Ports),
-    (pending, edited, sample_rate): (PendingParams, Notes, f64),
+    (pending, edited, sample_rate): (ParamQueue, Notes, f64),
     stop: &AtomicBool,
 ) -> Option<Stopped> {
     let processor = match stopped.start_processing() {
@@ -811,13 +825,13 @@ struct ClapBlock {
     channels: usize,
     input_ports: Ports,
     output_ports: Ports,
-    inputs: Vec<Vec<Vec<f32>>>,
-    outputs: Vec<Vec<Vec<f32>>>,
+    inputs: Planar,
+    outputs: Planar,
     input_audio: AudioPorts,
     output_audio: AudioPorts,
     in_events: EventBuffer,
     out_events: EventBuffer,
-    pending: PendingParams,
+    pending: ParamQueue,
     /// Where the block's output parameter events go: what the plug-in changed itself, for the
     /// main thread to report to the session.
     edited: Notes,
@@ -887,14 +901,14 @@ impl ClapBlock {
         processor: StartedPluginAudioProcessor<Host>,
         served: &Served,
         (input_ports, output_ports): (Ports, Ports),
-        (pending, edited): (PendingParams, Notes),
+        (pending, edited): (ParamQueue, Notes),
         sample_rate: f64,
     ) -> Self {
         let max_frames = served.max_frames() as usize;
         let inputs = input_ports.buffers(max_frames);
         let outputs = output_ports.buffers(max_frames);
-        let input_audio = AudioPorts::with_capacity(input_ports.total_channels(), inputs.len());
-        let output_audio = AudioPorts::with_capacity(output_ports.total_channels(), outputs.len());
+        let input_audio = AudioPorts::with_capacity(input_ports.total_channels(), inputs.bus_count());
+        let output_audio = AudioPorts::with_capacity(output_ports.total_channels(), outputs.bus_count());
         Self {
             processor,
             channels: served.channels() as usize,
@@ -939,38 +953,31 @@ impl crate::audio::Block for ClapBlock {
         let frames = input.len() / channels.max(1);
         // The link's channels into the main input port, by the rule every format follows
         // ([`crate::audio::feed_main`]); silence elsewhere (a plug-in may have written to an input).
-        for (port, buffers) in inputs.iter_mut().enumerate() {
+        for port in 0..inputs.bus_count() {
             if input_ports.main == Some(port) {
-                crate::audio::feed_main(input, channels, frames, buffers);
-                continue;
-            }
-            for buffer in buffers.iter_mut() {
-                buffer.iter_mut().take(frames).for_each(|sample| *sample = 0.0);
+                crate::audio::feed_main(input, channels, frames, inputs.bus_mut(port));
+            } else {
+                inputs.silence(port, frames);
             }
         }
-        let audio_in = input_audio.with_input_buffers(inputs.iter_mut().map(|port| AudioPortBuffer {
+        let audio_in = input_audio.with_input_buffers(inputs.buses_mut().map(|port| AudioPortBuffer {
             latency: 0,
             channels: AudioPortBufferType::f32_input_only(
-                port.iter_mut().map(|b| InputChannel::variable(b.get_mut(..frames).unwrap_or_default())),
+                port.map(|b| InputChannel::variable(b.get_mut(..frames).unwrap_or_default())),
             ),
         }));
-        let mut audio_out = output_audio.with_output_buffers(outputs.iter_mut().map(|port| AudioPortBuffer {
+        let mut audio_out = output_audio.with_output_buffers(outputs.buses_mut().map(|port| AudioPortBuffer {
             latency: 0,
-            channels: AudioPortBufferType::f32_output_only(
-                port.iter_mut().map(|b| b.get_mut(..frames).unwrap_or_default()),
-            ),
+            channels: AudioPortBufferType::f32_output_only(port.map(|b| b.get_mut(..frames).unwrap_or_default())),
         }));
         out_events.clear();
         in_events.clear();
         // Parameter values first, at the block's start; then the notes, in time order.
-        if let Ok(mut values) = pending.try_lock() {
-            let room = values.len().min(MAX_PARAM_CHANGES);
-            for (id, value) in values.drain(..room) {
-                if let Some(id) = ClapId::from_raw(id) {
-                    in_events.push(&ParamValueEvent::new(0, id, Pckn::match_all(), value));
-                }
+        pending.take(MAX_PARAM_CHANGES, |id, value| {
+            if let Some(id) = ClapId::from_raw(id) {
+                in_events.push(&ParamValueEvent::new(0, id, Pckn::match_all(), value));
             }
-        }
+        });
         for event in events {
             push_event(in_events, event);
         }
@@ -998,9 +1005,8 @@ impl crate::audio::Block for ClapBlock {
         }
         // A failed block stays silent (the output starts zeroed). The link's channels come from
         // the main output port, by the shared rule.
-        let main = output_ports.main.and_then(|port| outputs.get(port)).filter(|_| processed.is_ok());
-        if let Some(main) = main {
-            crate::audio::collect_main(main, channels, frames, output);
+        if let Some(main) = output_ports.main.filter(|_| processed.is_ok()) {
+            crate::audio::collect_main(outputs.bus(main), channels, frames, output);
         }
     }
 }
@@ -1118,7 +1124,8 @@ mod tests {
         let many = Ports::declared(std::iter::repeat_n((u32::MAX, false), 1_000));
         assert_eq!(many.channels.len(), MAX_PORTS);
         assert!(many.channels.iter().all(|c| *c == MAX_PORT_CHANNELS));
-        assert_eq!(many.buffers(4).iter().flatten().count(), many.total_channels());
+        let buffers = many.buffers(4);
+        assert_eq!((0..buffers.bus_count()).map(|bus| buffers.channels(bus)).sum::<usize>(), many.total_channels());
     }
     #[test]
     fn the_loop_reaches_a_plug_in_on_both_timelines_it_is_told_of() {

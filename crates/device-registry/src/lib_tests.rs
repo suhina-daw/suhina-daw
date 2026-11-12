@@ -92,6 +92,7 @@ fn every_stock_preset_reads_and_gives_every_parameter_of_its_device() {
         for (param, (id, value)) in device.params.iter().zip(&stock.preset.params) {
             assert_eq!(param.id, *id);
             assert_eq!(values[*id].as_f64(), Some(*value), "{key}: {id}");
+            assert!((param.min..=param.max).contains(value), "{key}: {id} is outside its range");
         }
         assert!(!stock.tags.is_empty(), "{key}");
     }
@@ -149,6 +150,154 @@ fn a_device_preset_file_is_read_and_a_bad_one_refused() {
     let mut large = good.into_bytes();
     large.resize(MAX_PRESET_BYTES + 1, b' ');
     assert!(preset(&large, 1).is_err());
+}
+
+#[test]
+fn a_written_preset_file_reads_back_its_name_file_and_values() {
+    // A file device's preset carries the file it selects through ADR 0014's `file` field.
+    let values: [(&str, f64); 2] = [("inputGain", -1.0), ("eqBass", 1.0)];
+    let bytes = write_preset_file(
+        "nam-amp-modeler",
+        "Home Crunch",
+        Some("builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam"),
+        &values,
+    )
+    .unwrap();
+    let read = preset(&bytes, 1).unwrap();
+    assert_eq!(read.name, "Home Crunch");
+    assert_eq!(read.file.as_deref(), Some("builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam"));
+    let value = |id: &str| read.params.iter().find(|(p, _)| *p == id).unwrap().1;
+    assert_eq!(value("inputGain"), -1.0);
+    assert_eq!(value("eqBass"), 1.0);
+    assert_eq!(value("eqOn"), 1.0, "what the write leaves out takes its default");
+    // Every declared parameter is in the file, so a device reading it keeps the values it has.
+    let written: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(written["params"].as_object().unwrap().len(), info("nam-amp-modeler").unwrap().params.len());
+    // The file rides the same format's shape, and is read by the same code.
+    assert_eq!(written["format"], "suhina-preset");
+    assert_eq!(preset_voices(&bytes).unwrap(), vec![(1, "Home Crunch".to_string())]);
+}
+
+#[test]
+fn a_preset_may_name_a_file() {
+    let file = |rest: &str| {
+        format!(
+            r#"{{ "format": "suhina-preset", "version": 1, "device": "nam-amp-modeler", "role": "effect", "name": "Mine", {rest} }}"#
+        )
+    };
+    let named = file(r#""file": "builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam", "params": {}"#);
+    let read = preset(named.as_bytes(), 1).unwrap();
+    assert_eq!(read.file.as_deref(), Some("builtin:nam-amp-modeler/Tim R JCM2000 Crunch.nam"));
+    // A file another device's pack is keyed to is refused here as at the write, before the
+    // device is added without its file ([ADR 0014] › Amendment: a preset may name a file);
+    // a blank is no file at all.
+    let cross = file(r#""file": "builtin:nam-cab-loader/x.wav", "params": {}"#);
+    assert!(preset(cross.as_bytes(), 1).is_err(), "the amp modeler runs no cab loader file");
+    let blank = file(r#""file": "  ", "params": {}"#);
+    assert_eq!(preset(blank.as_bytes(), 1).unwrap().file, None);
+    // Where the device runs no file, a named one is refused: the preset could never be kept.
+    let no_file = |id: &str| {
+        format!(
+            r#"{{ "format": "suhina-preset", "version": 1, "device": "{id}", "role": "effect", "name": "Mine", "file": "x.wav", "params": {{}} }}"#
+        )
+    };
+    assert!(preset(no_file("compressor").as_bytes(), 1).is_err(), "the compressor runs no file");
+    for bad in [file(r#""file": 1, "params": {}"#), file(r#""file": [], "params": {}"#)] {
+        assert!(preset(bad.as_bytes(), 1).is_err(), "{bad}");
+    }
+    // A preset is the format people share, so its file is a shipped key or a library-relative
+    // path ([ADR 0014] › Amendment, the review): an absolute or a `..`-climbing text would
+    // have the added device read another machine's file the moment the preset landed.
+    let relative = file(r#""file": "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam", "params": {}"#);
+    assert_eq!(
+        preset(relative.as_bytes(), 1).unwrap().file.as_deref(),
+        Some("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam"),
+        "a library-relative path reads"
+    );
+    for outside in [
+        file(r#""file": "/etc/passwd.nam", "params": {}"#),
+        file(r#""file": "../outside.nam", "params": {}"#),
+        file(r#""file": "Sounds/NAM/../../outside.nam", "params": {}"#),
+    ] {
+        assert!(preset(outside.as_bytes(), 1).is_err(), "{outside}");
+    }
+}
+
+#[test]
+fn a_saved_preset_file_is_whole_or_refused() {
+    let values: [(&str, f64); 0] = [];
+    // Every declared parameter goes in, so a device reading it later keeps what it is given.
+    let bytes = write_preset_file("nam-amp-modeler", "Home Crunch", None, &values).unwrap();
+    assert_eq!(preset(&bytes, 1).unwrap().file, None);
+    let squeeze: [(&str, f64); 0] = [];
+    assert!(write_preset_file("compressor", "Home Squeeze", None, squeeze.as_slice()).is_ok());
+    let out_of_range: [(&str, f64); 1] = [("inputGain", 999.0)];
+    for (device, name, file, values, why) in [
+        ("nam-amp-modeler", "", None, values.as_slice(), "no name"),
+        ("nam-amp-modeler", " a/b ", None, values.as_slice(), "a slash is not a file name"),
+        ("nam-amp-modeler", "..", None, values.as_slice(), "a relative climb is not one"),
+        (
+            "nam-amp-modeler",
+            "Mine",
+            Some("builtin:compressor/other.wav"),
+            values.as_slice(),
+            "a file is written by the session",
+        ),
+        ("compressor", "Mine", Some("x.wav"), squeeze.as_slice(), "the compressor runs no file"),
+        ("nothing", "Mine", None, values.as_slice(), "no device"),
+        ("nam-amp-modeler", "Mine", None, out_of_range.as_slice(), "a value outside the range"),
+        (
+            "nam-amp-modeler",
+            "Mine",
+            Some("/etc/passwd.nam"),
+            values.as_slice(),
+            "an absolute path is not a preset's file",
+        ),
+        ("nam-amp-modeler", "Mine", Some("../outside.nam"), values.as_slice(), "a climb leaves the library"),
+        ("nam-amp-modeler", "a*b", None, values.as_slice(), "a star is not a file name"),
+        ("nam-amp-modeler", "a?b", None, values.as_slice(), "a question mark is not one"),
+        ("nam-amp-modeler", "a\"b", None, values.as_slice(), "a quote is not one"),
+        ("nam-amp-modeler", "a<b", None, values.as_slice(), "a left angle is not one"),
+        ("nam-amp-modeler", "a>b", None, values.as_slice(), "a right angle is not one"),
+        ("nam-amp-modeler", "a|b", None, values.as_slice(), "a pipe is not one"),
+        ("nam-amp-modeler", "CON", None, values.as_slice(), "a reserved device name is not one"),
+        ("nam-amp-modeler", "com1", None, values.as_slice(), "a reserved name any case"),
+        ("nam-amp-modeler", "LPT9.txt", None, values.as_slice(), "a reserved stem before dots"),
+    ] {
+        assert!(write_preset_file(device, name, file, values).is_err(), "{why}");
+    }
+    // The name a preset carries is the trimmed one: a name typed with padding writes the same
+    // file a plain typing of it replaces ([ADR 0014] › 5, the review).
+    let padded = write_preset_file("nam-amp-modeler", "  Lead  ", None, values.as_slice()).unwrap();
+    assert_eq!(preset(&padded, 1).unwrap().name, "Lead", "the trimmed name carries");
+    // A library-relative file writes and reads back: the one form a shared preset carries
+    // beside the shipped key ([ADR 0014] › Amendment, the review).
+    let with_file = write_preset_file(
+        "nam-amp-modeler",
+        "Home Crunch",
+        Some("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam"),
+        values.as_slice(),
+    )
+    .unwrap();
+    assert_eq!(
+        preset(&with_file, 1).unwrap().file.as_deref(),
+        Some("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam"),
+        "a library-relative file writes and reads back"
+    );
+    let read = preset(&bytes, 1).unwrap();
+    assert!(read.params.iter().any(|(id, _)| *id == "inputGain"), "the file still carries every declared parameter");
+}
+
+#[test]
+fn every_stock_preset_naming_a_file_loads_it_from_the_pack() {
+    for stock in stock_presets() {
+        if let Some(file) = &stock.preset.file {
+            let Some((device, name)) = file.strip_prefix("builtin:").and_then(|rest| rest.split_once('/')) else {
+                panic!("{} names {}: a stock preset's file is builtin:<device id>/<file name>", stock.key, file);
+            };
+            load_builtin_file(device, name, 48_000).unwrap_or_else(|e| panic!("{}: {file}: {e}", stock.key));
+        }
+    }
 }
 
 #[test]
@@ -315,7 +464,8 @@ fn a_device_ignores_an_asset_another_device_read() {
     writer.finalize().unwrap();
     let asset = load_file("nam-cab-loader", &wav, 48_000).unwrap();
     assert_eq!(asset.device(), "nam-cab-loader");
-    assert_eq!(asset_name(&asset, &wav), dir.file_name().map(|n| n.to_string_lossy().into_owned()));
+    // The cab's shown name is its own file, never its folder's (~issue 1289).
+    assert_eq!(asset_name(&asset, &wav).as_deref(), Some("ir"));
     assert!(create_with("nam-cab-loader", Some(&asset)).is_some());
     // The Amp Modeler is given the IR: it starts at its defaults, as with no file.
     let amp = create_with("nam-amp-modeler", Some(&asset)).unwrap();
@@ -340,4 +490,32 @@ fn the_multiband_panel_switches_bands_and_opens_an_expanded_spectrum() {
         assert!(knob.visible_when.is_some(), "{band}: its knobs show for its tab only");
     }
     assert!(panel.expanded.as_ref().is_some_and(|e| e.size[0] > compact.size[0]));
+}
+
+#[test]
+fn every_pack_file_is_named_for_its_device_and_reads() {
+    assert!(is_file_device("nam-amp-modeler") && is_file_device("nam-cab-loader"));
+    for (device, name, bytes) in super::PACK_FILES {
+        let extension = file_extension(device).unwrap();
+        assert!(name.ends_with(&format!(".{extension}")), "{name} does not end in .{extension}");
+        assert!(bytes.len() <= 8 << 20, "{name} is {}, which is too large a first cut", bytes.len());
+        match *device {
+            "nam-amp-modeler" => {
+                let model = suhina_device_nam_amp_modeler::model::read_bytes(bytes)
+                    .unwrap_or_else(|e| panic!("{name} does not read: {e}"));
+                nam_rs::Model::from_nam(&model).expect("{name} does not run");
+            }
+            "nam-cab-loader" => {
+                suhina_device_nam_cab_loader::ir::read_bytes(bytes, 48_000)
+                    .unwrap_or_else(|e| panic!("{name} does not read: {e}"));
+            }
+            _ => panic!("{name} is in the pack for {device:?}, which runs no file"),
+        }
+        let key = builtin_file_key(device, name);
+        assert!(key == format!("builtin:{device}/{name}"), "{key} does not carry {device:?} as its folder");
+        assert!(pack_files(device).iter().any(|(file_name, _)| *file_name == *name), "{name} is not in pack_files");
+    }
+    // The ADR's ceiling for the whole pack ([ADR 0036]): it grows through this bound and the
+    // download window is its valve.
+    assert!(pack_bytes() <= 16 << 20, "the pack is {} bytes, more than the ADR's ceiling", pack_bytes());
 }

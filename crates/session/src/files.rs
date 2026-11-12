@@ -12,7 +12,7 @@ use suhina_device_api::Role;
 use suhina_engine::AudioData;
 use suhina_media::info::{FileKind, Tempo, TempoSource, kind_of};
 use suhina_model::{
-    ArrangementLane, AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipContent, ContentId,
+    ArrangementLane, AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ContentId,
     ContentKinds, ContentLane, InputChannels, LaneData, LauncherColumn, LoopRange, Note, Project, Scene, Slot,
     StretchMode, Track, TrackId, WarpMarker,
 };
@@ -187,6 +187,7 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     let preset = Args::new(params).opt_text("preset")?;
     let sd = Args::new(params).opt_text("sd")?;
     let stock = Args::new(params).opt_text("stock")?;
+    let file = Args::new(params).opt_text("file")?;
     // A preset's own values, for what it is for and, in a file that names it, what it is called.
     let preset_values = match (preset, stock) {
         (Some(_), Some(_)) => return Err("name a preset file or a stock preset, not both".into()),
@@ -199,6 +200,16 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         ),
         (None, None) => None,
     };
+    // A file-backed device only runs a file; a plug-in and an .sd graph do not.
+    if file.is_some() && sd.is_some() {
+        return Err("an .sd graph does not run a file".into());
+    }
+    if file.is_some()
+        && let (Some(id), None, None) = (device, preset_values.as_ref(), sd)
+        && suhina_device_registry::info(id).is_none()
+    {
+        return Err("a plug-in does not run a file".into());
+    }
     // What the device is decides the kind when none is given.
     let device_role = match (device, preset, sd) {
         _ if preset_values.is_some() => {
@@ -284,8 +295,8 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
             .ok_or_else(|| format!("count must be a whole number from 1 to {MAX_INSERT}"))?,
     };
     if count > 1 {
-        if device.is_some() || preset_values.is_some() || sd.is_some() {
-            return Err("count adds empty tracks; leave out device, preset, stock and sd".into());
+        if device.is_some() || preset_values.is_some() || sd.is_some() || file.is_some() {
+            return Err("count adds empty tracks; leave out device, preset, stock, sd and file".into());
         }
         let input = session.default_input();
         let mut tracks = Vec::with_capacity(count);
@@ -304,7 +315,7 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     let input = session.default_input();
     let track = insert_track(&mut session.project, kind, &name, after, input)?;
     let mut added = Value::Null;
-    if device.is_some() || preset_values.is_some() || sd.is_some() {
+    if device.is_some() || preset_values.is_some() || sd.is_some() || file.is_some() {
         let mut device_params = json!({ "track": track.0 });
         if let Some(path) = preset {
             device_params["preset"] = json!(path);
@@ -317,6 +328,9 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         }
         if let Some(path) = sd {
             device_params["path"] = json!(path);
+        }
+        if let Some(path) = file {
+            device_params["file"] = json!(path);
         }
         if sd.is_some()
             && let Some(sample) = Args::new(params).opt_text("sample")?
@@ -356,6 +370,8 @@ pub(crate) struct Source {
     /// Content length in beats (the clip's length too).
     pub(crate) length: f64,
     pub(crate) lane: LaneData,
+    /// How the clip plays its audio: gain, warp, the tempo's source. The starting state for notes.
+    pub(crate) audio: ClipAudio,
     /// Whether the clip loops in a slot.
     pub(crate) loops: bool,
 }
@@ -598,6 +614,7 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
             name: EMPTY_CLIP_NAME.into(),
             length,
             lane: LaneData::Notes(Default::default()),
+            audio: ClipAudio::default(),
             loops: true,
         },
         TrackKind::Audio => Source {
@@ -612,13 +629,9 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
                 sample_rate: None,
                 channels: None,
                 duration_seconds: None,
-                warped: false,
-                stretch: StretchMode::default(),
-                warp_markers: Default::default(),
-                gain: 1.0,
-                transpose: 0.0,
                 stream: None,
             }),
+            audio: ClipAudio::default(),
             loops: true,
         },
     };
@@ -699,6 +712,8 @@ pub(crate) fn place_clip(
         launch: Default::default(),
         color: None,
         ara: false,
+        audio: source.audio,
+        swing: Default::default(),
         extensions: Default::default(),
     };
     match row {
@@ -817,18 +832,21 @@ fn read_sources(
                 sample_rate: Some(data.sample_rate),
                 channels: Some(data.channels),
                 duration_seconds: Some(duration),
+                stream: None,
+            };
+            let audio = ClipAudio {
                 warped,
                 stretch: if warped { stretch } else { StretchMode::default() },
                 warp_markers: markers,
-                gain: 1.0,
-                transpose: 0.0,
-                stream: None,
+                tempo_source: tempo_of_file.map(|t| clip_tempo_source(t.source)),
+                ..ClipAudio::default()
             };
             Ok(vec![Source {
                 kind: TrackKind::Audio,
                 name,
                 length: beats,
                 lane: LaneData::Audio(region),
+                audio,
                 // A slot loops a sample over the whole file whether or not its tempo is known
                 // (`docs/spec/browser.md` › Warping); `clip.setLoop` turns it off.
                 loops: true,
@@ -855,6 +873,7 @@ fn read_sources(
                         name: clip_name,
                         length,
                         lane: LaneData::Notes(notes.into()),
+                        audio: ClipAudio::default(),
                         loops: true,
                     }
                 })
@@ -874,9 +893,38 @@ pub fn file_tempo(path: &Path, data: &AudioData) -> Option<Tempo> {
     from_file.or_else(|| suhina_media::tempo::detect(data).map(|bpm| Tempo { bpm, source: TempoSource::Detected }))
 }
 
+/// Where a tempo read from a file came from, as a clip keeps it.
+pub(crate) fn clip_tempo_source(source: TempoSource) -> suhina_model::TempoSource {
+    match source {
+        TempoSource::Metadata => suhina_model::TempoSource::Metadata,
+        TempoSource::Name => suhina_model::TempoSource::Name,
+        TempoSource::Detected => suhina_model::TempoSource::Detected,
+    }
+}
+
 /// `path` made absolute against the working folder, without touching the disk.
 pub(crate) fn absolute(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Writes `bytes` to `staging` and renames the completed file onto `target` — a write that
+/// fails (or an app that ends mid-write) leaves no partial file at the target, and the rename
+/// publishes the completed bytes only. The rename replaces a file the target already carries —
+/// the caller that must not replace checks `target.exists()` first. Staging is removed
+/// whatever the outcome. The pack unpack's publish and `device.savePreset`'s write are the
+/// same shape ([ADR 0036] › 5, the review).
+pub fn stage_and_rename(staging: &Path, target: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
+    if let Err(e) = std::fs::write(staging, bytes) {
+        let _ = std::fs::remove_file(staging);
+        return Err(e);
+    }
+    match std::fs::rename(staging, target) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(staging);
+            Err(e)
+        }
+    }
 }
 
 /// Whether `track` is a group track.
@@ -924,7 +972,8 @@ fn place_stems(
     let key = absolute.display().to_string();
     // One tempo for all, from the master: the stems stay locked together.
     let tempo = session.project.transport.tempo_bpm;
-    let file_bpm = file_tempo(&absolute, master).map(|t| t.bpm).filter(|b| b.is_finite() && *b > 0.0);
+    let file_tempo = file_tempo(&absolute, master).filter(|t| t.bpm.is_finite() && t.bpm > 0.0);
+    let file_bpm = file_tempo.map(|t| t.bpm);
     let mut sources = Vec::with_capacity(streams.len());
     for (n, data) in streams.iter().enumerate() {
         let duration = data.frames() as f64 / f64::from(data.sample_rate.max(1));
@@ -949,12 +998,14 @@ fn place_stems(
             sample_rate: Some(data.sample_rate),
             channels: Some(data.channels),
             duration_seconds: Some(duration),
+            stream: Some(u16::try_from(n).map_err(|_| "too many tracks")?),
+        };
+        let audio = ClipAudio {
             warped,
             stretch: if warped { stretch } else { StretchMode::default() },
             warp_markers: markers,
-            gain: 1.0,
-            transpose: 0.0,
-            stream: Some(u16::try_from(n).map_err(|_| "too many tracks")?),
+            tempo_source: file_tempo.map(|t| clip_tempo_source(t.source)),
+            ..ClipAudio::default()
         };
         let clip_name = match stem {
             Some(s) => format!("{name} – {}", s.name),
@@ -970,6 +1021,7 @@ fn place_stems(
                 name: clip_name,
                 length: beats,
                 lane: LaneData::Audio(region),
+                audio,
                 loops: true,
             },
         ));

@@ -11,16 +11,18 @@ fn ramp() -> Arc<AudioData> {
     Arc::new(AudioData { sample_rate: 8000, channels: 1, samples: (0..8000).map(|i| i as f32 / 8000.0).collect() })
 }
 
-fn region(warped: bool, markers: &[(f64, f64)], transpose: f64) -> AudioRegion {
-    AudioRegion {
-        sample_rate: Some(8000),
-        channels: Some(1),
-        duration_seconds: Some(1.0),
+fn region(warped: bool, markers: &[(f64, f64)], transpose: f64) -> ClipAudio {
+    ClipAudio {
         warped,
         warp_markers: markers.iter().map(|&(time, audio_time)| WarpMarker { time, audio_time }).collect(),
         transpose,
-        ..AudioRegion::new("ramp.wav")
+        ..ClipAudio::default()
     }
+}
+
+/// `clip` playing with `audio`.
+fn with(clip: &Clip, audio: ClipAudio) -> Clip {
+    Clip { audio, ..clip.clone() }
 }
 
 fn clip(length: f64, offset: f64, loop_range: Option<(f64, f64)>) -> Clip {
@@ -36,10 +38,9 @@ fn file_seconds_at(event: &AudioEvent, beat: f64) -> f32 {
     event.sample((beat * event.frames_per_beat) as u64).0
 }
 
-fn event(clip: &Clip, region: &AudioRegion) -> AudioEvent {
+fn event(clip: &Clip, audio: &ClipAudio) -> AudioEvent {
     AudioEvent::new(
-        clip,
-        region,
+        &with(clip, audio.clone()),
         ramp(),
         Timing {
             clock: crate::tempo::TempoClock::Constant { bpm: 120.0, per_beat: 60.0 / 120.0 * f64::from(SR) },
@@ -61,8 +62,8 @@ fn a_warped_clip_ends_where_the_map_puts_its_last_beat() {
     let map = Arc::new(transport.tempo_map(f64::from(SR)));
     let clock = crate::tempo::TempoClock::of(&map);
     let c = Clip { start: 2.0, ..clip(4.0, 0.0, None) };
-    let e =
-        AudioEvent::new(&c, &region(true, &[], 0.0), ramp(), Timing { clock, sample_rate: SR }, (1.0, 1.0)).unwrap();
+    let e = AudioEvent::new(&with(&c, region(true, &[], 0.0)), ramp(), Timing { clock, sample_rate: SR }, (1.0, 1.0))
+        .unwrap();
     assert_eq!(e.end, 192_000);
 }
 
@@ -92,13 +93,16 @@ fn a_zero_tempo_or_an_unplayable_sample_rate_is_no_event() {
         sample_rate: SR,
     };
     let c = clip(2.0, 0.0, None);
-    assert!(AudioEvent::new(&c, &region(false, &[], 0.0), ramp(), timing(0.0), (1.0, 1.0)).is_none());
-    assert!(AudioEvent::new(&c, &region(false, &[], 0.0), ramp(), timing(-120.0), (1.0, 1.0)).is_none());
+    assert!(AudioEvent::new(&with(&c, region(false, &[], 0.0)), ramp(), timing(0.0), (1.0, 1.0)).is_none());
+    assert!(AudioEvent::new(&with(&c, region(false, &[], 0.0)), ramp(), timing(-120.0), (1.0, 1.0)).is_none());
     for rate in [0, 999, 384_001, 1_000_000] {
         let data = Arc::new(AudioData { sample_rate: rate, ..(*ramp()).clone() });
-        assert!(AudioEvent::new(&c, &region(false, &[], 0.0), data, timing(120.0), (1.0, 1.0)).is_none(), "{rate}");
+        assert!(
+            AudioEvent::new(&with(&c, region(false, &[], 0.0)), data, timing(120.0), (1.0, 1.0)).is_none(),
+            "{rate}"
+        );
     }
-    assert!(AudioEvent::new(&c, &region(false, &[], 0.0), ramp(), timing(120.0), (1.0, 1.0)).is_some());
+    assert!(AudioEvent::new(&with(&c, region(false, &[], 0.0)), ramp(), timing(120.0), (1.0, 1.0)).is_some());
 }
 
 /// Hostile warp markers and offsets put the read position far past the file (or at
@@ -111,10 +115,9 @@ fn a_huge_position_in_a_stereo_file_is_silence() {
         assert_eq!(stereo.frame_at(position), (0.0, 0.0), "{position}");
     }
     assert_eq!(stereo.frame_at(999.0), (0.5, 0.5));
-    let warped = AudioRegion { channels: Some(2), ..region(true, &[(0.0, 0.0), (1.0, 1e300)], 0.0) };
+    let warped = region(true, &[(0.0, 0.0), (1.0, 1e300)], 0.0);
     let e = AudioEvent::new(
-        &clip(2.0, 0.0, None),
-        &warped,
+        &with(&clip(2.0, 0.0, None), warped),
         stereo,
         Timing {
             clock: crate::tempo::TempoClock::Constant { bpm: 120.0, per_beat: 60.0 / 120.0 * f64::from(SR) },
@@ -216,8 +219,7 @@ fn outside_the_file_is_silent_and_bad_clips_are_rejected() {
     let fpb = 24_000.0;
     assert!(
         AudioEvent::new(
-            &clip(0.0, 0.0, None),
-            &region(false, &[], 0.0),
+            &with(&clip(0.0, 0.0, None), region(false, &[], 0.0)),
             ramp(),
             Timing { clock: crate::tempo::TempoClock::Constant { bpm: 120.0, per_beat: fpb }, sample_rate: SR },
             (1.0, 1.0)
@@ -226,8 +228,7 @@ fn outside_the_file_is_silent_and_bad_clips_are_rejected() {
     );
     assert!(
         AudioEvent::new(
-            &clip(f64::NAN, 0.0, None),
-            &region(false, &[], 0.0),
+            &with(&clip(f64::NAN, 0.0, None), region(false, &[], 0.0)),
             ramp(),
             Timing { clock: crate::tempo::TempoClock::Constant { bpm: 120.0, per_beat: fpb }, sample_rate: SR },
             (1.0, 1.0)
@@ -237,12 +238,28 @@ fn outside_the_file_is_silent_and_bad_clips_are_rejected() {
     let empty = Arc::new(AudioData { sample_rate: 1000, channels: 2, samples: Vec::new() });
     assert!(
         AudioEvent::new(
-            &clip(1.0, 0.0, None),
-            &region(false, &[], 0.0),
+            &with(&clip(1.0, 0.0, None), region(false, &[], 0.0)),
             empty,
             Timing { clock: crate::tempo::TempoClock::Constant { bpm: 120.0, per_beat: fpb }, sample_rate: SR },
             (1.0, 1.0)
         )
         .is_none()
     );
+}
+
+/// An unwarped clip carried on through a tempo edit plays `shift` seconds from its beats; its
+/// envelope is read where the audio is, not where the beats are.
+#[test]
+fn the_envelope_follows_an_unwarped_clip_carried_on_through_a_tempo_edit() {
+    let audio = ClipAudio {
+        gain_envelope: vec![GainPoint::new(0.0, 0.0), GainPoint::new(2.0, -20.0)],
+        ..region(false, &[], 0.0)
+    };
+    let mut e = event(&clip(2.0, 0.0, None), &audio);
+    let at = e.frames_per_beat as u64;
+    // Beat 1 of the clip, but the file carried on to 0.75 s: content beat 1.5, -15 dB.
+    e.continue_from(at, 0.75);
+    let (left, _) = e.sample(at);
+    let want = 0.75 * 10f32.powf(-15.0 / 20.0);
+    assert!((left - want).abs() < 1e-3, "{left} {want}");
 }

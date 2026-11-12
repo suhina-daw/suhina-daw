@@ -13,7 +13,7 @@
 //! relative to the project file; [`rebase_audio`] moves those paths when a project is saved
 //! somewhere else.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -22,15 +22,17 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
-    Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, Channel, ChannelId,
-    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, ControllerMapping, Device,
-    DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction,
-    FollowKind, InputChannels, LaneData, LaneId, LaunchMode, LaunchQuantization, LaunchSettings, Launcher,
-    LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_MAPPINGS, MAX_TEMPO_CHANGES,
-    MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping, MappedDevice, MappingSource, MappingTarget, Marker, MidiInput,
-    MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane,
-    TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
+    Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, CLIP_GAIN_MAX_DB,
+    Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ClipSwing, ContentId, ContentKinds,
+    ContentLane, ControllerMapping, Device, DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions,
+    FadeCurve, FadeShape, FollowAction, FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData, LaneId,
+    LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT,
+    MAX_GAIN_POINTS, MAX_INPUT_CHANNEL, MAX_MAPPINGS, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro,
+    MacroMapping, MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb,
+    SWING_RANGE, Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TempoSource,
+    TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, max_clip_gain, valid_bpm,
 };
+use suhina_model::{LaneGroup, LaneLayout, LaneRef, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
 
 /// The file extension, without the dot.
 pub const EXTENSION: &str = suhina_model::PROJECT_EXTENSION;
@@ -40,7 +42,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 9;
+pub const VERSION: u64 = 12;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -212,6 +214,10 @@ fn project_value(p: &Project) -> Value {
         "tempo_bpm": number(p.transport.tempo_bpm),
         "time_signature": [p.transport.time_signature.numerator, p.transport.time_signature.denominator],
     });
+    // Left out when the project does not swing (#1221, version 11).
+    if p.transport.swing != 0.0 {
+        transport["swing"] = json!(number(p.transport.swing));
+    }
     // Left out when there is no loop region, so such a project is written as before.
     if let Some(range) = p.transport.loop_range {
         transport["loop"] =
@@ -291,6 +297,10 @@ fn project_value(p: &Project) -> Value {
     // written as before. The launcher's `mappings` of earlier versions is never written again.
     if !p.controller_mappings.is_empty() {
         out.insert("controller_mappings".into(), p.controller_mappings.iter().map(mapping_value).collect());
+    }
+    // From version 11 (#1322); left out when no channel's lanes were laid out.
+    if !p.lane_layouts.is_empty() {
+        out.insert("lane_layouts".into(), p.lane_layouts.iter().map(lane_layout_value).collect());
     }
     // Left out when there is none, so a project without one is written as before.
     if let Some(scale) = p.default_scale {
@@ -569,13 +579,38 @@ fn audio_value(a: &AudioRegion) -> Value {
         "sample_rate": a.sample_rate,
         "channels": a.channels,
         "duration_seconds": a.duration_seconds.map(number),
+        "stream": a.stream,
+    })
+}
+
+/// A clip's audio state (version 10 on): gain, envelope, transpose, warp and the tempo's source.
+fn clip_audio_value(a: &ClipAudio) -> Value {
+    let mut out = json!({
+        "gain": number(a.gain),
+        "transpose": number(a.transpose),
         "warped": a.warped,
         "stretch": stretch_name(a.stretch),
         "warp_markers": a.warp_markers.iter().map(|m| json!({ "time": number(m.time), "audio_time": number(m.audio_time) })).collect::<Vec<_>>(),
-        "gain": number(a.gain),
-        "transpose": number(a.transpose),
-        "stream": a.stream,
-    })
+    });
+    if let Some(map) = out.as_object_mut() {
+        if !a.gain_envelope.is_empty() {
+            let points = a.gain_envelope.iter().map(|p| {
+                let mut point = json!({ "beat": number(p.beat), "db": number(p.db) });
+                // A bent segment's curve, as an automation point's.
+                if !p.curve.is_straight()
+                    && let Some(map) = point.as_object_mut()
+                {
+                    map.insert("curve".into(), json!(p.curve.to_array().map(number)));
+                }
+                point
+            });
+            map.insert("gain_envelope".into(), Value::Array(points.collect()));
+        }
+        if let Some(source) = a.tempo_source {
+            map.insert("tempo_source".into(), json!(source.name()));
+        }
+    }
+    out
 }
 
 /// One note as the file writes it. `muted` is written only on a muted note, so a project without
@@ -629,6 +664,15 @@ fn clip_value(c: &Clip) -> Value {
         // Only a clip edited by its channel's ARA plug-in says so (#990).
         if c.ara {
             map.insert("ara".into(), json!(true));
+        }
+        // Only a clip whose audio state is not the starting one carries it: a clip of notes
+        // never does.
+        if c.audio != ClipAudio::default() {
+            map.insert("audio".into(), clip_audio_value(&c.audio));
+        }
+        // Only a clip whose swing is not the starting one carries it (#1221, version 11).
+        if !c.swing.is_default() {
+            map.insert("swing".into(), json!({ "amount": number(c.swing.amount), "own": c.swing.own }));
         }
         with_extensions(map, &c.extensions);
     }
@@ -899,6 +943,10 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                     (Some(range), flag(l, "enabled", false, at)?)
                 }
             };
+            let swing = float_or(t, "swing", 0.0, "project.transport")?;
+            if !SWING_RANGE.contains(&swing) {
+                return Err(format!("project.transport.swing: {swing} is not 0 to 1").into());
+            }
             Transport {
                 tempo_bpm: tempo,
                 time_signature: signature,
@@ -906,6 +954,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                 loop_enabled,
                 tempo_changes: tempo_changes(t)?.into(),
                 time_signature_changes: time_signature_changes(t)?,
+                swing,
             }
         }
     };
@@ -923,7 +972,15 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
         .iter()
         .enumerate()
         .map(|(i, v)| read_content(v, &format!("project.contents[{i}]")))
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<Vec<_>, _>>()?;
+    // Before version 10 an audio region held the gain, transpose and warp its clips play with; each
+    // clip without an audio state of its own takes its content's (ADR 0001 › Amendment: per-clip
+    // audio).
+    let legacy = Legacy {
+        states: contents.iter().filter_map(|(c, a)| Some((c.id, a.clone()?))).collect(),
+        markers_left: std::cell::Cell::new(MAX_LEGACY_MARKERS),
+    };
+    let contents: Vec<ClipContent> = contents.into_iter().map(|(c, _)| c).collect();
     let arrangement = match p.get("arrangement") {
         None | Some(Value::Null) => Arrangement::default(),
         Some(a) => {
@@ -935,7 +992,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                 let clips = list(lane, "clips", &at)?
                     .iter()
                     .enumerate()
-                    .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]")))
+                    .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]"), &legacy))
                     .collect::<Result<_, _>>()?;
                 lanes.push(ArrangementLane {
                     id: LaneId(read_id(lane, &at)?),
@@ -961,7 +1018,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                 let clips = list(take, "clips", &at)?
                     .iter()
                     .enumerate()
-                    .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]")))
+                    .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]"), &legacy))
                     .collect::<Result<Vec<_>, _>>()?;
                 // A take's clips have no ids: commands name a take by its track and number.
                 let clips = clips.into_iter().map(|c| Clip { id: ClipId::NONE, ..c }).collect();
@@ -1005,7 +1062,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
                     let s = object(s, &at)?;
                     let clip = match s.get("clip") {
                         None | Some(Value::Null) => None,
-                        Some(clip) => Some(read_clip(clip, &format!("{at}.clip"))?),
+                        Some(clip) => Some(read_clip(clip, &format!("{at}.clip"), &legacy)?),
                     };
                     slots.push(Slot { clip, has_stop: flag(s, "has_stop", false, &at)? });
                 }
@@ -1041,6 +1098,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
         extensions: extensions(p, "project")?,
         default_scale: read_scale(p, "default_scale", "project")?,
         controller_mappings,
+        lane_layouts: read_lane_layouts(p)?,
         next_id: optional_whole(p, "next_id", "project")?.unwrap_or(0),
     };
     // A file written before ids, or an object added by hand without one: the objects without an
@@ -1049,6 +1107,91 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
     // got new ids as their lists were built: the file holds none (#763 › 1).
     project.assign_ids().map_err(|e| ProjectFileError(format!("project: {e}")))?;
     Ok(project)
+}
+
+/// A lane of a layout: `{device?, param}`, the device by its id.
+fn lane_ref_value(lane: &LaneRef) -> Value {
+    match lane.device {
+        Some(device) => json!({ "device": device.0, "param": lane.param }),
+        None => json!({ "param": lane.param }),
+    }
+}
+
+/// A channel's lane layout (#1322): `{channel, lanes, groups}`, a group's `folded` and `device`
+/// written only when set.
+fn lane_layout_value(layout: &LaneLayout) -> Value {
+    let groups: Vec<Value> = layout
+        .groups
+        .iter()
+        .map(|g| {
+            let mut group = json!({ "name": g.name, "lanes": g.lanes.iter().map(lane_ref_value).collect::<Vec<_>>() });
+            if let Some(map) = group.as_object_mut() {
+                if g.folded {
+                    map.insert("folded".into(), json!(true));
+                }
+                if let Some(device) = g.device {
+                    map.insert("device".into(), json!(device.0));
+                }
+            }
+            group
+        })
+        .collect();
+    json!({
+        "channel": layout.channel.0,
+        "lanes": layout.lanes.iter().map(lane_ref_value).collect::<Vec<_>>(),
+        "groups": groups,
+    })
+}
+
+fn read_lane_ref(value: &Value, at: &str) -> Result<LaneRef, ProjectFileError> {
+    let o = object(value, at)?;
+    Ok(LaneRef { device: optional_whole(o, "device", at)?.map(DeviceId), param: text(o, "param", at)? })
+}
+
+/// The project's `lane_layouts` (version 11 on): each whole, within its limits.
+fn read_lane_layouts(p: &Obj) -> Result<Vec<LaneLayout>, ProjectFileError> {
+    let listed = list(p, "lane_layouts", "project")?;
+    if listed.len() > 65_536 {
+        return Err("project.lane_layouts: too many layouts".into());
+    }
+    let mut layouts = Vec::new();
+    for (i, v) in listed.iter().enumerate() {
+        let at = format!("project.lane_layouts[{i}]");
+        let o = object(v, &at)?;
+        let lanes = list(o, "lanes", &at)?;
+        let groups = list(o, "groups", &at)?;
+        if lanes.len() > MAX_LAYOUT_LANES || groups.len() > MAX_LAYOUT_GROUPS {
+            return Err(format!("{at}: more than {MAX_LAYOUT_LANES} lanes or {MAX_LAYOUT_GROUPS} groups").into());
+        }
+        let lanes = lanes
+            .iter()
+            .enumerate()
+            .map(|(j, v)| read_lane_ref(v, &format!("{at}.lanes[{j}]")))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut read_groups = Vec::new();
+        for (j, g) in groups.iter().enumerate() {
+            let at = format!("{at}.groups[{j}]");
+            let go = object(g, &at)?;
+            let members = list(go, "lanes", &at)?;
+            if members.len() > MAX_LAYOUT_LANES {
+                return Err(format!("{at}.lanes: more than {MAX_LAYOUT_LANES} lanes").into());
+            }
+            read_groups.push(LaneGroup {
+                name: text(go, "name", &at)?,
+                lanes: members
+                    .iter()
+                    .enumerate()
+                    .map(|(k, v)| read_lane_ref(v, &format!("{at}.lanes[{k}]")))
+                    .collect::<Result<Vec<_>, _>>()?,
+                folded: flag(go, "folded", false, &at)?,
+                device: optional_whole(go, "device", &at)?.map(DeviceId),
+            });
+        }
+        let layout = LaneLayout { channel: ChannelId(whole(o, "channel", &at)?), lanes, groups: read_groups };
+        layout.check().map_err(|e| ProjectFileError(format!("{at}: {e}")))?;
+        layouts.push(layout);
+    }
+    Ok(layouts)
 }
 
 fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
@@ -1357,9 +1500,11 @@ fn read_mapped_device(group: &DeviceGroup, x: &Obj, at: &str) -> Result<MappedDe
     }
 }
 
-fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError> {
+/// A content, and for one with audio written before version 10, the audio state its region held.
+fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudio>), ProjectFileError> {
     let c = object(value, at)?;
     let mut lanes = Vec::new();
+    let mut legacy = None;
     for (i, v) in list(c, "lanes", at)?.iter().enumerate() {
         let at = format!("{at}.lanes[{i}]");
         let lane = object(v, &at)?;
@@ -1388,24 +1533,67 @@ fn read_content(value: &Value, at: &str) -> Result<ClipContent, ProjectFileError
                 }
                 LaneData::Notes(notes.into())
             }
-            (None, Some(audio)) => LaneData::Audio(read_audio(audio, &format!("{at}.audio"))?),
+            (None, Some(audio)) => {
+                let (region, state) = read_audio(audio, &format!("{at}.audio"))?;
+                // The clips of a content take one state: a content whose audio lanes played with
+                // different ones cannot be read into it unchanged, so it is refused, not altered.
+                match (&legacy, state) {
+                    (None, state) => legacy = state,
+                    (Some(first), Some(state)) if *first != state => {
+                        return Err(format!(
+                            "{at}.audio: the content's audio lanes have different gain, transpose or warp; \
+                             a clip plays one, so this file of an older version cannot be read"
+                        )
+                        .into());
+                    }
+                    _ => {}
+                }
+                LaneData::Audio(region)
+            }
             _ => return Err(format!("{at}: a lane has either notes or audio").into()),
         };
         lanes.push(ContentLane { target, data });
     }
-    Ok(ClipContent {
+    let content = ClipContent {
         id: ContentId(whole(c, "id", at)?),
         name: text(c, "name", at)?,
         length: float(c, "length", at)?,
         lanes: lanes.into(),
         extensions: extensions(c, at)?,
         scale: read_scale(c, "scale", at)?,
-    })
+    };
+    Ok((content, legacy))
 }
 
-fn read_audio(value: &Value, at: &str) -> Result<AudioRegion, ProjectFileError> {
+/// An audio region, and the audio state it held when the file is older than version 10 (it has a
+/// `warped`, `stretch`, `warp_markers`, `gain` or `transpose`).
+fn read_audio(value: &Value, at: &str) -> Result<(AudioRegion, Option<ClipAudio>), ProjectFileError> {
     let a = object(value, at)?;
-    let stretch = match a.get("stretch").and_then(Value::as_str) {
+    let old = ["warped", "stretch", "warp_markers", "gain", "transpose"].iter().any(|k| a.contains_key(*k));
+    let state = if old { Some(read_clip_audio(a, at)?) } else { None };
+    let absolute_file = match a.get("absolute_file") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(required_text(a, "absolute_file", at)?),
+    };
+    let region = AudioRegion {
+        file: required_text(a, "file", at)?,
+        absolute_file,
+        sample_rate: optional_whole(a, "sample_rate", at)?,
+        channels: optional_whole(a, "channels", at)?,
+        duration_seconds: optional_float(a, "duration_seconds", at)?,
+        stream: optional_whole(a, "stream", at)?,
+    };
+    Ok((region, state))
+}
+
+/// A clip's audio state: the `audio` of a clip, or the fields of a region before version 10.
+fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, ProjectFileError> {
+    let stretch = match a.get("stretch") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(name)) => Some(name.as_str()),
+        Some(_) => return Err(format!("{at}.stretch: expected a stretch mode's name").into()),
+    };
+    let stretch = match stretch {
         Some("repitch") => StretchMode::Repitch,
         Some("rhythmic") => StretchMode::Rhythmic,
         Some("tonal") => StretchMode::Tonal,
@@ -1420,27 +1608,81 @@ fn read_audio(value: &Value, at: &str) -> Result<AudioRegion, ProjectFileError> 
         let m = object(v, &at)?;
         warp_markers.push(WarpMarker { time: float(m, "time", &at)?, audio_time: float(m, "audio_time", &at)? });
     }
-    let absolute_file = match a.get("absolute_file") {
+    let mut gain_envelope = Vec::new();
+    for (i, v) in list(a, "gain_envelope", at)?.iter().enumerate() {
+        let at = format!("{at}.gain_envelope[{i}]");
+        let p = object(v, &at)?;
+        let db = float(p, "db", &at)?;
+        if !GAIN_POINT_RANGE.contains(&db) {
+            let (low, high) = (GAIN_POINT_RANGE.start(), GAIN_POINT_RANGE.end());
+            return Err(format!("{at}.db: {db} is outside {low} to +{high} dB").into());
+        }
+        gain_envelope.push(GainPoint { beat: float(p, "beat", &at)?, db, curve: read_curve(p, &at)? });
+    }
+    if gain_envelope.len() > MAX_GAIN_POINTS {
+        return Err(format!("{at}.gain_envelope: more than {MAX_GAIN_POINTS} points").into());
+    }
+    let tempo_source = match a.get("tempo_source") {
         None | Some(Value::Null) => None,
-        Some(_) => Some(required_text(a, "absolute_file", at)?),
+        Some(Value::String(name)) => Some(
+            TempoSource::from_name(name)
+                .ok_or_else(|| ProjectFileError(format!("{at}.tempo_source: not a tempo source")))?,
+        ),
+        Some(_) => return Err(format!("{at}.tempo_source: expected a name").into()),
     };
-    Ok(AudioRegion {
-        file: required_text(a, "file", at)?,
-        absolute_file,
-        sample_rate: optional_whole(a, "sample_rate", at)?,
-        channels: optional_whole(a, "channels", at)?,
-        duration_seconds: optional_float(a, "duration_seconds", at)?,
+    let gain = float_or(a, "gain", 1.0, at)?;
+    if !(gain >= 0.0 && gain <= max_clip_gain() * (1.0 + 1e-9)) {
+        return Err(format!("{at}.gain: {gain} is outside 0 to {} (+{CLIP_GAIN_MAX_DB} dB)", max_clip_gain()).into());
+    }
+    Ok(ClipAudio {
+        gain,
+        gain_envelope,
+        transpose: float_or(a, "transpose", 0.0, at)?,
         warped: flag(a, "warped", false, at)?,
         stretch,
         warp_markers,
-        gain: float_or(a, "gain", 1.0, at)?,
-        transpose: float_or(a, "transpose", 0.0, at)?,
-        stream: optional_whole(a, "stream", at)?,
+        tempo_source,
     })
 }
 
-fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
+/// Most warp markers the clips of a file before version 10 are given in all, copied from their
+/// contents' regions: a small file of many clips on one region with many markers would otherwise
+/// copy them for every clip.
+const MAX_LEGACY_MARKERS: usize = 1_000_000;
+
+/// The audio states the regions of a file before version 10 held, by content, and how many more
+/// warp markers the clips that take them may copy.
+struct Legacy {
+    states: HashMap<ContentId, ClipAudio>,
+    markers_left: std::cell::Cell<usize>,
+}
+
+impl Legacy {
+    /// The state of `content`'s region for one more clip, within the marker budget.
+    fn for_clip(&self, content: ContentId, at: &str) -> Result<ClipAudio, ProjectFileError> {
+        let Some(state) = self.states.get(&content) else { return Ok(ClipAudio::default()) };
+        let left = self.markers_left.get().checked_sub(state.warp_markers.len()).ok_or_else(|| {
+            ProjectFileError(format!(
+                "{at}: more than {MAX_LEGACY_MARKERS} warp markers in all for the clips of this file"
+            ))
+        })?;
+        self.markers_left.set(left);
+        Ok(state.clone())
+    }
+}
+
+/// A clip; one without an `audio` state of its own (a file older than version 10) takes the one its
+/// content's region held, from `legacy`.
+fn read_clip(value: &Value, at: &str, legacy: &Legacy) -> Result<Clip, ProjectFileError> {
     let c = object(value, at)?;
+    let content = ContentId(whole(c, "content", at)?);
+    let audio = match c.get("audio") {
+        None | Some(Value::Null) => legacy.for_clip(content, at)?,
+        Some(v) => {
+            let at = format!("{at}.audio");
+            read_clip_audio(object(v, &at)?, &at)?
+        }
+    };
     let loop_range = match c.get("loop") {
         None | Some(Value::Null) => None,
         Some(Value::Array(pair)) if pair.len() == 2 => {
@@ -1454,7 +1696,7 @@ fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
     };
     Ok(Clip {
         id: ClipId(read_id(c, at)?),
-        content: ContentId(whole(c, "content", at)?),
+        content,
         start: float(c, "start", at)?,
         length: float(c, "length", at)?,
         offset: float_or(c, "offset", 0.0, at)?,
@@ -1468,8 +1710,27 @@ fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
         launch: read_launch(c, at)?,
         color: read_color(c.get("color"), at)?,
         ara: flag(c, "ara", false, at)?,
+        audio,
+        swing: read_swing(c, at)?,
         extensions: extensions(c, at)?,
     })
+}
+
+/// A clip's `swing` (version 11 on): `{ amount, own }`, the amount 0 to 1; missing or `null` is the
+/// starting one, following the project's swing.
+fn read_swing(c: &Obj, at: &str) -> Result<ClipSwing, ProjectFileError> {
+    match c.get("swing") {
+        None | Some(Value::Null) => Ok(ClipSwing::default()),
+        Some(v) => {
+            let at = format!("{at}.swing");
+            let s = object(v, &at)?;
+            let amount = float_or(s, "amount", 0.0, &at)?;
+            if !SWING_RANGE.contains(&amount) {
+                return Err(format!("{at}.amount: {amount} is not 0 to 1").into());
+            }
+            Ok(ClipSwing { amount, own: flag(s, "own", false, &at)? })
+        }
+    }
 }
 
 /// A `color` field, `#RRGGBB`; missing or null is none.

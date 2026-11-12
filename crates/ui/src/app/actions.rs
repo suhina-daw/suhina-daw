@@ -24,6 +24,14 @@ impl App {
             "file.new" => self.open_project_dialog(false),
             // With clips selected in the Arrangement, the loop is exactly their span; with none,
             // Ctrl+L turns looping on or off as before.
+            // A range painted on automation lanes, over one lane or several, loops its span (#1322).
+            "transport.setLoopEnabled"
+                if self.shown == View::Arrangement && self.arrangement.automation.range.is_some() =>
+            {
+                if let Some(range) = &self.arrangement.automation.range {
+                    actions.push(self.loop_or_unloop(range.start, range.end));
+                }
+            }
             // A time selection loops exactly its span; a click on a clip ends it, so then the
             // clips' span is looped (below).
             "transport.setLoopEnabled"
@@ -117,6 +125,19 @@ impl App {
             "view.editor" => {}
             "view.devices" => self.toggle_devices(),
             "view.araEditor" => self.open_ara_editor(),
+            "view.gainEnvelope" => match self.shown_clip() {
+                Some(ClipRef::Arrangement(track, clip))
+                    if self.piano_clip(Some(ClipRef::Arrangement(track, clip))).is_none() =>
+                {
+                    self.arrangement.toggle_envelope = Some(clip);
+                }
+                // Editing every clip's envelope is a mode: Alt+E turns it on or off without a clip
+                // picked (the clip given is not used then).
+                _ if self.settings.view.envelope_all => {
+                    self.arrangement.toggle_envelope = Some(suhina_engine::model::ClipId(0));
+                }
+                _ => self.status = Status::Hint("Select an audio clip in the Arrangement first".into()),
+            },
             "view.plugin" => self.toggle_plugin_editor(),
             "view.mappingMode" => self.toggle_mapping_mode(),
             "view.quickAdd" if self.quick_add_open() => {}
@@ -188,6 +209,15 @@ impl App {
             {
                 actions.extend(self.piano_key(action))
             }
+            // Notes copied last paste into the clip the piano roll shows, even when a click on
+            // that clip in the view took the other keys: copy notes, pick another clip, paste.
+            "selection.paste" if self.piano_takes_paste() => {
+                // The paste gives the piano roll the keys; it acts only with them.
+                self.piano_roll.focused = true;
+                let paste = self.piano_key(action);
+                self.piano_roll.focused = paste.is_some();
+                actions.extend(paste)
+            }
             "selection.mute"
             | "selection.rename"
             | "selection.split"
@@ -196,6 +226,15 @@ impl App {
             | "selection.takeDown"
                 if self.piano_has_keyboard() => {}
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
+            // Lane headers or group headings picked: Delete takes them out of the track's layout,
+            // one undo step (#1322).
+            "selection.delete" if self.shown == View::Arrangement && self.arrangement.automation.has_picks() => {
+                if let Some((_, _, timeline)) = self.timeline.as_ref()
+                    && let Some(action) = self.arrangement.automation.delete_picked(&timeline.automation)
+                {
+                    actions.push(action);
+                }
+            }
             // A range painted on an automation lane: copy, cut, paste (from its start), duplicate
             // (right after it) and delete act on it (#916).
             "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate" | "selection.delete"
@@ -243,6 +282,17 @@ impl App {
                 // its group).
                 let after = picks.iter().filter_map(|(_, at)| at.0.first().copied()).max().unwrap_or(0) + 1;
                 actions.push(Action::new("device.paste", json!({ "track": track.0, "position": after })));
+            }
+            // Devices copied last, none picked: Ctrl+V puts them at the end of the selected
+            // track's chain, never a copy of a track or a clip (#871). A clip or slot clicked
+            // last picks its track.
+            "selection.paste"
+                if self.copied_last == CopiedLast::Devices
+                    && self.session().is_some_and(|s| s.copied_devices() > 0)
+                    && self.paste_track().is_some() =>
+            {
+                let Some(track) = self.paste_track() else { return };
+                actions.push(Action::new("device.paste", json!({ "track": track.0 })));
             }
             // Ctrl+D copies the picked devices right after the last of them (#685).
             "selection.duplicate" if self.device_focus && self.selected_device.is_some() => {
@@ -337,13 +387,31 @@ impl App {
             {
                 let Some(span) = self.arrangement.time_selection().cloned() else { return };
                 let tracks: Vec<u32> = span.tracks.iter().map(|t| t.0).collect();
-                let params = json!({ "tracks": tracks, "start": span.start, "end": span.end });
+                let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
+                // In one row of a stack: that row's clips only, the other rows left be (#701).
+                let in_row = timeline.and_then(|t| span.row_clips(t));
+                let mut params = json!({ "tracks": tracks, "start": span.start, "end": span.end });
+                if let Some(clips) = &in_row {
+                    params["clips"] = json!(clips);
+                }
                 match action {
                     "selection.delete" => actions.push(Action::new("range.delete", params)),
                     "selection.cut" => actions.push(Action::new("range.cut", params)),
                     "selection.copy" => actions.push(Action::new("range.copy", params)),
                     "selection.split" => actions.push(Action::new("range.split", params)),
                     "selection.duplicate" => {
+                        // The copy replaces what it lands on: in one row of a stack, that row's
+                        // clips there, which `clips` names too; and it stacks when the stacking
+                        // setting covers every clip it copies, as a copied clip does.
+                        let length = span.end - span.start;
+                        if let Some(clips) =
+                            timeline.and_then(|t| span.row_clips_over(t, span.start, span.end + length))
+                        {
+                            params["clips"] = json!(clips);
+                        }
+                        if self.stacks_every_clip_in(&span, in_row.as_deref()) {
+                            params["stack"] = json!(true);
+                        }
                         actions.push(Action::new("range.duplicate", params));
                         // The selection moves onto the copy, so Ctrl+D again goes on.
                         let length = span.end - span.start;
@@ -358,28 +426,14 @@ impl App {
                     _ => {
                         // Each track of the span with something in it: the new clip runs over the
                         // whole span, its empty part silent.
-                        let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
                         let playing = |track: u32| {
                             timeline.and_then(|t| t.lanes.iter().find(|l| l.track.0 == track)).is_some_and(|l| {
                                 l.clips.iter().any(|c| c.start < span.end && c.start + c.length > span.start)
                             })
                         };
-                        // In one row of a stack: that row's clips only, the other rows left be.
-                        let in_row = |track: u32| -> Option<Vec<serde_json::Value>> {
-                            let (row, rows) = span.row?;
-                            let lane = timeline?.lanes.iter().find(|l| l.track.0 == track)?;
-                            Some(
-                                lane.clips
-                                    .iter()
-                                    .filter(|c| c.row == row && c.rows == rows)
-                                    .filter(|c| c.start < span.end && c.start + c.length > span.start)
-                                    .map(|c| json!(c.id.0))
-                                    .collect(),
-                            )
-                        };
                         for track in tracks.into_iter().filter(|t| playing(*t)) {
                             let mut params = json!({ "track": track, "start": span.start, "end": span.end });
-                            if let Some(clips) = in_row(track) {
+                            if let Some(clips) = &in_row {
                                 params["clips"] = json!(clips);
                             }
                             actions.push(Action::new("clip.consolidate", params));
@@ -400,13 +454,10 @@ impl App {
                 if action == "selection.delete"
                     && (self.detail_shows_devices() || self.device_focus)
                     && let Some((track, at)) = self.selected_device.clone()
+                    // Main's chain too, which has no track of its own (#690).
                     && self.session().is_some_and(|s| {
-                        let p = s.project();
-                        p.tracks
-                            .iter()
-                            .find(|t| t.id == track)
-                            .and_then(|t| t.channel)
-                            .and_then(|c| p.channels.iter().find(|ch| ch.id == c))
+                        s.project()
+                            .channel_of_track(track)
                             .is_some_and(|ch| suhina_engine::model::device_at(&ch.devices, &at.0).is_some())
                     })
                 {
@@ -586,9 +637,9 @@ impl App {
                 if (self.detail_shows_devices() || self.device_focus)
                     && let Some((track, at)) = self.selected_device.clone()
                     && let Some(enabled) = self.session().and_then(|s| {
-                        let p = s.project();
-                        let channel = p.track(track).and_then(|t| t.channel)?;
-                        suhina_engine::model::device_at(&p.channel(channel)?.devices, &at.0).map(|d| d.enabled)
+                        // Main's chain too (#690).
+                        let devices = &s.project().channel_of_track(track)?.devices;
+                        suhina_engine::model::device_at(devices, &at.0).map(|d| d.enabled)
                     })
                 {
                     // Every picked device follows the one clicked last (#948).
@@ -662,8 +713,7 @@ impl App {
                 let siblings: Vec<usize> = self
                     .session()
                     .and_then(|s| {
-                        let p = s.project();
-                        let devices = &p.channel(p.track(track)?.channel?)?.devices;
+                        let devices = &s.project().channel_of_track(track)?.devices;
                         let list = match parent.split_last() {
                             None => devices.as_slice(),
                             Some((branch, group)) => {
@@ -952,6 +1002,26 @@ impl App {
         })
     }
 
+    /// Whether the stacking setting covers every clip a copy of the time selection `span` takes
+    /// (those of the row, when `row` names them): with clips of both kinds, only when both
+    /// settings are on does the copy leave what it lands on alone. None to copy: no.
+    fn stacks_every_clip_in(
+        &self,
+        span: &crate::arrangement::arrangement_view::TimeSelection,
+        row: Option<&[u32]>,
+    ) -> bool {
+        let Some((_, _, timeline)) = self.timeline.as_ref() else { return false };
+        let mut copied = timeline
+            .lanes
+            .iter()
+            .filter(|l| span.tracks.contains(&l.track))
+            .flat_map(|l| &l.clips)
+            .filter(|c| c.start < span.end && c.start + c.length > span.start)
+            .filter(|c| row.is_none_or(|ids| ids.contains(&c.id.0)))
+            .peekable();
+        copied.peek().is_some() && copied.all(|c| self.stacks(c.audio))
+    }
+
     /// Makes the whole window `steps` zoom steps larger or smaller and keeps that in the settings.
     pub(super) fn step_zoom(&mut self, steps: i32) {
         if self.settings.step_zoom(steps) {
@@ -1082,6 +1152,53 @@ impl App {
             if self.session().is_some_and(|s| s.is_armed(track)) {
                 self.auto_arm.armed.insert(project, track);
             }
+        }
+    }
+
+    /// A control moved by hand brings its parameter into view in its track's open lanes, the top
+    /// lane showing it ready to be drawn on (#1205): a track's volume, pan or mute (Main's too),
+    /// a parameter of a device on the track's own chain, a built-in's, an `.sd` device's or a
+    /// plug-in's.
+    pub(super) fn focus_touched_lane(&mut self, action: &Action) {
+        use crate::arrangement::automation_lanes::LaneKey;
+        let id = |v: &serde_json::Value| v.as_u64().and_then(|n| u32::try_from(n).ok()).map(TrackId);
+        let touched: Vec<(TrackId, LaneKey)> = match action.id {
+            "track.setVolume" | "track.setPan" | "track.setMute" => {
+                let param = match action.id {
+                    "track.setVolume" => suhina_engine::model::automation::VOLUME,
+                    "track.setPan" => suhina_engine::model::automation::PAN,
+                    _ => suhina_engine::model::automation::MUTE,
+                };
+                // One track moved by hand; a value set on many at once brings none forward.
+                match action.params["tracks"].as_array().map(Vec::as_slice) {
+                    Some([one]) => id(one).map(|track| (track, LaneKey::mixer(param))).into_iter().collect(),
+                    _ => Vec::new(),
+                }
+            }
+            "device.setParam" => {
+                let track = id(&action.params["track"]);
+                let device = detail_view::DeviceAt::parse(&action.params["device"]);
+                let param = match &action.params["param"] {
+                    serde_json::Value::String(text) => Some(text.clone()),
+                    serde_json::Value::Number(number) => Some(number.to_string()),
+                    _ => None,
+                };
+                // Lanes are of the devices on the track's own chain, not inside a device group.
+                match (track, device, param) {
+                    (Some(track), Some(device), Some(param)) if device.0.len() == 1 => device
+                        .0
+                        .first()
+                        .map(|&index| (track, LaneKey { device: Some(index), param }))
+                        .into_iter()
+                        .collect(),
+                    _ => Vec::new(),
+                }
+            }
+            _ => return,
+        };
+        let Some((_, _, timeline)) = self.timeline.as_ref() else { return };
+        for (track, key) in touched {
+            self.arrangement.automation.focus(track, key, &timeline.automation);
         }
     }
 
@@ -1257,6 +1374,20 @@ impl App {
                 "track.setArm",
                 json!({ "track": track.0, "armed": arm, "exclusive": arm && i == 0 }),
             ));
+        }
+    }
+
+    /// The track copied devices are pasted on: the track of the clip or slot clicked last, else
+    /// the selected track.
+    pub(super) fn paste_track(&self) -> Option<TrackId> {
+        match self.shown {
+            View::Session if !self.view.track_focus => {
+                self.view.selected_slot.map(|(track, _)| track).or(self.view.selected)
+            }
+            View::Arrangement if !self.arrangement.track_focus => {
+                self.arrangement.selected_clip().map(|(track, _)| track).or_else(|| self.selected_track())
+            }
+            _ => self.selected_track(),
         }
     }
 

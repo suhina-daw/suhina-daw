@@ -107,6 +107,7 @@ fn alone(project: &Project, track: TrackId) -> Project {
         extensions: Extensions::default(),
         default_scale: None,
         controller_mappings: Vec::new(),
+        lane_layouts: Vec::new(),
     }
 }
 
@@ -155,7 +156,6 @@ mod tests {
             sample_rate: Some(48_000),
             channels: Some(1),
             duration_seconds: Some(1.0),
-            gain: 0.5,
             ..AudioRegion::new(file)
         }
     }
@@ -188,6 +188,7 @@ mod tests {
                     clips: vec![suhina_model::Clip {
                         offset: 0.25,
                         fade_in: 0.25,
+                        audio: suhina_model::ClipAudio { gain: 0.5, ..Default::default() },
                         ..suhina_model::Clip::new(ContentId(1), 0.5, 1.0)
                     }],
                 }],

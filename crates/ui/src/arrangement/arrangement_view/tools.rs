@@ -8,7 +8,7 @@
 use egui::{Id, Rect, Stroke, Ui, Vec2};
 
 use super::{ArrangementTool, ArrangementViewState};
-use crate::detail::piano_roll::IconButton;
+use crate::interaction::toolbar::IconButton;
 use crate::kit::theme;
 use crate::kit::widgets;
 
@@ -35,7 +35,7 @@ const GRID_MENU: f32 = 96.0;
 /// its right end the grid menu.
 pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState) {
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, theme::panel_background());
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(theme::border()));
     let mut x = rect.left() + 6.0;
     for (index, (tool, name)) in ArrangementTool::ALL.into_iter().enumerate() {
@@ -82,12 +82,12 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
         ui.scope_builder(egui::UiBuilder::new().max_rect(menu), |ui| {
             let text = egui::RichText::new(format!("{shown}   ")).font(mono).color(theme::text_value());
             let response = ui.menu_button(text, |ui| {
-                if let Some(picked) = crate::detail::piano_roll::grid_entries(ui, grid, &keys, &|_| true) {
+                if let Some(picked) = crate::interaction::grid_menu::grid_entries(ui, grid, &keys, &|_| true) {
                     state.grid = picked;
                     ui.close();
                 }
             });
-            crate::detail::piano_roll::menu_arrow(ui, response.response.rect, theme::text_value());
+            crate::interaction::toolbar::menu_arrow(ui, response.response.rect, theme::text_value());
             let label = format!("Arrangement grid {shown}");
             response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
             response.response.on_hover_text(

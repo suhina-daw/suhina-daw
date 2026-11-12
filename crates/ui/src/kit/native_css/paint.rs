@@ -164,54 +164,174 @@ fn draw(painter: &Painter, rect: Rect, gradient: &Gradient, radius: f32, opacity
     true
 }
 
-/// A control's own surface in `rect`: its background, border, corner radius and shadows from the
-/// element in scope, the caller's `radius` and `fill` where the sheet sets none. A transparent
-/// background paints nothing, rather than a see-through hole in the window. The surface blends
-/// with what is under it: a control is never a hole to the desktop, whatever its alpha (only
-/// views, bars and panels set the window's pixels). Returns the radius used, for what the
-/// control draws on top.
-pub fn surface(painter: &Painter, rect: Rect, radius: f32, fill: egui::Color32) -> f32 {
+/// An element's box in `rect`, as far as it is painted before its contents (CSS's order): its
+/// outer shadows, clipped by `outer` (the box of the nearest element around it that hides its
+/// overflow) where one is known, its background colour, its gradients, its inset shadows and its
+/// border. `style` is its element's (`kit::element`); the caller's `radius` and `fill` stand where
+/// the sheet sets none. A transparent background paints nothing, rather than a see-through hole in
+/// the window. The surface blends with what is under it, whatever its alpha. Returns the radius
+/// used, for what the element draws on top and for [`box_end`].
+pub(in crate::kit) fn box_begin(
+    painter: &Painter,
+    rect: Rect,
+    radius: f32,
+    fill: egui::Color32,
+    style: Option<&super::Computed>,
+    outer: Option<Rect>,
+) -> f32 {
     if !rect.is_positive() || !rect.is_finite() {
         return 0.0;
     }
-    let style = super::super::style_class::computed();
-    let radius = style.as_ref().filter(|s| s.authored.radius).map_or(radius, |s| s.radius);
+    let radius = style.filter(|s| s.authored.radius).map_or(radius, |s| s.radius);
     let radius = radius.min(rect.height().min(rect.width()) / 2.0).max(0.0);
-    let fill = style.as_ref().filter(|s| s.authored.background).map_or(fill, |s| s.background);
+    let fill = style.filter(|s| s.authored.background).map_or(fill, |s| s.background);
+    let Some(style) = style else {
+        if fill.a() > 0 {
+            painter.rect_filled(rect, radius, fill);
+        }
+        return radius;
+    };
+    let reach = style.shadows.iter().filter(|s| !s.inset).fold(rect, |reach, shadow| reach.union(shadow.bounds(rect)));
+    let outside = outer_painter(painter, outer, rect, reach);
+    // A see-through surface shows only its glyph, so its shadow (a glow) is round, around the
+    // glyph, rather than the square of a box no one sees, unless the sheet gives a radius.
+    let glow = if fill.a() == 0 && !style.authored.radius { rect.width().min(rect.height()) / 2.0 } else { radius };
+    for shadow in style.shadows.iter().rev().filter(|s| !s.inset) {
+        shadow.paint(&outside, rect, glow, style.opacity);
+    }
     if fill.a() > 0 {
         painter.rect_filled(rect, radius, fill);
     }
-    if let Some(mut style) = style {
-        style.radius = radius;
-        // A see-through surface shows only its glyph, so its shadow (a glow) is round, around the
-        // glyph, rather than the square of a box no one sees, unless the sheet gives a radius.
-        if fill.a() == 0 && !style.authored.radius {
-            let round = rect.width().min(rect.height()) / 2.0;
-            let mut glow = style.clone();
-            glow.radius = round;
-            glow.gradients = Vec::new().into();
-            background_with(painter, rect, &glow);
-            style.shadows = style.shadows.iter().filter(|s| s.inset).cloned().collect::<Vec<_>>().into();
+    for gradient in style.gradients.iter().rev() {
+        draw(painter, rect, gradient, radius, style.opacity);
+    }
+    edge(painter, rect, radius, style);
+    radius
+}
+
+/// What an element paints once its contents are: its outline, over them.
+pub(in crate::kit) fn box_end(
+    painter: &Painter,
+    rect: Rect,
+    radius: f32,
+    style: &super::Computed,
+    outer: Option<Rect>,
+) {
+    if !rect.is_positive() || !rect.is_finite() {
+        return;
+    }
+    if let Some((width, color, offset)) = style.outline() {
+        let around = rect.expand(offset);
+        if around.is_positive() {
+            let stroke = egui::Stroke::new(width, color.gamma_multiply(style.opacity));
+            let radius = if offset > 0.0 { radius + offset } else { radius };
+            outer_painter(painter, outer, rect, around.expand(width)).rect_stroke(
+                around,
+                radius,
+                stroke,
+                egui::StrokeKind::Outside,
+            );
         }
-        background_with(painter, rect, &style);
-        if style.border_width > 0.0 && style.border.a() > 0 {
-            let stroke = egui::Stroke::new(style.border_width, style.border.gamma_multiply(style.opacity));
-            painter.rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
-        }
+    }
+}
+
+/// An element's inset shadows and border. A border of one width all round follows the corners;
+/// sides of different widths are drawn straight.
+fn edge(painter: &Painter, rect: Rect, radius: f32, style: &super::Computed) {
+    for shadow in style.shadows.iter().rev().filter(|s| s.inset) {
+        shadow.paint(painter, rect, radius, style.opacity);
+    }
+    border(painter, rect, radius, style);
+}
+
+/// An element's border alone, for one whose background and inset shadows its caller painted.
+pub(crate) fn border(painter: &Painter, rect: Rect, radius: f32, style: &super::Computed) {
+    if !rect.is_positive() || !rect.is_finite() || style.border_width <= 0.0 || style.border.a() == 0 {
+        return;
+    }
+    let color = style.border.gamma_multiply(style.opacity);
+    let [top, right, bottom, left] = style.border_sides;
+    if [top, right, bottom, left].iter().all(|side| *side == top) {
+        painter.rect_stroke(rect, radius, egui::Stroke::new(top, color), egui::StrokeKind::Inside);
+        return;
+    }
+    // Top and bottom take the corners; the sides fill between them. Wider than the box, the
+    // sides meet without overlapping, so a translucent colour is not drawn twice.
+    let (x, y) = (rect.x_range(), rect.y_range());
+    let top = top.min(rect.height());
+    let bottom = bottom.min(rect.height() - top);
+    let left = left.min(rect.width());
+    let right = right.min(rect.width() - left);
+    let sides = [
+        Rect::from_x_y_ranges(x, egui::Rangef::new(y.min, y.min + top)),
+        Rect::from_x_y_ranges(x, egui::Rangef::new(y.max - bottom, y.max)),
+        Rect::from_x_y_ranges(egui::Rangef::new(x.min, x.min + left), egui::Rangef::new(y.min + top, y.max - bottom)),
+        Rect::from_x_y_ranges(egui::Rangef::new(x.max - right, x.max), egui::Rangef::new(y.min + top, y.max - bottom)),
+    ];
+    for side in sides.into_iter().filter(|side| side.is_positive()) {
+        painter.rect_filled(side.intersect(rect), 0.0, color);
+    }
+}
+
+/// `painter` clipped by `outer`, the box that clips what is outside an element, for what the
+/// element paints around its box `caster` as far as `reach`; `painter` itself where no such box
+/// is known.
+///
+/// `outer` lets the painting pass the painter's own clip (a toolbar section's edge), but only as
+/// far as `reach`, and only on a side where `caster` is whole inside that clip: a side that cuts
+/// the caster is a viewport's edge (a scroll area scrolled part of the element out of view), and
+/// what is beyond it is not the element's to paint over.
+fn outer_painter(painter: &Painter, outer: Option<Rect>, caster: Rect, reach: Rect) -> Painter {
+    let mut outside = painter.clone();
+    if let Some(outer) = outer {
+        outside.set_clip_rect(outer.intersect(passable(painter.clip_rect(), caster, reach)));
+    }
+    outside
+}
+
+/// `clip` widened to `reach` on each side where `caster` is inside it.
+fn passable(clip: Rect, caster: Rect, reach: Rect) -> Rect {
+    let mut wide = clip;
+    if caster.min.x >= clip.min.x {
+        wide.min.x = clip.min.x.min(reach.min.x);
+    }
+    if caster.min.y >= clip.min.y {
+        wide.min.y = clip.min.y.min(reach.min.y);
+    }
+    if caster.max.x <= clip.max.x {
+        wide.max.x = clip.max.x.max(reach.max.x);
+    }
+    if caster.max.y <= clip.max.y {
+        wide.max.y = clip.max.y.max(reach.max.y);
+    }
+    wide
+}
+
+/// [`box_begin`] and [`box_end`] at once, for a control drawn and done in one go (tests).
+#[cfg(test)]
+pub(in crate::kit) fn surface_with(
+    painter: &Painter,
+    rect: Rect,
+    radius: f32,
+    fill: egui::Color32,
+    style: Option<super::Computed>,
+) -> f32 {
+    let radius = box_begin(painter, rect, radius, fill, style.as_ref(), None);
+    if let Some(style) = &style {
+        box_end(painter, rect, radius, style, None);
     }
     radius
 }
 
-/// The thickness the sheet gives the element in scope (`height`), or `fallback`.
-pub fn thickness(fallback: f32) -> f32 {
-    super::super::style_class::computed().and_then(|style| style.height).unwrap_or(fallback)
-}
-
-/// The shadows (a glow is a shadow without an offset) of the element in scope, cast by artwork:
-/// drawn into `slot`, a place reserved under the artwork, as tinted copies of its `mesh`.
-/// Returns whether there were any.
-pub fn artwork_shadows(painter: &Painter, slot: egui::layers::ShapeIdx, mesh: &egui::Mesh) -> bool {
-    let Some(style) = super::super::style_class::computed() else { return false };
+/// The shadows (a glow is a shadow without an offset) of `style`, cast by artwork: drawn into
+/// `slot`, a place reserved under the artwork, as tinted copies of its `mesh`. Returns whether
+/// there were any.
+pub fn artwork_shadows(
+    painter: &Painter,
+    slot: egui::layers::ShapeIdx,
+    mesh: &egui::Mesh,
+    style: &super::Computed,
+) -> bool {
     let copies: Vec<egui::Shape> = style
         .shadows
         .iter()
@@ -226,32 +346,26 @@ pub fn artwork_shadows(painter: &Painter, slot: egui::layers::ShapeIdx, mesh: &e
     true
 }
 
-/// The element in scope's gradients without its outer shadows: for a surface whose artwork
-/// casts them itself ([`artwork_shadows`]).
-pub fn gradients_rounded(painter: &Painter, rect: Rect, radius: f32) -> bool {
-    super::super::style_class::computed().is_some_and(|mut style| {
-        if !style.authored.radius {
-            style.radius = radius;
-        }
-        style.radius = style.radius.min(rect.width().min(rect.height()) / 2.0).max(0.0);
-        let shadows: Vec<_> = style.shadows.iter().filter(|s| s.inset).cloned().collect();
-        style.shadows = shadows.into();
-        background_with(painter, rect, &style)
-    })
+/// `style`'s gradients without its outer shadows: for a surface whose artwork casts them itself
+/// ([`artwork_shadows`]).
+pub fn gradients_rounded(painter: &Painter, rect: Rect, radius: f32, mut style: super::Computed) -> bool {
+    if !style.authored.radius {
+        style.radius = radius;
+    }
+    style.radius = style.radius.min(rect.width().min(rect.height()) / 2.0).max(0.0);
+    let shadows: Vec<_> = style.shadows.iter().filter(|s| s.inset).cloned().collect();
+    style.shadows = shadows.into();
+    background_with(painter, rect, &style)
 }
 
-pub fn background(painter: &Painter, rect: Rect) -> bool {
-    background_rounded(painter, rect, 0.0)
-}
-pub fn background_rounded(painter: &Painter, rect: Rect, radius: f32) -> bool {
-    super::super::style_class::computed().is_some_and(|mut style| {
-        if !style.authored.radius {
-            style.radius = radius;
-        }
-        // A shadow follows the surface's corners, never rounder than the surface can be.
-        style.radius = style.radius.min(rect.width().min(rect.height()) / 2.0).max(0.0);
-        background_with(painter, rect, &style)
-    })
+/// `style`'s shadows and gradients in `rect`, with `radius` where the sheet gives none.
+pub fn background_rounded(painter: &Painter, rect: Rect, radius: f32, mut style: super::Computed) -> bool {
+    if !style.authored.radius {
+        style.radius = radius;
+    }
+    // A shadow follows the surface's corners, never rounder than the surface can be.
+    style.radius = style.radius.min(rect.width().min(rect.height()) / 2.0).max(0.0);
+    background_with(painter, rect, &style)
 }
 
 pub fn background_with(painter: &Painter, rect: Rect, style: &super::Computed) -> bool {
@@ -270,8 +384,7 @@ pub fn background_with(painter: &Painter, rect: Rect, style: &super::Computed) -
 
 /// Meter fills keep their material anchored to the entire scale. The caller clips
 /// the painter to the measured portion; shadows are drawn separately around it.
-pub fn level_fill(painter: &Painter, scale: Rect) -> bool {
-    let Some(style) = super::super::style_class::computed() else { return false };
+pub fn level_fill(painter: &Painter, scale: Rect, style: &super::Computed) -> bool {
     let mut painted = false;
     if style.authored.background {
         painter.rect_filled(scale, 0.0, style.background.gamma_multiply(style.opacity));
@@ -283,10 +396,8 @@ pub fn level_fill(painter: &Painter, scale: Rect) -> bool {
     painted
 }
 
-pub fn level_glow(painter: &Painter, lit: Rect) {
-    if let Some(style) = super::super::style_class::computed() {
-        for shadow in style.shadows.iter().rev().filter(|shadow| !shadow.inset) {
-            shadow.paint(painter, lit, style.radius, style.opacity);
-        }
+pub fn level_glow(painter: &Painter, lit: Rect, style: &super::Computed) {
+    for shadow in style.shadows.iter().rev().filter(|shadow| !shadow.inset) {
+        shadow.paint(painter, lit, style.radius, style.opacity);
     }
 }

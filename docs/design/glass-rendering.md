@@ -3,7 +3,7 @@ description: Experimental live modal backdrop and optical coatings for track and
 read_when: glass effect, backdrop blur, rendering materials, Aero
 type: plan
 status: draft
-last_verified: 2026-11-06
+last_verified: 2026-11-12
 covers:
   - crates/ui/src/kit/**
   - apps/suhina/src/main.rs
@@ -72,7 +72,10 @@ foreground at the original paint positions. One substrate serves all visible tra
 clip lenses. It has independent targets/texture IDs from the modal capture and skips the
 Gaussian passes: content lenses use the sharp encoded source. There are no per-clip
 captures. Temporarily hiding content lenses during modal replay keeps the dialog's backdrop free of
-glass drawn from another capture; the lenses are restored afterward. Each capture renderer
+glass drawn from another capture; the lenses are restored afterward. A lens is set into a slot
+reserved while its region was painted; a region that hides its overflow narrows the clip of
+everything painted inside it when it leaves scope (#1336), so the lens is set with the slot's
+clip as it is then, not the wider one it was reserved with; a dialog's backdrop slots likewise. Each capture renderer
 binds the textures it meets from where they already are, without copying them: egui's
 textures (images, icons) from eframe's main renderer, and another capture's image from that
 capture's targets. A capture never samples its own target, and what it cannot bind (a native

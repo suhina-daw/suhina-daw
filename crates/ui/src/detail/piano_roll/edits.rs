@@ -31,7 +31,8 @@ pub(super) fn single_click(
         }
         (None, Tool::Erase | Tool::Mute) => {}
         (Some(index), _) if inputs.shift || inputs.command => {
-            if !state.selected.remove(&index) {
+            // A note the press already added stays; any other is taken out or added.
+            if state.press_added.take() != Some(index) && !state.selected.remove(&index) {
                 state.selected.insert(index);
                 state.audition_keys(clip.notes.get(index).map(|n| n.key));
             }
@@ -48,11 +49,19 @@ pub(super) fn single_click(
         (None, Tool::Draw | Tool::Paint) => click_adds(gesture, state, actions, pos, inputs),
         (None, Tool::Select) if workflow.empty_click_draws => click_adds(gesture, state, actions, pos, inputs),
         (None, Tool::Slice) => {}
-        // A click on an empty spot leaves the mark a paste goes to.
+        // A click on an empty spot leaves the mark a paste goes to, and for an arrangement clip
+        // moves the play start marker there, as a click on an empty spot of a lane does: stopped,
+        // the playhead goes there; while playing, the next start begins there (#657).
         (None, Tool::Select) => {
             state.selected.clear();
             state.clear_span();
-            state.insert_at = Some(gesture.grid.place(gesture.layout.beat_at(pos.x), inputs.alt, true));
+            let beat = gesture.grid.place(gesture.layout.beat_at(pos.x), inputs.alt, true);
+            state.insert_at = Some(beat);
+            if clip.address.get("clip").is_some_and(serde_json::Value::is_number)
+                && let Some(at) = clip.placement.arrangement_beat(beat)
+            {
+                actions.push(Action::new("transport.setStart", json!({ "beats": round_beat(at) })));
+            }
         }
     }
 }
@@ -97,10 +106,34 @@ pub(super) fn second_click(
     }
 }
 
+/// How far a drag of `raw` beats moves a grabbed note that starts at `start`, the grid snapping
+/// (› Moving): a note on the grid goes by whole grid steps (`stepped`, as [`move_delta`] gives
+/// them). A note off the grid (played in, or humanised) moves freely until it reaches the first
+/// grid line, and from there snaps to whichever is nearer: a grid line, or its own offset from
+/// the grid a whole number of steps away. So it can be put back on the grid by dragging, or moved
+/// keeping its feel. Never before the start for any of `moved`.
+pub(super) fn magnetic(start: f64, raw: f64, moved: &[Note], grid: TimelineGrid) -> f64 {
+    let beats = magnetic_by(start, raw, grid, false);
+    let earliest = moved.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
+    if earliest.is_finite() { beats.max(-earliest) } else { beats }
+}
+
+/// The key a note on `key` goes to with a move of `keys` semitones, or, with the rows folded,
+/// `rows` shown rows (each note through the rows from its own, stopping at the top and bottom).
+pub(super) fn moved_key(shown: &KeyRows, key: u8, keys: i32, rows: Option<i32>) -> u8 {
+    let step = match rows {
+        Some(rows) => shown.semitones(key, rows),
+        None => keys,
+    };
+    u8::try_from(i32::from(key) + step).ok().filter(|k| *k <= 127).unwrap_or(key)
+}
+
 /// What a gesture does with the pointer at `now`.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Effect {
-    Move(f64, i32),
+    /// Beats and semitones the selection moves by; with the rows folded, also how many shown rows,
+    /// which each note steps through on its own (› [`moved_key`]).
+    Move(f64, i32, Option<i32>),
     Resize(f64),
     /// Beats the selection's starts move by, their ends kept.
     ResizeStart(f64),
@@ -114,10 +147,30 @@ pub(super) enum Effect {
     },
     /// The note a draw drag makes.
     Draw(Option<Note>),
-    /// A slice: the beat the cut is at, and the notes it crosses.
-    Slice(f64, Vec<usize>),
+    /// A slice: its cut line and the cuts it makes.
+    Slice(SliceCut),
     /// A paint or erase stroke: what it does is in the state.
     Stroke,
+}
+
+/// A slice drag's cut line and what it cuts (› Drawing notes, Slice).
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SliceCut {
+    /// The line as drawn: from where the press was to the pointer.
+    pub(super) line: [Pos2; 2],
+    /// Each note the line cuts and the beat it is cut at.
+    pub(super) cuts: Vec<(usize, f64)>,
+    /// The right button's slice: the shorter piece of each note cut goes.
+    pub(super) delete: bool,
+}
+
+impl SliceCut {
+    /// The beats of the piece of `note`, cut at `at`, that a deleting slice removes: the shorter
+    /// one, the later when they are as long (`note.split` with `keepLonger` keeps the first then).
+    pub(super) fn removed(note: &Note, at: f64) -> (f64, f64) {
+        let end = note.time + note.duration;
+        if at - note.time >= end - at { (at, end) } else { (note.time, at) }
+    }
 }
 
 pub(super) fn effect(
@@ -127,8 +180,9 @@ pub(super) fn effect(
     clip: &PianoClip,
     chosen: &[Note],
     grid: TimelineGrid,
-    free: bool,
+    inputs: Inputs,
 ) -> Effect {
+    let free = inputs.alt;
     match gesture {
         Gesture::Move { from, grabbed, .. } => {
             let raw = f64::from((now.x - from.x) / layout.beat_width);
@@ -136,7 +190,11 @@ pub(super) fn effect(
             // Folded, the grabbed note steps through the shown rows; the rest move as far.
             let keys = clip.notes.get(*grabbed).map_or(rows, |n| layout.rows.semitones(n.key, rows));
             let (beats, keys) = move_delta(raw, keys, chosen, grid, free);
-            Effect::Move(beats, keys)
+            let beats = match clip.notes.get(*grabbed) {
+                Some(g) if !free && grid.snaps => magnetic(g.time, raw, chosen, grid),
+                _ => beats,
+            };
+            Effect::Move(beats, keys, layout.rows.folded().then_some(rows))
         }
         Gesture::Resize { from, grabbed } => {
             let raw = f64::from((now.x - from.x) / layout.beat_width);
@@ -163,10 +221,11 @@ pub(super) fn effect(
                 clip.notes.get(*grabbed).map_or(target, |n| f64::from(suhina_session::midi_velocity(n.velocity)));
             Effect::Velocity(target - current)
         }
-        Gesture::Slice { .. } => match slice_at(clip, layout, grid, now.x, free) {
-            Some((at, cut)) => Effect::Slice(at, cut),
-            None => Effect::Stroke,
-        },
+        Gesture::Slice { from, delete, by_shift } => {
+            // Shift slants the line, unless Shift is what started the slice (Shift right-drag).
+            let slanted = inputs.shift && !by_shift;
+            Effect::Slice(SliceCut { delete: *delete, ..slice_cut(clip, layout, grid, (*from, now), slanted, free) })
+        }
         Gesture::Draw { .. }
         | Gesture::DrawRun
         | Gesture::Paint
@@ -176,27 +235,49 @@ pub(super) fn effect(
     }
 }
 
-/// The beat a cut at `x` lands on, and the notes it crosses; `None` when it misses every note.
-/// The line's own x is used, so the cut is where the pointer is, not where the drag started.
-pub(super) fn slice_at(
+/// A slice's cut line from `from` to the pointer at `now`, and the cuts it makes. The line stands
+/// straight up or down on the beat the pointer is at, or, `slanted` (Shift), runs from `from` to
+/// the pointer. Each note whose row the line reaches is cut where the line is at the row's middle
+/// (at the line's nearer end when it stops short of the middle), on the grid unless `free`; a cut
+/// on a note's start or end, or outside it, leaves the note alone. A row the fold hides is never
+/// reached.
+pub(super) fn slice_cut(
     clip: &PianoClip,
     layout: &Layout,
     grid: TimelineGrid,
-    x: f32,
+    (from, now): (Pos2, Pos2),
+    slanted: bool,
     free: bool,
-) -> Option<(f64, Vec<usize>)> {
-    let at = if free { layout.beat_at(x).max(0.0) } else { nearest_line(grid, layout.beat_at(x)) };
-    if !at.is_finite() {
-        return None;
-    }
-    let crossed: Vec<usize> = clip
+) -> SliceCut {
+    let snap = |x: f32| {
+        let beat = layout.beat_at(x).max(0.0);
+        if free { beat } else { nearest_line(grid, beat) }
+    };
+    let straight = snap(now.x);
+    let line = if slanted {
+        [from, now]
+    } else {
+        let x = layout.x_of(straight);
+        [Pos2::new(x, from.y), Pos2::new(x, now.y)]
+    };
+    let [a, b] = line;
+    let (top, bottom) = (a.y.min(b.y), a.y.max(b.y));
+    let x_at = |y: f32| if (b.y - a.y).abs() < 0.5 { b.x } else { a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y) };
+    let cuts = clip
         .notes
         .iter()
         .enumerate()
-        .filter(|(_, n)| n.time < at - EPSILON && n.time + n.duration > at + EPSILON)
-        .map(|(i, _)| i)
+        .filter_map(|(i, n)| {
+            let row_top = layout.y_of(n.key);
+            let row_bottom = row_top + layout.key_height;
+            if row_bottom < top || row_top > bottom {
+                return None;
+            }
+            let at = if slanted { snap(x_at(((row_top + row_bottom) / 2.0).clamp(top, bottom))) } else { straight };
+            (at.is_finite() && n.time < at - EPSILON && n.time + n.duration > at + EPSILON).then_some((i, at))
+        })
         .collect();
-    if crossed.is_empty() { None } else { Some((at, crossed)) }
+    SliceCut { line, cuts, delete: false }
 }
 
 pub(super) fn commit(
@@ -211,18 +292,28 @@ pub(super) fn commit(
     let mut params = clip.address.clone();
     params["notes"] = json!(notes);
     match (gesture, effect) {
-        (Gesture::Move { copy, .. }, Effect::Move(beats, keys)) if !notes.is_empty() && (beats != 0.0 || keys != 0) => {
+        (Gesture::Move { copy, .. }, Effect::Move(beats, keys, rows))
+            if !notes.is_empty() && (beats != 0.0 || keys != 0 || rows.is_some_and(|r| r != 0)) =>
+        {
             let moved: Vec<Note> = notes.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
-            state.audition_moved(&moved, keys);
+            let landing: Vec<u8> = moved.iter().map(|n| moved_key(&layout.rows, n.key, keys, rows)).collect();
+            state.audition_keys(landing.iter().copied());
             if !*copy {
                 state.span_moved(beats);
             }
             params["beats"] = json!(round_beat(beats));
-            params["semitones"] = json!(keys);
+            // Folded, each note (or its copy) steps through the shown rows on its own, so none
+            // lands on a key the fold hides.
+            if rows.is_some() {
+                params["keys"] = json!(landing);
+            } else {
+                params["semitones"] = json!(keys);
+            }
             if *copy {
                 // Ctrl+drag: one `note.duplicate` puts the copies where the drag let go; the
-                // copies are appended, so they are the next indices, and they are selected.
-                state.replacing(&mut params);
+                // copies are appended, so they are the next indices, and they are selected. With
+                // stacked notes off they replace what they land on at once, as Ctrl+D's do.
+                state.replacing_now(&mut params);
                 actions.push(Action::new("note.duplicate", params));
                 state.select_copies((clip.notes.len()..clip.notes.len() + notes.len()).collect(), &clip.notes);
                 // They went where the drag put them, not a stretch on.
@@ -265,8 +356,10 @@ pub(super) fn commit(
         }
         // Shift and Draw: one `note.add` for the whole stroke, the notes it drew.
         (Gesture::DrawRun, _) => {
-            let stroke: Vec<Note> = std::mem::take(&mut state.stroke)
-                .into_iter()
+            let stroke: Vec<Note> = state
+                .stroke
+                .iter()
+                .copied()
                 .filter(|p| !clip.notes.iter().any(|n| n.key == p.key && (n.time - p.time).abs() < EPSILON))
                 .collect();
             if !stroke.is_empty() {
@@ -278,21 +371,33 @@ pub(super) fn commit(
                 }
             }
         }
-        // Slice: one `note.split` for the whole stroke, at the beat the line ends at.
-        (Gesture::Slice { .. }, Effect::Slice(at, cut)) if !cut.is_empty() => {
+        // Slice: one `note.split` for the whole stroke, each note at the beat the line cuts it.
+        (Gesture::Slice { .. }, Effect::Slice(cut)) if !cut.cuts.is_empty() => {
             let mut params = clip.address.clone();
-            params["notes"] = json!(cut);
-            params["at"] = json!(round_beat(at));
-            // `note.split` appends the second halves: they are the notes after the ones there.
-            state.selected = (clip.notes.len()..clip.notes.len() + cut.len()).collect();
+            params["notes"] = json!(cut.cuts.iter().map(|(index, _)| *index).collect::<Vec<_>>());
+            let times: Vec<f64> = cut.cuts.iter().map(|(_, at)| round_beat(*at)).collect();
+            match times.split_first() {
+                Some((first, rest)) if rest.iter().all(|at| at == first) => params["at"] = json!(first),
+                _ => params["times"] = json!(times),
+            }
+            if cut.delete {
+                // The right button's slice keeps the longer piece of each note, in its place.
+                params["keepLonger"] = json!(true);
+                state.selected.clear();
+            } else {
+                // `note.split` appends the second halves: they are the notes after the ones there.
+                state.selected = (clip.notes.len()..clip.notes.len() + cut.cuts.len()).collect();
+            }
             actions.push(Action::new("note.split", params));
         }
         (Gesture::Paint, _) => {
             // A painted note on top of one already there (same key, same start) is left out, and so,
             // where notes do not stack, is one that would start inside it: a stroke paints the gaps.
             let inside = state.notes_replace;
-            let stroke: Vec<Note> = std::mem::take(&mut state.stroke)
-                .into_iter()
+            let stroke: Vec<Note> = state
+                .stroke
+                .iter()
+                .copied()
                 .filter(|p| {
                     !clip.notes.iter().any(|n| {
                         n.key == p.key
@@ -309,7 +414,7 @@ pub(super) fn commit(
         }
         (Gesture::Erase, _) if !state.erasing.is_empty() => {
             let mut params = clip.address.clone();
-            params["notes"] = json!(std::mem::take(&mut state.erasing).into_iter().collect::<Vec<_>>());
+            params["notes"] = json!(state.erasing.iter().collect::<Vec<_>>());
             state.selected.clear();
             actions.push(Action::new("note.delete", params));
         }
@@ -317,7 +422,7 @@ pub(super) fn commit(
         // state the first note it touched takes (› Muting).
         (Gesture::Mute, _) if !state.muting.is_empty() => {
             let mut params = clip.address.clone();
-            params["notes"] = json!(std::mem::take(&mut state.muting).into_iter().collect::<Vec<_>>());
+            params["notes"] = json!(state.muting.iter().collect::<Vec<_>>());
             params["muted"] = json!(state.mute_target);
             actions.push(Action::new("note.setMuted", params));
         }
@@ -331,7 +436,6 @@ pub(super) fn commit(
                     state.selected.insert(i);
                 }
             }
-            state.swept.clear();
             // What it covered is selected in time, the empty parts too, and one that adds keeps what
             // was selected in time: the stretch runs over both.
             let (start, end) = swept_span(note_grid(clip, layout.beat_width), layout, &clip.notes, rect);

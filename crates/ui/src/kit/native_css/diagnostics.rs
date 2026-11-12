@@ -32,7 +32,7 @@ mod tests {
     #[test]
     fn notices_name_unpainted_properties_and_skip_comments_and_strings() {
         let notices = inspect(
-            "/* transform: none */ .button:hover { color:rgb(1 2 3); text-shadow:1px 2px black; } @media (width > 1px) { .browser { font-family:'a:b;c'; } }",
+            "/* transform: none */ button:hover { color:rgb(1 2 3); text-shadow:1px 2px black; } @media (width > 1px) { browser { font-family:'a:b;c'; } }",
         )
         .unwrap();
         assert_eq!(notices.len(), 1, "{notices:?}");
@@ -40,7 +40,7 @@ mod tests {
     }
     #[test]
     fn nested_css_is_bounded_without_rejecting_quoted_braces() {
-        assert!(inspect(".browser { --text:'{{{{{{{{'; color:var(--ink,rgb(1 2 3)); }").is_ok());
+        assert!(inspect("browser { --text:'{{{{{{{{'; color:var(--ink,rgb(1 2 3)); }").is_ok());
         let deep = format!("{}color:red;{}", ".a {".repeat(66), "}".repeat(66));
         assert!(inspect(&deep).is_err());
     }

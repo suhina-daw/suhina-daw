@@ -4,7 +4,6 @@
 //! Small drawing helpers and the controls the views share: text that fits a cell, the value
 //! field drag, the knob.
 
-use crate::kit::surface::Backgrounds as _;
 use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextWrapping};
@@ -13,6 +12,7 @@ use egui::{
 };
 use serde_json::Value;
 
+use crate::kit::element::{Armed, BUTTON, Checked, DROPDOWN, Entered, KNOB, TEXT_INPUT, VALUE};
 use crate::kit::{motion, theme};
 
 /// The arrow of a row that opens: pointing right while closed, down while open.
@@ -54,14 +54,56 @@ struct ValueDrag {
     /// Let go of: the pointer has been moved back and shows at the next frame, so it never flashes
     /// where it was held.
     released: bool,
+    /// The pointer is hidden while the drag holds it ([`set_drag_hides_pointer`],
+    /// [`value_drag_pointer`]); otherwise it shows `icon`.
+    hides: bool,
+    /// What the pointer shows while the drag holds it: nothing while it hides, else the arrow of
+    /// the drag's axis ([`value_drag_shows`]).
+    icon: egui::CursorIcon,
 }
 
 fn value_drag_id() -> Id {
     Id::unique("value-drag-holds-pointer")
 }
 
+fn drag_hides_pointer_id() -> Id {
+    Id::unique("value-drag-hides-pointer")
+}
+
+/// Where a control's own answer to whether its next drag hides the pointer waits
+/// ([`value_drag_pointer`]).
+fn drag_pointer_id(response: &Response) -> Id {
+    response.id.with("drag-pointer")
+}
+
+/// Settings › Appearance › Hide pointer while dragging: whether a value drag hides the pointer
+/// (on by default) where its control's element says nothing of its own.
+pub fn set_drag_hides_pointer(ctx: &egui::Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(drag_hides_pointer_id(), on));
+}
+
+/// The setting [`set_drag_hides_pointer`] gave; on unless turned off.
+pub fn drag_hides_pointer(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp(drag_hides_pointer_id())).unwrap_or(true)
+}
+
+/// Gives a drag that `response` starts the pointer `el` asks for: the sheet's `drag-pointer` on
+/// it, else the setting. Called each frame by a control that has an element, before or after its
+/// drag reads its movement: a drag starts with what its control said in the frame before, as the
+/// pointer is over it before it is pressed. A control that never says follows the setting.
+pub fn value_drag_pointer(ctx: &egui::Context, response: &Response, el: &crate::kit::element::Entered) {
+    value_drag_hides(ctx, response, crate::kit::style_class::drag_hides_pointer(el, drag_hides_pointer(ctx)));
+}
+
+/// [`value_drag_pointer`] for a control that worked out its element's answer itself.
+pub fn value_drag_hides(ctx: &egui::Context, response: &Response, hides: bool) {
+    ctx.data_mut(|d| d.insert_temp(drag_pointer_id(response), hides));
+}
+
 /// How far a drag on a value control (knob, value field) moved this frame, called while it is
-/// dragged. The pointer hides while the drag lasts. A mouse sends raw motion, which is read and
+/// dragged. The pointer hides while the drag lasts, unless the setting or the control's element
+/// shows it ([`value_drag_pointer`]): then it keeps its icon, or the arrow of the drag's axis
+/// ([`value_drag_shows`]). A mouse sends raw motion, which is read and
 /// the pointer locked, so a long drag never stops at the screen's edge (X11 refuses the lock, and
 /// the pointer moves on hidden). A device with no relative motion (a pen in absolute mode, a remote
 /// session) sends none, so it keeps the pointer's own movement, which a lock would stop.
@@ -72,14 +114,23 @@ pub fn value_drag_delta(ui: &Ui, response: &Response) -> Vec2 {
     let ctx = ui.ctx();
     let mut drag = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id()));
     if drag.is_none() && response.drag_started() && ctx.input(|i| i.focused) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
-        drag = Some(ValueDrag { raw: false, back: None, released: false });
+        let hides =
+            ctx.data(|d| d.get_temp::<bool>(drag_pointer_id(response))).unwrap_or_else(|| drag_hides_pointer(ctx));
+        let icon = if hides {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
+            egui::CursorIcon::None
+        } else {
+            // The pointer the control shows, until the drag gives it an arrow of its own.
+            ctx.output(|o| o.cursor_icon)
+        };
+        drag = Some(ValueDrag { raw: false, back: None, released: false, hides, icon });
     }
     let Some(mut drag) = drag.filter(|d| !d.released) else {
         return Vec2::ZERO;
     };
-    // egui shows the pointer again whenever the icon changes, so the icon stays hidden too.
-    ctx.set_cursor_icon(egui::CursorIcon::None);
+    // egui shows the pointer again whenever the icon changes, so the icon stays hidden too, unless
+    // the drag shows one of its own.
+    ctx.set_cursor_icon(drag.icon);
     let (motion, per_point) = ui.input(|i| (i.pointer.motion(), i.pixels_per_point));
     if motion.is_some() && !drag.raw {
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::Locked));
@@ -110,11 +161,12 @@ pub fn release_value_drag(ctx: &egui::Context) {
         // own (a magnifier).
         ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
     } else if !ctx.input(|i| i.pointer.any_down() && i.focused) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
-        // Only in a window with focus: a pointer gone to another window stays there.
+        // Only in a window with focus: a pointer gone to another window stays there. Moved while
+        // the drag still locks it, as Wayland moves a pointer only while it is locked.
         if let Some(at) = drag.back.filter(|_| ctx.input(|i| i.focused)) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(at));
         }
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
         ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { released: true, ..drag }));
         ctx.request_repaint();
     }
@@ -127,11 +179,21 @@ pub fn value_drag_returns_to(ctx: &egui::Context, at: Pos2) {
     }
 }
 
-/// Keeps the pointer hidden while a value drag holds it, called after the views: the last icon set
-/// in a frame wins, and egui shows the pointer again for any other icon.
+/// The pointer shows `icon` for the rest of this value drag, unless the drag hides it: where it
+/// was pressed, as the drag holds it there.
+pub fn value_drag_shows(ctx: &egui::Context, icon: egui::CursorIcon) {
+    if let Some(drag) = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).filter(|d| !d.hides) {
+        ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { icon, ..drag }));
+        ctx.set_cursor_icon(icon);
+    }
+}
+
+/// Keeps the pointer hidden (or showing the drag's icon) while a value drag holds it, called
+/// after the views: the last icon set in a frame wins, and egui shows the pointer again for any
+/// other icon.
 pub fn hide_pointer_during_value_drag(ctx: &egui::Context) {
-    if ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_some() {
-        ctx.set_cursor_icon(egui::CursorIcon::None);
+    if let Some(drag) = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())) {
+        ctx.set_cursor_icon(drag.icon);
     }
 }
 
@@ -209,52 +271,60 @@ pub fn hover(ui: &Ui, response: &Response) -> f32 {
 
 /// Shared track-button surface. Colors and focus outlines follow the active theme.
 /// Geometry stays inside the caller's hit target, including compact mixer strips.
-pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, response: &Response, fill: Color32) {
-    let _style = crate::kit::style_class::control("button", response);
-    let radius = super::style_class::radius((rect.height() * 0.25).min(5.0));
-    button_surface(painter, rect, response, false, fill, radius);
+/// `el` is the button its caller entered (`button#solo`).
+pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, el: &Entered, response: &Response, fill: Color32) {
+    let radius = el.radius_or((rect.height() * 0.25).min(5.0));
+    button_surface(painter, rect, el, response, false, fill, radius);
     if response.has_focus() || response.hovered() {
         let edge = if response.has_focus() { theme::accent() } else { theme::border_strong() };
         painter.rect_stroke(rect, radius, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     }
 }
 
-/// CSS paint remains above the SVG body, below the control's glyph and label.
-pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bool, fill: Color32, radius: f32) {
-    let _style = super::style_class::control("button", response);
-    super::native_css::mark(super::native_css::HostState::Checked, on);
+/// CSS paint remains above the SVG body, below the control's glyph and label. `el` is the button
+/// its caller entered, with `[checked]` when `on`.
+pub fn button_surface(
+    painter: &Painter,
+    rect: Rect,
+    el: &Entered,
+    response: &Response,
+    on: bool,
+    fill: Color32,
+    radius: f32,
+) {
+    let style = el.style();
     // A shape the sheet gives the button wins over the artwork Suhina ships, not over the theme's own.
-    let shaped = super::style_class::computed()
+    let shaped = style
+        .as_ref()
         .is_some_and(|style| style.authored.background || style.authored.radius || style.authored.border_width);
-    let role = super::skin::button_role();
+    let role = super::skin::button_role(el);
     if !shaped || role != "button" || super::skin::has_own("button") {
-        let fill = super::style_class::background(fill);
-        let radius = super::style_class::radius(radius);
-        if super::skin::button(painter, rect, super::skin::State::response(response, on), fill, radius) {
+        let fill = el.background_or(fill);
+        let radius = el.radius_or(radius);
+        if super::skin::button(painter, rect, el, super::skin::State::response(response, on), fill, radius) {
             // The artwork cast the shadows already, in its own shape.
-            super::native_css::gradients_rounded(painter, rect, radius);
+            el.paint_gradients(painter, rect, radius);
             return;
         }
     }
-    super::native_css::surface(painter, rect, radius, fill);
+    el.paint_with(painter, rect, super::element::Native { radius, fill });
 }
 
-/// A track's number, `.track-number`: its own `color`, `font-size` and `display: none`, and
-/// `:muted` while the track is off.
+/// A track's number, `track-number`: its own `color`, `font-size` and `display: none`, and
+/// `[muted]` while the track is off.
 pub fn track_number_text(painter: &Painter, rect: Rect, number: &str, ink: Color32, muted: bool) {
-    let _style = super::style_class::enter("track-number");
-    super::native_css::mark(super::native_css::HostState::Muted, muted);
-    let computed = super::style_class::computed();
+    let el = super::element::TRACK_NUMBER.attr(super::element::Muted, muted).enter();
+    let computed = el.style();
     if computed.as_ref().is_some_and(|c| !c.visible) {
         return;
     }
     let size = computed.as_ref().filter(|c| c.authored.font_size).map_or(theme::TEXT_SMALL, |c| c.font_size);
-    let ink = super::style_class::foreground(ink);
+    let ink = el.color_or(ink);
     text_in(painter, rect, Align2::CENTER_CENTER, number, theme::mono_font(size), ink);
 }
 
-/// Where a knob's value goes, from `--suhina-value-position` on the control in scope: `right`
-/// (beside it, the default), `left`, `top`, `bottom`, `inside` (over its middle) or `none`.
+/// Where a knob's value goes, from `value-position` on the control or an element it is in:
+/// `right` (beside it, the default), `left`, `top`, `bottom`, `inside` (over its middle) or `none`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValuePosition {
     Right,
@@ -266,14 +336,9 @@ pub enum ValuePosition {
 }
 
 impl ValuePosition {
-    /// The position the sheet gives the control in scope.
-    pub fn current() -> Self {
-        Self::or(Self::Right)
-    }
-
-    /// The position the sheet gives the control in scope, or `default`.
-    pub fn or(default: Self) -> Self {
-        match super::style_class::property("--suhina-value-position").as_deref().map(str::trim) {
+    /// The position the sheet gives `el`, or `default`.
+    pub fn of(el: &Entered, default: Self) -> Self {
+        match el.style().and_then(|style| style.keyword(suhina_style::property::Property::ValuePosition)) {
             Some("right") => Self::Right,
             Some("left") => Self::Left,
             Some("top") => Self::Top,
@@ -290,11 +355,13 @@ const MIN_STACKED_KNOB: f32 = 10.0;
 
 /// A knob in `rect` at `position` (0 to 1) with its value `text` where the sheet puts it
 /// ([`ValuePosition`], `default` where it says nothing), in `ink` unless the sheet's `color` says
-/// otherwise, at its `font-size` (`font_size` where it says none).
+/// otherwise, at its `font-size` (`font_size` where it says none). `el` is the control its caller
+/// entered (`pan`, `send`).
 #[allow(clippy::too_many_arguments)]
 pub fn knob_with_value(
     painter: &Painter,
     rect: Rect,
+    el: &Entered,
     position: f32,
     pointer: Color32,
     response: Option<&Response>,
@@ -303,17 +370,16 @@ pub fn knob_with_value(
     default: ValuePosition,
     font_size: f32,
 ) {
-    let computed = super::style_class::computed();
-    let size_text = computed.as_ref().filter(|c| c.authored.font_size).map_or(font_size, |c| c.font_size);
-    let ink = super::style_class::foreground(ink);
+    let size_text = el.font_size_or(font_size);
+    let ink = el.color_or(ink);
     let line = size_text + 3.0;
-    let place = match ValuePosition::or(default) {
+    let place = match ValuePosition::of(el, default) {
         // A row too low for a knob with its value above or below it keeps the value beside it,
         // so the knob stays big enough to see and use (a pan in a track's header).
         ValuePosition::Top | ValuePosition::Bottom if rect.height() - line < MIN_STACKED_KNOB => ValuePosition::Right,
         place => place,
     };
-    let text = &formatted_value(text);
+    let text = &formatted_value(el, text);
     let (knob_area, text_area, align) = match place {
         ValuePosition::Right | ValuePosition::Left => {
             let size = rect.height().min(theme::KNOB);
@@ -385,12 +451,11 @@ pub fn solo_button(
     let rect = super::control_layout::place("solo", rect, painter.clip_rect());
     let label = if solo { format!("End solo on {name}") } else { format!("Solo {name}") };
     let response = button_area(ui, rect, id, label);
-    let _style = super::style_class::enter_named_response("button", "solo", &response);
-    super::native_css::mark(super::native_css::HostState::Checked, solo);
+    let el = BUTTON.id("solo").response(&response).attr(Checked, solo).enter();
     let lit = motion::toward(ui.ctx(), response.id.with("on"), solo, motion::VALUE);
     let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
-    track_button_face(ui, painter, rect, &response, motion::mix(off, theme::accent(), lit));
-    let text = super::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), lit));
+    track_button_face(ui, painter, rect, &el, &response, motion::mix(off, theme::accent(), lit));
+    let text = el.color_or(motion::mix(theme::text_secondary(), theme::text_inverse(), lit));
     if !super::skin::paint(painter, rect, "solo", super::skin::State::response(&response, solo), text, 0.0) {
         text_in(painter, rect, Align2::CENTER_CENTER, "S", theme::ui_font(theme::TEXT_SMALL), text);
     }
@@ -422,11 +487,10 @@ pub fn cue_button(
     let rect = super::control_layout::place("cue", rect, painter.clip_rect());
     let label = if cue { format!("Stop cueing {name}") } else { format!("Cue {name} on the headphones") };
     let response = button_area(ui, rect, id, label);
-    let _style = super::style_class::enter_named_response("button", "cue", &response);
-    super::native_css::mark(super::native_css::HostState::Checked, cue);
+    let el = BUTTON.id("cue").response(&response).attr(Checked, cue).enter();
     let (fill, text) = toggle_colors(ui, &response, cue);
-    let text = super::style_class::foreground(text);
-    track_button_face(ui, painter, rect, &response, fill);
+    let text = el.color_or(text);
+    track_button_face(ui, painter, rect, &el, &response, fill);
     if !super::skin::paint(painter, rect, "cue", super::skin::State::response(&response, cue), text, 0.0) {
         headphones(painter, rect, text);
     }
@@ -472,14 +536,12 @@ pub fn arm_button(
     let rect = super::control_layout::place("arm", rect, painter.clip_rect());
     let label = if armed { format!("Disarm {name}") } else { format!("Arm {name} for recording") };
     let response = button_area(ui, rect, id, label).on_hover_text("Make this track ready to record");
-    let _style = super::style_class::enter_named_response("button", "arm", &response);
-    super::native_css::mark(super::native_css::HostState::Checked, armed);
-    super::native_css::mark(super::native_css::HostState::Armed, armed);
+    let el = BUTTON.id("arm").response(&response).attr(Checked, armed).attr(Armed, armed).enter();
     let lit = motion::toward(ui.ctx(), response.id.with("on"), armed, motion::VALUE);
     let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
-    track_button_face(ui, painter, rect, &response, motion::mix(off, theme::recording_background(), lit));
+    track_button_face(ui, painter, rect, &el, &response, motion::mix(off, theme::recording_background(), lit));
     let radius = (rect.height().min(rect.width()) * 0.22).clamp(2.5, 4.0);
-    let ring = super::style_class::foreground(motion::mix(theme::text_secondary(), theme::recording(), lit));
+    let ring = el.color_or(motion::mix(theme::text_secondary(), theme::recording(), lit));
     if !super::skin::paint(painter, rect, "arm", super::skin::State::response(&response, armed), ring, 0.0) {
         painter.circle_stroke(rect.center(), radius, Stroke::new(1.2, ring));
         if lit > 0.0 {
@@ -509,8 +571,8 @@ pub fn input_frame() -> egui::Frame {
 
 /// A text edit with the same transparent surface and focus underline in every view.
 pub fn text_input(ui: &mut Ui, edit: egui::TextEdit<'_>) -> Response {
-    let _style_class = crate::kit::style_class::enter("text-input");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let el = TEXT_INPUT.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let response = ui.add(edit.frame(input_frame()));
     input_line(ui, &response);
@@ -519,8 +581,8 @@ pub fn text_input(ui: &mut Ui, edit: egui::TextEdit<'_>) -> Response {
 
 /// The fixed-rectangle counterpart used by browser rows and project dialogs.
 pub fn text_input_at(ui: &mut Ui, rect: Rect, edit: egui::TextEdit<'_>) -> Response {
-    let _style_class = crate::kit::style_class::enter("text-input");
-    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let el = TEXT_INPUT.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let response = ui.put(rect, edit.frame(input_frame()));
     input_line(ui, &response);
@@ -536,8 +598,8 @@ pub fn combo_box<R>(
     combo: egui::ComboBox,
     contents: impl FnOnce(&mut Ui) -> R,
 ) -> egui::InnerResponse<Option<R>> {
-    let _style_class = super::style_class::enter("dropdown");
-    let mut styled_ui = super::style_class::ui(ui);
+    let el = DROPDOWN.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let menu_style = ui.style().clone();
     ui.scope(|ui| {
@@ -569,8 +631,8 @@ fn transparent_control(ui: &mut Ui) {
 
 /// Draggable/typed numeric fields share the form underline without changing interaction.
 pub fn number_input(ui: &mut Ui, size: Option<egui::Vec2>, number: egui::DragValue<'_>) -> Response {
-    let _style_class = super::style_class::enter("value");
-    let mut styled_ui = super::style_class::ui(ui);
+    let el = VALUE.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     ui.scope(|ui| {
         transparent_control(ui);
@@ -582,8 +644,8 @@ pub fn number_input(ui: &mut Ui, size: Option<egui::Vec2>, number: egui::DragVal
 }
 
 pub fn number_input_at(ui: &mut Ui, rect: Rect, number: egui::DragValue<'_>) -> Response {
-    let _style_class = super::style_class::enter("value");
-    let mut styled_ui = super::style_class::ui(ui);
+    let el = VALUE.enter();
+    let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     ui.scope(|ui| {
         transparent_control(ui);
@@ -607,7 +669,7 @@ pub fn input_line(ui: &Ui, response: &Response) {
 
 /// A form field whose surrounding surface shows through, with only an underline.
 pub fn form_dropdown(ui: &Ui, painter: &Painter, rect: Rect, response: &Response, text: &str) {
-    let _style_class = crate::kit::style_class::enter_response("dropdown", response);
+    let _el = DROPDOWN.response(response).enter();
     let hover = hover(ui, response);
     let border = if response.has_focus() {
         theme::accent()
@@ -735,6 +797,62 @@ pub fn value_active(ctx: &egui::Context) -> bool {
         })
 }
 
+/// The keys a drop-down field takes this frame once it is clicked (as a value control does, until a
+/// click elsewhere, or Escape with its list closed): the arrow steps through its entries (down is
+/// +1, the next entry), and Enter while its list is `open`. Escape with the list open is left to
+/// the list, which it closes; the field keeps the keys, so the arrows then step the value itself.
+/// Escape with the list closed lets the keys go and is left to the rest of the window too (the
+/// panel's Escape, which leaves Quantise, still sees it).
+pub(crate) fn chooser_keys(ui: &Ui, response: &Response, open: bool) -> (i32, bool) {
+    let ctx = ui.ctx();
+    let key = egui::Id::unique(ACTIVE_VALUE);
+    let pass = ctx.cumulative_pass_nr();
+    if response.clicked() {
+        ctx.data_mut(|d| d.insert_temp(key, (response.id, pass)));
+    }
+    let active = ctx.data(|d| d.get_temp::<(egui::Id, u64)>(key)).is_some_and(|(id, _)| id == response.id);
+    if !active {
+        return (0, false);
+    }
+    // A press anywhere else lets it go; one in its own open list does not.
+    let pressed_elsewhere =
+        ui.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_none_or(|at| !response.rect.contains(at)));
+    if pressed_elsewhere && !response.hovered() && !open {
+        ctx.data_mut(|d| d.remove::<(egui::Id, u64)>(key));
+        return (0, false);
+    }
+    ctx.data_mut(|d| d.insert_temp(key, (response.id, pass)));
+    let (mut steps, mut enter, mut escape) = (0i32, false, false);
+    ctx.input_mut(|i| {
+        i.events.retain(|event| match event {
+            egui::Event::Key { key: egui::Key::ArrowUp, pressed: true, modifiers, .. } if !modifiers.command => {
+                steps -= 1;
+                false
+            }
+            egui::Event::Key { key: egui::Key::ArrowDown, pressed: true, modifiers, .. } if !modifiers.command => {
+                steps += 1;
+                false
+            }
+            egui::Event::Key { key: egui::Key::Enter, pressed: true, modifiers, .. } if open && !modifiers.command => {
+                enter = true;
+                false
+            }
+            egui::Event::Key { key: egui::Key::Escape, pressed: true, modifiers, .. }
+                if !open && !modifiers.command =>
+            {
+                escape = true;
+                true
+            }
+            _ => true,
+        });
+    });
+    if escape {
+        ctx.data_mut(|d| d.remove::<(egui::Id, u64)>(key));
+        return (0, false);
+    }
+    (steps, enter)
+}
+
 /// The keys an active value control takes this frame: arrow steps (up is +1), and Enter with
 /// the number typed into it. Ctrl (Cmd) with a key leaves it to the window's shortcuts, as
 /// [`value_active`] says.
@@ -822,7 +940,7 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
     let radius = if response.rect.width() > response.rect.height() * 4.0 { response.rect.height() * 0.5 } else { 4.0 };
     painter.rect_stroke(response.rect, radius, Stroke::new(1.0, theme::text_secondary()), egui::StrokeKind::Outside);
     if !typed.is_empty() {
-        painter.fill_background(response.rect.shrink(1.0), 0.0, theme::control_active());
+        painter.rect_filled(response.rect.shrink(1.0), 0.0, theme::control_active());
         painter.text(
             response.rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -832,6 +950,90 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
         );
     }
     (steps, fine, None)
+}
+
+/// The way a value control is dragged: up or down (up raises it), across (right raises it), or
+/// either, the drag's first few points choosing which. Each control picks the one that matches
+/// how it is drawn: a knob or an upright fader up or down, a bar lying across a header either way.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DragAxis {
+    #[default]
+    Vertical,
+    Horizontal,
+    /// Up or down, or across: whichever the drag moves along first, for the rest of that drag.
+    Both,
+}
+
+impl DragAxis {
+    /// How far a drag moved the value, in points: right or up is positive. [`DragAxis::Both`]
+    /// takes the larger of the two; [`drag_value_axis`] keeps one axis for a whole drag instead.
+    fn along(self, moved: Vec2) -> f32 {
+        match self {
+            Self::Vertical => -moved.y,
+            Self::Horizontal => moved.x,
+            Self::Both if moved.x.abs() > moved.y.abs() => moved.x,
+            Self::Both => -moved.y,
+        }
+    }
+
+    /// The pointer shown over a control dragged this way: none of its own for one dragged either
+    /// way, as neither arrow would say how.
+    fn cursor(self) -> Option<egui::CursorIcon> {
+        match self {
+            Self::Vertical => Some(egui::CursorIcon::ResizeVertical),
+            Self::Horizontal => Some(egui::CursorIcon::ResizeHorizontal),
+            Self::Both => None,
+        }
+    }
+}
+
+/// How far a [`DragAxis::Both`] drag moves, in points, before it chooses its axis.
+const AXIS_CHOICE_POINTS: f32 = 3.0;
+
+/// A [`DragAxis::Both`] drag's axis: the movement so far until it is far enough to choose, then
+/// the axis chosen, kept until the drag ends.
+#[derive(Debug, Clone, Copy)]
+enum AxisChoice {
+    Undecided(Vec2),
+    Chosen(DragAxis),
+}
+
+/// How far a [`DragAxis::Both`] drag moved the value this frame: nothing until it has moved
+/// [`AXIS_CHOICE_POINTS`], then the movement so far along the axis it moved along more, and from
+/// then on that axis alone, so a drag that wavers never switches. Once chosen, the pointer shows
+/// that axis's arrow.
+fn along_chosen_axis(ui: &Ui, id: egui::Id, moved: Vec2) -> f32 {
+    let key = id.with("drag-axis");
+    let choice = ui.ctx().data(|d| d.get_temp::<AxisChoice>(key)).unwrap_or(AxisChoice::Undecided(Vec2::ZERO));
+    let (choice, along) = match choice {
+        AxisChoice::Chosen(axis) => (choice, axis.along(moved)),
+        AxisChoice::Undecided(so_far) => {
+            let so_far = so_far + moved;
+            if so_far.length() < AXIS_CHOICE_POINTS {
+                (AxisChoice::Undecided(so_far), 0.0)
+            } else {
+                let axis = if so_far.x.abs() > so_far.y.abs() { DragAxis::Horizontal } else { DragAxis::Vertical };
+                (AxisChoice::Chosen(axis), axis.along(so_far))
+            }
+        }
+    };
+    ui.ctx().data_mut(|d| d.insert_temp(key, choice));
+    if let AxisChoice::Chosen(axis) = choice
+        && let Some(icon) = axis.cursor()
+    {
+        value_drag_shows(ui.ctx(), icon);
+    }
+    along
+}
+
+impl From<crate::kit::control_layout::Direction> for DragAxis {
+    /// A theme's `direction` for a control.
+    fn from(direction: crate::kit::control_layout::Direction) -> Self {
+        match direction {
+            crate::kit::control_layout::Direction::Vertical => Self::Vertical,
+            crate::kit::control_layout::Direction::Horizontal => Self::Horizontal,
+        }
+    }
 }
 
 /// A number changed by dragging vertically (up raises it), by the wheel over it and by a
@@ -849,7 +1051,7 @@ pub fn drag_value(
     range: (f64, f64),
     default: f64,
 ) -> Drag {
-    drag_value_axis(ui, response, preview, value, per_point, per_tick, range, default, false)
+    drag_value_axis(ui, response, preview, value, per_point, per_tick, range, default, DragAxis::Vertical)
 }
 
 /// A number typed into a value control, in the control's range. A pan (-1 to 1) shows and is
@@ -861,7 +1063,7 @@ fn typed_value(number: f64, range: (f64, f64)) -> f64 {
     number.clamp(range.0, range.1)
 }
 
-/// The same keyboard, wheel, reset and undo protocol with an explicit drag axis.
+/// [`drag_value`] dragged along `axis`.
 #[allow(clippy::too_many_arguments)]
 pub fn drag_value_axis(
     ui: &Ui,
@@ -872,9 +1074,9 @@ pub fn drag_value_axis(
     per_tick: f64,
     range: (f64, f64),
     default: f64,
-    horizontal: bool,
+    axis: DragAxis,
 ) -> Drag {
-    let _style_class = crate::kit::style_class::enter_response("value", response);
+    let _el = VALUE.response(response).enter();
     // Keys to the control clicked last: the arrows step it, Enter sets what was typed.
     let (steps, fine, typed) = value_keys(ui, response);
     if let Some(typed) = typed
@@ -908,12 +1110,22 @@ pub fn drag_value_axis(
     }
     if response.drag_started_by(egui::PointerButton::Primary) {
         *preview = Some(if value.is_finite() { value } else { range.0 });
+        // A new drag chooses its own axis.
+        ui.ctx().data_mut(|d| d.remove::<AxisChoice>(response.id.with("drag-axis")));
     }
     if response.dragged_by(egui::PointerButton::Primary) {
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
         let start = preview.unwrap_or(value);
         let moved = value_drag_delta(ui, response);
-        let delta = if horizontal { moved.x } else { -moved.y };
+        // A drag that shows the pointer shows the arrow of its axis; one that may go either way
+        // shows it once it has chosen (`along_chosen_axis`).
+        if let Some(icon) = axis.cursor() {
+            value_drag_shows(ui.ctx(), icon);
+        }
+        let delta = match axis {
+            DragAxis::Both => along_chosen_axis(ui, response.id, moved),
+            axis => axis.along(moved),
+        };
         let next = (start + f64::from(delta) * per_point * fine).clamp(range.0, range.1);
         *preview = Some(next);
         return Drag::Moving(next);
@@ -927,9 +1139,25 @@ pub fn drag_value_axis(
     Drag::None
 }
 
-/// Makes `rect` a draggable value with a label for screen readers and tests.
+/// Makes `rect` a draggable value with a label for screen readers and tests, dragged up or down
+/// (the up-down pointer over it); [`value_area_axis`] for another [`DragAxis`].
 pub fn value_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString, value: impl ToString) -> Response {
-    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
+    value_area_axis(ui, rect, id, label, value, DragAxis::Vertical)
+}
+
+/// A [`value_area`] dragged along `axis`, with the pointer that says so.
+pub fn value_area_axis(
+    ui: &Ui,
+    rect: Rect,
+    id: egui::Id,
+    label: impl ToString,
+    value: impl ToString,
+    axis: DragAxis,
+) -> Response {
+    let mut response = ui.interact(rect, id, Sense::click_and_drag());
+    if let Some(cursor) = axis.cursor() {
+        response = response.on_hover_cursor(cursor);
+    }
     let (label, value) = (label.to_string(), value.to_string());
     response.widget_info(|| {
         let mut info = WidgetInfo::labeled(Role::SpinButton, true, &label);
@@ -946,29 +1174,36 @@ pub fn value_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString, value
 /// Arrangement alike, so they can differ from the devices' knobs; otherwise every knob shares
 /// `knob.*`.
 pub fn knob_roles() -> (&'static str, &'static str) {
-    [("pan", "pan.knob.body", "pan.knob.pointer"), ("send", "send.knob.body", "send.knob.pointer")]
-        .into_iter()
-        .find(|(class, body, _)| super::style_class::within(class) && super::skin::has_own(body))
-        .map_or(("knob.body", "knob.pointer"), |(_, body, tip)| (body, tip))
+    [
+        (super::element::PAN, "pan.knob.body", "pan.knob.pointer"),
+        (super::element::SEND, "send.knob.body", "send.knob.pointer"),
+    ]
+    .into_iter()
+    .find(|(class, body, _)| super::style_class::within(*class) && super::skin::has_own(body))
+    .map_or(("knob.body", "knob.pointer"), |(_, body, tip)| (body, tip))
 }
 
 pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: Color32, response: Option<&Response>) {
-    let _style = response
-        .map(|response| crate::kit::style_class::enter_response("knob", response))
-        .unwrap_or_else(|| crate::kit::style_class::enter("knob"));
+    let el = KNOB.response_if(response).enter();
     let state =
         response.map(|response| super::skin::State::response(response, false)).unwrap_or(super::skin::State::Normal);
-    let pointer = super::style_class::foreground(pointer);
+    let pointer = el.color_or(pointer);
     let radius = size * 9.0 / 22.0;
     let rect = Rect::from_center_size(center, Vec2::splat(size));
     let (body, tip_role) = knob_roles();
-    if !super::skin::paint(painter, rect, body, state, pointer, 0.0) {
+    // A knob is two elements, each colouring its own artwork (`currentColor`), with the knob's
+    // pointer states. The body's colour is its own (the palette's tier gives it one), never one
+    // inherited from the knob; the pointer takes the knob's.
+    let body_ink =
+        super::element::KNOB_BODY.response_if(response).enter().computed_color_or(theme::control_background());
+    if !super::skin::paint(painter, rect, body, state, body_ink, 0.0) {
         painter.circle_filled(center, radius, theme::control_background());
         painter.circle_stroke(center, radius, theme::hairline(theme::text_hint()));
     }
-    super::native_css::background_rounded(painter, rect, size * 0.5);
+    el.paint_background(painter, rect, size * 0.5);
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
     let tip = center + Vec2::new(angle.sin(), -angle.cos()) * (radius - 1.0);
+    let pointer = super::element::KNOB_POINTER.response_if(response).enter().color_or(pointer);
     if !super::skin::paint(painter, rect, tip_role, state, pointer, angle) {
         painter.line_segment([center, tip], Stroke::new(1.5, pointer));
     }
@@ -976,13 +1211,11 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
 
 /// A dial as an `.sd` control's dial draws it, the built-in canvases' wheels (the reverb's and
 /// the delay's): the rim arc, the ring's disc, the inner disc, the pointer line to 72 % of the
-/// radius, 270° with the gap under. The colours are the tokens the `.knob` scope gives — the
+/// radius, 270° with the gap under. The colours are the tokens the `knob` scope gives — the
 /// same scope the canvases' dials take theirs from, so a theme's own colouring applies — and
 /// no artwork stands for the face, as a canvas has none.
 pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response: Option<&Response>) {
-    let _style = response
-        .map(|response| crate::kit::style_class::enter_response("knob", response))
-        .unwrap_or_else(|| crate::kit::style_class::enter("knob"));
+    let _el = response.map_or_else(|| KNOB.enter(), |response| KNOB.response(response).enter());
     let radius = (size * 0.5).max(1.0);
     // The face: the rim arc (2.35 to 7.05 rad as an `.sd` dial's is, i.e. 135° past each side
     // over the top), the ring disc inside it, the inner disc — the theme's tokens.
@@ -993,7 +1226,11 @@ pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response:
         })
         .collect();
     painter.add(egui::Shape::line(points, Stroke::new(4.0, theme::border())));
-    painter.circle_filled(center, (radius - 4.0).max(0.0), theme::panel_background());
+    painter.circle_filled(
+        center,
+        (radius - 4.0).max(0.0),
+        crate::kit::style_class::surface_or(theme::panel_background()),
+    );
     painter.circle_filled(center, (radius - 8.0).max(0.0), theme::control_background());
     // The pointer: a quarter in, three quarters to the rim, in the accent token.
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
@@ -1004,19 +1241,63 @@ pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response:
     );
 }
 
+/// `bpm` on the steps of the place a drag holds, counted from where it started (`grab`: the step
+/// and the start), to a thousandth of a BPM, within the tempo's range (#829).
+pub fn snap_tempo(grab: Option<(f64, f64)>, bpm: f64) -> f64 {
+    let snapped = match grab {
+        Some((step, from)) if step > 0.0 => from + ((bpm - from) / step).round() * step,
+        _ => bpm,
+    };
+    ((snapped * 1000.0).round() / 1000.0).clamp(20.0, 999.0)
+}
+
+/// The step of the place in the tempo `text` (right-aligned at `right`, characters `width`
+/// apart) under `x`: 1 BPM for the integer part, 0.1, 0.01 or 0.001 for the decimals (#829).
+pub fn tempo_place(text: &str, right: f32, width: f32, x: f32) -> f64 {
+    let len = text.chars().count();
+    let Some(dot) = text.find('.') else { return 1.0 };
+    if width <= 0.0 {
+        return 1.0;
+    }
+    let from_right = ((right - x) / width).floor().max(0.0) as usize;
+    let index = len.saturating_sub(from_right + 1);
+    if index <= dot {
+        return 1.0;
+    }
+    let decimals = (index - dot).min(3);
+    10f64.powi(-(decimals as i32))
+}
+
+/// The characters of the tempo `text` the place of `step` covers, as a range of indices: the
+/// whole integer part for 1 BPM, one decimal otherwise.
+pub fn tempo_place_span(text: &str, step: f64) -> (usize, usize) {
+    let dot = text.find('.').unwrap_or(text.len());
+    if step >= 1.0 {
+        return (0, dot);
+    }
+    let decimals = (-step.log10()).round().max(1.0) as usize;
+    (dot + decimals, dot + decimals + 1)
+}
+
 /// A volume in dB as the mixer shows it.
 pub fn format_db(db: f64) -> String {
     if db.is_finite() && db > -70.0 { format!("{db:.1}") } else { "-inf".into() }
 }
 
-/// A value's text as the sheet formats it: `--suhina-value-decimals: 0 | 1 | 2` rounds its
-/// number, and `--suhina-value-unit: " dB"` follows it (quoted; at most 8 characters). Text
-/// with no number (`-inf`, `C`) only takes the unit when it ends in a digit.
-pub fn formatted_value(text: &str) -> String {
-    let decimals = super::style_class::property("--suhina-value-decimals")
-        .and_then(|v| v.trim().parse::<usize>().ok())
+/// A value's text as the sheet formats it for `el`: `value-decimals: 0 | 1 | 2` rounds its
+/// number, and `value-unit: " dB"` follows it (quoted; at most 8 characters). Text with no number
+/// (`-inf`, `C`) only takes the unit when it ends in a digit.
+pub fn formatted_value(el: &Entered, text: &str) -> String {
+    use suhina_style::property::Property;
+    let style = el.style();
+    let decimals = style
+        .as_ref()
+        .and_then(|style| style.keyword(Property::ValueDecimals))
+        .and_then(|v| v.parse::<usize>().ok())
         .filter(|d| *d <= 2);
-    let unit = super::style_class::property("--suhina-value-unit")
+    let unit = style
+        .as_ref()
+        .and_then(|style| style.text(Property::ValueUnit))
         .map(|v| v.trim().trim_matches(['"', '\'']).chars().take(8).collect::<String>());
     let mut out = match (decimals, text.trim().parse::<f64>()) {
         (Some(decimals), Ok(number)) if number.is_finite() => format!("{number:.decimals$}"),
@@ -1068,16 +1349,82 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
     }
 }
 
+/// A button with `text` on it, `label` for screen readers and tests; true when clicked. Its id is
+/// its label in its layer, so a dialog drawn over a panel with a button of the same label (the
+/// start panel's *Download update now* under Help › Check for updates…) gets a button of its own
+/// (#1229): egui keeps a widget in the layer it was first seen in that frame.
 pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str) -> bool {
-    let response = button_area(ui, rect, Id::unique(("dialog-button", label)), label);
-    let _style = super::style_class::enter_response("button", &response);
+    let response = button_area(ui, rect, Id::unique(("dialog-button", ui.layer_id(), label)), label);
+    let el = BUTTON.response(&response).enter();
     let fill = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
-    let radius = super::style_class::radius(0.0);
-    button_surface(painter, rect, &response, false, fill, radius);
+    let radius = el.radius_or(0.0);
+    button_surface(painter, rect, &el, &response, false, fill, radius);
     painter.rect_stroke(rect, radius, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     let small = theme::ui_font(theme::TEXT_SMALL);
     text_in(painter, rect, Align2::CENTER_CENTER, text, small, theme::text_primary());
     response.clicked()
+}
+
+/// A horizontal slider of a percentage, 0 to 100 (swing, #1221): a click puts the handle there, a
+/// drag moves it and the value follows while it moves (every value of a drag says so, for the
+/// caller to send them as one gesture, one undo step), and a double-click puts it at 0. Named
+/// "`label`: N %" for a reader and a test. `lit` draws the filled part in the accent, otherwise in
+/// a quieter ink. Returns the value to set, and whether it comes from a drag.
+#[allow(clippy::too_many_arguments)]
+pub fn percent_slider(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    id: Id,
+    label: &str,
+    value: f64,
+    lit: bool,
+) -> Option<(f64, bool)> {
+    let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+    let shown = if value.is_finite() { value.clamp(0.0, 100.0).round() } else { 0.0 };
+    let named = format!("{label}: {shown} %");
+    response.widget_info(|| {
+        let mut info = WidgetInfo::labeled(Role::Slider, true, &named);
+        info.value = Some(shown);
+        info
+    });
+    let hovered = hover(ui, &response);
+    let track = rect.shrink2(Vec2::new(4.0, 0.0));
+    let mid = rect.center().y;
+    let handle_x = track.left() + track.width() * (shown / 100.0) as f32;
+    painter.line_segment(
+        [Pos2::new(track.left(), mid), Pos2::new(track.right(), mid)],
+        Stroke::new(3.0, theme::control_background()),
+    );
+    let fill = if lit { theme::accent() } else { motion::mix(theme::text_hint(), theme::text_secondary(), hovered) };
+    painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(handle_x, mid)], Stroke::new(3.0, fill));
+    let cap = Rect::from_center_size(Pos2::new(handle_x, mid), Vec2::new(8.0, 12.0));
+    painter.rect_filled(cap, 2.0, motion::mix(theme::text_secondary(), theme::text_value(), hovered));
+    let sent = id.with("sent");
+    if response.double_clicked() {
+        ui.data_mut(|d| d.remove::<bool>(sent));
+        return (shown != 0.0).then_some((0.0, false));
+    }
+    let mut out = None;
+    if (response.clicked() || response.dragged())
+        && let Some(pointer) = response.interact_pointer_pos()
+        && track.width() > 0.0
+    {
+        let at = (f64::from((pointer.x - track.left()) / track.width()).clamp(0.0, 1.0) * 100.0).round();
+        if (at - shown).abs() >= 0.5 {
+            // Anything but a plain click is part of a drag, its frame included where the drag
+            // is let go or has not passed egui's threshold yet.
+            let dragged = !response.clicked();
+            if dragged {
+                ui.data_mut(|d| d.insert_temp(sent, true));
+            }
+            out = Some((at, dragged));
+        }
+    }
+    if response.drag_stopped() || !response.dragged() {
+        ui.data_mut(|d| d.remove::<bool>(sent));
+    }
+    out
 }
 
 #[cfg(test)]

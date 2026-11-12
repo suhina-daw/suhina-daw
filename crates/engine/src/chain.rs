@@ -45,6 +45,9 @@ use crate::spectrum;
 pub(crate) const MAX_BLOCK: usize = 1024;
 /// Events a chain keeps for one block before it runs up to the frame it has reached.
 const MAX_PENDING: usize = 256;
+/// The sustain pedal's MIDI controller number.
+const SUSTAIN_PEDAL: u8 = 64;
+
 const NOT_HELD: u64 = u64::MAX;
 /// Gain of a centred track at unity volume, which the sources of a chain track are mixed at
 /// (see `track_gains`); the track's real gains apply after the chain, divided by this.
@@ -108,9 +111,15 @@ pub(crate) struct Chain {
     /// The index of the bus chain this chain's output goes into, or `None` for the output. Bus
     /// chains come after the chains that feed them, so they run after them in a block.
     pub(crate) target: Option<usize>,
-    /// Some chain plays into this one (a group bus): it runs after them, in order, rather than
-    /// in the stages the other chains run their plug-ins in together. Set with `target`.
+    /// Some chain plays into this one (a group bus, a return, Main). Set with `target`.
     pub(crate) is_bus: bool,
+    /// When in a block it runs: after the chains that play into it (#1261), and with how much
+    /// of the deadline (see [`crate::sends::Turn`]).
+    pub(crate) turn: crate::sends::Turn,
+    /// What it adds to its bus or the output and to the cue bus, staged when it is done
+    /// ([`Chain::stage`]) and added in chain order, so a sum never depends on which plug-in
+    /// answered first.
+    pub(crate) staged: crate::sends::Staged,
     /// The track's cue is on: its output after the chain is also added to the cue bus, at
     /// these gains (its own channel's volume and pan, divided by `CHAIN_INPUT_GAIN`).
     pub(crate) cue: Option<(f32, f32)>,
@@ -339,6 +348,8 @@ impl Chain {
             mix: None,
             target: None,
             is_bus: false,
+            turn: crate::sends::Turn::default(),
+            staged: crate::sends::Staged::new(),
             cue: None,
             sends: Vec::new(),
             scratch: Vec::new(),
@@ -391,6 +402,8 @@ impl Chain {
             mix: None,
             target: None,
             is_bus: false,
+            turn: crate::sends::Turn::default(),
+            staged: crate::sends::Staged::new(),
             cue: None,
             sends: Vec::new(),
             scratch: Vec::new(),
@@ -510,7 +523,8 @@ impl Chain {
     }
 
     /// Plans the parameter events of its plug-ins for a block of `frames` frames starting at
-    /// arrangement frame `time` (`None` while the transport is stopped): call it after
+    /// arrangement frame `time` (`None` while the transport is stopped, standing at `parked`,
+    /// where the plug-ins' lanes send their values once): call it after
     /// [`Chain::begin`], before any of the block runs. Never allocates.
     /// Tells the chain's plug-ins where the song is as the block starts
     /// ([`PluginProcessor::transport`]). Never allocates.
@@ -522,10 +536,10 @@ impl Chain {
         }
     }
 
-    pub(crate) fn automate(&mut self, time: Option<u64>, frames: usize) {
+    pub(crate) fn automate(&mut self, time: Option<u64>, parked: u64, frames: usize) {
         let frames = frames.min(MAX_BLOCK);
         for slot in self.plugin_slots() {
-            slot.params.plan(time, frames);
+            slot.params.plan(time, parked, frames);
         }
         self.device_lanes.plan(time, frames);
         for slot in &mut self.slots {
@@ -689,9 +703,20 @@ impl Chain {
         }
     }
 
+    /// The plug-in it waits for, to wait for together with other chains' (#1256): its block
+    /// out, or the block it was late with. `None` when it waits for nothing, or for a plug-in
+    /// that cannot be watched. Never allocates.
+    pub(crate) fn watch(&self) -> Option<suhina_ipc::Watch<'_>> {
+        let index = self.waiting?;
+        match self.slots.get(index) {
+            Some(DeviceSlot::Plugin(plugin)) => plugin.watch(self.behind == Some(index)),
+            _ => None,
+        }
+    }
+
     /// Until when the block out may take: the block's deadline, or offline, where there is
     /// none, [`OFFLINE_TIMEOUT`] after it went out.
-    fn limit(&self) -> Option<Instant> {
+    pub(crate) fn limit(&self) -> Option<Instant> {
         self.deadline.or_else(|| self.sent_at.and_then(|at| at.checked_add(OFFLINE_TIMEOUT)))
     }
 
@@ -871,13 +896,32 @@ impl Chain {
         }
     }
 
-    /// Releases every note now, at `frame` of the block.
-    /// Each held key is released on its own, then everything: an instrument that ignores an
-    /// all-notes-off (many plug-ins do) still lets go of its notes.
+    /// Releases every note now, at `frame` of the block, for a stop: each held key on its own,
+    /// then everything, so an instrument that ignores an all-notes-off (many plug-ins do) still
+    /// lets go of its notes.
     pub(crate) fn release_all(&mut self, frame: usize) {
         if !self.instrument {
             return;
         }
+        self.release_keys(frame);
+        self.push(frame, NoteEvent::AllNotesOff);
+    }
+
+    /// Releases each held key on its own at `frame` of the block and lifts the sustain pedal, with
+    /// no all-notes-off: for a jump, a loop's wrap or a launch, where new notes start in the same
+    /// block. A plug-in gets an all-notes-off as controller changes, which many apply to the whole
+    /// block, so it would silence the notes that start after it in that block (the notes at a
+    /// loop's start). The pedal alone stops nothing that starts after it.
+    pub(crate) fn release_held(&mut self, frame: usize) {
+        if !self.instrument {
+            return;
+        }
+        self.release_keys(frame);
+        self.push(frame, NoteEvent::Controller { number: SUSTAIN_PEDAL, value: 0.0 });
+    }
+
+    /// A note-off for each held key, at `frame` of the block.
+    fn release_keys(&mut self, frame: usize) {
         for key in 0..=127u8 {
             if self.held.get(usize::from(key)).is_some_and(|&end| end != NOT_HELD) {
                 self.push(frame, NoteEvent::Off { key, velocity: 0.5 });
@@ -885,7 +929,6 @@ impl Chain {
         }
         self.held = [NOT_HELD; 128];
         self.next_off = NOT_HELD;
-        self.push(frame, NoteEvent::AllNotesOff);
     }
 
     /// A retained processor has voices whose schedule belonged to the old renderer.
@@ -1230,9 +1273,9 @@ impl Chain {
     }
 }
 
-/// How long the engine sleeps on one chain's plug-in when none of the blocks out has been
-/// answered, before it looks at all of them again (see [`run_as_answered`]): an answer from
-/// that plug-in wakes it at once, one from another is seen at most this late.
+/// How long the engine waits on one chain's plug-in when none of the blocks out has been
+/// answered, before it looks at all of them again ([`crate::sends::run`]): an answer from that
+/// plug-in ends the wait at once, one from another is seen at most this late.
 pub(crate) const ANSWER_SLICE: Duration = Duration::from_micros(50);
 
 /// The spectrum rings' watched-output capture for one block
@@ -1267,35 +1310,6 @@ impl Capture<'_> {
             return;
         }
         self.spectrum.append(row, watch.generation, output, to - from);
-    }
-}
-
-/// Takes each chain's block as soon as its plug-in answers and runs that chain on to its next
-/// plug-in, until no chain has a block out (#151): a chain does not wait for the plug-ins of the
-/// other chains, only for its own, and only until the block's deadline. The chains were started
-/// with [`Chain::advance`]. While nothing has answered, it waits for the first chain still out,
-/// for at most [`ANSWER_SLICE`] at a time. Never allocates; returns by the deadline in real time
-/// (a plug-in still out then is a miss), and offline once every plug-in has answered or used up
-/// [`OFFLINE_TIMEOUT`].
-pub(crate) fn run_as_answered(chains: &mut [Chain], frames: usize, context: &ProcessContext) {
-    loop {
-        let now = crate::clock::now();
-        let mut out = false;
-        let mut moved = false;
-        for chain in chains.iter_mut().filter(|chain| chain.is_waiting()) {
-            if chain.answered(now) {
-                chain.collect(frames);
-                chain.advance(frames, context);
-                moved = true;
-            }
-            out |= chain.is_waiting();
-        }
-        if !out {
-            return;
-        }
-        if !moved && let Some(chain) = chains.iter_mut().find(|chain| chain.is_waiting()) {
-            chain.answered(now + ANSWER_SLICE);
-        }
     }
 }
 
