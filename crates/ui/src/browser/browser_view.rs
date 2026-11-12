@@ -266,12 +266,15 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     let Context { projects, settings, selected_track, search_key, other_results } = cx;
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
-    // The panel's own background, over the window's (#1233).
-    let _ = style.paint_with(
-        &painter,
-        area,
-        Native { radius: 0.0, fill: crate::kit::style_class::surface_or(theme::panel_background()) },
-    );
+    // The panel's own background, over the window's (#1233); the browser is laid out in its
+    // content box, inside its border and padding (#1336).
+    let area = style
+        .paint_with(
+            &painter,
+            area,
+            Native { radius: 0.0, fill: crate::kit::style_class::surface_or(theme::panel_background()) },
+        )
+        .content;
     state.poll();
     suhina_plugins::trace::timed("library poll", || projects.file_library_mut().poll());
 
@@ -431,13 +434,9 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
     // `.browser-search` (or `browser text-input`): its background, border, radius and `color`.
     let search_style = crate::kit::element::TEXT_INPUT.id("browser-search").enter();
     paint_row(&painter, &search_style, rect, crate::kit::style_class::surface_or(theme::window_background()));
-    if let Some(style) = search_style.style().filter(|s| s.border_width > 0.0 && s.border.a() > 0) {
-        painter.rect_stroke(
-            rect,
-            style.radius,
-            Stroke::new(style.border_width, style.border),
-            egui::StrokeKind::Inside,
-        );
+    // Each side at its own width (an underline: `border-width: 0 0 1px`).
+    if let Some(style) = search_style.style() {
+        crate::kit::native_css::border(&painter, rect, style.radius, &style);
     }
     let glass = Pos2::new(rect.left() + PAD + 5.0, rect.center().y);
     painter.circle_stroke(glass + Vec2::new(-1.0, -1.0), 3.5, Stroke::new(1.1, theme::browser_text_hint()));

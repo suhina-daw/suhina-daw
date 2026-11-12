@@ -305,6 +305,7 @@ fn responsive_workspace_and_toolbar_survive_resize() {
                         ("mapping".into(), 60.0),
                     ],
                     Vec2::new(size.x, 56.0),
+                    56.0,
                 )
                 .unwrap();
                 assert_eq!(modules.iter().any(|module| module.name == "performance"), size.x > 1000.0);
@@ -491,6 +492,7 @@ fn taffy_grid_changes_real_module_rectangles_and_hidden_modules() {
     let modules = toolbar(
         &[("tempo".into(), 62.0), ("transport".into(), 86.0), ("mapping".into(), 64.0)],
         Vec2::new(400.0, 32.0),
+        32.0,
     )
     .unwrap();
     assert_eq!(modules.len(), 2);
@@ -1132,7 +1134,11 @@ fn a_level_bar_s_value_may_sit_left_and_its_lit_part_take_its_own_ink() {
 #[test]
 fn a_sheet_s_border_is_the_ordinary_widgets_outline() {
     let mut strokes = Vec::new();
-    for css in ["dropdown { border-width: 0px; }", "dropdown { border-width: 2px; border-color: #FF0000; }"] {
+    for css in [
+        "dropdown { border-width: 0px; }",
+        "dropdown { border-width: 2px; border-color: #FF0000; }",
+        "dropdown { border-width: 0 0 2px; border-color: #FF0000; }",
+    ] {
         let mut seen = None;
         painted(css, |ui| {
             let menu = test_el("dropdown").enter();
@@ -1144,6 +1150,8 @@ fn a_sheet_s_border_is_the_ordinary_widgets_outline() {
     }
     assert_eq!(strokes[0].width, 0.0);
     assert_eq!(strokes[1], egui::Stroke::new(2.0, egui::Color32::from_rgb(0xFF, 0, 0)));
+    // A line along one side is the element's own, not a box round each widget in it (#1336).
+    assert_ne!(strokes[2], strokes[1], "a one-sided border keeps egui's own outline");
 }
 
 #[test]
@@ -1276,6 +1284,47 @@ fn egui_widgets_in_a_scope_take_the_generic_button_and_input_rules() {
     assert_eq!(visuals.widgets.active.bg_fill, egui::Color32::from_rgb(0x30, 0x30, 0x30));
     assert_eq!(visuals.selection.bg_fill, egui::Color32::from_rgb(0x40, 0x40, 0x40));
     assert_eq!(visuals.extreme_bg_color, egui::Color32::from_rgb(5, 5, 5));
+}
+
+/// A `button` rule that sets only a border width (no colour, no fill) still sets the width of
+/// egui's outline: `border-width: 0` removes it (#1336).
+#[test]
+fn a_button_rule_with_only_a_border_width_sets_egui_s_outline() {
+    let mut seen = Vec::new();
+    for css in ["settings button { border-width: 3px; }", "settings button { border-width: 0; }"] {
+        let mut last = None;
+        painted(css, |ui| {
+            let settings = test_el("settings").enter();
+            let styled = settings.ui(ui);
+            last = Some(styled.style().visuals.widgets.inactive.bg_stroke.width);
+        });
+        seen.extend(last);
+    }
+    assert_eq!(seen, [3.0, 0.0]);
+}
+
+/// egui draws one outline all round its widgets: a `button` rule whose sides differ (an
+/// underline) keeps egui's width and takes only its colour, not a box of its widest side (#1336).
+#[test]
+fn a_button_rule_with_uneven_sides_is_not_a_box_round_egui_s_widgets() {
+    let mut seen = Vec::new();
+    for css in [
+        "settings button { background-color: #101010; }",
+        "settings button { border-width: 0 0 2px; border-color: #FF0000; }",
+        "settings button { border-width: 3px; border-color: #FF0000; }",
+    ] {
+        let mut last = None;
+        painted(css, |ui| {
+            let settings = test_el("settings").enter();
+            let styled = settings.ui(ui);
+            last = Some(styled.style().visuals.widgets.inactive.bg_stroke);
+        });
+        seen.extend(last);
+    }
+    let red = egui::Color32::from_rgb(0xFF, 0, 0);
+    let [plain, uneven, even] = seen[..] else { panic!("three strokes: {seen:?}") };
+    assert_eq!(uneven, egui::Stroke::new(plain.width, red), "egui's own width, the rule's colour");
+    assert_eq!(even, egui::Stroke::new(3.0, red));
 }
 
 #[test]

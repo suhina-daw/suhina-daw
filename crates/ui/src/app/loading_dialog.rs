@@ -32,12 +32,12 @@ pub fn show(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bo
             let mut styled_ui = style_class.ui(ui);
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
-            draw(ui, area, project, progress)
+            draw(ui, &style_class, area, project, progress)
         })
         .inner
 }
 
-fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
+fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     // Dimmed behind, and the clicks there go nowhere while the dialog is up.
     let behind = ui.interact(area, Id::unique("plugin-loading-behind"), Sense::click_and_drag());
     let _swallowed = behind.clicked();
@@ -51,10 +51,15 @@ fn draw(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
     let loading = progress.loading.len().min(LISTED) + usize::from(progress.loading.len() > LISTED);
     let lines = 1 + loading + progress.failed.len().min(LISTED);
     let height = ROW + PAD * 3.0 + BAR + lines as f32 * LINE + BUTTON.y + PAD;
-    let rect = Rect::from_center_size(area.center(), Vec2::new(WIDTH.min(area.width() - 2.0 * PAD), height));
+    let size = crate::app::project_dialog::dialog_size(dialog, area, Vec2::new(WIDTH, height));
+    let rect = Rect::from_center_size(area.center(), size);
     crate::kit::liquid::backdrop(&painter, rect);
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::own_background_or(theme::panel_background()));
-    painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    let rect = crate::app::project_dialog::dialog_box(
+        &painter,
+        dialog,
+        rect,
+        crate::kit::style_class::own_background_or(theme::panel_background()),
+    );
 
     let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     painter.rect_filled(title, 0.0, theme::control_background());

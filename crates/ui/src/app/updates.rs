@@ -169,12 +169,16 @@ impl Updates {
     /// Draws Help › Check for updates… over `area`.
     pub fn show(&mut self, ui: &Ui, area: Rect, settings: &UpdateSettings) -> Option<Wanted> {
         let channel = settings.channel();
+        // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
+        let style_class = crate::kit::element::DIALOG.enter();
         let choice = egui::Area::new(Id::unique("updates-dialog"))
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
             .show(ui.ctx(), |ui| {
+                let mut styled_ui = style_class.ui(ui);
+                let ui = &mut *styled_ui;
                 ui.set_min_size(area.size());
-                self.draw(ui, area, channel)
+                self.draw(ui, &style_class, area, channel)
             })
             .inner;
         match choice? {
@@ -196,7 +200,7 @@ impl Updates {
         None
     }
 
-    fn draw(&self, ui: &mut Ui, area: Rect, channel: Channel) -> Option<Choice> {
+    fn draw(&self, ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect, channel: Channel) -> Option<Choice> {
         let mut chosen: Option<Choice> = None;
         let phase = self.updater.phase();
         let test_builds = match (&phase, channel) {
@@ -208,7 +212,7 @@ impl Updates {
         let gh_lines = if channel == Channel::TestBuilds { 1.0 } else { 0.0 };
         let lines = 4.0 + gh_lines + test_builds.len() as f32 + f32::from(u8::from(self.note.is_some()));
         let height = ROW + lines * LINE + BUTTON.y + 4.0 * PAD;
-        let panel = project_dialog::panel(ui, area, Vec2::new(WIDTH, height), "Updates", &mut chosen);
+        let panel = project_dialog::panel(ui, dialog, area, Vec2::new(WIDTH, height), "Updates", &mut chosen);
         let painter = ui.painter_at(area);
         let font = theme::ui_font(theme::TEXT);
         let mut y = panel.top() + ROW + PAD;

@@ -682,10 +682,10 @@ pub fn legacy_rule(selector: &str, key: &str, value: &str) -> Option<String> {
             (selector.to_owned(), name, value.to_owned())
         }
     };
-    let property = suhina_style::property::Property::from_name(if name == "gap" { "row-gap" } else { name })
-        .or_else(|| (name == "border-radius").then_some(suhina_style::property::Property::Radius))?;
-    property.parse(&value).ok()?;
-    Some(format!("{selector} {{ {name}: {value}; }}"))
+    // A shorthand (`padding`, `gap`, `border-width` since #1336) is checked by its parts, as the
+    // sheet checks it.
+    suhina_style::sheet::accepts(if name == "border-radius" { "radius" } else { name }, &value)
+        .then(|| format!("{selector} {{ {name}: {value}; }}"))
 }
 
 /// Reads the rules of a theme's own sheet that Suhina reads itself (its name, artwork, control

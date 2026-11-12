@@ -7,10 +7,15 @@ use crate::kit::{theme, widgets};
 use crate::settings::view_settings::ViewSettings;
 use egui::{Align2, Rect, Sense, Ui, Vec2};
 
-pub(super) fn show(ui: &mut Ui, settings: ViewSettings, project: &str, timing: &str) {
-    let style_class = crate::kit::element::APPLICATION_BAR.enter();
-    ui.painter().rect_filled(ui.max_rect(), 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
-    style_class.paint_background(ui.painter(), ui.max_rect(), 0.0);
+/// The bar's contents in `ui`'s rect, its content box: `style_class` is the bar's element, which
+/// the window entered and painted.
+pub(super) fn show(
+    ui: &mut Ui,
+    style_class: &crate::kit::element::Entered,
+    settings: ViewSettings,
+    project: &str,
+    timing: &str,
+) {
     let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let row = ui.available_rect_before_wrap();
@@ -125,7 +130,8 @@ mod tests {
     #[test]
     fn native_decorations_do_not_duplicate_window_buttons() {
         let mut harness = Harness::builder().allow_missing_glyphs().with_size((640.0, 28.0)).build_ui(|ui| {
-            show(ui, ViewSettings::default(), "Project", "120 BPM");
+            let bar = crate::kit::element::APPLICATION_BAR.enter();
+            show(ui, &bar, ViewSettings::default(), "Project", "120 BPM");
         });
         harness.run();
         for label in ["Window Minimize", "Window Maximize", "Window Close"] {

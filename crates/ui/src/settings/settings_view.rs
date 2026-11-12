@@ -913,6 +913,8 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     if !state.window {
         crate::kit::liquid::paint(&painter, area, &style_class, panel_base, crate::kit::liquid::Surface::Panel);
     }
+    // Its border, and the page in its content box, inside its border and padding (#1336).
+    let area = style_class.paint_border(&painter, area);
     input_style(ui);
 
     let width = SIDEBAR + SIDEBAR_GAP + PAGE_WIDTH;
@@ -1677,10 +1679,8 @@ fn paint_swatch(painter: &egui::Painter, rect: Rect, color: egui::Color32) -> f3
         Some(style) => {
             let corner = radius(style.radius);
             painter.rect_filled(rect, corner, style.background);
-            if style.border_width > 0.0 {
-                let stroke = egui::Stroke::new(style.border_width, style.border);
-                painter.rect_stroke(rect, corner, stroke, egui::StrokeKind::Inside);
-            }
+            // Each side at its own width.
+            crate::kit::native_css::border(painter, rect, corner, &style);
             corner
         }
         None => {

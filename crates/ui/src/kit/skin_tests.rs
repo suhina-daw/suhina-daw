@@ -295,6 +295,7 @@ fn a_legacy_skin_s_styles_join_its_sheet_under_today_s_names() {
             "css": "browser { color: #123456; }",
             "styles": {
                 "mixer pan": { "--suhina-appearance": "knob", "color": "#ABCDEF" },
+                "button": { "border-width": "1px", "padding": "2px 4px" },
                 "device": { "--suhina-param-columns": "3", "--suhina-param-row": "48px" },
                 "arrangement": { "--suhina-param-columns": "12" },
                 "nowhere": { "color": "#000000" }
@@ -308,6 +309,8 @@ fn a_legacy_skin_s_styles_join_its_sheet_under_today_s_names() {
     // The device grid's styles become the CSS layout that took their place.
     assert!(css.contains("device { grid-template-columns: repeat(3, 1fr); }"), "{css}");
     assert!(css.contains("device device-control { height: 48px; }"), "{css}");
+    // Shorthands (`border-width` since #1336) keep their names.
+    assert!(css.contains("button { border-width: 1px; }") && css.contains("button { padding: 2px 4px; }"), "{css}");
     assert!(!css.contains("param-columns") && !css.contains("param-row"), "{css}");
     assert_eq!(warnings.len(), 2, "{warnings:?}");
     assert!(

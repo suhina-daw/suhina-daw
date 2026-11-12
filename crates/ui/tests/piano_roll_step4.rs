@@ -670,3 +670,35 @@ fn stack_device_panel_only_in_piano_roll_keeps_the_piano_roll_open() {
     assert!(h.query_by_label("Devices column splitter").is_some(), "on: the column beside the view");
     assert!(h.query_by_label_contains("Piano roll,").is_some(), "and the piano roll stays open");
 }
+
+/// The stacked devices' column beside the editor lies above the detail area's panel, so that
+/// panel, which hides its overflow, does not cut it: what the column holds is painted where it
+/// is (#1336).
+#[test]
+fn the_devices_column_beside_the_editor_is_not_cut_by_the_detail_panel() {
+    // Regions hide their overflow already: a sheet that says so.
+    suhina_ui::kit::native_css::set_user_sheet(Some("#panel-detail { overflow: hidden; }".into()));
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer, Settings::default());
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, Settings { device_layout: DeviceLayout::Stack, ..Settings::default() });
+    h.run();
+    h.get_by_label("Show Devices").click();
+    h.run();
+    let splitter = h.get_by_label("Devices column splitter").rect();
+    let column = Rect::from_min_max(pos2(splitter.right(), splitter.top()), pos2(SIZE.0, splitter.bottom()));
+    // The column's own text (its devices, or the hint that it has none) shows in it.
+    let texts = h
+        .output()
+        .shapes
+        .iter()
+        .filter(|s| matches!(&s.shape, egui::Shape::Text(t) if column.contains(t.pos)))
+        .map(|s| s.clip_rect)
+        .collect::<Vec<_>>();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!texts.is_empty(), "the column paints its text");
+    assert!(
+        texts.iter().all(|clip| clip.intersect(column).is_positive()),
+        "not cut away by the panel under it: {texts:?}"
+    );
+}

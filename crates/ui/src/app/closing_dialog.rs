@@ -25,11 +25,11 @@ pub fn show(ui: &Ui, area: Rect, waiting: &[String]) {
         let mut styled_ui = style_class.ui(ui);
         let ui = &mut *styled_ui;
         ui.set_min_size(area.size());
-        draw(ui, area, waiting);
+        draw(ui, &style_class, area, waiting);
     });
 }
 
-fn draw(ui: &Ui, area: Rect, waiting: &[String]) {
+fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, waiting: &[String]) {
     // The window has nothing left to click while it closes.
     let behind = ui.interact(area, Id::unique("closing-behind"), Sense::click_and_drag());
     let _swallowed = behind.clicked();
@@ -38,9 +38,14 @@ fn draw(ui: &Ui, area: Rect, waiting: &[String]) {
 
     let listed = waiting.len().min(LISTED) + usize::from(waiting.len() > LISTED);
     let height = ROW + PAD * 2.0 + (1 + listed) as f32 * LINE;
-    let rect = Rect::from_center_size(area.center(), Vec2::new(WIDTH.min(area.width() - 2.0 * PAD), height));
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
-    painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    let size = crate::app::project_dialog::dialog_size(dialog, area, Vec2::new(WIDTH, height));
+    let rect = Rect::from_center_size(area.center(), size);
+    let rect = crate::app::project_dialog::dialog_box(
+        &painter,
+        dialog,
+        rect,
+        crate::kit::style_class::surface_or(theme::panel_background()),
+    );
     let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     painter.rect_filled(title, 0.0, theme::control_background());
     widgets::text_in(

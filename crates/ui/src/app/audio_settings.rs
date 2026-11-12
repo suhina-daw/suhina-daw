@@ -197,8 +197,10 @@ impl App {
                     let panel = Rect::from_min_max(whole.min, Pos2::new(whole.right(), top));
                     let bar = Rect::from_min_max(Pos2::new(whole.left(), top), whole.max);
                     suhina_plugins::trace::timed("settings native contents", || self.settings_contents(ui, panel));
-                    let _status =
-                        ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| self.status_bar(ui, None));
+                    let status_bar = crate::kit::element::STATUS_BAR.enter();
+                    let _status = ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| {
+                        self.status_bar(ui, &status_bar, None)
+                    });
                     if ui.input(|input| {
                         input.viewport().close_requested()
                             || (self.page.capture.is_none() && input.modifiers.command && input.key_pressed(Key::Comma))

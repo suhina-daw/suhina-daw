@@ -250,18 +250,24 @@ impl MissingFiles {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
         // The panel is a dialog: the theme may style it, and its panel does not take the window's colour.
-        let _dialog = crate::kit::element::DIALOG.enter();
+        let dialog = crate::kit::element::DIALOG.enter();
         egui::Area::new(Id::unique("missing-files"))
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
             .show(ui.ctx(), |ui| {
                 ui.set_min_size(area.size());
-                self.draw(ui, area, project)
+                self.draw(ui, &dialog, area, project)
             })
             .inner
     }
 
-    fn draw(&mut self, ui: &mut Ui, area: Rect, project: &str) -> Option<Outcome> {
+    fn draw(
+        &mut self,
+        ui: &mut Ui,
+        dialog: &crate::kit::element::Entered,
+        area: Rect,
+        project: &str,
+    ) -> Option<Outcome> {
         let behind = ui.interact(area, Id::unique("missing-files-behind"), Sense::click_and_drag());
         let _swallowed = behind.clicked();
         let painter = ui.painter_at(area);
@@ -271,11 +277,15 @@ impl MissingFiles {
             crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
         );
         let height = ROW + PAD * 4.0 + LINE * 3.0 + self.rows.len() as f32 * ROW_HEIGHT + BUTTON.y;
-        let size = Vec2::new(WIDTH.min(area.width() - 2.0 * PAD), height.min(area.height() - 2.0 * PAD));
+        let size = crate::app::project_dialog::dialog_size(dialog, area, Vec2::new(WIDTH, height));
         let rect = Rect::from_center_size(area.center(), size);
         crate::kit::liquid::backdrop(&painter, rect);
-        painter.rect_filled(rect, 0.0, crate::kit::style_class::own_background_or(theme::panel_background()));
-        painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+        let rect = crate::app::project_dialog::dialog_box(
+            &painter,
+            dialog,
+            rect,
+            crate::kit::style_class::own_background_or(theme::panel_background()),
+        );
         let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
         painter.rect_filled(bar, 0.0, theme::control_background());
         widgets::text_in(

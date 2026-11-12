@@ -150,7 +150,8 @@ pub(crate) fn parse(source: &str) -> Result<Vec<Transition>, String> {
         return Err("At most eight transitions".into());
     }
     for item in items {
-        let mut property = None;
+        // `None` for `all`; a shorthand names each of its longhands.
+        let mut properties: Vec<Option<Property>> = vec![None];
         let mut named = false;
         let mut times = Vec::new();
         let mut easing = None;
@@ -191,21 +192,24 @@ pub(crate) fn parse(source: &str) -> Result<Vec<Transition>, String> {
                 }
             } else if !named {
                 named = true;
-                property = match word.as_str() {
-                    "all" => None,
-                    "background" => Some(Property::BackgroundColor),
-                    name => Some(Property::from_name(name).ok_or("Unknown transition property")?),
+                properties = match word.as_str() {
+                    "all" => vec![None],
+                    name => match crate::sheet::Shorthand::from_name(name) {
+                        Some(shorthand) => shorthand.longhands().iter().copied().map(Some).collect(),
+                        None => vec![Some(Property::from_name(name).ok_or("Unknown transition property")?)],
+                    },
                 };
             } else {
                 return Err("Invalid transition".into());
             }
         }
-        result.push(Transition {
+        let easing = easing.unwrap_or(Easing::CubicBezier([0.25, 0.1, 0.25, 1.0]));
+        result.extend(properties.into_iter().map(|property| Transition {
             property,
             duration: times.first().copied().unwrap_or(0.0),
             delay: times.get(1).copied().unwrap_or(0.0),
-            easing: easing.unwrap_or(Easing::CubicBezier([0.25, 0.1, 0.25, 1.0])),
-        });
+            easing,
+        }));
     }
     Ok(result)
 }
@@ -558,6 +562,16 @@ mod tests {
         for bad in ["color 99s", "color 1s 1s 1s", "nothing 1s", "color 1s ease ease", "cubic-bezier(2,0,0,1) 1s"] {
             assert!(parse(bad).is_err(), "{bad}");
         }
+    }
+
+    /// A shorthand names its longhands, as `border-width` did before it became one (#1336), so a
+    /// transition list naming it still parses and animates the rest.
+    #[test]
+    fn a_transition_naming_a_shorthand_covers_its_longhands() {
+        let list = parse("border-width 1s, color 200ms, background 100ms").unwrap();
+        assert!(list.iter().any(|t| t.property == Some(Property::BorderLeftWidth)));
+        assert_eq!(find(&list, Property::Color).map(|t| t.duration), Some(0.2));
+        assert_eq!(find(&list, Property::BackgroundColor).map(|t| t.duration), Some(0.1));
     }
 
     #[test]

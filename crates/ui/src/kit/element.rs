@@ -6,8 +6,9 @@
 //!
 //! ```ignore
 //! let el = KNOB.id("send").response(&response).attr(Checked, on).enter();
-//! let boxed = el.paint(&painter, rect); // shadows, background, gradients, then border and outline
-//! draw_contents(boxed.content);
+//! let boxed = el.paint(&painter, rect); // shadows, background, gradients, inset shadows, border
+//! draw_contents(boxed.content); // the box less its border and padding
+//! drop(el); // clips what the contents painted (`overflow`), then paints the outline
 //! let style = CLIP.color(clip.color).style(); // a drawn item
 //! ```
 //!
@@ -16,8 +17,9 @@
 //! parent's and its own identity, never the style of an element that encloses it, so a part that
 //! forgets to enter its own element cannot paint as its parent. Kit's shared painters
 //! (`mixer_controls`' level bars and pan field, `widgets::button_surface`) take the element their
-//! caller entered. [`Entered::paint`] paints in CSS's order; what a region or container paints
-//! after its contents (its border, its outline) comes when it is dropped.
+//! caller entered. [`Entered::paint`] paints in CSS's order; when the element is dropped, what its
+//! contents painted is clipped to its padding box if it hides its overflow, and its outline is
+//! painted over them.
 
 use egui::{Color32, Painter, Rect, Response};
 
@@ -68,7 +70,7 @@ impl Default for Native {
 }
 
 /// What [`Entered::paint`] painted: the radius it used, and the rectangle left for the
-/// element's contents: the rectangle given, less the element's `padding`.
+/// element's contents: the rectangle given, less the element's border and `padding`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Boxed {
     pub content: Rect,
@@ -274,24 +276,78 @@ pub struct Entered {
     scope: super::style_class::Scope,
     native: Native,
     name: Name,
-    /// What the element paints once its contents are ([`Entered::paint`]).
+    /// What the element does once its contents are painted ([`Entered::paint`]).
     rest: std::cell::RefCell<Option<Rest>>,
 }
 
-/// The part of an element's box painted after its contents: where, and how.
+/// What an element does once its contents are painted: clip them, then paint its outline.
 struct Rest {
     painter: Painter,
     rect: Rect,
     radius: f32,
     style: Computed,
     outer: Option<Rect>,
-    control: bool,
+    /// The first shape of its contents in the painter's layer, and the padding box they are kept
+    /// in, when it hides its overflow.
+    clip: Option<(egui::layers::ShapeIdx, Rect)>,
 }
 
 impl Rest {
     fn paint(self) {
-        super::native_css::box_end(&self.painter, self.rect, self.radius, &self.style, self.outer, self.control);
+        if let Some((from, to)) = self.clip {
+            clip_contents(&self.painter, from, to);
+        }
+        super::native_css::box_end(&self.painter, self.rect, self.radius, &self.style, self.outer);
     }
+}
+
+/// Keeps every shape painted in `painter`'s layer since `from` inside `to` (`overflow: hidden`):
+/// whichever painter or `Ui` painted it, so a child cannot paint past its parent's padding box.
+/// Menus, popups and tooltips are other layers, which the clip leaves alone, as CSS's top layer.
+fn clip_contents(painter: &Painter, from: egui::layers::ShapeIdx, to: Rect) {
+    painter.ctx().graphics_mut(|layers| {
+        let list = layers.entry(painter.layer_id());
+        for index in from.0..list.next_idx().0 {
+            list.mutate_shape(egui::layers::ShapeIdx(index), |shape| {
+                #[cfg(debug_assertions)]
+                count_cut(shape, to);
+                shape.clip_rect = shape.clip_rect.intersect(to);
+            });
+        }
+    });
+}
+
+#[cfg(debug_assertions)]
+thread_local! {
+    static CUTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts a shape whose visible part an element's `overflow` clip cuts ([`overflow_cuts`]).
+#[cfg(debug_assertions)]
+fn count_cut(shape: &egui::epaint::ClippedShape, to: Rect) {
+    // Shapes that show nothing (a widget's transparent frame, an empty text) are not cut.
+    let shows = match &shape.shape {
+        egui::Shape::Mesh(mesh) => mesh.vertices.iter().any(|vertex| vertex.color.a() > 0),
+        egui::Shape::Text(text) => !text.galley.text().trim().is_empty(),
+        egui::Shape::Rect(rect) => rect.fill.a() > 0 || (rect.stroke.width > 0.0 && rect.stroke.color.a() > 0),
+        egui::Shape::Noop => false,
+        _ => true,
+    };
+    let seen = shape.shape.visual_bounding_rect().intersect(shape.clip_rect);
+    if shows && seen.is_positive() && !to.expand(0.01).contains_rect(seen) {
+        CUTS.set(CUTS.get() + 1);
+    }
+}
+
+/// How many shapes an element's `overflow` clip has cut on this thread since the last call, which
+/// starts the count again: for tests that check a view paints only inside the regions it is in.
+/// Always 0 in a release build.
+#[doc(hidden)]
+pub fn overflow_cuts() -> usize {
+    #[cfg(debug_assertions)]
+    return CUTS.replace(0);
+    #[cfg(not(debug_assertions))]
+    0
 }
 
 impl Drop for Entered {
@@ -309,10 +365,10 @@ impl Entered {
     }
 
     /// The element's box in `rect`, in CSS's order: its outer shadows, its background and
-    /// gradients, then for a control its inset shadows and border; for a region or container
-    /// those come when it leaves scope, after its contents, and so does any element's outline.
-    /// Its [`Native`] fallbacks stand where the sheet sets none. Its contents go in
-    /// [`Boxed::content`], the box less its `padding`.
+    /// gradients, its inset shadows and its border. Its contents go in [`Boxed::content`], the box
+    /// less its border and `padding`. When it leaves scope, what its contents painted in the
+    /// painter's layer is clipped to its padding box if it hides its overflow, and its outline is
+    /// painted over them. Its [`Native`] fallbacks stand where the sheet sets none.
     pub fn paint(&self, painter: &Painter, rect: Rect) -> Boxed {
         self.paint_with(painter, rect, self.native)
     }
@@ -320,34 +376,88 @@ impl Entered {
     /// [`Entered::paint`] with `native` as the fallbacks, for a fill worked out once the element is
     /// in scope (its hover).
     pub fn paint_with(&self, painter: &Painter, rect: Rect, native: Native) -> Boxed {
-        // A box painted before by this element is finished first.
-        if let Some(rest) = self.rest.borrow_mut().take() {
-            rest.paint();
-        }
+        self.finish();
         let style = self.style();
-        let control = !self.name.is_surface();
         let outer = super::native_css::outer_clip(self.scope.node);
-        super::native_css::set_box(self.scope.node, rect, painter.clip_rect());
-        let radius =
-            super::native_css::box_begin(painter, rect, native.radius, native.fill, style.as_ref(), outer, control);
-        let content = match &style {
-            Some(style) => {
-                let [top, right, bottom, left] = style.padding();
-                let inner = Rect::from_min_max(rect.min + egui::vec2(left, top), rect.max - egui::vec2(right, bottom));
-                if inner.is_positive() { inner } else { Rect::from_center_size(inner.center(), egui::Vec2::ZERO) }
-            }
-            None => rect,
-        };
-        if let Some(style) = style.filter(|style| super::native_css::has_end(style, control)) {
-            *self.rest.borrow_mut() = Some(Rest { painter: painter.clone(), rect, radius, style, outer, control });
-        }
+        let radius = super::native_css::box_begin(painter, rect, native.radius, native.fill, style.as_ref(), outer);
+        let content = self.contain(painter, rect, style, radius, outer);
         Boxed { content, radius }
     }
 
-    /// Says where the element is on screen without painting it (a panel, the toolbar): the box
-    /// that clips its children's outer shadows when it hides its overflow.
-    pub fn occupies(&self, rect: Rect, clip: Rect) {
-        super::native_css::set_box(self.scope.node, rect, clip);
+    /// The element's border in `rect`, for a bar whose background its caller paints with the
+    /// window's corners (and [`Entered::paint_background`] its gradients and inset shadows): then,
+    /// as after [`Entered::paint`], its contents go in the content box returned, are clipped to
+    /// its padding box when it hides its overflow, and its outline comes when it leaves scope.
+    pub fn paint_border(&self, painter: &Painter, rect: Rect) -> Rect {
+        self.finish();
+        let style = self.style();
+        if let Some(style) = &style {
+            super::native_css::border(painter, rect, 0.0, style);
+        }
+        let outer = super::native_css::outer_clip(self.scope.node);
+        self.contain(painter, rect, style, 0.0, outer)
+    }
+
+    /// The element's content box in `rect`; and from here on, until it is dropped, its box
+    /// clips what is painted in `painter`'s layer when it hides its overflow.
+    fn contain(
+        &self,
+        painter: &Painter,
+        rect: Rect,
+        style: Option<Computed>,
+        radius: f32,
+        outer: Option<Rect>,
+    ) -> Rect {
+        let Some(style) = style else {
+            super::native_css::set_box(self.scope.node, rect, painter.clip_rect());
+            return rect;
+        };
+        let [top, right, bottom, left] = style.border_sides;
+        let padding_box = shrink(rect, [top, right, bottom, left]);
+        super::native_css::set_box(self.scope.node, padding_box, painter.clip_rect());
+        let content = shrink(rect, style.insets_in(rect.width()));
+        let clip = style.hides_overflow().then(|| {
+            let from = painter.ctx().graphics_mut(|layers| layers.entry(painter.layer_id()).next_idx());
+            (from, padding_box)
+        });
+        if clip.is_some() || style.outline().is_some() {
+            *self.rest.borrow_mut() = Some(Rest { painter: painter.clone(), rect, radius, style, outer, clip });
+        }
+        content
+    }
+
+    /// Finishes a box this element painted before, if it did: a box at a time.
+    fn finish(&self) {
+        let rest = self.rest.borrow_mut().take();
+        if let Some(rest) = rest {
+            rest.paint();
+        }
+    }
+
+    /// Closes the box painted last before the element leaves scope: what its contents painted so
+    /// far is clipped, if it hides its overflow, and its outline is painted. Paint after this is
+    /// not clipped by it: for an element whose scope holds something outside its box (the detail
+    /// area's devices column, over the view above it).
+    pub fn close_box(&self) {
+        self.finish();
+    }
+
+    /// The element's content box in `rect`: `rect` less its border and `padding`, for an element
+    /// painted in part (a header scrolled partly out of view) whose contents follow its whole box.
+    pub fn content_in(&self, rect: Rect) -> Rect {
+        shrink(rect, self.insets_in(rect.width()))
+    }
+
+    /// The room the element's border and `padding` take inside its box (top, right, bottom,
+    /// left): what a box sized from its contents adds around them. Zero where no sheet styles it.
+    pub fn insets(&self) -> [f32; 4] {
+        self.style().map_or([0.0; 4], |style| style.insets())
+    }
+
+    /// [`Entered::insets`] for a box `width` wide, which a padding in percent is taken of
+    /// (`toolbar`, `workspace`: [`super::native_css::Computed::padding_in`]).
+    pub fn insets_in(&self, width: f32) -> [f32; 4] {
+        self.style().map_or([0.0; 4], |style| style.insets_in(width))
     }
 
     /// The element's `color`, or `fallback` where the sheet sets none.
@@ -386,7 +496,7 @@ impl Entered {
     /// The element's shadows, gradients and inset shadows in `rect`, with `radius` where the sheet
     /// gives none: for a surface whose fill its caller paints. Whether it painted anything.
     pub fn paint_background(&self, painter: &Painter, rect: Rect, radius: f32) -> bool {
-        self.occupies(rect, painter.clip_rect());
+        super::native_css::set_box(self.scope.node, rect, painter.clip_rect());
         self.style().is_some_and(|style| super::native_css::background_rounded(painter, rect, radius, style))
     }
 
@@ -441,6 +551,13 @@ impl Entered {
     pub fn name(&self) -> Name {
         self.name
     }
+}
+
+/// `rect` less `insets` (top, right, bottom, left); an empty rectangle at its centre where they
+/// leave no room.
+fn shrink(rect: Rect, [top, right, bottom, left]: [f32; 4]) -> Rect {
+    let inner = Rect::from_min_max(rect.min + egui::vec2(left, top), rect.max - egui::vec2(right, bottom));
+    if inner.is_positive() { inner } else { Rect::from_center_size(inner.center(), egui::Vec2::ZERO) }
 }
 
 /// The registry's element named `name`, for code that has a name at run time.

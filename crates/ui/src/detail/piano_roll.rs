@@ -246,6 +246,9 @@ pub fn show(
         .enter();
     let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
+    // Its own box, which no bundled theme paints; the toolbar, keys and grid go in its content
+    // box, inside its border and padding (#1336).
+    let area = el.paint(&ui.painter_at(area), area).content;
     let Context { options, keymap, copied, playhead, start_marker, seeks } = cx;
     let scale = options.toolbar_size.scale();
     let fresh = state.shown.as_ref() != Some(&clip.address);

@@ -150,6 +150,17 @@ fn css_changes_native_model_and_reports_unsupported_rules() {
     assert!(apply(&mut restored, &export(&theme)).is_empty());
     assert_eq!(restored, theme);
 }
+/// An element's border width, padding and gap are shorthands of the style engine; the editor takes
+/// them as it takes a longhand, and refuses a value none of their sides accepts (#1336).
+#[test]
+fn the_editor_takes_shorthands_of_an_element() {
+    let css = "button { border-width: 1px; } button { border-width: 0 0 2px; } mixer pan { padding: 2px 4px; } \
+               device { gap: 6px; } button { border-top-width: 3px; } button { border-radius: 4px; }";
+    assert!(apply(&mut Theme::default(), css).is_empty(), "{:?}", apply(&mut Theme::default(), css));
+    for bad in ["button { border-width: red; }", "button { border-width: 1px 2px 3px 4px 5px; }"] {
+        assert_eq!(apply(&mut Theme::default(), bad).len(), 1, "{bad}");
+    }
+}
 #[test]
 fn only_relative_css_imports_are_read() {
     assert_eq!(
@@ -262,4 +273,15 @@ fn an_artwork_rules_attribute_reads_in_any_form_css_allows() {
     {
         assert_eq!(theme.skin.assets.get(role).map(String::as_str), Some(path), "{role}");
     }
+}
+
+/// A theme that pads a painted element in percent is told so when it loads, and the padding is
+/// not used; on the workspace, laid out by the CSS layout, it is taken (#1336).
+#[test]
+fn a_theme_is_told_a_painted_element_takes_no_padding_in_percent() {
+    let meta = || crate::kit::theme::ThemeMeta::new("Padded", "#123456");
+    let (_, warnings) = crate::kit::theme::from_folder(meta(), "device { padding: 5%; }");
+    assert!(warnings.iter().any(|w| w.contains("percentage is read only on a CSS layout container")), "{warnings:?}");
+    let (_, warnings) = crate::kit::theme::from_folder(meta(), "#workspace { padding: 1%; }");
+    assert!(warnings.is_empty(), "{warnings:?}");
 }

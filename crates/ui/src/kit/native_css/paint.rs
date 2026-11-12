@@ -166,12 +166,11 @@ fn draw(painter: &Painter, rect: Rect, gradient: &Gradient, radius: f32, opacity
 
 /// An element's box in `rect`, as far as it is painted before its contents (CSS's order): its
 /// outer shadows, clipped by `outer` (the box of the nearest element around it that hides its
-/// overflow) where one is known, its background colour and its gradients, then for a `control`
-/// its inset shadows and border. `style` is its element's (`kit::element`); the caller's `radius`
-/// and `fill` stand where the sheet sets none. A transparent background paints nothing, rather
-/// than a see-through hole in the window. The surface blends with what is under it: a control is
-/// never a hole to the desktop, whatever its alpha (only views, bars and panels set the window's
-/// pixels). Returns the radius used, for what the element draws on top and for [`box_end`].
+/// overflow) where one is known, its background colour, its gradients, its inset shadows and its
+/// border. `style` is its element's (`kit::element`); the caller's `radius` and `fill` stand where
+/// the sheet sets none. A transparent background paints nothing, rather than a see-through hole in
+/// the window. The surface blends with what is under it, whatever its alpha. Returns the radius
+/// used, for what the element draws on top and for [`box_end`].
 pub(in crate::kit) fn box_begin(
     painter: &Painter,
     rect: Rect,
@@ -179,7 +178,6 @@ pub(in crate::kit) fn box_begin(
     fill: egui::Color32,
     style: Option<&super::Computed>,
     outer: Option<Rect>,
-    control: bool,
 ) -> f32 {
     if !rect.is_positive() || !rect.is_finite() {
         return 0.0;
@@ -207,27 +205,20 @@ pub(in crate::kit) fn box_begin(
     for gradient in style.gradients.iter().rev() {
         draw(painter, rect, gradient, radius, style.opacity);
     }
-    if control {
-        edge(painter, rect, radius, style);
-    }
+    edge(painter, rect, radius, style);
     radius
 }
 
-/// The rest of an element's box, painted once its contents are: a region's or container's inset
-/// shadows and border (a control's came before its contents), then any element's outline.
+/// What an element paints once its contents are: its outline, over them.
 pub(in crate::kit) fn box_end(
     painter: &Painter,
     rect: Rect,
     radius: f32,
     style: &super::Computed,
     outer: Option<Rect>,
-    control: bool,
 ) {
     if !rect.is_positive() || !rect.is_finite() {
         return;
-    }
-    if !control {
-        edge(painter, rect, radius, style);
     }
     if let Some((width, color, offset)) = style.outline() {
         let around = rect.expand(offset);
@@ -244,20 +235,41 @@ pub(in crate::kit) fn box_end(
     }
 }
 
-/// Whether `style` paints anything in [`box_end`] for an element of that kind.
-pub(in crate::kit) fn has_end(style: &super::Computed, control: bool) -> bool {
-    style.outline().is_some()
-        || (!control && (style.border_width > 0.0 || style.shadows.iter().any(|shadow| shadow.inset)))
-}
-
-/// An element's inset shadows and border.
+/// An element's inset shadows and border. A border of one width all round follows the corners;
+/// sides of different widths are drawn straight.
 fn edge(painter: &Painter, rect: Rect, radius: f32, style: &super::Computed) {
     for shadow in style.shadows.iter().rev().filter(|s| s.inset) {
         shadow.paint(painter, rect, radius, style.opacity);
     }
-    if style.border_width > 0.0 && style.border.a() > 0 {
-        let stroke = egui::Stroke::new(style.border_width, style.border.gamma_multiply(style.opacity));
-        painter.rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
+    border(painter, rect, radius, style);
+}
+
+/// An element's border alone, for one whose background and inset shadows its caller painted.
+pub(crate) fn border(painter: &Painter, rect: Rect, radius: f32, style: &super::Computed) {
+    if !rect.is_positive() || !rect.is_finite() || style.border_width <= 0.0 || style.border.a() == 0 {
+        return;
+    }
+    let color = style.border.gamma_multiply(style.opacity);
+    let [top, right, bottom, left] = style.border_sides;
+    if [top, right, bottom, left].iter().all(|side| *side == top) {
+        painter.rect_stroke(rect, radius, egui::Stroke::new(top, color), egui::StrokeKind::Inside);
+        return;
+    }
+    // Top and bottom take the corners; the sides fill between them. Wider than the box, the
+    // sides meet without overlapping, so a translucent colour is not drawn twice.
+    let (x, y) = (rect.x_range(), rect.y_range());
+    let top = top.min(rect.height());
+    let bottom = bottom.min(rect.height() - top);
+    let left = left.min(rect.width());
+    let right = right.min(rect.width() - left);
+    let sides = [
+        Rect::from_x_y_ranges(x, egui::Rangef::new(y.min, y.min + top)),
+        Rect::from_x_y_ranges(x, egui::Rangef::new(y.max - bottom, y.max)),
+        Rect::from_x_y_ranges(egui::Rangef::new(x.min, x.min + left), egui::Rangef::new(y.min + top, y.max - bottom)),
+        Rect::from_x_y_ranges(egui::Rangef::new(x.max - right, x.max), egui::Rangef::new(y.min + top, y.max - bottom)),
+    ];
+    for side in sides.into_iter().filter(|side| side.is_positive()) {
+        painter.rect_filled(side.intersect(rect), 0.0, color);
     }
 }
 
@@ -304,9 +316,9 @@ pub(in crate::kit) fn surface_with(
     fill: egui::Color32,
     style: Option<super::Computed>,
 ) -> f32 {
-    let radius = box_begin(painter, rect, radius, fill, style.as_ref(), None, true);
+    let radius = box_begin(painter, rect, radius, fill, style.as_ref(), None);
     if let Some(style) = &style {
-        box_end(painter, rect, radius, style, None, true);
+        box_end(painter, rect, radius, style, None);
     }
     radius
 }

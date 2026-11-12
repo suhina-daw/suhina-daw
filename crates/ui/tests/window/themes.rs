@@ -1110,6 +1110,56 @@ fn fills_inside(h: &Harness<'static, App>, inside: egui::Rect) -> Vec<egui::Colo
     seen
 }
 
+/// The browser's search field draws each side of its border at its own width: an underline is a
+/// line under the field, not a box round it of its widest side (#1336).
+#[test]
+fn the_browser_search_field_draws_an_underline() {
+    fn rects(shape: &egui::Shape, out: &mut Vec<egui::epaint::RectShape>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| rects(s, out)),
+            egui::Shape::Rect(rect) => out.push(rect.clone()),
+            _ => {}
+        }
+    }
+    let magenta = egui::Color32::from_rgb(0xFF, 0, 0xFF);
+    let h = open_with_clip("browser text-input { border-width: 0 0 2px; border-color: #FF00FF; }", false);
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| rects(&s.shape, &mut seen));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let lines: Vec<_> = seen.iter().filter(|r| r.fill == magenta).map(|r| r.rect).collect();
+    assert!(lines.len() == 1 && lines[0].height() == 2.0, "one line along the bottom: {lines:?}");
+    assert!(!seen.iter().any(|r| r.stroke.color == magenta && r.stroke.width > 0.0), "no box round it");
+}
+
+/// A browser whose panel's padding leaves less room than its fixed layout needs takes the pointer
+/// only inside its panel: what runs past it does not take clicks over the main view (#1336).
+#[test]
+fn a_padded_browser_takes_the_pointer_only_inside_its_panel() {
+    // The panel is 300 points wide; its content box 50, narrower than the browser's sidebar.
+    let h = open_with_clip("#panel-browser { padding-left: 250px; }", false);
+    let splitter = h.get_by_label("Browser splitter").rect();
+    let edge = splitter.left();
+    let (crossing, past) = h.ctx.viewport(|v| {
+        // What the browser lays out in its content box, from there to the panel's edge.
+        let browser: Vec<_> = v
+            .prev_pass
+            .widgets
+            .layers()
+            .flat_map(|(_, rects)| rects.iter())
+            .filter(|w| w.rect.left() > edge - 60.0 && w.rect.left() < edge)
+            .filter(|w| w.rect.top() >= splitter.top() && w.rect.bottom() <= splitter.bottom())
+            .collect();
+        // Past the splitter is the main view.
+        let crossing = browser.iter().filter(|w| w.rect.right() > splitter.right()).count();
+        let past: Vec<_> =
+            browser.iter().filter(|w| w.interact_rect.right() > splitter.right()).map(|w| w.interact_rect).collect();
+        (crossing, past)
+    });
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(crossing > 0, "the browser runs past its panel");
+    assert!(past.is_empty(), "nothing takes the pointer past the panel's edge {splitter:?}: {past:?}");
+}
+
 /// The workspace's splitters are elements a theme styles: `#detail-splitter` (its strip's
 /// `background-color`, its grip's `color`, with `:hover`) and `#browser-splitter`, in a layout
 /// with only gaps as in the native one; a sheet without them leaves the native colours (#1252).
@@ -1151,4 +1201,305 @@ fn a_theme_styles_the_workspace_splitters() {
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(native.contains(&theme::control_background()), "the native strip: {native:?}");
     assert!(!clear.contains(&theme::control_background()), "a transparent strip paints no fill: {clear:?}");
+}
+
+/// Every bundled theme gives no region a border or padding, so no region's `overflow` clip cuts
+/// anything its views paint: a view that paints past its region is a view laid out in the wrong
+/// box (#1336). The browser and the detail area show, in both views.
+#[test]
+fn no_bundled_theme_has_a_view_painting_past_its_region() {
+    let themes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("themes");
+    let mut names: Vec<String> = std::fs::read_dir(&themes)
+        .expect("the bundled themes")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().join("theme.css").is_file())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+    names.sort();
+    assert!(names.len() > 5, "{names:?}");
+    for name in names {
+        let mut app = demo_app();
+        app.set_browser_open(true);
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, &name);
+        h.run_steps(4);
+        for view in [View::Session, View::Arrangement] {
+            if h.state().view() != view {
+                h.key_press(Key::Tab);
+                h.run_steps(2);
+            }
+            suhina_ui::kit::element::overflow_cuts();
+            h.run_steps(2);
+            assert_eq!(suhina_ui::kit::element::overflow_cuts(), 0, "{name}, {view:?}");
+        }
+    }
+}
+
+/// The workspace's panels paint their own box as every element does: a border a theme gives
+/// `workspace-panel` is drawn round the browser, the main view and the detail area, in the room it
+/// takes, and their background under them (#1336).
+#[test]
+fn the_workspace_panels_draw_their_border_and_background() {
+    fn rects(shape: &egui::Shape, out: &mut Vec<egui::epaint::RectShape>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| rects(s, out)),
+            egui::Shape::Rect(rect) => out.push(rect.clone()),
+            _ => {}
+        }
+    }
+    let red = egui::Color32::from_rgb(0xFF, 0, 0);
+    let blue = egui::Color32::from_rgb(0, 0, 0xFF);
+    let h = open_with_clip(
+        "workspace-panel { border-width: 3px; border-color: #FF0000; } #panel-detail { background-color: #0000FF; }",
+        false,
+    );
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| rects(&s.shape, &mut seen));
+    let browser = h.get_by_label("Browser splitter").rect();
+    let detail = h.get_by_label("Detail area splitter").rect();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let borders: Vec<_> =
+        seen.iter().filter(|r| r.stroke.color == red && r.stroke.width == 3.0).map(|r| r.rect).collect();
+    assert_eq!(borders.len(), 3, "the browser's, the main view's and the detail area's: {borders:?}");
+    assert!(borders.iter().any(|r| r.right() <= browser.left() + 0.5), "the browser's, left of its splitter");
+    assert!(borders.iter().any(|r| r.top() >= detail.bottom() - 0.5), "the detail area's, under its splitter");
+    assert!(
+        borders.iter().any(|r| r.bottom() <= detail.top() + 0.5 && r.left() >= browser.right() - 0.5),
+        "the view's"
+    );
+    let under = borders.iter().find(|r| r.top() >= detail.bottom() - 0.5).copied();
+    assert!(seen.iter().any(|r| r.fill == blue && Some(r.rect) == under), "the detail panel's background");
+}
+
+/// A theme that pads every region and container, gives it a border and makes it hide its
+/// overflow: every view lays its children out in its content box (its box less its border and
+/// padding), so no element's clip cuts anything painted in it (#1336). Each screen in turn: the
+/// Launcher with a track's devices, a clip and the piano roll, stacked, the Arrangement view, the
+/// File menu, the Export dialog and Settings.
+#[test]
+fn padded_regions_hold_their_views_inside_their_content_box() {
+    const BOXES: &str = "application-bar, menu-bar, project-tabs, toolbar, status-bar, workspace-panel, \
+        browser, session, arrangement, mixer, detail, clip-editor, piano-roll, sample-map, popup, settings, \
+        dialog, start-page, plugin-manager, export, track-column, track-header, midi-tools, clip-info, \
+        device-panel, device { padding: 5px; border-width: 2px; border-color: #FF00FF; overflow: hidden; }";
+    let (padded, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), BOXES);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut app = App::new();
+    app.set_session(Session::new(project_with_a_device()), &[]);
+    let ctx = egui::Context::default();
+    app.set_themes(&ctx, vec![suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: padded }], None);
+    let mut h = window(app);
+    let ctx = h.ctx.clone();
+    h.state_mut().use_theme(&ctx, "padded");
+    h.run_steps(4);
+    let check = |h: &mut Harness<'static, App>, screen: &str| {
+        h.run_steps(2);
+        suhina_ui::kit::element::overflow_cuts();
+        h.run_steps(2);
+        assert_eq!(suhina_ui::kit::element::overflow_cuts(), 0, "{screen}");
+    };
+    check(&mut h, "the Launcher");
+    h.get_by_label("Track Drums").click();
+    check(&mut h, "a track's devices");
+    assert!(h.query_by_label("Device Utility").is_some(), "the devices show");
+    h.get_by_label("Select Walk on Bass (scene 2)").click();
+    check(&mut h, "a clip and its notes");
+    let settings = suhina_ui::settings::Settings {
+        device_layout: suhina_ui::settings::DeviceLayout::Stack,
+        theme: "padded".into(),
+        ..Default::default()
+    };
+    h.state_mut().set_settings(&ctx, settings.clone());
+    check(&mut h, "the detail area stacked");
+    h.state_mut().set_settings(&ctx, suhina_ui::settings::Settings { device_layout: Default::default(), ..settings });
+    h.key_press(Key::Tab);
+    check(&mut h, "the Arrangement view");
+    h.get_by_label("File").click();
+    check(&mut h, "the File menu");
+    h.get_by_label("Export…").click();
+    check(&mut h, "the Export dialog");
+    assert!(h.query_by_label("File to export to").is_some(), "the Export dialog is open");
+    h.key_press(Key::Escape);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    check(&mut h, "Settings");
+    assert!(h.query_by_label("Settings page: Themes").is_some(), "Settings is open");
+}
+
+/// A theme that pads the detail area and its device panels: the area opens taller by that
+/// padding, so a track's device panel is as tall as without it plus its own padding, whole and
+/// not squeezed into a scroll (#1336).
+#[test]
+fn a_padded_detail_area_still_shows_a_device_panel_whole() {
+    fn device_panel(css: Option<&str>) -> (egui::Rect, egui::Rect) {
+        let mut app = App::new();
+        app.set_session(Session::new(project_with_a_device()), &[]);
+        if let Some(css) = css {
+            let (padded, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), css);
+            assert!(warnings.is_empty(), "{warnings:?}");
+            let ctx = egui::Context::default();
+            let entry = suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: padded };
+            app.set_themes(&ctx, vec![entry], None);
+        }
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, "padded");
+        h.run_steps(2);
+        h.get_by_label("Track Drums").click();
+        h.run_steps(4);
+        let splitter = h.get_by_label("Detail area splitter").rect();
+        (h.get_by_label("Device Utility").rect(), splitter)
+    }
+    let (plain, _) = device_panel(None);
+    assert_eq!(plain.height(), suhina_ui::detail::detail_view::device_row_height());
+    let css = "#panel-detail, detail { padding: 6px; } device { padding: 4px; border-width: 1px; }";
+    let (padded, splitter) = device_panel(Some(css));
+    assert_eq!(padded.height(), plain.height() + 10.0, "the panel grows by its own padding and border");
+    assert_eq!(padded.bottom(), plain.bottom() - 12.0, "inside the panel's and the area's padding");
+    assert!(padded.top() > splitter.top(), "whole under the splitter: {padded:?}, {splitter:?}");
+}
+
+/// In the stacked layout too a padded device panel grows by its border and padding, so what it
+/// holds keeps its height (#1336).
+#[test]
+fn a_padded_device_panel_in_the_stack_grows_by_its_padding() {
+    fn panel(css: &str) -> egui::Rect {
+        let (themed, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), css);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let mut app = App::new();
+        app.set_session(Session::new(project_with_a_device()), &[]);
+        let ctx = egui::Context::default();
+        app.set_themes(
+            &ctx,
+            vec![suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: themed }],
+            None,
+        );
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, "padded");
+        let mut settings = h.state().settings().clone();
+        settings.device_layout = suhina_ui::settings::DeviceLayout::Stack;
+        h.state_mut().set_settings(&ctx, settings);
+        h.run_steps(2);
+        h.get_by_label("Track Drums").click();
+        h.run_steps(4);
+        h.get_by_label("Device Utility").rect()
+    }
+    let plain = panel("device { color: #FFFFFF; }");
+    let padded = panel("device { padding: 4px; border-width: 1px; }");
+    assert_eq!(padded.height(), plain.height() + 10.0, "{plain:?} then {padded:?}");
+}
+
+/// A theme that pads a selected device panel more than the others: the area opens as tall as the
+/// panel needs once it is selected, so the panel shows whole under the splitter (#1336).
+#[test]
+fn a_device_panel_padded_more_when_selected_is_still_shown_whole() {
+    let css = "device { padding: 4px; } device[selected] { padding: 14px; }";
+    let (themed, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), css);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut app = App::new();
+    app.set_session(Session::new(project_with_a_device()), &[]);
+    let ctx = egui::Context::default();
+    app.set_themes(&ctx, vec![suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: themed }], None);
+    let mut h = window(app);
+    let ctx = h.ctx.clone();
+    h.state_mut().use_theme(&ctx, "padded");
+    h.run_steps(2);
+    h.get_by_label("Track Drums").click();
+    h.run_steps(4);
+    let before = h.get_by_label("Device Utility").rect();
+    h.get_by_label("Device Utility").click();
+    h.run_steps(4);
+    assert!(before.height() < 228.0, "unselected, the panel is the plainer one's: {before:?}");
+    let splitter = h.get_by_label("Detail area splitter").rect();
+    let panel = h.get_by_label("Device Utility").rect();
+    let needs = suhina_ui::detail::detail_view::device_row_height() + 28.0;
+    assert_eq!(panel.height(), needs, "the panel has the selected state's padding: {panel:?}");
+    assert!(panel.top() > splitter.top(), "whole under the splitter: {panel:?}, {splitter:?}");
+}
+
+/// The detail area opens taller by the device panels' padding only: a group with many branches,
+/// taller than a compact panel, does not raise it, so the height a user set for a clip's view
+/// stays what it was when they switch back (#1336).
+#[test]
+fn a_tall_group_does_not_raise_the_padded_detail_area() {
+    use suhina_engine::model::{Branch, Device, DeviceGroup, DeviceKind};
+    fn splitter(group: bool) -> egui::Rect {
+        let mut project = project_with_a_device();
+        if group {
+            let branches = (0..16)
+                .map(|i| Branch {
+                    devices: vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))],
+                    ..Branch::new(format!("B{i}"))
+                })
+                .collect();
+            project.channels[0].devices.push(Device::group("G", DeviceGroup::with_branches(branches)));
+        }
+        let css = "device { padding: 4px; }";
+        let (themed, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), css);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let mut app = App::new();
+        app.set_session(Session::new(project), &[]);
+        let ctx = egui::Context::default();
+        app.set_themes(
+            &ctx,
+            vec![suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: themed }],
+            None,
+        );
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, "padded");
+        h.run_steps(2);
+        h.get_by_label("Track Drums").click();
+        h.run_steps(4);
+        h.get_by_label("Detail area splitter").rect()
+    }
+    assert_eq!(splitter(true), splitter(false));
+}
+
+/// A toolbar's padding in percent, which the sheet takes on `toolbar`: the bar grows by it and its
+/// buttons stay inside it, above its bottom border, as they do with padding in points (#1336).
+#[test]
+fn toolbar_percent_padding_keeps_the_buttons_in_the_bar() {
+    fn bar(css: &str) -> (Option<egui::Rect>, egui::Rect) {
+        let (padded, warnings) = theme::from_folder(theme::ThemeMeta::new("Padded", "#123456"), css);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let mut app = demo_app();
+        let ctx = egui::Context::default();
+        app.set_themes(
+            &ctx,
+            vec![suhina_ui::settings::themes::ThemeEntry { id: "padded".into(), theme: padded }],
+            None,
+        );
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, "padded");
+        h.run_steps(4);
+        let play = h.query_by_label("Play").map(|n| n.rect());
+        // The bar's bottom border: the magenta line across the window.
+        fn lines(shape: &egui::Shape, found: &mut Vec<egui::Rect>) {
+            match shape {
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| lines(s, found)),
+                egui::Shape::Rect(r) if r.fill == egui::Color32::from_rgb(0xFF, 0, 0xFF) => found.push(r.rect),
+                _ => {}
+            }
+        }
+        let mut found = Vec::new();
+        h.output().shapes.iter().for_each(|s| lines(&s.shape, &mut found));
+        let line = found.into_iter().find(|r| r.width() > SIZE.0 * 0.5).expect("the bar's bottom border");
+        (play, line)
+    }
+    let border = "toolbar { border-width: 0 0 3px; border-color: #FF00FF; }";
+    let (_, plain) = bar(border);
+    for padding in ["padding-top: 12px", "padding: 0 5%", "padding-top: 1%", "padding-top: 5%"] {
+        let (play, line) = bar(&format!("{border} toolbar {{ {padding} }}"));
+        let play = play.unwrap_or_else(|| panic!("{padding}: the toolbar has no Play button"));
+        assert!(
+            play.bottom() <= line.top() + 0.5,
+            "{padding}: Play {play:?} reaches past the bar's bottom border {line:?}"
+        );
+    }
+    // 1% of the bar's width (the window's, less its 8-point margins) above what it holds.
+    let (_, one) = bar(&format!("{border} toolbar {{ padding-top: 1% }}"));
+    assert!((one.top() - plain.top() - (SIZE.0 - 16.0) * 0.01).abs() < 0.5, "the bar grows by it: {plain:?} {one:?}");
 }

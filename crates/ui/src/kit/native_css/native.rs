@@ -14,6 +14,10 @@ use suhina_style::{
     value::{Color, Length, Value},
 };
 
+/// The border's side widths, in `padding`'s order: top, right, bottom, left.
+const BORDER_SIDES: [Property; 4] =
+    [Property::BorderTopWidth, Property::BorderRightWidth, Property::BorderBottomWidth, Property::BorderLeftWidth];
+
 pub(super) struct Paint {
     sheet: Sheet,
     defaults: Sheet,
@@ -109,8 +113,10 @@ pub fn user_agent_color(name: &str, attributes: &[(&str, &str)]) -> Option<Color
 /// theme gives them none: a knob's body, a fader's rail and its cap, lit a little by the values'
 /// text while the pointer is on it. Each is a rule on the part itself, so a colour a theme gives
 /// an element around it (`knob`, `mixer`) is not inherited into the artwork. A knob's pointer
-/// has none: it takes the knob's colour.
+/// has none: it takes the knob's colour. And the colour of the bars' borders, the lines between
+/// them and the view, which the user-agent sheet draws.
 pub(super) const PART_COLOURS: &str = "\
+application-bar, menu-bar, project-tabs, toolbar, status-bar { border-color: var(--border); }
 knob-body { color: var(--control-background); }
 fader-rail { color: color-mix(in srgb, var(--control-background), black 65%); }
 fader-cap { color: color-mix(in srgb, var(--control-background), var(--text-value) 28%); }
@@ -280,6 +286,12 @@ pub(super) fn theme_swatch(engine: &Engine, color: &str) -> Option<Computed> {
     engine.native.as_ref()?.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.last().map(computed)
 }
 
+/// Whether the theme writes on `style`'s element one of the properties that ask for theme layout,
+/// other than those in `except`.
+pub(super) fn requests_layout(style: &super::Computed, except: &[Property]) -> bool {
+    LAYOUT.iter().any(|property| !except.contains(property) && style.resolved.authored(*property))
+}
+
 /// Properties that ask for theme layout when a theme writes them on a laid-out element.
 const LAYOUT: &[Property] = &[
     Property::Display,
@@ -398,16 +410,18 @@ fn computed_from(resolved: Arc<ComputedStyle>) -> Computed {
         Value::Shadows(values) => values.iter().map(|shadow| shadow.resolve(font, foreground)).collect::<Vec<_>>(),
         _ => Vec::new(),
     };
+    let border_sides = BORDER_SIDES.map(|side| match style.get(side) {
+        Value::Length(Length::Px(value)) if value.is_finite() => value.clamp(0.0, 16.0),
+        _ => 0.0,
+    });
     Computed {
         color: color(Property::Color),
         background: ink(Property::BackgroundColor),
         border: ink(Property::BorderColor),
         font_size: font.clamp(7.0, 96.0),
         radius: radius.clamp(0.0, 128.0),
-        border_width: match style.get(Property::BorderWidth) {
-            Value::Length(Length::Px(value)) => value.clamp(0.0, 16.0),
-            _ => 0.0,
-        },
+        border_width: border_sides.into_iter().fold(0.0, f32::max),
+        border_sides,
         text_align: match style.get(Property::TextAlign) {
             _ if !style.authored(Property::TextAlign) => None,
             Value::Keyword("left" | "start") => Some(-1),
@@ -437,7 +451,7 @@ fn computed_from(resolved: Arc<ComputedStyle>) -> Computed {
             font_size: style.authored(Property::FontSize),
             radius: style.authored(Property::Radius),
             accent: style.authored(Property::AccentColor),
-            border_width: style.authored(Property::BorderWidth),
+            border_width: BORDER_SIDES.into_iter().any(|side| style.authored(side)),
         },
         variables: style.shared_variables(),
         gradients: match style.get(Property::BackgroundImage) {

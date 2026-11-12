@@ -447,6 +447,8 @@ pub fn show(
     }
     crate::kit::liquid::paint(painter, rect, &style_class, tint, crate::kit::liquid::Surface::Track);
     style_class.paint_background(painter, rect, 0.0);
+    // Its border, and its controls in its content box, inside its border and padding (#1336).
+    let rect = style_class.paint_border(painter, rect);
     // The strip's own background, under its controls: a double-click shows the track's devices.
     strip
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("{} channel strip", column.name)));

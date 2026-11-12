@@ -566,8 +566,11 @@ pub fn show(
     refresh_kind_colours();
     let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
-    let full = ui.available_rect_before_wrap();
-    ui.allocate_rect(full, Sense::hover());
+    let whole = ui.available_rect_before_wrap();
+    ui.allocate_rect(whole, Sense::hover());
+    // Its own box, which no bundled theme paints; the map goes in its content box, inside its
+    // border and padding (#1336).
+    let full = style_class.paint(&ui.painter_at(whole), whole).content;
     let height = top_bar(ui, full, view, status, details, events);
     let top = Rect::from_min_size(full.min, Vec2::new(full.width(), height));
     let bottom = Rect::from_min_max(Pos2::new(full.min.x, full.max.y - LEGEND), full.max);
