@@ -699,6 +699,20 @@ fn a_clip_off_the_grid_keeps_its_place_until_it_moves_half_a_step() {
 }
 
 #[test]
+fn crowded_clip_notes_fade_out_as_the_view_zooms_out() {
+    // Sixteenths over four bars: 64 starts.
+    let sixteenths: Vec<f64> = (0..64).map(|i| f64::from(i) * 0.25).collect();
+    assert_eq!(clip::crowded_notes_fade(sixteenths.clone(), 640.0), 1.0, "10 points apart: drawn in full");
+    assert_eq!(clip::crowded_notes_fade(sixteenths.clone(), 45.0), 0.0, "under a point apart: hidden");
+    let half = clip::crowded_notes_fade(sixteenths, 240.0);
+    assert!(half > 0.0 && half < 1.0, "3.75 points apart: faded, {half}");
+    // A four-note chord on each beat counts once per beat.
+    let chords: Vec<f64> = (0..16).flat_map(|beat| [f64::from(beat); 4]).collect();
+    assert_eq!(clip::crowded_notes_fade(chords, 96.0), 1.0, "16 chords 6 points apart");
+    assert_eq!(clip::crowded_notes_fade(Vec::new(), 10.0), 1.0);
+}
+
+#[test]
 fn dragging_a_selected_track_resizes_every_selected_track() {
     let mut state = ArrangementViewState::default();
     state.set_lane_height(TrackId(1), 100.0);

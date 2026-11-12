@@ -277,6 +277,11 @@ Let go, it is
   drawn as the clip itself, in its colour, one colour all along; where each pass starts it has a
   small notch at its top edge and a continuous vertical line in the leading edge's shade, so the repeats read as
   blocks even in an empty clip (#700). A MIDI clip's notes are drawn in every pass.
+- Zoomed out until a MIDI clip's notes crowd together, its notes fade out and its name takes their
+  place: drawn in full while their starts in view lie 5 points apart or more, hidden at 2.5 points
+  or less, fading between. Notes that start together (a chord) count once. A clip with a name bar
+  keeps its name there; on a lane too low for one, the name is drawn in the body, the track's name
+  when the clip has none.
 - The right edge is one handle over the clip's full height; there is no separate loop handle
   at the corner (#700). The loop is turned on in the clip column (› Clip column in
   [ui-clip-editor.md](ui-clip-editor.md)) or with `clip.setLoop`, and a looping clip's edge then

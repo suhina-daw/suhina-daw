@@ -1549,14 +1549,35 @@ pub(super) fn paint_clip(
         let span_end = f64::from((rect.right() - x_of(start)) / beat_width);
         // Dark on the clip's colour, as notes read on a vivid body; light ink read as a
         // highlight and vanished on the light colours.
-        let note_ink = content_ink;
-        for note in clip.notes.iter().filter(|n| n.start + n.length >= first && n.start <= last && n.start < span_end) {
-            let x = x_of(start + note.start);
-            let right = x_of(start + span_end);
-            let width = (note.length as f32 * beat_width - 1.0).max(1.0).min(right - x);
-            let row = f32::from(note.key - low);
-            let y = marks.bottom() - (row + 0.5) / rows * marks.height();
-            painter.rect_filled(Rect::from_min_size(Pos2::new(x, y - 1.0), Vec2::new(width, 2.0)), 0.0, note_ink);
+        let in_view = |n: &&crate::arrangement::timeline::NoteMark| {
+            n.start + n.length >= first && n.start <= last && n.start < span_end
+        };
+        // Zoomed out until the notes crowd into a smear, they fade out and the clip's name takes
+        // their place, so a dense part reads as the part it is rather than as noise.
+        let shown_width = (rect.right().min(view.right()) - rect.left().max(view.left())).max(0.0);
+        let starts: Vec<f64> = clip.notes.iter().filter(in_view).map(|n| n.start).collect();
+        let notes_fade = crowded_notes_fade(starts, shown_width);
+        let note_ink = content_ink.gamma_multiply(notes_fade);
+        if notes_fade > 0.0 {
+            for note in clip.notes.iter().filter(in_view) {
+                let x = x_of(start + note.start);
+                let right = x_of(start + span_end);
+                let width = (note.length as f32 * beat_width - 1.0).max(1.0).min(right - x);
+                let row = f32::from(note.key - low);
+                let y = marks.bottom() - (row + 0.5) / rows * marks.height();
+                painter.rect_filled(Rect::from_min_size(Pos2::new(x, y - 1.0), Vec2::new(width, 2.0)), 0.0, note_ink);
+            }
+        }
+        // A clip with a name bar already shows its name; a low lane's clip shows it in the body.
+        if notes_fade < 1.0 && !has_name {
+            let name = if clip.name.is_empty() { lane.name.as_str() } else { clip.name.as_str() };
+            let left = rect.left().max(view.left()) + 7.0;
+            let name_rect =
+                Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
+            let _name = crate::kit::style_class::enter("clip-name");
+            let size = crate::kit::style_class::font_size(theme::TEXT).min((rect.height() - 2.0).max(6.0));
+            let ink = crate::kit::style_class::foreground(text_color).gamma_multiply(1.0 - notes_fade);
+            widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, name, theme::ui_font(size), ink);
         }
     }
     if let Some((notes, tempo)) = ara_notes
@@ -1663,6 +1684,24 @@ pub(super) fn clip_grab_area(rect: Rect) -> Option<Rect> {
 
 /// Narrowest clip, in points, that has the Edit gain envelope button by its name.
 const ENVELOPE_BUTTON_LEAST: f32 = 48.0;
+
+/// Points between note starts at or under which a clip's notes are hidden.
+const CROWDED_GAP: f32 = 2.5;
+/// Points between note starts at or over which a clip's notes are drawn in full.
+const CLEAR_GAP: f32 = 5.0;
+
+/// How strongly a MIDI clip's notes are drawn, from 1 (in full) to 0 (hidden), by how far apart
+/// their starts (`starts`, in beats, those in view) fall across the `width` points of the clip in
+/// view. Notes that start together (a chord) count once, so chords do not hide a sparse part.
+pub(super) fn crowded_notes_fade(mut starts: Vec<f64>, width: f32) -> f32 {
+    starts.sort_unstable_by(f64::total_cmp);
+    starts.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+    if starts.is_empty() {
+        return 1.0;
+    }
+    let gap = width / starts.len() as f32;
+    ((gap - CROWDED_GAP) / (CLEAR_GAP - CROWDED_GAP)).clamp(0.0, 1.0)
+}
 
 /// Where a clip's waveform (or notes) is drawn: under its name bar, a little in from its edges.
 /// Its gain envelope's 0 dB runs across the middle of it.
