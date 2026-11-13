@@ -1,19 +1,17 @@
-- Partial `.flp` project import places clips on their instrument/sample tracks, with working
-  mixer controls, per-source shared patterns, shared mixer routing and source-level Utilities.
-  Repeated sources merge across playlist rows; compatible mixed rows form functional groups.
-  Samples use existing paths, project-local files and unambiguous matches in the browser library. Stored audio
-  stretch timing becomes warp markers. Known effects have approximate native substitutes;
-  wrapped VST2/VST3 instruments and effects retain their identities and supported saved states
-  for the existing plugin host. Unavailable instruments remain silent, including when soloed. Supported audio
-  volume automation becomes gain envelopes; unsupported automation stays in retained source data. Import warnings
-  explain the limits and the source is retained.
-- In an imported `.flp` project, supported automation links appear on their target devices or mixer
-  channels. Neutral layered notes fan out to existing source instruments. Supported parallel
-  instrument patches become device groups, with each plug-in state and output connection level
-  retained. Single-output mixer routing preserves shared buses and their Solo behaviour.
-  Unsupported cases are reported. Source instrument mute switches the retained instrument device
-  off; mixer mute stays on its track or bus. Disabled instruments stay silent and can be switched
-  back on independently.
-- In an imported `.flp` project, dedicated mixer inserts fold into their source track; shared
-  primary routes form groups, and parallel routes remain sends. Unused mixer strips are omitted.
-  Output labels show the actual destination and its mute state.
+- **Importing `.flp` projects (partial):** the window, `suhina-cli` and the MCP server open an
+  FL Studio project file. Patterns become clips on the instrument or sample tracks they play,
+  shared across placements; samplers, audio clips (fades, gain, stretch timing as warp markers),
+  wrapped VST2 and VST3 instruments and effects with their saved state, parallel instrument
+  patches as device groups and neutral layers come in, with known effects as approximate
+  built-in substitutes. Mixer routing becomes groups and sends, a mixer insert fed by one source
+  folds into its track, an instrument's own mute switches its device off and a mixer mute stays
+  on its track or group. Volume automation of audio clips becomes gain envelopes and supported
+  device and mixer automation becomes lanes on its owner; playlist colours and groups become
+  track colours and folders. Samples are found beside the project or in the browser's library.
+  Everything else (step-sequencer notes, note expression, unsupported plug-ins and curves) is
+  kept in the project and named in the import's warnings
+  ([mapping](docs/spec/flp-model-mapping.md)).
+- **Instruments that are switched off or missing stay silent:** they still take their track's
+  notes, so no default tone plays in their place, and play again when switched on or relinked.
+- **Groups apply their pan and can take sends:** a group's pan applies once to its sum and its
+  post-fader sends; a send can go into a group, and solo follows sends as well as outputs.
