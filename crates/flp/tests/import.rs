@@ -494,10 +494,24 @@ fn source_and_shared_content_survive_project_file_roundtrip() {
 }
 
 #[test]
-fn hostile_and_unsupported_inputs_return_errors() {
+fn step_and_zero_length_notes_do_not_stop_the_import() {
     for length in [0, u32::MAX] {
-        assert!(import_bytes(&fixture(length, 88)).is_err());
+        let imported = import_bytes(&fixture(length, 88)).unwrap();
+        let notes: usize = imported
+            .project
+            .contents
+            .iter()
+            .flat_map(|c| c.lanes.iter())
+            .map(|l| if let LaneData::Notes(n) = &l.data { n.len() } else { 0 })
+            .sum();
+        assert_eq!(notes, 0, "nothing is invented for a note without a length");
+        assert!(imported.warnings.iter().any(|w| w.starts_with("2 step-sequencer")), "{:?}", imported.warnings);
+        assert!(imported.project.extensions.0.iter().any(|e| e.format == "flp" && e.key == "source"));
     }
+}
+
+#[test]
+fn hostile_and_unsupported_inputs_return_errors() {
     let mut file = fixture(96, 88);
     file[12..14].fill(0);
     assert!(import_bytes(&file).unwrap_err().to_string().contains("PPQ"));

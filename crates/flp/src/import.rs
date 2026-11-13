@@ -234,6 +234,7 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
     let mut current = None;
     let mut total_notes = 0usize;
     let mut expression = false;
+    let mut steps = 0usize;
     for e in &flp.events {
         if matches!(e.id, 64 | 99 | 233 | 236) {
             current = None;
@@ -264,7 +265,10 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
                     return Err(error(e.offset, "too many notes"));
                 }
                 for r in d.as_chunks::<24>().0 {
-                    let n = note(r, ppq, e.offset)?;
+                    let Some(n) = note(r, ppq, e.offset)? else {
+                        steps += 1;
+                        continue;
+                    };
                     let mut targets = BTreeSet::new();
                     layer_targets(
                         u32::from(n.channel),
@@ -292,6 +296,11 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
     }
     if expression {
         warnings.push("Some notes have pitch, slide or pan expression that is not played.".into());
+    }
+    if steps > 0 {
+        warnings.push(format!(
+            "{steps} step-sequencer or zero-length notes are not played yet; they remain in the retained source."
+        ));
     }
     let pattern_colors: BTreeMap<_, _> = patterns.iter().filter_map(|(&id, p)| p.color.map(|c| (id, c))).collect();
     for (id, p) in patterns {

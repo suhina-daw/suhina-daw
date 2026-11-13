@@ -52,7 +52,9 @@ pub(crate) struct PatternNote {
     pub expression: bool,
 }
 
-pub(crate) fn note(r: &[u8], ppq: f64, offset: usize) -> Result<PatternNote, FlpError> {
+/// One 24-byte note record; `None` for a step-sequencer note (its length all ones: no note-off)
+/// or a zero-length one, which stay in the retained source without playing.
+pub(crate) fn note(r: &[u8], ppq: f64, offset: usize) -> Result<Option<PatternNote>, FlpError> {
     let key = word(r, 12, offset)?;
     if key > 127 {
         return Err(error(offset, "note key exceeds 127"));
@@ -64,10 +66,7 @@ pub(crate) fn note(r: &[u8], ppq: f64, offset: usize) -> Result<PatternNote, Flp
     let duration = dword(r, 8, offset)?;
     // A step note has no note-off: its length is all ones in this representation.
     if duration == 0 || duration == u32::MAX {
-        return Err(error(
-            offset,
-            "step notes or zero-length notes are not supported yet; convert steps to piano-roll notes before importing",
-        ));
+        return Ok(None);
     }
     let mut note = suhina_model::Note::new(
         f64::from(dword(r, 0, offset)?) / ppq,
@@ -76,13 +75,13 @@ pub(crate) fn note(r: &[u8], ppq: f64, offset: usize) -> Result<PatternNote, Flp
         f32::from(velocity) / 128.0,
     );
     note.muted = r.get(19).is_some_and(|b| b & 0x20 != 0);
-    Ok(PatternNote {
+    Ok(Some(PatternNote {
         channel: word(r, 6, offset)?,
         note,
         expression: word(r, 4, offset)? & 8 != 0
             || r.get(16).is_some_and(|v| *v != 120)
             || r.get(20).is_some_and(|v| *v != 64),
-    })
+    }))
 }
 
 pub(crate) struct Placement {
