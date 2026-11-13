@@ -430,8 +430,8 @@ fn a_held_key_toggles_once_and_steps_on_repeat() {
 }
 
 /// Join, Fit to time range, Crop and Split clip have keys of their own in the piano roll (#1284).
-/// Split clip shares Ctrl+Shift+E with Hide editor: the piano roll's key wins while it has the
-/// keyboard, the window's elsewhere.
+/// Split clip is Ctrl+E, the split key; the piano roll's own keys win over a window key on the same
+/// key while it has the keyboard (Hide editor's Ctrl+Shift+E stays the window's).
 #[test]
 fn the_clip_edit_keys_are_piano_roll_keys() {
     let known = actions();
@@ -439,7 +439,7 @@ fn the_clip_edit_keys_are_piano_roll_keys() {
         ("pianoRoll.join", "Ctrl+J"),
         ("pianoRoll.fitToTime", "Ctrl+Alt+J"),
         ("pianoRoll.crop", "Ctrl+Shift+J"),
-        ("pianoRoll.splitClip", "Ctrl+Shift+E"),
+        ("pianoRoll.splitClip", "Ctrl+E"),
     ] {
         let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
         assert_eq!(action.group, PIANO_ROLL);
@@ -449,8 +449,14 @@ fn the_clip_edit_keys_are_piano_roll_keys() {
     assert!(Keymap::default().conflicts().is_empty());
     assert!(!overlap("pianoRoll.splitClip", "view.editor"), "the piano roll's own scope");
     assert!(overlap("pianoRoll.splitClip", "pianoRoll.join"));
-    // Pressed while the piano roll has the keyboard, the key splits and does not hide the editor.
-    let keymap = Keymap::default();
+    // A window key the piano roll takes while it has the keyboard: its own action runs, not the
+    // window's.
+    let mut keymap = Keymap::default();
+    keymap.set(
+        "pianoRoll.splitClip",
+        vec![Shortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::E)],
+    );
+    assert!(keymap.conflicts().is_empty(), "Hide editor's key, taken in the piano roll, is no conflict");
     let mut input = egui::RawInput::default();
     input.events.push(egui::Event::Key {
         key: egui::Key::E,

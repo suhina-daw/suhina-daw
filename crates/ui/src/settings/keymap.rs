@@ -287,8 +287,8 @@ pub fn not_in_piano_roll(action: &str) -> bool {
 
 /// Whether `a` and `b` can both run on the same key press, so one key for both is a conflict. The
 /// piano roll's own keys are a scope of their own: while it has the keyboard they come first and
-/// take the key from a window action on the same key (Ctrl+Shift+E splits the clip there and hides
-/// the editor elsewhere), and outside it they never run, so the two never meet.
+/// take the key from a window action on the same key, and outside it they never run, so the two
+/// never meet.
 fn overlap(a: &str, b: &str) -> bool {
     piano_roll_only(a) == piano_roll_only(b)
 }
@@ -598,7 +598,7 @@ const DEFAULTS: [(&str, &[&str]); 95] = [
     ("pianoRoll.join", &["Ctrl+J"]),
     ("pianoRoll.fitToTime", &["Ctrl+Alt+J"]),
     ("pianoRoll.crop", &["Ctrl+Shift+J"]),
-    ("pianoRoll.splitClip", &["Ctrl+Shift+E"]),
+    ("pianoRoll.splitClip", &["Ctrl+E"]),
 ];
 
 impl Default for Keymap {
