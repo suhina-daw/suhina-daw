@@ -1,6 +1,6 @@
 ---
 description: Functional spec of the MIDI clip editor (piano roll): layout, toolbar size and icons, the six tools and the Mute tool, the clip panel's note tools (Notes and Transform tabs), grid and snapping, zoom, drawing, selecting, moving, resizing, velocity, quantise, scales, ghost notes, slicing, a playable key column, chords, shortcuts and keymap presets, and the note.* and preview.* commands
-read_when: piano roll, clip editor, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
+read_when: piano roll, clip editor, select next note, step through notes, Ctrl+arrow selection, grow selection, keyboard selection, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
 type: spec
 status: draft
 last_verified: 2026-11-11
@@ -659,6 +659,38 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344)):** while the piano roll has
   the keyboard (after a click in it), **Ctrl+A** selects every note of the clip and **Escape** clears
   the selection. Elsewhere Escape keeps its other uses.
+
+### Selecting from the keyboard
+
+**Built ([#1281](https://github.com/suhina-daw/suhina-daw/issues/1281)):** with **Ctrl** held, the
+arrow keys change which notes are selected instead of moving them; the notes stay where they are.
+They work while the piano roll has the keyboard, and follow a held key's repeat as the other arrow
+keys do.
+
+- **Ctrl+Right, Ctrl+Left** (`pianoRoll.selectNextOnKey`, `.selectPreviousOnKey`): each key with a
+  selected note on it goes on to its next (previous) note, every selected note of that key by one. A
+  key with no further note keeps what it has selected, so a selected chord walks along its keys and
+  the lines that end stay put.
+- **Ctrl+Up, Ctrl+Down** (`pianoRoll.selectNextNote`, `.selectPreviousNote`): the selection becomes
+  one note and steps through every note of the clip one at a time, in time order, and among notes
+  that start together from the lowest key up (Up) or from the highest down (Down). From more than
+  one selected note, Up takes the first of them in that order (a chord's lowest note) and Down the
+  last (its highest). At the clip's last (first) note the note stays selected.
+- **Ctrl+Shift+Right, Ctrl+Shift+Left** (`pianoRoll.growSelectionOnKey`, `.shrinkSelectionOnKey`):
+  each key with a selected note takes in the note after its last selected one, or lets go of its
+  last selected one; a key with one selected note keeps it.
+- **Ctrl+Shift+Up, Ctrl+Shift+Down** (`pianoRoll.growSelection`, `.shrinkSelection`): the selection
+  takes in the note after its last one in the Ctrl+Up order, or lets go of its last one; the last
+  note left stays.
+- **Nothing selected:** Ctrl+Right or Ctrl+Up (with Shift too) selects the clip's first note in the
+  Ctrl+Up order, Ctrl+Left or Ctrl+Down its last.
+- **What follows the selection:** the view scrolls to keep the selected notes on screen; the time
+  selection over the ruler becomes the selected notes' span, from the earliest start to the latest
+  end, as after a rectangle; with the audition on, the newly selected notes sound, as a click on
+  them does.
+- **Folded rows and the loop:** only notes the rows show are stepped to; notes outside the clip's
+  loop are stepped to like the others.
+
 - **Later:** a click on the ruler selects a time range; a lasso.
   A press or a drag on the key column, which selects the notes of a key or a range of keys, is
   built (› Playing the keys).
@@ -1148,6 +1180,10 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Up, Down; Shift+Up, Shift+Down | Moves the selection a semitone (folded, each note to the next row shown, so it stays in the scale: `note.move` with `keys`); an octave |
 | Shift+Left, Shift+Right | Takes the selection's ends to the previous, the next grid line, over the next note of the key too (› Resizing) |
 | Alt+Left, Alt+Right; Alt+Shift+Left, Alt+Shift+Right | Moves the selection, or changes its length, by a 1/128 note, off the grid (› Moving, › Resizing) |
+| Ctrl+Right, Ctrl+Left | Each selected key's selection goes to its next, previous note; the notes stay (› Selecting from the keyboard) |
+| Ctrl+Up, Ctrl+Down | Selects the clip's next, previous note, in time and then by key; from a chord its lowest, highest note |
+| Ctrl+Shift+Right, Ctrl+Shift+Left | Adds the next note on each selected key to the selection, takes the last one out |
+| Ctrl+Shift+Up, Ctrl+Shift+Down | Adds the clip's next note (in the Ctrl+Up order) to the selection, takes the last one out |
 | Ctrl+C, Ctrl+X, Ctrl+V | Copies, cuts, pastes notes |
 | Ctrl+D, or Ctrl+B with Draw-first | Duplicates the selected notes (› Keymap presets) |
 | Ctrl+Z, Ctrl+Shift+Z | Undo, redo (as everywhere) |
@@ -1169,7 +1205,9 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 
 The keys after a click in the piano roll are keymap actions ([`docs/shortcuts.md`](../shortcuts.md)):
 the `selection.*` ones the window has anyway, and `pianoRoll.selectAll`, `.deselect`, `.earlier`,
-`.later`, `.up`, `.down`, `.octaveUp`, `.octaveDown`, `.shorter`, `.longer`, `.draw`,
+`.later`, `.up`, `.down`, `.octaveUp`, `.octaveDown`, `.shorter`, `.longer`,
+`.selectNextOnKey`, `.selectPreviousOnKey`, `.selectNextNote`, `.selectPreviousNote`,
+`.growSelectionOnKey`, `.shrinkSelectionOnKey`, `.growSelection`, `.shrinkSelection`, `.draw`,
 `.tool1` … `.tool6`, `.gridNarrow`, `.gridWiden`, `.gridTriplet`, `.gridSnap`, `.zoomSelection`,
 `.zoomClip`, `.legato` and `.loop`, which are read only
 while the piano roll has the keyboard, so they can be changed like the rest. `pianoRoll.quantize`

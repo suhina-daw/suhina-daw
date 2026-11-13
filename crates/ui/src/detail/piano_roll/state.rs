@@ -578,6 +578,11 @@ impl PianoRollState {
             self.replacing(&mut params);
             return Some(Action::new("note.paste", params));
         }
+        // The selection keys (Ctrl and an arrow) change which notes are selected, never the notes.
+        if let Some(step) = Step::of(action) {
+            self.step_selection(step, clip);
+            return None;
+        }
         match action {
             "pianoRoll.selectAll" => {
                 self.selected = (0..count).collect();

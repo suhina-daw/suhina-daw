@@ -1149,3 +1149,27 @@ fn the_time_span_is_the_rectangle_while_it_is_drawn() {
     state.live_span = Some((0.0, 1.0));
     assert_eq!(state.time_span(), Some((0.0, 1.0)), "a new rectangle over it");
 }
+
+/// Ctrl and an arrow key change which notes are selected, never the notes: no command runs, the
+/// view follows them, the time selection becomes their span and, with the audition on, the newly
+/// selected notes sound (#1281).
+#[test]
+fn ctrl_and_an_arrow_key_step_the_selection_and_leave_the_notes() {
+    let clip = clip(vec![note(0.0, 0.5, 60), note(1.0, 0.5, 60), note(0.0, 1.0, 64)]);
+    let mut state = PianoRollState { audition: true, ..focused_on(&clip) };
+    assert!(state.key_action("pianoRoll.selectNextNote", &clip, 0.0, None).is_none());
+    assert_eq!(state.selected, BTreeSet::from([0]), "nothing selected: the first note");
+    assert_eq!(state.audition_pending, vec![60]);
+    state.audition_pending.clear();
+    assert!(state.key_action("pianoRoll.selectNextNote", &clip, 0.0, None).is_none());
+    assert_eq!(state.selected, BTreeSet::from([2]), "then the higher note that starts with it");
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 1.0)));
+    assert_eq!(state.reveal_selection, 2);
+    assert_eq!(state.audition_pending, vec![64]);
+    state.selected = BTreeSet::from([0]);
+    state.key_action("pianoRoll.growSelectionOnKey", &clip, 0.0, None);
+    assert_eq!(state.selected, BTreeSet::from([0, 1]));
+    assert_eq!(state.span.as_ref().map(|s| (s.start, s.end)), Some((0.0, 1.5)));
+    state.key_action("pianoRoll.selectNextOnKey", &clip, 0.0, None);
+    assert_eq!(state.selected, BTreeSet::from([0, 1]), "the line has ended: the notes stay selected");
+}

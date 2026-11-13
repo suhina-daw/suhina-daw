@@ -110,7 +110,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 90] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 98] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -176,6 +176,18 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 90] = [
     ("pianoRoll.longer", "Make the selected notes longer, to the next grid line", PIANO_ROLL),
     ("pianoRoll.shorterFine", "Make the selected notes a fine step shorter, off the grid", PIANO_ROLL),
     ("pianoRoll.longerFine", "Make the selected notes a fine step longer, off the grid", PIANO_ROLL),
+    ("pianoRoll.selectNextOnKey", "Select the next note on each selected note's key", PIANO_ROLL),
+    ("pianoRoll.selectPreviousOnKey", "Select the previous note on each selected note's key", PIANO_ROLL),
+    ("pianoRoll.selectNextNote", "Select the clip's next note, in time and then from the lowest key", PIANO_ROLL),
+    (
+        "pianoRoll.selectPreviousNote",
+        "Select the clip's previous note, in time and then from the highest key",
+        PIANO_ROLL,
+    ),
+    ("pianoRoll.growSelectionOnKey", "Add the next note on each selected key to the selection", PIANO_ROLL),
+    ("pianoRoll.shrinkSelectionOnKey", "Take the last selected note on each key out of the selection", PIANO_ROLL),
+    ("pianoRoll.growSelection", "Add the clip's next note to the selection", PIANO_ROLL),
+    ("pianoRoll.shrinkSelection", "Take the last selected note out of the selection", PIANO_ROLL),
     ("pianoRoll.draw", "Switch the piano roll between the Select and Draw tools", PIANO_ROLL),
     ("pianoRoll.tool1", "Choose the Select tool", PIANO_ROLL),
     ("pianoRoll.tool2", "Choose the Draw tool", PIANO_ROLL),
@@ -496,7 +508,7 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 91] = [
+const DEFAULTS: [(&str, &[&str]); 99] = [
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
@@ -573,6 +585,14 @@ const DEFAULTS: [(&str, &[&str]); 91] = [
     ("pianoRoll.longer", &["Shift+Right"]),
     ("pianoRoll.shorterFine", &["Alt+Shift+Left"]),
     ("pianoRoll.longerFine", &["Alt+Shift+Right"]),
+    ("pianoRoll.selectNextOnKey", &["Ctrl+Right"]),
+    ("pianoRoll.selectPreviousOnKey", &["Ctrl+Left"]),
+    ("pianoRoll.selectNextNote", &["Ctrl+Up"]),
+    ("pianoRoll.selectPreviousNote", &["Ctrl+Down"]),
+    ("pianoRoll.growSelectionOnKey", &["Ctrl+Shift+Right"]),
+    ("pianoRoll.shrinkSelectionOnKey", &["Ctrl+Shift+Left"]),
+    ("pianoRoll.growSelection", &["Ctrl+Shift+Up"]),
+    ("pianoRoll.shrinkSelection", &["Ctrl+Shift+Down"]),
     ("pianoRoll.draw", &["B"]),
     ("pianoRoll.tool1", &["1"]),
     ("pianoRoll.tool2", &["2"]),
