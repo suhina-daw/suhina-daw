@@ -355,3 +355,58 @@ fn a_session_given_another_ones_file_access_reads_its_devices_files_from_there()
     copy.set_file_access(opened.file_access());
     assert!(copy.device_asset("access-amp.nam").is_some());
 }
+
+/// A shipped file's `builtin:` key is no path on the disk: it loads from the pack on opening,
+/// with the location check (#617) not in its way (ADR 0036).
+#[test]
+fn a_shipped_key_loads_on_opening() {
+    let root = temp("builtin-nam");
+    let key = "builtin:nam-amp-modeler/Suhina Overdrive.nam";
+    let song = nam_song(&root.join("project"), key);
+    let (session, _) = Session::open(&song).unwrap();
+    assert!(session.device_asset(key).is_some(), "{:?}", session.device_asset_note(key));
+}
+
+/// The library's folder is Suhina's own: a relative state its base holds is read there, and so is
+/// an absolute path into it, though neither is in the project's folder nor trusted (ADR 0036 › 4).
+/// A relative path that climbs out of the library is not looked at.
+#[test]
+fn a_nam_path_in_the_library_is_read_from_there() {
+    let root = temp("library-nam");
+    let library = root.join("library");
+    let relative = "Sounds/NAM/Amp models/Mine/amp.nam";
+    let absolute = model(&library.join(relative));
+    for path in [relative.to_string(), absolute] {
+        let song = nam_song(&root.join("project"), &path);
+        let (mut session, _) = Session::open(&song).unwrap();
+        session.set_library_base(library.clone());
+        session.sync_device_files();
+        assert!(session.device_asset(&path).is_some(), "{path}: {:?}", session.device_asset_note(&path));
+    }
+
+    model(&root.join("models").join("climbing.nam"));
+    let climbing = "../models/climbing.nam";
+    let song = nam_song(&root.join("project"), climbing);
+    let (mut session, _) = Session::open(&song).unwrap();
+    session.set_library_base(library);
+    session.sync_device_files();
+    assert!(session.device_asset(climbing).is_none());
+    let note = session.device_asset_note(climbing).unwrap_or_default();
+    assert!(note.contains("outside the project's folder"), "{note}");
+}
+
+/// A file given to `device.add` is the person's choice, as one `device.setNamFile` takes: it runs
+/// wherever it is, outside the project's folder and untrusted.
+#[test]
+fn a_nam_file_given_to_device_add_is_read_wherever_it_is() {
+    let root = temp("added");
+    let path = model(&root.join("models").join("added.nam"));
+    let mut projects = projects(&root.join("settings"));
+    let song = nam_song(&root.join("project"), &share("other.nam"));
+    let (session, _) = projects.open_path(&song, OpenOptions { audio: true }).unwrap();
+    let active = projects.add(session, None).unwrap();
+    run(&mut projects, "device.add", json!({ "track": 1, "id": "nam-amp-modeler", "file": &path }));
+    let session = projects.get_mut(active).unwrap();
+    session.sync_device_files();
+    assert!(session.device_asset(&path).is_some(), "{:?}", session.device_asset_note(&path));
+}
