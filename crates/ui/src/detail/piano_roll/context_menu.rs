@@ -122,7 +122,7 @@ impl MenuCx<'_> {
     /// one change to the view.
     pub(super) fn show(&self, ui: &Ui, state: &mut PianoRollState, actions: &mut Vec<Action>) {
         let Some(at) = state.menu else { return };
-        let id = Id::new("piano-roll-context-menu");
+        let id = Id::unique("piano-roll-context-menu");
         let open = (!at.opened).then_some(SetOpenCommand::Bool(true));
         let mut picked = None;
         let shown = egui::Popup::new(id, ui.ctx().clone(), at.pos, ui.layer_id())
