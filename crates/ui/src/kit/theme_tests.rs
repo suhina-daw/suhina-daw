@@ -517,3 +517,17 @@ fn a_former_kind_token_gets_a_notice_naming_its_sample_point_rule() {
     assert!(warnings.iter().any(|w| w.contains("sample-point[kind=\"snare\"]")), "{warnings:?}");
     assert!(warnings.iter().any(|w| w == "kind.nothing is not a colour token"), "{warnings:?}");
 }
+
+/// The README's examples for track and clip colours are rules a theme can use as written.
+#[test]
+fn the_readme_s_track_and_clip_colour_examples_read_without_warnings() {
+    let readme = include_str!("../../themes/THEME-PACKAGE-README.md");
+    let from = readme.find("### Tracks").unwrap();
+    let to = readme[from..].find("piano-grid {").unwrap() + from;
+    let css: String =
+        readme[from..to].split("```css\n").skip(1).filter_map(|block| block.split("```").next()).collect();
+    assert!(css.contains("attr(color type(<color>))"), "{css}");
+    let (_, warnings) = from_folder(ThemeMeta::new("Readme", DEFAULT_SWATCH), &css);
+    assert!(warnings.is_empty(), "{warnings:?}\n{css}");
+    assert!(suhina_style::sheet::Sheet::parse(&css).is_ok());
+}
