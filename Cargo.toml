@@ -33,6 +33,7 @@ suhina-device-api = { path = "crates/device-api" }
 suhina-device-sdk = { path = "crates/device-sdk" }
 suhina-ipc = { path = "crates/ipc" }
 suhina-plugins = { path = "crates/plugins" }
+suhina-lua-runner = { path = "crates/lua-runner" }
 suhina-device-utility = { path = "devices/utility" }
 suhina-device-auto-pan = { path = "devices/auto-pan" }
 suhina-device-dj-eq = { path = "devices/dj-eq" }
@@ -73,6 +74,9 @@ winresource = { version = "0.1", default-features = false }  # MIT
 roxmltree = "0.21"  # MIT OR Apache-2.0
 cpal = "0.18"  # Apache-2.0
 serde_json = "1"  # MIT OR Apache-2.0
+# Lua 5.4 for the surface programs' Lua runner (ADR 0019 › Amendment), built from the lua-src
+# crate (vendored), so no system Lua is needed; the interpreter never runs in Suhina's process.
+mlua = { version = "0.12", default-features = false, features = ["lua54", "vendored"] }  # MIT
 chrono = { version = "0.4", default-features = false, features = ["clock"] }  # MIT OR Apache-2.0
 serde = { version = "1", features = ["derive"] }  # MIT OR Apache-2.0
 nam-rs = "0.4"  # MIT; NAM model inference for the two NAM devices

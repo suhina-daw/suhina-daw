@@ -330,7 +330,8 @@ patterns the script claims, lists the script file in `programs` with its SHA-256
 `runner` the runner it needs (`"lua"`). Suhina starts the runner it shipped with that script, so
 each surface program is one runner process of its own: a crash or a hang of the runner process
 restarts that program alone, with its ports back on the profiles meanwhile, the way a plug-in
-host's process is restarted. A script holds what any surface program
+host's process is restarted. The protocol the runner speaks, the Lua environment and the API a
+script gets, and the runner's caps, are in [surface programs](surface-programs.md). A script holds what any surface program
 is given and nothing more: every message of its claimed ports, with the timestamp it arrived
 with; a send-back leaves from a queue Suhina drains, and the script never waits on an answer to
 send one; commands, reading commands and subscriptions. The runner's Lua environment is

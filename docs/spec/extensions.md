@@ -108,7 +108,8 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
   The runner is a program Suhina ships, not an extension and not a surface program; the script's
   folder is both. The extension's state, its health and its restart
   are the runner process's, and the script's ports fall back to their profiles while that process
-  is down.
+  is down. The messages the runner and Suhina say, and the Lua environment and API the runner
+  gives a script, are in [surface programs](surface-programs.md).
 - Suhina does the parts it owns: decoding the audio, the resampling and the DSP chain around the
   model, placing the result in the project, and the undo step. The extension does the part Suhina may
   not ship.
