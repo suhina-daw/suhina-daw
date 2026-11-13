@@ -143,7 +143,7 @@ from top to bottom:
 | Category filters | Wrapping row of buttons, 16 px high, 7 px side padding, 2 px gaps, 10 px text; selected `control.selectedBackground` with `text.inverse` text, others `control.background` (hover `control.hoverBackground`) with `text.secondary` |
 | Sidebar | 104 px, a 1 px `border` on its right; section titles (Pinned, Recent, Folders) 10 px `text.hint` with 8 px top padding; items 17 px, 10 px `text.secondary` (`text.primary` when selected); selected item `control.activeBackground`, hover `panel.hoverBackground`; a folder's state at its right in 9 px mono `text.hint` ("…" scanning, "poll", "gone"); "+ Add folder" in `text.hint` opens a path field in its place |
 | Tree row | 17 px; indent 12 px per level; 10 px lead (a chevron in `text.hint` for what opens, a play triangle for a selected or hovered sample or MIDI file), 12 px type icon, 5 px, name 10 px `text.value` (`text.primary` selected), tag dots, meta right in 9 px mono `text.hint` (length, "plug-in", "MIDI effect", the folder a search found it in); selected row `control.activeBackground`, hover `panel.hoverBackground`; the list's scroll bar at the right edge is the one every scroll area has (as in a device's panel: thin until the pointer is near, dragged, clicked in its track), from `kit::scroll` |
-| Type icons | Our own strokes, 1.1 px, 12 px: folder and heading `text.secondary`; MIDI note `track.2` (ochre); audio wave `track.3` (steel blue); instrument and preset `track.4`; effect `track.1`; MIDI effect the effect's box in `track.2`; project page `text.secondary` |
+| Type icons | Our own strokes, 1.1 px, 12 px, a `browser-icon[kind]` element each, coloured by the user-agent sheet: folder and heading `text.secondary`; MIDI note `#F2D541` (ochre); audio wave `#4FC3F7` (steel blue); instrument and preset `#B38BFF`; effect `#FF9A3C`; MIDI effect the effect's box in `#F2D541`; project page `text.secondary` |
 | Colour tag | 6 px dot after the name, 2 px apart, in the tag's colour; a tag's right-click menu (a section row's or a footer dot's) offers the colour palette (Launcher view › Colour palette) and its Select colour…, whose picker opens in the menu, a Rename tag field — the section's renames as it is typed, the footer's takes Enter or a click outside the menu —, a New tag… field with its Add tag button, and Remove |
 | Preview strip | 54 px, `window.background`, a 1 px `border` on top: 22 px play button (`control.background`, its glyph `accent` while playing), file name 10 px, length, BPM ("~" when detected) and key right in 9 px mono `text.secondary`; under them the waveform ([waveforms](../spec/waveforms.md); a MIDI file: 2 px note bars), played part `text.secondary`, rest `text.hint`, playhead 1 px `accent` |
 | List and Map | 22 px row above the results: two buttons like the category filters, List and Map; Map shows the [sample map](../spec/sample-map.md) in the results area |
@@ -170,13 +170,11 @@ space, the mixer at the bottom.
 | Stop row | 20 px under the last scene, `panel.background`: per track a 7 × 7 square outline in `text.secondary` (`accent` while the stop is queued), centred; in the scene column the square and "Stop all" |
 | Empty space | Right of the last track: "+ MIDI track", "+ Audio track" and "+ Return track" buttons (a right-click anywhere there offers Insert audio track, Insert MIDI track, Insert return track) (20 px, `control.background`, 10 px `text.secondary`, 2 px apart, 6 px from its top left) and, below them, "Drop files or devices to add a track" in 10 px `text.hint`. Drops from the browser there make new tracks; the Arrangement has the same under its last lane |
 
-Track colours: the track's own colour if it has one, else its legacy palette colour resolved once on project attachment. `clip.midiDefault`
-and `clip.audioDefault` are copied only into future MIDI/audio tracks and clips; changing
-them never recolours existing project content.
+Track colours: the track's own colour if it has one, else Suhina's fixed colour for its place (`#FF9A3C` `#F2D541` `#4FC3F7` `#B38BFF` in turn). New tracks and clips get Suhina's MIDI (`#4FC3F7`) or audio (`#FF9A3C`) colour, never the theme's.
 
 ### Colour palette
 
-One palette for every colour choice: the theme's eight track colours `track.1`–`track.8`, as
+One palette for every colour choice: Suhina's eight track colours, the same in every theme, as
 14 px swatches 3 px apart, the track's current colour with a 1.5 px `text.primary` inset outline,
 a hovered one with 1 px. It is offered in the track's right-click menu (both views), in a popup
 under a track's colour area, and in a colour tag's right-click menu (before the free colour

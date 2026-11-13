@@ -6,6 +6,7 @@ status: draft
 last_verified: 2026-11-13
 covers:
   - crates/session/src/commands.rs
+  - crates/session/src/colours.rs
   - crates/ui/src/arrangement/timeline.rs
   - crates/ui/src/arrangement/arrangement_view.rs
   - crates/ui/src/arrangement/automation_lanes.rs
@@ -172,12 +173,16 @@ tracks: they then act on the painted time, until a header is clicked again (#119
 header shows its track's colour strongly (60 % over the panel); a selected track's is brighter
 and more saturated, with an outline in it. A track keeps the colour it shows when tracks are
 added, removed or moved: one without a colour of its own (from a project saved before tracks
-stored theirs) gets its place's palette colour stored then, in the same undo step. A new track
-gets a colour stored as it is made, by Settings › Arrangement › Tracks › **New track colour**:
-*By clip type* gives an audio track the default audio clip colour and every other track the
-default MIDI clip colour; *One colour* gives every new track the default MIDI clip colour. These
-two defaults are the theme's `clip.midiDefault` and `clip.audioDefault` for now; #1020 takes
-them out of the theme. A track never takes its colour from its place, so tracks made one after
+stored theirs) shows Suhina's fixed colour for its place (orange, yellow, light blue, violet in
+turn, the same in every theme), and that colour is stored then, in the same undo step. A new
+track gets a colour stored as it is made, by Settings › Arrangement › Tracks › **New track
+colour**: *By clip type* gives an audio track Suhina's audio colour (orange `#FF9A3C`) and every
+other track its MIDI colour (light blue `#4FC3F7`); *One colour* gives every new track the MIDI
+colour. A new clip takes its track's colour, or with **New clip colour** › *By clip type* the
+MIDI or audio colour for its content. These colours are Suhina's own, never the theme's, and the
+CLI and MCP give them too. A track's colour is saved as `"color": "#RRGGBB"`, the final colour.
+*Not yet:* a palette slot for a colour picked from a palette (#1025), saved beside `color` as a
+key of its own, so that the files read today keep reading. A track never takes its colour from its place, so tracks made one after
 another can share a colour.
 
 ## Clip colours

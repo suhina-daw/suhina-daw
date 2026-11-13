@@ -174,9 +174,8 @@ liquid strengths and the surface gradients are not listed there (#1019); a theme
 the theme's own values), so a built-in theme is not copied for them. A theme's `window { liquid }`
 setting is `auto` or three integers from 0 to 100 (panels, tracks, clips); `auto` preserves global
 inheritance. Copies and exports retain these values; Reset changes restores the theme's own
-settings. Tracks & clips colours for new tracks and clips (`clip.midiDefault`,
-`clip.audioDefault`) stay palette tokens a theme sets in its sheet; the session copies them only
-into newly created tracks and clips, and existing tracks and clips never read them.
+settings. A theme sets no track or clip colours: new tracks and clips get Suhina's own MIDI and
+audio colours, and the colour picker offers Suhina's eight, in every theme.
 Changes apply and save live into the variant in use; moving controls or changing artwork of a
 built-in theme creates a custom copy. A theme with variants shows a row of swatches under its
 card, the default variant first (named in `theme.json`, *Default* otherwise); clicking one uses
