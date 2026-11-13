@@ -37,6 +37,7 @@ use gestures::Part;
 
 mod clip;
 mod clip_strip;
+mod context_menu;
 mod drawing;
 mod edits;
 mod keys;
@@ -46,6 +47,7 @@ mod state;
 mod toolbar;
 
 pub use self::clip::*;
+use self::context_menu::{MenuAt, MenuCx, RightClick};
 #[cfg(test)]
 pub(crate) use self::drawing::part_style;
 use self::drawing::*;
@@ -262,6 +264,8 @@ pub fn show(
         state.playing_key = None;
         state.key_live = None;
         state.clear_span();
+        state.menu = None;
+        state.menu_waiting = None;
         // The scroll reach a zoom gave the last clip is not this one's.
         state.zoom_reach = 0.0;
     }
@@ -482,6 +486,8 @@ pub fn show(
     {
         gesture.delete_note(state, actions, index);
     }
+    // A right click that did none of the above opens the menu (› Right-click menu).
+    RightClick { layout: &layout, clip, inputs, workflow, right_deletes }.handle(ui, &response, pointer, state);
     // The right button: the Mouse-first switches, on the press, so a press that never moves (a
     // click) does the same job as a stroke (› Keymap presets).
     let right_pressed = ui.input(|i| i.pointer.button_pressed(PointerButton::Secondary))
@@ -828,7 +834,8 @@ pub fn show(
     let axis = ruler_view::Axis { origin: grid_rect.left() - state.scroll.x, beat_width: state.beat_width };
     ruler_view::draw(ui, ruler, &axis, &shape);
     state.live_span = draw_span_bar(ui, &layout, clip, state, selecting);
-    if let Some(((icon, hotspot), pos)) = tool_icon {
+    MenuCx { clip, keymap, copied, grid }.show(ui, state, actions);
+    if let Some(((icon, hotspot), pos)) = tool_icon.filter(|_| state.menu.is_none()) {
         draw_tool_pointer(&ui.painter_at(whole), icon, tool_pointer_rect(pos, hotspot, TOOL_POINTER));
     }
     if state.magnifier

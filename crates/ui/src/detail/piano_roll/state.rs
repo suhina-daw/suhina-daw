@@ -342,6 +342,10 @@ pub struct PianoRollState {
     /// How the toolbar folds the rows: Fold to the rows with notes, Scale to the clip's scale
     /// ([`Self::fold_for`]); kept until Suhina closes (› Zoom and scroll).
     pub fold: Fold,
+    /// The right-click menu, while it is open, and one a right click on a ghost note opens once the
+    /// double-click time has passed with no second click (› Right-click menu).
+    pub(super) menu: Option<MenuAt>,
+    pub(super) menu_waiting: Option<(f64, MenuAt)>,
 }
 
 impl Default for PianoRollState {
@@ -420,6 +424,8 @@ impl Default for PianoRollState {
             pressed_with: None,
             ghost_source: GhostSource::default(),
             fold: Fold::default(),
+            menu: None,
+            menu_waiting: None,
         }
     }
 }
@@ -798,6 +804,8 @@ impl PianoRollState {
         self.erasing.clear();
         self.audition_pending.clear();
         self.key_live = None;
+        self.menu = None;
+        self.menu_waiting = None;
     }
 
     /// Keeps `note`'s length and velocity for the next note drawn, and for the key column's

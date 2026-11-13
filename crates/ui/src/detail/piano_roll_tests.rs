@@ -1149,3 +1149,23 @@ fn the_time_span_is_the_rectangle_while_it_is_drawn() {
     state.live_span = Some((0.0, 1.0));
     assert_eq!(state.time_span(), Some((0.0, 1.0)), "a new rectangle over it");
 }
+
+/// Invert selection: the notes that were not selected, and no others; the time selection ends.
+#[test]
+fn invert_selection_selects_the_others() {
+    let clip = clip(vec![note(0.0, 0.5, 60), note(1.0, 0.5, 62), note(2.0, 0.5, 64)]);
+    let mut state = focused_on(&clip);
+    state.selected = BTreeSet::from([1]);
+    state.select_span(1.0, 1.5);
+    state.invert_selection(&clip);
+    assert_eq!(state.selected, BTreeSet::from([0, 2]));
+    assert!(state.span.is_none());
+}
+
+/// The pointer's icon is the toolbar button's: the same theme role, so a theme's artwork for the
+/// button is the pointer's too.
+#[test]
+fn the_tool_pointer_takes_the_toolbars_theme_role() {
+    assert_eq!(tool_role(IconButton::Draw), "piano.draw");
+    assert_eq!(tool_role(IconButton::Slice), "piano.slice");
+}

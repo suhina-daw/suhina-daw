@@ -623,7 +623,7 @@ impl ButtonPaint<'_> {
         } else {
             crate::kit::skin::State::response(&response, chosen)
         };
-        let role = format!("piano.{}", button.id().trim_start_matches("piano-"));
+        let role = super::layout::tool_role(button);
         if active {
             // Only the chosen tool or an open part has a fill; the others show one on hover.
             let fill = if chosen { theme::control_active() } else { Color32::TRANSPARENT };
