@@ -67,7 +67,9 @@ GPL-compatible stretchers usable from Rust (checked 2026-10-11):
    covers one stretch of constant speed, and the speed is the ratio of the input it is given to
    the output it makes. It never allocates once built (AGENTS.md rule 3). Where it runs:
    decision 6. Offline rendering runs the same voices (rule 4). A tempo change only means a new
-   playlist, not new audio.
+   playlist, not new audio. A `Stretch` can be cloned, which copies its buffers and shares its
+   FFT plans: far cheaper than building one, and a clone of one that has never processed
+   anything sounds bit for bit like a new one (the Sampler makes its 32 voices that way, #1396).
    - The stretcher runs at the **file's** sample rate, so the pitch is kept against the file's
      own pitch; its output is read at the project rate with linear interpolation. Transpose is
      the stretcher's own pitch shift.

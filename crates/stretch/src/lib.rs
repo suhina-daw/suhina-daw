@@ -17,6 +17,8 @@
 
 mod stft;
 
+use std::ops::{Deref, DerefMut};
+
 use rustfft::num_complex::Complex32 as Complex;
 
 use stft::Stft;
@@ -61,6 +63,33 @@ struct Peak {
     output: f32,
 }
 
+/// The spectral peaks of one block, in a list whose capacity is fixed when the stretch is built:
+/// [`Stretch::find_peaks`] never grows it, so it never allocates. A clone keeps that capacity,
+/// which a [`Vec`]'s clone does not, or a cloned stretch would find no peaks and not transpose.
+#[derive(Debug)]
+struct Peaks(Vec<Peak>);
+
+impl Clone for Peaks {
+    fn clone(&self) -> Self {
+        let mut peaks = Vec::with_capacity(self.0.capacity());
+        peaks.extend_from_slice(&self.0);
+        Self(peaks)
+    }
+}
+
+impl Deref for Peaks {
+    type Target = Vec<Peak>;
+    fn deref(&self) -> &Vec<Peak> {
+        &self.0
+    }
+}
+
+impl DerefMut for Peaks {
+    fn deref_mut(&mut self) -> &mut Vec<Peak> {
+        &mut self.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct MapPoint {
     input_bin: f32,
@@ -68,13 +97,18 @@ struct MapPoint {
 }
 
 /// A streaming time-stretcher and pitch-shifter for interleaved audio.
+///
+/// Cloning is much cheaper than building one (no FFT planning) and allocates the same buffers. A
+/// clone carries on exactly as the original would: [`Stretch::reset`] keeps the random phase
+/// generator, so only a clone of a stretch that has never processed anything sounds like a new one.
+#[derive(Clone)]
 pub struct Stretch {
     channels: usize,
     bands: usize,
     stft: Stft,
     band_data: Vec<Band>,
     predictions: Vec<Prediction>,
-    peaks: Vec<Peak>,
+    peaks: Peaks,
     energy: Vec<f32>,
     smoothed_energy: Vec<f32>,
     output_map: Vec<MapPoint>,
@@ -118,7 +152,7 @@ impl Stretch {
             bands,
             band_data: vec![Band::default(); bands * channels],
             predictions: vec![Prediction::default(); bands * channels],
-            peaks: Vec::with_capacity(bands),
+            peaks: Peaks(Vec::with_capacity(bands)),
             energy: vec![0.0; bands],
             smoothed_energy: vec![0.0; bands],
             output_map: vec![MapPoint::default(); bands],
@@ -775,6 +809,32 @@ mod tests {
         let mut short = vec![1.0; 100];
         assert!(!stretch.exact(&[0.5; 20], &mut short));
         assert!(short.iter().all(|s| *s == 0.0));
+    }
+
+    /// A transpose (which looks for spectral peaks) at a stretch above 2× (which draws random
+    /// phases), as the bits of the output.
+    fn transposed_and_stretched(mut stretch: Stretch) -> Vec<u32> {
+        let input = sine(440.0, 24_000, 2);
+        stretch.set_transpose_semitones(7.0, 0.0);
+        let mut output = vec![0.0; 60_000 * 2];
+        assert!(stretch.exact(&input, &mut output));
+        output.iter().map(|s| s.to_bits()).collect()
+    }
+
+    #[test]
+    fn a_clone_of_a_new_stretch_sounds_bit_for_bit_like_a_new_one() {
+        let fresh = transposed_and_stretched(Stretch::new(2, SR));
+        let template = Stretch::new(2, SR);
+        assert_eq!(transposed_and_stretched(template.clone()), fresh);
+        assert_eq!(transposed_and_stretched(template), fresh);
+        // A stretch that has played does not start like a new one, even after a reset: the
+        // random phases go on. So the comparison above covers them.
+        let mut played = Stretch::new(2, SR);
+        let mut output = vec![0.0; 60_000 * 2];
+        played.set_transpose_semitones(7.0, 0.0);
+        assert!(played.exact(&sine(440.0, 24_000, 2), &mut output));
+        played.reset();
+        assert_ne!(transposed_and_stretched(played), fresh);
     }
 }
 

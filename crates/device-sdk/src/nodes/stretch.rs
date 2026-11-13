@@ -6,6 +6,15 @@ use suhina_stretch::Stretch;
 
 const BLOCK: usize = 64;
 
+#[cfg(test)]
+thread_local! {
+    /// The rate of each voice [`Voice::new`] has built on this thread, for tests that count them.
+    pub(crate) static BUILT: std::cell::RefCell<Vec<f64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// One note's stretch. Clone a voice that has never played to make more: a clone costs a copy of
+/// its buffers, where [`Voice::new`] also plans the FFTs, and it sounds bit for bit like a new one.
+#[derive(Clone)]
 pub(crate) struct Voice {
     stretch: Stretch,
     input: Vec<f32>,
@@ -19,6 +28,8 @@ pub(crate) struct Voice {
 
 impl Voice {
     pub(crate) fn new(rate: f64) -> Self {
+        #[cfg(test)]
+        BUILT.with(|built| built.borrow_mut().push(rate));
         let stretch = Stretch::new(2, rate as f32);
         let capacity = stretch.output_seek_length(4.).max(BLOCK * 4) * 2;
         Self {
@@ -202,5 +213,24 @@ mod tests {
         voice.next(1.1, 1., |_| [0.5; 2]);
         assert_eq!(voice.cursor, cursor + 1);
         assert!(voice.ready);
+    }
+
+    /// 0.4× speed is a stretch of 2.5×, above 2×, where the stretch draws random phases; a pitch
+    /// of 1.5 makes it look for spectral peaks. The output as bits.
+    fn played(mut voice: super::Voice) -> Vec<u64> {
+        let source = |at: f64| {
+            let s = (at * 0.06).sin() * 0.5;
+            [s, s * 0.5]
+        };
+        (0..30_000).flat_map(|_| voice.next(0.4, 1.5, source).map(f64::to_bits)).collect()
+    }
+
+    #[test]
+    fn a_clone_of_a_new_voice_plays_bit_for_bit_like_a_new_one() {
+        let fresh = played(super::Voice::new(44_100.));
+        let clones = vec![super::Voice::new(44_100.); 3];
+        for clone in clones {
+            assert_eq!(played(clone), fresh);
+        }
     }
 }
