@@ -212,15 +212,14 @@ impl MenuCx<'_> {
         item(ui, "Zoom to selection", Some("pianoRoll.zoomSelection"), true, Pick::Key("pianoRoll.zoomSelection"));
         item(ui, "Zoom to clip", Some("pianoRoll.zoomClip"), true, Pick::Key("pianoRoll.zoomClip"));
         ui.separator();
-        let grid_label = format!("Grid ({})", clip.grid_menu.label());
-        let response = ui.menu_button(egui::RichText::new("Grid").font(font.clone()), |ui| {
-            let keys = grid_key_labels(self.keymap, &PIANO_GRID_KEYS);
-            if let Some(grid) = grid_entries(ui, clip.grid_menu, &keys, &|_| true) {
-                picked = Some(Pick::Grid(grid));
-                ui.close();
-            }
-        });
-        response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &grid_label));
+        // The grid's entries right in the menu, as the toolbar's grid menu holds them: no submenu
+        // to open first.
+        let keys = grid_key_labels(self.keymap, &PIANO_GRID_KEYS);
+        if let Some(grid) = grid_entries(ui, clip.grid_menu, &keys, &|_| true) {
+            picked = Some(Pick::Grid(grid));
+            ui.close();
+        }
+        ui.separator();
         let toggle = |ui: &mut Ui, name: &str, on: bool| {
             let response = ui.add(egui::Button::selectable(on, egui::RichText::new(name).font(font.clone())));
             response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, name));
