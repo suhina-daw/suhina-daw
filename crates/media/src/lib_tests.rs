@@ -157,6 +157,30 @@ fn missing_and_broken_files_are_warnings() {
 }
 
 #[test]
+fn decoding_says_which_file_each_name_was_read_from() {
+    let dir = temp_dir("found");
+    let set = std::path::absolute(dir.join("set")).unwrap();
+    write_wav(&set.join("in.wav"), 1, 16);
+    let outside = std::path::absolute(dir.join("out.wav")).unwrap();
+    write_wav(&outside, 1, 16);
+    std::fs::write(set.join("noise.wav"), b"definitely not audio").unwrap();
+    let trusted = Trusted { files: [outside.clone()].into(), ..Trusted::default() };
+    // In the project's folder, and outside it where trusted, under the name the clip gives it.
+    let decoded = decode_project_audio_found(&project_with_audio("in.wav", None), &set, &trusted);
+    assert_eq!(decoded.found.get("in.wav"), Some(&set.join("in.wav")));
+    let named = project_with_audio("moved/out.wav", Some(outside.display().to_string()));
+    let decoded = decode_project_audio_found(&named, &set, &trusted);
+    assert_eq!(decoded.found.get("moved/out.wav"), Some(&outside));
+    assert!(decoded.pool.files.contains_key("moved/out.wav"));
+    // A file that is missing or does not decode was read from nowhere.
+    for name in ["gone.wav", "noise.wav"] {
+        let decoded = decode_project_audio_found(&project_with_audio(name, None), &set, &trusted);
+        assert!(decoded.found.is_empty() && decoded.pool.files.is_empty() && decoded.warnings.len() == 1, "{name}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_stems_file_is_decoded_once_with_a_key_per_track() {
     let data = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data");
     let mut project = project_with_audio("tones-aac.stem.mp4", None);

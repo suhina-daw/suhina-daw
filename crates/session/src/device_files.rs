@@ -3,7 +3,7 @@
 
 //! [`DeviceFiles`]: the files a project's devices load, read off the audio thread.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 
 use suhina_engine::DeviceAssets;
@@ -19,6 +19,10 @@ pub(crate) struct DeviceFiles {
     pub(crate) notes: HashMap<String, String>,
     /// When each loaded file was last written, so a rewritten file is reloaded.
     pub(crate) modified: HashMap<String, Option<SystemTime>>,
+    /// The files the person chose for a device in this session (`device.setNamFile`), which are
+    /// read wherever they are; a path the project names is read only from where its audio may
+    /// be (`Session::resolve_device_file`).
+    pub(crate) chosen: HashSet<String>,
     /// How many loads the syncs have made: a parse and, for an IR, a resample each, on the
     /// session's thread. A diagnostic, read by [`crate::Session::device_file_loads`].
     pub(crate) loads: u64,

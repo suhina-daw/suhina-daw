@@ -589,8 +589,12 @@ impl Projects {
         let Some(copied) = from.and_then(|t| self.tabs.open.iter().find(|o| o.id == t)) else { return };
         let mut clipboards = copied.session.clipboards.clone();
         clipboards.tracks.clear();
+        // A device's file the person chose in one project is their choice in the others too, so
+        // a copied Amp Modeler runs its model where it is pasted (`Session::resolve_device_file`).
+        let chosen = copied.session.device_files.chosen.clone();
         for open in self.tabs.open.iter_mut().filter(|o| Some(o.id) != from) {
             open.session.clipboards = clipboards.clone();
+            open.session.device_files.chosen.extend(chosen.iter().cloned());
         }
     }
 
@@ -793,10 +797,11 @@ impl Projects {
             .unwrap_or_else(|| PathBuf::from("."));
         let source = session.source().map(Path::to_path_buf);
         let trusted = self.trusted_audio_for(source.as_deref());
-        let (audio, warnings) = suhina_media::load_project_audio_trusted(session.project(), &folder, &trusted);
+        let decoded = suhina_media::decode_project_audio_found(session.project(), &folder, &trusted);
         session.set_trusted(trusted);
-        session.set_audio(audio);
-        warnings
+        // With where each file was read from, which saving uses for it (#617).
+        session.set_audio_found(decoded.pool, decoded.found);
+        decoded.warnings
     }
 
     /// [`Projects::trusted_audio`] for the project saved as `project`: with the folders outside
@@ -992,6 +997,8 @@ impl Projects {
                     folders.push(folder.to_path_buf());
                 }
             }
+            // The devices' files (NAM models and IRs) are the person's choice as well.
+            let files: Vec<PathBuf> = files.into_iter().chain(session.loaded_device_files()).collect();
             if let Err(e) = self.browser.files.trust_audio(files) {
                 suhina_plugins::trace!("trusted audio not kept: {e}");
             }

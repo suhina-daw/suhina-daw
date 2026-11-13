@@ -691,7 +691,15 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
                 return Err(format!("a {id} runs a .{want_extension} file").into());
             }
             let state_text = device_file_state(session, info.id.as_ref(), path);
-            session.load_device_file(&info.id, &state_text).map_err(CommandError)?;
+            // The person's own choice, read wherever it is, as `device.setNamFile` reads one.
+            let newly_chosen = std::path::Path::new(&state_text).is_absolute()
+                && session.device_files.chosen.insert(state_text.clone());
+            if let Err(e) = session.load_device_file(&info.id, &state_text) {
+                if newly_chosen {
+                    session.device_files.chosen.remove(&state_text);
+                }
+                return Err(CommandError(e));
+            }
             Some(state_text)
         }
     };
@@ -1224,12 +1232,40 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     } else {
         device_file_state(session, &kind, path)
     };
-    let asset = session.load_device_file(&kind, &state_text).map_err(CommandError)?;
+    // The person's own choice: an absolute file is read wherever it is while the session runs
+    // (a path the project names is read only from where its audio may be, #617), and runs as
+    // read now, so a save trusts it even before an edit reads the devices' files again.
+    let newly_chosen =
+        std::path::Path::new(&state_text).is_absolute() && session.device_files.chosen.insert(state_text.clone());
+    let asset = match session.load_device_file(&kind, &state_text) {
+        Ok(asset) => asset,
+        Err(e) => {
+            if newly_chosen {
+                session.device_files.chosen.remove(&state_text);
+            }
+            return Err(CommandError(e));
+        }
+    };
     let name = suhina_device_registry::asset_name(&asset, std::path::Path::new(&state_text)).unwrap_or_default();
+    let modified = session
+        .resolve_device_file(&state_text)
+        .and_then(|file| std::fs::metadata(file).ok())
+        .and_then(|m| m.modified().ok());
+    let files = &mut session.device_files;
+    files.modified.insert(state_text.clone(), modified);
+    files.notes.remove(state_text.as_str());
+    files.assets.set(state_text.clone(), asset);
+    files.changed = true;
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
+    // The file the device names already (one the project named where it may not be read, chosen
+    // again) leaves the project as it was, so no edit carries it to a playing engine.
+    let unchanged = device.state.as_deref() == Some(state_text.as_bytes());
     device.state = Some(state_text.as_bytes().into());
+    if unchanged {
+        session.follow_device_files();
+    }
     Ok(json!({ "device": path_value(&path), "file": state_text, "name": name }))
 }
 

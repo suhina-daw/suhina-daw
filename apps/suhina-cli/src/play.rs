@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use suhina_engine::model::{LaneData, Project};
 use suhina_engine::{AudioPool, DeviceAssets, Plugins, Renderer};
 use suhina_output::{Output, Progress, Stream};
-use suhina_session::{OutputChoice, Player, Session};
+use suhina_session::{FileAccess, OutputChoice, Player, Session};
 
 /// Extra time to wait after the last frame, so the device can drain its buffer.
 const TAIL: Duration = Duration::from_millis(300);
@@ -108,11 +108,13 @@ edits (heard while playing):
   help, quit";
 
 /// Plays the project on the output `choice` names with the transport stopped and reads launcher
-/// commands from standard input until `quit` or end of input.
+/// commands from standard input until `quit` or end of input. `access` is where the project's
+/// files were read from when it opened, so its devices' files are read from there again.
 pub fn launcher(
     project: Project,
     audio: &AudioPool,
     assets: &DeviceAssets,
+    access: FileAccess,
     choice: &OutputChoice,
 ) -> Result<(), String> {
     if project.launcher.columns.iter().all(|c| c.slots.iter().all(|s| s.clip.is_none())) {
@@ -131,6 +133,8 @@ pub fn launcher(
     let stream = output.start(renderer, &mut controller, &progress)?;
     note_priority(&stream);
     let mut session = Session::new(project);
+    // Its devices' files as the project opened with them, not looked for in the working folder.
+    session.set_file_access(access);
     session.attach_player(Player::new(controller, None));
     println!("clip launcher on {}\n{LAUNCHER_HELP}\n", output.describe());
     print_grid(&mut session);
