@@ -844,11 +844,15 @@ fn a_muted_clip_is_the_user_agent_grey_whatever_its_colour() {
     for colour in [Color32::from_rgb(0xFF, 0x9A, 0x3C), Color32::from_rgb(0x4A, 0x4A, 0x4A), grey] {
         assert_eq!(clip::clip_body(surface, colour, 82, true, false), grey, "{colour:?}");
         let selected = clip::clip_body(surface, colour, 82, true, true);
-        assert!(selected.r() > grey.r(), "selection lifts a muted clip's brightness");
+        assert!(
+            selected.to_srgba_unmultiplied()[0] > grey.to_srgba_unmultiplied()[0],
+            "selection lifts a muted clip's brightness"
+        );
     }
     // A clip that plays keeps its hue, and a grey one is not the muted grey.
     let orange = clip::clip_body(surface, Color32::from_rgb(0xFF, 0x9A, 0x3C), 82, false, false);
-    assert!(orange.r() > orange.b() + 60, "{orange:?}");
+    let [red, _, blue, _] = orange.to_srgba_unmultiplied();
+    assert!(red > blue + 60, "{orange:?}");
     assert_ne!(clip::clip_body(surface, Color32::from_rgb(0x4A, 0x4A, 0x4A), 82, false, false), grey);
 }
 
@@ -863,7 +867,9 @@ fn a_clip_on_a_muted_track_keeps_its_colour_in_its_name_bar() {
     // Turned off itself: the bar is grey, a hair off the body.
     let off = clip::name_bar_fill(grey, surface, orange, 82, false, false);
     assert_ne!(off, on_track);
-    assert!(off.r().abs_diff(grey.r()) < 16 && off.r().abs_diff(off.b()) < 16, "{off:?}");
+    let [red, _, blue, _] = off.to_srgba_unmultiplied();
+    let grey_red = grey.to_srgba_unmultiplied()[0];
+    assert!(red.abs_diff(grey_red) < 16 && red.abs_diff(blue) < 16, "{off:?}");
 }
 
 #[test]
