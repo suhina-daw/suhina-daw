@@ -1849,7 +1849,6 @@ mod sampler_regressions {
     #[test]
     fn sampler_fit_beats_follows_project_tempo_during_a_held_note() {
         let mut sampler = suhina_device_registry::create("sampler").unwrap();
-        sampler.prepare(48_000.).unwrap();
         sampler.samples().unwrap().load_sample(48000, 1, vec![0.2; 48000].into());
         for (id, value) in [("warp", 1.), ("warp_beats", 4.), ("attack", 0.), ("sustain", 1.)] {
             sampler.set_param(sampler.info().param_index(id).unwrap(), value);

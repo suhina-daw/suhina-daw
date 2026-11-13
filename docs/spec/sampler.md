@@ -406,13 +406,12 @@ ratios outside 0.25..4 use Repitch, as arrangement clips do. Grain retains its
 existing independent scan and grain tuning; Warp applies only to Sample mode.
 
 The SDK allocates 32 stereo stretch voices and input/output buffers off the audio
-thread, for the output rate, once it has both a source and a rate: when a loaded
-instrument is prepared, or when a prepared one loads a source. An instrument that has a
-source but has not been prepared has no stretch voices and plays a stretched note
-silently; hosts prepare it before it plays. It builds one voice and copies it 31 times,
-so 32 voices cost about one stretch build; a copy of a voice that has never played sounds
-bit for bit like a new one. Either order of loading and preparing makes one stretch per
-Sampler, so each graph build does. A note resets its
+thread when loading a source or preparing a loaded instrument. It builds one voice and
+copies it 31 times, so 32 voices cost about one stretch build, and a copy of a voice that
+has never played sounds bit for bit like a new one. The engine prepares an instrument
+before it gives it its source, so a graph build makes one stretch per Sampler; a source
+loaded before the instrument is prepared at another rate than the 48 kHz a new device
+runs at is built twice. A note resets its
 existing stretch state, primes it using bounded source lookahead, and streams in
 64-frame blocks without allocation. Source sample rates are converted to the output
 rate during lookahead. Forward, reverse, sliced and looping reads respect their

@@ -102,6 +102,9 @@ impl SlotFactory<'_> {
         let asset = crate::assets::stored_path(self.devices, id, stored.state.as_deref())
             .and_then(|path| self.assets.get(path));
         let mut device = self.devices.create(id, asset)?;
+        // Prepared before it gets its sample, so a Sampler builds its stretch voices once, for
+        // this rate, rather than for 48 kHz on load and again here (#1396).
+        device.prepare(f64::from(self.sample_rate)).ok()?;
         // What a chain gives a device that plays samples: the decoded sample, the manual slices
         // and the source corrections.
         let slices: Option<std::sync::Arc<[f64]>> = stored.sample_slices().map(std::sync::Arc::from);
@@ -113,7 +116,6 @@ impl SlotFactory<'_> {
             samples.load_sample_slices(slices.clone());
             samples.load_sample_edits(edits.clone());
         }
-        device.prepare(f64::from(self.sample_rate)).ok()?;
         let info = device.info().clone();
         let mut values: Vec<f64> = info.params.iter().map(|p| p.default).collect();
         for p in &stored.params {
