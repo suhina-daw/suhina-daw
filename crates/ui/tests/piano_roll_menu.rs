@@ -143,7 +143,9 @@ fn a_right_click_on_the_empty_grid_opens_the_menu_with_select_first() {
     assert!(menu_open(&h), "the menu opens where the right button does nothing else");
     assert!(h.query_by_label_contains("Snap to grid").is_some(), "the grid's entries are in the menu itself");
     assert!(h.query_by_label("Zoom to clip").is_none(), "Z and Shift+Z zoom; the menu does not");
-    assert!(h.query_by_label("Set loop end here").is_some());
+    assert!(h.query_by_label("Set loop start here").is_some());
+    assert!(h.query_by_label("Set loop end here").is_none(), "the ends are dragged on the ruler");
+    assert!(h.query_by_label("Select all").is_none(), "Ctrl+A selects all");
 }
 
 #[test]
@@ -208,8 +210,8 @@ fn the_items_send_their_commands() {
     pause(&mut h);
     let empty = empty_spot(&h);
     right_click(&mut h, empty);
-    item(&mut h, "Select all");
-    assert_eq!(h.state().piano_roll().selected.len(), n.len() - 1);
+    item(&mut h, "Invert selection");
+    assert_eq!(h.state().piano_roll().selected.len(), n.len() - 1, "nothing was selected: all are now");
 }
 
 #[test]

@@ -109,6 +109,9 @@ pub(super) struct MenuCx<'a> {
     pub(super) grid: TimelineGrid,
 }
 
+/// The height of one of the menu's rows, lower than the window's other rows.
+const MENU_ROW: f32 = 16.0;
+
 /// The menu's accessible name, for a reader and a test.
 pub(super) const MENU_NAME: &str = "Piano roll menu";
 
@@ -126,7 +129,14 @@ impl MenuCx<'_> {
             .style(menu_style)
             .accessible_name(MENU_NAME)
             .open_memory(open)
-            .show(|ui| picked = self.entries(ui, state, at));
+            .show(|ui| {
+                // Compact rows, as a context menu's are: the menu stays short beside the grid.
+                let spacing = ui.spacing_mut();
+                spacing.item_spacing.y = 0.0;
+                spacing.button_padding.y = 1.0;
+                spacing.interact_size.y = MENU_ROW;
+                picked = self.entries(ui, state, at);
+            });
         if shown.is_none() && at.opened {
             state.menu = None;
             return;
@@ -166,10 +176,10 @@ impl MenuCx<'_> {
         item(ui, "Paste", Some("selection.paste"), pastes, Pick::Key("selection.paste"));
         item(ui, "Duplicate", Some("selection.duplicate"), acting, Pick::Key("selection.duplicate"));
         item(ui, "Delete", Some("selection.delete"), acting, Pick::Delete);
-        ui.separator();
-        item(ui, "Select all", Some("pianoRoll.selectAll"), notes, Pick::Key("pianoRoll.selectAll"));
+        ui.add(egui::Separator::default().spacing(4.0));
+        // No Select all: Ctrl+A is quicker.
         item(ui, "Invert selection", None, notes, Pick::InvertSelection);
-        ui.separator();
+        ui.add(egui::Separator::default().spacing(4.0));
         let quantizes = notes && !(state.acting().is_empty() && state.span.is_some());
         item(ui, "Quantize", Some("pianoRoll.quantize"), quantizes, Pick::Key("pianoRoll.quantize"));
         item(ui, "Quantize settings…", None, true, Pick::QuantizeSettings);
@@ -177,15 +187,14 @@ impl MenuCx<'_> {
         let (word, mute) = if acting && muted { ("Unmute", false) } else { ("Mute", true) };
         item(ui, word, None, acting, Pick::Mute(mute));
         item(ui, "Split here", None, !self.split_notes(state, at).is_empty(), Pick::Split);
-        ui.separator();
+        ui.add(egui::Separator::default().spacing(4.0));
         item(ui, "Loop selection", None, self.selection_span(state).is_some(), Pick::LoopSelection);
-        let shape = clip.shape;
+        // The start marker and the loop's start only: their ends are dragged on the ruler, and
+        // Loop selection sets both of the loop's ends.
         item(ui, "Set start here", None, true, Pick::Marker(RulerPart::StartMarker));
-        item(ui, "Set end here", None, shape.loop_range.is_none(), Pick::Marker(RulerPart::EndMarker));
         item(ui, "Set loop start here", None, true, Pick::Marker(RulerPart::LoopStart));
-        item(ui, "Set loop end here", None, true, Pick::Marker(RulerPart::LoopEnd));
         // No zoom items: Z and Shift+Z are quicker than the menu, which the grid already makes long.
-        ui.separator();
+        ui.add(egui::Separator::default().spacing(4.0));
         // The grid's entries right in the menu, as the toolbar's grid menu holds them: no submenu
         // to open first.
         let keys = grid_key_labels(self.keymap, &PIANO_GRID_KEYS);
