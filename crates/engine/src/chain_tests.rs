@@ -788,3 +788,24 @@ fn a_midi_clip_sounds_on_its_beat_after_play_with_the_loop_on() {
     let expected = 12 * BEAT;
     assert!(first + 256 >= expected && first <= expected + 512, "first sound at frame {first}, expected {expected}");
 }
+
+#[test]
+fn a_missing_instrument_takes_the_notes_and_plays_nothing() {
+    let render = |devices: Vec<Device>| {
+        let p = project(vec![note(0., 1., 60)], 1., devices);
+        peak(&render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap())
+    };
+    // The control: a track with no instrument plays its notes with the default voice.
+    assert!(render(vec![]) > 0.01);
+    // A hosted instrument whose plug-in is not installed, kept as an instrument.
+    let mut hosted = Device::new("Synth", DeviceKind::Vst3 { id: "0123456789ABCDEF0123456789ABCDEF".into() });
+    hosted.mark_external_instrument();
+    assert_eq!(render(vec![hosted.clone(), device("utility", &[])]), 0.0);
+    // The same device without the mark is an unknown device, not an instrument: the notes sound.
+    let unmarked = Device::new("Synth", DeviceKind::Vst3 { id: "0123456789ABCDEF0123456789ABCDEF".into() });
+    assert!(render(vec![unmarked]) > 0.01);
+    // An imported instrument this Suhina cannot run, kept as a silent placeholder.
+    let mut foreign = Device::new("Synth", DeviceKind::Foreign { format: "flp".into(), id: "Synth".into() });
+    foreign.mark_missing_instrument();
+    assert_eq!(render(vec![foreign]), 0.0);
+}
