@@ -152,8 +152,8 @@ approval for the protected paths: `ready to merge` alone does not merge such a c
 not one from another maintainer.
 
 **The updater needs the owner's review too.** Suhina installs and runs what its updater downloads,
-so the same approval applies to `crates/update/` and the updater's two files in `crates/ui`, and a
-check fails a pull request that changes where the updater downloads from
+so the same approval applies to `crates/update/`, and a check fails a pull request that changes
+where the updater downloads from
 ([`docs/spec/updates.md` › Where builds come from](docs/spec/updates.md#where-builds-come-from)).
 
 ## Clean-room

@@ -129,10 +129,14 @@ Suhina installs and runs what the updater downloads, so a pull request that chan
 must not pass unnoticed, however large it is. Three things hold, and none of them can be turned off
 by the pull request alone:
 
-- **Code owner's review.** `.github/CODEOWNERS` names the repository owner for `crates/update/`,
-  `crates/ui/src/app/updates.rs` and `crates/ui/src/settings/update_settings.rs`, as it does for
-  `.github/` and `scripts/`. GitHub reads the file from the base branch, and the main ruleset
-  requires that review, so `ready to merge` alone does not merge a change here.
+- **Code owner's review.** `.github/CODEOWNERS` names the repository owner for `crates/update/`, as
+  it does for `.github/` and `scripts/`. GitHub reads the file from the base branch, and the main
+  ruleset requires that review, so `ready to merge` alone does not merge a change here. The crate
+  holds everything that decides where the updater looks and what it installs: the addresses, which
+  test builds are trusted, the checksum, unpacking and putting the build in place. The window's
+  files (`crates/ui/src/app/updates.rs`, `crates/ui/src/settings/update_settings.rs`) only show what
+  the crate found and hand the pressed button back, so they follow the usual review; a change there
+  that starts a download of its own is the case the paragraph below the list names.
 - **The required check.** `scripts/updater_source.py` runs in the `docs` job of `ci.yml`, under the
   `ci` check main requires, in the merge queue too. It fails when `crates/update/src/github.rs` no
   longer holds the pinned lines (`REPOSITORY`, `NIGHTLY_URL`, `NIGHTLY_PAGE`, `ARTIFACTS_URL` and the
