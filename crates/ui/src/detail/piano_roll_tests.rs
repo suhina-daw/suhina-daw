@@ -1228,5 +1228,11 @@ fn join_and_crop_keep_the_selection_where_they_would_be_refused() {
     state.select_span(9.0, 10.0);
     assert!(state.key_action("pianoRoll.crop", &apart, 0.0, None).is_none());
     assert!(state.span.is_some(), "the time selection stays");
-    assert!(joins(&[note(0.0, 1.0, 60), note(1.0, 1.0, 60)], &BTreeSet::from([0, 1])));
+    // Sent, the selection stays too: a crop the command refuses (a stretch too short) keeps it.
+    state.selected = BTreeSet::from([0]);
+    state.select_span(0.0, 1.0);
+    assert!(state.key_action("pianoRoll.crop", &apart, 0.0, None).is_some());
+    assert_eq!(state.selected, BTreeSet::from([0]));
+    assert!(state.span.is_some());
+    assert!(PianoRollState::joins(&[note(0.0, 1.0, 60), note(1.0, 1.0, 60)], &BTreeSet::from([0, 1])));
 }

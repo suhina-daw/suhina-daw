@@ -796,13 +796,12 @@ impl PianoRollState {
             "pianoRoll.join" => {
                 // Nothing to join (no two notes of a key touch): the command would refuse it, and
                 // the selection stays to be changed and tried again.
-                if !joins(&clip.notes, acting) {
+                if !Self::joins(&clip.notes, acting) {
                     return None;
                 }
                 params["notes"] = json!(acting.iter().collect::<Vec<_>>());
-                // Joined notes take others' places: the selection would point at other notes.
-                self.selected.clear();
-                self.clear_span();
+                // The selection stays: it follows its notes by id (#1182), the joined note keeping
+                // the first one's, so a refused join leaves it to be tried again.
                 Some(Action::new("note.join", params))
             }
             "pianoRoll.fitToTime" => {
@@ -825,8 +824,8 @@ impl PianoRollState {
                 }
                 params["start"] = json!(start);
                 params["end"] = json!(end);
-                self.selected.clear();
-                self.clear_span();
+                // The selection stays, following its notes by id: the deleted ones leave it, and a
+                // refused crop (a stretch too short, a neighbour in the way) leaves it as it was.
                 Some(Action::new("clip.crop", params))
             }
             "pianoRoll.splitClip" => {
