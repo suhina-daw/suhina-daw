@@ -744,6 +744,7 @@ names! {
     PIANO_INSERT_MARK = "piano-insert-mark";
     PIANO_NOTE = "piano-note";
     VELOCITY = "velocity";
+    PIANO_SLICE = "piano-slice";
     PIANO_TOOL = "piano-tool";
     MIDI_TOOLS = "midi-tools";
     TAB_ROW = "tab-row";

@@ -151,6 +151,7 @@ const CONTROL_IDS: &[&str] = &[
     "take-promote",
     "clip-envelope-edit",
     "clip-envelope-free",
+    "focus-first",
     "track-on",
     "automation",
     "monitor",
@@ -361,7 +362,7 @@ pub const ELEMENTS: &[Element] = &[
     element("time-selection", Drawn, "Selected time: its `background-color` over the lanes and its `color` at its edges; along the ruler (`kind=\"ruler\"`); the clip the Draw tool's drag makes (`kind=\"draw\"`).")
         .attributes(&["kind"]),
     element("marquee", Drawn, "The rectangle a drag draws to pick whole clips."),
-    element("start-marker", Drawn, "The play start marker under the ruler, and its line in the lane clicked (`kind=\"insert\"`).")
+    element("start-marker", Drawn, "The play start marker under the ruler, and its line in the lane clicked (`kind=\"insert\"`); a clip's start and end markers in the piano roll (`kind=\"clip\"`).")
         .attributes(&["kind"]),
     element("loop-region", Control, "The loop bar.").attributes(&["checked"]).artwork(&[own("loop-region")]),
     element("loop-line", Drawn, "The lines at the loop's ends."),
@@ -407,7 +408,8 @@ pub const ELEMENTS: &[Element] = &[
         .parts(&["piano-tool", "group", "bar-item", "separator", "flexible-space"])
         .attributes(&["size"]),
     element("piano-grid", Drawn, "The piano roll's grid."),
-    element("piano-row", Drawn, "A row of the piano roll."),
+    element("piano-row", Drawn, "A row of the piano roll; the row under the pointer is `piano-row[kind=\"hover\"]`.")
+        .attributes(&["kind"]),
     element("piano-row-black", Drawn, "A row of a black key."),
     element("piano-key", Drawn, "A white key.").attributes(&["selected", "playing"]),
     element("piano-key-black", Drawn, "A black key.").attributes(&["selected", "playing"]),
@@ -421,8 +423,12 @@ pub const ELEMENTS: &[Element] = &[
     element("piano-clip-strip", Drawn, "The strip over the ruler showing several picked clips."),
     element("piano-time-selection", Drawn, "What is selected in time."),
     element("piano-insert-mark", Drawn, "The mark a click leaves where a paste goes."),
-    element("piano-note", Drawn, "A note.").attributes(&["selected", "muted"]),
-    element("velocity", Drawn, "A note's velocity stem."),
+    element("piano-note", Drawn, "A note; a note a draw or paint drag is making is `piano-note[kind=\"draft\"]`.")
+        .attributes(&["selected", "muted", "kind"]),
+    element("velocity", Drawn, "A note's velocity stem, `[selected]` and `[muted]` as its note; the line a velocity drag draws is `velocity[kind=\"line\"]`.")
+        .attributes(&["selected", "muted", "kind"]),
+    element("piano-slice", Drawn, "The line a slice drag cuts along, `kind=\"cut\"` or `kind=\"delete\"` for the right button's; its `background-color` over what a delete takes away.")
+        .attributes(&["kind"]),
     element("piano-tool", Control, "A tool button of the piano roll.")
         .ids(Ids::Prefixed("piano-"))
         .attributes(&["checked"])
