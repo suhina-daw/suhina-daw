@@ -149,7 +149,10 @@ when asked to finish a pull request.
 repository's secrets, [`.github/CODEOWNERS`](.github/CODEOWNERS) names the repository owner for
 `.github/` and `scripts/`. The main ruleset requires a code owner's
 approval for the protected paths: `ready to merge` alone does not merge such a change, also
-not one from another maintainer.
+not one from another maintainer. Checked on 2026-11-13 (#1087): #1366, which changed a file that
+then had a code owner, got `ready to merge` from a maintainer who is not the owner, the app's
+approval and *Merge when ready*, and stayed blocked until the owner approved, although the app is
+a bypass actor of the main ruleset.
 
 **The updater needs the owner's review too.** Suhina installs and runs what its updater downloads,
 so the same approval applies to `crates/update/`, and a check fails a pull request that changes

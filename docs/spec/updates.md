@@ -131,7 +131,9 @@ by the pull request alone:
 
 - **Code owner's review.** `.github/CODEOWNERS` names the repository owner for `crates/update/`, as
   it does for `.github/` and `scripts/`. GitHub reads the file from the base branch, and the main
-  ruleset requires that review, so `ready to merge` alone does not merge a change here. The crate
+  ruleset requires that review, so `ready to merge` alone does not merge a change here (checked on
+  2026-11-13, CONTRIBUTING.md › Merging many pull requests: the app's approval, although the app is
+  a bypass actor of the ruleset, left the pull request blocked until the owner approved). The crate
   holds everything that decides where the updater looks and what it installs: the addresses, which
   test builds are trusted, the checksum, unpacking and putting the build in place. The window's
   files (`crates/ui/src/app/updates.rs`, `crates/ui/src/settings/update_settings.rs`) only show what
