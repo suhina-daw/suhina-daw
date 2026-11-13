@@ -157,9 +157,10 @@ selection (a double-click there still makes a clip, › Making an empty clip). T
 selection stays, so the detail area shows the selected track's devices (or its hint); it does not
 close or hide the detail area ([clip editor](ui-clip-editor.md) › Least height and closing).
 
-A clip shows what it holds at every lane height, down to the lane's least 20 px: a MIDI clip draws
-a line per note in the strip it has under its name, and from below 30 px over the name's row; an
-audio clip its waveform the same way ([components](../design/components.md) › MIDI marks).
+A clip on a lane tall enough for a name bar (36 px) shows what it holds under its name: a MIDI clip
+a line per note, an audio clip its waveform ([components](../design/components.md) › MIDI marks).
+On a lower lane, down to the least 20 px, the strip is too thin for either to read, so the clip
+shows its name in the body instead (› Clip edges).
 
 In the track headers the same keys work on tracks: a click selects one, Ctrl adds or takes one out,
 Shift takes the run of headers between the last one clicked and this one. Ctrl+G groups those.
@@ -283,6 +284,14 @@ Let go, it is
   drawn as the clip itself, in its colour, one colour all along; where each pass starts it has a
   small notch at its top edge and a continuous vertical line in the leading edge's shade, so the repeats read as
   blocks even in an empty clip (#700). A MIDI clip's notes are drawn in every pass.
+- On a lane too low for a name bar (under 36 px), a clip shows its name in its body, the track's
+  name when the clip has none, and neither notes nor a waveform: the strip is too thin for them to
+  read. On a taller lane the name stays in its bar, and a MIDI clip's notes, a row per pitch the clip
+  uses (the keys between take no room), give way once the strip under the name leaves a row under
+  3 points, or once they
+  crowd into a smear, their starts in view under 3 points apart (notes that start together, a
+  chord, count once); an audio clip keeps its waveform. One or the other is drawn, never the name
+  over faint notes.
 - The right edge is one handle over the clip's full height; there is no separate loop handle
   at the corner (#700). The loop is turned on in the clip column (› Clip column in
   [ui-clip-editor.md](ui-clip-editor.md)) or with `clip.setLoop`, and a looping clip's edge then

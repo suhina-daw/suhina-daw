@@ -1495,7 +1495,15 @@ pub(super) fn paint_clip(
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &clip.name, font, text_color);
     }
     let marks = wave_area(rect);
-    if let Some(view) = clip.audio_view.as_ref().filter(|_| marks.height() >= 4.0)
+    // On a lane too low for a name bar the strip under the name is too thin for a waveform or
+    // notes to read, so the clip shows its name there instead. On a taller lane, notes that crowd
+    // into a smear give way too, the name staying in its bar. One or the other, never the name
+    // over faint notes.
+    let low = !has_name;
+    let mut content_hidden = low;
+    if low {
+        // The name only, drawn below.
+    } else if let Some(view) = clip.audio_view.as_ref().filter(|_| marks.height() >= 4.0)
         && let Some(peaks) = timeline.waveforms.get(&view.file)
     {
         // One column per point in view: the stretch of the file it shows, scaled by the clip's
@@ -1538,9 +1546,10 @@ pub(super) fn paint_clip(
     } else if clip.audio {
         painter.hline(marks.x_range(), marks.center().y.round() + 0.5, theme::hairline(dim(color)));
     } else if !clip.notes.is_empty() && marks.height() >= 4.0 {
-        let low = clip.notes.iter().map(|n| n.key).min().unwrap_or(0);
-        let high = clip.notes.iter().map(|n| n.key).max().unwrap_or(low);
-        let rows = f32::from(high - low) + 1.0;
+        // A row per pitch the clip uses, lowest at the bottom: the keys between them would only
+        // squeeze the rows, and the few pitches of a drum part each get a row that reads.
+        let keys = used_keys(clip.notes.iter().map(|n| n.key));
+        let rows = keys.len().max(1) as f32;
         // Only the notes in view are drawn; a long looped clip has thousands.
         let first = f64::from((view.left() - x_of(start)) / beat_width) - 1.0;
         let last = f64::from((view.right() - x_of(start)) / beat_width) + 1.0;
@@ -1549,17 +1558,39 @@ pub(super) fn paint_clip(
         let span_end = f64::from((rect.right() - x_of(start)) / beat_width);
         // Dark on the clip's colour, as notes read on a vivid body; light ink read as a
         // highlight and vanished on the light colours.
+        let in_view = |n: &&crate::arrangement::timeline::NoteMark| {
+            n.start + n.length >= first && n.start <= last && n.start < span_end
+        };
+        // Notes that crowd into a smear give way, so a dense part reads by the name in its bar
+        // rather than as noise: zoomed out until their starts run together, or with more pitches
+        // than the strip under the name has room for rows.
+        let shown_width = (rect.right().min(view.right()) - rect.left().max(view.left())).max(0.0);
+        let starts: Vec<f64> = clip.notes.iter().filter(in_view).map(|n| n.start).collect();
+        content_hidden = notes_crowded(starts, shown_width) || pitch_rows_crowded(keys.len(), marks.height());
         let note_ink = content_ink;
-        for note in clip.notes.iter().filter(|n| n.start + n.length >= first && n.start <= last && n.start < span_end) {
-            let x = x_of(start + note.start);
-            let right = x_of(start + span_end);
-            let width = (note.length as f32 * beat_width - 1.0).max(1.0).min(right - x);
-            let row = f32::from(note.key - low);
-            let y = marks.bottom() - (row + 0.5) / rows * marks.height();
-            painter.rect_filled(Rect::from_min_size(Pos2::new(x, y - 1.0), Vec2::new(width, 2.0)), 0.0, note_ink);
+        if !content_hidden {
+            for note in clip.notes.iter().filter(in_view) {
+                let x = x_of(start + note.start);
+                let right = x_of(start + span_end);
+                let width = (note.length as f32 * beat_width - 1.0).max(1.0).min(right - x);
+                let row = keys.binary_search(&note.key).unwrap_or(0) as f32;
+                let y = marks.bottom() - (row + 0.5) / rows * marks.height();
+                painter.rect_filled(Rect::from_min_size(Pos2::new(x, y - 1.0), Vec2::new(width, 2.0)), 0.0, note_ink);
+            }
         }
     }
+    // A clip with a name bar already shows its name; a low lane's clip shows it in the body.
+    if content_hidden && !has_name {
+        let name = if clip.name.is_empty() { lane.name.as_str() } else { clip.name.as_str() };
+        let left = rect.left().max(view.left()) + 7.0;
+        let name_rect = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
+        let el = crate::kit::element::CLIP_NAME.enter();
+        let size = el.font_size_or(theme::TEXT).min((rect.height() - 2.0).max(6.0));
+        let ink = el.color_or(text_color);
+        widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, name, theme::ui_font(size), ink);
+    }
     if let Some((notes, tempo)) = ara_notes
+        && !low
         && marks.height() >= 4.0
     {
         paint_ara_notes(painter, rect, marks, notes, tempo, start, clip.length, x_of, beat_width, content_ink);
@@ -1663,6 +1694,35 @@ pub(super) fn clip_grab_area(rect: Rect) -> Option<Rect> {
 
 /// Narrowest clip, in points, that has the Edit gain envelope button by its name.
 const ENVELOPE_BUTTON_LEAST: f32 = 48.0;
+
+/// Points between note starts under which a clip's notes are not drawn.
+const CROWDED_GAP: f32 = 3.0;
+
+/// Whether a MIDI clip's notes crowd too close to be drawn: their starts (`starts`, in beats,
+/// those in view) fall under [`CROWDED_GAP`] points apart across the `width` points of the clip
+/// in view. Notes that start together (a chord) count once, so chords do not hide a sparse part.
+pub(super) fn notes_crowded(mut starts: Vec<f64>, width: f32) -> bool {
+    starts.sort_unstable_by(f64::total_cmp);
+    starts.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+    !starts.is_empty() && width / (starts.len() as f32) < CROWDED_GAP
+}
+
+/// Points a pitch row needs for a clip's notes to be drawn: a note is 2 points high, so a row
+/// under 3 runs into the next one.
+const LEAST_PITCH_ROW: f32 = 3.0;
+
+/// The pitches a clip's notes use, lowest first, each once: a row each in the clip.
+pub(super) fn used_keys(keys: impl Iterator<Item = u8>) -> Vec<u8> {
+    let mut keys: Vec<u8> = keys.collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+}
+
+/// Whether `rows` pitch rows are too many for the `height` points the notes are drawn in.
+pub(super) fn pitch_rows_crowded(rows: usize, height: f32) -> bool {
+    rows > 0 && height / (rows as f32) < LEAST_PITCH_ROW
+}
 
 /// Where a clip's waveform (or notes) is drawn: under its name bar, a little in from its edges.
 /// Its gain envelope's 0 dB runs across the middle of it.

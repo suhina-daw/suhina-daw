@@ -699,6 +699,29 @@ fn a_clip_off_the_grid_keeps_its_place_until_it_moves_half_a_step() {
 }
 
 #[test]
+fn crowded_clip_notes_give_way_as_the_view_zooms_out() {
+    // Sixteenths over four bars: 64 starts.
+    let sixteenths: Vec<f64> = (0..64).map(|i| f64::from(i) * 0.25).collect();
+    assert!(!clip::notes_crowded(sixteenths.clone(), 640.0), "10 points apart: drawn");
+    assert!(!clip::notes_crowded(sixteenths.clone(), 200.0), "3.1 points apart: drawn");
+    assert!(clip::notes_crowded(sixteenths, 160.0), "2.5 points apart: the name instead");
+    // A four-note chord on each beat counts once per beat.
+    let chords: Vec<f64> = (0..16).flat_map(|beat| [f64::from(beat); 4]).collect();
+    assert!(!clip::notes_crowded(chords, 64.0), "16 chords 4 points apart");
+    assert!(!clip::notes_crowded(Vec::new(), 10.0));
+}
+
+#[test]
+fn a_clips_notes_get_a_row_per_pitch_they_use_and_give_way_when_rows_are_too_thin() {
+    // A drum part: kick, snare and hat, each a row, whatever lies between them.
+    assert_eq!(clip::used_keys([42, 36, 38, 36, 42].into_iter()), vec![36, 38, 42]);
+    // The 13 points under the name bar of a 36 px lane: four pitches fit, a pluck's twenty do not.
+    assert!(!clip::pitch_rows_crowded(4, 13.0), "4 rows of 3.25 points");
+    assert!(clip::pitch_rows_crowded(20, 30.0), "20 rows of 1.5 points");
+    assert!(!clip::pitch_rows_crowded(0, 13.0));
+}
+
+#[test]
 fn dragging_a_selected_track_resizes_every_selected_track() {
     let mut state = ArrangementViewState::default();
     state.set_lane_height(TrackId(1), 100.0);
