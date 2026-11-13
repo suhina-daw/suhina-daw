@@ -67,6 +67,7 @@ The project you leave stops playing.
 | Key | Action | Where | What it does |
 |---|---|---|---|
 | Space | `transport.toggle` | Anywhere | Starts playback, or stops it when it is playing. Where playback starts and where the playhead goes when it stops are set in Settings › Arrangement › Time and play › **Play from** and **Stop**. |
+| F9 | `transport.toggleRecord` | Anywhere | Starts recording into the arrangement from the playhead, or stops it, as the record button right of play and stop does. Every armed track records, MIDI and audio tracks alike; with no track armed, the status bar says to arm one. |
 | Ctrl+L | `transport.setLoopEnabled` | Anywhere but the piano roll | Turns looping on or off. While looping is on, the arrangement plays the loop region over and over. If there is no loop region yet, turning it on makes one over the first 4 bars. After a click in the piano roll the same key loops the clip you are editing instead (see [Piano roll](#piano-roll)), so it never changes the arrangement's loop behind the notes. |
 | M | `marker.addAtPlayhead` | Anywhere | Adds a marker (a named point in the arrangement) where the playhead is. While stopped, it adds the marker at the play start marker. |
 
@@ -138,6 +139,7 @@ of clip is on.
 |---|---|---|---|
 | Ctrl+G | `selection.group` | Selection | Puts the selected tracks in a group track. A group track holds other tracks so you can fold them away and set their volume together. With devices picked (clicked in a mixer strip's device list or in the device chain), it puts those devices into a device group instead: one box that holds them, with branches that run side by side. |
 | Ctrl+Shift+G | `selection.ungroup` | A picked device group | Takes a device group of one branch apart, putting its devices back in its place. |
+| None: give it one | `selection.arm` | Selection | Arms the selected tracks for recording (the round button on a track's header), or disarms them when all of them are armed. Arming disarms the other tracks, as a click on an arm button does, so to record a MIDI and an audio track together, select both and press the key once. A return, group or main track is left as it is. |
 
 ## Launcher view
 
