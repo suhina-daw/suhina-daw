@@ -29,7 +29,7 @@ pub use native::user_agent_color;
 mod paint;
 mod shadows;
 mod text;
-mod workspace;
+mod window;
 pub use diagnostics::{Notice, inspect};
 pub use paint::background_with;
 pub(crate) use paint::border;
@@ -38,7 +38,7 @@ pub(in crate::kit) use paint::surface_with;
 pub(in crate::kit) use paint::{artwork_shadows, background_rounded, gradients_rounded, level_fill, level_glow};
 pub(in crate::kit) use paint::{box_begin, box_end};
 pub use text::paint_text;
-pub use workspace::{Workspace, splitter_between, workspace};
+pub use window::{BrowserSide, DetailPlace, Input as WindowInput, Region, Window, splitter_between, window};
 
 const MAX_CONTEXTS: usize = 128;
 const MAX_DEPTH: usize = 16;
@@ -360,11 +360,14 @@ struct Engine {
     /// Whether this frame hit a limit of the tree, which the trace was told of.
     limited: bool,
     toolbar: Option<(String, Vec<Module>)>,
-    workspace: Option<(String, Option<Workspace>)>,
+    window: Option<(String, Window)>,
     /// Whether the browser and the detail area follow their splitters, by the window's size and
-    /// which panels are open: a splitter drag changes only the preferred sizes, which lays the
-    /// workspace out again without probing the flags anew.
-    workspace_follows: Option<(String, (bool, bool))>,
+    /// which regions are there: a splitter drag changes only the content sizes, which lays the
+    /// window out again without probing the flags anew.
+    window_follows: Option<(String, (bool, bool))>,
+    /// The attributes `window` has this frame (`[detail]`, `[browser]`, `[menu-bar]`), as the
+    /// window's grid was last given them: the toolbar's modules are laid out under them too.
+    window_attributes: Vec<(String, String)>,
     toolbar_layout: bool,
     collecting: bool,
     nodes: Vec<StyleNode>,
@@ -1042,8 +1045,8 @@ impl Engine {
         self.body = None;
         self.resolved.clear();
         self.toolbar = None;
-        self.workspace = None;
-        self.workspace_follows = None;
+        self.window = None;
+        self.window_follows = None;
     }
 }
 
@@ -1273,7 +1276,7 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2, module_height: f32) -> Optio
         if !same_source(engine.source.as_ref()) {
             return None;
         }
-        let key = format!("{order:?}:{size:?}:{module_height:?}");
+        let key = format!("{order:?}:{size:?}:{module_height:?}:{:?}", engine.window_attributes);
         if let Some((previous, modules)) = &engine.toolbar
             && previous == &key
         {
@@ -1294,18 +1297,33 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2, module_height: f32) -> Optio
         }
         let laid = native::layout(&engine, elements, &defaults, [size.x, size.y])?;
         // The toolbar's own padding pads Suhina's toolbar, in its content box, as its border does
-        // (#1336): only its layout properties (display, flex, grid, gap, sizes) and its modules'
-        // ask for the theme's layout.
-        const PADDING: [Property; 4] =
-            [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft];
-        engine.toolbar_layout = laid
-            .items
-            .iter()
-            .enumerate()
-            .any(|(index, (_, style))| native::requests_layout(style, if index == 0 { &PADDING } else { &[] }));
+        // (#1336), and its place in the window's grid (its area, lines, margins, alignment and
+        // order there) says nothing about where its modules go (#1370): only its layout
+        // properties (display, flex, grid, gap, sizes) and its modules' ask for the theme's layout.
+        const NOT_ITS_LAYOUT: [Property; 13] = [
+            Property::PaddingTop,
+            Property::PaddingRight,
+            Property::PaddingBottom,
+            Property::PaddingLeft,
+            Property::GridArea,
+            Property::GridColumn,
+            Property::GridRow,
+            Property::MarginTop,
+            Property::MarginRight,
+            Property::MarginBottom,
+            Property::MarginLeft,
+            Property::AlignSelf,
+            Property::Order,
+        ];
+        engine.toolbar_layout = laid.items.iter().enumerate().any(|(index, (_, style))| {
+            native::requests_layout(style, if index == 0 { &NOT_ITS_LAYOUT } else { &[] })
+        });
+        // The modules' places in the toolbar's own box: the toolbar lies in the window's grid,
+        // whose padding, gaps and rows above it say nothing about where its modules go.
+        let origin = laid.items.first().and_then(|(rect, _)| *rect).map_or(Vec2::ZERO, |rect| rect.min.to_vec2());
         let mut modules = Vec::new();
         for ((name, _), (rect, style)) in order.iter().zip(laid.items.into_iter().skip(1)) {
-            let Some(rect) = rect else { continue };
+            let Some(rect) = rect.map(|rect| rect.translate(-origin)) else { continue };
             if style.visible {
                 modules.push(Module { name: name.clone(), rect, style });
             }

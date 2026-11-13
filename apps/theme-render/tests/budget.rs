@@ -16,6 +16,9 @@ use suhina_theme_render::{Subject, scenes};
 /// those after a hover are its tooltip's. Every background blends (#1233), so a settled frame has
 /// no paint callbacks: only a menu's or dialog's backdrop clears the pixels under it.
 ///
+/// #1370 (the window grid) added one styled element to each scene: one more
+/// identity in each.
+///
 /// #1336 (the content box) raised the counts of nodes and identities, by 2 and 4 in the launcher
 /// and by 3 and 4 in the FM synth: its elements now hold what they lay out, inside their border.
 #[cfg(not(windows))]
@@ -24,13 +27,13 @@ const RECORDED: [(&str, Counts); 2] = [
         "launcher",
         Counts {
             nodes: 321,
-            identities: 297,
+            identities: 298,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 297,
+            theme_change_fresh: 298,
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 0,
@@ -40,13 +43,13 @@ const RECORDED: [(&str, Counts); 2] = [
         "expanded-fm-synth",
         Counts {
             nodes: 546,
-            identities: 520,
+            identities: 521,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 520,
+            theme_change_fresh: 521,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 0,

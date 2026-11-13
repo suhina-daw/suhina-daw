@@ -142,6 +142,39 @@ fn tabs_switch_keep_each_projects_edits_and_close() {
     assert!(harness.query_by_label("Tab Untitled 1").is_none(), "one project shows no tabs");
 }
 
+/// A tab row the sheet narrows takes clicks only inside its own box: the tabs and close buttons
+/// that run past its edge are hidden, and a click there neither switches nor closes a project
+/// (#1370).
+#[test]
+fn a_narrowed_tab_row_takes_no_clicks_past_its_edge() {
+    suhina_ui::kit::native_css::set_user_sheet(Some("project-tabs { width: 40px; }".into()));
+    let mut harness = two_projects();
+    let ids = harness.state().projects().ids();
+    let first = harness.get_by_label("Tab Untitled 1").rect();
+    let close = harness.get_by_label("Close Untitled 1").rect().center();
+    let click = |harness: &mut Harness<'static, App>, pos: egui::Pos2| {
+        harness.hover_at(pos);
+        harness.step();
+        for pressed in [true, false] {
+            let (button, modifiers) = (egui::PointerButton::Primary, Modifiers::NONE);
+            harness.input_mut().events.push(egui::Event::PointerButton { pos, button, pressed, modifiers });
+            harness.step();
+        }
+        harness.run();
+    };
+    // Past the row's 40 points: the first tab's hidden part and its close button.
+    click(&mut harness, egui::pos2(first.left() + 60.0, first.center().y));
+    click(&mut harness, close);
+    let (after, count) = (harness.state().projects().active(), harness.state().projects().len());
+    // Inside the row, the first tab still takes its click.
+    click(&mut harness, egui::pos2(first.left() + 10.0, first.center().y));
+    let switched = harness.state().projects().active();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(close.x > first.left() + 40.0, "the close button lies past the row: {first:?} {close:?}");
+    assert_eq!((after, count), (ids.get(1).copied(), 2), "nothing switched or closed past the row's edge");
+    assert_eq!(switched, ids.first().copied(), "a click inside the row switches");
+}
+
 /// A carry names a slot in the project it was made in: switching projects while it is held lets
 /// it go, so its release never copies the last project's clip into the new one.
 #[test]

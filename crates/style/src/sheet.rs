@@ -308,7 +308,7 @@ pub const PLACEMENT_PROPERTIES: &[&str] =
 /// The elements whose children the CSS layout places: only there does a padding in percent, which
 /// CSS takes of the width of the box around the element, mean anything. Everywhere else the app
 /// paints the element's content box itself, without that box, so a percentage is refused.
-pub const PERCENT_PADDING_ELEMENTS: &[&str] = &["workspace", "toolbar"];
+pub const PERCENT_PADDING_ELEMENTS: &[&str] = &["window", "toolbar"];
 
 /// Whether a rule's selector list (`header`) holds a control placement (`.control-play`), whose
 /// [`PLACEMENT_PROPERTIES`] the host reads.
@@ -896,13 +896,13 @@ mod tests {
     use super::*;
 
     /// Padding in percent is taken only where the CSS layout places an element's children (the
-    /// workspace, the toolbar): elsewhere the app paints the content box without the box around
+    /// window, the toolbar): elsewhere the app paints the content box without the box around
     /// the element, so it is refused with a notice rather than read as no padding (#1336).
     #[test]
     fn padding_in_percent_is_read_only_on_a_layout_container() {
         // `:is()` and `:where()` that hold only layout containers name them too; `:not()` does not.
         let named = Sheet::parse(
-            ":is(toolbar, #workspace) { padding: 1%; } :where(toolbar) { padding-top: 2%; } \
+            ":is(toolbar, #window) { padding: 1%; } :where(toolbar) { padding-top: 2%; } \
              :is(toolbar, device) { padding: 1%; } :not(device) { padding: 1%; }",
         )
         .unwrap();
@@ -910,7 +910,7 @@ mod tests {
         let kept: Vec<_> = named.rules.iter().map(|r| r.declarations.len()).collect();
         assert_eq!(kept, [4, 1, 0, 0]);
         let sheet = Sheet::parse(
-            "workspace { padding: 2%; } #workspace, toolbar { padding-left: 5%; } \
+            "window { padding: 2%; } #window, toolbar { padding-left: 5%; } \
              device { padding: 5%; } browser { padding-top: 10%; } toolbar, device { padding: 1% 4px; } \
              device { padding: 4px 1em; }",
         )

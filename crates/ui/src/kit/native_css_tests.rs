@@ -239,22 +239,6 @@ fn the_user_sheet_wins_over_device_and_theme_and_runs_without_a_theme_sheet() {
     assert_eq!(styled.color, Color32::from_rgb(255, 0, 0));
     assert!(!other.authored.color, "unstyled parts keep the application theme");
 }
-
-#[test]
-fn workspace_example_collapses_closed_panels() {
-    prepare(theme::WORKSPACE_GRID_EXAMPLE, 800.0);
-    let open = workspace(Vec2::new(800.0, 600.0), Some(240.0), Some((false, 180.0))).unwrap();
-    assert_eq!(open.browser.unwrap().width(), 240.0);
-    assert_eq!(open.detail.unwrap().height(), 180.0);
-    let closed = workspace(Vec2::new(800.0, 600.0), None, None).unwrap();
-    assert!(closed.browser.is_none() && closed.detail.is_none());
-    assert!(
-        closed.main.width() > 780.0 && closed.main.height() > 580.0,
-        "closed panels reserved their fixed dimensions: {:?}",
-        closed.main
-    );
-    skin::configure(&skin::Skin::default());
-}
 #[test]
 fn gloss_surfaces_have_opaque_bases_and_sheet_overlays_preserve_native_fills() {
     prepare(theme::GLOSS_EXAMPLE, 1138.0);
@@ -311,10 +295,12 @@ fn responsive_workspace_and_toolbar_survive_resize() {
                 .unwrap();
                 assert_eq!(modules.iter().any(|module| module.name == "performance"), size.x > 1000.0);
                 assert_eq!(modules.iter().any(|module| module.name == "mapping"), size.x > 820.0);
-                let layout = workspace(Vec2::new(size.x, size.y - 100.0), None, Some((false, 200.0))).unwrap();
-                assert!(layout.browser.is_none());
-                assert_eq!(layout.detail.unwrap().height(), if size.y <= 760.0 { 150.0 } else { 200.0 });
-                let _workspace = test_el("workspace").id("workspace").enter();
+                let mut input = full_window(Vec2::new(size.x, size.y));
+                input.browser = None;
+                input.regions[Region::Browser as usize] = None;
+                let layout = window(&input).unwrap();
+                assert!(layout.rect(Region::Browser).is_none());
+                assert_eq!(layout.rect(Region::Detail).unwrap().height(), if size.y <= 760.0 { 150.0 } else { 200.0 });
                 {
                     let _main = test_el("workspace-panel").id("panel-main").enter();
                     let _view = test_el("arrangement").enter();
@@ -755,75 +741,30 @@ fn keyframe_only_properties_are_applied_without_a_static_declaration() {
     });
     skin::configure(&skin::Skin::default());
 }
+/// A splitter drag changes a panel's content size every frame: the window is laid out once for
+/// each, not probed again for which panels follow their splitters.
 #[test]
-fn workspace_grid_resolves_real_panels_and_respects_native_visibility() {
-    prepare(
-        "#workspace { display:grid; grid-template-columns:minmax(0,1fr) 240px; grid-template-rows:minmax(0,1fr) 160px; gap:8px; } #panel-browser {grid-column:2;grid-row:1 / -1;} #panel-main {grid-column:1;grid-row:1;} #panel-detail {grid-column:1;grid-row:2;}",
-        800.0,
-    );
-    let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, 120.0))).unwrap();
-    assert_eq!(layout.main, Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(552.0, 432.0)));
-    assert_eq!(layout.browser.unwrap().left(), 560.0);
-    assert_eq!(layout.detail.unwrap().top(), 440.0);
-    assert!(!layout.browser_follows && !layout.detail_follows, "the sheet sizes both: no splitters");
-    let closed = workspace(Vec2::new(800.0, 600.0), None, None).unwrap();
-    assert!(closed.browser.is_none() && closed.detail.is_none());
-    prepare("browser {color:red;}", 800.0);
-    assert!(workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, 120.0))).is_none());
-    skin::configure(&skin::Skin::default());
-}
-/// A layout that only adds gaps leaves the panels' sizes to their splitters, beside the view or
-/// stacked; a fixed size takes that panel's (#1240).
-#[test]
-fn a_workspace_layout_keeps_the_splitters_of_the_panels_it_does_not_size() {
-    for stacked in [false, true] {
-        prepare("#workspace { gap: 6px; }", 800.0);
-        let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((stacked, 120.0))).unwrap();
-        assert!(layout.browser_follows && layout.detail_follows, "gaps only, stacked {stacked}: {layout:?}");
-        prepare("#workspace { gap: 6px; } #panel-browser { width: 248px; }", 800.0);
-        let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((stacked, 120.0))).unwrap();
-        assert!(!layout.browser_follows && layout.detail_follows, "a fixed browser, stacked {stacked}: {layout:?}");
-    }
-    // Stacked, with the browser and the detail area in each other's columns: each grows with the
-    // other's preferred size, so neither splitter would resize its own panel.
-    prepare("#workspace { gap: 6px; } #panel-browser { grid-column: 3; } #panel-detail { grid-column: 1; }", 800.0);
-    let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((true, 120.0))).unwrap();
-    assert!(!layout.browser_follows && !layout.detail_follows, "swapped columns: {layout:?}");
-    let between = splitter_between(
-        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(200.0, 600.0)),
-        Rect::from_min_max(egui::pos2(206.0, 0.0), egui::pos2(800.0, 600.0)),
-        4.0,
-    );
-    assert_eq!(between, Rect::from_min_max(egui::pos2(200.0, 0.0), egui::pos2(206.0, 600.0)), "the gap");
-    let thin = splitter_between(
-        Rect::from_min_max(egui::pos2(0.0, 500.0), egui::pos2(800.0, 600.0)),
-        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(800.0, 500.0)),
-        4.0,
-    );
-    assert_eq!(thin, Rect::from_min_max(egui::pos2(0.0, 498.0), egui::pos2(800.0, 502.0)), "at least its thickness");
-    skin::configure(&skin::Skin::default());
-}
-/// A splitter drag changes a panel's preferred size every frame: the workspace is laid out once
-/// for each, not probed again for which panels follow their splitters.
-#[test]
-fn dragging_a_splitter_lays_the_workspace_out_once_a_frame() {
-    prepare("#workspace { gap: 6px; } #panel-browser { width: 248px; }", 800.0);
-    let lays = || super::workspace::LAYS.with(std::cell::Cell::get);
+fn dragging_a_splitter_lays_the_window_out_once_a_frame() {
+    prepare("#panel-browser { width: 248px; }", 800.0);
+    let lays = || super::window::LAYS.with(std::cell::Cell::get);
+    let mut input = full_window(Vec2::new(800.0, 600.0));
     let before = lays();
-    let first = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, 120.0))).unwrap();
-    assert_eq!(lays() - before, 3, "the layout and a probe for each panel");
+    let first = window(&input).unwrap();
+    assert_eq!(lays() - before, 4, "the layout, the shape's and a probe for each panel");
     for (step, height) in [130.0, 140.0, 150.0].into_iter().enumerate() {
+        input.set(Region::Detail, [None, Some(height)]);
         let before = lays();
-        let layout = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((false, height))).unwrap();
+        let laid = window(&input).unwrap();
         assert_eq!(lays() - before, 1, "frame {step} of the drag");
-        assert_eq!((layout.browser_follows, layout.detail_follows), (first.browser_follows, first.detail_follows));
-        assert_eq!(layout.detail.unwrap().height(), height, "the detail area follows the drag");
+        assert_eq!((laid.browser_follows, laid.detail_follows), (first.browser_follows, first.detail_follows));
+        assert_eq!(laid.rect(Region::Detail).unwrap().height(), height, "the detail area follows the drag");
     }
-    // Another window size, or another set of open panels, probes again.
+    // Another window size, or another set of regions, probes again.
     let before = lays();
-    let stacked = workspace(Vec2::new(800.0, 600.0), Some(200.0), Some((true, 150.0))).unwrap();
-    assert_eq!(lays() - before, 3);
-    assert!(!stacked.browser_follows && stacked.detail_follows, "{stacked:?}");
+    input.size = Vec2::new(900.0, 600.0);
+    let wider = window(&input).unwrap();
+    assert_eq!(lays() - before, 4);
+    assert!(!wider.browser_follows && wider.detail_follows, "{wider:?}");
     skin::configure(&skin::Skin::default());
 }
 #[test]
@@ -1609,4 +1550,277 @@ fn a_full_id_table_keeps_the_names_of_the_elements_already_entered_and_starts_ag
     skin::configure(&skin::Skin::default());
     let expected = (Some("first".to_owned()), None);
     assert_eq!(names, [expected.clone(), expected], "an earlier element keeps its name; a new one gets none");
+}
+
+/// Every region of the window, at the sizes the app gives them, in a window of `size`.
+fn full_window(size: Vec2) -> WindowInput {
+    let mut input = WindowInput { size, browser: Some(BrowserSide::Left), menu_bar: true, ..Default::default() };
+    for (region, content) in [
+        (Region::MenuBar, [None, Some(19.0)]),
+        (Region::Tabs, [None, Some(21.0)]),
+        (Region::Toolbar, [None, Some(39.0)]),
+        (Region::TopLine, [None, Some(1.0)]),
+        (Region::Browser, [Some(240.0), None]),
+        (Region::Main, [None, None]),
+        (Region::Detail, [None, Some(200.0)]),
+        (Region::BottomLine, [None, Some(1.0)]),
+        (Region::StatusBar, [None, Some(19.0)]),
+    ] {
+        input.set(region, content);
+    }
+    input
+}
+fn r(x: f32, y: f32, right: f32, bottom: f32) -> Rect {
+    Rect::from_min_max(egui::pos2(x, y), egui::pos2(right, bottom))
+}
+/// The user-agent sheet lays the window out as Suhina did before it had a grid: the bars over and
+/// under, the 1 px lines, the browser at the left with its handle's 4 points, the detail area under
+/// the view with its splitter's 6.
+#[test]
+fn the_user_agent_grid_places_every_region() {
+    for css in ["", "browser { color: red; }"] {
+        prepare(css, 1000.0);
+        let laid = window(&full_window(Vec2::new(1000.0, 700.0))).unwrap();
+        assert_eq!(laid.rect(Region::MenuBar), Some(r(0.0, 0.0, 1000.0, 20.0)), "{css}");
+        assert_eq!(laid.rect(Region::Tabs), Some(r(0.0, 20.0, 1000.0, 42.0)));
+        assert_eq!(laid.rect(Region::Toolbar), Some(r(0.0, 42.0, 1000.0, 82.0)));
+        assert_eq!(laid.rect(Region::TopLine), Some(r(0.0, 82.0, 1000.0, 83.0)));
+        assert_eq!(laid.rect(Region::Browser), Some(r(0.0, 83.0, 240.0, 679.0)));
+        assert_eq!(laid.rect(Region::Main), Some(r(244.0, 83.0, 1000.0, 473.0)));
+        assert_eq!(laid.rect(Region::Detail), Some(r(244.0, 479.0, 1000.0, 679.0)));
+        assert_eq!(laid.rect(Region::BottomLine), Some(r(0.0, 679.0, 1000.0, 680.0)));
+        assert_eq!(laid.rect(Region::StatusBar), Some(r(0.0, 680.0, 1000.0, 700.0)));
+        assert!(laid.browser_follows && laid.detail_follows, "the sheet sizes neither panel");
+        // A region that is not there has no element, and its track is empty.
+        let mut input = full_window(Vec2::new(1000.0, 700.0));
+        input.regions[Region::Tabs as usize] = None;
+        input.regions[Region::MenuBar as usize] = None;
+        let laid = window(&input).unwrap();
+        assert_eq!(laid.rect(Region::Tabs), None);
+        assert_eq!(laid.rect(Region::Toolbar), Some(r(0.0, 0.0, 1000.0, 40.0)));
+    }
+    skin::configure(&skin::Skin::default());
+}
+/// Each layout setting is an attribute on `window` that changes the grid.
+#[test]
+fn the_layout_settings_change_the_grid() {
+    prepare("", 1000.0);
+    let base = full_window(Vec2::new(1000.0, 700.0));
+    let full = window(&WindowInput { detail: DetailPlace::FullWidth, ..base.clone() }).unwrap();
+    assert_eq!(full.rect(Region::Detail), Some(r(0.0, 479.0, 1000.0, 679.0)), "under the browser too");
+    assert_eq!(full.rect(Region::Browser), Some(r(0.0, 83.0, 240.0, 473.0)));
+    let mut beside = WindowInput { detail: DetailPlace::Beside, ..base.clone() };
+    beside.set(Region::Detail, [Some(300.0), None]);
+    let beside = window(&beside).unwrap();
+    assert_eq!(beside.rect(Region::Detail), Some(r(700.0, 83.0, 1000.0, 679.0)));
+    assert_eq!(beside.rect(Region::Main), Some(r(244.0, 83.0, 694.0, 679.0)));
+    let right = window(&WindowInput { browser: Some(BrowserSide::Right), ..base.clone() }).unwrap();
+    assert_eq!(right.rect(Region::Browser), Some(r(760.0, 83.0, 1000.0, 679.0)));
+    assert_eq!(right.rect(Region::Main), Some(r(0.0, 83.0, 756.0, 473.0)));
+    // The menu bar's attribute is there for a theme to read.
+    prepare("window:not([menu-bar]) toolbar { height: 60px; }", 1000.0);
+    assert_eq!(window(&base).unwrap().rect(Region::Toolbar).unwrap().height(), 40.0);
+    let laid = window(&WindowInput { menu_bar: false, ..base }).unwrap();
+    assert_eq!(laid.rect(Region::Toolbar).unwrap().height(), 60.0);
+    skin::configure(&skin::Skin::default());
+}
+/// A theme moves the status bar to the top, the toolbar under the views and hides the tabs.
+#[test]
+fn a_theme_moves_and_hides_the_bars() {
+    prepare(
+        "window { grid-template-rows: auto auto auto auto minmax(0,1fr) auto auto auto auto; \
+           grid-template-areas: 'status status status status' 'menu menu menu menu' 'top top top top' \
+           'notice notice notice notice' 'left main side right' 'left detail detail right' \
+           'bottom bottom bottom bottom' 'toolbar toolbar toolbar toolbar' 'tabs tabs tabs tabs'; } \
+         project-tabs { display: none; }",
+        1000.0,
+    );
+    let laid = window(&full_window(Vec2::new(1000.0, 700.0))).unwrap();
+    assert_eq!(laid.rect(Region::StatusBar), Some(r(0.0, 0.0, 1000.0, 20.0)));
+    assert_eq!(laid.rect(Region::MenuBar), Some(r(0.0, 20.0, 1000.0, 40.0)));
+    assert_eq!(laid.rect(Region::Toolbar), Some(r(0.0, 660.0, 1000.0, 700.0)));
+    assert_eq!(laid.rect(Region::Tabs), None);
+    // A template without an area hides what stood there, without a track of its own.
+    prepare("project-tabs { grid-area: nowhere; }", 1000.0);
+    let laid = window(&full_window(Vec2::new(1000.0, 700.0))).unwrap();
+    assert_eq!(laid.rect(Region::Tabs), None);
+    assert_eq!(laid.rect(Region::Toolbar), Some(r(0.0, 20.0, 1000.0, 60.0)));
+    skin::configure(&skin::Skin::default());
+}
+/// A panel the sheet sizes loses its splitter; one it leaves to its content size keeps it, beside
+/// the view or stacked (#1240).
+#[test]
+fn a_splitter_stays_beside_a_panel_the_sheet_does_not_size() {
+    for detail in [DetailPlace::Below, DetailPlace::Beside] {
+        let mut input = WindowInput { detail, ..full_window(Vec2::new(1000.0, 700.0)) };
+        if detail == DetailPlace::Beside {
+            input.set(Region::Detail, [Some(300.0), None]);
+        }
+        prepare("workspace-panel { margin: 8px; }", 1000.0);
+        let laid = window(&input).unwrap();
+        assert!(laid.browser_follows && laid.detail_follows, "margins only, {detail:?}: {laid:?}");
+        prepare("#panel-browser { width: 260px; } #panel-detail { width: 200px; height: 100px; }", 1000.0);
+        let laid = window(&input).unwrap();
+        assert!(!laid.browser_follows && !laid.detail_follows, "sized, {detail:?}: {laid:?}");
+        assert_eq!(laid.rect(Region::Browser).unwrap().width(), 260.0);
+    }
+    prepare("", 1000.0);
+    let mut input = full_window(Vec2::new(1000.0, 700.0));
+    // The closed detail area keeps its place, with the splitter's gap above it.
+    input.set(Region::Detail, [None, Some(0.0)]);
+    input.detail_closed = true;
+    let laid = window(&input).unwrap();
+    let (main, detail) = (laid.rect(Region::Main).unwrap(), laid.rect(Region::Detail).unwrap());
+    assert_eq!((detail.height(), detail.top() - main.bottom()), (0.0, 6.0));
+    assert!(laid.detail_follows);
+    assert_eq!(splitter_between(detail, main, 6.0), r(244.0, 673.0, 1000.0, 679.0));
+    skin::configure(&skin::Skin::default());
+}
+/// A theme whose layout fails leaves the window laid out by the user-agent sheet, which is built in
+/// and always parses.
+#[test]
+fn a_failing_theme_layout_falls_back_to_the_user_agent_sheet() {
+    let sheet = suhina_style::sheet::Sheet::parse(suhina_theme_package::USER_AGENT_SHEET).unwrap();
+    assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+    prepare("", 1000.0);
+    let alone = window(&full_window(Vec2::new(1000.0, 700.0))).unwrap();
+    prepare("#panel-main { margin-left: 100000%; }", 1000.0);
+    assert_eq!(window(&full_window(Vec2::new(1000.0, 700.0))).unwrap(), alone);
+    // Only a window with no room has no layout.
+    assert!(window(&full_window(Vec2::new(0.0, 700.0))).is_none());
+    assert!(window(&full_window(Vec2::new(f32::NAN, 700.0))).is_none());
+    skin::configure(&skin::Skin::default());
+}
+/// A closed detail area the sheet sizes leaves no empty hole: it is left out of the grid, and has
+/// no splitter.
+#[test]
+fn a_closed_detail_area_the_sheet_sizes_leaves_no_hole() {
+    prepare("#panel-detail { height: 200px; }", 1000.0);
+    let mut input = full_window(Vec2::new(1000.0, 700.0));
+    input.set(Region::Detail, [None, Some(0.0)]);
+    input.detail_closed = true;
+    let laid = window(&input).unwrap();
+    assert_eq!(laid.rect(Region::Detail), None);
+    assert_eq!(laid.rect(Region::Main).unwrap().bottom(), 679.0, "the view reaches the line under it");
+    assert!(!laid.detail_follows);
+    // `grid-area: auto` places nothing and hides nothing.
+    prepare("project-tabs { grid-area: auto; grid-row: 9; }", 1000.0);
+    let laid = window(&full_window(Vec2::new(1000.0, 700.0))).unwrap();
+    assert_eq!(laid.rect(Region::Tabs).map(|r| r.height()), Some(22.0));
+    skin::configure(&skin::Skin::default());
+}
+/// The toolbar's modules lie in the toolbar's own box, wherever the window's grid puts it.
+#[test]
+fn the_toolbar_s_modules_ignore_the_window_s_padding_and_gaps() {
+    let modules = |css: &str| {
+        prepare(css, 800.0);
+        toolbar(&[("transport".into(), 100.0)], Vec2::new(800.0, 40.0), 40.0).map(|m| m[0].rect)
+    };
+    let plain = modules("toolbar { display: flex; }");
+    let padded = modules("toolbar { display: flex; } window { padding: 6px; gap: 10px; }");
+    skin::configure(&skin::Skin::default());
+    assert!(plain.is_some());
+    assert_eq!(plain, padded);
+}
+/// The toolbar's place in the window's grid (its area, lines, margins, alignment) says nothing
+/// about where its modules go: a theme that only moves the toolbar keeps Suhina's own toolbar.
+#[test]
+fn moving_the_toolbar_in_the_window_keeps_suhina_s_toolbar() {
+    let requested = |css: &str| {
+        prepare(css, 800.0);
+        toolbar(&[("transport".into(), 100.0)], Vec2::new(800.0, 40.0), 40.0);
+        toolbar_layout_requested()
+    };
+    for css in [
+        "toolbar { grid-area: status; } status-bar { grid-area: toolbar; }",
+        "toolbar { grid-row: 9; grid-column: 1 / -1; }",
+        "toolbar { margin: 4px 0; align-self: end; order: 2; }",
+    ] {
+        assert!(!requested(css), "{css} only moves the toolbar");
+    }
+    assert!(requested("toolbar { grid-area: toolbar; gap: 12px; }"), "its own layout still switches");
+    skin::configure(&skin::Skin::default());
+}
+/// The toolbar's modules are laid out under the same `window` attributes as the window's grid and
+/// its painting: a rule for the browser's side moves them, without the sheet changing.
+#[test]
+fn the_toolbar_s_modules_follow_the_window_s_attributes() {
+    prepare("toolbar { display: flex; } window[browser=\"right\"] toolbar { gap: 20px; }", 800.0);
+    let second = |side: BrowserSide| {
+        window(&WindowInput { browser: Some(side), ..full_window(Vec2::new(800.0, 600.0)) });
+        let order = [("transport".into(), 100.0), ("tempo".into(), 50.0)];
+        toolbar(&order, Vec2::new(800.0, 40.0), 40.0).and_then(|m| m.get(1).map(|m| m.rect.left()))
+    };
+    let (left, right, again) = (second(BrowserSide::Left), second(BrowserSide::Right), second(BrowserSide::Left));
+    skin::configure(&skin::Skin::default());
+    assert_eq!((left, right, again), (Some(104.0), Some(120.0), Some(104.0)));
+}
+/// Padding on a closed detail area is not a size the sheet sets: the area keeps its place, a box
+/// of its padding, and its splitter, closed and open again.
+#[test]
+fn a_padded_detail_area_keeps_its_splitter_closed_and_open() {
+    prepare("#panel-detail { padding: 8px; }", 1000.0);
+    let mut input = full_window(Vec2::new(1000.0, 700.0));
+    input.set(Region::Detail, [None, Some(0.0)]);
+    input.detail_closed = true;
+    let closed = window(&input).unwrap();
+    input.set(Region::Detail, [None, Some(200.0)]);
+    input.detail_closed = false;
+    let open = window(&input).unwrap();
+    skin::configure(&skin::Skin::default());
+    let (main, detail) = (closed.rect(Region::Main).unwrap(), closed.rect(Region::Detail).unwrap());
+    assert_eq!(detail.height(), 16.0, "its padding");
+    assert!(closed.detail_follows, "closed, it keeps its splitter");
+    assert!(splitter_between(detail, main, 6.0).is_positive());
+    assert_eq!(open.rect(Region::Detail).map(|d| d.height()), Some(216.0));
+    assert!(open.detail_follows, "open again, too");
+}
+/// A panel the sheet only caps (`max-height`, `max-width`) still follows its splitter at its
+/// maximum and past it, whatever size the window was first laid out at: only a size the sheet
+/// fixes takes the splitter away.
+#[test]
+fn a_capped_panel_keeps_its_splitter_at_its_maximum() {
+    prepare("#panel-detail { max-height: 200px; } #panel-browser { max-width: 240px; }", 1000.0);
+    let follows = |detail: f32, browser: f32| {
+        let mut input = full_window(Vec2::new(1000.0, 700.0));
+        input.set(Region::Detail, [None, Some(detail)]);
+        input.set(Region::Browser, [Some(browser), None]);
+        let laid = window(&input).unwrap();
+        (laid.browser_follows, laid.detail_follows)
+    };
+    // At the maximum first, then under it and past it: the same answer each time.
+    let sizes = [(200.0, 240.0), (150.0, 200.0), (250.0, 300.0)];
+    let found: Vec<_> = sizes.iter().map(|(detail, browser)| follows(*detail, *browser)).collect();
+    prepare("#panel-detail { height: 200px; } #panel-browser { width: 240px; }", 1000.0);
+    let fixed = follows(200.0, 240.0);
+    skin::configure(&skin::Skin::default());
+    assert_eq!(found, vec![(true, true); 3], "capped panels follow their splitters");
+    assert_eq!(fixed, (false, false), "a size the sheet sets has no splitter");
+}
+/// A theme sheet that does not parse keeps the last working styles, the window's grid with them:
+/// laid out again, for the same input or a new one, the window keeps the last working theme's
+/// layout, as its painting does.
+#[test]
+fn a_sheet_that_does_not_parse_keeps_the_last_working_grid() {
+    let input = full_window(Vec2::new(1000.0, 700.0));
+    let wider = full_window(Vec2::new(1200.0, 700.0));
+    prepare("project-tabs { display: none; } toolbar { color: #123456; }", 1000.0);
+    let working = (window(&input).unwrap(), window(&wider).unwrap());
+    // More cascade layers than a sheet may have: the whole sheet does not parse.
+    let broken: String = (0..65).map(|layer| format!("@layer l{layer} {{ }} ")).collect();
+    let broken = format!("{broken} toolbar {{ display: none; }}");
+    prepare(&broken, 1000.0);
+    let painted = scoped(&["toolbar".into()]).map(|style| style.color);
+    let kept = (window(&input).unwrap(), window(&wider).unwrap());
+    // Changed input after the failed parse: the window is laid out anew, with the same sheet.
+    let mut taller = full_window(Vec2::new(1000.0, 800.0));
+    taller.set(Region::Detail, [None, Some(150.0)]);
+    let laid = window(&taller).unwrap();
+    skin::configure(&skin::Skin::default());
+    assert!(suhina_style::sheet::Sheet::parse(&broken).is_err());
+    assert_eq!(working.0.rect(Region::Tabs), None);
+    assert_eq!(kept, working);
+    assert_eq!(laid.rect(Region::Tabs), None, "the last working sheet still hides the tabs");
+    assert!(laid.rect(Region::Toolbar).is_some(), "the broken sheet's rules do not apply");
+    assert_eq!(painted, Some(Color32::from_rgb(0x12, 0x34, 0x56)), "painting keeps the same sheet");
 }

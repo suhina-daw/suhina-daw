@@ -241,7 +241,7 @@ impl Resolver {
         let styles = cascade::compute(tree, viewport, &sheets)?;
         // Keep exact viewport dimensions in the cache key. Percentage sizes change
         // even without crossing a media breakpoint.
-        let rectangles = layout::compute(tree, &styles, [viewport.width, viewport.height])?;
+        let rectangles = layout::compute(tree, &styles, [viewport.width, viewport.height], &[])?;
         let result = Arc::new(Snapshot { styles, rectangles });
         match self.cached.as_ref().filter(|(_, size, _)| *size == viewport) {
             Some((previous, _, _)) => match changed(previous, tree, self.siblings) {

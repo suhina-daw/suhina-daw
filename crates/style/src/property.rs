@@ -199,8 +199,8 @@ properties! {
     Visible, "visible", Bool, Value::Bool(true), false, "Whether the element participates in drawing and input.";
     Columns, "columns", Tracks, Value::Tracks(Vec::new()), false, "Grid column sizes: px, em, percent, fr or auto.";
     Rows, "rows", Tracks, Value::Tracks(Vec::new()), false, "Grid row sizes: px, em, percent, fr or auto.";
-    Areas, "areas", Areas, Value::Areas(crate::layout::Areas::default()), false, "Quoted rows of rectangular named grid areas.";
-    Area, "area", Name, Value::Name(String::new()), false, "The named grid area occupied by this element.";
+    GridTemplateAreas, "grid-template-areas", Areas, Value::Areas(crate::layout::Areas::default()), false, "Quoted rows of rectangular named grid areas.";
+    GridArea, "grid-area", Name, Value::Name(String::new()), false, "The named grid area this element takes; a name the parent's template lacks leaves the element out of the layout.";
     BoxShadow, "box-shadow", BoxShadows, Value::Shadows(Vec::new()), false, "Up to four inset/outset surface shadows.";
     TextShadow, "text-shadow", TextShadows, Value::Shadows(Vec::new()), true, "Up to four shadows behind native glyphs.";
     Overflow, "overflow", Keyword(OVERFLOW), Value::Keyword("visible"), false, "hidden (or clip) keeps what the element's children paint, their shadows too, inside its box; regions are hidden.";

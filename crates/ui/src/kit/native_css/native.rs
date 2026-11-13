@@ -329,15 +329,13 @@ const LAYOUT: &[Property] = &[
     Property::Layout,
     Property::Columns,
     Property::Rows,
-    Property::Areas,
-    Property::Area,
+    Property::GridTemplateAreas,
+    Property::GridArea,
     Property::Visible,
 ];
 
 /// Rectangles and styles of host elements laid out by the theme.
 pub(super) struct Laid {
-    /// Whether the theme wrote any layout property on these elements.
-    pub requested: bool,
     /// For each given element: its rectangle (none when not displayed) and style.
     pub items: Vec<(Option<Rect>, Computed)>,
 }
@@ -348,14 +346,17 @@ pub(super) fn layout(engine: &Engine, elements: Vec<Element>, defaults: &str, si
     let paint = engine.native.as_ref()?;
     let count = elements.len();
     let mut all = roots(true);
+    // `window` carries this frame's attributes, as in the window's grid and the painted tree.
+    if let Some(window) = all.get_mut(1) {
+        window.attributes.clone_from(&engine.window_attributes);
+    }
     all.extend(elements);
     let tree = Tree::new(all).ok()?;
     let defaults = Sheet::parse(defaults).ok()?;
     let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
     let styles = paint.styles(&tree, viewport(engine), Some(&defaults), variant(engine), &[], user)?;
     let size = [size[0].clamp(0.0, 16384.0), size[1].clamp(0.0, 16384.0)];
-    let rectangles = suhina_style::layout::compute(&tree, &styles, size).ok()?;
-    let requested = styles.iter().skip(2).any(|style| LAYOUT.iter().any(|property| style.authored(*property)));
+    let rectangles = suhina_style::layout::compute(&tree, &styles, size, &[]).ok()?;
     let items = rectangles
         .iter()
         .zip(&styles)
@@ -368,7 +369,58 @@ pub(super) fn layout(engine: &Engine, elements: Vec<Element>, defaults: &str, si
             (rect, computed(style))
         })
         .collect();
-    Some(Laid { requested, items })
+    Some(Laid { items })
+}
+
+/// Lays out the window's regions: `elements` are the children of `window`, which carries
+/// `attributes`, each with its content size in `sizes` (the same order). Under the theme's
+/// sheets when it has some and their layout works; otherwise, or with no theme at all, under the
+/// user-agent sheet alone, which is built in and always lays the window out (#1370).
+pub(super) fn window_layout(
+    engine: Option<&Engine>,
+    attributes: &[(&str, &str)],
+    elements: Vec<Element>,
+    sizes: &[Option<[Option<f32>; 2]>],
+    size: [f32; 2],
+) -> Option<Vec<(Option<Rect>, Computed)>> {
+    let count = elements.len();
+    let mut all = roots(true);
+    if let Some(window) = all.get_mut(1) {
+        window.attributes = attributes.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
+    }
+    all.extend(elements);
+    let tree = Tree::new(all).ok()?;
+    let size = [size[0].clamp(0.0, 16384.0), size[1].clamp(0.0, 16384.0)];
+    let mut measured = vec![None, None];
+    measured.extend_from_slice(sizes);
+    let lay = |styles: Vec<ComputedStyle>| -> Option<Vec<(Option<Rect>, Computed)>> {
+        let rectangles = suhina_style::layout::compute(&tree, &styles, size, &measured).ok()?;
+        Some(
+            rectangles
+                .iter()
+                .zip(&styles)
+                .skip(2)
+                .take(count)
+                .map(|(rect, style)| {
+                    let rect = rect
+                        .map(|r| Rect::from_min_size(egui::pos2(r.x, r.y), Vec2::new(r.width, r.height)))
+                        .filter(|r| r.is_finite());
+                    (rect, computed(style))
+                })
+                .collect(),
+        )
+    };
+    let themed = engine.and_then(|engine| {
+        let paint = engine.native.as_ref()?;
+        let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
+        lay(paint.styles(&tree, viewport(engine), None, variant(engine), &[], user)?)
+    });
+    themed.or_else(|| {
+        let agent = user_agent()?;
+        let viewport = engine.map_or(Viewport { width: size[0], height: size[1], reduced_motion: false }, viewport);
+        let applied = [AppliedSheet { sheet: agent, layer: Layer::UserAgent, root: None }];
+        lay(cascade::compute(&tree, viewport, &applied).ok()?)
+    })
 }
 
 pub(super) fn computed(style: &ComputedStyle) -> Computed {

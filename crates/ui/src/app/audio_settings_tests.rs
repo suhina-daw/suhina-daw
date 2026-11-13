@@ -178,3 +178,24 @@ fn audio_page_follows_the_focus_of_its_own_viewport() {
     frame(&mut app, true, false);
     assert_eq!(checks.load(Ordering::Relaxed), 3, "embedded Settings follows root");
 }
+
+/// Settings keeps clear of the status bar where the window's grid put it (#1370).
+#[test]
+fn settings_keeps_clear_of_the_status_bar_at_the_top_or_the_bottom() {
+    let rect = |x: f32, y: f32, right: f32, bottom: f32| Rect::from_min_max(Pos2::new(x, y), Pos2::new(right, bottom));
+    let window = rect(0.0, 0.0, 800.0, 600.0);
+    let bottom = rect(0.0, 580.0, 800.0, 600.0);
+    let top = rect(0.0, 0.0, 800.0, 20.0);
+    assert_eq!(clear_of(window, Some(bottom)), vec![rect(0.0, 0.0, 800.0, 580.0)]);
+    assert_eq!(clear_of(window, Some(top)), vec![rect(0.0, 20.0, 800.0, 600.0)]);
+    // A status bar a theme hides takes no room: Settings has, and dims, the whole window.
+    assert_eq!(clear_of(window, None), vec![window]);
+    // One a theme puts under the toolbar stays clear too: the dimming goes round it, and the
+    // dialog takes the largest part, under it.
+    let middle = rect(0.0, 100.0, 800.0, 120.0);
+    assert_eq!(clear_of(window, Some(middle)), vec![rect(0.0, 0.0, 800.0, 100.0), rect(0.0, 120.0, 800.0, 600.0)]);
+    assert_eq!(largest(&clear_of(window, Some(middle))), rect(0.0, 120.0, 800.0, 600.0));
+    // Down one side, it leaves the rest of the rows beside it.
+    let side = rect(700.0, 100.0, 800.0, 600.0);
+    assert_eq!(clear_of(window, Some(side)), vec![rect(0.0, 0.0, 800.0, 100.0), rect(0.0, 100.0, 700.0, 600.0)]);
+}

@@ -1,0 +1,1 @@
+- Floating surfaces in themes: every menu, right-click menu, dropdown, tooltip and dialog blurs the window behind it, whatever colour a theme gives its frame; `backdrop-filter: blur() | none` on `popup`, `menu`, `dialog` and `tooltip` turns it on or off, and a theme styles a popup's and a tooltip's frame (background, border, corners, shadow).

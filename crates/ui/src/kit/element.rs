@@ -596,7 +596,7 @@ names! {
     TOOLBAR = "toolbar";
     TOOLBAR_MODULE = "toolbar-module";
     STATUS_BAR = "status-bar";
-    WORKSPACE = "workspace";
+    NOTICE_BAR = "notice-bar";
     WORKSPACE_PANEL = "workspace-panel";
     DIVIDER = "divider";
     BROWSER = "browser";
