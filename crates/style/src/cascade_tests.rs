@@ -162,6 +162,8 @@ fn keyframes_resolve_for_each_element_with_its_variables() {
     assert_eq!(frames.iter().map(|f| f.0).collect::<Vec<_>>(), [0.0, 0.5, 1.0]);
     assert_eq!(frames[2].1[0], (Property::Color, Value::Color(Color::Rgba([0, 0, 255, 255]))));
     assert!(styles[2].authored(Property::Opacity), "a keyframe-only property counts as written");
+    assert!(styles[2].declared(Property::Color), "a keyframe's property is the element's own");
+    assert!(!styles[1].declared(Property::Color));
     assert!(styles[1].animations().is_empty());
     // An unknown name animates nothing; a bad offset is a notice.
     let sheet = Sheet::parse("knob { animation: missing 1s; } @keyframes x { 200% { color: red; } }").unwrap();

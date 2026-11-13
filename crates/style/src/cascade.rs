@@ -318,9 +318,11 @@ pub(crate) fn element_style(
                 }
                 resolved.push((*offset, values));
             }
+            // A keyframe's property is written on this very element: it is also declared.
             for (_, values) in &resolved {
                 for (property, _) in values {
                     computed.authored.insert(*property);
+                    computed.declared.insert(*property);
                 }
             }
             computed.keyframes.push((animation, Arc::new(resolved)));

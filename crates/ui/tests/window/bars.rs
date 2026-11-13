@@ -160,3 +160,20 @@ fn a_tab_taller_than_the_midi_tools_row_takes_input_only_inside_it() {
     // The tab's box is 80 points tall, centred on the row; its target stops at the row.
     assert_eq!(tall, Some(plain));
 }
+
+#[test]
+fn the_midi_tools_tabs_have_their_kind() {
+    assert!(exactly("", "Transform tab").is_some());
+    assert!(exactly("editor-tab[kind=\"tab-transform\"] { display: none; }", "Transform tab").is_none());
+    assert!(exactly("editor-tab[kind=\"tab-transform\"] { display: none; }", "Notes tab").is_some());
+}
+
+#[test]
+fn a_menu_item_s_menu_lies_in_its_content_box() {
+    // The grid menu is at the right end: its padding grows the item to the left, and the menu
+    // stays where it was, inside the padding.
+    let plain = rect_of("", "Grid value").map(|r| r.left());
+    let padded = rect_of("#piano-roll-grid { padding-left: 40px; }", "Grid value").map(|r| r.left());
+    assert!(plain.is_some());
+    assert_eq!(plain, padded);
+}

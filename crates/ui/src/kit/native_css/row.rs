@@ -187,9 +187,13 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
                 let within = parent
                     .is_some_and(|parent| rect.left() + 0.5 >= parent.left() && rect.right() <= parent.right() + 0.5);
                 // A width the sheet gives the item is its own, not a lack of room.
-                let sized = [Property::Width, Property::MaxWidth, Property::FlexBasis]
-                    .iter()
-                    .any(|property| style.authored_value(*property).is_some());
+                // (`auto` and `max-width: none` give no size.)
+                let sized = [Property::Width, Property::MaxWidth, Property::FlexBasis].iter().any(|property| {
+                    matches!(
+                        style.authored_value(*property),
+                        Some(suhina_style::value::Value::Length(length)) if length != suhina_style::value::Length::Auto
+                    )
+                });
                 // The app measured the item's content box: its padding and border are not part of it.
                 let [_, right, _, left] = style.insets_in(rect.width());
                 let content = rect.width() - left - right;

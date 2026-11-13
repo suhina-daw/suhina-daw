@@ -68,6 +68,7 @@ pub(super) fn toolbar(
             let value = clip.grid_menu.label();
             (menu_width(ui, (Some("Grid"), &value)), menu_width(ui, (None, &value)))
         },
+        rows_height: (inner - ROWS_GROUP_INSETS).max(1.0),
         rows: ROWS.map(|(_, word)| (row_toggle_width(ui, side, Some(word)), row_toggle_width(ui, side, None))),
     };
     // The buttons lit this frame are `[checked]` in the layout as they are when painted (the tools and the two columns), so a
@@ -107,7 +108,10 @@ pub(super) fn toolbar(
                 }
             }
             "bar-item" => {
-                let _item = crate::kit::element::BAR_ITEM.id(id).attribute("kind", id).enter();
+                // The item's box is painted, and its menu goes in the content box, inside its
+                // border and padding.
+                let item = crate::kit::element::BAR_ITEM.id(id).attribute("kind", id).enter();
+                let area = item.paint(&painter, area).content;
                 match id {
                     "piano-roll-workflow" => workflow_menu(ui, area, keymap, state, step < Step::Arrows),
                     "piano-roll-ghosts" => {
@@ -200,6 +204,8 @@ struct Widths {
     size: Vec2,
     side: f32,
     inner: f32,
+    /// The height of a Rows toggle: the room inside the bar less the group's vertical padding.
+    rows_height: f32,
     workflow: (f32, f32),
     ghosts: (f32, f32),
     grid: (f32, f32),
@@ -227,10 +233,11 @@ fn items(step: Step, w: &Widths, lit: &dyn Fn(IconButton) -> bool) -> Vec<crate:
     if step < Step::Squeezed {
         items.push(separator());
         let group = items.len();
-        items.push(Item::named("group", "piano-roll-rows").height(w.inner));
+        // The group's height is its toggles' (the sheet can set one of its own).
+        items.push(Item::named("group", "piano-roll-rows"));
         for ((toggle, _), width) in ROWS.iter().zip(w.rows) {
             let width = if step < Step::Icons { width.0 } else { width.1 };
-            items.push(Item::named("piano-tool", toggle.id()).width(width).in_group(group));
+            items.push(Item::named("piano-tool", toggle.id()).width(width).height(w.rows_height).in_group(group));
         }
     }
     items.push(Item::new("flexible-space"));
@@ -266,6 +273,11 @@ enum Step {
 impl Step {
     const ALL: [Step; 6] = [Step::Full, Step::NoCaption, Step::Icons, Step::Edit, Step::Arrows, Step::Squeezed];
 }
+
+/// The vertical room the user-agent sheet's padding leaves round the Rows group's toggles
+/// (`piano-roll-toolbar group { padding: 1px 2px }`), in points: the group has no height of its own,
+/// so a theme's rule for it sets one, and its toggles are this much shorter than the bar's room.
+const ROWS_GROUP_INSETS: f32 = 2.0;
 
 /// The room a toolbar button has beside its icon, both sides together, at Normal size, in points.
 const BUTTON_ROOM: f32 = 8.0;
@@ -386,10 +398,12 @@ fn rows_toggles(
         // A toggle the sheet hides is gone; the others keep their own places.
         let Some(rect) = rect else { continue };
         let on = ons.get(index).copied().unwrap_or(false);
+        // A group that hides its overflow takes no input past its padding box either.
+        let input = rect.intersect(element.input_clip(group));
         if !row_toggle(
             ui,
             painter,
-            *rect,
+            (*rect, input),
             (*button, words.then_some(*word)),
             on,
             hints.get(index).copied().unwrap_or(""),
@@ -424,13 +438,13 @@ fn rows_toggles(
 fn row_toggle(
     ui: &Ui,
     painter: &egui::Painter,
-    rect: Rect,
+    (rect, input): (Rect, Rect),
     (button, word): (IconButton, Option<&str>),
     on: bool,
     hint: &str,
     scale: f32,
 ) -> bool {
-    let response = widgets::button_area(ui, rect, Id::unique(("piano-roll-rows", button.name())), button.name());
+    let response = widgets::button_area(ui, input, Id::unique(("piano-roll-rows", button.name())), button.name());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, button.name()));
     // Lit as a selected word is (the selection's fill and ink), as the toolbar's words were.
     let visuals = ui.visuals();

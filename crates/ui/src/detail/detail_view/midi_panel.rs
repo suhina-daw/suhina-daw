@@ -305,8 +305,7 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
         .iter()
         .zip(&ids)
         .map(|((tab, text), id)| {
-            Item::new("editor-tab")
-                .id(id)
+            Item::named("editor-tab", id)
                 .flag("checked", state.tools_tab == *tab)
                 .width(widgets::text_width(ui, text, font.clone()) + 16.0)
         })
@@ -320,8 +319,12 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
         let response = widgets::button_area(ui, hit, Id::unique(("midi-tools-tab", text)), format!("{text} tab"));
         // `editor-tab` (`[checked]` for the one shown), `#tab-notes` and `#tab-transform`.
         let on = state.tools_tab == tab;
-        let el =
-            crate::kit::element::EDITOR_TAB.id(id).response(&response).attr(crate::kit::element::Checked, on).enter();
+        let el = crate::kit::element::EDITOR_TAB
+            .id(id)
+            .attribute("kind", id)
+            .response(&response)
+            .attr(crate::kit::element::Checked, on)
+            .enter();
         let ink = if on {
             theme::text_primary()
         } else {

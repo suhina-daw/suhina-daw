@@ -987,11 +987,14 @@ grid's tracks).
 | Piano roll's toolbar | `piano-roll-toolbar[size]` | `piano-tool` buttons by id (`#piano-select` … `#piano-hide`, `#piano-edit` for the folded clipboard), `separator[kind="bar"]`, `group#piano-roll-rows` with `#piano-fold`, `#piano-scale`, `#piano-highlight`, a `flexible-space`, `bar-item#piano-roll-workflow`, `#piano-roll-ghosts`, `#piano-roll-grid` |
 | MIDI tools' tabs | `tab-row` | `editor-tab#tab-notes`, `#tab-transform`, `[checked]` on the one shown |
 
-Every item has a `kind` attribute equal to its id, as it lays out and as it paints, which the
-user-agent sheet selects (it uses no ids). An item's text keeps the colour the app gives it by
+Every item that has an id has a `kind` attribute equal to it, as it lays out and as it paints,
+which the user-agent sheet selects (it uses no ids); the project tabs, one per project, have no
+id and so no `kind` (select `project-tab` and `[selected]`). An item's text keeps the colour the app gives it by
 state (an error in the status bar, the tab shown) unless a rule gives the item a `color` of its
-own, even one equal to the bar's (`status-bar, #status-message { color: white; }`); the bar's
-`color`, which the items inherit, does not replace it. The items of a group are drawn in the
+own, even one equal to the bar's (`status-bar, #status-message { color: white; }`) or one a
+keyframe animation gives it; the bar's `color`, which the items inherit, does not replace it. The
+piano roll's Rows toggles (Fold, Scale, Highlight) draw with the selection colours of the
+palette, not an item `color`. The items of a group are drawn in the
 group's scope, so a rule through the group (`#app-bar-start > bar-item { … }`) reaches them and a
 group that hides its overflow cuts them. What a bar, a group, a module or a tab hides by
 `overflow` takes no input either, and a tab or button taller than its bar takes input only inside

@@ -84,6 +84,8 @@ fn a_bar_gives_way_until_its_items_fit() {
     let padded = "bar-item { padding: 0 10px; min-width: 0; flex-shrink: 1; } status-bar { gap: 0; padding: 0; }";
     assert_eq!(at(500.0, padded), Some(1));
     assert_eq!(at(600.0, padded), Some(0));
+    // `width: auto` and `max-width: none` give no size: the items still shrink below theirs.
+    assert_eq!(at(400.0, "bar-item { width: auto; max-width: none; min-width: 0; flex-shrink: 1; }"), Some(1));
     // Nothing fits: the sparsest, clipped.
     assert_eq!(at(50.0, ""), Some(1));
 }
@@ -98,4 +100,12 @@ fn hostile_input_lays_out_nothing_or_finite_rectangles() {
     assert!(row.items.iter().flatten().all(|r| r.is_finite()));
     let many: Vec<_> = (0..=MAX_ITEMS).map(|_| Item::new("bar-item")).collect();
     assert_eq!(super::row(&Bar::new("status-bar", Vec2::new(400.0, 30.0)), &many), None);
+}
+
+#[test]
+fn a_group_s_height_is_its_children_s_unless_the_sheet_sets_one() {
+    let items = vec![Item::new("group").id("g"), Item::new("bar-item").id("a").width(40.0).height(20.0).in_group(0)];
+    let height = |css: &str| laid(css, "piano-roll-toolbar", 400.0, &items).items[0].map(|r| r.height());
+    assert!(height("").is_some_and(|h| (20.0..30.0).contains(&h)), "the child's height, with its room");
+    assert_eq!(height("group { height: 8px; }"), Some(8.0));
 }
