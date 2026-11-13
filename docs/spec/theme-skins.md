@@ -902,7 +902,9 @@ bar. The user-agent sheet's grid reads them, and a theme's rules can too
 `#panel-detail[closed]`.
 
 A closed detail area whose size the sheet sets is left out of the grid instead, since it would
-leave an empty hole: it then has no splitter, and opens again with its key or menu item. A
+leave an empty hole: it then has no splitter, and opens again with its key or menu item. Its
+padding and border are not such a size: a closed area with them keeps its place, a box of its
+padding round an empty content box, and its splitter. A
 `grid-area` of `auto`, or one under an element without a template, places nothing.
 
 **A region that is not there has no element** (the menu bar turned off, the tabs of a single
@@ -930,7 +932,10 @@ helper (`kit::divider`). The strip takes `background-color` and the detail split
 and the browser's the border colour, stronger under the pointer.
 
 **One set of rectangles.** Drawing, input clipping and drop targets use the rectangles the grid
-gives. A region the grid gives none draws nothing and takes no input. A panel the grid lays over
+gives. A region the grid gives none draws nothing and takes no input. What a bar lays out past
+its rectangle (tabs past a narrowed `project-tabs`) is neither drawn nor takes the pointer. The
+Settings dialog keeps clear of the status bar wherever the grid puts it, and leaves it undimmed;
+a hidden status bar takes no room from it. A panel the grid lays over
 `#panel-main` (in the same cells) is drawn on a layer above the view, so it shows and takes the
 pointer there.
 
@@ -974,7 +979,10 @@ native input targets. The host still defines toolbar height. A stylesheet withou
 toolbar layout declarations leaves the ordinary toolbar arrangement intact. The toolbar's own
 `padding` and border are not layout declarations: they pad Suhina's toolbar, whose contents go
 in its content box, and only its other layout properties (`display`, flex and grid properties,
-`gap`, sizes) or its modules' (placement, `order`) switch to the CSS layout (#1336); a customized
+`gap`, sizes) or its modules' (placement, `order`) switch to the CSS layout (#1336). Its place
+in the window's grid (`grid-area`, `grid-row`, `grid-column`, margins, `align-self`, `order`)
+does not switch it either, and its modules are laid out under the same `window` attributes as
+the grid (#1370); a customized
 bar scrolls horizontally when it exceeds the window. The bounded retained scope tree
 exposes actual ancestry and siblings. Launcher mixer and track-header scopes carry stable
 `[data-object="track-N"]` identities. Clip, scene and slot roles also expose their native

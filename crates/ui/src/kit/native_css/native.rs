@@ -346,6 +346,10 @@ pub(super) fn layout(engine: &Engine, elements: Vec<Element>, defaults: &str, si
     let paint = engine.native.as_ref()?;
     let count = elements.len();
     let mut all = roots(true);
+    // `window` carries this frame's attributes, as in the window's grid and the painted tree.
+    if let Some(window) = all.get_mut(1) {
+        window.attributes.clone_from(&engine.window_attributes);
+    }
     all.extend(elements);
     let tree = Tree::new(all).ok()?;
     let defaults = Sheet::parse(defaults).ok()?;

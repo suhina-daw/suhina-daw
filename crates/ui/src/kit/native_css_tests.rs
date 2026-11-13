@@ -1722,3 +1722,56 @@ fn the_toolbar_s_modules_ignore_the_window_s_padding_and_gaps() {
     assert!(plain.is_some());
     assert_eq!(plain, padded);
 }
+/// The toolbar's place in the window's grid (its area, lines, margins, alignment) says nothing
+/// about where its modules go: a theme that only moves the toolbar keeps Suhina's own toolbar.
+#[test]
+fn moving_the_toolbar_in_the_window_keeps_suhina_s_toolbar() {
+    let requested = |css: &str| {
+        prepare(css, 800.0);
+        toolbar(&[("transport".into(), 100.0)], Vec2::new(800.0, 40.0), 40.0);
+        toolbar_layout_requested()
+    };
+    for css in [
+        "toolbar { grid-area: status; } status-bar { grid-area: toolbar; }",
+        "toolbar { grid-row: 9; grid-column: 1 / -1; }",
+        "toolbar { margin: 4px 0; align-self: end; order: 2; }",
+    ] {
+        assert!(!requested(css), "{css} only moves the toolbar");
+    }
+    assert!(requested("toolbar { grid-area: toolbar; gap: 12px; }"), "its own layout still switches");
+    skin::configure(&skin::Skin::default());
+}
+/// The toolbar's modules are laid out under the same `window` attributes as the window's grid and
+/// its painting: a rule for the browser's side moves them, without the sheet changing.
+#[test]
+fn the_toolbar_s_modules_follow_the_window_s_attributes() {
+    prepare("toolbar { display: flex; } window[browser=\"right\"] toolbar { gap: 20px; }", 800.0);
+    let second = |side: BrowserSide| {
+        window(&WindowInput { browser: Some(side), ..full_window(Vec2::new(800.0, 600.0)) });
+        let order = [("transport".into(), 100.0), ("tempo".into(), 50.0)];
+        toolbar(&order, Vec2::new(800.0, 40.0), 40.0).and_then(|m| m.get(1).map(|m| m.rect.left()))
+    };
+    let (left, right, again) = (second(BrowserSide::Left), second(BrowserSide::Right), second(BrowserSide::Left));
+    skin::configure(&skin::Skin::default());
+    assert_eq!((left, right, again), (Some(104.0), Some(120.0), Some(104.0)));
+}
+/// Padding on a closed detail area is not a size the sheet sets: the area keeps its place, a box
+/// of its padding, and its splitter, closed and open again.
+#[test]
+fn a_padded_detail_area_keeps_its_splitter_closed_and_open() {
+    prepare("#panel-detail { padding: 8px; }", 1000.0);
+    let mut input = full_window(Vec2::new(1000.0, 700.0));
+    input.set(Region::Detail, [None, Some(0.0)]);
+    input.detail_closed = true;
+    let closed = window(&input).unwrap();
+    input.set(Region::Detail, [None, Some(200.0)]);
+    input.detail_closed = false;
+    let open = window(&input).unwrap();
+    skin::configure(&skin::Skin::default());
+    let (main, detail) = (closed.rect(Region::Main).unwrap(), closed.rect(Region::Detail).unwrap());
+    assert_eq!(detail.height(), 16.0, "its padding");
+    assert!(closed.detail_follows, "closed, it keeps its splitter");
+    assert!(splitter_between(detail, main, 6.0).is_positive());
+    assert_eq!(open.rect(Region::Detail).map(|d| d.height()), Some(216.0));
+    assert!(open.detail_follows, "open again, too");
+}

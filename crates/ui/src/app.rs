@@ -3257,7 +3257,7 @@ impl App {
         let region = |region: Region| layout.rect(region).filter(|rect| rect.is_positive());
         if let Some(rect) = region(Region::MenuBar) {
             let bar = crate::kit::element::MENU_BAR.enter();
-            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            in_region(ui, rect, |ui| {
                 // The menus keep 4 points from the bar's sides.
                 let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO).shrink2(Vec2::new(4.0, 0.0));
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.menu_bar(ui, &bar, &mut actions))
@@ -3266,11 +3266,11 @@ impl App {
         self.frame_trace.mark("menu bar");
         if let Some(rect) = region(Region::Tabs) {
             let bar = crate::kit::element::PROJECT_TABS.enter();
-            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| self.tab_row(ui, &bar, &mut actions));
+            in_region(ui, rect, |ui| self.tab_row(ui, &bar, &mut actions));
         }
         if let Some(rect) = region(Region::Toolbar) {
             let bar = crate::kit::element::TOOLBAR.enter();
-            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            in_region(ui, rect, |ui| {
                 let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO);
                 self.control_bar(ui, &bar, inside, grid.as_ref(), cpu, ram, &mut actions)
             });
@@ -3279,7 +3279,7 @@ impl App {
         self.status_bar_rect = region(Region::StatusBar);
         if let Some(rect) = region(Region::StatusBar) {
             let bar = crate::kit::element::STATUS_BAR.enter();
-            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            in_region(ui, rect, |ui| {
                 // The window's bottom corners are the bar's where it lies along the bottom.
                 let bottom = if rect.bottom() >= room.bottom() - 0.5 {
                     egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner }
@@ -3315,14 +3315,10 @@ impl App {
                 let style = crate::kit::element::NOTICE_BAR.enter();
                 let inside = style.paint(ui.painter(), rect).content;
                 if self.open_prompt.is_some() {
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.open_prompt_bar(ui));
+                    in_region(ui, inside, |ui| self.open_prompt_bar(ui));
                 } else if missing_bar {
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.missing.bar(ui, inside));
-                } else if update_bar
-                    && let Some(wanted) = ui
-                        .scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.updates.bar(ui, inside))
-                        .inner
-                {
+                    in_region(ui, inside, |ui| self.missing.bar(ui, inside));
+                } else if update_bar && let Some(wanted) = in_region(ui, inside, |ui| self.updates.bar(ui, inside)) {
                     self.updates_wanted(ui.ctx(), wanted);
                 }
             }
@@ -4161,6 +4157,17 @@ fn native_bar_line(bar: &crate::kit::element::Entered) -> [f32; 4] {
 
 /// Draws a workspace panel with `draw`; when the theme's grid lays `panel` over the `main` view
 /// (both in the same cells), on a layer above the view, so it shows and takes the pointer there.
+/// Draws `draw` in a region of the window's grid at `rect`: what it lays out past the region's
+/// edge is neither painted nor takes the pointer (#1370). `UiBuilder::max_rect` alone keeps the
+/// window's clip, under which a widget past the edge would still take clicks.
+fn in_region<R>(ui: &mut Ui, rect: Rect, draw: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+        ui.set_clip_rect(ui.clip_rect().intersect(rect));
+        draw(ui)
+    })
+    .inner
+}
+
 fn over_view<R>(ui: &mut Ui, name: &str, panel: Rect, main: Rect, draw: impl FnOnce(&mut Ui) -> R) -> R {
     if panel.intersect(main).is_positive() {
         let layer = egui::LayerId::new(egui::Order::Middle, Id::unique(("workspace-overlay", name)));

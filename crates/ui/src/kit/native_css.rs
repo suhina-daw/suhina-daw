@@ -365,6 +365,9 @@ struct Engine {
     /// which regions are there: a splitter drag changes only the content sizes, which lays the
     /// window out again without probing the flags anew.
     window_follows: Option<(String, (bool, bool))>,
+    /// The attributes `window` has this frame (`[detail]`, `[browser]`, `[menu-bar]`), as the
+    /// window's grid was last given them: the toolbar's modules are laid out under them too.
+    window_attributes: Vec<(String, String)>,
     toolbar_layout: bool,
     collecting: bool,
     nodes: Vec<StyleNode>,
@@ -1273,7 +1276,7 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2, module_height: f32) -> Optio
         if !same_source(engine.source.as_ref()) {
             return None;
         }
-        let key = format!("{order:?}:{size:?}:{module_height:?}");
+        let key = format!("{order:?}:{size:?}:{module_height:?}:{:?}", engine.window_attributes);
         if let Some((previous, modules)) = &engine.toolbar
             && previous == &key
         {
@@ -1294,15 +1297,27 @@ pub fn toolbar(order: &[(String, f32)], size: Vec2, module_height: f32) -> Optio
         }
         let laid = native::layout(&engine, elements, &defaults, [size.x, size.y])?;
         // The toolbar's own padding pads Suhina's toolbar, in its content box, as its border does
-        // (#1336): only its layout properties (display, flex, grid, gap, sizes) and its modules'
-        // ask for the theme's layout.
-        const PADDING: [Property; 4] =
-            [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft];
-        engine.toolbar_layout = laid
-            .items
-            .iter()
-            .enumerate()
-            .any(|(index, (_, style))| native::requests_layout(style, if index == 0 { &PADDING } else { &[] }));
+        // (#1336), and its place in the window's grid (its area, lines, margins, alignment and
+        // order there) says nothing about where its modules go (#1370): only its layout
+        // properties (display, flex, grid, gap, sizes) and its modules' ask for the theme's layout.
+        const NOT_ITS_LAYOUT: [Property; 13] = [
+            Property::PaddingTop,
+            Property::PaddingRight,
+            Property::PaddingBottom,
+            Property::PaddingLeft,
+            Property::GridArea,
+            Property::GridColumn,
+            Property::GridRow,
+            Property::MarginTop,
+            Property::MarginRight,
+            Property::MarginBottom,
+            Property::MarginLeft,
+            Property::AlignSelf,
+            Property::Order,
+        ];
+        engine.toolbar_layout = laid.items.iter().enumerate().any(|(index, (_, style))| {
+            native::requests_layout(style, if index == 0 { &NOT_ITS_LAYOUT } else { &[] })
+        });
         // The modules' places in the toolbar's own box: the toolbar lies in the window's grid,
         // whose padding, gaps and rows above it say nothing about where its modules go.
         let origin = laid.items.first().and_then(|(rect, _)| *rect).map_or(Vec2::ZERO, |rect| rect.min.to_vec2());

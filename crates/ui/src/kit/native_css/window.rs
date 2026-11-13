@@ -164,8 +164,18 @@ pub fn window(input: &Input) -> Option<Window> {
     if !input.size.is_finite() || input.size.x <= 0.0 || input.size.y <= 0.0 {
         return None;
     }
+    let mut attributes = vec![("detail", input.detail.attribute())];
+    if let Some(side) = input.browser {
+        attributes.push(("browser", side.attribute()));
+    }
+    if input.menu_bar {
+        attributes.push(("menu-bar", ""));
+    }
     super::ENGINE.with(|engine| {
         let mut engine = engine.borrow_mut();
+        // The toolbar's modules are laid out under the same attributes.
+        engine.window_attributes =
+            attributes.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
         let key = format!("{input:?}");
         if let Some((previous, laid)) = &engine.window
             && previous == &key
@@ -175,7 +185,9 @@ pub fn window(input: &Input) -> Option<Window> {
         // A sheet the engine holds for another theme (the theme just changed) is not used: the
         // user-agent sheet lays the window out until the engine has the new one.
         let themed = engine.source.is_some() && super::same_source(engine.source.as_ref());
-        let lay = |input: &Input| -> Option<[Option<Rect>; 10]> {
+        // Each region's rectangle, and the detail area's content box (its rectangle less its
+        // border and padding).
+        let lay = |input: &Input| -> Option<([Option<Rect>; 10], Option<Rect>)> {
             let mut elements = Vec::new();
             let mut sizes = Vec::new();
             let mut present = Vec::new();
@@ -193,13 +205,6 @@ pub fn window(input: &Input) -> Option<Window> {
                 sizes.push(Some(*size));
                 present.push(*region);
             }
-            let mut attributes = vec![("detail", input.detail.attribute())];
-            if let Some(side) = input.browser {
-                attributes.push(("browser", side.attribute()));
-            }
-            if input.menu_bar {
-                attributes.push(("menu-bar", ""));
-            }
             #[cfg(test)]
             LAYS.with(|lays| lays.set(lays.get() + 1));
             let laid = super::native::window_layout(
@@ -210,26 +215,29 @@ pub fn window(input: &Input) -> Option<Window> {
                 [input.size.x.min(16384.0), input.size.y.min(16384.0)],
             )?;
             let mut rects = [None; 10];
+            let mut detail = None;
             for (region, (rect, style)) in present.iter().zip(laid) {
+                let rect = rect.filter(|rect| style.visible && rect.width() >= 0.0 && rect.height() >= 0.0);
+                if *region == Region::Detail {
+                    detail = rect.map(|rect| {
+                        let [top, right, bottom, left] = style.insets_in(rect.width());
+                        Rect::from_min_max(rect.min + Vec2::new(left, top), rect.max - Vec2::new(right, bottom))
+                    });
+                }
                 if let Some(slot) = rects.get_mut(region.index()) {
-                    *slot = rect.filter(|rect| style.visible && rect.width() >= 0.0 && rect.height() >= 0.0);
+                    *slot = rect;
                 }
             }
-            Some(rects)
+            Some((rects, detail))
         };
-        let mut rects = lay(input)?;
-        // A closed detail area keeps its place, with no size, for its splitter; one whose size
-        // the sheet sets would leave an empty hole instead, so it is left out of the grid.
-        if input.detail_closed
-            && rects
-                .get(Region::Detail.index())
-                .copied()
-                .flatten()
-                .is_some_and(|rect| rect.width().min(rect.height()) > 0.5)
-        {
+        let (mut rects, detail_content) = lay(input)?;
+        // A closed detail area keeps its place, with no content size, for its splitter; one whose
+        // size the sheet sets would leave an empty hole instead, so it is left out of the grid.
+        // Its border and padding are not such a size: they stay round its empty content box.
+        if input.detail_closed && detail_content.is_some_and(|content| content.width().min(content.height()) > 0.5) {
             let mut without = input.clone();
             without.regions[Region::Detail.index()] = None;
-            rects = lay(&without)?;
+            rects = lay(&without)?.0;
         }
         // Laid out again with one panel's content size a point larger at a time: a panel the sheet
         // does not size grows with it, and keeps its splitter. No list of properties says which:
@@ -258,7 +266,7 @@ pub fn window(input: &Input) -> Option<Window> {
                     larger.set(region, bigger);
                     let (Some(Some(at)), Some(then)) = (
                         rects.get(region.index()),
-                        lay(&larger).and_then(|r| r.get(region.index()).copied().flatten()),
+                        lay(&larger).and_then(|(r, _)| r.get(region.index()).copied().flatten()),
                     ) else {
                         return false;
                     };
