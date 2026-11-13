@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-11
+last_verified: 2026-11-13
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -684,7 +684,7 @@ Play button pass the setting **Play from** (Settings › Arrangement › Time an
 **Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them; while playing, playback goes on and the next start begins there. A click where a drag would move the clip (by default its name bar; with the lower half moving it, that half) picks it whole and moves the marker to its exact start, off the grid too, even when it was picked already. A click where a drag would paint time picks it but sets the play start on the grid line nearest the click (the line before it when the nearest is at or past the clip's end), never before the clip's start, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with a
-time selection painted after the clip was picked, no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
+time selection painted after the clip was picked, the marker moved elsewhere after the pick (a click on a ruler, a marker or a lane: the clip stays picked, and play starts where the user put the marker until a clip is picked again), no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
 from the marker.
 
 Playing from a clip **moves the marker** to the clip's start rather than leaving it where it was.

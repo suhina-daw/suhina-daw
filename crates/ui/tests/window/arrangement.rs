@@ -434,6 +434,60 @@ fn play_starts_from_the_selected_clip_as_the_setting_says() {
 }
 
 #[test]
+fn a_click_on_the_ruler_after_picking_a_clip_is_where_play_starts() {
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
+    let mut harness = arrangement_app_with_engine(&mut renderer);
+    let monitor = renderer.monitor();
+    let stop = |harness: &mut Harness<'static, App>, renderer: &mut suhina_engine::Renderer| {
+        harness.get_by_label("Stop").click();
+        harness.run_steps(2);
+        render_a_block(renderer);
+    };
+    let ruler_click = |harness: &mut Harness<'static, App>| {
+        let ruler = harness.get_by_label("Ruler").rect();
+        // 8 points a beat by default, so the grid is a bar: 130 points in is beat 16.25, bar 5.
+        let at = egui::pos2(ruler.left() + 130.0, ruler.center().y);
+        harness.hover_at(at);
+        harness.run();
+        harness.drag_at(at);
+        harness.drop_at(at);
+        harness.run();
+    };
+
+    // The clip picked whole, then the ruler clicked: Play and Space start at the ruler's beat,
+    // the clip still picked (the regression: they went back to the clip's start).
+    click_name_bar(&mut harness, "Clip Beat B on Drums at bar 17");
+    render_a_block(&mut renderer);
+    ruler_click(&mut harness);
+    render_a_block(&mut renderer);
+    assert_eq!(monitor.start_beat(), 16.0);
+    assert!(harness.state().arrangement().selected_clip().is_some(), "the clip stays picked");
+    harness.key_press(Key::Space);
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert_eq!((monitor.running(), monitor.start_beat()), (true, 16.0));
+    stop(&mut harness, &mut renderer);
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert_eq!((monitor.running(), monitor.start_beat()), (true, 16.0));
+    stop(&mut harness, &mut renderer);
+
+    // Its name bar clicked again, play starts from the clip once more.
+    click_name_bar(&mut harness, "Clip Beat B on Drums at bar 17");
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert_eq!((monitor.running(), monitor.start_beat()), (true, 64.0));
+}
+
+#[test]
 fn arrangement_headers_turn_tracks_off() {
     let mut harness = arrangement_app();
     harness.get_by_label("Turn Keys off").click();

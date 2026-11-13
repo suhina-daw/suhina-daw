@@ -224,3 +224,66 @@ fn archives_are_read_and_written_within_bounds() {
     assert!(!unsafe { archive_id(std::ptr::null_mut(), reader) }.is_null());
     assert_eq!(&out, b"abc");
 }
+
+/// A plug-in's playback region ref for the tests, never read.
+fn region_ref(n: usize) -> ARAPlaybackRegionRef {
+    std::ptr::without_provenance_mut(n)
+}
+
+/// Stop editing takes the selected clip's region out: the view is told nothing is selected
+/// before it goes. Editing again makes it anew: the view is told it is selected again. A
+/// region that is not the selected one changes nothing.
+#[test]
+fn a_selected_region_taken_out_and_made_again_is_selected_again() {
+    let (old, new, other) = (region_ref(16), region_ref(32), region_ref(48));
+    let taken_out = Edited { added: Vec::new(), removed: vec![old] };
+    assert!(clears_selection(Some(old), &taken_out));
+    assert!(!clears_selection(Some(other), &taken_out));
+    assert!(!clears_selection(None, &taken_out));
+    assert!(!selects_again(Some(old), &taken_out));
+
+    let made_again = Edited { added: vec![new], removed: Vec::new() };
+    assert!(selects_again(Some(new), &made_again));
+    assert!(!selects_again(Some(other), &made_again));
+    assert!(!selects_again(None, &made_again));
+    assert!(!clears_selection(Some(new), &made_again));
+
+    // Another modification for the same clip: the old region goes, the new one is selected.
+    let replaced = Edited { added: vec![new], removed: vec![old] };
+    assert!(clears_selection(Some(old), &replaced));
+    assert!(selects_again(Some(new), &replaced));
+}
+
+/// The selection is told again once, when the time asked for has come; a later ask moves it.
+#[test]
+fn the_selection_is_told_again_once_when_its_time_comes() {
+    let start = Instant::now();
+    let again = SelectAgain::default();
+    assert!(!again.due(start + SELECT_AGAIN_AFTER));
+    again.ask(start + SELECT_AGAIN_AFTER);
+    assert!(!again.due(start));
+    assert!(again.due(start + SELECT_AGAIN_AFTER));
+    assert!(!again.due(start + SELECT_AGAIN_AFTER * 2));
+    again.ask(start + SELECT_AGAIN_AFTER);
+    again.ask(start + SELECT_AGAIN_AFTER * 2);
+    assert!(!again.due(start + SELECT_AGAIN_AFTER));
+    assert!(again.due(start + SELECT_AGAIN_AFTER * 2));
+}
+
+/// The view is told the selection each time its window comes to show: an embedded editor placed
+/// where it shows after being hidden, a floating one opened after being closed (it is never
+/// placed); placing it again where it already shows tells nothing.
+#[test]
+fn the_selection_is_told_each_time_the_editor_comes_to_show() {
+    // (shown before, shown now, told): embedded, placed, moved, hidden, placed again.
+    for (was, shown, told) in [(false, true, true), (true, true, false), (true, false, false), (false, true, true)] {
+        assert_eq!(shows_again(was, shown), told, "{was} -> {shown}");
+    }
+    // A floating editor: opened (shown), closed (`close_editor`: not shown), opened again.
+    let mut view_shown = false;
+    let told: Vec<bool> = [true, false, true]
+        .into_iter()
+        .map(|shown| shows_again(std::mem::replace(&mut view_shown, shown), shown))
+        .collect();
+    assert_eq!(told, [true, false, true]);
+}

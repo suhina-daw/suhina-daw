@@ -547,6 +547,10 @@ pub struct App {
     /// The Arrangement's clip selection last frame: when it changes while stopped, the play
     /// start marker goes to its first clip.
     clips_before: Vec<(TrackId, ClipId)>,
+    /// Where the last pick of clips put the play start marker (`None`: it left the marker
+    /// alone), and whether something else has moved the marker since: a click on a ruler, a
+    /// marker, a lane. Moved, Play starts at the marker and not at the selected clip.
+    pick_start: (Option<f64>, bool),
     /// The piano roll is pulled to the top (`docs/spec/ui-clip-editor.md` › Pulled to the top).
     detail_max: bool,
     /// The width a drag of the stacked devices' column splitter has reached so far.
@@ -808,6 +812,7 @@ impl App {
             quick_add_filter: quick_add::Filter::default(),
             quick_add_kept: String::new(),
             clips_before: Vec::new(),
+            pick_start: (None, false),
             detail_max: false,
             last_escape: None,
             escape_twice: false,
@@ -1277,7 +1282,10 @@ impl App {
         // Picking clips clears the time selection, so one there now was painted after the pick:
         // Play starts at it (#937).
         let painted = self.shown == View::Arrangement && self.arrangement.time_selection().is_some();
-        let clip = (self.settings.play_from == PlayFrom::Clip && !painted)
+        // The marker moved since the pick (a click on the ruler, a marker, a lane): the user chose
+        // where play starts after picking the clip, and Play starts there.
+        let moved = self.pick_start.1;
+        let clip = (self.settings.play_from == PlayFrom::Clip && !painted && !moved)
             .then(|| self.selected_arrangement_clip())
             .flatten()
             .filter(|_| self.arrangement.picked_whole)
@@ -1285,6 +1293,23 @@ impl App {
         match clip {
             Some((_, clip)) => Action::new("transport.play", json!({ "from": "clip", "clip": clip.0 })),
             None => Action::new("transport.play", json!({})),
+        }
+    }
+
+    /// Notes a command that moves the play start marker anywhere but where the last pick of
+    /// clips put it: from then on Play starts at the marker, not at the selected clip.
+    fn note_marker_moved(&mut self, action: &Action) {
+        let beats = action.params.get("beats").and_then(serde_json::Value::as_f64);
+        let moved = match action.id {
+            "transport.jump" | "transport.setStart" | "transport.setPosition" => {
+                // The pick's own move to its first clip is not one.
+                !matches!((self.pick_start.0, beats), (Some(pick), Some(beats)) if (pick - beats).abs() <= 1e-9)
+            }
+            "marker.jump" => true,
+            _ => false,
+        };
+        if moved {
+            self.pick_start.1 = true;
         }
     }
 
@@ -2651,6 +2676,7 @@ impl App {
         }
         // A control moved by hand shows its parameter in the track's open lanes (#1205).
         self.focus_touched_lane(action);
+        self.note_marker_moved(action);
         // A fader or a send dragged on one of several selected tracks moves them together.
         if let Some(wider) = self.drag_to_selection(action) {
             return self.run(&wider);
@@ -3659,6 +3685,10 @@ impl App {
                             // that click put it.
                             let body = !self.arrangement.picked_whole;
                             let changed = clicked || picked != self.clips_before.as_slice();
+                            // A new pick: Play starts at it again until the marker moves elsewhere.
+                            if changed {
+                                self.pick_start = (None, false);
+                            }
                             if changed && (!self.settings.view.play_from_clip || body) {
                                 self.clips_before = picked.to_vec();
                             } else if changed {
@@ -3676,6 +3706,7 @@ impl App {
                                             .map(|c| c.start)
                                     })
                                     .fold(f64::INFINITY, f64::min);
+                                self.pick_start.0 = first.is_finite().then_some(first);
                                 if first.is_finite() && (first - timeline.start_beat).abs() > 1e-9 {
                                     // While playing, playback goes on and the next start begins there.
                                     let id =
@@ -3760,35 +3791,7 @@ impl App {
             if let Some(project) = closing {
                 self.check_plugin_edits(project);
             }
-            // A picked clip's row in the clip column: it gets the piano roll's focus (#1054).
-            if action.id == "view.focusClip" {
-                let number = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
-                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
-                    self.arrangement.focus_clip((TrackId(track), ClipId(clip)));
-                    self.piano_roll.selected.clear();
-                }
-                continue;
-            }
-            // The ARA editor's Float and Dock: the window's own, not an undo step.
-            if action.id == "view.araFloat" {
-                let number = |key: &str| action.params[key].as_u64();
-                let track = number("track").and_then(|t| u32::try_from(t).ok()).map(TrackId);
-                let device = number("device").and_then(|d| usize::try_from(d).ok());
-                let float = action.params["float"].as_bool().unwrap_or(false);
-                if let (Some(track), Some(device), Ok(session)) = (track, device, self.projects.session_mut(None))
-                    && let Err(e) = session.set_ara_floating(track, device, float)
-                {
-                    self.status = Status::Error(e.message().to_owned());
-                }
-                continue;
-            }
-            // A clip's menu opens it in its track's plug-in that edits clips: the window does it.
-            if action.id == "view.araEditor" {
-                let id = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
-                if let (Some(track), Some(clip)) = (id("track"), id("clip")) {
-                    self.arrangement.select_clip(TrackId(track), ClipId(clip));
-                }
-                self.open_ara_editor();
+            if self.window_action(action) {
                 continue;
             }
             if let Some(project) = closing
@@ -3892,6 +3895,45 @@ impl App {
 
     /// What the Launcher view asked for this frame that the window keeps: the mixer's height,
     /// saved in Settings, and the detail area opened from a strip's device list.
+    /// Runs `action` when it is the window's own, not a session command (no undo step), and says
+    /// whether it was: the views put these among their actions, and the session does not know
+    /// them ("unknown command").
+    fn window_action(&mut self, action: &Action) -> bool {
+        let number = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
+        match action.id {
+            // A picked clip's row in the clip column: it gets the piano roll's focus (#1054).
+            "view.focusClip" => {
+                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
+                    self.arrangement.focus_clip((TrackId(track), ClipId(clip)));
+                    self.piano_roll.selected.clear();
+                }
+            }
+            // The ARA editor's Float and Dock.
+            "view.araFloat" => {
+                let device = action.params["device"].as_u64().and_then(|d| usize::try_from(d).ok());
+                let float = action.params["float"].as_bool().unwrap_or(false);
+                if let (Some(track), Some(device), Ok(session)) =
+                    (number("track").map(TrackId), device, self.projects.session_mut(None))
+                    && let Err(e) = session.set_ara_floating(track, device, float)
+                {
+                    self.status = Status::Error(e.message().to_owned());
+                }
+            }
+            // The ARA editor's ×: hides the editor as the piano roll's × does (View › Hide
+            // editor); the plug-in keeps the clip and its edits.
+            "view.editor" => self.hide_editor(),
+            // A clip's menu opens it in its track's plug-in that edits clips.
+            "view.araEditor" => {
+                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
+                    self.arrangement.select_clip(TrackId(track), ClipId(clip));
+                }
+                self.open_ara_editor();
+            }
+            _ => return false,
+        }
+        true
+    }
+
     fn session_view_done(&mut self) {
         let height = self.view.mixer_height.round() as u32;
         if height != self.settings.view.mixer_height {
