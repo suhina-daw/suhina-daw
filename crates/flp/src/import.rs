@@ -53,17 +53,32 @@ pub fn import_file_with_samples(
     std::fs::File::open(path)?.take(MAX_IMPORT_BYTES + 1).read_to_end(&mut bytes)?;
     let mut imported = parse_project(&bytes)?;
     if let Some(folder) = path.parent() {
-        relocate_samples(&mut imported, folder, resolve);
-        crate::stretch::apply(&crate::read_bytes(&bytes)?, &mut imported, folder)?;
+        let found = relocate_samples(&mut imported, folder, resolve);
+        crate::stretch::apply(&crate::read_bytes(&bytes)?, &mut imported, folder, &found)?;
     }
     finish(&mut imported)?;
     Ok(imported)
 }
 
-fn relocate_samples(import: &mut Import, folder: &Path, library: impl FnOnce(&[String]) -> Vec<Option<PathBuf>>) {
+/// Whether the importer may look at a stored absolute path: one on a local disk, decided from
+/// the path alone, so a network share or a device path a project names is never touched
+/// (`docs/spec/missing-files.md` › Project file boundaries).
+fn may_probe(path: &Path) -> bool {
+    path.is_absolute()
+        && suhina_media::on_local_disk(path)
+        && !path.components().any(|c| matches!(c, std::path::Component::ParentDir))
+}
+
+/// Points each sample at a file that is there and returns the references it resolved, the only
+/// sample paths the rest of the import reads.
+fn relocate_samples(
+    import: &mut Import,
+    folder: &Path,
+    library: impl FnOnce(&[String]) -> Vec<Option<PathBuf>>,
+) -> BTreeSet<String> {
     let resolve = |file: &str| -> Option<String> {
         let stored = Path::new(file);
-        if stored.is_absolute() && stored.is_file() {
+        if may_probe(stored) && stored.is_file() {
             return Some(file.to_owned());
         }
         let relative = if stored.is_absolute() { stored.strip_prefix(folder).ok() } else { Some(stored) };
@@ -142,6 +157,7 @@ fn relocate_samples(import: &mut Import, folder: &Path, library: impl FnOnce(&[S
             .warnings
             .push(format!("Sample not found in the project folder or library: {file}. Relink it to play this source."));
     }
+    resolved.into_values().collect()
 }
 
 /// Maps a complete FLP into the model, retaining the original bytes as an extension.
@@ -1013,6 +1029,25 @@ fn mixer_eq(bands: [[f64; 3]; 3]) -> Result<Device, FlpError> {
         }
     }
     Ok(device)
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn only_local_disk_paths_a_project_names_are_looked_at() {
+        let local = if cfg!(windows) { "C:\\Samples\\kick.wav" } else { "/samples/kick.wav" };
+        assert!(may_probe(Path::new(local)));
+        let stepping = if cfg!(windows) { "C:\\Samples\\..\\kick.wav" } else { "/samples/../kick.wav" };
+        assert!(!may_probe(Path::new(stepping)));
+        assert!(!may_probe(Path::new("Samples/kick.wav")), "relative paths resolve inside the folder");
+        if cfg!(windows) {
+            for path in ["\\\\host\\share\\kick.wav", "\\\\?\\UNC\\host\\share\\kick.wav", "\\\\.\\COM1", "\\\\.\\pipe\\x"] {
+                assert!(!may_probe(Path::new(path)), "{path}");
+            }
+        }
+    }
 }
 
 #[cfg(test)]

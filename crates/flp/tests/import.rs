@@ -582,6 +582,50 @@ fn file_import_fits_audio_to_stored_beats_and_converts_source_trim() {
     }
 }
 
+#[test]
+fn a_sample_path_outside_the_project_is_never_read_for_its_stretch() {
+    let root = std::env::temp_dir().join(format!("suhina-stretch-outside-{}", std::process::id()));
+    let folder = root.join("Project");
+    std::fs::create_dir_all(&folder).unwrap();
+    // A readable file one step above the project: the stored path names it with `..`.
+    let mut wav = b"RIFF".to_vec();
+    wav.extend(16036u32.to_le_bytes());
+    wav.extend(b"WAVEfmt ");
+    wav.extend(16u32.to_le_bytes());
+    wav.extend(1u16.to_le_bytes());
+    wav.extend(1u16.to_le_bytes());
+    wav.extend(8000u32.to_le_bytes());
+    wav.extend(16000u32.to_le_bytes());
+    wav.extend(2u16.to_le_bytes());
+    wav.extend(16u16.to_le_bytes());
+    wav.extend(b"data");
+    wav.extend(16000u32.to_le_bytes());
+    wav.resize(16044, 0);
+    std::fs::write(root.join("outside.wav"), &wav).unwrap();
+    let mut e = Vec::new();
+    event(&mut e, 64, &2u16.to_le_bytes());
+    event(&mut e, 21, &[4]);
+    text(&mut e, 196, "../outside.wav");
+    let mut settings = [0u8; 112];
+    settings[96..100].copy_from_slice(&(4u32 * 192).to_le_bytes());
+    settings[108..112].copy_from_slice(&5u32.to_le_bytes());
+    event(&mut e, 215, &settings);
+    event(&mut e, 51, &[0]);
+    let mut clip = [0u8; 32];
+    clip[4..6].copy_from_slice(&0x5000u16.to_le_bytes());
+    clip[6..8].copy_from_slice(&2u16.to_le_bytes());
+    clip[8..12].copy_from_slice(&192u32.to_le_bytes());
+    clip[12..14].copy_from_slice(&499u16.to_le_bytes());
+    event(&mut e, 233, &clip);
+    let path = folder.join("authored.flp");
+    std::fs::write(&path, appended(fixture(96, 32), &e)).unwrap();
+    let result = suhina_flp::import_file_with_samples(&path, |files| vec![None; files.len()]).unwrap();
+    let lane = result.project.arrangement.lanes.iter().find(|l| l.track == Some(suhina_model::TrackId(2))).unwrap();
+    assert!(!lane.clips[0].audio.warped, "a path out of the project folder is not opened");
+    assert!(result.warnings.iter().any(|w| w.contains("sample duration unavailable")), "{:?}", result.warnings);
+    assert!(result.warnings.iter().any(|w| w.contains("../outside.wav")), "{:?}", result.warnings);
+}
+
 fn wrapper_record(out: &mut Vec<u8>, id: u32, bytes: &[u8]) {
     out.extend(id.to_le_bytes());
     out.extend((bytes.len() as u64).to_le_bytes());

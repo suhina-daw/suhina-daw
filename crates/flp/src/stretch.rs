@@ -10,10 +10,15 @@ use crate::{
     Flp, FlpError, Import,
     records::{data, dword, number},
 };
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 use suhina_model::{LaneData, StretchMode, WarpMarker};
 
-pub(crate) fn apply(flp: &Flp, import: &mut Import, folder: &Path) -> Result<(), FlpError> {
+/// `found` holds the sample references the import resolved to files that are there; only those
+/// are opened to read a duration, never a path the project file names on its own.
+pub(crate) fn apply(flp: &Flp, import: &mut Import, folder: &Path, found: &BTreeSet<String>) -> Result<(), FlpError> {
     let mut source = None;
     let mut settings = BTreeMap::new();
     for event in &flp.events {
@@ -55,10 +60,10 @@ pub(crate) fn apply(flp: &Flp, import: &mut Import, folder: &Path) -> Result<(),
                 import.warnings.push(format!("{}: invalid audio stretch settings; not applied.", content.name));
                 continue;
             }
-            let path = folder.join(&region.file);
-            let info = suhina_media::info::sample_info(&path).ok().or_else(|| {
-                region.absolute_file.as_ref().and_then(|path| suhina_media::info::sample_info(Path::new(path)).ok())
-            });
+            let info = found
+                .contains(&region.file)
+                .then(|| folder.join(&region.file))
+                .and_then(|path| suhina_media::info::sample_info(&path).ok());
             let Some(seconds) = info.and_then(|i| i.duration_seconds).filter(|s| *s > 0.) else {
                 import
                     .warnings

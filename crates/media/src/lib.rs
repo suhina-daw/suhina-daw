@@ -288,8 +288,9 @@ impl Trusted {
 }
 
 /// Whether `path` is on a local disk, decided from the path alone: a drive letter on Windows (not
-/// a network share or a device path); any absolute path elsewhere.
-fn on_local_disk(path: &Path) -> bool {
+/// a network share or a device path); any absolute path elsewhere. Importers use it before they
+/// look at a path a project file names (`docs/spec/missing-files.md` › Project file boundaries).
+pub fn on_local_disk(path: &Path) -> bool {
     use std::path::{Component, Prefix};
     match path.components().next() {
         Some(Component::Prefix(prefix)) => matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_)),
