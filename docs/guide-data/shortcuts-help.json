@@ -1300,7 +1300,7 @@
     ]
   },
   "pianoRoll.crop": {
-    "description": "Crops the clip to the time selection: its start, length and loop become the selection's, notes outside it are deleted and notes across its edges are cut there. What is left plays where it played.",
+    "description": "Crops the clip to the time selection: its start marker and length become the selection's (a looping clip keeps its end and goes on looping), its loop is cut to the selection and turns off where they do not meet, notes outside it are deleted and notes across its edges are cut there. What is left plays where it played.",
     "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
     "whenToUse": "Keep only the part of a clip you want.",
     "sourceFingerprint": "4e7af55c0cd141d219dd5ef25b1eae801f9cffe8c0dc3e5c2275183dd0f447dd",

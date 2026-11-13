@@ -143,10 +143,15 @@ pub(crate) fn fit_to_time(session: &mut Session, params: &Value) -> Result<Value
 }
 
 /// Where `note` lies once cut to `start` … `end`: its new start and length, or `None` when it is
-/// outside, or what is left is shorter than [`MIN_LENGTH`].
+/// outside. A note wholly inside keeps its length, however short; a piece an edge cuts shorter
+/// than [`MIN_LENGTH`] goes.
 fn cropped(note: &Note, start: f64, end: f64) -> Option<(f64, f64)> {
+    let note_end = note.time + note.duration;
+    if note.time >= start - EPSILON && note_end <= end + EPSILON {
+        return (note.time < end).then_some((note.time, note.duration));
+    }
     let from = note.time.max(start);
-    let to = (note.time + note.duration).min(end);
+    let to = note_end.min(end);
     (to - from >= MIN_LENGTH - EPSILON).then_some((from, to - from))
 }
 

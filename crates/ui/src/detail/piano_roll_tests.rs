@@ -1214,3 +1214,19 @@ fn split_clip_leaves_a_slot_clip_alone() {
     state.select_span(1.0, 2.0);
     assert!(state.key_action("pianoRoll.splitClip", &piano, 0.0, None).is_none());
 }
+
+/// Join and Crop leave the selection alone where the command would refuse them: notes that do not
+/// touch, a time selection outside the part of the clip that plays.
+#[test]
+fn join_and_crop_keep_the_selection_where_they_would_be_refused() {
+    let apart = clip(vec![note(0.0, 1.0, 60), note(2.0, 1.0, 60), note(0.0, 1.0, 64)]);
+    let mut state = focused_on(&apart);
+    state.selected = BTreeSet::from([0, 1, 2]);
+    assert!(state.key_action("pianoRoll.join", &apart, 0.0, None).is_none());
+    assert_eq!(state.selected, BTreeSet::from([0, 1, 2]), "kept to try again");
+    state.selected.clear();
+    state.select_span(9.0, 10.0);
+    assert!(state.key_action("pianoRoll.crop", &apart, 0.0, None).is_none());
+    assert!(state.span.is_some(), "the time selection stays");
+    assert!(joins(&[note(0.0, 1.0, 60), note(1.0, 1.0, 60)], &BTreeSet::from([0, 1])));
+}

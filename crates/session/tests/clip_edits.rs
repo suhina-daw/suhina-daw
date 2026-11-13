@@ -128,6 +128,13 @@ fn cropping_keeps_the_stretch_and_cuts_notes_at_its_edges() {
 }
 
 #[test]
+fn cropping_keeps_a_short_note_wholly_inside_and_drops_a_sliver_an_edge_cuts() {
+    let mut session = Session::new(project(vec![note(3.0, 0.005, 60), note(1.0, 1.005, 62)]));
+    run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 2.0, "end": 6.0 })).unwrap();
+    assert_eq!(notes(&session, 1), vec![(3.0, 0.005, 60)]);
+}
+
+#[test]
 fn cropping_a_looping_clip_cuts_its_loop_and_keeps_its_end() {
     let mut session = Session::new(project(vec![note(0.0, 1.0, 60), note(3.0, 1.0, 64)]));
     run(&mut session, "clip.setLoop", json!({ "track": 1, "index": 0, "start": 0.0, "end": 4.0 })).unwrap();
