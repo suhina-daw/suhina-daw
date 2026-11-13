@@ -546,6 +546,14 @@ fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
     }
 }
 
+/// What a search looks through for a plug-in besides its name: its vendor, its format and the
+/// name of its file. The name a plug-in reports can differ from the one its file and its
+/// installer use (a short code, the vendor's own product name), and a search for either finds it.
+fn plugin_haystack(plugin: &suhina_plugins::scan::PluginInfo) -> String {
+    let file = plugin.path.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
+    format!("{} {} {file}", plugin.vendor, plugin.format())
+}
+
 fn fits(found: &Found, category: Category) -> bool {
     match category {
         Category::All => true,
@@ -740,6 +748,14 @@ pub fn prepare_search(
             let Some(found) = describe(projects, item) else { continue };
             let path = match &found.item {
                 Item::File(p) | Item::Voice(p, _) => p.display().to_string(),
+                Item::Plugin(spec) => {
+                    let env = projects.plugin_env();
+                    env.catalog
+                        .plugins()
+                        .find(|p| p.spec() == *spec || p.name == *spec)
+                        .map(plugin_haystack)
+                        .unwrap_or_default()
+                }
                 _ => String::new(),
             };
             if fits(&found, category)
@@ -840,8 +856,7 @@ pub fn prepare_search(
                 format: Some(plugin.plugin_format()),
                 folder: None,
             };
-            let haystack = format!("{} {}", plugin.vendor, plugin.format());
-            if let Some(rank) = suhina_library::rank(&words, &plugin.name, &haystack)
+            if let Some(rank) = suhina_library::rank(&words, &plugin.name, &plugin_haystack(plugin))
                 && fits(&found, category)
                 && tagged(projects.file_library_mut(), &found.item.key())
             {

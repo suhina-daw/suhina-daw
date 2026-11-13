@@ -95,6 +95,29 @@ fn search_ranks_exact_then_prefix_then_word_start_then_the_rest() {
 }
 
 #[test]
+fn a_search_finds_a_name_by_any_part_of_it_with_or_without_spaces() {
+    let ranked = |text: &str, name: &str, path: &str| rank(&words(text), name, path);
+    // Any part of the name, without regard to case.
+    assert_eq!(ranked("Grand", "GrandPianos", ""), Some(1));
+    assert_eq!(ranked("piano", "GrandPianos", ""), Some(3));
+    assert_eq!(ranked("ANDPIA", "GrandPianos", ""), Some(3));
+    // Spaces and punctuation do not count, in the search or in the name.
+    assert_eq!(ranked("grandpiano", "Grand Pianos", ""), Some(1));
+    assert_eq!(ranked("grandpianos", "Grand-Pianos x64", ""), Some(1));
+    assert_eq!(ranked("grand pianos", "GrandPianos", ""), Some(1));
+    assert_eq!(ranked("kick01", "Kick 01.wav", ""), Some(1));
+    assert_eq!(ranked("pianosx64", "Grand Pianos", "Keys/Grand Pianos x64.dll"), Some(3));
+    // The path below the folder counts too, with or without its spaces.
+    assert_eq!(ranked("grandpianos", "TP", "Keys/Grand Pianos x64.dll"), Some(3));
+    // Every word must still match somewhere; punctuation alone matches nothing it is not in.
+    assert_eq!(ranked("grand organ", "Grand Pianos", ""), None);
+    assert_eq!(ranked("grandorgan", "Grand Pianos", ""), None);
+    assert_eq!(ranked("-", "Grand Pianos", ""), None);
+    // The exact name still comes first.
+    assert_eq!(ranked("grandpianos", "GrandPianos", ""), Some(0));
+}
+
+#[test]
 fn listing_shows_folders_first_in_natural_order_and_only_known_kinds() {
     let samples = temp("list");
     pack(&samples);

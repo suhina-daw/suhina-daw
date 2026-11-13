@@ -947,24 +947,42 @@ pub fn words(text: &str) -> Vec<String> {
     text.split_whitespace().map(str::to_lowercase).filter(|w| !w.is_empty()).take(16).collect()
 }
 
+/// `text` with only its letters and digits: what a search compares when spaces and
+/// punctuation should not count ("Grand Pianos", "grand-pianos" and "GrandPianos" are one name).
+fn compact(text: &str) -> String {
+    text.chars().filter(|c| c.is_alphanumeric()).collect()
+}
+
 /// How well an item called `name`, at `path` below its folder, matches `words` (lower-cased):
 /// `None` when a word is in neither; 0 for the exact name, 1 when the name starts with the
 /// first word, 2 when a word in the name does, 3 otherwise. No words match everything at 3.
+/// A word also matches with the spaces and punctuation of the name and path left out, so
+/// "grandpiano" finds "Grand Pianos" and "grand pianos" finds "GrandPianos".
 pub fn rank(words: &[String], name: &str, path: &str) -> Option<u8> {
     if words.is_empty() {
         return Some(3);
     }
     let name_lower = name.to_lowercase();
     let path_lower = path.to_lowercase();
-    if !words.iter().all(|w| name_lower.contains(w.as_str()) || path_lower.contains(w.as_str())) {
-        return None;
+    // Made only when a word is not found as typed: most items match no word at all.
+    let mut compacted: Option<(String, String)> = None;
+    for word in words {
+        if name_lower.contains(word.as_str()) || path_lower.contains(word.as_str()) {
+            continue;
+        }
+        let bare = compact(word);
+        let (name_bare, path_bare) = compacted.get_or_insert_with(|| (compact(&name_lower), compact(&path_lower)));
+        if bare.is_empty() || !(name_bare.contains(bare.as_str()) || path_bare.contains(bare.as_str())) {
+            return None;
+        }
     }
     let stem = name_lower.rsplit_once('.').map_or(name_lower.as_str(), |(s, _)| s);
     let first = words.first().map_or("", String::as_str);
     if words.len() == 1 && (stem == first || name_lower == first) {
         return Some(0);
     }
-    if name_lower.starts_with(first) {
+    let first_bare = compact(first);
+    if name_lower.starts_with(first) || (!first_bare.is_empty() && compact(stem).starts_with(first_bare.as_str())) {
         return Some(1);
     }
     let word_start =
