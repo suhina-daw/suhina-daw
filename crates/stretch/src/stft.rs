@@ -18,6 +18,9 @@ use rustfft::{Fft, FftPlanner};
 /// Added to the window products so a division never meets zero.
 const ALMOST_ZERO: f32 = 1e-30;
 
+/// Cloning copies the buffers and shares the FFT plans, which run through `&self`: a clone
+/// shares nothing mutable.
+#[derive(Clone)]
 pub(crate) struct Stft {
     channels: usize,
     block: usize,
