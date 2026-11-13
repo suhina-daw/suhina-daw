@@ -1,1 +1,0 @@
-- The bars' items in themes: the toolbar, the status bar, the project tabs, the application bar, the piano roll's toolbar and the MIDI tools' tabs lay out their items in one CSS row, so a theme sets their gaps, padding, alignment and sizes and hides an item with `display: none`, which takes its input away too; a narrow bar still gives way in Suhina's order.
