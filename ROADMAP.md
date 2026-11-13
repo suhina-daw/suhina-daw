@@ -243,6 +243,11 @@ refused or suspended, never by losing its edits.
   file when dragged or quick-added. `device.add {stock}` and `track.add {stock}` add one by its
   key, dragging one from the browser does the same, and each is one undo step.
 
+- Track and clip colours are the project's own in every theme: the colour picker and new tracks
+  and clips (from the window, the CLI or MCP) take Suhina's colours, and a theme draws a track's
+  header, column, strip, lane, its clips and the piano roll from their `color` attribute
+  (`attr(color type(<color>))`), with each Arrangement row a `track-lane` of its own.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
