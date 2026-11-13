@@ -225,9 +225,15 @@ fn a_pattern_two_clips_play_is_neither_cropped_nor_given_a_new_first_beat() {
     content.lanes =
         vec![ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(2.0, 1.0, 60)].into()) }].into();
     project.arrangement.lanes[0].clips.push(Clip::new(ContentId(1), 32.0, 8.0));
+    // The start marker at beat 1, so only the shared pattern stands in the way of the first beat.
+    project.arrangement.lanes[0].clips[0].offset = 1.0;
     let mut session = Session::new(project);
     let before = session.project().clone();
-    assert!(run(&mut session, "clip.setOrigin", json!({ "track": 1, "index": 0, "beat": 1.0 })).is_err());
-    assert!(run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 1.0, "end": 4.0 })).is_err());
+    let shared =
+        |result: Result<serde_json::Value, String>| result.is_err_and(|e| e.contains("pattern another clip plays"));
+    let origin = run(&mut session, "clip.setOrigin", json!({ "track": 1, "index": 0, "beat": 1.0 }));
+    assert!(shared(origin), "refused for the shared pattern");
+    let crop = run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 1.0, "end": 4.0 }));
+    assert!(shared(crop), "refused for the shared pattern");
     assert_eq!(*session.project(), before, "nothing changed for either clip");
 }
