@@ -49,16 +49,6 @@
   --recording-background: color-mix(in oklab, var(--surface), var(--recording) 22%);
   --meter-normal: #70E0BC;
   --meter-hot: #FFD779;
-  --clip-audioDefault: #F5BD72;
-  --clip-midiDefault: #74C7ED;
-  --track-1: #C99070;
-  --track-2: #D8BA64;
-  --track-3: #83A9B4;
-  --track-4: #A699B8;
-  --track-5: #95AA80;
-  --track-6: #C18F9E;
-  --track-7: #879BBE;
-  --track-8: #80ADA1;
 }
 window { liquid: var(--glassiness) 0 0; panel-gradient: 90deg, #FFFFFF2E 0%, #FFFFFF12 38%, #00000008 53%, #0000001C 100%; track-gradient: 90deg, #FFFFFF18 0%, #00000012 100%; clip-gradient: 90deg, #FFFFFF14 0%, #0000000A 100%; }
 

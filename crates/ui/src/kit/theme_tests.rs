@@ -44,18 +44,15 @@ fn translucent_theme_colours_preserve_alpha_in_files() {
 }
 
 #[test]
-fn old_clip_defaults_migrate_and_explicit_defaults_and_materials_round_trip() {
-    let (old, warnings) = Theme::from_json(r##"{"colors":{"track.1":"#123456","track.3":"#ABCDEF"}}"##);
-    assert!(warnings.is_empty());
-    assert_eq!(old.colors.audio_clip_default, rgb(0x123456));
-    assert_eq!(old.colors.midi_clip_default, rgb(0xABCDEF));
-    assert_eq!(old.liquid, None);
-    let (theme, warnings) = Theme::from_json(
-        r##"{"colors":{"clip.midiDefault":"#010203","clip.audioDefault":"#040506"},"liquid":{"panels":38,"tracks":52,"clips":40}}"##,
+fn former_track_colours_are_named_as_no_longer_read_and_materials_round_trip() {
+    let (old, warnings) = Theme::from_json(
+        r##"{"colors":{"track.1":"#123456","clip.midiDefault":"#ABCDEF","clip.audioDefault":"#040506"}}"##,
     );
+    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    assert!(warnings.iter().all(|w| w.contains("is no longer read") && w.contains("attr(color")), "{warnings:?}");
+    assert_eq!(old.liquid, None);
+    let (theme, warnings) = Theme::from_json(r##"{"liquid":{"panels":38,"tracks":52,"clips":40}}"##);
     assert!(warnings.is_empty());
-    assert_eq!(theme.colors.midi_clip_default, rgb(0x010203));
-    assert_eq!(theme.colors.audio_clip_default, rgb(0x040506));
     assert_eq!(theme.liquid, Some(super::super::liquid::Options { panels: 38, tracks: 52, clips: 40 }));
     assert_eq!(Theme::from_json(&theme.to_json()), (theme, Vec::new()));
     let (invalid, warnings) = Theme::from_json(r#"{"liquid":{"panels":999,"tracks":-1,"clips":"bad"}}"#);
@@ -101,24 +98,16 @@ fn example_themes_embed_their_paint_and_all_editable_artwork() {
 }
 
 #[test]
-fn track_colours_keep_their_values_in_suhina_studio() {
-    let dark = Palette::DARK;
-    let tracks = [
-        dark.track_color_1,
-        dark.track_color_2,
-        dark.track_color_3,
-        dark.track_color_4,
-        dark.track_color_5,
-        dark.track_color_6,
-        dark.track_color_7,
-        dark.track_color_8,
-    ];
-    let expected = [0xFF9A3C, 0xF2D541, 0x4FC3F7, 0xB38BFF, 0x7FDB5A, 0xFF6FA8, 0x5C8DFF, 0x2FD9C4].map(rgb);
-    assert_eq!(tracks, expected);
-    // A theme can change them like any other token.
-    let (theme, warnings) = Theme::from_json(r##"{ "colors": { "track.1": "#010203" } }"##);
-    assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(theme.colors.track_color_1, rgb(0x010203));
+fn a_theme_sheet_that_sets_the_former_track_colours_is_told_they_are_not_read() {
+    let meta = ThemeMeta::new("Old", DEFAULT_SWATCH);
+    let (_, warnings) =
+        from_folder(meta, ":root { --track-3: #010203; --clip-audioDefault: #040506; --track-9: #000; }");
+    let former: Vec<_> = warnings.iter().filter(|w| w.contains("is no longer read")).collect();
+    assert_eq!(former.len(), 2, "{warnings:?}");
+    assert!(
+        former.iter().any(|w| w.starts_with("--track-3"))
+            && former.iter().any(|w| w.starts_with("--clip-audioDefault"))
+    );
 }
 
 #[test]
@@ -422,7 +411,7 @@ fn every_token_has_its_own_name() {
 #[test]
 fn text_on_a_colour_is_the_text_token_that_stands_out_more() {
     // The default track colours are light: names on them are dark.
-    for fill in [Palette::DARK.track_color_1, Palette::DARK.track_color_8] {
+    for fill in [rgb(0xFF9A3C), rgb(0x2FD9C4)] {
         assert_eq!(text_on(fill), window_background(), "{fill:?}");
         assert!(contrast(fill, text_on(fill)) >= 4.5, "{fill:?}");
     }

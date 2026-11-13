@@ -128,26 +128,6 @@ palette! {
         "Behind a track header's pan field";
     pan_centre, "pan.centre", 0x817F7A,
         "The centre mark of a pan field";
-    midi_clip_default, "clip.midiDefault", 0x4FC3F7,
-        "RGB colour copied only to newly created MIDI tracks and clips; existing tracks and clips never change";
-    audio_clip_default, "clip.audioDefault", 0xFF9A3C,
-        "RGB colour copied only to newly created audio tracks and clips; existing tracks and clips never change";
-    track_color_1, "track.1", 0xFF9A3C,
-        "Colour-picker swatch 1; also effects in the browser (legacy track token)";
-    track_color_2, "track.2", 0xF2D541,
-        "Colour-picker swatch 2; also MIDI files in the browser (legacy track token)";
-    track_color_3, "track.3", 0x4FC3F7,
-        "Colour-picker swatch 3; also samples in the browser (legacy track token)";
-    track_color_4, "track.4", 0xB38BFF,
-        "Colour-picker swatch 4; also instruments and presets in the browser (legacy track token)";
-    track_color_5, "track.5", 0x7FDB5A,
-        "A colour the track colour palette offers";
-    track_color_6, "track.6", 0xFF6FA8,
-        "A colour the track colour palette offers";
-    track_color_7, "track.7", 0x5C8DFF,
-        "A colour the track colour palette offers";
-    track_color_8, "track.8", 0x2FD9C4,
-        "A colour the track colour palette offers";
 }
 
 /// Tokens renamed since the first theme files, old name first; files with the old names still
@@ -417,6 +397,7 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
         Err(error) => warnings.push(error),
     }
     warnings.extend(theme.vars.base.keys().filter_map(|name| former_kind_token(name.strip_prefix("--kind-")?)));
+    warnings.extend(theme.vars.base.keys().filter_map(|name| former_track_colour_token(name.strip_prefix("--")?)));
     warnings.extend(super::theme_css::read_host_rules(&mut theme, sheet));
     if let Some((toolbar, offsets)) = theme.meta.toolbar.as_ref().and_then(read_toolbar) {
         theme.skin.toolbar = Some(toolbar);
@@ -436,6 +417,21 @@ pub fn former_kind_token(kind: &str) -> Option<String> {
         "--kind-{kind} is no longer read: the sample map's colours are rules, \
          sample-point[kind=\"{kind}\"] {{ color: … }}"
     ))
+}
+
+/// The notice for a track colour a theme of an earlier version gives (`--track-1` to
+/// `--track-8`, `--clip-midiDefault`, `--clip-audioDefault`, without their `--`): tracks and clips
+/// keep their own colours, and the colour picker and new tracks take Suhina's, so a theme no
+/// longer sets them (#1020). `None` for any other name.
+pub fn former_track_colour_token(name: &str) -> Option<String> {
+    let former = matches!(name, "clip-midiDefault" | "clip-audioDefault")
+        || name.strip_prefix("track-").is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8"));
+    former.then(|| {
+        format!(
+            "--{name} is no longer read: a track's or clip's colour is its own, and a theme draws it \
+             from the element's color attribute, attr(color type(<color>))"
+        )
+    })
 }
 
 /// The toolbar arrangement in `theme.json` as the toolbar editor has it: `items` (names only) and
@@ -624,19 +620,13 @@ impl Theme {
                         (None, _) => warnings.push(
                             key.strip_prefix("kind.")
                                 .and_then(former_kind_token)
+                                .or_else(|| former_track_colour_token(&key.replace('.', "-")))
                                 .unwrap_or_else(|| format!("{key} is not a colour token")),
                         ),
                         (Some(_), None) => {
                             warnings.push(format!("{key}: {value} is not a #RRGGBB or #RRGGBBAA colour"))
                         }
                     }
-                }
-                // Older palettes only supplied the numbered colour-picker swatches.
-                if !colors.contains_key("clip.midiDefault") {
-                    theme.colors.midi_clip_default = theme.colors.track_color_3;
-                }
-                if !colors.contains_key("clip.audioDefault") {
-                    theme.colors.audio_clip_default = theme.colors.track_color_1;
                 }
                 // Older files drew these with a background and a text colour.
                 if !colors.contains_key("text.inverse") {

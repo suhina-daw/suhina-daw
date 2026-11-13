@@ -58,17 +58,7 @@ impl App {
         // Tracks keep the colour they show when others come and go (#690, #709).
         for id in self.projects.ids() {
             let Ok(session) = self.projects.session_mut(Some(id)) else { continue };
-            let palette = crate::interaction::grid::track_palette();
-            let fixed = self
-                .settings
-                .view
-                .fixed_track_colour
-                .then(|| crate::interaction::grid::to_rgb(theme::midi_clip_default()));
-            session.set_track_colours(palette.to_vec(), fixed);
-            session.set_track_type_colours(
-                crate::interaction::grid::to_rgb(theme::midi_clip_default()),
-                crate::interaction::grid::to_rgb(theme::audio_clip_default()),
-            );
+            session.set_one_new_track_colour(self.settings.view.fixed_track_colour);
             session.set_new_clips_take_track_colour(self.settings.view.new_clip_track_colour);
         }
         let changes = self.session().map(suhina_session::Session::change_count);

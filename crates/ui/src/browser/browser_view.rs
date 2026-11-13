@@ -156,14 +156,41 @@ pub struct Context<'a> {
     pub other_results: Option<&'a mut OtherResults<'a>>,
 }
 
+/// A row's icon colour: its `browser-icon[kind="…"]` element's `color`, which the user-agent
+/// sheet gives the kinds of item that have one and a theme may change; folders, headings and
+/// projects take the row's secondary text colour unless a sheet gives them one.
 fn icon_color(kind: ItemKind) -> Color32 {
-    match kind {
-        ItemKind::Midi | ItemKind::MidiEffect => theme::track_color_2(),
-        ItemKind::Sample => theme::track_color_3(),
-        ItemKind::Instrument | ItemKind::Preset => theme::track_color_4(),
-        ItemKind::Effect | ItemKind::AudioEffect => theme::track_color_1(),
-        ItemKind::Folder | ItemKind::Heading | ItemKind::Project => theme::browser_text_secondary(),
+    let id = icon_kind(kind);
+    let el = crate::kit::element::BROWSER_ICON.attribute("kind", id).enter();
+    match icon_default(id) {
+        Some(default) => el.computed_color_or(default),
+        None => el.color_or(theme::browser_text_secondary()),
     }
+}
+
+/// The `kind` attribute of `kind`'s `browser-icon`.
+fn icon_kind(kind: ItemKind) -> &'static str {
+    match kind {
+        ItemKind::Midi => "midi",
+        ItemKind::MidiEffect => "midi-effect",
+        ItemKind::Sample => "sample",
+        ItemKind::Instrument => "instrument",
+        ItemKind::Preset => "preset",
+        ItemKind::Effect => "effect",
+        ItemKind::AudioEffect => "audio-effect",
+        ItemKind::Folder => "folder",
+        ItemKind::Heading => "heading",
+        ItemKind::Project => "project",
+    }
+}
+
+/// The colour the user-agent sheet alone gives the icon of kind `id`, if any: worked out once.
+fn icon_default(id: &str) -> Option<Color32> {
+    const COLOURED: [&str; 7] = ["midi", "midi-effect", "sample", "instrument", "preset", "effect", "audio-effect"];
+    static DEFAULTS: std::sync::OnceLock<[Option<Color32>; 7]> = std::sync::OnceLock::new();
+    let defaults = DEFAULTS
+        .get_or_init(|| COLOURED.map(|id| crate::kit::native_css::user_agent_color("browser-icon", &[("kind", id)])));
+    COLOURED.iter().position(|known| *known == id).and_then(|at| defaults.get(at).copied().flatten())
 }
 
 /// Our own simple stroke icons, 12 px.
@@ -3467,6 +3494,21 @@ fn paint_row(painter: &egui::Painter, el: &Entered, rect: Rect, fill: egui::Colo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The kinds' icon colours come from the user-agent sheet's `browser-icon[kind]` rules, not
+    /// the theme's palette; folders, headings and projects have none and take the row's text.
+    #[test]
+    fn icon_colours_are_the_user_agent_sheet_s_by_kind() {
+        let colour = |kind| icon_default(icon_kind(kind));
+        assert_eq!(colour(ItemKind::Midi), Some(Color32::from_rgb(0xF2, 0xD5, 0x41)));
+        assert_eq!(colour(ItemKind::MidiEffect), colour(ItemKind::Midi));
+        assert_eq!(colour(ItemKind::Sample), Some(Color32::from_rgb(0x4F, 0xC3, 0xF7)));
+        assert_eq!(colour(ItemKind::Preset), Some(Color32::from_rgb(0xB3, 0x8B, 0xFF)));
+        assert_eq!(colour(ItemKind::AudioEffect), Some(Color32::from_rgb(0xFF, 0x9A, 0x3C)));
+        for plain in [ItemKind::Folder, ItemKind::Heading, ItemKind::Project] {
+            assert_eq!(colour(plain), None);
+        }
+    }
 
     /// The name of a plug-in always shows: as the panel narrows, the columns to its right drop
     /// (the rightmost first) before the name gets narrower than its least.

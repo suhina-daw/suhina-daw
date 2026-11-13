@@ -1085,21 +1085,21 @@
       "page": "Arrangement",
       "section": "Tracks",
       "name": "New track colour",
-      "note": "Choose whether new track colours follow their type or share one default.",
+      "note": "Choose whether new track colours follow their type or share one colour.",
       "keys": [
         "new_track_colour"
       ],
-      "sourceFingerprint": "ffbad35f31ae0c8be42eb02926aad4e054d807467075d28245aac698755acc14",
+      "sourceFingerprint": "45ba5221d8d92f559a1cc4d0f77e6dc21cf68aceb3113ca5fc6d679c70aa44e9",
       "helpStatus": "reviewed",
-      "description": "Sets the initial colour of newly created tracks from the active theme. Existing tracks retain their stored colours when this setting or the theme changes. Change the MIDI and audio defaults in Themes > Edit current theme > Tracks & clips; tracks can also be coloured individually.",
+      "description": "Sets the initial colour of newly created tracks. MIDI tracks start light blue and audio tracks orange, in every theme. Existing tracks keep their stored colours when this setting or the theme changes, and each track can be coloured individually.",
       "options": [
         {
           "name": "By clip type",
-          "description": "Use the theme MIDI default for MIDI tracks and audio default for audio tracks. This is the default."
+          "description": "Give MIDI tracks the MIDI colour (light blue) and audio tracks the audio colour (orange). This is the default."
         },
         {
           "name": "One colour",
-          "description": "Use the theme MIDI default for all new tracks."
+          "description": "Give every new track the MIDI colour (light blue)."
         }
       ],
       "whenToChange": "Use By clip type to distinguish MIDI and audio tracks, or One colour for a uniform starting colour.",
@@ -1110,11 +1110,11 @@
       "page": "Arrangement",
       "section": "Tracks",
       "name": "New clip colour",
-      "note": "Choose whether a new clip takes its track's colour or the theme's clip default.",
+      "note": "Choose whether a new clip takes its track's colour or the colour for its kind.",
       "keys": [
         "new_clip_colour"
       ],
-      "sourceFingerprint": "3060472f4e1874100e43d653fdaa5d70e777413e36cbb6f0838937af70f295b3",
+      "sourceFingerprint": "50881751a69cada41d32da1aa96e05435a190bd9acf1c76cc5a25829fb094fe4",
       "helpStatus": "reviewed",
       "description": "Sets the colour a newly made clip starts with: one drawn with a double-click, recorded, or made from a file. Existing clips keep their stored colours when this setting, a track's colour or the theme changes, and copies and pasted clips keep the colour they had. Clips can still be coloured individually.",
       "options": [
@@ -1123,11 +1123,11 @@
           "description": "Give a new clip the colour its track has at that moment. This is the default."
         },
         {
-          "name": "Theme default",
-          "description": "Give a new MIDI clip the theme's MIDI clip default and a new audio clip its audio clip default, whatever the track's colour."
+          "name": "By clip type",
+          "description": "Give a new MIDI clip the MIDI colour (light blue) and a new audio clip the audio colour (orange), whatever the track's colour."
         }
       ],
-      "whenToChange": "Keep Track colour so clips match the track they are on; choose Theme default when every new clip should start in the theme's MIDI or audio colour.",
+      "whenToChange": "Keep Track colour so clips match the track they are on; choose By clip type when every new clip should start in the MIDI or audio colour.",
       "workInProgress": false
     },
     {

@@ -161,8 +161,9 @@ fn filled_with(harness: &Harness<'static, App>, area: Rect, colour: Color32) -> 
     filled_rects(harness).iter().any(|r| r.fill == colour && r.rect.expand(0.5).contains_rect(area))
 }
 
+/// The demo's first track has no colour of its own, so it shows Suhina's first legacy colour.
 fn default_drums() -> Color32 {
-    theme::track_color_1()
+    colour_picker::color32(suhina_session::colours::LEGACY[0])
 }
 
 #[test]
@@ -241,12 +242,7 @@ fn picking_the_colour_the_track_has_changes_nothing() {
     let mut harness = arrangement();
     harness.get_by_label("Drums colour").click();
     harness.run();
-    harness
-        .get_by_label(&format!(
-            "Colour {}",
-            colour_picker::hex(suhina_ui::interaction::grid::to_rgb(theme::track_color_1()))
-        ))
-        .click();
+    harness.get_by_label(&format!("Colour {}", colour_picker::hex(suhina_session::colours::LEGACY[0]))).click();
     harness.run();
     assert!(!harness.state().session().unwrap().can_undo(), "no command for the same colour");
 }

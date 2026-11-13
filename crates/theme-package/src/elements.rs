@@ -239,12 +239,18 @@ pub const ELEMENTS: &[Element] = &[
         "browser-place",
         "browser-row",
         "browser-play",
+        "browser-icon",
         "browser-tag-dot",
         "browser-preview-wave",
     ]),
     element("browser-place", Control, "A place or kind on the browser's left.").attributes(&["checked", "selected"]),
     element("browser-row", Control, "A row of the browser's list.").attributes(&["selected"]),
     element("browser-play", Control, "The button that previews a browser row."),
+    element(
+        "browser-icon",
+        Drawn,
+        "A browser row's icon, coloured by its `kind` attribute (`midi`, `sample`, `instrument`, `effect`).",
+    ),
     element("browser-tag-dot", Drawn, "The coloured dot of a tag in the browser."),
     element("browser-preview-wave", Drawn, "The waveform of the sound being previewed."),
     element("session", Region, "The Launcher view: tracks as columns of clip slots.")

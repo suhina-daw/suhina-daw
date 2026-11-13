@@ -193,7 +193,7 @@ fn a_slot_records_from_the_next_bar_and_plays_its_take_looped() {
 #[test]
 fn the_arrangement_records_after_the_count_in() {
     let mut rig = rig(project());
-    rig.session.set_track_type_colours(Rgb(200, 40, 90), Rgb(30, 120, 220));
+    rig.session.set_new_clips_take_track_colour(false);
     rig.run("track.setArm", json!({ "track": 1, "armed": true })).unwrap();
     rig.run("transport.setCountIn", json!({ "bars": 1 })).unwrap();
     let started = rig.run("transport.record", json!({ "on": true })).unwrap();
@@ -227,7 +227,7 @@ fn the_arrangement_records_after_the_count_in() {
     assert_eq!(lane.clips.len(), 1);
     let clip = &lane.clips[0];
     assert_ne!(clip.id.0, 0, "the take's clip has an id the clip commands take");
-    assert_eq!(clip.color, Some(Rgb(200, 40, 90)));
+    assert_eq!(clip.color, Some(suhina_session::colours::MIDI));
     // It ends where the playhead was when asked: within a block of beat 3.
     assert!(close(clip.start, 0.0) && (clip.length - 3.0).abs() < 0.02, "{clip:?}");
     let got = notes(p.content(clip.content).unwrap());

@@ -630,6 +630,7 @@ names! {
     BROWSER_PLACE = "browser-place";
     BROWSER_ROW = "browser-row";
     BROWSER_PLAY = "browser-play";
+    BROWSER_ICON = "browser-icon";
     BROWSER_TAG_DOT = "browser-tag-dot";
     BROWSER_PREVIEW_WAVE = "browser-preview-wave";
     SESSION = "session";

@@ -40,6 +40,7 @@ mod clip_color;
 mod clip_edges;
 mod clip_shape;
 mod clipboards;
+pub mod colours;
 mod commands;
 mod demo;
 mod device_files;
@@ -231,10 +232,9 @@ pub struct Session {
     /// How long the fades of a part comped from a take are, in milliseconds (Settings ›
     /// Arrangement › Take lanes, #1078): the crossfade where it meets a part of another take.
     take_crossfade_ms: f64,
-    /// The colours a track without one of its own shows, by its place among the tracks (the
-    /// window's palette), and the one a new track gets instead, when set ([`Session::set_track_colours`]).
-    track_colours: (Vec<suhina_model::Rgb>, Option<suhina_model::Rgb>),
-    track_type_colours: Option<(suhina_model::Rgb, suhina_model::Rgb)>,
+    /// Every new track gets [`colours::MIDI`] rather than the default for its kind
+    /// ([`Session::set_one_new_track_colour`]).
+    one_new_track_colour: bool,
     /// A new clip takes its track's colour rather than the MIDI or audio default.
     new_clips_take_track_colour: bool,
     /// The project's plug-ins, running while it plays (ADR 0006).
@@ -285,9 +285,8 @@ impl Session {
             history: history::History::default(),
             clipboards: clipboards::Clipboards::default(),
             take_crossfade_ms: Project::COMP_CROSSFADE_MS,
-            track_colours: (Vec::new(), None),
-            track_type_colours: None,
-            new_clips_take_track_colour: false,
+            one_new_track_colour: false,
+            new_clips_take_track_colour: true,
             plugins: rack::Rack::default(),
             audio: project_audio::ProjectAudio::default(),
             device_files: device_files::DeviceFiles::default(),
@@ -1270,29 +1269,10 @@ impl Session {
         (self.history.undo.len(), self.history.made)
     }
 
-    /// The colours a track without one of its own shows, by its place among the tracks (the
-    /// window's palette, which follows the theme), and `fixed`, the one colour every new track
-    /// gets, when set. Without a palette, tracks keep no colour of their own. Clears the MIDI and
-    /// audio defaults, so call [`Session::set_track_type_colours`] after it.
-    pub fn set_track_colours(&mut self, palette: Vec<suhina_model::Rgb>, fixed: Option<suhina_model::Rgb>) {
-        // Resolve legacy inherited colours once, before a later theme/default edit can change them.
-        // This is display normalisation, not an undoable project edit.
-        if !palette.is_empty() {
-            for (index, track) in self.project.tracks.iter_mut().enumerate() {
-                if track.color.is_none() {
-                    track.color = palette.get(index % palette.len()).copied();
-                }
-            }
-        }
-        self.track_type_colours = None;
-        if self.track_colours.0 != palette || self.track_colours.1 != fixed {
-            self.track_colours = (palette, fixed);
-        }
-    }
-
-    /// Optional MIDI/audio defaults for newly created tracks; existing explicit colours win.
-    pub fn set_track_type_colours(&mut self, midi: suhina_model::Rgb, audio: suhina_model::Rgb) {
-        self.track_type_colours = Some((midi, audio));
+    /// Whether every new track gets [`colours::MIDI`] (`true`, Settings › *One colour*) or the
+    /// MIDI or audio default for its kind (`false`, the default).
+    pub fn set_one_new_track_colour(&mut self, on: bool) {
+        self.one_new_track_colour = on;
     }
 
     /// Whether a new clip takes its track's colour (`true`) or the MIDI or audio default.
@@ -1301,36 +1281,26 @@ impl Session {
     }
 
     /// After an edit that adds, removes or moves tracks: every track keeps the colour it showed
-    /// (#690, #709). A track without a colour of its own showed its place's colour from the
-    /// palette, so it is given that colour now, before the places shift. A new track gets the
-    /// fixed colour, or else the MIDI or audio default for its kind, and only without those its
-    /// place's palette colour. Part of the same undo step.
+    /// (#690, #709). A track without a colour of its own showed its place's [`colours::LEGACY`]
+    /// colour, so it is given that colour now, before the places shift. A new track gets the MIDI
+    /// or audio default for its kind, or [`colours::MIDI`] with *One colour*. Part of the same
+    /// undo step.
     fn keep_track_colours(&mut self, before: &Project) {
-        let (palette, fixed) = &self.track_colours;
-        if palette.is_empty() && self.track_type_colours.is_none() {
-            return;
-        }
         let order = |p: &Project| p.tracks.iter().map(|t| t.id).collect::<Vec<_>>();
         let was = order(before);
         if was == order(&self.project) {
             return;
         }
-        let colour = |place: usize, track: &suhina_model::Track| {
-            self.track_type_colours.map_or_else(
-                || palette[place % palette.len()],
-                |(midi, audio)| if track.content.audio && !track.content.notes { audio } else { midi },
-            )
-        };
         for (place, track) in before.tracks.iter().enumerate().filter(|(_, t)| t.color.is_none()) {
-            if let Some(now) = self.project.tracks.iter_mut().find(|t| t.id == track.id && t.color.is_none())
-                && !palette.is_empty()
-            {
-                now.color = palette.get(place % palette.len()).copied();
+            if let Some(now) = self.project.tracks.iter_mut().find(|t| t.id == track.id && t.color.is_none()) {
+                now.color = Some(colours::track_colour(None, place));
             }
         }
-        for (place, track) in self.project.tracks.iter_mut().enumerate() {
+        let one = self.one_new_track_colour;
+        for track in self.project.tracks.iter_mut() {
             if track.color.is_none() && !was.contains(&track.id) {
-                track.color = Some(fixed.unwrap_or_else(|| colour(place, track)));
+                let audio = !one && track.content.audio && !track.content.notes;
+                track.color = Some(if audio { colours::AUDIO } else { colours::MIDI });
             }
         }
     }
@@ -1338,7 +1308,7 @@ impl Session {
     /// New content takes the creation default once. Existing clips, shared-content copies
     /// and explicit colours never follow later changes to that default.
     fn colour_new_clips(&mut self, before: &Project) {
-        let Some((midi, audio)) = self.track_type_colours else { return };
+        let (midi, audio) = (colours::MIDI, colours::AUDIO);
         if self.project.contents.len() == before.contents.len() {
             return;
         }
@@ -1370,8 +1340,14 @@ impl Session {
             })
             .collect();
         let take_track = self.new_clips_take_track_colour;
-        let track_colours: std::collections::HashMap<_, _> =
-            self.project.tracks.iter().filter_map(|track| Some((track.id, track.color?))).collect();
+        // The colour each track shows, a track saved without one included.
+        let track_colours: std::collections::HashMap<_, _> = self
+            .project
+            .tracks
+            .iter()
+            .enumerate()
+            .map(|(place, track)| (track.id, colours::track_colour(track.color, place)))
+            .collect();
         let lanes = self.project.arrangement.lanes.iter_mut().flat_map(|lane| {
             let track = lane.track;
             lane.clips.iter_mut().map(move |clip| (track, clip))
