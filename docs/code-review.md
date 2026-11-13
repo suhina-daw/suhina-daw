@@ -141,6 +141,11 @@ For a verified defect, describe meaningful regression coverage or a reproduction
 the fix. Do not request tests that only mirror implementation, or assert timings that depend on
 the speed of a shared CI runner.
 
+A test that writes a file twice and expects the second write to read as newer depends on timing
+too (`AGENTS.md` rule 7): a file's last-write time ticks in steps of up to 16 ms on Windows and a
+second on some file systems, so two quick writes can carry the same time. Such a test sets the
+times it needs with `File::set_modified`; a `sleep` between the writes is the same fault.
+
 ## 6. Review performance explicitly
 
 Consider realistic project sizes, not only the smallest fixture. Look for:
