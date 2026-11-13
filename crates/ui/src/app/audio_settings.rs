@@ -211,9 +211,10 @@ impl App {
             });
             return;
         }
-        egui::Area::new(Id::unique("settings-dialog")).order(egui::Order::Foreground).fixed_pos(window.min).show(
-            ui.ctx(),
-            |ui| {
+        crate::kit::floating::area(ui.ctx(), Id::unique("settings-dialog"), crate::kit::floating::Kind::Own)
+            .order(egui::Order::Foreground)
+            .fixed_pos(window.min)
+            .show(ui.ctx(), |ui| {
                 ui.set_min_size(window.size());
                 let behind = ui.interact(window, Id::unique("settings-behind"), Sense::click_and_drag());
                 let _swallowed = behind.clicked();
@@ -252,8 +253,7 @@ impl App {
                     );
                 }
                 ui.painter().rect_stroke(panel, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-            },
-        );
+            });
     }
 
     pub(super) fn settings_contents(&mut self, ui: &mut Ui, panel: Rect) -> bool {

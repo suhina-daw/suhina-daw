@@ -47,6 +47,37 @@ fn liquid(text: &str) -> bool {
     words == ["auto"] || words.len() == 3 && words.iter().all(|w| w.parse::<u8>().is_ok_and(|n| n <= 100))
 }
 
+/// What a floating surface does to the window behind it: `none`, or `blur(<length>)`. Only on or
+/// off in this version: the radius is checked and not read.
+fn backdrop_filter(text: &str) -> bool {
+    let text = text.trim();
+    text == "none"
+        || text.strip_prefix("blur(").and_then(|rest| rest.strip_suffix(')')).is_some_and(|radius| {
+            let radius = radius.trim();
+            radius == "0"
+                || radius.strip_suffix("px").is_some_and(|n| n.parse::<f32>().is_ok_and(|n| n.is_finite() && n >= 0.0))
+        })
+}
+
+/// Whether a `backdrop-filter` value turns the blur on: a radius above 0. `none`, `blur(0)` and
+/// what does not parse leave it off.
+pub fn blurs(text: &str) -> bool {
+    text.trim()
+        .strip_prefix("blur(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .map(|radius| radius.trim().trim_end_matches("px").trim())
+        .and_then(|radius| radius.parse::<f32>().ok())
+        .is_some_and(|radius| radius.is_finite() && radius > 0.0)
+}
+
+/// The elements `backdrop-filter` reads: they float over the window's own layers. Everything else
+/// sits in the window, whose background the system already blurs behind it. All but `dialog` read
+/// it from rules on the element alone (`popup { … }`), which [`BARE_FILTERED`] lists.
+pub const BACKDROP_FILTERED: &[&str] = &["popup", "menu", "dialog", "tooltip"];
+
+/// The floating elements that read `backdrop-filter` only from a rule naming them alone.
+pub const BARE_FILTERED: &[&str] = &["popup", "menu", "tooltip"];
+
 /// A surface gradient: `none`, or an angle and colour stops (`90deg, #fff2 0%, #0002 100%`).
 fn surface_gradient(text: &str) -> bool {
     let text = text.trim();
@@ -197,6 +228,7 @@ properties! {
     PanelGradient, "panel-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the panels: none, or an angle and colour stops.";
     TrackGradient, "track-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the tracks: none, or an angle and colour stops.";
     ClipGradient, "clip-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the clips: none, or an angle and colour stops.";
+    BackdropFilter, "backdrop-filter", Text(backdrop_filter), Value::Text(String::new()), false, "What a popup, menu, dialog or tooltip does to the window behind it: blur(<length>) or none; on or off for now.";
     BackdropImage, "backdrop-image", Text(backdrop_image), Value::Text(String::new()), false, "The theme's picture behind the window: none or url(\"<file>.png\").";
     BackdropOpacity, "backdrop-opacity", Integer, Value::Integer(-1), false, "How much the backdrop picture shows, 0 to 100.";
     BackdropBlur, "backdrop-blur", Integer, Value::Integer(-1), false, "How much the backdrop picture is blurred, 0 to 100.";

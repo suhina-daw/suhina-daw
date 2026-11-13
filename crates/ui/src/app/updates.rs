@@ -205,7 +205,7 @@ impl Updates {
     fn dialog(&self, ctx: &egui::Context, area: Rect, channel: Channel, phase: Phase) -> Option<Choice> {
         // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
         let style_class = crate::kit::element::DIALOG.enter();
-        egui::Area::new(Id::unique("updates-dialog"))
+        crate::kit::floating::area(ctx, Id::unique("updates-dialog"), crate::kit::floating::Kind::Own)
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
             .show(ctx, |ui| {

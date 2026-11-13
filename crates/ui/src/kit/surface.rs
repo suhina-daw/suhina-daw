@@ -42,14 +42,14 @@ pub fn available(ctx: &Context) -> bool {
         && super::liquid::background_image(ctx).is_none()
 }
 
-/// A shape that clears `rect` to see-through, for something painted over the window's content
-/// that must not blend with it; `None` when the window shows no desktop.
-pub fn clear(ctx: &Context, rect: Rect) -> Option<Shape> {
+/// A shape that clears `rect`, with corners of `radius`, to see-through, for something painted
+/// over the window's content that must not blend with it; `None` when the window shows no desktop.
+pub fn clear(ctx: &Context, rect: Rect, radius: CornerRadius) -> Option<Shape> {
     if !available(ctx) {
         return None;
     }
     let host = ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST)))?;
-    Some(host.0.shape(rect, CornerRadius::ZERO, Color32::TRANSPARENT))
+    Some(host.0.shape(rect, radius, Color32::TRANSPARENT))
 }
 
 #[cfg(test)]
@@ -83,15 +83,15 @@ mod tests {
     #[test]
     fn a_see_through_window_clears_with_the_provider() {
         let ctx = see_through();
-        assert!(matches!(clear(&ctx, rect()), Some(Shape::Circle(_))));
+        assert!(matches!(clear(&ctx, rect(), CornerRadius::ZERO), Some(Shape::Circle(_))));
     }
 
     #[test]
     fn an_opaque_theme_or_no_provider_clears_nothing() {
         let ctx = see_through();
         super::super::theme::set_palette(&ctx, super::super::theme::Palette::DARK);
-        assert!(clear(&ctx, rect()).is_none());
-        assert!(clear(&Context::default(), rect()).is_none());
+        assert!(clear(&ctx, rect(), CornerRadius::ZERO).is_none());
+        assert!(clear(&Context::default(), rect(), CornerRadius::ZERO).is_none());
     }
 
     #[test]
@@ -105,7 +105,7 @@ mod tests {
                     pixels: Arc::new(egui::ColorImage::filled([2, 2], Color32::RED)),
                 }),
             );
-            assert_eq!(clear(&ctx, rect()).is_none(), private_image);
+            assert_eq!(clear(&ctx, rect(), CornerRadius::ZERO).is_none(), private_image);
         }
     }
 }

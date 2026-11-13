@@ -63,6 +63,24 @@ fn nothing_scrolled_shows_through_a_frozen_header() {
     }
 }
 
+/// What floats over the window gets the window blurred under it in the scenes (#1234): the menu
+/// bar's menu, a right-click menu and a tooltip in frames of the test theme's own (not egui's),
+/// and the dialogs.
+#[test]
+#[ignore = "needs a GPU adapter; run with --ignored"]
+fn the_floating_surfaces_are_blurred_in_the_scenes() {
+    let theme = super::see_through().unwrap();
+    let gpu = Gpu::new().unwrap();
+    for name in ["menu", "context-menu", "settings-menu", "tooltip", "export-dialog", "about-dialog"] {
+        let scene = scenes::find(name).expect("the scene");
+        let mut h = rendered((scene.app)().unwrap(), &theme, scene.width, 1.0, &gpu);
+        (scene.drive)(&mut h).unwrap_or_else(|e| panic!("{e}"));
+        let _shot = shoot(&mut h).unwrap_or_else(|e| panic!("{e}"));
+        let blurred = suhina_ui::kit::liquid::blurred(&h.ctx);
+        assert!(blurred >= 1, "{name}: the window is blurred under what floats ({blurred} surfaces)");
+    }
+}
+
 /// Every bundled theme renders in every scene, to `target/theme-shots/<theme>/`.
 #[test]
 #[ignore = "needs a GPU adapter; run with --ignored"]

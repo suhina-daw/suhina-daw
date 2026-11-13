@@ -644,6 +644,20 @@ fn rules(parser: &mut Parser<'_>, source: &str, scope: &Scope, sheet: &mut Sheet
                                 layout: selectors.iter().all(|s| s.subject_is(PERCENT_PADDING_ELEMENTS)),
                             };
                             let declarations = nested(parser, |parser| declarations(parser, source, sheet, rule))?;
+                            if declarations.iter().any(|d| d.name == "backdrop-filter")
+                                && !selectors.iter().all(|s| {
+                                    s.bare_kind().is_some_and(|kind| crate::property::BARE_FILTERED.contains(&kind))
+                                        || s.subject_is(&["dialog"])
+                                })
+                            {
+                                sheet.notice(
+                                    location,
+                                    "backdrop-filter is read only on dialog and in a rule for popup, menu or \
+                                     tooltip alone: other elements sit in the window, which the system blurs \
+                                     behind"
+                                        .into(),
+                                );
+                            }
                             if sheet.rules.len() >= 1024 {
                                 return Err("Style sheet exceeds 1024 rules".into());
                             }
@@ -956,6 +970,35 @@ mod tests {
         );
         assert_eq!(sheet.notices.len(), 2, "{:?}", sheet.notices);
         assert_eq!(sheet.unstyled_group_classes(), ["typo"]);
+    }
+
+    #[test]
+    fn backdrop_filter_is_read_on_floating_elements_and_named_elsewhere() {
+        let sheet = Sheet::parse(
+            "popup, menu { backdrop-filter: blur(20px); } dialog[kind=\"x\"] { backdrop-filter: none; } \
+             tooltip { backdrop-filter: blur(0); } window dialog { backdrop-filter: blur(4.5px); }",
+        )
+        .unwrap();
+        assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+        let sheet = Sheet::parse(
+            "workspace-panel { backdrop-filter: blur(8px); } popup, browser { backdrop-filter: none; } \
+             popup button { backdrop-filter: none; } :is(popup, tooltip) { backdrop-filter: none; } \
+             menu-bar menu { backdrop-filter: none; } popup#metronome-level { backdrop-filter: none; }",
+        )
+        .unwrap();
+        assert_eq!(sheet.notices.len(), 6, "{:?}", sheet.notices);
+        assert!(
+            sheet.notices.iter().all(|n| n.message.contains("backdrop-filter is read only")),
+            "{:?}",
+            sheet.notices
+        );
+        for bad in ["blur()", "blur(2em)", "sepia(1)", "blur(-1px)", "blur(NaNpx)"] {
+            let sheet = Sheet::parse(&format!("popup {{ backdrop-filter: {bad}; }}")).unwrap();
+            assert_eq!(sheet.notices.len(), 1, "{bad}: {:?}", sheet.notices);
+        }
+        use crate::property::blurs;
+        assert!(blurs("blur(20px)") && blurs(" blur( 0.5px ) "));
+        assert!(!blurs(" none ") && !blurs("blur(0)") && !blurs("blur(0px)") && !blurs("sepia(1)"));
     }
 
     #[test]

@@ -77,6 +77,17 @@ pub trait Provider: Send + Sync {
     ) -> Option<Backdrop> {
         None
     }
+    /// The window's layers and the dialog (or Settings) over them, blurred, for the menus and
+    /// tooltips floating over that dialog: targets of its own, apart from [`Provider::capture_behind`]'s,
+    /// which the dialog's own backdrop shows in the same frame.
+    fn capture_above(
+        &self,
+        _ctx: &Context,
+        _shapes: Vec<egui::epaint::ClippedShape>,
+        _see_through: bool,
+    ) -> Option<Backdrop> {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -113,6 +124,7 @@ pub fn begin_frame(ctx: &Context, gradients: super::gradient::Gradients) {
         data.insert_temp(Id::unique(GRADIENTS), gradients);
         data.remove_temp::<Vec<Marked>>(Id::unique(MARKED));
     });
+    super::floating::begin_frame(ctx);
 }
 
 /// Resolve all content lenses once the visible substrate is complete, before modal chrome.
@@ -145,21 +157,30 @@ struct Marked {
     cut: egui::layers::ShapeIdx,
     image: egui::layers::ShapeIdx,
     rect: Rect,
+    /// The panel's corner radius, which the blur and the cut under it take.
+    radius: f32,
     opacity: f32,
 }
 
 /// Marks `rect` for the window's content, blurred, under what `painter` paints next: a dialog's
 /// panel, called just before its fill. `finish_backdrops` puts the image there once the frame is
-/// painted.
-pub fn backdrop(painter: &Painter, rect: Rect) {
+/// painted. `radius` is the panel's corner radius.
+pub fn backdrop(painter: &Painter, rect: Rect, radius: f32) {
     let ctx = painter.ctx();
     if !effects_allowed(ctx) || !available(ctx) || !rect.is_finite() {
         return;
     }
     let cut = painter.add(egui::Shape::Noop);
     let image = painter.add(egui::Shape::Noop);
-    let marked =
-        Marked { layer: painter.layer_id(), clip: painter.clip_rect(), cut, image, rect, opacity: painter.opacity() };
+    let marked = Marked {
+        layer: painter.layer_id(),
+        clip: painter.clip_rect(),
+        cut,
+        image,
+        rect,
+        radius: radius.clamp(0.0, 128.0),
+        opacity: painter.opacity(),
+    };
     ctx.data_mut(|data| {
         let all = data.get_temp_mut_or_default::<Vec<Marked>>(Id::unique(MARKED));
         if all.len() < 64 {
@@ -168,115 +189,253 @@ pub fn backdrop(painter: &Painter, rect: Rect) {
     });
 }
 
-/// Menus, other popups and the dialogs that asked (`backdrop`) blur the window's content behind
-/// them. Called once the frame is painted, before `kit::surface` swaps its backgrounds (the
-/// capture cannot replay those).
+/// One surface found floating over the window this frame: its layer, where its frame is in it,
+/// and what is put under (and in place of) that frame.
+struct Floating {
+    layer: egui::LayerId,
+    index: usize,
+    frame: super::floating::Frame,
+    shown: f32,
+    /// The frame its element paints instead of egui's.
+    restyled: Option<super::floating::Restyled>,
+    /// Over one of the app's own floating layers (a dialog, Settings): what is behind it is that
+    /// layer too, not the window alone.
+    over_app: bool,
+}
+
+/// The surfaces floating over the window (#1234): every layer at `Order::Foreground` or
+/// `Order::Tooltip` the app did not declare its own (egui's menus, context menus, dropdowns and
+/// tooltips), and the bar's menus, each with its frame, as far as its element's `backdrop-filter`
+/// lets it blur. `order` is the layers from back to front. Also every layer that floats, kept or
+/// not, for the captures to leave out.
+fn floating(ctx: &Context, order: &[egui::LayerId]) -> (Vec<Floating>, Vec<egui::LayerId>) {
+    use super::element::{MENU, POPUP, TOOLTIP};
+    use super::floating::Kind;
+    let declared = super::floating::declared(ctx);
+    let mut below_app = false;
+    let wanted: Vec<(egui::LayerId, super::element::Name, bool)> = order
+        .iter()
+        .filter_map(|layer| {
+            let name = match (layer.order, declared.get(&layer.id)) {
+                (egui::Order::Foreground, Some(Kind::Own)) => {
+                    below_app = true;
+                    return None;
+                }
+                (_, Some(Kind::Own)) => return None,
+                (egui::Order::Foreground | egui::Order::Tooltip, Some(Kind::Menu)) => MENU,
+                (egui::Order::Foreground, _) => POPUP,
+                (egui::Order::Tooltip, _) => TOOLTIP,
+                _ => return None,
+            };
+            Some((*layer, name, below_app))
+        })
+        .collect();
+    let all: Vec<egui::LayerId> = wanted.iter().map(|(layer, _, _)| *layer).collect();
+    if wanted.is_empty() {
+        return (Vec::new(), all);
+    }
+    let blurs: Vec<(super::element::Name, bool)> =
+        [MENU, POPUP, TOOLTIP].into_iter().map(|name| (name, super::floating::blurs(name))).collect();
+    let found: Vec<(egui::LayerId, super::element::Name, bool, usize, super::floating::Frame)> =
+        ctx.graphics(|layers| {
+            wanted
+                .iter()
+                .filter_map(|(layer, name, over_app)| {
+                    let (index, frame) = super::floating::find_frame(layers.get(*layer)?)?;
+                    Some((*layer, *name, *over_app, index, frame))
+                })
+                .collect()
+        });
+    let surfaces = found
+        .into_iter()
+        .filter_map(|(layer, name, over_app, index, frame)| {
+            let shown = super::floating::shown(ctx, layer.id);
+            if shown <= 0.0 {
+                return None;
+            }
+            // The bar's menus paint `menu` themselves.
+            let restyled = if name == MENU { None } else { super::floating::frame(ctx, name, &frame, shown) };
+            let blur = blurs.iter().any(|(n, on)| *n == name && *on);
+            (blur || restyled.is_some()).then(|| Floating {
+                layer,
+                index,
+                frame,
+                shown: if blur { shown } else { 0.0 },
+                restyled,
+                over_app,
+            })
+        })
+        .collect();
+    (surfaces, all)
+}
+
+/// The shapes of `layers`, and of no other, as one capture replays them. Only these are copied:
+/// `drain` replays every layer it holds, those painted on without an area (a drag's preview) too.
+fn shapes_of(ctx: &Context, layers: &[egui::LayerId]) -> Vec<egui::epaint::ClippedShape> {
+    let transforms =
+        layers.iter().filter_map(|layer| ctx.layer_transform_to_global(*layer).map(|t| (*layer, t))).collect();
+    ctx.graphics(|all| {
+        let mut copy = egui::layers::GraphicLayers::default();
+        for layer in layers {
+            if let Some(list) = all.get(*layer) {
+                *copy.entry(*layer) = list.clone();
+            }
+        }
+        copy.drain(layers, &transforms)
+    })
+}
+
+/// What goes where a surface's frame was.
+struct Placed {
+    layer: egui::LayerId,
+    /// The frame's index in its layer.
+    index: usize,
+    /// The shapes put there: the blurred window, then the frame its element paints, if any.
+    shapes: Vec<egui::Shape>,
+    /// Whether those replace egui's frame.
+    replaced: bool,
+    /// What goes over the contents: the frame's outline.
+    over: Vec<egui::Shape>,
+}
+
+const BLURRED: &str = "liquid-blurred";
+
+/// How many surfaces the last frame put the window, blurred, under: popups, menus, tooltips and
+/// dialogs. For the render tool's scenes.
+pub fn blurred(ctx: &Context) -> usize {
+    ctx.data(|data| data.get_temp::<usize>(Id::unique(BLURRED))).unwrap_or(0)
+}
+
+/// Popups, menus, tooltips and the dialogs that asked (`backdrop`) blur what is behind them.
+/// The window's own layers are captured once however many surfaces float over them, and not at
+/// all when none does; a menu or tooltip over a dialog (or Settings) needs that dialog behind it
+/// too, so while one is open a second capture holds the window and the dialog, with the dialog's
+/// own blur already in it. Popups' and tooltips' frames are painted from their elements. Called
+/// once the frame is painted, before `kit::surface` swaps its backgrounds (the capture cannot
+/// replay those).
 pub fn finish_backdrops(ctx: &Context) {
     let marked = ctx.data_mut(|data| data.remove_temp::<Vec<Marked>>(Id::unique(MARKED))).unwrap_or_default();
-    if !effects_allowed(ctx) {
-        return;
-    }
-    let Some(host) = ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST))) else { return };
-    // A popup's frame (egui's menus, context menus and dropdowns) is the first shape of its
-    // floating layer: the window fill with the window's outline.
-    let visuals = ctx.global_style().visuals.clone();
-    let order: Vec<egui::LayerId> = ctx.memory(|memory| memory.layer_ids().collect());
-    let menus: Vec<(egui::LayerId, usize, Rect, f32)> = ctx.graphics(|layers| {
-        order
-            .iter()
-            .filter(|layer| layer.order == egui::Order::Foreground)
-            .filter_map(|layer| {
-                let list = layers.get(*layer)?;
-                let (index, first) =
-                    list.all_entries().enumerate().find(|(_, clipped)| !matches!(clipped.shape, egui::Shape::Noop))?;
-                // With a shadow, egui paints the frame as [shadow, frame].
-                let frame = match &first.shape {
-                    egui::Shape::Vec(parts) => parts.last()?,
-                    shape => shape,
-                };
-                // While the popup fades in, egui scales its colours: compare them without alpha.
-                match frame {
-                    egui::Shape::Rect(frame)
-                        if same_colour(frame.fill, visuals.window_fill)
-                            && same_colour(frame.stroke.color, visuals.window_stroke.color)
-                            && frame.stroke.width == visuals.window_stroke.width =>
-                    {
-                        let shown = f32::from(frame.fill.a()) / f32::from(visuals.window_fill.a().max(1));
-                        Some((*layer, index, frame.rect, shown.clamp(0.0, 1.0)))
-                    }
-                    _ => None,
-                }
-            })
-            .collect()
-    });
+    let order = super::floating::with_window_layers(ctx, ctx.memory(|memory| memory.layer_ids().collect()));
+    let (mut surfaces, floating_layers) = floating(ctx, &order);
+    let host = ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST))).filter(|_| effects_allowed(ctx));
     if suhina_plugins::trace::on() {
-        suhina_plugins::trace::state("menu backdrop", format!("{} menus, {} dialogs", menus.len(), marked.len()));
+        suhina_plugins::trace::state("menu backdrop", format!("{} floating, {} dialogs", surfaces.len(), marked.len()));
     }
-    if menus.is_empty() && marked.is_empty() {
-        return;
-    }
-    let window: Vec<egui::LayerId> = order
-        .iter()
-        .copied()
-        .filter(|layer| matches!(layer.order, egui::Order::Background | egui::Order::Middle))
-        .collect();
-    let transforms =
-        window.iter().filter_map(|layer| ctx.layer_transform_to_global(*layer).map(|t| (*layer, t))).collect();
-    // `drain` adds every layer, not only those named: the floating ones are emptied first.
-    let shapes = ctx.graphics(|layers| {
-        let mut copy = layers.clone();
-        for layer in order.iter().filter(|layer| !window.contains(layer)) {
-            *copy.entry(*layer) = egui::layers::PaintList::default();
-        }
-        copy.drain(&window, &transforms)
-    });
     let see_through = super::surface::available(ctx);
-    let Some(backdrop) = host.0.capture_behind(ctx, shapes, see_through) else {
-        if suhina_plugins::trace::on() {
-            suhina_plugins::trace::state("menu backdrop", "no capture".into());
-        }
-        return;
-    };
     // In a see-through window the pixels are cleared first, so the sharp content under them does
     // not show through the image's alpha; while a menu or dialog fades in, the image fades in
-    // over the content instead.
-    let under = |rect: Rect, shown: f32| {
+    // over the content instead. The image takes the frame's corners.
+    let under = |backdrop: Backdrop, rect: Rect, radius: egui::CornerRadius, shown: f32| -> Vec<egui::Shape> {
         let uv_min = (rect.min - backdrop.screen.min) / backdrop.screen.size();
         let uv_max = (rect.max - backdrop.screen.min) / backdrop.screen.size();
         let uv = Rect::from_min_max(uv_min.to_pos2(), uv_max.to_pos2());
-        let cut = if shown >= 1.0 { super::surface::clear(ctx, rect) } else { None };
-        (cut, egui::Shape::image(backdrop.texture, rect, uv, Color32::WHITE.gamma_multiply(shown)))
+        let cut = if shown >= 1.0 { super::surface::clear(ctx, rect, radius) } else { None };
+        let image = egui::epaint::RectShape::filled(rect, radius, Color32::WHITE.gamma_multiply(shown))
+            .with_texture(backdrop.texture, uv);
+        cut.into_iter().chain([egui::Shape::Rect(image)]).collect()
     };
-    let dialogs: Vec<(Marked, Option<egui::Shape>, egui::Shape)> = marked
+
+    // The window's own layers, for the dialogs and what floats straight over the window.
+    let behind = match &host {
+        Some(host) if !marked.is_empty() || surfaces.iter().any(|s| s.shown > 0.0 && !s.over_app) => {
+            let window: Vec<egui::LayerId> = order
+                .iter()
+                .copied()
+                .filter(|layer| matches!(layer.order, egui::Order::Background | egui::Order::Middle))
+                .collect();
+            let backdrop = host.0.capture_behind(ctx, shapes_of(ctx, &window), see_through);
+            if backdrop.is_none() && suhina_plugins::trace::on() {
+                suhina_plugins::trace::state("menu backdrop", "no capture".into());
+            }
+            backdrop
+        }
+        _ => None,
+    };
+    let mut blurred = 0;
+    if let Some(backdrop) = behind {
+        let dialogs: Vec<(Marked, Vec<egui::Shape>)> = marked
+            .into_iter()
+            .map(|marked| {
+                let shapes = under(
+                    backdrop,
+                    marked.rect,
+                    egui::CornerRadius::from(marked.radius),
+                    marked.opacity.clamp(0.0, 1.0),
+                );
+                (marked, shapes)
+            })
+            .collect();
+        blurred += dialogs.len();
+        ctx.graphics_mut(|layers| {
+            for (marked, mut shapes) in dialogs {
+                let list = layers.entry(marked.layer);
+                // Each slot keeps its clip as it is now: a region that hides its overflow may have
+                // narrowed it since it was reserved (#1336).
+                let clip_of = |list: &egui::layers::PaintList, slot: egui::layers::ShapeIdx| {
+                    list.all_entries().nth(slot.0).map_or(marked.clip, |shape| shape.clip_rect)
+                };
+                let image = shapes.pop().unwrap_or(egui::Shape::Noop);
+                if let Some(cut) = shapes.pop() {
+                    let clip = clip_of(list, marked.cut);
+                    list.set(marked.cut, clip, cut);
+                }
+                let clip = clip_of(list, marked.image);
+                list.set(marked.image, clip, image);
+            }
+        });
+    }
+
+    // The window and the app's own layers over it (dialogs, with their blur now in them), for
+    // what floats over a dialog: every layer behind the first such surface but the surfaces.
+    let above = match &host {
+        Some(host) => surfaces.iter().find(|s| s.shown > 0.0 && s.over_app).and_then(|first| {
+            let behind: Vec<egui::LayerId> = order
+                .iter()
+                .copied()
+                .take_while(|layer| *layer != first.layer)
+                .filter(|layer| !floating_layers.contains(layer))
+                .collect();
+            host.0.capture_above(ctx, shapes_of(ctx, &behind), see_through)
+        }),
+        None => None,
+    };
+    for surface in &mut surfaces {
+        if (if surface.over_app { above } else { behind }).is_none() {
+            surface.shown = 0.0;
+        }
+    }
+    surfaces.retain(|surface| surface.shown > 0.0 || surface.restyled.is_some());
+    blurred += surfaces.iter().filter(|s| s.shown > 0.0).count();
+    ctx.data_mut(|data| data.insert_temp(Id::unique(BLURRED), blurred));
+    if surfaces.is_empty() {
+        return;
+    }
+    // What goes where each frame was, worked out before the layers are taken.
+    let placed: Vec<Placed> = surfaces
         .into_iter()
-        .map(|marked| {
-            let (cut, image) = under(marked.rect, marked.opacity.clamp(0.0, 1.0));
-            (marked, cut, image)
-        })
-        .collect();
-    let under: Vec<(egui::LayerId, usize, Vec<egui::Shape>)> = menus
-        .into_iter()
-        .map(|(layer, index, rect, shown)| {
-            let (cut, image) = under(rect, shown);
-            (layer, index, cut.into_iter().chain([image]).collect())
+        .map(|surface| {
+            let radius = surface
+                .restyled
+                .as_ref()
+                .map_or(surface.frame.radius, |restyled| egui::CornerRadius::from(restyled.radius));
+            let backdrop = if surface.over_app { above } else { behind };
+            let mut shapes = match backdrop {
+                Some(backdrop) if surface.shown > 0.0 => under(backdrop, surface.frame.rect, radius, surface.shown),
+                _ => Vec::new(),
+            };
+            let replaced = surface.restyled.is_some();
+            let over = match surface.restyled {
+                Some(restyled) => {
+                    shapes.extend(restyled.under);
+                    restyled.over
+                }
+                None => Vec::new(),
+            };
+            Placed { layer: surface.layer, index: surface.index, shapes, replaced, over }
         })
         .collect();
     ctx.graphics_mut(|layers| {
-        for (marked, cut, image) in dialogs {
-            let list = layers.entry(marked.layer);
-            // Each slot keeps its clip as it is now: a region that hides its overflow may have
-            // narrowed it since it was reserved (#1336).
-            let clip_of = |list: &egui::layers::PaintList, slot: egui::layers::ShapeIdx| {
-                list.all_entries().nth(slot.0).map_or(marked.clip, |shape| shape.clip_rect)
-            };
-            if let Some(cut) = cut {
-                let clip = clip_of(list, marked.cut);
-                list.set(marked.cut, clip, cut);
-            }
-            let clip = clip_of(list, marked.image);
-            list.set(marked.image, clip, image);
-        }
-        for (layer, index, shapes) in under {
+        for Placed { layer, index, shapes, replaced, over } in placed {
             let list = layers.entry(layer);
             let entries: Vec<egui::epaint::ClippedShape> = list.all_entries().cloned().collect();
             let mut rebuilt = egui::layers::PaintList::default();
@@ -285,22 +444,19 @@ pub fn finish_backdrops(ctx: &Context) {
                     for shape in &shapes {
                         rebuilt.add(clipped.clip_rect, shape.clone());
                     }
+                    if replaced {
+                        continue;
+                    }
                 }
                 rebuilt.add(clipped.clip_rect, clipped.shape);
+            }
+            let clip = rebuilt.all_entries().nth(index).map_or(Rect::EVERYTHING, |shape| shape.clip_rect);
+            for shape in over {
+                rebuilt.add(clip, shape);
             }
             *list = rebuilt;
         }
     });
-}
-
-/// Whether two colours are the same but for their alpha.
-fn same_colour(a: Color32, b: Color32) -> bool {
-    let ([ar, ag, ab, aa], [br, bg, bb, ba]) = (a.to_srgba_unmultiplied(), b.to_srgba_unmultiplied());
-    if aa == 0 || ba == 0 {
-        return aa == ba;
-    }
-    // Scaling by an opacity rounds each channel a little.
-    [(ar, br), (ag, bg), (ab, bb)].iter().all(|(x, y)| x.abs_diff(*y) <= 3)
 }
 
 /// Updated by the app when reduced effects or a high-contrast theme is selected.

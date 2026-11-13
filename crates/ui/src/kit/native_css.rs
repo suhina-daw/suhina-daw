@@ -202,6 +202,11 @@ impl Computed {
         self.variables.get(name).map(String::as_str)
     }
 
+    /// Whether the sheet gives the element a `box-shadow`.
+    pub fn has_shadow(&self) -> bool {
+        !self.shadows.is_empty()
+    }
+
     pub fn has_gradient(&self) -> bool {
         !self.gradients.is_empty()
     }
@@ -281,6 +286,7 @@ impl Computed {
                         self.text_shadows = resolved.iter().map(text::Shadow::from_native).collect::<Vec<_>>().into();
                     } else {
                         self.shadows = resolved.iter().map(shadows::Shadow::from_native).collect::<Vec<_>>().into();
+                        self.authored.box_shadow = true;
                     }
                 }
             }
@@ -300,6 +306,8 @@ pub struct Authored {
     pub radius: bool,
     pub accent: bool,
     pub border_width: bool,
+    /// `box-shadow` was set, `none` included.
+    pub box_shadow: bool,
 }
 
 /// One running transition of one property of one element.
@@ -1190,14 +1198,19 @@ fn same_arc(a: Option<&Arc<str>>, b: Option<&Arc<str>>) -> bool {
 /// settings Suhina reads outside a frame: the Arrangement view's track height, a device's
 /// parameter labels. Worked out once per set of sheets and path, which are known by their
 /// pointers: asked for by every track header in every frame, it hashes no sheet's text. `None`
-/// without a sheet.
+/// without a sheet (a theme's or the user's).
 pub fn settings_of(path: &[super::element::Name]) -> Option<Computed> {
     thread_local! {
         static CACHE: RefCell<Option<SettingsSheets>> = const { RefCell::new(None) };
     }
+    thread_local! {
+        /// The sheet of a skin that has none, one allocation so that the cache can tell it again.
+        static NO_SHEET: Arc<str> = Arc::from("");
+    }
     let skin = skin::current();
-    let css = skin.css.clone()?;
     let user = USER_SHEET.with(|sheet| sheet.borrow().clone());
+    // Without a theme sheet the engine still runs for user.css (as in `frame`).
+    let css = skin.css.clone().or_else(|| user.is_some().then(|| NO_SHEET.with(Arc::clone)))?;
     let key: Vec<&'static str> = path.iter().map(|name| name.name()).collect();
     CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();

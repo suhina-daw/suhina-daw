@@ -27,83 +27,369 @@ fn a_dialog_that_marks_its_panel_gets_the_window_blurred_under_it() {
         begin_frame(&ctx, Default::default());
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("dialog")));
         let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(120.0, 80.0));
-        backdrop(&painter, rect);
+        backdrop(&painter, rect, 0.0);
         painter.rect_filled(rect, 0.0, panel);
         finish_backdrops(&ctx);
     });
     output.textures_delta.clear();
     let shapes: Vec<_> = output.shapes.into_iter().map(|clipped| clipped.shape).collect();
-    let image = shapes.iter().position(|s| matches!(s, egui::Shape::Mesh(m) if m.texture_id == TextureId::User(8)));
+    let image =
+        shapes.iter().position(|s| matches!(s, egui::Shape::Rect(r) if r.fill_texture_id() == TextureId::User(8)));
     let fill = shapes.iter().position(|s| matches!(s, egui::Shape::Rect(r) if r.fill == panel));
     assert!(matches!((image, fill), (Some(image), Some(fill)) if image < fill), "{shapes:?}");
 }
 
-#[test]
-fn a_menu_gets_the_window_blurred_under_its_frame_and_other_floating_layers_do_not() {
-    use std::sync::Mutex;
-    struct Behind(Mutex<Vec<egui::epaint::ClippedShape>>);
-    impl Provider for Behind {
-        fn capture(&self, _: &Context) -> Option<Backdrop> {
-            None
-        }
-        fn capture_behind(
-            &self,
-            ctx: &Context,
-            shapes: Vec<egui::epaint::ClippedShape>,
-            _see_through: bool,
-        ) -> Option<Backdrop> {
-            if let Ok(mut seen) = self.0.lock() {
-                *seen = shapes;
-            }
-            Some(Backdrop { texture: TextureId::User(7), sharp_texture: None, screen: ctx.content_rect() })
-        }
+/// A host that counts its captures behind the floating surfaces and keeps the last one's shapes.
+struct Behind {
+    calls: std::sync::atomic::AtomicUsize,
+    seen: std::sync::Mutex<Vec<egui::epaint::ClippedShape>>,
+    /// Captures of the window with a dialog in it, and the last one's shapes.
+    above: std::sync::atomic::AtomicUsize,
+    seen_above: std::sync::Mutex<Vec<egui::epaint::ClippedShape>>,
+}
+
+impl Provider for Behind {
+    fn capture(&self, _: &Context) -> Option<Backdrop> {
+        None
     }
-    let host = Arc::new(Behind(Mutex::new(Vec::new())));
+    fn capture_behind(
+        &self,
+        ctx: &Context,
+        shapes: Vec<egui::epaint::ClippedShape>,
+        _see_through: bool,
+    ) -> Option<Backdrop> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if let Ok(mut seen) = self.seen.lock() {
+            *seen = shapes;
+        }
+        Some(Backdrop { texture: TextureId::User(7), sharp_texture: None, screen: ctx.content_rect() })
+    }
+    fn capture_above(
+        &self,
+        ctx: &Context,
+        shapes: Vec<egui::epaint::ClippedShape>,
+        _see_through: bool,
+    ) -> Option<Backdrop> {
+        self.above.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if let Ok(mut seen) = self.seen_above.lock() {
+            *seen = shapes;
+        }
+        Some(Backdrop { texture: TextureId::User(9), sharp_texture: None, screen: ctx.content_rect() })
+    }
+}
+
+const WINDOW: Color32 = Color32::from_rgb(1, 2, 3);
+
+/// `float` drawn over a window for long enough that what it shows has faded in, with `css` as
+/// the theme; the last frame's shapes and how many captures the host made in it.
+fn floating_frames(css: Option<&str>, float: impl Fn(&Context)) -> (Vec<egui::Shape>, usize, Arc<Behind>) {
+    super::super::skin::configure(&super::super::skin::Skin { css: css.map(Into::into), ..Default::default() });
+    let host = Arc::new(Behind {
+        calls: Default::default(),
+        seen: Default::default(),
+        above: Default::default(),
+        seen_above: Default::default(),
+    });
     let ctx = Context::default();
     install(&ctx, host.clone());
-    let window = Color32::from_rgb(1, 2, 3);
-    // A new area is laid out unseen in its first frame; the second shows it.
     let frame = |ui: &mut egui::Ui| {
         let ctx = ui.ctx().clone();
-        let area = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(300.0, 200.0));
-        ctx.layer_painter(egui::LayerId::background()).rect_filled(area, 0.0, window);
-        egui::Area::new(Id::unique("menu")).order(egui::Order::Foreground).fixed_pos(pos2(20.0, 20.0)).show(
-            &ctx,
-            |ui| {
-                egui::Frame::menu(ui.style()).show(ui, |ui| ui.label("Open"));
-            },
-        );
-        // A floating layer that is not a popup's frame is left alone.
-        egui::Area::new(Id::unique("dialog"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(pos2(150.0, 20.0))
-            .show(&ctx, |ui| ui.label("Dialog"));
+        begin_frame(&ctx, Default::default());
+        let area = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0));
+        ctx.layer_painter(egui::LayerId::background()).rect_filled(area, 0.0, WINDOW);
+        float(&ctx);
         finish_backdrops(&ctx);
     };
-    let mut first = ctx.run_ui(Default::default(), frame);
-    first.textures_delta.clear();
-    let mut output = ctx.run_ui(Default::default(), frame);
-    output.textures_delta.clear();
-    let shapes: Vec<_> = output.shapes.into_iter().map(|clipped| clipped.shape).collect();
-    let image = shapes
+    // A new area is laid out unseen in its first frame, then fades in.
+    let mut last = Vec::new();
+    for step in 0..4 {
+        host.calls.store(0, std::sync::atomic::Ordering::SeqCst);
+        host.above.store(0, std::sync::atomic::Ordering::SeqCst);
+        let input = egui::RawInput {
+            time: Some(f64::from(step)),
+            screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0))),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, frame);
+        output.textures_delta.clear();
+        // egui paints a frame with a shadow as `[shadow, frame]`: flattened, each shape is one.
+        last = output
+            .shapes
+            .into_iter()
+            .flat_map(|clipped| match clipped.shape {
+                egui::Shape::Vec(parts) => parts,
+                shape => vec![shape],
+            })
+            .collect();
+    }
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    let calls = host.calls.load(std::sync::atomic::Ordering::SeqCst);
+    (last, calls, host)
+}
+
+fn is_image(shape: &egui::Shape) -> bool {
+    matches!(shape, egui::Shape::Rect(r) if r.fill_texture_id() == TextureId::User(7))
+}
+
+/// A popup's frame in another colour than egui's window fill, as a theme gives one.
+fn odd_menu(ctx: &Context, id: &str, order: egui::Order, at: egui::Pos2) {
+    super::super::floating::area(ctx, Id::unique(id), super::super::floating::Kind::Popup)
+        .order(order)
+        .fixed_pos(at)
+        .show(ctx, |ui| {
+            egui::Frame::menu(ui.style()).fill(Color32::from_rgb(200, 10, 10)).show(ui, |ui| ui.label("Open"));
+        });
+}
+
+#[test]
+fn popups_and_tooltips_get_the_window_blurred_under_their_frames_whatever_their_colour() {
+    let (shapes, calls, host) = floating_frames(None, |ctx| {
+        odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0));
+        odd_menu(ctx, "tooltip", egui::Order::Tooltip, pos2(200.0, 20.0));
+        // A drag's preview, painted on without an area: never in the capture.
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("drag"))).rect_filled(
+            Rect::from_min_size(pos2(300.0, 200.0), egui::vec2(40.0, 20.0)),
+            0.0,
+            Color32::from_rgb(0, 200, 0),
+        );
+    });
+    assert_eq!(calls, 1, "one capture however many surfaces float");
+    let images: Vec<usize> = shapes.iter().enumerate().filter(|(_, s)| is_image(s)).map(|(i, _)| i).collect();
+    let frames: Vec<usize> = shapes
         .iter()
-        .position(|s| matches!(s, egui::Shape::Mesh(m) if m.texture_id == TextureId::User(7)))
-        .expect("the backdrop under the menu");
+        .enumerate()
+        .filter(|(_, s)| matches!(s, egui::Shape::Rect(r) if r.fill.to_srgba_unmultiplied()[0] == 200))
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(images.len(), 2, "{shapes:?}");
+    assert_eq!(frames.len(), 2, "{shapes:?}");
+    assert!(images.iter().zip(&frames).all(|(image, frame)| image < frame), "each image is under its frame");
+    // The capture holds the window's own layers, never what floats.
+    let seen = host.seen.lock().map(|seen| seen.clone()).unwrap_or_default();
+    assert!(seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == WINDOW)));
+    assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Text(_))));
+    assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 200, 0))));
+}
+
+/// A workspace panel the theme lays over a view is painted on a layer without an area: said to
+/// be the window's, it is in the capture behind a menu; a drag's preview, not said, never is.
+#[test]
+fn a_window_layer_without_an_area_is_in_the_capture_and_a_drag_s_preview_is_not() {
+    let panel = Color32::from_rgb(0, 0, 250);
+    let (_, _, host) = floating_frames(None, |ctx| {
+        let layer = egui::LayerId::new(egui::Order::Middle, Id::unique("workspace-overlay"));
+        super::super::floating::window_layer(ctx, layer);
+        ctx.layer_painter(layer).rect_filled(Rect::from_min_size(pos2(5.0, 5.0), egui::vec2(50.0, 50.0)), 0.0, panel);
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, Id::unique("preview"))).rect_filled(
+            Rect::from_min_size(pos2(100.0, 5.0), egui::vec2(50.0, 50.0)),
+            0.0,
+            Color32::from_rgb(0, 200, 0),
+        );
+        odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0));
+    });
+    let seen = host.seen.lock().map(|seen| seen.clone()).unwrap_or_default();
+    let has = |color: Color32| seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == color));
+    assert!(has(panel), "the panel is behind the menu: {seen:?}");
+    assert!(!has(Color32::from_rgb(0, 200, 0)), "a preview is not");
+}
+
+#[test]
+fn the_app_s_own_layers_are_not_blurred_and_nothing_floating_means_no_capture() {
+    use super::super::floating::{Kind, area};
+    let (shapes, calls, _) = floating_frames(None, |ctx| {
+        // A dialog's dimming, an overlay and a drag's preview, each a rectangle first.
+        for (id, kind, order) in [
+            ("dialog", Kind::Own, egui::Order::Foreground),
+            ("overlay", Kind::Own, egui::Order::Foreground),
+            ("splash", Kind::Own, egui::Order::Tooltip),
+        ] {
+            area(ctx, Id::unique(id), kind).order(order).fixed_pos(pos2(20.0, 20.0)).show(ctx, |ui| {
+                egui::Frame::menu(ui.style()).show(ui, |ui| ui.label(id));
+            });
+        }
+        // Painted on without an area: never taken for a tooltip.
+        super::super::floating::modal(ctx, Id::unique("help")).show(ctx, |ui| ui.label("Help"));
+        let drag = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("drag")));
+        drag.rect_filled(Rect::from_min_size(pos2(5.0, 5.0), egui::vec2(40.0, 20.0)), 0.0, Color32::RED);
+    });
+    assert_eq!(calls, 0, "no capture when nothing floats");
+    assert!(!shapes.iter().any(is_image), "{shapes:?}");
+}
+
+/// A dialog with rounded corners has its blur cut to them.
+#[test]
+fn a_dialog_s_blur_takes_its_corner_radius() {
+    let panel = Color32::from_rgb(4, 5, 6);
+    let (shapes, _, _) = floating_frames(None, |ctx| {
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("dialog")));
+        let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(120.0, 80.0));
+        backdrop(&painter, rect, 24.0);
+        painter.rect_filled(rect, 24.0, panel);
+    });
+    let image = shapes.iter().find_map(|s| match s {
+        egui::Shape::Rect(r) if is_image(s) => Some(r.corner_radius),
+        _ => None,
+    });
+    assert_eq!(image, Some(egui::CornerRadius::same(24)), "{shapes:?}");
+}
+
+/// A menu opened over a dialog (a dropdown in Export audio, Settings' More) shows the dialog
+/// blurred behind it, with the dialog's own blur in it; the dialog's blur is the window alone.
+#[test]
+fn a_menu_over_a_dialog_gets_the_dialog_blurred_behind_it() {
+    use super::super::floating::{Kind, area};
+    let panel = Color32::from_rgb(4, 5, 6);
+    let (shapes, calls, host) = floating_frames(None, |ctx| {
+        area(ctx, Id::unique("dialog"), Kind::Own).order(egui::Order::Foreground).fixed_pos(pos2(0.0, 0.0)).show(
+            ctx,
+            |ui| {
+                let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(200.0, 150.0));
+                backdrop(ui.painter(), rect, 0.0);
+                ui.painter().rect_filled(rect, 0.0, panel);
+                ui.allocate_rect(rect, egui::Sense::hover());
+            },
+        );
+        odd_menu(ctx, "dropdown", egui::Order::Foreground, pos2(60.0, 60.0));
+    });
+    assert_eq!(calls, 1, "the window, for the dialog");
+    assert_eq!(host.above.load(std::sync::atomic::Ordering::SeqCst), 1, "the window and the dialog, for the menu");
+    let dialog_image = shapes.iter().position(is_image).expect("the dialog's blur");
+    let menu_image = shapes
+        .iter()
+        .position(|s| matches!(s, egui::Shape::Rect(r) if r.fill_texture_id() == TextureId::User(9)))
+        .expect("the menu's blur");
+    assert!(dialog_image < menu_image);
+    let seen = host.seen_above.lock().map(|seen| seen.clone()).unwrap_or_default();
+    assert!(seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == panel)), "the dialog is in it");
+    assert!(
+        seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill_texture_id() == TextureId::User(7))),
+        "with its own blur"
+    );
+    assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Text(_))), "and never the menu");
+}
+
+/// A popup that is not blurred still floats: a tooltip over it, over a dialog, blurs the dialog
+/// and never the popup's contents.
+#[test]
+fn a_capture_never_holds_a_floating_surface_even_one_left_sharp() {
+    use super::super::floating::{Kind, area};
+    let (_, _, host) = floating_frames(Some("popup { backdrop-filter: none; }"), |ctx| {
+        area(ctx, Id::unique("dialog"), Kind::Own).order(egui::Order::Foreground).fixed_pos(pos2(0.0, 0.0)).show(
+            ctx,
+            |ui| {
+                ui.painter().rect_filled(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(200.0, 150.0)), 0.0, WINDOW);
+            },
+        );
+        odd_menu(ctx, "dropdown", egui::Order::Foreground, pos2(60.0, 60.0));
+        odd_menu(ctx, "tooltip", egui::Order::Tooltip, pos2(70.0, 70.0));
+    });
+    assert_eq!(host.above.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let seen = host.seen_above.lock().map(|seen| seen.clone()).unwrap_or_default();
+    assert!(!seen.is_empty());
+    assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Text(_))), "{seen:?}");
+}
+
+#[test]
+fn backdrop_filter_none_keeps_a_surface_sharp() {
+    let (shapes, calls, _) = floating_frames(Some("popup { backdrop-filter: none; }"), |ctx| {
+        odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0));
+        odd_menu(ctx, "tooltip", egui::Order::Tooltip, pos2(200.0, 20.0));
+    });
+    assert_eq!(calls, 1);
+    assert_eq!(shapes.iter().filter(|s| is_image(s)).count(), 1, "only the tooltip is blurred: {shapes:?}");
+}
+
+#[test]
+fn a_theme_s_popup_and_tooltip_frames_replace_egui_s() {
+    let css = "popup { background-color: #00ff00; border-radius: 6px; } \
+               tooltip { background-color: #0000ff; border-width: 2px; border-color: #ff00ff; }";
+    let (shapes, _, _) = floating_frames(Some(css), |ctx| {
+        odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0));
+        odd_menu(ctx, "tooltip", egui::Order::Tooltip, pos2(200.0, 20.0));
+    });
+    let rect = |s: &egui::Shape| match s {
+        egui::Shape::Rect(r) => Some(r.clone()),
+        _ => None,
+    };
+    let rects: Vec<_> = shapes.iter().filter_map(rect).collect();
+    assert!(!rects.iter().any(|r| r.fill.to_srgba_unmultiplied()[0] == 200), "egui's frames are gone: {rects:?}");
+    let popup = rects.iter().find(|r| r.fill == Color32::from_rgb(0, 255, 0)).expect("the popup's frame");
+    assert_eq!(popup.corner_radius, egui::CornerRadius::same(6));
+    let image = rects.iter().find(|r| r.fill_texture_id() == TextureId::User(7) && r.rect == popup.rect);
+    assert_eq!(image.map(|r| r.corner_radius), Some(egui::CornerRadius::same(6)), "the blur takes its corners");
+    assert!(rects.iter().any(|r| r.fill == Color32::from_rgb(0, 0, 255)), "the tooltip's frame");
+}
+
+/// A sheet that sets a popup's background but no shadow keeps egui's shadow, and an outline is
+/// drawn over the popup's contents, as CSS draws it.
+#[test]
+fn a_restyled_frame_keeps_egui_s_shadow_and_draws_its_outline_over_the_contents() {
+    let css = "popup { background-color: #00ff00; outline: 2px solid #ff0000; }";
+    let (shapes, _, _) =
+        floating_frames(Some(css), |ctx| odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0)));
     let frame = shapes
         .iter()
-        .position(|s| match s {
-            egui::Shape::Rect(r) => r.fill != window,
-            egui::Shape::Vec(parts) => matches!(parts.last(), Some(egui::Shape::Rect(_))),
-            _ => false,
-        })
-        .expect("the menu's frame");
-    assert!(image < frame, "the backdrop is drawn before the menu's frame: {shapes:?}");
-    let images = shapes.iter().filter(|s| matches!(s, egui::Shape::Mesh(m) if m.texture_id == TextureId::User(7)));
-    assert_eq!(images.count(), 1, "only the menu is blurred behind");
-    // The capture holds the window's own layers, never the menu.
-    let seen = host.0.lock().map(|seen| seen.clone()).unwrap_or_default();
-    assert!(seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == window)));
-    assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Text(_))));
+        .position(|s| matches!(s, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 255, 0)))
+        .expect("the popup's frame");
+    let shadow = shapes.iter().position(|s| matches!(s, egui::Shape::Rect(r) if r.blur_width > 0.0));
+    assert!(shadow.is_some_and(|shadow| shadow < frame), "egui's shadow stays under it: {shapes:?}");
+    let text = shapes.iter().position(|s| matches!(s, egui::Shape::Text(_))).expect("the contents");
+    let outline = shapes
+        .iter()
+        .position(|s| matches!(s, egui::Shape::Rect(r) if r.stroke.color == Color32::from_rgb(255, 0, 0)))
+        .expect("the outline");
+    assert!(frame < text && text < outline, "{frame} < {text} < {outline}");
+}
+
+/// `box-shadow: none` takes egui's shadow away, as any other value replaces it.
+#[test]
+fn box_shadow_none_removes_egui_s_shadow() {
+    let css = "popup { background-color: #00ff00; box-shadow: none; }";
+    let (shapes, _, _) =
+        floating_frames(Some(css), |ctx| odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0)));
+    assert!(shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 255, 0))));
+    assert!(!shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.blur_width > 0.0)), "{shapes:?}");
+}
+
+/// A `border-color` alone colours egui's own stroke: the width stays egui's.
+#[test]
+fn border_color_alone_colours_egui_s_stroke() {
+    let (shapes, _, _) = floating_frames(Some("popup { border-color: #ff0000; }"), |ctx| {
+        odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0))
+    });
+    let stroke = shapes.iter().find_map(|s| match s {
+        egui::Shape::Rect(r) if r.stroke.width > 0.0 && r.fill_texture_id() != TextureId::User(7) => Some(r.stroke),
+        _ => None,
+    });
+    assert!(stroke.is_some_and(|stroke| matches!(stroke.color.to_array(), [r, 0, 0, _] if r > 0)), "{shapes:?}");
+}
+
+/// `user.css` styles popups and tooltips when the theme has no sheet at all.
+#[test]
+fn user_css_alone_styles_popups() {
+    super::super::native_css::set_user_sheet(Some(
+        "popup { backdrop-filter: none; background-color: #00ff00; }".into(),
+    ));
+    let (shapes, calls, _) =
+        floating_frames(None, |ctx| odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0)));
+    super::super::native_css::set_user_sheet(None);
+    assert_eq!(calls, 0, "left sharp");
+    assert!(shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 255, 0))));
+}
+
+#[test]
+fn a_bar_menu_blurs_as_menu_and_keeps_egui_s_frame() {
+    let (shapes, _, _) =
+        floating_frames(Some("popup { background-color: #00ff00; } popup { backdrop-filter: none; }"), |ctx| {
+            super::super::floating::area(ctx, Id::unique("bar"), super::super::floating::Kind::Menu)
+                .order(egui::Order::Foreground)
+                .fixed_pos(pos2(20.0, 20.0))
+                .show(ctx, |ui| {
+                    egui::Frame::menu(ui.style()).show(ui, |ui| ui.label("File"));
+                });
+        });
+    assert_eq!(shapes.iter().filter(|s| is_image(s)).count(), 1, "{shapes:?}");
+    assert!(!shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 255, 0))));
 }
 
 #[test]

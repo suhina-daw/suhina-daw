@@ -690,6 +690,7 @@ names! {
     LABEL = "label";
     SEPARATOR = "separator";
     POPUP = "popup";
+    TOOLTIP = "tooltip";
     PROGRESS = "progress";
     PROGRESS_FILL = "progress-fill";
     SETTINGS = "settings";

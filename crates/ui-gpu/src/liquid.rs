@@ -19,6 +19,9 @@ pub struct Liquid {
     surface_state: Mutex<Option<State>>,
     /// The menus' backdrop: targets of its own, so a menu and a dialog never share an image.
     menu_state: Mutex<Option<State>>,
+    /// The backdrop of menus over a dialog or Settings: the window with that dialog in it, in
+    /// targets of its own, made the first time such a menu opens and kept.
+    above_state: Mutex<Option<State>>,
     resource_report: Mutex<Option<std::time::Instant>>,
 }
 
@@ -87,8 +90,10 @@ impl State {
                 cache: None,
             })
         };
+        let mut renderer = egui_wgpu::Renderer::new(device, wgpu::TextureFormat::Rgba8UnormSrgb, Default::default());
+        crate::surface::prepare(&mut renderer, device, wgpu::TextureFormat::Rgba8UnormSrgb);
         State {
-            renderer: egui_wgpu::Renderer::new(device, wgpu::TextureFormat::Rgba8UnormSrgb, Default::default()),
+            renderer,
             targets: None,
             horizontal: pipeline(wgpu::TextureFormat::Rgba8UnormSrgb, "linear_blur"),
             vertical: pipeline(wgpu::TextureFormat::Rgba8Unorm, "encoded_blur"),
@@ -161,6 +166,7 @@ impl Liquid {
             state,
             surface_state: Mutex::new(None),
             menu_state: Mutex::new(None),
+            above_state: Mutex::new(None),
             resource_report: Mutex::new(None),
         }
     }
@@ -187,7 +193,7 @@ impl Liquid {
         if let Ok(state) = self.state.try_lock() {
             count(&state);
         }
-        for state in [&self.surface_state, &self.menu_state] {
+        for state in [&self.surface_state, &self.menu_state, &self.above_state] {
             if let Ok(state) = state.try_lock()
                 && let Some(state) = state.as_ref()
             {
@@ -316,14 +322,29 @@ impl Provider for Liquid {
             self.render_frame(ctx, state, shapes, true, see_through, &own)
         })
     }
+
+    fn capture_above(
+        &self,
+        ctx: &egui::Context,
+        shapes: Vec<egui::epaint::ClippedShape>,
+        see_through: bool,
+    ) -> Option<Backdrop> {
+        suhina_plugins::trace::timed("liquid backdrop over a dialog", || {
+            let own = self.images_except(Which::Above);
+            let mut state = self.above_state.lock().ok()?;
+            let state = state.get_or_insert_with(|| State::new(&self.gpu));
+            self.render_frame(ctx, state, shapes, true, see_through, &own)
+        })
+    }
 }
 
-/// The three captures, each drawing into targets of its own.
+/// The captures, each drawing into targets of its own.
 #[derive(Clone, Copy, PartialEq)]
 enum Which {
     Dialog,
     Surfaces,
     Menus,
+    Above,
 }
 
 impl Liquid {
@@ -347,7 +368,11 @@ impl Liquid {
         {
             all.extend(images(state.targets.as_ref()));
         }
-        for (which, state) in [(Which::Surfaces, &self.surface_state), (Which::Menus, &self.menu_state)] {
+        for (which, state) in [
+            (Which::Surfaces, &self.surface_state),
+            (Which::Menus, &self.menu_state),
+            (Which::Above, &self.above_state),
+        ] {
             if which != except
                 && let Ok(state) = state.try_lock()
             {
@@ -387,14 +412,29 @@ impl Liquid {
             state.font = Some(font);
         }
         // Text uses the atlas uploaded above; every other texture is bound from where it is drawn
-        // (egui's in the main renderer, another capture's image). What cannot be drawn here (a
-        // native callback, a texture nobody here can bind) is left out; the rest still draws.
+        // (egui's in the main renderer, another capture's image). `kit::surface`'s clears are
+        // made again for this renderer where the image keeps the window's alpha, since they
+        // replace pixels there as in the window (a see-through dialog's backdrop, under a menu
+        // over it). What cannot be drawn here (a foreign callback, a texture nobody here can
+        // bind) is left out; the rest still draws.
         let before = jobs.len();
         let mut used = HashSet::new();
+        let offset = -screen.min.to_vec2();
         {
             let main = self.gpu.renderer.read();
             jobs.retain_mut(|job| match &mut job.primitive {
-                egui::epaint::Primitive::Callback(_) => false,
+                egui::epaint::Primitive::Callback(callback) => {
+                    match see_through
+                        .then(|| crate::surface::replay(&main, callback, callback.rect.translate(offset)))
+                        .flatten()
+                    {
+                        Some(fill) => {
+                            *callback = fill;
+                            true
+                        }
+                        None => false,
+                    }
+                }
                 egui::epaint::Primitive::Mesh(mesh) if mesh.texture_id == egui::TextureId::Managed(0) => true,
                 egui::epaint::Primitive::Mesh(mesh) => match state.share(device, &main, own, mesh.texture_id) {
                     Some(id) => {
@@ -426,10 +466,10 @@ impl Liquid {
         let scale = size[0] as f32 / screen.width();
         // Content rect coordinates are in points; translate to the offscreen origin.
         for job in &mut jobs {
-            job.clip_rect = job.clip_rect.translate(-screen.min.to_vec2());
+            job.clip_rect = job.clip_rect.translate(offset);
             if let egui::epaint::Primitive::Mesh(mesh) = &mut job.primitive {
                 for vertex in &mut mesh.vertices {
-                    vertex.pos -= screen.min.to_vec2();
+                    vertex.pos += offset;
                 }
             }
         }
