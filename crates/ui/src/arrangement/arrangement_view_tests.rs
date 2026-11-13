@@ -712,6 +712,16 @@ fn crowded_clip_notes_give_way_as_the_view_zooms_out() {
 }
 
 #[test]
+fn a_clips_notes_get_a_row_per_pitch_they_use_and_give_way_when_rows_are_too_thin() {
+    // A drum part: kick, snare and hat, each a row, whatever lies between them.
+    assert_eq!(clip::used_keys([42, 36, 38, 36, 42].into_iter()), vec![36, 38, 42]);
+    // The 13 points under the name bar of a 36 px lane: four pitches fit, a pluck's twenty do not.
+    assert!(!clip::pitch_rows_crowded(4, 13.0), "4 rows of 3.25 points");
+    assert!(clip::pitch_rows_crowded(20, 30.0), "20 rows of 1.5 points");
+    assert!(!clip::pitch_rows_crowded(0, 13.0));
+}
+
+#[test]
 fn dragging_a_selected_track_resizes_every_selected_track() {
     let mut state = ArrangementViewState::default();
     state.set_lane_height(TrackId(1), 100.0);

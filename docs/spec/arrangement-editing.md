@@ -280,7 +280,9 @@ Let go, it is
   blocks even in an empty clip (#700). A MIDI clip's notes are drawn in every pass.
 - On a lane too low for a name bar (under 36 px), a clip shows its name in its body, the track's
   name when the clip has none, and neither notes nor a waveform: the strip is too thin for them to
-  read. On a taller lane the name stays in its bar, and a MIDI clip's notes give way once they
+  read. On a taller lane the name stays in its bar, and a MIDI clip's notes, a row per pitch the clip
+  uses (the keys between take no room), give way once the strip under the name leaves a row under
+  3 points, or once they
   crowd into a smear, their starts in view under 3 points apart (notes that start together, a
   chord, count once); an audio clip keeps its waveform. One or the other is drawn, never the name
   over faint notes.
