@@ -699,37 +699,25 @@ fn a_clip_off_the_grid_keeps_its_place_until_it_moves_half_a_step() {
 }
 
 #[test]
-fn crowded_clip_notes_fade_out_as_the_view_zooms_out() {
+fn crowded_clip_notes_give_way_as_the_view_zooms_out() {
     // Sixteenths over four bars: 64 starts.
     let sixteenths: Vec<f64> = (0..64).map(|i| f64::from(i) * 0.25).collect();
-    assert_eq!(clip::crowded_notes_fade(sixteenths.clone(), 640.0), 1.0, "10 points apart: drawn in full");
-    assert_eq!(clip::crowded_notes_fade(sixteenths.clone(), 45.0), 0.0, "under a point apart: hidden");
-    let half = clip::crowded_notes_fade(sixteenths, 240.0);
-    assert!(half > 0.0 && half < 1.0, "3.75 points apart: faded, {half}");
+    assert!(!clip::notes_crowded(sixteenths.clone(), 640.0), "10 points apart: drawn");
+    assert!(!clip::notes_crowded(sixteenths.clone(), 200.0), "3.1 points apart: drawn");
+    assert!(clip::notes_crowded(sixteenths, 160.0), "2.5 points apart: the name instead");
     // A four-note chord on each beat counts once per beat.
     let chords: Vec<f64> = (0..16).flat_map(|beat| [f64::from(beat); 4]).collect();
-    assert_eq!(clip::crowded_notes_fade(chords, 96.0), 1.0, "16 chords 6 points apart");
-    assert_eq!(clip::crowded_notes_fade(Vec::new(), 10.0), 1.0);
+    assert!(!clip::notes_crowded(chords, 64.0), "16 chords 4 points apart");
+    assert!(!clip::notes_crowded(Vec::new(), 10.0));
 }
 
 #[test]
-fn a_low_clips_notes_fade_when_its_pitches_run_together() {
-    // A low lane draws notes in about 8 points: two pitches stay apart, many run into a band.
-    assert_eq!(clip::crowded_rows_fade(vec![36, 36, 43], 8.0), 1.0, "2 pitches, 4 points apart");
-    assert_eq!(clip::crowded_rows_fade((48..60).collect(), 8.0), 0.0, "12 pitches in 8 points");
-    let some = clip::crowded_rows_fade(vec![60, 64, 67], 8.0);
-    assert!(some > 0.0 && some < 1.0, "3 pitches: faded, {some}");
-    assert_eq!(clip::crowded_rows_fade(Vec::new(), 8.0), 1.0);
+fn a_low_clip_shows_its_name_only_once_zoomed_out_past_the_opening_zoom() {
+    // The view opens at 8 points a beat: a 20 px lane still shows its notes or waveform there.
+    assert!(!clip::zoomed_out_for_low_lane(8.0), "the opening zoom shows the content");
+    assert!(!clip::zoomed_out_for_low_lane(6.0));
+    assert!(clip::zoomed_out_for_low_lane(5.0), "zoomed out further: the name");
 }
-
-#[test]
-fn a_low_audio_clips_waveform_fades_as_the_view_zooms_out() {
-    assert_eq!(clip::crowded_wave_fade(26.0), 1.0, "26 points a beat: drawn in full");
-    assert_eq!(clip::crowded_wave_fade(6.0), 0.0, "6 points a beat: hidden");
-    let some = clip::crowded_wave_fade(12.0);
-    assert!(some > 0.0 && some < 1.0, "12 points a beat: faded, {some}");
-}
-
 #[test]
 fn dragging_a_selected_track_resizes_every_selected_track() {
     let mut state = ArrangementViewState::default();
