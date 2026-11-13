@@ -12,6 +12,9 @@ use suhina_dsp::{Biquad, Coefficients};
 
 use crate::nodes::stretch as warp;
 
+/// The most notes a sampler plays at once; each has a voice and a warp voice.
+const VOICES: usize = 32;
+
 const fn continuous(id: &'static str, name: &'static str, min: f64, max: f64, default: f64, unit: Unit) -> ParamInfo {
     ParamInfo::continuous(id, name, (min, max), default, unit, Scale::Linear)
 }
@@ -242,7 +245,7 @@ impl Sampler {
             source_rate: 48000.,
             channels: 1,
             source: Arc::new(Vec::<f32>::new()),
-            voices: vec![Voice::default(); 32],
+            voices: vec![Voice::default(); VOICES],
             warp: Vec::new(),
             next_voice: 0,
             seed: 1,
@@ -259,6 +262,11 @@ impl Sampler {
     }
     fn frames(&self) -> usize {
         self.source.as_ref().as_ref().len() / self.channels.max(1)
+    }
+    /// Gives every voice a new stretch for the current rate: one voice, cloned, which costs about
+    /// one voice's build rather than 32 (#1396). Allocates.
+    fn build_warp(&mut self) {
+        self.warp = vec![warp::Voice::new(self.rate); VOICES];
     }
 }
 fn read(source: &[f32], channels: usize, position: f64) -> [f64; 2] {
@@ -314,7 +322,7 @@ impl SampleSource for Sampler {
         self.source = samples;
         self.channels = usize::from(channels);
         self.source_rate = f64::from(rate);
-        self.warp = (0..32).map(|_| warp::Voice::new(self.rate)).collect();
+        self.build_warp();
         self.reset();
     }
     fn load_sample(&mut self, rate: u32, channels: u16, samples: Arc<[f32]>) {
@@ -351,8 +359,11 @@ impl Device for Sampler {
     fn prepare(&mut self, rate: f64) -> Result<(), DeviceError> {
         suhina_device_api::check_sample_rate(rate)?;
         self.rate = rate;
-        if self.frames() > 0 {
-            self.warp = (0..32).map(|_| warp::Voice::new(rate)).collect();
+        // Voices that were built for this rate and have not played are kept: a sample loaded
+        // before the first `prepare` at the rate a new device runs at needs no second build.
+        let kept = self.warp.len() == VOICES && self.warp.iter().all(|voice| voice.is_new_at(rate));
+        if self.frames() > 0 && !kept {
+            self.build_warp();
         }
         self.reset();
         Ok(())
@@ -594,6 +605,42 @@ mod shared_source_tests {
         drop(a);
         drop(b);
         assert_eq!(Arc::strong_count(&source), 1, "cache must not retain PCM");
+    }
+
+    #[test]
+    fn a_sampler_builds_one_warp_voice_and_clones_it_for_its_rate() {
+        let built = || warp::BUILT.with(std::cell::Cell::get);
+        let new_at = |s: &Sampler, rate: f64| s.warp.len() == VOICES && s.warp.iter().all(|v| v.is_new_at(rate));
+        let source: SharedPcm = Arc::new(vec![0.25; 4800]);
+        // How the engine builds one: prepared, then given its sample.
+        for rate in [44_100., 48_000., 96_000.] {
+            let before = built();
+            let mut sampler = Sampler::new();
+            sampler.prepare(rate).unwrap();
+            assert!(sampler.warp.is_empty(), "no sample, no voices");
+            sampler.load_shared_sample(48000, 1, source.clone());
+            assert_eq!(built() - before, 1, "prepared for {rate}, then loaded");
+            assert!(new_at(&sampler, rate));
+        }
+        // Given its sample first, at the 48 kHz a new device runs at, then prepared.
+        let before = built();
+        let mut sampler = Sampler::new();
+        sampler.load_shared_sample(48000, 1, source.clone());
+        sampler.prepare(48_000.).unwrap();
+        assert_eq!(built() - before, 1, "loaded, then prepared for 48 kHz");
+        assert!(new_at(&sampler, 48_000.));
+        sampler.prepare(44_100.).unwrap();
+        assert_eq!(built() - before, 2, "another rate needs voices of its own");
+        assert!(new_at(&sampler, 44_100.));
+        // A voice that has played no longer sounds like a new one, so preparing again replaces them.
+        sampler.warp[3].next(1., 1., |_| [0.5; 2]);
+        sampler.prepare(44_100.).unwrap();
+        assert_eq!(built() - before, 3);
+        assert!(new_at(&sampler, 44_100.));
+        // A new sample gets new voices too.
+        sampler.load_shared_sample(48000, 1, Arc::new(vec![0.5; 4800]));
+        assert_eq!(built() - before, 4);
+        assert!(new_at(&sampler, 44_100.));
     }
 }
 
