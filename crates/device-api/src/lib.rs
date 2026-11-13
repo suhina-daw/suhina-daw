@@ -746,7 +746,10 @@ pub trait SampleSource {
         positions
     }
 
-    /// Share host-owned decoded PCM without copying it. Called off the audio thread.
+    /// Share host-owned decoded PCM without copying it. Called off the audio thread, before or
+    /// after [`Device::prepare`]: a device that builds per-rate state for its sample (the
+    /// Sampler's stretch voices) builds it in whichever of the two comes last, once, and plays
+    /// what needs it silently until it has been prepared.
     fn load_shared_sample(
         &mut self,
         sample_rate: u32,
@@ -815,7 +818,9 @@ pub trait Device: Send {
     }
 
     /// Gets ready to run at `sample_rate`, allocating whatever that needs, and clears all state.
-    /// A device is usable right after construction, prepared for 48 kHz.
+    /// A device is usable right after construction, prepared for 48 kHz, but a host prepares
+    /// it before it plays: a sample instrument may build what it plays a loaded sample with only
+    /// here ([`SampleSource::load_shared_sample`]).
     fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError>;
 
     /// Clears all signal state (filter memories, delay lines, envelopes) as if the device had

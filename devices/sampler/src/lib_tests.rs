@@ -5,8 +5,11 @@ use super::*;
 use suhina_device_api::SampleSource as _;
 use suhina_device_api::{Device, NoteEvent, ProcessContext};
 
+/// A Sampler with a second of a 220 Hz sine, prepared at 48 kHz as a host prepares it: it builds
+/// its stretch voices only once it knows its rate.
 fn loaded() -> Sampler {
     let mut s = Sampler::new();
+    s.prepare(48000.).unwrap();
     s.load_sample(
         48000,
         1,
@@ -100,6 +103,7 @@ fn warp_preserves_pitch_and_note_length_across_modes_and_blocks() {
 fn source_bpm_sets_speed_independently_of_loop_length_and_trim() {
     for seconds in [2, 4, 16] {
         let mut s = Sampler::new();
+        s.prepare(48000.).unwrap();
         s.load_sample(
             48000,
             1,
@@ -134,6 +138,7 @@ fn source_bpm_sets_speed_independently_of_loop_length_and_trim() {
 fn warp_tempo_keeps_the_speed_until_a_length_is_set() {
     for seconds in [1, 4] {
         let mut s = Sampler::new();
+        s.prepare(48000.).unwrap();
         s.load_sample(48000, 1, vec![0.2f32; seconds * 48000].into());
         // The length is set first because setting one clears the tempo; at 0.25 beats it alone
         // would play these several times too fast.
@@ -152,6 +157,7 @@ fn warp_tempo_keeps_the_speed_until_a_length_is_set() {
         assert!((after - before - 0.05 / seconds as f32).abs() < 1e-6, "a trim must not alter the speed");
     }
     let mut s = Sampler::new();
+    s.prepare(48000.).unwrap();
     s.load_sample(48000, 1, vec![0.2f32; 4 * 48000].into());
     for (id, value) in [("warp_tempo", 120.), ("warp", 1.), ("attack", 0.), ("sustain", 1.), ("warp_beats", 2.)] {
         set(&mut s, id, value);

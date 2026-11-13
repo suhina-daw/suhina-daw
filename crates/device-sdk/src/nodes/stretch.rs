@@ -8,8 +8,8 @@ const BLOCK: usize = 64;
 
 #[cfg(test)]
 thread_local! {
-    /// How many voices [`Voice::new`] has built on this thread, for tests that count them.
-    pub(crate) static BUILT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// The rate of each voice [`Voice::new`] has built on this thread, for tests that count them.
+    pub(crate) static BUILT: std::cell::RefCell<Vec<f64>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// One note's stretch. Clone a voice that has never played to make more: a clone costs a copy of
@@ -17,11 +17,6 @@ thread_local! {
 #[derive(Clone)]
 pub(crate) struct Voice {
     stretch: Stretch,
-    /// The output rate it was built for.
-    rate: f64,
-    /// Whether it has made a sound since it was built: [`Voice::restart`] does not reset the
-    /// stretch's random phases, so a voice that has played no longer equals a new one.
-    played: bool,
     input: Vec<f32>,
     output: [f32; BLOCK * 2],
     cursor: usize,
@@ -34,13 +29,11 @@ pub(crate) struct Voice {
 impl Voice {
     pub(crate) fn new(rate: f64) -> Self {
         #[cfg(test)]
-        BUILT.with(|built| built.set(built.get() + 1));
+        BUILT.with(|built| built.borrow_mut().push(rate));
         let stretch = Stretch::new(2, rate as f32);
         let capacity = stretch.output_seek_length(4.).max(BLOCK * 4) * 2;
         Self {
             stretch,
-            rate,
-            played: false,
             input: vec![0.; capacity],
             output: [0.; BLOCK * 2],
             cursor: BLOCK,
@@ -51,11 +44,6 @@ impl Voice {
         }
     }
 
-    /// Whether it was built for `rate` and has never played, so it is as good as a new voice.
-    pub(crate) fn is_new_at(&self, rate: f64) -> bool {
-        !self.played && self.rate.to_bits() == rate.to_bits()
-    }
-
     pub(crate) fn restart(&mut self) {
         self.ready = false;
         self.cursor = BLOCK;
@@ -64,7 +52,6 @@ impl Voice {
     pub(crate) fn next(&mut self, speed: f64, pitch: f64, source: impl Fn(f64) -> [f64; 2]) -> [f64; 2] {
         self.speed = speed;
         self.stretch.set_transpose_factor(pitch as f32, 0.);
-        self.played = true;
         if !self.ready {
             self.speed = speed;
             let frames = self.stretch.output_seek_length(speed as f32);
@@ -241,15 +228,9 @@ mod tests {
     #[test]
     fn a_clone_of_a_new_voice_plays_bit_for_bit_like_a_new_one() {
         let fresh = played(super::Voice::new(44_100.));
-        let template = super::Voice::new(44_100.);
-        assert!(template.is_new_at(44_100.) && !template.is_new_at(48_000.));
-        let clones = vec![template; 3];
+        let clones = vec![super::Voice::new(44_100.); 3];
         for clone in clones {
             assert_eq!(played(clone), fresh);
         }
-        let mut voice = super::Voice::new(44_100.);
-        voice.next(1., 1., |_| [0.5; 2]);
-        voice.restart();
-        assert!(!voice.is_new_at(44_100.), "a voice that played is not new after a restart");
     }
 }
