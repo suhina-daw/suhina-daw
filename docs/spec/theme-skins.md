@@ -922,8 +922,12 @@ devices at one height, the piano roll pulled to the top under the Arrangement vi
 **Splitters.** The panels' margins leave the gaps the splitters lie in (4 points beside the
 browser, 6 over the detail area or beside it). A panel whose size the sheet sets has no
 splitter; one the grid leaves to its content size keeps a `divider` in the gap beside it, and its
-drag sets the saved size. Which panels follow is found by laying the grid out again with their
-content sizes a point larger, one at a time, not by a list of properties (#1240). The closed
+drag sets the saved size. Which panels follow is found by laying the grid out again, one panel at
+a time, with no content size and with the window's whole room as its content size, not by a list
+of properties (#1240): a panel that grows between the two follows, so one the sheet only caps
+(`max-height`) keeps its splitter at its maximum and past it, and one whose size it sets does
+not. The answer depends on which regions are there and the window's size, not on the sizes of
+the frame. The closed
 detail area keeps its place with no size, so its splitter stays in the gap, to drag it open. The
 splitters are `divider` elements, `#browser-splitter` and `#detail-splitter`, with `:hover` and
 `:active`; every divider (a mixer strip's `#mixer-divider` too) drags and paints through one
@@ -975,7 +979,9 @@ The native engine
 computes variables, layers, inheritance, colours, value expressions and viewport
 media conditions for class scopes. Taffy computes Flex/Grid rectangles for the actual
 visible toolbar modules (`#tempo`, `#transport`, etc.); the same rectangles bound their
-native input targets. The host still defines toolbar height. A stylesheet without
+native input targets. Suhina gives the toolbar its default height, the content height the
+window's grid starts from; a `height` on `toolbar` in the sheet replaces it, as for every bar
+(*Sizes* above), and the modules take the height of its content box. A stylesheet without
 toolbar layout declarations leaves the ordinary toolbar arrangement intact. The toolbar's own
 `padding` and border are not layout declarations: they pad Suhina's toolbar, whose contents go
 in its content box, and only its other layout properties (`display`, flex and grid properties,

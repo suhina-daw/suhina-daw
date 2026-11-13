@@ -239,38 +239,46 @@ pub fn window(input: &Input) -> Option<Window> {
             without.regions[Region::Detail.index()] = None;
             rects = lay(&without)?.0;
         }
-        // Laid out again with one panel's content size a point larger at a time: a panel the sheet
-        // does not size grows with it, and keeps its splitter. No list of properties says which:
+        // Laid out again with one panel's content size changed at a time: a panel the sheet does
+        // not size grows with it, and keeps its splitter. No list of properties says which:
         // the layout does. One at a time, so a sheet that swaps the panels' tracks does not count
         // one panel's growth as the other's. Cached apart from the sizes, which a drag changes
         // every frame.
-        let follows_key = {
+        let shape = {
             let mut shape = input.clone();
             for size in shape.regions.iter_mut().flatten() {
                 *size = [size[0].map(|_| 0.0), size[1].map(|_| 0.0)];
             }
-            format!("{shape:?}")
+            shape
         };
+        let follows_key = format!("{shape:?}");
         let known = engine.window_follows.as_ref().filter(|(previous, _)| previous == &follows_key).map(|(_, f)| *f);
         let (browser_follows, detail_follows) = match known {
             Some(follows) => follows,
             None => {
+                // The shape (every content size 0) and, one panel at a time, the shape with the
+                // window's whole room as that panel's content size: one the sheet leaves to its
+                // content grows between the two, even where it caps it (`max-height`) or gives it
+                // a least size; one whose size the sheet sets does not. The answer depends on the
+                // shape alone, the key it is cached under, not on the sizes of this frame.
+                let least = lay(&shape).map(|(r, _)| r);
                 let grown = |region: Region| -> bool {
-                    let Some(Some(size)) = input.regions.get(region.index()) else { return false };
-                    let axis = usize::from(size[0].is_none());
-                    let mut larger = input.clone();
-                    let mut bigger = *size;
-                    if let Some(value) = bigger.get_mut(axis) {
-                        *value = Some(value.unwrap_or(0.0) + 1.0);
-                    }
-                    larger.set(region, bigger);
-                    let (Some(Some(at)), Some(then)) = (
-                        rects.get(region.index()),
-                        lay(&larger).and_then(|(r, _)| r.get(region.index()).copied().flatten()),
-                    ) else {
+                    let Some(Some(size)) = shape.regions.get(region.index()) else { return false };
+                    if rects.get(region.index()).copied().flatten().is_none() {
                         return false;
-                    };
-                    if axis == 0 { then.width() > at.width() } else { then.height() > at.height() }
+                    }
+                    let axis = usize::from(size[0].is_none());
+                    let room = if axis == 0 { input.size.x } else { input.size.y };
+                    let mut probe = shape.clone();
+                    let mut sized = *size;
+                    if let Some(value) = sized.get_mut(axis) {
+                        *value = Some(room.min(16384.0));
+                    }
+                    probe.set(region, sized);
+                    let most = lay(&probe).and_then(|(r, _)| r.get(region.index()).copied().flatten());
+                    let least = least.and_then(|r| r.get(region.index()).copied().flatten());
+                    let (Some(least), Some(most)) = (least, most) else { return false };
+                    if axis == 0 { most.width() > least.width() } else { most.height() > least.height() }
                 };
                 let follows = (grown(Region::Browser), grown(Region::Detail));
                 engine.window_follows = Some((follows_key, follows));
