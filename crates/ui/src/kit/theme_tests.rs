@@ -520,7 +520,8 @@ fn a_former_kind_token_gets_a_notice_naming_its_sample_point_rule() {
 /// The README's examples for track and clip colours are rules a theme can use as written.
 #[test]
 fn the_readme_s_track_and_clip_colour_examples_read_without_warnings() {
-    let readme = include_str!("../../themes/THEME-PACKAGE-README.md");
+    // A Windows checkout has CRLF line ends; the fences are found by their LF.
+    let readme = include_str!("../../themes/THEME-PACKAGE-README.md").replace("\r\n", "\n");
     let from = readme.find("### Tracks").unwrap();
     let to = readme[from..].find("piano-grid {").unwrap() + from;
     let css: String =
