@@ -783,9 +783,12 @@ impl FadeShape {
     /// out beforehand.
     pub fn gain_bent(self, t: f64, exponent: f64) -> f64 {
         let shaped = self.gain(t);
-        // Cosine tension law adapted from the GPL-3.0-or-later source listed in
-        // ATTRIBUTION.md: Copyright (C) 2026 ItsAlphaNeon. Native normalized curve
-        // mapping and bounded-input handling are Suhina's changes.
+        // SPDX-SnippetBegin
+        // SPDX-SnippetCopyrightText: 2026 ItsAlphaNeon
+        // SPDX-License-Identifier: GPL-3.0-or-later
+        // From Lemon Studio crates/os-model/src/lib.rs (fade_curve) at
+        // 011a03f23d9db7f10f07cd7d165cc978a9dda263; the tension law written over Suhina's
+        // normalised curve, with bounded inputs.
         if self == Self::Cosine && exponent != 1.0 {
             let base = if exponent < 1.0 { 1.0 / exponent } else { exponent };
             let squared = base * base;
@@ -801,6 +804,7 @@ impl FadeShape {
                 (q.powf(shaped) - 1.0) / (q - 1.0)
             };
         }
+        // SPDX-SnippetEnd
         if exponent == 1.0 { shaped } else { shaped.powf(exponent) }
     }
 

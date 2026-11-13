@@ -33,6 +33,8 @@ changed. The full list with copyright lines is in [`NOTICE`](NOTICE).
 | Path | Ported from | Author | Source | License |
 |---|---|---|---|---|
 | `crates/flp/src/{records,import,effects,automation,stretch,patcher}.rs` | os-flp records, os-dsp mixer/level laws and os-engine effect state layouts | ItsAlphaNeon, thacer13 | [Pinned source](https://github.com/ItsAlphaNeon/Lemon-Studio/tree/011a03f23d9db7f10f07cd7d165cc978a9dda263/crates) | GPL-3.0-or-later |
+| `crates/flp/src/wrapper.rs` | os-flp `wrapper.rs`, os-vst2 `state.rs` and os-vst3 `{fl_state,lib}.rs`: the plug-in wrapper's records and the VST2 and VST3 states in them; bounded reads, canonical class ids, conversion to Suhina's host state | ItsAlphaNeon | [Pinned source](https://github.com/ItsAlphaNeon/Lemon-Studio/tree/011a03f23d9db7f10f07cd7d165cc978a9dda263/crates) | GPL-3.0-or-later |
+| `crates/model/src/lib.rs` (`FadeShape::gain_bent`, the cosine branch, in snippet tags) | os-model `lib.rs` `fade_curve`: the raised-cosine tension law, over Suhina's normalised curve | ItsAlphaNeon | [Pinned source](https://github.com/ItsAlphaNeon/Lemon-Studio/blob/011a03f23d9db7f10f07cd7d165cc978a9dda263/crates/os-model/src/lib.rs) | GPL-3.0-or-later |
 | `crates/stretch` | Signalsmith Stretch, Signalsmith Linear (STFT) | Geraint Luff / Signalsmith Audio | https://github.com/Signalsmith-Audio/signalsmith-stretch, https://github.com/Signalsmith-Audio/linear | MIT |
 | `devices/fm-synth/src/{tables,env,lfo,core,voice}.rs` | MSFA engine as found in Dexed | Google Inc., Pascal Gauthier, Jean Pierre Cimalando | https://github.com/asb2m10/dexed (`Source/msfa`) | Apache-2.0 |
 | `crates/plugin-host/src/vst2/vestige.rs` | VeSTige header (VST2 interface definitions), as Ardour distributes it | Javier Serrano Polo (written for LMMS) | https://github.com/Ardour/ardour/blob/365cc92cba0e016c30fea34aed168a0957aeeca0/libs/ardour/ardour/vestige/vestige.h | GPL-2.0-or-later, used as GPL-3.0-or-later |
@@ -70,17 +72,3 @@ samples, presets or Packs that ship with a commercial DAW.
 | Path | Title | Author | Source | License |
 |---|---|---|---|---|
 | _(none yet)_ | | | | |
-
-The wrapper decoder in `crates/flp/src/wrapper.rs` adapts the same pinned Lemon Studio
-revision: `os-flp/src/wrapper.rs`, `os-vst2/src/state.rs` and
-`os-vst3/src/{fl_state,lib}.rs` (Copyright 2026 ItsAlphaNeon, GPL-3.0-or-later).
-Changes: bounded reads, canonical class ids and conversion to Suhina host state.
-
-The cosine branch of `FadeShape::gain_bent` in `crates/model/src/lib.rs` adapts
-the raised-cosine tension law from `crates/os-model/src/lib.rs::fade_curve`
-at the same pinned Lemon Studio revision (Copyright 2026 ItsAlphaNeon,
-GPL-3.0-or-later). Suhina adds a normalized editable curve, checked import,
-shared realtime/offline evaluation and native project serialization.
-
-The Patcher decoder adapts the pinned `os-flp/src/patcher.rs` chunk and node layouts.
-Its bounded graph mapping and authored-file MIDI observations are Suhina additions.
