@@ -1090,3 +1090,6 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 
 - Floating surfaces in themes: every menu, right-click menu, dropdown, tooltip and dialog blurs the window behind it, whatever colour a theme gives its frame; `backdrop-filter: blur() | none` on `popup`, `menu`, `dialog` and `tooltip` turns it on or off, and a theme styles a popup's and a tooltip's frame (background, border, corners, shadow).
 
+- Floating surfaces in themes: every menu, right-click menu, dropdown, tooltip and dialog blurs the window behind it, whatever colour a theme gives its frame; `backdrop-filter: blur() | none` on `popup`, `menu`, `dialog` and `tooltip` turns it on or off, and a theme styles a popup's and a tooltip's frame (background, border, corners, shadow).
+- The window as one grid in themes: the menu bar, the tabs, the toolbar, the status bar and the browser, view and detail panels are laid out by one CSS grid on `window`, which Suhina's own sheet states, so a theme can move the status bar to the top, put the toolbar under the views or hide a bar with `grid-template-areas`, `grid-area` and `display: none`; the layout settings are attributes on `window` (`[detail]`, `[browser]`, `[menu-bar]`).
+
