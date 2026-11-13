@@ -467,8 +467,9 @@ fn the_clip_edit_keys_are_piano_roll_keys() {
     });
     let ctx = egui::Context::default();
     let mut fired = Vec::new();
-    let _ = ctx.run_ui(input, |ui| {
+    let mut output = ctx.run_ui(input, |ui| {
         fired = ui.input_mut(|i| keymap.pressed(i, |id| !not_in_piano_roll(id)));
     });
+    output.textures_delta.clear();
     assert_eq!(fired, vec!["pianoRoll.splitClip".to_string()]);
 }
