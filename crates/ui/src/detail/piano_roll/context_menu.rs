@@ -189,9 +189,7 @@ impl MenuCx<'_> {
         item(ui, "Set end here", None, shape.loop_range.is_none(), Pick::Marker(RulerPart::EndMarker));
         item(ui, "Set loop start here", None, true, Pick::Marker(RulerPart::LoopStart));
         item(ui, "Set loop end here", None, true, Pick::Marker(RulerPart::LoopEnd));
-        ui.separator();
-        item(ui, "Zoom to selection", Some("pianoRoll.zoomSelection"), true, Pick::Key("pianoRoll.zoomSelection"));
-        item(ui, "Zoom to clip", Some("pianoRoll.zoomClip"), true, Pick::Key("pianoRoll.zoomClip"));
+        // No zoom items: Z and Shift+Z are quicker than the menu, which the grid already makes long.
         ui.separator();
         // The grid's entries right in the menu, as the toolbar's grid menu holds them: no submenu
         // to open first.

@@ -782,11 +782,12 @@ at the pointer, with what the toolbar, the clip panel and the keys can do.
     here, Set end here (greyed out while the clip loops), Set loop start here, Set loop end here,
     at the clicked point on the grid, as a drag of that marker on the ruler to there would leave
     it (`clip.setStart`, `clip.setLength`, `clip.setLoop`);
-  - Zoom to selection (Z), Zoom to clip (Shift+Z);
   - the toolbar's grid menu right in the menu, with no submenu (Snap, Adaptive, Fixed, Narrow,
     Widen, Triplet);
   - Fold, Fold to scale and Highlight scale (the toolbar's row toggles), and Scale: the clip's
     scale, Off or a mode and its root (`clip.setScale`).
+- No zoom items: Z and Shift+Z (› Zoom and scroll) are quicker than the menu, which the grid's
+  entries already make long.
 - Escape, a click outside it or a pick closes it; another clip shown closes it too.
 
 ## Muting
