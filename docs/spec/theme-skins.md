@@ -610,8 +610,11 @@ A clip without a colour of its own gives its track's. `attr(color type(<color>))
 element's own attribute only, so a theme passes it to the parts inside with a variable of its own:
 `track-header { --track: attr(color type(<color>)); } track-name { border-color: var(--track); }`.
 A theme should keep track colours recognisable, since people tell tracks apart by them: tint
-them, mix them with the background (`color-mix()` in oklab or oklch), use them for borders;
-nothing enforces it. The colour picker's eight colours and the colours new tracks and clips get
+them, mix them with the background, use them for borders; nothing enforces it. Mixing in oklab
+keeps a colour's hue; oklch moves it towards the hue of a background that is nearly grey
+(dark blue `#1F3A93` 40 % of the way to `#1D1C1A` comes out maroon in oklch, a darker blue in
+oklab), and a pale colour mixed far towards a light background (yellow 60 % towards `#F4F2EE`)
+is hard to tell from it. The colour picker's eight colours and the colours new tracks and clips get
 are Suhina's own, the same in every theme (`suhina_session::colours`); a theme that still sets
 `--track-1` to `--track-8`, `--clip-midiDefault` or `--clip-audioDefault` is told they are no
 longer read. A `track-lane`'s background is painted over the grid lines, so a theme gives it a

@@ -679,13 +679,16 @@ so hand it to the parts inside with a variable of your own:
 track-header, mixer { --track: attr(color type(<color>)); }
 session track-header track-name { background-color: var(--track); color: contrast-color(var(--track)); }
 arrangement track-name { background-color: #2A2C2E; border-width: 1px; border-color: var(--track); color: #E6E6E6; }
-mixer track-name { background-color: color-mix(in oklch, var(--track) 40%, #1E2023); }
+mixer track-name { background-color: color-mix(in oklab, var(--track) 40%, #1E2023); }
 mixer[muted] track-name { background-color: #2A2C2E; }
 track-lane { background-color: color-mix(in srgb, attr(color type(<color>)) 8%, transparent); }
 ```
 
 Keep the colours recognisable: people tell tracks apart by them. Tint them, mix them with the
-background, use them for borders, rather than replacing them. A lane's background is painted over
+background, use them for borders, rather than replacing them. Mix in `oklab` (or `srgb`):
+`oklch` turns hues towards the hue of a nearly grey background, so a dark blue mixed with a warm
+dark grey comes out maroon. On a light background keep at least about 60 % of the colour, or a
+pale yellow fades into it. A lane's background is painted over
 the grid lines, so keep it translucent. A selector for one colour takes the `i` flag:
 `track-header[color="#FF9A3C" i]`.
 
