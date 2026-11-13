@@ -4,7 +4,7 @@ read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taff
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-13
+last_verified: 2026-11-14
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
@@ -975,3 +975,30 @@ Accepted, from [issue #1370](https://github.com/suhina-daw/suhina-daw/issues/137
   rules: an `auto` size is the content size plus the element's padding and border, and a size
   the sheet sets wins. A splitter stays beside a panel whose size the grid leaves to its content
   size, and its drag sets that size.
+
+## Amendment: the Launcher, the mixer and the Arrangement draw from their elements (2026-11-14)
+
+Accepted, from [issue #1417](https://github.com/suhina-daw/suhina-daw/issues/1417), the first
+slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 10 of #995).
+
+- **What these views draw is an element.** Every colour the Launcher, its mixer strips and
+  meters, and the Arrangement (its ruler, grid, lanes, clips, take lanes, automation lanes and
+  envelopes) paint is read from the element that draws it, with the palette token it used before
+  as the fallback: where no rule of a sheet reaches the element, it paints as before, in every
+  theme. The palette stays until every view has moved; then the fallbacks become the user-agent
+  sheet's values.
+- **A drawn item's style is read once per kind** (`Look`, from `Name::look` or
+  `Builder::look`), outside the loop that draws its items: a grid line drawn a hundred times is
+  one element of the style tree, so the tree grows with kinds, not with items.
+- **A line or a mark takes only a colour given to it** (`Look::color_or`, `Entered::own_color_or`):
+  the text colour a rule gives a view (`session { color }`) does not reach its lines. Text takes
+  the inherited colour (`Look::text_or`, `Entered::color_or`), as the scoped palette gave it.
+- **`[queued]` is an attribute** the app gives, as `[playing]` is: a clip or a track's
+  stop button waiting for its launch. `:queued` is no longer a pseudo-class.
+- **New elements and kinds:** `separator[kind]` for the views' lines, `grid-line`, `tempo-mark`,
+  `start-marker`, `marker`, `time-selection`, `marquee`, `drop-target`, `slot-mark`,
+  `mapping-overlay`, `clip-fade`, `clip-envelope`, `take-header`, `automation-header`,
+  `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `device-list`,
+  `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool`; Main's header is
+  `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all**
+  `scene[kind="stop-all"]`, the Launcher mixer's top line `divider#mixer-splitter`.
