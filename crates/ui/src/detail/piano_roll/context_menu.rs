@@ -316,6 +316,9 @@ impl MenuCx<'_> {
 
     /// The action an item runs, or the change it makes to the view (none then).
     pub(super) fn run(&self, pick: Pick, at: MenuAt, state: &mut PianoRollState) -> Option<Action> {
+        // The click on the item landed on the menu, over the piano roll, which took the keyboard
+        // from it: the menu is the piano roll's, so it keeps the keyboard and its keys' actions run.
+        state.focused = true;
         let clip = self.clip;
         let mut params = clip.address.clone();
         match pick {
