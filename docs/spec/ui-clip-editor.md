@@ -800,10 +800,11 @@ right-click menu. They work on a clip in the Arrangement and in a launcher slot 
 arrangement clip only, as a slot has no lane to put the parts on); notes of other clips and ghost
 notes are untouched, and a clip that holds audio refuses them.
 
-- **Join notes** (`note.join`, **Ctrl+J**): the selected notes on one key that touch or overlap
-  become one note, from the first's start to the last's end, with the first's velocity and release
-  velocity; notes on different keys join per key, and a key with one selected note (or notes apart)
-  keeps them. With fewer than two notes selected it does nothing.
+- **Join notes** (`note.join`, **Ctrl+J**): the selected notes on one key become one note, from the
+  first's start to the last's end: the first reaches over any gap to the next, as legato does, and
+  joins it. It keeps the first's velocity and release velocity; notes on different keys join per
+  key, and a key with one selected note keeps it. Without two selected notes on one key it does
+  nothing.
 - **Fit to time selection** (`note.fitToTime`, **Ctrl+Alt+J**): the selected notes (or those that
   start in the time selection) are stretched or squeezed, starts and lengths alike, so they fill the
   time selection exactly: the first start at its start, the last end at its end. Nothing without a
@@ -1239,7 +1240,7 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Z, Shift+Z | Zooms to the selected notes (the whole clip when none is selected); to the whole clip (after a click in the piano roll) |
 | Ctrl+L | The clip's own loop: over the time selection (again on the same stretch: off), or with no time selection the clip's loop on or off, as a click on the ruler's loop bar (after a click in the piano roll; elsewhere Ctrl+L is the Arrangement's loop) |
 | Alt+L | Legato, as the Notes tab's button: the selected notes, or every note when none is selected (after a click in the piano roll; › Other note tools) |
-| Ctrl+J; Ctrl+Alt+J | Joins the selected notes that touch or overlap on one key; fits the selected notes to the time selection (› Joining, fitting, cropping and splitting) |
+| Ctrl+J; Ctrl+Alt+J | Joins the selected notes on one key, over any gap between them; fits the selected notes to the time selection (› Joining, fitting, cropping and splitting) |
 | Ctrl+Shift+J; Ctrl+E | Crops the clip to the time selection; splits the clip at the time selection's edges (an arrangement clip; the split key, the piano roll's while it has the keyboard) |
 | Ctrl+Shift+E | Hides the editor (the detail area), or shows it again (`view.editor`, › Least height and closing) |
 

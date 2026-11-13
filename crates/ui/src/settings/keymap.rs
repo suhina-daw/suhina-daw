@@ -204,7 +204,7 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 94] = [
     ("pianoRoll.zoomClip", "Zoom the piano roll to the whole clip", PIANO_ROLL),
     ("pianoRoll.legato", "Make the selected notes, or all the notes, last until the next one starts", PIANO_ROLL),
     ("pianoRoll.loop", "Loop the piano roll's clip over the time selection, or turn its loop on or off", PIANO_ROLL),
-    ("pianoRoll.join", "Join the selected notes that touch or overlap on one key into one note", PIANO_ROLL),
+    ("pianoRoll.join", "Join the selected notes on one key into one note, over any gap", PIANO_ROLL),
     ("pianoRoll.fitToTime", "Stretch or squeeze the selected notes to fill the time selection", PIANO_ROLL),
     ("pianoRoll.crop", "Crop the piano roll's clip to the time selection", PIANO_ROLL),
     ("pianoRoll.splitClip", "Split the piano roll's clip at the time selection's edges", PIANO_ROLL),

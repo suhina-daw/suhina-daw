@@ -240,7 +240,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.join",
-        label: "Join notes of a MIDI clip: the named notes on one key that touch or overlap become one note, from the first's start to the last's end, with the first's velocity and release velocity; keys join each on their own, and a key with one named note keeps it. The result gives the joined notes' indices and the removed ones",
+        label: "Join notes of a MIDI clip: the named notes on one key become one note, from the first's start to the last's end (the first reaching over any gap, as legato does), with the first's velocity and release velocity; keys join each on their own, and a key with one named note keeps it. The result gives the joined notes' indices and the removed ones",
         params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
         kind: CommandKind::EDIT,
         run: crate::clip_edits::join,

@@ -24,9 +24,9 @@ const EPSILON: f64 = 1e-9;
 /// The shortest note a crop leaves: a hundredth of a beat. A sliver shorter than this is dropped.
 const MIN_LENGTH: f64 = 0.01;
 
-/// `note.join`: the named notes on one key that touch or overlap become one note, from the first's
-/// start to the last's end, with the first's velocity, release velocity, channel and mute. Notes on
-/// different keys join per key; a key with one named note, or notes apart, keeps them.
+/// `note.join`: the named notes on one key become one note, from the first's start to the last's end
+/// (the first reaching over any gap, as legato does), with the first's velocity, release velocity,
+/// channel and mute. Notes on different keys join per key; a key with one named note keeps it.
 pub(crate) fn join(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     edit_notes(&mut session.project, params, |notes| {
         let named = indices(params, notes)?;
@@ -55,7 +55,8 @@ pub(crate) fn join(session: &mut Session, params: &Value) -> Result<Value, Comma
 type Joined = (Vec<(usize, f64)>, Vec<usize>);
 
 /// What `note.join` does to `named` among `notes`: each joined note's index with its new end, and
-/// the indices of the notes it took in.
+/// the indices of the notes it took in. On each key the first named note reaches, as legato does,
+/// over any gap, to the last one's end and takes in the others.
 fn joined(notes: &Notes, named: &[usize]) -> Result<Joined, CommandError> {
     let mut by_key: std::collections::BTreeMap<u8, Vec<(f64, usize)>> = std::collections::BTreeMap::new();
     for &index in named {
@@ -64,32 +65,15 @@ fn joined(notes: &Notes, named: &[usize]) -> Result<Joined, CommandError> {
     }
     let mut kept = Vec::new();
     let mut removed = Vec::new();
-    for line in by_key.values_mut() {
+    for line in by_key.values_mut().filter(|line| line.len() > 1) {
         line.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        let mut run: Option<(usize, f64, bool)> = None;
-        for &(time, index) in line.iter() {
-            let end = notes.get(index).map_or(time, |n| n.time + n.duration);
-            match &mut run {
-                // Touches or overlaps the run: taken in.
-                Some((_, run_end, grew)) if time <= *run_end + EPSILON => {
-                    *run_end = run_end.max(end);
-                    *grew = true;
-                    removed.push(index);
-                }
-                _ => {
-                    if let Some((first, run_end, true)) = run.take() {
-                        kept.push((first, run_end));
-                    }
-                    run = Some((index, end, false));
-                }
-            }
-        }
-        if let Some((first, run_end, true)) = run {
-            kept.push((first, run_end));
-        }
+        let Some(&(_, first)) = line.first() else { continue };
+        let end = line.iter().filter_map(|(_, i)| notes.get(*i)).map(|n| n.time + n.duration).fold(f64::MIN, f64::max);
+        kept.push((first, end));
+        removed.extend(line.iter().skip(1).map(|(_, i)| *i));
     }
     if kept.is_empty() {
-        return Err("no notes to join: give notes on one key that touch or overlap".into());
+        return Err("no notes to join: give at least two notes on one key".into());
     }
     if kept.iter().any(|(_, end)| !end.is_finite() || *end > MAX_BEAT) {
         return Err(format!("a joined note would end after beat {MAX_BEAT}").into());

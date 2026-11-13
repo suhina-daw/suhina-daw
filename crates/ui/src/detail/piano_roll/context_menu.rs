@@ -190,7 +190,13 @@ impl MenuCx<'_> {
         item(ui, "Set loop end here", None, true, Pick::Marker(RulerPart::LoopEnd));
         ui.separator();
         let span = state.span.is_some();
-        item(ui, "Join notes", Some("pianoRoll.join"), state.acting().len() > 1, Pick::Key("pianoRoll.join"));
+        item(
+            ui,
+            "Join notes",
+            Some("pianoRoll.join"),
+            PianoRollState::joins(&clip.notes, state.acting()),
+            Pick::Key("pianoRoll.join"),
+        );
         let fits = span && acting;
         item(ui, "Fit to time selection", Some("pianoRoll.fitToTime"), fits, Pick::Key("pianoRoll.fitToTime"));
         item(ui, "Crop clip to time selection", Some("pianoRoll.crop"), span, Pick::Key("pianoRoll.crop"));

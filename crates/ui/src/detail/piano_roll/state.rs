@@ -794,7 +794,7 @@ impl PianoRollState {
         let span = self.span.as_ref().map(|s| (round_beat(s.start), round_beat(s.end))).filter(|(s, e)| e > s);
         match action {
             "pianoRoll.join" => {
-                // Nothing to join (no two notes of a key touch): the command would refuse it, and
+                // Nothing to join (no two notes on one key): the command would refuse it, and
                 // the selection stays to be changed and tried again.
                 if !Self::joins(&clip.notes, acting) {
                     return None;
@@ -836,21 +836,11 @@ impl PianoRollState {
         }
     }
 
-    /// Whether `note.join` has something to join among `acting`: two of them on one key that touch or
-    /// overlap.
+    /// Whether `note.join` has something to join among `acting`: two of them on one key, however far
+    /// apart (the first reaches the others as legato does).
     pub(super) fn joins(notes: &[Note], acting: &BTreeSet<usize>) -> bool {
-        let mut chosen: Vec<&Note> = acting.iter().filter_map(|i| notes.get(*i)).collect();
-        chosen.sort_by(|a, b| a.key.cmp(&b.key).then(a.time.total_cmp(&b.time)));
-        let mut reach: Option<(u8, f64)> = None;
-        for note in chosen {
-            let end = note.time + note.duration;
-            match reach {
-                Some((key, until)) if key == note.key && note.time <= until + EPSILON => return true,
-                Some((key, until)) if key == note.key => reach = Some((key, until.max(end))),
-                _ => reach = Some((note.key, end)),
-            }
-        }
-        false
+        let mut keys = BTreeSet::new();
+        acting.iter().filter_map(|i| notes.get(*i)).any(|n| !keys.insert(n.key))
     }
 
     /// `clip.split` of an arrangement clip at content beats `beats` (on the arrangement where the

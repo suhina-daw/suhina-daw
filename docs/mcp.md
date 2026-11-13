@@ -312,8 +312,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   (the piano roll's Ctrl+drag; `keys` gives each copy its own key, one per entry of `notes`). The note clipboard is apart from the clip clipboard.
 - **Making room.** `note.makeRoom {track, index | scene, notes, covered?}` makes room under the named notes as `replace` does (the piano roll sends it when notes edited while selected are let go); a note no longer in the clip is left out. `covered` (with `replace` on the other note commands too) says what happens to a note covered from its start that runs on past: `"cut"` (the default) keeps what runs on, `"delete"` removes it whole.
 - **Joining, fitting, cropping.** `note.join {track, index | scene, notes}` joins the named notes
-  on one key that touch or overlap into one note (the first's start, velocity and release velocity,
-  the last's end), each key on its own; it fails when no two named notes on a key touch.
+  on one key into one note (the first's start, velocity and release velocity, the last's end, the
+  first reaching over any gap as legato does), each key on its own; it fails without two named
+  notes on one key.
   `note.fitToTime {..., notes, start, end, replace?, covered?}` stretches or squeezes the named notes,
   starts and lengths alike, so the first starts at `start` and the last ends at `end` (content beats).
   `clip.crop {track, index | scene, start, end}` keeps only that stretch of a MIDI clip's content: start

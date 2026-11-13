@@ -1221,9 +1221,13 @@ fn split_clip_leaves_a_slot_clip_alone() {
 fn join_and_crop_keep_the_selection_where_they_would_be_refused() {
     let apart = clip(vec![note(0.0, 1.0, 60), note(2.0, 1.0, 60), note(0.0, 1.0, 64)]);
     let mut state = focused_on(&apart);
-    state.selected = BTreeSet::from([0, 1, 2]);
+    // One note on each key: nothing to join.
+    state.selected = BTreeSet::from([0, 2]);
     assert!(state.key_action("pianoRoll.join", &apart, 0.0, None).is_none());
-    assert_eq!(state.selected, BTreeSet::from([0, 1, 2]), "kept to try again");
+    assert_eq!(state.selected, BTreeSet::from([0, 2]), "kept to try again");
+    // Two notes of a key with a gap between them join: the first reaches the second.
+    state.selected = BTreeSet::from([0, 1]);
+    assert!(state.key_action("pianoRoll.join", &apart, 0.0, None).is_some());
     state.selected.clear();
     state.select_span(9.0, 10.0);
     assert!(state.key_action("pianoRoll.crop", &apart, 0.0, None).is_none());
@@ -1234,5 +1238,5 @@ fn join_and_crop_keep_the_selection_where_they_would_be_refused() {
     assert!(state.key_action("pianoRoll.crop", &apart, 0.0, None).is_some());
     assert_eq!(state.selected, BTreeSet::from([0]));
     assert!(state.span.is_some());
-    assert!(PianoRollState::joins(&[note(0.0, 1.0, 60), note(1.0, 1.0, 60)], &BTreeSet::from([0, 1])));
+    assert!(PianoRollState::joins(&[note(0.0, 1.0, 60), note(3.0, 1.0, 60)], &BTreeSet::from([0, 1])));
 }

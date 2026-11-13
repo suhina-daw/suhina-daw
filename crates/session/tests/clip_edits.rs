@@ -93,12 +93,16 @@ fn joining_merges_touching_and_overlapping_notes_per_key() {
     ]));
     let before = notes(&session, 1);
     let result = run(&mut session, "note.join", json!({ "track": 1, "index": 0, "notes": [0, 1, 2, 3, 4] })).unwrap();
-    assert_eq!(result["removed"], json!([1, 2]));
-    assert_eq!(notes(&session, 1), vec![(0.0, 2.5, 60), (4.0, 1.0, 60), (0.0, 1.0, 64)]);
+    assert_eq!(result["removed"], json!([1, 2, 3]));
+    assert_eq!(notes(&session, 1), vec![(0.0, 5.0, 60), (0.0, 1.0, 64)]);
     assert_eq!(suhina_session::midi_velocity(lane_notes(&session, 1)[0].velocity), 50, "the first note's velocity");
     undo(&mut session);
     assert_eq!(notes(&session, 1), before, "one undo step");
-    // Nothing that touches: refused. An empty selection too.
+    // A gap is bridged: the first note reaches the next one, as legato does, and joins it.
+    run(&mut session, "note.join", json!({ "track": 1, "index": 0, "notes": [0, 3] })).unwrap();
+    assert_eq!(notes(&session, 1)[0], (0.0, 5.0, 60));
+    undo(&mut session);
+    // One note on each key: nothing to join, refused. An empty selection too.
     assert!(run(&mut session, "note.join", json!({ "track": 1, "index": 0, "notes": [3, 4] })).is_err());
     assert!(run(&mut session, "note.join", json!({ "track": 1, "index": 0, "notes": [] })).is_err());
 }
