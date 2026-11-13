@@ -1052,7 +1052,9 @@ mod path_tests {
         assert!(!may_probe(Path::new(stepping)));
         assert!(!may_probe(Path::new("Samples/kick.wav")), "relative paths resolve inside the folder");
         if cfg!(windows) {
-            for path in ["\\\\host\\share\\kick.wav", "\\\\?\\UNC\\host\\share\\kick.wav", "\\\\.\\COM1", "\\\\.\\pipe\\x"] {
+            for path in
+                ["\\\\host\\share\\kick.wav", "\\\\?\\UNC\\host\\share\\kick.wav", "\\\\.\\COM1", "\\\\.\\pipe\\x"]
+            {
                 assert!(!may_probe(Path::new(path)), "{path}");
             }
         }
