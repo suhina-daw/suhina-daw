@@ -38,6 +38,7 @@ mod clip_ara;
 mod clip_audio;
 mod clip_color;
 mod clip_edges;
+mod clip_edits;
 mod clip_shape;
 mod clipboards;
 mod commands;

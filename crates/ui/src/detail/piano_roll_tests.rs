@@ -1169,3 +1169,44 @@ fn the_tool_pointer_takes_the_toolbars_theme_role() {
     assert_eq!(tool_role(IconButton::Draw), "piano.draw");
     assert_eq!(tool_role(IconButton::Slice), "piano.slice");
 }
+
+/// Join, Fit, Crop and Split clip (#1284): the keys send their commands, and do nothing where
+/// they have nothing to act on (Split clip never at the playhead, only at a time selection).
+#[test]
+fn the_clip_edit_keys_send_their_commands() {
+    let notes = vec![note(0.0, 1.0, 60), note(1.0, 1.0, 60), note(4.0, 1.0, 64)];
+    let piano = clip(notes);
+    let mut state = focused_on(&piano);
+    assert!(state.key_action("pianoRoll.join", &piano, 0.0, None).is_none(), "nothing selected");
+    state.selected = BTreeSet::from([0, 1]);
+    let join = state.key_action("pianoRoll.join", &piano, 0.0, None).expect("note.join");
+    assert_eq!((join.id, join.params["notes"].clone()), ("note.join", json!([0, 1])));
+    // No time selection: Fit, Crop and Split clip do nothing, whatever the playhead.
+    state.selected = BTreeSet::from([0, 1]);
+    for key in ["pianoRoll.fitToTime", "pianoRoll.crop", "pianoRoll.splitClip"] {
+        assert!(state.key_action(key, &piano, 18.0, None).is_none(), "{key}");
+    }
+    state.select_span(2.0, 6.0);
+    let fit = state.key_action("pianoRoll.fitToTime", &piano, 0.0, None).expect("note.fitToTime");
+    assert_eq!((fit.params["start"].as_f64(), fit.params["end"].as_f64()), (Some(2.0), Some(6.0)));
+    state.selected = BTreeSet::from([0, 1]);
+    state.select_span(2.0, 6.0);
+    // The clip plays from arrangement beat 16: its content's beats 2 and 6 are beats 18 and 22.
+    let split = state.key_action("pianoRoll.splitClip", &piano, 0.0, None).expect("clip.split");
+    assert_eq!((split.id, split.params["ats"].clone()), ("clip.split", json!([18.0, 22.0])));
+    state.selected = BTreeSet::from([0, 1]);
+    state.select_span(2.0, 6.0);
+    let crop = state.key_action("pianoRoll.crop", &piano, 0.0, None).expect("clip.crop");
+    assert_eq!(crop.params, json!({ "track": 1, "index": 0, "start": 2.0, "end": 6.0 }));
+}
+
+/// A slot's clip has no lane to put the parts on: Split clip leaves it alone.
+#[test]
+fn split_clip_leaves_a_slot_clip_alone() {
+    let mut piano = clip(vec![note(0.0, 1.0, 60)]);
+    piano.address = json!({ "track": 1, "scene": 0 });
+    let mut state = focused_on(&piano);
+    state.selected = BTreeSet::from([0]);
+    state.select_span(1.0, 2.0);
+    assert!(state.key_action("pianoRoll.splitClip", &piano, 0.0, None).is_none());
+}

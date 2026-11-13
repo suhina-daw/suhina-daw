@@ -104,6 +104,10 @@ pub(super) enum Pick {
     ScaleRows,
     Highlight,
     SetScale(Option<(usize, ScaleMode)>),
+    /// Split clip at the clicked point, with no time selection.
+    SplitClipHere,
+    /// Set the clip's first beat here (`clip.setOrigin`).
+    Origin,
 }
 
 /// What the menu needs for one frame besides the state.
@@ -190,6 +194,21 @@ impl MenuCx<'_> {
         item(ui, "Set loop start here", None, true, Pick::Marker(RulerPart::LoopStart));
         item(ui, "Set loop end here", None, true, Pick::Marker(RulerPart::LoopEnd));
         ui.separator();
+        let span = state.span.is_some();
+        item(ui, "Join notes", Some("pianoRoll.join"), state.acting().len() > 1, Pick::Key("pianoRoll.join"));
+        let fits = span && acting;
+        item(ui, "Fit to time selection", Some("pianoRoll.fitToTime"), fits, Pick::Key("pianoRoll.fitToTime"));
+        item(ui, "Crop clip to time selection", Some("pianoRoll.crop"), span, Pick::Key("pianoRoll.crop"));
+        let arranged = clip.address.get("scene").is_none();
+        let (name, pick) = if span {
+            ("Split clip at the time selection", Pick::Key("pianoRoll.splitClip"))
+        } else {
+            ("Split clip here", Pick::SplitClipHere)
+        };
+        let splits = arranged && (span || self.split_here(at).is_some());
+        item(ui, name, span.then_some("pianoRoll.splitClip"), splits, pick);
+        item(ui, "Set the clip's first beat here", None, self.origin_ok(at), Pick::Origin);
+        ui.separator();
         item(ui, "Zoom to selection", Some("pianoRoll.zoomSelection"), true, Pick::Key("pianoRoll.zoomSelection"));
         item(ui, "Zoom to clip", Some("pianoRoll.zoomClip"), true, Pick::Key("pianoRoll.zoomClip"));
         ui.separator();
@@ -241,6 +260,24 @@ impl MenuCx<'_> {
         });
         response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &scale_label));
         picked
+    }
+
+    /// The song beat Split clip here cuts at: the clicked point, inside the clip.
+    fn split_here(&self, at: MenuAt) -> Option<f64> {
+        let placement = self.clip.placement;
+        let song = placement.arrangement_beat(self.beat(at))?;
+        (song > placement.start + 1e-6 && song < placement.start + placement.length - 1e-6).then_some(song)
+    }
+
+    /// Whether the clicked point can become the clip's first beat: past 0, and nothing of the clip
+    /// (a note, the start marker, the loop's start) lies before it (`clip.setOrigin` refuses).
+    fn origin_ok(&self, at: MenuAt) -> bool {
+        let beat = self.beat(at);
+        let shape = self.clip.shape;
+        beat > EPSILON
+            && shape.offset >= beat - EPSILON
+            && shape.loop_range.is_none_or(|(start, _)| start >= beat - EPSILON)
+            && self.clip.notes.iter().all(|n| n.time >= beat - EPSILON)
     }
 
     fn acting_notes<'s>(&'s self, state: &'s PianoRollState) -> impl Iterator<Item = &'s Note> + 's {
@@ -351,6 +388,14 @@ impl MenuCx<'_> {
                 state.highlight_scale = !state.highlight_scale;
                 state.view_picked = Some(ViewPick::HighlightScale(state.highlight_scale));
                 None
+            }
+            Pick::SplitClipHere => {
+                let beat = self.beat(at);
+                state.split_clip_at(clip, &[beat])
+            }
+            Pick::Origin => {
+                params["beat"] = json!(round_beat(self.beat(at)));
+                Some(Action::new("clip.setOrigin", params))
             }
             Pick::SetScale(None) => {
                 params["off"] = json!(true);

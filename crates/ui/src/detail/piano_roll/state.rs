@@ -669,6 +669,11 @@ impl PianoRollState {
                 self.replacing(&mut params);
                 return Some(Action::new("note.legato", params));
             }
+            // Join, Fit to time range, Crop and Split clip (› Joining, fitting, cropping and
+            // splitting): one command each.
+            "pianoRoll.join" | "pianoRoll.fitToTime" | "pianoRoll.crop" | "pianoRoll.splitClip" => {
+                return self.clip_edit(action, clip, &acting);
+            }
             _ if chosen.is_empty() => return None,
             _ => {}
         }
@@ -779,6 +784,72 @@ impl PianoRollState {
         self.replacing(&mut params);
         self.reveal_selection = 2;
         Some(Action::new(id, params))
+    }
+
+    /// The command a clip edit key runs on `clip`, with `acting` the notes the edit keys act on;
+    /// `None` where it has nothing to act on: Join without two notes, Fit, Crop and Split clip
+    /// without a time selection (Split clip never splits at the playhead), Split clip in a slot.
+    pub(super) fn clip_edit(&mut self, action: &str, clip: &PianoClip, acting: &BTreeSet<usize>) -> Option<Action> {
+        let mut params = clip.address.clone();
+        let span = self.span.as_ref().map(|s| (round_beat(s.start), round_beat(s.end))).filter(|(s, e)| e > s);
+        match action {
+            "pianoRoll.join" => {
+                if acting.len() < 2 {
+                    return None;
+                }
+                params["notes"] = json!(acting.iter().collect::<Vec<_>>());
+                // Joined notes take others' places: the selection would point at other notes.
+                self.selected.clear();
+                self.clear_span();
+                Some(Action::new("note.join", params))
+            }
+            "pianoRoll.fitToTime" => {
+                let (start, end) = span?;
+                if acting.is_empty() {
+                    return None;
+                }
+                params["notes"] = json!(acting.iter().collect::<Vec<_>>());
+                params["start"] = json!(start);
+                params["end"] = json!(end);
+                self.replacing(&mut params);
+                Some(Action::new("note.fitToTime", params))
+            }
+            "pianoRoll.crop" => {
+                let (start, end) = span?;
+                params["start"] = json!(start);
+                params["end"] = json!(end);
+                self.selected.clear();
+                self.clear_span();
+                Some(Action::new("clip.crop", params))
+            }
+            "pianoRoll.splitClip" => {
+                let (start, end) = span?;
+                self.split_clip_at(clip, &[start, end])
+            }
+            _ => None,
+        }
+    }
+
+    /// `clip.split` of an arrangement clip at content beats `beats` (on the arrangement where the
+    /// clip plays them first), those inside the clip; `None` for a slot's clip or no cut inside.
+    pub(super) fn split_clip_at(&mut self, clip: &PianoClip, beats: &[f64]) -> Option<Action> {
+        if clip.address.get("scene").is_some() {
+            return None;
+        }
+        let placement = clip.placement;
+        let inside = |at: &f64| *at > placement.start + 1e-6 && *at < placement.start + placement.length - 1e-6;
+        let mut ats: Vec<f64> =
+            beats.iter().filter_map(|b| placement.arrangement_beat(*b)).map(round_beat).filter(inside).collect();
+        ats.sort_by(f64::total_cmp);
+        ats.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+        if ats.is_empty() {
+            return None;
+        }
+        let mut params = clip.address.clone();
+        params["ats"] = json!(ats);
+        self.selected.clear();
+        self.clear_span();
+        Some(Action::new("clip.split", params))
     }
 
     /// Zooms and scrolls time so beats `start` to `end` fill the note grid's width (as far as the

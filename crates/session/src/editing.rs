@@ -21,8 +21,56 @@ pub(crate) const MAX_NAME_TRIES: u32 = 1000;
 /// The folder next to the project file that consolidated audio is written to.
 pub(crate) const CONSOLIDATED_FOLDER: &str = "Consolidated";
 
-/// `clip.split {track, index, at}`: cuts a clip in two at song position `at`.
+/// The most cuts one `clip.split` makes.
+const MAX_CUTS: usize = 64;
+
+/// `clip.split {track, index, at}`: cuts a clip in two at song position `at`; with `ats` instead,
+/// at each of several positions, into as many parts plus one, in one undo step (the piano roll
+/// splits at a time selection's two edges).
 pub(crate) fn split_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let Some(list) = Args::new(params).value("ats") else { return split_once(session, params) };
+    if Args::new(params).has("at") {
+        return Err("give at or ats, not both".into());
+    }
+    let list = list.as_array().ok_or("ats must be a list of song positions in beats")?;
+    if list.is_empty() || list.len() > MAX_CUTS {
+        return Err(format!("ats must hold 1 to {MAX_CUTS} positions").into());
+    }
+    let mut ats = Vec::with_capacity(list.len());
+    for value in list {
+        ats.push(value.as_f64().filter(|a| a.is_finite()).ok_or("each of ats must be a number of beats")?);
+    }
+    ats.sort_by(|a, b| a.total_cmp(b));
+    ats.dedup_by(|a, b| (*a - *b).abs() < MIN_PART);
+    // Every cut must fall inside the clip as it is now, or none is made.
+    let (lane, index) = crate::commands::lane_and_index(&session.project, params)?;
+    let clip =
+        session.project.arrangement.lanes.get(lane).and_then(|l| l.clips.get(index)).ok_or("the clip is missing")?;
+    let (start, end) = (clip.start, clip.start + clip.length);
+    if let Some(at) = ats.iter().find(|at| !(**at > start + MIN_PART && **at < end - MIN_PART)) {
+        return Err(format!("each cut must be inside the clip, between beats {start} and {end}, got {at}").into());
+    }
+    let id = clip.id;
+    // From the last cut back: the first part keeps the clip's id, so each cut finds it again.
+    let mut parts = Vec::with_capacity(ats.len() + 1);
+    for at in ats.iter().rev() {
+        let mut one = params.clone();
+        if let Some(map) = one.as_object_mut() {
+            map.remove("ats");
+            map.remove("index");
+            map.insert("clip".into(), json!(id.0));
+            map.insert("at".into(), json!(at));
+        }
+        let result = split_once(session, &one)?;
+        parts.push(result["second_clip"].clone());
+    }
+    parts.push(json!(id.0));
+    parts.reverse();
+    Ok(json!({ "clips": parts, "ats": ats }))
+}
+
+/// One cut of `clip.split`, at `at`.
+fn split_once(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let at = Args::new(params).f64("at")?;
     let (lane, index) = crate::commands::lane_and_index(&session.project, params)?;
     let p = &mut session.project;

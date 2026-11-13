@@ -428,3 +428,22 @@ fn a_held_key_toggles_once_and_steps_on_repeat() {
         assert_eq!(keymap.pressed(&mut input, |_| true), std::slice::from_ref(id), "an arrow steps on");
     }
 }
+
+/// Join, Fit to time range, Crop and Split clip have keys of their own in the piano roll (#1284);
+/// Split clip takes Ctrl+E, the Arrangement's split key, as Ctrl+Shift+E hides the editor there.
+#[test]
+fn the_clip_edit_keys_are_piano_roll_keys() {
+    let known = actions();
+    for (id, key) in [
+        ("pianoRoll.join", "Ctrl+J"),
+        ("pianoRoll.fitToTime", "Ctrl+Alt+J"),
+        ("pianoRoll.crop", "Ctrl+Shift+J"),
+        ("pianoRoll.splitClip", "Ctrl+E"),
+    ] {
+        let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
+        assert_eq!(action.group, PIANO_ROLL);
+        assert!(piano_roll_only(id), "{id} is read only while the piano roll has the keyboard");
+        assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
+    }
+    assert!(Keymap::default().conflicts().is_empty());
+}
