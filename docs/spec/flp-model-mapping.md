@@ -170,8 +170,10 @@ data but do not become project tracks.
   Each pattern becomes one shared content, with a targeted notes lane per channel.
   Positions and lengths are ticks divided by the header PPQ. A note record holds u32
   position at 0, u16 channel at 6, u32 length at 8, u16 key at 12, and velocity at 21
-  (0..128). Byte 19 bit 0x20 mutes a note. Note expression and step-sequencer events are
-  retained but not interpreted.
+  (0..128). Byte 19 bit 0x20 mutes a note. Note expression is retained but not
+  interpreted. A note whose length is all ones (a step-sequencer step, which has no
+  note-off) or zero is left out of the pattern, stays in the retained source and is counted in
+  one warning; it never stops the import.
 - Playlist event 233 contains records of 32, 60, 80 or 88 bytes, selected only when all
   records have the 0x5000 marker at offset 4. Records hold position at 0, source at 6,
   length at 8, reversed row at 12, mute flag 0x20 at 19 and pattern offsets at 24/28.
@@ -209,12 +211,16 @@ points per clip and one million points per import.
 
 ## Limits and validation
 
-File import first keeps an existing stored absolute sample path. Otherwise it checks the
+File import first keeps a stored absolute sample path that is on a local disk (a drive letter on
+Windows) without parent steps and names an existing file; a network share or a device path the
+project names is decided from the path alone and never touched
+([missing files](missing-files.md) › Project file boundaries). Otherwise it checks the
 stored relative path (or an absolute path already inside the project directory), then the
 filename beside the project and in its Samples, Recorded and Rendered subdirectories,
 then the caller's library candidates as described below. Only existing regular
 files are used; no parent traversal or symlinks are followed. A local match becomes a relative
-reference while the original absolute reference is retained. Missing media is reported,
+reference while the original absolute reference is retained. Stretch timing reads a sample's
+duration only from a file resolved this way. Missing media is reported,
 not a failure to open the project. Nothing is created in, moved from or removed from an
 imported project directory.
 
@@ -309,7 +315,11 @@ become device-group branches; shared or reconvergent processing is unsupported r
 Unlinked controllers do not affect playback. Unsupported active controls, sidechains,
 cycles or ambiguous ports keep the whole patch as a placeholder, never a partial graph.
 Nonunity input/internal edge gains are unsupported, while output-edge gains become branch gains.
-The original state is retained. No LYNX code or format research is used: its own
+The original state is retained. No LYNX code or format research is used, except that one
+note of its analysis marked as taken from saved data (the channel switch of event 0, separate
+from the mixer mute) was compared, with the maintainer's leave, after the same behaviour had
+been observed in FL Studio itself and found in Lemon Studio's source; nothing was taken from
+it into the code. Its own
 REA_rodada14/141 provenance explicitly names Ghidra decompilation. Lemon's pinned README
 states independent specification/public-documentation development and excludes code
 derived from decompiled output; its Patcher source describes measured cycle behaviour.

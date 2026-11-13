@@ -166,3 +166,9 @@ a network share, or another file on the disk beside a sample in its folder, cann
 copied or trusted by being edited and saved. A NAM model or IR a project names is read only from
 where its audio may be ([nam-amp-and-cab.md](nam-amp-and-cab.md)); one the person chose is read
 wherever it is, and saving trusts the ones the project's devices name with the audio.
+
+An importer follows the same boundary before anything is decoded: of the absolute paths a
+foreign project file names it looks only at those on a local disk without parent steps
+(`suhina_media::on_local_disk`), and it opens a sample (to read its duration, for example) only
+once it has resolved it to a file inside the project folder, a local path that is there or a
+library match. Whether the audio is then read is decided by the rules above.
