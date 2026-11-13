@@ -1495,12 +1495,15 @@ pub(super) fn paint_clip(
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &clip.name, font, text_color);
     }
     let marks = wave_area(rect);
-    // Whether the clip's waveform or notes give way: where they crowd into a smear they are not
-    // drawn and, on a lane too low for a name bar, the clip's name takes their place in the body.
-    // One or the other, never the name over faint notes.
-    let low_and_far = !has_name && zoomed_out_for_low_lane(beat_width);
-    let mut content_hidden = false;
-    if let Some(view) = clip.audio_view.as_ref().filter(|_| marks.height() >= 4.0)
+    // On a lane too low for a name bar the strip under the name is too thin for a waveform or
+    // notes to read, so the clip shows its name there instead. On a taller lane, notes that crowd
+    // into a smear give way too, the name staying in its bar. One or the other, never the name
+    // over faint notes.
+    let low = !has_name;
+    let mut content_hidden = low;
+    if low {
+        // The name only, drawn below.
+    } else if let Some(view) = clip.audio_view.as_ref().filter(|_| marks.height() >= 4.0)
         && let Some(peaks) = timeline.waveforms.get(&view.file)
     {
         // One column per point in view: the stretch of the file it shows, scaled by the clip's
@@ -1534,17 +1537,12 @@ pub(super) fn paint_clip(
                 waveform::Column { x: x + 0.5, from: a.min(b), to: a.max(b), gain }
             })
             .collect();
-        // On a low lane, zoomed out until a beat is a few points wide, the thin waveform says
-        // nothing more than the clip's name would; a lane with a name bar keeps it.
-        content_hidden = low_and_far;
-        if !content_hidden {
-            let shape = waveform::geometry(peaks, marks, &columns, waveform::scale(painter.ctx()));
-            waveform::paint(
-                &painter.with_clip_rect(marks.intersect(painter.clip_rect())),
-                &shape,
-                waveform::Colors::from(dim(color)),
-            );
-        }
+        let shape = waveform::geometry(peaks, marks, &columns, waveform::scale(painter.ctx()));
+        waveform::paint(
+            &painter.with_clip_rect(marks.intersect(painter.clip_rect())),
+            &shape,
+            waveform::Colors::from(dim(color)),
+        );
     } else if clip.audio {
         painter.hline(marks.x_range(), marks.center().y.round() + 0.5, theme::hairline(dim(color)));
     } else if !clip.notes.is_empty() && marks.height() >= 4.0 {
@@ -1562,12 +1560,11 @@ pub(super) fn paint_clip(
         let in_view = |n: &&crate::arrangement::timeline::NoteMark| {
             n.start + n.length >= first && n.start <= last && n.start < span_end
         };
-        // Zoomed out until the notes crowd into a smear, they give way to the clip's name, so a
-        // dense part reads as the part it is rather than as noise; on a low lane also once a
-        // beat is a few points wide, as an audio clip's waveform does.
+        // Zoomed out until the notes crowd into a smear, they give way, so a dense part reads by
+        // the name in its bar rather than as noise.
         let shown_width = (rect.right().min(view.right()) - rect.left().max(view.left())).max(0.0);
         let starts: Vec<f64> = clip.notes.iter().filter(in_view).map(|n| n.start).collect();
-        content_hidden = low_and_far || notes_crowded(starts, shown_width);
+        content_hidden = notes_crowded(starts, shown_width);
         let note_ink = content_ink;
         if !content_hidden {
             for note in clip.notes.iter().filter(in_view) {
@@ -1591,6 +1588,7 @@ pub(super) fn paint_clip(
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, name, theme::ui_font(size), ink);
     }
     if let Some((notes, tempo)) = ara_notes
+        && !low
         && marks.height() >= 4.0
     {
         paint_ara_notes(painter, rect, marks, notes, tempo, start, clip.length, x_of, beat_width, content_ink);
@@ -1705,16 +1703,6 @@ pub(super) fn notes_crowded(mut starts: Vec<f64>, width: f32) -> bool {
     starts.sort_unstable_by(f64::total_cmp);
     starts.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
     !starts.is_empty() && width / (starts.len() as f32) < CROWDED_GAP
-}
-
-/// Points per beat under which a clip on a lane too low for a name bar shows its name instead of
-/// its notes or waveform. The view opens at 8, where they still show.
-const LOW_LANE_LEAST_BEAT: f32 = 6.0;
-
-/// Whether the view is zoomed out so far (`beat_width` points a beat) that a clip on a lane too
-/// low for a name bar shows its name instead of its notes or waveform.
-pub(super) fn zoomed_out_for_low_lane(beat_width: f32) -> bool {
-    beat_width < LOW_LANE_LEAST_BEAT
 }
 
 /// Where a clip's waveform (or notes) is drawn: under its name bar, a little in from its edges.

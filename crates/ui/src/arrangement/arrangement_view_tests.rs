@@ -712,13 +712,6 @@ fn crowded_clip_notes_give_way_as_the_view_zooms_out() {
 }
 
 #[test]
-fn a_low_clip_shows_its_name_only_once_zoomed_out_past_the_opening_zoom() {
-    // The view opens at 8 points a beat: a 20 px lane still shows its notes or waveform there.
-    assert!(!clip::zoomed_out_for_low_lane(8.0), "the opening zoom shows the content");
-    assert!(!clip::zoomed_out_for_low_lane(6.0));
-    assert!(clip::zoomed_out_for_low_lane(5.0), "zoomed out further: the name");
-}
-#[test]
 fn dragging_a_selected_track_resizes_every_selected_track() {
     let mut state = ArrangementViewState::default();
     state.set_lane_height(TrackId(1), 100.0);
