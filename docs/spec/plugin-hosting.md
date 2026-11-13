@@ -3,7 +3,7 @@ description: How Suhina hosts plug-ins in detail - host processes and instances,
 read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade
 type: spec
 status: current
-last_verified: 2026-11-11
+last_verified: 2026-11-13
 covers:
   - crates/plugins/**
   - crates/plugin-host/**
