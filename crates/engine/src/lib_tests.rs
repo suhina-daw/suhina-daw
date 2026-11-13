@@ -44,6 +44,7 @@ fn project_with(lanes: Vec<ContentLane>, clips: Vec<Clip>, tracks: u32) -> Proje
             })
             .collect(),
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 4.0,

@@ -34,6 +34,7 @@ fn sending(level: f64, pre_fader: bool, return_devices: Vec<Device>) -> Project 
             channel(3, ChannelRole::Effect, vec![]),
         ],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,

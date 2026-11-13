@@ -47,6 +47,7 @@ fn project_built() -> Project {
         automation: Vec::new(),
     };
     let content = |id: u32, name: &str, key: u8| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: name.into(),
         length: 1.0,

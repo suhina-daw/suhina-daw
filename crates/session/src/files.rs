@@ -688,6 +688,7 @@ pub(crate) fn place_clip(
     // A new MIDI clip takes the project's default scale (ADR 0001 › Amendment: clip scales).
     let scale = if matches!(source.lane, LaneData::Notes(_)) { p.default_scale } else { None };
     p.contents.push(ClipContent {
+        linked: false,
         id,
         name: source.name.clone(),
         length,

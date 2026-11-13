@@ -17,6 +17,7 @@ fn project() -> Project {
         }],
         channels: vec![Channel::new(ChannelId(1), "Drums")],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "Beat".into(),
             length: 1.0,

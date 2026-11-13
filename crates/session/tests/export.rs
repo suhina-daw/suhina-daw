@@ -57,6 +57,7 @@ fn one_track() -> Project {
         }],
         channels: vec![Channel::new(ChannelId(1), "Bass")],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "Riff".into(),
             length: 1.0,

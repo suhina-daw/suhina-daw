@@ -148,6 +148,7 @@ fn content_of(id: ContentId, name: &str, track: u8) -> ClipContent {
         })
         .collect();
     ClipContent {
+        linked: false,
         id,
         name: name.into(),
         length: 4.0,

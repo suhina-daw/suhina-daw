@@ -826,6 +826,7 @@ impl Reader {
         let out_marker = number(node, &["Loop", "OutMarker"]).unwrap_or(loop_end);
         let id = ContentId(u32::try_from(self.contents.len()).unwrap_or(u32::MAX).saturating_add(1));
         self.contents.push(ClipContent {
+            linked: false,
             id,
             name: name.clone(),
             length: loop_end.max(out_marker).max(0.0),

@@ -61,6 +61,7 @@ fn per_track_clip_project_validates() {
         channels: vec![channel(1)],
         contents: vec![
             ClipContent {
+                linked: false,
                 id: ContentId(1),
                 name: "Bass A".into(),
                 length: 4.0,
@@ -69,6 +70,7 @@ fn per_track_clip_project_validates() {
                 scale: None,
             },
             ClipContent {
+                linked: false,
                 id: ContentId(2),
                 name: "Bass B".into(),
                 length: 4.0,
@@ -107,6 +109,7 @@ fn per_track_clip_project_validates() {
 #[test]
 fn shared_pattern_project_validates_and_shares_content() {
     let pattern = ClipContent {
+        linked: false,
         id: ContentId(1),
         name: "Pattern 1".into(),
         length: 4.0,
@@ -246,6 +249,7 @@ fn fades_must_be_non_negative_and_fit_the_clip() {
     assert!(!bent(1.5).fades_valid() && !bent(f64::NAN).fades_valid(), "a curve outside -1 … +1");
 
     let content = ClipContent {
+        linked: false,
         id: ContentId(1),
         name: String::new(),
         length: 4.0,

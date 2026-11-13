@@ -59,6 +59,7 @@ fn project_built() -> Project {
             channel(4, ChannelRole::Effect),
         ],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "Riff".into(),
             length: 1.0,

@@ -773,6 +773,7 @@ fn audio_project() -> Project {
 fn audio_project_built() -> Project {
     let mut p = project_built();
     p.contents.push(ClipContent {
+        linked: false,
         id: ContentId(9),
         name: "Loop".into(),
         length: 4.0,

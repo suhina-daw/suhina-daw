@@ -90,6 +90,7 @@ fn project() -> Project {
             automation: Vec::new(),
         }],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 4.0,

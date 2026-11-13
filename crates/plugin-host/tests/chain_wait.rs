@@ -64,6 +64,7 @@ fn plugin_device() -> Device {
 fn project(chains: &[usize]) -> Project {
     let mut p = Project {
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 64.0,

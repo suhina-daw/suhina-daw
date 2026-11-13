@@ -19,6 +19,7 @@ fn a_project_files_device_params_reach_the_render() {
             }],
             channels: vec![Channel { devices, ..Channel::new(ChannelId(1), "C") }],
             contents: vec![ClipContent {
+                linked: false,
                 id: ContentId(1),
                 name: "c".into(),
                 length: 2.0,

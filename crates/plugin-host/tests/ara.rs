@@ -67,6 +67,7 @@ fn project(clip: bool) -> Project {
         tracks: vec![track],
         channels: vec![channel],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "take".into(),
             length: 2.0,

@@ -116,6 +116,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
             automation: Vec::new(),
         }],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length,

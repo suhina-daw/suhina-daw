@@ -32,6 +32,7 @@ fn project_built(volume: f64) -> Project {
         tracks: vec![track(1, "Lead"), track(2, "Quiet")],
         channels: vec![channel(1, volume), channel(2, 0.0)],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "A".into(),
             length: 16.0,

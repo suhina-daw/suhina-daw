@@ -363,6 +363,7 @@ fn launcher_project_built() -> Project {
     let mut p = project_built();
     let note = suhina_model::Note::new(0.0, 0.25, 60, 1.0);
     p.contents.push(suhina_model::ClipContent {
+        linked: false,
         id: suhina_model::ContentId(900),
         name: "loop".into(),
         length: 4.0,

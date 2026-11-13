@@ -174,6 +174,7 @@ mod tests {
             }],
             channels: vec![Channel { volume: 0.3, pan: -0.5, ..Channel::new(ChannelId(7), "Audio") }],
             contents: vec![ClipContent {
+                linked: false,
                 id: ContentId(1),
                 name: "a".into(),
                 length: 2.0,

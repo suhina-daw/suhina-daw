@@ -35,6 +35,7 @@ pub(crate) fn grouped(group_devices: Vec<Device>, outside: bool) -> Project {
         tracks,
         channels,
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,

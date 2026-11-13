@@ -59,6 +59,7 @@ fn midi_project(notes: Vec<Note>, clips: Vec<Clip>) -> Project {
 fn midi_project_built(notes: Vec<Note>, clips: Vec<Clip>) -> Project {
     let mut p = blank_project();
     p.contents.push(ClipContent {
+        linked: false,
         id: ContentId(1),
         name: "Riff".into(),
         length: 4.0,

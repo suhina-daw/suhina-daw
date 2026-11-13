@@ -48,6 +48,7 @@ fn project() -> Project {
 
 fn project_built() -> Project {
     let content = |id: u32, data: LaneData| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,

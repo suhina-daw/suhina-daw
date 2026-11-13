@@ -55,6 +55,7 @@ fn project(tracks: u32) -> Project {
     }];
     let mut p = Project {
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 64.0,

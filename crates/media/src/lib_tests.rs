@@ -24,6 +24,7 @@ fn write_wav(path: &Path, channels: u16, frames: usize) {
 fn project_with_audio(file: &str, absolute: Option<String>) -> Project {
     Project {
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "a".into(),
             length: 4.0,

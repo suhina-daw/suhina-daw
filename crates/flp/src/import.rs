@@ -313,6 +313,7 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
             })
             .collect::<Vec<_>>();
         project.contents.push(ClipContent {
+            linked: false,
             id: ContentId(id),
             name: if p.name.is_empty() { format!("Pattern {id}") } else { p.name },
             length: p.length.max(1.),
@@ -674,6 +675,7 @@ fn add_channel(
             Vec::new()
         };
         project.contents.push(ClipContent {
+            linked: false,
             id: ContentId(65_536 + source_id),
             name: name.clone(),
             length: 1.,

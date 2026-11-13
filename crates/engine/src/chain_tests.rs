@@ -39,6 +39,7 @@ pub(crate) fn project(notes: Vec<Note>, length: f64, devices: Vec<Device>) -> Pr
         }],
         channels: vec![Channel { devices, ..Channel::new(ChannelId(1), "C") }],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length,

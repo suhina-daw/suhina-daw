@@ -557,6 +557,10 @@ pub struct ClipContent {
     /// The scale the notes are written in, if any: the piano roll marks its keys
     /// ([ADR 0001](../../docs/decisions/0001-daw-neutral-model.md) › Amendment: clip scales).
     pub scale: Option<Scale>,
+    /// The clips that play it are linked copies on purpose: an edit through one changes them all,
+    /// with no copy on write, until a clip is unlinked (`docs/spec/arrangement-editing.md` ›
+    /// Linked copies).
+    pub linked: bool,
 }
 
 /// One lane of a clip content. `target` is `None` when the lane plays on whichever track the

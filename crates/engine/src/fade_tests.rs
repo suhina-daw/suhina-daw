@@ -35,6 +35,7 @@ pub(crate) fn project((region, audio): Source, length: f64, fade_in: f64, fade_o
         }],
         channels: vec![Channel::new(ChannelId(1), "Audio")],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length,

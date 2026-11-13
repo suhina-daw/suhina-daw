@@ -19,6 +19,7 @@ fn note(time: f64, key: u8) -> Note {
 
 fn content(id: u32, notes: Vec<Note>) -> ClipContent {
     ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("C{id}"),
         length: 8.0,

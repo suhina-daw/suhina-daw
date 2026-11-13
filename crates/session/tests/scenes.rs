@@ -28,6 +28,7 @@ fn project_built() -> Project {
     };
     let channel = |id: u32| Channel::new(ChannelId(id), format!("T{id}"));
     let content = |id: u32| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("Clip {id}"),
         length: 1.0,

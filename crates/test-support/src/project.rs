@@ -170,6 +170,7 @@ impl ProjectBuilder {
 
     fn content(mut self, id: u32, name: &str, length: f64, data: LaneData) -> Self {
         self.project.contents.push(ClipContent {
+            linked: false,
             id: ContentId(id),
             name: name.into(),
             length,

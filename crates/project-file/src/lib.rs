@@ -42,7 +42,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 12;
+pub const VERSION: u64 = 13;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -571,6 +571,10 @@ fn content_value(c: &ClipContent) -> Value {
         // Left out when the content has none, so a project without scales is written as before.
         if let Some(scale) = c.scale {
             map.insert("scale".into(), scale_value(scale));
+        }
+        // Left out unless its clips are linked copies, so other projects are written as before.
+        if c.linked {
+            map.insert("linked".into(), Value::Bool(true));
         }
         with_extensions(map, &c.extensions);
     }
@@ -1565,6 +1569,7 @@ fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudi
         lanes.push(ContentLane { target, data });
     }
     let content = ClipContent {
+        linked: flag(c, "linked", false, at)?,
         id: ContentId(whole(c, "id", at)?),
         name: text(c, "name", at)?,
         length: float(c, "length", at)?,

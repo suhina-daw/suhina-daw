@@ -12,6 +12,7 @@ fn project() -> Project {
         tracks: vec![Track { channel: Some(ChannelId(1)), ..Track::new(TrackId(1), "Bass") }],
         channels: vec![Channel::new(ChannelId(1), "Bass")],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "Note".into(),
             length: 1.0,

@@ -176,6 +176,7 @@ fn everything() -> Project {
         ],
         contents: vec![
             ClipContent {
+                linked: false,
                 id: ContentId(1),
                 name: "Chords".into(),
                 length: 8.0,
@@ -194,6 +195,7 @@ fn everything() -> Project {
                 scale: None,
             },
             ClipContent {
+                linked: false,
                 id: ContentId(2),
                 name: "Loop".into(),
                 length: 16.0,
@@ -1155,6 +1157,7 @@ fn an_empty_audio_region_is_left_alone_by_rebase_audio() {
     // An empty audio clip has no file yet; saving elsewhere does not invent one.
     let mut project = everything();
     project.contents.push(ClipContent {
+        linked: false,
         id: ContentId(900),
         name: "Audio clip".into(),
         length: 4.0,
@@ -1492,6 +1495,9 @@ fn every_feature() -> Project {
     project.channels[0].devices[0].set_sample_edit_data(sample_edits).unwrap();
     // Version 11: a clip's own swing (#1221).
     project.arrangement.lanes[0].clips[0].swing = ClipSwing { amount: 0.6, own: true };
+    // Version 13: linked copies and the cosine fade shape.
+    project.contents[0].linked = true;
+    project.arrangement.lanes[0].clips[0].fade_out_curve = FadeCurve { shape: FadeShape::Cosine, curve: 0.25 };
     renumbered(project)
 }
 
@@ -1557,6 +1563,12 @@ fn a_file_of_every_version_reads() {
             for clip in expected.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
                 clip.swing = ClipSwing::default();
             }
+        }
+        if version < 13 {
+            // Linked copies and the cosine fade shape came with version 13.
+            expected.contents[0].linked = false;
+            expected.arrangement.lanes[0].clips[0].fade_out_curve =
+                everything().arrangement.lanes[0].clips[0].fade_out_curve;
         }
         // Devices get their ids in document order when a file before version 6 is read.
         assert_eq!(from_json(&text).map(renumbered), Ok(renumbered(expected)), "version {version}");
@@ -1749,4 +1761,26 @@ fn an_older_content_with_lanes_of_different_audio_is_refused() {
         "arrangement": { "lanes": [ { "name": "A", "clips": [ { "content": 1, "start": 0.0, "length": 4.0 } ] } ] } } }"#;
     let error = from_json(text).expect_err("refused");
     assert!(error.0.contains("different gain"), "{error}");
+}
+
+#[test]
+fn linked_copies_survive_a_round_trip_and_older_files_read_unlinked() {
+    let mut project = everything();
+    if let Some(content) = project.contents.first_mut() {
+        content.linked = true;
+    }
+    let text = to_json(&project);
+    let written: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(written["project"]["contents"][0]["linked"], json!(true));
+    // Only the linked content says so.
+    let contents = written["project"]["contents"].as_array().unwrap();
+    assert_eq!(contents.iter().filter(|c| c.get("linked").is_some()).count(), 1, "{text}");
+    assert_eq!(from_json(&text), Ok(project.clone()));
+    let mut older: Value = serde_json::from_str(&text).unwrap();
+    older["project"]["contents"][0].as_object_mut().unwrap().remove("linked");
+    let read = from_json(&older.to_string()).unwrap();
+    assert!(read.contents.iter().all(|c| !c.linked));
+    let mut wrong = written;
+    wrong["project"]["contents"][0]["linked"] = json!("yes");
+    assert!(from_json(&wrong.to_string()).is_err());
 }

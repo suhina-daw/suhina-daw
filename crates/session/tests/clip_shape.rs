@@ -57,6 +57,7 @@ fn project_built() -> Project {
     let note =
         Note { time: 0.0, duration: 1.0, key: 60, velocity: 0.8, release_velocity: 0.5, channel: 0, muted: false };
     let content = |id: u32| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,

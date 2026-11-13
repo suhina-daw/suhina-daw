@@ -221,6 +221,7 @@ pub(super) fn project_with_audio() -> (suhina_engine::model::Project, suhina_ui:
         ..ClipAudio::default()
     };
     project.contents.push(ClipContent {
+        linked: false,
         id: ContentId(300),
         name: "Loop".into(),
         length: 4.0,

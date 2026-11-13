@@ -1210,6 +1210,7 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
     saved.channels[0].devices[0].set_sample_reference("tone.wav", &wav.display().to_string());
     assert_eq!(saved.channels[0].devices[0].state, state, "asset reference must not replace graph data");
     saved.contents.push(ClipContent {
+        linked: false,
         id: ContentId(1),
         name: "Note".into(),
         length: 1.,
