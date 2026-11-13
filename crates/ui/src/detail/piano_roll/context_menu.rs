@@ -8,7 +8,6 @@
 
 use egui::containers::menu::menu_style;
 use egui::{Layout as EguiLayout, PopupKind, SetOpenCommand};
-use suhina_engine::model::{ROOT_NAMES, ScaleMode};
 
 use super::*;
 use crate::detail::piano_roll_ruler::Part as RulerPart;
@@ -100,10 +99,6 @@ pub(super) enum Pick {
     LoopSelection,
     Marker(RulerPart),
     Grid(PianoGrid),
-    Fold,
-    ScaleRows,
-    Highlight,
-    SetScale(Option<(usize, ScaleMode)>),
     /// Split clip at the clicked point, with no time selection.
     SplitClipHere,
     /// Set the clip's first beat here (`clip.setOrigin`).
@@ -208,9 +203,7 @@ impl MenuCx<'_> {
         let splits = arranged && (span || self.split_here(at).is_some());
         item(ui, name, span.then_some("pianoRoll.splitClip"), splits, pick);
         item(ui, "Set the clip's first beat here", None, self.origin_ok(at), Pick::Origin);
-        ui.separator();
-        item(ui, "Zoom to selection", Some("pianoRoll.zoomSelection"), true, Pick::Key("pianoRoll.zoomSelection"));
-        item(ui, "Zoom to clip", Some("pianoRoll.zoomClip"), true, Pick::Key("pianoRoll.zoomClip"));
+        // No zoom items: Z and Shift+Z are quicker than the menu, which the grid already makes long.
         ui.separator();
         // The grid's entries right in the menu, as the toolbar's grid menu holds them: no submenu
         // to open first.
@@ -219,45 +212,7 @@ impl MenuCx<'_> {
             picked = Some(Pick::Grid(grid));
             ui.close();
         }
-        ui.separator();
-        let toggle = |ui: &mut Ui, name: &str, on: bool| {
-            let response = ui.add(egui::Button::selectable(on, egui::RichText::new(name).font(font.clone())));
-            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, name));
-            if response.clicked() {
-                ui.close();
-            }
-            response.clicked()
-        };
-        if toggle(ui, "Fold", state.fold == Fold::Notes) {
-            picked = Some(Pick::Fold);
-        }
-        if toggle(ui, "Fold to scale", state.fold == Fold::Scale && clip.scale.is_some()) {
-            picked = Some(Pick::ScaleRows);
-        }
-        if toggle(ui, "Highlight scale", state.highlight_scale) {
-            picked = Some(Pick::Highlight);
-        }
-        let scale_name = clip.scale.map_or("Off".to_string(), |s| format!("{} {}", s.root_name(), s.mode.label()));
-        let scale_label = format!("Scale ({scale_name})");
-        let response = ui.menu_button(egui::RichText::new("Scale").font(font.clone()), |ui| {
-            if ui.add_enabled(clip.scale.is_some(), egui::Button::new("Off")).clicked() {
-                picked = Some(Pick::SetScale(None));
-                ui.close();
-            }
-            for mode in ScaleMode::ALL {
-                ui.menu_button(mode.label(), |ui| {
-                    for index in 0..ROOT_NAMES.len() {
-                        let root = pitch_class_name(u8::try_from(index).unwrap_or(0));
-                        let on = clip.scale.is_some_and(|s| usize::from(s.root()) == index && s.mode == mode);
-                        if ui.add(egui::Button::selectable(on, root)).clicked() {
-                            picked = Some(Pick::SetScale(Some((index, mode))));
-                            ui.close();
-                        }
-                    }
-                });
-            }
-        });
-        response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &scale_label));
+        // No fold or scale items: the toolbar's Fold, Scale and Highlight are one click away.
         picked
     }
 
@@ -370,27 +325,6 @@ impl MenuCx<'_> {
                 state.grid_picked = Some(grid);
                 None
             }
-            Pick::Fold => {
-                state.fold = if state.fold == Fold::Notes { Fold::Off } else { Fold::Notes };
-                None
-            }
-            Pick::ScaleRows => {
-                let scaled = state.fold == Fold::Scale && clip.scale.is_some();
-                state.fold = if scaled { Fold::Off } else { Fold::Scale };
-                (!scaled && clip.scale.is_none()).then(|| {
-                    let mut params = clip.address.clone();
-                    let (root, mode) = default_scale();
-                    let root = ROOT_NAMES.get(usize::from(root)).copied().unwrap_or("C");
-                    params["root"] = json!(root);
-                    params["mode"] = json!(mode.name());
-                    Action::new("clip.setScale", params)
-                })
-            }
-            Pick::Highlight => {
-                state.highlight_scale = !state.highlight_scale;
-                state.view_picked = Some(ViewPick::HighlightScale(state.highlight_scale));
-                None
-            }
             Pick::SplitClipHere => {
                 let beat = self.beat(at);
                 state.split_clip_at(clip, &[beat])
@@ -398,15 +332,6 @@ impl MenuCx<'_> {
             Pick::Origin => {
                 params["beat"] = json!(round_beat(self.beat(at)));
                 Some(Action::new("clip.setOrigin", params))
-            }
-            Pick::SetScale(None) => {
-                params["off"] = json!(true);
-                Some(Action::new("clip.setScale", params))
-            }
-            Pick::SetScale(Some((root, mode))) => {
-                params["root"] = json!(ROOT_NAMES.get(root).copied().unwrap_or("C"));
-                params["mode"] = json!(mode.name());
-                Some(Action::new("clip.setScale", params))
             }
         }
     }

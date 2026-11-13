@@ -786,11 +786,10 @@ at the pointer, with what the toolbar, the clip panel and the keys can do.
   - Join notes, Fit to time selection, Crop clip to time selection, Split clip (at the time
     selection, or here at the clicked point without one) and Set the clip's first beat here
     (› Joining, fitting, cropping and splitting);
-  - Zoom to selection (Z), Zoom to clip (Shift+Z);
   - the toolbar's grid menu right in the menu, with no submenu (Snap, Adaptive, Fixed, Narrow,
-    Widen, Triplet);
-  - Fold, Fold to scale and Highlight scale (the toolbar's row toggles), and Scale: the clip's
-    scale, Off or a mode and its root (`clip.setScale`).
+    Widen, Triplet).
+- No zoom, fold or scale items: Z and Shift+Z (› Zoom and scroll) and the toolbar's Fold, Scale
+  and Highlight are quicker than the menu, which the grid's entries already make long.
 - Escape, a click outside it or a pick closes it; another clip shown closes it too.
 
 ## Joining, fitting, cropping and splitting
