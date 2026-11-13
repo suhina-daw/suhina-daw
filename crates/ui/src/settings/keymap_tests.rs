@@ -428,3 +428,26 @@ fn a_held_key_toggles_once_and_steps_on_repeat() {
         assert_eq!(keymap.pressed(&mut input, |_| true), std::slice::from_ref(id), "an arrow steps on");
     }
 }
+
+/// Ctrl and the arrow keys step and grow the piano roll's note selection: keymap actions read only
+/// while the piano roll has the keyboard, so a preset can change them (#1281).
+#[test]
+fn ctrl_and_the_arrows_are_the_piano_roll_selection_keys() {
+    let known = actions();
+    for (id, key) in [
+        ("pianoRoll.selectNextOnKey", "Ctrl+Right"),
+        ("pianoRoll.selectPreviousOnKey", "Ctrl+Left"),
+        ("pianoRoll.selectNextNote", "Ctrl+Up"),
+        ("pianoRoll.selectPreviousNote", "Ctrl+Down"),
+        ("pianoRoll.growSelectionOnKey", "Ctrl+Shift+Right"),
+        ("pianoRoll.shrinkSelectionOnKey", "Ctrl+Shift+Left"),
+        ("pianoRoll.growSelection", "Ctrl+Shift+Up"),
+        ("pianoRoll.shrinkSelection", "Ctrl+Shift+Down"),
+    ] {
+        let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
+        assert_eq!(action.group, PIANO_ROLL);
+        assert!(piano_roll_only(id), "{id} is read only while the piano roll has the keyboard");
+        assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
+    }
+    assert!(Keymap::default().conflicts().is_empty());
+}

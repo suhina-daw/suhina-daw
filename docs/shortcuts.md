@@ -135,6 +135,10 @@ Arrangement or the Launcher (the clip and slot keys below, the Arrangement's too
 | In the piano roll: move the selected notes a semitone, an octave up or down (`pianoRoll.up`, `.down`, `.octaveUp`, `.octaveDown`) | Up, Down; Shift+Up, Shift+Down |
 | In the piano roll: take the selected notes' ends to the previous, the next grid line, over the next note of the key too (`pianoRoll.shorter`, `.longer`; never shorter than a step) | Shift+Left; Shift+Right |
 | In the piano roll: make the selected notes a fine step shorter, longer, off the grid, over the next note of the key too (`pianoRoll.shorterFine`, `.longerFine`) | Alt+Shift+Left; Alt+Shift+Right |
+| In the piano roll: select the next, the previous note on each selected key, the notes staying where they are (`pianoRoll.selectNextOnKey`, `.selectPreviousOnKey`, [spec](spec/ui-clip-editor.md) › Selecting from the keyboard) | Ctrl+Right; Ctrl+Left |
+| In the piano roll: select the clip's next, previous note, in time and then by key (`pianoRoll.selectNextNote`, `.selectPreviousNote`) | Ctrl+Up; Ctrl+Down |
+| In the piano roll: add the next note on each selected key to the selection, take the last one out (`pianoRoll.growSelectionOnKey`, `.shrinkSelectionOnKey`) | Ctrl+Shift+Right; Ctrl+Shift+Left |
+| In the piano roll: add the clip's next note to the selection, take the last one out (`pianoRoll.growSelection`, `.shrinkSelection`) | Ctrl+Shift+Up; Ctrl+Shift+Down |
 | In the piano roll: switch between the Select and Draw tools (`pianoRoll.draw`, [spec](spec/ui-clip-editor.md) › Drawing notes) | B |
 | In the piano roll: make the grid finer, coarser (`pianoRoll.gridNarrow`, `.gridWiden`, [spec](spec/ui-clip-editor.md) › Grid and snapping) | Ctrl+1; Ctrl+2 |
 | In the piano roll: turn the triplet grid on or off (`pianoRoll.gridTriplet`) | Ctrl+3 |
