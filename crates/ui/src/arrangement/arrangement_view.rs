@@ -1120,13 +1120,15 @@ fn show_lanes(
         if lane_rect.bottom() + below < lanes_area.top() || lane_rect.top() > lanes_area.bottom() {
             continue;
         }
-        // The row's `track-lane`, with the colour of the clips it shows: its clips are entered
-        // inside it, and a theme may give it a background, painted here over the grid lines.
+        // The row's `track-lane`, the track its header shows (a folded group's, whose row draws
+        // the clips of the track it stands in for, each with its own `[color]`): its clips are
+        // entered inside it, and a theme may give it a background, painted here over the grid
+        // lines.
         let lane_el = crate::kit::element::TRACK_LANE
-            .id(&format!("track-{}", clips_lane.track.0))
-            .color(rgb(clips_lane.color))
+            .id(&format!("track-{}", lane.track.0))
+            .color(rgb(lane.color))
             .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track))
-            .attr(crate::kit::element::Muted, clips_lane.mute)
+            .attr(crate::kit::element::Muted, lane.mute)
             .enter();
         lane_el.paint(&lanes_painter, row.clip.intersect(lanes_area));
         // A click on an empty spot of a lane clears the clip selection (arrangement-editing ›

@@ -275,8 +275,11 @@ their existing semantics. Layout entry support is incremental and documented per
 
 Artwork can choose an interaction state: `track.name.hover` overrides the default
 `track.name`. The own state variant wins, then the own default, then the embedded fallback.
-Artwork is not chosen by a track's colour: a theme colours artwork through the element's
-`color` (`currentColor`), which a rule may take from its `[color]` attribute.
+Artwork is not chosen by a track's colour. In track artwork (`track.name`, `track.body`)
+`currentColor` is the fill Suhina draws there (the track's colour, dimmed while muted), or the
+element's own `color` where the sheet gives one, which a rule may take from its `[color]`. A sheet
+that reads `--track-colour`, `--track-fill` or `--clip-colour`, or gives artwork for one colour
+(`track.body.color-ff9a3c`), is told they are no longer used.
 `track.body` covers the strip background. A contiguous sequence of `.frame-0` through
 `.frame-31` asset keys animates that variant at `skin.artwork-fps` (1–30, default 12).
 Native animation-off freezes it at frame zero without a repaint loop. Assets allow the
@@ -1295,7 +1298,7 @@ of bars, and a slider id per parameter.
   `#control-automation` (artwork `automation`), `fold` (artwork `fold`), `#control-monitor`
   (artwork `monitor`, placed as `arrangement-monitor`).
 - **Artwork variables:** before rasterising, `var()` in artwork takes the theme's resolved root
-  variables; a track's colour reaches artwork only as `currentColor`.
+  variables; a track's colour reaches artwork as `currentColor`.
 - **Knob values:** `value-position` (`right` by default, `left`, `top`, `bottom`,
   `inside`, `none`); `none` hides a level bar's value. Mixer sends default to `bottom`.
 - **Sizes:** `send { width; height }` within the sends row; `track-height` (20–400

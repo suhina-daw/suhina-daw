@@ -397,8 +397,10 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
         Err(error) => warnings.push(error),
     }
     warnings.extend(theme.vars.base.keys().filter_map(|name| former_kind_token(name.strip_prefix("--kind-")?)));
-    warnings.extend(theme.vars.base.keys().filter_map(|name| former_track_colour_token(name.strip_prefix("--")?)));
+    warnings.extend(former_track_colours_notice(theme.vars.base.keys().map(String::as_str)));
+    warnings.extend(former_host_variables_notice(sheet));
     warnings.extend(super::theme_css::read_host_rules(&mut theme, sheet));
+    warnings.extend(former_colour_artwork_notice(theme.skin.assets.keys().cloned()));
     if let Some((toolbar, offsets)) = theme.meta.toolbar.as_ref().and_then(read_toolbar) {
         theme.skin.toolbar = Some(toolbar);
         theme.skin.toolbar_offsets = offsets;
@@ -419,17 +421,56 @@ pub fn former_kind_token(kind: &str) -> Option<String> {
     ))
 }
 
-/// The notice for a track colour a theme of an earlier version gives (`--track-1` to
-/// `--track-8`, `--clip-midiDefault`, `--clip-audioDefault`, without their `--`): tracks and clips
-/// keep their own colours, and the colour picker and new tracks take Suhina's, so a theme no
-/// longer sets them (#1020). `None` for any other name.
-pub fn former_track_colour_token(name: &str) -> Option<String> {
-    let former = matches!(name, "clip-midiDefault" | "clip-audioDefault")
-        || name.strip_prefix("track-").is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8"));
-    former.then(|| {
+/// Whether `name` (without its `--`) is a track colour a theme of an earlier version set:
+/// `track-1` to `track-8`, `clip-midiDefault`, `clip-audioDefault`. Tracks and clips keep their
+/// own colours, and the colour picker and new tracks take Suhina's, so a theme no longer sets
+/// them (#1020).
+pub fn is_former_track_colour(name: &str) -> bool {
+    matches!(name, "clip-midiDefault" | "clip-audioDefault")
+        || name.strip_prefix("track-").is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8"))
+}
+
+/// One notice naming the former track colours among a theme's `:root` variables `names`, if any.
+pub fn former_track_colours_notice<'a>(names: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let former: Vec<_> =
+        names.into_iter().filter(|name| name.strip_prefix("--").is_some_and(is_former_track_colour)).collect();
+    (!former.is_empty()).then(|| {
         format!(
-            "--{name} is no longer read: a track's or clip's colour is its own, and a theme draws it \
-             from the element's color attribute, attr(color type(<color>))"
+            "{} no longer read: a track's or clip's colour is its own, and a theme draws it from \
+             the element's color attribute, attr(color type(<color>))",
+            former.join(", ")
+        )
+    })
+}
+
+/// The notice for a sheet that reads a variable the app set on tracks and clips in an earlier
+/// version (`--track-colour`, `--track-fill`, `--clip-colour`): the app sets none now, so a rule
+/// that reads one falls back without it.
+pub fn former_host_variables_notice(sheet: &str) -> Option<String> {
+    let used: Vec<_> =
+        ["--track-colour", "--track-fill", "--clip-colour"].into_iter().filter(|name| sheet.contains(name)).collect();
+    (!used.is_empty()).then(|| {
+        format!(
+            "{} no longer set: a track's or clip's colour is the element's color attribute, \
+             attr(color type(<color>))",
+            used.join(", ")
+        )
+    })
+}
+
+/// The notice for artwork chosen by an exact track colour (`track.body.color-ff9a3c`), which no
+/// track picks any more: artwork takes a track's colour as `currentColor`.
+fn former_colour_artwork_notice(roles: impl IntoIterator<Item = String>) -> Option<String> {
+    let colour = |role: &str| {
+        role.split('.').any(|part| {
+            part.strip_prefix("color-").is_some_and(|hex| hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+        })
+    };
+    let used: Vec<_> = roles.into_iter().filter(|role| colour(role)).collect();
+    (!used.is_empty()).then(|| {
+        format!(
+            "{} not used: artwork is not chosen by a track's colour; it takes the colour as currentColor",
+            used.join(", ")
         )
     })
 }
@@ -607,6 +648,11 @@ impl Theme {
                 for (key, value) in colors {
                     let canonical = RENAMED.iter().find(|(old, _)| *old == key).map_or(key.as_str(), |(_, new)| *new);
                     let parsed = value.as_str().and_then(parse_hex);
+                    // A track colour an earlier version kept in every theme file: tracks keep their
+                    // own now, so it is left behind without a word, and the file still converts.
+                    if is_former_track_colour(&key.replace('.', "-")) {
+                        continue;
+                    }
                     match (theme.colors.token_mut(canonical), parsed) {
                         (Some(slot), Some(color)) => {
                             *slot = color;
@@ -620,7 +666,6 @@ impl Theme {
                         (None, _) => warnings.push(
                             key.strip_prefix("kind.")
                                 .and_then(former_kind_token)
-                                .or_else(|| former_track_colour_token(&key.replace('.', "-")))
                                 .unwrap_or_else(|| format!("{key} is not a colour token")),
                         ),
                         (Some(_), None) => {

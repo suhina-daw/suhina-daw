@@ -21,11 +21,8 @@ pub const PALETTE: [Rgb; 8] = [
     Rgb(0x2F, 0xD9, 0xC4),
 ];
 
-/// What a track saved without a colour of its own (a project from before tracks stored theirs)
-/// shows, by its place among the tracks: these four in turn. Fixed, so such a track looks the
-/// same in every theme and every version.
-pub const LEGACY: [Rgb; 4] =
-    [Rgb(0xFF, 0x9A, 0x3C), Rgb(0xF2, 0xD5, 0x41), Rgb(0x4F, 0xC3, 0xF7), Rgb(0xB3, 0x8B, 0xFF)];
+/// What a track saved without a colour of its own shows, by its place among the tracks.
+pub use suhina_model::LEGACY_TRACK_COLOURS as LEGACY;
 
 /// The colour a new MIDI track or clip gets (and every new track, with *One colour*).
 pub const MIDI: Rgb = Rgb(0x4F, 0xC3, 0xF7);

@@ -44,12 +44,13 @@ fn translucent_theme_colours_preserve_alpha_in_files() {
 }
 
 #[test]
-fn former_track_colours_are_named_as_no_longer_read_and_materials_round_trip() {
+fn former_track_colours_are_left_behind_quietly_and_materials_round_trip() {
+    // Every file an earlier version saved has them: they go without a word, so the file still
+    // converts to a theme.css.
     let (old, warnings) = Theme::from_json(
         r##"{"colors":{"track.1":"#123456","clip.midiDefault":"#ABCDEF","clip.audioDefault":"#040506"}}"##,
     );
-    assert_eq!(warnings.len(), 3, "{warnings:?}");
-    assert!(warnings.iter().all(|w| w.contains("is no longer read") && w.contains("attr(color")), "{warnings:?}");
+    assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(old.liquid, None);
     let (theme, warnings) = Theme::from_json(r##"{"liquid":{"panels":38,"tracks":52,"clips":40}}"##);
     assert!(warnings.is_empty());
@@ -102,12 +103,10 @@ fn a_theme_sheet_that_sets_the_former_track_colours_is_told_they_are_not_read() 
     let meta = ThemeMeta::new("Old", DEFAULT_SWATCH);
     let (_, warnings) =
         from_folder(meta, ":root { --track-3: #010203; --clip-audioDefault: #040506; --track-9: #000; }");
-    let former: Vec<_> = warnings.iter().filter(|w| w.contains("is no longer read")).collect();
-    assert_eq!(former.len(), 2, "{warnings:?}");
-    assert!(
-        former.iter().any(|w| w.starts_with("--track-3"))
-            && former.iter().any(|w| w.starts_with("--clip-audioDefault"))
-    );
+    let former: Vec<_> = warnings.iter().filter(|w| w.contains("no longer read")).collect();
+    assert_eq!(former.len(), 1, "one notice for them all: {warnings:?}");
+    assert!(former[0].contains("--track-3") && former[0].contains("--clip-audioDefault"));
+    assert!(!former[0].contains("--track-9"), "only the former ones");
 }
 
 #[test]
@@ -530,4 +529,18 @@ fn the_readme_s_track_and_clip_colour_examples_read_without_warnings() {
     let (_, warnings) = from_folder(ThemeMeta::new("Readme", DEFAULT_SWATCH), &css);
     assert!(warnings.is_empty(), "{warnings:?}\n{css}");
     assert!(suhina_style::sheet::Sheet::parse(&css).is_ok());
+}
+
+/// A sheet from an earlier version that reads the variables the app set on tracks, or gives
+/// artwork chosen by a track's colour, is told that neither is used any more.
+#[test]
+fn a_sheet_reading_former_track_variables_or_colour_artwork_is_told() {
+    let sheet = "track-name { background-color: var(--track-colour); } \
+                 track.body.color-ff9a3c { image: url(\"assets/orange.svg\"); }";
+    let (_, warnings) = from_folder(ThemeMeta::new("Old", DEFAULT_SWATCH), sheet);
+    assert!(warnings.iter().any(|w| w.starts_with("--track-colour no longer set")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.starts_with("track.body.color-ff9a3c not used")), "{warnings:?}");
+    let (_, warnings) =
+        from_folder(ThemeMeta::new("New", DEFAULT_SWATCH), "track-name { color: attr(color type(<color>)); }");
+    assert!(warnings.is_empty(), "{warnings:?}");
 }

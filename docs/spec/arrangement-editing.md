@@ -171,10 +171,11 @@ selected tracks, in their order, one undo step each (Tracks, #919). A time selec
 afterwards, in the lanes or on the ruler, or a click in a lane takes these keys back from the
 tracks: they then act on the painted time, until a header is clicked again (#1199). The
 header shows its track's colour strongly (60 % over the panel); a selected track's is brighter
-and more saturated, with an outline in it. A track keeps the colour it shows when tracks are
-added, removed or moved: one without a colour of its own (from a project saved before tracks
-stored theirs) shows Suhina's fixed colour for its place (orange, yellow, light blue, violet in
-turn, the same in every theme), and that colour is stored then, in the same undo step. A new
+and more saturated, with an outline in it. Every track has a colour of its own: one saved without
+(a project from before tracks stored theirs) is given Suhina's fixed colour for its place when
+the project is opened (orange, yellow, light blue, violet in turn, the same in every theme),
+which is not an edit, so a copy of it, a group's colour and every view show the same. A track
+keeps its colour when tracks are added, removed or moved. A new
 track gets a colour stored as it is made, by Settings › Arrangement › Tracks › **New track
 colour**: *By clip type* gives an audio track Suhina's audio colour (orange `#FF9A3C`) and every
 other track its MIDI colour (light blue `#4FC3F7`); *One colour* gives every new track the MIDI

@@ -848,7 +848,8 @@ fn column_header(
         rect,
         "track.name",
         crate::kit::skin::State::response(&response, state.selected == Some(column.track)),
-        fill,
+        // Artwork's `currentColor`: the header's own `color` where the sheet gives one.
+        own.own_color_or(fill),
     ) {
         painter.rect_filled(rect, 0.0, fill);
     }
@@ -933,7 +934,7 @@ fn column_body(
             } else {
                 crate::kit::skin::State::Normal
             },
-            rgb(column.color),
+            column_style.own_color_or(rgb(column.color)),
         );
     }
     // Its border, and its slots in its content box, inside its border and padding (#1336); the

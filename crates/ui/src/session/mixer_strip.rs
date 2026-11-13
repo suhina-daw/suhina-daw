@@ -435,7 +435,7 @@ pub fn show(
         rect,
         "track.body",
         crate::kit::skin::State::response(&strip, state.selected == Some(column.track)),
-        tint,
+        style_class.own_color_or(tint),
     ) {
         painter.rect_filled(rect, 0.0, tint);
     }
@@ -571,7 +571,7 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
         rect,
         "track.name",
         crate::kit::skin::State::response(&response, selected),
-        fill,
+        name_style.own_color_or(fill),
     ) {
         painter.rect_filled(rect, 0.0, fill);
     }

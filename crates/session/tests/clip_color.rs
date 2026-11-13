@@ -229,3 +229,23 @@ fn a_new_clip_can_take_its_track_s_colour() {
     run(&mut session, "clip.create", json!({"track":1,"start":24.0,"length":4.0})).unwrap();
     assert_eq!(clips(&session, 1).last().unwrap().color, Some(colours::MIDI));
 }
+
+#[test]
+fn a_track_saved_without_a_colour_keeps_the_one_it_shows_and_its_copy_takes_it() {
+    // A project from before tracks stored their colour.
+    let mut project = blank_project();
+    for track in &mut project.tracks {
+        track.color = None;
+    }
+    let mut session = Session::new(project);
+    assert!(!session.has_unsaved_changes(), "giving the colour is not an edit");
+    let first = session.project().tracks[0].clone();
+    let second = session.project().tracks[1].color;
+    assert_eq!(first.color, Some(colours::LEGACY[0]));
+    assert_eq!(second, Some(colours::LEGACY[1]));
+    // Its copy shows the colour it shows, not the default for its kind.
+    run(&mut session, "track.duplicate", json!({ "tracks": [first.id.0] })).unwrap();
+    let copy = session.project().tracks.iter().find(|t| t.id != first.id && t.name.starts_with(&first.name));
+    assert_eq!(copy.and_then(|t| t.color), first.color);
+    assert_ne!(first.color, Some(colours::MIDI), "the test tells the two apart");
+}

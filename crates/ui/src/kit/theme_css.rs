@@ -205,6 +205,9 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                         }
                     }
                 }
+                // A track colour an earlier version kept in the theme: tracks keep their own now,
+                // so it is left behind without a word, and the theme still converts.
+                ":root" if super::theme::is_former_track_colour(property.trim_start_matches("--")) => Ok(()),
                 ":root" if property.starts_with("--") => {
                     let key = property.trim_start_matches("--").replace('-', ".");
                     match (theme.colors.token_mut(&key), super::theme::parse_rgba(value)) {

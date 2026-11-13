@@ -290,7 +290,8 @@ pub(super) fn track_header(
         rect,
         "track.body",
         crate::kit::skin::State::response(&body, selected),
-        header_fill,
+        // Artwork's `currentColor`: the header's own `color` where the sheet gives one.
+        own.own_color_or(header_fill),
     ) {
         painter.rect_filled(rect, 0.0, header_fill);
     }
@@ -586,7 +587,7 @@ pub(super) fn track_header(
             name,
             "track.name",
             crate::kit::skin::State::response(&body, selected),
-            header_fill,
+            name_style.own_color_or(header_fill),
         );
         // The sheet's own background for the name (`arrangement track-name`).
         name_style.paint(painter, name.intersect(clip));

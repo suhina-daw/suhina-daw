@@ -279,6 +279,9 @@ impl Session {
     pub fn new(mut project: Project) -> Self {
         // A project that has used every id there is still opens; only adding objects then fails.
         let _ = project.assign_ids();
+        // A track saved without a colour of its own (before tracks stored one) is given the
+        // colour it shows, once. Not an edit: nothing to undo.
+        project.fill_track_colours();
         Self {
             project,
             source: None,
@@ -1291,6 +1294,8 @@ impl Session {
         if was == order(&self.project) {
             return;
         }
+        // A track an edit left without a colour (an older project set in place) keeps the one it
+        // showed.
         for (place, track) in before.tracks.iter().enumerate().filter(|(_, t)| t.color.is_none()) {
             if let Some(now) = self.project.tracks.iter_mut().find(|t| t.id == track.id && t.color.is_none()) {
                 now.color = Some(colours::track_colour(None, place));
