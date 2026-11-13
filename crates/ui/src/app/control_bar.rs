@@ -100,7 +100,9 @@ impl App {
         }
         self.hover_switch(ui.ctx(), hovered_switch);
         // The underline slides to the view that was picked.
-        if let Some((x, y, width, color)) = underline {
+        // Painted where its module is, inside the group's clip.
+        if let Some(((x, y, width, color), clip)) = underline {
+            let painter = painter.with_clip_rect(painter.clip_rect().intersect(clip));
             let ctx = ui.ctx();
             let x = motion::value(ctx, Id::unique("view-underline-x"), x, motion::SLIDE);
             let width = motion::value(ctx, Id::unique("view-underline-width"), width, motion::SLIDE);
@@ -220,7 +222,7 @@ impl App {
         (module, laid, clip): (&str, Rect, Rect),
         shown: Shown<'_>,
         actions: &mut Vec<Action>,
-        (hovered_switch, underline): (&mut Option<View>, &mut Option<Underline>),
+        (hovered_switch, underline): (&mut Option<View>, &mut Option<(Underline, Rect)>),
     ) {
         let at = themed_toolbar::place(ui, module, laid);
         let scope = crate::kit::element::TOOLBAR_MODULE.id(module).attribute("kind", module).enter();
@@ -230,7 +232,11 @@ impl App {
         let painter = painter.with_clip_rect(painter.clip_rect().intersect(clip));
         let Shown { grid, cpu, ram } = shown;
         let cx = ModuleCx { grid, cpu, ram, scope: &scope };
-        self.toolbar_module(&mut module_ui, &painter, at, module, cx, actions, hovered_switch, underline);
+        let mut own = None;
+        self.toolbar_module(&mut module_ui, &painter, at, module, cx, actions, hovered_switch, &mut own);
+        if let Some(own) = own {
+            *underline = Some((own, painter.clip_rect()));
+        }
     }
 
     /// One module of the toolbar in `outer`, its whole box, drawn the same wherever the row puts it;

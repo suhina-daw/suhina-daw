@@ -450,3 +450,27 @@ fn a_tempo_drag_is_dropped_when_its_field_goes_away() {
     assert_eq!((app.tempo_drag, app.tempo_grab, app.tempo_sent), (None, None, None));
     skin::configure(&skin::Skin::default());
 }
+
+/// The view switch's underline is painted inside the group that holds the switch: a group that
+/// hides its overflow cuts it as it cuts the names.
+#[test]
+fn the_view_underline_is_cut_with_its_group() {
+    let mut harness = native_bar();
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    // The clip of the one-point-high line under the shown view's name.
+    let clip_of_underline = |harness: &Harness<'static, Fixture>| {
+        harness.output().shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.rect.height() == 1.0 && rect.fill.a() > 0 && rect.rect.width() > 20.0 => {
+                Some(shape.clip_rect)
+            }
+            _ => None,
+        })
+    };
+    let plain = clip_of_underline(&harness).map(|clip| clip.width());
+    harness.state_mut().app.use_test_skin(css("#toolbar-end { overflow: hidden; max-width: 40px; }"));
+    harness.run();
+    let cut = clip_of_underline(&harness).map(|clip| clip.width());
+    skin::configure(&skin::Skin::default());
+    assert!(plain.is_some_and(|width| width > 200.0), "{plain:?}");
+    assert!(cut.is_some_and(|width| width < 60.0), "{cut:?}");
+}

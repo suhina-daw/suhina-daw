@@ -162,6 +162,23 @@ fn a_tab_taller_than_the_midi_tools_row_takes_input_only_inside_it() {
 }
 
 #[test]
+fn a_tab_taller_than_the_midi_tools_row_paints_only_inside_it() {
+    // The clip of the tab's word: the row's, not the tab's 80 points.
+    let clip_of_word = |css: &str| {
+        let h = with_clip(css);
+        let clip = h.output().shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text() == "Transform" => Some(shape.clip_rect),
+            _ => None,
+        });
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        clip
+    };
+    let plain = clip_of_word("").unwrap();
+    let tall = clip_of_word("midi-tools editor-tab { height: 80px; }").unwrap();
+    assert!(tall.height() <= plain.height().max(23.0), "{tall:?} {plain:?}");
+}
+
+#[test]
 fn the_midi_tools_tabs_have_their_kind() {
     assert!(exactly("", "Transform tab").is_some());
     assert!(exactly("editor-tab[kind=\"tab-transform\"] { display: none; }", "Transform tab").is_none());
