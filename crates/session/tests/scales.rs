@@ -14,7 +14,16 @@ use suhina_session::Session;
 use crate::support::run;
 
 fn note(time: f64, key: u8) -> Note {
-    Note { time, duration: 1.0, key, velocity: 100.0 / 127.0, release_velocity: 0.5, channel: 0, muted: false }
+    Note {
+        time,
+        duration: 1.0,
+        key,
+        velocity: 100.0 / 127.0,
+        release_velocity: 0.5,
+        channel: 0,
+        muted: false,
+        velocity_range: 0,
+    }
 }
 
 fn clip(content: u32) -> Clip {

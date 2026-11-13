@@ -687,7 +687,12 @@ pub fn show(
                 if !state.selected.contains(&grabbed) {
                     state.selected = BTreeSet::from([grabbed]);
                 }
-                state.gesture = Some(Gesture::Velocity { from, grabbed });
+                // Ctrl (Cmd) sets the range the velocity is rolled in instead (› Velocity range).
+                state.gesture = Some(if inputs.command {
+                    Gesture::VelocityRange { from, grabbed }
+                } else {
+                    Gesture::Velocity { from, grabbed }
+                });
             } else {
                 state.gesture = Some(Gesture::VelocityLine { from });
             }

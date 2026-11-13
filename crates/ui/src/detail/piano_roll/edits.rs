@@ -139,6 +139,8 @@ pub(super) enum Effect {
     ResizeStart(f64),
     Select(Rect),
     Velocity(f64),
+    /// The velocity range the selection takes, in MIDI steps (› Velocity range).
+    VelocityRange(i32),
     /// A line in the velocity lane from `from` to `to`, and the velocity each stem it spans takes.
     VelocityLine {
         from: Pos2,
@@ -220,6 +222,13 @@ pub(super) fn effect(
             let current =
                 clip.notes.get(*grabbed).map_or(target, |n| f64::from(suhina_session::midi_velocity(n.velocity)));
             Effect::Velocity(target - current)
+        }
+        Gesture::VelocityRange { grabbed, .. } => {
+            // From the grabbed note's velocity to the pointer's height: above it a range up,
+            // below it one down.
+            let target = velocity_at(layout.lane, now.y);
+            let own = clip.notes.get(*grabbed).map_or(target, |n| f64::from(suhina_session::midi_velocity(n.velocity)));
+            Effect::VelocityRange((target - own).round().clamp(-127.0, 127.0) as i32)
         }
         Gesture::Slice { from, delete, by_shift } => {
             // Shift slants the line, unless Shift is what started the slice (Shift right-drag).
@@ -340,6 +349,11 @@ pub(super) fn commit(
         {
             params["by"] = json!(by);
             actions.push(Action::new("note.setVelocity", params));
+        }
+        // The range: one `note.setVelocityRange` for the selection (› Velocity range).
+        (Gesture::VelocityRange { .. }, Effect::VelocityRange(range)) if !notes.is_empty() => {
+            params["range"] = json!(range);
+            actions.push(Action::new("note.setVelocityRange", params));
         }
         // The velocity line: one `note.setVelocity` with a value for each stem it spans.
         (Gesture::VelocityLine { .. }, Effect::VelocityLine { set, .. }) if !set.is_empty() => {

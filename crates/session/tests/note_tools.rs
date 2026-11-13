@@ -779,3 +779,32 @@ fn muting_a_duplicate_gives_only_that_clip_its_own_content() {
     assert_eq!(mutes(&session), [false, false, false, false], "the original stays unmuted");
     assert_eq!(notes_of(&session, own).iter().map(|n| n.muted).collect::<Vec<_>>(), [true, false, false, false]);
 }
+
+#[test]
+fn setting_a_velocity_range_absolutely_or_by_a_step() {
+    let mut session = Session::new(project(scale_notes()));
+    let before = notes_of(&session, 1);
+    let result =
+        run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [0, 1], "range": 20 }))
+            .unwrap();
+    assert_eq!(result, json!({ "notes": [0, 1], "ranges": [20, 20] }));
+    let ranges = |s: &Session| notes_of(s, 1).iter().map(|n| n.velocity_range).collect::<Vec<_>>();
+    assert_eq!(ranges(&session), vec![20, 20, 0, 0]);
+    let listed = run(&mut session, "note.list", json!({ "track": 1, "index": 0 })).unwrap();
+    assert_eq!(listed[0]["velocityRange"], json!(20));
+    assert!(listed[2].get("velocityRange").is_none(), "a note without one lists none");
+    run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [0, 2], "by": -1 })).unwrap();
+    assert_eq!(ranges(&session), vec![19, 20, -1, 0]);
+    // Kept within -127 to 127.
+    run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [1], "by": 200 })).unwrap();
+    assert_eq!(ranges(&session)[1], 127);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(notes_of(&session, 1), before, "one undo step each");
+    let bad = |params| run(&mut Session::new(project(scale_notes())), "note.setVelocityRange", params).is_err();
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "range": 128 })));
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "range": 1, "by": 1 })));
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0] })));
+    assert!(bad(json!({ "track": 1, "index": 2, "notes": [0], "range": 4 })), "an audio clip has no notes");
+}

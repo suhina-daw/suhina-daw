@@ -1417,6 +1417,12 @@ fn every_feature() -> Project {
     project.channels[0].devices[0].set_sample_edit_data(sample_edits).unwrap();
     // Version 11: a clip's own swing (#1221).
     project.arrangement.lanes[0].clips[0].swing = ClipSwing { amount: 0.6, own: true };
+    // Version 13: a note's velocity range (#1282).
+    if let Some(LaneData::Notes(notes)) = project.contents[0].lanes.first_mut().map(|l| &mut l.data)
+        && let Some(note) = notes.get_mut(0)
+    {
+        note.velocity_range = 20;
+    }
     renumbered(project)
 }
 
@@ -1481,6 +1487,14 @@ fn a_file_of_every_version_reads() {
             expected.transport.swing = 0.0;
             for clip in expected.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
                 clip.swing = ClipSwing::default();
+            }
+        }
+        if version < 13 {
+            // A note's velocity range came with version 13 (#1282).
+            for lane in expected.contents.iter_mut().flat_map(|c| c.lanes.iter_mut()) {
+                if let LaneData::Notes(notes) = &mut lane.data {
+                    notes.iter_mut().for_each(|n| n.velocity_range = 0);
+                }
             }
         }
         // Devices get their ids in document order when a file before version 6 is read.
@@ -1674,4 +1688,22 @@ fn an_older_content_with_lanes_of_different_audio_is_refused() {
         "arrangement": { "lanes": [ { "name": "A", "clips": [ { "content": 1, "start": 0.0, "length": 4.0 } ] } ] } } }"#;
     let error = from_json(text).expect_err("refused");
     assert!(error.0.contains("different gain"), "{error}");
+}
+
+/// A note's velocity range is written only when it is not 0, read back as it was, and a value out
+/// of range refuses the file (#1282).
+#[test]
+fn a_notes_velocity_range_round_trips_and_is_checked() {
+    let mut project = every_feature();
+    let written = to_json(&project);
+    assert_eq!(written.matches("velocity_range").count(), 1, "only the note that has one");
+    assert_eq!(from_json(&written).map(renumbered), Ok(renumbered(project.clone())));
+    if let Some(LaneData::Notes(notes)) = project.contents[0].lanes.first_mut().map(|l| &mut l.data)
+        && let Some(note) = notes.get_mut(0)
+    {
+        note.velocity_range = -127;
+    }
+    assert_eq!(from_json(&to_json(&project)).map(renumbered), Ok(renumbered(project)));
+    let bad = written.replace("\"velocity_range\": 20", "\"velocity_range\": 128");
+    assert!(from_json(&bad).is_err());
 }

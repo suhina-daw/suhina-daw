@@ -319,7 +319,16 @@ mod tests {
     use super::*;
 
     fn note(time: f64, duration: f64, key: u8) -> Note {
-        Note { time, duration, key, velocity: 100.0 / 127.0, release_velocity: 0.5, channel: 0, muted: false }
+        Note {
+            time,
+            duration,
+            key,
+            velocity: 100.0 / 127.0,
+            release_velocity: 0.5,
+            channel: 0,
+            muted: false,
+            velocity_range: 0,
+        }
     }
 
     #[test]

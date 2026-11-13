@@ -5,7 +5,16 @@ use super::*;
 use crate::detail::piano_roll_grid::{GridMode, Width};
 
 fn note(time: f64, duration: f64, key: u8) -> Note {
-    Note { time, duration, key, velocity: 100.0 / 127.0, release_velocity: 0.5, channel: 0, muted: false }
+    Note {
+        time,
+        duration,
+        key,
+        velocity: 100.0 / 127.0,
+        release_velocity: 0.5,
+        channel: 0,
+        muted: false,
+        velocity_range: 0,
+    }
 }
 
 #[test]
@@ -1148,4 +1157,21 @@ fn the_time_span_is_the_rectangle_while_it_is_drawn() {
     assert_eq!(state.time_span(), Some((2.0, 4.0)), "let go: the time selection");
     state.live_span = Some((0.0, 1.0));
     assert_eq!(state.time_span(), Some((0.0, 1.0)), "a new rectangle over it");
+}
+
+/// Alt+Shift+Up and Down step the selection's velocity range by one; Ctrl and a drag on a stem
+/// sets it from the grabbed note's velocity to the pointer's height (#1282).
+#[test]
+fn the_velocity_range_keys_and_drag() {
+    let piano = clip(vec![note(0.0, 1.0, 60), note(1.0, 1.0, 62)]);
+    let mut state = focused_on(&piano);
+    assert!(state.key_action("pianoRoll.rangeUp", &piano, 0.0, None).is_none(), "nothing selected");
+    state.selected = BTreeSet::from([1]);
+    let up = state.key_action("pianoRoll.rangeUp", &piano, 0.0, None).expect("a command");
+    assert_eq!(
+        (up.id, up.params["by"].clone(), up.params["notes"].clone()),
+        ("note.setVelocityRange", json!(1), json!([1]))
+    );
+    let down = state.key_action("pianoRoll.rangeDown", &piano, 0.0, None).expect("a command");
+    assert_eq!(down.params["by"], json!(-1));
 }

@@ -52,6 +52,7 @@ fn project(tracks: u32) -> Project {
         release_velocity: 0.5,
         channel: 0,
         muted: false,
+        velocity_range: 0,
     }];
     let mut p = Project {
         contents: vec![ClipContent {

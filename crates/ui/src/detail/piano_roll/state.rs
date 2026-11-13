@@ -125,6 +125,9 @@ pub(super) enum Gesture {
     Select { from: Pos2, add: bool },
     /// The selection's velocities follow the grabbed stem.
     Velocity { from: Pos2, grabbed: usize },
+    /// Ctrl and a drag on a stem: the selection's velocity range follows the pointer, from the
+    /// grabbed note's velocity (› Velocity range).
+    VelocityRange { from: Pos2, grabbed: usize },
     /// A note drawn where the press was, as long as the drag reaches.
     Draw { from: Pos2 },
     /// Notes painted along the drag ([`PianoRollState::stroke`]).
@@ -678,6 +681,11 @@ impl PianoRollState {
         };
         let (id, beats, keys) = match action {
             "selection.copy" => return Some(Action::new("note.copy", params)),
+            // Alt+Shift+Up and Down: the selection's velocity range by one step (› Velocity range).
+            "pianoRoll.rangeUp" | "pianoRoll.rangeDown" => {
+                params["by"] = json!(if action == "pianoRoll.rangeUp" { 1 } else { -1 });
+                return Some(Action::new("note.setVelocityRange", params));
+            }
             "selection.cut" => {
                 // The insert mark stays where the notes were, so a paste puts them back there.
                 let first = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
@@ -875,7 +883,16 @@ impl PianoRollState {
             FREE_LENGTH
         };
         let velocity = f32::from(self.last_velocity) / 127.0;
-        Some(Note { time, duration: length, key, velocity, release_velocity: 0.5, channel: 0, muted: false })
+        Some(Note {
+            time,
+            duration: length,
+            key,
+            velocity,
+            release_velocity: 0.5,
+            channel: 0,
+            muted: false,
+            velocity_range: 0,
+        })
     }
 }
 
