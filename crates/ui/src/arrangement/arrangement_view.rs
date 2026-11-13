@@ -1342,6 +1342,9 @@ fn show_lanes(
                 lanes_painter.vline(x, row.time.y_range(), egui::Stroke::new(1.0, theme::text_primary()));
             }
         }
+        // The row's scope ends with its clips: a theme's `overflow: hidden` on it must not cut the
+        // header, the take lanes or the automation lanes, which are not inside it.
+        drop(lane_el);
         let header = Rect::from_x_y_ranges(headers, row.time.y_range());
         let nest = Nest { places: &places, groups: &groups };
         let order = HeaderOrder { children: shown.children, tracks: &track_order };

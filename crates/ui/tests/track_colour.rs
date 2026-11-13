@@ -606,3 +606,38 @@ fn a_theme_colours_a_track_s_lane_from_its_color_attribute() {
     });
     assert!(lane.rect.width() > 400.0, "the whole row: {:?}", lane.rect);
 }
+
+/// Whether the last frame drew a filled rectangle of `colour` over `area` that nothing clips off it.
+fn drawn_unclipped(harness: &Harness<'static, App>, area: Rect, colour: Color32) -> bool {
+    harness.output().shapes.iter().any(|clipped| {
+        let mut rects = Vec::new();
+        let mut stack = vec![&clipped.shape];
+        while let Some(shape) = stack.pop() {
+            match shape {
+                Shape::Rect(r) => rects.push(r.clone()),
+                Shape::Vec(v) => stack.extend(v),
+                _ => {}
+            }
+        }
+        clipped.clip_rect.expand(0.5).contains_rect(area)
+            && rects.iter().any(|r| r.fill == colour && r.rect.expand(0.5).contains_rect(area))
+    })
+}
+
+#[test]
+fn a_lane_that_hides_its_overflow_leaves_the_header_and_the_automation_lanes_alone() {
+    let mut harness = arrangement_with_theme("track-lane { overflow: hidden; }");
+    let band = harness.get_by_label("Drums colour").rect();
+    assert!(drawn_unclipped(&harness, band, default_drums()), "the header's band is not cut to the timeline");
+    harness.get_by_label("Show automation of Drums").click();
+    harness.run();
+    let band = harness.get_by_label("Drums colour").rect();
+    assert!(drawn_unclipped(&harness, band, default_drums()), "nor with an automation lane open");
+    let lane = harness.get_by_label("Volume automation on Drums").rect();
+    let cut = harness
+        .output()
+        .shapes
+        .iter()
+        .any(|c| c.shape.visual_bounding_rect().intersects(lane) && !c.clip_rect.expand(0.5).contains_rect(lane));
+    assert!(!cut, "the automation lane's header is not cut either");
+}
