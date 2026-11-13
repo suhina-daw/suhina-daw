@@ -315,12 +315,7 @@ become device-group branches; shared or reconvergent processing is unsupported r
 Unlinked controllers do not affect playback. Unsupported active controls, sidechains,
 cycles or ambiguous ports keep the whole patch as a placeholder, never a partial graph.
 Nonunity input/internal edge gains are unsupported, while output-edge gains become branch gains.
-The original state is retained. No LYNX code or format research is used, except that one
-note of its analysis marked as taken from saved data (the channel switch of event 0, separate
-from the mixer mute) was compared, with the maintainer's leave, after the same behaviour had
-been observed in FL Studio itself and found in Lemon Studio's source; nothing was taken from
-it into the code. Its own
-REA_rodada14/141 provenance explicitly names Ghidra decompilation. Lemon's pinned README
+The original state is retained. Lemon's pinned README
 states independent specification/public-documentation development and excludes code
 derived from decompiled output; its Patcher source describes measured cycle behaviour.
 
