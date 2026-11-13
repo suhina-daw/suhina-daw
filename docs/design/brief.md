@@ -140,8 +140,6 @@ a theme file can change any of them (see Themes). Current values:
 | `track.mutedBackground` | `#21201D` | The fills of a muted track |
 | `pan.background` | `#1F1E1C` | Behind a track header's pan field |
 | `pan.centre` | `#817F7A` | The centre mark of a pan field |
-| `track.1`–`track.8` | `#FF9A3C` `#F2D541` `#4FC3F7` `#B38BFF` `#7FDB5A` `#FF6FA8` `#5C8DFF` `#2FD9C4` | Eight colour-picker swatches, also used to resolve legacy uncoloured tracks once on opening. New tracks and clips use the MIDI/audio creation defaults; + picks any colour |
-| `track.5`–`track.8` | `#8FA87A` `#C27C8E` `#7F8FB0` `#B9B2A6` | The other colours of the track colour palette (track menu, colour areas, colour tags' menu) |
 | type | 12 px UI, 11 px values, 9 px rulers | |
 | row height | 20 px grid rows and fields, 15–16 px inline fields, 17 px browser rows (`theme::BROWSER_ROW`) | |
 | radius | 0 everywhere | |
@@ -192,12 +190,11 @@ fills blend over that image. Clearing the image restores the host's transparent 
 A token the file leaves out keeps Suhina Studio's colour, so a file needs only the colours it
 changes; an unknown token or a value that is not `#RRGGBB` or `#RRGGBBAA` is skipped with a warning. Transparent RGB is preserved under canonical token names, including inherited text roles. Files with
 the first token names (`surface.0`, `line`, `text.tertiary` …) still read. Only colours belong to
-a theme: sizes, spacing and type stay the design's. A track's own colour comes from the project; tracks without one take
-a numbered palette colour resolved once when opened. `clip.midiDefault` and
-`clip.audioDefault` are creation-only RGB defaults, copied to new tracks and clips;
-existing project colours never follow edits to those defaults. The theme editor
-offers these two defaults; numbered `track.1`–`track.8` remain legacy swatches for file
-compatibility and colour pickers, rather than a list of default track colours.
+a theme: sizes, spacing and type stay the design's. Track and clip colours are
+not the theme's: a track's or clip's colour comes from the project, and the colour picker's eight
+colours (`#FF9A3C` `#F2D541` `#4FC3F7` `#B38BFF` `#7FDB5A` `#FF6FA8` `#5C8DFF` `#2FD9C4`) and
+the colours new tracks and clips get (MIDI `#4FC3F7`, audio `#FF9A3C`) are Suhina's own, the same
+in every theme. A theme draws them from the element's `color` attribute.
 
 
 Themes that come with Suhina (one folder each in `crates/ui/themes/<id>/`, of `theme.json`,

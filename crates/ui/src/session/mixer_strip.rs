@@ -416,15 +416,10 @@ pub fn show(
     let _work_trace = crate::kit::frame_trace::WorkSpan::new("mixer strip");
     let clipped_painter = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
     let painter = &clipped_painter;
-    let _artwork =
-        crate::kit::artwork::track_color(egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2));
     let strip_id = format!("track-{}", column.track.0);
     let style_class = crate::kit::element::MIXER
         .id(&strip_id)
-        .variable(
-            "--track-colour",
-            crate::kit::native_css::hex(egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2)),
-        )
+        .color(egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2))
         .attr(Selected, state.selected == Some(column.track))
         .attr(Muted, column.mute)
         .enter();
@@ -435,13 +430,12 @@ pub fn show(
         0.16,
     ));
     let strip = ui.interact(rect.intersect(painter.clip_rect()), id.with("strip"), Sense::click());
-    if !crate::kit::skin::paint_colored(
+    if !crate::kit::skin::paint_in_view(
         painter,
         rect,
         "track.body",
         crate::kit::skin::State::response(&strip, state.selected == Some(column.track)),
-        tint,
-        egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
+        style_class.own_color_or(tint),
     ) {
         painter.rect_filled(rect, 0.0, tint);
     }
@@ -561,12 +555,7 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, rect: Rect, fader: f32
 fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: Id, selected: bool) {
     let response = ui.interact(rect.intersect(painter.clip_rect()), id.with("strip-name"), Sense::hover());
     let track_id = format!("track-{}", column.track.0);
-    let name_style = crate::kit::element::TRACK_NAME
-        .id(&track_id)
-        .response(&response)
-        .variable("--track-fill", crate::kit::native_css::hex(colour_picker::fill(column.color, column.mute)))
-        .attr(Selected, selected)
-        .enter();
+    let name_style = crate::kit::element::TRACK_NAME.id(&track_id).response(&response).attr(Selected, selected).enter();
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{} strip", column.name)));
     // The name stands on the track's colour, as in the column's header.
     let native_fill = colour_picker::fill(column.color, column.mute);
@@ -577,13 +566,12 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
     } else {
         name_style.background_or(native_fill)
     };
-    if !crate::kit::skin::paint_colored(
+    if !crate::kit::skin::paint_in_view(
         painter,
         rect,
         "track.name",
         crate::kit::skin::State::response(&response, selected),
-        fill,
-        egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
+        name_style.own_color_or(fill),
     ) {
         painter.rect_filled(rect, 0.0, fill);
     }

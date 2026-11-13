@@ -698,20 +698,7 @@ pub fn button(painter: &Painter, rect: Rect, el: &Entered, state: State, fill: C
     let style = el.style();
     let radius = el.radius_or(radius);
     // A state the button's own artwork leaves out is every button's.
-    let paint = |role: &str| {
-        paint_variant(
-            painter,
-            rect,
-            role,
-            state,
-            fill,
-            0.0,
-            radius,
-            super::artwork::current_color(),
-            None,
-            style.as_ref(),
-        )
-    };
+    let paint = |role: &str| paint_variant(painter, rect, role, state, fill, 0.0, radius, None, style.as_ref());
     (role != "button" && paint(&role)) || paint("button")
 }
 
@@ -731,7 +718,7 @@ pub fn button_role(el: &Entered) -> String {
 }
 
 fn paint_inner(painter: &Painter, rect: Rect, role: &str, state: State, ink: Color32, angle: f32, radius: f32) -> bool {
-    paint_variant(painter, rect, role, state, ink, angle, radius, super::artwork::current_color(), None, None)
+    paint_variant(painter, rect, role, state, ink, angle, radius, None, None)
 }
 
 /// [`paint`], with the artwork casting `el`'s shadows (`box-shadow`) in its own shape and a
@@ -752,38 +739,21 @@ pub fn paint_turned_as(
 ) -> bool {
     let style = el.style();
     let radius = el.radius_or(0.0);
-    paint_variant(painter, rect, role, state, ink, angle, radius, super::artwork::current_color(), None, style.as_ref())
+    paint_variant(painter, rect, role, state, ink, angle, radius, None, style.as_ref())
 }
 
-/// Raw track colour chooses artwork independently of the muted/selected paint tint.
-pub fn paint_colored(
-    painter: &Painter,
-    rect: Rect,
-    role: &str,
-    state: State,
-    ink: Color32,
-    track_color: Color32,
-) -> bool {
+/// [`paint`], with the view's own artwork for `role` when the theme has one
+/// (`track.name.mixer`).
+pub fn paint_in_view(painter: &Painter, rect: Rect, role: &str, state: State, ink: Color32) -> bool {
     // The view's own artwork for the role, when the theme has one (`track.name.mixer`).
     let view = super::style_class::view().map(|view| format!("{role}.{view}"));
     let role = view.as_deref().filter(|role| has_own(role)).unwrap_or(role);
-    paint_variant(painter, rect, role, state, ink, 0.0, 0.0, Some(track_color), None, None)
+    paint_variant(painter, rect, role, state, ink, 0.0, 0.0, None, None)
 }
 
 /// A missing or invalid signal-driven sequence lets the native meter draw normally.
 pub fn meter_frame(painter: &Painter, rect: Rect, state: State, level: f32) -> bool {
-    paint_variant(
-        painter,
-        rect,
-        "meter",
-        state,
-        Color32::WHITE,
-        0.0,
-        0.0,
-        super::artwork::current_color(),
-        Some(level),
-        None,
-    )
+    paint_variant(painter, rect, "meter", state, Color32::WHITE, 0.0, 0.0, Some(level), None)
 }
 
 /// `var(--name)` and `var(--name, fallback)` in artwork take the theme's resolved values, colours
@@ -801,7 +771,6 @@ fn paint_variant(
     ink: Color32,
     angle: f32,
     radius: f32,
-    track_color: Option<Color32>,
     level: Option<f32>,
     shadows: Option<&super::native_css::Computed>,
 ) -> bool {
@@ -819,7 +788,7 @@ fn paint_variant(
     let defaults = DEFAULTS.get_or_init(default_assets);
     let key = format!("{role}{suffix}");
     let variant = if let Some(level) = level {
-        let variant = super::artwork::level_variant(&skin, state, track_color, level);
+        let variant = super::artwork::level_variant(&skin, state, level);
         if variant.is_none() {
             return false;
         }
@@ -829,7 +798,6 @@ fn paint_variant(
             &skin,
             role,
             state,
-            track_color,
             painter.ctx().input(|input| input.time),
             super::motion::enabled(painter.ctx()),
         )
@@ -843,15 +811,8 @@ fn paint_variant(
     let Some(source) = own.or_else(|| defaults.get(&key)).or_else(|| defaults.get(role)) else {
         return false;
     };
-    // The variables of the elements in scope (a track's `--track-colour`) win over the theme's.
-    let scoped = if source.contains("var(--") { super::native_css::scope_variables() } else { Vec::new() };
-    let substituted = if scoped.is_empty() {
-        substitute_variables(source, &skin.variables)
-    } else {
-        let mut variables = (*skin.variables).clone();
-        variables.extend(scoped.iter().cloned());
-        std::borrow::Cow::Owned(substitute_variables(source, &variables).into_owned())
-    };
+    // The theme's resolved `:root` variables; a track's colour reaches artwork as `currentColor`.
+    let substituted = substitute_variables(source, &skin.variables);
     let source = substituted.as_ref();
     // Plain inherited track surfaces use the native fill and avoid filling the SVG
     // texture cache with a separate rectangle for every colour and strip height.
@@ -875,10 +836,7 @@ fn paint_variant(
         textures.sources.clear();
         textures.source_owner = Some(Arc::clone(&skin));
     }
-    let mut source_key = variant.as_ref().map_or_else(|| key.clone(), |(key, _)| key.clone());
-    for (name, value) in &scoped {
-        source_key.push_str(&format!("|{name}={value}"));
-    }
+    let source_key = variant.as_ref().map_or_else(|| key.clone(), |(key, _)| key.clone());
     let source_hash = if let Some(hash) = textures.sources.get(&source_key) {
         *hash
     } else {

@@ -111,7 +111,6 @@ impl Name {
             attributes: Vec::new(),
             sheet: None,
             native: Native::default(),
-            variables: Vec::new(),
         }
     }
     /// The element with the id the app gives it (`play`, `device-compressor`); the registry
@@ -148,10 +147,6 @@ impl Name {
     pub fn pointer<'a>(self, hovered: bool, pressed: bool, disabled: bool) -> Builder<'a> {
         self.builder().pointer(hovered, pressed, disabled)
     }
-    /// The element with the custom property `name` (`--track-colour`) for the sheet.
-    pub fn variable<'a>(self, name: &'static str, value: String) -> Builder<'a> {
-        self.builder().variable(name, value)
-    }
     /// The style of a drawn item of this element, with nothing more said about it.
     pub fn style(self) -> Option<Computed> {
         self.builder().style()
@@ -177,7 +172,6 @@ pub struct Builder<'a> {
     /// Attributes with a value the app gives the element besides its colour (`kind`).
     attributes: Vec<(&'static str, &'a str)>,
     native: Native,
-    variables: Vec<(&'static str, String)>,
 }
 
 impl<'a> Builder<'a> {
@@ -226,15 +220,10 @@ impl<'a> Builder<'a> {
         self.native = native;
         self
     }
-    /// A custom property the element gives the sheet and its descendants (`--track-colour`).
-    pub fn variable(mut self, name: &'static str, value: String) -> Self {
-        self.variables.push((name, value));
-        self
-    }
 
     /// Puts the element in the style tree and the palette scope until the value is dropped.
     pub fn enter(self) -> Entered {
-        let Self { name, id, response, states, pointer, color, attributes, native, variables, sheet } = self;
+        let Self { name, id, response, states, pointer, color, attributes, native, sheet } = self;
         let sheet_wake = sheet.clone();
         let scope = super::style_class::enter_inner(name, id, response, |node| {
             super::native_css::mark_node_bits(node, pointer);
@@ -248,9 +237,6 @@ impl<'a> Builder<'a> {
             }
             for (attribute, value) in attributes {
                 super::native_css::set_attribute(node, attribute, value.to_owned());
-            }
-            for (variable, value) in variables {
-                super::native_css::set_variable(node, variable, value);
             }
             if let Some((ctx, source)) = sheet {
                 super::native_css::device_sheet(Some(node), &ctx, Some(source));
@@ -630,6 +616,7 @@ names! {
     BROWSER_PLACE = "browser-place";
     BROWSER_ROW = "browser-row";
     BROWSER_PLAY = "browser-play";
+    BROWSER_ICON = "browser-icon";
     BROWSER_TAG_DOT = "browser-tag-dot";
     BROWSER_PREVIEW_WAVE = "browser-preview-wave";
     SESSION = "session";
@@ -643,6 +630,7 @@ names! {
     TRACK_NUMBER = "track-number";
     FOLD = "fold";
     ADD_TRACK = "add-track";
+    TRACK_LANE = "track-lane";
     CLIP = "clip";
     CLIP_NAME = "clip-name";
     CLIP_WAVEFORM = "clip-waveform";

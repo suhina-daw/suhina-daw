@@ -257,8 +257,7 @@ Its theme-owned liquid strengths are 48/24/12 for panels/tracks/clips. Actual li
 requires animations and a supported GPU renderer; ordinary alpha/CSS materials
 remain available with OpenGL or adapters without linear texture-view aliases.
 **Suhina Blocks** has brown plank CSS and original pixel SVGs, with no landscape
-or background PNG. Eight raw track colours choose distinct `track.body.color-RRGGBB`
-textures. `track-column { track-artwork: on; }` extends body
+or background PNG. `track-column { track-artwork: on; }` extends body
 artwork behind Launcher slots; empty cells preserve it and native clip launches remain
 unchanged. `off`/omission preserves native fills. Native custom properties inherit
 from the nearest authored ancestor, and a closer scope can override them.
@@ -299,20 +298,22 @@ also connected (`arrangement-fold`, `arrangement-enable`, `arrangement-automatio
 Individual send slots use `mixer-send-1` and `arrangement-send-1`, then `-2`, etc.,
 following native return order. Launcher sends stay inside their movable sends region.
 
-Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds. Exact raw
-track colours choose variants independently of selection/mute tint:
+Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds, with a
+variant for a state if you like. Artwork is not chosen by a track's colour; an SVG that draws in
+`currentColor` takes the track's colour as Suhina draws it (dimmed while muted), or the element's
+own `color` where your sheet gives one, which a rule can take from the track's colour (see
+*Tracks* below):
 
 ```css
 track.name { image: url("assets/name.svg"); }
-track.name.color-00ff00 { image: url("assets/green-name.svg"); }
-track.name.color-00ff00.hover { image: url("assets/green-name-hover.svg"); }
+track.name.hover { image: url("assets/name-hover.svg"); }
 window { artwork-fps: 12; }
 ```
 
 For an image sequence, supply contiguous `.frame-0`, `.frame-1`, … keys for that
-variant (at most 32 frames), e.g. `track.name.color-00ff00.hover.frame-0`.
+variant (at most 32 frames), e.g. `track.name.hover.frame-0`.
 Frame rate is 1–30 fps (`window { artwork-fps: 12; }` in `theme.css`). With native animations off,
-the first frame stays visible without continuous repainting. Colour/state defaults
+the first frame stays visible without continuous repainting. State variants
 fall back to the role's normal artwork and then Suhina's embedded original.
 PNG artwork retains authored colours and transparency rather than applying `currentColor`.
 Each PNG is limited to 8 MiB compressed, 4096 pixels per axis and 4 million pixels;
@@ -669,15 +670,28 @@ A button's glyph takes the button's `color`, in every state. Artwork has an on s
 
 ### Tracks
 
-A track's header, Launcher column and mixer strip give the sheet `--track-colour`, the track's
-colour, and its name `--track-fill`, the fill Suhina draws there (the colour at the user's header
-colour strength). Use them to style each view on its own, whatever that setting is:
+A track's colour is the project's, chosen by the user; a theme draws it but never chooses it,
+and the colour picker offers the same colours in every theme. A track's header (both views),
+Launcher column, mixer strip and Arrangement lane (`track-lane`) have it as a `color` attribute,
+the final `#rrggbb` in lowercase. `attr(color type(<color>))` reads an element's own attribute,
+so hand it to the parts inside with a variable of your own:
 
 ```css
-session track-header track-name { background-color: var(--track-colour); color: #101214; }
-arrangement track-name { background-color: #2A2C2E; border-width: 1px; border-color: var(--track-colour); color: #E6E6E6; }
-mixer track-name { background-color: color-mix(in srgb, var(--track-colour) 40%, #1E2023); }
+track-header, mixer { --track: attr(color type(<color>)); }
+session track-header track-name { background-color: var(--track); color: contrast-color(var(--track)); }
+arrangement track-name { background-color: #2A2C2E; border-width: 1px; border-color: var(--track); color: #E6E6E6; }
+mixer track-name { background-color: color-mix(in oklab, var(--track) 40%, #1E2023); }
+mixer[muted] track-name { background-color: #2A2C2E; }
+track-lane { background-color: color-mix(in srgb, attr(color type(<color>)) 8%, transparent); }
 ```
+
+Keep the colours recognisable: people tell tracks apart by them. Tint them, mix them with the
+background, use them for borders, rather than replacing them. Mix in `oklab` (or `srgb`):
+`oklch` turns hues towards the hue of a nearly grey background, so a dark blue mixed with a warm
+dark grey comes out maroon. On a light background keep at least about 60 % of the colour, or a
+pale yellow fades into it. A lane's background is painted over
+the grid lines, so keep it translucent. A selector for one colour takes the `i` flag:
+`track-header[color="#FF9A3C" i]`.
 
 A name's `color` sets its text; without one it is worked out from the fill. `mixer` is a strip,
 also in the Launcher view, so `mixer track-name` is the strip's name and
@@ -687,11 +701,12 @@ also in the Launcher view, so `mixer track-name` is the strip's name and
 
 ### Clips
 
-An arrangement clip gives the sheet `--clip-colour`, its own colour, and takes `opacity` (the
+A clip, in the Arrangement or in a Launcher slot, has its colour as a `color` attribute (its
+own, or its track's when it has none), and takes `opacity` (the
 whole clip fades, its waveform, notes and name with it), `border-radius` and a background:
 
 ```css
-clip { border-radius: 4px; background-color: color-mix(in srgb, var(--clip-colour) 70%, #000); }
+clip { border-radius: 4px; background-color: color-mix(in oklab, attr(color type(<color>)) 70%, #000); }
 clip[selected] { border-width: 1px; border-color: #FFFFFF; }
 clip[muted] { opacity: 0.5; }
 clip[playing] clip-name { background-color: var(--accent); color: #000; }
@@ -706,13 +721,13 @@ The waveform's and notes' `color` applies while **Settings › Arrangement › W
 existed reads as the choice it was (Dark, for most): pick Theme there to see the theme's
 colours. `clip.fade-handle` is artwork for
 the fade handles. A new clip takes its track's colour while **New clip colour** is **Track
-colour** (the default); with **Theme default** it takes `clip.midiDefault` or
-`clip.audioDefault`.
+colour** (the default); with **By clip type** it takes Suhina's MIDI or audio colour.
 
-The piano roll's notes have `--clip-colour` too, and their own rules:
+The piano roll has the edited clip's `color` attribute, and its notes their own rules:
 
 ```css
-piano-note { background-color: var(--clip-colour); border-radius: 2px; }
+piano-roll { --clip: attr(color type(<color>)); }
+piano-note { background-color: var(--clip); border-radius: 2px; }
 piano-note[selected] { border-color: #FFFFFF; }
 piano-row-black { background-color: #15171A; }
 piano-key { background-color: #E8E8E8; color: #202020; }
@@ -897,8 +912,8 @@ control with no room left is not drawn, without a notice: check narrow tracks an
   `font-size`, `display: none`, `[muted]`). `#control-automation` (`[checked]` while its lanes
   show, artwork `automation`), `fold` (`[checked]` while folded, artwork `fold`) and
   `#control-monitor` (`[checked]` while monitoring is In, artwork `monitor`).
-- **Artwork reads scope variables:** `var(--track-colour)`, `var(--track-fill)` and
-  `var(--clip-colour)` in an SVG take the track's or clip's value.
+- **Artwork reads the theme's variables:** `var(--name)` in an SVG takes the theme's `:root`
+  value; a track's colour reaches artwork only as `currentColor`.
 - **Values:** `value-position: right | left | top | bottom | inside | none` on a knob
   (`pan`, a volume knob, `send`, the MIDI tools knob) places its value or hides it; `none` on
   a level bar hides its value.
@@ -1058,8 +1073,8 @@ within ±256 points and at most 32 points of blur. Blur uses a fixed nine-tap we
 approximation on cached glyphs, not an image convolution.
 Keep assets small, use readable contrast, and retain useful native labels.
 
-Track/clip colours belong to the project. `clip.midiDefault` and `clip.audioDefault`
-apply when new tracks/clips are created; theme edits must not recolour existing ones.
+Track/clip colours belong to the project: a theme draws them from the `color` attribute and
+never chooses them, so the colour picker and new tracks and clips take Suhina's own colours.
 Use `text.primary` contrast of at least 7:1 and hints of at least 3:1 where possible.
 
 ## For AI-assisted edits

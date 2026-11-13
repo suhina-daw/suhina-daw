@@ -80,6 +80,7 @@ pub fn blank_project_with(returns: bool) -> Project {
         Launcher { scenes: (1..=SCENES).map(|n| Scene { name: n.to_string(), ..Scene::default() }).collect(), columns };
     // Its lanes and scenes get ids in order; a handful of objects cannot use up the counter.
     let _ = project.assign_ids();
+    project.fill_track_colours();
     project
 }
 

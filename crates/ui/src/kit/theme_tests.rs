@@ -44,18 +44,16 @@ fn translucent_theme_colours_preserve_alpha_in_files() {
 }
 
 #[test]
-fn old_clip_defaults_migrate_and_explicit_defaults_and_materials_round_trip() {
-    let (old, warnings) = Theme::from_json(r##"{"colors":{"track.1":"#123456","track.3":"#ABCDEF"}}"##);
-    assert!(warnings.is_empty());
-    assert_eq!(old.colors.audio_clip_default, rgb(0x123456));
-    assert_eq!(old.colors.midi_clip_default, rgb(0xABCDEF));
-    assert_eq!(old.liquid, None);
-    let (theme, warnings) = Theme::from_json(
-        r##"{"colors":{"clip.midiDefault":"#010203","clip.audioDefault":"#040506"},"liquid":{"panels":38,"tracks":52,"clips":40}}"##,
+fn former_track_colours_are_left_behind_quietly_and_materials_round_trip() {
+    // Every file an earlier version saved has them: they go without a word, so the file still
+    // converts to a theme.css.
+    let (old, warnings) = Theme::from_json(
+        r##"{"colors":{"track.1":"#123456","clip.midiDefault":"#ABCDEF","clip.audioDefault":"#040506"}}"##,
     );
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(old.liquid, None);
+    let (theme, warnings) = Theme::from_json(r##"{"liquid":{"panels":38,"tracks":52,"clips":40}}"##);
     assert!(warnings.is_empty());
-    assert_eq!(theme.colors.midi_clip_default, rgb(0x010203));
-    assert_eq!(theme.colors.audio_clip_default, rgb(0x040506));
     assert_eq!(theme.liquid, Some(super::super::liquid::Options { panels: 38, tracks: 52, clips: 40 }));
     assert_eq!(Theme::from_json(&theme.to_json()), (theme, Vec::new()));
     let (invalid, warnings) = Theme::from_json(r#"{"liquid":{"panels":999,"tracks":-1,"clips":"bad"}}"#);
@@ -101,24 +99,14 @@ fn example_themes_embed_their_paint_and_all_editable_artwork() {
 }
 
 #[test]
-fn track_colours_keep_their_values_in_suhina_studio() {
-    let dark = Palette::DARK;
-    let tracks = [
-        dark.track_color_1,
-        dark.track_color_2,
-        dark.track_color_3,
-        dark.track_color_4,
-        dark.track_color_5,
-        dark.track_color_6,
-        dark.track_color_7,
-        dark.track_color_8,
-    ];
-    let expected = [0xFF9A3C, 0xF2D541, 0x4FC3F7, 0xB38BFF, 0x7FDB5A, 0xFF6FA8, 0x5C8DFF, 0x2FD9C4].map(rgb);
-    assert_eq!(tracks, expected);
-    // A theme can change them like any other token.
-    let (theme, warnings) = Theme::from_json(r##"{ "colors": { "track.1": "#010203" } }"##);
-    assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(theme.colors.track_color_1, rgb(0x010203));
+fn a_theme_sheet_that_sets_the_former_track_colours_is_told_they_are_not_read() {
+    let meta = ThemeMeta::new("Old", DEFAULT_SWATCH);
+    let (_, warnings) =
+        from_folder(meta, ":root { --track-3: #010203; --clip-audioDefault: #040506; --track-9: #000; }");
+    let former: Vec<_> = warnings.iter().filter(|w| w.contains("no longer read")).collect();
+    assert_eq!(former.len(), 1, "one notice for them all: {warnings:?}");
+    assert!(former[0].contains("--track-3") && former[0].contains("--clip-audioDefault"));
+    assert!(!former[0].contains("--track-9"), "only the former ones");
 }
 
 #[test]
@@ -422,7 +410,7 @@ fn every_token_has_its_own_name() {
 #[test]
 fn text_on_a_colour_is_the_text_token_that_stands_out_more() {
     // The default track colours are light: names on them are dark.
-    for fill in [Palette::DARK.track_color_1, Palette::DARK.track_color_8] {
+    for fill in [rgb(0xFF9A3C), rgb(0x2FD9C4)] {
         assert_eq!(text_on(fill), window_background(), "{fill:?}");
         assert!(contrast(fill, text_on(fill)) >= 4.5, "{fill:?}");
     }
@@ -527,4 +515,33 @@ fn a_former_kind_token_gets_a_notice_naming_its_sample_point_rule() {
     let (_, warnings) = Theme::from_json(r##"{"colors":{"kind.snare":"#123456","kind.nothing":"#123456"}}"##);
     assert!(warnings.iter().any(|w| w.contains("sample-point[kind=\"snare\"]")), "{warnings:?}");
     assert!(warnings.iter().any(|w| w == "kind.nothing is not a colour token"), "{warnings:?}");
+}
+
+/// The README's examples for track and clip colours are rules a theme can use as written.
+#[test]
+fn the_readme_s_track_and_clip_colour_examples_read_without_warnings() {
+    // A Windows checkout has CRLF line ends; the fences are found by their LF.
+    let readme = include_str!("../../themes/THEME-PACKAGE-README.md").replace("\r\n", "\n");
+    let from = readme.find("### Tracks").unwrap();
+    let to = readme[from..].find("piano-grid {").unwrap() + from;
+    let css: String =
+        readme[from..to].split("```css\n").skip(1).filter_map(|block| block.split("```").next()).collect();
+    assert!(css.contains("attr(color type(<color>))"), "{css}");
+    let (_, warnings) = from_folder(ThemeMeta::new("Readme", DEFAULT_SWATCH), &css);
+    assert!(warnings.is_empty(), "{warnings:?}\n{css}");
+    assert!(suhina_style::sheet::Sheet::parse(&css).is_ok());
+}
+
+/// A sheet from an earlier version that reads the variables the app set on tracks, or gives
+/// artwork chosen by a track's colour, is told that neither is used any more.
+#[test]
+fn a_sheet_reading_former_track_variables_or_colour_artwork_is_told() {
+    let sheet = "track-name { background-color: var(--track-colour); } \
+                 track.body.color-ff9a3c { image: url(\"assets/orange.svg\"); }";
+    let (_, warnings) = from_folder(ThemeMeta::new("Old", DEFAULT_SWATCH), sheet);
+    assert!(warnings.iter().any(|w| w.starts_with("--track-colour no longer set")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.starts_with("track.body.color-ff9a3c not used")), "{warnings:?}");
+    let (_, warnings) =
+        from_folder(ThemeMeta::new("New", DEFAULT_SWATCH), "track-name { color: attr(color type(<color>)); }");
+    assert!(warnings.is_empty(), "{warnings:?}");
 }

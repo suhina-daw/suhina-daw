@@ -258,6 +258,22 @@ pub enum MidiPort {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
+/// What a track saved without a colour of its own (a project from before tracks stored one)
+/// shows, by its place among the tracks: these four in turn. Fixed, since it says what a saved
+/// file means: such a track looks the same in every theme and every version.
+pub const LEGACY_TRACK_COLOURS: [Rgb; 4] =
+    [Rgb(0xFF, 0x9A, 0x3C), Rgb(0xF2, 0xD5, 0x41), Rgb(0x4F, 0xC3, 0xF7), Rgb(0xB3, 0x8B, 0xFF)];
+
+impl Project {
+    /// Gives every track without a colour of its own the one it shows
+    /// ([`LEGACY_TRACK_COLOURS`] by its place), so every track has its own.
+    pub fn fill_track_colours(&mut self) {
+        for (place, track) in self.tracks.iter_mut().enumerate() {
+            track.color.get_or_insert(LEGACY_TRACK_COLOURS[place % LEGACY_TRACK_COLOURS.len()]);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChannelRole {
     #[default]

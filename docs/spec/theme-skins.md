@@ -273,9 +273,13 @@ The direction property applies to controls with an axis; horizontal volume dragg
 to the right, while vertical dragging increases upwards. Keyboard, wheel, reset and undo keep
 their existing semantics. Layout entry support is incremental and documented per adapter.
 
-Artwork can choose an exact raw track colour and interaction state before palette tinting:
-`track.name.color-00ff00.hover` overrides the default `track.name`. The most specific own
-colour/state variant wins, then own colour, own state, own default, then embedded fallback.
+Artwork can choose an interaction state: `track.name.hover` overrides the default
+`track.name`. The own state variant wins, then the own default, then the embedded fallback.
+Artwork is not chosen by a track's colour. In track artwork (`track.name`, `track.body`)
+`currentColor` is the fill Suhina draws there (the track's colour, dimmed while muted), or the
+element's own `color` where the sheet gives one, which a rule may take from its `[color]`. A sheet
+that reads `--track-colour`, `--track-fill` or `--clip-colour`, or gives artwork for one colour
+(`track.body.color-ff9a3c`), is told they are no longer used.
 `track.body` covers the strip background. A contiguous sequence of `.frame-0` through
 `.frame-31` asset keys animates that variant at `skin.artwork-fps` (1–30, default 12).
 Native animation-off freezes it at frame zero without a repaint loop. Assets allow the
@@ -353,8 +357,8 @@ contiguous `meter.frame-0` through `meter.frame-31` SVG/PNG artwork by the loude
 channel's normalized dBFS peak, from silence to the top of the existing meter range.
 It is signal-driven, independent of animation settings and artwork fps. Missing or
 invalid frame sequences fall back to the continuous stereo meter. The native clip
-indicator, click-to-reset command and accessible measurement remain intact. Exact
-track-colour and interaction-state sequences follow normal artwork precedence.
+indicator, click-to-reset command and accessible measurement remain intact. Interaction-state
+sequences follow normal artwork precedence.
 Other styles use the existing stereo
 peak/RMS monitor; presentation never changes measurement or sound. The clip light
 and click-to-reset work with every style. Segment count is bounded. Needle displays
@@ -424,7 +428,7 @@ like before a theme styles it.
   A state follows the element as a pseudo-class or an attribute: `knob-body:hover`,
   `fader-cap:active`, `button:disabled`, `button[checked]` (a toggle that is on). The earlier role
   form (`knob.body:hover`, `solo:on`) still reads; Suhina writes the element form. Roles without
-  default artwork (`piano.draw`, `track.body.color-ff9a3c`, `meter.frame-3`) are written as roles.
+  default artwork (`piano.draw`, `meter.frame-3`) are written as roles.
 - **Sample-map colours are not settings.** The user-agent sheet styles each sound by its kind,
   `sample-point[kind="kick"] { color: #D06E5E; }` and so on for `snare`, `clap`, `closedHat`,
   `openHat`, `hat`, `rim`, `tom`, `crash`, `ride`, `cymbal`, `percussion`, `bass`, `tonal`,
@@ -596,12 +600,28 @@ volume field is the native capsule and the pan field the native flat field.
 the side of the Arrangement view's track headers while the user's Track headers setting
 is *Theme* (the default); Left and Right are the user's own and win.
 
-**Host states and variables.** The host marks elements with states the sheet matches, on the
+**Host states and colours.** The host marks elements with states the sheet matches, on the
 element's builder before it is entered (`kit::element`, `.attr(Checked, on)`): `[checked]` on a toggle that is on, `[playing]` and `[recording]` on the
 transport's buttons, `[selected]` on the selected track's header, column, strip and name,
-`[armed]` and `[muted]`. It gives elements custom properties below every rule
-(`.variable("--track-colour", …)`): a track's header, column and strip `--track-colour`, its name
-`--track-fill`. A track name's text takes the sheet's `color` when one applies. Artwork has an
+`[armed]` and `[muted]`. It sets no custom properties: variables are the theme's. A track's or
+clip's colour is its own data, the RGB the user chose, which the theme draws but never chooses.
+The host gives it as a `color` attribute (`#rrggbb`, lowercase; a selector for one
+colour takes the `i` flag) on every element that stands for a track or a clip: `track-header`
+in both views, the Launcher's `track-column`, a `mixer` strip, the Arrangement's `track-lane`,
+each `clip` (in the Arrangement and in a Launcher slot) and the `piano-roll` of the clip it edits.
+A clip without a colour of its own gives its track's. `attr(color type(<color>))` reads the
+element's own attribute only, so a theme passes it to the parts inside with a variable of its own:
+`track-header { --track: attr(color type(<color>)); } track-name { border-color: var(--track); }`.
+A theme should keep track colours recognisable, since people tell tracks apart by them: tint
+them, mix them with the background, use them for borders; nothing enforces it. Mixing in oklab
+keeps a colour's hue; oklch moves it towards the hue of a background that is nearly grey
+(dark blue `#1F3A93` 40 % of the way to `#1D1C1A` comes out maroon in oklch, a darker blue in
+oklab), and a pale colour mixed far towards a light background (yellow 60 % towards `#F4F2EE`)
+is hard to tell from it. The colour picker's eight colours and the colours new tracks and clips get
+are Suhina's own, the same in every theme (`suhina_session::colours`); a theme that still sets
+`--track-1` to `--track-8`, `--clip-midiDefault` or `--clip-audioDefault` is told they are no
+longer read. A `track-lane`'s background is painted over the grid lines, so a theme gives it a
+translucent one. A track name's text takes the sheet's `color` when one applies. Artwork has an
 `.on` state (`solo:on`), falling back to `.active`, and per-view track roles
 (`track.name.mixer` and the others) over `track.name` and `track.body`.
 
@@ -1184,7 +1204,7 @@ These native parts take the sheet (the theme package README lists every selector
 - **Ruler, loop region, play position:** `ruler` (background, `color`, `border-color`;
   artwork `ruler`), `loop-region` (`[checked]` while looping; `height`; artwork `loop-region`,
   `.on`), `playhead` (`color`, `width`; `width: 0` hides it).
-- **Clips:** `--clip-colour`; `[selected]`, `[muted]`, `[playing]` (the play position inside the
+- **Clips:** `[color]`; `[selected]`, `[muted]`, `[playing]` (the play position inside the
   clip while the transport runs), `[recording]` (a recording span over it on its track);
   `clip-gain`, `clip-fade-handle` (artwork `clip.fade-handle`).
 - **Level bars:** `font-size` for the value; `value-handle` with a `width` (or artwork
@@ -1204,8 +1224,8 @@ These native parts take the sheet (the theme package README lists every selector
   `piano-key-line` and `piano-scale-mark` (their backgrounds); `piano-scale-strip` (background,
   `border-color`, `color`) and `piano-range` (background, `border-color`: the range a drag on the
   keys is selecting), `piano-clip-strip` (the background of the strip that shows several picked clips), `piano-time-selection` (background over the rows, `border-color` for its edges
-  and the bar on the ruler) and `piano-insert-mark` (background). What the sheet sets wins over the key style chosen in the piano roll; `piano-note` with
-  `--clip-colour`, `[selected]` and `[muted]` (background, border, radius, `color` for its name),
+  and the bar on the ruler) and `piano-insert-mark` (background). What the sheet sets wins over the key style chosen in the piano roll; `piano-note` inside
+  the `piano-roll`'s `[color]`, with `[selected]` and `[muted]` (background, border, radius, `color` for its name),
   `velocity` (`color` of the stems), `ruler`; the tool buttons `piano-tool` with
   `#piano-<tool>` ids, `[checked]` and artwork `piano.<tool>`; `midi-tools`, `clip-info`,
   `editor-tab` (`#tab-clip`, `#tab-devices`, and the MIDI tools part's `#tab-notes` and `#tab-transform`; `[checked]`).
@@ -1219,7 +1239,7 @@ These native parts take the sheet (the theme package README lists every selector
 - **Pan field:** the native field takes `pan` and `#mixer-pan` colours.
 
 **New clip colour** (Settings › Arrangement › Tracks): *Track colour* (default) gives a new
-clip its track's colour; *Theme default* the theme's MIDI or audio clip default. Arming an
+clip its track's colour; *By clip type* Suhina's MIDI or audio colour. Arming an
 audio track while the audio device has no input says so in the status bar.
 
 
@@ -1277,9 +1297,8 @@ of bars, and a slider id per parameter.
   `track-number` (placed as `arrangement-number` when `arrangement-enable` is hidden),
   `#control-automation` (artwork `automation`), `fold` (artwork `fold`), `#control-monitor`
   (artwork `monitor`, placed as `arrangement-monitor`).
-- **Artwork variables:** before rasterising, the variables Suhina sets in scope
-  (`--track-colour`, `--track-fill`, `--clip-colour`) are laid over the theme's root variables;
-  the texture cache keys on them.
+- **Artwork variables:** before rasterising, `var()` in artwork takes the theme's resolved root
+  variables; a track's colour reaches artwork as `currentColor`.
 - **Knob values:** `value-position` (`right` by default, `left`, `top`, `bottom`,
   `inside`, `none`); `none` hides a level bar's value. Mixer sends default to `bottom`.
 - **Sizes:** `send { width; height }` within the sends row; `track-height` (20–400

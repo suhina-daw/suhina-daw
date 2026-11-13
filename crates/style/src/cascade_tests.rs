@@ -215,26 +215,6 @@ fn host_properties_and_bad_property_rules_do_not_break_a_sheet() {
 }
 
 #[test]
-fn a_host_variable_is_inherited_and_a_rule_may_replace_it() {
-    use crate::selector::{Element, Tree};
-    let sheet =
-        Sheet::parse(".name { color: var(--track-colour); } .plain .name { --track-colour: #000000; }").unwrap();
-    let mut track = Element::new("div", None);
-    track.classes.push("track".into());
-    track.variables.push(("--track-colour".into(), "#ff8800".into()));
-    let mut name = Element::new("div", Some(0));
-    name.classes.push("name".into());
-    let tree = Tree::new(vec![track, name]).unwrap();
-    let styles = compute(
-        &tree,
-        Viewport { width: 800.0, height: 600.0, reduced_motion: false },
-        &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }],
-    )
-    .unwrap();
-    assert_eq!(styles[1].get(Property::Color), Value::Color(crate::value::Color::Rgba([0xff, 0x88, 0, 0xff])));
-}
-
-#[test]
 fn attr_colours_a_track_and_its_children_through_a_variable() {
     let sheet = Sheet::parse(
         "track-header { --track: attr(color type(<color>)); \

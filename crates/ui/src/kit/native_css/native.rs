@@ -166,7 +166,6 @@ fn element_of(engine: &Engine, node: &StyleNode, parent: usize) -> Element {
     let mut element = Element::new(node.element.name(), Some(parent));
     element.id = Some(element_id(engine, node));
     element.object = name_of(engine, node).map(str::to_owned);
-    element.variables.clone_from(&node.variables);
     element.attributes.clone_from(&node.attributes);
     element.states.push(if node.state & 4 != 0 { "disabled" } else { "enabled" }.into());
     for (bit, state) in [(1, "hover"), (2, "active"), (8, "focus"), (8, "focus-visible")] {

@@ -135,7 +135,6 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
             element: crate::kit::element::TOOLBAR,
             id: None,
             state: 0,
-            variables: Vec::new(),
             attributes: Vec::new(),
             sheet: 0,
         },
@@ -145,7 +144,6 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
             element: crate::kit::element::BUTTON,
             id: None,
             state: 0,
-            variables: Vec::new(),
             attributes: Vec::new(),
             sheet: 0,
         },
@@ -972,12 +970,11 @@ fn a_selected_header_s_background_never_fills_its_buttons() {
 #[test]
 fn a_track_gives_its_colour_to_the_sheet_and_each_view_is_known() {
     let mut seen = None;
-    painted("mixer track-name { background-color: var(--track-colour); }", |_| {
+    // `attr()` reads the strip's own attribute; the theme hands it to the name in a variable.
+    let css = "mixer { --track: attr(color type(<color>)); } mixer track-name { background-color: var(--track); }";
+    painted(css, |_| {
         let _session = test_el("session").enter();
-        let _strip = test_el("mixer")
-            .id("track-1")
-            .variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)))
-            .enter();
+        let _strip = test_el("mixer").id("track-1").color(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)).enter();
         let name = test_el("track-name").id("track-1").enter();
         seen = Some((name.background_or(egui::Color32::TRANSPARENT), super::super::style_class::view()));
     });
@@ -988,22 +985,24 @@ fn a_track_gives_its_colour_to_the_sheet_and_each_view_is_known() {
 }
 
 #[test]
-fn artwork_reads_the_variables_of_the_elements_in_scope() {
-    let mut seen = Vec::new();
-    painted("", |_| {
-        let _header = test_el("track-header")
-            .id("track-1")
-            .variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)))
-            .enter();
-        let _button = test_el("button").enter();
-        seen = scope_variables();
+fn tracks_and_clips_carry_their_colour_as_an_attribute() {
+    let mut seen = None;
+    // The attribute holds the final RGB, in lowercase, so a selector for one colour takes `i`.
+    let css = "track-header { background-color: color-mix(in oklab, attr(color type(<color>)), black 50%); } \
+               clip[color=\"#E8913A\" i] { background-color: #010203; } \
+               clip { color: contrast-color(attr(color type(<color>))); }";
+    painted(css, |_| {
+        let header = test_el("track-header").id("track-1").color(egui::Color32::from_rgb(0xFF, 0x00, 0x00)).enter();
+        let shown = header.background_or(egui::Color32::TRANSPARENT);
+        drop(header);
+        let clip = test_el("clip").color(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)).enter();
+        seen = Some((shown, clip.background_or(egui::Color32::TRANSPARENT), clip.color_or(egui::Color32::RED)));
     });
-    assert_eq!(seen, [("--track-colour".to_string(), "#e8913a".to_string())]);
-    let mut theme = std::collections::BTreeMap::new();
-    theme.insert("--track-colour".to_string(), "#000000".to_string());
-    theme.extend(seen);
-    let svg = r#"<rect fill="var(--track-colour, #ff00ff)"/>"#;
-    assert_eq!(crate::kit::skin::substitute_variables(svg, &theme), r##"<rect fill="#e8913a"/>"##);
+    let (header, clip, ink) = seen.unwrap();
+    let [red, green, _, _] = header.to_srgba_unmultiplied();
+    assert!(red > 0x40 && red < 0xC0 && green == 0, "half the red: {header:?}");
+    assert_eq!(clip, egui::Color32::from_rgb(1, 2, 3));
+    assert_eq!(ink, egui::Color32::BLACK, "a light clip takes dark text");
 }
 
 #[test]
@@ -1181,14 +1180,13 @@ fn a_level_bar_draws_a_handle_where_its_fill_ends() {
 #[test]
 fn piano_roll_notes_take_the_clip_colour_and_their_states() {
     use crate::detail::piano_roll::part_style;
-    let css = "piano-note { background-color: var(--clip-colour); } \
+    let css = "piano-roll { --clip: attr(color type(<color>)); } \
+               piano-note { background-color: var(--clip); } \
                piano-note[selected] { border-color: #FFFFFF; } \
                piano-key-black { background-color: #000000; }";
     let mut seen = None;
     painted(css, |_| {
-        let _roll = test_el("piano-roll")
-            .variable("--clip-colour", super::hex(egui::Color32::from_rgb(0x12, 0x34, 0x56)))
-            .enter();
+        let _roll = test_el("piano-roll").color(egui::Color32::from_rgb(0x12, 0x34, 0x56)).enter();
         seen = Some((
             part_style("piano-note", &[]),
             part_style("piano-note", &[crate::kit::element::Selected]),
@@ -1469,12 +1467,9 @@ fn a_family_class_reaches_every_part_of_its_kind() {
 #[test]
 fn a_level_bar_s_fill_can_take_the_track_s_colour() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(200.0, 20.0));
-    let css = "value-fill { background-color: var(--track-colour); }";
+    let css = "track-header { --track: attr(color type(<color>)); } value-fill { background-color: var(--track); }";
     let shapes = painted(css, |ui| {
-        let _header = test_el("track-header")
-            .id("track-1")
-            .variable("--track-colour", hex(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)))
-            .enter();
+        let _header = test_el("track-header").id("track-1").color(egui::Color32::from_rgb(0xE8, 0x91, 0x3A)).enter();
         let value = test_el("value").id("arrangement-volume").enter();
         crate::kit::mixer_controls::level_bar(
             ui.painter(),

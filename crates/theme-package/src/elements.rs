@@ -86,6 +86,7 @@ pub const ATTRIBUTES: &[(&str, &str)] = &[
     ("recording", "record while it records, a clip being recorded"),
     ("armed", "a track armed for recording, and its arm button"),
     ("muted", "a muted track, a clip or note that is off, a device that is off"),
+    ("color", "a track's or clip's own colour, `#rrggbb` in lowercase: `attr(color type(<color>))`"),
     ("kind", "what an element is among those of its name: an icon's symbol, a panel or line of the window"),
     ("closed", "the detail area while it is closed, its place kept for its splitter"),
     ("detail", "where the window has its detail area: below, full-width or beside"),
@@ -239,29 +240,36 @@ pub const ELEMENTS: &[Element] = &[
         "browser-place",
         "browser-row",
         "browser-play",
+        "browser-icon",
         "browser-tag-dot",
         "browser-preview-wave",
     ]),
     element("browser-place", Control, "A place or kind on the browser's left.").attributes(&["checked", "selected"]),
     element("browser-row", Control, "A row of the browser's list.").attributes(&["selected"]),
     element("browser-play", Control, "The button that previews a browser row."),
+    element(
+        "browser-icon",
+        Drawn,
+        "A browser row's icon, coloured by its `kind` attribute (`midi`, `sample`, `instrument`, `effect`).",
+    )
+    .attributes(&["kind"]),
     element("browser-tag-dot", Drawn, "The coloured dot of a tag in the browser."),
     element("browser-preview-wave", Drawn, "The waveform of the sound being previewed."),
     element("session", Region, "The Launcher view: tracks as columns of clip slots.")
         .parts(&["track-column", "scene-column"])
         .settings(&["track-width", "return-width", "scene-width", "slot-height", "header-height"]),
     element("track-column", Container, "A track's column in the Launcher view.")
-        .attributes(&["selected", "muted"])
+        .attributes(&["color", "selected", "muted"])
         .settings(&["track-artwork"]),
     element("scene-column", Part, "The column of scenes at the Launcher view's side."),
     element("scene", Control, "A scene's launch button."),
     element("slot", Control, "A clip slot in the Launcher view.").settings(&["track-artwork"]),
     element("arrangement", Region, "The Arrangement view: tracks as rows along a timeline.")
-        .parts(&["track-header", "ruler", "loop-region", "playhead", "clip", "add-track"])
+        .parts(&["track-header", "track-lane", "ruler", "loop-region", "playhead", "add-track"])
         .settings(&["track-headers", "track-height", "header-min-width", "header-tint", "compact-below"]),
     element("track-header", Container, "A track's header, in the Arrangement view and over a Launcher column.")
         .parts(&["track-name", "track-number", "fold"])
-        .attributes(&["selected", "armed", "muted"])
+        .attributes(&["color", "selected", "armed", "muted"])
         .artwork(&[
             default_svg!("track.midi", "icon[kind=\"midi\"]"),
             default_svg!("track.audio", "icon[kind=\"audio\"]"),
@@ -282,9 +290,16 @@ pub const ELEMENTS: &[Element] = &[
     element("add-track", Control, "The buttons that add a track, after the last one.")
         .ids(Ids::Prefixed("add-"))
         .artwork(&[own("add-track")]),
-    element("clip", Control, "An arrangement clip.")
+    element(
+        "track-lane",
+        Container,
+        "A track's row of clips in the Arrangement view, its clips inside it. Its background is painted over the grid lines, so give it a translucent one.",
+    )
+    .parts(&["clip"])
+    .attributes(&["color", "selected", "muted"]),
+    element("clip", Control, "A clip, in the Arrangement or in a Launcher slot.")
         .parts(&["clip-name", "clip-waveform", "clip-notes", "clip-gain", "clip-fade-handle"])
-        .attributes(&["selected", "muted", "playing", "recording"])
+        .attributes(&["color", "selected", "muted", "playing", "recording"])
         .settings(&["track-artwork"]),
     element("clip-name", Part, "An arrangement clip's name bar."),
     element("clip-waveform", Part, "An arrangement clip's waveform."),
@@ -301,7 +316,7 @@ pub const ELEMENTS: &[Element] = &[
     element("playhead", Drawn, "The play position line."),
     element("mixer", Region, "The mixer, and a mixer strip in any view.")
         .parts(&["fader", "pan", "send", "meter"])
-        .attributes(&["selected", "muted"]),
+        .attributes(&["color", "selected", "muted"]),
     element("detail", Region, "The detail area under the main view."),
     element("clip-editor", Region, "The clip editor in the detail area.").parts(&["editor-tab"]),
     element(
@@ -311,7 +326,7 @@ pub const ELEMENTS: &[Element] = &[
     )
     .ids(Ids::Prefixed("tab-"))
     .attributes(&["checked"]),
-    element("piano-roll", Region, "The piano roll.").parts(&[
+    element("piano-roll", Region, "The piano roll, with the edited clip's `color`.").attributes(&["color"]).parts(&[
         "piano-grid",
         "piano-key",
         "piano-note",
@@ -466,7 +481,7 @@ pub const ELEMENTS: &[Element] = &[
     element("start-page", Region, "The page shown with no project open."),
     element("plugin-manager", Region, "The Plug-in manager."),
     element("export", Region, "The Export audio dialog."),
-    element("theme-swatch", Drawn, "A theme's swatch in the theme picker, with a `color` attribute."),
+    element("theme-swatch", Drawn, "A theme's swatch in the theme picker, with a `color` attribute.").attributes(&["color"]),
 ];
 
 /// The element named `name`.
@@ -669,7 +684,6 @@ mod tests {
         assert_eq!(role_of_selector("icon[kind=stop]:hover"), "stop.hover");
         assert_eq!(selector_of_role("piano.draw:on"), "piano.draw:on");
         assert_eq!(selector_of_role("piano.draw.on"), "piano.draw:on");
-        assert_eq!(selector_of_role("track.body.color-ff9a3c"), "track.body.color-ff9a3c");
     }
 
     #[test]

@@ -183,6 +183,12 @@ knob-pointer { image: url("suhina:knob.pointer.svg"); }
 meter { image: url("suhina:meter.svg"); }
 icon[kind="folder"] { image: url("suhina:folder.svg"); }
 
+/* A browser row's icon, by the kind of item; folders, headings and projects take the row's text. */
+browser-icon[kind="midi"], browser-icon[kind="midi-effect"] { color: #F2D541; }
+browser-icon[kind="sample"] { color: #4FC3F7; }
+browser-icon[kind="instrument"], browser-icon[kind="preset"] { color: #B38BFF; }
+browser-icon[kind="effect"], browser-icon[kind="audio-effect"] { color: #FF9A3C; }
+
 /* The sounds of the sample map, by kind. */
 sample-point[kind="kick"] { color: #D06E5E; }
 sample-point[kind="snare"] { color: #73AAC0; }
