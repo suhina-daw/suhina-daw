@@ -500,6 +500,7 @@ fn computed_from(resolved: Arc<ComputedStyle>) -> Computed {
             radius: style.authored(Property::Radius),
             accent: style.authored(Property::AccentColor),
             border_width: BORDER_SIDES.into_iter().any(|side| style.authored(side)),
+            box_shadow: style.authored(Property::BoxShadow),
         },
         variables: style.shared_variables(),
         gradients: match style.get(Property::BackgroundImage) {

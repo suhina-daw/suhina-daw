@@ -4164,6 +4164,8 @@ fn native_bar_line(bar: &crate::kit::element::Entered) -> [f32; 4] {
 fn over_view<R>(ui: &mut Ui, name: &str, panel: Rect, main: Rect, draw: impl FnOnce(&mut Ui) -> R) -> R {
     if panel.intersect(main).is_positive() {
         let layer = egui::LayerId::new(egui::Order::Middle, Id::unique(("workspace-overlay", name)));
+        // Painted on without an area: said, so that the captures behind a menu hold it.
+        crate::kit::floating::window_layer(ui.ctx(), layer);
         ui.scope_builder(egui::UiBuilder::new().layer_id(layer), draw).inner
     } else {
         draw(ui)

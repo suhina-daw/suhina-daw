@@ -1132,6 +1132,14 @@ fn a_windows_backslash_state_stores_forward_slashed() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Sets `path`'s last write to `seconds` after 1970: a test that needs a file to read as rewritten
+/// says so, rather than hoping the clock moved between two writes (file times tick in steps of up
+/// to 16 ms on Windows, a second on some file systems; `AGENTS.md` rule 7).
+fn stamp(path: &Path, seconds: u64) {
+    let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+    file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds)).unwrap();
+}
+
 /// A library-relative state's file is at the library's base, not the working folder: the
 /// timestamp check sees the same resolved path the load read, so a rewritten file is
 /// reloaded and the player hears it.
@@ -1145,6 +1153,7 @@ fn a_library_relative_files_rewrite_is_reloaded_by_the_sync() {
     let file = dir.join("Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam");
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, SHIPPED_OVERDRIVE).unwrap();
+    stamp(&file, 1_000_000);
     run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": text(&file) })).unwrap();
     let relative = "Sounds/NAM/Amp models/Suhina/Suhina Overdrive.nam";
     session.sync_device_files();
@@ -1170,6 +1179,7 @@ fn a_library_relative_files_rewrite_is_reloaded_by_the_sync() {
         "metadata": { "name": "Test amp 1965" }
     }"#;
     std::fs::write(&file, model).unwrap();
+    stamp(&file, 2_000_000);
     session.sync_device_files();
     assert_eq!(
         session.device_asset_name(relative).as_deref(),

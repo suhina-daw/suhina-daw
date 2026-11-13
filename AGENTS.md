@@ -38,7 +38,8 @@ describe a file. Read only the ones that match your task.
 7. **Tests are the gate.** Every change comes with tests: round-trip and malformed-input tests for
    formats, golden-file renders for DSP and engine behaviour. A test never depends on timing: no
    `sleep` to give a thread time, no wall-clock deadline or elapsed-time bound, no polling loop
-   that waits for another thread, no result that depends on the order threads run in. CI runners
+   that waits for another thread, no result that depends on the order threads run in, no file
+   time that must move between two writes (set it with `File::set_modified`). CI runners
    are slow and uneven, and such a test fails there once in a while and teaches everyone to
    re-run the job. Render a fixed number of frames with `process`, use a fake clock, or wait
    on an explicit signal (a barrier such as `Session::sync_recording`, a channel, a join).

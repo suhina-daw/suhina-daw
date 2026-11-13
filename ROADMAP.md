@@ -1088,3 +1088,5 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   out. A tester never has to look for the new build on GitHub
   ([spec](https://github.com/suhina-daw/suhina-daw/blob/main/docs/spec/updates.md)).
 
+- Floating surfaces in themes: every menu, right-click menu, dropdown, tooltip and dialog blurs the window behind it, whatever colour a theme gives its frame; `backdrop-filter: blur() | none` on `popup`, `menu`, `dialog` and `tooltip` turns it on or off, and a theme styles a popup's and a tooltip's frame (background, border, corners, shadow).
+
