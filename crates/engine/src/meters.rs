@@ -8,7 +8,7 @@
 //! atomics any thread reads, like [`crate::CpuMonitor`]: the audio thread only stores into it,
 //! never allocates, locks or waits. A track is measured at its own level, after its own
 //! devices, volume and pan and before the groups and the main channel it plays through; a
-//! group shows the sum of what plays into it, after its own volume. A track that is not heard
+//! group shows the sum of what plays into it, after its own volume and pan. A track that is not heard
 //! (muted, or another track soloed) shows nothing. The main output is what the renderer hands
 //! the audio device, preview and metronome included.
 //!
@@ -19,7 +19,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-use suhina_model::{ChannelId, ChannelRole, Project, TrackId};
+use suhina_model::{ChannelRole, Project, TrackId};
 
 use crate::buses::gains_until;
 use crate::chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK};
@@ -263,14 +263,12 @@ impl Levels {
             project.channel(id)
         };
         let master = project.channels.iter().find(|c| c.role == ChannelRole::Master).map(|c| c.id);
-        let is_group =
-            |channel: ChannelId| project.channels.iter().any(|c| c.id != channel && c.output == Some(channel));
-        // A track's own gains: its volume and pan (a group's pan does not apply, as when it is
-        // mixed), up to the next channel it plays into.
+        // A track's own gains: its volume and pan, a group's too (its pan applies once to its
+        // sum, as when it is mixed), up to the next channel it plays into.
         let own = |track: TrackId| -> (f32, f32) {
             let Some(channel) = channel_of(track) else { return (0.0, 0.0) };
             let until = channel.output.or(master.filter(|&m| m != channel.id));
-            gains_until(project, track, until, !is_group(channel.id)).unwrap_or((0.0, 0.0))
+            gains_until(project, track, until, true).unwrap_or((0.0, 0.0))
         };
         let ratio = |a: f32, b: f32| if b > 0.0 && b.is_finite() { a / b } else { 0.0 };
         let mut direct = Vec::with_capacity(tracks.len());
