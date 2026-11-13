@@ -1495,6 +1495,10 @@ pub(super) fn paint_clip(
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &clip.name, font, text_color);
     }
     let marks = wave_area(rect);
+    // How strongly the clip's waveform or notes are drawn, 1 in full to 0 hidden: where they
+    // crowd into a smear, they fade out and, on a lane too low for a name bar, the clip's name
+    // takes their place in the body.
+    let mut content_fade = 1.0_f32;
     if let Some(view) = clip.audio_view.as_ref().filter(|_| marks.height() >= 4.0)
         && let Some(peaks) = timeline.waveforms.get(&view.file)
     {
@@ -1529,12 +1533,19 @@ pub(super) fn paint_clip(
                 waveform::Column { x: x + 0.5, from: a.min(b), to: a.max(b), gain }
             })
             .collect();
-        let shape = waveform::geometry(peaks, marks, &columns, waveform::scale(painter.ctx()));
-        waveform::paint(
-            &painter.with_clip_rect(marks.intersect(painter.clip_rect())),
-            &shape,
-            waveform::Colors::from(dim(color)),
-        );
+        // On a low lane, zoomed out until a beat is a few points wide, the thin waveform says
+        // nothing more than the clip's name would; a lane with a name bar keeps it.
+        if !has_name {
+            content_fade = crowded_wave_fade(beat_width);
+        }
+        if content_fade > 0.0 {
+            let shape = waveform::geometry(peaks, marks, &columns, waveform::scale(painter.ctx()));
+            waveform::paint(
+                &painter.with_clip_rect(marks.intersect(painter.clip_rect())),
+                &shape,
+                waveform::Colors::from(dim(color).gamma_multiply(content_fade)),
+            );
+        }
     } else if clip.audio {
         painter.hline(marks.x_range(), marks.center().y.round() + 0.5, theme::hairline(dim(color)));
     } else if !clip.notes.is_empty() && marks.height() >= 4.0 {
@@ -1553,10 +1564,16 @@ pub(super) fn paint_clip(
             n.start + n.length >= first && n.start <= last && n.start < span_end
         };
         // Zoomed out until the notes crowd into a smear, they fade out and the clip's name takes
-        // their place, so a dense part reads as the part it is rather than as noise.
+        // their place, so a dense part reads as the part it is rather than as noise. Crowded
+        // across (starts too close) or, on a low lane, up and down (pitches too close).
         let shown_width = (rect.right().min(view.right()) - rect.left().max(view.left())).max(0.0);
         let starts: Vec<f64> = clip.notes.iter().filter(in_view).map(|n| n.start).collect();
-        let notes_fade = crowded_notes_fade(starts, shown_width);
+        let mut notes_fade = crowded_notes_fade(starts, shown_width);
+        if !has_name {
+            let keys: Vec<u8> = clip.notes.iter().filter(in_view).map(|n| n.key).collect();
+            notes_fade = notes_fade.min(crowded_rows_fade(keys, marks.height()));
+        }
+        content_fade = notes_fade;
         let note_ink = content_ink.gamma_multiply(notes_fade);
         if notes_fade > 0.0 {
             for note in clip.notes.iter().filter(in_view) {
@@ -1568,17 +1585,16 @@ pub(super) fn paint_clip(
                 painter.rect_filled(Rect::from_min_size(Pos2::new(x, y - 1.0), Vec2::new(width, 2.0)), 0.0, note_ink);
             }
         }
-        // A clip with a name bar already shows its name; a low lane's clip shows it in the body.
-        if notes_fade < 1.0 && !has_name {
-            let name = if clip.name.is_empty() { lane.name.as_str() } else { clip.name.as_str() };
-            let left = rect.left().max(view.left()) + 7.0;
-            let name_rect =
-                Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
-            let el = crate::kit::element::CLIP_NAME.enter();
-            let size = el.font_size_or(theme::TEXT).min((rect.height() - 2.0).max(6.0));
-            let ink = el.color_or(text_color).gamma_multiply(1.0 - notes_fade);
-            widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, name, theme::ui_font(size), ink);
-        }
+    }
+    // A clip with a name bar already shows its name; a low lane's clip shows it in the body.
+    if content_fade < 1.0 && !has_name {
+        let name = if clip.name.is_empty() { lane.name.as_str() } else { clip.name.as_str() };
+        let left = rect.left().max(view.left()) + 7.0;
+        let name_rect = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
+        let el = crate::kit::element::CLIP_NAME.enter();
+        let size = el.font_size_or(theme::TEXT).min((rect.height() - 2.0).max(6.0));
+        let ink = el.color_or(text_color).gamma_multiply(1.0 - content_fade);
+        widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, name, theme::ui_font(size), ink);
     }
     if let Some((notes, tempo)) = ara_notes
         && marks.height() >= 4.0
@@ -1701,6 +1717,35 @@ pub(super) fn crowded_notes_fade(mut starts: Vec<f64>, width: f32) -> f32 {
     }
     let gap = width / starts.len() as f32;
     ((gap - CROWDED_GAP) / (CLEAR_GAP - CROWDED_GAP)).clamp(0.0, 1.0)
+}
+
+/// Points between pitch rows at or under which a low clip's notes are hidden; its notes are 2
+/// points high, so rows closer than that run into one band.
+const CROWDED_ROW: f32 = 2.0;
+/// Points between pitch rows at or over which a low clip's notes are drawn in full.
+const CLEAR_ROW: f32 = 4.0;
+
+/// How strongly a MIDI clip's notes are drawn by how many distinct pitches (`keys`, those in
+/// view) share the `height` points they are drawn in, from 1 (in full) to 0 (hidden).
+pub(super) fn crowded_rows_fade(mut keys: Vec<u8>, height: f32) -> f32 {
+    keys.sort_unstable();
+    keys.dedup();
+    if keys.is_empty() {
+        return 1.0;
+    }
+    let gap = height / keys.len() as f32;
+    ((gap - CROWDED_ROW) / (CLEAR_ROW - CROWDED_ROW)).clamp(0.0, 1.0)
+}
+
+/// Points per beat at or under which a low audio clip's waveform is hidden.
+const CROWDED_BEAT: f32 = 8.0;
+/// Points per beat at or over which a low audio clip's waveform is drawn in full.
+const CLEAR_BEAT: f32 = 16.0;
+
+/// How strongly an audio clip's waveform is drawn on a lane too low for a name bar, by how many
+/// points a beat takes (`beat_width`), from 1 (in full) to 0 (hidden).
+pub(super) fn crowded_wave_fade(beat_width: f32) -> f32 {
+    ((beat_width - CROWDED_BEAT) / (CLEAR_BEAT - CROWDED_BEAT)).clamp(0.0, 1.0)
 }
 
 /// Where a clip's waveform (or notes) is drawn: under its name bar, a little in from its edges.

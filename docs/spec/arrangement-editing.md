@@ -279,9 +279,13 @@ Let go, it is
   blocks even in an empty clip (#700). A MIDI clip's notes are drawn in every pass.
 - Zoomed out until a MIDI clip's notes crowd together, its notes fade out and its name takes their
   place: drawn in full while their starts in view lie 5 points apart or more, hidden at 2.5 points
-  or less, fading between. Notes that start together (a chord) count once. A clip with a name bar
-  keeps its name there; on a lane too low for one, the name is drawn in the body, the track's name
-  when the clip has none.
+  or less, fading between. Notes that start together (a chord) count once. On a lane too low for a
+  name bar, the notes also fade when their pitches run together: drawn in full while the distinct
+  pitches in view are 4 points apart or more in the clip's height, hidden at 2 points or less. An
+  audio clip on such a lane fades its waveform as the view zooms out: in full at 16 points a beat
+  or more, hidden at 8 or less. A clip with a name bar keeps its name there (and an audio clip its
+  waveform); on a lane too low for one, the name is drawn in the body as the notes or the waveform
+  fade, the track's name when the clip has none.
 - The right edge is one handle over the clip's full height; there is no separate loop handle
   at the corner (#700). The loop is turned on in the clip column (› Clip column in
   [ui-clip-editor.md](ui-clip-editor.md)) or with `clip.setLoop`, and a looping clip's edge then

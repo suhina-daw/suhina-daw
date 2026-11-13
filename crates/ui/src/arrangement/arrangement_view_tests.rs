@@ -713,6 +713,24 @@ fn crowded_clip_notes_fade_out_as_the_view_zooms_out() {
 }
 
 #[test]
+fn a_low_clips_notes_fade_when_its_pitches_run_together() {
+    // A low lane draws notes in about 8 points: two pitches stay apart, many run into a band.
+    assert_eq!(clip::crowded_rows_fade(vec![36, 36, 43], 8.0), 1.0, "2 pitches, 4 points apart");
+    assert_eq!(clip::crowded_rows_fade((48..60).collect(), 8.0), 0.0, "12 pitches in 8 points");
+    let some = clip::crowded_rows_fade(vec![60, 64, 67], 8.0);
+    assert!(some > 0.0 && some < 1.0, "3 pitches: faded, {some}");
+    assert_eq!(clip::crowded_rows_fade(Vec::new(), 8.0), 1.0);
+}
+
+#[test]
+fn a_low_audio_clips_waveform_fades_as_the_view_zooms_out() {
+    assert_eq!(clip::crowded_wave_fade(26.0), 1.0, "26 points a beat: drawn in full");
+    assert_eq!(clip::crowded_wave_fade(6.0), 0.0, "6 points a beat: hidden");
+    let some = clip::crowded_wave_fade(12.0);
+    assert!(some > 0.0 && some < 1.0, "12 points a beat: faded, {some}");
+}
+
+#[test]
 fn dragging_a_selected_track_resizes_every_selected_track() {
     let mut state = ArrangementViewState::default();
     state.set_lane_height(TrackId(1), 100.0);
