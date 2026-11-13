@@ -548,6 +548,10 @@ pub struct App {
     /// The Arrangement's clip selection last frame: when it changes while stopped, the play
     /// start marker goes to its first clip.
     clips_before: Vec<(TrackId, ClipId)>,
+    /// Where the last pick of clips put the play start marker (`None`: it left the marker
+    /// alone), and whether something else has moved the marker since: a click on a ruler, a
+    /// marker, a lane. Moved, Play starts at the marker and not at the selected clip.
+    pick_start: (Option<f64>, bool),
     /// The piano roll is pulled to the top (`docs/spec/ui-clip-editor.md` › Pulled to the top).
     detail_max: bool,
     /// The width a drag of the stacked devices' column splitter has reached so far.
@@ -809,6 +813,7 @@ impl App {
             quick_add_filter: quick_add::Filter::default(),
             quick_add_kept: String::new(),
             clips_before: Vec::new(),
+            pick_start: (None, false),
             detail_max: false,
             last_escape: None,
             escape_twice: false,
@@ -1278,7 +1283,10 @@ impl App {
         // Picking clips clears the time selection, so one there now was painted after the pick:
         // Play starts at it (#937).
         let painted = self.shown == View::Arrangement && self.arrangement.time_selection().is_some();
-        let clip = (self.settings.play_from == PlayFrom::Clip && !painted)
+        // The marker moved since the pick (a click on the ruler, a marker, a lane): the user chose
+        // where play starts after picking the clip, and Play starts there.
+        let moved = self.pick_start.1;
+        let clip = (self.settings.play_from == PlayFrom::Clip && !painted && !moved)
             .then(|| self.selected_arrangement_clip())
             .flatten()
             .filter(|_| self.arrangement.picked_whole)
@@ -1286,6 +1294,23 @@ impl App {
         match clip {
             Some((_, clip)) => Action::new("transport.play", json!({ "from": "clip", "clip": clip.0 })),
             None => Action::new("transport.play", json!({})),
+        }
+    }
+
+    /// Notes a command that moves the play start marker anywhere but where the last pick of
+    /// clips put it: from then on Play starts at the marker, not at the selected clip.
+    fn note_marker_moved(&mut self, action: &Action) {
+        let beats = action.params.get("beats").and_then(serde_json::Value::as_f64);
+        let moved = match action.id {
+            "transport.jump" | "transport.setStart" | "transport.setPosition" => {
+                // The pick's own move to its first clip is not one.
+                !matches!((self.pick_start.0, beats), (Some(pick), Some(beats)) if (pick - beats).abs() <= 1e-9)
+            }
+            "marker.jump" => true,
+            _ => false,
+        };
+        if moved {
+            self.pick_start.1 = true;
         }
     }
 
@@ -2652,6 +2677,7 @@ impl App {
         }
         // A control moved by hand shows its parameter in the track's open lanes (#1205).
         self.focus_touched_lane(action);
+        self.note_marker_moved(action);
         // A fader or a send dragged on one of several selected tracks moves them together.
         if let Some(wider) = self.drag_to_selection(action) {
             return self.run(&wider);
@@ -3212,6 +3238,10 @@ impl App {
         // region the grid gives none is not drawn.
         self.missing.sync(&mut self.projects, self.revision);
         let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
+        // A newer build is offered in a bar over an open project; the start panel has its own
+        // line (`docs/spec/updates.md` › With a project open).
+        let update_bar =
+            self.open_prompt.is_none() && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
         // The browser stays hidden on the start panel (nothing to drop into); its setting keeps
         // its value for when a project opens. It slides in and out from its side, with animations
         // on (#708).
@@ -3221,14 +3251,15 @@ impl App {
         // The grid takes the whole room, as the panels it replaced did: what the window holds
         // reaches its edges, for what is painted behind it.
         ui.advance_cursor_after_rect(room);
-        let input = self.window_input(room.size(), grid.is_some(), self.open_prompt.is_some() || missing_bar);
+        let input =
+            self.window_input(room.size(), grid.is_some(), self.open_prompt.is_some() || missing_bar || update_bar);
         let layout = crate::kit::native_css::window(&input)
             .map(|layout| layout.translated(room.min.to_vec2()))
             .unwrap_or_default();
         let region = |region: Region| layout.rect(region).filter(|rect| rect.is_positive());
         if let Some(rect) = region(Region::MenuBar) {
             let bar = crate::kit::element::MENU_BAR.enter();
-            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            in_region(ui, rect, |ui| {
                 // The menus keep 4 points from the bar's sides.
                 let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO).shrink2(Vec2::new(4.0, 0.0));
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.menu_bar(ui, &bar, &mut actions))
@@ -3237,11 +3268,11 @@ impl App {
         self.frame_trace.mark("menu bar");
         if let Some(rect) = region(Region::Tabs) {
             let bar = crate::kit::element::PROJECT_TABS.enter();
-            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| self.tab_row(ui, &bar, &mut actions));
+            in_region(ui, rect, |ui| self.tab_row(ui, &bar, &mut actions));
         }
         if let Some(rect) = region(Region::Toolbar) {
             let bar = crate::kit::element::TOOLBAR.enter();
-            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            in_region(ui, rect, |ui| {
                 let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO);
                 self.control_bar(ui, &bar, inside, grid.as_ref(), cpu, ram, &mut actions)
             });
@@ -3250,7 +3281,7 @@ impl App {
         self.status_bar_rect = region(Region::StatusBar);
         if let Some(rect) = region(Region::StatusBar) {
             let bar = crate::kit::element::STATUS_BAR.enter();
-            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            in_region(ui, rect, |ui| {
                 // The window's bottom corners are the bar's where it lies along the bottom.
                 let bottom = if rect.bottom() >= room.bottom() - 0.5 {
                     egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner }
@@ -3287,9 +3318,11 @@ impl App {
                 let style = crate::kit::element::NOTICE_BAR.enter();
                 let inside = style.paint(ui.painter(), rect).content;
                 if self.open_prompt.is_some() {
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.open_prompt_bar(ui));
+                    in_region(ui, inside, |ui| self.open_prompt_bar(ui));
                 } else if missing_bar {
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.missing.bar(ui, inside));
+                    in_region(ui, inside, |ui| self.missing.bar(ui, inside));
+                } else if update_bar && let Some(wanted) = in_region(ui, inside, |ui| self.updates.bar(ui, inside)) {
+                    self.updates_wanted(ui.ctx(), wanted);
                 }
             }
             let main = layout.rect(Region::Main).unwrap_or(Rect::from_min_size(room.min, Vec2::ZERO));
@@ -3651,6 +3684,10 @@ impl App {
                             // that click put it.
                             let body = !self.arrangement.picked_whole;
                             let changed = clicked || picked != self.clips_before.as_slice();
+                            // A new pick: Play starts at it again until the marker moves elsewhere.
+                            if changed {
+                                self.pick_start = (None, false);
+                            }
                             if changed && (!self.settings.view.play_from_clip || body) {
                                 self.clips_before = picked.to_vec();
                             } else if changed {
@@ -3668,6 +3705,7 @@ impl App {
                                             .map(|c| c.start)
                                     })
                                     .fold(f64::INFINITY, f64::min);
+                                self.pick_start.0 = first.is_finite().then_some(first);
                                 if first.is_finite() && (first - timeline.start_beat).abs() > 1e-9 {
                                     // While playing, playback goes on and the next start begins there.
                                     let id =
@@ -3752,35 +3790,7 @@ impl App {
             if let Some(project) = closing {
                 self.check_plugin_edits(project);
             }
-            // A picked clip's row in the clip column: it gets the piano roll's focus (#1054).
-            if action.id == "view.focusClip" {
-                let number = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
-                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
-                    self.arrangement.focus_clip((TrackId(track), ClipId(clip)));
-                    self.piano_roll.selected.clear();
-                }
-                continue;
-            }
-            // The ARA editor's Float and Dock: the window's own, not an undo step.
-            if action.id == "view.araFloat" {
-                let number = |key: &str| action.params[key].as_u64();
-                let track = number("track").and_then(|t| u32::try_from(t).ok()).map(TrackId);
-                let device = number("device").and_then(|d| usize::try_from(d).ok());
-                let float = action.params["float"].as_bool().unwrap_or(false);
-                if let (Some(track), Some(device), Ok(session)) = (track, device, self.projects.session_mut(None))
-                    && let Err(e) = session.set_ara_floating(track, device, float)
-                {
-                    self.status = Status::Error(e.message().to_owned());
-                }
-                continue;
-            }
-            // A clip's menu opens it in its track's plug-in that edits clips: the window does it.
-            if action.id == "view.araEditor" {
-                let id = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
-                if let (Some(track), Some(clip)) = (id("track"), id("clip")) {
-                    self.arrangement.select_clip(TrackId(track), ClipId(clip));
-                }
-                self.open_ara_editor();
+            if self.window_action(action) {
                 continue;
             }
             if let Some(project) = closing
@@ -3884,6 +3894,45 @@ impl App {
 
     /// What the Launcher view asked for this frame that the window keeps: the mixer's height,
     /// saved in Settings, and the detail area opened from a strip's device list.
+    /// Runs `action` when it is the window's own, not a session command (no undo step), and says
+    /// whether it was: the views put these among their actions, and the session does not know
+    /// them ("unknown command").
+    fn window_action(&mut self, action: &Action) -> bool {
+        let number = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
+        match action.id {
+            // A picked clip's row in the clip column: it gets the piano roll's focus (#1054).
+            "view.focusClip" => {
+                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
+                    self.arrangement.focus_clip((TrackId(track), ClipId(clip)));
+                    self.piano_roll.selected.clear();
+                }
+            }
+            // The ARA editor's Float and Dock.
+            "view.araFloat" => {
+                let device = action.params["device"].as_u64().and_then(|d| usize::try_from(d).ok());
+                let float = action.params["float"].as_bool().unwrap_or(false);
+                if let (Some(track), Some(device), Ok(session)) =
+                    (number("track").map(TrackId), device, self.projects.session_mut(None))
+                    && let Err(e) = session.set_ara_floating(track, device, float)
+                {
+                    self.status = Status::Error(e.message().to_owned());
+                }
+            }
+            // The ARA editor's ×: hides the editor as the piano roll's × does (View › Hide
+            // editor); the plug-in keeps the clip and its edits.
+            "view.editor" => self.hide_editor(),
+            // A clip's menu opens it in its track's plug-in that edits clips.
+            "view.araEditor" => {
+                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
+                    self.arrangement.select_clip(TrackId(track), ClipId(clip));
+                }
+                self.open_ara_editor();
+            }
+            _ => return false,
+        }
+        true
+    }
+
     fn session_view_done(&mut self) {
         let height = self.view.mixer_height.round() as u32;
         if height != self.settings.view.mixer_height {
@@ -4111,9 +4160,22 @@ fn native_bar_line(bar: &crate::kit::element::Entered) -> [f32; 4] {
 
 /// Draws a workspace panel with `draw`; when the theme's grid lays `panel` over the `main` view
 /// (both in the same cells), on a layer above the view, so it shows and takes the pointer there.
+/// Draws `draw` in a region of the window's grid at `rect`: what it lays out past the region's
+/// edge is neither painted nor takes the pointer (#1370). `UiBuilder::max_rect` alone keeps the
+/// window's clip, under which a widget past the edge would still take clicks.
+fn in_region<R>(ui: &mut Ui, rect: Rect, draw: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+        ui.set_clip_rect(ui.clip_rect().intersect(rect));
+        draw(ui)
+    })
+    .inner
+}
+
 fn over_view<R>(ui: &mut Ui, name: &str, panel: Rect, main: Rect, draw: impl FnOnce(&mut Ui) -> R) -> R {
     if panel.intersect(main).is_positive() {
         let layer = egui::LayerId::new(egui::Order::Middle, Id::unique(("workspace-overlay", name)));
+        // Painted on without an area: said, so that the captures behind a menu hold it.
+        crate::kit::floating::window_layer(ui.ctx(), layer);
         ui.scope_builder(egui::UiBuilder::new().layer_id(layer), draw).inner
     } else {
         draw(ui)

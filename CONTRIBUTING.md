@@ -149,11 +149,14 @@ when asked to finish a pull request.
 repository's secrets, [`.github/CODEOWNERS`](.github/CODEOWNERS) names the repository owner for
 `.github/` and `scripts/`. The main ruleset requires a code owner's
 approval for the protected paths: `ready to merge` alone does not merge such a change, also
-not one from another maintainer.
+not one from another maintainer. Checked on 2026-11-13 (#1087): #1366, which changed a file that
+then had a code owner, got `ready to merge` from a maintainer who is not the owner, the app's
+approval and *Merge when ready*, and stayed blocked until the owner approved, although the app is
+a bypass actor of the main ruleset.
 
 **The updater needs the owner's review too.** Suhina installs and runs what its updater downloads,
-so the same approval applies to `crates/update/` and the updater's two files in `crates/ui`, and a
-check fails a pull request that changes where the updater downloads from
+so the same approval applies to `crates/update/`, and a check fails a pull request that changes
+where the updater downloads from
 ([`docs/spec/updates.md` › Where builds come from](docs/spec/updates.md#where-builds-come-from)).
 
 ## Clean-room
@@ -161,6 +164,10 @@ check fails a pull request that changes where the updater downloads from
 Suhina reimplements the *behaviour* of commercial DAWs, Ableton Live in particular, without
 using any of their code or content. This rule outranks feature work: one contaminated change can
 force a rewrite of everything built on it, so it is not something we clean up later.
+
+The rule guards against proprietary binaries, leaked code and the content of commercial
+products. Open-source code is none of those: whether it may be used is a licence question, with
+the checks in [Taking code from open-source projects](#taking-code-from-open-source-projects).
 
 **Allowed sources:**
 
@@ -179,9 +186,12 @@ force a rewrite of everything built on it, so it is not something we clean up la
   endorsement. The next list's ban covers content copied from proprietary products, such as an
   impulse response from a commercial plug-in's or DAW's library, not a third party's own
   recording of a device.
-- Open-source code under a licence compatible with GPL-3.0-or-later, ported with its notices
-  kept. Code without a licence may not be copied, ported or translated; only its published
-  description (a paper, a README) may be learnt from.
+- Open-source code under a licence compatible with GPL-3.0-or-later, open-source DAWs and
+  plug-in hosts included: read, compared and taken over, its values, constants, algorithms and
+  solutions as well as whole files, with the checks and notices in
+  [Taking code from open-source projects](#taking-code-from-open-source-projects). Code without a
+  licence may not be copied, ported or translated; only its published description (a paper, a
+  README) may be learnt from.
 - **One named exception for the VST2 interface: VeSTige.** The VeSTige header as Ardour
   distributes it (`libs/ardour/ardour/vestige/vestige.h`, GPL-2.0-or-later, used under
   GPL-3.0-or-later), at the commit [ADR 0022](docs/decisions/0022-vst2-interface-description.md)
@@ -190,7 +200,9 @@ force a rewrite of everything built on it, so it is not something we clean up la
   forbids; the project accepts this one source on the record ADR 0022 keeps. The exception covers
   that file only: not Steinberg's VST2 SDK, not leaked code, not FST, not `vst2sdk`, not any other
   header or write-up, and not material from any other reverse engineering. VST2-enabled builds
-  may also be distributed, under ADR 0022 › 5 as amended on 2026-10-31.
+  may also be distributed, under ADR 0022 › 5 as amended on 2026-10-31. Other open-source hosts'
+  own code is not covered by this exception and needs none: it is open-source code like any other,
+  and ADR 0022's amendment of 2026-11-12 says how a VST2 value found in it is checked.
 
 **Not allowed:**
 
@@ -225,6 +237,66 @@ force a rewrite of everything built on it, so it is not something we clean up la
 **How we work:** findings go into prose specs under `docs/spec/` (your own words, no code from
 the product). Implementation is written from those specs. AI agents follow the same rules: an
 agent that writes Suhina code must never be given decompiled or leaked material.
+
+### Taking code from open-source projects
+
+Code, a value or a solution may be taken from an open-source project, another DAW or plug-in host
+included, when three things hold.
+
+1. **The licence of what is taken is compatible with GPL-3.0-or-later**, as AGENTS.md rule 10
+   lists them: GPL-2.0-or-later and GPL-3.0 are, GPL-2.0-only is not, nor a non-commercial licence
+   or none. GPL-2.0-or-later code is used under GPL-3.0-or-later. Look where a licence actually
+   applies before ruling code in or out: the notice of the file taken from counts, not the
+   project's README or its package metadata, and a project whose files carry different licences
+   is checked file by file. A notice that names the GNU GPL without a version number lets any
+   version be chosen (GPL-2.0 § 9); "version 2" without "or any later version" is GPL-2.0-only. A
+   GPL-2.0-only file blocks taking its code (copying, porting or translating it, also a single
+   function); a fact read from it, such as a constant, a size or a call order, may still be
+   written in our own code as the third case below says, since a fact is not the file's to
+   license.
+2. **Where the project got it is allowed too.** A project's licence does not clean what it
+   carries. Material that came from a proprietary SDK that may not be redistributed, from leaked
+   code, or from someone's disassembly, decompilation or debugging of a proprietary program stays
+   under *Not allowed* above, whichever open-source project distributes it. Look at the file's
+   history, its comments and the project's documentation; a value whose origin cannot be traced is
+   a lead to be checked by our own observation, not a source.
+   [ADR 0022](docs/decisions/0022-vst2-interface-description.md) applies this to the VST2
+   interface.
+3. **The notices come with it,** in proportion to what is taken:
+   - *A ported file, or most of one:* it keeps the original copyright and licence notice and the
+     SPDX line of that licence in place of Suhina's header, names the project, the path and the
+     commit it was ported from and what the port changed, and is listed in
+     `scripts/license_header.py`'s `PORTED`, in [`ATTRIBUTION.md`](ATTRIBUTION.md) › Ported code
+     and in [`NOTICE`](NOTICE). The licence's full text sits next to the port
+     (`crates/stretch/LICENSE-signalsmith.txt`, `devices/fm-synth/LICENSE-APACHE`), since an SPDX
+     line only names it; the GPL-3.0's text in [`LICENSE`](LICENSE) already serves GPL code. What
+     an upstream `NOTICE` file says (Apache-2.0 § 4) goes into ours.
+     `crates/plugin-host/src/vst2/vestige.rs` is an example.
+   - *A smaller piece taken over as it is* (a function, a table of values, a few lines) into a file
+     of Suhina's own: the file keeps Suhina's header, and the piece is wrapped in
+     [REUSE](https://reuse.software/spec-3.3/) snippet tags that carry its copyright holders and
+     licence, with a plain `//` comment under them naming the project, the path, the commit and
+     what was changed. The notice then stays with the piece when it moves to another file. The
+     tags are `//` comments, not `///` doc comments: a doc comment says what the function does for
+     its callers, not where it came from. `ATTRIBUTION.md` › Ported code gets a row. MIT, BSD and
+     Apache-2.0 code keeps the notice text its licence asks to keep.
+
+     ```rust
+     // SPDX-SnippetBegin
+     // SPDX-SnippetCopyrightText: 2014 Jane Doe
+     // SPDX-License-Identifier: GPL-2.0-or-later
+     // From <project> libs/foo/bar.cc at <commit>; translated to Rust, names changed.
+     fn taken_over() { /* … */ }
+     // SPDX-SnippetEnd
+     ```
+   - *A value or a solution written in our own code* (a call order, a buffer size, a workaround, an
+     algorithm written anew): no notice is needed in the code, since a fact or an idea is not the
+     project's to license, but the spec that describes the behaviour names the source with the
+     file's path and the commit, so its provenance can be checked later.
+
+These notices name the project the code came from, also when it is another DAW: that is
+attribution the licence asks for, not a comparison (AGENTS.md rule 9). The project is still not
+named in Suhina's interface or in its own product text.
 
 If you are unsure whether a source is allowed, ask in an issue before using it.
 

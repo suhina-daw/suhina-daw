@@ -3,7 +3,7 @@ description: How Suhina hosts plug-ins in detail - host processes and instances,
 read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade
 type: spec
 status: current
-last_verified: 2026-11-11
+last_verified: 2026-11-13
 covers:
   - crates/plugins/**
   - crates/plugin-host/**
@@ -175,6 +175,20 @@ band clean without either.
 Nothing fails over it: when real-time scheduling is refused the first stream in a process
 adds a notice (the app shows it, `suhina-cli play` prints it), and the hosts' threads, which
 ask the same system, play on silently. `SUHINA_NO_REALTIME=1` turns it off, to compare.
+
+The hosts' audio threads run every plug-in block with subnormal numbers flushed to zero (#1258,
+`crates/plugin-host/src/denormals.rs`). On x86_64 that is MXCSR's flush-to-zero bit, and its
+denormals-are-zero bit where the processor has one: the `MXCSR_MASK` that `fxsave` stores says
+so, since `ldmxcsr` faults on a bit the processor lacks. On aarch64 it is FPCR's FZ bit, and
+elsewhere nothing changes. Without it, a plug-in whose filters, delays or reverb tails decay
+below the smallest normal float computes with subnormal numbers, many times slower, and feedback
+can hold it there while its input is silent: its host process keeps a core busy and its blocks
+come back late. Each audio thread sets the mode when it starts and again before each instance's
+part of a block, because a plug-in may change it while it runs. These threads run nothing else,
+so the mode is never put back. The host's main thread keeps the default mode, and so do the
+threads plug-ins start from it. Suhina's own devices do not need it: `crates/dsp` floors filter
+state at `DENORMAL_FLOOR`.
+
 A late reply resets the hang counter when the next request is accepted: missing
 an audio deadline does not mean the host stopped answering. Superseded starts
 after a rate change are unloaded off the session thread, like accepted instances.

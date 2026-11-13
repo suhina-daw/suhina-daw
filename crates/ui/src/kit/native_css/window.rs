@@ -164,6 +164,13 @@ pub fn window(input: &Input) -> Option<Window> {
     if !input.size.is_finite() || input.size.x <= 0.0 || input.size.y <= 0.0 {
         return None;
     }
+    let mut attributes = vec![("detail", input.detail.attribute())];
+    if let Some(side) = input.browser {
+        attributes.push(("browser", side.attribute()));
+    }
+    if input.menu_bar {
+        attributes.push(("menu-bar", ""));
+    }
     super::ENGINE.with(|engine| {
         let mut engine = engine.borrow_mut();
         let key = format!("{input:?}");
@@ -175,7 +182,9 @@ pub fn window(input: &Input) -> Option<Window> {
         // A sheet the engine holds for another theme (the theme just changed) is not used: the
         // user-agent sheet lays the window out until the engine has the new one.
         let themed = engine.source.is_some() && super::same_source(engine.source.as_ref());
-        let lay = |input: &Input| -> Option<[Option<Rect>; 10]> {
+        // Each region's rectangle, and the detail area's content box (its rectangle less its
+        // border and padding).
+        let lay = |input: &Input| -> Option<([Option<Rect>; 10], Option<Rect>)> {
             let mut elements = Vec::new();
             let mut sizes = Vec::new();
             let mut present = Vec::new();
@@ -193,13 +202,6 @@ pub fn window(input: &Input) -> Option<Window> {
                 sizes.push(Some(*size));
                 present.push(*region);
             }
-            let mut attributes = vec![("detail", input.detail.attribute())];
-            if let Some(side) = input.browser {
-                attributes.push(("browser", side.attribute()));
-            }
-            if input.menu_bar {
-                attributes.push(("menu-bar", ""));
-            }
             #[cfg(test)]
             LAYS.with(|lays| lays.set(lays.get() + 1));
             let laid = super::native::window_layout(
@@ -210,59 +212,70 @@ pub fn window(input: &Input) -> Option<Window> {
                 [input.size.x.min(16384.0), input.size.y.min(16384.0)],
             )?;
             let mut rects = [None; 10];
+            let mut detail = None;
             for (region, (rect, style)) in present.iter().zip(laid) {
+                let rect = rect.filter(|rect| style.visible && rect.width() >= 0.0 && rect.height() >= 0.0);
+                if *region == Region::Detail {
+                    detail = rect.map(|rect| {
+                        let [top, right, bottom, left] = style.insets_in(rect.width());
+                        Rect::from_min_max(rect.min + Vec2::new(left, top), rect.max - Vec2::new(right, bottom))
+                    });
+                }
                 if let Some(slot) = rects.get_mut(region.index()) {
-                    *slot = rect.filter(|rect| style.visible && rect.width() >= 0.0 && rect.height() >= 0.0);
+                    *slot = rect;
                 }
             }
-            Some(rects)
+            Some((rects, detail))
         };
-        let mut rects = lay(input)?;
-        // A closed detail area keeps its place, with no size, for its splitter; one whose size
-        // the sheet sets would leave an empty hole instead, so it is left out of the grid.
-        if input.detail_closed
-            && rects
-                .get(Region::Detail.index())
-                .copied()
-                .flatten()
-                .is_some_and(|rect| rect.width().min(rect.height()) > 0.5)
-        {
+        let (mut rects, detail_content) = lay(input)?;
+        // A closed detail area keeps its place, with no content size, for its splitter; one whose
+        // size the sheet sets would leave an empty hole instead, so it is left out of the grid.
+        // Its border and padding are not such a size: they stay round its empty content box.
+        if input.detail_closed && detail_content.is_some_and(|content| content.width().min(content.height()) > 0.5) {
             let mut without = input.clone();
             without.regions[Region::Detail.index()] = None;
-            rects = lay(&without)?;
+            rects = lay(&without)?.0;
         }
-        // Laid out again with one panel's content size a point larger at a time: a panel the sheet
-        // does not size grows with it, and keeps its splitter. No list of properties says which:
+        // Laid out again with one panel's content size changed at a time: a panel the sheet does
+        // not size grows with it, and keeps its splitter. No list of properties says which:
         // the layout does. One at a time, so a sheet that swaps the panels' tracks does not count
         // one panel's growth as the other's. Cached apart from the sizes, which a drag changes
         // every frame.
-        let follows_key = {
+        let shape = {
             let mut shape = input.clone();
             for size in shape.regions.iter_mut().flatten() {
                 *size = [size[0].map(|_| 0.0), size[1].map(|_| 0.0)];
             }
-            format!("{shape:?}")
+            shape
         };
+        let follows_key = format!("{shape:?}");
         let known = engine.window_follows.as_ref().filter(|(previous, _)| previous == &follows_key).map(|(_, f)| *f);
         let (browser_follows, detail_follows) = match known {
             Some(follows) => follows,
             None => {
+                // The shape (every content size 0) and, one panel at a time, the shape with the
+                // window's whole room as that panel's content size: one the sheet leaves to its
+                // content grows between the two, even where it caps it (`max-height`) or gives it
+                // a least size; one whose size the sheet sets does not. The answer depends on the
+                // shape alone, the key it is cached under, not on the sizes of this frame.
+                let least = lay(&shape).map(|(r, _)| r);
                 let grown = |region: Region| -> bool {
-                    let Some(Some(size)) = input.regions.get(region.index()) else { return false };
-                    let axis = usize::from(size[0].is_none());
-                    let mut larger = input.clone();
-                    let mut bigger = *size;
-                    if let Some(value) = bigger.get_mut(axis) {
-                        *value = Some(value.unwrap_or(0.0) + 1.0);
-                    }
-                    larger.set(region, bigger);
-                    let (Some(Some(at)), Some(then)) = (
-                        rects.get(region.index()),
-                        lay(&larger).and_then(|r| r.get(region.index()).copied().flatten()),
-                    ) else {
+                    let Some(Some(size)) = shape.regions.get(region.index()) else { return false };
+                    if rects.get(region.index()).copied().flatten().is_none() {
                         return false;
-                    };
-                    if axis == 0 { then.width() > at.width() } else { then.height() > at.height() }
+                    }
+                    let axis = usize::from(size[0].is_none());
+                    let room = if axis == 0 { input.size.x } else { input.size.y };
+                    let mut probe = shape.clone();
+                    let mut sized = *size;
+                    if let Some(value) = sized.get_mut(axis) {
+                        *value = Some(room.min(16384.0));
+                    }
+                    probe.set(region, sized);
+                    let most = lay(&probe).and_then(|(r, _)| r.get(region.index()).copied().flatten());
+                    let least = least.and_then(|r| r.get(region.index()).copied().flatten());
+                    let (Some(least), Some(most)) = (least, most) else { return false };
+                    if axis == 0 { most.width() > least.width() } else { most.height() > least.height() }
                 };
                 let follows = (grown(Region::Browser), grown(Region::Detail));
                 engine.window_follows = Some((follows_key, follows));

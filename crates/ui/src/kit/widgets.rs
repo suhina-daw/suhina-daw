@@ -1349,8 +1349,12 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
     }
 }
 
+/// A button with `text` on it, `label` for screen readers and tests; true when clicked. Its id is
+/// its label in its layer, so a dialog drawn over a panel with a button of the same label (the
+/// start panel's *Download update now* under Help › Check for updates…) gets a button of its own
+/// (#1229): egui keeps a widget in the layer it was first seen in that frame.
 pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str) -> bool {
-    let response = button_area(ui, rect, Id::unique(("dialog-button", label)), label);
+    let response = button_area(ui, rect, Id::unique(("dialog-button", ui.layer_id(), label)), label);
     let el = BUTTON.response(&response).enter();
     let fill = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
     let radius = el.radius_or(0.0);

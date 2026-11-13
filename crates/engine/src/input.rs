@@ -251,9 +251,9 @@ impl Input {
             // held span — not the previous hold's own: a hold carried from before the fresh
             // samples would splice backward at the fresh-to-held boundary.
             if take > 0 {
-                for channel in 0..channels {
+                for (channel, last) in self.last.iter_mut().enumerate().take(channels) {
                     if let Some(sample) = block.get((take / channels - 1) * channels + channel) {
-                        self.last[channel] = *sample;
+                        *last = *sample;
                     }
                 }
             }
@@ -291,9 +291,9 @@ impl Input {
             self.excess = ring.slots() / channels;
             // The last state each channel delivered is the next starved block's hold: the
             // block's last frame, which the ring carried whole.
-            for channel in 0..channels {
+            for (channel, last) in self.last.iter_mut().enumerate().take(channels) {
                 if let Some(sample) = block.get((frames - 1) * channels + channel) {
-                    self.last[channel] = *sample;
+                    *last = *sample;
                 }
             }
         }

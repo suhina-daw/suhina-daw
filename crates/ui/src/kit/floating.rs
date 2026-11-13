@@ -43,7 +43,10 @@ const MAX_DECLARED: usize = 256;
 
 /// Forgets last frame's declarations; called at the start of each frame.
 pub fn begin_frame(ctx: &Context) {
-    ctx.data_mut(|data| data.remove_temp::<HashMap<Id, Kind>>(Id::unique(DECLARED)));
+    ctx.data_mut(|data| {
+        data.remove_temp::<HashMap<Id, Kind>>(Id::unique(DECLARED));
+        data.remove_temp::<Vec<egui::LayerId>>(Id::unique(OVERLAYS));
+    });
 }
 
 /// Says that the layer with `id` (at any order) is the app's own, and what it is.
@@ -68,6 +71,33 @@ pub fn modal(ctx: &Context, id: Id) -> egui::Modal {
     declare(ctx, id, Kind::Own);
     #[allow(clippy::disallowed_methods)]
     egui::Modal::new(id)
+}
+
+const OVERLAYS: &str = "floating-overlays";
+
+/// Says that `layer`, painted on without an area (a workspace panel the theme lays over a view),
+/// is part of the window this frame: the captures behind a menu or dialog hold it, as they hold
+/// the window's areas.
+pub fn window_layer(ctx: &Context, layer: egui::LayerId) {
+    ctx.data_mut(|data| {
+        let layers = data.get_temp_mut_or_default::<Vec<egui::LayerId>>(Id::unique(OVERLAYS));
+        if layers.len() < MAX_DECLARED && !layers.contains(&layer) {
+            layers.push(layer);
+        }
+    });
+}
+
+/// `order` (the layers from back to front) with the layers said to be the window's, each after
+/// the last layer at its own order or below.
+pub(crate) fn with_window_layers(ctx: &Context, mut order: Vec<egui::LayerId>) -> Vec<egui::LayerId> {
+    let layers = ctx.data(|data| data.get_temp::<Vec<egui::LayerId>>(Id::unique(OVERLAYS))).unwrap_or_default();
+    for layer in layers {
+        if !order.contains(&layer) {
+            let at = order.iter().rposition(|other| other.order <= layer.order).map_or(0, |at| at + 1);
+            order.insert(at, layer);
+        }
+    }
+    order
 }
 
 /// What the app said the layer with `id` is this frame, if it said.
@@ -118,7 +148,8 @@ pub(crate) fn dialog_size(dialog: &Entered, area: Rect, size: Vec2) -> Vec2 {
 /// where the sheet gives it no border. Returns the content box what it holds goes in (#1336).
 pub(crate) fn dialog(painter: &Painter, dialog: &Entered, rect: Rect, fill: Color32) -> Rect {
     if style_blurs(dialog.style()) {
-        super::liquid::backdrop(painter, rect);
+        let radius = dialog.style().filter(|style| style.authored.radius).map_or(0.0, |style| style.radius);
+        super::liquid::backdrop(painter, rect, radius);
     }
     let content = dialog.paint_with(painter, rect, element::Native { radius: 0.0, fill }).content;
     if !dialog.style().is_some_and(|style| style.authored.border_width) {
@@ -173,7 +204,11 @@ pub(crate) struct Restyled {
 /// The contents keep egui's margins: `padding` does not move them.
 pub(crate) fn frame(ctx: &Context, name: Name, frame: &Frame, opacity: f32) -> Option<Restyled> {
     let style = super::native_css::settings_of(&[name])?;
-    let authored = style.authored.background || style.authored.border_width || style.authored.radius;
+    let authored = style.authored.background
+        || style.authored.border
+        || style.authored.border_width
+        || style.authored.radius
+        || style.authored.box_shadow;
     if !authored && !style.has_shadow() && !style.has_gradient() && style.outline().is_none() {
         return None;
     }
@@ -199,10 +234,12 @@ pub(crate) fn frame(ctx: &Context, name: Name, frame: &Frame, opacity: f32) -> O
         None,
     );
     if !style.authored.border_width && frame.stroke.width > 0.0 {
-        let stroke = egui::Stroke::new(frame.stroke.width, unfaded(frame.stroke.color));
+        // egui's stroke, in the sheet's `border-color` when it sets one without a width.
+        let color = if style.authored.border { style.border } else { unfaded(frame.stroke.color) };
+        let stroke = egui::Stroke::new(frame.stroke.width, color);
         painter.rect_stroke(frame.rect, radius, stroke, egui::StrokeKind::Inside);
     }
-    let mut under = if style.has_shadow() { Vec::new() } else { frame.shadow.clone() };
+    let mut under = if style.authored.box_shadow { Vec::new() } else { frame.shadow.clone() };
     under.extend(take());
     super::native_css::box_end(&painter, frame.rect, radius, &style, None);
     Some(Restyled { radius, under, over: take() })

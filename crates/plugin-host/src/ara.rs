@@ -861,6 +861,14 @@ pub(crate) struct Document {
     /// The plug-in's editor view, told which region the host has selected; `None` when the
     /// plug-in has none.
     editor_view: Option<(ARAEditorViewRef, *const ARAEditorViewInterface)>,
+    /// The region the host last selected (`clip-<id>`), kept when the track does not hold it
+    /// (yet): a clip taken out of the plug-in and given back is shown again when it is back.
+    selected: RefCell<Option<String>>,
+    /// Whether the editor's window was last placed where it shows, not hidden.
+    view_shown: Cell<bool>,
+    /// The selection is told to the editor view again then, once the plug-in had time to take
+    /// in a region made or a window shown again.
+    select_again: SelectAgain,
     /// When the regions' notes were last read, and the document's note change count then.
     last_notes_read: Cell<Instant>,
     notes_seen: Cell<u64>,
@@ -908,6 +916,9 @@ impl Document {
             owned_modifications: Vec::new(),
             extension: std::ptr::null(),
             editor_view: None,
+            selected: RefCell::new(None),
+            view_shown: Cell::new(false),
+            select_again: SelectAgain::default(),
             last_notes_read: Cell::new(Instant::now()),
             // Read once the regions are made.
             notes_seen: Cell::new(u64::MAX),
@@ -1052,18 +1063,30 @@ impl Document {
     }
 
     /// Tells the plug-in's editor view which region the host has selected (`clip-<id>`), so its
-    /// editor shows it; `None`, or an id the track does not hold, selects nothing. Returns
-    /// whether the plug-in was told.
+    /// editor shows it; `None`, or an id the track does not hold, selects nothing. The id is
+    /// kept, so the region is selected again when the track holds it again. Returns whether
+    /// the plug-in was told.
     pub(crate) fn select(&self, region: Option<&str>) -> bool {
+        *self.selected.borrow_mut() = region.map(str::to_string);
+        self.tell_selection(self.selected_region())
+    }
+
+    /// The playback region of the region the host selected, when the track holds it.
+    fn selected_region(&self) -> Option<ARAPlaybackRegionRef> {
+        let selected = self.selected.borrow();
+        let id = selected.as_deref()?;
+        let index = self.region_described.iter().position(|r| r.id == id)?;
+        self.regions.get(index).copied()
+    }
+
+    /// Tells the plug-in's editor view that `region` (with its sequence) is selected, or
+    /// nothing; whether it was told.
+    fn tell_selection(&self, region: Option<ARAPlaybackRegionRef>) -> bool {
         let Some((view, interface)) = self.editor_view else { return false };
         // SAFETY: the plug-in's editor view table, valid with its extension instance.
         let interface = unsafe { &*interface };
         let Some(notify) = interface.notifySelection else { return false };
-        let selected: Vec<ARAPlaybackRegionRef> = region
-            .and_then(|id| self.region_described.iter().position(|r| r.id == id))
-            .and_then(|index| self.regions.get(index).copied())
-            .into_iter()
-            .collect();
+        let selected: Vec<ARAPlaybackRegionRef> = region.into_iter().collect();
         let sequences = if selected.is_empty() { Vec::new() } else { vec![self.sequence] };
         let selection = ARAViewSelection {
             structSize: size_of::<ARAViewSelection>(),
@@ -1077,6 +1100,27 @@ impl Document {
         // points to live for the call.
         unsafe { notify(view, &selection) };
         true
+    }
+
+    /// After [`Document::destroy`]: when the edit made the selected region anew (its clip given
+    /// back to the plug-in), the editor view is told the selection now, and again a moment
+    /// later, when the plug-in has taken in the new region (a region it did not know yet when
+    /// it was selected showed nothing).
+    pub(crate) fn select_after(&self, edited: &Edited) {
+        if selects_again(self.selected_region(), edited) {
+            self.tell_selection(self.selected_region());
+            self.select_again.ask(Instant::now() + SELECT_AGAIN_AFTER);
+        }
+    }
+
+    /// The editor's window was placed: `shown` when it shows, not hidden. Shown again after it
+    /// was hidden, the view is told the selection again, as the ARA API asks of a view that is
+    /// opened again.
+    pub(crate) fn view_placed(&self, shown: bool) {
+        if shows_again(self.view_shown.replace(shown), shown) {
+            self.tell_selection(self.selected_region());
+            self.select_again.ask(Instant::now() + SELECT_AGAIN_AFTER);
+        }
     }
 
     /// Whether the plug-in said its edits changed since this was last asked (ARA 2.3).
@@ -1097,6 +1141,9 @@ impl Document {
         let due = self.shared.borrow().last_model_update.get().elapsed() >= MODEL_UPDATES_EVERY;
         if due {
             self.notify_model_updates();
+        }
+        if self.select_again.due(Instant::now()) {
+            self.tell_selection(self.selected_region());
         }
         // What the plug-in said changed reached the host inside that call; the notes are read
         // now, outside it, as the API asks. While a region still has no notes (its analysis
@@ -1400,6 +1447,11 @@ impl Document {
         if edited.removed.is_empty() {
             return;
         }
+        // The view shows a region about to go: it is told nothing is selected first, so it
+        // lets go of it rather than keep a region that no longer exists selected.
+        if clears_selection(self.selected_region(), edited) {
+            self.tell_selection(None);
+        }
         let shared = self.shared.borrow();
         let Some(dc) = shared.controller() else { return };
         let (Some(begin), Some(end), Some(destroy)) =
@@ -1428,6 +1480,48 @@ impl Document {
             }
         }
     }
+}
+
+/// How long after a region selected anew, or the editor shown again, the selection is told
+/// once more: a model update ([`MODEL_UPDATES_EVERY`]) and then some.
+const SELECT_AGAIN_AFTER: Duration = Duration::from_millis(400);
+
+/// When the editor view is to be told the selection again; nothing while none is asked.
+#[derive(Debug, Default)]
+struct SelectAgain(Cell<Option<Instant>>);
+
+impl SelectAgain {
+    /// Asks for it at `at`, in place of any earlier ask.
+    fn ask(&self, at: Instant) {
+        self.0.set(Some(at));
+    }
+
+    /// Whether the time asked for has come at `now`; it is then forgotten, so it is due once.
+    fn due(&self, now: Instant) -> bool {
+        match self.0.get() {
+            Some(at) if now >= at => {
+                self.0.set(None);
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Whether the editor's window, `was` shown before, shows again now that it is placed or opened
+/// `shown`: only a change from hidden (or closed) to shown tells the view the selection.
+fn shows_again(was: bool, shown: bool) -> bool {
+    shown && !was
+}
+
+/// Whether `edited` takes out the selected region `selected`.
+fn clears_selection(selected: Option<ARAPlaybackRegionRef>, edited: &Edited) -> bool {
+    selected.is_some_and(|r| edited.removed.contains(&r))
+}
+
+/// Whether `edited` made the selected region `selected` (as it is after the edit) anew.
+fn selects_again(selected: Option<ARAPlaybackRegionRef>, edited: &Edited) -> bool {
+    selected.is_some_and(|r| edited.added.contains(&r))
 }
 
 /// What [`Document::edit`] changed in the regions the plug-in's renderers hold.

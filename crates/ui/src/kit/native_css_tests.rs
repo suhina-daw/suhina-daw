@@ -72,7 +72,8 @@ fn native_paint_values_resolve_variables_currentcolor_em_and_media() {
             font_size: false,
             radius: true,
             accent: false,
-            border_width: false
+            border_width: false,
+            box_shadow: false
         }
     );
     prepare(
@@ -746,7 +747,7 @@ fn dragging_a_splitter_lays_the_window_out_once_a_frame() {
     let mut input = full_window(Vec2::new(800.0, 600.0));
     let before = lays();
     let first = window(&input).unwrap();
-    assert_eq!(lays() - before, 3, "the layout and a probe for each panel");
+    assert_eq!(lays() - before, 4, "the layout, the shape's and a probe for each panel");
     for (step, height) in [130.0, 140.0, 150.0].into_iter().enumerate() {
         input.set(Region::Detail, [None, Some(height)]);
         let before = lays();
@@ -759,7 +760,7 @@ fn dragging_a_splitter_lays_the_window_out_once_a_frame() {
     let before = lays();
     input.size = Vec2::new(900.0, 600.0);
     let wider = window(&input).unwrap();
-    assert_eq!(lays() - before, 3);
+    assert_eq!(lays() - before, 4);
     assert!(!wider.browser_follows && wider.detail_follows, "{wider:?}");
     skin::configure(&skin::Skin::default());
 }
@@ -1718,4 +1719,92 @@ fn the_toolbar_s_modules_ignore_the_window_s_padding_and_gaps() {
     skin::configure(&skin::Skin::default());
     assert!(plain.is_some());
     assert_eq!(plain, padded);
+}
+/// The toolbar's place in the window's grid (its area, lines, margins, alignment) says nothing
+/// about where its modules go: they lie in the toolbar's own box, wherever the grid puts it.
+#[test]
+fn moving_the_toolbar_in_the_window_leaves_its_modules_where_they_are() {
+    let modules = |css: &str| {
+        prepare(css, 800.0);
+        let items = [row::Item::named("toolbar-module", "transport").width(100.0)];
+        row::row(&row::Bar::new("toolbar", Vec2::new(800.0, 40.0)), &items).and_then(|r| r.items[0])
+    };
+    let plain = modules("toolbar { display: flex; }");
+    for css in [
+        "toolbar { display: flex; grid-area: status; } status-bar { grid-area: toolbar; }",
+        "toolbar { display: flex; grid-row: 9; grid-column: 1 / -1; }",
+        "toolbar { display: flex; margin: 4px 0; align-self: end; order: 2; }",
+    ] {
+        assert_eq!(modules(css), plain, "{css} only moves the toolbar");
+    }
+    skin::configure(&skin::Skin::default());
+}
+/// Padding on a closed detail area is not a size the sheet sets: the area keeps its place, a box
+/// of its padding, and its splitter, closed and open again.
+#[test]
+fn a_padded_detail_area_keeps_its_splitter_closed_and_open() {
+    prepare("#panel-detail { padding: 8px; }", 1000.0);
+    let mut input = full_window(Vec2::new(1000.0, 700.0));
+    input.set(Region::Detail, [None, Some(0.0)]);
+    input.detail_closed = true;
+    let closed = window(&input).unwrap();
+    input.set(Region::Detail, [None, Some(200.0)]);
+    input.detail_closed = false;
+    let open = window(&input).unwrap();
+    skin::configure(&skin::Skin::default());
+    let (main, detail) = (closed.rect(Region::Main).unwrap(), closed.rect(Region::Detail).unwrap());
+    assert_eq!(detail.height(), 16.0, "its padding");
+    assert!(closed.detail_follows, "closed, it keeps its splitter");
+    assert!(splitter_between(detail, main, 6.0).is_positive());
+    assert_eq!(open.rect(Region::Detail).map(|d| d.height()), Some(216.0));
+    assert!(open.detail_follows, "open again, too");
+}
+/// A panel the sheet only caps (`max-height`, `max-width`) still follows its splitter at its
+/// maximum and past it, whatever size the window was first laid out at: only a size the sheet
+/// fixes takes the splitter away.
+#[test]
+fn a_capped_panel_keeps_its_splitter_at_its_maximum() {
+    prepare("#panel-detail { max-height: 200px; } #panel-browser { max-width: 240px; }", 1000.0);
+    let follows = |detail: f32, browser: f32| {
+        let mut input = full_window(Vec2::new(1000.0, 700.0));
+        input.set(Region::Detail, [None, Some(detail)]);
+        input.set(Region::Browser, [Some(browser), None]);
+        let laid = window(&input).unwrap();
+        (laid.browser_follows, laid.detail_follows)
+    };
+    // At the maximum first, then under it and past it: the same answer each time.
+    let sizes = [(200.0, 240.0), (150.0, 200.0), (250.0, 300.0)];
+    let found: Vec<_> = sizes.iter().map(|(detail, browser)| follows(*detail, *browser)).collect();
+    prepare("#panel-detail { height: 200px; } #panel-browser { width: 240px; }", 1000.0);
+    let fixed = follows(200.0, 240.0);
+    skin::configure(&skin::Skin::default());
+    assert_eq!(found, vec![(true, true); 3], "capped panels follow their splitters");
+    assert_eq!(fixed, (false, false), "a size the sheet sets has no splitter");
+}
+/// A theme sheet that does not parse keeps the last working styles, the window's grid with them:
+/// laid out again, for the same input or a new one, the window keeps the last working theme's
+/// layout, as its painting does.
+#[test]
+fn a_sheet_that_does_not_parse_keeps_the_last_working_grid() {
+    let input = full_window(Vec2::new(1000.0, 700.0));
+    let wider = full_window(Vec2::new(1200.0, 700.0));
+    prepare("project-tabs { display: none; } toolbar { color: #123456; }", 1000.0);
+    let working = (window(&input).unwrap(), window(&wider).unwrap());
+    // More cascade layers than a sheet may have: the whole sheet does not parse.
+    let broken: String = (0..65).map(|layer| format!("@layer l{layer} {{ }} ")).collect();
+    let broken = format!("{broken} toolbar {{ display: none; }}");
+    prepare(&broken, 1000.0);
+    let painted = scoped(&["toolbar".into()]).map(|style| style.color);
+    let kept = (window(&input).unwrap(), window(&wider).unwrap());
+    // Changed input after the failed parse: the window is laid out anew, with the same sheet.
+    let mut taller = full_window(Vec2::new(1000.0, 800.0));
+    taller.set(Region::Detail, [None, Some(150.0)]);
+    let laid = window(&taller).unwrap();
+    skin::configure(&skin::Skin::default());
+    assert!(suhina_style::sheet::Sheet::parse(&broken).is_err());
+    assert_eq!(working.0.rect(Region::Tabs), None);
+    assert_eq!(kept, working);
+    assert_eq!(laid.rect(Region::Tabs), None, "the last working sheet still hides the tabs");
+    assert!(laid.rect(Region::Toolbar).is_some(), "the broken sheet's rules do not apply");
+    assert_eq!(painted, Some(Color32::from_rgb(0x12, 0x34, 0x56)), "painting keeps the same sheet");
 }

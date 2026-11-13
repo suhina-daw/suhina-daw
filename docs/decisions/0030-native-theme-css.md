@@ -4,7 +4,7 @@ read_when: modern CSS, Stylo, Taffy, Lightning CSS, Blitz, native CSS architectu
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-02
+last_verified: 2026-11-12
 covers:
   - crates/ui/src/kit/native_css.rs
   - crates/ui/src/kit/native_css/paint.rs

@@ -34,6 +34,7 @@ changed. The full list with copyright lines is in [`NOTICE`](NOTICE).
 |---|---|---|---|---|
 | `crates/stretch` | Signalsmith Stretch, Signalsmith Linear (STFT) | Geraint Luff / Signalsmith Audio | https://github.com/Signalsmith-Audio/signalsmith-stretch, https://github.com/Signalsmith-Audio/linear | MIT |
 | `devices/fm-synth/src/{tables,env,lfo,core,voice}.rs` | MSFA engine as found in Dexed | Google Inc., Pascal Gauthier, Jean Pierre Cimalando | https://github.com/asb2m10/dexed (`Source/msfa`) | Apache-2.0 |
+| `crates/plugin-host/src/vst2/vestige.rs` | VeSTige header (VST2 interface definitions), as Ardour distributes it | Javier Serrano Polo (written for LMMS) | https://github.com/Ardour/ardour/blob/365cc92cba0e016c30fea34aed168a0957aeeca0/libs/ardour/ardour/vestige/vestige.h | GPL-2.0-or-later, used as GPL-3.0-or-later |
 
 ## Vendored code
 

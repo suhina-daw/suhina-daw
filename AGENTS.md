@@ -14,7 +14,9 @@ describe a file. Read only the ones that match your task.
 1. **Clean-room (outranks everything).** Never disassemble or decompile proprietary binaries,
    never use leaked code, never commit content from commercial products; knowledge comes from
    observation, self-authored files and public documentation, written down in `docs/spec/` before
-   it is implemented. The rules and their one exception (the VeSTige header,
+   it is implemented. Open-source code, other DAWs' included, is a licence question (rule 10), not
+   a clean-room one: its values and solutions may be taken when its own provenance is clean, with
+   the notices CONTRIBUTING asks for. The rules and their one exception (the VeSTige header,
    [ADR 0022](docs/decisions/0022-vst2-interface-description.md)) are in
    [CONTRIBUTING.md › Clean-room](CONTRIBUTING.md#clean-room).
 2. **Never crash.** Non-test code never panics (no `unwrap()`, `expect()`, `panic!`,
@@ -36,7 +38,8 @@ describe a file. Read only the ones that match your task.
 7. **Tests are the gate.** Every change comes with tests: round-trip and malformed-input tests for
    formats, golden-file renders for DSP and engine behaviour. A test never depends on timing: no
    `sleep` to give a thread time, no wall-clock deadline or elapsed-time bound, no polling loop
-   that waits for another thread, no result that depends on the order threads run in. CI runners
+   that waits for another thread, no result that depends on the order threads run in, no file
+   time that must move between two writes (set it with `File::set_modified`). CI runners
    are slow and uneven, and such a test fails there once in a while and teaches everyone to
    re-run the job. Render a fixed number of frames with `process`, use a fake clock, or wait
    on an explicit signal (a barrier such as `Session::sync_recording`, a channel, a join).
@@ -51,6 +54,8 @@ describe a file. Read only the ones that match your task.
    repository ([ADR 0016](docs/decisions/0016-scope.md) › 5). ROADMAP, README, the model, engine, CLI and UI describe Suhina's own features under
    their own names and neutral words, and other DAWs' product terms are not used as generic words
    ("drum sampler", not "drum rack"). User-facing text may name a format it imports or exports.
+   The notices of code taken from an open-source project name that project wherever its licence
+   asks (the file's header, `NOTICE`, `ATTRIBUTION.md`).
    The rule is about other DAWs and music software, not makers of hardware (amplifiers, speakers,
    microphones, synthesizers): content licensed for redistribution, such as an amp model or an
    impulse response, may keep a name that says which hardware it was recorded from, with a note

@@ -3,7 +3,7 @@ description: Checking for a newer build of Suhina and installing it from inside 
 read_when: update, updates, new version available, check for updates, download update, nightly update, auto update, test build, gh, github cli, developer mode
 type: spec
 status: draft
-last_verified: 2026-11-07
+last_verified: 2026-11-13
 covers:
   - crates/update/src/lib.rs
   - crates/update/src/version.rs
@@ -62,7 +62,7 @@ A local build (`cargo run`) is never told it is behind: it has no channel, and r
 
 ## The start panel
 
-While a newer build is available, a line between the actions and the list says *New version
+While a newer build is available, a line between the actions and the list says *New nightly
 available: Suhina 0.0.1-nightly.20261018+c176a33* with **Download update now** and a link to the
 release page. The button:
 
@@ -77,6 +77,31 @@ release page. The button:
 
 A failure (no space, a folder Suhina may not write to, a checksum that does not match) is shown on
 the same line with the reason, and the running build is left as it was.
+
+When the download cannot start at all (a test build while Suhina is not connected to gh, no folder
+the program is in), the button opens Help › Check for updates…, which says why and has *Connect
+Suhina to your gh* when a sign-in is what is missing. The button never does nothing.
+
+A test build is offered as *New test build available: the test build of #663 (…)*.
+
+Nothing is downloaded or installed until the user presses the button: the check only tells.
+
+## With a project open
+
+The same line shows as a bar across the top of the workspace, under the toolbar, where the
+missing-files bar shows. The prompt to open a project and the missing-files bar go first while
+either has something to say. The bar is part of the window, not a dialog, and does not take the
+keyboard. Besides **Download update now** and **What's new** it has **Later**, which hides the
+offer of that build until a newer one is out or Suhina starts again. The download's progress,
+*Restart now* and a failure show in the same bar. While the bar waits on the person it has
+**Later**:
+
+- on an installed update, beside *Restart now*: the bar goes, and *Restart now* stays in Help ›
+  Check for updates…;
+- on a failure, beside *Try again*: the bar goes until the updater has something new to say (a
+  new install, a new failure, a newer build).
+
+A download or an install in progress has nothing to put off and shows no **Later**.
 
 ## Installing in place
 
@@ -104,10 +129,16 @@ Suhina installs and runs what the updater downloads, so a pull request that chan
 must not pass unnoticed, however large it is. Three things hold, and none of them can be turned off
 by the pull request alone:
 
-- **Code owner's review.** `.github/CODEOWNERS` names the repository owner for `crates/update/`,
-  `crates/ui/src/app/updates.rs` and `crates/ui/src/settings/update_settings.rs`, as it does for
-  `.github/` and `scripts/`. GitHub reads the file from the base branch, and the main ruleset
-  requires that review, so `ready to merge` alone does not merge a change here.
+- **Code owner's review.** `.github/CODEOWNERS` names the repository owner for `crates/update/`, as
+  it does for `.github/` and `scripts/`. GitHub reads the file from the base branch, and the main
+  ruleset requires that review, so `ready to merge` alone does not merge a change here (checked on
+  2026-11-13, CONTRIBUTING.md › Merging many pull requests: the app's approval, although the app is
+  a bypass actor of the ruleset, left the pull request blocked until the owner approved). The crate
+  holds everything that decides where the updater looks and what it installs: the addresses, which
+  test builds are trusted, the checksum, unpacking and putting the build in place. The window's
+  files (`crates/ui/src/app/updates.rs`, `crates/ui/src/settings/update_settings.rs`) only show what
+  the crate found and hand the pressed button back, so they follow the usual review; a change there
+  that starts a download of its own is the case the paragraph below the list names.
 - **The required check.** `scripts/updater_source.py` runs in the `docs` job of `ci.yml`, under the
   `ci` check main requires, in the merge queue too. It fails when `crates/update/src/github.rs` no
   longer holds the pinned lines (`REPOSITORY`, `NIGHTLY_URL`, `NIGHTLY_PAGE`, `ARTIFACTS_URL` and the

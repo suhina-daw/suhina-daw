@@ -27,7 +27,7 @@ fn a_dialog_that_marks_its_panel_gets_the_window_blurred_under_it() {
         begin_frame(&ctx, Default::default());
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("dialog")));
         let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(120.0, 80.0));
-        backdrop(&painter, rect);
+        backdrop(&painter, rect, 0.0);
         painter.rect_filled(rect, 0.0, panel);
         finish_backdrops(&ctx);
     });
@@ -171,6 +171,28 @@ fn popups_and_tooltips_get_the_window_blurred_under_their_frames_whatever_their_
     assert!(!seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 200, 0))));
 }
 
+/// A workspace panel the theme lays over a view is painted on a layer without an area: said to
+/// be the window's, it is in the capture behind a menu; a drag's preview, not said, never is.
+#[test]
+fn a_window_layer_without_an_area_is_in_the_capture_and_a_drag_s_preview_is_not() {
+    let panel = Color32::from_rgb(0, 0, 250);
+    let (_, _, host) = floating_frames(None, |ctx| {
+        let layer = egui::LayerId::new(egui::Order::Middle, Id::unique("workspace-overlay"));
+        super::super::floating::window_layer(ctx, layer);
+        ctx.layer_painter(layer).rect_filled(Rect::from_min_size(pos2(5.0, 5.0), egui::vec2(50.0, 50.0)), 0.0, panel);
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, Id::unique("preview"))).rect_filled(
+            Rect::from_min_size(pos2(100.0, 5.0), egui::vec2(50.0, 50.0)),
+            0.0,
+            Color32::from_rgb(0, 200, 0),
+        );
+        odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0));
+    });
+    let seen = host.seen.lock().map(|seen| seen.clone()).unwrap_or_default();
+    let has = |color: Color32| seen.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == color));
+    assert!(has(panel), "the panel is behind the menu: {seen:?}");
+    assert!(!has(Color32::from_rgb(0, 200, 0)), "a preview is not");
+}
+
 #[test]
 fn the_app_s_own_layers_are_not_blurred_and_nothing_floating_means_no_capture() {
     use super::super::floating::{Kind, area};
@@ -194,6 +216,23 @@ fn the_app_s_own_layers_are_not_blurred_and_nothing_floating_means_no_capture() 
     assert!(!shapes.iter().any(is_image), "{shapes:?}");
 }
 
+/// A dialog with rounded corners has its blur cut to them.
+#[test]
+fn a_dialog_s_blur_takes_its_corner_radius() {
+    let panel = Color32::from_rgb(4, 5, 6);
+    let (shapes, _, _) = floating_frames(None, |ctx| {
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("dialog")));
+        let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(120.0, 80.0));
+        backdrop(&painter, rect, 24.0);
+        painter.rect_filled(rect, 24.0, panel);
+    });
+    let image = shapes.iter().find_map(|s| match s {
+        egui::Shape::Rect(r) if is_image(s) => Some(r.corner_radius),
+        _ => None,
+    });
+    assert_eq!(image, Some(egui::CornerRadius::same(24)), "{shapes:?}");
+}
+
 /// A menu opened over a dialog (a dropdown in Export audio, Settings' More) shows the dialog
 /// blurred behind it, with the dialog's own blur in it; the dialog's blur is the window alone.
 #[test]
@@ -205,7 +244,7 @@ fn a_menu_over_a_dialog_gets_the_dialog_blurred_behind_it() {
             ctx,
             |ui| {
                 let rect = Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(200.0, 150.0));
-                backdrop(ui.painter(), rect);
+                backdrop(ui.painter(), rect, 0.0);
                 ui.painter().rect_filled(rect, 0.0, panel);
                 ui.allocate_rect(rect, egui::Sense::hover());
             },
@@ -300,6 +339,42 @@ fn a_restyled_frame_keeps_egui_s_shadow_and_draws_its_outline_over_the_contents(
         .position(|s| matches!(s, egui::Shape::Rect(r) if r.stroke.color == Color32::from_rgb(255, 0, 0)))
         .expect("the outline");
     assert!(frame < text && text < outline, "{frame} < {text} < {outline}");
+}
+
+/// `box-shadow: none` takes egui's shadow away, as any other value replaces it.
+#[test]
+fn box_shadow_none_removes_egui_s_shadow() {
+    let css = "popup { background-color: #00ff00; box-shadow: none; }";
+    let (shapes, _, _) =
+        floating_frames(Some(css), |ctx| odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0)));
+    assert!(shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 255, 0))));
+    assert!(!shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.blur_width > 0.0)), "{shapes:?}");
+}
+
+/// A `border-color` alone colours egui's own stroke: the width stays egui's.
+#[test]
+fn border_color_alone_colours_egui_s_stroke() {
+    let (shapes, _, _) = floating_frames(Some("popup { border-color: #ff0000; }"), |ctx| {
+        odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0))
+    });
+    let stroke = shapes.iter().find_map(|s| match s {
+        egui::Shape::Rect(r) if r.stroke.width > 0.0 && r.fill_texture_id() != TextureId::User(7) => Some(r.stroke),
+        _ => None,
+    });
+    assert!(stroke.is_some_and(|stroke| matches!(stroke.color.to_array(), [r, 0, 0, _] if r > 0)), "{shapes:?}");
+}
+
+/// `user.css` styles popups and tooltips when the theme has no sheet at all.
+#[test]
+fn user_css_alone_styles_popups() {
+    super::super::native_css::set_user_sheet(Some(
+        "popup { backdrop-filter: none; background-color: #00ff00; }".into(),
+    ));
+    let (shapes, calls, _) =
+        floating_frames(None, |ctx| odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0)));
+    super::super::native_css::set_user_sheet(None);
+    assert_eq!(calls, 0, "left sharp");
+    assert!(shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 255, 0))));
 }
 
 #[test]

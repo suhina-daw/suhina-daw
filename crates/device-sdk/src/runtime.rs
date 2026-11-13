@@ -618,9 +618,8 @@ impl PreparedEffect {
                     );
                     for (frame, pair) in audio.as_chunks::<2>().0.iter().take(block.len()).enumerate() {
                         self.block_values[index][frame] = [finite(f64::from(pair[0])), finite(f64::from(pair[1]))];
-                        for port in 0..auxiliary_count {
-                            self.block_auxiliary[index][port][frame] =
-                                native.output(port, frame).map(|v| finite(f64::from(v)));
+                        for (port, buffer) in self.block_auxiliary[index].iter_mut().enumerate().take(auxiliary_count) {
+                            buffer[frame] = native.output(port, frame).map(|v| finite(f64::from(v)));
                         }
                     }
                     continue;

@@ -3,12 +3,13 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-12
+last_verified: 2026-11-13
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
   - crates/ui/src/kit/artwork.rs
   - crates/ui/src/kit/control_layout.rs
+  - crates/ui/src/kit/floating.rs
   - assets/themes/default/*.svg
   - assets/themes/examples/*.svg
   - crates/ui/themes/THEME-PACKAGE-README.md
@@ -907,7 +908,9 @@ bar. The user-agent sheet's grid reads them, and a theme's rules can too
 `#panel-detail[closed]`.
 
 A closed detail area whose size the sheet sets is left out of the grid instead, since it would
-leave an empty hole: it then has no splitter, and opens again with its key or menu item. A
+leave an empty hole: it then has no splitter, and opens again with its key or menu item. Its
+padding and border are not such a size: a closed area with them keeps its place, a box of its
+padding round an empty content box, and its splitter. A
 `grid-area` of `auto`, or one under an element without a template, places nothing.
 
 **A region that is not there has no element** (the menu bar turned off, the tabs of a single
@@ -925,8 +928,12 @@ devices at one height, the piano roll pulled to the top under the Arrangement vi
 **Splitters.** The panels' margins leave the gaps the splitters lie in (4 points beside the
 browser, 6 over the detail area or beside it). A panel whose size the sheet sets has no
 splitter; one the grid leaves to its content size keeps a `divider` in the gap beside it, and its
-drag sets the saved size. Which panels follow is found by laying the grid out again with their
-content sizes a point larger, one at a time, not by a list of properties (#1240). The closed
+drag sets the saved size. Which panels follow is found by laying the grid out again, one panel at
+a time, with no content size and with the window's whole room as its content size, not by a list
+of properties (#1240): a panel that grows between the two follows, so one the sheet only caps
+(`max-height`) keeps its splitter at its maximum and past it, and one whose size it sets does
+not. The answer depends on which regions are there and the window's size, not on the sizes of
+the frame. The closed
 detail area keeps its place with no size, so its splitter stays in the gap, to drag it open. The
 splitters are `divider` elements, `#browser-splitter` and `#detail-splitter`, with `:hover` and
 `:active`; every divider (a mixer strip's `#mixer-divider` too) drags and paints through one
@@ -935,7 +942,10 @@ helper (`kit::divider`). The strip takes `background-color` and the detail split
 and the browser's the border colour, stronger under the pointer.
 
 **One set of rectangles.** Drawing, input clipping and drop targets use the rectangles the grid
-gives. A region the grid gives none draws nothing and takes no input. A panel the grid lays over
+gives. A region the grid gives none draws nothing and takes no input. What a bar lays out past
+its rectangle (tabs past a narrowed `project-tabs`) is neither drawn nor takes the pointer. The
+Settings dialog keeps clear of the status bar wherever the grid puts it, and leaves it undimmed;
+a hidden status bar takes no room from it. A panel the grid lays over
 `#panel-main` (in the same cells) is drawn on a layer above the view, so it shows and takes the
 pointer there.
 
