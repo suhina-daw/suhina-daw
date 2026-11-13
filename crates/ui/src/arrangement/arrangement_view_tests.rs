@@ -835,15 +835,16 @@ fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
 }
 
 #[test]
-fn a_muted_clip_is_the_muted_grey_whatever_its_colour() {
+fn a_muted_clip_is_the_user_agent_grey_whatever_its_colour() {
     // #1393: dimming the colour left a muted clip looking like any other clip on a grey track.
     let surface = crate::kit::theme::panel_background();
-    let grey = crate::kit::theme::clip_muted();
+    let grey = clip::muted_clip_grey(false);
+    assert_eq!(grey, Color32::from_rgb(0x85, 0x83, 0x7E), "the user-agent sheet's clip[muted]");
+    assert_eq!(clip::muted_clip_grey(true), Color32::from_rgb(0x9A, 0x98, 0x93), "clip[muted][selected]");
     for colour in [Color32::from_rgb(0xFF, 0x9A, 0x3C), Color32::from_rgb(0x4A, 0x4A, 0x4A), grey] {
         assert_eq!(clip::clip_body(surface, colour, 82, true, false), grey, "{colour:?}");
         let selected = clip::clip_body(surface, colour, 82, true, true);
-        assert_ne!(selected, grey, "selection still shows on a muted clip");
-        assert!(selected.r() > grey.r(), "selection lifts the brightness");
+        assert!(selected.r() > grey.r(), "selection lifts a muted clip's brightness");
     }
     // A clip that plays keeps its hue, and a grey one is not the muted grey.
     let orange = clip::clip_body(surface, Color32::from_rgb(0xFF, 0x9A, 0x3C), 82, false, false);

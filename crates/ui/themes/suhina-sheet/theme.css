@@ -11,7 +11,6 @@
   --browser-text-secondary: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 4%), black 18%);
   --browser-text-value: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 3%), black 35%);
   --clip-audioDefault: #9BC2E6;
-  --clip-mutedBackground: var(--text-hint);
   --clip-midiDefault: #A9D18E;
   --control-activeBackground: color-mix(in oklab, var(--tint), white 53%);
   --control-background: white;

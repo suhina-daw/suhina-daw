@@ -94,6 +94,16 @@ pub(in crate::kit) fn user_agent() -> Option<&'static Sheet> {
 /// (`sample-point[kind="kick"]`), as the element's own rule: what it looks like where no sheet
 /// styles the window. `None` where the sheet gives it no colour.
 pub fn user_agent_color(name: &str, attributes: &[(&str, &str)]) -> Option<Color32> {
+    user_agent_property(name, attributes, Property::Color)
+}
+
+/// The `background-color` the user-agent sheet alone gives the element `name` with `attributes`
+/// (`clip[muted]`), as [`user_agent_color`] does for `color`. `None` where it gives none.
+pub fn user_agent_background(name: &str, attributes: &[(&str, &str)]) -> Option<Color32> {
+    user_agent_property(name, attributes, Property::BackgroundColor)
+}
+
+fn user_agent_property(name: &str, attributes: &[(&str, &str)], property: Property) -> Option<Color32> {
     let sheet = user_agent()?;
     let element =
         attributes.iter().fold(Element::new(name, None), |element, (name, value)| element.with_attribute(name, value));
@@ -102,8 +112,8 @@ pub fn user_agent_color(name: &str, attributes: &[(&str, &str)]) -> Option<Color
     let style =
         cascade::last_style(&tree, None, viewport, &[AppliedSheet { sheet, layer: Layer::UserAgent, root: None }])
             .ok()?;
-    match style.get(Property::Color) {
-        color if color == Property::Color.initial() => None,
+    match style.get(property) {
+        value if value == property.initial() => None,
         Value::Color(Color::Rgba([r, g, b, a])) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
         _ => None,
     }

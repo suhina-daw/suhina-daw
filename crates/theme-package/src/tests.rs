@@ -328,6 +328,13 @@ fn the_user_agent_sheet_colours_sample_points_by_kind() {
     assert_eq!(kinds, 17);
 }
 
+/// A muted clip is grey in the user-agent sheet, whatever its colour (#1393).
+#[test]
+fn the_user_agent_sheet_greys_muted_clips() {
+    assert!(USER_AGENT_SHEET.contains("clip[muted] { background-color: #85837E; }"));
+    assert!(USER_AGENT_SHEET.contains("clip[muted][selected] { background-color: #9A9893; }"));
+}
+
 #[test]
 fn image_rules_read_selector_lists_and_skip_comments_and_at_rules() {
     let css = "/* a { image: url(x.svg); } */ a, b:hover { image: url('y.svg'); color: red; }\n\

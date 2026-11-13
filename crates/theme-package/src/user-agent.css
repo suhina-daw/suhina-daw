@@ -68,6 +68,11 @@ knob-pointer { image: url("suhina:knob.pointer.svg"); }
 meter { image: url("suhina:meter.svg"); }
 icon[kind="folder"] { image: url("suhina:folder.svg"); }
 
+/* A muted arrangement clip (turned off, or on a muted track) is grey whatever its colour, a little
+   lighter while selected, so it never reads as a darker shade of a clip that plays (#1393). */
+clip[muted] { background-color: #85837E; }
+clip[muted][selected] { background-color: #9A9893; }
+
 /* The sounds of the sample map, by kind. */
 sample-point[kind="kick"] { color: #D06E5E; }
 sample-point[kind="snare"] { color: #73AAC0; }

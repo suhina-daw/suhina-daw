@@ -1385,7 +1385,8 @@ pub(super) fn paint_clip(
     let painter = &inside;
     // Keep the clip colour legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
-    // A muted clip is grey and hatched (below), not a dimmer shade of its colour (#1393).
+    // A muted clip is the sheet's `clip[muted]` grey and hatched (below), not a dimmer shade of
+    // its colour (#1393).
     let strength = if clip.audio { look.audio_colour_strength } else { 82 };
     let surface = crate::kit::style_class::surface_or(theme::panel_background());
     let body = own.background_or(clip_body(surface, rgb(clip.color), strength, off, selected));
@@ -1720,17 +1721,30 @@ pub(super) fn drawn_muted(track_muted: bool, enabled: bool) -> bool {
     track_muted || !enabled
 }
 
-/// A clip's body. A muted clip (turned off, or on a muted track) is the theme's neutral
-/// `clip.mutedBackground` whatever its colour, so it never reads as a darker shade of a clip that
-/// plays, nor as a clip whose colour is grey (#1393); its colour stays in the project. Selection
-/// lifts the brightness either way and never changes the hue.
+/// A clip's body where no sheet styles it. A muted clip (turned off, or on a muted track) is the
+/// user-agent sheet's `clip[muted]` grey whatever its colour, so it never reads as a darker shade
+/// of a clip that plays, nor as a clip whose colour is grey (#1393); its colour stays in the
+/// project. Selection lifts the brightness either way and never changes the hue.
 pub(super) fn clip_body(surface: Color32, colour: Color32, strength: u8, muted: bool, selected: bool) -> Color32 {
     if muted {
-        let grey = theme::clip_muted();
-        return if selected { motion::mix(grey, theme::text_primary(), 0.15) } else { grey };
+        return muted_clip_grey(selected);
     }
     let strength = if selected { strength.saturating_add(12).min(100) } else { strength };
     colour_surface(surface, colour, strength, false)
+}
+
+/// The background the user-agent sheet gives `clip[muted]` (`clip[muted][selected]` while
+/// selected), worked out once: the fallback where no sheet styles the window, as the sample map's
+/// kind colours are.
+pub(super) fn muted_clip_grey(selected: bool) -> Color32 {
+    static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
+    let greys = GREYS.get_or_init(|| {
+        let of = |attributes: &[(&str, &str)]| {
+            crate::kit::native_css::user_agent_background("clip", attributes).unwrap_or(Color32::GRAY)
+        };
+        [of(&[("muted", "")]), of(&[("muted", ""), ("selected", "")])]
+    });
+    greys[usize::from(selected)]
 }
 
 /// Gap between the lines of a muted clip's hatch, in points.

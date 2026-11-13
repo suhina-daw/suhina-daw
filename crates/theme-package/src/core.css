@@ -38,7 +38,6 @@
 @property --pan-centre { syntax: "<color>"; initial-value: #817F7A; }
 @property --clip-midiDefault { syntax: "<color>"; initial-value: #4FC3F7; }
 @property --clip-audioDefault { syntax: "<color>"; initial-value: #FF9A3C; }
-@property --clip-mutedBackground { syntax: "<color>"; initial-value: #85837E; }
 @property --track-1 { syntax: "<color>"; initial-value: #FF9A3C; }
 @property --track-2 { syntax: "<color>"; initial-value: #F2D541; }
 @property --track-3 { syntax: "<color>"; initial-value: #4FC3F7; }
