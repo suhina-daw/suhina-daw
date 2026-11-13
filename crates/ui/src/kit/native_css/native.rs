@@ -142,9 +142,14 @@ fn variant(engine: &Engine) -> Option<&Sheet> {
     engine.variant.as_ref().map(|(_, sheet)| sheet.as_ref())
 }
 
-/// `html` and under it `body`, or the `window` element when the window is laid out.
+/// `html` and under it `body`, and under that the `window` element when the window is laid out:
+/// the ancestors painting has, so a rule through `body` matches in layout as it does when painted.
 pub(super) fn roots(window: bool) -> Vec<Element> {
-    vec![Element::new("html", None), Element::new(if window { "window" } else { "body" }, Some(0))]
+    let mut roots = vec![Element::new("html", None), Element::new("body", Some(0))];
+    if window {
+        roots.push(Element::new("window", Some(1)));
+    }
+    roots
 }
 
 /// A host element of the registry's `name`, with an optional id and project object.
@@ -314,12 +319,17 @@ pub(super) fn host_layout(
     size: [f32; 2],
 ) -> Option<Vec<(Option<Rect>, Computed)>> {
     let mut all = roots(window);
-    if let Some(window) = all.get_mut(1) {
-        window.attributes = attributes.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
+    // The attributes belong to the last root: `window`, or `body` for a bar.
+    if let Some(last) = all.last_mut() {
+        last.attributes = attributes.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
     }
     let first = all.len();
     all.extend(elements);
     let mut measured = vec![None; first];
+    // `body` is the box the window fills (`window { height: 100% }`).
+    if window && let Some(body) = measured.get_mut(1) {
+        *body = Some([Some(size[0].clamp(0.0, 16384.0)), Some(size[1].clamp(0.0, 16384.0))]);
+    }
     measured.extend_from_slice(sizes);
     tree_layout(engine, all, first, &measured, size)
 }

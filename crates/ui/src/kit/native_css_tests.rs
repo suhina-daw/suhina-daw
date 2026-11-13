@@ -1739,6 +1739,27 @@ fn moving_the_toolbar_in_the_window_leaves_its_modules_where_they_are() {
     }
     skin::configure(&skin::Skin::default());
 }
+/// The window is laid out under `body`, as it is painted: a rule through `body` reaches the
+/// regions, and the view still fills the room the grid leaves.
+#[test]
+fn a_rule_through_body_reaches_the_window_s_regions() {
+    prepare("body toolbar { height: 60px; }", 1000.0);
+    let laid = window(&full_window(Vec2::new(1000.0, 700.0))).unwrap();
+    assert_eq!(laid.rect(Region::Toolbar).map(|r| r.height()), Some(60.0));
+    assert!(
+        laid.rect(Region::StatusBar).is_some_and(|r| (r.bottom() - 700.0).abs() < 0.5),
+        "the grid fills the window"
+    );
+    skin::configure(&skin::Skin::default());
+    prepare("", 1000.0);
+    let plain = window(&full_window(Vec2::new(1000.0, 700.0))).unwrap();
+    assert_ne!(plain.rect(Region::Toolbar).map(|r| r.height()), Some(60.0));
+    assert!(
+        plain.rect(Region::StatusBar).is_some_and(|r| (r.bottom() - 700.0).abs() < 0.5),
+        "the grid fills the window"
+    );
+    skin::configure(&skin::Skin::default());
+}
 /// Padding on a closed detail area is not a size the sheet sets: the area keeps its place, a box
 /// of its padding, and its splitter, closed and open again.
 #[test]

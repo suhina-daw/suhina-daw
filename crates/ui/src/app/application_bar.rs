@@ -67,16 +67,17 @@ pub(super) fn show(
         }
     }
     let laid = row::row(&Bar::of(style_class, body.size()), &items).unwrap_or_default();
-    for (index, item) in items.iter().enumerate().take(3) {
-        if let (Some(id), Some(rect)) = (item.id.as_deref(), laid.at(index, body.min)) {
-            crate::kit::element::GROUP.id(id).attribute("kind", id).enter().paint(ui.painter(), rect);
-        }
-    }
-    for (index, id, text) in texts {
-        if let Some(rect) = laid.at(index, body.min) {
+    // Each group's items are painted in its scope, so a rule through the group reaches them and
+    // a group that hides its overflow cuts them.
+    for (group_index, item) in items.iter().enumerate().take(3) {
+        let (Some(id), Some(rect)) = (item.id.as_deref(), laid.at(group_index, body.min)) else { continue };
+        let scope = crate::kit::element::GROUP.id(id).attribute("kind", id).enter();
+        scope.paint(ui.painter(), rect);
+        for (index, id, text) in texts.iter().filter(|(index, ..)| items[*index].parent == Some(group_index)) {
+            let Some(rect) = laid.at(*index, body.min) else { continue };
             let item = crate::kit::element::BAR_ITEM.id(id).attribute("kind", id).enter();
             let content = item.paint(ui.painter(), rect).content;
-            group(ui, content, text, item.own_color_or(style_class, theme::text_primary()));
+            group(ui, content, text.clone(), item.own_color_or(theme::text_primary()));
         }
     }
     if !custom_controls {
@@ -212,5 +213,37 @@ mod tests {
         let (hidden, close) = painted("#project-name { display: none; } bar-item { display: none; }");
         assert!(x(&plain, "Project").is_some() && x(&hidden, "Project").is_none());
         assert_eq!(close, cfg!(target_os = "windows"), "the window's buttons are not the sheet's");
+    }
+
+    /// The colour the bar's text containing `text` is painted in, under `css`.
+    fn ink_of(css: &str, text: &str) -> Option<egui::Color32> {
+        crate::kit::native_css::set_user_sheet(Some(css.into()));
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size((640.0, 28.0)).build_ui(|ui| {
+            let _frame = crate::kit::native_css::frame(ui);
+            let bar = crate::kit::element::APPLICATION_BAR.enter();
+            let settings = ViewSettings { app_name_centered: false, ..ViewSettings::default() };
+            show(ui, &bar, settings, "Project", "120 BPM");
+        });
+        harness.run();
+        harness.run();
+        let ink = harness.output().shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Text(shape) if shape.galley.text().contains(text) => {
+                shape.galley.job.sections.first().map(|section| section.format.color)
+            }
+            _ => None,
+        });
+        crate::kit::native_css::set_user_sheet(None);
+        ink
+    }
+
+    /// The items are painted in their group's scope: a rule through the group reaches them, and an
+    /// item's own `color` wins even when a rule gives the bar the same one.
+    #[test]
+    fn a_rule_through_a_group_reaches_its_items() {
+        let red = egui::Color32::from_rgb(255, 0, 0);
+        let plain = ink_of("", "Suhina").unwrap();
+        assert_ne!(plain, red);
+        assert_eq!(ink_of("#app-bar-start > bar-item { color: #ff0000; }", "Suhina"), Some(red));
+        assert_eq!(ink_of("application-bar, #app-name { color: #ff0000; }", "Suhina"), Some(red));
     }
 }

@@ -78,6 +78,12 @@ fn a_bar_gives_way_until_its_items_fit() {
     assert_eq!(at(400.0, ""), Some(1));
     // A theme that lets the items shrink still gives way: they no longer have their width.
     assert_eq!(at(400.0, "bar-item { min-width: 0; flex-shrink: 1; }"), Some(1));
+    // The items are measured by their content: padding shrunk into the same width is not room.
+    // Five 100-point items with 10 points of padding either side and no gap need 600 points; in
+    // 500 each box stays 100 wide but its content box shrinks to 80, so the sparser set is chosen.
+    let padded = "bar-item { padding: 0 10px; min-width: 0; flex-shrink: 1; } status-bar { gap: 0; padding: 0; }";
+    assert_eq!(at(500.0, padded), Some(1));
+    assert_eq!(at(600.0, padded), Some(0));
     // Nothing fits: the sparsest, clipped.
     assert_eq!(at(50.0, ""), Some(1));
 }

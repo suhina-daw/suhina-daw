@@ -225,8 +225,11 @@ session track { width: 86px; }
 session slot { height: 18px; }
 
 @media (max-width: 900px) {
-  window { grid-template-areas: "menu" "toolbar" "main" "detail" "status"; }   /* the browser moves out */
-  #browser { visible: false; }
+  /* One column and the same nine rows as the user-agent sheet; the browser has no area, so it is out */
+  window {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "menu" "tabs" "toolbar" "top" "notice" "main" "detail" "bottom" "status";
+  }
 }
 @media (desktop-blur: off) { #browser { glass: 0.9 inset; } }
 ```

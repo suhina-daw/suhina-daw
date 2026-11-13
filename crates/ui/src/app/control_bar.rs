@@ -62,24 +62,41 @@ impl App {
         let painter = ui.painter_at(rect);
         let mut hovered_switch = None;
         let mut underline = None;
-        // The groups' boxes first, under their modules.
-        for (index, item) in items.iter().enumerate() {
-            if let (Some(id), Some(at), "group") = (item.id.as_deref(), row.at(index, rect.min), item.name) {
-                crate::kit::element::GROUP.id(id).attribute("kind", id).enter().paint(&painter, at);
+        // A group's modules are drawn in its scope, so a rule through the group reaches them and a
+        // group that hides its overflow cuts them. A module outside any group stands alone.
+        let mut tempo_drawn = false;
+        let shown = Shown { grid, cpu, ram };
+        for (index, item) in items.iter().enumerate().filter(|(_, item)| item.parent.is_none()) {
+            let (Some(id), Some(at)) = (item.id.as_deref(), row.at(index, rect.min)) else { continue };
+            match item.name {
+                "group" => {
+                    let group = crate::kit::element::GROUP.id(id).attribute("kind", id).enter();
+                    group.paint(&painter, at);
+                    let clip = rect.intersect(group.input_clip(at));
+                    let members = items.iter().enumerate().filter(|(_, member)| member.parent == Some(index));
+                    for (member, module) in members {
+                        let Some(module_id) = module.id.as_deref().filter(|_| module.name == "toolbar-module") else {
+                            continue;
+                        };
+                        let Some(laid) = row.at(member, rect.min) else { continue };
+                        tempo_drawn |= module_id == "tempo";
+                        let place = (module_id, laid, clip);
+                        let state = (&mut hovered_switch, &mut underline);
+                        self.toolbar_member(ui, &painter, place, shown, actions, state);
+                    }
+                }
+                "toolbar-module" => {
+                    tempo_drawn |= id == "tempo";
+                    let state = (&mut hovered_switch, &mut underline);
+                    self.toolbar_member(ui, &painter, (id, at, rect), shown, actions, state);
+                }
+                _ => {}
             }
         }
-        for (index, item) in items.iter().enumerate() {
-            let (Some(module), Some(laid)) = (item.id.as_deref(), row.at(index, rect.min)) else { continue };
-            if item.name != "toolbar-module" {
-                continue;
-            }
-            let at = themed_toolbar::place(ui, module, laid);
-            let scope = crate::kit::element::TOOLBAR_MODULE.id(module).attribute("kind", module).enter();
-            let mut module_ui = ui.new_child(egui::UiBuilder::new().id_salt(("toolbar", module)).max_rect(at));
-            module_ui.set_clip_rect(ui.clip_rect().intersect(rect));
-            let painter = painter.with_clip_rect(painter.clip_rect().intersect(rect));
-            let cx = ModuleCx { grid, cpu, ram, scope: &scope };
-            self.toolbar_module(&mut module_ui, &painter, at, module, cx, actions, &mut hovered_switch, &mut underline);
+        // A tempo drag whose field went away mid-drag (a rule hid it) cannot be finished: it is
+        // dropped once the pointer is up, so no stale preview or underline is left.
+        if !tempo_drawn && !ui.input(|i| i.pointer.any_down()) {
+            (self.tempo_drag, self.tempo_grab, self.tempo_sent) = (None, None, None);
         }
         self.hover_switch(ui.ctx(), hovered_switch);
         // The underline slides to the view that was picked.
@@ -194,13 +211,36 @@ impl App {
         candidates
     }
 
-    /// One module of the toolbar in `rect`, drawn the same wherever the row puts it.
+    /// One module of the toolbar, given as its id, the rectangle the row gave it and the one its
+    /// bar and groups leave to it: painting and input stop at the edge of the last.
+    fn toolbar_member(
+        &mut self,
+        ui: &mut Ui,
+        painter: &egui::Painter,
+        (module, laid, clip): (&str, Rect, Rect),
+        shown: Shown<'_>,
+        actions: &mut Vec<Action>,
+        (hovered_switch, underline): (&mut Option<View>, &mut Option<Underline>),
+    ) {
+        let at = themed_toolbar::place(ui, module, laid);
+        let scope = crate::kit::element::TOOLBAR_MODULE.id(module).attribute("kind", module).enter();
+        let mut module_ui = ui.new_child(egui::UiBuilder::new().id_salt(("toolbar", module)).max_rect(at));
+        // A module that hides its overflow takes no input past its padding box either.
+        module_ui.set_clip_rect(ui.clip_rect().intersect(clip).intersect(scope.input_clip(at)));
+        let painter = painter.with_clip_rect(painter.clip_rect().intersect(clip));
+        let Shown { grid, cpu, ram } = shown;
+        let cx = ModuleCx { grid, cpu, ram, scope: &scope };
+        self.toolbar_module(&mut module_ui, &painter, at, module, cx, actions, hovered_switch, underline);
+    }
+
+    /// One module of the toolbar in `outer`, its whole box, drawn the same wherever the row puts it;
+    /// its contents go in the content box, inside the module's border and padding.
     #[allow(clippy::too_many_arguments)]
     fn toolbar_module(
         &mut self,
         ui: &mut Ui,
         painter: &egui::Painter,
-        rect: Rect,
+        outer: Rect,
         module: &str,
         cx: ModuleCx<'_>,
         actions: &mut Vec<Action>,
@@ -208,19 +248,20 @@ impl App {
         underline: &mut Option<(f32, f32, f32, egui::Color32)>,
     ) {
         let ModuleCx { grid, cpu, ram, scope } = cx;
+        let rect = scope.content_in(outer);
         let surface = |fill| crate::kit::element::Native { radius: 0.0, fill };
         let box_fill = crate::kit::style_class::surface_or(theme::window_background());
         match module {
             "browser" => {
-                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 self.browser_toggle(ui, painter, rect);
             }
             "tempo" => {
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("sampler-tempo"), grid.tempo_bpm));
-                self.tempo_field(ui, painter, rect, grid.tempo_bpm, Some(scope), actions);
+                self.tempo_field(ui, painter, outer, grid.tempo_bpm, Some(scope), actions);
             }
             "signature" => {
-                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 // The time signature playing, like the tempo: a launched scene may have changed it.
                 let ts = grid.time_signature();
                 widgets::text_in(
@@ -244,12 +285,12 @@ impl App {
                     self.toggle_typing_keys();
                 }
                 let (fill, ink) = widgets::toggle_colors(ui, &response, self.typing.on);
-                scope.paint_with(painter, rect, surface(fill));
+                scope.paint_with(painter, outer, surface(fill));
                 let text = if self.typing.on { self.typing.label() } else { "Keys".into() };
                 widgets::text_in(painter, rect, Align2::CENTER_CENTER, &text, theme::ui_font(theme::TEXT_SMALL), ink);
             }
             "grid" => {
-                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 let (caption, menu) = captioned(rect, GRID_CAPTION, GRID_MENU);
                 widgets::text_in(
                     painter,
@@ -286,7 +327,7 @@ impl App {
                 }
             }
             "count-in" => {
-                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 let (caption, menu) = captioned(rect, COUNT_IN_CAPTION, COUNT_IN_MENU);
                 widgets::text_in(
                     painter,
@@ -300,15 +341,15 @@ impl App {
                 crate::session::record_controls::count_in_menu(ui, menu, bars, actions);
             }
             "metronome" => {
-                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 crate::session::record_controls::metronome_button(ui, painter, rect, grid.metronome, actions);
             }
             "transport" => {
-                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 self.transport(ui, painter, rect, grid, actions);
             }
             "position" => {
-                scope.paint_with(painter, rect, surface(box_fill));
+                scope.paint_with(painter, outer, surface(box_fill));
                 widgets::text_in(
                     painter,
                     rect.shrink2(Vec2::new(PAD, 0.0)),
@@ -319,7 +360,7 @@ impl App {
                 );
             }
             "mapping" => {
-                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 // The mapping mode's button, lit while the mode is on.
                 let on = self.view.launch_keys.mode.on;
                 let color = if on { theme::accent() } else { theme::text_secondary() };
@@ -350,7 +391,7 @@ impl App {
                 }
             }
             "views" => {
-                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 // The view switch, the current view underlined. A clip dragged in the Arrangement
                 // view, or carried, switches the view when it hovers over the other view's name for
                 // a moment.
@@ -385,7 +426,7 @@ impl App {
                 }
             }
             "agents" => {
-                scope.paint_with(painter, rect, surface(egui::Color32::TRANSPARENT));
+                scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 // Each agent the person let in (ADR 0028), lit; a click disconnects it.
                 let mut left = rect.left();
                 for (connection, client) in self.agents.clone() {
@@ -582,13 +623,13 @@ impl App {
         if let Some(rect) = laid.at(0, bar.min) {
             let item = crate::kit::element::BAR_ITEM.id("status-message").attribute("kind", "status-message").enter();
             let content = item.paint(&painter, rect).content;
-            let ink = item.own_color_or(style_class, color);
+            let ink = item.own_color_or(color);
             widgets::text_in(&painter, content, Align2::LEFT_CENTER, text, font.clone(), ink);
         }
         if let (Some(counts), Some(rect)) = (counts, laid.at(1, bar.min)) {
             let item = crate::kit::element::BAR_ITEM.id("status-counts").attribute("kind", "status-counts").enter();
             let content = item.paint(&painter, rect).content;
-            let ink = item.own_color_or(style_class, theme::text_hint());
+            let ink = item.own_color_or(theme::text_hint());
             widgets::text_in(&painter, content, Align2::RIGHT_CENTER, &counts, font, ink);
         }
     }
@@ -635,7 +676,9 @@ impl App {
             module.paint_with(painter, tempo_rect, crate::kit::element::Native { radius: 0.0, fill });
         }
         let mono = theme::mono_font(theme::TEXT);
-        let text_area = tempo_rect.shrink2(Vec2::new(PAD, 0.0));
+        // The module's text goes in its content box, inside its border and padding.
+        let content = native.map_or(tempo_rect, |module| module.content_in(tempo_rect));
+        let text_area = content.shrink2(Vec2::new(PAD, 0.0));
         let ink = if native.is_some() { theme::text_primary() } else { theme::text_value() };
         widgets::text_in(painter, text_area, Align2::RIGHT_CENTER, &tempo_text, mono.clone(), ink);
         // The place under the pointer, or the one the drag holds: the integer part steps 1 BPM,
@@ -656,7 +699,7 @@ impl App {
             let underline =
                 egui::Rangef::new(right - (len - from as f32) * char_width, right - (len - to as f32) * char_width);
             let line = if held.is_some() { theme::accent() } else { theme::text_secondary() };
-            painter.hline(underline, tempo_rect.bottom() - 3.0, egui::Stroke::new(1.0, line));
+            painter.hline(underline, content.bottom() - 3.0, egui::Stroke::new(1.0, line));
         }
         // Four points of drag a step of the place grabbed; the arrow keys and the wheel 1 BPM.
         let per_point = held.unwrap_or(1.0) / 4.0;
@@ -706,6 +749,17 @@ struct Step {
     agent: bool,
     map: bool,
     performance: (bool, bool),
+}
+
+/// Where the view switch's underline goes: its x, y, width and colour.
+type Underline = (f32, f32, f32, egui::Color32);
+
+/// What the toolbar's modules draw from, before a module's element is entered.
+#[derive(Clone, Copy)]
+struct Shown<'a> {
+    grid: &'a TrackGrid,
+    cpu: Option<u32>,
+    ram: Option<u64>,
 }
 
 /// What a toolbar module draws from.

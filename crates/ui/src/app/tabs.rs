@@ -210,8 +210,7 @@ impl App {
             let fill = motion::mix(idle, crate::kit::style_class::surface_or(theme::panel_background()), lit);
             element.paint_with(&painter, tab, crate::kit::element::Native { radius: 0.0, fill });
             // The shown tab stands out unless a rule colours the tab itself; the row's `color` does not.
-            let text =
-                element.own_color_or(style_class, motion::mix(theme::text_secondary(), theme::text_primary(), lit));
+            let text = element.own_color_or(motion::mix(theme::text_secondary(), theme::text_primary(), lit));
             widgets::paint_text(
                 &painter,
                 Pos2::new(tab.left() + PAD, tab.center().y - galley.size().y / 2.0),

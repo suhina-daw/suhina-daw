@@ -46,6 +46,9 @@ pub struct ComputedStyle {
     values: BTreeMap<Property, Value>,
     variables: Arc<BTreeMap<String, String>>,
     authored: BTreeSet<Property>,
+    /// The properties a rule above the user agent wrote on this very element, not ones it
+    /// inherited: an item's own `color`, against the `color` its bar gives all its items.
+    declared: BTreeSet<Property>,
     /// The element's `animation` items with their keyframes resolved for it.
     keyframes: Vec<(crate::motion::Animation, Arc<crate::motion::Frames>)>,
 }
@@ -78,6 +81,12 @@ impl ComputedStyle {
     /// rule on an element sets the property again.
     pub fn authored(&self, property: Property) -> bool {
         self.authored.contains(&property)
+    }
+    /// Whether a rule above the user agent wrote `property` on this element itself. An inherited
+    /// value is not declared, though it is [`authored`](Self::authored), and a declaration that
+    /// repeats the inherited value is.
+    pub fn declared(&self, property: Property) -> bool {
+        self.declared.contains(&property)
     }
     /// Keyframe animations that apply, each with its frames resolved for this element.
     pub fn animations(&self) -> &[(crate::motion::Animation, Arc<crate::motion::Frames>)] {
@@ -271,8 +280,10 @@ pub(crate) fn element_style(
         // `knob`).
         if priority.0 > Layer::UserAgent as u8 {
             computed.authored.insert(property);
+            computed.declared.insert(property);
         } else {
             computed.authored.remove(&property);
+            computed.declared.remove(&property);
         }
     }
     if let Value::Animations(animations) = computed.get(Property::Animation) {

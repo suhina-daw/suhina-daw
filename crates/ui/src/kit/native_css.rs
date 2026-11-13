@@ -93,6 +93,12 @@ pub struct Computed {
     resolved: Arc<suhina_style::cascade::ComputedStyle>,
 }
 impl Computed {
+    /// Whether a rule above the user agent wrote `property` on this element itself, rather than
+    /// the element inheriting it.
+    pub fn declared(&self, property: Property) -> bool {
+        self.resolved.declared(property)
+    }
+
     /// The computed value of `property`, written or not (a host default, an initial value).
     pub fn value(&self, property: Property) -> Value {
         self.resolved.get(property)

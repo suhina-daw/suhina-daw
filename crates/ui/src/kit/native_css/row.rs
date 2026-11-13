@@ -190,7 +190,10 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
                 let sized = [Property::Width, Property::MaxWidth, Property::FlexBasis]
                     .iter()
                     .any(|property| style.authored_value(*property).is_some());
-                within && (sized || !item.size[0].is_some_and(|width| rect.width() + 0.5 < width))
+                // The app measured the item's content box: its padding and border are not part of it.
+                let [_, right, _, left] = style.insets_in(rect.width());
+                let content = rect.width() - left - right;
+                within && (sized || !item.size[0].is_some_and(|width| content + 0.5 < width))
             })
             .collect();
         let fits = inside.iter().all(|inside| *inside);

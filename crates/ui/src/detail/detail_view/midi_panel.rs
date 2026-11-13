@@ -314,7 +314,10 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
     let Some(laid) = row::row(&Bar::of(&element, row.size()), &items) else { return };
     for (index, ((tab, text), id)) in tabs.into_iter().zip(&ids).enumerate() {
         let Some(cell) = laid.at(index, row.min) else { continue };
-        let response = widgets::button_area(ui, cell, Id::unique(("midi-tools-tab", text)), format!("{text} tab"));
+        // A tab taller than the row paints and takes input only inside it, not over the tools.
+        let painter = &painter.with_clip_rect(painter.clip_rect().intersect(row));
+        let hit = cell.intersect(row);
+        let response = widgets::button_area(ui, hit, Id::unique(("midi-tools-tab", text)), format!("{text} tab"));
         // `editor-tab` (`[checked]` for the one shown), `#tab-notes` and `#tab-transform`.
         let on = state.tools_tab == tab;
         let el =

@@ -385,3 +385,68 @@ fn the_transport_stays_in_the_middle_and_a_narrow_toolbar_gives_way() {
 
 /// The transport, a gap and the position: the toolbar's middle.
 const TRANSPORT_AND_POSITION: f32 = 28.0 * 3.0 + 2.0 + 6.0 + 64.0;
+
+/// A module's padding moves what it holds: the transport's left padding moves Play, without
+/// changing the room the buttons take between them.
+#[test]
+fn a_module_s_contents_lie_in_its_content_box() {
+    let mut harness = native_bar();
+    let play = harness.get_by_label("Play").rect();
+    let stop = harness.get_by_label("Stop").rect();
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    harness.state_mut().app.use_test_skin(css("#transport { padding-left: 20px; }"));
+    harness.run();
+    let (padded, padded_stop) = (harness.get_by_label("Play").rect(), harness.get_by_label("Stop").rect());
+    // The module grows by 20 points and stays centred: its left edge moves 10 back, Play 20 on.
+    assert_eq!(padded.left(), play.left() + 10.0);
+    assert_eq!(padded_stop.left() - padded.left(), stop.left() - play.left());
+    skin::configure(&skin::Skin::default());
+}
+
+/// A module that hides its overflow takes no input past its padding box: with `#transport`
+/// 28 points wide, only Play remains, and a click where Stop was runs nothing.
+#[test]
+fn a_module_that_hides_its_overflow_takes_no_input_past_it() {
+    let mut harness = native_bar();
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    let click_second_button = |harness: &mut Harness<'static, Fixture>| {
+        let play = harness.get_by_label("Play").rect();
+        harness.state_mut().actions.clear();
+        let pos = egui::pos2(play.left() + 29.0 + 14.0, play.center().y);
+        harness.hover_at(pos);
+        harness.run();
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            harness.run();
+        }
+        harness.state().actions.len()
+    };
+    harness.state_mut().app.use_test_skin(css("#transport { width: 28px; }"));
+    harness.run();
+    assert!(click_second_button(&mut harness) > 0, "unclipped, the second button takes the click");
+    harness.state_mut().app.use_test_skin(css("#transport { width: 28px; overflow: hidden; }"));
+    harness.run();
+    assert_eq!(click_second_button(&mut harness), 0);
+    skin::configure(&skin::Skin::default());
+}
+
+/// A tempo drag whose field is hidden by a rule is dropped once the pointer is up, so the stale
+/// preview does not come back when the field does.
+#[test]
+fn a_tempo_drag_is_dropped_when_its_field_goes_away() {
+    let mut harness = native_bar();
+    harness.state_mut().app.tempo_drag = Some(133.0);
+    harness.state_mut().app.tempo_grab = Some((1.0, 120.0));
+    harness.state_mut().app.tempo_sent = Some(1.0);
+    let hidden = skin::Skin { css: Some(std::sync::Arc::from("#tempo { display: none; }")), ..Default::default() };
+    harness.state_mut().app.use_test_skin(hidden);
+    harness.run();
+    let app = &harness.state().app;
+    assert_eq!((app.tempo_drag, app.tempo_grab, app.tempo_sent), (None, None, None));
+    skin::configure(&skin::Skin::default());
+}

@@ -141,3 +141,22 @@ fn the_midi_tools_tab_row_s_padding_moves_its_tabs() {
     let padded = exactly("tab-row { padding-left: 15px; }", "Notes tab").unwrap();
     assert_eq!(padded.left(), notes.left() + 15.0);
 }
+
+#[test]
+fn a_state_the_painting_has_reaches_the_layout() {
+    // The chosen tool is `[checked]` when it lays out as when it paints.
+    assert!(rect_of("", "Select (").is_some());
+    assert!(rect_of("#piano-select[checked] { display: none; }", "Select (").is_none());
+    assert!(rect_of("#piano-select[checked] { display: none; }", "Draw (").is_some());
+}
+
+#[test]
+fn a_tab_taller_than_the_midi_tools_row_takes_input_only_inside_it() {
+    let (plain, tall) = (
+        with_clip("").query_by_label("Transform tab").map(|node| node.rect()).unwrap(),
+        with_clip("midi-tools editor-tab { height: 80px; }").query_by_label("Transform tab").map(|node| node.rect()),
+    );
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    // The tab's box is 80 points tall, centred on the row; its target stops at the row.
+    assert_eq!(tall, Some(plain));
+}

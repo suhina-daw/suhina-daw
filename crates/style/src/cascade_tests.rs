@@ -393,3 +393,18 @@ fn a_user_agent_rule_on_a_child_is_not_authored_though_its_parent_is() {
     assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 176, 0, 255])));
     assert!(styles[3].authored(Property::Color));
 }
+
+#[test]
+fn a_property_a_rule_wrote_on_the_element_is_declared_not_inherited() {
+    let tree =
+        Tree::new(vec![Element::new("window", None), Element::new("knob", Some(0)), Element::new("knob", Some(0))])
+            .unwrap();
+    let theme = Sheet::parse("window, knob:last-child { color: #ffb000; }").unwrap();
+    let styles =
+        compute(&tree, viewport(800.0), &[AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None }]).unwrap();
+    // The first knob inherits the window's colour; the second writes the same one itself.
+    assert_eq!(styles[1].get(Property::Color), styles[2].get(Property::Color));
+    assert!(styles[1].authored(Property::Color) && !styles[1].declared(Property::Color));
+    assert!(styles[2].declared(Property::Color));
+    assert!(styles[0].declared(Property::Color));
+}

@@ -973,7 +973,8 @@ sheet hides (`display: none`) is gone from input as well as painting. A sheet wh
 is laid out by the user-agent sheet alone, as the window's grid is. The items are laid out under
 the same elements around the bar as they paint under (the window, a view), so a rule such as
 `clip-editor piano-roll-toolbar { gap: 8px; }` or `window[menu-bar] #app-name { display: none; }`
-lays out as it paints. The bar's own box is the one
+lays out as it paints; the window's regions are laid out under `body` too, as they paint
+(`body toolbar { … }`). The bar's own box is the one
 the window's grid gave it: a `width` or `height` on the bar here changes nothing (set it in the
 grid's tracks).
 
@@ -989,7 +990,13 @@ grid's tracks).
 Every item has a `kind` attribute equal to its id, as it lays out and as it paints, which the
 user-agent sheet selects (it uses no ids). An item's text keeps the colour the app gives it by
 state (an error in the status bar, the tab shown) unless a rule gives the item a `color` of its
-own; the bar's `color`, which the items inherit, does not replace it. The user-agent sheet lays each bar out as Suhina's own layout did: `display: flex` and
+own, even one equal to the bar's (`status-bar, #status-message { color: white; }`); the bar's
+`color`, which the items inherit, does not replace it. The items of a group are drawn in the
+group's scope, so a rule through the group (`#app-bar-start > bar-item { … }`) reaches them and a
+group that hides its overflow cuts them. What a bar, a group, a module or a tab hides by
+`overflow` takes no input either, and a tab or button taller than its bar takes input only inside
+it. A button's `[checked]` state (the chosen tool) is part of its layout, as of its painting.
+The user-agent sheet lays each bar out as Suhina's own layout did: `display: flex` and
 `align-items: center` on the bars and groups, `flex-shrink: 0` on items (an item keeps its width),
 `flex: 1` on a `flexible-space`. The toolbar's start and end groups share the room left over
 (`flex: 1`, the end `justify-content: flex-end`), so the transport and the position stay in the

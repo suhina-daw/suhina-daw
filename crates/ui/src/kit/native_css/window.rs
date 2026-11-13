@@ -191,7 +191,7 @@ pub fn window(input: &Input) -> Option<Window> {
             for (region, size) in Region::ALL.iter().zip(&input.regions) {
                 let Some(size) = size else { continue };
                 let (name, id, kind) = region.element();
-                let mut element = super::native::element(name, id, None, Some(1));
+                let mut element = super::native::element(name, id, None, Some(2));
                 if let Some(kind) = kind {
                     element.attributes.push(("kind".into(), kind.into()));
                 }

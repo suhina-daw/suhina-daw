@@ -70,13 +70,26 @@ pub(super) fn toolbar(
         },
         rows: ROWS.map(|(_, word)| (row_toggle_width(ui, side, Some(word)), row_toggle_width(ui, side, None))),
     };
-    let candidates: Vec<_> = Step::ALL.iter().map(|step| items(*step, &widths)).collect();
+    // The buttons lit this frame are `[checked]` in the layout as they are when painted (the tools and the two columns), so a
+    // rule on them (`#piano-select[checked] { display: none }`) takes them out of both.
+    let lit = {
+        let (tool, quantise, tools) = (state.tool, state.quantize_open(), state.tools_open);
+        move |button: IconButton| match button {
+            IconButton::Quantise => quantise,
+            IconButton::MidiTools => tools,
+            button => TOOLS.iter().any(|(t, b)| *b == button && *t == tool),
+        }
+    };
+    let candidates: Vec<_> = Step::ALL.iter().map(|step| items(*step, &widths, &lit)).collect();
     let bar = Bar::of(&bar_el, rect.size());
     let Some((chosen, laid)) = row::fitting(&bar, &candidates) else { return };
     let (Some(step), Some(items)) = (Step::ALL.get(chosen).copied(), candidates.get(chosen)) else { return };
     let selected = !state.acting().is_empty();
     let mut rows = [None; 3];
     let mut rows_group = None;
+    // What the controls take as input stops at the toolbar's edge, as what they paint does.
+    let outer_clip = ui.clip_rect();
+    ui.set_clip_rect(outer_clip.intersect(rect));
     for (index, item) in items.iter().enumerate() {
         let Some(area) = laid.at(index, rect.min) else { continue };
         let id = item.id.as_deref().unwrap_or("");
@@ -156,6 +169,7 @@ pub(super) fn toolbar(
     if let Some(group) = rows_group {
         rows_toggles(ui, &painter, group, &rows, step < Step::Icons, cx, state, actions);
     }
+    ui.set_clip_rect(outer_clip);
 }
 
 /// One icon button in `area` ([`ButtonPaint::place`]).
@@ -193,9 +207,11 @@ struct Widths {
 }
 
 /// The toolbar's items at `step`, in order.
-fn items(step: Step, w: &Widths) -> Vec<crate::kit::native_css::row::Item> {
+fn items(step: Step, w: &Widths, lit: &dyn Fn(IconButton) -> bool) -> Vec<crate::kit::native_css::row::Item> {
     use crate::kit::native_css::row::Item;
-    let button = |button: IconButton| Item::named("piano-tool", button.id()).width(w.size.x).height(w.size.y);
+    let button = |button: IconButton| {
+        Item::named("piano-tool", button.id()).flag("checked", lit(button)).width(w.size.x).height(w.size.y)
+    };
     let separator = || Item::new("separator").attribute("kind", "bar").width(1.0).height(w.inner);
     let menu = |id: &str, width: f32| Item::named("bar-item", id).width(width).height(w.inner);
     let mut items: Vec<Item> = TOOLS.iter().map(|(_, b)| button(*b)).collect();
