@@ -783,7 +783,8 @@ at the pointer, with what the toolbar, the clip panel and the keys can do.
     at the clicked point on the grid, as a drag of that marker on the ruler to there would leave
     it (`clip.setStart`, `clip.setLength`, `clip.setLoop`);
   - Zoom to selection (Z), Zoom to clip (Shift+Z);
-  - Grid, the toolbar's grid menu (Snap, Adaptive, Fixed, Narrow, Widen, Triplet);
+  - the toolbar's grid menu right in the menu, with no submenu (Snap, Adaptive, Fixed, Narrow,
+    Widen, Triplet);
   - Fold, Fold to scale and Highlight scale (the toolbar's row toggles), and Scale: the clip's
     scale, Off or a mode and its root (`clip.setScale`).
 - Escape, a click outside it or a pick closes it; another clip shown closes it too.
