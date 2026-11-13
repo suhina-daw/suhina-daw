@@ -178,7 +178,6 @@ fn dark_gloss_example_keeps_native_layout_and_transport_commands() {
     harness.run();
     assert_eq!(play, harness.get_by_label("Play").rect());
     assert_eq!(tempo, harness.get_by_label("Tempo").rect());
-    assert!(!crate::kit::native_css::toolbar_layout_requested());
     harness.get_by_label("Play").click();
     harness.run();
     assert!(harness.state().actions.iter().any(|action| action.id == "transport.play"));
@@ -278,7 +277,7 @@ fn dragging_real_transport_snaps_and_saves_only_on_done_and_cancel_discards() {
 #[test]
 fn css_toolbar_targets_keep_native_commands_with_svg_artwork() {
     let mut app = App::new();
-    let layout = Toolbar {
+    let layout = skin::Toolbar {
         hidden: skin::MODULES
             .iter()
             .filter(|id| !["tempo", "transport", "mapping"].contains(id))
@@ -338,25 +337,140 @@ fn toolbar_module_backgrounds_follow_the_sheet() {
     assert!(fills.iter().any(|(_, fill)| *fill == egui::Color32::from_rgb(0x10, 0x20, 0x30)), "{fills:?}");
 }
 
-/// Padding on the toolbar pads Suhina's own toolbar, in its content box: it does not switch to
-/// the theme's layout, whose view switches are framed buttons. Layout properties still do
-/// (#1336).
+/// The toolbar's modules lie in one CSS row (#1372): a theme's padding and gap move them, and
+/// `display: none` takes a module away with its input.
 #[test]
-fn padding_pads_the_native_toolbar_and_layout_properties_still_switch() {
+fn a_theme_s_padding_gap_and_display_move_and_hide_the_modules() {
+    let mut harness = native_bar();
+    let tempo = harness.get_by_label("Tempo").rect();
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    harness.state_mut().app.use_test_skin(css("toolbar { padding: 0 20px; }"));
+    harness.run();
+    assert_eq!(harness.get_by_label("Tempo").rect().left(), tempo.left() + 14.0, "20 points of padding, not 6");
+    harness.state_mut().app.use_test_skin(css("toolbar-module[kind=\"browser\"] { margin-right: 10px; }"));
+    harness.run();
+    assert_eq!(harness.get_by_label("Tempo").rect().left(), tempo.left() + 12.0);
+    let play = harness.get_by_label("Play").rect();
+    harness.state_mut().app.use_test_skin(css("group[kind=\"toolbar-start\"] { gap: 16px; }"));
+    harness.run();
+    assert_eq!(harness.get_by_label("Tempo").rect().left(), tempo.left() + 10.0, "the gap was 6 points");
+    assert_eq!(harness.get_by_label("Play").rect(), play, "the middle stays in the middle");
+    harness.state_mut().app.use_test_skin(css("#tempo { display: none; }"));
+    harness.run();
+    assert!(harness.query_by_label("Tempo").is_none(), "a hidden module has no input");
+    skin::configure(&skin::Skin::default());
+}
+
+/// The default toolbar keeps the transport in the middle of the bar, however wide its two sides
+/// are, and gives way at its end first as the window narrows.
+#[test]
+fn the_transport_stays_in_the_middle_and_a_narrow_toolbar_gives_way() {
+    let mut harness = native_bar();
+    let middle = |harness: &Harness<'static, Fixture>| {
+        let play = harness.get_by_label("Play").rect();
+        let bar = harness.ctx.content_rect().shrink(8.0);
+        (play.left() + TRANSPORT_AND_POSITION / 2.0 - bar.center().x).abs()
+    };
+    assert!(middle(&harness) < 0.5, "{}", middle(&harness));
+    assert!(harness.query_by_label("RAM usage 0 MB").is_some());
+    harness.set_size(Vec2::new(1100.0, 240.0));
+    harness.run();
+    assert!(middle(&harness) < 0.5, "{}", middle(&harness));
+    harness.set_size(Vec2::new(480.0, 240.0));
+    harness.run();
+    assert!(harness.query_by_label("CPU load 1.0%").is_none(), "the CPU gives way");
+    assert!(harness.get_by_label("Play").rect().left() > harness.get_by_label("Tempo").rect().right());
+    skin::configure(&skin::Skin::default());
+}
+
+/// The transport, a gap and the position: the toolbar's middle.
+const TRANSPORT_AND_POSITION: f32 = 28.0 * 3.0 + 2.0 + 6.0 + 64.0;
+
+/// A module's padding moves what it holds: the transport's left padding moves Play, without
+/// changing the room the buttons take between them.
+#[test]
+fn a_module_s_contents_lie_in_its_content_box() {
+    let mut harness = native_bar();
+    let play = harness.get_by_label("Play").rect();
+    let stop = harness.get_by_label("Stop").rect();
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    harness.state_mut().app.use_test_skin(css("#transport { padding-left: 20px; }"));
+    harness.run();
+    let (padded, padded_stop) = (harness.get_by_label("Play").rect(), harness.get_by_label("Stop").rect());
+    // The module grows by 20 points and stays centred: its left edge moves 10 back, Play 20 on.
+    assert_eq!(padded.left(), play.left() + 10.0);
+    assert_eq!(padded_stop.left() - padded.left(), stop.left() - play.left());
+    skin::configure(&skin::Skin::default());
+}
+
+/// A module that hides its overflow takes no input past its padding box: with `#transport`
+/// 28 points wide, only Play remains, and a click where Stop was runs nothing.
+#[test]
+fn a_module_that_hides_its_overflow_takes_no_input_past_it() {
     let mut harness = native_bar();
     let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
-    harness.state_mut().app.use_test_skin(css("toolbar { padding: 0 20px; border-width: 0 0 2px; }"));
-    harness.run();
-    assert!(!crate::kit::native_css::toolbar_layout_requested(), "padding keeps Suhina's layout");
-    let launcher = harness.get_by_label("Launcher view").rect();
-    let framed = harness.output().shapes.iter().any(
-        |shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == launcher && rect.stroke.width > 0.0),
-    );
-    assert!(!framed, "the view switches keep their own look");
-    for layout in ["toolbar { gap: 12px; }", "toolbar { display: flex; padding: 4px; }", "#transport { order: 3; }"] {
-        harness.state_mut().app.use_test_skin(css(layout));
+    let click_second_button = |harness: &mut Harness<'static, Fixture>| {
+        let play = harness.get_by_label("Play").rect();
+        harness.state_mut().actions.clear();
+        let pos = egui::pos2(play.left() + 29.0 + 14.0, play.center().y);
+        harness.hover_at(pos);
         harness.run();
-        assert!(crate::kit::native_css::toolbar_layout_requested(), "{layout} asks for the theme's layout");
-    }
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            harness.run();
+        }
+        harness.state().actions.len()
+    };
+    harness.state_mut().app.use_test_skin(css("#transport { width: 28px; }"));
+    harness.run();
+    assert!(click_second_button(&mut harness) > 0, "unclipped, the second button takes the click");
+    harness.state_mut().app.use_test_skin(css("#transport { width: 28px; overflow: hidden; }"));
+    harness.run();
+    assert_eq!(click_second_button(&mut harness), 0);
     skin::configure(&skin::Skin::default());
+}
+
+/// A tempo drag whose field is hidden by a rule is dropped once the pointer is up, so the stale
+/// preview does not come back when the field does.
+#[test]
+fn a_tempo_drag_is_dropped_when_its_field_goes_away() {
+    let mut harness = native_bar();
+    harness.state_mut().app.tempo_drag = Some(133.0);
+    harness.state_mut().app.tempo_grab = Some((1.0, 120.0));
+    harness.state_mut().app.tempo_sent = Some(1.0);
+    let hidden = skin::Skin { css: Some(std::sync::Arc::from("#tempo { display: none; }")), ..Default::default() };
+    harness.state_mut().app.use_test_skin(hidden);
+    harness.run();
+    let app = &harness.state().app;
+    assert_eq!((app.tempo_drag, app.tempo_grab, app.tempo_sent), (None, None, None));
+    skin::configure(&skin::Skin::default());
+}
+
+/// The view switch's underline is painted inside the group that holds the switch: a group that
+/// hides its overflow cuts it as it cuts the names.
+#[test]
+fn the_view_underline_is_cut_with_its_group() {
+    let mut harness = native_bar();
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    // The clip of the one-point-high line under the shown view's name.
+    let clip_of_underline = |harness: &Harness<'static, Fixture>| {
+        harness.output().shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.rect.height() == 1.0 && rect.fill.a() > 0 && rect.rect.width() > 20.0 => {
+                Some(shape.clip_rect)
+            }
+            _ => None,
+        })
+    };
+    let plain = clip_of_underline(&harness).map(|clip| clip.width());
+    harness.state_mut().app.use_test_skin(css("#toolbar-end { overflow: hidden; max-width: 40px; }"));
+    harness.run();
+    let cut = clip_of_underline(&harness).map(|clip| clip.width());
+    skin::configure(&skin::Skin::default());
+    assert!(plain.is_some_and(|width| width > 200.0), "{plain:?}");
+    assert!(cut.is_some_and(|width| width < 60.0), "{cut:?}");
 }

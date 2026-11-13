@@ -22,6 +22,7 @@
 //! painted over them.
 
 use egui::{Color32, Painter, Rect, Response};
+use suhina_style::property::Property;
 
 use super::native_css::HostState;
 
@@ -442,6 +443,16 @@ impl Entered {
         self.finish();
     }
 
+    /// Where input may reach inside `rect`, the element's box: its padding box when it hides its
+    /// overflow (what its contents paint outside it is cut, and takes no click either), else
+    /// everywhere.
+    pub fn input_clip(&self, rect: Rect) -> Rect {
+        match self.style() {
+            Some(style) if style.hides_overflow() => shrink(rect, style.border_sides),
+            _ => Rect::EVERYTHING,
+        }
+    }
+
     /// The element's content box in `rect`: `rect` less its border and `padding`, for an element
     /// painted in part (a header scrolled partly out of view) whose contents follow its whole box.
     pub fn content_in(&self, rect: Rect) -> Rect {
@@ -463,6 +474,18 @@ impl Entered {
     /// The element's `color`, or `fallback` where the sheet sets none.
     pub fn color_or(&self, fallback: Color32) -> Color32 {
         self.style().filter(|s| s.authored.color).map_or(fallback, |s| s.color)
+    }
+
+    /// The element's `color` where a rule gives it one of its own, not the one it inherits (a
+    /// bar's `color` on its items), even when it equals the inherited one; else `fallback`, a
+    /// colour the app gives by state (an error, the shown tab).
+    pub fn own_color_or(&self, fallback: Color32) -> Color32 {
+        self.style().filter(|own| own.declared(Property::Color)).map_or(fallback, |own| own.color)
+    }
+
+    /// The element's node in this frame's style tree, while it is entered.
+    pub(crate) fn node(&self) -> Option<usize> {
+        self.scope.node
     }
 
     /// The element's computed `color`, the user-agent tier's included: for an element whose
@@ -593,8 +616,12 @@ names! {
     MENU_BAR = "menu-bar";
     MENU = "menu";
     PROJECT_TABS = "project-tabs";
+    PROJECT_TAB = "project-tab";
     TOOLBAR = "toolbar";
     TOOLBAR_MODULE = "toolbar-module";
+    GROUP = "group";
+    FLEXIBLE_SPACE = "flexible-space";
+    BAR_ITEM = "bar-item";
     STATUS_BAR = "status-bar";
     NOTICE_BAR = "notice-bar";
     WORKSPACE_PANEL = "workspace-panel";
@@ -633,6 +660,7 @@ names! {
     CLIP_EDITOR = "clip-editor";
     EDITOR_TAB = "editor-tab";
     PIANO_ROLL = "piano-roll";
+    PIANO_ROLL_TOOLBAR = "piano-roll-toolbar";
     PIANO_GRID = "piano-grid";
     PIANO_ROW = "piano-row";
     PIANO_ROW_BLACK = "piano-row-black";
@@ -652,6 +680,7 @@ names! {
     VELOCITY = "velocity";
     PIANO_TOOL = "piano-tool";
     MIDI_TOOLS = "midi-tools";
+    TAB_ROW = "tab-row";
     CLIP_INFO = "clip-info";
     SAMPLE_MAP = "sample-map";
     SAMPLE_POINT = "sample-point";

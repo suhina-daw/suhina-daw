@@ -1147,6 +1147,8 @@ fn a_padded_browser_takes_the_pointer_only_inside_its_panel() {
     // The test window's room starts 8 points in.
     let edge = 308.0;
     let splitter = egui::Rect::from_x_y_ranges(edge..=edge + 4.0, 0.0..=10_000.0);
+    // The toolbar runs across the window over the browser; its modules are not the browser's.
+    let below_toolbar = h.get_by_label("Tempo").rect().bottom();
     let (crossing, past) = h.ctx.viewport(|v| {
         // What the browser lays out in its content box, from there to the panel's edge.
         let browser: Vec<_> = v
@@ -1155,7 +1157,7 @@ fn a_padded_browser_takes_the_pointer_only_inside_its_panel() {
             .layers()
             .flat_map(|(_, rects)| rects.iter())
             .filter(|w| w.rect.left() > edge - 60.0 && w.rect.left() < edge)
-            .filter(|w| w.rect.top() >= splitter.top() && w.rect.bottom() <= splitter.bottom())
+            .filter(|w| w.rect.top() >= below_toolbar && w.rect.bottom() <= splitter.bottom())
             .collect();
         // Past the splitter is the main view.
         let crossing = browser.iter().filter(|w| w.rect.right() > splitter.right()).count();

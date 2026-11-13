@@ -59,12 +59,11 @@ pub(crate) use self::toolbar::*;
 
 pub use gestures::start_by;
 
-/// Height of the toolbar, widths of the scale strip and the key column, how far the toolbar's
-/// buttons start from the left, height of the ruler and the default height of the velocity lane.
+/// Height of the toolbar, widths of the scale strip and the key column, height of the ruler and
+/// the default height of the velocity lane.
 const TOOLBAR: f32 = 22.0;
 const SCALE_STRIP: f32 = 26.0;
 const KEYS: f32 = 60.0;
-const TOOLBAR_INSET: f32 = 4.0;
 const RULER: f32 = 36.0;
 const VELOCITY_LANE: f32 = 72.0;
 /// The velocity lane is left out under this height, and leaves at least this many key rows.
@@ -76,9 +75,8 @@ const LEAST_KEY_ROWS: f32 = 5.0;
 pub const LEAST_HEIGHT: f32 = 132.0;
 /// The height of a row of the strip that shows several picked clips, which the least height grows by.
 pub const CLIP_STRIP: f32 = 16.0;
-/// The toolbar's icon size and the space between its buttons, in points.
+/// The toolbar's icon size, in points; the space between its buttons is the user-agent sheet's.
 const TOOL_ICON: f32 = 14.0;
-const TOOL_GAP: f32 = 3.0;
 /// The size of a tool's icon drawn in place of the pointer over the grid, about a system cursor's.
 const TOOL_POINTER: f32 = 18.0;
 /// Key row heights and points per beat: the default and the zoom ranges.
@@ -305,7 +303,7 @@ pub fn show(
     let ruler = Rect::from_min_max(Pos2::new(keys.right(), area.top()), Pos2::new(area.right(), keys.top()));
     let grid_rect = Rect::from_min_max(Pos2::new(keys.right(), keys.top()), Pos2::new(area.right(), keys.bottom()));
     let lane = Rect::from_min_max(Pos2::new(keys.right(), keys.bottom()), area.max);
-    toolbar(ui, toolbar_rect, ToolbarCx { clip, keymap, copied, scale }, state, actions);
+    toolbar(ui, toolbar_rect, ToolbarCx { clip, keymap, copied, scale, size: options.toolbar_size }, state, actions);
     if grid_rect.width() <= 1.0 || grid_rect.height() <= 1.0 {
         state.remember_selection(&clip.notes, selecting_new || sent_edit(&actions[sent_from..]));
         return;

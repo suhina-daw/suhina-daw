@@ -219,3 +219,44 @@ fn track_lists_and_placements_are_bounded() {
 fn disjoint_named_area_is_refused() {
     assert!(Areas::parse("'a b' 'b a'").is_err());
 }
+#[test]
+fn a_size_on_an_element_with_children_is_its_whole_box() {
+    let css = "bar { display: flex; height: 90px; width: 50px; padding: 0 4px; } item { width: 20px; }";
+    let tree = vec![
+        Element::new("window", None),
+        Element::new("bar", Some(0)),
+        Element::new("item", Some(1)),
+        Element::new("item", Some(1)),
+    ];
+    let sizes = [None, Some([Some(300.0), Some(28.0)]), None, None];
+    let rects = measured(css, tree.clone(), 800.0, &sizes);
+    let bar = rects[1].unwrap();
+    assert_eq!((bar.width, bar.height), (300.0, 28.0), "the host's box wins over the sheet's size");
+    assert_eq!(rects[2].unwrap().x, 4.0);
+    assert_eq!(rects[2].unwrap().height, 28.0, "items stretch to the content box");
+    // Hostile sizes leave the sheet's.
+    let hostile = [None, Some([Some(f32::NAN), None]), None, None];
+    let rects = measured(css, tree, 800.0, &hostile);
+    assert_eq!(rects[1].unwrap().width, 50.0);
+}
+#[test]
+fn the_user_agent_sheet_s_flex_lays_out_as_a_theme_s_does() {
+    let sheet = Sheet::parse("bar { display: flex; } gap { flex: 1; }").unwrap();
+    let tree = Tree::new(vec![
+        Element::new("bar", None),
+        Element::new("item", Some(0)),
+        Element::new("gap", Some(0)),
+        Element::new("item", Some(0)),
+    ])
+    .unwrap();
+    let sizes = [None, Some([Some(40.0), None]), None, Some([Some(40.0), None])];
+    let styles = cascade::compute(
+        &tree,
+        Viewport { width: 400.0, height: 30.0, reduced_motion: false },
+        &[AppliedSheet { sheet: &sheet, layer: Layer::UserAgent, root: None }],
+    )
+    .unwrap();
+    let rects = compute(&tree, &styles, [400.0, 30.0], &sizes).unwrap();
+    assert_eq!(rects[2].unwrap().width, 320.0);
+    assert_eq!(rects[3].unwrap().x, 360.0);
+}

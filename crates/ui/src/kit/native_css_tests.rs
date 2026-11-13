@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::kit::element::test_el;
+use egui::Vec2;
 #[test]
 fn native_gradients_publish_every_layer_and_their_end_colours() {
     for (image, layers, first, last) in [
@@ -282,19 +283,14 @@ fn responsive_workspace_and_toolbar_survive_resize() {
                         let _button = test_el("button").enter();
                     }
                 }
-                let modules = toolbar(
-                    &[
-                        ("transport".into(), 100.0),
-                        ("position".into(), 100.0),
-                        ("performance".into(), 80.0),
-                        ("mapping".into(), 60.0),
-                    ],
-                    Vec2::new(size.x, 56.0),
-                    56.0,
-                )
-                .unwrap();
-                assert_eq!(modules.iter().any(|module| module.name == "performance"), size.x > 1000.0);
-                assert_eq!(modules.iter().any(|module| module.name == "mapping"), size.x > 820.0);
+                let items: Vec<_> =
+                    [("transport", 100.0), ("position", 100.0), ("performance", 80.0), ("mapping", 60.0)]
+                        .into_iter()
+                        .map(|(id, width)| row::Item::named("toolbar-module", id).width(width).height(56.0))
+                        .collect();
+                let laid = row::row(&row::Bar::new("toolbar", Vec2::new(size.x, 56.0)), &items).unwrap();
+                assert_eq!(laid.items[2].is_some(), size.x > 1000.0);
+                assert_eq!(laid.items[3].is_some(), size.x > 820.0);
                 let mut input = full_window(Vec2::new(size.x, size.y));
                 input.browser = None;
                 input.regions[Region::Browser as usize] = None;
@@ -476,15 +472,16 @@ fn taffy_grid_changes_real_module_rectangles_and_hidden_modules() {
         "toolbar { display:grid; grid-template-columns:80px 120px; gap:10px; } #tempo { width:auto; } #transport { width:auto; } #mapping { display:none; }",
         800.0,
     );
-    let modules = toolbar(
-        &[("tempo".into(), 62.0), ("transport".into(), 86.0), ("mapping".into(), 64.0)],
-        Vec2::new(400.0, 32.0),
-        32.0,
-    )
-    .unwrap();
-    assert_eq!(modules.len(), 2);
-    assert!((modules[0].rect.width() - 80.0).abs() < 0.1);
-    assert!((modules[1].rect.left() - 90.0).abs() < 0.1);
+    let items: Vec<_> = [("tempo", 62.0), ("transport", 86.0), ("mapping", 64.0)]
+        .into_iter()
+        .map(|(id, width)| row::Item::named("toolbar-module", id).width(width).height(32.0))
+        .collect();
+    let laid = row::row(&row::Bar::new("toolbar", Vec2::new(400.0, 32.0)), &items).unwrap();
+    assert!(laid.items[2].is_none(), "hidden");
+    let [tempo, transport] = [laid.items[0].unwrap(), laid.items[1].unwrap()];
+    // The toolbar's padding of the user-agent sheet, then the theme's grid.
+    assert!((tempo.width() - 80.0).abs() < 0.1, "{tempo:?}");
+    assert!((transport.left() - tempo.right() - 10.0).abs() < 0.1, "{transport:?}");
     skin::configure(&skin::Skin::default());
 }
 #[test]
@@ -1714,7 +1711,8 @@ fn a_closed_detail_area_the_sheet_sizes_leaves_no_hole() {
 fn the_toolbar_s_modules_ignore_the_window_s_padding_and_gaps() {
     let modules = |css: &str| {
         prepare(css, 800.0);
-        toolbar(&[("transport".into(), 100.0)], Vec2::new(800.0, 40.0), 40.0).map(|m| m[0].rect)
+        let item = row::Item::named("toolbar-module", "transport").width(100.0);
+        row::row(&row::Bar::new("toolbar", Vec2::new(800.0, 40.0)), &[item]).and_then(|r| r.items[0])
     };
     let plain = modules("toolbar { display: flex; }");
     let padded = modules("toolbar { display: flex; } window { padding: 6px; gap: 10px; }");
@@ -1723,37 +1721,44 @@ fn the_toolbar_s_modules_ignore_the_window_s_padding_and_gaps() {
     assert_eq!(plain, padded);
 }
 /// The toolbar's place in the window's grid (its area, lines, margins, alignment) says nothing
-/// about where its modules go: a theme that only moves the toolbar keeps Suhina's own toolbar.
+/// about where its modules go: they lie in the toolbar's own box, wherever the grid puts it.
 #[test]
-fn moving_the_toolbar_in_the_window_keeps_suhina_s_toolbar() {
-    let requested = |css: &str| {
+fn moving_the_toolbar_in_the_window_leaves_its_modules_where_they_are() {
+    let modules = |css: &str| {
         prepare(css, 800.0);
-        toolbar(&[("transport".into(), 100.0)], Vec2::new(800.0, 40.0), 40.0);
-        toolbar_layout_requested()
+        let items = [row::Item::named("toolbar-module", "transport").width(100.0)];
+        row::row(&row::Bar::new("toolbar", Vec2::new(800.0, 40.0)), &items).and_then(|r| r.items[0])
     };
+    let plain = modules("toolbar { display: flex; }");
     for css in [
-        "toolbar { grid-area: status; } status-bar { grid-area: toolbar; }",
-        "toolbar { grid-row: 9; grid-column: 1 / -1; }",
-        "toolbar { margin: 4px 0; align-self: end; order: 2; }",
+        "toolbar { display: flex; grid-area: status; } status-bar { grid-area: toolbar; }",
+        "toolbar { display: flex; grid-row: 9; grid-column: 1 / -1; }",
+        "toolbar { display: flex; margin: 4px 0; align-self: end; order: 2; }",
     ] {
-        assert!(!requested(css), "{css} only moves the toolbar");
+        assert_eq!(modules(css), plain, "{css} only moves the toolbar");
     }
-    assert!(requested("toolbar { grid-area: toolbar; gap: 12px; }"), "its own layout still switches");
     skin::configure(&skin::Skin::default());
 }
-/// The toolbar's modules are laid out under the same `window` attributes as the window's grid and
-/// its painting: a rule for the browser's side moves them, without the sheet changing.
+/// The window is laid out under `body`, as it is painted: a rule through `body` reaches the
+/// regions, and the view still fills the room the grid leaves.
 #[test]
-fn the_toolbar_s_modules_follow_the_window_s_attributes() {
-    prepare("toolbar { display: flex; } window[browser=\"right\"] toolbar { gap: 20px; }", 800.0);
-    let second = |side: BrowserSide| {
-        window(&WindowInput { browser: Some(side), ..full_window(Vec2::new(800.0, 600.0)) });
-        let order = [("transport".into(), 100.0), ("tempo".into(), 50.0)];
-        toolbar(&order, Vec2::new(800.0, 40.0), 40.0).and_then(|m| m.get(1).map(|m| m.rect.left()))
-    };
-    let (left, right, again) = (second(BrowserSide::Left), second(BrowserSide::Right), second(BrowserSide::Left));
+fn a_rule_through_body_reaches_the_window_s_regions() {
+    prepare("body toolbar { height: 60px; }", 1000.0);
+    let laid = window(&full_window(Vec2::new(1000.0, 700.0))).unwrap();
+    assert_eq!(laid.rect(Region::Toolbar).map(|r| r.height()), Some(60.0));
+    assert!(
+        laid.rect(Region::StatusBar).is_some_and(|r| (r.bottom() - 700.0).abs() < 0.5),
+        "the grid fills the window"
+    );
     skin::configure(&skin::Skin::default());
-    assert_eq!((left, right, again), (Some(104.0), Some(120.0), Some(104.0)));
+    prepare("", 1000.0);
+    let plain = window(&full_window(Vec2::new(1000.0, 700.0))).unwrap();
+    assert_ne!(plain.rect(Region::Toolbar).map(|r| r.height()), Some(60.0));
+    assert!(
+        plain.rect(Region::StatusBar).is_some_and(|r| (r.bottom() - 700.0).abs() < 0.5),
+        "the grid fills the window"
+    );
+    skin::configure(&skin::Skin::default());
 }
 /// Padding on a closed detail area is not a size the sheet sets: the area keeps its place, a box
 /// of its padding, and its splitter, closed and open again.
