@@ -830,7 +830,7 @@ impl PianoRollState {
             }
             "pianoRoll.splitClip" => {
                 let (start, end) = span?;
-                self.split_clip_at(clip, &[start, end])
+                self.split_clip_at(clip, &[(start, false), (end, true)])
             }
             _ => None,
         }
@@ -843,16 +843,25 @@ impl PianoRollState {
         acting.iter().filter_map(|i| notes.get(*i)).any(|n| !keys.insert(n.key))
     }
 
-    /// `clip.split` of an arrangement clip at content beats `beats` (on the arrangement where the
-    /// clip plays them first), those inside the clip; `None` for a slot's clip or no cut inside.
-    pub(super) fn split_clip_at(&mut self, clip: &PianoClip, beats: &[f64]) -> Option<Action> {
+    /// `clip.split` of an arrangement clip at content beats `cuts` (on the arrangement where the
+    /// clip plays them first), those inside the clip; `None` for a slot's clip or no cut inside. A
+    /// cut that ends a stretch (`true`) is where the stretch's last moment plays, so a stretch
+    /// ending on the loop's end is cut there and not where the loop starts again.
+    pub(super) fn split_clip_at(&mut self, clip: &PianoClip, cuts: &[(f64, bool)]) -> Option<Action> {
         if clip.address.get("scene").is_some() {
             return None;
         }
         let placement = clip.placement;
         let inside = |at: &f64| *at > placement.start + 1e-6 && *at < placement.start + placement.length - 1e-6;
-        let mut ats: Vec<f64> =
-            beats.iter().filter_map(|b| placement.arrangement_beat(*b)).map(round_beat).filter(inside).collect();
+        const JUST: f64 = 1e-6;
+        let song = |(beat, ends): &(f64, bool)| {
+            if *ends {
+                placement.arrangement_beat(beat - JUST).map(|at| at + JUST)
+            } else {
+                placement.arrangement_beat(*beat)
+            }
+        };
+        let mut ats: Vec<f64> = cuts.iter().filter_map(song).map(round_beat).filter(inside).collect();
         ats.sort_by(f64::total_cmp);
         ats.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
         if ats.is_empty() {

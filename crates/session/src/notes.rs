@@ -208,7 +208,7 @@ pub(crate) fn after_removal(indices: &[usize], removed: &[usize]) -> Vec<usize> 
 }
 
 /// How many clips, on the arrangement and in the launcher, play `content`.
-fn placements(p: &Project, content: ContentId) -> usize {
+pub(crate) fn placements(p: &Project, content: ContentId) -> usize {
     let arranged = p.arrangement.lanes.iter().flat_map(|l| &l.clips).filter(|c| c.content == content).count();
     let launched = p
         .launcher

@@ -333,7 +333,7 @@ impl MenuCx<'_> {
             }
             Pick::SplitClipHere => {
                 let beat = self.beat(at);
-                state.split_clip_at(clip, &[beat])
+                state.split_clip_at(clip, &[(beat, false)])
             }
             Pick::Origin => {
                 params["beat"] = json!(round_beat(self.beat(at)));

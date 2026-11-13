@@ -1240,3 +1240,14 @@ fn join_and_crop_keep_the_selection_where_they_would_be_refused() {
     assert!(state.span.is_some());
     assert!(PianoRollState::joins(&[note(0.0, 1.0, 60), note(3.0, 1.0, 60)], &BTreeSet::from([0, 1])));
 }
+
+/// A time selection that ends on the loop's end splits there, not where the loop starts again.
+#[test]
+fn split_clip_cuts_at_a_loop_end_selection_edge() {
+    let mut piano = clip(vec![note(1.0, 1.0, 60)]);
+    piano.placement = Placement { start: 16.0, length: 8.0, offset: 0.0, loop_range: Some((0.0, 4.0)) };
+    let mut state = focused_on(&piano);
+    state.select_span(1.0, 4.0);
+    let split = state.key_action("pianoRoll.splitClip", &piano, 0.0, None).expect("clip.split");
+    assert_eq!(split.params["ats"], json!([17.0, 20.0]));
+}

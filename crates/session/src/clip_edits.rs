@@ -15,7 +15,7 @@ use suhina_model::{LoopRange, Note, Notes};
 use crate::commands::Args;
 use crate::notes::{
     ClipAt, MAX_BEAT, after_removal, clip_at, clip_mut, copy_on_write, covered_go, edit_notes, indices, locate,
-    notes_mut, replace_under, replaces, with_replaced,
+    notes_mut, placements, replace_under, replaces, with_replaced,
 };
 use crate::{CommandError, Session};
 
@@ -139,6 +139,18 @@ fn cropped(note: &Note, start: f64, end: f64) -> Option<(f64, f64)> {
     (to - from >= MIN_LENGTH - EPSILON).then_some((from, to - from))
 }
 
+/// Fails when the clip `params` names plays a pattern of named-track lanes that another clip plays
+/// too: such content is shared, not copied on write, and moving its notes for this clip's start
+/// marker or loop would move them under the other clip as well.
+fn check_unshared_pattern(p: &suhina_model::Project, params: &Value) -> Result<(), CommandError> {
+    let (_, content, _) = locate(p, params)?;
+    let pattern = p.content(content).is_some_and(|c| c.lanes.iter().any(|l| l.target.is_some()));
+    if pattern && placements(p, content) > 1 {
+        return Err("the clip plays a pattern another clip plays too; this edit would change that clip as well".into());
+    }
+    Ok(())
+}
+
 /// `clip.crop`: the clip keeps only `start` … `end` of its content: its start marker and length
 /// become that stretch's, its loop is clipped to it (off where they do not meet), and the notes
 /// outside it are deleted, those across an edge cut at it. An arrangement clip moves on the
@@ -152,6 +164,7 @@ pub(crate) fn crop(session: &mut Session, params: &Value) -> Result<Value, Comma
             format!("start and end must be within 0 to {MAX_BEAT}, end after start; got {start} and {end}").into()
         );
     }
+    check_unshared_pattern(&session.project, params)?;
     let (at, _, _) = locate(&session.project, params)?;
     let clip = clip_at(&session.project, at).ok_or("the clip is missing")?.clone();
     let played = match clip.loop_range {
@@ -169,7 +182,15 @@ pub(crate) fn crop(session: &mut Session, params: &Value) -> Result<Value, Comma
     // that plays once is as long as the stretch.
     let (new_start, new_length) = match at {
         ClipAt::Arrangement(..) => {
-            let moved = clip.start + (start - clip.offset);
+            // Where the clip first plays content beat `start`: after the start marker on the first
+            // pass, or, for a loop that starts before the marker, once the loop has come round.
+            let into = match clip.loop_range {
+                Some(range) if start < clip.offset - EPSILON && start >= range.start - EPSILON => {
+                    (range.end - clip.offset) + (start - range.start)
+                }
+                _ => start - clip.offset,
+            };
+            let moved = clip.start + into;
             if moved < -EPSILON {
                 return Err("the clip would start before the beginning of the song".into());
             }
@@ -250,6 +271,7 @@ pub(crate) fn set_origin(session: &mut Session, params: &Value) -> Result<Value,
     if !(0.0..=MAX_BEAT).contains(&beat) {
         return Err(format!("beat must be within 0 to {MAX_BEAT}, got {beat}").into());
     }
+    check_unshared_pattern(&session.project, params)?;
     let (at, _, _) = locate(&session.project, params)?;
     let clip = clip_at(&session.project, at).ok_or("the clip is missing")?.clone();
     if beat == 0.0 {

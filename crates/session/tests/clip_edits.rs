@@ -203,3 +203,31 @@ fn splitting_at_two_cuts_is_one_undo_step() {
     assert!(run(&mut session, "clip.split", json!({ "track": 1, "index": 0, "ats": [2.0, 9.0] })).is_err());
     assert_eq!(session.project().arrangement.lanes[0].clips.len(), 2);
 }
+
+#[test]
+fn cropping_a_looping_clip_before_its_start_marker_plays_it_where_the_loop_came_round() {
+    // The clip plays content 3 to 5 first, then loops 1 to 5: content 1 to 2 first plays at beat 2.
+    let mut session = Session::new(project(vec![note(1.0, 0.5, 60), note(3.0, 1.0, 64)]));
+    run(&mut session, "clip.setLoop", json!({ "track": 1, "index": 0, "start": 1.0, "end": 5.0 })).unwrap();
+    run(&mut session, "clip.setStart", json!({ "track": 1, "index": 0, "offset": 3.0 })).unwrap();
+    run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 1.0, "end": 2.0 })).unwrap();
+    let clip = arranged(&session);
+    assert_eq!((clip.start, clip.offset), (2.0, 1.0));
+    assert_eq!(clip.loop_range, Some(LoopRange { start: 1.0, end: 2.0 }));
+    assert_eq!(notes(&session, 1), vec![(1.0, 0.5, 60)]);
+}
+
+#[test]
+fn a_pattern_two_clips_play_is_neither_cropped_nor_given_a_new_first_beat() {
+    let mut project = project(vec![note(2.0, 1.0, 60)]);
+    // Content 1 as a pattern of a named-track lane, played by two clips on the lane.
+    let content = project.contents.iter_mut().find(|c| c.id == ContentId(1)).unwrap();
+    content.lanes =
+        vec![ContentLane { target: Some(TrackId(1)), data: LaneData::Notes(vec![note(2.0, 1.0, 60)].into()) }].into();
+    project.arrangement.lanes[0].clips.push(Clip::new(ContentId(1), 32.0, 8.0));
+    let mut session = Session::new(project);
+    let before = session.project().clone();
+    assert!(run(&mut session, "clip.setOrigin", json!({ "track": 1, "index": 0, "beat": 1.0 })).is_err());
+    assert!(run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 1.0, "end": 4.0 })).is_err());
+    assert_eq!(*session.project(), before, "nothing changed for either clip");
+}
