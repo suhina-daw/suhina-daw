@@ -152,9 +152,14 @@ fn variant(engine: &Engine) -> Option<&Sheet> {
     engine.variant.as_ref().map(|(_, sheet)| sheet.as_ref())
 }
 
-/// `html` and under it `body`, or the `window` element when the window is laid out.
-fn roots(window: bool) -> Vec<Element> {
-    vec![Element::new("html", None), Element::new(if window { "window" } else { "body" }, Some(0))]
+/// `html` and under it `body`, and under that the `window` element when the window is laid out:
+/// the ancestors painting has, so a rule through `body` matches in layout as it does when painted.
+pub(super) fn roots(window: bool) -> Vec<Element> {
+    let mut roots = vec![Element::new("html", None), Element::new("body", Some(0))];
+    if window {
+        roots.push(Element::new("window", Some(1)));
+    }
+    roots
 }
 
 /// A host element of the registry's `name`, with an optional id and project object.
@@ -171,7 +176,6 @@ fn element_of(engine: &Engine, node: &StyleNode, parent: usize) -> Element {
     let mut element = Element::new(node.element.name(), Some(parent));
     element.id = Some(element_id(engine, node));
     element.object = name_of(engine, node).map(str::to_owned);
-    element.variables.clone_from(&node.variables);
     element.attributes.clone_from(&node.attributes);
     element.states.push(if node.state & 4 != 0 { "disabled" } else { "enabled" }.into());
     for (bit, state) in [(1, "hover"), (2, "active"), (8, "focus"), (8, "focus-visible")] {
@@ -296,89 +300,115 @@ pub(super) fn theme_swatch(engine: &Engine, color: &str) -> Option<Computed> {
     engine.native.as_ref()?.styles(&tree, viewport(engine), None, variant(engine), &[], user)?.last().map(computed)
 }
 
-/// Whether the theme writes on `style`'s element one of the properties that ask for theme layout,
-/// other than those in `except`.
-pub(super) fn requests_layout(style: &super::Computed, except: &[Property]) -> bool {
-    LAYOUT.iter().any(|property| !except.contains(property) && style.resolved.authored(*property))
+/// Lays out the window's regions: `elements` are the children of `window`, which carries
+/// `attributes`, each with its content size in `sizes` (the same order). Under the theme's
+/// sheets when it has some and their layout works; otherwise, or with no theme at all, under the
+/// user-agent sheet alone, which is built in and always lays the window out (#1370).
+pub(super) fn window_layout(
+    engine: Option<&Engine>,
+    attributes: &[(&str, &str)],
+    elements: Vec<Element>,
+    sizes: &[Option<[Option<f32>; 2]>],
+    size: [f32; 2],
+) -> Option<Vec<(Option<Rect>, Computed)>> {
+    host_layout(engine, attributes, true, elements, sizes, size)
 }
 
-/// Properties that ask for theme layout when a theme writes them on a laid-out element.
-const LAYOUT: &[Property] = &[
-    Property::Display,
-    Property::Width,
-    Property::Height,
-    Property::MinWidth,
-    Property::MinHeight,
-    Property::MaxWidth,
-    Property::MaxHeight,
-    Property::Order,
-    Property::FlexDirection,
-    Property::FlexWrap,
-    Property::FlexGrow,
-    Property::FlexShrink,
-    Property::FlexBasis,
-    Property::JustifyContent,
-    Property::AlignItems,
-    Property::AlignSelf,
-    Property::AlignContent,
-    Property::GridTemplateColumns,
-    Property::GridTemplateRows,
-    Property::GridColumn,
-    Property::GridRow,
-    Property::ColumnGap,
-    Property::RowGap,
-    Property::MarginTop,
-    Property::MarginRight,
-    Property::MarginBottom,
-    Property::MarginLeft,
-    Property::PaddingTop,
-    Property::PaddingRight,
-    Property::PaddingBottom,
-    Property::PaddingLeft,
-    Property::Visibility,
-    Property::Layout,
-    Property::Columns,
-    Property::Rows,
-    Property::Areas,
-    Property::Area,
-    Property::Visible,
-];
-
-/// Rectangles and styles of host elements laid out by the theme.
-pub(super) struct Laid {
-    /// Whether the theme wrote any layout property on these elements.
-    pub requested: bool,
-    /// For each given element: its rectangle (none when not displayed) and style.
-    pub items: Vec<(Option<Rect>, Computed)>,
-}
-
-/// Lays out `elements` (parents index the full list, after `html` and `body.window`) in a
-/// box of `size`, with host `defaults` under the theme.
-pub(super) fn layout(engine: &Engine, elements: Vec<Element>, defaults: &str, size: [f32; 2]) -> Option<Laid> {
-    let paint = engine.native.as_ref()?;
-    let count = elements.len();
-    let mut all = roots(true);
+/// Lays out host `elements` under `window` (which carries `attributes`), or under `body` as the
+/// style tree has them when not `window`, each with its content size in `sizes`, in a box of
+/// `size`: the window's regions, or a bar and its items (#1372).
+/// Under the theme's sheets when it has some and their layout works; otherwise under the
+/// user-agent sheet alone, which is built in and always parses.
+pub(super) fn host_layout(
+    engine: Option<&Engine>,
+    attributes: &[(&str, &str)],
+    window: bool,
+    elements: Vec<Element>,
+    sizes: &[Option<[Option<f32>; 2]>],
+    size: [f32; 2],
+) -> Option<Vec<(Option<Rect>, Computed)>> {
+    let mut all = roots(window);
+    // The attributes belong to the last root: `window`, or `body` for a bar.
+    if let Some(last) = all.last_mut() {
+        last.attributes = attributes.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
+    }
+    let first = all.len();
     all.extend(elements);
+    let mut measured = vec![None; first];
+    // `body` is the box the window fills (`window { height: 100% }`).
+    if window && let Some(body) = measured.get_mut(1) {
+        *body = Some([Some(size[0].clamp(0.0, 16384.0)), Some(size[1].clamp(0.0, 16384.0))]);
+    }
+    measured.extend_from_slice(sizes);
+    tree_layout(engine, all, first, &measured, size, true)
+}
+
+/// The style tree's elements from `html` down to `node`, as this frame's tree has them: the
+/// ancestors a bar's items are laid out under, so a rule through the window or a view around the
+/// bar (`clip-editor piano-roll-toolbar`) lays out as it paints (#1372).
+pub(super) fn chain(engine: &Engine, node: usize) -> Option<Vec<Element>> {
+    let mut nodes = vec![node];
+    while let Some(parent) = nodes.last().and_then(|&at| engine.nodes.get(at)).and_then(|at| at.parent) {
+        if nodes.len() > super::MAX_DEPTH * 4 {
+            return None;
+        }
+        nodes.push(parent);
+    }
+    nodes.reverse();
+    let mut elements = roots(false);
+    for (index, &at) in nodes.iter().enumerate() {
+        elements.push(element_of(engine, engine.nodes.get(at)?, index + 1));
+    }
+    Some(elements)
+}
+
+/// Lays out `all` (a tree from its root), each element with its content size in `sizes`, in a box
+/// of `size`, and returns the rectangles and styles of the elements from `first` on. Under the
+/// theme's sheets when it has some and their layout works; otherwise under the user-agent sheet
+/// alone, which is built in and always parses. A parent's children are laid out by their `order`
+/// when `by_order` (the window's regions), else in the tree's order (a bar's items).
+pub(super) fn tree_layout(
+    engine: Option<&Engine>,
+    all: Vec<Element>,
+    first: usize,
+    sizes: &[Option<[Option<f32>; 2]>],
+    size: [f32; 2],
+    by_order: bool,
+) -> Option<Vec<(Option<Rect>, Computed)>> {
     let tree = Tree::new(all).ok()?;
-    let defaults = Sheet::parse(defaults).ok()?;
-    let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
-    let styles = paint.styles(&tree, viewport(engine), Some(&defaults), variant(engine), &[], user)?;
     let size = [size[0].clamp(0.0, 16384.0), size[1].clamp(0.0, 16384.0)];
-    let rectangles = suhina_style::layout::compute(&tree, &styles, size).ok()?;
-    let requested = styles.iter().skip(2).any(|style| LAYOUT.iter().any(|property| style.authored(*property)));
-    let items = rectangles
-        .iter()
-        .zip(&styles)
-        .skip(2)
-        .take(count)
-        .map(|(rect, style)| {
-            let rect = rect.map(|r| Rect::from_min_size(egui::pos2(r.x, r.y), Vec2::new(r.width, r.height)));
-            let rect = rect
-                .filter(|r| r.is_finite() && [r.min.x, r.min.y, r.max.x, r.max.y].iter().all(|v| v.abs() <= 16384.0));
-            (rect, computed(style))
-        })
-        .collect();
-    Some(Laid { requested, items })
+    let lay = |styles: Vec<ComputedStyle>| -> Option<Vec<(Option<Rect>, Computed)>> {
+        let rectangles = if by_order {
+            suhina_style::layout::compute(&tree, &styles, size, sizes)
+        } else {
+            suhina_style::layout::compute_in_tree_order(&tree, &styles, size, sizes)
+        }
+        .ok()?;
+        Some(
+            rectangles
+                .iter()
+                .zip(&styles)
+                .skip(first)
+                .map(|(rect, style)| {
+                    let rect = rect
+                        .map(|r| Rect::from_min_size(egui::pos2(r.x, r.y), Vec2::new(r.width, r.height)))
+                        .filter(|r| r.is_finite());
+                    (rect, computed(style))
+                })
+                .collect(),
+        )
+    };
+    let themed = engine.and_then(|engine| {
+        let paint = engine.native.as_ref()?;
+        let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
+        lay(paint.styles(&tree, viewport(engine), None, variant(engine), &[], user)?)
+    });
+    themed.or_else(|| {
+        let agent = user_agent()?;
+        let viewport = engine.map_or(Viewport { width: size[0], height: size[1], reduced_motion: false }, viewport);
+        let applied = [AppliedSheet { sheet: agent, layer: Layer::UserAgent, root: None }];
+        lay(cascade::compute(&tree, viewport, &applied).ok()?)
+    })
 }
 
 pub(super) fn computed(style: &ComputedStyle) -> Computed {

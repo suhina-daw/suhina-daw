@@ -1120,6 +1120,17 @@ fn show_lanes(
         if lane_rect.bottom() + below < lanes_area.top() || lane_rect.top() > lanes_area.bottom() {
             continue;
         }
+        // The row's `track-lane`, the track its header shows (a folded group's, whose row draws
+        // the clips of the track it stands in for, each with its own `[color]`): its clips are
+        // entered inside it, and a theme may give it a background, painted here over the grid
+        // lines.
+        let lane_el = crate::kit::element::TRACK_LANE
+            .id(&format!("track-{}", lane.track.0))
+            .color(rgb(lane.color))
+            .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track))
+            .attr(crate::kit::element::Muted, lane.mute)
+            .enter();
+        lane_el.paint(&lanes_painter, row.clip.intersect(lanes_area));
         // A click on an empty spot of a lane clears the clip selection (arrangement-editing ›
         // Selecting clips). A double-click on an empty spot of a lane that holds clips makes a
         // one-bar clip there in the grid cell under the pointer (Alt: where the pointer is) — MIDI
@@ -1331,6 +1342,9 @@ fn show_lanes(
                 lanes_painter.vline(x, row.time.y_range(), egui::Stroke::new(1.0, theme::text_primary()));
             }
         }
+        // The row's scope ends with its clips: a theme's `overflow: hidden` on it must not cut the
+        // header, the take lanes or the automation lanes, which are not inside it.
+        drop(lane_el);
         let header = Rect::from_x_y_ranges(headers, row.time.y_range());
         let nest = Nest { places: &places, groups: &groups };
         let order = HeaderOrder { children: shown.children, tracks: &track_order };

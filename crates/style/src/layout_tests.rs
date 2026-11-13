@@ -9,6 +9,9 @@ use crate::{
     sheet::Sheet,
 };
 fn layout(source: &str, elements: Vec<Element>, width: f32) -> Vec<Option<Rect>> {
+    measured(source, elements, width, &[])
+}
+fn measured(source: &str, elements: Vec<Element>, width: f32, sizes: &[Option<[Option<f32>; 2]>]) -> Vec<Option<Rect>> {
     let sheet = Sheet::parse(source).unwrap();
     assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
     let tree = Tree::new(elements).unwrap();
@@ -18,11 +21,61 @@ fn layout(source: &str, elements: Vec<Element>, width: f32) -> Vec<Option<Rect>>
         &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }],
     )
     .unwrap();
-    compute(&tree, &styles, [width, 600.0]).unwrap()
+    compute(&tree, &styles, [width, 600.0], sizes).unwrap()
+}
+#[test]
+fn an_area_the_template_does_not_name_leaves_the_element_out() {
+    let css = "window { display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: 'bar' 'main'; } #bar { grid-area: bar; height: 20px; } #lost { grid-area: nowhere; height: 30px; } #main { grid-area: main; }";
+    let tree = vec![
+        Element::new("window", None),
+        Element::new("pane", Some(0)).with_id("bar"),
+        Element::new("pane", Some(0)).with_id("lost"),
+        Element::new("pane", Some(0)).with_id("main"),
+    ];
+    let rects = layout(css, tree, 800.0);
+    assert_eq!(rects[2], None, "no implicit track for a name the template lacks");
+    // Without a template, or as `auto`, the name places nothing and hides nothing.
+    let free = layout(
+        "window { display: flex; } #a { grid-area: somewhere; height: 10px; } #b { grid-area: auto; height: 10px; }",
+        vec![
+            Element::new("window", None),
+            Element::new("pane", Some(0)).with_id("a"),
+            Element::new("pane", Some(0)).with_id("b"),
+        ],
+        800.0,
+    );
+    assert!(free[1].is_some() && free[2].is_some(), "{free:?}");
+    let main = rects[3].unwrap();
+    assert_eq!((main.y, main.height), (20.0, 580.0));
+}
+#[test]
+fn a_content_size_is_the_content_box_and_a_sheet_size_wins() {
+    let css = "window { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } #bar { grid-column: 1 / -1; padding: 3px 0 2px; border-width: 0 0 1px; } #side { grid-row: 2; } #main { grid-row: 2; grid-column: 2; }";
+    let tree = vec![
+        Element::new("window", None),
+        Element::new("pane", Some(0)).with_id("bar"),
+        Element::new("pane", Some(0)).with_id("side"),
+        Element::new("pane", Some(0)).with_id("main"),
+    ];
+    let sizes = [None, Some([None, Some(24.0)]), Some([Some(240.0), None]), None];
+    let rects = measured(css, tree.clone(), 800.0, &sizes);
+    // The bar's text height plus its padding and its border.
+    assert_eq!(rects[1].unwrap().height, 30.0);
+    assert_eq!(rects[2].unwrap().width, 240.0);
+    assert_eq!(rects[3].unwrap().x, 240.0);
+    let sized = format!("{css} #bar {{ height: 40px; }} #side {{ width: 100px; }}");
+    let rects = measured(&sized, tree.clone(), 800.0, &sizes);
+    assert_eq!(rects[1].unwrap().height, 40.0);
+    assert_eq!(rects[2].unwrap().width, 100.0);
+    // Hostile sizes are clamped, not laid out.
+    let hostile = [None, Some([None, Some(f32::NAN)]), Some([Some(f32::INFINITY), None]), None];
+    let rects = measured(css, tree, 800.0, &hostile);
+    assert_eq!(rects[1].unwrap().height, 6.0);
+    assert!(rects[2].unwrap().width <= 800.0);
 }
 #[test]
 fn absent_panel_auto_track_collapses_and_resize_keeps_real_bounds() {
-    let css = "window { layout: grid; columns: auto 1fr; rows: 1fr; areas: 'browser main'; } #browser { area: browser; width: 248px; } #main { area: main; }";
+    let css = "window { layout: grid; columns: auto 1fr; rows: 1fr; grid-template-areas: 'browser main'; } #browser { grid-area: browser; width: 248px; } #main { grid-area: main; }";
     let tree = vec![Element::new("window", None), Element::new("pane", Some(0)).with_id("main")];
     for width in [1138.0, 800.0, 1.0, 0.0, 1138.0] {
         let rects = layout(css, tree.clone(), width);
@@ -165,4 +218,45 @@ fn track_lists_and_placements_are_bounded() {
 #[test]
 fn disjoint_named_area_is_refused() {
     assert!(Areas::parse("'a b' 'b a'").is_err());
+}
+#[test]
+fn a_size_on_an_element_with_children_is_its_whole_box() {
+    let css = "bar { display: flex; height: 90px; width: 50px; padding: 0 4px; } item { width: 20px; }";
+    let tree = vec![
+        Element::new("window", None),
+        Element::new("bar", Some(0)),
+        Element::new("item", Some(1)),
+        Element::new("item", Some(1)),
+    ];
+    let sizes = [None, Some([Some(300.0), Some(28.0)]), None, None];
+    let rects = measured(css, tree.clone(), 800.0, &sizes);
+    let bar = rects[1].unwrap();
+    assert_eq!((bar.width, bar.height), (300.0, 28.0), "the host's box wins over the sheet's size");
+    assert_eq!(rects[2].unwrap().x, 4.0);
+    assert_eq!(rects[2].unwrap().height, 28.0, "items stretch to the content box");
+    // Hostile sizes leave the sheet's.
+    let hostile = [None, Some([Some(f32::NAN), None]), None, None];
+    let rects = measured(css, tree, 800.0, &hostile);
+    assert_eq!(rects[1].unwrap().width, 50.0);
+}
+#[test]
+fn the_user_agent_sheet_s_flex_lays_out_as_a_theme_s_does() {
+    let sheet = Sheet::parse("bar { display: flex; } gap { flex: 1; }").unwrap();
+    let tree = Tree::new(vec![
+        Element::new("bar", None),
+        Element::new("item", Some(0)),
+        Element::new("gap", Some(0)),
+        Element::new("item", Some(0)),
+    ])
+    .unwrap();
+    let sizes = [None, Some([Some(40.0), None]), None, Some([Some(40.0), None])];
+    let styles = cascade::compute(
+        &tree,
+        Viewport { width: 400.0, height: 30.0, reduced_motion: false },
+        &[AppliedSheet { sheet: &sheet, layer: Layer::UserAgent, root: None }],
+    )
+    .unwrap();
+    let rects = compute(&tree, &styles, [400.0, 30.0], &sizes).unwrap();
+    assert_eq!(rects[2].unwrap().width, 320.0);
+    assert_eq!(rects[3].unwrap().x, 360.0);
 }

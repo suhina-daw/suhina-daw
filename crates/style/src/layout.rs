@@ -408,7 +408,39 @@ fn grid_tracks(style: &ComputedStyle, property: Property) -> Vec<GridTemplateCom
 
 /// A host supplies a bounded tree and its computed styles. Invisible elements keep
 /// their identities but have no rectangle, so callers also suppress their hit targets.
-pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Result<Vec<Option<Rect>>, String> {
+/// Lays out `tree` in `viewport`. `sizes` gives an element's content size where the host
+/// knows it (a bar's height from its text, a panel's saved width), by element index in `sizes`; a missing or
+/// `None` entry is none. Like a replaced element's in CSS, the size is the content box's: an
+/// `auto` size is it plus the element's padding and border, and a size the sheet sets wins. On an
+/// element with children the size is its whole box instead, whatever the sheet says: a bar whose
+/// place the window's grid gave lays its items out in that box (#1372).
+pub fn compute(
+    tree: &Tree,
+    styles: &[ComputedStyle],
+    viewport: [f32; 2],
+    sizes: &[Option<[Option<f32>; 2]>],
+) -> Result<Vec<Option<Rect>>, String> {
+    compute_with(tree, styles, viewport, sizes, true)
+}
+
+/// [`compute`] with the children of every element in the order the tree gives them, whatever
+/// their `order`: for a host whose items have an order of their own (a bar's, #1372).
+pub fn compute_in_tree_order(
+    tree: &Tree,
+    styles: &[ComputedStyle],
+    viewport: [f32; 2],
+    sizes: &[Option<[Option<f32>; 2]>],
+) -> Result<Vec<Option<Rect>>, String> {
+    compute_with(tree, styles, viewport, sizes, false)
+}
+
+fn compute_with(
+    tree: &Tree,
+    styles: &[ComputedStyle],
+    viewport: [f32; 2],
+    sizes: &[Option<[Option<f32>; 2]>],
+    by_order: bool,
+) -> Result<Vec<Option<Rect>>, String> {
     if styles.len() != tree.elements().len()
         || styles.is_empty()
         || viewport.iter().any(|n| !n.is_finite() || !(0.0..=16384.0).contains(n))
@@ -418,14 +450,35 @@ pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Res
     if tree.elements().iter().filter(|e| e.parent.is_none()).count() != 1 {
         return Err("Native layout needs one root".into());
     }
-    let mut taffy: TaffyTree<()> = TaffyTree::new();
+    let mut taffy: TaffyTree<[Option<f32>; 2]> = TaffyTree::new();
     taffy.disable_rounding();
     let mut nodes = Vec::with_capacity(styles.len());
     let mut children = vec![Vec::new(); styles.len()];
     let mut visible = Vec::with_capacity(styles.len());
+    let mut parents = vec![false; styles.len()];
+    for parent in tree.elements().iter().filter_map(|element| element.parent) {
+        if let Some(slot) = parents.get_mut(parent) {
+            *slot = true;
+        }
+    }
+    let clean = |n: f32| n.is_finite().then(|| n.clamp(0.0, 16384.0));
     for (index, (element, computed)) in tree.elements().iter().zip(styles).enumerate() {
+        // A `grid-area` its parent's template does not name leaves the element out, so a theme's
+        // typo or a template without the area hides it rather than adding an implicit track.
+        let area = match computed.get(Property::GridArea) {
+            Value::Name(area) if !area.is_empty() && area != "auto" => Some(area),
+            _ => None,
+        };
+        let parent_areas =
+            element.parent.and_then(|parent| match styles.get(parent)?.get(Property::GridTemplateAreas) {
+                Value::Areas(areas) if areas != Areas::default() => Some(areas),
+                _ => None,
+            });
+        // Under a parent without a template, the name means nothing and is ignored.
+        let placed = area.as_ref().zip(parent_areas.as_ref()).map(|(area, areas)| areas.bounds().get(area).copied());
         let shown = computed.get(Property::Visible) != Value::Bool(false)
             && computed.get(Property::Display) != Value::Keyword("none")
+            && !matches!(placed, Some(None))
             && element.parent.is_none_or(|parent| visible.get(parent).copied().unwrap_or(false));
         visible.push(shown);
         let layout = computed.get(Property::Layout);
@@ -493,18 +546,15 @@ pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Res
                 .unwrap_or_else(|| grid_tracks(computed, Property::Rows)),
             ..Style::default()
         };
-        if computed.authored(Property::FlexGrow)
-            || computed.authored(Property::FlexShrink)
-            || computed.authored(Property::FlexBasis)
-        {
-            if let Value::Number(grow) = computed.get(Property::FlexGrow) {
-                style.flex_grow = grow;
-            }
-            if let Value::Number(shrink) = computed.get(Property::FlexShrink) {
-                style.flex_shrink = shrink;
-            }
-            style.flex_basis = size(computed, Property::FlexBasis);
+        // Their initial values are CSS's, so a sheet at any layer, the user-agent sheet's
+        // included, sets them as a browser would (#1372).
+        if let Value::Number(grow) = computed.get(Property::FlexGrow) {
+            style.flex_grow = grow.clamp(0.0, 1.0e6);
         }
+        if let Value::Number(shrink) = computed.get(Property::FlexShrink) {
+            style.flex_shrink = shrink.clamp(0.0, 1.0e6);
+        }
+        style.flex_basis = size(computed, Property::FlexBasis);
         if let Some(parent) = element.parent {
             let parent_style = styles.get(parent).ok_or("Missing parent style")?;
             let axis = if parent_style.get(Property::Layout) == Value::Layout(Layout::Row) {
@@ -516,12 +566,7 @@ pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Res
                 style.flex_grow = grow;
                 style.flex_basis = length(0.0);
             }
-            if let (Value::Areas(areas), Value::Name(area)) =
-                (parent_style.get(Property::Areas), computed.get(Property::Area))
-                && !area.is_empty()
-            {
-                let [left, top, right, bottom] =
-                    areas.bounds().get(&area).copied().ok_or_else(|| format!("Missing layout area {area}"))?;
+            if let Some(Some([left, top, right, bottom])) = placed {
                 style.grid_column = Line { start: line((left + 1) as i16), end: line((right + 1) as i16) };
                 style.grid_row = Line { start: line((top + 1) as i16), end: line((bottom + 1) as i16) };
             }
@@ -543,21 +588,50 @@ pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Res
         } else {
             style.size = Size { width: length(viewport[0]), height: length(viewport[1]) };
         }
-        nodes.push(taffy.new_leaf(style).map_err(|e| e.to_string())?);
+        let size = sizes.get(index).copied().flatten().unwrap_or([None, None]);
+        if parents.get(index).copied().unwrap_or(false) {
+            if let Some(width) = size[0].and_then(clean) {
+                style.size.width = length(width);
+                style.min_size.width = length(width);
+                style.max_size.width = length(width);
+            }
+            if let Some(height) = size[1].and_then(clean) {
+                style.size.height = length(height);
+                style.min_size.height = length(height);
+                style.max_size.height = length(height);
+            }
+        }
+        nodes.push(taffy.new_leaf_with_context(style, size).map_err(|e| e.to_string())?);
     }
     for (index, children) in children.iter_mut().enumerate() {
-        children.sort_by_key(|child| match styles.get(*child).map(|s| s.get(Property::Order)) {
-            Some(Value::Integer(order)) => order,
-            _ => 0,
-        });
+        if by_order {
+            children.sort_by_key(|child| match styles.get(*child).map(|s| s.get(Property::Order)) {
+                Some(Value::Integer(order)) => order,
+                _ => 0,
+            });
+        }
         let ordered = children.iter().filter_map(|index| nodes.get(*index).copied()).collect::<Vec<_>>();
         taffy.set_children(*nodes.get(index).ok_or("Missing layout node")?, &ordered).map_err(|e| e.to_string())?;
     }
     let root = *nodes.first().ok_or("Missing layout root")?;
     taffy
-        .compute_layout(
+        .compute_layout_with_measure(
             root,
             Size { width: AvailableSpace::Definite(viewport[0]), height: AvailableSpace::Definite(viewport[1]) },
+            // Taffy measures only leaves, and only for an axis the style leaves to the content.
+            |inputs, _, size, style| {
+                let [width, height] = size.map_or([None, None], |size| *size);
+                let clean = |n: Option<f32>| n.filter(|n| n.is_finite()).map_or(0.0, |n| n.clamp(0.0, 16384.0));
+                taffy::compute_leaf_layout(
+                    inputs,
+                    style,
+                    |_, _| 0.0,
+                    |known, _| Size {
+                        width: known.width.unwrap_or(clean(width)),
+                        height: known.height.unwrap_or(clean(height)),
+                    },
+                )
+            },
         )
         .map_err(|e| e.to_string())?;
     let mut rectangles: Vec<Option<Rect>> = Vec::with_capacity(nodes.len());

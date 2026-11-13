@@ -128,26 +128,6 @@ palette! {
         "Behind a track header's pan field";
     pan_centre, "pan.centre", 0x817F7A,
         "The centre mark of a pan field";
-    midi_clip_default, "clip.midiDefault", 0x4FC3F7,
-        "RGB colour copied only to newly created MIDI tracks and clips; existing tracks and clips never change";
-    audio_clip_default, "clip.audioDefault", 0xFF9A3C,
-        "RGB colour copied only to newly created audio tracks and clips; existing tracks and clips never change";
-    track_color_1, "track.1", 0xFF9A3C,
-        "Colour-picker swatch 1; also effects in the browser (legacy track token)";
-    track_color_2, "track.2", 0xF2D541,
-        "Colour-picker swatch 2; also MIDI files in the browser (legacy track token)";
-    track_color_3, "track.3", 0x4FC3F7,
-        "Colour-picker swatch 3; also samples in the browser (legacy track token)";
-    track_color_4, "track.4", 0xB38BFF,
-        "Colour-picker swatch 4; also instruments and presets in the browser (legacy track token)";
-    track_color_5, "track.5", 0x7FDB5A,
-        "A colour the track colour palette offers";
-    track_color_6, "track.6", 0xFF6FA8,
-        "A colour the track colour palette offers";
-    track_color_7, "track.7", 0x5C8DFF,
-        "A colour the track colour palette offers";
-    track_color_8, "track.8", 0x2FD9C4,
-        "A colour the track colour palette offers";
 }
 
 /// Tokens renamed since the first theme files, old name first; files with the old names still
@@ -272,7 +252,7 @@ const BUILT_IN_FOLDERS: [BuiltInFolder; 10] = [
     folder!("suhina-glass": "theme.json", "theme.css", "thumbnail.svg", "variants/frost.json", "variants/midnight.json"),
     folder!("suhina-sheet": "theme.json", "theme.css", "thumbnail.svg", "assets/folder.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
     folder!("suhina-meadow": "theme.json", "theme.css", "thumbnail.svg", "background.png", "assets/folder.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
-    folder!("suhina-blocks": "theme.json", "theme.css", "thumbnail.svg", "assets/folder.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.color-4fc3f7.svg", "assets/track.body.color-7fdb5a.svg", "assets/track.body.color-80ada1.svg", "assets/track.body.color-a84f4f.svg", "assets/track.body.color-b38bff.svg", "assets/track.body.color-e5484d.svg", "assets/track.body.color-f2d541.svg", "assets/track.body.color-ff9a3c.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
+    folder!("suhina-blocks": "theme.json", "theme.css", "thumbnail.svg", "assets/folder.svg", "assets/arm.svg", "assets/button.svg", "assets/cue.svg", "assets/fader.cap.svg", "assets/fader.rail.svg", "assets/knob.body.svg", "assets/knob.pointer.svg", "assets/meter.svg", "assets/play.svg", "assets/record.svg", "assets/solo.svg", "assets/stop.svg", "assets/track.audio.svg", "assets/track.body.svg", "assets/track.midi.svg", "assets/track.name.svg"),
 ];
 
 /// The themes that come with Suhina, Suhina Studio first, with their ids. They do not change;
@@ -417,7 +397,10 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
         Err(error) => warnings.push(error),
     }
     warnings.extend(theme.vars.base.keys().filter_map(|name| former_kind_token(name.strip_prefix("--kind-")?)));
+    warnings.extend(former_track_colours_notice(theme.vars.base.keys().map(String::as_str)));
+    warnings.extend(former_host_variables_notice(sheet));
     warnings.extend(super::theme_css::read_host_rules(&mut theme, sheet));
+    warnings.extend(former_colour_artwork_notice(theme.skin.assets.keys().cloned()));
     if let Some((toolbar, offsets)) = theme.meta.toolbar.as_ref().and_then(read_toolbar) {
         theme.skin.toolbar = Some(toolbar);
         theme.skin.toolbar_offsets = offsets;
@@ -436,6 +419,60 @@ pub fn former_kind_token(kind: &str) -> Option<String> {
         "--kind-{kind} is no longer read: the sample map's colours are rules, \
          sample-point[kind=\"{kind}\"] {{ color: … }}"
     ))
+}
+
+/// Whether `name` (without its `--`) is a track colour a theme of an earlier version set:
+/// `track-1` to `track-8`, `clip-midiDefault`, `clip-audioDefault`. Tracks and clips keep their
+/// own colours, and the colour picker and new tracks take Suhina's, so a theme no longer sets
+/// them (#1020).
+pub fn is_former_track_colour(name: &str) -> bool {
+    matches!(name, "clip-midiDefault" | "clip-audioDefault")
+        || name.strip_prefix("track-").is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8"))
+}
+
+/// One notice naming the former track colours among a theme's `:root` variables `names`, if any.
+pub fn former_track_colours_notice<'a>(names: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let former: Vec<_> =
+        names.into_iter().filter(|name| name.strip_prefix("--").is_some_and(is_former_track_colour)).collect();
+    (!former.is_empty()).then(|| {
+        format!(
+            "{} no longer read: a track's or clip's colour is its own, and a theme draws it from \
+             the element's color attribute, attr(color type(<color>))",
+            former.join(", ")
+        )
+    })
+}
+
+/// The notice for a sheet that reads a variable the app set on tracks and clips in an earlier
+/// version (`--track-colour`, `--track-fill`, `--clip-colour`): the app sets none now, so a rule
+/// that reads one falls back without it.
+pub fn former_host_variables_notice(sheet: &str) -> Option<String> {
+    let used: Vec<_> =
+        ["--track-colour", "--track-fill", "--clip-colour"].into_iter().filter(|name| sheet.contains(name)).collect();
+    (!used.is_empty()).then(|| {
+        format!(
+            "{} no longer set: a track's or clip's colour is the element's color attribute, \
+             attr(color type(<color>))",
+            used.join(", ")
+        )
+    })
+}
+
+/// The notice for artwork chosen by an exact track colour (`track.body.color-ff9a3c`), which no
+/// track picks any more: artwork takes a track's colour as `currentColor`.
+fn former_colour_artwork_notice(roles: impl IntoIterator<Item = String>) -> Option<String> {
+    let colour = |role: &str| {
+        role.split('.').any(|part| {
+            part.strip_prefix("color-").is_some_and(|hex| hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+        })
+    };
+    let used: Vec<_> = roles.into_iter().filter(|role| colour(role)).collect();
+    (!used.is_empty()).then(|| {
+        format!(
+            "{} not used: artwork is not chosen by a track's colour; it takes the colour as currentColor",
+            used.join(", ")
+        )
+    })
 }
 
 /// The toolbar arrangement in `theme.json` as the toolbar editor has it: `items` (names only) and
@@ -611,6 +648,11 @@ impl Theme {
                 for (key, value) in colors {
                     let canonical = RENAMED.iter().find(|(old, _)| *old == key).map_or(key.as_str(), |(_, new)| *new);
                     let parsed = value.as_str().and_then(parse_hex);
+                    // A track colour an earlier version kept in every theme file: tracks keep their
+                    // own now, so it is left behind without a word, and the file still converts.
+                    if is_former_track_colour(&key.replace('.', "-")) {
+                        continue;
+                    }
                     match (theme.colors.token_mut(canonical), parsed) {
                         (Some(slot), Some(color)) => {
                             *slot = color;
@@ -630,13 +672,6 @@ impl Theme {
                             warnings.push(format!("{key}: {value} is not a #RRGGBB or #RRGGBBAA colour"))
                         }
                     }
-                }
-                // Older palettes only supplied the numbered colour-picker swatches.
-                if !colors.contains_key("clip.midiDefault") {
-                    theme.colors.midi_clip_default = theme.colors.track_color_3;
-                }
-                if !colors.contains_key("clip.audioDefault") {
-                    theme.colors.audio_clip_default = theme.colors.track_color_1;
                 }
                 // Older files drew these with a background and a text colour.
                 if !colors.contains_key("text.inverse") {
@@ -750,9 +785,6 @@ pub const GLOSS_EXAMPLE: &str = include_str!("../../themes/dark-gloss.css");
 
 /// Optional native Launcher density, shared by the editor and exported packages.
 pub const COMPACT_SESSION_EXAMPLE: &str = include_str!("../../themes/compact-session.css");
-
-/// Optional panels own their dimensions so closed panels leave no fixed-size track.
-pub const WORKSPACE_GRID_EXAMPLE: &str = "/* CSS owns panel geometry; removing these rules restores splitters. */\n#workspace { display:grid; grid-template-columns:minmax(0, 1fr) auto; grid-template-rows:minmax(0, 1fr) auto; gap:8px; }\n#panel-browser { grid-column:2; grid-row:1 / -1; width:240px; }\n#panel-main { grid-column:1; grid-row:1; }\n#panel-detail { grid-column:1; grid-row:2; height:180px; }\n";
 
 /// The README shipped with themes: the format, capabilities and generated palette reference.
 pub fn template_readme() -> String {

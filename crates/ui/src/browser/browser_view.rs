@@ -19,8 +19,8 @@ use crate::browser::{BrowserState, Place, Row, duration_text};
 use crate::interaction::drop::{BrowserItem, ItemKind};
 use crate::interaction::status::Status;
 use crate::kit::element::{
-    BROWSER, BROWSER_PLACE, BROWSER_PLAY, BROWSER_ROW as BROWSER_ROW_ELEMENT, BUTTON, Checked, DIVIDER, Entered,
-    Native, Selected,
+    BROWSER, BROWSER_PLACE, BROWSER_PLAY, BROWSER_ROW as BROWSER_ROW_ELEMENT, BUTTON, Checked, Entered, Native,
+    Selected,
 };
 use crate::kit::theme::{self, BROWSER_ROW as ROW, PAD};
 use crate::kit::widgets::play_glyph;
@@ -156,14 +156,41 @@ pub struct Context<'a> {
     pub other_results: Option<&'a mut OtherResults<'a>>,
 }
 
+/// A row's icon colour: its `browser-icon[kind="…"]` element's `color`, which the user-agent
+/// sheet gives the kinds of item that have one and a theme may change; folders, headings and
+/// projects take the row's secondary text colour unless a sheet gives them one.
 fn icon_color(kind: ItemKind) -> Color32 {
-    match kind {
-        ItemKind::Midi | ItemKind::MidiEffect => theme::track_color_2(),
-        ItemKind::Sample => theme::track_color_3(),
-        ItemKind::Instrument | ItemKind::Preset => theme::track_color_4(),
-        ItemKind::Effect | ItemKind::AudioEffect => theme::track_color_1(),
-        ItemKind::Folder | ItemKind::Heading | ItemKind::Project => theme::browser_text_secondary(),
+    let id = icon_kind(kind);
+    let el = crate::kit::element::BROWSER_ICON.attribute("kind", id).enter();
+    match icon_default(id) {
+        Some(default) => el.computed_color_or(default),
+        None => el.color_or(theme::browser_text_secondary()),
     }
+}
+
+/// The `kind` attribute of `kind`'s `browser-icon`.
+fn icon_kind(kind: ItemKind) -> &'static str {
+    match kind {
+        ItemKind::Midi => "midi",
+        ItemKind::MidiEffect => "midi-effect",
+        ItemKind::Sample => "sample",
+        ItemKind::Instrument => "instrument",
+        ItemKind::Preset => "preset",
+        ItemKind::Effect => "effect",
+        ItemKind::AudioEffect => "audio-effect",
+        ItemKind::Folder => "folder",
+        ItemKind::Heading => "heading",
+        ItemKind::Project => "project",
+    }
+}
+
+/// The colour the user-agent sheet alone gives the icon of kind `id`, if any: worked out once.
+fn icon_default(id: &str) -> Option<Color32> {
+    const COLOURED: [&str; 7] = ["midi", "midi-effect", "sample", "instrument", "preset", "effect", "audio-effect"];
+    static DEFAULTS: std::sync::OnceLock<[Option<Color32>; 7]> = std::sync::OnceLock::new();
+    let defaults = DEFAULTS
+        .get_or_init(|| COLOURED.map(|id| crate::kit::native_css::user_agent_color("browser-icon", &[("kind", id)])));
+    COLOURED.iter().position(|known| *known == id).and_then(|at| defaults.get(at).copied().flatten())
 }
 
 /// Our own simple stroke icons, 12 px.
@@ -3411,40 +3438,39 @@ fn footer_overflow(
         });
 }
 
-/// The browser's resize handle at its inner edge: dragged, the width it is dragged to;
-/// double-clicked, `default`. Gives that width, and whether the handle was let go (or reset)
-/// now: the width is saved then, not on every frame of a drag.
-pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32) -> (Option<f32>, bool) {
-    let response = ui
-        .interact(handle, Id::unique("browser-resize"), Sense::click_and_drag())
-        .on_hover_cursor(CursorIcon::ResizeHorizontal);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Browser splitter"));
-    if response.double_clicked() {
+/// The browser's splitter in `handle`, beside its panel of `width` on the `left` or the right,
+/// bounded to `bounds`: the width a drag gives, or `default` for a double-click, and whether the
+/// drag ended.
+pub fn resize_handle(
+    ui: &Ui,
+    handle: Rect,
+    width: f32,
+    left: bool,
+    default: f32,
+    bounds: (f32, f32),
+) -> (Option<f32>, bool) {
+    let divider = crate::kit::divider::show(
+        ui,
+        crate::kit::divider::Divider {
+            name: "browser-splitter",
+            key: Id::unique("browser-resize"),
+            strip: handle,
+            across: true,
+            label: "Browser splitter",
+            size: width,
+            grows_forward: left,
+            bounds,
+        },
+    );
+    if divider.response.double_clicked() {
         return (Some(default), true);
     }
-    {
-        // `#browser-splitter` (a `divider`, with `:hover` and `:active`) takes the element's
-        // `background-color`; without one, the border colour, stronger under the pointer.
-        let style = DIVIDER.id("browser-splitter").response(&response).enter();
-        let native = if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() };
-        ui.painter().rect_filled(handle, 0.0, style.background_or(native));
-    }
-    // The width follows the pointer from where the drag began, so it never falls behind it
-    // (adding each frame's movement to the width rounded to whole points would).
-    let start_id = Id::unique("browser-resize-start");
-    if response.drag_started()
-        && let Some(pointer) = response.interact_pointer_pos()
-    {
-        ui.ctx().data_mut(|d| d.insert_temp(start_id, (width, pointer.x)));
-    }
-    if response.dragged()
-        && let (Some((from, x0)), Some(pointer)) =
-            (ui.ctx().data(|d| d.get_temp::<(f32, f32)>(start_id)), response.interact_pointer_pos())
-    {
-        let dx = pointer.x - x0;
-        return (Some(if left { from + dx } else { from - dx }), false);
-    }
-    (None, response.drag_stopped())
+    // `#browser-splitter` takes the element's `background-color`; without one, the border colour,
+    // stronger under the pointer.
+    let response = &divider.response;
+    let native = if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() };
+    ui.painter().rect_filled(handle, 0.0, divider.style.background_or(native));
+    (divider.size, response.drag_stopped())
 }
 
 /// The active project's session.
@@ -3468,6 +3494,21 @@ fn paint_row(painter: &egui::Painter, el: &Entered, rect: Rect, fill: egui::Colo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The kinds' icon colours come from the user-agent sheet's `browser-icon[kind]` rules, not
+    /// the theme's palette; folders, headings and projects have none and take the row's text.
+    #[test]
+    fn icon_colours_are_the_user_agent_sheet_s_by_kind() {
+        let colour = |kind| icon_default(icon_kind(kind));
+        assert_eq!(colour(ItemKind::Midi), Some(Color32::from_rgb(0xF2, 0xD5, 0x41)));
+        assert_eq!(colour(ItemKind::MidiEffect), colour(ItemKind::Midi));
+        assert_eq!(colour(ItemKind::Sample), Some(Color32::from_rgb(0x4F, 0xC3, 0xF7)));
+        assert_eq!(colour(ItemKind::Preset), Some(Color32::from_rgb(0xB3, 0x8B, 0xFF)));
+        assert_eq!(colour(ItemKind::AudioEffect), Some(Color32::from_rgb(0xFF, 0x9A, 0x3C)));
+        for plain in [ItemKind::Folder, ItemKind::Heading, ItemKind::Project] {
+            assert_eq!(colour(plain), None);
+        }
+    }
 
     /// The name of a plug-in always shows: as the panel narrows, the columns to its right drop
     /// (the rightmost first) before the name gets narrower than its least.

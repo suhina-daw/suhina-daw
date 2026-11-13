@@ -4,7 +4,7 @@ read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taff
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-12
+last_verified: 2026-11-13
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
@@ -225,8 +225,11 @@ session track { width: 86px; }
 session slot { height: 18px; }
 
 @media (max-width: 900px) {
-  window { areas: "menu" "control" "views" "detail" "status"; }   /* the browser moves out */
-  #browser { visible: false; }
+  /* One column and the same nine rows as the user-agent sheet; the browser has no area, so it is out */
+  window {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "menu" "tabs" "toolbar" "top" "notice" "main" "detail" "bottom" "status";
+  }
 }
 @media (desktop-blur: off) { #browser { glass: 0.9 inset; } }
 ```
@@ -298,7 +301,7 @@ breakpoint while resizing costs one fresh cascade.
 | --- | --- | --- |
 | Text | `font-family`, `font-size`, `font-weight`, `font-style`, `line-height`, `letter-spacing`, `color`, `text-align`, `text-shadow` | families from `@font-face` and the built-in fonts; `px`, `em` |
 | Box | `background` (a list of layers), `border`, `border-top` …, `radius` (one to four corners), `shadow` | colours, `linear-gradient()`, `radial-gradient()`, `conic-gradient()`, `image(url, fit, slice)` |
-| Layout | `layout` (`row`, `column`, `grid`, `stack`), `width`, `height`, `min-*`, `max-*`, `gap`, `padding`, `align`, `justify`, `columns`, `rows`, `areas`, `area`, `order`, `visible`, `position` (`flow`, `overlay`), `inset` | `px`, `em`, `%`, `fr`, `auto`, `calc()` |
+| Layout | `layout` (`row`, `column`, `grid`, `stack`), `width`, `height`, `min-*`, `max-*`, `gap`, `padding`, `align`, `justify`, `columns`, `rows`, `grid-template-areas`, `grid-area`, `order`, `visible`, `position` (`flow`, `overlay`), `inset` | `px`, `em`, `%`, `fr`, `auto`, `calc()` |
 | Artwork | `body`, `pointer` (knobs), `cap`, `rail` (faders), `face`, `icon` (buttons), `frames`, `frame-rate` | `image(url)`, `frames(url, count)`, `none` |
 | Controls | `appearance` (`auto`, `knob`, `field`), `direction` (`vertical`, `horizontal`) | keywords |
 | Meters | `style` (`continuous`, `segmented`, `needle`, `frames`), `segments`, `intensity` | keywords, integers, `%` |
@@ -943,3 +946,32 @@ Accepted, from [issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)
   only those.
 - **`@media (prefers-color-scheme)` is not supported**, which replaces it in the table of media
   features above: a theme's light and dark looks are variants.
+
+## Amendment: the window is one grid, and its settings are attributes (2026-11-12)
+
+Accepted, from [issue #1370](https://github.com/suhina-daw/suhina-daw/issues/1370) (section 3 of
+#995). It replaces part of decision 5.
+
+- **The window is one CSS grid** on `window`, laid out in the window under the custom title bar.
+  Its children are the bars (`menu-bar`, `project-tabs`, `toolbar`, `status-bar`), the notice
+  strip (`notice-bar`) and the three panels (`workspace-panel#panel-browser`, `#panel-main`,
+  `#panel-detail`). The user-agent sheet states the default grid, so it is the only layout path:
+  without a theme, or with a theme sheet whose layout fails, the window is laid out from the
+  user-agent sheet alone. The `workspace` element goes.
+- **Its properties are CSS's:** `grid-template-areas` and `grid-area` replace `areas` and
+  `area`. An element whose `grid-area` names an area its parent's template lacks is left out of
+  the layout (no implicit track), so a theme that drops an area from its template hides what
+  stood there.
+- **The settings that change the layout are attributes on `window`, not classes**, since what
+  the app knows about an element is an attribute (#995 section 1) and the user-agent sheet uses
+  no classes: `window[detail="below"]`, `[detail="full-width"]` and `[detail="beside"]` (the
+  detail area along the bottom beside the browser, across the full width, or stacked beside the
+  view; *beside* wins over full width), `window[browser]` while the browser shows, and
+  `window[menu-bar]` while the window has its own menu bar.
+- **The application bar on Windows stays outside the grid**, with the custom title bar: it holds
+  the system's window buttons and the region that drags the window.
+- **The sizes the app knows reach the layout as content sizes** on the elements (a bar's height
+  from its controls or its text, the browser's saved width, the detail area's saved size), not as
+  rules: an `auto` size is the content size plus the element's padding and border, and a size
+  the sheet sets wins. A splitter stays beside a panel whose size the grid leaves to its content
+  size, and its drag sets that size.

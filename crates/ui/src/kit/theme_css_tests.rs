@@ -282,6 +282,6 @@ fn a_theme_is_told_a_painted_element_takes_no_padding_in_percent() {
     let meta = || crate::kit::theme::ThemeMeta::new("Padded", "#123456");
     let (_, warnings) = crate::kit::theme::from_folder(meta(), "device { padding: 5%; }");
     assert!(warnings.iter().any(|w| w.contains("percentage is read only on a CSS layout container")), "{warnings:?}");
-    let (_, warnings) = crate::kit::theme::from_folder(meta(), "#workspace { padding: 1%; }");
+    let (_, warnings) = crate::kit::theme::from_folder(meta(), "window { padding: 1%; }");
     assert!(warnings.is_empty(), "{warnings:?}");
 }

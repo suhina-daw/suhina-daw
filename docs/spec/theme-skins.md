@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-13
+last_verified: 2026-11-14
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -29,7 +29,15 @@ covers:
   - crates/ui/src/kit/native_css/geometry.rs
   - crates/ui/src/kit/native_css/shadows.rs
   - crates/ui/src/kit/native_css/text.rs
-  - crates/ui/src/kit/native_css/workspace.rs
+  - crates/ui/src/kit/native_css/window.rs
+  - crates/ui/src/kit/native_css/row.rs
+  - crates/ui/src/app/control_bar.rs
+  - crates/ui/src/app/tabs.rs
+  - crates/ui/src/app/application_bar.rs
+  - crates/ui/src/detail/piano_roll/toolbar.rs
+  - crates/ui/src/detail/detail_view/midi_panel.rs
+  - crates/ui/src/app/window_layout.rs
+  - crates/ui/src/kit/divider.rs
   - crates/ui/src/kit/native_css/diagnostics.rs
   - crates/ui/src/kit/theme_css.rs
   - crates/ui/src/kit/theme_vars.rs
@@ -113,8 +121,8 @@ tracks 24, clips 12). The liquid renderer requires GPU rendering, animations ena
 and encoded/linear texture-view support; older GL adapters retain ordinary alpha
 materials without installing unsupported captures. Effective SVG roles include shared original Sheet
 glyphs plus Meadow's own faders, knobs, button, paper icon and mixer body.
-While a private background image is active, the workspace's separator backdrop
-stays transparent. Panel surfaces and individual splitter controls still paint
+While a private background image is active, the lines over and under the views
+(`#views-top`, `#views-bottom`) stay transparent. Panel surfaces and individual splitter controls still paint
 their own fills; without an image the native separator backdrop remains unchanged.
 
 ![Suhina Meadow with visible private wallpaper, translucent panels and live liquid materials](../design/reference/theme-meadow-liquid.png)
@@ -217,7 +225,7 @@ the native GPU transparency regression has separate automated coverage. Theme
 changes were made through external JSON/CSS files while the app remained open.
 Colour-dependent texture contrast is authored with named scopes, e.g.
 `track-name[data-object=track-1] { color: #edf6e9; }`; arbitrary named track scopes
-use `data-object`, while toolbar/workspace ids have their documented literal ids.
+use `data-object`, while the toolbar's and the window's ids have their documented literal ids.
 
 ## Native element placement contract
 
@@ -265,9 +273,14 @@ The direction property applies to controls with an axis; horizontal volume dragg
 to the right, while vertical dragging increases upwards. Keyboard, wheel, reset and undo keep
 their existing semantics. Layout entry support is incremental and documented per adapter.
 
-Artwork can choose an exact raw track colour and interaction state before palette tinting:
-`track.name.color-00ff00.hover` overrides the default `track.name`. The most specific own
-colour/state variant wins, then own colour, own state, own default, then embedded fallback.
+Artwork can choose an interaction state: `track.name.hover` overrides the default
+`track.name`. The own state variant wins, then the own default, then the embedded fallback.
+Artwork is not chosen by a track's colour. In track artwork (`track.name`, `track.body`)
+`currentColor` is the fill Suhina draws there (the track's colour, dimmed while muted; a muted
+track's arrangement header is the `track-header[muted]` grey instead), or the element's own
+`color` where the sheet gives one, which a rule may take from its `[color]`. A sheet
+that reads `--track-colour`, `--track-fill` or `--clip-colour`, or gives artwork for one colour
+(`track.body.color-ff9a3c`), is told they are no longer used.
 `track.body` covers the strip background. A contiguous sequence of `.frame-0` through
 `.frame-31` asset keys animates that variant at `skin.artwork-fps` (1–30, default 12).
 Native animation-off freezes it at frame zero without a repaint loop. Assets allow the
@@ -345,19 +358,19 @@ contiguous `meter.frame-0` through `meter.frame-31` SVG/PNG artwork by the loude
 channel's normalized dBFS peak, from silence to the top of the existing meter range.
 It is signal-driven, independent of animation settings and artwork fps. Missing or
 invalid frame sequences fall back to the continuous stereo meter. The native clip
-indicator, click-to-reset command and accessible measurement remain intact. Exact
-track-colour and interaction-state sequences follow normal artwork precedence.
+indicator, click-to-reset command and accessible measurement remain intact. Interaction-state
+sequences follow normal artwork precedence.
 Other styles use the existing stereo
 peak/RMS monitor; presentation never changes measurement or sound. The clip light
 and click-to-reset work with every style. Segment count is bounded. Needle displays
 use peak for the thin pointer and RMS for the heavier pointer. These are dBFS level
 displays, not calibrated analogue VU or loudness measurements.
 
-Toolbar modules have stable names and a saved order/visibility. The built-in layout
-is used when no toolbar is supplied. Editing exposes labelled drag handles rather
-than stealing normal control gestures. Escape cancels a drag. Hidden modules can be
-restored from the editor, and resetting the layout restores the default. Narrow
-windows scroll the customized toolbar horizontally; controls do not overlap.
+Toolbar modules have stable names and a saved order/visibility. The default arrangement
+(› The bars' rows) is used when no toolbar is supplied. Editing exposes labelled drag handles
+rather than stealing normal control gestures; a module's offset moves it from where the row puts
+it. Escape cancels a drag. Resetting the layout restores the default. A toolbar too narrow for its
+modules is clipped at its end.
 
 Theme ZIP import validates the entire input before writing. Paths must be relative,
 remain within the theme folder, contain no parent traversal or symlinks, and name
@@ -383,7 +396,8 @@ like before a theme styles it.
 - **What it holds:** `overflow: hidden` on every region (the registry's `Region` kind); a 1 px
   `border-bottom-width` on the bars over the views (`application-bar`, `menu-bar`,
   `project-tabs`, `toolbar`) and a 1 px `border-top-width` on `status-bar`, in `--border` from
-  the palette's tier (the lines above and under the view are `#workspace`'s);
+  the palette's tier (the lines over and under the views are `separator#views-top` and
+  `#views-bottom`); the window's grid (*The window grid*);
   `backdrop-filter: blur(20px)` on `popup`, `menu`, `dialog` and `tooltip`; the default
   artwork; the sample map's colours; the grey of a muted arrangement clip and track header,
   `clip[muted] { background-color: #A9A6A0; }` (`#BDBAB4` with `[selected]`) and
@@ -418,7 +432,7 @@ like before a theme styles it.
   A state follows the element as a pseudo-class or an attribute: `knob-body:hover`,
   `fader-cap:active`, `button:disabled`, `button[checked]` (a toggle that is on). The earlier role
   form (`knob.body:hover`, `solo:on`) still reads; Suhina writes the element form. Roles without
-  default artwork (`piano.draw`, `track.body.color-ff9a3c`, `meter.frame-3`) are written as roles.
+  default artwork (`piano.draw`, `meter.frame-3`) are written as roles.
 - **Sample-map colours are not settings.** The user-agent sheet styles each sound by its kind,
   `sample-point[kind="kick"] { color: #D06E5E; }` and so on for `snare`, `clap`, `closedHat`,
   `openHat`, `hat`, `rim`, `tom`, `crash`, `ride`, `cymbal`, `percussion`, `bass`, `tonal`,
@@ -455,11 +469,11 @@ so and changes nothing. *New theme* starts from a
 
 ## Native CSS: controls and the toolbar
 
-The native centred toolbar exposes the same `toolbar-module` ids as the custom
-layout, without opting into new geometry for colour/paint-only rules. Module
-scopes are siblings rather than nested controls; their palette/style changes
-must be restored before painting another module. Native hit rectangles, ids,
-commands and default geometry remain unchanged.
+The toolbar's modules are `toolbar-module` elements by id, laid out in one CSS row whatever the
+theme (› The bars' rows). Module scopes are siblings rather than nested controls; their
+palette/style changes are restored before another module paints. Each module paints its box
+(`background`, border, shadows) and draws its controls in it; its ids and commands are the same in
+every arrangement.
 
 **Control surfaces.** A control paints its own surface through its element
 (`kit::element`, `Entered::paint`): `background-color`, `background-image`, `border-radius`,
@@ -483,7 +497,7 @@ children at the padding box (› Overflow), so its border stays whole.
 widths and its `padding`. Padding in points and in `em` (of the element's own font size) is
 resolved as the CSS layout resolves it. A percentage, which CSS takes of the width of the box
 around the element, is read only on the elements whose children the CSS layout places
-(`workspace`, `toolbar`), each laid out in its own box: there it is a percentage of that box's
+(`window`, `toolbar`), each laid out in its own box: there it is a percentage of that box's
 width, for the layout and for the sizes Suhina works out (the toolbar's height grows by it, and
 its content box keeps it), so they agree. Anywhere else Suhina paints the content box without that box, so the
 sheet refuses the declaration with a notice instead of reading it as no padding. Every view lays its children out there, not in the rectangle it
@@ -590,12 +604,28 @@ volume field is the native capsule and the pan field the native flat field.
 the side of the Arrangement view's track headers while the user's Track headers setting
 is *Theme* (the default); Left and Right are the user's own and win.
 
-**Host states and variables.** The host marks elements with states the sheet matches, on the
+**Host states and colours.** The host marks elements with states the sheet matches, on the
 element's builder before it is entered (`kit::element`, `.attr(Checked, on)`): `[checked]` on a toggle that is on, `[playing]` and `[recording]` on the
 transport's buttons, `[selected]` on the selected track's header, column, strip and name,
-`[armed]` and `[muted]`. It gives elements custom properties below every rule
-(`.variable("--track-colour", …)`): a track's header, column and strip `--track-colour`, its name
-`--track-fill`. A track name's text takes the sheet's `color` when one applies. Artwork has an
+`[armed]` and `[muted]`. It sets no custom properties: variables are the theme's. A track's or
+clip's colour is its own data, the RGB the user chose, which the theme draws but never chooses.
+The host gives it as a `color` attribute (`#rrggbb`, lowercase; a selector for one
+colour takes the `i` flag) on every element that stands for a track or a clip: `track-header`
+in both views, the Launcher's `track-column`, a `mixer` strip, the Arrangement's `track-lane`,
+each `clip` (in the Arrangement and in a Launcher slot) and the `piano-roll` of the clip it edits.
+A clip without a colour of its own gives its track's. `attr(color type(<color>))` reads the
+element's own attribute only, so a theme passes it to the parts inside with a variable of its own:
+`track-header { --track: attr(color type(<color>)); } track-name { border-color: var(--track); }`.
+A theme should keep track colours recognisable, since people tell tracks apart by them: tint
+them, mix them with the background, use them for borders; nothing enforces it. Mixing in oklab
+keeps a colour's hue; oklch moves it towards the hue of a background that is nearly grey
+(dark blue `#1F3A93` 40 % of the way to `#1D1C1A` comes out maroon in oklch, a darker blue in
+oklab), and a pale colour mixed far towards a light background (yellow 60 % towards `#F4F2EE`)
+is hard to tell from it. The colour picker's eight colours and the colours new tracks and clips get
+are Suhina's own, the same in every theme (`suhina_session::colours`); a theme that still sets
+`--track-1` to `--track-8`, `--clip-midiDefault` or `--clip-audioDefault` is told they are no
+longer read. A `track-lane`'s background is painted over the grid lines, so a theme gives it a
+translucent one. A track name's text takes the sheet's `color` when one applies. Artwork has an
 `.on` state (`solo:on`), falling back to `.active`, and per-view track roles
 (`track.name.mixer` and the others) over `track.name` and `track.body`.
 
@@ -603,8 +633,8 @@ transport's buttons, `[selected]` on the selected track's header, column, strip 
 dropdown list and popup is `popup`, and a tooltip `tooltip` (see *Floating surfaces*); the
 metronome's level slider is `popup#metronome-level`, outside the toggle's scope.
 
-**Bar lines.** The separator under a bar uses that bar's `border-color`, and the line above the
-view `#workspace`'s; `--border` stays every other line.
+**Bar lines.** The separator under a bar uses that bar's `border-color`, and the lines over and
+under the views `#views-top`'s and `#views-bottom`'s; `--border` stays every other line.
 
 **Header width.** `arrangement { header-min-width }` (160 to 520 points) is the least
 width of the Arrangement header column, so the header's narrower layouts do not break a theme's
@@ -614,9 +644,9 @@ placements.
 warnings. Renaming a theme keeps its folder (its id). Two themes with one name are named in the
 warnings and show their folder names. Placement rules accept selector lists.
 
-**Workspace overlays.** A browser or detail panel that the `#workspace` grid places in
-the same cells as `#panel-main` is drawn on a layer above the view, so it shows and takes
-the pointer there.
+**Panel overlays.** A browser or detail panel that the window's grid places in the same
+cells as `#panel-main` is drawn on a layer above the view, so it shows and takes the pointer
+there.
 
 Connected native text helpers support computed CSS `text-shadow`, including lists,
 inherited/currentColor colours and animated offsets/colours. Up to four layers
@@ -627,7 +657,7 @@ and offsets of ±256 points. This is not a full image convolution. Native clippi
 still applies. Ordinary egui text that bypasses the shared/native helper is not
 covered yet. The editor includes an original dark gloss CSS example demonstrating
 gradients, rounded buttons and bounded text/box shadows without changing the native
-toolbar/workspace layout.
+toolbar or window layout.
 
 Host rules the app reads itself, beside the engine: `meter` accepts `style`, `segments`
 and `intensity`; `image` declarations name package-relative SVG/PNG artwork or Suhina's own
@@ -853,41 +883,170 @@ See [sd-device-format.md](sd-device-format.md) › Panel style sheets.
 Trace spans `style paint parse` and `style paint resolve` mark the engine's UI-thread
 work; no audio callback is instrumented.
 
-### Workspace layout contract
+### The window grid
 
-Panel elements are absent when closed. Fixed tracks still reserve their size for
-absent elements; put sizes on the optional panels and use `auto` tracks instead:
+The window is one CSS grid on `window` (#1370), laid out under the custom title bar (and, on
+Windows, the application bar, which holds the system's window buttons and the region that drags
+the window, so it stays outside the grid). The user-agent sheet states the default grid, so a
+window with no theme, or with a theme sheet whose layout fails, is laid out by it alone: there is
+no other layout path.
+
+Its children, by element, id and `kind`:
+
+| Element | Id | Area | What it is |
+|---|---|---|---|
+| `menu-bar` | — | `menu` | the window's own menu bar, while Settings shows it |
+| `project-tabs` | — | `tabs` | the tabs, while two or more projects are open |
+| `toolbar` | — | `toolbar` | the toolbar |
+| `separator[kind="views-top"]` | `#views-top` | `top` | the 1 px line over the views |
+| `notice-bar` | — | `notice` | the strip asking about an opened project or naming missing files |
+| `workspace-panel[kind="browser"]` | `#panel-browser` | `left` (`right` with the browser on the right) | the browser |
+| `workspace-panel[kind="main"]` | `#panel-main` | `main` | the Launcher or the Arrangement |
+| `workspace-panel[kind="detail"]` | `#panel-detail` | `detail` | the detail area |
+| `separator[kind="views-bottom"]` | `#views-bottom` | `bottom` | the 1 px line under the views |
+| `status-bar` | — | `status` | the status bar |
+
+The default grid has four columns (the browser on the left, the views, the detail area stacked
+beside them, the browser on the right) and nine rows, one per area:
 
 ```css
-/* Wrong: leaves a browser-sized hole when the browser is closed. */
-#workspace { display:grid; grid-template-columns:248px minmax(0,1fr);
-             grid-template-rows:minmax(0,1fr) 200px; }
-/* Right: absent browser/detail panels have no fixed-size track. */
-#workspace { display:grid; grid-template-columns:auto minmax(0,1fr);
-             grid-template-rows:minmax(0,1fr) auto; }
-#panel-browser { grid-column:1; grid-row:1 / -1; width:248px; }
-#panel-main { grid-column:2; grid-row:1; }
-#panel-detail { grid-column:2; grid-row:2; height:200px; }
+window {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    "menu menu menu menu" "tabs tabs tabs tabs" "toolbar toolbar toolbar toolbar"
+    "top top top top" "notice notice notice notice"
+    "left main side right" "left detail detail right"
+    "bottom bottom bottom bottom" "status status status status";
+}
 ```
 
-The native workspace exposes `workspace` / `#workspace`, with `workspace-panel`
-children `#panel-browser`, `#panel-main`, `#panel-detail`. They contain the browser,
-Launcher/Arrangement and detail scopes respectively. Each panel paints its own box as every
-element does: a `background-color` under the view it holds and a border round it, in the room the
-border takes (none unless the sheet gives one), and the view goes in its content box. Authored layout declarations on
-these containers opt into CSS Flex/Grid geometry. With none, native splitters and layout
-remain in charge. Closed native panels do not become visible merely through CSS.
-In CSS layout mode, placement comes from the stylesheet. A panel whose size the sheet sets has no
-splitter; one whose size it leaves to the native grid (a layout with only gaps or margins) keeps
-its splitter in the gap beside it, and dragging it still sets the saved size. Which panels follow
-is found by laying the grid out again with their preferred sizes a point larger, not by a list of
-properties (#1240). The splitters are `divider` elements, `#detail-splitter` and
-`#browser-splitter`, with `:hover` and `:active`, in the native layout too, so a theme that owns
-the layout owns the strips in its gaps (#1252). The strip takes `background-color` and the detail
-splitter's grip `color`; without them the detail splitter keeps the control background and a
-hint-coloured grip, and the browser's the border colour, stronger under the pointer. Drawing,
-input clipping and drag/drop targets must use the same resolved rectangles. Removing those layout declarations restores the
-native arrangement and its saved sizes. Bars and floating windows remain host-managed.
+**What the app knows is an attribute on `window`:** `[detail="below"]` (the detail area under the
+view, beside the browser), `[detail="full-width"]` (under the view and the browser, Settings ›
+Devices › Detail area width) and `[detail="beside"]` (the devices stacked beside the view; a clip's
+editor still lies along the bottom, so a stacked area showing one is `below`); `[browser="left"]`
+or `[browser="right"]` while the browser shows; `[menu-bar]` while the window has its own menu
+bar. The user-agent sheet's grid reads them, and a theme's rules can too
+(`window[detail="beside"] #panel-detail { … }`). The closed detail area is
+`#panel-detail[closed]`.
+
+A closed detail area whose size the sheet sets is left out of the grid instead, since it would
+leave an empty hole: it then has no splitter, and opens again with its key or menu item. Its
+padding and border are not such a size: a closed area with them keeps its place, a box of its
+padding round an empty content box, and its splitter. A
+`grid-area` of `auto`, or one under an element without a template, places nothing.
+
+**A region that is not there has no element** (the menu bar turned off, the tabs of a single
+project, the hidden browser, the browser and the detail area on the start page), so its `auto`
+track is empty. A theme hides one with `display: none`, or with a template that lacks its area:
+an element whose `grid-area` names an area its parent's template does not is left out of the
+layout, with no implicit track.
+
+**Sizes.** A bar's height, a line's 1 px, the browser's saved width and the detail area's size
+are content sizes the app gives the elements: an `auto` size is the content size plus the
+element's padding and border, and a `width` or `height` in the sheet replaces it. The detail
+area's content size is the one its own rules give it: the height the user dragged, a track's
+devices at one height, the piano roll pulled to the top under the Arrangement view.
+
+**Splitters.** The panels' margins leave the gaps the splitters lie in (4 points beside the
+browser, 6 over the detail area or beside it). A panel whose size the sheet sets has no
+splitter; one the grid leaves to its content size keeps a `divider` in the gap beside it, and its
+drag sets the saved size. Which panels follow is found by laying the grid out again, one panel at
+a time, with no content size and with the window's whole room as its content size, not by a list
+of properties (#1240): a panel that grows between the two follows, so one the sheet only caps
+(`max-height`) keeps its splitter at its maximum and past it, and one whose size it sets does
+not. The answer depends on which regions are there and the window's size, not on the sizes of
+the frame. The closed
+detail area keeps its place with no size, so its splitter stays in the gap, to drag it open. The
+splitters are `divider` elements, `#browser-splitter` and `#detail-splitter`, with `:hover` and
+`:active`; every divider (a mixer strip's `#mixer-divider` too) drags and paints through one
+helper (`kit::divider`). The strip takes `background-color` and the detail splitter's grip
+`color`; without them the detail splitter keeps the control background and a hint-coloured grip,
+and the browser's the border colour, stronger under the pointer.
+
+**One set of rectangles.** Drawing, input clipping and drop targets use the rectangles the grid
+gives. A region the grid gives none draws nothing and takes no input. What a bar lays out past
+its rectangle (tabs past a narrowed `project-tabs`) is neither drawn nor takes the pointer. The
+Settings dialog keeps clear of the status bar wherever the grid puts it, and leaves it undimmed;
+a hidden status bar takes no room from it. A panel the grid lays over
+`#panel-main` (in the same cells) is drawn on a layer above the view, so it shows and takes the
+pointer there.
+
+Example: the status bar at the top, the toolbar under the views, no tabs:
+
+```css
+window {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto auto;
+  grid-template-areas:
+    "status status status status" "menu menu menu menu" "top top top top"
+    "notice notice notice notice" "left main side right" "left detail detail right"
+    "bottom bottom bottom bottom" "toolbar toolbar toolbar toolbar" "tabs tabs tabs tabs";
+}
+project-tabs { display: none; }
+```
+
+### The bars' rows
+
+The toolbar, the status bar, the project tabs, the application bar, the piano roll's toolbar and
+the MIDI tools' tab row each lay their items out in one CSS row (#1372), through one helper
+(`kit::native_css::row`). The app gives the items in its order, each with the size it measured
+(its content box, as for the window's regions), and the sheet sets the geometry: `gap`, `padding`,
+alignment, sizes, margins and `flex-grow`. CSS does not reorder them (no `order`). An item the
+sheet hides (`display: none`) is gone from input as well as painting. A sheet whose layout fails
+is laid out by the user-agent sheet alone, as the window's grid is. The items are laid out under
+the same elements around the bar as they paint under (the window, a view), so a rule such as
+`clip-editor piano-roll-toolbar { gap: 8px; }` or `window[menu-bar] #app-name { display: none; }`
+lays out as it paints; the window's regions are laid out under `body` too, as they paint
+(`body toolbar { … }`). The bar's own box is the one
+the window's grid gave it: a `width` or `height` on the bar here changes nothing (set it in the
+grid's tracks).
+
+| Bar | Its element | Its items |
+|---|---|---|
+| Toolbar | `toolbar` | `group#toolbar-start` and `group#toolbar-end` around `toolbar-module#transport` and `#position`; the modules by id (`#browser`, `#tempo`, `#signature`, `#keys`, `#grid`, `#count-in`, `#metronome`, `#mapping`, `#performance`, `#views`, `#agents`) |
+| Status bar | `status-bar` | `bar-item#status-message`, `bar-item#status-counts` |
+| Project tabs | `project-tabs` | a `project-tab` per open project, `[selected]` on the one shown; its close button is inside it |
+| Application bar | `application-bar` | `group#app-bar-start`, `#app-bar-centre`, `#app-bar-end`; `bar-item#app-name`, `#project-name`, `#project-timing` |
+| Piano roll's toolbar | `piano-roll-toolbar[size]` | `piano-tool` buttons by id (`#piano-select` … `#piano-hide`, `#piano-edit` for the folded clipboard), `separator[kind="bar"]`, `group#piano-roll-rows` with `#piano-fold`, `#piano-scale`, `#piano-highlight`, a `flexible-space`, `bar-item#piano-roll-workflow`, `#piano-roll-ghosts`, `#piano-roll-grid` |
+| MIDI tools' tabs | `tab-row` | `editor-tab#tab-notes`, `#tab-transform`, `[checked]` on the one shown |
+
+Every item that has an id has a `kind` attribute equal to it, as it lays out and as it paints,
+which the user-agent sheet selects (it uses no ids); the project tabs, one per project, have no
+id and so no `kind` (select `project-tab` and `[selected]`). An item's text keeps the colour the app gives it by
+state (an error in the status bar, the tab shown) unless a rule gives the item a `color` of its
+own, even one equal to the bar's (`status-bar, #status-message { color: white; }`) or one a
+keyframe animation gives it; the bar's `color`, which the items inherit, does not replace it. The
+piano roll's Rows toggles (Fold, Scale, Highlight) draw with the selection colours of the
+palette, not an item `color`. The items of a group are drawn in the
+group's scope, so a rule through the group (`#app-bar-start > bar-item { … }`) reaches them and a
+group that hides its overflow cuts them. What a bar, a group, a module or a tab hides by
+`overflow` takes no input either, and a tab or button taller than its bar takes input only inside
+it. A button's `[checked]` state (the chosen tool) is part of its layout, as of its painting.
+The user-agent sheet lays each bar out as Suhina's own layout did: `display: flex` and
+`align-items: center` on the bars and groups, `flex-shrink: 0` on items (an item keeps its width),
+`flex: 1` on a `flexible-space`. The toolbar's start and end groups share the room left over
+(`flex: 1`, the end `justify-content: flex-end`), so the transport and the position stay in the
+middle; the application bar's start and end groups do the same round its centre. The settings
+that put the app's name or the project's information in the centre of the application bar move
+those items to `#app-bar-centre`. `piano-roll-toolbar[size]` is `normal`, `large` or `larger`
+(the *Toolbar size* setting), and its gap grows with it.
+
+**Giving way.** A bar too narrow for its items takes a sparser set of them, in the app's order,
+until one fits: an item fits when it has the width the app measured and lies inside its group or
+the bar's content box; a `width` the sheet gives an item is its own, not a lack of room. The
+toolbar takes away the captions of Quantize and Count-in, then the
+count-in and the metronome, then the agents, the mapping button, the RAM and the CPU; its start
+may run under the middle once it has left out all it can. The piano roll's toolbar gives way as
+`docs/spec/ui-clip-editor.md` › Layout says. When nothing fits, the sparsest set is drawn and
+clipped. A theme's `toolbar` order (`theme.json`) is laid out as it is, flat, with no giving way.
+
+**What is not an item.** The window's buttons on Windows (minimize, maximize, close) keep their
+own 96 points at the application bar's right end, outside its row, as the title bar is outside the
+window's grid: a theme cannot move, shrink or hide them. The row lies in the rest of the bar.
+
+**Not a row.** The MIDI tools' body is a column of fields, not a row of items: it keeps its own
+layout, styled through `midi-tools` (› the element reference).
 
 ### Readable values
 
@@ -910,14 +1069,8 @@ stylesheet. The *Theme style sheet* section of the editor lists the sheet's noti
 
 The native engine
 computes variables, layers, inheritance, colours, value expressions and viewport
-media conditions for class scopes. Taffy computes Flex/Grid rectangles for the actual
-visible toolbar modules (`#tempo`, `#transport`, etc.); the same rectangles bound their
-native input targets. The host still defines toolbar height. A stylesheet without
-toolbar layout declarations leaves the ordinary toolbar arrangement intact. The toolbar's own
-`padding` and border are not layout declarations: they pad Suhina's toolbar, whose contents go
-in its content box, and only its other layout properties (`display`, flex and grid properties,
-`gap`, sizes) or its modules' (placement, `order`) switch to the CSS layout (#1336); a customized
-bar scrolls horizontally when it exceeds the window. The bounded retained scope tree
+media conditions for class scopes. Taffy lays out the window's grid and the bars' rows
+(› The bars' rows); the same rectangles bound their native input targets. The bounded retained scope tree
 exposes actual ancestry and siblings. Launcher mixer and track-header scopes carry stable
 `[data-object="track-N"]` identities. Clip, scene and slot roles also expose their native
 project identities. Controls
@@ -1055,8 +1208,8 @@ These native parts take the sheet (the theme package README lists every selector
 - **Ruler, loop region, play position:** `ruler` (background, `color`, `border-color`;
   artwork `ruler`), `loop-region` (`[checked]` while looping; `height`; artwork `loop-region`,
   `.on`), `playhead` (`color`, `width`; `width: 0` hides it).
-- **Clips:** `--clip-colour`; `[selected]`, `[muted]` (turned off or on a muted track; grey from
-  the user-agent sheet, the host draws its colour down the leading edge and a mute mark before the
+- **Clips:** `[color]`; `[selected]`, `[muted]` (turned off or on a muted track; grey from the
+  user-agent sheet, the host draws its colour down the leading edge and a mute mark before the
   name of a clip turned off itself), `[playing]` (the play position inside the
   clip while the transport runs), `[recording]` (a recording span over it on its track);
   `clip-gain`, `clip-fade-handle` (artwork `clip.fade-handle`).
@@ -1077,8 +1230,8 @@ These native parts take the sheet (the theme package README lists every selector
   `piano-key-line` and `piano-scale-mark` (their backgrounds); `piano-scale-strip` (background,
   `border-color`, `color`) and `piano-range` (background, `border-color`: the range a drag on the
   keys is selecting), `piano-clip-strip` (the background of the strip that shows several picked clips), `piano-time-selection` (background over the rows, `border-color` for its edges
-  and the bar on the ruler) and `piano-insert-mark` (background). What the sheet sets wins over the key style chosen in the piano roll; `piano-note` with
-  `--clip-colour`, `[selected]` and `[muted]` (background, border, radius, `color` for its name),
+  and the bar on the ruler) and `piano-insert-mark` (background). What the sheet sets wins over the key style chosen in the piano roll; `piano-note` inside
+  the `piano-roll`'s `[color]`, with `[selected]` and `[muted]` (background, border, radius, `color` for its name),
   `velocity` (`color` of the stems), `ruler`; the tool buttons `piano-tool` with
   `#piano-<tool>` ids, `[checked]` and artwork `piano.<tool>`; `midi-tools`, `clip-info`,
   `editor-tab` (`#tab-clip`, `#tab-devices`, and the MIDI tools part's `#tab-notes` and `#tab-transform`; `[checked]`).
@@ -1092,7 +1245,7 @@ These native parts take the sheet (the theme package README lists every selector
 - **Pan field:** the native field takes `pan` and `#mixer-pan` colours.
 
 **New clip colour** (Settings › Arrangement › Tracks): *Track colour* (default) gives a new
-clip its track's colour; *Theme default* the theme's MIDI or audio clip default. Arming an
+clip its track's colour; *By clip type* Suhina's MIDI or audio colour. Arming an
 audio track while the audio device has no input says so in the status bar.
 
 
@@ -1150,9 +1303,8 @@ of bars, and a slider id per parameter.
   `track-number` (placed as `arrangement-number` when `arrangement-enable` is hidden),
   `#control-automation` (artwork `automation`), `fold` (artwork `fold`), `#control-monitor`
   (artwork `monitor`, placed as `arrangement-monitor`).
-- **Artwork variables:** before rasterising, the variables Suhina sets in scope
-  (`--track-colour`, `--track-fill`, `--clip-colour`) are laid over the theme's root variables;
-  the texture cache keys on them.
+- **Artwork variables:** before rasterising, `var()` in artwork takes the theme's resolved root
+  variables; a track's colour reaches artwork as `currentColor`.
 - **Knob values:** `value-position` (`right` by default, `left`, `top`, `bottom`,
   `inside`, `none`); `none` hides a level bar's value. Mixer sends default to `bottom`.
 - **Sizes:** `send { width; height }` within the sends row; `track-height` (20–400

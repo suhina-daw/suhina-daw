@@ -190,13 +190,12 @@ pub(super) fn track_header(
     let mut work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement track header");
     let own = crate::kit::element::TRACK_HEADER
         .id(&format!("track-{}", lane.track.0))
-        .variable("--track-colour", crate::kit::native_css::hex(rgb(lane.color)))
+        .color(rgb(lane.color))
         .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track))
         .attr(crate::kit::element::Muted, lane.mute)
         .attr(crate::kit::element::Armed, lane.armed)
         .enter();
     work_trace.mark("style");
-    let _artwork = crate::kit::artwork::track_color(rgb(lane.color));
     // What the header holds goes in its content box, inside its border and padding (#1336), and
     // its rows are as tall as that box allows.
     let inside = own.content_in(rect);
@@ -293,13 +292,13 @@ pub(super) fn track_header(
         let surface = colour_surface(background, rgb(lane.color), strength);
         if selected { motion::mix(surface, theme::text_primary(), 0.07) } else { surface }
     };
-    if !crate::kit::skin::paint_colored(
+    if !crate::kit::skin::paint_in_view(
         painter,
         rect,
         "track.body",
         crate::kit::skin::State::response(&body, selected),
-        header_fill,
-        rgb(lane.color),
+        // Artwork's `currentColor`: the header's own `color` where the sheet gives one.
+        own.own_color_or(header_fill),
     ) {
         painter.rect_filled(rect, 0.0, header_fill);
     }
@@ -588,18 +587,14 @@ pub(super) fn track_header(
     };
     name = crate::kit::control_layout::place("arrangement-name", name, clip);
     let name_visible = !crate::kit::control_layout::placement("arrangement-name").hidden;
-    let name_style = crate::kit::element::TRACK_NAME
-        .id(&format!("track-{}", lane.track.0))
-        .variable("--track-fill", crate::kit::native_css::hex(header_fill))
-        .enter();
+    let name_style = crate::kit::element::TRACK_NAME.id(&format!("track-{}", lane.track.0)).enter();
     if name_visible {
-        crate::kit::skin::paint_colored(
+        crate::kit::skin::paint_in_view(
             painter,
             name,
             "track.name",
             crate::kit::skin::State::response(&body, selected),
-            header_fill,
-            rgb(lane.color),
+            name_style.own_color_or(header_fill),
         );
         // The sheet's own background for the name (`arrangement track-name`).
         name_style.paint(painter, name.intersect(clip));

@@ -417,3 +417,91 @@ fn manual_map_updates_reach_live_playback_and_keep_the_held_voice() {
     let heads = session.player().unwrap().meter_monitor().sample_positions(TrackId(1), 0);
     assert!(heads.into_iter().flatten().any(|p| (p - 0.7).abs() < 0.01), "new notes use the edited map");
 }
+
+/// What a note move costs with `samplers` Samplers that each hold a 4 s sample: the median of 50
+/// `note.move` commands, each followed by a block so the renderer takes the new graph (#1396).
+#[allow(clippy::unwrap_used)] // a test helper outside #[test] functions
+fn note_move_cost(samplers: usize, rate: u32) -> std::time::Duration {
+    let ids = 1..=samplers.max(1) as u32;
+    let mut project = Project {
+        tracks: ids
+            .clone()
+            .map(|i| Track {
+                content: ContentKinds { notes: true, audio: false },
+                channel: Some(ChannelId(i)),
+                ..Track::new(TrackId(i), "Keys")
+            })
+            .collect(),
+        channels: ids.clone().map(|i| Channel::new(ChannelId(i), "Keys")).collect(),
+        contents: vec![ClipContent {
+            id: ContentId(1),
+            name: "Notes".into(),
+            length: 4.0,
+            lanes: vec![ContentLane {
+                target: None,
+                data: LaneData::Notes(vec![Note::new(0.0, 1.0, 60, 0.8), Note::new(1.0, 1.0, 64, 0.8)].into()),
+            }]
+            .into(),
+            extensions: Extensions::default(),
+            scale: None,
+        }],
+        arrangement: Arrangement {
+            lanes: vec![ArrangementLane {
+                id: Default::default(),
+                name: "Keys".into(),
+                track: Some(TrackId(1)),
+                clips: vec![Clip::new(ContentId(1), 0.0, 4.0)],
+            }],
+            markers: Default::default(),
+            takes: Vec::new(),
+        },
+        ..Project::default()
+    };
+    let mut session = Session::new(project.clone());
+    for i in 1..=samplers {
+        session.execute("device.add", &json!({"track":i,"id":"sampler"})).unwrap();
+    }
+    project = suhina_test_support::with_ids(session.project().clone());
+    for channel in project.channels.iter_mut().take(samplers) {
+        channel.devices[0].set_sample_file("source.wav");
+    }
+    let mut pool = suhina_engine::AudioPool::default();
+    pool.files.insert(
+        "source.wav".into(),
+        std::sync::Arc::new(suhina_engine::AudioData {
+            sample_rate: 48000,
+            channels: 2,
+            samples: (0..4 * 48000 * 2).map(|i| (i as f32 * 0.01).sin() * 0.5).collect(),
+        }),
+    );
+    let mut renderer = suhina_engine::Renderer::stopped(&project, &pool, rate, suhina_session::devices()).unwrap();
+    let controller = renderer.controller();
+    let mut session = Session::new(project);
+    session.set_audio(pool);
+    session.attach_player(suhina_session::Player::new(controller, None));
+    let mut buffer = [0.; 256];
+    renderer.process(&mut buffer);
+    let mut times: Vec<_> = (0..50)
+        .map(|i| {
+            let beats = if i % 2 == 0 { 0.5 } else { -0.5 };
+            let began = std::time::Instant::now();
+            session.execute("note.move", &json!({"track":1,"index":0,"notes":[0],"beats":beats})).unwrap();
+            let took = began.elapsed();
+            renderer.process(&mut buffer);
+            took
+        })
+        .collect();
+    times.sort();
+    times[times.len() / 2]
+}
+
+#[test]
+#[ignore = "a measurement; run in release with --ignored --nocapture"]
+fn note_move_cost_with_samplers() {
+    println!("| Samplers | 48 kHz | 44.1 kHz |");
+    println!("|---|---|---|");
+    for samplers in [0, 1, 2, 4] {
+        let at = |rate| note_move_cost(samplers, rate).as_secs_f64() * 1e3;
+        println!("| {samplers} | {:.2} ms | {:.2} ms |", at(48_000), at(44_100));
+    }
+}

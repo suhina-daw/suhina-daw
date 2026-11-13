@@ -114,10 +114,10 @@ const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA
 fn png_control_artwork_round_trips_and_live_corruption_preserves_saved_theme() {
     let root = folder("png-artwork");
     let mut theme = styled();
-    theme.skin.assets.insert("track.name.color-00ff00.frame-0".into(), PNG.into());
+    theme.skin.assets.insert("track.name.hover.frame-0".into(), PNG.into());
     let mut files = ThemeFiles::new(Some(root.join("themes")));
     files.write("portable", &theme).unwrap();
-    let png = root.join("themes/portable/assets/track.name.color-00ff00.frame-0.png");
+    let png = root.join("themes/portable/assets/track.name.hover.frame-0.png");
     assert_eq!(std::fs::read(&png).unwrap(), skin::decode_png(PNG).unwrap());
     assert!(same_look(&files.read_all().0[0].theme, &theme));
     let package = portable_package_files("portable", &theme).unwrap();
@@ -126,13 +126,13 @@ fn png_control_artwork_round_trips_and_live_corruption_preserves_saved_theme() {
     write_zip(&zip, &package).unwrap();
     let mut imported = ThemeFiles::new(Some(root.join("imported")));
     imported.import(&zip).unwrap();
-    assert_eq!(imported.read_all().0[0].theme.skin.assets["track.name.color-00ff00.frame-0"], PNG);
+    assert_eq!(imported.read_all().0[0].theme.skin.assets["track.name.hover.frame-0"], PNG);
     let replacement = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4H6r0HwAGQwJ299oQdAAAAABJRU5ErkJggg==";
     std::fs::write(&png, skin::decode_png(replacement).unwrap()).unwrap();
     files.checked = None;
     let (changed, warnings) = files.changed();
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(changed[0].theme.skin.assets["track.name.color-00ff00.frame-0"], replacement);
+    assert_eq!(changed[0].theme.skin.assets["track.name.hover.frame-0"], replacement);
     let css = root.join("themes/portable/theme.css");
     let saved = std::fs::read(&css).unwrap();
     std::fs::write(&png, b"\x89PNG\r\n\x1fcorrupt").unwrap();
@@ -307,6 +307,11 @@ fn a_json_theme_migrates_keeping_its_comments_and_its_originals() {
     std::fs::create_dir_all(themes.join("old/assets")).unwrap();
     let mut json: serde_json::Value = serde_json::from_str(&theme.to_json()).unwrap();
     json["stylesheet"] = serde_json::json!("old/style.css");
+    // Earlier versions wrote the track colours into every theme; tracks keep their own now, and
+    // the theme still converts (#1020).
+    for key in ["track.1", "track.8", "clip.midiDefault", "clip.audioDefault"] {
+        json["colors"][key] = serde_json::json!("#FF9A3C");
+    }
     json["advanced-stylesheet"] = serde_json::json!("old/advanced.css");
     if let Some(skin) = json["skin"].as_object_mut() {
         skin.remove("css");
@@ -345,7 +350,10 @@ fn a_theme_css_of_the_earlier_form_migrates_with_its_advanced_sheet() {
     std::fs::create_dir_all(themes.join("earlier")).unwrap();
     let mut theme = styled();
     theme.skin.segments = 40;
-    let previous = format!("@import \"advanced.css\";\n/* My notes */\n{}", theme_css::export(&theme));
+    let previous = format!(
+        "@import \"advanced.css\";\n/* My notes */\n{}:root {{ --track-1: #FF9A3C; --clip-midiDefault: #4FC3F7; }}\n",
+        theme_css::export(&theme)
+    );
     std::fs::write(themes.join("earlier/theme.css"), &previous).unwrap();
     std::fs::write(themes.join("earlier/advanced.css"), "@layer mine { browser { opacity: .9; } }\n").unwrap();
     std::fs::create_dir_all(themes.join("earlier/assets")).unwrap();

@@ -185,9 +185,10 @@ fn digs(session: &mut Session, renderer: &mut Renderer, deadline: Instant) -> su
 
 #[test]
 fn an_export_gathers_its_states_over_frames_without_the_window_waiting() {
-    // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
+    // Its lanes, clips and track colours are filled, as a session fills them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
+    opened.fill_track_colours();
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
@@ -234,7 +235,7 @@ fn an_export_gathers_its_states_over_frames_without_the_window_waiting() {
 
 #[test]
 fn a_gather_keeps_the_reads_across_a_project_switch() {
-    // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
+    // Its lanes, clips and track colours are filled, as a session fills them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
     // The project's saved state is the default gain; the plug-in loads with it.
@@ -323,9 +324,10 @@ fn until_with_projects(
 
 #[test]
 fn a_cancelled_gather_starts_nothing_on_a_late_reply() {
-    // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
+    // Its lanes, clips and track colours are filled, as a session fills them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
+    opened.fill_track_colours();
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
@@ -361,7 +363,7 @@ fn a_cancelled_gather_starts_nothing_on_a_late_reply() {
 
 #[test]
 fn a_gather_past_its_deadline_says_which_plug_in_did_not_answer() {
-    // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
+    // Its lanes, clips and track colours are filled, as a session fills them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
@@ -458,9 +460,10 @@ fn until(session: &mut Session, renderer: &mut Renderer, what: &str, mut done: i
 
 #[test]
 fn an_export_plays_the_running_plug_ins_state_without_a_project_change() {
-    // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
+    // Its lanes, clips and track colours are filled, as a session fills them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
+    opened.fill_track_colours();
     let dry = render_offline(&opened, SR, 256, suhina_session::devices()).unwrap();
     let peak = |samples: &[f32]| samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
     assert!(peak(&dry) > 0.1, "the notes sound: {}", peak(&dry));

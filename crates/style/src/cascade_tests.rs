@@ -162,6 +162,8 @@ fn keyframes_resolve_for_each_element_with_its_variables() {
     assert_eq!(frames.iter().map(|f| f.0).collect::<Vec<_>>(), [0.0, 0.5, 1.0]);
     assert_eq!(frames[2].1[0], (Property::Color, Value::Color(Color::Rgba([0, 0, 255, 255]))));
     assert!(styles[2].authored(Property::Opacity), "a keyframe-only property counts as written");
+    assert!(styles[2].declared(Property::Color), "a keyframe's property is the element's own");
+    assert!(!styles[1].declared(Property::Color));
     assert!(styles[1].animations().is_empty());
     // An unknown name animates nothing; a bad offset is a notice.
     let sheet = Sheet::parse("knob { animation: missing 1s; } @keyframes x { 200% { color: red; } }").unwrap();
@@ -210,26 +212,6 @@ fn host_properties_and_bad_property_rules_do_not_break_a_sheet() {
     assert_eq!(sheet.notices.len(), 1, "{:?}", sheet.notices);
     assert!(sheet.notices[0].message.contains("initial-value"));
     assert_eq!(sheet.properties.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["--y"]);
-}
-
-#[test]
-fn a_host_variable_is_inherited_and_a_rule_may_replace_it() {
-    use crate::selector::{Element, Tree};
-    let sheet =
-        Sheet::parse(".name { color: var(--track-colour); } .plain .name { --track-colour: #000000; }").unwrap();
-    let mut track = Element::new("div", None);
-    track.classes.push("track".into());
-    track.variables.push(("--track-colour".into(), "#ff8800".into()));
-    let mut name = Element::new("div", Some(0));
-    name.classes.push("name".into());
-    let tree = Tree::new(vec![track, name]).unwrap();
-    let styles = compute(
-        &tree,
-        Viewport { width: 800.0, height: 600.0, reduced_motion: false },
-        &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }],
-    )
-    .unwrap();
-    assert_eq!(styles[1].get(Property::Color), Value::Color(crate::value::Color::Rgba([0xff, 0x88, 0, 0xff])));
 }
 
 #[test]
@@ -392,4 +374,19 @@ fn a_user_agent_rule_on_a_child_is_not_authored_though_its_parent_is() {
     assert!(!styles[2].authored(Property::Color));
     assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 176, 0, 255])));
     assert!(styles[3].authored(Property::Color));
+}
+
+#[test]
+fn a_property_a_rule_wrote_on_the_element_is_declared_not_inherited() {
+    let tree =
+        Tree::new(vec![Element::new("window", None), Element::new("knob", Some(0)), Element::new("knob", Some(0))])
+            .unwrap();
+    let theme = Sheet::parse("window, knob:last-child { color: #ffb000; }").unwrap();
+    let styles =
+        compute(&tree, viewport(800.0), &[AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None }]).unwrap();
+    // The first knob inherits the window's colour; the second writes the same one itself.
+    assert_eq!(styles[1].get(Property::Color), styles[2].get(Property::Color));
+    assert!(styles[1].authored(Property::Color) && !styles[1].declared(Property::Color));
+    assert!(styles[2].declared(Property::Color));
+    assert!(styles[0].declared(Property::Color));
 }

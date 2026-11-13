@@ -3,9 +3,10 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-13
+last_verified: 2026-11-14
 covers:
   - crates/session/src/commands.rs
+  - crates/session/src/colours.rs
   - crates/ui/src/arrangement/timeline.rs
   - crates/ui/src/arrangement/arrangement_view.rs
   - crates/ui/src/arrangement/automation_lanes.rs
@@ -170,14 +171,19 @@ selected tracks, in their order, one undo step each (Tracks, #919). A time selec
 afterwards, in the lanes or on the ruler, or a click in a lane takes these keys back from the
 tracks: they then act on the painted time, until a header is clicked again (#1199). The
 header shows its track's colour strongly (60 % over the panel); a selected track's is brighter
-and more saturated, with an outline in it. A track keeps the colour it shows when tracks are
-added, removed or moved: one without a colour of its own (from a project saved before tracks
-stored theirs) gets its place's palette colour stored then, in the same undo step. A new track
-gets a colour stored as it is made, by Settings › Arrangement › Tracks › **New track colour**:
-*By clip type* gives an audio track the default audio clip colour and every other track the
-default MIDI clip colour; *One colour* gives every new track the default MIDI clip colour. These
-two defaults are the theme's `clip.midiDefault` and `clip.audioDefault` for now; #1020 takes
-them out of the theme. A track never takes its colour from its place, so tracks made one after
+and more saturated, with an outline in it. Every track has a colour of its own: one saved without
+(a project from before tracks stored theirs) is given Suhina's fixed colour for its place when
+the project is opened (orange, yellow, light blue, violet in turn, the same in every theme),
+which is not an edit, so a copy of it, a group's colour and every view show the same. A track
+keeps its colour when tracks are added, removed or moved. A new
+track gets a colour stored as it is made, by Settings › Arrangement › Tracks › **New track
+colour**: *By clip type* gives an audio track Suhina's audio colour (orange `#FF9A3C`) and every
+other track its MIDI colour (light blue `#4FC3F7`); *One colour* gives every new track the MIDI
+colour. A new clip takes its track's colour, or with **New clip colour** › *By clip type* the
+MIDI or audio colour for its content. These colours are Suhina's own, never the theme's, and the
+CLI and MCP give them too. A track's colour is saved as `"color": "#RRGGBB"`, the final colour.
+*Not yet:* a palette slot for a colour picked from a palette (#1025), saved beside `color` as a
+key of its own, so that the files read today keep reading. A track never takes its colour from its place, so tracks made one after
 another can share a colour.
 
 ## Clip colours

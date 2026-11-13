@@ -22,6 +22,7 @@
 //! painted over them.
 
 use egui::{Color32, Painter, Rect, Response};
+use suhina_style::property::Property;
 
 use super::native_css::HostState;
 
@@ -110,7 +111,6 @@ impl Name {
             attributes: Vec::new(),
             sheet: None,
             native: Native::default(),
-            variables: Vec::new(),
         }
     }
     /// The element with the id the app gives it (`play`, `device-compressor`); the registry
@@ -147,10 +147,6 @@ impl Name {
     pub fn pointer<'a>(self, hovered: bool, pressed: bool, disabled: bool) -> Builder<'a> {
         self.builder().pointer(hovered, pressed, disabled)
     }
-    /// The element with the custom property `name` (`--track-colour`) for the sheet.
-    pub fn variable<'a>(self, name: &'static str, value: String) -> Builder<'a> {
-        self.builder().variable(name, value)
-    }
     /// The style of a drawn item of this element, with nothing more said about it.
     pub fn style(self) -> Option<Computed> {
         self.builder().style()
@@ -176,7 +172,6 @@ pub struct Builder<'a> {
     /// Attributes with a value the app gives the element besides its colour (`kind`).
     attributes: Vec<(&'static str, &'a str)>,
     native: Native,
-    variables: Vec<(&'static str, String)>,
 }
 
 impl<'a> Builder<'a> {
@@ -225,15 +220,10 @@ impl<'a> Builder<'a> {
         self.native = native;
         self
     }
-    /// A custom property the element gives the sheet and its descendants (`--track-colour`).
-    pub fn variable(mut self, name: &'static str, value: String) -> Self {
-        self.variables.push((name, value));
-        self
-    }
 
     /// Puts the element in the style tree and the palette scope until the value is dropped.
     pub fn enter(self) -> Entered {
-        let Self { name, id, response, states, pointer, color, attributes, native, variables, sheet } = self;
+        let Self { name, id, response, states, pointer, color, attributes, native, sheet } = self;
         let sheet_wake = sheet.clone();
         let scope = super::style_class::enter_inner(name, id, response, |node| {
             super::native_css::mark_node_bits(node, pointer);
@@ -247,9 +237,6 @@ impl<'a> Builder<'a> {
             }
             for (attribute, value) in attributes {
                 super::native_css::set_attribute(node, attribute, value.to_owned());
-            }
-            for (variable, value) in variables {
-                super::native_css::set_variable(node, variable, value);
             }
             if let Some((ctx, source)) = sheet {
                 super::native_css::device_sheet(Some(node), &ctx, Some(source));
@@ -442,6 +429,16 @@ impl Entered {
         self.finish();
     }
 
+    /// Where input may reach inside `rect`, the element's box: its padding box when it hides its
+    /// overflow (what its contents paint outside it is cut, and takes no click either), else
+    /// everywhere.
+    pub fn input_clip(&self, rect: Rect) -> Rect {
+        match self.style() {
+            Some(style) if style.hides_overflow() => shrink(rect, style.border_sides),
+            _ => Rect::EVERYTHING,
+        }
+    }
+
     /// The element's content box in `rect`: `rect` less its border and `padding`, for an element
     /// painted in part (a header scrolled partly out of view) whose contents follow its whole box.
     pub fn content_in(&self, rect: Rect) -> Rect {
@@ -463,6 +460,18 @@ impl Entered {
     /// The element's `color`, or `fallback` where the sheet sets none.
     pub fn color_or(&self, fallback: Color32) -> Color32 {
         self.style().filter(|s| s.authored.color).map_or(fallback, |s| s.color)
+    }
+
+    /// The element's `color` where a rule gives it one of its own, not the one it inherits (a
+    /// bar's `color` on its items), even when it equals the inherited one; else `fallback`, a
+    /// colour the app gives by state (an error, the shown tab).
+    pub fn own_color_or(&self, fallback: Color32) -> Color32 {
+        self.style().filter(|own| own.declared(Property::Color)).map_or(fallback, |own| own.color)
+    }
+
+    /// The element's node in this frame's style tree, while it is entered.
+    pub(crate) fn node(&self) -> Option<usize> {
+        self.scope.node
     }
 
     /// The element's computed `color`, the user-agent tier's included: for an element whose
@@ -593,16 +602,21 @@ names! {
     MENU_BAR = "menu-bar";
     MENU = "menu";
     PROJECT_TABS = "project-tabs";
+    PROJECT_TAB = "project-tab";
     TOOLBAR = "toolbar";
     TOOLBAR_MODULE = "toolbar-module";
+    GROUP = "group";
+    FLEXIBLE_SPACE = "flexible-space";
+    BAR_ITEM = "bar-item";
     STATUS_BAR = "status-bar";
-    WORKSPACE = "workspace";
+    NOTICE_BAR = "notice-bar";
     WORKSPACE_PANEL = "workspace-panel";
     DIVIDER = "divider";
     BROWSER = "browser";
     BROWSER_PLACE = "browser-place";
     BROWSER_ROW = "browser-row";
     BROWSER_PLAY = "browser-play";
+    BROWSER_ICON = "browser-icon";
     BROWSER_TAG_DOT = "browser-tag-dot";
     BROWSER_PREVIEW_WAVE = "browser-preview-wave";
     SESSION = "session";
@@ -616,6 +630,7 @@ names! {
     TRACK_NUMBER = "track-number";
     FOLD = "fold";
     ADD_TRACK = "add-track";
+    TRACK_LANE = "track-lane";
     CLIP = "clip";
     CLIP_NAME = "clip-name";
     CLIP_WAVEFORM = "clip-waveform";
@@ -633,6 +648,7 @@ names! {
     CLIP_EDITOR = "clip-editor";
     EDITOR_TAB = "editor-tab";
     PIANO_ROLL = "piano-roll";
+    PIANO_ROLL_TOOLBAR = "piano-roll-toolbar";
     PIANO_GRID = "piano-grid";
     PIANO_ROW = "piano-row";
     PIANO_ROW_BLACK = "piano-row-black";
@@ -652,6 +668,7 @@ names! {
     VELOCITY = "velocity";
     PIANO_TOOL = "piano-tool";
     MIDI_TOOLS = "midi-tools";
+    TAB_ROW = "tab-row";
     CLIP_INFO = "clip-info";
     SAMPLE_MAP = "sample-map";
     SAMPLE_POINT = "sample-point";

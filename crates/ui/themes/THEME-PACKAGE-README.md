@@ -257,8 +257,7 @@ Its theme-owned liquid strengths are 48/24/12 for panels/tracks/clips. Actual li
 requires animations and a supported GPU renderer; ordinary alpha/CSS materials
 remain available with OpenGL or adapters without linear texture-view aliases.
 **Suhina Blocks** has brown plank CSS and original pixel SVGs, with no landscape
-or background PNG. Eight raw track colours choose distinct `track.body.color-RRGGBB`
-textures. `track-column { track-artwork: on; }` extends body
+or background PNG. `track-column { track-artwork: on; }` extends body
 artwork behind Launcher slots; empty cells preserve it and native clip launches remain
 unchanged. `off`/omission preserves native fills. Native custom properties inherit
 from the nearest authored ancestor, and a closer scope can override them.
@@ -299,20 +298,23 @@ also connected (`arrangement-fold`, `arrangement-enable`, `arrangement-automatio
 Individual send slots use `mixer-send-1` and `arrangement-send-1`, then `-2`, etc.,
 following native return order. Launcher sends stay inside their movable sends region.
 
-Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds. Exact raw
-track colours choose variants independently of selection/mute tint:
+Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds, with a
+variant for a state if you like. Artwork is not chosen by a track's colour; an SVG that draws in
+`currentColor` takes the track's colour as Suhina draws it (dimmed while muted, and grey in a
+muted track's arrangement header), or the element's
+own `color` where your sheet gives one, which a rule can take from the track's colour (see
+*Tracks* below):
 
 ```css
 track.name { image: url("assets/name.svg"); }
-track.name.color-00ff00 { image: url("assets/green-name.svg"); }
-track.name.color-00ff00.hover { image: url("assets/green-name-hover.svg"); }
+track.name.hover { image: url("assets/name-hover.svg"); }
 window { artwork-fps: 12; }
 ```
 
 For an image sequence, supply contiguous `.frame-0`, `.frame-1`, … keys for that
-variant (at most 32 frames), e.g. `track.name.color-00ff00.hover.frame-0`.
+variant (at most 32 frames), e.g. `track.name.hover.frame-0`.
 Frame rate is 1–30 fps (`window { artwork-fps: 12; }` in `theme.css`). With native animations off,
-the first frame stays visible without continuous repainting. Colour/state defaults
+the first frame stays visible without continuous repainting. State variants
 fall back to the role's normal artwork and then Suhina's embedded original.
 PNG artwork retains authored colours and transparency rather than applying `currentColor`.
 Each PNG is limited to 8 MiB compressed, 4096 pixels per axis and 4 million pixels;
@@ -443,7 +445,7 @@ Portable exports include inherited artwork so another machine receives the same 
 | Meters | `continuous`, `segmented` (4–64 segments), `needle`, signal-driven `frames`; signal remains dBFS |
 | Materials | Optional bounded PNG background, opacity/blur; panel/track/clip gradient and liquid settings |
 | Toolbar | Native layout plus anchored offsets, explicit order/visibility, connected Flex/Grid |
-| Workspace | CSS layout of `#panel-browser`, `#panel-main`, `#panel-detail` under `#workspace` |
+| Window | One CSS grid of the bars and the panels on `window`, which a theme rearranges |
 | Styles | Connected foreground/font size/radius, linear/radial/conic and repeating gradients, bounded inset/outset box shadows and shared native text shadows |
 | Motion | Connected paint transitions/keyframes; native animation-off/high-contrast settings suppress motion |
 | Selectors | Retained native class tree, child/sibling matching, connected hover/active/disabled/focus states, named object identities |
@@ -453,28 +455,47 @@ Portable exports include inherited artwork so another machine receives the same 
 ```css
 browser { color: #D8E8DF; background-color: #101C17;
            background-image: linear-gradient(135deg, #243A30, #101C17); }
-#workspace { display: grid; grid-template-columns: auto minmax(0, 1fr);
-             grid-template-rows: minmax(0, 1fr) auto; gap: 8px; }
-#panel-browser { grid-column: 1; grid-row: 1 / -1; width: 240px; }
-#panel-main { grid-column: 2; grid-row: 1; }
-#panel-detail { grid-column: 2; grid-row: 2; height: 180px; }
+#panel-browser { grid-area: right; margin: 0 0 0 8px; width: 240px; }
+#panel-detail { height: 180px; }
 ```
+
+**The window is one grid** on `window`: the bars, the lines over and under the views and the
+three panels are its children, in named areas that Suhina's own sheet states, so with no rule of
+yours the window looks as it always has. Give an element another `grid-area`, or rewrite
+`window`'s `grid-template-areas`, to move it; `display: none`, or a template without its area,
+hides it. The areas are `menu`, `tabs`, `toolbar`, `top` (the line over the views), `notice`,
+`left` and `right` (the browser's sides), `main`, `side` (the detail area stacked beside the view),
+`detail`, `bottom` (the line under the views) and `status`. The status bar at the top and the
+toolbar under the views:
+
+```css
+window {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto auto;
+  grid-template-areas:
+    "status status status status" "menu menu menu menu" "top top top top"
+    "notice notice notice notice" "left main side right" "left detail detail right"
+    "bottom bottom bottom bottom" "toolbar toolbar toolbar toolbar" "tabs tabs tabs tabs";
+}
+```
+
+The settings that change the layout are attributes on `window`, which your rules can read:
+`[detail="below"]`, `[detail="full-width"]` or `[detail="beside"]` (where the detail area lies),
+`[browser="left"]` or `[browser="right"]` while the browser shows, and `[menu-bar]` while the
+window has its own menu bar. A panel is a `workspace-panel` with `kind` `browser`, `main` or
+`detail`; the closed detail area is `#panel-detail[closed]`.
 
 Each panel draws its own background and border, as every element does, and holds its view in
 its content box: `#panel-detail { border-width: 1px; border-color: var(--border); padding: 4px; }`
-frames the detail area. Workspace layout respects native panel visibility. A panel whose size the sheet sets (a `width`
-on `#panel-browser`, a `height` on `#panel-detail`, a fixed grid track) has no splitter; one whose
-size it leaves alone keeps its splitter, in the gap beside it, so `#workspace { gap: 8px; }`
-alone keeps both. The splitters are elements of their own, `#detail-splitter` and
-`#browser-splitter`, so a gap can stay clear: `#detail-splitter { background-color: transparent; }`.
-Removing the layout rules restores saved native sizes. A panel the grid
-places in the same cells as `#panel-main` is drawn over the view and takes the pointer there,
-for example a browser floating over the left of the view:
+frames the detail area. A panel whose size the sheet sets (a `width` on `#panel-browser`, a
+`height` on `#panel-detail`) has no splitter; one whose size it leaves alone keeps its splitter, in
+the gap its margin leaves beside the view (4 points beside the browser, 6 over the detail area),
+and dragging it sets the saved size. The splitters are elements of their own, `#detail-splitter`
+and `#browser-splitter`, so a gap can stay clear: `#detail-splitter { background-color:
+transparent; }`. A panel the grid places in the same cells as `#panel-main` is drawn over the
+view and takes the pointer there, for example a browser floating over the left of the view:
 
 ```css
-#workspace { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-#panel-main { grid-column: 1; grid-row: 1; }
-#panel-browser { grid-column: 1; grid-row: 1; width: 260px; justify-self: start; }
+#panel-browser { grid-area: main; width: 260px; justify-self: start; margin: 0; }
 ```
 
 `arrangement { track-headers: left; }` (or `right`) puts the Arrangement view's track
@@ -485,8 +506,9 @@ The toolbar exposes `browser`, `tempo`, `signature`, `grid`, `count-in`, `transp
 Device SDK controls are elements such as `device-panel`, `knob`, `button` and
 `device-control`. Stable named track/clip/slot/scene scopes also exist.
 The native centred toolbar exposes the same module ids as CSS layouts. Padding and a border on
-`toolbar` pad it and keep it; `display`, flex and grid properties, `gap`, sizes or a module's
-placement or `order` switch it to the CSS layout. Its main
+`toolbar` pad it and keep it, and moving it in the window's grid (`grid-area`, margins) keeps it
+too; `display`, flex and grid properties, `gap`, sizes or a module's placement or `order` switch
+it to the CSS layout. Its main
 buttons additionally expose `#control-play`, `#control-stop`, `#control-record`,
 `#control-browser-toggle` and `#control-metronome-toggle`. Paint-only rules preserve
 the existing geometry. The selector reference below lists every element and id.
@@ -549,7 +571,8 @@ Elements, by name:
 | Element | What it is |
 |---|---|
 | `window`, `menu-bar`, `application-bar`, `project-tabs`, `toolbar`, `status-bar` | the window and its bars |
-| `workspace`, `workspace-panel` | the layout under the bars (`#workspace`, `#panel-browser`, `#panel-main`, `#panel-detail`) |
+| `workspace-panel` | the window's panels (`#panel-browser`, `#panel-main`, `#panel-detail`) |
+| `notice-bar` | the strip over the views that asks about an opened project or names missing files |
 | `toolbar-module` | one area of the toolbar, by its id (below) |
 | `browser`, `session`, `arrangement`, `mixer`, `detail`, `clip-editor`, `piano-roll`, `sample-map` | the views and panels |
 | `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips |
@@ -564,7 +587,7 @@ Elements, by name:
 | `send` | a send, in a mixer strip and in a track header |
 | `add-track` | the **+ MIDI track**, **+ Audio track** and **+ Return track** buttons after the last track |
 | `ruler`, `loop-region`, `playhead` | the Arrangement view's ruler, its loop bar and the play position line |
-| `divider` | the line between a strip's device list and its controls (`#mixer-divider`), and the workspace's splitters (`#detail-splitter`, `#browser-splitter`) |
+| `divider` | the line between a strip's device list and its controls (`#mixer-divider`), and the window's splitters (`#detail-splitter`, `#browser-splitter`) |
 | `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles |
 | `value-handle`, `fader-rail` | the handle where a level bar's fill ends; a fader's rail |
 | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-note`, `velocity` | the piano roll's grid, its rows, its keys (with `[selected]` and `[playing]`), the notes and their velocity stems |
@@ -585,7 +608,8 @@ Ids:
 | `#arrangement-volume`, `#arrangement-pan` | a track header's volume and pan fields |
 | `#main-volume` | the volume field in Main's row of the Arrangement view |
 | `#mixer-volume`, `#mixer-pan` | a mixer strip's fader and pan |
-| `#workspace`, `#panel-browser`, `#panel-main`, `#panel-detail` | the workspace and its panels |
+| `#panel-browser`, `#panel-main`, `#panel-detail` | the window's panels |
+| `#views-top`, `#views-bottom` | the lines over and under the views (`separator`) |
 | `#mixer-send-1`, `#mixer-send-2`, … | a mixer strip's sends, from the left |
 | `#add-midi-track`, `#add-audio-track`, `#add-return-track` | the three add-track buttons |
 | `#mixer-divider` | a strip's divider |
@@ -647,15 +671,28 @@ A button's glyph takes the button's `color`, in every state. Artwork has an on s
 
 ### Tracks
 
-A track's header, Launcher column and mixer strip give the sheet `--track-colour`, the track's
-colour, and its name `--track-fill`, the fill Suhina draws there (the colour at the user's header
-colour strength). Use them to style each view on its own, whatever that setting is:
+A track's colour is the project's, chosen by the user; a theme draws it but never chooses it,
+and the colour picker offers the same colours in every theme. A track's header (both views),
+Launcher column, mixer strip and Arrangement lane (`track-lane`) have it as a `color` attribute,
+the final `#rrggbb` in lowercase. `attr(color type(<color>))` reads an element's own attribute,
+so hand it to the parts inside with a variable of your own:
 
 ```css
-session track-header track-name { background-color: var(--track-colour); color: #101214; }
-arrangement track-name { background-color: #2A2C2E; border-width: 1px; border-color: var(--track-colour); color: #E6E6E6; }
-mixer track-name { background-color: color-mix(in srgb, var(--track-colour) 40%, #1E2023); }
+track-header, mixer { --track: attr(color type(<color>)); }
+session track-header track-name { background-color: var(--track); color: contrast-color(var(--track)); }
+arrangement track-name { background-color: #2A2C2E; border-width: 1px; border-color: var(--track); color: #E6E6E6; }
+mixer track-name { background-color: color-mix(in oklab, var(--track) 40%, #1E2023); }
+mixer[muted] track-name { background-color: #2A2C2E; }
+track-lane { background-color: color-mix(in srgb, attr(color type(<color>)) 8%, transparent); }
 ```
+
+Keep the colours recognisable: people tell tracks apart by them. Tint them, mix them with the
+background, use them for borders, rather than replacing them. Mix in `oklab` (or `srgb`):
+`oklch` turns hues towards the hue of a nearly grey background, so a dark blue mixed with a warm
+dark grey comes out maroon. On a light background keep at least about 60 % of the colour, or a
+pale yellow fades into it. A lane's background is painted over
+the grid lines, so keep it translucent. A selector for one colour takes the `i` flag:
+`track-header[color="#FF9A3C" i]`.
 
 A name's `color` sets its text; without one it is worked out from the fill. `mixer` is a strip,
 also in the Launcher view, so `mixer track-name` is the strip's name and
@@ -665,11 +702,12 @@ also in the Launcher view, so `mixer track-name` is the strip's name and
 
 ### Clips
 
-An arrangement clip gives the sheet `--clip-colour`, its own colour, and takes `opacity` (the
+A clip, in the Arrangement or in a Launcher slot, has its colour as a `color` attribute (its
+own, or its track's when it has none), and takes `opacity` (the
 whole clip fades, its waveform, notes and name with it), `border-radius` and a background:
 
 ```css
-clip { border-radius: 4px; background-color: color-mix(in srgb, var(--clip-colour) 70%, #000); }
+clip { border-radius: 4px; background-color: color-mix(in oklab, attr(color type(<color>)) 70%, #000); }
 clip[selected] { border-width: 1px; border-color: #FFFFFF; }
 clip[muted] { opacity: 0.5; }
 clip[playing] clip-name { background-color: var(--accent); color: #000; }
@@ -684,13 +722,13 @@ The waveform's and notes' `color` applies while **Settings › Arrangement › W
 existed reads as the choice it was (Dark, for most): pick Theme there to see the theme's
 colours. `clip.fade-handle` is artwork for
 the fade handles. A new clip takes its track's colour while **New clip colour** is **Track
-colour** (the default); with **Theme default** it takes `clip.midiDefault` or
-`clip.audioDefault`.
+colour** (the default); with **By clip type** it takes Suhina's MIDI or audio colour.
 
-The piano roll's notes have `--clip-colour` too, and their own rules:
+The piano roll has the edited clip's `color` attribute, and its notes their own rules:
 
 ```css
-piano-note { background-color: var(--clip-colour); border-radius: 2px; }
+piano-roll { --clip: attr(color type(<color>)); }
+piano-note { background-color: var(--clip); border-radius: 2px; }
 piano-note[selected] { border-color: #FFFFFF; }
 piano-row-black { background-color: #15171A; }
 piano-key { background-color: #E8E8E8; color: #202020; }
@@ -798,7 +836,7 @@ panels by 1 px on the sides it lights).
 
 An element's contents go in its **content box**: its box less its border and its `padding`
 (`padding: 4px 8px;` or `padding-top` and the others), in points or `em`. A percentage is
-taken only on `workspace` and `toolbar`, whose children the CSS layout places; elsewhere the
+taken only on `window` and `toolbar`, whose children the CSS layout places; elsewhere the
 sheet refuses it with a notice. A size Suhina works out from what an
 element holds grows by its border and padding, as a CSS box with `height: auto` does: each
 bar's height, each dialog's size, a device panel's size and the height the detail area opens at
@@ -824,7 +862,8 @@ A bar's border is a box round it, as any element's is. The line under each bar o
 over `status-bar` its top border: 1 px each from Suhina's own sheet, in `--border` unless you
 give the bar a `border-color`. `border-width: 0` takes a bar's line away, and the bar is that
 much shorter, so no gap shows between bars; `border-width: 0 0 2px` makes it thicker. The
-lines above and under the view are `#workspace`'s `border-color`, so a theme can join the bars
+lines over and under the views are `#views-top` and `#views-bottom`, painted in their
+`border-color`, so a theme can join the bars
 into one surface without losing the lines elsewhere. `--border` is every other line: rulers,
 the browser's edges and the piano roll's keys and rows. A gradient over the whole stack of bars
 is not possible yet: give each bar its share.
@@ -874,8 +913,8 @@ control with no room left is not drawn, without a notice: check narrow tracks an
   `font-size`, `display: none`, `[muted]`). `#control-automation` (`[checked]` while its lanes
   show, artwork `automation`), `fold` (`[checked]` while folded, artwork `fold`) and
   `#control-monitor` (`[checked]` while monitoring is In, artwork `monitor`).
-- **Artwork reads scope variables:** `var(--track-colour)`, `var(--track-fill)` and
-  `var(--clip-colour)` in an SVG take the track's or clip's value.
+- **Artwork reads the theme's variables:** `var(--name)` in an SVG takes the theme's `:root`
+  value; a track's colour reaches artwork only as `currentColor`.
 - **Values:** `value-position: right | left | top | bottom | inside | none` on a knob
   (`pan`, a volume knob, `send`, the MIDI tools knob) places its value or hides it; `none` on
   a level bar hides its value.
@@ -982,20 +1021,14 @@ outlines blend the same way, and nothing an element paints punches a hole to the
 
 ## Closed-panel Grid tracks
 
-CSS cannot open a closed browser or detail panel: its element is absent. A fixed
-track still reserves space for that absent element. Put the dimensions on panels
-and use `auto` for their tracks, so they collapse when the panel is closed.
+CSS cannot open a closed browser: its element is absent. A fixed track still reserves space
+for that absent element, so keep the `auto` tracks of Suhina's grid and put sizes on the panels:
 
 ```css
-/* Wrong: reserves 248px and 200px even when those panels are closed. */
-#workspace { display: grid; grid-template-columns: 248px minmax(0, 1fr);
-             grid-template-rows: minmax(0, 1fr) 200px; }
-/* Right: absent panels leave no fixed-size track. */
-#workspace { display: grid; grid-template-columns: auto minmax(0, 1fr);
-             grid-template-rows: minmax(0, 1fr) auto; }
-#panel-browser { grid-column: 1; grid-row: 1 / -1; width: 248px; }
-#panel-main { grid-column: 2; grid-row: 1; }
-#panel-detail { grid-column: 2; grid-row: 2; height: 200px; }
+/* Wrong: reserves 248px even when the browser is closed. */
+window { grid-template-columns: 248px minmax(0, 1fr) auto auto; }
+/* Right: the absent browser leaves no fixed-size track. */
+#panel-browser { width: 248px; }
 ```
 
 Check browser and detail both open and closed, separately, at narrow and wide sizes.
@@ -1025,8 +1058,8 @@ This is Suhina's own style engine, not a browser. A declaration it does not know
 skipped with a notice (line and column) and the rest of the sheet applies; a sheet that
 does not parse at all keeps the last working one. Some raw widgets still need integration. Transforms,
 filters, downloadable fonts, full typography, geometry animation and
-the reduced-motion media feature are not connected. Bars and floating windows stay
-host-managed; the toolbar's height stays native. Do not claim universal browser CSS
+the reduced-motion media feature are not connected. Floating windows stay host-managed; the
+inside of each bar is laid out by Suhina, and its controls keep their native height. Do not claim universal browser CSS
 or container-query support. Notices are useful but are not a complete CSS validator.
 Use the editor's Flex/Grid examples and check the current support specification.
 
@@ -1041,8 +1074,8 @@ within ±256 points and at most 32 points of blur. Blur uses a fixed nine-tap we
 approximation on cached glyphs, not an image convolution.
 Keep assets small, use readable contrast, and retain useful native labels.
 
-Track/clip colours belong to the project. `clip.midiDefault` and `clip.audioDefault`
-apply when new tracks/clips are created; theme edits must not recolour existing ones.
+Track/clip colours belong to the project: a theme draws them from the `color` attribute and
+never chooses them, so the colour picker and new tracks and clips take Suhina's own colours.
 Use `text.primary` contrast of at least 7:1 and hints of at least 3:1 where possible.
 
 ## For AI-assisted edits

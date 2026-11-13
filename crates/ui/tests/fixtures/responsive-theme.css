@@ -8,11 +8,9 @@
   button { color:var(--ink); background-color:#163440; border-color:#2E5566; }
 }
 @layer workspace {
-  #workspace { display:grid; grid-template-columns:auto minmax(0,1fr);
-               grid-template-rows:minmax(0,1fr) auto; gap:6px; padding:6px; }
-  #panel-browser { grid-column:1; grid-row:1 / -1; width:248px; }
-  #panel-main { grid-column:2; grid-row:1; }
-  #panel-detail { grid-column:2; grid-row:2; height:200px; }
+  window { padding:6px; }
+  #panel-browser { width:248px; margin-right:6px; }
+  #panel-detail { height:200px; }
   @media (max-width:1000px) { #panel-browser { width:200px; } }
   @media (max-height:760px) { #panel-detail { height:150px; } }
 }

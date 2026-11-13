@@ -40,9 +40,6 @@ pub struct Element {
     /// The project object this element shows (a track's stable name), matched by
     /// `[data-object]` and `[data-object=name]`.
     pub object: Option<String>,
-    /// Custom properties the host gives this element (a track's colour as `--track-colour`):
-    /// inherited by its descendants, below every rule of every sheet.
-    pub variables: Vec<(String, String)>,
     /// Attributes the host gives this element (`color`, `kind`, `selected`), tested by attribute
     /// selectors and read by `attr()`. Names are lowercase; an attribute without a value is `""`.
     pub attributes: Vec<(String, String)>,
@@ -349,8 +346,8 @@ impl Selector {
     }
 
     /// Whether the element this selector styles (its last compound) is named one of `names`, by
-    /// its kind or its id (`toolbar`, `#workspace`), or by an `:is()` or `:where()` each of
-    /// whose selectors is (`:is(toolbar, #workspace)`); never by a `:not()`.
+    /// its kind or its id (`toolbar`, `#views-top`), or by an `:is()` or `:where()` each of
+    /// whose selectors is (`:is(toolbar, window)`); never by a `:not()`.
     pub fn subject_is(&self, names: &[&str]) -> bool {
         self.parts.last().is_some_and(|part| {
             part.tests.iter().any(|test| match test {

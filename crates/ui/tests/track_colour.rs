@@ -161,8 +161,9 @@ fn filled_with(harness: &Harness<'static, App>, area: Rect, colour: Color32) -> 
     filled_rects(harness).iter().any(|r| r.fill == colour && r.rect.expand(0.5).contains_rect(area))
 }
 
+/// The demo's first track has no colour of its own, so it shows Suhina's first legacy colour.
 fn default_drums() -> Color32 {
-    theme::track_color_1()
+    colour_picker::color32(suhina_session::colours::LEGACY[0])
 }
 
 #[test]
@@ -241,12 +242,7 @@ fn picking_the_colour_the_track_has_changes_nothing() {
     let mut harness = arrangement();
     harness.get_by_label("Drums colour").click();
     harness.run();
-    harness
-        .get_by_label(&format!(
-            "Colour {}",
-            colour_picker::hex(suhina_ui::interaction::grid::to_rgb(theme::track_color_1()))
-        ))
-        .click();
+    harness.get_by_label(&format!("Colour {}", colour_picker::hex(suhina_session::colours::LEGACY[0]))).click();
     harness.run();
     assert!(!harness.state().session().unwrap().can_undo(), "no command for the same colour");
 }
@@ -553,4 +549,95 @@ fn a_padded_header_folds_back_to_its_height_and_resizes_from_its_edge() {
     let resized = h.get_by_label("Track Drums").rect().height();
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(resized > header.height() + 10.0, "the lane's own edge resizes it: {resized}");
+}
+
+/// The Arrangement with a theme whose only rules are `css`, in use.
+fn arrangement_with_theme(css: &str) -> Harness<'static, App> {
+    let (lanes, warnings) = theme::from_folder(theme::ThemeMeta::new("Lanes", "#123456"), css);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(demo_project()), &[]);
+    let ctx = egui::Context::default();
+    app.set_themes(&ctx, vec![suhina_ui::settings::themes::ThemeEntry { id: "lanes".into(), theme: lanes }], None);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(SIZE)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().use_theme(&ctx, "lanes");
+    harness.run();
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness
+}
+
+#[test]
+fn a_theme_colours_a_track_s_lane_from_its_color_attribute() {
+    // A colour no other part of the window uses, mixed from the track's own.
+    let harness = arrangement_with_theme(
+        "track-lane { background-color: color-mix(in srgb, attr(color type(<color>)), #000000 50%); }",
+    );
+    let header = harness.get_by_label("Track Drums").rect();
+    let own = suhina_session::colours::LEGACY[0];
+    let half = |c: u8| c / 2 + (c % 2);
+    let near = |a: u8, b: u8| a.abs_diff(b) <= 1;
+    let lane = filled_rects(&harness).into_iter().find(|r| {
+        let [red, green, blue, _] = r.fill.to_srgba_unmultiplied();
+        near(red, half(own.0))
+            && near(green, half(own.1))
+            && near(blue, half(own.2))
+            && r.rect.left() >= header.right() - 1.0
+            && (r.rect.center().y - header.center().y).abs() < header.height() / 2.0
+    });
+    let lane = lane.unwrap_or_else(|| {
+        let near_row: Vec<_> = filled_rects(&harness)
+            .into_iter()
+            .filter(|r| {
+                r.rect.left() >= header.right() - 1.0
+                    && (r.rect.center().y - header.center().y).abs() < header.height() / 2.0
+            })
+            .map(|r| (r.rect, r.fill))
+            .collect();
+        panic!("Drums' lane is filled with its colour mixed with black: {header:?} {near_row:?}")
+    });
+    assert!(lane.rect.width() > 400.0, "the whole row: {:?}", lane.rect);
+}
+
+/// Whether the last frame drew a filled rectangle of `colour` over `area` that nothing clips off it.
+fn drawn_unclipped(harness: &Harness<'static, App>, area: Rect, colour: Color32) -> bool {
+    harness.output().shapes.iter().any(|clipped| {
+        let mut rects = Vec::new();
+        let mut stack = vec![&clipped.shape];
+        while let Some(shape) = stack.pop() {
+            match shape {
+                Shape::Rect(r) => rects.push(r.clone()),
+                Shape::Vec(v) => stack.extend(v),
+                _ => {}
+            }
+        }
+        clipped.clip_rect.expand(0.5).contains_rect(area)
+            && rects.iter().any(|r| r.fill == colour && r.rect.expand(0.5).contains_rect(area))
+    })
+}
+
+#[test]
+fn a_lane_that_hides_its_overflow_leaves_the_header_and_the_automation_lanes_alone() {
+    let mut harness = arrangement_with_theme("track-lane { overflow: hidden; }");
+    let band = harness.get_by_label("Drums colour").rect();
+    assert!(drawn_unclipped(&harness, band, default_drums()), "the header's band is not cut to the timeline");
+    harness.get_by_label("Show automation of Drums").click();
+    harness.run();
+    let band = harness.get_by_label("Drums colour").rect();
+    assert!(drawn_unclipped(&harness, band, default_drums()), "nor with an automation lane open");
+    let lane = harness.get_by_label("Volume automation on Drums").rect();
+    let cut = harness
+        .output()
+        .shapes
+        .iter()
+        .any(|c| c.shape.visual_bounding_rect().intersects(lane) && !c.clip_rect.expand(0.5).contains_rect(lane));
+    assert!(!cut, "the automation lane's header is not cut either");
 }

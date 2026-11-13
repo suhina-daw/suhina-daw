@@ -21,20 +21,10 @@ const SWATCH_GAP: f32 = 3.0;
 /// How much of its colour a muted track's colour area keeps over `control.background`.
 const MUTED: f32 = 0.55;
 
-/// The palette: the theme's eight track colours (`track.1` to `track.8`; the first four are the
-/// colours new tracks take in turn).
+/// The palette: Suhina's eight track colours, the same in every theme (a theme draws a track's
+/// colour but never chooses it, #1020).
 pub fn swatches() -> [Rgb; 8] {
-    [
-        theme::track_color_1(),
-        theme::track_color_2(),
-        theme::track_color_3(),
-        theme::track_color_4(),
-        theme::track_color_5(),
-        theme::track_color_6(),
-        theme::track_color_7(),
-        theme::track_color_8(),
-    ]
-    .map(to_rgb)
+    suhina_session::colours::PALETTE
 }
 
 /// `#rrggbb`, as `track.setColor` takes it.
@@ -303,9 +293,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_palette_is_the_themes_track_colours_and_starts_with_the_default_ones() {
+    fn the_palette_holds_the_colours_new_tracks_take() {
         let palette = swatches();
-        assert_eq!(&palette[..4], &crate::interaction::grid::track_palette()[..]);
+        use suhina_session::colours::{AUDIO, LEGACY, MIDI};
+        assert!([MIDI, AUDIO].iter().chain(&LEGACY).all(|colour| palette.contains(colour)));
         let mut unique = palette.to_vec();
         unique.sort_by_key(|c| (c.0, c.1, c.2));
         unique.dedup();
