@@ -774,22 +774,24 @@ at the pointer, with what the toolbar, the clip panel and the keys can do.
 - **Items**, each with its key where it has one, greyed out when there is nothing to act on, and
   each one undo step (or a change to the view):
   - Cut, Copy, Paste, Duplicate, Delete (the edit keys);
-  - Select all; **Invert selection**, the one item that is new: the notes that were not selected
-    become the selection, and no others;
+  - **Invert selection**, the one item that is new: the notes that were not selected become the
+    selection, and no others;
   - Quantize (Ctrl+U) and Quantize settings… (the Transform tab's Quantise); Mute or Unmute the
     selection (`note.setMuted`; Unmute when every note it acts on is muted); Split here
     (`note.split` of the notes it acts on at the clicked point, on the grid);
   - Loop selection (`clip.setLoop` over the time selection, or the selected notes' span); Set start
-    here, Set end here (greyed out while the clip loops), Set loop start here, Set loop end here,
-    at the clicked point on the grid, as a drag of that marker on the ruler to there would leave
-    it (`clip.setStart`, `clip.setLength`, `clip.setLoop`);
+    here and Set loop start here, at the clicked point on the grid, as a drag of that marker on the
+    ruler to there would leave it (`clip.setStart`, `clip.setLoop`);
   - Join notes, Fit to time selection, Crop clip to time selection, Split clip (at the time
     selection, or here at the clicked point without one) and Set the clip's first beat here
     (› Joining, fitting, cropping and splitting);
   - the toolbar's grid menu right in the menu, with no submenu (Snap, Adaptive, Fixed, Narrow,
     Widen, Triplet).
-- No zoom, fold or scale items: Z and Shift+Z (› Zoom and scroll) and the toolbar's Fold, Scale
-  and Highlight are quicker than the menu, which the grid's entries already make long.
+- No zoom, fold or scale items, no Select all and no end markers: Z and Shift+Z (› Zoom and
+  scroll), the toolbar's Fold, Scale and Highlight, Ctrl+A and a drag of an end on the ruler are
+  quicker than the menu, which the grid's entries already make long.
+- Its rows are lower than the window's others (16 pixels, with no gap between them), so the menu
+  stays short.
 - Escape, a click outside it or a pick closes it; another clip shown closes it too.
 
 ## Joining, fitting, cropping and splitting
