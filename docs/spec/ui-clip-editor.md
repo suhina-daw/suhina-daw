@@ -1,6 +1,6 @@
 ---
 description: Functional spec of the MIDI clip editor (piano roll): layout, toolbar size and icons, the six tools and the Mute tool, the clip panel's note tools (Notes and Transform tabs), grid and snapping, zoom, drawing, selecting, moving, resizing, velocity, quantise, scales, ghost notes, slicing, a playable key column, chords, shortcuts and keymap presets, and the note.* and preview.* commands
-read_when: piano roll, clip editor, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
+read_when: piano roll, clip editor, velocity range, rolled velocity, note.setVelocityRange, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
 type: spec
 status: draft
 last_verified: 2026-11-11
@@ -18,6 +18,7 @@ covers:
   - crates/session/src/notes.rs
   - crates/session/src/scales.rs
   - crates/session/src/note_tools.rs
+  - crates/model/src/roll.rs
   - crates/session/src/preview.rs
   - crates/session/src/clip_shape.rs
 ---
@@ -842,8 +843,34 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   dragging; letting go is one `note.setVelocity` with `velocities` (one value per note), one undo
   step. A line that spans no stem does nothing.
 - **Later ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** release velocity and a
-  note's probability and velocity range (a per-note chance to play and a random variation), shown
-  as a second lane; randomise, ramp and deviation tools.
+  note's probability (a per-note chance to play, [#1152](https://github.com/suhina-daw/suhina-daw/issues/1152)),
+  shown as a second lane.
+
+### Velocity range
+
+**Built ([#1282](https://github.com/suhina-daw/suhina-daw/issues/1282)):** each note has a velocity
+range, -127 to 127 (0 by default): how far above (or, negative, below) its velocity it may play,
+rolled each time it starts. A note of velocity 100 with a range of +20 plays somewhere from 100 to
+120 on each pass of a loop; a range of 0 plays exactly 100. The played velocity stays within 1 to
+127. The note keeps its own velocity; the roll happens where the note starts, in the one render
+path, from a pure function of the note and where it plays, so an offline render gives the same
+velocities every time and matches what was heard
+([ADR 0037](../decisions/0037-rolled-note-values.md)). MIDI export writes the note's own velocity.
+
+- **The lane:** a note with a range shows it as a fainter bar beside its stem, from its velocity to
+  the furthest it may play, with a tick at that end.
+- **Dragging:** **Ctrl+drag** a stem (Cmd on macOS) sets the range: from the grabbed note's
+  velocity to the pointer's height, above it a range up and below it one down; every selected note
+  takes the same range. The bar follows while dragging; letting go is one `note.setVelocityRange`,
+  one undo step.
+- **Keys:** **Alt+Shift+Up** and **Alt+Shift+Down** raise and lower the selection's range by one
+  (`pianoRoll.rangeUp`, `.rangeDown`; `note.setVelocityRange` with `by`).
+- **The clip panel's figures** show the range of what the tools act on beside its velocities
+  ("100 (range +20)", or "range −5–+20" for several).
+- **Commands:** `note.setVelocityRange {notes, range | by}`, one undo step; `note.list` gives a
+  note's `velocityRange` where it has one; the project file writes `velocity_range` from version 13.
+- **Import:** what another project format holds of a note's velocity range comes in once it is
+  written down in that format's spec from a file of our own.
 
 ## Quantise
 
@@ -1165,13 +1192,15 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Z, Shift+Z | Zooms to the selected notes (the whole clip when none is selected); to the whole clip (after a click in the piano roll) |
 | Ctrl+L | The clip's own loop: over the time selection (again on the same stretch: off), or with no time selection the clip's loop on or off, as a click on the ruler's loop bar (after a click in the piano roll; elsewhere Ctrl+L is the Arrangement's loop) |
 | Alt+L | Legato, as the Notes tab's button: the selected notes, or every note when none is selected (after a click in the piano roll; › Other note tools) |
+| Alt+Shift+Up, Alt+Shift+Down | Raises, lowers the selection's velocity range by one (› Velocity range) |
+| Ctrl+drag a stem in the velocity lane | Sets the selection's velocity range to the pointer's height (› Velocity range) |
 | Ctrl+Shift+E | Hides the editor (the detail area), or shows it again (`view.editor`, › Least height and closing) |
 
 The keys after a click in the piano roll are keymap actions ([`docs/shortcuts.md`](../shortcuts.md)):
 the `selection.*` ones the window has anyway, and `pianoRoll.selectAll`, `.deselect`, `.earlier`,
 `.later`, `.up`, `.down`, `.octaveUp`, `.octaveDown`, `.shorter`, `.longer`, `.draw`,
 `.tool1` … `.tool6`, `.gridNarrow`, `.gridWiden`, `.gridTriplet`, `.gridSnap`, `.zoomSelection`,
-`.zoomClip`, `.legato` and `.loop`, which are read only
+`.zoomClip`, `.legato`, `.loop`, `.rangeUp` and `.rangeDown`, which are read only
 while the piano roll has the keyboard, so they can be changed like the rest. `pianoRoll.quantize`
 (Ctrl+U) means nothing elsewhere, so it works whenever the piano roll shows a clip.
 

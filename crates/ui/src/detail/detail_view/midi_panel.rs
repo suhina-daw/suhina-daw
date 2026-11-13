@@ -542,6 +542,11 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
         (Some(low), Some(high)) => Some(format!("{low}–{high}")),
         _ => None,
     };
+    // Beside the velocities, the range they are rolled in, where a note has one (› Velocity range).
+    let velocity = velocity.map(|v| match velocity_range_text(tools.notes, acted) {
+        Some(range) => format!("{v} ({range})"),
+        None => v,
+    });
     let muted = (info.muted > 0).then(|| info.muted.to_string());
     let rows = [("Pitch", pitch), ("From", info.from.clone()), ("To", info.to.clone()), ("Muted", muted)];
     for (name, value) in rows {
@@ -570,6 +575,33 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
     );
     painter.rect_filled(span, 2.0, theme::accent());
     bar.bottom()
+}
+
+/// The velocity range of the notes `acted` among `notes`, as the figures show it beside their
+/// velocities ("±0–+20", "+12"); `None` when none of them has one.
+pub(crate) fn velocity_range_text(
+    notes: &[suhina_engine::model::Note],
+    acted: &std::collections::BTreeSet<usize>,
+) -> Option<String> {
+    let ranges = || acted.iter().filter_map(|i| notes.get(*i)).map(|n| n.velocity_range);
+    let (low, high) = (ranges().min()?, ranges().max()?);
+    if low == 0 && high == 0 {
+        return None;
+    }
+    let signed = |r: i8| {
+        if r > 0 {
+            format!("+{r}")
+        } else if r < 0 {
+            format!("−{}", r.unsigned_abs())
+        } else {
+            "±0".to_string()
+        }
+    };
+    Some(if low == high {
+        format!("range {}", signed(low))
+    } else {
+        format!("range {}–{}", signed(low), signed(high))
+    })
 }
 
 /// The head of the figures: what the tools act on (**Whole clip**, **Selection**, **No notes in
@@ -846,4 +878,22 @@ fn amount_knob(ui: &Ui, painter: &egui::Painter, rect: Rect, amount: f64) -> f64
         10.0,
     );
     amount
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use suhina_engine::model::Note;
+
+    /// The figures name the velocity range of what the tools act on beside its velocities (#1282).
+    #[test]
+    fn the_figures_name_the_velocity_range() {
+        let ranged = |range: i8| Note { velocity_range: range, ..Note::new(0.0, 1.0, 60, 0.8) };
+        let notes = [ranged(0), ranged(20), ranged(-5), ranged(20)];
+        let set = |list: &[usize]| list.iter().copied().collect::<std::collections::BTreeSet<usize>>();
+        assert_eq!(velocity_range_text(&notes, &set(&[0])), None);
+        assert_eq!(velocity_range_text(&notes, &set(&[1, 3])).as_deref(), Some("range +20"));
+        assert_eq!(velocity_range_text(&notes, &set(&[0, 1, 2])).as_deref(), Some("range −5–+20"));
+        assert_eq!(velocity_range_text(&notes, &set(&[0, 1])).as_deref(), Some("range ±0–+20"));
+    }
 }

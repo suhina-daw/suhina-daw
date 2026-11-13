@@ -25,7 +25,7 @@ const COVERED: Param = optional(
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.list",
-        label: "List a MIDI clip's notes: index, id (which names the note while the project is open, wherever it moves), time and length in beats, key (60 is C3), velocity 1 to 127 and whether it is muted",
+        label: "List a MIDI clip's notes: index, id (which names the note while the project is open, wherever it moves), time and length in beats, key (60 is C3), velocity 1 to 127, whether it is muted, and velocityRange where the note has one",
         params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
         kind: CommandKind::READ,
         run: notes::list,
@@ -251,6 +251,30 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::EDIT,
         run: note_tools::set_muted,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "note.setVelocityRange",
+        label: "Set the velocity range of notes of a MIDI clip: how far above (or, negative, below) its velocity each note may play, rolled each time it starts, the played velocity kept within 1 to 127; the result gives each note's range",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            NOTES,
+            optional(
+                "range",
+                ParamType::Integer,
+                "the range for every named note, -127 to 127 (0 plays the velocity exactly)",
+            ),
+            optional(
+                "by",
+                ParamType::Integer,
+                "instead of range: MIDI steps added to each note's range, which stays within -127 to 127",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: note_tools::set_velocity_range,
         policy: Policy::DEFAULT,
     },
     CommandSpec {

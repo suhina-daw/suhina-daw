@@ -1886,8 +1886,9 @@ fn collect_notes(
     }
     let to_frame = |beats: f64| tempo::frame_of(map, beats);
 
-    // Each pass maps the content range [from, to) to the clip position `at`.
-    let mut push_range = |from: f64, to: f64, at: f64| {
+    // Each pass maps the content range [from, to) to the clip position `at`; `pass` counts the
+    // passes through the loop from 0, for the notes' rolled velocities (ADR 0037).
+    let mut push_range = |from: f64, to: f64, at: f64, pass: u64| {
         for note in notes {
             // A muted note stays in the clip and produces no event at all, exactly as if it were
             // not there (ADR 0001 › Amendment: muted notes).
@@ -1911,15 +1912,19 @@ fn collect_notes(
                 continue;
             }
             let end = (start + length).min(clip_end);
+            // A note's velocity range is rolled here, for each pass, in the one render path
+            // (ADR 0037): offline and live lay out the same notes.
+            let place = suhina_model::RollPlace { track: track.0, clip: clip.start.to_bits(), pass };
+            let velocity = note_velocity(suhina_model::played_velocity(note, place));
             events.push(ArrangedNote {
                 start: to_frame(start),
                 end: to_frame(end),
                 frequency: 440.0 * 2f64.powf((f64::from(note.key) - 69.0) / 12.0),
                 key: note.key.min(127),
-                velocity: note_velocity(note.velocity),
+                velocity,
                 track,
-                gain_left: gain_left * note_velocity(note.velocity),
-                gain_right: gain_right * note_velocity(note.velocity),
+                gain_left: gain_left * velocity,
+                gain_right: gain_right * velocity,
                 column,
                 bus,
                 meter,
@@ -1933,17 +1938,17 @@ fn collect_notes(
             let loop_len = range.end - range.start;
             // First pass from the offset to the loop end, then whole loops until the clip ends.
             let first_from = clip.offset.clamp(range.start, range.end);
-            push_range(first_from, range.end, 0.0);
+            push_range(first_from, range.end, 0.0, 0);
             let mut at = range.end - first_from;
             let max_passes = 100_000;
             let mut passes = 0;
             while at < clip.length && passes < max_passes {
-                push_range(range.start, range.end, at);
-                at += loop_len;
                 passes += 1;
+                push_range(range.start, range.end, at, passes);
+                at += loop_len;
             }
         }
-        _ => push_range(clip.offset, f64::INFINITY, 0.0),
+        _ => push_range(clip.offset, f64::INFINITY, 0.0, 0),
     }
 }
 

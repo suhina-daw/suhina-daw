@@ -428,3 +428,16 @@ fn a_held_key_toggles_once_and_steps_on_repeat() {
         assert_eq!(keymap.pressed(&mut input, |_| true), std::slice::from_ref(id), "an arrow steps on");
     }
 }
+
+/// Alt+Shift+Up and Down raise and lower the selection's velocity range in the piano roll (#1282).
+#[test]
+fn alt_shift_up_and_down_step_the_velocity_range() {
+    let known = actions();
+    for (id, key) in [("pianoRoll.rangeUp", "Alt+Shift+Up"), ("pianoRoll.rangeDown", "Alt+Shift+Down")] {
+        let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
+        assert_eq!(action.group, PIANO_ROLL);
+        assert!(piano_roll_only(id), "{id} is read only while the piano roll has the keyboard");
+        assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
+    }
+    assert!(Keymap::default().conflicts().is_empty());
+}

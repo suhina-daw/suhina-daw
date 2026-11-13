@@ -27,6 +27,7 @@ impl Note {
             release_velocity: Self::DEFAULT_RELEASE_VELOCITY,
             channel: 0,
             muted: false,
+            velocity_range: 0,
         }
     }
 }

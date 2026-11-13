@@ -389,6 +389,9 @@ pub(super) fn draw(
                 let midi = (f64::from(suhina_session::midi_velocity(note.velocity)) + by).clamp(1.0, 127.0);
                 Note { velocity: (midi / 127.0) as f32, ..*note }
             }
+            Some(Effect::VelocityRange(range)) => {
+                Note { velocity_range: i8::try_from(range.clamp(-127, 127)).unwrap_or(0), ..*note }
+            }
             _ => *note,
         }
     };
@@ -498,6 +501,16 @@ pub(super) fn draw(
         } else {
             velocity_style.color.unwrap_or(clip.color)
         };
+        // Its velocity range, a fainter bar beside the stem from the velocity to the furthest it
+        // may play (› Velocity range).
+        if note.velocity_range != 0 {
+            let own = f32::from(suhina_session::midi_velocity(note.velocity));
+            let far = (own + f32::from(note.velocity_range)).clamp(1.0, 127.0);
+            let far_top = layout.lane.bottom() - 2.0 - velocity_height(far / 127.0, layout.lane);
+            let range = Rect::from_x_y_ranges(x + 0.5..=x + 3.5, egui::Rangef::new(top.min(far_top), top.max(far_top)));
+            lane_painter.rect_filled(range, 0.0, stem.gamma_multiply(0.35));
+            lane_painter.hline(x - 2.5..=x + 3.5, far_top, Stroke::new(1.0, stem.gamma_multiply(0.6)));
+        }
         lane_painter.vline(x, egui::Rangef::new(top, layout.lane.bottom()), Stroke::new(1.0, stem));
         lane_painter.rect_filled(Rect::from_min_size(Pos2::new(x - 2.5, top), Vec2::new(5.0, 2.0)), 0.0, stem);
     }

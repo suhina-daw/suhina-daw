@@ -188,6 +188,8 @@ Settings go on working. Click in the Arrangement or the Launcher to give the key
 | Alt+Shift+Right | `pianoRoll.longerFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) longer, off the grid, stopping at the next note of their key unless stacked notes are allowed. |
 | Ctrl+L | `pianoRoll.loop` | Piano roll | Loops the clip you are editing. With a time selection (a stretch of time dragged in the piano roll) the clip's loop goes exactly over it; press again on the same stretch to turn the loop off. With no time selection it turns the clip's loop on or off, like a click on the loop bar in the piano roll's ruler. |
 | Alt+L | `pianoRoll.legato` | Piano roll | Legato: makes each selected note last until the next one starts, so there are no gaps between them. With no note selected it does this to every note in the clip. The same as **Legato** in the Notes tab of the clip panel's note tools. |
+| Alt+Shift+Up | `pianoRoll.rangeUp` | Piano roll | Raises the selected notes' velocity range by one: how far above its velocity each note may play, picked anew every time it plays. |
+| Alt+Shift+Down | `pianoRoll.rangeDown` | Piano roll | Lowers the selected notes' velocity range by one; below 0 the notes may play softer than their velocity. |
 | Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings of Quantise in the Transform tab of the clip panel's note tools. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
 
 Copy, cut, paste, duplicate and delete in the piano roll use the [Editing](#editing) keys. With no

@@ -238,6 +238,55 @@ pub(crate) fn set_muted(session: &mut Session, params: &Value) -> Result<Value, 
     })
 }
 
+/// `note.setVelocityRange`: sets the named notes' velocity range (ADR 0037), `range` for all of
+/// them or `by` steps added to each one's, kept within -127 to 127. A call that changes nothing
+/// marks no undo step.
+pub(crate) fn set_velocity_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let args = Args::new(params);
+    let whole = |key: &str| -> Result<Option<i64>, CommandError> {
+        match args.value(key) {
+            None => Ok(None),
+            Some(v) => v
+                .as_i64()
+                .filter(|r| (-254..=254).contains(r))
+                .map(Some)
+                .ok_or_else(|| format!("{key} must be a whole number of MIDI steps").into()),
+        }
+    };
+    let (range, by) = (whole("range")?, whole("by")?);
+    let set = match (range, by) {
+        (Some(range), None) if (-127..=127).contains(&range) => VelocityRange::To(range),
+        (Some(range), None) => return Err(format!("range must be -127 to 127, got {range}").into()),
+        (None, Some(by)) => VelocityRange::By(by),
+        (Some(_), Some(_)) => return Err("give range or by, not both".into()),
+        (None, None) => return Err("give range (-127 to 127) or by (steps to add)".into()),
+    };
+    edit_notes(&mut session.project, params, |notes| {
+        let named = indices(params, notes)?;
+        let mut ranges = Vec::with_capacity(named.len());
+        for &index in &named {
+            let note = notes.get_mut(index).ok_or("a note is missing")?;
+            let wanted = match set {
+                VelocityRange::To(range) => range,
+                VelocityRange::By(by) => i64::from(note.velocity_range) + by,
+            };
+            let range = i8::try_from(wanted.clamp(-127, 127)).unwrap_or(0);
+            if note.velocity_range != range {
+                note.velocity_range = range;
+            }
+            ranges.push(range);
+        }
+        Ok(json!({ "notes": named, "ranges": ranges }))
+    })
+}
+
+/// What `note.setVelocityRange` sets: one range, or a step added to each note's.
+#[derive(Debug, Clone, Copy)]
+enum VelocityRange {
+    To(i64),
+    By(i64),
+}
+
 /// How far `note.humanize` may move a start, in beats: `time` in beats, or `ms` in milliseconds
 /// at the project's tempo (10 ms when neither is given), never both.
 fn humanize_beats(session: &Session, params: &Value) -> Result<f64, CommandError> {

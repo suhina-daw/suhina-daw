@@ -59,12 +59,14 @@ pub use lane_layout::{LaneGroup, LaneLayout, LaneRef, MAX_GROUP_NAME, MAX_LAYOUT
 mod launch;
 mod mapping;
 mod overlap;
+mod roll;
 mod scale;
 mod shared;
 mod swing;
 pub use launch::{LaunchMode, LaunchQuantization, LaunchSettings};
 pub use mapping::{ControllerMapping, KEY_NAME_MAX, MAX_MAPPINGS, MappingSource, MappingTarget};
 pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, TOUCH_TOLERANCE};
+pub use roll::{RollFor, RollPlace, note_roll, played_velocity};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
 pub use shared::{Bytes, Shared};
 pub use swing::{ClipSwing, SWING_RANGE, swung};
@@ -545,6 +547,10 @@ pub struct Note {
     /// it were not there ([ADR 0001](../../docs/decisions/0001-daw-neutral-model.md) › Amendment:
     /// muted notes).
     pub muted: bool,
+    /// How far above (or, negative, below) its velocity the note may play, in MIDI steps, -127 to
+    /// 127: rolled each time it starts, the played velocity kept within 1 to 127; 0 plays the
+    /// velocity exactly ([ADR 0037](../../docs/decisions/0037-rolled-note-values.md)).
+    pub velocity_range: i8,
 }
 
 /// An audio file a clip plays: only the source. How it is mapped onto musical time, its gain and

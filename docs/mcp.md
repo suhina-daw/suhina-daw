@@ -1,6 +1,6 @@
 ---
 description: The MCP server for agents: tools, file roots, errors and how to run it
-read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
+read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools, note.setVelocityRange, velocity range
 type: system
 status: current
 last_verified: 2026-11-11
@@ -266,6 +266,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   ([clip editor spec](spec/ui-clip-editor.md) › Commands). An edit to a clip whose content
   other clips also play (a duplicate) first gives that clip its own copy of the content, so the
   others do not change; the result's indices are the same.
+- **Velocity range.** `note.setVelocityRange {track, index | scene, notes, range | by}` sets how far
+  above (or, negative, below) its velocity each named note may play, -127 to 127, rolled each time
+  it starts and kept within 1 to 127 (`by` adds steps to each note's range); one undo step.
+  `note.list` gives `velocityRange` on a note that has one ([ADR 0037](decisions/0037-rolled-note-values.md)).
 - **Muting notes.** `note.setMuted {track, index | scene, notes, muted?}` sets the named notes'
   mute (`true` mutes, `false` unmutes); with `muted` left out each named note is flipped, which is
   what a click with the piano roll's Mute tool does. A muted note keeps its place, length, key and
