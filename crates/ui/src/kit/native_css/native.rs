@@ -331,7 +331,7 @@ pub(super) fn host_layout(
         *body = Some([Some(size[0].clamp(0.0, 16384.0)), Some(size[1].clamp(0.0, 16384.0))]);
     }
     measured.extend_from_slice(sizes);
-    tree_layout(engine, all, first, &measured, size)
+    tree_layout(engine, all, first, &measured, size, true)
 }
 
 /// The style tree's elements from `html` down to `node`, as this frame's tree has them: the
@@ -356,18 +356,25 @@ pub(super) fn chain(engine: &Engine, node: usize) -> Option<Vec<Element>> {
 /// Lays out `all` (a tree from its root), each element with its content size in `sizes`, in a box
 /// of `size`, and returns the rectangles and styles of the elements from `first` on. Under the
 /// theme's sheets when it has some and their layout works; otherwise under the user-agent sheet
-/// alone, which is built in and always parses.
+/// alone, which is built in and always parses. A parent's children are laid out by their `order`
+/// when `by_order` (the window's regions), else in the tree's order (a bar's items).
 pub(super) fn tree_layout(
     engine: Option<&Engine>,
     all: Vec<Element>,
     first: usize,
     sizes: &[Option<[Option<f32>; 2]>],
     size: [f32; 2],
+    by_order: bool,
 ) -> Option<Vec<(Option<Rect>, Computed)>> {
     let tree = Tree::new(all).ok()?;
     let size = [size[0].clamp(0.0, 16384.0), size[1].clamp(0.0, 16384.0)];
     let lay = |styles: Vec<ComputedStyle>| -> Option<Vec<(Option<Rect>, Computed)>> {
-        let rectangles = suhina_style::layout::compute(&tree, &styles, size, sizes).ok()?;
+        let rectangles = if by_order {
+            suhina_style::layout::compute(&tree, &styles, size, sizes)
+        } else {
+            suhina_style::layout::compute_in_tree_order(&tree, &styles, size, sizes)
+        }
+        .ok()?;
         Some(
             rectangles
                 .iter()

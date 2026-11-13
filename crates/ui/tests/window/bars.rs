@@ -194,3 +194,78 @@ fn a_menu_item_s_menu_lies_in_its_content_box() {
     assert!(plain.is_some());
     assert_eq!(plain, padded);
 }
+
+/// Where the painted text inside the node labelled like `label` starts, from the node's left edge,
+/// under `css`; and the rectangles painted in `colour`.
+fn text_offset(css: &str, label: &str, word: &str) -> Option<f32> {
+    let h = with_clip(css);
+    let node = h.query_all_by_label_contains(label).next().map(|node| node.rect())?;
+    let found = h.output().shapes.iter().find_map(|shape| match &shape.shape {
+        egui::Shape::Text(text) if text.galley.text().contains(word) && node.contains(text.pos) => {
+            Some(text.pos.x - node.left())
+        }
+        _ => None,
+    });
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    found
+}
+
+/// Whether a filled rectangle of `colour` is painted under `css`, at a window `width` wide.
+fn paints_red(css: &str, width: f32, label: &str) -> (bool, bool) {
+    let mut h = with_clip(css);
+    h.set_size(egui::vec2(width, 900.0));
+    h.run();
+    let found = h.query_all_by_label_contains(label).next().is_some();
+    let red = h.output().shapes.iter().any(
+        |shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.fill == egui::Color32::from_rgb(255, 0, 0)),
+    );
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    (found, red)
+}
+
+#[test]
+fn a_project_tab_s_name_lies_in_its_content_box() {
+    let plain = text_offset("", "Tab ", "Demo").or_else(|| text_offset("", "Tab ", "")).unwrap();
+    let padded = text_offset("project-tab { padding-left: 20px; }", "Tab ", "Demo")
+        .or_else(|| text_offset("project-tab { padding-left: 20px; }", "Tab ", ""))
+        .unwrap();
+    assert_eq!(padded - plain, 20.0);
+}
+
+#[test]
+fn a_midi_tools_tab_is_painted_and_its_word_lies_in_its_content_box() {
+    let (_, red) = paints_red("#tab-notes { padding-left: 40px; background-color: #ff0000; }", 1400.0, "Notes tab");
+    assert!(red, "the tab's background is painted");
+    let centre = |css: &str| {
+        let h = with_clip(css);
+        let node = h.query_by_label("Notes tab").map(|node| node.rect())?;
+        let word = h.output().shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text() == "Notes" => Some(text.visual_bounding_rect().center().x),
+            _ => None,
+        })?;
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        Some(word - node.center().x)
+    };
+    let (plain, padded) = (centre("").unwrap(), centre("#tab-notes { padding-left: 40px; }").unwrap());
+    assert!((padded - plain - 20.0).abs() < 0.5, "{plain} {padded}");
+}
+
+#[test]
+fn the_compact_edit_item_is_painted_in_its_box() {
+    let css = "#piano-edit { padding-left: 40px; background-color: #ff0000; }";
+    // The clipboard folds into the Edit menu when the Cut button is gone and the tools remain.
+    let compact = |width: f32| {
+        let mut h = with_clip(css);
+        h.set_size(egui::vec2(width, 900.0));
+        h.run();
+        let folded = h.query_all_by_label_contains("Select (").next().is_some()
+            && h.query_all_by_label_contains("Cut (").next().is_none();
+        let red = h.output().shapes.iter().any(
+            |shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.fill == egui::Color32::from_rgb(255, 0, 0)),
+        );
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        (folded, red)
+    };
+    let shown = (500..1400).step_by(100).map(|width| compact(width as f32)).find(|(folded, _)| *folded);
+    assert_eq!(shown, Some((true, true)), "the Edit menu shows in a narrow window, painted");
+}

@@ -475,10 +475,14 @@ fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<Icon
     let response = widgets::button_area(ui, area, Id::unique("piano-roll-edit-menu"), "Edit");
     let fill = crate::kit::motion::mix(Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response));
     let ink = theme::text_secondary();
-    paint.painter.rect_filled(area, 3.0, fill);
-    let icon = Rect::from_min_size(area.min, Vec2::splat(area.height()));
+    // The item's box is painted, and its icon and chevron lie in the content box, inside its
+    // border and padding.
+    let item =
+        crate::kit::element::PIANO_TOOL.id("piano-edit").attribute("kind", "piano-edit").response(&response).enter();
+    let content = item.paint_with(paint.painter, area, crate::kit::element::Native { radius: 3.0, fill }).content;
+    let icon = Rect::from_min_size(content.min, Vec2::splat(content.height()));
     IconButton::Copy.draw(paint.painter, icon, ink, paint.scale * ICON_IN_BUTTON);
-    chevron(paint.painter, Pos2::new(area.right() - MENU_PAD, area.center().y), ink);
+    chevron(paint.painter, Pos2::new(content.right() - MENU_PAD, content.center().y), ink);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
         for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {

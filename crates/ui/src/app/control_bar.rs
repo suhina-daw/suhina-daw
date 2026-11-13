@@ -414,7 +414,12 @@ impl App {
                     if response.clicked() {
                         self.shown = view;
                     }
-                    if carrying && self.shown != view && pointer.is_some_and(|p| at.expand(4.0).contains(p)) {
+                    // Only where the name shows: a name cut by its group or the bar is not a target.
+                    let shown_at = ui.clip_rect();
+                    if carrying
+                        && self.shown != view
+                        && pointer.is_some_and(|p| at.expand(4.0).contains(p) && shown_at.contains(p))
+                    {
                         *hovered_switch = Some(view);
                         painter.rect_stroke(
                             at.expand(3.0),

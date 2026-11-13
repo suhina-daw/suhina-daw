@@ -109,3 +109,10 @@ fn a_group_s_height_is_its_children_s_unless_the_sheet_sets_one() {
     assert!(height("").is_some_and(|h| (20.0..30.0).contains(&h)), "the child's height, with its room");
     assert_eq!(height("group { height: 8px; }"), Some(8.0));
 }
+
+#[test]
+fn css_order_does_not_reorder_a_bar_s_items() {
+    let plain = laid("", "status-bar", 400.0, &three());
+    let ordered = laid("#a { order: 1; } #c { order: -1; }", "status-bar", 400.0, &three());
+    assert_eq!(ordered.items, plain.items, "the app's order is the bar's");
+}

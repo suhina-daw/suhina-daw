@@ -420,6 +420,27 @@ pub fn compute(
     viewport: [f32; 2],
     sizes: &[Option<[Option<f32>; 2]>],
 ) -> Result<Vec<Option<Rect>>, String> {
+    compute_with(tree, styles, viewport, sizes, true)
+}
+
+/// [`compute`] with the children of every element in the order the tree gives them, whatever
+/// their `order`: for a host whose items have an order of their own (a bar's, #1372).
+pub fn compute_in_tree_order(
+    tree: &Tree,
+    styles: &[ComputedStyle],
+    viewport: [f32; 2],
+    sizes: &[Option<[Option<f32>; 2]>],
+) -> Result<Vec<Option<Rect>>, String> {
+    compute_with(tree, styles, viewport, sizes, false)
+}
+
+fn compute_with(
+    tree: &Tree,
+    styles: &[ComputedStyle],
+    viewport: [f32; 2],
+    sizes: &[Option<[Option<f32>; 2]>],
+    by_order: bool,
+) -> Result<Vec<Option<Rect>>, String> {
     if styles.len() != tree.elements().len()
         || styles.is_empty()
         || viewport.iter().any(|n| !n.is_finite() || !(0.0..=16384.0).contains(n))
@@ -583,10 +604,12 @@ pub fn compute(
         nodes.push(taffy.new_leaf_with_context(style, size).map_err(|e| e.to_string())?);
     }
     for (index, children) in children.iter_mut().enumerate() {
-        children.sort_by_key(|child| match styles.get(*child).map(|s| s.get(Property::Order)) {
-            Some(Value::Integer(order)) => order,
-            _ => 0,
-        });
+        if by_order {
+            children.sort_by_key(|child| match styles.get(*child).map(|s| s.get(Property::Order)) {
+                Some(Value::Integer(order)) => order,
+                _ => 0,
+            });
+        }
         let ordered = children.iter().filter_map(|index| nodes.get(*index).copied()).collect::<Vec<_>>();
         taffy.set_children(*nodes.get(index).ok_or("Missing layout node")?, &ordered).map_err(|e| e.to_string())?;
     }

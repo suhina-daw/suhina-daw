@@ -166,7 +166,7 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
             all.push(element);
             sizes.push(Some(item.size));
         }
-        let laid = super::native::tree_layout(themed.then_some(&*engine), all, at, &sizes, size)?;
+        let laid = super::native::tree_layout(themed.then_some(&*engine), all, at, &sizes, size, false)?;
         let (bar_rect, bar_style) = laid.first()?;
         let origin = bar_rect.map_or(Vec2::ZERO, |rect| rect.min.to_vec2());
         let [top, right, bottom, left] = bar_style.insets_in(size[0]);

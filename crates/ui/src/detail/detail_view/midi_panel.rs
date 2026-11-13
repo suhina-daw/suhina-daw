@@ -330,8 +330,11 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
         } else {
             motion::mix(theme::text_hint(), theme::text_secondary(), widgets::hover(ui, &response))
         };
-        let ink = el.color_or(ink);
-        widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, font.clone(), ink);
+        let ink = el.own_color_or(ink);
+        // The tab's box is painted, and its word lies in the content box, inside its border and
+        // padding.
+        let content = el.paint(painter, cell).content;
+        widgets::text_in(painter, content, Align2::CENTER_CENTER, text, font.clone(), ink);
         if on {
             let line = Rect::from_min_max(
                 Pos2::new(cell.left() + 4.0, cell.bottom() - 2.0),

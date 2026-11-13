@@ -192,7 +192,11 @@ impl App {
             let Some(tab) = laid.at(index, whole.min) else { continue };
             let element =
                 crate::kit::element::PROJECT_TAB.attr(crate::kit::element::Selected, Some(id) == active).enter();
-            let close = Rect::from_center_size(Pos2::new(tab.right() - PAD - 4.0, tab.center().y), Vec2::splat(12.0));
+            // The name and the close button lie in the tab's content box, inside its border and
+            // padding.
+            let content = element.content_in(tab);
+            let close =
+                Rect::from_center_size(Pos2::new(content.right() - PAD - 4.0, tab.center().y), Vec2::splat(12.0));
             let response = widgets::button_area(ui, tab, Id::unique(("tab", id.0)), format!("Tab {name}"));
             let close_response =
                 widgets::button_area(ui, close, Id::unique(("close-tab", id.0)), format!("Close {name}"));
@@ -213,7 +217,7 @@ impl App {
             let text = element.own_color_or(motion::mix(theme::text_secondary(), theme::text_primary(), lit));
             widgets::paint_text(
                 &painter,
-                Pos2::new(tab.left() + PAD, tab.center().y - galley.size().y / 2.0),
+                Pos2::new(content.left() + PAD, tab.center().y - galley.size().y / 2.0),
                 galley,
                 text,
             );
