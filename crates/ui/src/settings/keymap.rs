@@ -285,9 +285,12 @@ pub fn not_in_piano_roll(action: &str) -> bool {
     !in_piano_roll(action)
 }
 
-/// Whether `a` and `b` can both run on the same key press, so one key for both is a conflict.
+/// Whether `a` and `b` can both run on the same key press, so one key for both is a conflict. The
+/// piano roll's own keys are a scope of their own: while it has the keyboard they come first and
+/// take the key from a window action on the same key (Ctrl+Shift+E splits the clip there and hides
+/// the editor elsewhere), and outside it they never run, so the two never meet.
 fn overlap(a: &str, b: &str) -> bool {
-    !((piano_roll_only(a) && not_in_piano_roll(b)) || (not_in_piano_roll(a) && piano_roll_only(b)))
+    piano_roll_only(a) == piano_roll_only(b)
 }
 
 /// The detail area's own actions, listed with the window's, and their default keys.
@@ -595,7 +598,7 @@ const DEFAULTS: [(&str, &[&str]); 95] = [
     ("pianoRoll.join", &["Ctrl+J"]),
     ("pianoRoll.fitToTime", &["Ctrl+Alt+J"]),
     ("pianoRoll.crop", &["Ctrl+Shift+J"]),
-    ("pianoRoll.splitClip", &["Ctrl+E"]),
+    ("pianoRoll.splitClip", &["Ctrl+Shift+E"]),
 ];
 
 impl Default for Keymap {
@@ -815,7 +818,9 @@ impl Keymap {
             .filter(|(id, _)| wanted(id))
             .flat_map(|(id, keys)| keys.iter().map(move |k| (id, k)))
             .collect();
-        all.sort_by_key(|(_, k)| std::cmp::Reverse(k.modifier_count()));
+        // Longer combinations first; among the same, the piano roll's own keys, which take the
+        // key from a window action while it has the keyboard (› `overlap`).
+        all.sort_by_key(|(id, k)| (std::cmp::Reverse(k.modifier_count()), !piano_roll_only(id)));
         let mut fired = Vec::new();
         for (id, key) in all {
             // A key held down repeats; only the actions that step something (the arrows, undo)

@@ -429,8 +429,9 @@ fn a_held_key_toggles_once_and_steps_on_repeat() {
     }
 }
 
-/// Join, Fit to time range, Crop and Split clip have keys of their own in the piano roll (#1284);
-/// Split clip takes Ctrl+E, the Arrangement's split key, as Ctrl+Shift+E hides the editor there.
+/// Join, Fit to time range, Crop and Split clip have keys of their own in the piano roll (#1284).
+/// Split clip shares Ctrl+Shift+E with Hide editor: the piano roll's key wins while it has the
+/// keyboard, the window's elsewhere.
 #[test]
 fn the_clip_edit_keys_are_piano_roll_keys() {
     let known = actions();
@@ -438,7 +439,7 @@ fn the_clip_edit_keys_are_piano_roll_keys() {
         ("pianoRoll.join", "Ctrl+J"),
         ("pianoRoll.fitToTime", "Ctrl+Alt+J"),
         ("pianoRoll.crop", "Ctrl+Shift+J"),
-        ("pianoRoll.splitClip", "Ctrl+E"),
+        ("pianoRoll.splitClip", "Ctrl+Shift+E"),
     ] {
         let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
         assert_eq!(action.group, PIANO_ROLL);
@@ -446,4 +447,22 @@ fn the_clip_edit_keys_are_piano_roll_keys() {
         assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
     }
     assert!(Keymap::default().conflicts().is_empty());
+    assert!(!overlap("pianoRoll.splitClip", "view.editor"), "the piano roll's own scope");
+    assert!(overlap("pianoRoll.splitClip", "pianoRoll.join"));
+    // Pressed while the piano roll has the keyboard, the key splits and does not hide the editor.
+    let keymap = Keymap::default();
+    let mut input = egui::RawInput::default();
+    input.events.push(egui::Event::Key {
+        key: egui::Key::E,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+    });
+    let ctx = egui::Context::default();
+    let mut fired = Vec::new();
+    let _ = ctx.run_ui(input, |ui| {
+        fired = ui.input_mut(|i| keymap.pressed(i, |id| !not_in_piano_roll(id)));
+    });
+    assert_eq!(fired, vec!["pianoRoll.splitClip".to_string()]);
 }

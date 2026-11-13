@@ -814,7 +814,8 @@ notes are untouched, and a clip that holds audio refuses them.
   (a piece shorter than a hundredth of a beat goes). An arrangement clip moves with its start
   marker, so what is left plays where it played; a looping one keeps its end and goes on looping
   over what is left. A time selection outside the part of the clip that plays is refused.
-- **Split clip** (`clip.split` with `ats`, **Ctrl+E**): the clip is cut at the time selection's
+- **Split clip** (`clip.split` with `ats`, **Ctrl+Shift+E** while the piano roll has the keyboard,
+  where its own keys come before the window's, so Hide editor keeps the key everywhere else): the clip is cut at the time selection's
   edges (where the clip first plays them), into clips of their own on the same lane, as the
   Arrangement's split does, in one undo step. Without a time selection the key does nothing (it
   never splits at the playhead); the menu's Split clip here cuts at the clicked point.
@@ -1239,10 +1240,12 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Ctrl+L | The clip's own loop: over the time selection (again on the same stretch: off), or with no time selection the clip's loop on or off, as a click on the ruler's loop bar (after a click in the piano roll; elsewhere Ctrl+L is the Arrangement's loop) |
 | Alt+L | Legato, as the Notes tab's button: the selected notes, or every note when none is selected (after a click in the piano roll; › Other note tools) |
 | Ctrl+J; Ctrl+Alt+J | Joins the selected notes that touch or overlap on one key; fits the selected notes to the time selection (› Joining, fitting, cropping and splitting) |
-| Ctrl+Shift+J; Ctrl+E | Crops the clip to the time selection; splits the clip at the time selection's edges (an arrangement clip) |
+| Ctrl+Shift+J; Ctrl+Shift+E | Crops the clip to the time selection; splits the clip at the time selection's edges (an arrangement clip; while the piano roll has the keyboard, Ctrl+Shift+E is this and not Hide editor) |
 | Ctrl+Shift+E | Hides the editor (the detail area), or shows it again (`view.editor`, › Least height and closing) |
 
-The keys after a click in the piano roll are keymap actions ([`docs/shortcuts.md`](../shortcuts.md)):
+The piano roll's own keys are a scope of their own: while it has the keyboard they come before a
+window key on the same key (Ctrl+Shift+E splits the clip there and hides the editor elsewhere), so
+the two are not a conflict. The keys after a click in the piano roll are keymap actions ([`docs/shortcuts.md`](../shortcuts.md)):
 the `selection.*` ones the window has anyway, and `pianoRoll.selectAll`, `.deselect`, `.earlier`,
 `.later`, `.up`, `.down`, `.octaveUp`, `.octaveDown`, `.shorter`, `.longer`, `.draw`,
 `.tool1` … `.tool6`, `.gridNarrow`, `.gridWiden`, `.gridTriplet`, `.gridSnap`, `.zoomSelection`,
