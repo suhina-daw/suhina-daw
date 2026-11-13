@@ -1077,6 +1077,15 @@ impl Vst3Plugin {
         Ok(crate::ara::wrap_state(stream.bytes(), self.ara.as_deref().and_then(crate::ara::Document::store)))
     }
 
+    /// The component's own state as it gives it, without an ARA document's edits; `None` when
+    /// it gives none.
+    fn component_bytes(&self) -> Option<Vec<u8>> {
+        let stream = ComWrapper::new(MemoryStream::new(Vec::new()));
+        let raw = stream.to_com_ptr::<IBStream>()?;
+        // SAFETY: a live component writing to a live stream.
+        ok(unsafe { self.component.getState(raw.as_ptr()) }).then(|| stream.bytes())
+    }
+
     /// The controller's own state, when it is a separate object that gives one.
     pub(crate) fn controller_state(&mut self) -> Option<Vec<u8>> {
         let controller = self.controller.as_ref()?;
@@ -1098,11 +1107,18 @@ impl Vst3Plugin {
         if let Some(suhina_plugins::vst2::Program::Chunk(_)) = suhina_plugins::vst2::single_program(data) {
             return Err("a VST3 plug-in does not read a VST2 program chunk (.fxp); give it a bank (.fxb) or its own saved state".into());
         }
+        let indexed = indexed_state_matches(data, &self.class_id);
+        // Some plug-ins answer yes to a bank of parameter values and leave their state as it was;
+        // only then are the values set by number. One whose state changed converted the bank
+        // itself, and the raw numbers must not overwrite that (`plugin-hosting.md` › Handing
+        // over the state).
+        let before = if indexed { self.component_bytes() } else { None };
         let stream = ComWrapper::new(MemoryStream::new(data.to_vec()));
         let raw = stream.to_com_ptr::<IBStream>().ok_or("stream")?;
         // SAFETY: a live component reading from a live stream.
         let taken = ok(unsafe { self.component.setState(raw.as_ptr()) });
-        let parameters = if !taken && indexed_state_matches(data, &self.class_id) {
+        let ignored = taken && before.is_some() && self.component_bytes() == before;
+        let parameters = if indexed && (!taken || ignored) {
             suhina_plugins::vst2::program_values(data).map_or(0, |values| self.set_parameters(&values))
         } else {
             0

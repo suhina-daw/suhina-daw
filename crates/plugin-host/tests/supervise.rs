@@ -339,6 +339,31 @@ fn a_bank_of_programs_is_set_as_parameters() {
     assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125));
 }
 
+#[test]
+fn a_bank_answered_yes_but_not_read_is_still_set_as_parameters() {
+    let (mut plugin, mut audio) = start("test:vst3");
+    let before = block(&mut audio, PATIENT);
+    // The fixture's version 98 bank: the component says it took it and changes nothing.
+    let mut bank = b"CcnK".to_vec();
+    bank.extend_from_slice(&[0; 4]);
+    bank.extend_from_slice(b"FxBk");
+    for word in [2u32, 0x4761696e, 98, 1, 0] {
+        bank.extend_from_slice(&word.to_be_bytes());
+    }
+    bank.resize(156, 0);
+    bank.extend_from_slice(b"CcnK");
+    bank.extend_from_slice(&(4u32 * 5 + 28 + 4).to_be_bytes());
+    bank.extend_from_slice(b"FxCk");
+    for word in [1u32, 0x4761696e, 1, 1] {
+        bank.extend_from_slice(&word.to_be_bytes());
+    }
+    bank.extend_from_slice(&[0; 28]);
+    bank.extend_from_slice(&0.125f32.to_be_bytes());
+    assert_ne!(before.1, 0.125, "the default differs from the bank's value");
+    plugin.load_state(bank).unwrap();
+    assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125));
+}
+
 /// An `.fxp` file of `kind` for the declared Gain predecessor: the header, the name, then `rest`.
 fn fxp(kind: &[u8; 4], count: u32, rest: &[u8]) -> Vec<u8> {
     let mut out = b"CcnK".to_vec();

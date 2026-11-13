@@ -405,10 +405,14 @@ state goes with the component's (`set_state` carries both) and is
 restored after a restart. A plug-in that refuses the state runs with its defaults and the
 caller is told (`offline::render_with_state`, `suhina-cli plugin run-device`). Measured on
 a real project: two effects read their VST2 chunk banks (the output changes with the saved
-settings). A component's successful state conversion is authoritative: the host never
-queues raw parameter values over it. When the component refuses a parameter bank (`FxBk`),
-the host can set the current program's value `i` to parameter id `i` only when the VST3
-class id is derived from that bank's VST2 id and every required parameter id exists.
+settings); a third takes a parameter bank (`FxBk`) in `setState` without applying it. A
+component that converts the state itself is authoritative: a newer synth that migrated its
+predecessor's bank lost its sound when the host then queued the raw values over it. So the
+host compares the component's own state (`getState`) before and after `setState`, and sets the
+current program's value `i` to parameter id `i` only when the component refused the bank or
+answered yes and left its state unchanged, and only when the VST3 class id is derived from
+that bank's VST2 id and every required parameter id exists. With that the third plays with the
+project's settings and the migrated synth keeps its own.
 The values go to the controller (`setParamNormalized`) and to the processor through the
 next block's parameter changes (`crates/plugin-host/src/vst3/params.rs`). A compatibility
 declaration promises state conversion, not identical parameter numbering, so it does not

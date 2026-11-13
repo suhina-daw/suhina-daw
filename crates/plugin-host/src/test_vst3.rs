@@ -138,6 +138,14 @@ impl IComponentTrait for Processor {
                 };
                 1.0 - f32::from_be_bytes(bytes)
             }
+            // Version 98 of the predecessor's bank: answered yes and not read, as a measured
+            // effect does with a parameter bank, so the host has to set its values by number.
+            bank if bank.starts_with(b"CcnK")
+                && bank.get(8..12) == Some(b"FxBk")
+                && bank.get(20..24) == Some(&98u32.to_be_bytes()) =>
+            {
+                return kResultOk;
+            }
             // As a plug-in seen in #1167 does: a single program's chunk is answered yes and read
             // not at all, so only the host can tell the caller it did not take.
             program if program.starts_with(b"CcnK") && program.get(8..12) == Some(b"FPCh") => return kResultOk,
