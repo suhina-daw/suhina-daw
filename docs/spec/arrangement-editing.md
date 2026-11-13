@@ -684,7 +684,7 @@ Play button pass the setting **Play from** (Settings › Arrangement › Time an
 **Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them; while playing, playback goes on and the next start begins there. A click where a drag would move the clip (by default its name bar; with the lower half moving it, that half) picks it whole and moves the marker to its exact start, off the grid too, even when it was picked already. A click where a drag would paint time picks it but sets the play start on the grid line nearest the click (the line before it when the nearest is at or past the clip's end), never before the clip's start, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with a
-time selection painted after the clip was picked, no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
+time selection painted after the clip was picked, the marker moved elsewhere after the pick (a click on a ruler, a marker or a lane: the clip stays picked, and play starts where the user put the marker until a clip is picked again), no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
 from the marker.
 
 Playing from a clip **moves the marker** to the clip's start rather than leaving it where it was.
