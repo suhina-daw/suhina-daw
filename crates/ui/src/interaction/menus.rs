@@ -406,12 +406,14 @@ fn rename_item(ui: &mut Ui, target: serde_json::Value, name: &str, actions: &mut
 
 /// The menu of arrangement clips; `stack` is true when the stacking setting for the clips' kind
 /// is on, so their copies leave the clips they land on as they are. `clips` is the selection the
-/// click fell in, or the one clip it fell on; `enabled` is whether the clicked clip plays now.
+/// click fell in, or the one clip it fell on; `enabled` is whether the clicked clip plays now, and
+/// `linked` whether it is a linked copy (#1414).
 pub fn clip_menu(
     ui: &mut Ui,
     clips: &[(TrackId, ClipId)],
     stack: bool,
     enabled: bool,
+    linked: bool,
     name: &str,
     actions: &mut Vec<Action>,
 ) {
@@ -467,6 +469,18 @@ pub fn clip_menu(
             params["stack"] = json!(true);
         }
         actions.push(Action::new("clip.duplicate", params));
+        ui.close();
+    }
+    if ui.button("Duplicate linked").clicked() {
+        let mut params = json!({ "clips": list.clone(), "linked": true });
+        if stack {
+            params["stack"] = json!(true);
+        }
+        actions.push(Action::new("clip.duplicate", params));
+        ui.close();
+    }
+    if linked && ui.button("Unlink").clicked() {
+        actions.push(Action::new("clip.unlink", json!({ "clips": list.clone() })));
         ui.close();
     }
     let mute = if enabled { "Mute" } else { "Unmute" };

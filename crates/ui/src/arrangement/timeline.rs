@@ -125,6 +125,8 @@ pub struct ClipBox {
     pub take: Option<usize>,
     /// It plays through its channel's ARA plug-in (#990).
     pub ara: bool,
+    /// A linked copy: its content is linked and another arrangement clip plays it too (#1414).
+    pub linked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -500,6 +502,18 @@ impl Timeline {
             if kind == ColumnKind::Return { returns.push(lane) } else { lanes.push(lane) }
         }
         lanes.extend(returns);
+        // Linked copies (#1414): a content marked linked that two or more arrangement clips play.
+        if project.contents.iter().any(|c| c.linked) {
+            let mut plays: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+            for clip in project.arrangement.lanes.iter().flat_map(|l| &l.clips) {
+                *plays.entry(clip.content.0).or_default() += 1;
+            }
+            for clip in lanes.iter_mut().flat_map(|l: &mut Lane| &mut l.clips) {
+                let content = clip.stack_key.0;
+                clip.linked = project.content(suhina_engine::model::ContentId(content)).is_some_and(|c| c.linked)
+                    && plays.get(&content).is_some_and(|n| *n > 1);
+            }
+        }
         let markers: Vec<MarkerFlag> = project
             .arrangement
             .markers
@@ -838,6 +852,7 @@ fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> C
         rows: 1,
         take: None,
         ara: clip.ara,
+        linked: false,
     }
 }
 

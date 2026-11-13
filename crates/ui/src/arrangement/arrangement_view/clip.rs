@@ -257,7 +257,7 @@ pub(super) fn clip_box<'a>(
     } else if response.hovered() {
         ui.ctx().set_cursor_icon(if copy_key { egui::CursorIcon::Copy } else { egui::CursorIcon::Grab });
     }
-    let label = format!("Clip {name} on {} at bar {bar}", lane.name);
+    let label = format!("Clip {name} on {} at bar {bar}{}", lane.name, if clip.linked { ", linked" } else { "" });
     // Selected or not, as it is drawn: a screen reader and the tests read it (#695).
     let picked = state.is_selected(key);
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, picked, &label));
@@ -280,7 +280,7 @@ pub(super) fn clip_box<'a>(
         ui.ctx().data_mut(|d| d.remove::<String>(Id::unique(("clip-rename", key.1.0))));
     }
     egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-        menus::clip_menu(ui, &menu_clips, stack, clip.enabled, &clip.name, actions);
+        menus::clip_menu(ui, &menu_clips, stack, clip.enabled, clip.linked, &clip.name, actions);
         let ara = state
             .ara_tracks
             .iter()
@@ -1725,6 +1725,9 @@ pub(super) fn paint_clip(
     if clip.take.is_some() {
         paint_take_marker(painter, rect, ink);
     }
+    if clip.linked {
+        paint_link_marker(painter, rect, ink);
+    }
 }
 
 /// The piano roll's time selection on `clip`, in beats from the clip's start and within it:
@@ -1748,6 +1751,20 @@ fn paint_take_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
     for line in 0..3 {
         let y = (bottom - line as f32 * 2.5).round() + 0.5;
         painter.hline(egui::Rangef::new(left, left + 7.0), y, Stroke::new(1.0, ink));
+    }
+}
+
+/// The small mark in a clip's lower right corner that says it is a linked copy: two links of a
+/// chain (#1414).
+fn paint_link_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
+    if rect.height() < 16.0 || rect.width() < 24.0 {
+        return;
+    }
+    let centre = Pos2::new(rect.right() - 10.0, rect.bottom() - 6.0);
+    let stroke = Stroke::new(1.0, ink);
+    for dx in [-2.5, 2.5] {
+        let link = Rect::from_center_size(centre + egui::vec2(dx, 0.0), egui::vec2(6.0, 4.0));
+        painter.rect_stroke(link, 2.0, stroke, StrokeKind::Inside);
     }
 }
 
@@ -2771,6 +2788,7 @@ pub(super) fn paint_live_take(
         // It holds takes from its first pass on: the corner mark says so (#1078).
         take: Some(0),
         ara: false,
+        linked: false,
     };
     paint_clip(painter, rect, lane, &clip, Shown::of(&clip), take.start, x_of, beat_width, timeline, false, look);
     // An audio take's waveform so far: a line per peak, about the middle of the clip.

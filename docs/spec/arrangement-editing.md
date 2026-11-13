@@ -392,6 +392,27 @@ same for the selection. Points selected on an automation lane are deleted by Del
 clip; selecting a clip ends a selection of points, and selecting points ends the clips' selection
 ([automation](automation.md#in-the-arrangement-view)).
 
+### Linked copies
+
+A duplicate is independent: the first edit through a clip whose content another clip also plays
+gives it its own copy of the content (copy on write, ADR 0001). A **linked copy** keeps one content
+on purpose (#1414): `clip.duplicate {clips, linked: true}` (the menu's **Duplicate linked**)
+places copies that play the clips' content and marks the content linked, so an edit to the notes
+or audio through any of them, or through the original, changes them all, with no copy on write.
+A clip of a linked content that another arrangement clip plays too shows a mark of two chain
+links in its lower right corner, and its name reads ", linked" to a screen reader.
+
+`clip.unlink {clips}` (the menu's **Unlink**, shown on a linked copy) gives each named linked clip
+its own copy of the content as it is now; the other clips stay linked. A content left with one
+clip is no longer linked. A clip that is not linked is left as it is. One undo step.
+
+An ordinary duplicate, a paste and a drag copy of a linked clip are independent at once: they get
+a content of their own, so they never join the link unasked. A split's parts keep playing the
+content from where it was cut, so they stay linked copies. Placement properties (start,
+length, offset, loop, fades, gain envelope, colour) stay each clip's own, as for any clip. The
+project file keeps `linked` on the content ([format](suhina-format.md) › Parts). An imported
+`.flp` pattern placed several times comes in linked ([FLP mapping](flp-model-mapping.md)).
+
 ## Automation lanes
 
 Under a track, the lanes of its automation, shown and hidden with the envelope button on its

@@ -14,3 +14,6 @@
   notes, so no default tone plays in their place, and play again when switched on or relinked.
 - **Groups apply their pan and can take sends:** a group's pan applies once to its sum and its
   post-fader sends; a send can go into a group, and solo follows sends as well as outputs.
+- **Linked copies:** Duplicate linked in a clip's menu makes copies that keep one content, so
+  editing any of them edits all; they carry a chain mark, and Unlink gives a clip its own content
+  again. An ordinary duplicate stays independent.

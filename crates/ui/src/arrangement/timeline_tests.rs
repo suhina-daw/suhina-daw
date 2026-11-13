@@ -416,3 +416,27 @@ fn a_dragged_tempo_or_pitch_draws_the_clip_at_its_new_length() {
     assert!((tempo - 2.0).abs() < 1e-9, "{tempo}");
     assert_eq!(preview(Dragged::Tempo(120.0)).factor(&unwarped), None, "unwarped audio has no tempo");
 }
+
+#[test]
+fn only_clips_that_share_a_linked_content_show_as_linked() {
+    let mut project = demo_project();
+    let lane = &mut project.arrangement.lanes[0];
+    let content = lane.clips[0].content;
+    let mut copy = lane.clips[0].clone();
+    copy.start += 256.0;
+    lane.clips.push(copy);
+    let linked = |project: &Project| -> Vec<bool> {
+        Timeline::build(project, None)
+            .lanes
+            .iter()
+            .flat_map(|l| &l.clips)
+            .filter(|c| c.linked)
+            .map(|c| c.linked)
+            .collect()
+    };
+    assert!(linked(&project).is_empty(), "a shared content that is not linked is no linked copy");
+    project.contents.iter_mut().filter(|c| c.id == content).for_each(|c| c.linked = true);
+    assert_eq!(linked(&project).len(), 2, "both clips of the linked content");
+    project.arrangement.lanes[0].clips.pop();
+    assert!(linked(&project).is_empty(), "a linked content one clip plays shows no mark");
+}
