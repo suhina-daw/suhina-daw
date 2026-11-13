@@ -199,14 +199,6 @@ pub(crate) fn element_style(
             computed.variables = Arc::new(initial);
         }
     }
-    // The host's own values come first, so any rule may replace them.
-    if !element.variables.is_empty() {
-        let mut variables = (*computed.variables).clone();
-        for (name, value) in element.variables.iter().filter(|(name, _)| name.starts_with("--")).take(16) {
-            variables.insert(name.clone(), value.clone());
-        }
-        computed.variables = Arc::new(variables);
-    }
     let mut winners: BTreeMap<&str, (Priority, &Declaration)> = BTreeMap::new();
     let mut order = 0usize;
     for applied in sheets {

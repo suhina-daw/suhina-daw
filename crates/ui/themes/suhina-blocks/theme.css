@@ -105,14 +105,6 @@ icon[kind="record"] { image: url("assets/record.svg"); }
 icon[kind="solo"] { image: url("assets/solo.svg"); }
 icon[kind="stop"] { image: url("assets/stop.svg"); }
 icon[kind="audio"] { image: url("assets/track.audio.svg"); }
-track.body.color-4fc3f7 { image: url("assets/track.body.color-4fc3f7.svg"); }
-track.body.color-7fdb5a { image: url("assets/track.body.color-7fdb5a.svg"); }
-track.body.color-80ada1 { image: url("assets/track.body.color-80ada1.svg"); }
-track.body.color-a84f4f { image: url("assets/track.body.color-a84f4f.svg"); }
-track.body.color-b38bff { image: url("assets/track.body.color-b38bff.svg"); }
-track.body.color-e5484d { image: url("assets/track.body.color-e5484d.svg"); }
-track.body.color-f2d541 { image: url("assets/track.body.color-f2d541.svg"); }
-track.body.color-ff9a3c { image: url("assets/track.body.color-ff9a3c.svg"); }
 track-header { image: url("assets/track.body.svg"); }
 icon[kind="midi"] { image: url("assets/track.midi.svg"); }
 track-name { image: url("assets/track.name.svg"); }

@@ -440,8 +440,6 @@ struct StyleNode {
     id: Option<u32>,
     /// Pointer states (hover 1, active 2, disabled 4, focus 8) and the host's ([`mark_node`]).
     state: u16,
-    /// Custom properties the host gives the element ([`set_variable`]).
-    variables: Vec<(String, String)>,
     /// Attributes with a value the host gives the element (`color`), beside the states in
     /// `state` that are attributes without one.
     attributes: Vec<(String, String)>,
@@ -584,8 +582,7 @@ pub(super) fn enter(
                 | u16::from(!r.enabled()) << 2
                 | u16::from(r.has_focus()) << 3
         });
-        let node =
-            StyleNode { key, parent, element, id, state, variables: Vec::new(), attributes: Vec::new(), sheet: 0 };
+        let node = StyleNode { key, parent, element, id, state, attributes: Vec::new(), sheet: 0 };
         let index = engine.nodes.len();
         engine.nodes.push(node);
         engine.chains.push(0);
@@ -642,32 +639,6 @@ pub enum HostState {
 /// The host states and the selector names they match.
 pub(crate) const HOST_STATES: [(u16, &str); 6] =
     [(16, "checked"), (32, "selected"), (64, "playing"), (128, "recording"), (256, "armed"), (512, "muted")];
-
-/// Gives the element of this frame's tree at `node` the custom property `name` (`--track-colour`)
-/// as `value`, which it and its descendants see below every rule of the sheet.
-pub(super) fn set_variable(node: usize, name: &str, value: String) {
-    ENGINE.with(|engine| {
-        if let Some(node) = engine.borrow_mut().nodes.get_mut(node)
-            && node.variables.len() < 16
-        {
-            node.variables.push((name.to_owned(), value));
-        }
-    });
-}
-
-/// The variables Suhina sets for the elements in scope (`--track-colour`, `--clip-colour`, …),
-/// the innermost last, for artwork's `var()`.
-pub fn scope_variables() -> Vec<(String, String)> {
-    ENGINE.with(|engine| {
-        let engine = engine.borrow();
-        engine
-            .parents
-            .iter()
-            .filter_map(|&at| engine.nodes.get(at))
-            .flat_map(|node| node.variables.iter().cloned())
-            .collect()
-    })
-}
 
 /// `color` as `#RRGGBB` or `#RRGGBBAA`, for a value given to the sheet.
 pub fn hex(color: Color32) -> String {
@@ -1099,7 +1070,6 @@ fn chain_of(engine: &mut Engine, at: usize) -> Option<u64> {
     let mut hash = std::hash::DefaultHasher::new();
     (parent_chain, node.element.index(), name_of(engine, node), node.state, node.sheet).hash(&mut hash);
     node.attributes.hash(&mut hash);
-    node.variables.hash(&mut hash);
     let chain = hash.finish().max(1);
     *engine.chains.get_mut(at)? = chain;
     Some(chain)

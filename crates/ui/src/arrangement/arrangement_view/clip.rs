@@ -1358,7 +1358,7 @@ pub(super) fn paint_clip(
     let id = format!("clip-{}", clip.id.0);
     let own = crate::kit::element::CLIP
         .id(&id)
-        .variable("--clip-colour", crate::kit::native_css::hex(rgb(clip.color)))
+        .color(rgb(clip.color))
         .attr(crate::kit::element::Selected, selected)
         .attr(crate::kit::element::Muted, off)
         .attr(crate::kit::element::Playing, playing)

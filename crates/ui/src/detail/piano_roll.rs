@@ -237,11 +237,8 @@ pub fn show(
     cx: Context<'_>,
     actions: &mut Vec<Action>,
 ) {
-    // `--clip-colour`, the clip's colour, for the notes drawn inside it.
-    let el = crate::kit::element::PIANO_ROLL
-        .native(crate::kit::element::Native::default())
-        .variable("--clip-colour", crate::kit::native_css::hex(clip.color))
-        .enter();
+    // `[color]`, the clip's colour, for the notes drawn inside it.
+    let el = crate::kit::element::PIANO_ROLL.native(crate::kit::element::Native::default()).color(clip.color).enter();
     let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     // Its own box, which no bundled theme paints; the toolbar, keys and grid go in its content

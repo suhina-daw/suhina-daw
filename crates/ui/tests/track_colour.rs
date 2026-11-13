@@ -550,3 +550,59 @@ fn a_padded_header_folds_back_to_its_height_and_resizes_from_its_edge() {
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(resized > header.height() + 10.0, "the lane's own edge resizes it: {resized}");
 }
+
+/// The Arrangement with a theme whose only rules are `css`, in use.
+fn arrangement_with_theme(css: &str) -> Harness<'static, App> {
+    let (lanes, warnings) = theme::from_folder(theme::ThemeMeta::new("Lanes", "#123456"), css);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(demo_project()), &[]);
+    let ctx = egui::Context::default();
+    app.set_themes(&ctx, vec![suhina_ui::settings::themes::ThemeEntry { id: "lanes".into(), theme: lanes }], None);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(SIZE)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().use_theme(&ctx, "lanes");
+    harness.run();
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness
+}
+
+#[test]
+fn a_theme_colours_a_track_s_lane_from_its_color_attribute() {
+    // A colour no other part of the window uses, mixed from the track's own.
+    let harness = arrangement_with_theme(
+        "track-lane { background-color: color-mix(in srgb, attr(color type(<color>)), #000000 50%); }",
+    );
+    let header = harness.get_by_label("Track Drums").rect();
+    let own = suhina_session::colours::LEGACY[0];
+    let half = |c: u8| c / 2 + (c % 2);
+    let near = |a: u8, b: u8| a.abs_diff(b) <= 1;
+    let lane = filled_rects(&harness).into_iter().find(|r| {
+        let [red, green, blue, _] = r.fill.to_srgba_unmultiplied();
+        near(red, half(own.0))
+            && near(green, half(own.1))
+            && near(blue, half(own.2))
+            && r.rect.left() >= header.right() - 1.0
+            && (r.rect.center().y - header.center().y).abs() < header.height() / 2.0
+    });
+    let lane = lane.unwrap_or_else(|| {
+        let near_row: Vec<_> = filled_rects(&harness)
+            .into_iter()
+            .filter(|r| {
+                r.rect.left() >= header.right() - 1.0
+                    && (r.rect.center().y - header.center().y).abs() < header.height() / 2.0
+            })
+            .map(|r| (r.rect, r.fill))
+            .collect();
+        panic!("Drums' lane is filled with its colour mixed with black: {header:?} {near_row:?}")
+    });
+    assert!(lane.rect.width() > 400.0, "the whole row: {:?}", lane.rect);
+}
