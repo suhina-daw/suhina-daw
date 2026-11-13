@@ -976,14 +976,15 @@ Accepted, from [issue #1370](https://github.com/suhina-daw/suhina-daw/issues/137
   the sheet sets wins. A splitter stays beside a panel whose size the grid leaves to its content
   size, and its drag sets that size.
 
-## Amendment: the Launcher, the mixer and the Arrangement draw from their elements (2026-11-14)
+## Amendment: the Launcher, the mixer, the Arrangement and the piano roll draw from their elements (2026-11-14)
 
 Accepted, from [issue #1417](https://github.com/suhina-daw/suhina-daw/issues/1417), the first
 slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 10 of #995).
 
 - **What these views draw is an element.** Every colour the Launcher, its mixer strips and
-  meters, and the Arrangement (its ruler, grid, lanes, clips, take lanes, automation lanes and
-  envelopes) paint is read from the element that draws it, with the palette token it used before
+  meters, the Arrangement (its ruler, grid, lanes, clips, take lanes, automation lanes and
+  envelopes) and the piano roll's grid, notes, ruler and loop row paint is read from the element
+  that draws it, with the palette token it used before
   as the fallback: where no rule of a sheet reaches the element, it paints as before, in every
   theme. The palette stays until every view has moved; then the fallbacks become the user-agent
   sheet's values.
@@ -999,6 +1000,7 @@ slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 
   `start-marker`, `marker`, `time-selection`, `marquee`, `drop-target`, `slot-mark`,
   `mapping-overlay`, `clip-fade`, `clip-envelope`, `take-header`, `automation-header`,
   `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `device-list`,
-  `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool`; Main's header is
+  `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool`, `piano-slice`,
+  `piano-row[kind="hover"]`, `piano-note[kind="draft"]`, `velocity[kind="line"]`; Main's header is
   `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all**
   `scene[kind="stop-all"]`, the Launcher mixer's top line `divider#mixer-splitter`.
