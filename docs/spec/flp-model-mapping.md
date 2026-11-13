@@ -67,7 +67,10 @@ The existing project.open command opens the result through the same session path
 Imported arrangement tracks are the source instrument/sample tracks, so clips, devices,
 meters and mixer controls address the same channel. Patterns with several source channels
 split into per-source contents cached by original content and source; repeated placements
-still share their per-source notes. All placements of one source merge into one arrangement
+still share their per-source notes, as linked copies: a pattern content placed more than once is
+marked linked, so an edit through one placement reaches the others until a clip is unlinked
+([arrangement editing](arrangement-editing.md) › Linked copies). Audio sources stay ordinary
+shared contents, copied on the first edit. All placements of one source merge into one arrangement
 lane, even when the original uses several playlist rows. Original row labels stay in clip
 extension metadata. Instruments and shared mixer buses are never duplicated.
 Mixed-row groups survive only when each member belongs exclusively to that group and all

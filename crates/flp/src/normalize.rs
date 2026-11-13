@@ -148,5 +148,15 @@ pub(crate) fn apply(import: &mut Import) -> Result<(), FlpError> {
             lane
         })
         .collect();
+    // A pattern placed several times is one pattern in the source: its placements come in as
+    // linked copies, so an edit to one reaches the others until a clip is unlinked (#1414).
+    let mut plays: BTreeMap<ContentId, usize> = BTreeMap::new();
+    for clip in p.arrangement.lanes.iter().flat_map(|l| &l.clips) {
+        *plays.entry(clip.content).or_default() += 1;
+    }
+    for content in &mut p.contents {
+        let pattern = content.lanes.iter().any(|l| matches!(l.data, suhina_model::LaneData::Notes(_)));
+        content.linked = pattern && plays.get(&content.id).is_some_and(|n| *n > 1);
+    }
     Ok(())
 }

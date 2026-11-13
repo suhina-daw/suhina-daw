@@ -538,7 +538,13 @@ fn repeated_sources_from_separate_rows_merge_without_losing_placements() {
         assert_eq!(lane.clips.iter().map(|c| c.start).collect::<Vec<_>>(), [0., 4., 8.]);
         assert!(lane.clips.iter().all(|c| c.content == lane.clips[0].content));
         assert_eq!(lane.clips[2].extensions.0.iter().find(|e| e.key == "playlist-row").unwrap().data, b"Playlist 2");
+        // A pattern placed several times comes in as linked copies (#1414).
+        assert!(p.content(lane.clips[0].content).unwrap().linked);
     }
+    // Audio sources stay ordinary shared contents.
+    assert!(
+        p.contents.iter().filter(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_)))).all(|c| !c.linked)
+    );
 }
 
 #[test]
