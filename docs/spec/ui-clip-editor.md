@@ -140,13 +140,6 @@ not from velocity or opacity. Muted, erased and out-of-window notes remain dimme
 
 ## Coordinates
 
-A shared pattern can hold targeted note lanes for several instrument tracks independently
-of the track on which its clip is placed. The editor's **Pattern channel** menu selects the
-instrument lane to display, edit and audition. Changing it releases any preview notes.
-Note commands accept optional `targetTrack` (the instrument track id) alongside the usual
-clip address. Without it, the placement track is used. A target outside the pattern is an
-error; editing one target keeps the other lanes and the shared content intact.
-
 - **Time** is in beats from the start of the clip's content (its first beat is 0), the same beats
   the model stores (`Note::time`, `Note::duration`). The ruler shows bars and beats of the content
   (bar 1 at beat 0), in the project's time signature.

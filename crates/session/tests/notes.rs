@@ -112,22 +112,6 @@ fn notes_are_listed_with_midi_velocities() {
 }
 
 #[test]
-fn a_pattern_channel_can_be_edited_from_its_playlist_placement() {
-    let mut session = Session::new(project());
-    let address = json!({ "track": 1, "index": 3, "targetTrack": 2 });
-    let notes = run(&mut session, "note.list", address.clone()).unwrap();
-    assert_eq!(notes[0]["key"], 36);
-    let mut edit = address.clone();
-    edit["notes"] = json!([0]);
-    edit["semitones"] = json!(12);
-    run(&mut session, "note.move", edit).unwrap();
-    assert_eq!(run(&mut session, "note.list", address.clone()).unwrap()[0]["key"], 48);
-    run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(run(&mut session, "note.list", address).unwrap()[0]["key"], 36);
-    assert!(run(&mut session, "note.list", json!({ "track": 1, "index": 3, "targetTrack": 99 })).is_err());
-}
-
-#[test]
 fn adding_appends_notes_and_undoes() {
     let mut session = Session::new(project());
     let before = notes(&session, 1);

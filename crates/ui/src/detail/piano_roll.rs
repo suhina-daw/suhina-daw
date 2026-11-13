@@ -160,15 +160,6 @@ pub(crate) fn scale_switch_params(ctx: &egui::Context, address: &Value, scale: O
     }
 }
 
-/// Clip-level commands address the placement, independently of the selected note lane.
-pub(crate) fn placement_address(address: &Value) -> Value {
-    let mut address = address.clone();
-    if let Some(params) = address.as_object_mut() {
-        params.remove("targetTrack");
-    }
-    address
-}
-
 fn is_black(key: u8) -> bool {
     matches!(key % 12, 1 | 3 | 6 | 8 | 10)
 }
@@ -852,7 +843,7 @@ pub fn show(
     for_readers(ui, &layout, clip, state);
     scale_view::key_readers(ui, layout.keys, clip, &layout.rows, |key| layout.y_of(key), layout.key_height);
     // Notes the audition sounds go on now and off a moment later.
-    let track = clip.address.get("targetTrack").or_else(|| clip.address.get("track")).and_then(Value::as_u64);
+    let track = clip.address.get("track").and_then(Value::as_u64);
     // A drag held at the grid's edge scrolls the view for the next frame, its start moving along.
     if dragging && let Some(pointer) = now {
         layout::scroll_at_edges(state, grid_rect, pointer);

@@ -580,7 +580,6 @@ pub struct App {
     last_clip: Option<ClipRef>,
     /// The piano roll's own grid value, used unless Settings has it follow the control bar's.
     piano_grid: crate::detail::piano_roll_grid::PianoGrid,
-    pattern_track: Option<TrackId>,
     detail_width: f32,
     page: PageState,
     settings: Settings,
@@ -826,7 +825,6 @@ impl App {
             editor_closed: false,
             last_clip: None,
             piano_grid: crate::detail::piano_roll_grid::PianoGrid::default(),
-            pattern_track: None,
             detail_width: detail_view::STACK_WIDTH,
             page: PageState::default(),
             settings: Settings::default(),

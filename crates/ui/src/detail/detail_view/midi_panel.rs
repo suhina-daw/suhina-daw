@@ -521,7 +521,7 @@ fn fit_to_a_new_scale(response: &egui::Response, tools: &Tools<'_>, actions: &mu
                 for (index, name) in ROOT_NAMES.iter().enumerate() {
                     let root = crate::detail::piano_roll::pitch_class_name(u8::try_from(index).unwrap_or(0));
                     if ui.button(root).clicked() {
-                        let mut scale = crate::detail::piano_roll::placement_address(tools.address);
+                        let mut scale = tools.address.clone();
                         scale["root"] = json!(name);
                         scale["mode"] = json!(mode.name());
                         actions.push(Action::new("clip.setScale", scale));

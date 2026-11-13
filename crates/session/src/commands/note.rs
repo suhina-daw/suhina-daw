@@ -26,7 +26,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.list",
         label: "List a MIDI clip's notes: index, id (which names the note while the project is open, wherever it moves), time and length in beats, key (60 is C3), velocity 1 to 127 and whether it is muted",
-        params: &[CLIP_TRACK, NOTE_TARGET, CLIP, CLIP_INDEX, CLIP_SCENE],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
         kind: CommandKind::READ,
         run: notes::list,
         policy: Policy::DEFAULT,
@@ -36,7 +36,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Add notes to a MIDI clip; they go after its other notes, and the result gives their indices and ids",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -51,7 +50,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.delete",
         label: "Delete notes of a MIDI clip; later notes move up in the list and keep their ids",
-        params: &[CLIP_TRACK, NOTE_TARGET, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
         kind: CommandKind::EDIT,
         run: notes::delete,
         policy: Policy::DEFAULT,
@@ -61,7 +60,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Move notes of a MIDI clip in time and in pitch; fails if any note would start before 0 or leave keys 0 to 127",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -85,7 +83,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Set the length of notes of a MIDI clip, change it by a number of beats, or move their starts and keep their ends",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -114,7 +111,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Set the velocity of notes of a MIDI clip, or change it by an amount, each kept within 1 to 127",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -136,7 +132,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Quantise notes of a MIDI clip: move their starts, and with ends their ends, towards the nearest grid line",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -154,7 +149,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.copy",
         label: "Copy notes of a MIDI clip for note.paste; changes nothing",
-        params: &[CLIP_TRACK, NOTE_TARGET, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
         kind: CommandKind::READ,
         run: notes::copy,
         policy: Policy { after: After::Copies, ..Policy::DEFAULT },
@@ -162,7 +157,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.cut",
         label: "Copy notes of a MIDI clip for note.paste and delete them",
-        params: &[CLIP_TRACK, NOTE_TARGET, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
         kind: CommandKind::EDIT,
         run: notes::cut,
         policy: Policy { after: After::Copies, ..Policy::DEFAULT },
@@ -172,7 +167,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Add the copied notes to a MIDI clip, keeping their spacing; the result gives their indices and ids",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -193,7 +187,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Add a copy of notes of a MIDI clip right after their end, or beats and semitones away; the result gives the copies' indices and ids",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -215,7 +208,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.makeRoom",
         label: "Make room for notes of a MIDI clip: the notes of their keys under them are removed or cut, as replace does; notes no longer in the clip are left out",
-        params: &[CLIP_TRACK, NOTE_TARGET, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES, COVERED],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES, COVERED],
         kind: CommandKind::EDIT,
         run: notes::make_room,
         policy: Policy::DEFAULT,
@@ -225,7 +218,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Split notes of a MIDI clip at a beat, each note that spans it into two; the result gives the new notes' indices and ids; each first half keeps its note's id",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -251,7 +243,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Mute or unmute notes of a MIDI clip; with muted left out each named note is flipped; the result gives the state of each",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -267,7 +258,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Move the starts and velocities of notes of a MIDI clip slightly, like a person playing: a normally distributed draw within the limits for each note, which keeps its length unless it would overlap the next note on the key; the same seed gives the same result, and the result gives the seed",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -294,7 +284,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Move notes of a MIDI clip to the nearest key of a scale over a root; a tie goes to the lower key",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -319,7 +308,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.invert",
         label: "Mirror the keys of notes of a MIDI clip around the middle of the range they cover, each kept within 0 to 127",
-        params: &[CLIP_TRACK, NOTE_TARGET, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE, COVERED],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE, COVERED],
         kind: CommandKind::EDIT,
         run: note_tools::invert,
         policy: Policy::DEFAULT,
@@ -327,7 +316,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.reverse",
         label: "Turn notes of a MIDI clip round in time inside their own span (the earliest start to the latest end), lengths unchanged",
-        params: &[CLIP_TRACK, NOTE_TARGET, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE, COVERED],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION, REPLACE, COVERED],
         kind: CommandKind::EDIT,
         run: note_tools::reverse,
         policy: Policy::DEFAULT,
@@ -337,7 +326,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Make each note of a MIDI clip last until the next one starts, on any key; notes that start together end together, and the last ones keep their length or last until a given beat",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -359,7 +347,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Stretch notes of a MIDI clip in time about the earliest of their starts; 2 is twice as long, 0.5 half of it",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -377,7 +364,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Move the velocities of notes of a MIDI clip by a random draw, each kept within 1 to 127; the same seed gives the same result",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
@@ -398,7 +384,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Spread the velocities of notes of a MIDI clip evenly from one value to another in time order; one note takes the last value",
         params: &[
             CLIP_TRACK,
-            NOTE_TARGET,
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,

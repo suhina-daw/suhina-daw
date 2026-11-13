@@ -281,25 +281,11 @@ pub(crate) fn check_midi(p: &Project, content: ContentId) -> Result<(), CommandE
 /// The notes of an empty MIDI clip.
 static NO_NOTES: Notes = Notes::new();
 
-/// Selects the instrument lane independently of a pattern's playlist placement.
-fn note_target(content: &ClipContent, track: TrackId, params: &Value) -> Result<TrackId, CommandError> {
-    if let Some(value) = params.get("targetTrack") {
-        let id =
-            value.as_u64().and_then(|n| u32::try_from(n).ok()).map(TrackId).ok_or("targetTrack must be a track id")?;
-        if !content.lanes.iter().any(|l| l.target == Some(id) && matches!(l.data, LaneData::Notes(_))) {
-            return Err("targetTrack is not a note channel of this pattern".into());
-        }
-        return Ok(id);
-    }
-    Ok(track)
-}
-
 /// The notes of the clip `params` names (none for an empty MIDI clip).
 pub(crate) fn notes_of<'a>(p: &'a Project, params: &Value) -> Result<&'a Notes, CommandError> {
     let (_, content, track) = locate(p, params)?;
     check_midi(p, content)?;
     let content = p.content(content).ok_or("the clip's content is missing")?;
-    let track = note_target(content, track, params)?;
     Ok(content
         .lanes
         .iter()
@@ -316,7 +302,6 @@ fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Notes, Co
     let (_, id, track) = locate(p, params)?;
     check_midi(p, id)?;
     let content = p.contents.iter_mut().find(|c| c.id == id).ok_or("the clip's content is missing")?;
-    let track = note_target(content, track, params)?;
     let has_lane = content.lanes.iter().any(|l| plays_on(l, track) && matches!(l.data, LaneData::Notes(_)));
     if !has_lane {
         if !content.lanes.is_empty() {

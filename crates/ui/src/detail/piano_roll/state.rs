@@ -628,7 +628,6 @@ impl PianoRollState {
             // in time, or off again when it is on over that very stretch; with no time selection
             // the loop the clip has (or its whole length) on or off.
             "pianoRoll.loop" => {
-                params = super::placement_address(&params);
                 let looped = clip.shape.loop_range;
                 let span = self.span.as_ref().map(|span| (round_beat(span.start), round_beat(span.end)));
                 match span {
@@ -816,7 +815,7 @@ impl PianoRollState {
         if self.playing_key == Some(key) {
             return None;
         }
-        let track = clip.address.get("targetTrack").or_else(|| clip.address.get("track")).and_then(Value::as_u64)?;
+        let track = clip.address.get("track").and_then(Value::as_u64)?;
         self.playing_key = Some(key);
         Some(Action::new("preview.noteOn", json!({ "track": track, "key": key, "velocity": self.last_velocity })))
     }
@@ -824,7 +823,7 @@ impl PianoRollState {
     /// Lets go of the key the key column is playing, `preview.noteOff`; `None` when none sounds.
     pub fn key_release(&mut self, clip: &PianoClip) -> Option<Action> {
         let key = self.playing_key.take()?;
-        let track = clip.address.get("targetTrack").or_else(|| clip.address.get("track")).and_then(Value::as_u64)?;
+        let track = clip.address.get("track").and_then(Value::as_u64)?;
         Some(Action::new("preview.noteOff", json!({ "track": track, "key": key })))
     }
 

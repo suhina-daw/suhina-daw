@@ -437,8 +437,7 @@ fn rows_toggles(
                 // keeps the clip's scale, so its rows stay highlighted on the whole keyboard.
                 if !scaled && clip.scale.is_none() {
                     let mut params = crate::detail::piano_roll::scale_switch_params(ui.ctx(), &clip.address, None);
-                    let placement = super::placement_address(&clip.address);
-                    if let (Some(params), Some(address)) = (params.as_object_mut(), placement.as_object()) {
+                    if let (Some(params), Some(address)) = (params.as_object_mut(), clip.address.as_object()) {
                         params.extend(address.clone());
                     }
                     actions.push(Action::new("clip.setScale", params));
