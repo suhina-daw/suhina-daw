@@ -851,3 +851,52 @@ fn legato_replaces_only_under_the_notes_it_lengthens() {
     run(&mut session, "note.legato", params).unwrap();
     assert_eq!(spans(&session), [(0.0, 1.0, 60), (1.0, 1.0, 60), (1.2, 0.5, 60), (2.0, 0.5, 62)]);
 }
+
+#[test]
+fn an_edit_through_a_linked_copy_changes_every_copy_and_unlink_separates_one() {
+    let mut session = Session::new(project());
+    let duplicate = |session: &mut Session, linked: bool| {
+        let made = run(
+            session,
+            "clip.duplicate",
+            json!({ "clips": [{ "track": 1, "index": 0 }], "stack": true, "linked": linked }),
+        )
+        .unwrap();
+        made["clips"][0]["index"].as_u64().unwrap() as usize
+    };
+    let copy = duplicate(&mut session, true);
+    assert_eq!(arranged(&session)[copy], 1, "a linked copy plays the same content");
+    assert!(session.project().content(ContentId(1)).unwrap().linked);
+    run(&mut session, "note.move", json!({ "track": 1, "index": copy, "notes": [0], "semitones": 12 })).unwrap();
+    // No copy on write: the original plays the edit too.
+    assert_eq!(arranged(&session)[0], 1);
+    assert_eq!(arranged(&session)[copy], 1);
+    assert_eq!(notes(&session, 1)[0].key, 72);
+
+    // An ordinary duplicate of a linked clip is independent at once.
+    let independent = duplicate(&mut session, false);
+    let own = arranged(&session)[independent];
+    assert_ne!(own, 1);
+    assert!(!session.project().content(ContentId(own)).unwrap().linked);
+
+    // Unlinking the copy: it keeps its notes as they are, in a content of its own; one undo step.
+    let before = session.project().clone();
+    // The second clip that plays content 1 is the linked copy (the duplicates moved the indexes).
+    let copy_index = arranged(&session).iter().enumerate().filter(|(_, c)| **c == 1).nth(1).unwrap().0;
+    run(&mut session, "clip.unlink", json!({ "clips": [{ "track": 1, "index": copy_index }] })).unwrap();
+    let separated = arranged(&session)[copy_index];
+    assert_ne!(separated, 1);
+    assert_eq!(notes(&session, separated), notes(&session, 1));
+    // The content left with one clip is no longer linked; neither is the separated one.
+    assert!(!session.project().content(ContentId(1)).unwrap().linked);
+    assert!(!session.project().content(ContentId(separated)).unwrap().linked);
+    run(&mut session, "note.delete", json!({ "track": 1, "index": copy_index, "notes": [0] })).unwrap();
+    assert_eq!(notes(&session, 1)[0].key, 72, "the other clip keeps its notes");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(*session.project(), before);
+    // A clip that is not linked is left as it is.
+    let contents = session.project().contents.len();
+    run(&mut session, "clip.unlink", json!({ "clips": [{ "track": 1, "index": independent }] })).unwrap();
+    assert_eq!(session.project().contents.len(), contents);
+}
