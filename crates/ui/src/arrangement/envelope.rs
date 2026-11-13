@@ -462,7 +462,8 @@ pub fn show(
         let elapsed = elapsed_at(x);
         if free { elapsed } else { snap(elapsed).clamp(0.0, length) }
     };
-    let ink = theme::accent();
+    // The gain envelope's points and their line while it is edited: `clip-envelope`'s `color`.
+    let ink = crate::kit::element::CLIP_ENVELOPE.look().color_or(theme::accent());
     // Over a halo of the other of black and white, so they read on the waveform too.
     let [r, g, b, _] = line_ink.to_srgba_unmultiplied();
     let light = u16::from(r) + u16::from(g) + u16::from(b) > 3 * 128;
@@ -949,7 +950,12 @@ pub fn edit_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, n
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, format!("Edit gain envelope of {name}"))
     });
-    let ink = if on { theme::accent() } else { theme::text_secondary() };
+    let el = crate::kit::element::BUTTON
+        .id("clip-envelope-edit")
+        .response(&response)
+        .attr(crate::kit::element::Checked, on)
+        .enter();
+    let ink = el.own_color_or(if on { theme::accent() } else { theme::text_secondary() });
     if on || response.hovered() {
         painter.rect_filled(rect, 2.0, ink.gamma_multiply(0.18));
     }
@@ -974,7 +980,12 @@ pub fn free_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, f
         .on_hover_text(if free { "Free move: points move freely" } else { "Free move: points snap to the dB grid" })
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, free, "Free move"));
-    let ink = if free { theme::accent() } else { theme::text_secondary() };
+    let el = crate::kit::element::BUTTON
+        .id("clip-envelope-free")
+        .response(&response)
+        .attr(crate::kit::element::Checked, free)
+        .enter();
+    let ink = el.own_color_or(if free { theme::accent() } else { theme::text_secondary() });
     painter.rect_filled(rect, 2.0, crate::kit::style_class::surface_or(theme::panel_background()).gamma_multiply(0.85));
     if free || response.hovered() {
         painter.rect_filled(rect, 2.0, ink.gamma_multiply(0.18));

@@ -2191,6 +2191,7 @@ pub fn show(
     let mut y = lanes.top;
     // Where each row went, for a drag of headers to land between them.
     let mut placed_rows: Vec<(LaneRow, f32, f32)> = Vec::new();
+    let mut row_line = None;
     for row in state.rows(lanes.track, params) {
         let height = state.row_height(lanes.track, &row);
         let time = Rect::from_x_y_ranges(geometry.time, egui::Rangef::new(y, y + height));
@@ -2201,20 +2202,24 @@ pub fn show(
         if full.bottom() < geometry.visible.top() || full.top() > geometry.visible.bottom() {
             continue;
         }
+        // The line under each automation lane, `separator[kind="row"]`, read once.
+        let row_line = *row_line.get_or_insert_with(|| {
+            crate::kit::element::SEPARATOR.attribute("kind", "row").look().color_or(theme::border())
+        });
         match row {
             LaneRow::Group(index) => {
                 group_heading(ui, painter, geometry, lanes, index, header, time, state, params, actions);
-                painter.hline(geometry.visible.x_range(), time.bottom() + 0.5, theme::hairline(theme::border()));
+                painter.hline(geometry.visible.x_range(), time.bottom() + 0.5, theme::hairline(row_line));
             }
             LaneRow::Empty => {
                 empty_lane(ui, painter, geometry, lanes, header, time, state, params);
-                painter.hline(geometry.visible.x_range(), time.bottom() + 0.5, theme::hairline(theme::border()));
+                painter.hline(geometry.visible.x_range(), time.bottom() + 0.5, theme::hairline(row_line));
             }
             LaneRow::Lane(key) => {
                 let Some(param) = params.param(lanes.track, &key) else { continue };
                 lane(ui, painter, geometry, lanes, param, time, state, actions);
                 lane_header(ui, painter, geometry, lanes, param, header, state, params, actions);
-                painter.hline(geometry.visible.x_range(), time.bottom() + 0.5, theme::hairline(theme::border()));
+                painter.hline(geometry.visible.x_range(), time.bottom() + 0.5, theme::hairline(row_line));
                 resize_edge(ui, geometry, lanes, &key, full, state);
             }
         }
@@ -2243,7 +2248,7 @@ fn empty_lane(
             Align2::CENTER_CENTER,
             "Choose a parameter, or move a control, to show it here",
             theme::ui_font(theme::TEXT_SMALL),
-            theme::text_hint(),
+            crate::kit::element::LABEL.look().text_or(theme::text_hint()),
         );
     }
     let clip = header.intersect(geometry.visible);
@@ -2313,8 +2318,9 @@ fn drop_headers(
     match into {
         Some((_, top, bottom)) => {
             let area = Rect::from_x_y_ranges(across, egui::Rangef::new(top, bottom));
-            painter.rect_filled(area, 0.0, theme::accent().gamma_multiply(0.2));
-            painter.rect_stroke(area, 0.0, Stroke::new(2.0, theme::accent()), StrokeKind::Inside);
+            let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look();
+            painter.rect_filled(area, 0.0, target.background_or(theme::accent().gamma_multiply(0.2)));
+            painter.rect_stroke(area, 0.0, Stroke::new(2.0, target.color_or(theme::accent())), StrokeKind::Inside);
         }
         None => {
             let line_y = match landing {
@@ -2325,7 +2331,8 @@ fn drop_headers(
             // the lanes go (in the group or out of it) shows before they are let go of.
             let joins = !drag.group && matches!(place, Place::Before { join: true, .. });
             let line = if joins { egui::Rangef::new(across.min + GROUP_INDENT, across.max) } else { across };
-            painter.hline(line, line_y, Stroke::new(2.0, theme::accent()));
+            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color_or(theme::accent());
+            painter.hline(line, line_y, Stroke::new(2.0, ink));
         }
     }
     if ui.input(|i| i.pointer.any_down()) {
@@ -2375,11 +2382,30 @@ fn group_heading(
         return;
     }
     let painter = painter.with_clip_rect(geometry.visible);
-    painter.rect_filled(header, 0.0, theme::control_background());
-    if state.picked_groups.contains(&(track, index)) {
-        painter.rect_filled(header, 0.0, theme::accent().gamma_multiply(0.25));
+    let picked = state.picked_groups.contains(&(track, index));
+    // A group's lane under it is `automation-lane[kind="group"]`; its header,
+    // `automation-header[kind="group"]`, is `[selected]` while picked.
+    let band = crate::kit::element::AUTOMATION_LANE.attribute("kind", "group").look();
+    painter.rect_filled(
+        time.intersect(geometry.visible),
+        0.0,
+        band.background_or(theme::accent().gamma_multiply(0.06)),
+    );
+    let el = crate::kit::element::AUTOMATION_HEADER
+        .attribute("kind", "group")
+        .attr(crate::kit::element::Selected, picked)
+        .enter();
+    match el.style().filter(|style| style.authored.background) {
+        Some(style) => {
+            painter.rect_filled(header, 0.0, style.background);
+        }
+        None => {
+            painter.rect_filled(header, 0.0, theme::control_background());
+            if picked {
+                painter.rect_filled(header, 0.0, theme::accent().gamma_multiply(0.25));
+            }
+        }
     }
-    painter.rect_filled(time.intersect(geometry.visible), 0.0, theme::accent().gamma_multiply(0.06));
     let id = Id::unique(("automation-group", track.0, index));
     let inner = header.shrink2(Vec2::new(PAD, 2.0));
     let arrow = Rect::from_min_size(inner.min, Vec2::new(14.0, inner.height()));
@@ -2448,7 +2474,7 @@ fn group_heading(
         Align2::CENTER_CENTER,
         if group.folded { "▸" } else { "▾" },
         theme::ui_font(theme::TEXT_SMALL),
-        theme::text_secondary(),
+        el.color_or(theme::text_secondary()),
     );
     match state.renaming.clone().filter(|(t, i, _)| *t == track && *i == index) {
         Some((_, _, mut text)) => {
@@ -2486,7 +2512,7 @@ fn group_heading(
                 Align2::LEFT_CENTER,
                 &text,
                 theme::ui_font(theme::TEXT_SMALL),
-                theme::text_primary(),
+                el.color_or(theme::text_primary()),
             );
         }
     }
@@ -3097,7 +3123,11 @@ fn lane(
         let at = if held { None } else { painting };
         state.drawn_drag = Some(Dragged { track, key: key.clone(), points: points.clone(), at });
     }
-    let ink = if param.enabled { color(lanes.color) } else { theme::text_hint() };
+    // The envelope's line: the track's colour, `automation-line[muted]`'s while it is off.
+    let ink = crate::kit::element::AUTOMATION_LINE
+        .attr(crate::kit::element::Muted, !param.enabled)
+        .look()
+        .color_or(if param.enabled { color(lanes.color) } else { theme::text_hint() });
     let line = envelope(&points, &param.scale, plot, geometry);
     // A finished bend asks for its command only now, after the envelope above drew it: the
     // project has the new curve only once the command has run, after this frame, so dropping
@@ -3173,8 +3203,9 @@ fn lane(
     // The range being painted, and the one painted: the lane's whole height between them.
     if let Some(drag) = state.box_drag.as_ref().filter(|d| d.select && d.track == track && &d.key == key) {
         let area = Rect::from_two_pos(drag.from, drag.to);
-        lane_painter.rect_filled(area, 0.0, theme::accent().gamma_multiply(0.15));
-        lane_painter.rect_stroke(area, 0.0, theme::hairline(theme::accent()), StrokeKind::Inside);
+        let look = crate::kit::element::TIME_SELECTION.attribute("kind", "automation").look();
+        lane_painter.rect_filled(area, 0.0, look.background_or(theme::accent().gamma_multiply(0.15)));
+        lane_painter.rect_stroke(area, 0.0, theme::hairline(look.color_or(theme::accent())), StrokeKind::Inside);
     }
     // A range painted from another lane over this one is on this one too (#1322).
     let painting = state
@@ -3202,8 +3233,9 @@ fn lane(
         if !last {
             area.max.y += LINE;
         }
-        lane_painter.rect_filled(area, 0.0, theme::accent().gamma_multiply(0.15));
-        let stroke = theme::hairline(theme::accent());
+        let look = crate::kit::element::TIME_SELECTION.attribute("kind", "automation").look();
+        lane_painter.rect_filled(area, 0.0, look.background_or(theme::accent().gamma_multiply(0.15)));
+        let stroke = theme::hairline(look.color_or(theme::accent()));
         let inner = area.shrink(0.5);
         lane_painter.line_segment([inner.left_top(), Pos2::new(inner.left(), area.bottom())], stroke);
         lane_painter.line_segment([inner.right_top(), Pos2::new(inner.right(), area.bottom())], stroke);
@@ -3286,6 +3318,13 @@ fn lane(
     // The points: a click selects (Shift or Ctrl adds), a drag moves (the selection with it), a
     // double-click or the menu deletes.
     let dragging = state.point_drag.as_ref().filter(|d| d.track == track && &d.key == key).map(|d| d.point);
+    let (point_ink, selected_point) = {
+        let plain = crate::kit::element::AUTOMATION_POINT.look();
+        let picked = crate::kit::element::AUTOMATION_POINT.attr(crate::kit::element::Selected, true).look();
+        let plain =
+            plain.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
+        (plain, picked.color_or(theme::text_primary()))
+    };
     for (index, point) in param.points.iter().enumerate() {
         // Drawn where a drag puts it.
         let shown = match dragging {
@@ -3475,7 +3514,8 @@ fn lane(
         }
         let hover = widgets::hover(ui, &response);
         let radius = POINT + hover;
-        let fill = if selected { theme::text_primary() } else { ink };
+        // `automation-point`, `[selected]` while picked: its `color`, the line's where none.
+        let fill = if selected { selected_point } else { point_ink.unwrap_or(ink) };
         lane_painter.circle_filled(center, radius, fill);
         lane_painter.circle_stroke(
             center,
@@ -4178,7 +4218,8 @@ fn lane_header(
     let layout = state.layout(track, params);
     let top = !layout.lanes.contains(&param.key);
     if state.is_picked(track, &param.key) {
-        painter.rect_filled(rect, 0.0, theme::accent().gamma_multiply(0.18));
+        let look = crate::kit::element::AUTOMATION_HEADER.attr(crate::kit::element::Selected, true).look();
+        painter.rect_filled(rect, 0.0, look.background_or(theme::accent().gamma_multiply(0.18)));
     }
     let id = Id::unique(("automation-header", track.0, param.key.device, param.key.param.as_str()));
     let background = ui.interact(clip, id.with("background"), Sense::click_and_drag());
@@ -4383,7 +4424,7 @@ fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::R
         painter.rect_filled(rect, 3.0, theme::control_hover().gamma_multiply(hover));
     }
     let ink = match glyph {
-        Glyph::Pinned => theme::automation_pin(),
+        Glyph::Pinned => crate::kit::element::AUTOMATION_PIN.look().color_or(theme::automation_pin()),
         _ => crate::kit::motion::mix(theme::text_hint(), theme::text_primary(), hover),
     };
     let stroke = Stroke::new(1.25, ink);

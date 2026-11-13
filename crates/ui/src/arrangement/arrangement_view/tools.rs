@@ -36,7 +36,8 @@ const GRID_MENU: f32 = 96.0;
 pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState) {
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
-    painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(theme::border()));
+    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().color_or(theme::border());
+    painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(line));
     let mut x = rect.left() + 6.0;
     for (index, (tool, name)) in ArrangementTool::ALL.into_iter().enumerate() {
         let area = Rect::from_min_size(egui::pos2(x, rect.center().y - ICON / 2.0), Vec2::splat(ICON));
@@ -50,13 +51,18 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
             widgets::button_area(ui, area, Id::unique(("arrangement-tool", name)), &label).on_hover_text(&hint);
         let chosen = state.tool == tool;
         response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, &label));
+        // `arrangement-tool`, `[checked]` on the chosen one.
+        let el = crate::kit::element::ARRANGEMENT_TOOL
+            .response(&response)
+            .attr(crate::kit::element::Checked, chosen)
+            .enter();
         let fill = if chosen { theme::control_active() } else { theme::control_background() };
         painter.rect_filled(
             area,
             0.0,
-            crate::kit::motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response)),
+            el.background_or(crate::kit::motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response))),
         );
-        let ink = if chosen { theme::text_primary() } else { theme::text_secondary() };
+        let ink = el.color_or(if chosen { theme::text_primary() } else { theme::text_secondary() });
         match tool {
             ArrangementTool::Select => IconButton::Select.draw(&painter, area, ink, 1.0),
             ArrangementTool::Split => IconButton::Slice.draw(&painter, area, ink, 1.0),

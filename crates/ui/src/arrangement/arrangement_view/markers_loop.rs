@@ -41,23 +41,28 @@ pub(super) fn marker_flags(
         let id = Id::unique(("arrangement-marker", marker.index));
         let response = ui.interact(tag.expand2(Vec2::new(2.0, 0.0)), id, Sense::click_and_drag());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Marker {}", marker.name)));
-        let fill = if state.marker_drag.is_some_and(|(i, _)| i == marker.index) {
+        let dragged = state.marker_drag.is_some_and(|(i, _)| i == marker.index);
+        // `marker`, `[checked]` while it is dragged: its tag's background, its line's border
+        // colour and its name's colour.
+        let el = crate::kit::element::MARKER.response(&response).attr(crate::kit::element::Checked, dragged).enter();
+        let fill = el.background_or(if dragged {
             theme::control_active()
         } else if response.hovered() {
             theme::control_hover()
         } else {
             theme::control_background()
-        };
+        });
         painter.rect_filled(tag, 0.0, fill);
-        painter.vline(x, row.y_range(), theme::hairline(theme::text_secondary()));
+        painter.vline(x, row.y_range(), theme::hairline(el.border_or(theme::text_secondary())));
         widgets::text_in(
             &painter,
             tag.shrink2(Vec2::new(3.0, 0.0)).translate(Vec2::new(1.0, 0.0)),
             Align2::LEFT_CENTER,
             &marker.name,
             font.clone(),
-            theme::text_value(),
+            el.color_or(theme::text_value()),
         );
+        drop(el);
 
         if response.clicked() {
             // A click loops from the marker to the next one and jumps there, so a section is
@@ -266,6 +271,8 @@ pub(super) fn loop_brace(
     } else {
         (theme::control_background(), theme::text_hint())
     };
+    // Its edge (and its artwork's `currentColor`) is its own `color` where the sheet gives one.
+    let edge = el.own_color_or(edge);
     let state = if enabled { crate::kit::skin::State::On } else { crate::kit::skin::State::Normal };
     if !crate::kit::skin::paint_as(&el, &painter, bar, "loop-region", state, edge) {
         let authored = el.style().is_some_and(|c| c.authored.border || c.border_width > 0.0);

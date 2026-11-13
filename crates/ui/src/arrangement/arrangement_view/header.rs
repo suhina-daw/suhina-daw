@@ -304,7 +304,8 @@ pub(super) fn track_header(
     // The name and the controls' ink read on whichever background is shown.
     let header_fill = own.background_or(header_fill);
     if selected {
-        let outline = motion::mix(theme::border_strong(), saturated(rgb(lane.color)), 0.5);
+        // `track-header[selected]`'s border colour, else a shade of the track's own.
+        let outline = own.border_or(motion::mix(theme::border_strong(), saturated(rgb(lane.color)), 0.5));
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, outline), StrokeKind::Inside);
     }
     work_trace.mark("background");
@@ -684,7 +685,11 @@ pub(super) fn track_header(
         // placed as `arrangement-number`), which turns nothing off.
         let at = crate::kit::control_layout::place("arrangement-number", toggle, clip);
         if at.intersects(clip) {
-            widgets::track_number_text(painter, at, &number, theme::text_secondary(), lane.mute);
+            let ink = crate::kit::element::TRACK_NUMBER
+                .attr(crate::kit::element::Muted, lane.mute)
+                .look()
+                .text_or(theme::text_secondary());
+            widgets::track_number_text(painter, at, &number, ink, lane.mute);
         }
     }
 
@@ -817,7 +822,7 @@ pub(super) fn track_header(
                     Align2::CENTER_CENTER,
                     glyph,
                     theme::ui_font(theme::TEXT + 2.0),
-                    if enabled { theme::text_primary() } else { theme::text_hint() },
+                    el.color_or(if enabled { theme::text_primary() } else { theme::text_hint() }),
                 );
                 if enabled && response.clicked() {
                     offset = if index == 0 { offset.saturating_sub(1) } else { (offset + 1).min(max_offset) };

@@ -44,17 +44,20 @@ pub enum Attr {
     Armed,
     /// A muted track, a clip or note that is off, a device that is off.
     Muted,
+    /// A clip or a track's stop button waiting for its launch.
+    Queued,
 }
-pub use Attr::{Armed, Checked, Muted, Playing, Recording, Selected};
+pub use Attr::{Armed, Checked, Muted, Playing, Queued, Recording, Selected};
 
 /// Every [`Attr`] with the host state that marks it.
-const STATES: [(Attr, HostState); 6] = [
+const STATES: [(Attr, HostState); 7] = [
     (Checked, HostState::Checked),
     (Selected, HostState::Selected),
     (Playing, HostState::Playing),
     (Recording, HostState::Recording),
     (Armed, HostState::Armed),
     (Muted, HostState::Muted),
+    (Queued, HostState::Queued),
 ];
 
 /// What a control paints where the sheet sets nothing: today's token values, until the
@@ -150,6 +153,10 @@ impl Name {
     /// The style of a drawn item of this element, with nothing more said about it.
     pub fn style(self) -> Option<Computed> {
         self.builder().style()
+    }
+    /// The [`Look`] of the drawn items of this element, with nothing more said about them.
+    pub fn look(self) -> Look {
+        self.builder().look()
     }
     pub fn enter(self) -> Entered {
         self.builder().enter()
@@ -254,6 +261,46 @@ impl<'a> Builder<'a> {
     /// The style of a drawn item: the element entered and left at once.
     pub fn style(self) -> Option<Computed> {
         self.enter().style()
+    }
+
+    /// The [`Look`] of every drawn item of this kind: looked up once, outside the loop that draws
+    /// them, so a line drawn a hundred times is one element of the style tree.
+    pub fn look(self) -> Look {
+        Look(self.style())
+    }
+}
+
+/// What a sheet says about a kind of drawn item (a grid line, a slot's mark), each colour with the
+/// palette token it replaces as the fallback: where no rule of a theme reaches the item, it paints
+/// as it did with the token (#1417).
+#[derive(Clone, Debug, Default)]
+pub struct Look(Option<Computed>);
+
+impl Look {
+    /// The item's own `color`, where a rule on the item sets one; else `token`. A line or a mark
+    /// does not take the text colour a view's rule gives everything in it.
+    pub fn color_or(&self, token: Color32) -> Color32 {
+        self.0.as_ref().filter(|own| own.declared(Property::Color)).map_or(token, |own| own.color)
+    }
+
+    /// The item's text colour, inherited from a sheet's rule around it too; else `token`.
+    pub fn text_or(&self, token: Color32) -> Color32 {
+        self.0.as_ref().filter(|s| s.authored.color).map_or(token, |s| s.color)
+    }
+
+    /// The item's `background-color`, where the sheet sets one; else `token`.
+    pub fn background_or(&self, token: Color32) -> Color32 {
+        self.0.as_ref().filter(|s| s.authored.background).map_or(token, |s| s.background)
+    }
+
+    /// The item's `border-color`, where the sheet sets one; else `token`.
+    pub fn border_or(&self, token: Color32) -> Color32 {
+        self.0.as_ref().filter(|s| s.authored.border).map_or(token, |s| s.border)
+    }
+
+    /// The item's computed style, when a sheet styles the window.
+    pub fn style(&self) -> Option<&Computed> {
+        self.0.as_ref()
     }
 }
 
@@ -487,6 +534,17 @@ impl Entered {
         self.style().filter(|s| s.authored.background).map_or(fallback, |s| s.background)
     }
 
+    /// The element's `border-color`, or `fallback` where the sheet sets none: for a line the
+    /// element draws along its edge (a column's separator, a selected slot's frame).
+    pub fn border_or(&self, fallback: Color32) -> Color32 {
+        self.style().filter(|s| s.authored.border).map_or(fallback, |s| s.border)
+    }
+
+    /// The [`Look`] of the element, for the colours of what it draws inside itself.
+    pub fn look(&self) -> Look {
+        Look(self.style())
+    }
+
     /// The element's corner radius, or `fallback` where the sheet sets none.
     pub fn radius_or(&self, fallback: f32) -> f32 {
         self.style().filter(|s| s.authored.radius).map_or(fallback, |s| s.radius)
@@ -624,6 +682,9 @@ names! {
     SCENE_COLUMN = "scene-column";
     SCENE = "scene";
     SLOT = "slot";
+    MAPPING_OVERLAY = "mapping-overlay";
+    SLOT_MARK = "slot-mark";
+    DROP_TARGET = "drop-target";
     ARRANGEMENT = "arrangement";
     TRACK_HEADER = "track-header";
     TRACK_NAME = "track-name";
@@ -635,15 +696,32 @@ names! {
     CLIP_NAME = "clip-name";
     CLIP_WAVEFORM = "clip-waveform";
     CLIP_NOTES = "clip-notes";
+    CLIP_ENVELOPE = "clip-envelope";
     CLIP_GAIN = "clip-gain";
     CLIP_FADE_HANDLE = "clip-fade-handle";
+    CLIP_FADE = "clip-fade";
+    TAKE_HEADER = "take-header";
     RULER = "ruler";
     RULER_NUMBER = "ruler-number";
     RULER_TICK = "ruler-tick";
+    TEMPO_MARK = "tempo-mark";
+    GRID_LINE = "grid-line";
+    TIME_SELECTION = "time-selection";
+    MARQUEE = "marquee";
+    START_MARKER = "start-marker";
     LOOP_REGION = "loop-region";
     LOOP_LINE = "loop-line";
+    AUTOMATION_HEADER = "automation-header";
+    AUTOMATION_LANE = "automation-lane";
+    AUTOMATION_LINE = "automation-line";
+    AUTOMATION_POINT = "automation-point";
+    AUTOMATION_PIN = "automation-pin";
+    MARKER = "marker";
+    ARRANGEMENT_TOOL = "arrangement-tool";
     PLAYHEAD = "playhead";
     MIXER = "mixer";
+    DEVICE_LIST = "device-list";
+    DEVICE_ROW = "device-row";
     DETAIL = "detail";
     CLIP_EDITOR = "clip-editor";
     EDITOR_TAB = "editor-tab";
@@ -689,6 +767,7 @@ names! {
     VALUE_FILL = "value-fill";
     VALUE_HANDLE = "value-handle";
     PAN = "pan";
+    PAN_CENTRE = "pan-centre";
     FADER = "fader";
     FADER_CAP = "fader-cap";
     FADER_RAIL = "fader-rail";
@@ -700,10 +779,12 @@ names! {
     ICON = "icon";
     METER = "meter";
     METER_LEVEL = "meter-level";
+    METER_CLIP = "meter-clip";
     METER_VERTICAL = "meter-vertical";
     METER_HORIZONTAL = "meter-horizontal";
     DROPDOWN = "dropdown";
     TEXT_INPUT = "text-input";
+    SCROLL_BAR = "scroll-bar";
     LABEL = "label";
     SEPARATOR = "separator";
     POPUP = "popup";

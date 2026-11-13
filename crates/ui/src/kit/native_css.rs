@@ -634,11 +634,20 @@ pub enum HostState {
     Armed = 256,
     /// A muted track.
     Muted = 512,
+    /// A clip or a track's stop button waiting for its launch.
+    Queued = 1024,
 }
 
 /// The host states and the selector names they match.
-pub(crate) const HOST_STATES: [(u16, &str); 6] =
-    [(16, "checked"), (32, "selected"), (64, "playing"), (128, "recording"), (256, "armed"), (512, "muted")];
+pub(crate) const HOST_STATES: [(u16, &str); 7] = [
+    (16, "checked"),
+    (32, "selected"),
+    (64, "playing"),
+    (128, "recording"),
+    (256, "armed"),
+    (512, "muted"),
+    (1024, "queued"),
+];
 
 /// `color` as `#RRGGBB` or `#RRGGBBAA`, for a value given to the sheet.
 pub fn hex(color: Color32) -> String {

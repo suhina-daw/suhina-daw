@@ -112,7 +112,12 @@ the importable example is `my-theme/`, with an example variant.
 
 A theme's colours are custom properties: every theme has each palette token (`--accent`,
 `--window-background`, `--track-headerBackground`: the palette keys with hyphens), set in
-`:root`. Its settings are properties of the elements they belong to:
+`:root`. A token colours many things at once; in the Launcher, the mixer and the Arrangement
+each thing is also an element of its own (the selector reference below), and a rule for it
+replaces the token there alone: `slot[kind="stop"] { background-color: … }`,
+`grid-line[kind="beat"] { color: … }`. A line or a mark takes only a `color` given to it, not the
+text colour a rule gives the view it is in. Its settings are properties of the elements they
+belong to:
 
 - `meter { meter-style; meter-segments; meter-intensity; }`: `continuous`, `segmented`,
   `needle` or `frames`; 4–64 segments; an intensity of 0–100.
@@ -541,8 +546,8 @@ control is dragged or shows the arrow of the drag's direction; `auto` keeps the 
 |---|---|
 | Toolbar `toolbar` | `toolbar-module`, modules `#browser`, `#tempo`, `#position`, `#signature`, `#grid`, `#count-in`, `#metronome`, `#views`, `#performance`, `#mapping`, `#agents`; `#control-play`, `#control-stop`, `#control-record`, `#control-metronome-toggle`, `#control-browser-toggle` |
 | Arrangement header `arrangement track-header` | `track-name`, `track-number`, `#control-track-on`, `#control-solo`, `#control-cue`, `#control-arm`, `#control-automation`, `#control-monitor`, `fold`, `#arrangement-volume`, `#arrangement-pan`, `send`, `value-fill`, `value-handle` |
-| Timeline `arrangement` | `ruler`, `ruler-number`, `ruler-tick`, `loop-region`, `loop-line`, `playhead`, `clip`, `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle`, `add-track`, `#add-midi-track`, `#add-audio-track`, `#add-return-track` |
-| Launcher and mixer `session`, `mixer` | `track-column`, `slot`, `scene`, `scene-column`, `#mixer-volume`, `#mixer-pan`, `#mixer-send-N`, `fader`, `fader-cap`, `fader-rail`, `fader-scale`, `meter`, `#mixer-divider` |
+| Timeline `arrangement` | `ruler`, `ruler-number`, `ruler-tick`, `tempo-mark`, `loop-region`, `loop-line`, `marker`, `playhead`, `start-marker`, `grid-line`, `time-selection`, `marquee`, `track-lane`, `clip`, `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade`, `clip-fade-handle`, `clip-envelope`, `take-header`, `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `arrangement-tool`, `add-track`, `#add-midi-track`, `#add-audio-track`, `#add-return-track` |
+| Launcher and mixer `session`, `mixer` | `track-column`, `slot`, `slot-mark`, `scene`, `scene-column`, `mapping-overlay`, `#mixer-volume`, `#mixer-pan`, `pan-centre`, `#mixer-send-N`, `fader`, `fader-cap`, `fader-rail`, `fader-scale`, `meter`, `meter-level`, `meter-clip`, `device-list`, `device-row`, `scroll-bar`, `#mixer-divider`, `#mixer-splitter` |
 | Piano roll `piano-roll` | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark`, `piano-scale-strip`, `piano-range`, `piano-time-selection`, `piano-insert-mark`, `piano-note`, `velocity`, `piano-tool` with `#piano-<tool>`, `midi-tools` (with `slider#quantise-amount`), `clip-info`, `editor-tab` (`#tab-clip`, `#tab-devices`, `#tab-notes`, `#tab-transform`) |
 | Browser `browser` | `browser-place`, `browser-row`, `browser-play`, `browser-tag-dot`, `browser-preview-wave`, `#browser-search` (`text-input`) |
 | Devices `device`, `#device-<id>` | `device-header`, `device-control`, `slider`, `slider-rail`, `slider-fill`, `slider-handle`, `knob`, `value` |
@@ -550,7 +555,7 @@ control is dragged or shows the arrow of the drag's direction; `auto` keeps the 
 
 States: the pointer's and focus are pseudo-classes, `:hover`, `:active`, `:disabled`, `:focus`;
 what Suhina knows about a part is an attribute, `[checked]`, `[selected]`, `[muted]`,
-`[playing]`, `[recording]`, `[armed]` (`:checked` is not a state and does not parse). Artwork names its state `.hover`, `.active`, `.on`.
+`[playing]`, `[queued]`, `[recording]`, `[armed]` (`:checked` is not a state and does not parse). Artwork names its state `.hover`, `.active`, `.on`.
 
 **Glow:** a shadow without an offset, `box-shadow: 0 0 12px #00c8ff`. A button drawn with artwork
 casts it in the artwork's shape, under it; a button without a background of its own glows round
@@ -574,7 +579,7 @@ Elements, by name:
 | `notice-bar` | the strip over the views that asks about an opened project or names missing files |
 | `toolbar-module` | one area of the toolbar, by its id (below) |
 | `browser`, `session`, `arrangement`, `mixer`, `detail`, `clip-editor`, `piano-roll`, `sample-map` | the views and panels |
-| `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips |
+| `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips; Main's header is `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all** `scene[kind="stop-all"]`; a clip is `[playing]`, `[queued]`, `[selected]`, `[recording]` and, deactivated, `[muted]` |
 | `waveform`, `envelope` | what a clip shows |
 | `device-panel`, `device-section`, `device-control`, `xy-control` | device panels; `#id` selects a device control |
 | `button`, `value`, `value-fill`, `dropdown`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields |
@@ -586,7 +591,14 @@ Elements, by name:
 | `send` | a send, in a mixer strip and in a track header |
 | `add-track` | the **+ MIDI track**, **+ Audio track** and **+ Return track** buttons after the last track |
 | `ruler`, `loop-region`, `playhead` | the Arrangement view's ruler, its loop bar and the play position line |
-| `divider` | the line between a strip's device list and its controls (`#mixer-divider`), and the window's splitters (`#detail-splitter`, `#browser-splitter`) |
+| `divider` | the line between a strip's device list and its controls (`#mixer-divider`), the Launcher mixer's top line (`#mixer-splitter`), and the window's splitters (`#detail-splitter`, `#browser-splitter`) |
+| `separator[kind]` | the views' lines: the Launcher's between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's under its rows (`row`), between its bands (`band`) and under each lane (`lane`), in their `color` |
+| `slot-mark`, `mapping-overlay`, `drop-target` | the mark in an empty slot with a stop button; the tint over a control while keys are mapped (`[selected]` on the picked one); where a drop lands (`kind="area"`, `kind="insert"`) |
+| `grid-line`, `tempo-mark`, `start-marker`, `marker` | the Arrangement's grid lines (`kind="bar"`, `kind="beat"`), a tempo or time-signature change, the play start marker, a marker's tag |
+| `time-selection`, `marquee` | selected time (`background-color` over the lanes, `color` at its edges; `kind="ruler"`, `"draw"`, `"editor"`, `"take"`, `"automation"`), and the rectangle that picks clips |
+| `clip-fade`, `clip-envelope`, `take-header` | a fade's line (`kind="crossfade"` between takes), a clip's gain envelope while it is edited, a take lane's header |
+| `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin` | an automation lane's header (`kind="group"` for a group's), a group's time, the envelope (`[muted]` while off), its points (`[selected]`) and the pin |
+| `device-list`, `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool` | a mixer strip's device list and its rows, how far its sends are scrolled, a pan field's centre ticks, a meter's clip light, the Arrangement's own tool buttons |
 | `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles |
 | `value-handle`, `fader-rail` | the handle where a level bar's fill ends; a fader's rail |
 | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-note`, `velocity` | the piano roll's grid, its rows, its keys (with `[selected]` and `[playing]`), the notes and their velocity stems |
@@ -612,6 +624,10 @@ Ids:
 | `#mixer-send-1`, `#mixer-send-2`, … | a mixer strip's sends, from the left |
 | `#add-midi-track`, `#add-audio-track`, `#add-return-track` | the three add-track buttons |
 | `#mixer-divider` | a strip's divider |
+| `#mixer-splitter` | the Launcher mixer's top line, which a drag resizes |
+| `#control-main-metronome`, `#control-slot-record`, `#control-mixer-monitor-in`, `#control-mixer-monitor-auto`, `#control-mixer-monitor-off` | the metronome in Main's strip, an armed slot's record button, a strip's monitor buttons |
+| `#control-back-to-arrangement`, `#control-returns-toggle`, `#control-take-delete`, `#control-take-solo`, `#control-take-promote`, `#control-clip-envelope-edit`, `#control-clip-envelope-free` | the Arrangement's buttons: back to arrangement, show or hide returns, a take lane's buttons, a clip's gain envelope buttons |
+| `#waveform-zoom` | the Arrangement's waveform zoom (`slider`) |
 | `#detail-splitter`, `#browser-splitter` | the splitters beside the detail area and the browser: `background-color` for the strip, `color` for the detail splitter's grip, with `:hover` and `:active` |
 | `#piano-select`, `#piano-draw`, `#piano-paint`, `#piano-erase`, `#piano-slice`, `#piano-mute`, `#piano-cut`, `#piano-copy`, `#piano-paste`, `#piano-duplicate`, `#piano-quantise`, `#piano-midi-tools`, `#piano-audition`, `#piano-hide` | the piano roll's tool buttons |
 | `#tab-clip`, `#tab-devices` | the clip editor's two tabs |

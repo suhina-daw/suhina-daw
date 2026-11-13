@@ -561,3 +561,48 @@ fn a_child_of_a_parent_held_for_a_transition_is_not_kept_under_the_parent_s_new_
     assert_eq!(color, Some(egui::Color32::from_rgb(0, 0, 0xFF)));
     assert!(!asked, "the frame painted the whole tree's styles");
 }
+
+/// A drawn item's [`Look`]: its own `color` for a line or a mark, never the text colour a view's
+/// rule gives what is in it; its text colour inherited; the token wherever no rule reaches it
+/// (#1417).
+#[test]
+fn a_look_takes_its_own_rules_and_the_token_elsewhere() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let css = "session { color: #FF0000; } separator[kind=\"slot\"] { color: #00FF00; } \
+               slot-mark { background-color: #0000FF; border-color: #FFFF00; }";
+    let (slot_line, column_line, column_text, mark) = frames(css, || {
+        let _view = SESSION.enter();
+        let slot = SEPARATOR.attribute("kind", "slot").look();
+        let column = SEPARATOR.attribute("kind", "column").look();
+        let mark = SLOT_MARK.look();
+        (slot.color_or(token), column.color_or(token), column.text_or(token), mark)
+    });
+    assert_eq!(slot_line, rgb(0, 0xff, 0), "a rule on the line gives its colour");
+    assert_eq!(column_line, token, "the view's text colour does not reach a line");
+    assert_eq!(column_text, rgb(0xff, 0, 0), "but it is the text colour inside it");
+    assert_eq!(mark.background_or(token), rgb(0, 0, 0xff));
+    assert_eq!(mark.border_or(token), rgb(0xff, 0xff, 0));
+    assert_eq!(mark.color_or(token), token);
+    // Without a sheet, every colour is the token's.
+    let unstyled = Look::default();
+    assert_eq!(
+        (unstyled.color_or(token), unstyled.background_or(token), unstyled.border_or(token)),
+        (token, token, token)
+    );
+}
+
+/// `[queued]` is an attribute the app gives, as `[playing]` is (#1417).
+#[test]
+fn queued_is_an_attribute() {
+    let css = "clip[queued] { background-color: #102030; }";
+    let (queued, waiting) = frames(css, || {
+        let _view = SESSION.enter();
+        (
+            CLIP.attr(Queued, true).look().background_or(egui::Color32::BLACK),
+            CLIP.look().background_or(egui::Color32::BLACK),
+        )
+    });
+    assert_eq!(queued, egui::Color32::from_rgb(0x10, 0x20, 0x30));
+    assert_eq!(waiting, egui::Color32::BLACK);
+}

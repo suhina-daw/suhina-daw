@@ -169,7 +169,17 @@ pub fn show(
         let light = Rect::from_min_max(Pos2::new(rect.right() - CLIP, rect.top()), rect.max);
         (light, Rect::from_min_max(rect.min, Pos2::new(light.left() - 1.0, rect.bottom())))
     };
-    painter.rect_filled(light, 0.0, if level.clipped { theme::recording() } else { background });
+    // The clip light, `meter-clip`: its background while lit.
+    let lit =
+        if level.clipped { super::element::METER_CLIP.look().background_or(theme::recording()) } else { background };
+    painter.rect_filled(light, 0.0, lit);
+    // The level's colours: `meter-level { color }` up to the top's last stretch, and
+    // `meter-level[kind="hot"]` in it.
+    let (normal, hot) = {
+        let level = super::element::METER_LEVEL.look();
+        let hot = super::element::METER_LEVEL.attribute("kind", "hot").look();
+        (level.color_or(theme::meter_normal()), hot.color_or(theme::meter_hot()))
+    };
     // Intensity changes only measured ink, never rails or the safety indicator.
     let mut ink = painter.clone();
     ink.multiply_opacity(f32::from(skin.meter_intensity.min(100)) / 100.0);
@@ -223,7 +233,7 @@ pub fn show(
             ] {
                 let value = fraction(value);
                 let to = egui::pos2(bar.left() + bar.width() * value, bar.bottom() - bar.height() * value);
-                let color = if value > hot_from { theme::meter_hot() } else { theme::meter_normal() };
+                let color = if value > hot_from { hot } else { normal };
                 native_ink.line_segment([origin, to], egui::Stroke::new(width, color));
             }
             continue;
@@ -254,19 +264,19 @@ pub fn show(
                         break;
                     }
                     let end = ((f32::from(segment) + 0.8) / f32::from(count)).min(to);
-                    let color = if from >= hot_from { theme::meter_hot() } else { theme::meter_normal() };
+                    let color = if from >= hot_from { hot } else { normal };
                     fill(from, end, color);
                 }
             } else {
-                fill(0.0, to.min(hot_from), theme::meter_normal());
+                fill(0.0, to.min(hot_from), normal);
                 if to > hot_from {
-                    fill(hot_from, to, theme::meter_hot());
+                    fill(hot_from, to, hot);
                 }
             }
         }
         let hold = fraction(hold.get(side).copied().unwrap_or(0.0));
         if hold > 0.0 {
-            let color = if hold > hot_from { theme::meter_hot() } else { theme::meter_normal() };
+            let color = if hold > hot_from { hot } else { normal };
             let line = if upright {
                 let y = (bar.bottom() - bar.height() * hold).max(bar.top());
                 Rect::from_x_y_ranges(bar.x_range(), egui::Rangef::new(y, y + 1.0))
