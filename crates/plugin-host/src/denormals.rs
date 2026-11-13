@@ -12,8 +12,9 @@
 //! The mode belongs to a thread, so it is set where the plug-ins' blocks run. Each host audio
 //! thread sets it when it starts and again before each instance's part of a block
 //! ([`crate::audio`]), because a plug-in may change it inside its own processing. These threads
-//! run nothing else, so the mode is never put back. The host's main thread keeps the default mode,
-//! and so do the threads plug-ins start from it.
+//! run nothing else, so the mode is never put back. Leaving it set outside an asm block departs
+//! from Rust's rule for these bits; `x86::write` says why that is accepted. The host's main
+//! thread keeps the default mode, and so do the threads plug-ins start from it.
 //!
 //! - x86_64: MXCSR's FTZ bit (15), and DAZ (6) where the processor has it. The first processors
 //!   with SSE had no DAZ, and `ldmxcsr` faults on a bit the processor does not have, so the
@@ -120,7 +121,11 @@ mod x86 {
     pub(super) fn write(csr: u32) {
         // SAFETY: `ldmxcsr` loads the 4 bytes at the address, a live local `u32`, into MXCSR. No
         // reserved bit is set (see above), so it does not fault; it changes neither the stack nor
-        // the flags.
+        // the flags. Rust's rules for inline assembly ask that FTZ and DAZ be put back before the
+        // block ends, because compiled code assumes the default mode. This block leaves them set
+        // on purpose: the plug-in's foreign code must run under the mode, and nothing can set it
+        // for that code alone. The host's own code on these threads only copies, compares and
+        // sums normal values, where flushing changes no result.
         unsafe {
             core::arch::asm!(
                 "ldmxcsr dword ptr [{}]",

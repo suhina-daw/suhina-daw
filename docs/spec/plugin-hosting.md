@@ -186,8 +186,8 @@ can hold it there while its input is silent: its host process keeps a core busy 
 come back late. Each audio thread sets the mode when it starts and again before each instance's
 part of a block, because a plug-in may change it while it runs. These threads run nothing else,
 so the mode is never put back. The host's main thread keeps the default mode, and so do the
-threads plug-ins start from it. Suhina's own devices do not need it: `crates/dsp` floors filter state at
-`DENORMAL_FLOOR`.
+threads plug-ins start from it. Suhina's own devices do not need it: `crates/dsp` floors filter
+state at `DENORMAL_FLOOR`.
 
 A late reply resets the hang counter when the next request is accepted: missing
 an audio deadline does not mean the host stopped answering. Superseded starts
