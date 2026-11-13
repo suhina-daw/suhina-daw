@@ -138,6 +138,7 @@ a theme file can change any of them (see Themes). Current values:
 | `meter.hot` | `#E3C86A` | A level meter near the top |
 | `slot.empty` | `#484642` | The mark in an empty clip slot |
 | `track.mutedBackground` | `#21201D` | The fills of a muted track |
+| `clip.mutedBackground` | `#85837E` | The body of a muted arrangement clip (turned off, or on a muted track), hatched, whatever its colour; the built-in themes set it to their `text.hint` |
 | `pan.background` | `#1F1E1C` | Behind a track header's pan field |
 | `pan.centre` | `#817F7A` | The centre mark of a pan field |
 | `track.1`–`track.8` | `#FF9A3C` `#F2D541` `#4FC3F7` `#B38BFF` `#7FDB5A` `#FF6FA8` `#5C8DFF` `#2FD9C4` | Eight colour-picker swatches, also used to resolve legacy uncoloured tracks once on opening. New tracks and clips use the MIDI/audio creation defaults; + picks any colour |

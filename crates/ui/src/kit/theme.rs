@@ -132,6 +132,8 @@ palette! {
         "RGB colour copied only to newly created MIDI tracks and clips; existing tracks and clips never change";
     audio_clip_default, "clip.audioDefault", 0xFF9A3C,
         "RGB colour copied only to newly created audio tracks and clips; existing tracks and clips never change";
+    clip_muted, "clip.mutedBackground", 0x85837E,
+        "The body of a muted arrangement clip (turned off, or on a muted track), hatched, whatever its colour";
     track_color_1, "track.1", 0xFF9A3C,
         "Colour-picker swatch 1; also effects in the browser (legacy track token)";
     track_color_2, "track.2", 0xF2D541,

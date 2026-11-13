@@ -1347,7 +1347,7 @@ pub(super) fn paint_clip(
     look: &super::state::ClipLook,
 ) {
     let _work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement clip");
-    let off = lane.mute || !clip.enabled;
+    let off = drawn_muted(lane.mute, clip.enabled);
     // `[playing]` while the play position is inside it, `[recording]` while a take records over it.
     let end = clip.start + clip.length;
     let playing = timeline.running && !off && (clip.start..end).contains(&timeline.beat);
@@ -1385,14 +1385,10 @@ pub(super) fn paint_clip(
     let painter = &inside;
     // Keep the clip colour legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
+    // A muted clip is grey and hatched (below), not a dimmer shade of its colour (#1393).
     let strength = if clip.audio { look.audio_colour_strength } else { 82 };
-    let strength = if selected { strength.saturating_add(12).min(100) } else { strength };
-    let body = own.background_or(colour_surface(
-        crate::kit::style_class::surface_or(theme::panel_background()),
-        rgb(clip.color),
-        strength,
-        off,
-    ));
+    let surface = crate::kit::style_class::surface_or(theme::panel_background());
+    let body = own.background_or(clip_body(surface, rgb(clip.color), strength, off, selected));
     let radius = own.radius_or(2.0);
     // A clip is content, not a background: it blends with the lane under it, so its alpha never
     // reaches the window and the desktop never shows through it.
@@ -1414,6 +1410,10 @@ pub(super) fn paint_clip(
     }
     crate::kit::liquid::paint(painter, rect.shrink(1.0), &own, body, crate::kit::liquid::Surface::Clip);
     let ink = ink_on(body);
+    if off {
+        let below = bar.map_or(rect, |bar| Rect::from_min_max(Pos2::new(rect.left(), bar.bottom()), rect.max));
+        paint_muted_hatch(painter, below, body, ink);
+    }
     let edge_width = if selected { 4.0 } else { 3.0 };
     let edge_ink = motion::mix(body, ink, 0.5);
     if let Some(bar) = bar {
@@ -1712,6 +1712,44 @@ pub(super) fn paint_ara_activity(
     if let Some(p) = progress {
         let done = Rect::from_min_max(track.min, Pos2::new(track.left() + track.width() * p, track.bottom()));
         painter.rect_filled(done, 0.0, theme::accent());
+    }
+}
+
+/// Whether a clip is drawn muted: turned off itself, or on a muted track.
+pub(super) fn drawn_muted(track_muted: bool, enabled: bool) -> bool {
+    track_muted || !enabled
+}
+
+/// A clip's body. A muted clip (turned off, or on a muted track) is the theme's neutral
+/// `clip.mutedBackground` whatever its colour, so it never reads as a darker shade of a clip that
+/// plays, nor as a clip whose colour is grey (#1393); its colour stays in the project. Selection
+/// lifts the brightness either way and never changes the hue.
+pub(super) fn clip_body(surface: Color32, colour: Color32, strength: u8, muted: bool, selected: bool) -> Color32 {
+    if muted {
+        let grey = theme::clip_muted();
+        return if selected { motion::mix(grey, theme::text_primary(), 0.15) } else { grey };
+    }
+    let strength = if selected { strength.saturating_add(12).min(100) } else { strength };
+    colour_surface(surface, colour, strength, false)
+}
+
+/// Gap between the lines of a muted clip's hatch, in points.
+const MUTED_HATCH_GAP: f32 = 7.0;
+
+/// The diagonal lines over a muted clip's body under its name bar: with the grey body they tell
+/// a muted clip from one whose colour is grey. The lines sit on a grid of the window, so they stay
+/// put while the clip is dragged or the view scrolls, and only those in view are drawn.
+fn paint_muted_hatch(painter: &egui::Painter, area: Rect, body: Color32, ink: Color32) {
+    let area = area.intersect(painter.clip_rect());
+    if !area.is_positive() {
+        return;
+    }
+    let stroke = Stroke::new(1.0, motion::mix(body, ink, 0.18));
+    let rise = area.height();
+    let mut x = ((area.left() - rise) / MUTED_HATCH_GAP).floor() * MUTED_HATCH_GAP;
+    while x <= area.right() {
+        painter.line_segment([Pos2::new(x, area.bottom()), Pos2::new(x + rise, area.top())], stroke);
+        x += MUTED_HATCH_GAP;
     }
 }
 

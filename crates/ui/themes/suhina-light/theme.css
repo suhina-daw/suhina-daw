@@ -10,6 +10,7 @@
   --browser-text-secondary: #5E5952;
   --browser-text-value: #3A3632;
   --clip-audioDefault: #FF9A3C;
+  --clip-mutedBackground: var(--text-hint);
   --clip-midiDefault: #4FC3F7;
   --control-activeBackground: #C2BCB1;
   --control-background: #DCD8D0;

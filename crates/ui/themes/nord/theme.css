@@ -43,6 +43,7 @@
   --meter-normal: #A3BE8C;
   --meter-hot: #EBCB8B;
   --clip-audioDefault: #FF9A3C;
+  --clip-mutedBackground: var(--text-hint);
   --clip-midiDefault: #4FC3F7;
   --track-1: #FF9A3C;
   --track-2: #F2D541;

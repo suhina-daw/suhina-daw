@@ -410,8 +410,13 @@ replaces what it covers unless stacked. Both are `clip.copy` then `clip.paste`
 
 ## Clips off
 
-`clip.setEnabled {clips, enabled}` turns clips on or off: an off clip is drawn dimmed, plays
-nothing and does not sound in a render, so it works as a clip mute. The 0 key turns the selection off,
+`clip.setEnabled {clips, enabled}` turns clips on or off: an off clip plays nothing and does not
+sound in a render, so it works as a clip mute. An off clip, and every clip on a muted track, is
+drawn on the theme's neutral `clip.mutedBackground` grey with a diagonal hatch under its name
+bar, whatever its colour, so it never reads as a darker shade of a clip that plays or as a clip
+whose colour is grey (#1393); its colour stays in the project and comes back when it plays again.
+Selection lifts its brightness, and it never shows as playing. A theme's `clip[muted]` background
+wins over the token ([theme skins](theme-skins.md)). The 0 key turns the selection off,
 or back on when nothing in it plays; a clip's menu says Mute or Unmute for the clip it fell on.
 ## Splitting
 

@@ -833,3 +833,27 @@ fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
     assert_eq!((shown[0].left(), shown[0].right()), (120.0, 160.0), "beats 1 to 3 of the clip");
     assert!(lit(None).is_empty());
 }
+
+#[test]
+fn a_muted_clip_is_the_muted_grey_whatever_its_colour() {
+    // #1393: dimming the colour left a muted clip looking like any other clip on a grey track.
+    let surface = crate::kit::theme::panel_background();
+    let grey = crate::kit::theme::clip_muted();
+    for colour in [Color32::from_rgb(0xFF, 0x9A, 0x3C), Color32::from_rgb(0x4A, 0x4A, 0x4A), grey] {
+        assert_eq!(clip::clip_body(surface, colour, 82, true, false), grey, "{colour:?}");
+        let selected = clip::clip_body(surface, colour, 82, true, true);
+        assert_ne!(selected, grey, "selection still shows on a muted clip");
+        assert!(selected.r() > grey.r(), "selection lifts the brightness");
+    }
+    // A clip that plays keeps its hue, and a grey one is not the muted grey.
+    let orange = clip::clip_body(surface, Color32::from_rgb(0xFF, 0x9A, 0x3C), 82, false, false);
+    assert!(orange.r() > orange.b() + 60, "{orange:?}");
+    assert_ne!(clip::clip_body(surface, Color32::from_rgb(0x4A, 0x4A, 0x4A), 82, false, false), grey);
+}
+
+#[test]
+fn a_clip_on_a_muted_track_is_drawn_muted_too() {
+    assert!(clip::drawn_muted(true, true), "on a muted track");
+    assert!(clip::drawn_muted(false, false), "turned off");
+    assert!(!clip::drawn_muted(false, true));
+}
