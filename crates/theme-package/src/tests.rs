@@ -328,11 +328,18 @@ fn the_user_agent_sheet_colours_sample_points_by_kind() {
     assert_eq!(kinds, 17);
 }
 
-/// A muted clip is grey in the user-agent sheet, whatever its colour (#1393).
+/// A muted clip and a muted track's header are grey in the user-agent sheet, whatever their colour
+/// (#1393).
 #[test]
-fn the_user_agent_sheet_greys_muted_clips() {
-    assert!(USER_AGENT_SHEET.contains("clip[muted] { background-color: #85837E; }"));
-    assert!(USER_AGENT_SHEET.contains("clip[muted][selected] { background-color: #9A9893; }"));
+fn the_user_agent_sheet_greys_muted_clips_and_headers() {
+    for rule in [
+        "clip[muted] { background-color: #A9A6A0; }",
+        "clip[muted][selected] { background-color: #BDBAB4; }",
+        "track-header[muted] { background-color: #A9A6A0; }",
+        "track-header[muted][selected] { background-color: #B5B2AC; }",
+    ] {
+        assert!(USER_AGENT_SHEET.contains(rule), "the user-agent sheet lacks {rule}");
+    }
 }
 
 #[test]

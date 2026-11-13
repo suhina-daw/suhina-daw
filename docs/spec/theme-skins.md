@@ -385,9 +385,10 @@ like before a theme styles it.
   `project-tabs`, `toolbar`) and a 1 px `border-top-width` on `status-bar`, in `--border` from
   the palette's tier (the lines above and under the view are `#workspace`'s);
   `backdrop-filter: blur(20px)` on `popup`, `menu`, `dialog` and `tooltip`; the default
-  artwork; the sample map's colours; the grey of a muted arrangement clip, `clip[muted] {
-  background-color: #85837E; }` and `#9A9893` for `clip[muted][selected]` (#1393); the theme
-  swatch's rounded square.
+  artwork; the sample map's colours; the grey of a muted arrangement clip and track header,
+  `clip[muted] { background-color: #A9A6A0; }` (`#BDBAB4` with `[selected]`) and
+  `track-header[muted]` (`#A9A6A0`, `#B5B2AC` with `[selected]`, #1393); the theme swatch's
+  rounded square.
 - **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
   `suhina:` URL names an SVG built into Suhina (`assets/themes/default/`), and a theme may use one
   too. Every theme gets the defaults for the controls it does not replace. The defaults take their
@@ -1055,7 +1056,8 @@ These native parts take the sheet (the theme package README lists every selector
   artwork `ruler`), `loop-region` (`[checked]` while looping; `height`; artwork `loop-region`,
   `.on`), `playhead` (`color`, `width`; `width: 0` hides it).
 - **Clips:** `--clip-colour`; `[selected]`, `[muted]` (turned off or on a muted track; grey from
-  the user-agent sheet, hatched by the host), `[playing]` (the play position inside the
+  the user-agent sheet, the host draws its colour down the leading edge and a mute mark before the
+  name of a clip turned off itself), `[playing]` (the play position inside the
   clip while the transport runs), `[recording]` (a recording span over it on its track);
   `clip-gain`, `clip-fade-handle` (artwork `clip.fade-handle`).
 - **Level bars:** `font-size` for the value; `value-handle` with a `width` (or artwork

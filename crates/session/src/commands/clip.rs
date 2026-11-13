@@ -216,7 +216,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setEnabled",
-        label: "Turn arrangement clips on or off: a clip that is off is drawn grey and hatched and plays nothing",
+        label: "Turn arrangement clips on or off: a clip that is off is drawn grey with a mute mark and plays nothing",
         params: &[CLIPS, param("enabled", ParamType::Bool, "true plays the clips, false silences them")],
         kind: CommandKind::EDIT,
         run: set_clip_enabled,

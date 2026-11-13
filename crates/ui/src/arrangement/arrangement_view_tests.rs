@@ -839,8 +839,8 @@ fn a_muted_clip_is_the_user_agent_grey_whatever_its_colour() {
     // #1393: dimming the colour left a muted clip looking like any other clip on a grey track.
     let surface = crate::kit::theme::panel_background();
     let grey = clip::muted_clip_grey(false);
-    assert_eq!(grey, Color32::from_rgb(0x85, 0x83, 0x7E), "the user-agent sheet's clip[muted]");
-    assert_eq!(clip::muted_clip_grey(true), Color32::from_rgb(0x9A, 0x98, 0x93), "clip[muted][selected]");
+    assert_eq!(grey, Color32::from_rgb(0xA9, 0xA6, 0xA0), "the user-agent sheet's clip[muted]");
+    assert_eq!(clip::muted_clip_grey(true), Color32::from_rgb(0xBD, 0xBA, 0xB4), "clip[muted][selected]");
     for colour in [Color32::from_rgb(0xFF, 0x9A, 0x3C), Color32::from_rgb(0x4A, 0x4A, 0x4A), grey] {
         assert_eq!(clip::clip_body(surface, colour, 82, true, false), grey, "{colour:?}");
         let selected = clip::clip_body(surface, colour, 82, true, true);
@@ -850,6 +850,26 @@ fn a_muted_clip_is_the_user_agent_grey_whatever_its_colour() {
     let orange = clip::clip_body(surface, Color32::from_rgb(0xFF, 0x9A, 0x3C), 82, false, false);
     assert!(orange.r() > orange.b() + 60, "{orange:?}");
     assert_ne!(clip::clip_body(surface, Color32::from_rgb(0x4A, 0x4A, 0x4A), 82, false, false), grey);
+}
+
+#[test]
+fn a_clip_on_a_muted_track_keeps_its_colour_in_its_name_bar() {
+    let surface = crate::kit::theme::panel_background();
+    let orange = Color32::from_rgb(0xFF, 0x9A, 0x3C);
+    let grey = clip::muted_clip_grey(false);
+    // On a muted track: the bar is the colour a clip that plays has.
+    let on_track = clip::name_bar_fill(grey, surface, orange, 82, true, false);
+    assert_eq!(on_track, clip::clip_body(surface, orange, 82, false, false));
+    // Turned off itself: the bar is grey, a hair off the body.
+    let off = clip::name_bar_fill(grey, surface, orange, 82, false, false);
+    assert_ne!(off, on_track);
+    assert!(off.r().abs_diff(grey.r()) < 16 && off.r().abs_diff(off.b()) < 16, "{off:?}");
+}
+
+#[test]
+fn a_muted_track_header_is_the_user_agent_grey() {
+    assert_eq!(header::muted_header_grey(false), Color32::from_rgb(0xA9, 0xA6, 0xA0), "track-header[muted]");
+    assert_eq!(header::muted_header_grey(true), Color32::from_rgb(0xB5, 0xB2, 0xAC), "track-header[muted][selected]");
 }
 
 #[test]

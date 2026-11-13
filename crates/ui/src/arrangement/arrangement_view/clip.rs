@@ -1385,11 +1385,12 @@ pub(super) fn paint_clip(
     let painter = &inside;
     // Keep the clip colour legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
-    // A muted clip is the sheet's `clip[muted]` grey and hatched (below), not a dimmer shade of
-    // its colour (#1393).
+    // A muted clip is the sheet's `clip[muted]` grey, not a dimmer shade of its colour (#1393):
+    // its own colour stays only down its leading edge, and on a muted track in its name bar.
     let strength = if clip.audio { look.audio_colour_strength } else { 82 };
     let surface = crate::kit::style_class::surface_or(theme::panel_background());
     let body = own.background_or(clip_body(surface, rgb(clip.color), strength, off, selected));
+    let bar_fill = name_bar_fill(body, surface, rgb(clip.color), strength, lane.mute && clip.enabled, selected);
     let radius = own.radius_or(2.0);
     // A clip is content, not a background: it blends with the lane under it, so its alpha never
     // reaches the window and the desktop never shows through it.
@@ -1398,7 +1399,7 @@ pub(super) fn paint_clip(
     let bar = clip_name_bar(rect);
     if let Some(bar) = bar {
         let name_bar = crate::kit::element::CLIP_NAME.enter();
-        let fill = name_bar.background_or(motion::mix(body, ink_on(body), 0.045));
+        let fill = name_bar.background_or(bar_fill);
         // The bar keeps the clip's rounded top corners.
         let top = radius.min(bar.height()).clamp(0.0, 255.0) as u8;
         painter.rect_filled(
@@ -1411,18 +1412,16 @@ pub(super) fn paint_clip(
     }
     crate::kit::liquid::paint(painter, rect.shrink(1.0), &own, body, crate::kit::liquid::Surface::Clip);
     let ink = ink_on(body);
-    if off {
-        let below = bar.map_or(rect, |bar| Rect::from_min_max(Pos2::new(rect.left(), bar.bottom()), rect.max));
-        paint_muted_hatch(painter, below, body, ink);
-    }
     let edge_width = if selected { 4.0 } else { 3.0 };
-    let edge_ink = motion::mix(body, ink, 0.5);
+    // A muted clip keeps its colour down its leading edge, so it is still known by it.
+    let line_ink = motion::mix(body, ink, 0.5);
+    let edge_ink = if off { rgb(clip.color) } else { line_ink };
     if let Some(bar) = bar {
         // A quiet divider ties the title to the stronger leading edge without framing the preview.
         painter.hline(
             (rect.left() + edge_width)..=rect.right(),
             bar.bottom() - 0.5,
-            theme::hairline(motion::mix(body, edge_ink, 0.4)),
+            theme::hairline(motion::mix(body, line_ink, 0.4)),
         );
     }
     // The leading edge follows the clip's rounded left corners.
@@ -1459,10 +1458,12 @@ pub(super) fn paint_clip(
     } else {
         appearance.ink(ink)
     };
+    // A muted clip's notes and waveform step back, so the grey reads first.
+    let content_ink = if off { motion::mix(body, content_ink, 0.6) } else { content_ink };
     let wave_ink = if ara_notes.is_some() { motion::mix(body, content_ink, 0.75) } else { content_ink };
     let dim = |_: Color32| wave_ink;
     let color = ink;
-    let text_color = ink_on(body);
+    let text_color = ink_on(if bar.is_some() { bar_fill } else { body });
     // The name's place, for a rename in place (Ctrl+R).
     let strip = Rect::from_min_max(
         Pos2::new(rect.left().max(view.left()), rect.top()),
@@ -1471,7 +1472,7 @@ pub(super) fn paint_clip(
     let pass = painter.ctx().cumulative_pass_nr();
     painter.ctx().data_mut(|d| {
         // The name bar's colour, as it is drawn above (a hair lighter or darker than the body).
-        let fill = if bar.is_some() { motion::mix(body, ink_on(body), 0.045) } else { body };
+        let fill = if bar.is_some() { bar_fill } else { body };
         let size = own.font_size_or(theme::TEXT);
         let spot = crate::app::NameSpot { rect: strip, pass, fill, text: text_color, size };
         d.insert_temp(Id::unique((crate::app::NAME_RECT_CLIP, u64::from(clip.id.0))), spot);
@@ -1485,7 +1486,16 @@ pub(super) fn paint_clip(
         } else {
             0.0
         };
-        let left = rect.left().max(view.left()) + 7.0 + button;
+        let mut left = rect.left().max(view.left()) + 7.0 + button;
+        // A clip turned off itself has the mute mark before its name: with it, it is never taken
+        // for a clip whose colour is grey, and a clip on a muted track (which has none) is told
+        // from one muted on its own.
+        if !clip.enabled {
+            let bar_rect = bar.unwrap_or(rect);
+            let centre = Pos2::new(left + MUTE_MARK / 2.0, bar_rect.center().y);
+            paint_mute_mark(painter, centre, text_color);
+            left += MUTE_MARK + 4.0;
+        }
         let name_rect = Rect::from_min_max(
             Pos2::new(left, rect.top() + 3.0),
             Pos2::new(rect.right() - 5.0, bar.map_or(rect.top(), |bar| bar.bottom()) - 3.0),
@@ -1595,7 +1605,7 @@ pub(super) fn paint_clip(
         if x < view.left() - 4.0 || x > view.right() + 4.0 || x <= rect.left() || x >= rect.right() {
             continue;
         }
-        painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, motion::mix(body, edge_ink, 0.5)));
+        painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, motion::mix(body, line_ink, 0.5)));
         // Dense passes should not turn the top edge into a sawtooth.
         if pass_width < 64.0 {
             continue;
@@ -1723,14 +1733,15 @@ pub(super) fn drawn_muted(track_muted: bool, enabled: bool) -> bool {
 
 /// A clip's body where no sheet styles it. A muted clip (turned off, or on a muted track) is the
 /// user-agent sheet's `clip[muted]` grey whatever its colour, so it never reads as a darker shade
-/// of a clip that plays, nor as a clip whose colour is grey (#1393); its colour stays in the
-/// project. Selection lifts the brightness either way and never changes the hue.
+/// of a clip that plays (#1393); its colour stays in the project, down its leading edge, and in
+/// its name bar on a muted track. Selection lifts the brightness either way and never changes
+/// the hue.
 pub(super) fn clip_body(surface: Color32, colour: Color32, strength: u8, muted: bool, selected: bool) -> Color32 {
     if muted {
         return muted_clip_grey(selected);
     }
     let strength = if selected { strength.saturating_add(12).min(100) } else { strength };
-    colour_surface(surface, colour, strength, false)
+    colour_surface(surface, colour, strength)
 }
 
 /// The background the user-agent sheet gives `clip[muted]` (`clip[muted][selected]` while
@@ -1747,30 +1758,38 @@ pub(super) fn muted_clip_grey(selected: bool) -> Color32 {
     greys[usize::from(selected)]
 }
 
-/// Gap between the lines of a muted clip's hatch, in points.
-const MUTED_HATCH_GAP: f32 = 7.0;
-
-/// The diagonal lines over a muted clip's body under its name bar: with the grey body they tell
-/// a muted clip from one whose colour is grey. The lines sit on a grid of the window, so they stay
-/// put while the clip is dragged or the view scrolls, and only those in view are drawn.
-fn paint_muted_hatch(painter: &egui::Painter, area: Rect, body: Color32, ink: Color32) {
-    let area = area.intersect(painter.clip_rect());
-    if !area.is_positive() {
-        return;
+/// The colour of a clip's name bar: a hair off its body, or, for a clip that plays on a muted
+/// track, the clip's colour as an unmuted clip's body has it, so the clips of a muted track keep
+/// their colour in their names while their bodies are grey.
+pub(super) fn name_bar_fill(
+    body: Color32,
+    surface: Color32,
+    colour: Color32,
+    strength: u8,
+    on_muted_track: bool,
+    selected: bool,
+) -> Color32 {
+    if on_muted_track {
+        return clip_body(surface, colour, strength, false, selected);
     }
-    let stroke = Stroke::new(1.0, motion::mix(body, ink, 0.18));
-    let rise = area.height();
-    let mut x = ((area.left() - rise) / MUTED_HATCH_GAP).floor() * MUTED_HATCH_GAP;
-    while x <= area.right() {
-        painter.line_segment([Pos2::new(x, area.bottom()), Pos2::new(x + rise, area.top())], stroke);
-        x += MUTED_HATCH_GAP;
-    }
+    motion::mix(body, ink_on(body), 0.045)
 }
 
-/// Keep hue and dim a muted source by reducing its strength over the same theme surface.
-pub(super) fn colour_surface(background: Color32, source: Color32, strength: u8, dim: bool) -> Color32 {
-    let amount = f32::from(strength.min(100)) / 100.0;
-    motion::mix(background, source, if dim { amount * 0.55 } else { amount })
+/// The size of the mute mark, in points.
+const MUTE_MARK: f32 = 9.0;
+
+/// The mark before the name of a clip turned off: a ring crossed by a slash, in the name's ink.
+fn paint_mute_mark(painter: &egui::Painter, centre: Pos2, ink: Color32) {
+    let radius = MUTE_MARK / 2.0 - 0.5;
+    let stroke = Stroke::new(1.25, ink);
+    painter.circle_stroke(centre, radius, stroke);
+    let reach = radius * std::f32::consts::FRAC_1_SQRT_2;
+    painter.line_segment([centre + Vec2::new(-reach, reach), centre + Vec2::new(reach, -reach)], stroke);
+}
+
+/// A colour over a theme surface at `strength` per cent, keeping its hue.
+pub(super) fn colour_surface(background: Color32, source: Color32, strength: u8) -> Color32 {
+    motion::mix(background, source, f32::from(strength.min(100)) / 100.0)
 }
 
 /// Text and marks that read on `background`: dark on a light colour, light on a dark one.

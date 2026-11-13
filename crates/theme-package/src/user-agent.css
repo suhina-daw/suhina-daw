@@ -68,10 +68,13 @@ knob-pointer { image: url("suhina:knob.pointer.svg"); }
 meter { image: url("suhina:meter.svg"); }
 icon[kind="folder"] { image: url("suhina:folder.svg"); }
 
-/* A muted arrangement clip (turned off, or on a muted track) is grey whatever its colour, a little
-   lighter while selected, so it never reads as a darker shade of a clip that plays (#1393). */
-clip[muted] { background-color: #85837E; }
-clip[muted][selected] { background-color: #9A9893; }
+/* A muted arrangement clip (turned off, or on a muted track) and a muted track's header are grey
+   whatever their colour, a little lighter while selected, so they never read as a darker shade of
+   what plays (#1393). */
+clip[muted] { background-color: #A9A6A0; }
+clip[muted][selected] { background-color: #BDBAB4; }
+track-header[muted] { background-color: #A9A6A0; }
+track-header[muted][selected] { background-color: #B5B2AC; }
 
 /* The sounds of the sample map, by kind. */
 sample-point[kind="kick"] { color: #D06E5E; }
