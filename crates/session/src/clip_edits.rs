@@ -51,9 +51,12 @@ pub(crate) fn join(session: &mut Session, params: &Value) -> Result<Value, Comma
     })
 }
 
+/// Each joined note's index with its new end, and the indices of the notes it took in.
+type Joined = (Vec<(usize, f64)>, Vec<usize>);
+
 /// What `note.join` does to `named` among `notes`: each joined note's index with its new end, and
 /// the indices of the notes it took in.
-fn joined(notes: &Notes, named: &[usize]) -> Result<(Vec<(usize, f64)>, Vec<usize>), CommandError> {
+fn joined(notes: &Notes, named: &[usize]) -> Result<Joined, CommandError> {
     let mut by_key: std::collections::BTreeMap<u8, Vec<(f64, usize)>> = std::collections::BTreeMap::new();
     for &index in named {
         let note = notes.get(index).ok_or("a note is missing")?;
@@ -113,7 +116,8 @@ pub(crate) fn fit_to_time(session: &mut Session, params: &Value) -> Result<Value
             from = from.min(note.time);
             to = to.max(note.time + note.duration);
         }
-        if !(to > from + EPSILON) {
+        // Not after the first start (or not a number): nothing to fit.
+        if to.partial_cmp(&(from + EPSILON)) != Some(std::cmp::Ordering::Greater) {
             return Err("the notes have no length to fit".into());
         }
         let factor = (end - start) / (to - from);
@@ -182,7 +186,7 @@ pub(crate) fn crop(session: &mut Session, params: &Value) -> Result<Value, Comma
             }
             let moved = moved.max(0.0);
             let length = if clip.loop_range.is_some() { clip.start + clip.length - moved } else { end - start };
-            if !(length > MIN_LENGTH) {
+            if length.partial_cmp(&MIN_LENGTH) != Some(std::cmp::Ordering::Greater) {
                 return Err("the cropped clip would have no length left".into());
             }
             check_neighbours(&session.project, at, moved, length)?;
