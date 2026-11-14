@@ -245,3 +245,29 @@ fn one_right_click_on_a_ghost_note_opens_the_menu_after_the_double_click_time() 
     h.run();
     assert!(menu_open(&h));
 }
+
+/// Reverse turns the selected notes round in time inside their own span, as the Notes tab's
+/// Reverse does; the note left out stays where it is.
+#[test]
+fn reverse_turns_the_selected_notes_round_in_time() {
+    let mut renderer = engine();
+    let mut h = with_preset(&mut renderer, Preset::SelectFirst);
+    let before = notes(&h);
+    let on = note_rect(&h, &before[0]).center();
+    right_click(&mut h, on);
+    item(&mut h, "Invert selection");
+    pause(&mut h);
+    let on = note_rect(&h, &before[1]).center();
+    right_click(&mut h, on);
+    item(&mut h, "Reverse");
+    let rest = &before[1..];
+    let start = rest.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
+    let end = rest.iter().map(|n| n.time + n.duration).fold(f64::NEG_INFINITY, f64::max);
+    let at = |time: f64, key: u8| ((time * 1e6).round() as i64, key);
+    let mut expected: Vec<_> = rest.iter().map(|n| at(start + end - (n.time + n.duration), n.key)).collect();
+    expected.push(at(before[0].time, before[0].key));
+    expected.sort_unstable();
+    let mut after: Vec<_> = notes(&h).iter().map(|n| at(n.time, n.key)).collect();
+    after.sort_unstable();
+    assert_eq!(after, expected, "note.reverse on the selected notes only");
+}
