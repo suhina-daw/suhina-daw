@@ -40,6 +40,10 @@ pub const MAX_RENDER_THREADS: usize = 16;
 /// waited for; a worker that returns a chain wakes it sooner.
 const RETURN_WAIT: Duration = Duration::from_millis(2);
 
+/// The most chains a worker holds at once, sent and not yet given back: each needs a spare to
+/// stand in its place, made with the pool.
+const DEPTH: usize = 4;
+
 /// How many times the render thread looks for a returned chain, with a spin-loop hint between,
 /// before it sleeps: some microseconds.
 const SPINS: usize = 2_000;
@@ -85,10 +89,16 @@ struct Worker {
     jobs: rtrb::Producer<Job>,
     replies: rtrb::Consumer<Reply>,
     thread: Thread,
-    /// What stands in the graph for the chain while it is away.
-    spare: Option<Chain>,
-    /// The chain it runs, while it runs one.
-    busy: Option<usize>,
+    /// What stands in the graph for each chain while it is away: [`DEPTH`] of them, made with
+    /// the pool, one fewer for each chain the worker holds. Never grows past its capacity.
+    spares: Vec<Chain>,
+}
+
+impl Worker {
+    /// The chains it holds: sent, and not given back yet.
+    fn load(&self) -> usize {
+        DEPTH.saturating_sub(self.spares.len())
+    }
 }
 
 /// The render workers (see the module's documentation).
@@ -112,8 +122,8 @@ impl Pool {
         let mut pool =
             Self { workers: Vec::with_capacity(workers), joins: Vec::with_capacity(workers), shared, sent: 0 };
         for n in 0..workers {
-            let (jobs, job_rx) = rtrb::RingBuffer::<Job>::new(1);
-            let (reply_tx, replies) = rtrb::RingBuffer::<Reply>::new(1);
+            let (jobs, job_rx) = rtrb::RingBuffer::<Job>::new(DEPTH);
+            let (reply_tx, replies) = rtrb::RingBuffer::<Reply>::new(DEPTH);
             let shared = Arc::clone(&pool.shared);
             let spawned = std::thread::Builder::new()
                 .name(format!("suhina-render-worker-{n}"))
@@ -123,8 +133,9 @@ impl Pool {
                 jobs,
                 replies,
                 thread: join.thread().clone(),
-                spare: Some(Chain::passthrough(TrackId(u32::MAX), crate::NO_COLUMN, sample_rate)),
-                busy: None,
+                spares: (0..DEPTH)
+                    .map(|_| Chain::passthrough(TrackId(u32::MAX), crate::NO_COLUMN, sample_rate))
+                    .collect(),
             });
             pool.joins.push(join);
         }
@@ -146,18 +157,41 @@ impl Pool {
         }
     }
 
-    /// Whether a worker runs a chain now.
+    /// Whether a worker holds a chain now.
     pub(crate) fn any_away(&self) -> bool {
-        self.workers.iter().any(|w| w.busy.is_some())
+        self.workers.iter().any(|w| w.load() > 0)
     }
 
-    /// Sends chain `i` to an idle worker, its place in `chains` taken by the worker's spare
-    /// (whose turn says it is away). False when every worker is busy. Never allocates.
-    pub(crate) fn send(&mut self, chains: &mut [Chain], i: usize, frames: usize, context: &ProcessContext) -> bool {
-        let Some(worker) = self.workers.iter_mut().find(|w| w.busy.is_none() && w.spare.is_some()) else {
-            return false;
-        };
-        let (Some(slot), Some(mut spare)) = (chains.get_mut(i), worker.spare.take()) else { return false };
+    /// Hands out the queued chains in `chains`: each to whichever of the render thread and the
+    /// workers holds the fewest, the render thread taking a tie. A lone chain so stays on the
+    /// render thread and wakes nobody, and the rest spread evenly at once, so a worker that
+    /// finishes while the render thread runs a chain of its own still has the next one. The
+    /// render thread's share stays queued for it to run. True when a chain was sent. Never
+    /// allocates.
+    pub(crate) fn distribute(&mut self, chains: &mut [Chain], frames: usize, context: &ProcessContext) -> bool {
+        let mut mine = 0usize;
+        let mut sent = false;
+        for i in 0..chains.len() {
+            if !chains.get(i).is_some_and(|c| c.turn.queued) {
+                continue;
+            }
+            let least = (0..self.workers.len())
+                .filter_map(|n| self.workers.get(n).filter(|w| !w.spares.is_empty()).map(|w| (n, w.load())))
+                .min_by_key(|&(_, load)| load);
+            match least {
+                Some((n, load)) if load < mine && self.send(chains, n, i, frames, context) => sent = true,
+                _ => mine += 1,
+            }
+        }
+        sent
+    }
+
+    /// Sends chain `i` to worker `n`, its place in `chains` taken by one of the worker's spares
+    /// (whose turn says it is away). False when the worker has no spare left. Never allocates.
+    fn send(&mut self, chains: &mut [Chain], n: usize, i: usize, frames: usize, context: &ProcessContext) -> bool {
+        let Some(worker) = self.workers.get_mut(n) else { return false };
+        let Some(slot) = chains.get_mut(i) else { return false };
+        let Some(mut spare) = worker.spares.pop() else { return false };
         slot.turn.queued = false;
         spare.turn = slot.turn;
         spare.turn.away = true;
@@ -165,15 +199,14 @@ impl Pool {
         let job = Job { index: i, chain, frames, context: *context, reply_to: std::thread::current() };
         match worker.jobs.push(job) {
             Ok(()) => {
-                worker.busy = Some(i);
                 worker.thread.unpark();
                 self.sent = self.sent.wrapping_add(1);
                 true
             }
-            // Never full: a worker gets a job only once it has given the last one back.
+            // Never full: the ring holds DEPTH jobs, and a worker holds at most DEPTH chains.
             Err(rtrb::PushError::Full(job)) => {
                 if let Some(slot) = chains.get_mut(i) {
-                    worker.spare = Some(std::mem::replace(slot, job.chain));
+                    worker.spares.push(std::mem::replace(slot, job.chain));
                     slot.turn.queued = true;
                 }
                 false
@@ -181,22 +214,23 @@ impl Pool {
         }
     }
 
-    /// Puts every chain a worker has given back into its place in `chains`, and calls `back`
+    /// Puts every chain the workers have given back into its place in `chains`, and calls `back`
     /// with its index and whether it completed its block. True when one came back. Never
     /// allocates.
     pub(crate) fn receive(&mut self, chains: &mut [Chain], mut back: impl FnMut(&mut [Chain], usize, bool)) -> bool {
         let mut any = false;
         for w in 0..self.workers.len() {
-            let Some(worker) = self.workers.get_mut(w) else { continue };
-            let Ok(Reply { index, chain, completed }) = worker.replies.pop() else { continue };
-            worker.busy = None;
-            if let Some(slot) = chains.get_mut(index) {
-                let mut chain = chain;
-                chain.turn.away = false;
-                worker.spare = Some(std::mem::replace(slot, chain));
+            while let Some(worker) = self.workers.get_mut(w)
+                && let Ok(Reply { index, chain, completed }) = worker.replies.pop()
+            {
+                if let Some(slot) = chains.get_mut(index) {
+                    let mut chain = chain;
+                    chain.turn.away = false;
+                    worker.spares.push(std::mem::replace(slot, chain));
+                }
+                back(chains, index, completed);
+                any = true;
             }
-            back(chains, index, completed);
-            any = true;
         }
         any
     }
@@ -205,7 +239,7 @@ impl Pool {
     /// meanwhile): it spins a moment first, since a chain often comes back sooner than a
     /// sleeping thread wakes, then sleeps until a worker wakes it. Never allocates.
     pub(crate) fn wait(&self, slice: Option<Duration>) {
-        let back = || self.workers.iter().any(|w| w.busy.is_some() && !w.replies.is_empty());
+        let back = || self.workers.iter().any(|w| w.load() > 0 && !w.replies.is_empty());
         for _ in 0..SPINS {
             if back() {
                 return;
@@ -252,7 +286,7 @@ fn work(shared: &Shared, mut jobs: rtrb::Consumer<Job>, mut replies: rtrb::Produ
             chain.complete(frames, &context);
             chain.stage(frames);
         }
-        // Never full: the render thread takes each reply before it sends this worker another job.
+        // Never full: the ring holds DEPTH replies, and the worker holds at most DEPTH chains.
         let _ = replies.push(Reply { index, chain, completed });
         reply_to.unpark();
         if let Some(rt) = realtime.as_mut() {

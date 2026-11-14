@@ -369,24 +369,10 @@ pub(crate) fn run(
                     release(chains, i, frames, context, capture.as_ref(), parallel);
                 }
             });
-            // One queued chain stays for the render thread, which would otherwise only wait: a
-            // worker is woken only for work beside it (as other engines' pools do).
-            let mut queued = chains.iter().filter(|c| c.turn.queued).count();
-            for i in 0..chains.len() {
-                if queued <= 1 {
-                    break;
-                }
-                if chains.get(i).is_some_and(|c| c.turn.queued) {
-                    if !pool.send(chains, i, frames, context) {
-                        break;
-                    }
-                    queued -= 1;
-                    moved = true;
-                }
-            }
+            moved |= pool.distribute(chains, frames, context);
         }
-        // With workers, the render thread runs one queued chain itself, then looks at the
-        // workers again.
+        // With workers, the render thread runs one chain of its share itself, then looks at
+        // the workers again.
         let mut ran_queued = false;
         for i in 0..chains.len() {
             let Some(chain) = chains.get_mut(i).filter(|c| c.turn.started && !c.turn.done && !c.turn.away) else {
