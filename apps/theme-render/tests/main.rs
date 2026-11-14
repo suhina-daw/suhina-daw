@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The renderer's tests, in one binary (as `crates/ui/tests/main.rs` says why): a module per file.
-//! `budget` and `scenes` run headless; `render` needs a GPU and runs only when asked.
+//! `budget`, `painted` and `scenes` run headless; `render` needs a GPU and runs only when asked.
 
 use std::path::Path;
 
 use suhina_theme_render::Subject;
 
 mod budget;
+mod painted;
 mod render;
 mod scenes;
 

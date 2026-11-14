@@ -361,7 +361,8 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
     let painter = ui.painter_at(ruler);
     let row = Rect::from_min_max(ruler.min, Pos2::new(ruler.right(), ruler.top() + LOOP_ROW));
     painter.rect_filled(row, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
-    painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(theme::border()));
+    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+    painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(line));
 
     // The loop bar: bright while the clip loops, dim where turning the loop on would put it.
     let looping = shape.loop_range.is_some();
@@ -371,14 +372,24 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
         Pos2::new(left, row.center().y - LOOP_BAR / 2.0),
         Pos2::new(right.max(left + 1.0), row.center().y + LOOP_BAR / 2.0),
     );
-    let (fill, edge) = if looping {
-        (theme::control_active(), theme::text_secondary())
+    // `loop-region`, `[checked]` while the clip loops, as the Arrangement's loop bar.
+    let (el, plain) = crate::kit::element::LOOP_REGION.enter_against_plain(crate::kit::element::Checked, looping);
+    let (fill, edge, handle) = if looping {
+        (theme::control_active(), theme::text_secondary(), theme::text_primary())
     } else {
-        (theme::control_background(), theme::text_hint())
+        (theme::control_background(), theme::text_hint(), theme::text_hint())
+    };
+    // A rule for the plain bar must not hide that the clip loops: only a `[checked]` rule does.
+    let (fill, edge, handle_color) = match &plain {
+        Some(plain) => {
+            let lit = el.look();
+            (lit.background_unlike(plain, fill), lit.border_unlike(plain, edge), lit.own_color_unlike(plain, handle))
+        }
+        None => (el.background_or(fill), el.border_or(edge), el.own_color_or(handle)),
     };
     painter.rect_filled(bar, 0.0, fill);
     painter.rect_stroke(bar, 0.0, theme::hairline(edge), StrokeKind::Inside);
-    let handle_color = if looping { theme::text_primary() } else { theme::text_hint() };
+    drop(el);
     for x in [left, right] {
         painter.rect_filled(
             Rect::from_center_size(Pos2::new(x, row.center().y), Vec2::new(HANDLE, LOOP_ROW)),
@@ -389,9 +400,11 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
 
     // The markers, under the loop row: a flag pointing into the part the clip plays.
     let numbers = Rect::from_min_max(Pos2::new(ruler.left(), row.bottom()), ruler.max);
-    marker(&painter, numbers, axis.x_of(shape.offset), 1.0, theme::text_primary());
+    // The clip's start and end markers: `start-marker[kind="clip"]`.
+    let ink = crate::kit::element::START_MARKER.attribute("kind", "clip").look().own_color_or(theme::text_primary());
+    marker(&painter, numbers, axis.x_of(shape.offset), 1.0, ink);
     if let Some(end) = shape.end_marker() {
-        marker(&painter, numbers, axis.x_of(end), -1.0, theme::text_primary());
+        marker(&painter, numbers, axis.x_of(end), -1.0, ink);
     }
 
     // Names for readers: each handle and marker, where it is.

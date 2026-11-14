@@ -602,7 +602,8 @@ fn output_row(
 ) {
     let current = column.output.and_then(|t| groups.iter().find(|(g, _)| *g == t)).map_or("Main", |(_, name)| name);
     let arrow = Rect::from_min_size(rect.min, Vec2::new(ARROW, rect.height()));
-    widgets::text_in(painter, arrow, Align2::LEFT_CENTER, "→", theme::ui_font(theme::TEXT_SMALL), theme::text_hint());
+    let hint = crate::kit::element::LABEL.look().color_or(theme::text_hint());
+    widgets::text_in(painter, arrow, Align2::LEFT_CENTER, "→", theme::ui_font(theme::TEXT_SMALL), hint);
     let field = Rect::from_min_max(Pos2::new(arrow.right(), rect.top()), rect.max);
     let response = widgets::button_area(
         ui,
@@ -662,7 +663,10 @@ fn device_list(
     state: &mut SessionViewState,
     id: Id,
 ) {
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
+    // The strip's `device-list`, a `device-row` for each device in it.
+    let list = crate::kit::element::DEVICE_LIST.enter();
+    painter.rect_filled(rect, 0.0, list.background_or(crate::kit::style_class::surface_or(theme::window_background())));
+    let hint = crate::kit::element::LABEL.look().color_or(theme::text_hint());
     if devices.is_empty() {
         widgets::text_in(
             painter,
@@ -670,7 +674,7 @@ fn device_list(
             Align2::LEFT_TOP,
             "No devices",
             theme::ui_font(theme::TEXT_SMALL),
-            theme::text_hint(),
+            hint,
         );
         return;
     }
@@ -721,14 +725,19 @@ fn device_list(
         }
         // Lit as the detail area's chain lights it: the devices picked in either.
         let lit = state.device_picks.iter().any(|(t, at)| *t == track && at.index() == Some(index));
-        let fill = if lit {
+        let el = crate::kit::element::DEVICE_ROW
+            .response(&response)
+            .attr(Selected, lit)
+            .attr(crate::kit::element::Muted, !device.enabled)
+            .enter();
+        let fill = el.background_or(if lit {
             theme::control_active()
         } else {
             motion::mix(egui::Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response))
-        };
+        });
         list_painter.rect_filled(row, 0.0, fill);
         let text = row.shrink2(Vec2::new(4.0, 0.0));
-        let color = if device.enabled { theme::text_secondary() } else { theme::text_hint() };
+        let color = el.color_or(if device.enabled { theme::text_secondary() } else { theme::text_hint() });
         let tag = match device.group {
             Some(count) => Some(format!("group {count}")),
             None => device.plugin.then(|| "plug-in".to_owned()),
@@ -747,14 +756,7 @@ fn device_list(
             color,
         );
         if let Some(tag) = &tag {
-            widgets::text_in(
-                &list_painter,
-                text,
-                Align2::RIGHT_CENTER,
-                tag,
-                theme::ui_font(theme::TEXT_TINY),
-                theme::text_hint(),
-            );
+            widgets::text_in(&list_painter, text, Align2::RIGHT_CENTER, tag, theme::ui_font(theme::TEXT_TINY), hint);
         }
     }
     // A device of this track carried over its list: a line where it would go, and its place
@@ -772,7 +774,8 @@ fn device_list(
             .iter()
             .find(|(i, _)| *i == to)
             .map_or_else(|| slots.last().map_or(rect.top(), |(_, r)| r.bottom()), |(_, r)| r.top());
-        list_painter.hline(rect.x_range(), y, egui::Stroke::new(2.0, theme::accent()));
+        let color = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent());
+        list_painter.hline(rect.x_range(), y, egui::Stroke::new(2.0, color));
     }
     let pass = ui.ctx().cumulative_pass_nr();
     crate::interaction::drop::note_device_slots(
@@ -802,7 +805,7 @@ fn audio_block(
         Align2::LEFT_CENTER,
         "Audio From",
         theme::ui_font(theme::TEXT_SMALL),
-        theme::text_hint(),
+        crate::kit::element::LABEL.look().color_or(theme::text_hint()),
     );
     let pick = source;
     let current = match column.audio_input.channels {
@@ -863,11 +866,14 @@ fn audio_block(
             id.with(("strip-monitor", value)),
             format!("{} monitor {word}", column.name),
         );
-        let fill = if on {
-            theme::control_active()
-        } else {
-            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response))
-        };
+        let (el, plain) = crate::kit::element::BUTTON.id(&name).response(&response).enter_against_plain(Checked, on);
+        let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+        let (fill, ink) = widgets::toggle_inks(
+            &el,
+            plain.as_ref(),
+            (theme::control_active(), off),
+            (theme::text_primary(), el.color_or(theme::text_secondary())),
+        );
         painter.rect_filled(area, 0.0, fill);
         widgets::text_in(
             painter,
@@ -875,7 +881,7 @@ fn audio_block(
             Align2::CENTER_CENTER,
             word,
             theme::ui_font(theme::TEXT_SMALL),
-            if on { theme::text_primary() } else { theme::text_secondary() },
+            ink,
         );
         if response.clicked() && !on {
             actions.push(Action::new("track.setAudioInput", json!({ "track": track.0, "monitor": value })));
@@ -1092,7 +1098,7 @@ fn paint_fader(
     widgets::value_drag_pointer(ui.ctx(), response, &style);
     style.paint_background(painter, fader, 0.0);
     let hover = widgets::hover(ui, response);
-    let value_color = motion::mix(theme::text_value(), theme::text_primary(), hover);
+    let value_color = style.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
     if readout.is_positive() {
         let placed = horizontal_volume() || control_layout::placement("mixer-volume-readout") != Default::default();
         let area = if placed {
@@ -1138,7 +1144,8 @@ fn paint_fader(
         painter.rect_filled(rail, 2.0, crate::kit::mixer_controls::recess());
     }
     drop(rail_el);
-    let _scale_style = crate::kit::element::FADER_SCALE.enter();
+    let scale_style = crate::kit::element::FADER_SCALE.enter();
+    let ink = scale_style.color_or(theme::text_hint());
     let native_scale = Rect::from_min_size(
         egui::pos2(if centred { fader.left() - SCALE_WIDTH - 2.0 } else { fader.right() }, fader.top()),
         egui::vec2(SCALE_WIDTH, fader.height()),
@@ -1159,12 +1166,11 @@ fn paint_fader(
                 Align2::RIGHT_CENTER,
                 label,
                 theme::mono_font(8.0),
-                theme::text_hint(),
+                ink,
             );
             last_label_y = y;
         }
         let length = if db == 0.0 { 5.0 } else { 3.0 };
-        let ink = theme::text_hint();
         let shift = scale.left() - native_scale.left();
         painter.hline(
             egui::Rangef::new(rail.right() + 2.0 + shift, rail.right() + length + 2.0 + shift),
@@ -1172,7 +1178,7 @@ fn paint_fader(
             theme::hairline(ink),
         );
     }
-    drop(_scale_style);
+    drop(scale_style);
     let level = at(widgets::volume_position(db));
     let cap = Rect::from_center_size(Pos2::new(x, level), cap_size);
     crate::kit::mixer_controls::fader_cap(painter, cap, hover, response);
@@ -1192,14 +1198,15 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
         painter.rect_filled(
             Rect::from_center_size(fader.center(), Vec2::new(fader.width(), 5.0)),
             2.0,
-            theme::control_background(),
+            rail_el.background_or(theme::control_background()),
         );
     }
     drop(rail_el);
     let mut previous = f32::NEG_INFINITY;
     let native_scale = Rect::from_min_size(egui::pos2(fader.left(), fader.bottom()), egui::vec2(fader.width(), 12.0));
     let scale = control_layout::place("mixer-volume-scale", native_scale, painter.clip_rect());
-    let _scale_style = crate::kit::element::FADER_SCALE.enter();
+    let scale_style = crate::kit::element::FADER_SCALE.enter();
+    let ink = scale_style.color_or(theme::text_hint());
     for value in
         [-70.0, -24.0, -12.0, -6.0, 0.0].into_iter().filter(|_| !control_layout::placement("mixer-volume-scale").hidden)
     {
@@ -1209,7 +1216,7 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
             continue;
         }
         previous = x;
-        painter.vline(x, scale.top()..=scale.top() + 3.0, theme::hairline(theme::text_hint()));
+        painter.vline(x, scale.top()..=scale.top() + 3.0, theme::hairline(ink));
         widgets::text_in(
             painter,
             Rect::from_center_size(egui::pos2(x, scale.top() + 7.0), Vec2::new(22.0, 8.0)),
@@ -1222,10 +1229,10 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
                 continue;
             },
             theme::mono_font(8.0),
-            theme::text_hint(),
+            ink,
         );
     }
-    drop(_scale_style);
+    drop(scale_style);
     let centre = egui::pos2(at(widgets::volume_position(db)), fader.center().y);
     let cap = Rect::from_center_size(centre, Vec2::new(thickness, length));
     let cap_style = crate::kit::element::FADER_CAP.response(response).enter();
@@ -1233,8 +1240,13 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
     let cap_ink = crate::kit::mixer_controls::cap_ink(&cap_style, state);
     if !crate::kit::skin::paint(painter, cap, "fader.cap", state, cap_ink, std::f32::consts::FRAC_PI_2) {
         let cap = Rect::from_center_size(centre, Vec2::new(length, thickness));
-        painter.rect_filled(cap, 2.0, motion::mix(theme::control_background(), theme::text_value(), hover * 0.3));
-        painter.vline(centre.x, cap.shrink(2.0).y_range(), theme::hairline(theme::text_value()));
+        let fill = cap_style.background_or(motion::mix(theme::control_background(), theme::text_value(), hover * 0.3));
+        painter.rect_filled(cap, 2.0, fill);
+        painter.vline(
+            centre.x,
+            cap.shrink(2.0).y_range(),
+            theme::hairline(cap_style.own_color_or(theme::text_value())),
+        );
     }
 }
 
@@ -1263,6 +1275,8 @@ fn compact_volume(
     let position = crate::kit::widgets::volume_position(db);
     let text = rect.shrink2(Vec2::new(4.0, 0.0));
     let font = theme::mono_font(theme::TEXT_SMALL);
+    // `value#mixer-volume`, its lit part `value-fill`.
+    let el = crate::kit::element::VALUE.id("mixer-volume").response(&response).enter();
     if state.knobs {
         let size = rect.height();
         let center = Pos2::new(rect.left() + size / 2.0, rect.center().y);
@@ -1271,15 +1285,18 @@ fn compact_volume(
             center,
             size,
             position,
-            motion::mix(theme::text_value(), theme::text_primary(), hover),
+            el.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover)),
             Some(&response),
         );
     } else {
-        painter.rect_filled(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+        let fill = el.background_or(motion::mix(theme::control_background(), theme::control_hover(), hover));
+        painter.rect_filled(rect, 0.0, fill);
         let x = rect.left() + rect.width() * position;
-        painter.rect_filled(Rect::from_min_max(rect.min, Pos2::new(x, rect.bottom())), 0.0, theme::control_playing());
+        let lit = crate::kit::element::VALUE_FILL.look().background_or(theme::control_playing());
+        painter.rect_filled(Rect::from_min_max(rect.min, Pos2::new(x, rect.bottom())), 0.0, lit);
     }
-    widgets::text_in(painter, text, Align2::RIGHT_CENTER, &widgets::format_db(db), font, theme::text_primary());
+    let ink = el.color_or(theme::text_primary());
+    widgets::text_in(painter, text, Align2::RIGHT_CENTER, &widgets::format_db(db), font, ink);
 }
 
 /// The full-width pan field, sharing its face with Arrangement.
@@ -1332,7 +1349,7 @@ fn pan_row(
             Pos2::new(row.left() + size / 2.0, row.center().y),
             size,
             ((pan.clamp(-1.0, 1.0) + 1.0) / 2.0) as f32,
-            theme::text_value(),
+            style.color_or(theme::text_value()),
             Some(&pan_response),
         );
         if row.width() >= size + 20.0 {
@@ -1342,7 +1359,7 @@ fn pan_row(
                 Align2::CENTER_CENTER,
                 &widgets::format_pan(pan),
                 theme::mono_font(theme::TEXT_SMALL),
-                theme::text_primary(),
+                style.color_or(theme::text_primary()),
             );
         }
     } else {
@@ -1372,6 +1389,8 @@ fn send_knobs(
         let send = crate::kit::element::SEND.enter();
         send.style()
     };
+    // The bar that shows how far the sends are scrolled is the row's `scroll-bar`.
+    let bar = crate::kit::element::SCROLL_BAR.look().background_or(theme::text_hint());
     let width =
         sheet.as_ref().and_then(|s| s.width).map_or((row.width() - SEND_GAP) / 2.0, |w| w.clamp(8.0, row.width()));
     let height = sheet.as_ref().and_then(|s| s.height).map_or(row.height() - 2.0, |h| h.clamp(8.0, row.height()));
@@ -1388,11 +1407,7 @@ fn send_knobs(
     if most > 0.0 {
         let width = (row.width() * row.width() / (row.width() + most)).max(8.0).min(row.width());
         let x = row.left() + (row.width() - width) * scroll / most;
-        painter.rect_filled(
-            Rect::from_min_size(Pos2::new(x, row.bottom() - 1.0), Vec2::new(width, 1.0)),
-            1.0,
-            theme::text_hint(),
-        );
+        painter.rect_filled(Rect::from_min_size(Pos2::new(x, row.bottom() - 1.0), Vec2::new(width, 1.0)), 1.0, bar);
     }
     for (index, send) in column.sends.iter().enumerate() {
         let rect = Rect::from_min_size(

@@ -561,3 +561,162 @@ fn a_child_of_a_parent_held_for_a_transition_is_not_kept_under_the_parent_s_new_
     assert_eq!(color, Some(egui::Color32::from_rgb(0, 0, 0xFF)));
     assert!(!asked, "the frame painted the whole tree's styles");
 }
+
+/// A drawn item's [`Look`]: its own `color` for a line or a mark, never the text colour a view's
+/// rule gives what is in it; its text colour inherited; the token wherever no rule reaches it
+/// (#1417).
+#[test]
+fn a_look_takes_its_own_rules_and_the_token_elsewhere() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let css = "session { color: #FF0000; } separator[kind=\"slot\"] { color: #00FF00; } \
+               slot-mark { background-color: #0000FF; border-color: #FFFF00; }";
+    let (slot_line, column_line, column_text, mark) = frames(css, || {
+        let _view = SESSION.enter();
+        let slot = SEPARATOR.attribute("kind", "slot").look();
+        let column = SEPARATOR.attribute("kind", "column").look();
+        let mark = SLOT_MARK.look();
+        (slot.own_color_or(token), column.own_color_or(token), column.color_or(token), mark)
+    });
+    assert_eq!(slot_line, rgb(0, 0xff, 0), "a rule on the line gives its colour");
+    assert_eq!(column_line, token, "the view's text colour does not reach a line");
+    assert_eq!(column_text, rgb(0xff, 0, 0), "but it is the text colour inside it");
+    assert_eq!(mark.background_or(token), rgb(0, 0, 0xff));
+    assert_eq!(mark.border_or(token), rgb(0xff, 0xff, 0));
+    assert_eq!(mark.own_color_or(token), token);
+    // Without a sheet, every colour is the token's.
+    let unstyled = Look::default();
+    assert_eq!(
+        (unstyled.own_color_or(token), unstyled.background_or(token), unstyled.border_or(token)),
+        (token, token, token)
+    );
+}
+
+/// `[queued]` is an attribute the app gives, as `[playing]` is (#1417).
+#[test]
+fn queued_is_an_attribute() {
+    let css = "clip[queued] { background-color: #102030; }";
+    let (queued, waiting) = frames(css, || {
+        let _view = SESSION.enter();
+        (
+            CLIP.attr(Queued, true).look().background_or(egui::Color32::BLACK),
+            CLIP.look().background_or(egui::Color32::BLACK),
+        )
+    });
+    assert_eq!(queued, egui::Color32::from_rgb(0x10, 0x20, 0x30));
+    assert_eq!(waiting, egui::Color32::BLACK);
+}
+
+/// A rule for every `button` does not hide which toggle is on: while lit, only a rule for the
+/// state (`button[checked]`) gives it a colour (#1417 review).
+#[test]
+fn a_rule_for_every_button_does_not_hide_a_lit_one() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let lit_fill = |css: &str| {
+        frames(css, || {
+            let _view = SESSION.enter();
+            let plain = BUTTON.id("main-metronome").probe();
+            BUTTON.id("main-metronome").attr(Checked, true).look().background_unlike(&plain, token)
+        })
+    };
+    assert_eq!(lit_fill("button { background-color: #102030; }"), token);
+    assert_eq!(
+        lit_fill("button { background-color: #102030; } button[checked] { background-color: #405060; }"),
+        rgb(0x40, 0x50, 0x60)
+    );
+}
+
+/// A comparison lookup (`probe`) is not drawn, so it is no sibling: `button + button` does not
+/// match the one drawn after it (#1428 review).
+#[test]
+fn a_probe_is_no_sibling_of_what_is_drawn_after_it() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let css = "button + button { background-color: #102030; }";
+    let (after_probe, after_look) = frames(css, || {
+        let _view = SESSION.enter();
+        let _probe = BUTTON.id("a").probe();
+        let after_probe = BUTTON.id("b").look().background_or(token);
+        let _look = BUTTON.id("c").look();
+        let after_look = BUTTON.id("d").look().background_or(token);
+        (after_probe, after_look)
+    });
+    assert_eq!(after_probe, token, "the probe took no place beside the button");
+    assert_eq!(after_look, rgb(0x10, 0x20, 0x30), "a drawn button is a sibling");
+}
+
+/// A rule for every stop button does not hide the queued one: its colour comes from a rule for
+/// `[queued]` or stays the native accent (#1428 review).
+#[test]
+fn a_rule_for_every_slot_does_not_hide_a_queued_one() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let queued_ink = |css: &str| {
+        frames(css, || {
+            let _view = SESSION.enter();
+            let plain = SLOT.attribute("kind", "stop").probe();
+            SLOT.attribute("kind", "stop").attr(Queued, true).look().own_color_unlike(&plain, token)
+        })
+    };
+    assert_eq!(queued_ink("slot[kind=\"stop\"] { color: #102030; }"), token);
+    assert_eq!(
+        queued_ink("slot[kind=\"stop\"] { color: #102030; } slot[kind=\"stop\"][queued] { color: #405060; }"),
+        rgb(0x40, 0x50, 0x60)
+    );
+}
+
+/// With CSS motion on, a probe that shares its key with the drawn element it describes (here the
+/// same place, no id or response) is its own chain's style, not that element's painted values
+/// held for a transition: a `[selected]` rule is not on both sides of the comparison (#1428
+/// review).
+#[test]
+fn a_probe_is_its_own_style_with_motion_on() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let css = "automation-point { color: #102030; transition: color 1s linear; } \
+               automation-point[selected] { color: #405060; }";
+    super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut picked = token;
+    for frame in 0..5 {
+        ctx.run_ui(egui::RawInput { time: Some(f64::from(frame) * 0.1), ..Default::default() }, |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, true);
+            let _view = ARRANGEMENT.enter();
+            let plain = AUTOMATION_POINT.probe();
+            picked = AUTOMATION_POINT.attr(Selected, true).look().own_color_unlike(&plain, token);
+        })
+        .textures_delta
+        .clear();
+    }
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    assert_eq!(picked, rgb(0x40, 0x50, 0x60));
+}
+
+/// The plain look `enter_against_plain` compares with is the same element with only the state
+/// off: its pointer state too, so a `:hover` rule is not taken for the lit state's (#1428 review).
+#[test]
+fn the_plain_look_keeps_the_pointer_state() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let lit_fill = |css: &str| {
+        frames(css, || {
+            let _view = SESSION.enter();
+            let (el, plain) =
+                BUTTON.id("main-metronome").pointer(true, false, false).enter_against_plain(Checked, true);
+            super::super::widgets::toggle_inks(&el, plain.as_ref(), (token, token), (token, token)).0
+        })
+    };
+    assert_eq!(lit_fill("button:hover { background-color: #102030; }"), token);
+    assert_eq!(
+        lit_fill("button:hover { background-color: #102030; } button[checked]:hover { background-color: #405060; }"),
+        rgb(0x40, 0x50, 0x60)
+    );
+    // Off, nothing is compared: the element's own rules apply as they are.
+    let off = frames("button:hover { background-color: #102030; }", || {
+        let _view = SESSION.enter();
+        let (el, plain) = BUTTON.id("main-metronome").pointer(true, false, false).enter_against_plain(Checked, false);
+        (plain.is_none(), el.background_or(token))
+    });
+    assert_eq!(off, (true, rgb(0x10, 0x20, 0x30)));
+}
