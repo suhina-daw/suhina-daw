@@ -133,6 +133,12 @@ not a mix.
   paths, as with the limiter's look-ahead. Longer IRs are handled inside the same delay with the
   partition's tail buffers. The **Delay** knob is not reported.
 
+The Amp Modeler builds what its rate and its model need (the resampler legs, the staging and the
+two running model instances) when it is made and when `prepare` moves it to another rate; the Cab
+Loader builds its convolutions once, when it is made, and its filters and delays for the rate.
+`reset` only clears all of it (the running models' state, the convolutions' memory, the filters,
+delays and positions) and allocates nothing.
+
 Both devices run their stages on the frames each call brings, as they arrive: the Amp
 Modeler's model, its DC blocker and the resampler legs, and the Cab Loader's convolution
 (whose convolver buffers to its own 256-frame partitions, so its input chunking — and its

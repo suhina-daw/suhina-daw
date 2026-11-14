@@ -48,13 +48,20 @@ its `INFO` and finds parameters by id, so the change is mostly the device's own 
    from observation (CONTRIBUTING › Clean-room).
 2. **Crate** `devices/<name>`, package `suhina-device-<name>`, with workspace settings and an
    entry in the root `Cargo.toml`'s `[workspace.dependencies]`. It exports `INFO: DeviceInfo`
-   and a type that implements `suhina_device_api::Device`. Missing DSP goes into `crates/dsp`,
-   not into the device.
+   and a type that implements `suhina_device_api::Device`, made with
+   `with_rate(sample_rate) -> Result<Self, DeviceError>` (it checks the rate with
+   `check_sample_rate` and builds everything for that rate once) and `new()`, the same at
+   `DEFAULT_SAMPLE_RATE`, for tests ([ADR 0004](../../../docs/decisions/0004-built-in-devices.md)
+   › Amendment: a device is made at its rate). `prepare` builds again only what depends on the
+   rate; `reset` clears and never allocates (`crates/device-registry/tests/reset.rs` checks it).
+   Missing DSP goes into `crates/dsp`, not into the device.
 3. **Registry**, `crates/device-registry/src/lib.rs`: one row in `ENTRIES` (browser order; the
-   array's length is in its type) with its `INFO`, its constructor, its layout (its
+   array's length is in its type) with its `INFO`, its constructor
+   (`make: |rate| boxed(Name::with_rate(rate))`), its layout (its
    `panel.json`, one built in Rust, or the generated list) and whether it runs a file.
    `DEVICES`, `create`, `layout`, `panel`, `is_file_device` and `load_file` read that row; a device that runs a file gives its `FileKind` there (extension, read, shown name, make), and nothing outside the registry names it to load its file.
-4. **Tests**: the device's own in `devices/<name>/src/tests.rs`; the registry's conformance test
+4. **Tests**: the device's own in `devices/<name>/src/tests.rs`, with
+   `suhina_device_api::conformance_test!(Name::with_rate);`; the registry's conformance test
    covers it once it is listed. A device whose sound is the point gets a golden render.
 5. **Documents**: the crate's row in `docs/architecture.md` and the crate map; the devices table
    of `ROADMAP.md`; `docs/spec/device-import.md` when it imports.

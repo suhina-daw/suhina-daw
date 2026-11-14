@@ -70,8 +70,9 @@ decision 9.
    are given. `process` works in place on interleaved stereo, the engine's format, and gets a
    `ProcessContext` (tempo, song position in beats, whether the transport runs) for devices that
    follow the tempo (`tempo_or_default` gives one between 1 and 1000 BPM, or 120 when the host's
-   makes no sense). `latency()` reports added delay for compensation. A device is made prepared
-   for `DEFAULT_SAMPLE_RATE` (48 kHz).
+   makes no sense). `latency()` reports added delay for compensation. A device is made for the
+   rate it will run at (`with_rate`), and `prepare` moves a made device to another rate (see
+   *Amendment: a device is made at its rate*).
 5. **Automation: the host splits, the device smooths.** The host addresses parameters by index
    and splits a block where an automation point falls, so a change lands on its frame, and gives
    each part the song position of its own first frame; the device ramps a change that would click (20 ms for the utility). The output must not depend on
@@ -80,7 +81,8 @@ decision 9.
    device through hostile parameter values and input (NaN, infinities, extremes), several block
    sizes with parameter changes, `reset` against a fresh device, and every sample rate from
    8 kHz to 384 kHz. An effect or an instrument prepared at other rates and then at 48 kHz again
-   must sound as a fresh one does, and at its defaults an effect's impulse must first be heard
+   must sound as a fresh one does, one made at a rate must sound as one made at 48 kHz and
+   prepared at that rate, and at its defaults an effect's impulse must first be heard
    within 4 frames of its `latency()`, at 44.1, 48 and 96 kHz. Each device crate calls it from a
    test (`conformance_test!`), next to its own tests of what it sounds like, and
    `device-registry` runs it on every device it lists, as it makes them, so a crate that leaves
@@ -140,3 +142,30 @@ How 8 to 14 behave in detail (orders, room for events, latency, what a swap keep
 - An instrument that works in fixed internal blocks applies an event at its next internal block
   boundary, which keeps its output independent of the host's block sizes at the cost of up to one
   internal block of timing.
+
+## Amendment: a device is made at its rate (2026-11-14)
+
+Decision 4 made every device prepared for `DEFAULT_SAMPLE_RATE` (48 kHz) when it was made, and
+the engine then prepared it at the project's rate: every built-in built its per-rate state at
+least twice on every graph build, and a sample loaded before `prepare` gave the Sampler a second
+set of stretch voices (#1402). Now:
+
+- **A device is made for the rate it will run at.** Each device crate has
+  `with_rate(sample_rate) -> Result<Self, DeviceError>`, which refuses a rate
+  `check_sample_rate` refuses; `new()` is the same at `DEFAULT_SAMPLE_RATE`, for tests and tools.
+  The device factory (`DeviceFactory::create`, `preview_instrument`) and the registry's `create`
+  take the rate, and there is no rate-less way to make a device by its id, so no caller makes one
+  at 48 kHz by mistake. The engine, the preview instrument and the native devices of `.sd` graphs
+  make devices at their rate and never prepare them on the way.
+- **`prepare` moves a made device to another rate.** It builds again only what depends on the
+  rate, and clears the state as `reset` does. It stays for a device kept across a change of
+  rate, off the audio thread.
+- **`reset` clears signal state and never allocates**, so it is real-time safe like the rest of
+  decision 4's audio-thread calls: what a device builds for its rate or its file is built when it
+  is made or prepared, and `reset` only empties it. A test with a counting allocator checks it for
+  every listed device.
+- The contract tests (decision 6) check that a device made at a rate sounds as one made at
+  48 kHz and prepared at that rate, and that one made at a refused rate is not made.
+
+The alternative, a device made unprepared that must be prepared before it runs, was not taken: a
+forgotten `prepare` would fail silently, and every device would need a defined output before it.

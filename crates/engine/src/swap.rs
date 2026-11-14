@@ -1015,12 +1015,9 @@ impl Controller {
     }
 
     /// A fallback instrument for [`crate::preview_notes`]: the device factory's preview
-    /// instrument, prepared at the renderer's rate.
+    /// instrument, made at the renderer's rate.
     pub fn preview_instrument(&self) -> Option<Box<dyn suhina_device_api::Device>> {
-        let mut device = self.updater.devices.preview_instrument()?;
-        device.prepare(f64::from(self.updater.sample_rate)).ok()?;
-        device.reset();
-        Some(device)
+        self.updater.devices.preview_instrument(f64::from(self.updater.sample_rate))
     }
 
     /// Changes the level of what is previewed now to `gain` (linear), gliding there without a

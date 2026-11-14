@@ -57,7 +57,7 @@ fn db(gain: f64) -> f64 {
     20.0 * gain.log10()
 }
 
-suhina_device_api::conformance_test!(Saturator::new());
+suhina_device_api::conformance_test!(Saturator::with_rate);
 
 #[test]
 fn fully_dry_is_the_input_delayed_exactly() {

@@ -101,10 +101,9 @@ impl SlotFactory<'_> {
     fn builtin(&self, id: &str, stored: &suhina_model::Device, lanes: &mut DeviceLanes, slot: usize) -> Option<Built> {
         let asset = crate::assets::stored_path(self.devices, id, stored.state.as_deref())
             .and_then(|path| self.assets.get(path));
-        let mut device = self.devices.create(id, asset)?;
-        // Prepared before it gets its sample, so a Sampler builds its stretch voices once, for
-        // this rate, rather than for 48 kHz on load and again here (#1396).
-        device.prepare(f64::from(self.sample_rate)).ok()?;
+        // Made at the renderer's rate, so nothing builds for 48 kHz and again here, and a Sampler
+        // gets its stretch voices once, for this rate, when it is given its sample (#1402).
+        let mut device = self.devices.create(id, f64::from(self.sample_rate), asset)?;
         // What a chain gives a device that plays samples: the decoded sample, the manual slices
         // and the source corrections.
         let slices: Option<std::sync::Arc<[f64]>> = stored.sample_slices().map(std::sync::Arc::from);
@@ -135,7 +134,7 @@ impl SlotFactory<'_> {
             if info.role == Role::MidiEffect { DeviceSlot::MidiDevice(device) } else { DeviceSlot::Device(device) };
         Some(Built {
             slot: kind,
-            id: crate::chain::device_identity(id, stored, self.audio, self.devices),
+            id: crate::chain::device_identity(id, stored, self.audio, self.devices, asset),
             values,
             latency,
             slices,

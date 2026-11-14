@@ -205,13 +205,16 @@ fn after_host(ara: &Option<AraHost>, buffer: &mut [f32], from: usize, to: usize)
 
 /// The identity of built-in device `id` for graph swaps: a device that holds a file changes with
 /// the file, so its identity carries the state's hash, the `.sd` devices' trick, and a model swap
-/// rebuilds one device alone; a Sampler's carries its sample (#600). A chain and the groups in it
-/// give the same device the same identity.
+/// rebuilds one device alone; a Sampler's carries its sample (#600). It carries the read of the
+/// file too (`asset`'s address), so a file read again (at another rate, or after a rewrite) is a
+/// new device and a swap does not keep the running one with the earlier read. A chain and the
+/// groups in it give the same device the same identity.
 pub(crate) fn device_identity(
     id: &str,
     stored: &suhina_model::Device,
     audio: &crate::AudioPool,
     devices: &dyn suhina_device_sdk::DeviceFactory,
+    asset: Option<&suhina_device_sdk::DeviceAsset>,
 ) -> String {
     if devices.runs_a_file(id) {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -223,7 +226,8 @@ pub(crate) fn device_identity(
             }
             Err(_) => hasher.finish(),
         };
-        format!("{id}:{hashed:016x}")
+        let read = asset.map(|asset| std::ptr::from_ref(asset.data()).cast::<()>());
+        format!("{id}:{hashed:016x}:{read:?}")
     } else {
         stored.sample_file().map_or_else(
             || id.to_owned(),
@@ -1814,7 +1818,7 @@ mod span_tests {
     /// The delay with its LFO synced to sixteenth notes at full depth on the time and the band,
     /// over a block of clicks, its frames split at `splits` by notes it ignores.
     fn synced_delay(splits: &[usize]) -> Vec<f32> {
-        let Some(mut device) = suhina_device_registry::create("delay") else { panic!("no delay") };
+        let Some(mut device) = suhina_device_registry::create("delay", 48_000.0) else { panic!("no delay") };
         let info = device.info().clone();
         let index = |id: &str| info.params.iter().position(|p| p.id == id).unwrap_or_else(|| panic!("{id}"));
         // Synced mode, 1/16 per cycle, the shortest time so the repeats are heard in one block.
@@ -1848,7 +1852,7 @@ mod sampler_regressions {
     use super::*;
     #[test]
     fn sampler_fit_beats_follows_project_tempo_during_a_held_note() {
-        let mut sampler = suhina_device_registry::create("sampler").unwrap();
+        let mut sampler = suhina_device_registry::create("sampler", 48_000.0).unwrap();
         sampler.samples().unwrap().load_sample(48000, 1, vec![0.2; 48000].into());
         for (id, value) in [("warp", 1.), ("warp_beats", 4.), ("attack", 0.), ("sustain", 1.)] {
             sampler.set_param(sampler.info().param_index(id).unwrap(), value);
@@ -1876,7 +1880,7 @@ mod sampler_regressions {
     }
     #[test]
     fn first_beat_slice_uses_context_before_frame_zero_note() {
-        let mut sampler = suhina_device_registry::create("sampler").unwrap();
+        let mut sampler = suhina_device_registry::create("sampler", 48_000.0).unwrap();
         let source =
             std::sync::Arc::new(crate::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.5; 96000] });
         sampler.samples().unwrap().load_shared_sample(48000, 1, source.clone());

@@ -61,7 +61,7 @@ fn level(signal: &[f32], hz: f64, from: usize) -> f64 {
     2.0 * re.hypot(im) / frames.len().max(1) as f64
 }
 
-suhina_device_api::conformance_test!(Limiter::new());
+suhina_device_api::conformance_test!(Limiter::with_rate);
 
 #[test]
 fn reports_the_lookahead_as_latency_at_every_rate() {
