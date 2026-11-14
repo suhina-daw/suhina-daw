@@ -4,7 +4,7 @@ read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taff
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-14
+last_verified: 2026-11-13
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
