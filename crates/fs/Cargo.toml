@@ -1,12 +1,15 @@
 [package]
 name = "suhina-fs"
-description = "Writes a file whole or not at all, for every crate of Suhina that saves one"
+description = "Writes a file whole or not at all, and reads a plain file without waiting on a pipe, for every crate of Suhina"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"  # MIT OR Apache-2.0; O_NONBLOCK for read_plain
 
 [lints]
 workspace = true

@@ -250,7 +250,8 @@ fn sampler_loading_is_atomic_undoable_persistent_and_relinkable() {
     s.execute("edit.redo", &json!({})).unwrap();
     assert_eq!(s.project(), &loaded);
     let mut rebased = loaded.clone();
-    suhina_project_file::rebase_audio(&mut rebased, &folder, &folder);
+    let decoded = folder.join("source.wav");
+    suhina_project_file::rebase_audio(&mut rebased, &folder, &folder, &|_, _| Some(decoded.clone()));
     assert_eq!(rebased.channels[0].devices[0].sample_file(), Some("source.wav"));
     let (pool, warnings) = suhina_media::load_project_audio(&rebased, &folder);
     assert!(warnings.is_empty(), "{warnings:?}");
