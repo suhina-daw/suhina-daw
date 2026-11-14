@@ -55,12 +55,14 @@ suhina.on_port_message(function(bytes, port)
 end)
 "#;
 /// Watches the launcher grid: the first state comes after the subscribe, the next when the
-/// project changes; the controller byte counts the states.
+/// project changes; the controller byte counts the states, the value byte says the state came
+/// with its token first and its value with it, as the spec's handler shape says.
 const SCRIPT_SUBSCRIBE: &str = r#"
-local seen = 0
+local count = 0
 suhina.on_state(function(token, value)
-    seen = seen + 1
-    suhina.send("APC out", suhina.midi.cc(1, seen, 64))
+    count = count + 1
+    local ordered = (token == 1 and type(value) == "table" and value.tracks ~= nil) and 1 or 0
+    suhina.send("APC out", suhina.midi.cc(1, count, ordered))
 end)
 suhina.subscribe("project.launcher")
 "#;
@@ -390,12 +392,12 @@ fn a_subscription_pushes_its_first_state_and_the_next_change() {
     fixture.projects.poll_plugins();
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
-    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 0x40]]);
-    // The project changes; the next look pushes again.
+    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 0x01]]);
+    // The project changes; the next look pushes again. Both states carried their token first.
     fixture.projects.execute("track.add", &json!({ "kind": "audio" })).expect("the track adds");
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
-    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 0x40], vec![0xB1, 0x02, 0x40]]);
+    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 0x01], vec![0xB1, 0x02, 0x01]]);
 }
 
 /// Stand-in MIDI ports: a claimed input port plays into the sink it was opened raw for, and

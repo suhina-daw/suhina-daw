@@ -423,8 +423,8 @@ fn deliver(link: &Shared<Link>, runner: &Shared<Run>, lua: &Lua, message: &Messa
         ],
         Message::State { token, value } => {
             vec![
-                vm::json_to_lua(lua, value).map_err(|e| e.to_string())?,
                 LuaValue::Integer((*token).try_into().unwrap_or(i64::MAX)),
+                vm::json_to_lua(lua, value).map_err(|e| e.to_string())?,
             ]
         }
         _ => return Ok(()),
