@@ -143,11 +143,11 @@ impl App {
         let width = |id: &str, captions: bool, performance: (bool, bool)| -> Option<f32> {
             Some(match id {
                 "browser" => theme::ROW,
-                // The tempo and the time signature fit their widest value in the module's font,
-                // which a theme may make larger than the bar's: measured where the module is
-                // drawn, in its style ([`field_width`]), the bar's font until then.
-                "tempo" => field_width(ui, "tempo").unwrap_or_else(|| tempo_width(ui)).max(56.0),
-                "signature" => field_width(ui, "signature").unwrap_or_else(|| signature_width(ui)).max(40.0),
+                // The time signature fits "99 / 16" and its chevron in the bar's font; a theme that
+                // makes a module's font larger gives it the width as well, so styling never
+                // reflows the bar.
+                "tempo" => 56.0,
+                "signature" => signature_width(ui).max(40.0),
                 "keys" => 44.0,
                 "grid" => GRID_MENU + if captions { GRID_CAPTION } else { 0.0 },
                 "count-in" => COUNT_IN_MENU + if captions { COUNT_IN_CAPTION } else { 0.0 },
@@ -267,12 +267,10 @@ impl App {
                 self.browser_toggle(ui, painter, rect);
             }
             "tempo" => {
-                measure_field(ui, module, tempo_width(ui));
                 ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("sampler-tempo"), grid.tempo_bpm));
                 self.tempo_field(ui, painter, outer, grid.tempo_bpm, Some(scope), actions);
             }
             "signature" => {
-                measure_field(ui, module, signature_width(ui));
                 if self.session().is_some() {
                     signature_field(ui, painter, outer, grid, Some(scope), actions);
                 }
@@ -838,27 +836,6 @@ pub(crate) const DENOMINATORS: [u8; 5] = [1, 2, 4, 8, 16];
 
 /// The width of the chevron at the right of the time signature that opens the common ones.
 const SIGNATURE_CHEVRON: f32 = 14.0;
-
-/// The width a field module (the tempo, the time signature) measured for itself, in its own style,
-/// the last time it was drawn.
-fn field_width(ui: &Ui, module: &str) -> Option<f32> {
-    ui.ctx().data(|d| d.get_temp::<f32>(Id::unique(("toolbar-field-width", module))))
-}
-
-/// Keeps the width a field module needs, measured while its style is entered, for the next layout;
-/// a width that changed (a theme with another font) lays the bar out again at once.
-fn measure_field(ui: &Ui, module: &str, width: f32) {
-    if field_width(ui, module).is_none_or(|kept| (kept - width).abs() > 0.5) {
-        ui.ctx().data_mut(|d| d.insert_temp(Id::unique(("toolbar-field-width", module)), width));
-        ui.ctx().request_repaint();
-    }
-}
-
-/// The width the tempo field needs for its widest value in the font it is drawn with (a theme
-/// may make it larger), with its padding.
-pub(super) fn tempo_width(ui: &Ui) -> f32 {
-    widgets::text_width(ui, "999.999", theme::mono_font(theme::TEXT)) + 2.0 * PAD + 4.0
-}
 
 /// The width the time-signature field needs for its widest value, its padding and its chevron.
 pub(super) fn signature_width(ui: &Ui) -> f32 {

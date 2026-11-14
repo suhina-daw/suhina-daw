@@ -212,8 +212,9 @@ Every edit here is one of the commands above and one undo step.
   Picking or typing the project's signature while a launched scene's drives the clock puts the
   clock back on the map (`transport.followTempoMap`). The chevron at its right, and only the
   chevron, opens the common signatures to pick (2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 9/8, 12/8, 15/16),
-  the current one ticked. Its width fits the widest signature, 99 / 16, in the font it is drawn
-  with, as the tempo field's fits 999.999, also when a theme makes the font larger. It sets the project's signature in effect at the playhead: the start signature
+  the current one ticked. Its width fits the widest signature, 99 / 16, and the chevron in the
+  control bar's font; a theme that makes the module's font larger gives it a `width` too, as
+  styling a module never moves the others. It sets the project's signature in effect at the playhead: the start signature
   (`transport.setTimeSignature`) before the first change, otherwise the change the playhead is
   past (`timeSignature.add` at that change's bar, which replaces it). **Suhina:** while a scene's
   signature drives the clock, the field still edits the project's signature; the edit puts the
