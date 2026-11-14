@@ -751,3 +751,54 @@ fn a_muted_clip_s_colours_come_back_through_a_probe_with_motion_on() {
     super::super::skin::configure(&super::super::skin::Skin::default());
     assert_eq!(seen, (rgb(0x40, 0x50, 0x60), rgb(0x50, 0x60, 0x70)));
 }
+
+/// [`Entered::paint_over`] paints the fill it is given over the sheet's `background-color`, which
+/// [`Entered::paint_with`] takes instead (#1023).
+#[test]
+fn paint_over_keeps_the_fill_it_is_given() {
+    let rgb = egui::Color32::from_rgb;
+    super::super::skin::configure(&super::super::skin::Skin {
+        css: Some(Arc::from("button { background-color: #102030; }")),
+        ..Default::default()
+    });
+    let ctx = egui::Context::default();
+    let fill = rgb(0x70, 0x80, 0x90);
+    let mut fills = (Vec::new(), Vec::new());
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, false);
+            let el = BUTTON.enter();
+            let rect = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(20.0, 10.0));
+            el.paint_with(ui.painter(), rect, Native { radius: 0.0, fill });
+            el.paint_over(ui.painter(), rect.translate(egui::vec2(40.0, 0.0)), Native { radius: 0.0, fill });
+        });
+        output.textures_delta.clear();
+        let rects: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) => Some((rect.rect.left(), rect.fill)),
+                _ => None,
+            })
+            .collect();
+        fills = (
+            rects.iter().filter(|(x, _)| *x == 10.0).map(|(_, fill)| *fill).collect(),
+            rects.iter().filter(|(x, _)| *x == 50.0).map(|(_, fill)| *fill).collect(),
+        );
+    }
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    assert_eq!(fills, (vec![rgb(0x10, 0x20, 0x30)], vec![fill]));
+}
+
+/// `accent-color` where the sheet gives one, else the token, on an element and on a look.
+#[test]
+fn accent_or_reads_the_accent_colour() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let (entered, look, unstyled) = frames("knob { accent-color: #102030; }", || {
+        let unstyled = SLIDER.enter().accent_or(token);
+        let el = KNOB.enter();
+        (el.accent_or(token), KNOB.look().accent_or(token), unstyled)
+    });
+    assert_eq!((entered, look, unstyled), (rgb(0x10, 0x20, 0x30), rgb(0x10, 0x20, 0x30), token));
+}

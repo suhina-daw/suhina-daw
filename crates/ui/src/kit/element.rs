@@ -340,6 +340,11 @@ impl Look {
         self.0.as_ref().filter(|s| s.authored.border).map_or(token, |s| s.border)
     }
 
+    /// The item's `accent-color`, where the sheet sets one; else `token`.
+    pub fn accent_or(&self, token: Color32) -> Color32 {
+        self.0.as_ref().filter(|s| s.authored.accent).map_or(token, |s| s.accent)
+    }
+
     /// The item's computed style, when a sheet styles the window.
     pub fn style(&self) -> Option<&Computed> {
         self.0.as_ref()
@@ -482,6 +487,22 @@ impl Entered {
         Boxed { content, radius }
     }
 
+    /// [`Entered::paint_with`] with `native.fill` in place of the sheet's `background-color`: for a
+    /// toggle whose caller worked out its fill from the element already ([`super::widgets::Toggle`]),
+    /// so the lit state's fill is not covered again by a rule for every such control.
+    pub fn paint_over(&self, painter: &Painter, rect: Rect, native: Native) -> Boxed {
+        self.finish();
+        let style = self.style();
+        let mut own = style.clone();
+        if let Some(own) = own.as_mut() {
+            own.authored.background = false;
+        }
+        let outer = super::native_css::outer_clip(self.scope.node);
+        let radius = super::native_css::box_begin(painter, rect, native.radius, native.fill, own.as_ref(), outer);
+        let content = self.contain(painter, rect, style, radius, outer);
+        Boxed { content, radius }
+    }
+
     /// The element's border in `rect`, for a bar whose background its caller paints with the
     /// window's corners (and [`Entered::paint_background`] its gradients and inset shadows): then,
     /// as after [`Entered::paint`], its contents go in the content box returned, are clipped to
@@ -596,6 +617,12 @@ impl Entered {
     /// The element's `background-color`, or `fallback` where the sheet sets none.
     pub fn background_or(&self, fallback: Color32) -> Color32 {
         self.style().filter(|s| s.authored.background).map_or(fallback, |s| s.background)
+    }
+
+    /// The element's `accent-color`, or `fallback` where the sheet sets none: a control's accent,
+    /// such as a dial's pointer or the line under a field that has the keys.
+    pub fn accent_or(&self, fallback: Color32) -> Color32 {
+        self.style().filter(|s| s.authored.accent).map_or(fallback, |s| s.accent)
     }
 
     /// The element's `border-color`, or `fallback` where the sheet sets none: for a line the
