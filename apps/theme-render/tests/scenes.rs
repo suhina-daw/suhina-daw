@@ -57,6 +57,17 @@ fn the_scenes_cover_the_views_the_devices_and_the_floating_surfaces() {
         "tooltip",
         "export-dialog",
         "about-dialog",
+        "settings-audio",
+        "settings-plug-ins",
+        "settings-keys",
+        "settings-themes",
+        "project-dialog",
+        "unsaved-dialog",
+        "quick-add",
+        "missing-files",
+        "start-panel",
+        "control-bar-toggles",
+        "grid-menu",
     ] {
         assert!(names.iter().any(|n| n == wanted), "{wanted} in {names:?}");
     }

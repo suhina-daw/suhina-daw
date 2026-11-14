@@ -50,9 +50,40 @@ pub const FIXED: &[(&str, Step)] = &[
     ("context-menu", context_menu),
     ("settings", settings),
     ("settings-menu", settings_menu),
+    ("settings-audio", |h| settings_page(h, "Audio")),
+    ("settings-midi", |h| settings_page(h, "MIDI")),
+    ("settings-plug-ins", |h| settings_page(h, "Plug-ins")),
+    ("settings-devices", |h| settings_page(h, "Devices")),
+    ("settings-launcher", |h| settings_page(h, "Launcher and mixer")),
+    ("settings-browser", |h| settings_page(h, "Browser")),
+    ("settings-keys", |h| settings_page(h, "Keys")),
+    ("settings-appearance", |h| settings_page(h, "Appearance")),
+    ("settings-themes", |h| settings_page(h, "Themes")),
+    ("settings-agents", |h| settings_page(h, "Agents and updates")),
     ("tooltip", tooltip),
     ("export-dialog", |h| menu_item(h, "File", "Export…")),
     ("about-dialog", |h| menu_item(h, "Help", "About Suhina")),
+    ("project-dialog", |h| {
+        settle(h)?;
+        h.state_mut().open_project_dialog(false);
+        settle(h)
+    }),
+    ("save-dialog", |h| menu_item(h, "File", "Save as template…")),
+    ("updates-dialog", |h| menu_item(h, "Help", "Check for updates…")),
+    ("quick-add", quick_add),
+    ("unsaved-dialog", unsaved_dialog),
+    ("agent-dialog", |h| {
+        settle(h)?;
+        h.state_mut().ask_agent(1, "An assistant".into());
+        settle(h)
+    }),
+    ("control-bar-toggles", control_bar_toggles),
+    ("empty-space-menu", empty_space_menu),
+    ("grid-menu", |h| {
+        click(h, "Arrangement view")?;
+        click(h, "Clip Beat B on Drums at bar 17")?;
+        click_containing(h, "Grid value")
+    }),
     ("browser", browser),
     ("browser-search", browser_search),
     ("browser-plug-ins", |h| {
@@ -68,8 +99,12 @@ pub const FIXED: &[(&str, Step)] = &[
 ];
 
 /// The scenes on a project of their own: `(name, the app, what is done)`.
-pub const OWN: &[(&str, Build, Step)] =
-    &[("clip-audio", with_audio, clip_audio), ("device-group", with_device_group, |h| click(h, "Track Keys"))];
+pub const OWN: &[(&str, Build, Step)] = &[
+    ("clip-audio", with_audio, clip_audio),
+    ("device-group", with_device_group, |h| click(h, "Track Keys")),
+    ("missing-files", with_audio, |h| menu_item(h, "View", "Missing files (1)…")),
+    ("start-panel", empty_app, settle),
+];
 
 /// The scenes with the views scrolled down and along, on a project with more tracks and scenes
 /// than fit: what scrolls must never show through the headers, rulers and fixed rows that stay
@@ -150,6 +185,16 @@ fn settle(h: &mut Window) -> Result<(), String> {
 fn click(h: &mut Window, label: &str) -> Result<(), String> {
     settle(h)?;
     h.query_by_label(label).ok_or_else(|| format!("no control labelled {label:?}"))?.click();
+    settle(h)
+}
+
+/// The first control with `contains` in its label.
+fn click_containing(h: &mut Window, contains: &str) -> Result<(), String> {
+    settle(h)?;
+    h.query_all_by_label_contains(contains)
+        .next()
+        .ok_or_else(|| format!("no control with {contains:?} in its label"))?
+        .click();
     settle(h)
 }
 
@@ -397,6 +442,50 @@ fn settings_menu(h: &mut Window) -> Result<(), String> {
     settings(h)?;
     click(h, "Settings page: Themes")?;
     click(h, "More")
+}
+
+/// One of Settings' pages, by its name in the list.
+fn settings_page(h: &mut Window, page: &str) -> Result<(), String> {
+    settings(h)?;
+    click(h, &format!("Settings page: {page}"))?;
+    h.remove_cursor();
+    settle(h)
+}
+
+/// The quick-add palette, opened with its key.
+fn quick_add(h: &mut Window) -> Result<(), String> {
+    settle(h)?;
+    h.key_press_modifiers(Modifiers::COMMAND, Key::P);
+    settle(h)
+}
+
+/// A project with a change not saved, closed from the Projects menu: the dialog that asks.
+fn unsaved_dialog(h: &mut Window) -> Result<(), String> {
+    click(h, "Solo Drums")?;
+    menu_item(h, "Projects", "Close project")
+}
+
+/// The toolbar's switches lit: the computer keyboard, the metronome and the key mapping.
+fn control_bar_toggles(h: &mut Window) -> Result<(), String> {
+    click(h, "Metronome on")?;
+    click(h, "Map keys to slots and scenes")?;
+    click(h, "Computer keyboard")?;
+    h.remove_cursor();
+    settle(h)
+}
+
+/// The menu over empty space in the Launcher.
+fn empty_space_menu(h: &mut Window) -> Result<(), String> {
+    settle(h)?;
+    h.query_by_label("Empty space").ok_or("no control labelled \"Empty space\"")?.click_secondary();
+    settle(h)
+}
+
+/// The app with no project open: the start panel.
+fn empty_app() -> Result<App, String> {
+    let mut app = App::new();
+    app.set_browser_open(false);
+    Ok(app)
 }
 
 /// A tooltip: the pointer held over the toolbar's browser button until its tooltip shows.
