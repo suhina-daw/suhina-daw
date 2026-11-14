@@ -109,7 +109,7 @@ pub(super) fn send_knob(
             theme::TEXT_SMALL,
         );
     } else {
-        crate::kit::mixer_controls::send_field(painter, rect, &letter, shown, send.pre_fader, pointer, position);
+        crate::kit::mixer_controls::send_field(painter, rect, &el, &letter, shown, send.pre_fader, pointer, position);
     }
 }
 

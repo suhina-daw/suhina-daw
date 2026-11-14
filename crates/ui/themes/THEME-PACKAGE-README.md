@@ -582,9 +582,11 @@ Elements, by name:
 | `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips; Main's header is `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all** `scene[kind="stop-all"]`; a clip is `[playing]`, `[queued]`, `[selected]`, `[recording]` and, deactivated, `[muted]` |
 | `waveform`, `envelope` | what a clip shows |
 | `device-panel`, `device-section`, `device-control`, `xy-control` | device panels; `#id` selects a device control |
-| `button`, `value`, `value-fill`, `dropdown`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields |
+| `button`, `value`, `value-fill`, `dropdown`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields; a field's underline is its `border-color`, and its `accent-color` while it is edited; a track header's routing fields, which take the header's colours, are `dropdown[kind="subtle"]` (a rule for every `dropdown` leaves them alone); a number typed into a value control is `text-input[kind="typed"]` (its ring's `border-color`, its `background-color`, its `color`) |
+| `#control-solo`, `#control-cue`, `#control-arm` | a track's solo, cue and arm buttons, `[checked]` while on (the arm `[armed]` too): lit, they take a colour only from a rule for that state, so a rule for every `button` does not hide which one is on; under the pointer they are ringed in their `border-color`, and in their `accent-color` while they have the keys |
+| `slider`, `slider-rail`, `slider-fill`, `slider-handle` | a slider and its parts' `background-color`; a swing amount is `slider[checked]` while it is the clip's own |
 | `menu`, `popup` | an open menu of the menu bar; a control's popup (`#metronome-level`, the metronome's level) |
-| `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls |
+| `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls; a dial (an audio clip's Pitch, the EQ's) is a `knob` with its rim in its `border-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |
 | `meter`, `meter-level`, `meter-vertical`, `meter-horizontal` | level meters and their lit part |
 | `label`, `separator`, `settings`, `dialog` | labels, rules, the Settings page and dialogs |
 | `start-page`, `plugin-manager` | the page with no project open, the Plug-in manager |

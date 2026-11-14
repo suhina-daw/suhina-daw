@@ -469,8 +469,9 @@ pub const ELEMENTS: &[Element] = &[
     element("xy-control", Control, "A two-dimensional control of a device panel."),
     element("envelope", Drawn, "An envelope a device panel shows."),
     element("waveform", Drawn, "A waveform a panel shows."),
-    element("slider", Control, "A parameter's slider; the MIDI tools' quantise amount, as a knob.")
+    element("slider", Control, "A parameter's slider; the MIDI tools' quantise amount, as a knob; a swing amount, `[checked]` while it is the clip's own.")
         .parts(&["slider-rail", "slider-fill", "slider-handle"])
+        .attributes(&["checked"])
         .ids(Ids::Listed { prefix: "", names: &["quantise-amount", "waveform-zoom"] })
         .settings(VALUE_SETTINGS)
         .artwork(&[own("slider.rail"), own("slider.fill"), own("slider.handle")]),
@@ -540,9 +541,11 @@ pub const ELEMENTS: &[Element] = &[
     element("meter-clip", Drawn, "A meter's clip light; its `background-color` while it is lit."),
     element("meter-vertical", Part, "A meter standing up, around its level."),
     element("meter-horizontal", Part, "A meter lying down, around its level."),
-    element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists.")
+    element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists. A routing field in a track header, which takes the colours of what it is on, is `dropdown[kind=\"subtle\"]`: only a rule for that kind reaches it.")
+        .attributes(&["kind"])
         .artwork(&[default_svg!("folder", "icon[kind=\"folder\"]")]),
-    element("text-input", Control, "A text field."),
+    element("text-input", Control, "A text field; a number typed into a value control is `text-input[kind=\"typed\"]`.")
+        .attributes(&["kind"]),
     element("scroll-bar", Drawn, "The mark of how far a row is scrolled, such as a mixer strip's sends."),
     element("label", Drawn, "A label; a scene's number is `label[kind=\"scene-number\"]`.").attributes(&["kind"]),
     element("separator", Drawn, "A rule between parts, by its `kind`: the window's lines over and under the views; a divider between a bar's items (`bar`); the Launcher's lines between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's and the piano roll's under their rows (`row`), between their bands (`band`) and under each lane (`lane`).")

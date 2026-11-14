@@ -74,8 +74,9 @@ pub fn level_bar(
     let height = el.thickness_or(rect.height()).clamp(1.0, rect.height());
     let track = Rect::from_center_size(rect.center(), Vec2::new(rect.width(), height));
     let back = motion::mix(theme::control_background(), theme::control_hover(), hover);
+    // The track's artwork takes the control's `background-color` where the sheet gives one.
     let radius = if skin::has_own(&format!("{kind}.track"))
-        && skin::paint(painter, track, &format!("{kind}.track"), state, back, 0.0)
+        && skin::paint(painter, track, &format!("{kind}.track"), state, el.background_or(back), 0.0)
     {
         0.0
     } else {
@@ -175,9 +176,14 @@ pub fn level_bar(
     );
 }
 
+/// A send as a tile in `rect`, drawn as `el`, the `send` its caller entered: its letter, its level
+/// in dB and a rail lit up to `position` in `pointer`, the send's colour. The rail is the send's
+/// `background-color` tinted with `pointer`.
+#[allow(clippy::too_many_arguments)]
 pub fn send_field(
     painter: &egui::Painter,
     rect: Rect,
+    el: &Entered,
     letter: &str,
     db: f64,
     pre_fader: bool,
@@ -189,7 +195,7 @@ pub fn send_field(
         Pos2::new(rect.left() + 4.0, rect.bottom() - 3.0),
         Pos2::new(rect.right() - 4.0, rect.bottom() - 1.5),
     );
-    let quiet = motion::mix(theme::control_background(), pointer, 0.25);
+    let quiet = motion::mix(el.background_or(theme::control_background()), pointer, 0.25);
     painter.rect_filled(rail, 1.0, quiet);
     let level = Rect::from_min_size(rail.min, Vec2::new(rail.width() * position.clamp(0.0, 1.0), rail.height()));
     if level.width() >= 1.0
@@ -268,8 +274,11 @@ pub fn fader_cap(painter: &egui::Painter, cap: Rect, hover: f32, response: &egui
     if super::skin::paint(painter, cap, "fader.cap", state, cap_ink(&el, state), 0.0) {
         return;
     }
-    let base = motion::mix(theme::control_background(), theme::control_hover(), hover);
-    let face = motion::mix(base, theme::text_value(), 0.28);
+    // Without artwork: the cap's own `color` where a rule gives it one (not the palette tier's),
+    // shaded lighter and darker; else the control colour lit a little by the values' text.
+    let own = el.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
+    let base = own.unwrap_or_else(|| motion::mix(theme::control_background(), theme::control_hover(), hover));
+    let face = own.unwrap_or_else(|| motion::mix(base, theme::text_value(), 0.28));
     let light = motion::mix(face, theme::text_on(face), 0.32);
     let dark = motion::mix(base, Color32::BLACK, 0.55);
     painter.rect_filled(cap.translate(Vec2::new(1.0, 2.0)), 3.0, Color32::from_black_alpha(100));

@@ -752,6 +752,45 @@ fn a_muted_clip_s_colours_come_back_through_a_probe_with_motion_on() {
     assert_eq!(seen, (rgb(0x40, 0x50, 0x60), rgb(0x50, 0x60, 0x70)));
 }
 
+/// A toggle's colours ([`super::super::widgets::Toggle`]): off, the button's own where the sheet
+/// gives them; lit, only what a rule for the lit state gives, the ink worked out from the lit fill
+/// where that rule gives no ink of its own (#1023).
+#[test]
+fn a_toggle_is_lit_only_by_a_rule_for_its_lit_state() {
+    use super::super::widgets::Toggle;
+    let rgb = egui::Color32::from_rgb;
+    let (off, on) = ((rgb(1, 1, 1), rgb(2, 2, 2)), rgb(3, 3, 3));
+    // The ink on a fill: its red channel turned to blue, so a test can tell which fill it is for.
+    let ink_on = |fill: egui::Color32| rgb(0, 0, fill.to_srgba_unmultiplied()[0]);
+    let toggle = |css: &str, lit: bool| {
+        frames(css, || {
+            let _view = SESSION.enter();
+            let (el, plain) = BUTTON.id("solo").enter_against_plain(Checked, lit);
+            Toggle::of(&el, plain.as_ref(), off, on, ink_on)
+        })
+    };
+    let general = "button { background-color: #102030; color: #405060; }";
+    assert_eq!(
+        toggle(general, true),
+        Toggle { off: (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60)), on: (on, ink_on(on)) },
+        "a rule for every button colours the unlit side only"
+    );
+    assert_eq!(toggle(general, false).off, (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60)));
+    let lit = format!("{general} button[checked] {{ background-color: #708090; }}");
+    assert_eq!(toggle(&lit, true).on, (rgb(0x70, 0x80, 0x90), rgb(0, 0, 0x70)), "the ink follows the lit fill");
+    let inked = format!("{lit} button[checked] {{ color: #A0B0C0; }}");
+    assert_eq!(toggle(&inked, true).on, (rgb(0x70, 0x80, 0x90), rgb(0xA0, 0xB0, 0xC0)));
+    // Faded half way, half of each.
+    let half = Toggle { off: (rgb(0, 0, 0), rgb(0, 0, 0)), on: (rgb(200, 200, 200), rgb(100, 100, 100)) }.at(0.5);
+    assert_eq!(
+        half,
+        (
+            super::super::motion::mix(rgb(0, 0, 0), rgb(200, 200, 200), 0.5),
+            super::super::motion::mix(rgb(0, 0, 0), rgb(100, 100, 100), 0.5)
+        )
+    );
+}
+
 /// [`Entered::paint_over`] paints the fill it is given over the sheet's `background-color`, which
 /// [`Entered::paint_with`] takes instead (#1023).
 #[test]

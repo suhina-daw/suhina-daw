@@ -406,3 +406,151 @@ fn the_lit_monitor_button_keeps_its_label_ink() {
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert_eq!(inked.len(), 2, "the two off buttons take the colour, the lit one does not: {inked:?}");
 }
+
+/// The fills of the rectangles painted exactly over `rect` in the last frame.
+fn fills_at(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Color32> {
+    fn walk(shape: &egui::Shape, rect: egui::Rect, found: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, rect, found)),
+            egui::Shape::Rect(shape)
+                if (shape.rect.min - rect.min).length() < 0.5 && (shape.rect.max - rect.max).length() < 0.5 =>
+            {
+                found.push(shape.fill)
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    h.output().shapes.iter().for_each(|shape| walk(&shape.shape, rect, &mut found));
+    found
+}
+
+/// The demo with Drums soloed, cued and armed: each of its three buttons lit, Keys' unlit.
+fn lit_drums() -> Harness<'static, App> {
+    let mut h = window(demo_app());
+    for label in ["Solo Drums", "Cue Drums on the headphones", "Arm Drums for recording"] {
+        h.get_by_label(label).click();
+        h.run();
+    }
+    h
+}
+
+/// A track's solo, cue and arm buttons are `button#control-solo`, `#control-cue` and
+/// `#control-arm`, `[checked]` while on (and the arm `[armed]`): a rule for each, lit and unlit,
+/// reaches its fill (#1023).
+#[test]
+fn solo_cue_and_arm_take_their_own_rules_lit_and_unlit() {
+    let mut h = lit_drums();
+    let rules = [
+        ("button#control-solo", "background-color", odd(51)),
+        ("button#control-solo[checked]", "background-color", odd(52)),
+        ("button#control-cue", "background-color", odd(53)),
+        ("button#control-cue[checked]", "background-color", odd(54)),
+        ("button#control-arm", "background-color", odd(55)),
+        ("button#control-arm[armed]", "background-color", odd(56)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// A rule for every `button` does not hide which track button is on: the lit solo, cue and arm keep
+/// their lit fills, the unlit ones take the rule's (#1023).
+#[test]
+fn a_rule_for_every_button_keeps_solo_cue_and_arm_lit() {
+    let mut h = lit_drums();
+    let css = format!("button {{ background-color: {}; }}", hex(odd(57)));
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    for (lit, unlit) in [
+        ("End solo on Drums", "Solo Keys"),
+        ("Stop cueing Drums", "Cue Keys on the headphones"),
+        ("Disarm Drums", "Arm Keys for recording"),
+    ] {
+        let lit_fills = fills_at(&h, h.get_by_label(lit).rect());
+        assert!(!lit_fills.is_empty(), "{lit} is painted");
+        assert!(!lit_fills.contains(&odd(57)), "{lit} keeps its lit fill: {lit_fills:?}");
+        assert!(fills_at(&h, h.get_by_label(unlit).rect()).contains(&odd(57)), "{unlit} takes the rule");
+    }
+    suhina_ui::kit::native_css::set_user_sheet(None);
+}
+
+/// The Arrangement's swing is a `slider`, `[checked]` while it is lit: its rail, its fill and its
+/// handle take their parts' rules (#1023).
+#[test]
+fn the_swing_slider_s_parts_take_their_own_rules() {
+    let mut h = arrangement_app();
+    assert!(h.query_by_label_contains("Global swing").is_some(), "the swing is shown");
+    let rules = [
+        ("slider[checked] slider-rail", "background-color", odd(61)),
+        ("slider[checked] slider-fill", "background-color", odd(62)),
+        ("slider[checked] slider-handle", "background-color", odd(63)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// An audio clip's Pitch dial is a `knob`: its rim in its `border-color`, its inner disc in its
+/// `background-color`, its pointer in its `accent-color`. Clicked and typed into, the number is a
+/// `text-input[kind="typed"]`: its ring, its fill and its text (#1023).
+#[test]
+fn the_pitch_dial_and_a_typed_number_take_their_rules() {
+    let mut h = window_with_step(audio_app(), 1.0 / 60.0);
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    h.get_by_label("Clip Loop on Loop at bar 1").click();
+    h.run();
+    let rules =
+        [("knob", "border-color", odd(71)), ("knob", "background-color", odd(72)), ("knob", "accent-color", odd(73))];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+    h.get_by_label_contains("Pitch: ").click();
+    h.run();
+    h.event(egui::Event::Text("3".into()));
+    h.run();
+    let rules = [
+        ("text-input[kind=\"typed\"]", "border-color", odd(74)),
+        ("text-input[kind=\"typed\"]", "background-color", odd(75)),
+        ("text-input[kind=\"typed\"]", "color", odd(76)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// A text field's and a drop-down's underline is their `border-color` (#1023).
+#[test]
+fn a_field_s_underline_takes_its_border_colour() {
+    let mut app = App::new();
+    app.set_session(Session::new(demo_project()), &[]);
+    let mut h = window(app);
+    let rules = [("text-input", "border-color", odd(81)), ("dropdown", "border-color", odd(82))];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// A track header's routing fields take the colours of the header: a rule for every `dropdown`
+/// leaves them alone, one for `dropdown[kind="subtle"]` reaches them (#1023).
+#[test]
+fn a_routing_field_takes_only_its_own_kind_s_rule() {
+    let mut h = arrangement_app();
+    // The colours of the lines along the bottom of the corner's Resize all field.
+    let underline = |h: &mut Harness<'static, App>, css: String| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        let field = h.get_by_label("Resize all tracks").rect();
+        let mut found = Vec::new();
+        for shape in &h.output().shapes {
+            if let egui::Shape::LineSegment { points, stroke } = &shape.shape
+                && points.iter().all(|p| (p.y - (field.bottom() - 0.5)).abs() < 0.01)
+                && (points[0].x - field.left()).abs() < 0.5
+            {
+                found.push(stroke.color);
+            }
+        }
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        found
+    };
+    let general = underline(&mut h, format!("dropdown {{ border-color: {}; }}", hex(odd(83))));
+    assert!(!general.is_empty(), "the field has its line");
+    assert!(!general.contains(&odd(83)), "a rule for every dropdown leaves it alone: {general:?}");
+    let own = underline(&mut h, format!("dropdown[kind=\"subtle\"] {{ border-color: {}; }}", hex(odd(84))));
+    assert!(own.contains(&odd(84)), "its own kind's rule reaches it: {own:?}");
+}

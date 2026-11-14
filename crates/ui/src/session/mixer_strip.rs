@@ -1511,7 +1511,16 @@ fn send_knobs(
                 crate::kit::element::Native { radius: 2.0, fill: egui::Color32::TRANSPARENT },
             );
             crate::kit::skin::paint_as(&el, &painter, rect, "send", state, pointer);
-            crate::kit::mixer_controls::send_field(&painter, rect, &letter, shown, send.pre_fader, pointer, position);
+            crate::kit::mixer_controls::send_field(
+                &painter,
+                rect,
+                &el,
+                &letter,
+                shown,
+                send.pre_fader,
+                pointer,
+                position,
+            );
         }
     }
     sending
