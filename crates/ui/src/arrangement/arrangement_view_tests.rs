@@ -227,6 +227,16 @@ fn a_second_drag_cannot_start_while_one_is_under_way() {
 }
 
 #[test]
+fn losing_the_window_focus_ends_the_drag_and_holds_no_press_back() {
+    let mut slot = GestureSlot::default();
+    assert!(slot.begin(Gesture::Marker((0, 2.0))));
+    slot.lose_focus();
+    assert!(!slot.is_some());
+    assert!(!slot.cancelled());
+    assert!(slot.begin(Gesture::Marker((1, 3.0))), "the first press after the focus returns starts a drag");
+}
+
+#[test]
 fn escape_ends_the_drag_and_its_held_press() {
     let mut state = ArrangementViewState::default();
     assert!(!state.gesture_under_way());

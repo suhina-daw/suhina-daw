@@ -761,6 +761,11 @@ impl ArrangementViewState {
         self.gesture.settle(buttons_down);
     }
 
+    /// Ends the drag under way, without committing it, when the window loses the focus.
+    pub fn lose_focus(&mut self) {
+        self.gesture.lose_focus();
+    }
+
     /// Whether a drag is under way in the view (Escape then cancels it).
     pub fn gesture_under_way(&self) -> bool {
         self.gesture.is_some()

@@ -97,6 +97,9 @@ impl App {
         if self.shown != View::Arrangement {
             self.arrangement.settle_gesture(ui.input(|i| i.pointer.any_down()));
         }
+        if ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false)))) {
+            self.arrangement.lose_focus();
+        }
         if self.arrangement.gesture_under_way() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.arrangement.cancel_gesture();
             // The widget's own drag ends too: a value control gives the pointer back, and a clip
