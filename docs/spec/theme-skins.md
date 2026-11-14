@@ -1379,6 +1379,20 @@ of bars, and a slider id per parameter.
   `color`), a routing field (`dropdown[kind="subtle"]`) and a typed number
   (`text-input[kind="typed"]`), which only a rule for the kind reaches. The other toggles keep
   the palette's colours until their views move.
+- **The browser and the detail panels (#1023):** the browser, the clip panels, the follow action,
+  a device's and a device group's panel (`device[kind="group"]`, its branches `device-row`), an
+  expanded panel and the piano roll's keys, toolbar and corner draw from their elements the same
+  way. Their words are `label` by how much they stand out: `hint` and `caption` take only a colour
+  given to them (so a colour a theme gives a whole panel keeps them dim), `title`, `value`,
+  `error`, `plugin-state` and `head` (`[selected]`, in its `accent-color`). Their switches stay
+  lit under a rule for every `button`; a device's on switch (`button#control-device-on`), an
+  expanded panel's × (`button[kind="close"]`), the browser's more tags (`button[kind="more"]`) and
+  the piano roll's toolbar menus (`dropdown[kind="subtle"]`) take only a rule for themselves. The
+  piano roll's keys take `piano-key`'s `accent-color` for a playing or selected key, its range and
+  selection their `accent-color`, its tool pointer and magnifier `icon[kind="pointer"]` and
+  `icon[kind="magnifier"]`. egui's fields in the browser take `text-input` through their style. The
+  Arrangement's header edge is `divider#arrangement-header-splitter`, painted only where a theme
+  gives it a `background-color`.
 - **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
 - **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
   `theme.css`.

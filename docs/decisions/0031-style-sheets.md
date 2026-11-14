@@ -1027,3 +1027,22 @@ kept off their lit fill, through the whole fade both ways (`widgets::Toggle`,
 (`widgets::toggle_colors_in`, `toggle_inks`). New kinds are `dropdown[kind="subtle"]` and
 `text-input[kind="typed"]`, which only a rule for the kind reaches, and `slider[checked]`;
 `accent-color` colours a dial's pointer and a field's or a track button's focus.
+
+## Amendment: the browser, the detail panels and the piano roll's keys and toolbar draw from their elements (2026-11-14)
+
+Accepted, from [issue #1023](https://github.com/suhina-daw/suhina-daw/issues/1023): the browser
+(its search, places, rows, chips, preview strip and sample map), the clip panels, the follow
+action, a device's and a device group's panel, an expanded panel and the piano roll's keys,
+toolbar, corner and gestures draw from their elements, the palette token as the fallback, so a
+theme that leaves them alone looks as before. Their words read `label` by how much they stand
+out (`hint`, `caption`, `title`, `value`, `error`, `plugin-state`, `head`); `hint` and `caption`
+take only a colour a rule gives them, so a colour a theme gives a whole panel keeps them dimmer
+than its names. Lit toggles stay lit under a rule for every `button` (the follow action's
+switches, a branch's mute and solo, the browser's chips); parts that sit quietly on their bar
+(the piano roll's toolbar menus, `dropdown[kind="subtle"]`; a device's on switch,
+`button#control-device-on`; an expanded panel's ×, `button[kind="close"]`) take only a rule for
+themselves. egui's fields in the browser take `text-input` through `Entered::ui`. The Arrangement's
+header edge is `divider#arrangement-header-splitter`. Where no theme's sheet runs, the piano
+roll's toolbar is laid out with its Toolbar size and measured with the user-agent sheet's padding,
+as it is when the style engine runs. The EQ's curve and the colours a device panel's canvas hands
+the device SDK still come from the palette.

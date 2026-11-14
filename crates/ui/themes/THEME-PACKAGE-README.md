@@ -589,11 +589,15 @@ Elements, by name:
 | `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls; a dial (an audio clip's Pitch, the EQ's) is a `knob` with its rim in its `border-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |
 | `meter`, `meter-level`, `meter-vertical`, `meter-horizontal` | level meters and their lit part |
 | `label`, `separator`, `settings`, `dialog` | labels, rules, the Settings page and dialogs |
+| `label[kind]` | the browser's and the detail panels' words by how much they stand out: dim words (`hint`) and a control's or figure's name (`caption`) take only a colour given to them, not one around them; a panel's title (`title`), a value shown as words (`value`), a fault (`error`), a plug-in's state (`plugin-state`), the head of the MIDI tools' figures (`head`, `[selected]` in its `accent-color`) |
+| `#control-device-on`, `button[kind="close"]`, `button[kind="more"]` | a device's on switch (`[checked]` while it runs), an expanded panel's × and the browser's more tags: only a rule for them reaches them, not one for every `button` |
+| `device[kind="group"]`, `device-row` | a device group's panel, and its branches (`[selected]` while shown, `[muted]` while muted); its `+ Branch` is `add-track[kind="branch"]`; a device's `accent-color` outlines it while selected |
+| `icon[kind]` in the piano roll | its tool pointer (`pointer`, the ring its `background-color`) and the strip's magnifier (`magnifier`); a clip's colour swatch is `icon[kind="swatch"]` |
 | `start-page`, `plugin-manager` | the page with no project open, the Plug-in manager |
 | `send` | a send, in a mixer strip and in a track header |
 | `add-track` | the **+ MIDI track**, **+ Audio track** and **+ Return track** buttons after the last track |
 | `ruler`, `loop-region`, `playhead` | the Arrangement view's ruler, its loop bar and the play position line |
-| `divider` | the line between a strip's device list and its controls (`#mixer-divider`), the Launcher mixer's top line (`#mixer-splitter`), and the window's splitters (`#detail-splitter`, `#browser-splitter`) |
+| `divider` | the line between a strip's device list and its controls (`#mixer-divider`), the Launcher mixer's top line (`#mixer-splitter`), and the window's splitters (`#detail-splitter`, `#browser-splitter`) and the Arrangement's track header edge (`#arrangement-header-splitter`, painted only where a theme gives it a `background-color`) |
 | `separator[kind]` | the views' lines: the Launcher's between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's under its rows (`row`), between its bands (`band`) and under each lane (`lane`), in their `color` |
 | `slot-mark`, `slot-record`, `mapping-overlay`, `drop-target` | the mark in an empty slot with a stop button; an armed slot's record button (`[recording]`); the tint over a control while keys are mapped (`[selected]` on the picked one); where a drop lands (`kind="area"`, `kind="insert"`) |
 | `grid-line`, `tempo-mark`, `start-marker`, `marker` | the Arrangement's grid lines (`kind="bar"`, `kind="beat"`), a tempo or time-signature change, the play start marker, a marker's tag |

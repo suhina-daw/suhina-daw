@@ -1,8 +1,8 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What the Launcher, the mixer and the Arrangement draw is each an element a theme styles on its
-//! own (#1417): a rule for one reaches what it paints, and nothing else takes its colour.
+//! What the Launcher, the mixer, the Arrangement, the browser and the detail panels draw is each an
+//! element a theme styles on its own (#1417, #1023): a rule for one reaches what it paints, and nothing else takes its colour.
 
 use super::*;
 
@@ -675,4 +675,127 @@ fn a_rule_for_every_slider_fill_keeps_the_swing_lit() {
     assert_eq!(count_with(&mut h, &general, odd(95)), 0, "the lit swing keeps its fill");
     let lit = format!("{general} slider[checked] slider-fill {{ background-color: {}; }}", hex(odd(96)));
     assert_eq!(count_with(&mut h, &lit, odd(96)), 1, "a rule for the lit slider's fill reaches it");
+}
+
+/// The demo with Walk on Bass picked in the Launcher: its MIDI clip's panel, its follow action and
+/// its piano roll.
+fn walk_picked() -> Harness<'static, App> {
+    let mut h = window(demo_app());
+    h.get_by_label("Select Walk on Bass (scene 2)").click();
+    h.run();
+    h
+}
+
+/// A MIDI clip's panel, its follow action and the piano roll's toolbar draw their words and lines
+/// from their elements (#1023): a rule for each kind reaches what it paints.
+#[test]
+fn a_clip_panel_s_words_lines_and_menus_take_their_own_rules() {
+    let mut h = walk_picked();
+    let rules = [
+        ("label[kind=\"title\"]", "color", odd(71)),
+        ("label[kind=\"caption\"]", "color", odd(72)),
+        ("label[kind=\"hint\"]", "color", odd(73)),
+        ("separator[kind=\"row\"]", "color", odd(75)),
+        ("dropdown[kind=\"subtle\"]", "color", odd(76)),
+        ("piano-tool#piano-more", "color", odd(78)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// A colour a theme gives a whole clip column reaches its titles, not its dim words: `hint` and
+/// `caption` take only a colour given to them (#1023).
+#[test]
+fn a_colour_for_a_whole_clip_column_leaves_its_dim_words_dim() {
+    let mut h = walk_picked();
+    let css = format!("clip-info {{ color: {}; }}", hex(odd(79)));
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let shown = painted(&h);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(shown.contains(&odd(79)), "the titles take the area's colour");
+    let (caption, hint) = (suhina_ui::kit::theme::text_secondary(), suhina_ui::kit::theme::text_hint());
+    assert!(shown.contains(&caption) && shown.contains(&hint), "the captions and hints stay dim");
+}
+
+/// A rule for every `button` does not hide which of the follow action's switches is on (#1023).
+#[test]
+fn a_rule_for_every_button_keeps_the_follow_action_s_switch_lit() {
+    let mut h = walk_picked();
+    let css = format!("button {{ background-color: {}; }}", hex(odd(80)));
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let lit = fills_at(&h, h.get_by_label("Linked to the clip's length").rect());
+    let unlit = fills_at(&h, h.get_by_label("Follow action off").rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!lit.is_empty() && !lit.contains(&odd(80)), "the lit switch keeps its fill: {lit:?}");
+    assert!(unlit.contains(&odd(80)), "the unlit switch takes the rule: {unlit:?}");
+}
+
+/// A device group's panel: its branch's row, its add button and its on switch take their own
+/// rules (#1023).
+#[test]
+fn a_device_group_s_panel_takes_its_own_rules() {
+    let mut session = suhina_session::Session::new(demo_project());
+    session.execute("device.add", &serde_json::json!({ "track": "Keys", "id": "utility" })).unwrap();
+    session.execute("device.group", &serde_json::json!({ "track": "Keys", "device": 0 })).unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    let mut h = window(app);
+    h.get_by_label("Track Keys").click();
+    h.run();
+    let rules = [
+        ("device-row[selected]", "background-color", odd(81)),
+        ("add-track[kind=\"branch\"]", "color", odd(82)),
+        ("button#control-device-on", "background-color", odd(83)),
+        ("device-header", "background-color", odd(84)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// The browser's words and lines take their own rules, and its search field `text-input`'s (#1023).
+#[test]
+fn the_browser_s_words_and_lines_take_their_own_rules() {
+    let mut app = demo_app();
+    app.set_browser_open(true);
+    let mut h = window(app);
+    let rules = [
+        ("label[kind=\"hint\"]", "color", odd(85)),
+        ("label[kind=\"caption\"]", "color", odd(86)),
+        ("separator[kind=\"row\"]", "color", odd(87)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// The Arrangement's track header edge is `divider#arrangement-header-splitter`: unpainted
+/// without a rule, its `background-color` with one, and it still resizes the headers (#1023).
+#[test]
+fn the_header_edge_is_a_divider_that_still_resizes_the_headers() {
+    let mut h = window(demo_app());
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    let edge = h.get_by_label("Track header width").rect();
+    assert!(!fills_at(&h, edge).contains(&odd(88)));
+    assert_eq!(
+        missing(&mut h, &[("divider#arrangement-header-splitter", "background-color", odd(88))]),
+        Vec::<String>::new()
+    );
+    let before = h.get_by_label("Track header width").rect().center().x;
+    let from = edge.center();
+    h.hover_at(from);
+    h.run();
+    h.drag_at(from);
+    h.run();
+    for dx in [20.0, 40.0] {
+        h.hover_at(from + egui::vec2(dx, 0.0));
+        h.run();
+    }
+    h.drop_at(from + egui::vec2(40.0, 0.0));
+    h.run();
+    let after = h.get_by_label("Track header width").rect().center().x;
+    assert!((after - before - 40.0).abs() < 1.0, "the edge moved with the drag: {before} to {after}");
 }
