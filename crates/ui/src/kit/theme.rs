@@ -4,8 +4,8 @@
 //! Design tokens from `docs/design/brief.md` › Tokens and the sizes in
 //! `docs/design/components.md`. Views use these names, never raw colours or sizes.
 //!
-//! Colours come from the theme in use (a [`Palette`]), so the user can change them: a theme is a
-//! JSON file of token names and `#RRGGBB` values (see [`Theme::from_json`]). Sizes are fixed.
+//! Colours come from the theme in use (a [`Palette`]: Suhina Studio's colours with the ones the
+//! theme sets over them, [`Colors`]), so the user can change them. Sizes are fixed.
 
 use std::cell::Cell;
 use std::sync::Arc;
@@ -38,14 +38,25 @@ macro_rules! palette {
                 vec![$(($key, $use, self.$field),)*]
             }
 
-            /// The colour of the token named `key` (or by its first name, see [`RENAMED`]), to
-            /// change.
+            /// The colour of the token named `key`, to change.
             pub fn token_mut(&mut self, key: &str) -> Option<&mut Color32> {
-                let key = RENAMED.iter().find(|(old, _)| *old == key).map_or(key, |(_, new)| *new);
                 match key {
                     $($key => Some(&mut self.$field),)*
                     _ => None,
                 }
+            }
+
+            /// The colour of the token named `key`.
+            pub fn token_color(&self, key: &str) -> Option<Color32> {
+                match key {
+                    $($key => Some(self.$field),)*
+                    _ => None,
+                }
+            }
+
+            /// Whether `key` names a token.
+            pub fn is_token(key: &str) -> bool {
+                matches!(key, $($key)|*)
             }
         }
 
@@ -130,23 +141,37 @@ palette! {
         "The centre mark of a pan field";
 }
 
-/// Tokens renamed since the first theme files, old name first; files with the old names still
-/// read.
-const RENAMED: [(&str, &str); 13] = [
-    ("surface.0", "window.background"),
-    ("surface.1", "panel.background"),
-    ("hover.surface.1", "panel.hoverBackground"),
-    ("surface.2", "control.background"),
-    ("hover.surface.2", "control.hoverBackground"),
-    ("surface.3", "control.activeBackground"),
-    ("surface.3.bright", "control.playingBackground"),
-    ("line", "border"),
-    ("line.strong", "border.strong"),
-    ("text.tertiary", "text.hint"),
-    ("state.recording", "recording"),
-    ("meter.ok", "meter.normal"),
-    ("muted.fill", "track.mutedBackground"),
-];
+/// The name of the custom property that holds the token `key`, without its `--`: `accent` is
+/// `accent`, `window.background` is `window-background`. A theme's colours are kept by this name
+/// ([`Colors`]).
+pub fn variable_name(key: &str) -> String {
+    key.replace('.', "-")
+}
+
+/// The token a custom property named `variable` (without its `--`) holds, as a theme file names it.
+/// No token's name has a `-`, so this undoes [`variable_name`].
+pub fn token_key(variable: &str) -> String {
+    variable.replace('-', ".")
+}
+
+/// The colours a theme sets: its colour variables by name without the `--`
+/// (`window-background`, `accent`), the names `:root { --… }` uses. A colour the theme does not
+/// set is Suhina Studio's ([`Palette::from_colors`]).
+pub type Colors = std::collections::BTreeMap<String, Color32>;
+
+impl Palette {
+    /// Suhina Studio's colours with `colors` over them: the colours a theme paints with. A name
+    /// that is not a token is left out.
+    pub fn from_colors(colors: &Colors) -> Self {
+        let mut palette = Self::DARK;
+        for (variable, color) in colors {
+            if let Some(slot) = palette.token_mut(&token_key(variable)) {
+                *slot = *color;
+            }
+        }
+        palette
+    }
+}
 
 impl Default for Palette {
     fn default() -> Self {
@@ -606,6 +631,19 @@ pub fn is_built_in(id: &str) -> bool {
     BUILT_IN_FOLDERS.iter().any(|(b, _)| id.eq_ignore_ascii_case(b))
 }
 
+/// The colours an older theme file may leave out, which [`Theme::from_json`] works out from others.
+const DERIVED: [&str; 9] = [
+    "text.inverse",
+    "control.selectedBackground",
+    "browser.text.primary",
+    "browser.text.secondary",
+    "browser.text.hint",
+    "browser.text.value",
+    "text.onColorLight",
+    "text.onColorDark",
+    "automation.pin",
+];
+
 /// A named set of colours, kept in a theme file:
 ///
 /// ```json
@@ -614,9 +652,11 @@ pub fn is_built_in(id: &str) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Theme {
     pub skin: super::skin::Skin,
+    /// The rgb of each colour in [`Theme::colors`] that is fully transparent, by the same names.
     pub transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
     pub name: String,
-    pub colors: Palette,
+    /// The colours the theme sets; any other is Suhina Studio's ([`Theme::palette`]).
+    pub colors: Colors,
     /// None inherits the application's global material strengths.
     pub liquid: Option<super::liquid::Options>,
     pub gradients: super::gradient::Gradients,
@@ -636,7 +676,7 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             name: "Suhina Studio".into(),
-            colors: Palette::DARK,
+            colors: Colors::new(),
             liquid: None,
             gradients: Default::default(),
             transparent_rgb: Default::default(),
@@ -665,14 +705,61 @@ impl Theme {
         theme
     }
 
-    pub fn rgba(&self, key: &str, color: Color32) -> [u8; 4] {
+    /// The colours the theme paints with: Suhina Studio's with the ones the theme sets over them.
+    pub fn palette(&self) -> Palette {
+        Palette::from_colors(&self.colors)
+    }
+
+    /// `color`, the value of the colour variable `variable` (a name without `--`), as four bytes:
+    /// a fully transparent colour keeps the rgb it was written with.
+    pub fn rgba(&self, variable: &str, color: Color32) -> [u8; 4] {
         let mut rgba = color.to_srgba_unmultiplied();
         if color.a() == 0
-            && let Some(rgb) = self.transparent_rgb.get(key)
+            && let Some(rgb) = self.transparent_rgb.get(variable)
         {
             rgba[..3].copy_from_slice(rgb);
         }
         rgba
+    }
+
+    /// Sets the colour variable `variable` (a name without `--`) to `rgba`.
+    pub fn set_color(&mut self, variable: &str, [r, g, b, a]: [u8; 4]) {
+        self.colors.insert(variable.to_owned(), Color32::from_rgba_unmultiplied(r, g, b, a));
+        self.transparent_rgb.remove(variable);
+        if a == 0 && [r, g, b] != [0, 0, 0] {
+            self.transparent_rgb.insert(variable.to_owned(), [r, g, b]);
+        }
+    }
+
+    /// Sets the colour variable `variable` to `rgba` as read from a file or a sheet: a colour that
+    /// is Suhina Studio's own is not one the theme sets, so it is left out of the map.
+    pub fn read_color(&mut self, variable: &str, [r, g, b, a]: [u8; 4]) {
+        let color = Color32::from_rgba_unmultiplied(r, g, b, a);
+        if a != 0 && Palette::DARK.token_color(&token_key(variable)) == Some(color) {
+            self.reset_color(variable);
+        } else {
+            self.set_color(variable, [r, g, b, a]);
+        }
+    }
+
+    /// Sets the token `key` to `color`, a colour worked out from the theme's others. One that is
+    /// Suhina Studio's own is not kept, so the theme sets only what differs.
+    fn derive(&mut self, key: &str, color: Color32, transparent_rgb: Option<[u8; 3]>) {
+        let variable = variable_name(key);
+        let same = Palette::DARK.token_color(key) == Some(color) && transparent_rgb.is_none();
+        self.reset_color(&variable);
+        if !same {
+            self.colors.insert(variable.clone(), color);
+            if let Some(rgb) = transparent_rgb.filter(|_| color.a() == 0) {
+                self.transparent_rgb.insert(variable, rgb);
+            }
+        }
+    }
+
+    /// Makes the colour variable `variable` Suhina Studio's again: the theme no longer sets it.
+    pub fn reset_color(&mut self, variable: &str) {
+        self.colors.remove(variable);
+        self.transparent_rgb.remove(variable);
     }
 
     /// Reads a theme file. Tokens it leaves out keep Suhina Studio's colour, so a file only needs
@@ -694,66 +781,60 @@ impl Theme {
         match root.get("colors") {
             Some(Value::Object(colors)) => {
                 for (key, value) in colors {
-                    let canonical = RENAMED.iter().find(|(old, _)| *old == key).map_or(key.as_str(), |(_, new)| *new);
-                    let parsed = value.as_str().and_then(parse_hex);
                     // A track colour an earlier version kept in every theme file: tracks keep their
                     // own now, so it is left behind without a word, and the file still converts.
                     if is_former_track_colour(&key.replace('.', "-")) {
                         continue;
                     }
-                    match (theme.colors.token_mut(canonical), parsed) {
-                        (Some(slot), Some(color)) => {
-                            *slot = color;
-                            theme.transparent_rgb.remove(canonical);
-                            if let Some([r, g, b, 0]) = value.as_str().and_then(parse_rgba)
-                                && [r, g, b] != [0, 0, 0]
-                            {
-                                theme.transparent_rgb.insert(canonical.to_string(), [r, g, b]);
-                            }
-                        }
-                        (None, _) => warnings.push(
+                    match (Palette::is_token(key), value.as_str().and_then(parse_rgba)) {
+                        (true, Some(rgba)) => theme.read_color(&variable_name(key), rgba),
+                        (false, _) => warnings.push(
                             key.strip_prefix("kind.")
                                 .and_then(former_kind_token)
                                 .unwrap_or_else(|| format!("{key} is not a colour token")),
                         ),
-                        (Some(_), None) => {
-                            warnings.push(format!("{key}: {value} is not a #RRGGBB or #RRGGBBAA colour"))
-                        }
+                        (true, None) => warnings.push(format!("{key}: {value} is not a #RRGGBB or #RRGGBBAA colour")),
                     }
                 }
+                // A colour an older file leaves out is worked out from the ones it sets, so the
+                // file keeps looking as it did until the colour is edited. It counts as set.
+                let has = |key: &str| colors.contains_key(key) && Palette::is_token(key);
+                let rgb_of = |theme: &Theme, key: &str, color: Color32| -> [u8; 3] {
+                    let [r, g, b, _] = color.to_srgba_unmultiplied();
+                    theme.transparent_rgb.get(&variable_name(key)).copied().unwrap_or([r, g, b])
+                };
                 // Older files drew these with a background and a text colour.
-                if !colors.contains_key("text.inverse") {
-                    let [r, g, b, _] = theme.colors.window_background.to_srgba_unmultiplied();
-                    let [r, g, b] = theme.transparent_rgb.get("window.background").copied().unwrap_or([r, g, b]);
-                    theme.colors.text_inverse = Color32::from_rgb(r, g, b);
+                if !has("text.inverse") {
+                    let [r, g, b] = rgb_of(&theme, "window.background", theme.palette().window_background);
+                    theme.derive("text.inverse", Color32::from_rgb(r, g, b), None);
                 }
-                if !colors.contains_key("control.selectedBackground") && colors.contains_key("text.value") {
-                    theme.colors.control_selected = theme.colors.text_value;
+                if !has("control.selectedBackground") && has("text.value") {
+                    let value = theme.palette().text_value;
+                    let rgb = theme.transparent_rgb.get("text-value").copied();
+                    theme.derive("control.selectedBackground", value, rgb);
                 }
                 // Keep old themes visually identical until these independent roles are edited.
-                for (key, source, value) in [
-                    ("browser.text.primary", "text.primary", theme.colors.text_primary),
-                    ("browser.text.secondary", "text.secondary", theme.colors.text_secondary),
-                    ("browser.text.hint", "text.hint", theme.colors.text_hint),
-                    ("browser.text.value", "text.value", theme.colors.text_value),
-                    ("text.onColorLight", "text.primary", theme.colors.text_primary),
-                    ("text.onColorDark", "window.background", theme.colors.window_background),
-                    ("automation.pin", "accent", theme.colors.accent),
+                for (key, source) in [
+                    ("browser.text.primary", "text.primary"),
+                    ("browser.text.secondary", "text.secondary"),
+                    ("browser.text.hint", "text.hint"),
+                    ("browser.text.value", "text.value"),
+                    ("text.onColorLight", "text.primary"),
+                    ("text.onColorDark", "window.background"),
+                    ("automation.pin", "accent"),
                 ] {
-                    if !colors.contains_key(key)
-                        && let Some(slot) = theme.colors.token_mut(key)
-                    {
-                        *slot = value;
-                        if let Some(rgb) = theme.transparent_rgb.get(source).copied() {
-                            theme.transparent_rgb.insert(key.to_string(), rgb);
+                    if !has(key) {
+                        let value = theme.palette().token_color(source);
+                        let rgb = theme.transparent_rgb.get(&variable_name(source)).copied();
+                        if let Some(value) = value {
+                            theme.derive(key, value, rgb);
                         }
                     }
                 }
                 // Text never takes a see-through background's alpha.
-                if !colors.contains_key("text.onColorDark") {
-                    let [r, g, b, _] = theme.colors.text_on_color_dark.to_srgba_unmultiplied();
-                    let [r, g, b] = theme.transparent_rgb.remove("text.onColorDark").unwrap_or([r, g, b]);
-                    theme.colors.text_on_color_dark = Color32::from_rgb(r, g, b);
+                if !has("text.onColorDark") {
+                    let [r, g, b] = rgb_of(&theme, "text.onColorDark", theme.palette().text_on_color_dark);
+                    theme.derive("text.onColorDark", Color32::from_rgb(r, g, b), None);
                 }
             }
             Some(_) => warnings.push("the theme's colors are not an object".into()),
@@ -801,20 +882,40 @@ impl Theme {
         (theme, warnings)
     }
 
-    /// The theme as a file, every token written out so it can be edited.
+    /// The theme as a file: the colours it sets, and nothing for a colour it leaves to Suhina Studio.
+    /// A file that leaves out a colour [`Theme::from_json`] works out from others (older files'
+    /// text roles) gets that colour written when working it out would change it, so reading the
+    /// file gives the same theme back.
     pub fn to_json(&self) -> String {
-        let colors: Map<String, Value> = self
+        let mut colors: Map<String, Value> = self
             .colors
-            .tokens()
-            .into_iter()
-            .map(|(key, _, color)| (key.to_string(), Value::String(hex_rgba(self.rgba(key, color)))))
+            .iter()
+            .map(|(variable, color)| (token_key(variable), Value::String(hex_rgba(self.rgba(variable, *color)))))
             .collect();
+        let read = |colors: &Map<String, Value>| {
+            let text = serde_json::json!({ "colors": colors }).to_string();
+            Self::from_json(&text).0
+        };
+        let reread = read(&colors);
+        for key in DERIVED {
+            let variable = variable_name(key);
+            let (Some(mine), Some(theirs)) = (self.palette().token_color(key), reread.palette().token_color(key))
+            else {
+                continue;
+            };
+            let (mine, theirs) = (self.rgba(&variable, mine), reread.rgba(&variable, theirs));
+            if mine != theirs && !colors.contains_key(key) {
+                colors.insert(key.to_string(), Value::String(hex_rgba(mine)));
+            }
+        }
         let mut root = Map::new();
         if self.skin != super::skin::Skin::default() {
             root.insert("skin".into(), self.skin.to_json());
         }
         root.insert("name".into(), Value::String(self.name.clone()));
-        root.insert("colors".into(), Value::Object(colors));
+        if !colors.is_empty() {
+            root.insert("colors".into(), Value::Object(colors));
+        }
         if self.gradients != super::gradient::Gradients::default() {
             root.insert("gradients".into(), self.gradients.to_json());
         }

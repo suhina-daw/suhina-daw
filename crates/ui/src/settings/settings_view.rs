@@ -9,7 +9,7 @@ use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2, pos2};
 
 use crate::interaction::pick::PickField;
 use crate::kit::motion;
-use crate::kit::theme::{self, PAD, Palette};
+use crate::kit::theme::{self, Colors, PAD};
 use crate::kit::widgets;
 use crate::settings::keymap::{Keymap, Preset, Shortcut, actions};
 use crate::settings::workflow::Setting;
@@ -194,7 +194,7 @@ pub struct ThemesView {
     pub current: String,
     pub built_in: bool,
     pub name: String,
-    pub colors: Palette,
+    pub colors: Colors,
     pub liquid: Option<crate::kit::liquid::Options>,
     pub global_liquid: crate::kit::liquid::Options,
     pub gradients: crate::kit::gradient::Gradients,
@@ -225,9 +225,9 @@ pub enum ThemeRequest {
     /// A new variant of the theme in use, with its values, named.
     NewVariant(String),
     /// Use these colours; a built-in theme is copied first, since it does not change.
-    Edit(Palette),
+    Edit(Colors),
     EditRgba {
-        colors: Palette,
+        colors: Colors,
         transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
     },
     EditLiquid(Option<crate::kit::liquid::Options>),
@@ -237,7 +237,7 @@ pub enum ThemeRequest {
     ResetEdits {
         skin: Box<crate::kit::skin::Skin>,
         transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
-        colors: Palette,
+        colors: Colors,
         liquid: Option<crate::kit::liquid::Options>,
         gradients: crate::kit::gradient::Gradients,
         /// The theme's own settings, by property.
@@ -352,7 +352,7 @@ pub struct PageState {
     pub skin_editor: super::skin_editor::State,
     pub theme_original_liquid: Option<Option<crate::kit::liquid::Options>>,
     pub theme_original_gradients: Option<crate::kit::gradient::Gradients>,
-    pub theme_original: Option<Palette>,
+    pub theme_original: Option<Colors>,
     pub theme_original_rgb: Option<std::collections::BTreeMap<String, [u8; 3]>>,
     /// The theme's own settings when the editor opened, for Reset changes.
     pub theme_original_values: Option<std::collections::BTreeMap<String, String>>,
@@ -1485,7 +1485,7 @@ fn theme_page(
                 ui.label(format!("Current theme: {}", themes.name));
                 if ui.button("Edit current theme…").clicked() {
                     state.theme_editor = true;
-                    state.theme_original = Some(themes.colors);
+                    state.theme_original = Some(themes.colors.clone());
                     state.theme_original_rgb = Some(themes.transparent_rgb.clone());
                     state.theme_original_values = Some(declared_values(themes));
                     state.theme_original_liquid = Some(themes.liquid);
@@ -1734,7 +1734,11 @@ fn theme_card(
 
 /// The swatch colour of the theme or variant `id`, or the panels' colour when it has none.
 fn swatch_of(themes: &ThemesView, id: &str) -> egui::Color32 {
-    themes.swatches.iter().find(|(key, _)| key == id).map_or(themes.colors.panel_background, |(_, color)| *color)
+    themes
+        .swatches
+        .iter()
+        .find(|(key, _)| key == id)
+        .map_or(theme::Palette::from_colors(&themes.colors).panel_background, |(_, color)| *color)
 }
 
 /// A swatch of `color`: a `theme-swatch` element with that `color` attribute, as the theme in use
@@ -1817,7 +1821,7 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
             request = Some(ThemeRequest::Duplicate { artwork: false });
             state.theme_rename_focus = true;
         }
-        let original = *state.theme_original.get_or_insert(themes.colors);
+        let original = state.theme_original.get_or_insert_with(|| themes.colors.clone()).clone();
         let original_rgb = state.theme_original_rgb.get_or_insert_with(|| themes.transparent_rgb.clone()).clone();
         let original_liquid = *state.theme_original_liquid.get_or_insert(themes.liquid);
         let original_gradients = state.theme_original_gradients.get_or_insert_with(|| themes.gradients.clone()).clone();

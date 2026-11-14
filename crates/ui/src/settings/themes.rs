@@ -123,9 +123,9 @@ impl Themes {
         self.entries.iter().find(|e| same_id(&e.id, id)).map(|e| &e.theme)
     }
 
-    /// The colours of the theme `id`, or Suhina Studio's when there is no such theme.
+    /// The colours the theme `id` paints with, or Suhina Studio's when there is no such theme.
     pub fn palette(&self, id: &str) -> Palette {
-        self.get(id).map_or(Palette::DARK, |t| t.colors)
+        self.get(id).map_or(Palette::DARK, Theme::palette)
     }
 
     /// What Settings shows, with `current` in use.
@@ -265,7 +265,7 @@ impl Themes {
                 }
                 let switched = self.request(
                     current,
-                    ThemeRequest::EditRgba { colors: theme.colors, transparent_rgb: theme.transparent_rgb },
+                    ThemeRequest::EditRgba { colors: theme.colors.clone(), transparent_rgb: theme.transparent_rgb },
                 );
                 let id = switched.as_deref().unwrap_or(current).to_string();
                 self.request(&id, ThemeRequest::EditSkin(theme.skin)).or(switched)

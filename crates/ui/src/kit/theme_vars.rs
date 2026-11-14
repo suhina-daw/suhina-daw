@@ -163,8 +163,9 @@ pub fn is_core(name: &str) -> bool {
 /// The values of the core properties that `theme` (the model) holds, as CSS text.
 pub fn core_values(theme: &Theme) -> BTreeMap<String, String> {
     let mut values = BTreeMap::new();
-    for (key, _, color) in theme.colors.tokens() {
-        values.insert(token_property(key), hex_rgba(theme.rgba(key, color)));
+    for (key, _, color) in theme.palette().tokens() {
+        let variable = super::theme::variable_name(key);
+        values.insert(format!("--{variable}"), hex_rgba(theme.rgba(&variable, color)));
     }
     let skin = &theme.skin;
     values.insert("meter-style".into(), skin.meter.name().into());
@@ -207,20 +208,14 @@ pub fn core_values(theme: &Theme) -> BTreeMap<String, String> {
 /// theme has its background; the image itself is the theme's `background.png`.
 pub fn apply_core(theme: &mut Theme, values: &BTreeMap<String, String>) -> Vec<String> {
     let mut warnings = Vec::new();
-    let tokens: Vec<&'static str> = theme.colors.tokens().into_iter().map(|(key, _, _)| key).collect();
-    for key in tokens {
-        let Some(value) = values.get(&token_property(key)) else { continue };
+    // A colour equal to Suhina Studio's is not one the theme sets, so it is left out of the map
+    // (and one the theme set before is dropped when the values no longer differ).
+    for (key, _, _) in super::theme::Palette::DARK.tokens() {
+        let variable = super::theme::variable_name(key);
+        let Some(value) = values.get(&format!("--{variable}")) else { continue };
         match suhina_style::value::Color::parse(value) {
-            Ok(suhina_style::value::Color::Rgba([r, g, b, a])) => {
-                if let Some(slot) = theme.colors.token_mut(key) {
-                    *slot = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
-                }
-                theme.transparent_rgb.remove(key);
-                if a == 0 && [r, g, b] != [0, 0, 0] {
-                    theme.transparent_rgb.insert(key.into(), [r, g, b]);
-                }
-            }
-            _ => warnings.push(format!("{}: {value} is not a colour", token_property(key))),
+            Ok(suhina_style::value::Color::Rgba(rgba)) => theme.read_color(&variable, rgba),
+            _ => warnings.push(format!("--{variable}: {value} is not a colour")),
         }
     }
     let number = |name: &str, min: u8, max: u8| -> Option<Result<u8, String>> {

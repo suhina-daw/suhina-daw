@@ -209,14 +209,13 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                 // so it is left behind without a word, and the theme still converts.
                 ":root" if super::theme::is_former_track_colour(property.trim_start_matches("--")) => Ok(()),
                 ":root" if property.starts_with("--") => {
-                    let key = property.trim_start_matches("--").replace('-', ".");
-                    match (theme.colors.token_mut(&key), super::theme::parse_rgba(value)) {
-                        (Some(slot), Some(rgba)) => {
-                            *slot = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
-                            theme.transparent_rgb.remove(&key);
-                            if rgba[3] == 0 && rgba[..3] != [0, 0, 0] {
-                                theme.transparent_rgb.insert(key, [rgba[0], rgba[1], rgba[2]]);
-                            }
+                    let variable = property.trim_start_matches("--");
+                    match (
+                        super::theme::Palette::is_token(&super::theme::token_key(variable)),
+                        super::theme::parse_rgba(value),
+                    ) {
+                        (true, Some(rgba)) => {
+                            theme.read_color(variable, rgba);
                             Ok(())
                         }
                         _ => Err("unknown colour token or invalid hex colour"),
@@ -366,12 +365,17 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
 
 /// Canonical CSS is generated from the same model the theme editor changes.
 pub fn export(theme: &Theme) -> String {
-    let mut css = String::from("/* Suhina native theme CSS. See README.md for supported properties. */\n:root {\n");
-    for (key, _, color) in theme.colors.tokens() {
-        css.push_str(&format!("  --{}: {};\n", key.replace('.', "-"), super::theme::hex_rgba(theme.rgba(key, color))));
+    let mut css = String::from("/* Suhina native theme CSS. See README.md for supported properties. */\n");
+    // Only the colours the theme sets: a theme that sets none writes no colour block.
+    if !theme.colors.is_empty() {
+        css.push_str(":root {\n");
+        for (variable, color) in &theme.colors {
+            css.push_str(&format!("  --{variable}: {};\n", super::theme::hex_rgba(theme.rgba(variable, *color))));
+        }
+        css.push_str("}\n");
     }
     css.push_str(&format!(
-        "}}\nmeter {{ style: {}; segments: {}; intensity: {}%; }}\n",
+        "meter {{ style: {}; segments: {}; intensity: {}%; }}\n",
         theme.skin.meter.name(),
         theme.skin.segments,
         theme.skin.meter_intensity
@@ -469,8 +473,9 @@ pub fn export(theme: &Theme) -> String {
 /// `theme.json`.
 pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
     let mut css = String::from(
-        "/* Suhina theme. Colours are custom properties, settings properties of their elements; see README.md. */\n:root {\n",
+        "/* Suhina theme. Colours are custom properties, settings properties of their elements; see README.md. */\n",
     );
+    let mut root = String::new();
     let defaults = super::theme_vars::core_values(&Theme::default());
     let mut settings = std::collections::BTreeMap::new();
     for (name, value) in super::theme_vars::core_values(theme) {
@@ -480,13 +485,16 @@ pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
             }
             continue;
         }
-        // Palette tokens are always written, so a theme shows every colour it uses.
-        let palette = theme.colors.tokens().iter().any(|(key, _, _)| super::theme_vars::token_property(key) == name);
+        // A colour the theme sets is written, and no other: a theme that sets none has no colours.
+        let palette = name.strip_prefix("--").is_some_and(|variable| theme.colors.contains_key(variable));
         if palette || defaults.get(&name) != Some(&value) {
-            css.push_str(&format!("  {name}: {value};\n"));
+            root.push_str(&format!("  {name}: {value};\n"));
         }
     }
-    css.push_str("}\n");
+    // A theme that sets no colour has no colour block.
+    if !root.is_empty() {
+        css.push_str(&format!(":root {{\n{root}}}\n"));
+    }
     css.push_str(&super::theme_vars::setting_rules(&settings));
     for (role, asset) in &theme.skin.assets {
         css.push_str(&artwork_rule(role, asset));
