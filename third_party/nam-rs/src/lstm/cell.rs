@@ -90,6 +90,14 @@ impl LstmCell {
         self.c.copy_from_slice(&self.c0);
     }
 
+    /// The hidden and cell state of `other`, a cell of the same size.
+    pub(crate) fn copy_state_from(&mut self, other: &Self) {
+        if self.h.len() == other.h.len() {
+            self.h.copy_from_slice(&other.h);
+            self.c.copy_from_slice(&other.c);
+        }
+    }
+
     pub(crate) fn hidden_size(&self) -> usize {
         self.hidden_size
     }

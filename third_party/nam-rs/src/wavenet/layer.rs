@@ -428,6 +428,22 @@ impl Layer {
             f.reset();
         }
     }
+
+    pub(super) fn copy_state_from(&mut self, other: &Self) {
+        self.conv.copy_state_from(&other.conv);
+        self.mixin.copy_state_from(&other.mixin);
+        if let (Some(l), Some(o)) = (&mut self.layer1x1, &other.layer1x1) {
+            l.copy_state_from(o);
+        }
+        if let (Some(h), Some(o)) = (&mut self.head1x1, &other.head1x1) {
+            h.copy_state_from(o);
+        }
+        for (f, o) in self.films.iter_mut().zip(&other.films) {
+            if let (Some(f), Some(o)) = (f, o) {
+                f.copy_state_from(o);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

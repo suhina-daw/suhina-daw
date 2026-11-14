@@ -10,6 +10,7 @@ covers:
   - crates/dsp/src/delay.rs
   - crates/dsp/src/resampler.rs
   - crates/dsp/src/convolver.rs
+  - third_party/nam-rs/**
   - crates/device-registry/src/lib.rs
   - crates/engine/src/chain.rs
   - crates/session/src/devices.rs
@@ -49,7 +50,10 @@ here first (clean-room, [ADR 0004](../decisions/0004-built-in-devices.md)).
   (`WaveNet`, `LSTM` or `SlimmableContainer`, NAM's "A2"), the architecture's `config`, the
   trained `weights`, the `sample_rate` the capture ran at and a `metadata` block whose name,
   gear and loudness the panel shows. The model runs on **one channel**; the device keeps one
-  running instance per side.
+  running instance per side. While both sides feed the model the same frames (a mono source),
+  only the left instance runs and its output stands for both; the first span whose frames
+  differ hands the right instance the left one's state, and both run from then on. The sound is
+  the same, bit for bit, as two instances running all along ([§ Cost](#cost)).
 - **IR:** a `.wav` impulse response. Its first samples answer "what the cabinet plays after a
   click"; convolving a signal with it plays the signal through the cabinet. The device keeps one
   convolution per side.
@@ -422,6 +426,16 @@ Both panels, top to bottom:
 | The file cannot run (feature refused, malformed after all) | The fault, the name of the file | Pass-through |
 
 A mono IR is heard on both sides; a mono model captures both sides' moves through two instances.
+
+## Cost
+
+A model is the device's whole cost; the EQ, the resampler legs and the DC blocker are about
+1 % of one core together. On an AMD Ryzen 5 5600X, one standard WaveNet (Tim R JCM2000 Crunch)
+at 48 kHz in 512-frame calls takes 9.8 % of one core with the vendored `nam-rs`
+(`third_party/nam-rs/VENDORED.md`: NeuralAmpModelerCore's fast tanh), 16.8 % before; the
+device runs one instance for a mono source and two for stereo. Calls shorter than 128 frames
+cost more per frame (64 frames: about 1.4×), and a moving automation lane splits a call into
+64-frame steps.
 
 ## What the project stores
 

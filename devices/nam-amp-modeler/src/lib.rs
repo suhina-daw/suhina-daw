@@ -116,6 +116,11 @@ pub struct NamAmp {
     model_rate: f64,
     /// The running instances, built at rebuild time (off the audio thread).
     running: [Option<Model>; 2],
+    /// Whether the two instances still stand where one would: every span so far fed both the
+    /// same frames, so only the left one ran and its output stood for the right one too. The
+    /// first span whose frames differ hands the right instance the left one's state and runs
+    /// both from then on, so the output is the same as two instances running all along.
+    joined: bool,
     /// Whether the runtime refused the model: it stays silent, and the panel says so.
     model_refused: bool,
     sides: [Side; 2],
@@ -176,6 +181,7 @@ impl NamAmp {
             model,
             model_rate: DEFAULT_SAMPLE_RATE,
             running: [None, None],
+            joined: true,
             model_refused: false,
             sides: [Side::new(sample_rate, DEFAULT_SAMPLE_RATE), Side::new(sample_rate, DEFAULT_SAMPLE_RATE)],
             chunk: [Box::new([0.0; CHUNK]), Box::new([0.0; CHUNK])],
@@ -239,6 +245,19 @@ impl NamAmp {
                 slim.select(if wide { widest } else { 0 });
             }
         }
+    }
+
+    /// Parts the sides from the start, as two instances running all along: the reference the
+    /// tests hold the joined run against.
+    #[cfg(test)]
+    fn part_sides(&mut self) {
+        self.joined = false;
+    }
+
+    /// Whether the two instances still run as one (`joined`).
+    #[cfg(test)]
+    fn sides_joined(&self) -> bool {
+        self.joined
     }
 
     /// The EQ's coefficients for the current values.
@@ -306,6 +325,7 @@ impl NamAmp {
         // The running model, two instances (one per side), or the refusal the gate decided
         // before any sizing. A model whose features the runtime refuses joins it here.
         self.running = [None, None];
+        self.joined = true;
         if let Some(parsed) = self.model.as_ref()
             && !self.model_refused
         {
@@ -374,10 +394,7 @@ impl NamAmp {
     /// delivery ring at their stream positions. A model the runtime refuses passes the span
     /// through.
     fn run_span(&mut self, at: usize, len: usize) {
-        let mut counts = [0usize; 2];
-        for (side, count) in counts.iter_mut().enumerate() {
-            *count = self.model_stage(side, at, len);
-        }
+        let counts = self.model_stages(at, len);
         let count = counts[0].min(counts[1]).min(RING);
         for k in 0..count {
             self.delay_frames.next_value();
@@ -398,33 +415,61 @@ impl NamAmp {
         self.produced_pos += count as u64;
     }
 
-    /// One side's stage between the head-stored chunk and the tails: the model over the span,
-    /// with the resampler legs when the model's rate is another one (and no legs without a
-    /// model), plus its DC blocker. The produced frames land in `stage_out[side]`; the count
-    /// comes back.
+    /// Both sides' stages between the head-stored chunk and the tails over the span, the
+    /// produced counts back. While the sides stay joined and feed the model the same frames,
+    /// the model runs once and its output stands for both; the first span that feeds them
+    /// different frames parts them (`joined`).
+    fn model_stages(&mut self, at: usize, len: usize) -> [usize; 2] {
+        if self.running[0].is_none() || self.running[1].is_none() {
+            return [self.model_stage(0, at, len), self.model_stage(1, at, len)];
+        }
+        let fed = [self.model_input(0, at, len), self.model_input(1, at, len)];
+        // Compared bit for bit: -0.0 and 0.0 count as different frames.
+        let same = fed[0] == fed[1]
+            && self.model_io[0][..fed[0]]
+                .iter()
+                .zip(&self.model_io[1][..fed[1]])
+                .all(|(l, r)| l.to_bits() == r.to_bits());
+        if self.joined && !same {
+            // The sides part here: the right instance takes the state the left one reached
+            // for both, before either runs this span.
+            if let [Some(left), Some(right)] = &mut self.running {
+                right.copy_state_from(left);
+            }
+            self.joined = false;
+        }
+        if self.joined {
+            if let Some(model) = self.running[0].as_mut() {
+                model.process_buffer(&mut self.model_io[0][..fed[0]]);
+            }
+            let [left, right] = &mut self.model_io;
+            right[..fed[0]].copy_from_slice(&left[..fed[0]]);
+        } else {
+            for (side, &n) in fed.iter().enumerate() {
+                if let Some(model) = self.running.get_mut(side).and_then(|slot| slot.as_mut()) {
+                    model.process_buffer(&mut self.model_io[side][..n]);
+                }
+            }
+        }
+        [self.model_output(0, fed[0]), self.model_output(1, fed[1])]
+    }
+
+    /// One side's stage without a running model: the trims and EQ stand in for it, with no DC
+    /// blocker to run. The produced frames land in `stage_out[side]`; the count comes back.
     fn model_stage(&mut self, side: usize, at: usize, len: usize) -> usize {
-        if self.running[side].is_none() {
-            // No model: the trims and EQ stand in for it, with no DC blocker to run.
-            for (k, &value) in self.chunk[side][at..at + len].iter().enumerate() {
-                self.stage_out[side][k] = f64::from(value);
-            }
-            return len;
+        for (k, &value) in self.chunk[side][at..at + len].iter().enumerate() {
+            self.stage_out[side][k] = f64::from(value);
         }
-        let rate_match = self.rates_match();
-        if rate_match {
+        len
+    }
+
+    /// One side's span into the model's buffer: a copy when the model's rate is the project's,
+    /// else through the leg into the model's rate. The frames fed to the model come back.
+    fn model_input(&mut self, side: usize, at: usize, len: usize) -> usize {
+        if self.rates_match() {
             self.model_io[side][..len].copy_from_slice(&self.chunk[side][at..at + len]);
-            if let Some(model) = self.running.get_mut(side).and_then(|slot| slot.as_mut()) {
-                model.process_buffer(&mut self.model_io[side][..len]);
-            }
-            // The DC blocker only ever sees the span's frames: the staging list is longer
-            // than a span, and feeding it the slots past the span would drag its state off
-            // with old values.
-            for (k, io) in self.model_io[side].iter().take(len).enumerate() {
-                self.stage_out[side][k] = self.sides[side].dc.process(f64::from(*io));
-            }
             return len;
         }
-        // The legs: into the model's rate, through the model, the DC blocker, and back.
         for (k, &value) in self.chunk[side][at..at + len].iter().enumerate() {
             self.chunk_f64[side][k] = f64::from(value);
         }
@@ -432,8 +477,21 @@ impl NamAmp {
         for (k, value) in self.model_input[side].iter().take(fed).enumerate() {
             self.model_io[side][k] = *value as f32;
         }
-        if let Some(model) = self.running.get_mut(side).and_then(|slot| slot.as_mut()) {
-            model.process_buffer(&mut self.model_io[side][..fed]);
+        fed
+    }
+
+    /// One side's model output (`fed` frames in `model_io[side]`) through its DC blocker, and
+    /// back to the project's rate when the model runs at another one. The produced frames land
+    /// in `stage_out[side]`; the count comes back.
+    fn model_output(&mut self, side: usize, fed: usize) -> usize {
+        if self.rates_match() {
+            // The DC blocker only ever sees the span's frames: the staging list is longer
+            // than a span, and feeding it the slots past the span would drag its state off
+            // with old values.
+            for (k, io) in self.model_io[side].iter().take(fed).enumerate() {
+                self.stage_out[side][k] = self.sides[side].dc.process(f64::from(*io));
+            }
+            return fed;
         }
         for (k, io) in self.model_io[side].iter().take(fed).enumerate() {
             self.dc_staged[side][k] = self.sides[side].dc.process(f64::from(*io));

@@ -16,6 +16,11 @@ Measured on an AMD Ryzen 5 5600X, one standard WaveNet (Tim R JCM2000 Crunch) at
 512-frame blocks, the share of one core: 16.8 % before, 9.8 % after. NeuralAmpModelerCore
 compiled the same way (SSE2) takes 8.2 % with its fast tanh and 13.8 % without.
 
+A second change: `Model::copy_state_from` (and the same per part, beside each `reset`) copies
+another instance's streaming state, the fields `reset` clears, without allocating. Suhina's Amp
+Modeler runs one instance while both stereo sides feed it the same frames and hands the other
+side this state when they part (docs/spec/nam-amp-and-cab.md in the parent repository).
+
 Nothing else is changed. The crate's tests and benches are otherwise kept as published; the
 published crate leaves out `tests/fixtures`, so ten of its tests cannot find their files, before
 the change as after it.

@@ -114,6 +114,21 @@ impl Lstm {
         self.buf_a.fill(0.0);
         self.buf_b.fill(0.0);
     }
+
+    /// The state of `other`, an LSTM built from the same model: what [`reset`] clears, copied
+    /// instead of cleared. Allocates nothing.
+    ///
+    /// [`reset`]: Self::reset
+    pub fn copy_state_from(&mut self, other: &Self) {
+        for (c, o) in self.cells.iter_mut().zip(&other.cells) {
+            c.copy_state_from(o);
+        }
+        for (dst, src) in [(&mut self.buf_a, &other.buf_a), (&mut self.buf_b, &other.buf_b)] {
+            if dst.len() == src.len() {
+                dst.copy_from_slice(src);
+            }
+        }
+    }
 }
 
 /// Number of `f32`s the LSTM `config` implies in the flat weight blob.

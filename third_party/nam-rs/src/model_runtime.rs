@@ -141,6 +141,28 @@ impl Model {
         }
     }
 
+    /// Makes this instance continue exactly as `other` does: the streaming state that
+    /// [`reset`](Self::reset) clears, copied from `other`, and a slimmable model's selection.
+    /// Both must come from the same model (`from_nam` of one `NamModel`); a part whose shape
+    /// differs is left as it is. Allocates nothing, so it is real-time safe. (Suhina's change,
+    /// `VENDORED.md`: a stereo device runs one instance while both sides are equal and hands
+    /// the other side this state when they part.)
+    pub fn copy_state_from(&mut self, other: &Self) {
+        match (self, other) {
+            (Model::WaveNet(w), Model::WaveNet(o)) => w.copy_state_from(o),
+            (Model::Lstm(l), Model::Lstm(o)) => l.copy_state_from(o),
+            (Model::Slimmable(s), Model::Slimmable(o)) => {
+                for (m, om) in s.submodels.iter_mut().zip(&o.submodels) {
+                    m.copy_state_from(om);
+                }
+                if s.submodels.len() == o.submodels.len() {
+                    s.active = o.active;
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// The model's processing latency in samples.
     ///
     /// For WaveNet this is the receptive field: the first this-many output samples

@@ -224,6 +224,14 @@ impl Conv1d {
         self.ring.iter_mut().for_each(|x| *x = 0.0);
         self.pos = self.ring_len - 1;
     }
+
+    /// The history of `other`, a conv of the same shape (`Model::copy_state_from`).
+    pub(super) fn copy_state_from(&mut self, other: &Self) {
+        if self.ring.len() == other.ring.len() {
+            self.ring.copy_from_slice(&other.ring);
+            self.pos = other.pos;
+        }
+    }
 }
 
 #[cfg(test)]

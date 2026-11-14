@@ -529,3 +529,89 @@ fn hostile_numbers_stay_finite() {
         assert!(v.is_finite() || v == 0.0, "{v}");
     }
 }
+
+/// Shipped models with streaming state (a standard WaveNet with dilations up to 512, an LSTM),
+/// for the joined sides' tests: the tiny model above keeps no history.
+const STANDARD_WAVENET: &str = include_str!("../../../packs/nam-amp-modeler/Tim R JCM2000 Crunch.nam");
+const OWN_LSTM: &str = include_str!("../../../packs/nam-amp-modeler/Suhina Overdrive.nam");
+
+/// `input` (interleaved stereo) through an amp prepared at `rate`, in calls of `block` frames;
+/// `parted` runs the two sides apart from the start, as two instances always did.
+fn joined_render(json: &str, rate: f64, block: usize, input: &[f32], parted: bool) -> (Vec<f32>, bool) {
+    let model = Arc::new(NamModel::from_json_str(json).expect("the shipped model parses"));
+    let mut amp = NamAmp::with_model(model);
+    amp.prepare(rate).expect("prepare");
+    if parted {
+        amp.part_sides();
+    }
+    let mut out = input.to_vec();
+    for call in out.chunks_mut(block * 2) {
+        amp.process(&ProcessContext::default(), call);
+    }
+    (out, amp.sides_joined())
+}
+
+/// A guitar-like test signal: the same on both sides for `mono_frames`, then the right side
+/// drifts off (half the level and a second tone), so the sides part there.
+fn parting_signal(rate: f64, frames: usize, mono_frames: usize) -> Vec<f32> {
+    (0..frames)
+        .flat_map(|n| {
+            let t = n as f64 / rate;
+            let left = (0.4 * (2.0 * std::f64::consts::PI * 110.0 * t).sin() * (-3.0 * (t % 0.5)).exp()) as f32;
+            let right = if n < mono_frames {
+                left
+            } else {
+                0.5 * left + (0.1 * (2.0 * std::f64::consts::PI * 330.0 * t).sin()) as f32
+            };
+            [left, right]
+        })
+        .collect()
+}
+
+#[test]
+fn joined_sides_render_bit_for_bit_as_two_instances() {
+    for (name, json) in [("standard WaveNet", STANDARD_WAVENET), ("LSTM", OWN_LSTM)] {
+        // 44.1 kHz runs the resampler legs around a 48 kHz model; 48 kHz runs it directly.
+        for rate in [44_100.0, 48_000.0] {
+            let frames = (rate * 0.6) as usize;
+            // The sides part mid-call and mid-chunk, after the model's history has filled.
+            let input = parting_signal(rate, frames, 9_999);
+            for block in [64, 1024] {
+                let (joined, still_joined) = joined_render(json, rate, block, &input, false);
+                let (parted, _) = joined_render(json, rate, block, &input, true);
+                assert!(!still_joined, "{name} at {rate} Hz: the sides part when their frames differ");
+                let first_diff = joined.iter().zip(&parted).position(|(a, b)| a.to_bits() != b.to_bits());
+                assert_eq!(first_diff, None, "{name} at {rate} Hz, {block}-frame calls");
+                assert!(joined.iter().any(|s| s.abs() > 1e-3), "{name} at {rate} Hz renders sound");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_mono_signal_keeps_the_sides_joined_and_both_sides_equal() {
+    let rate = 44_100.0;
+    let frames = (rate * 0.5) as usize;
+    let input = parting_signal(rate, frames, frames);
+    let (out, still_joined) = joined_render(STANDARD_WAVENET, rate, 512, &input, false);
+    assert!(still_joined, "a mono signal never parts the sides");
+    assert!(frames_equal(&out), "both sides carry the one instance's output");
+    let (parted, _) = joined_render(STANDARD_WAVENET, rate, 512, &input, true);
+    assert_eq!(out.iter().zip(&parted).position(|(a, b)| a.to_bits() != b.to_bits()), None);
+}
+
+fn frames_equal(signal: &[f32]) -> bool {
+    frames(signal).iter().all(|[l, r]| l.to_bits() == r.to_bits())
+}
+
+#[test]
+fn a_reset_joins_the_sides_again() {
+    let model = Arc::new(NamModel::from_json_str(STANDARD_WAVENET).expect("parses"));
+    let mut amp = NamAmp::with_model(model);
+    amp.prepare(SR).expect("prepare");
+    let mut stereo = parting_signal(SR, 4_096, 0);
+    amp.process(&ProcessContext::default(), &mut stereo);
+    assert!(!amp.sides_joined());
+    amp.reset();
+    assert!(amp.sides_joined(), "a reset clears both instances, so they stand as one again");
+}

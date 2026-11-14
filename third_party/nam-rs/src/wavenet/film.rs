@@ -162,6 +162,10 @@ impl FiLM {
         self.cond_to_scale_shift.reset();
     }
 
+    pub(super) fn copy_state_from(&mut self, other: &Self) {
+        self.cond_to_scale_shift.copy_state_from(&other.cond_to_scale_shift);
+    }
+
     /// Rows the internal Conv1x1 emits: `(shift ? 2 : 1) * input_dim`.
     #[cfg(test)]
     pub(super) fn out_rows(&self) -> usize {

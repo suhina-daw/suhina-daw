@@ -533,6 +533,32 @@ impl WaveNet {
         self.sig_a.fill(0.0);
         self.sig_b.fill(0.0);
     }
+
+    /// The streaming state of `other`, a WaveNet built from the same model: what [`reset`]
+    /// clears, copied instead of cleared. Allocates nothing.
+    ///
+    /// [`reset`]: Self::reset
+    pub fn copy_state_from(&mut self, other: &Self) {
+        for (a, o) in self.arrays.iter_mut().zip(&other.arrays) {
+            a.copy_state_from(o);
+        }
+        if let (Some(h), Some(o)) = (&mut self.post_stack_head, &other.post_stack_head) {
+            h.copy_state_from(o);
+        }
+        if let (Some(c), Some(o)) = (&mut self.condition_dsp, &other.condition_dsp) {
+            c.copy_state_from(o);
+        }
+        for (dst, src) in [
+            (&mut self.head_a, &other.head_a),
+            (&mut self.head_b, &other.head_b),
+            (&mut self.sig_a, &other.sig_a),
+            (&mut self.sig_b, &other.sig_b),
+        ] {
+            if dst.len() == src.len() {
+                dst.copy_from_slice(src);
+            }
+        }
+    }
 }
 
 /// Reject WaveNet features whose forward pass is not implemented yet, with a clear

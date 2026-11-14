@@ -162,6 +162,14 @@ impl LayerArray {
             layer.reset();
         }
     }
+
+    pub(super) fn copy_state_from(&mut self, other: &Self) {
+        self.rechannel.copy_state_from(&other.rechannel);
+        self.head_rechannel.copy_state_from(&other.head_rechannel);
+        for (layer, o) in self.layers.iter_mut().zip(&other.layers) {
+            layer.copy_state_from(o);
+        }
+    }
 }
 
 #[cfg(test)]

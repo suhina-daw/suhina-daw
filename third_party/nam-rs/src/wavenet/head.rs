@@ -134,6 +134,12 @@ impl PostStackHead {
             c.reset();
         }
     }
+
+    pub(super) fn copy_state_from(&mut self, other: &Self) {
+        for ((_, c), (_, o)) in self.convs.iter_mut().zip(&other.convs) {
+            c.copy_state_from(o);
+        }
+    }
 }
 
 #[cfg(test)]
