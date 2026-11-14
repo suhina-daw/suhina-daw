@@ -22,7 +22,8 @@ Own design: nothing here is observed from another program.
 
 `crates/device-registry` makes a device from its `DeviceKind::Builtin` id. When the renderer's
 graph is built, a track whose channel holds enabled built-in effects and instruments gets a chain: the
-devices made, prepared, given the project's parameter values (`Device::params`, by
+devices made at the renderer's rate (never prepared on the way; [ADR 0004](../decisions/0004-built-in-devices.md) › Amendment: a device
+is made at its rate), given the project's parameter values (`Device::params`, by
 parameter id; missing ones at their defaults) and reset. Everything the track plays in a
 block (sine voices, audio clips, stretched and launched clips) goes into the chain's buffer
 at a centred unity gain instead of the output; the devices run over it in order, and then
