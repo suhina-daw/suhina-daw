@@ -88,18 +88,15 @@ impl Ir {
                     out.resize(out.len() + staged.len() * 2, 0.0);
                 }
             }
-            // The kernel's tail: what waited for input that has now all been fed.
-            loop {
-                if at + HALF_TAPS + 4 > out.len() {
-                    out.resize(out.len() + 256, 0.0);
-                }
-                let n = leg.process(&[], &mut out[at..]);
-                if n == 0 {
-                    break;
-                }
-                at += n;
+            // The kernel's tail: what waited for input that now has all been fed. The IR keeps
+            // the length its time says, and at least one frame when it had any.
+            if out.len() < at + HALF_TAPS * 2 + 16 {
+                out.resize(at + HALF_TAPS * 2 + 16, 0.0);
             }
-            out.truncate(at);
+            at += leg.flush(&mut out[at..]);
+            let length =
+                (side.len() as f64 * f64::from(project_rate.max(1)) / f64::from(self.sample_rate)).round() as usize;
+            out.truncate(at.min(length.max(usize::from(!side.is_empty()))));
             sides.push(out.into_iter().map(|v| v as f32).collect::<Vec<f32>>().into_boxed_slice());
         }
         Ir { channels: self.channels.max(1), sample_rate: project_rate.max(1), sides: sides.into() }
@@ -268,5 +265,44 @@ mod tests {
         for (i, (g, w)) in got.iter().zip(&want).enumerate() {
             assert!((g - w).abs() < 1e-4, "{i}: {g} vs {w}");
         }
+    }
+
+    /// Index and value of the largest magnitude in `side`.
+    fn peak(side: &[f32]) -> (usize, f32) {
+        side.iter()
+            .copied()
+            .enumerate()
+            .fold((0, 0.0), |best, (i, v)| if v.abs() > best.1.abs() { (i, v) } else { best })
+    }
+
+    #[test]
+    fn a_resampled_ir_keeps_its_length_and_its_last_frames() {
+        // An impulse 10 frames before the end of a 44.1 kHz IR: at 48 kHz it sits at 1077.6 of
+        // 1088 frames, inside the kernel's tail the resampler still held back.
+        let mut data = vec![0.0f32; 1_000];
+        data[990] = 1.0;
+        let ir = Ir::from_interleaved(1, 1_000, 44_100, &data).resampled_to(48_000);
+        assert_eq!(ir.sample_rate, 48_000);
+        assert!(ir.frames().abs_diff(1_088) <= 1, "{}", ir.frames());
+        let (at, value) = peak(ir.side(0));
+        assert!(at.abs_diff(1_078) <= 1, "{at}");
+        // The impulse falls between two output frames (1077.6): the nearest holds sinc(0.4).
+        assert!(value > 0.7, "{value}");
+    }
+
+    #[test]
+    fn a_very_short_resampled_ir_is_not_empty() {
+        for (from, to, frames, want) in [(44_100, 48_000, 4, 4), (48_000, 44_100, 3, 3), (96_000, 44_100, 1, 1)] {
+            let mut data = vec![0.0f32; frames];
+            data[0] = 1.0;
+            let ir = Ir::from_interleaved(1, frames, from, &data).resampled_to(to);
+            assert_eq!(ir.frames(), want, "{from} -> {to}");
+            assert!(ir.side(0).iter().any(|v| v.abs() > 0.1), "{from} -> {to}");
+        }
+    }
+
+    #[test]
+    fn an_empty_ir_stays_empty_when_resampled() {
+        assert_eq!(Ir::from_interleaved(1, 0, 44_100, &[]).resampled_to(48_000).frames(), 0);
     }
 }

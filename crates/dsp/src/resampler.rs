@@ -82,7 +82,9 @@ impl Resampler {
 
     /// Feeds `input` in and writes what the conversion gives so far into `output`, as much as
     /// fits; returns how many frames were written. Feed a slice fully before the next: an
-    /// unfed-and-unread remainder is only what the output slice lacked room for.
+    /// unfed-and-unread remainder is only what the output slice lacked room for. The last
+    /// `HALF_TAPS + 1` input frames' outputs wait for the frames after them: [`Self::flush`] at
+    /// the stream's end.
     pub fn process(&mut self, input: &[f64], output: &mut [f64]) -> usize {
         let mut written = 0usize;
         for &x in input {
@@ -111,6 +113,17 @@ impl Resampler {
             }
         }
         written
+    }
+
+    /// Ends the stream: feeds the silence that follows it, so the outputs that were waiting for
+    /// the kernel's far half come out, and writes them into `output` (the frames up to the end
+    /// of the input, `fed * to / from` in all; the last output or two may lie a fraction past
+    /// it). Returns how many frames were written; `output` needs room for `HALF_TAPS + 1`
+    /// input frames' worth. The resampler is spent afterwards: [`Self::reset`] it to reuse it.
+    /// [`Self::process`] with no input drains nothing, since an output is made only as an
+    /// input frame arrives.
+    pub fn flush(&mut self, output: &mut [f64]) -> usize {
+        self.process(&[0.0; HALF_TAPS + 1], output)
     }
 
     /// Rebuilds the signal at input-time `t` (`centre = (t + 0.5).floor()`); frames before the
@@ -151,7 +164,8 @@ mod tests {
     use super::*;
 
     /// Feeds `input` through `resampler` in calls of `chunk` input frames, collecting every
-    /// output frame, including what stays queued for the kernel's tail at the end.
+    /// output frame the feed produced; the stream's last `HALF_TAPS + 1` input frames' outputs
+    /// stay queued, as no flush ends it.
     fn run(resampler: &mut Resampler, input: &[f64], chunk: usize) -> Vec<f64> {
         let cap = input.len() * 2 + TAPS;
         let mut out = vec![0.0f64; cap];
@@ -171,6 +185,19 @@ mod tests {
         }
         out.truncate(at);
         out
+    }
+
+    #[test]
+    fn a_flushed_stream_holds_all_of_its_time() {
+        // `process` with no input drains nothing; `flush` gives the frames up to the input's end.
+        let input = vec![0.25f64; 1_000];
+        let mut line = Resampler::new(44_100.0, 48_000.0);
+        let mut out = vec![0.0f64; 1_200];
+        let mut at = line.process(&input, &mut out);
+        assert_eq!(line.process(&[], &mut out[at..]), 0);
+        at += line.flush(&mut out[at..]);
+        let want = 1_000.0 * 48_000.0 / 44_100.0;
+        assert!((at as f64 - want).abs() <= 1.0, "{at}");
     }
 
     #[test]
