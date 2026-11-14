@@ -237,9 +237,27 @@ pub(super) fn tool_pointer_rect(pos: Pos2, hotspot: Vec2, size: f32) -> Rect {
     Rect::from_min_size(pos - hotspot * size, Vec2::splat(size))
 }
 
-/// A tool's icon in place of the pointer, in `rect`: in the text colour, ringed with a point of
-/// the window's colour so it reads over a note as well as over the empty grid.
+/// The theme's own artwork for a tool's toolbar button (`piano.draw` and the others), the role the
+/// toolbar paints it with, so the pointer changes with the toolbar's icon.
+pub(super) fn tool_role(icon: IconButton) -> String {
+    format!("piano.{}", icon.id().trim_start_matches("piano-"))
+}
+
+/// A tool's icon in place of the pointer, in `rect`: the toolbar's icon (the theme's when it has
+/// one, else the built-in artwork) in the text colour, ringed with a point of the window's colour
+/// so it reads over a note as well as over the empty grid.
 pub(super) fn draw_tool_pointer(painter: &egui::Painter, icon: IconButton, rect: Rect) {
+    let role = tool_role(icon);
+    if crate::kit::skin::has_own(&role) {
+        let normal = crate::kit::skin::State::Normal;
+        for (x, y) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+            let ring = rect.translate(Vec2::new(x, y));
+            crate::kit::skin::paint(painter, ring, &role, normal, theme::window_background(), 0.0);
+        }
+        if crate::kit::skin::paint(painter, rect, &role, normal, theme::text_primary(), 0.0) {
+            return;
+        }
+    }
     if let Some(svg) = icon.svg() {
         for (x, y) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
             crate::kit::skin::paint_icon(painter, rect.translate(Vec2::new(x, y)), svg, theme::window_background());

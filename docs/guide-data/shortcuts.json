@@ -6898,6 +6898,336 @@
       "helpStatus": "reviewed"
     },
     {
+      "id": "pianoRoll.join",
+      "name": "Join the selected notes on one key into one note, over any gap",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "J"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "J"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "J"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "J"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "J"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "J"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "J"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "J"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "J"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "30e9d00d37484c68e7555aeab3795cfce9c18f0b6eecf5238df3bd4eccb4a20c",
+      "description": "Joins the selected notes on the same key into one note, from the first one's start to the last one's end: the first reaches over any gap to the next, as legato does, and joins it. It keeps the first one's velocity. Notes on different keys are joined key by key.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Turn repeated or chopped notes back into one held note.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
+      "id": "pianoRoll.fitToTime",
+      "name": "Stretch or squeeze the selected notes to fill the time selection",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Alt",
+              "J"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Alt",
+              "J"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Option",
+              "J"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Alt",
+              "J"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Alt",
+              "J"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Option",
+              "J"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Alt",
+              "J"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Alt",
+              "J"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Option",
+              "J"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "fa7e55051b47f0ce8f599e6d6ca77d2bb20b950a2d6c35a982d7cc66921c2258",
+      "description": "Stretches or squeezes the selected notes, starts and lengths alike, so they exactly fill the time selection (a stretch of time dragged in the piano roll). Does nothing without a time selection.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Make a phrase fill exactly a bar or a gap.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
+      "id": "pianoRoll.crop",
+      "name": "Crop the piano roll's clip to the time selection",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "J"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "J"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "J"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "J"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "J"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "J"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "J"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "J"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "J"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "bce0f56beb4bf9f97a6e72749366e0e600ce36d5a9df6b8aa57af609c91b1f59",
+      "description": "Crops the clip to the time selection: its start marker and length become the selection's (a looping clip keeps its end and goes on looping), its loop is cut to the selection and turns off where they do not meet, notes outside it are deleted and notes across its edges are cut there. What is left plays where it played.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Keep only the part of a clip you want.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
+      "id": "pianoRoll.splitClip",
+      "name": "Split the piano roll's clip at the time selection's edges",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "E"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "E"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "E"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "E"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "E"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "E"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "E"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "E"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "E"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "43797b97a004d0336294daa5db87c29eabb098f69bb66712e7a8dd1f468eca87",
+      "description": "Splits the clip at the two edges of the time selection into separate clips on the same lane, in one undo step. It never splits at the playhead, and works on an arrangement clip.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Cut a section out of a clip into a clip of its own while editing its notes.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
       "id": "help.about",
       "name": "Show which version of Suhina this is",
       "category": "Help",

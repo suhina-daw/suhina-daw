@@ -1,6 +1,6 @@
 ---
 description: The MCP server for agents: tools, file roots, errors and how to run it
-read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
+read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools, note.join, note.fitToTime, clip.crop, clip.setOrigin
 type: system
 status: current
 last_verified: 2026-11-11
@@ -237,7 +237,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   stack?}` makes an empty clip — MIDI on a notes track, audio with no file yet on an audio
   track — a bar long by default, in an empty slot or at a beat
   ([arrangement editing](spec/arrangement-editing.md#making-an-empty-clip)).
-  `clip.split {track, index, at}` cuts a clip in two at a song position; `clip.consolidate
+  `clip.split {track, index, at}` cuts a clip in two at a song position (`ats` instead: at
+  several positions in one undo step, the result listing the parts' clip ids); `clip.consolidate
   {track, start, end}` turns a range of one track into one clip (audio is rendered to a file next
   to the project, which must have been saved).
 
@@ -310,6 +311,19 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   semitones? | keys?}` adds a copy right after the notes' end, or `beats` and `semitones` from them
   (the piano roll's Ctrl+drag; `keys` gives each copy its own key, one per entry of `notes`). The note clipboard is apart from the clip clipboard.
 - **Making room.** `note.makeRoom {track, index | scene, notes, covered?}` makes room under the named notes as `replace` does (the piano roll sends it when notes edited while selected are let go); a note no longer in the clip is left out. `covered` (with `replace` on the other note commands too) says what happens to a note covered from its start that runs on past: `"cut"` (the default) keeps what runs on, `"delete"` removes it whole.
+- **Joining, fitting, cropping.** `note.join {track, index | scene, notes}` joins the named notes
+  on one key into one note (the first's start, velocity and release velocity, the last's end, the
+  first reaching over any gap as legato does), each key on its own; it fails without two named
+  notes on one key.
+  `note.fitToTime {..., notes, start, end, replace?, covered?}` stretches or squeezes the named notes,
+  starts and lengths alike, so the first starts at `start` and the last ends at `end` (content beats).
+  `clip.crop {track, index | scene, start, end}` keeps only that stretch of a MIDI clip's content: start
+  marker and length become it, the loop is cut to it, notes outside are deleted and those across an
+  edge cut; an arrangement clip moves with its start marker so what is left plays where it played.
+  `clip.setOrigin {track, index | scene, beat}` makes content beat `beat` the first (1.1.1): the notes,
+  start marker and loop move back by it together and the clip sounds as before; it fails when
+  anything of the clip lies before the beat. Each is one undo step and refuses an audio clip
+  ([spec](spec/ui-clip-editor.md) › Joining, fitting, cropping and splitting).
 - **Splitting notes.** `note.split {track, index | scene, notes, at | times, keepLonger?}` splits
   each named note that spans the beat `at` into two at `at` (the first keeps the start, the second
   the end); `times` instead gives each note a beat of its own, one per entry of `notes` (the piano

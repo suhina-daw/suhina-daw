@@ -179,6 +179,14 @@ impl PianoRollState {
         self.span.as_ref().map(|span| round_beat(span.end))
     }
 
+    /// Where Legato's last notes end when the time selection is what it acts on: the stretch's end
+    /// with no note selected (the notes that start in it). Selected notes reach the next note
+    /// after them, as without a time selection: the stretch a rectangle leaves round them is only
+    /// their extent, and ending them there would leave them as they are.
+    pub fn legato_span_end(&self) -> Option<f64> {
+        self.span_end().filter(|_| self.selected.is_empty())
+    }
+
     /// The stretch selected in time, from its start to its end in the clip's beats, or what a
     /// selecting rectangle covers while it is drawn: the Arrangement lights it on the clip too.
     pub fn time_span(&self) -> Option<(f64, f64)> {
