@@ -271,8 +271,11 @@ fn the_user_agent_sheet_selects_by_name_state_and_attribute_only() {
         let close = rest.find('}').unwrap();
         for selector in rest[..open].split(',').map(str::trim) {
             rules += 1;
-            let name = selector.split(['[', ':']).next().unwrap();
-            assert!(elements::is_element(name), "{selector}: {name} is not an element");
+            // Each element of a descendant or child chain (`application-bar group`).
+            for compound in selector.split([' ', '>']).filter(|part| !part.is_empty()) {
+                let name = compound.split(['[', ':']).next().unwrap();
+                assert!(elements::is_element(name), "{selector}: {name} is not an element");
+            }
             // No classes yet: the standard toolbar group classes the spec allows come with the
             // toolbar's groups (#995 § 7).
             assert!(!selector.contains('.'), "{selector} has a class");

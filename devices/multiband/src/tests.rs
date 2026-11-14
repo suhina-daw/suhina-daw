@@ -61,7 +61,7 @@ fn fast(extra: &[(usize, f64)]) -> Vec<(usize, f64)> {
     s
 }
 
-suhina_device_api::conformance_test!(Multiband::new());
+suhina_device_api::conformance_test!(Multiband::with_rate);
 
 #[test]
 fn crossed_crossovers_split_like_the_same_two_in_order() {

@@ -220,7 +220,7 @@ fn a_toggle_that_is_on_has_artwork_of_its_own_or_the_pressed_one() {
     assert!(theme_css::read_host_rules(&mut theme, css).is_empty());
     assert_eq!(theme.skin.assets.get("solo.on").map(String::as_str), Some("assets/solo.on.svg"));
     let pick = |role: &str| {
-        crate::kit::artwork::variant(&theme.skin, role, crate::kit::skin::State::On, None, 0.0, false).map(|v| v.0)
+        crate::kit::artwork::variant(&theme.skin, role, crate::kit::skin::State::On, 0.0, false).map(|v| v.0)
     };
     assert_eq!(pick("solo").as_deref(), Some("solo.on"));
     assert_eq!(pick("arm").as_deref(), Some("arm.active"), "without .on, the pressed artwork");

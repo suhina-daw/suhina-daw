@@ -58,9 +58,9 @@ fn the_own_model_renders_within_a_bound_of_its_source_chain() {
         panic!("the pack has no own model to prove");
     };
     let asset = load_builtin_file("nam-amp-modeler", name, RATE).unwrap();
-    let mut model = create_with("nam-amp-modeler", Some(&asset)).unwrap();
+    let mut model = create_with("nam-amp-modeler", f64::from(RATE), Some(&asset)).unwrap();
 
-    let mut chain = create("overdrive").unwrap();
+    let mut chain = create("overdrive", f64::from(RATE)).unwrap();
     let mut phrase = phrase();
     let model_out = rendered(model.as_mut(), &mut phrase.clone());
     let gold_out = rendered(chain.as_mut(), &mut phrase);
@@ -126,9 +126,9 @@ fn the_clean_model_renders_within_a_bound_of_its_source_chain() {
         panic!("the pack has no second own model to prove");
     };
     let asset = load_builtin_file("nam-amp-modeler", name, RATE).unwrap();
-    let mut model = create_with("nam-amp-modeler", Some(&asset)).unwrap();
+    let mut model = create_with("nam-amp-modeler", f64::from(RATE), Some(&asset)).unwrap();
 
-    let mut chain = create("compressor").unwrap();
+    let mut chain = create("compressor", f64::from(RATE)).unwrap();
     let mut phrase = phrase_from("suhina-clean-train-phrase.wav");
     let model_out = rendered(model.as_mut(), &mut phrase.clone());
     let gold_out = rendered(chain.as_mut(), &mut phrase);
@@ -188,7 +188,7 @@ fn the_clean_model_renders_within_a_bound_of_its_source_chain() {
 fn every_pack_ir_runs_stereo() {
     for (name, _) in pack_files("nam-cab-loader") {
         let asset = load_builtin_file("nam-cab-loader", name, RATE).unwrap();
-        let mut cab = create_with("nam-cab-loader", Some(&asset)).unwrap();
+        let mut cab = create_with("nam-cab-loader", f64::from(RATE), Some(&asset)).unwrap();
         let mut frames = test_signal(96_000);
         cab.process(&ProcessContext::default(), &mut frames);
         let passive = frames.as_chunks::<2>().0.iter().any(|[l, _]| l.abs() > 1e-3);
@@ -196,19 +196,32 @@ fn every_pack_ir_runs_stereo() {
     }
 }
 
-/// Every shipped amp model runs the device: each pack model renders the phrase through the
-/// normal device path, and its output stays finite and off silence ([ADR 0036] › 7, the
-/// offline render is the oracle).
+/// The passage of the phrase from `start` seconds, `seconds` long, as interleaved stereo.
+fn passage(phrase: &[f32], start: usize, seconds: usize) -> Vec<f32> {
+    let rate = RATE as usize;
+    phrase[start * rate * 2..(start + seconds) * rate * 2].to_vec()
+}
+
+/// Every shipped amp model runs the device: each pack model renders two passages of the phrase
+/// through the normal device path, and its output stays finite and off silence ([ADR 0036] › 7,
+/// the offline render is the oracle). Two 6 s passages, not the whole 90 s phrase: over every
+/// model the whole phrase took 11 to 19 minutes of a CI run (#1382). 20 s to 26 s is one of
+/// the phrase's loudest stretches (−16.1 dB RMS against the whole phrase's −21.5 dB), 37 s to
+/// 43 s holds its peak (−1.9 dBFS at 39.84 s). The level checks below keep the whole phrase:
+/// no few seconds of it carry its level through every cabinet and tone within 2 dB.
 #[test]
 fn every_pack_amp_model_runs_the_device() {
     let phrase = phrase();
+    let passages = [passage(&phrase, 20, 6), passage(&phrase, 37, 6)];
     for (name, _) in pack_files("nam-amp-modeler") {
         let asset = load_builtin_file("nam-amp-modeler", name, RATE).unwrap();
-        let mut device = create_with("nam-amp-modeler", Some(&asset)).unwrap();
-        let out = rendered(device.as_mut(), &mut phrase.clone());
-        assert!(out.iter().all(|s| s.is_finite()), "{name} renders a non-finite sample");
-        let peak = out.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-        assert!(peak > 1e-3, "{name} renders silence (peak {peak:.2e}) — the pack must not ship an unusable model");
+        let mut device = create_with("nam-amp-modeler", f64::from(RATE), Some(&asset)).unwrap();
+        for passage in &passages {
+            let out = rendered(device.as_mut(), &mut passage.clone());
+            assert!(out.iter().all(|s| s.is_finite()), "{name} renders a non-finite sample");
+            let peak = out.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+            assert!(peak > 1e-3, "{name} renders silence (peak {peak:.2e}) — the pack must not ship an unusable model");
+        }
     }
 }
 
@@ -226,7 +239,7 @@ fn every_stock_preset_naming_a_file_renders_heard_and_under_full_scale() {
             panic!("{}: {} is not a shipped file's key", stock.key, file);
         };
         let asset = load_builtin_file(id, name, RATE).unwrap_or_else(|e| panic!("{}: {e}", stock.key));
-        let mut device = create_with(id, Some(&asset)).unwrap();
+        let mut device = create_with(id, f64::from(RATE), Some(&asset)).unwrap();
         for (param, value) in &stock.preset.params {
             let info = info(id).unwrap();
             let index = info.param_index(param).unwrap_or_else(|| panic!("{}: {param:?}", stock.key));

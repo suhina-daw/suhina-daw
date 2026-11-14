@@ -281,6 +281,17 @@ impl Default for Multiband {
 
 impl Multiband {
     pub fn new() -> Self {
+        Self::at(DEFAULT_SAMPLE_RATE)
+    }
+
+    /// The same, made for `sample_rate` (ADR 0004 › Amendment: a device is made at its rate);
+    /// fails for a rate a device cannot run at. Allocates.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(Self::at)
+    }
+
+    /// Everything for `sample_rate`, which has been checked.
+    fn at(sample_rate: f64) -> Self {
         let band = Band {
             input: Smoother::new(0.0, 1),
             gain: Smoother::new(0.0, 1),
@@ -290,16 +301,16 @@ impl Multiband {
             level: 0.0,
         };
         let mut device = Self {
-            sample_rate: DEFAULT_SAMPLE_RATE,
+            sample_rate,
             params: ParamBank::new(&PARAMS),
             bands: [band; 3],
             output: Smoother::new(0.0, 1),
             frequencies: [Smoother::new(0.0, 1); 2],
-            sides: [Side::new(DEFAULT_SAMPLE_RATE, 120.0, 2_500.0); 2],
+            sides: [Side::new(sample_rate, 120.0, 2_500.0); 2],
             frame: 0,
             readouts: idle_readouts(),
             spectrum: Analyser::new(
-                DEFAULT_SAMPLE_RATE,
+                sample_rate,
                 SPECTRUM_LOW,
                 SPECTRUM_HIGH,
                 (SPECTRUM_RISE_SECONDS, SPECTRUM_FALL_SECONDS),

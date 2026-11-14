@@ -831,12 +831,17 @@ pub fn show_ara_editor(
             Action::new("view.araFloat", params),
             actions,
         );
-        // At the row's right end the ×, which hides the editor, as the piano roll's does.
+        // At the row's right end the ×, which hides the editor, as the piano roll's does. It only
+        // hides it: the plug-in keeps the clip and its edits, which the tooltip says, as an ×
+        // reads as closing.
         let hide =
             Rect::from_min_size(Pos2::new(area.right() - PAD - BUTTON_HEIGHT, float.top()), Vec2::splat(BUTTON_HEIGHT));
         let response =
             crate::kit::widgets::button_area(ui, hide, egui::Id::unique(("ara-hide", track.0)), "Hide editor")
-                .on_hover_text("Hide editor");
+                .on_hover_text(format!(
+                    "Hide editor: {} keeps the clip and its edits; select the clip to show it again",
+                    device.name
+                ));
         let fill = crate::kit::motion::mix(
             theme::control_background(),
             theme::control_hover(),

@@ -10,18 +10,10 @@ use suhina_engine::model::{
 };
 use suhina_engine::{LauncherMonitor, PlayingMeter, Queued};
 
-use crate::kit::theme;
-
-/// The colours tracks without one of their own take in turn: the theme's first four track
-/// colours (`track.1` to `track.4`).
-pub fn track_palette() -> [Rgb; 4] {
-    [theme::track_color_1(), theme::track_color_2(), theme::track_color_3(), theme::track_color_4()].map(to_rgb)
-}
-
-/// Legacy tracks resolve their indexed swatch once when attached to the UI. Creation
-/// defaults are applied by the session only to newly created tracks and clips.
+/// The colour a track at `index` among the tracks shows: its own, or for a track saved without
+/// one, Suhina's fixed colour for its place.
 pub fn track_colour(track: &Track, index: usize) -> Rgb {
-    track.color.unwrap_or_else(|| track_palette()[index % 4])
+    suhina_session::colours::track_colour(track.color, index)
 }
 
 /// A theme colour as a project's track colour.

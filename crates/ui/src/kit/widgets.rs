@@ -310,6 +310,26 @@ pub fn button_surface(
     el.paint_with(painter, rect, super::element::Native { radius, fill });
 }
 
+/// The fill and the ink of a toggle drawn as `el` (a `button` entered with `[checked]` while on):
+/// the sheet's where it gives them, else `fills` and `inks` (on, off). `plain` is the same button
+/// without `[checked]`, looked up before `el` is entered, and given only while it is on: then only
+/// a rule for the lit state counts (`button[checked]`), so a rule for every `button` does not hide
+/// which one is on.
+pub fn toggle_inks(
+    el: &Entered,
+    plain: Option<&super::element::Look>,
+    fills: (Color32, Color32),
+    inks: (Color32, Color32),
+) -> (Color32, Color32) {
+    match plain {
+        Some(plain) => {
+            let lit = el.look();
+            (lit.background_unlike(plain, fills.0), lit.own_color_unlike(plain, inks.0))
+        }
+        None => (el.background_or(fills.1), el.own_color_or(inks.1)),
+    }
+}
+
 /// A track's number, `track-number`: its own `color`, `font-size` and `display: none`, and
 /// `[muted]` while the track is off.
 pub fn track_number_text(painter: &Painter, rect: Rect, number: &str, ink: Color32, muted: bool) {
@@ -1349,8 +1369,12 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
     }
 }
 
+/// A button with `text` on it, `label` for screen readers and tests; true when clicked. Its id is
+/// its label in its layer, so a dialog drawn over a panel with a button of the same label (the
+/// start panel's *Download update now* under Help › Check for updates…) gets a button of its own
+/// (#1229): egui keeps a widget in the layer it was first seen in that frame.
 pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str) -> bool {
-    let response = button_area(ui, rect, Id::unique(("dialog-button", label)), label);
+    let response = button_area(ui, rect, Id::unique(("dialog-button", ui.layer_id(), label)), label);
     let el = BUTTON.response(&response).enter();
     let fill = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
     let radius = el.radius_or(0.0);

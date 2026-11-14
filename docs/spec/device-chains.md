@@ -3,7 +3,7 @@ description: How the engine runs devices on tracks - chains, instruments and the
 read_when: device chain, chain, instrument notes, note events, MIDI effect, process_events, group bus, bus, sends into returns, device group in the engine, main channel chain, latency compensation, graph swap keeps devices, chain order, Slot::Group
 type: spec
 status: current
-last_verified: 2026-11-03
+last_verified: 2026-11-14
 covers:
   - crates/engine/src/chain.rs
   - crates/engine/src/slot_factory.rs
@@ -24,7 +24,8 @@ Own design: nothing here is observed from another program.
 
 `crates/device-registry` makes a device from its `DeviceKind::Builtin` id. When the renderer's
 graph is built, a track whose channel holds enabled built-in effects and instruments gets a chain: the
-devices made, prepared, given the project's parameter values (`Device::params`, by
+devices made at the renderer's rate (never prepared on the way; [ADR 0004](../decisions/0004-built-in-devices.md) › Amendment: a device
+is made at its rate), given the project's parameter values (`Device::params`, by
 parameter id; missing ones at their defaults) and reset. Everything the track plays in a
 block (sine voices, audio clips, stretched and launched clips) goes into the chain's buffer
 at a centred unity gain instead of the output; the devices run over it in order, and then

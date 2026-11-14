@@ -146,6 +146,7 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
     // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
+    opened.fill_track_colours();
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
@@ -192,6 +193,7 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
 fn a_duplicated_track_starts_its_plug_in_with_the_state_it_has_now() {
     let mut opened = project();
     assert_eq!(opened.assign_ids(), Ok(()));
+    opened.fill_track_colours();
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened);
     session.attach_player(Player::new(renderer.controller(), None));

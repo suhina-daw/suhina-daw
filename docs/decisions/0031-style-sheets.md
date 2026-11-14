@@ -4,7 +4,7 @@ read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taff
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-12
+last_verified: 2026-11-14
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
@@ -225,8 +225,11 @@ session track { width: 86px; }
 session slot { height: 18px; }
 
 @media (max-width: 900px) {
-  window { areas: "menu" "control" "views" "detail" "status"; }   /* the browser moves out */
-  #browser { visible: false; }
+  /* One column and the same nine rows as the user-agent sheet; the browser has no area, so it is out */
+  window {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "menu" "tabs" "toolbar" "top" "notice" "main" "detail" "bottom" "status";
+  }
 }
 @media (desktop-blur: off) { #browser { glass: 0.9 inset; } }
 ```
@@ -298,7 +301,7 @@ breakpoint while resizing costs one fresh cascade.
 | --- | --- | --- |
 | Text | `font-family`, `font-size`, `font-weight`, `font-style`, `line-height`, `letter-spacing`, `color`, `text-align`, `text-shadow` | families from `@font-face` and the built-in fonts; `px`, `em` |
 | Box | `background` (a list of layers), `border`, `border-top` …, `radius` (one to four corners), `shadow` | colours, `linear-gradient()`, `radial-gradient()`, `conic-gradient()`, `image(url, fit, slice)` |
-| Layout | `layout` (`row`, `column`, `grid`, `stack`), `width`, `height`, `min-*`, `max-*`, `gap`, `padding`, `align`, `justify`, `columns`, `rows`, `areas`, `area`, `order`, `visible`, `position` (`flow`, `overlay`), `inset` | `px`, `em`, `%`, `fr`, `auto`, `calc()` |
+| Layout | `layout` (`row`, `column`, `grid`, `stack`), `width`, `height`, `min-*`, `max-*`, `gap`, `padding`, `align`, `justify`, `columns`, `rows`, `grid-template-areas`, `grid-area`, `order`, `visible`, `position` (`flow`, `overlay`), `inset` | `px`, `em`, `%`, `fr`, `auto`, `calc()` |
 | Artwork | `body`, `pointer` (knobs), `cap`, `rail` (faders), `face`, `icon` (buttons), `frames`, `frame-rate` | `image(url)`, `frames(url, count)`, `none` |
 | Controls | `appearance` (`auto`, `knob`, `field`), `direction` (`vertical`, `horizontal`) | keywords |
 | Meters | `style` (`continuous`, `segmented`, `needle`, `frames`), `segments`, `intensity` | keywords, integers, `%` |
@@ -800,7 +803,9 @@ forgot its own scope painted as its parent.
   `[armed]` and `[muted]`, without a value. They are no longer pseudo-classes: a selector with
   `:checked` does not parse, and its rule is skipped with a notice. Pointer and focus states
   stay pseudo-classes (`:hover`, `:active`, `:focus`, `:focus-visible`, `:disabled`), and so do
-  `:open`, `:queued`, `:dragged` and `:drop-target`, which nothing sets yet.
+  `:open`, `:dragged` and `:drop-target`, which nothing sets yet (`:queued`, listed here at first,
+  became the attribute `[queued]`: *Amendment: the Launcher, the mixer, the Arrangement and the
+  piano roll draw from their elements*).
 - **Settings stay as they are for now.** The registry lists the settings each element would
   carry (`meter-style` on `meter`, `track-height` on `arrangement`), as names only, and nothing
   reads them yet. Making them registered properties on their elements, in place of the
@@ -943,3 +948,69 @@ Accepted, from [issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)
   only those.
 - **`@media (prefers-color-scheme)` is not supported**, which replaces it in the table of media
   features above: a theme's light and dark looks are variants.
+
+## Amendment: the window is one grid, and its settings are attributes (2026-11-12)
+
+Accepted, from [issue #1370](https://github.com/suhina-daw/suhina-daw/issues/1370) (section 3 of
+#995). It replaces part of decision 5.
+
+- **The window is one CSS grid** on `window`, laid out in the window under the custom title bar.
+  Its children are the bars (`menu-bar`, `project-tabs`, `toolbar`, `status-bar`), the notice
+  strip (`notice-bar`) and the three panels (`workspace-panel#panel-browser`, `#panel-main`,
+  `#panel-detail`). The user-agent sheet states the default grid, so it is the only layout path:
+  without a theme, or with a theme sheet whose layout fails, the window is laid out from the
+  user-agent sheet alone. The `workspace` element goes.
+- **Its properties are CSS's:** `grid-template-areas` and `grid-area` replace `areas` and
+  `area`. An element whose `grid-area` names an area its parent's template lacks is left out of
+  the layout (no implicit track), so a theme that drops an area from its template hides what
+  stood there.
+- **The settings that change the layout are attributes on `window`, not classes**, since what
+  the app knows about an element is an attribute (#995 section 1) and the user-agent sheet uses
+  no classes: `window[detail="below"]`, `[detail="full-width"]` and `[detail="beside"]` (the
+  detail area along the bottom beside the browser, across the full width, or stacked beside the
+  view; *beside* wins over full width), `window[browser]` while the browser shows, and
+  `window[menu-bar]` while the window has its own menu bar.
+- **The application bar on Windows stays outside the grid**, with the custom title bar: it holds
+  the system's window buttons and the region that drags the window.
+- **The sizes the app knows reach the layout as content sizes** on the elements (a bar's height
+  from its controls or its text, the browser's saved width, the detail area's saved size), not as
+  rules: an `auto` size is the content size plus the element's padding and border, and a size
+  the sheet sets wins. A splitter stays beside a panel whose size the grid leaves to its content
+  size, and its drag sets that size.
+
+## Amendment: the Launcher, the mixer, the Arrangement and the piano roll draw from their elements (2026-11-14)
+
+Accepted, from [issue #1417](https://github.com/suhina-daw/suhina-daw/issues/1417), the first
+slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 10 of #995).
+
+- **What these views draw is an element.** Every colour the Launcher, its mixer strips and
+  meters, the Arrangement (its ruler, grid, lanes, clips, take lanes, automation lanes and
+  envelopes) and the piano roll's grid, notes, ruler and loop row paint is read from the element
+  that draws it, with the palette token it used before
+  as the fallback: where no rule of a sheet reaches the element, it paints as before, in every
+  theme. The palette stays until every view has moved; then the fallbacks become the user-agent
+  sheet's values.
+- **A drawn item's style is read once per kind** (`Look`, from `Name::look` or
+  `Builder::look`), outside the loop that draws its items: a grid line drawn a hundred times is
+  one element of the style tree, so the tree grows with kinds, not with items.
+- **A line or a mark takes only a colour given to it** (`Look::own_color_or`, `Entered::own_color_or`):
+  the text colour a rule gives a view (`session { color }`) does not reach its lines. Text takes
+  the inherited colour (`Look::color_or`, `Entered::color_or`), as the scoped palette gave it.
+- **A toggle keeps its lit state.** While a button is on, its fill and ink come from the sheet
+  only where a rule for the state (`button[checked]`) makes them differ from the same button with
+  only that state off, its pointer states kept (`Builder::enter_against_plain`): neither a rule
+  for every `button` nor a `button:hover` rule hides which one is on (`widgets::toggle_inks`,
+  `Look::background_unlike`). The comparison is its own chain's style, never the values a drawn
+  element held for a transition. The same holds for a clip's `[queued]`, `[selected]` and
+  `[muted]` outlines and fill in a Launcher slot, a picked automation point's `[selected]` colour,
+  and a lane's `[checked]` light.
+- **`[queued]` is an attribute** the app gives, as `[playing]` is: a clip or a track's
+  stop button waiting for its launch. `:queued` is no longer a pseudo-class.
+- **New elements and kinds:** `separator[kind]` for the views' lines, `grid-line`, `tempo-mark`,
+  `start-marker`, `marker`, `time-selection`, `marquee`, `drop-target`, `slot-mark`, `slot-record`,
+  `mapping-overlay`, `clip-fade`, `clip-envelope`, `take-header`, `automation-header`,
+  `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `device-list`,
+  `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool`, `piano-slice`,
+  `piano-row[kind="hover"]`, `piano-note[kind="draft"]`, `velocity[kind="line"]`; Main's header is
+  `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all**
+  `scene[kind="stop-all"]`, the Launcher mixer's top line `divider#mixer-splitter`.

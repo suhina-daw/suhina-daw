@@ -39,7 +39,7 @@ fn run(device: &mut Pitch, input: &[(usize, NoteEvent)]) -> Vec<(usize, NoteEven
     output
 }
 
-suhina_device_api::conformance_test!(Pitch::new());
+suhina_device_api::conformance_test!(Pitch::with_rate);
 
 /// At its defaults, the effect leaves every key where it is.
 #[test]

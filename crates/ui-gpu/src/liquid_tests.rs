@@ -393,3 +393,63 @@ fn backdrop_size_is_bounded_and_handles_dpi() {
     assert_eq!(target_size(screen, f32::NAN), None);
     assert_eq!(target_size(egui::Rect::NOTHING, 1.0), None);
 }
+
+/// A menu over a see-through dialog that has faded in gets the dialog's backdrop as the window
+/// shows it: the dialog's clear replaces the translucent window's pixels in the capture too, so
+/// over the dialog the image is no more opaque than the dialog's own backdrop. A foreign paint
+/// callback is still left out.
+#[test]
+#[ignore = "requires a native GPU; run explicitly for rendering changes"]
+fn a_dialogs_clear_replaces_the_window_in_the_capture_over_it() {
+    use suhina_ui::kit::surface::Provider as _;
+    struct Foreign(std::sync::Arc<std::sync::atomic::AtomicBool>);
+    impl egui_wgpu::CallbackTrait for Foreign {
+        fn prepare(
+            &self,
+            _: &wgpu::Device,
+            _: &wgpu::Queue,
+            _: &egui_wgpu::ScreenDescriptor,
+            _: &mut wgpu::CommandEncoder,
+            _: &mut egui_wgpu::CallbackResources,
+        ) -> Vec<wgpu::CommandBuffer> {
+            self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+            Vec::new()
+        }
+        fn paint(
+            &self,
+            _: egui::PaintCallbackInfo,
+            _: &mut wgpu::RenderPass<'static>,
+            _: &egui_wgpu::CallbackResources,
+        ) {
+            self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    let instance = wgpu::Instance::default();
+    let gpu = wait(egui_wgpu::RenderState::create(&Default::default(), &instance, None, Default::default())).unwrap();
+    let surfaces = crate::surface::Surfaces::new(&gpu);
+    let liquid = Liquid::new(gpu.clone());
+    let ctx = egui::Context::default();
+    let area = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(64.0, 64.0));
+    let dialog = egui::Rect::from_min_size(egui::pos2(16.0, 16.0), egui::vec2(32.0, 32.0));
+    let foreign_ran = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let clipped = |shape: egui::Shape| egui::epaint::ClippedShape::new(area, shape);
+    let mut output = ctx.run_ui(egui::RawInput { screen_rect: Some(area), ..Default::default() }, |ui| {
+        let shapes = vec![
+            // The translucent window, then the dialog: its clear, then its backdrop's image.
+            clipped(egui::Shape::rect_filled(area, 0.0, egui::Color32::from_rgba_premultiplied(0, 0, 128, 128))),
+            clipped(egui::Shape::Callback(egui_wgpu::Callback::new_paint_callback(area, Foreign(foreign_ran.clone())))),
+            clipped(surfaces.shape(dialog, egui::CornerRadius::ZERO, egui::Color32::TRANSPARENT)),
+            clipped(egui::Shape::rect_filled(dialog, 0.0, egui::Color32::from_rgba_premultiplied(0, 64, 0, 64))),
+        ];
+        assert!(liquid.capture_above(ui.ctx(), shapes, true).is_some());
+    });
+    output.textures_delta.clear();
+    let state = liquid.above_state.lock().unwrap();
+    let sharp = texture_pixels(&gpu, &state.as_ref().unwrap().targets.as_ref().unwrap().source);
+    let at = |x: usize, y: usize| &sharp[(y * 64 + x) * 4..(y * 64 + x) * 4 + 4];
+    let (window, over_dialog) = (at(4, 4), at(32, 32));
+    assert!(window[3].abs_diff(128) <= 2, "the window's alpha is kept: {window:?}");
+    assert!(over_dialog[3].abs_diff(64) <= 2, "the dialog's clear replaced the window: {over_dialog:?}");
+    assert!(over_dialog[2] <= 2, "none of the window's blue is left under the dialog: {over_dialog:?}");
+    assert!(!foreign_ran.load(std::sync::atomic::Ordering::Relaxed), "a foreign callback was replayed");
+}

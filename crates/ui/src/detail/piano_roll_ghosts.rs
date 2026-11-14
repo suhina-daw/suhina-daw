@@ -228,7 +228,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
             .tracks
             .get(position)
             .map(|track| track_colour(track, position))
-            .unwrap_or_else(|| crate::interaction::grid::to_rgb(theme::midi_clip_default()));
+            .unwrap_or(suhina_session::colours::MIDI);
         let color = Color32::from_rgb(rgb.0, rgb.1, rgb.2);
         let source = ghosts.sources.iter().position(|s| *s == name).unwrap_or(ghosts.sources.len());
         let before = ghosts.notes.len();
@@ -273,7 +273,7 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
             .tracks
             .get(position)
             .map(|track| track_colour(track, position))
-            .unwrap_or_else(|| crate::interaction::grid::to_rgb(theme::midi_clip_default()));
+            .unwrap_or(suhina_session::colours::MIDI);
         let at = placement(clip, other);
         let content = project.content(other.content).map_or("", |c| c.name.as_str());
         ghosts.picked.push(PickedBar {
@@ -300,7 +300,7 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
             .tracks
             .get(position)
             .map(|track| track_colour(track, position))
-            .unwrap_or_else(|| crate::interaction::grid::to_rgb(theme::midi_clip_default()));
+            .unwrap_or(suhina_session::colours::MIDI);
         let color = Color32::from_rgb(rgb.0, rgb.1, rgb.2);
         let source = ghosts.sources.iter().position(|s| *s == name).unwrap_or(ghosts.sources.len());
         let before = ghosts.notes.len();

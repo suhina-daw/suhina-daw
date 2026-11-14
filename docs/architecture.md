@@ -3,7 +3,7 @@ description: How the crates, threads and commands fit together, from a file to t
 read_when: adding a crate or feature, where does code go, threads, audio thread, data flow, layers, player, controller
 type: system
 status: current
-last_verified: 2026-11-11
+last_verified: 2026-11-14
 covers:
   - crates/style/
   - apps/suhina/src/theme_io.rs
@@ -100,7 +100,7 @@ its tests.
 | `automation` | The MCP server over the open projects, file roots for agents (every path a command reads is checked against the read root), the user's browser library, offline WAV rendering ([`mcp.md`](mcp.md)); the desktop app's endpoints, a named pipe or Unix socket per build: one instance per build, and agents working on the window's open projects through a job queue the window runs between frames ([ADR 0028](decisions/0028-mcp-in-the-running-app.md)). | session, engine, media, library |
 | `output` | The audio device: lists hosts and devices (cpal: WASAPI, ASIO, ALSA, PulseAudio, JACK, CoreAudio; WASAPI exclusive through `wasapi`), which host says which devices play, so a device that cannot say its formats yet (a Bluetooth endpoint) is still listed, and `AudioSystem::device_names` lets a list on screen follow what is connected and plays a `Renderer` that renders ahead on a real-time thread into a lock-free ring the device reads, with the main pair and the cue ([spec](spec/cue-output.md)); opens the chosen input ([ADR 0017](decisions/0017-inputs-and-latency.md)). `open_chosen` gives a `Player`; `DeviceOutput` is the session's `AudioSystem`. The only code that opens an audio device. | engine, session, realtime, plugins (the trace log) |
 | `midi` | MIDI controllers ([ADR 0017](decisions/0017-inputs-and-latency.md)): lists the system's MIDI input ports and opens them with `midir` (ALSA sequencer, WinMM, CoreMIDI); `parse` turns note on and off, the sustain pedal, every other control change, pitch bend and channel pressure, and all-notes-off, on every channel, into the engine's `LiveEvent`s (#812), and the driver's callback hands them to the session's `LiveInput`. `Midi` is the session's `MidiSystem`. The only code that opens a MIDI device. | engine, session, plugins (the trace log) |
-| `ui` | The user interface ([ADR 0009](decisions/0009-ui-toolkit-and-look.md)): the main window with the browser ([spec](spec/browser.md): `browser`, `browser_view`, and `drop` for dragging into the views), the Launcher and Arrangement views (the Launcher view's channel strips in `mixer_strip`; the track colour palette and colour areas in `colour_picker`; the Arrangement's automation lanes in `automation_lanes`; `nesting` for groups inside groups: folding them and moving tracks between them), the detail area (device chain, clip properties, embedded plug-in editors, the piano roll in `piano_roll`), the sample map, the missing-files dialog, the Settings dialog and the updates (`app/updates`: the start panel's *New version available* line and Help › Check for updates…, [spec](spec/updates.md)), drawn with egui from the project and the `LauncherMonitor`; every change is a command. `memory-stats`
+| `ui` | The user interface ([ADR 0009](decisions/0009-ui-toolkit-and-look.md)): the main window with the browser ([spec](spec/browser.md): `browser`, `browser_view`, and `drop` for dragging into the views), the Launcher and Arrangement views (the Launcher view's channel strips in `mixer_strip`; the track colour palette and colour areas in `colour_picker`; the Arrangement's automation lanes in `automation_lanes`; `nesting` for groups inside groups: folding them and moving tracks between them), the detail area (device chain, clip properties, embedded plug-in editors, the piano roll in `piano_roll`), the sample map, the missing-files dialog, the Settings dialog and the updates (`app/updates`: the *New nightly available* line on the start panel and in the bar over an open project, and Help › Check for updates…, [spec](spec/updates.md)), drawn with egui from the project and the `LauncherMonitor`; every change is a command. `memory-stats`
 reads the program's RAM for the control bar and the plug-in hosts' reports theirs, which `plugins::host_memory` adds together. Design tokens in `theme.rs`; the colours are the theme in use (`themes.rs` keeps the list). No windowing or GPU code, so tests drive it headless (egui_kittest). | engine, session, plugins, library, media, output, soundmap, device-api, device-registry, device-sdk, update |
 | `ui-gpu` | The GPU side of `ui`'s providers on egui's wgpu renderer, shared by the app and `suhina-theme-render`: `surface`, the clears that set a see-through window's pixels unblended under a menu's backdrop (`kit::surface::Provider`), and `liquid`, the liquid materials' offscreen captures and blur (`kit::liquid::Provider`). Each reaches `ui` only through its `Provider` trait. | ui, plugins (the trace log) |
 | `suhina-cli` | The command line: render, play, mcp (with `--audio`, the MIDI inputs too). `theme render` starts `suhina-theme-render` from beside it, so the CLI needs no GPU or window toolkit. | all of the above |
@@ -129,7 +129,7 @@ reads the program's RAM for the control bar and the plug-in hosts' reports their
 | `devices/reverb` | Algorithmic reverb: input band, Live's early-reflection taps and their families, a measured feedback delay network of 4 to 10 lines with allpasses and damping in the loop, chorus, freeze and a stereo rotation ([spec](spec/reverb.md)); no latency. | dsp, device-api |
 | `devices/pitch` | The pitch MIDI effect: transposes notes by semitones or by steps along the clip's scale, and keeps them in a window of keys by blocking, folding or limiting them; note-offs follow their note-ons ([spec](spec/pitch.md)). Events only, no latency. | device-api |
 | `devices/fm-synth` | The FM synth, an instrument: six operators, 43 algorithms, up to 32 voices, waveforms, time envelopes, a filter per note, two LFOs, a matrix, a randomizer ([spec](spec/fm-synth.md)); the engine is a port of MSFA (the engine in Dexed, Apache-2.0) that matches it sample for sample; reads and writes DX7 voice files ([spec](spec/dx7-voice-format.md)). | device-api |
-| `devices/nam-amp-modeler` | The NAM Amp Modeler: a `.nam` model through `nam-rs` (MIT) inference, one instance per side, with the input trim, an EQ (shelves and a mid peak), an HQ toggle (the A2 width dial's widest sub-model), a trim delay and an output trim; a rate mismatch runs both ways through `dsp`'s resampler. The fixed schedule and the one-chunk trail make the sound independent of the host's block sizes ([spec](spec/nam-amp-and-cab.md)). | dsp, device-api, nam-rs |
+| `devices/nam-amp-modeler` | The NAM Amp Modeler: a `.nam` model through `nam-rs` (MIT, vendored with a fast tanh) inference, one instance per side (only the left one runs while both sides are the same, or while the Mono toggle, on by default, feeds both the mean of the two), with the input trim, an EQ (shelves and a mid peak), an HQ toggle (the A2 width dial's widest sub-model), a trim delay and an output trim; a rate mismatch runs both ways through `dsp`'s resampler. The fixed schedule and the one-chunk trail make the sound independent of the host's block sizes ([spec](spec/nam-amp-and-cab.md)). | dsp, device-api, nam-rs |
 | `devices/nam-cab-loader` | The NAM Cab Loader: a `.wav` impulse response through `dsp`'s IR convolution, per side, with a phase invert, a high pass, bass/mid/treble cuts, a trim delay and a volume; the same fixed schedule ([spec](spec/nam-amp-and-cab.md)). | dsp, device-api, hound |
 
 Output startup, shutdown fades and diagnostic publication are described in
@@ -153,7 +153,7 @@ crates/ui/src/
                  plugin_host, audio_settings, exports) and its dialogs (project, loading,
                  missing files), the start panel and the splash
   arrangement/   the Arrangement view: arrangement_view (with its parts in arrangement_view/),
-                 timeline, automation_lanes
+                 timeline, automation_lanes, gesture (the one drag under way, shared by both)
   session/       the Launcher view: session_view, mixer_strip, slot_launch, launch_keys,
                  record_controls
   detail/        the detail area: detail_view (device chain; its model, parameters, expanded panel,
@@ -259,8 +259,8 @@ Beside the crates:
   icon;
 - `third_party/`: vendored source, each folder with a `VENDORED.md`: the ASIO SDK's host part
   (`asiosdk`, GPL-3.0, built with `asio`), LAME 3.100's encoder (`lame`, LGPL, ADR 0029), `cpal`
-  0.18.2 and `asio-sys` 0.4.0 with local patches (`[patch.crates-io]` in `Cargo.toml`), and the ARA
-  headers (`ara-api`);
+  0.18.2, `asio-sys` 0.4.0 and `nam-rs` 0.4.0 with local patches (`[patch.crates-io]` in
+  `Cargo.toml`), and the ARA headers (`ara-api`);
 - `scripts/`: research helpers (extracting and diffing `.als` files), `docs.py` (the docs
   index and checks), `release_notes.py` and `discord_post.py`, `agent_post.py` (an agent's issue
   or comment, [`workflow.md`](workflow.md) › Posting as the bot).
@@ -310,7 +310,7 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
    warped clip placement (two stretchers each, so a fresh one takes over before every strong
    onset and transients stay on the grid; ADR 0003), the prepared launcher clips, the
    per-track gains (group and master chain included) and a device chain for each track whose
-   channel holds built-in effects and instruments, made by the `DeviceFactory` in `RenderInputs` (the session passes `device-registry`'s) and prepared (ADR 0004;
+   channel holds built-in effects and instruments, made by the `DeviceFactory` in `RenderInputs` (the session passes `device-registry`'s) at the renderer's rate (ADR 0004;
    built-in MIDI effects change the chain's note events before its instrument, and each note
    carries its clip's scale for them; MIDI effects without an instrument after them get the
    engine's sine tones as one, `sine.rs`, ADR 0004 › 14); a

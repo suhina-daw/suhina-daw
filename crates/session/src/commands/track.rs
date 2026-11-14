@@ -818,7 +818,12 @@ fn paste_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandE
         Some(_) => Some(track_at(&session.project, params, "after")?),
     };
     let clipboard = session.clipboards.whole_tracks.clone();
-    let added = crate::track_copy::paste(&mut session.project, &clipboard, after, suffix(params)?)?;
+    let suffix = suffix(params)?;
+    let added = crate::track_copy::paste(&mut session.project, &clipboard, after, suffix)?;
+    // The files the person chose for the copied tracks' devices where they were copied from run
+    // here too, from the sync after this edit.
+    let chosen = session.clipboards.chosen_files.clone();
+    session.device_files.chosen.extend(chosen);
     Ok(json!({ "tracks": added.iter().map(|t| t.0).collect::<Vec<_>>() }))
 }
 

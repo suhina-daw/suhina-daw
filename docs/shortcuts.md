@@ -3,7 +3,7 @@ description: Keyboard shortcuts in the desktop app: the default keys, the keymap
 read_when: shortcuts, keys, keymap, Ctrl+drag copies notes, Alt+drag velocity, left edge, keymap.json, keymap preset, workflow mode, workflow menu, workflow settings, Custom mode, double-click, Draw-first, Select-first, Mouse-first, mouse switches, right click deletes, left click draws, Alt right plays, rebind, cut copy paste, duplicate, mute clips, hotkeys, quantise, Ctrl+U, piano roll keys, tool keys, number keys choose a tool, arrow keys, select all, mute tool key, grid keys, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, narrow grid, widen grid, triplet grid, snap to grid, Z, Shift+Z, zoom to selection, zoom to clip, ruler zoom
 type: howto
 status: current
-last_verified: 2026-11-11
+last_verified: 2026-11-14
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -102,6 +102,7 @@ Arrangement or the Launcher (the clip and slot keys below, the Arrangement's too
 | Switch between Launcher and Arrangement (`view.toggle`) | Tab |
 | Show or hide the detail area (`view.detail`) | Shift+Tab |
 | Hide the clip editor, or show it again (`view.editor`; [spec](spec/ui-clip-editor.md) › Least height and closing). Escape in the piano roll keeps clearing the note selection | Ctrl+Shift+E |
+| Let go of the drag under way in the Arrangement without doing what its release would ([spec](spec/arrangement-editing.md#one-drag-at-a-time)); not a rebindable shortcut | Escape |
 | Pull the clip editor (or the track's devices) to the top of the Arrangement, or let it go again ([spec](spec/ui-clip-editor.md) › Pulled to the top); not a rebindable shortcut | Escape twice |
 | Show the selected clip's track devices in the detail area, or the clip again: the detail area's Clip / Devices switch, for a MIDI clip; opens the detail area when it is hidden (`view.devices`; [spec](spec/ui-clip-editor.md) › Where it opens). A double-click on a track's header, a Launcher column's name or its channel strip shows that track's devices too | Ctrl+Shift+D |
 | Open the selected audio clip in its track's plug-in that edits clips, such as a pitch editor (`view.araEditor`; [spec](spec/ui-clip-editor.md) › Where it opens): the detail area shows the clip with the plug-in's editor, and the plug-in shows that clip. On a track without one, the installed one (Melodyne first) is added to the track first. The clip's right-click menu has the same as **Open in** and the plug-in's name | Alt+M |

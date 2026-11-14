@@ -56,6 +56,11 @@ host is the process plug-ins run in: keep the three in one folder. On macOS the 
 on [Discord](https://discord.com/invite/e5JAZYMU) or in the
 [issues](https://github.com/suhina-daw/suhina-daw/issues). The binaries are not signed yet,
 so macOS and Windows warn before running them. On Linux they need the ALSA library (`libasound2`).
+You download a nightly from GitHub only once: after that Suhina checks at each start whether a
+newer nightly is out and says so, *New nightly available*, in a line on the start panel or a bar
+over the open project (not a pop-up). Nothing is installed until you press **Download update
+now**, which puts the new build in place of the running one and offers to restart Suhina
+([`docs/spec/updates.md`](docs/spec/updates.md)).
 How a release is made: [`docs/releasing.md`](docs/releasing.md).
 
 ## Try it
