@@ -100,6 +100,10 @@ pub(super) enum Pick {
     LoopSelection,
     Marker(RulerPart),
     Grid(PianoGrid),
+    /// Split clip at the clicked point, with no time selection.
+    SplitClipHere,
+    /// Set the clip's first beat here (`clip.setOrigin`).
+    Origin,
 }
 
 /// What the menu needs for one frame besides the state.
@@ -197,6 +201,27 @@ impl MenuCx<'_> {
         // Loop selection sets both of the loop's ends.
         item(ui, "Set start here", None, true, Pick::Marker(RulerPart::StartMarker));
         item(ui, "Set loop start here", None, true, Pick::Marker(RulerPart::LoopStart));
+        ui.add(egui::Separator::default().spacing(4.0));
+        let span = state.span.is_some();
+        item(
+            ui,
+            "Join notes",
+            Some("pianoRoll.join"),
+            PianoRollState::joins(&clip.notes, state.acting()),
+            Pick::Key("pianoRoll.join"),
+        );
+        let fits = span && acting;
+        item(ui, "Fit to time selection", Some("pianoRoll.fitToTime"), fits, Pick::Key("pianoRoll.fitToTime"));
+        item(ui, "Crop clip to time selection", Some("pianoRoll.crop"), span, Pick::Key("pianoRoll.crop"));
+        let arranged = clip.address.get("scene").is_none();
+        let (name, pick) = if span {
+            ("Split clip at the time selection", Pick::Key("pianoRoll.splitClip"))
+        } else {
+            ("Split clip here", Pick::SplitClipHere)
+        };
+        let splits = arranged && (span || self.split_here(at).is_some());
+        item(ui, name, span.then_some("pianoRoll.splitClip"), splits, pick);
+        item(ui, "Set the clip's first beat here", None, self.origin_ok(at), Pick::Origin);
         // No zoom items: Z and Shift+Z are quicker than the menu, which the grid already makes long.
         ui.add(egui::Separator::default().spacing(4.0));
         // The grid's entries right in the menu, as the toolbar's grid menu holds them: no submenu
@@ -208,6 +233,24 @@ impl MenuCx<'_> {
         }
         // No fold or scale items: the toolbar's Fold, Scale and Highlight are one click away.
         picked
+    }
+
+    /// The song beat Split clip here cuts at: the clicked point, inside the clip.
+    fn split_here(&self, at: MenuAt) -> Option<f64> {
+        let placement = self.clip.placement;
+        let song = placement.arrangement_beat(self.beat(at))?;
+        (song > placement.start + 1e-6 && song < placement.start + placement.length - 1e-6).then_some(song)
+    }
+
+    /// Whether the clicked point can become the clip's first beat: past 0, and nothing of the clip
+    /// (a note, the start marker, the loop's start) lies before it (`clip.setOrigin` refuses).
+    fn origin_ok(&self, at: MenuAt) -> bool {
+        let beat = self.beat(at);
+        let shape = self.clip.shape;
+        beat > EPSILON
+            && shape.offset >= beat - EPSILON
+            && shape.loop_range.is_none_or(|(start, _)| start >= beat - EPSILON)
+            && self.clip.notes.iter().all(|n| n.time >= beat - EPSILON)
     }
 
     fn acting_notes<'s>(&'s self, state: &'s PianoRollState) -> impl Iterator<Item = &'s Note> + 's {
@@ -305,6 +348,14 @@ impl MenuCx<'_> {
             Pick::Grid(grid) => {
                 state.grid_picked = Some(grid);
                 None
+            }
+            Pick::SplitClipHere => {
+                let beat = self.beat(at);
+                state.split_clip_at(clip, &[(beat, false)])
+            }
+            Pick::Origin => {
+                params["beat"] = json!(round_beat(self.beat(at)));
+                Some(Action::new("clip.setOrigin", params))
             }
         }
     }

@@ -1169,3 +1169,104 @@ fn the_tool_pointer_takes_the_toolbars_theme_role() {
     assert_eq!(tool_role(IconButton::Draw), "piano.draw");
     assert_eq!(tool_role(IconButton::Slice), "piano.slice");
 }
+
+/// Join, Fit, Crop and Split clip (#1284): the keys send their commands, and do nothing where
+/// they have nothing to act on (Split clip never at the playhead, only at a time selection).
+#[test]
+fn the_clip_edit_keys_send_their_commands() {
+    let notes = vec![note(0.0, 1.0, 60), note(1.0, 1.0, 60), note(4.0, 1.0, 64)];
+    let piano = clip(notes);
+    let mut state = focused_on(&piano);
+    assert!(state.key_action("pianoRoll.join", &piano, 0.0, None).is_none(), "nothing selected");
+    state.selected = BTreeSet::from([0, 1]);
+    let join = state.key_action("pianoRoll.join", &piano, 0.0, None).expect("note.join");
+    assert_eq!((join.id, join.params["notes"].clone()), ("note.join", json!([0, 1])));
+    // No time selection: Fit, Crop and Split clip do nothing, whatever the playhead.
+    state.selected = BTreeSet::from([0, 1]);
+    for key in ["pianoRoll.fitToTime", "pianoRoll.crop", "pianoRoll.splitClip"] {
+        assert!(state.key_action(key, &piano, 18.0, None).is_none(), "{key}");
+    }
+    // A time selection with no note selected: the notes that start in it (the third) fill it. A
+    // selection's own time selection always holds its notes, so it is left out here.
+    state.selected.clear();
+    state.select_span(2.0, 6.0);
+    let fit = state.key_action("pianoRoll.fitToTime", &piano, 0.0, None).expect("note.fitToTime");
+    assert_eq!((fit.params["start"].as_f64(), fit.params["end"].as_f64()), (Some(2.0), Some(6.0)));
+    assert_eq!(fit.params["notes"], json!([2]));
+    state.selected.clear();
+    state.select_span(2.0, 6.0);
+    // The clip plays from arrangement beat 16: its content's beats 2 and 6 are beats 18 and 22.
+    let split = state.key_action("pianoRoll.splitClip", &piano, 0.0, None).expect("clip.split");
+    assert_eq!((split.id, split.params["ats"].clone()), ("clip.split", json!([18.0, 22.0])));
+    state.selected.clear();
+    state.select_span(2.0, 6.0);
+    let crop = state.key_action("pianoRoll.crop", &piano, 0.0, None).expect("clip.crop");
+    assert_eq!(crop.params, json!({ "track": 1, "index": 0, "start": 2.0, "end": 6.0 }));
+}
+
+/// A slot's clip has no lane to put the parts on: Split clip leaves it alone.
+#[test]
+fn split_clip_leaves_a_slot_clip_alone() {
+    let mut piano = clip(vec![note(0.0, 1.0, 60)]);
+    piano.address = json!({ "track": 1, "scene": 0 });
+    let mut state = focused_on(&piano);
+    state.selected = BTreeSet::from([0]);
+    state.select_span(1.0, 2.0);
+    assert!(state.key_action("pianoRoll.splitClip", &piano, 0.0, None).is_none());
+}
+
+/// Join and Crop leave the selection alone where the command would refuse them: notes that do not
+/// touch, a time selection outside the part of the clip that plays.
+#[test]
+fn join_and_crop_keep_the_selection_where_they_would_be_refused() {
+    let apart = clip(vec![note(0.0, 1.0, 60), note(2.0, 1.0, 60), note(0.0, 1.0, 64)]);
+    let mut state = focused_on(&apart);
+    // One note on each key: nothing to join.
+    state.selected = BTreeSet::from([0, 2]);
+    assert!(state.key_action("pianoRoll.join", &apart, 0.0, None).is_none());
+    assert_eq!(state.selected, BTreeSet::from([0, 2]), "kept to try again");
+    // Two notes of a key with a gap between them join: the first reaches the second.
+    state.selected = BTreeSet::from([0, 1]);
+    assert!(state.key_action("pianoRoll.join", &apart, 0.0, None).is_some());
+    state.selected.clear();
+    state.select_span(9.0, 10.0);
+    assert!(state.key_action("pianoRoll.crop", &apart, 0.0, None).is_none());
+    assert!(state.span.is_some(), "the time selection stays");
+    // Sent, the selection stays too: a crop the command refuses (a stretch too short) keeps it.
+    state.selected = BTreeSet::from([0]);
+    state.select_span(0.0, 1.0);
+    assert!(state.key_action("pianoRoll.crop", &apart, 0.0, None).is_some());
+    assert_eq!(state.selected, BTreeSet::from([0]));
+    assert!(state.span.is_some());
+    assert!(PianoRollState::joins(&[note(0.0, 1.0, 60), note(3.0, 1.0, 60)], &BTreeSet::from([0, 1])));
+}
+
+/// A time selection that ends on the loop's end splits there, not where the loop starts again.
+#[test]
+fn split_clip_cuts_at_a_loop_end_selection_edge() {
+    let mut piano = clip(vec![note(1.0, 1.0, 60)]);
+    piano.placement = Placement { start: 16.0, length: 8.0, offset: 0.0, loop_range: Some((0.0, 4.0)) };
+    let mut state = focused_on(&piano);
+    state.select_span(1.0, 4.0);
+    let split = state.key_action("pianoRoll.splitClip", &piano, 0.0, None).expect("clip.split");
+    assert_eq!(split.params["ats"], json!([17.0, 20.0]));
+}
+
+/// Selected notes reach the next note with Legato even where a rectangle left a time selection
+/// round them; with none selected, the notes in a time selection reach its end.
+#[test]
+fn legato_of_selected_notes_reaches_the_next_note_past_their_time_selection() {
+    let piano = clip(vec![note(0.0, 1.0, 60), note(2.0, 0.5, 59), note(6.0, 1.0, 61)]);
+    // A rectangle round the second note: it is selected, with the stretch 2 to 3 in time.
+    let mut state = span_state(&piano, 2.0, 3.0);
+    state.selected = BTreeSet::from([1]);
+    if let Some(span) = &mut state.span {
+        span.with = state.selected.clone();
+    }
+    let legato = state.key_action("pianoRoll.legato", &piano, 0.0, None).expect("note.legato");
+    assert_eq!(legato.params["until"], json!(6.0), "to the next note, not the stretch's end");
+    // No note selected: the notes that start in the stretch end at its end.
+    let mut state = span_state(&piano, 2.0, 4.0);
+    let legato = state.key_action("pianoRoll.legato", &piano, 0.0, None).expect("note.legato");
+    assert_eq!(legato.params["until"], json!(4.0));
+}

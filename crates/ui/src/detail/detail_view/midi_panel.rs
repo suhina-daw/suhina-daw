@@ -492,7 +492,7 @@ fn notes_tab(
                 "Invert" => "note.invert",
                 "Reverse" => "note.reverse",
                 "Legato" => {
-                    params["until"] = json!(tools.legato_until(state.span_end()));
+                    params["until"] = json!(tools.legato_until(state.legato_span_end()));
                     "note.legato"
                 }
                 "×2" => {

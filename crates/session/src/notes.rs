@@ -208,7 +208,7 @@ pub(crate) fn after_removal(indices: &[usize], removed: &[usize]) -> Vec<usize> 
 }
 
 /// How many clips, on the arrangement and in the launcher, play `content`.
-fn placements(p: &Project, content: ContentId) -> usize {
+pub(crate) fn placements(p: &Project, content: ContentId) -> usize {
     let arranged = p.arrangement.lanes.iter().flat_map(|l| &l.clips).filter(|c| c.content == content).count();
     let launched = p
         .launcher
@@ -298,7 +298,7 @@ pub(crate) fn notes_of<'a>(p: &'a Project, params: &Value) -> Result<&'a Notes, 
 }
 
 /// The notes of the clip `params` names, to change; an empty MIDI clip gets a note lane.
-fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Notes, CommandError> {
+pub(crate) fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Notes, CommandError> {
     let (_, id, track) = locate(p, params)?;
     check_midi(p, id)?;
     let content = p.contents.iter_mut().find(|c| c.id == id).ok_or("the clip's content is missing")?;

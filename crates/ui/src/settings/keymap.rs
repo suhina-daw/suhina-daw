@@ -110,7 +110,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 90] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 94] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -204,6 +204,10 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 90] = [
     ("pianoRoll.zoomClip", "Zoom the piano roll to the whole clip", PIANO_ROLL),
     ("pianoRoll.legato", "Make the selected notes, or all the notes, last until the next one starts", PIANO_ROLL),
     ("pianoRoll.loop", "Loop the piano roll's clip over the time selection, or turn its loop on or off", PIANO_ROLL),
+    ("pianoRoll.join", "Join the selected notes on one key into one note, over any gap", PIANO_ROLL),
+    ("pianoRoll.fitToTime", "Stretch or squeeze the selected notes to fill the time selection", PIANO_ROLL),
+    ("pianoRoll.crop", "Crop the piano roll's clip to the time selection", PIANO_ROLL),
+    ("pianoRoll.splitClip", "Split the piano roll's clip at the time selection's edges", PIANO_ROLL),
     ("help.about", "Show which version of Suhina this is", "Help"),
 ];
 
@@ -281,9 +285,12 @@ pub fn not_in_piano_roll(action: &str) -> bool {
     !in_piano_roll(action)
 }
 
-/// Whether `a` and `b` can both run on the same key press, so one key for both is a conflict.
+/// Whether `a` and `b` can both run on the same key press, so one key for both is a conflict. The
+/// piano roll's own keys are a scope of their own: while it has the keyboard they come first and
+/// take the key from a window action on the same key, and outside it they never run, so the two
+/// never meet.
 fn overlap(a: &str, b: &str) -> bool {
-    !((piano_roll_only(a) && not_in_piano_roll(b)) || (not_in_piano_roll(a) && piano_roll_only(b)))
+    piano_roll_only(a) == piano_roll_only(b)
 }
 
 /// The detail area's own actions, listed with the window's, and their default keys.
@@ -496,7 +503,7 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 91] = [
+const DEFAULTS: [(&str, &[&str]); 95] = [
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
@@ -588,6 +595,10 @@ const DEFAULTS: [(&str, &[&str]); 91] = [
     ("pianoRoll.zoomClip", &["Shift+Z"]),
     ("pianoRoll.legato", &["Alt+L"]),
     ("pianoRoll.loop", &["Ctrl+L"]),
+    ("pianoRoll.join", &["Ctrl+J"]),
+    ("pianoRoll.fitToTime", &["Ctrl+Alt+J"]),
+    ("pianoRoll.crop", &["Ctrl+Shift+J"]),
+    ("pianoRoll.splitClip", &["Ctrl+E"]),
 ];
 
 impl Default for Keymap {
@@ -807,7 +818,9 @@ impl Keymap {
             .filter(|(id, _)| wanted(id))
             .flat_map(|(id, keys)| keys.iter().map(move |k| (id, k)))
             .collect();
-        all.sort_by_key(|(_, k)| std::cmp::Reverse(k.modifier_count()));
+        // Longer combinations first; among the same, the piano roll's own keys, which take the
+        // key from a window action while it has the keyboard (› `overlap`).
+        all.sort_by_key(|(id, k)| (std::cmp::Reverse(k.modifier_count()), !piano_roll_only(id)));
         let mut fired = Vec::new();
         for (id, key) in all {
             // A key held down repeats; only the actions that step something (the arrows, undo)

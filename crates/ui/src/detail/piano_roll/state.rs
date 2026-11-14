@@ -665,9 +665,14 @@ impl PianoRollState {
                     nothing,
                 };
                 let mut params = tools.params();
-                params["until"] = json!(tools.legato_until(self.span_end()));
+                params["until"] = json!(tools.legato_until(self.legato_span_end()));
                 self.replacing(&mut params);
                 return Some(Action::new("note.legato", params));
+            }
+            // Join, Fit to time range, Crop and Split clip (› Joining, fitting, cropping and
+            // splitting): one command each.
+            "pianoRoll.join" | "pianoRoll.fitToTime" | "pianoRoll.crop" | "pianoRoll.splitClip" => {
+                return self.clip_edit(action, clip, &acting);
             }
             _ if chosen.is_empty() => return None,
             _ => {}
@@ -779,6 +784,94 @@ impl PianoRollState {
         self.replacing(&mut params);
         self.reveal_selection = 2;
         Some(Action::new(id, params))
+    }
+
+    /// The command a clip edit key runs on `clip`, with `acting` the notes the edit keys act on;
+    /// `None` where it has nothing to act on: Join without two notes, Fit, Crop and Split clip
+    /// without a time selection (Split clip never splits at the playhead), Split clip in a slot.
+    pub(super) fn clip_edit(&mut self, action: &str, clip: &PianoClip, acting: &BTreeSet<usize>) -> Option<Action> {
+        let mut params = clip.address.clone();
+        let span = self.span.as_ref().map(|s| (round_beat(s.start), round_beat(s.end))).filter(|(s, e)| e > s);
+        match action {
+            "pianoRoll.join" => {
+                // Nothing to join (no two notes on one key): the command would refuse it, and
+                // the selection stays to be changed and tried again.
+                if !Self::joins(&clip.notes, acting) {
+                    return None;
+                }
+                params["notes"] = json!(acting.iter().collect::<Vec<_>>());
+                // The selection stays: it follows its notes by id (#1182), the joined note keeping
+                // the first one's, so a refused join leaves it to be tried again.
+                Some(Action::new("note.join", params))
+            }
+            "pianoRoll.fitToTime" => {
+                let (start, end) = span?;
+                if acting.is_empty() {
+                    return None;
+                }
+                params["notes"] = json!(acting.iter().collect::<Vec<_>>());
+                params["start"] = json!(start);
+                params["end"] = json!(end);
+                self.replacing(&mut params);
+                Some(Action::new("note.fitToTime", params))
+            }
+            "pianoRoll.crop" => {
+                let (start, end) = span?;
+                // A time selection outside the part of the clip that plays is refused: it stays.
+                let (from, to) = clip.shape.played();
+                if end <= from + EPSILON || start >= to - EPSILON {
+                    return None;
+                }
+                params["start"] = json!(start);
+                params["end"] = json!(end);
+                // The selection stays, following its notes by id: the deleted ones leave it, and a
+                // refused crop (a stretch too short, a neighbour in the way) leaves it as it was.
+                Some(Action::new("clip.crop", params))
+            }
+            "pianoRoll.splitClip" => {
+                let (start, end) = span?;
+                self.split_clip_at(clip, &[(start, false), (end, true)])
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether `note.join` has something to join among `acting`: two of them on one key, however far
+    /// apart (the first reaches the others as legato does).
+    pub(super) fn joins(notes: &[Note], acting: &BTreeSet<usize>) -> bool {
+        let mut keys = BTreeSet::new();
+        acting.iter().filter_map(|i| notes.get(*i)).any(|n| !keys.insert(n.key))
+    }
+
+    /// `clip.split` of an arrangement clip at content beats `cuts` (on the arrangement where the
+    /// clip plays them first), those inside the clip; `None` for a slot's clip or no cut inside. A
+    /// cut that ends a stretch (`true`) is where the stretch's last moment plays, so a stretch
+    /// ending on the loop's end is cut there and not where the loop starts again.
+    pub(super) fn split_clip_at(&mut self, clip: &PianoClip, cuts: &[(f64, bool)]) -> Option<Action> {
+        if clip.address.get("scene").is_some() {
+            return None;
+        }
+        let placement = clip.placement;
+        let inside = |at: &f64| *at > placement.start + 1e-6 && *at < placement.start + placement.length - 1e-6;
+        const JUST: f64 = 1e-6;
+        let song = |(beat, ends): &(f64, bool)| {
+            if *ends {
+                placement.arrangement_beat(beat - JUST).map(|at| at + JUST)
+            } else {
+                placement.arrangement_beat(*beat)
+            }
+        };
+        let mut ats: Vec<f64> = cuts.iter().filter_map(song).map(round_beat).filter(inside).collect();
+        ats.sort_by(f64::total_cmp);
+        ats.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+        if ats.is_empty() {
+            return None;
+        }
+        let mut params = clip.address.clone();
+        params["ats"] = json!(ats);
+        self.selected.clear();
+        self.clear_span();
+        Some(Action::new("clip.split", params))
     }
 
     /// Zooms and scrolls time so beats `start` to `end` fill the note grid's width (as far as the
