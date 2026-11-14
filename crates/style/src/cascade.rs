@@ -14,14 +14,18 @@ use std::{
     sync::Arc,
 };
 
-/// The tiers of the cascade, lowest first: Suhina's user-agent sheet, the theme, its variant,
-/// device panel sheets and the user's sheet. Layers are an explicit host policy; a device cannot
-/// choose a higher layer.
+/// The tiers of the cascade, lowest first: Suhina's user-agent sheet, its base sheet, the theme,
+/// its variant, device panel sheets and the user's sheet. A rule of a higher tier beats every rule
+/// of a lower one, whatever their specificity or `@layer`. Layers are an explicit host policy; a
+/// device cannot choose a higher layer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Layer {
-    /// Suhina's user-agent sheet (`suhina_theme_package::USER_AGENT_SHEET`), and the host's
-    /// palette defaults beside it until the palette goes (#995 § 10).
+    /// Suhina's user-agent sheet (`suhina_theme_package::USER_AGENT_SHEET`): the bare floor.
     UserAgent,
+    /// Suhina's design under every theme (`suhina_theme_package::BASE_SHEET`), the core variables'
+    /// registrations and the theme's colour map. Like the user agent's, its declarations are not
+    /// [`ComputedStyle::authored`]: they are Suhina's, not a theme's.
+    Base,
     Theme,
     /// A theme variant's chosen values, above the theme's own rules.
     Variant,
@@ -46,7 +50,7 @@ pub struct ComputedStyle {
     values: BTreeMap<Property, Value>,
     variables: Arc<BTreeMap<String, String>>,
     authored: BTreeSet<Property>,
-    /// The properties a rule above the user agent wrote on this very element, not ones it
+    /// The properties a rule above the base tier wrote on this very element, not ones it
     /// inherited: an item's own `color`, against the `color` its bar gives all its items.
     declared: BTreeSet<Property>,
     /// The element's `animation` items with their keyframes resolved for it.
@@ -77,12 +81,12 @@ impl ComputedStyle {
         Arc::clone(&self.variables)
     }
     /// Host defaults must not replace a native widget's own appearance. Inherited
-    /// authored properties retain this marker across the component tree, until a user-agent
-    /// rule on an element sets the property again.
+    /// authored properties retain this marker across the component tree, until a user-agent or
+    /// base rule on an element sets the property again.
     pub fn authored(&self, property: Property) -> bool {
         self.authored.contains(&property)
     }
-    /// Whether a rule above the user agent wrote `property` on this element itself. An inherited
+    /// Whether a rule above the base tier wrote `property` on this element itself. An inherited
     /// value is not declared, though it is [`authored`](Self::authored), and a declaration that
     /// repeats the inherited value is.
     pub fn declared(&self, property: Property) -> bool {
@@ -267,10 +271,10 @@ pub(crate) fn element_style(
             },
         };
         computed.values.insert(property, value);
-        // A user-agent rule on the element replaces what it inherited from a sheet's rule above
-        // it: its value is the user agent's, not one a sheet wrote (`knob-body` under a styled
+        // A user-agent or base rule on the element replaces what it inherited from a sheet's rule
+        // above it: its value is Suhina's, not one a theme wrote (`knob-body` under a styled
         // `knob`).
-        if priority.0 > Layer::UserAgent as u8 {
+        if priority.0 > Layer::Base as u8 {
             computed.authored.insert(property);
             computed.declared.insert(property);
         } else {
