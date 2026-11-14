@@ -1505,8 +1505,16 @@ pub(super) fn paint_clip(
     } else {
         appearance.ink(ink)
     };
-    let content_ink =
-        if !clip.audio && theme::text_contrast(content_ink, body) < 3.0 { theme::text_on(body) } else { content_ink };
+    // Notes the theme or the clip's colour chose that are lost on the body (an imported clip's own
+    // colour can be as dark as its notes) take the body's readable ink instead; a colour the user
+    // chose in Settings (Light, Dark, Custom) is kept as chosen.
+    use crate::settings::view_settings::WaveformColour;
+    let chosen = matches!(appearance.mode, WaveformColour::Light | WaveformColour::Dark | WaveformColour::Custom);
+    let content_ink = if !clip.audio && !chosen && theme::text_contrast(content_ink, body) < 3.0 {
+        theme::text_on(body)
+    } else {
+        content_ink
+    };
     let wave_ink = if ara_notes.is_some() { motion::mix(body, content_ink, 0.75) } else { content_ink };
     let dim = |_: Color32| wave_ink;
     let color = ink;
