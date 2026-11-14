@@ -596,13 +596,14 @@ pub fn show(
 
 /// The status's tooltip: the whole status, then each part with its lines.
 fn status_tooltip(ui: &mut Ui, status: &str, details: &[StatusPart]) {
+    let tier = crate::browser::browser_view::inks();
     ui.set_max_width(420.0);
-    ui.label(egui::RichText::new(status).color(theme::text_primary()));
+    ui.label(egui::RichText::new(status).color(tier.primary));
     for part in details {
         ui.add_space(theme::PAD);
-        ui.label(egui::RichText::new(&part.heading).color(theme::text_primary()));
+        ui.label(egui::RichText::new(&part.heading).color(tier.primary));
         for line in &part.lines {
-            ui.label(egui::RichText::new(line).color(theme::text_secondary()).size(theme::TEXT_SMALL));
+            ui.label(egui::RichText::new(line).color(tier.secondary).size(theme::TEXT_SMALL));
         }
     }
 }
@@ -610,6 +611,7 @@ fn status_tooltip(ui: &mut Ui, status: &str, details: &[StatusPart]) {
 /// The card in the middle of the map while it is analysed or arranged. It is only painted, so
 /// the map under it, the top bar and the rest of the window keep working.
 fn busy_card(ui: &Ui, area: Rect, busy: &Busy) {
+    let tier = crate::browser::browser_view::inks();
     const WIDTH: f32 = 240.0;
     const HEIGHT: f32 = 62.0;
     const BAR: f32 = 4.0;
@@ -620,25 +622,32 @@ fn busy_card(ui: &Ui, area: Rect, busy: &Busy) {
     let card = Rect::from_center_size(area.center(), Vec2::new(width, HEIGHT));
     let painter = ui.painter().with_clip_rect(area);
     painter.rect_filled(card, CornerRadius::ZERO, crate::kit::style_class::surface_or(theme::panel_background()));
-    painter.rect_stroke(card, CornerRadius::ZERO, Stroke::new(1.0, theme::border_strong()), StrokeKind::Inside);
-    let inner = card.shrink(2.0 * theme::PAD);
-    painter.text(
-        inner.left_top(),
-        egui::Align2::LEFT_TOP,
-        &busy.title,
-        theme::ui_font(theme::TEXT),
-        theme::text_primary(),
+    painter.rect_stroke(
+        card,
+        CornerRadius::ZERO,
+        Stroke::new(1.0, crate::kit::element::SAMPLE_MAP.look().border_or(theme::border_strong())),
+        StrokeKind::Inside,
     );
+    let inner = card.shrink(2.0 * theme::PAD);
+    painter.text(inner.left_top(), egui::Align2::LEFT_TOP, &busy.title, theme::ui_font(theme::TEXT), tier.primary);
     let bar = Rect::from_min_size(Pos2::new(inner.min.x, inner.center().y - BAR / 2.0), Vec2::new(inner.width(), BAR));
-    painter.rect_filled(bar, CornerRadius::ZERO, theme::control_background());
+    painter.rect_filled(
+        bar,
+        CornerRadius::ZERO,
+        crate::kit::element::PROGRESS.look().background_or(theme::control_background()),
+    );
     let done = Rect::from_min_size(bar.min, Vec2::new(bar.width() * busy.fraction.clamp(0.0, 1.0), BAR));
-    painter.rect_filled(done, CornerRadius::ZERO, theme::accent());
+    painter.rect_filled(
+        done,
+        CornerRadius::ZERO,
+        crate::kit::element::PROGRESS_FILL.look().background_or(theme::accent()),
+    );
     painter.text(
         inner.left_bottom(),
         egui::Align2::LEFT_BOTTOM,
         &busy.detail,
         theme::ui_font(theme::TEXT_SMALL),
-        theme::text_secondary(),
+        tier.secondary,
     );
 }
 
@@ -652,6 +661,7 @@ fn top_bar(
     details: &[StatusPart],
     events: &mut Vec<MapEvent>,
 ) -> f32 {
+    let tier = crate::browser::browser_view::inks();
     let inner =
         Rect::from_min_max(full.min + Vec2::new(theme::PAD, 2.0), Pos2::new(full.max.x - theme::PAD, full.max.y));
     let mut child =
@@ -661,7 +671,7 @@ fn top_bar(
     child.horizontal_wrapped(|ui| controls(ui, view, events));
     // The status is cut short with "…" when it does not fit. Its tooltip has all of it and says
     // why files are missing.
-    let text = egui::RichText::new(status).color(theme::text_secondary()).size(theme::TEXT_SMALL);
+    let text = egui::RichText::new(status).color(tier.secondary).size(theme::TEXT_SMALL);
     child
         .add_sized(
             Vec2::new(inner.width(), theme::TEXT_SMALL + 6.0),
@@ -683,6 +693,7 @@ fn together(ui: &mut Ui, width: f32, add: impl FnOnce(&mut Ui)) {
 
 /// The map's controls, left to right in the order they wrap.
 fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
+    let tier = crate::browser::browser_view::inks();
     for (layout, name) in [(Layout::Cloud, "Cloud"), (Layout::Grid, "Grid")] {
         if ui.selectable_label(view.layout == layout, name).clicked() && view.layout != layout {
             view.layout = layout;
@@ -720,7 +731,7 @@ fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
     }
     // Each label stays with its field: the pair moves to the next row as a whole.
     together(ui, 90.0, |ui| {
-        ui.label(egui::RichText::new("Size").color(theme::text_secondary()).size(theme::TEXT_SMALL));
+        ui.label(egui::RichText::new("Size").color(tier.secondary).size(theme::TEXT_SMALL));
         let mut percent = (view.dot_size * 100.0).round() as u32;
         let (low, high) = crate::settings::MAP_DOT_SIZES;
         let size = crate::kit::widgets::number_input(
@@ -735,7 +746,7 @@ fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
         }
     });
     together(ui, 110.0, |ui| {
-        ui.label(egui::RichText::new("Labels").color(theme::text_secondary()).size(theme::TEXT_SMALL));
+        ui.label(egui::RichText::new("Labels").color(tier.secondary).size(theme::TEXT_SMALL));
         let percent = (view.label_size * 100.0).round() as u32;
         let name = |p: u32| if p == 0 { "Off".to_string() } else { format!("{p} %") };
         egui::ComboBox::from_id_salt("sample-map-labels")
@@ -755,7 +766,7 @@ fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
             );
     });
     together(ui, 170.0, |ui| {
-        ui.label(egui::RichText::new("Volume").color(theme::text_secondary()).size(theme::TEXT_SMALL));
+        ui.label(egui::RichText::new("Volume").color(tier.secondary).size(theme::TEXT_SMALL));
         let (low, high) = crate::settings::PREVIEW_VOLUMES;
         let mut db = view.volume;
         let volume = ui
@@ -779,6 +790,7 @@ struct Content<'a> {
 }
 
 fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, events: &mut Vec<MapEvent>) {
+    let tier = crate::browser::browser_view::inks();
     let Content { points, positions, grid, tags } = *content;
     view.area = rect;
     let id = ui.scope_id().with("sample-map");
@@ -838,7 +850,8 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
     if let Some(start) = view.rubber_band {
         let end = pointer.or_else(|| response.interact_pointer_pos()).unwrap_or(start);
         let band = Rect::from_two_pos(start, end);
-        painter.rect_stroke(band, CornerRadius::ZERO, Stroke::new(1.0, theme::accent()), StrokeKind::Inside);
+        let edge = crate::kit::element::MARQUEE.look().own_color_or(theme::accent());
+        painter.rect_stroke(band, CornerRadius::ZERO, Stroke::new(1.0, edge), StrokeKind::Inside);
         if response.drag_stopped() {
             let items: Vec<usize> =
                 screen.iter().enumerate().filter(|(_, p)| band.contains(**p)).map(|(i, _)| i).collect();
@@ -987,10 +1000,10 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
     if let Some(point) = under.and_then(|i| points.get(i)) {
         let kind = kind_text(point);
         response.on_hover_ui_at_pointer(|ui| {
-            ui.label(egui::RichText::new(&point.name).color(theme::text_primary()));
-            ui.label(egui::RichText::new(kind).color(theme::text_secondary()));
+            ui.label(egui::RichText::new(&point.name).color(tier.primary));
+            ui.label(egui::RichText::new(kind).color(tier.secondary));
             if !point.detail.is_empty() {
-                ui.label(egui::RichText::new(&point.detail).color(theme::text_secondary()));
+                ui.label(egui::RichText::new(&point.detail).color(tier.secondary));
             }
             if let Some((_, peaks)) = view.hover_waveform.as_ref().filter(|(i, _)| Some(*i) == under) {
                 let (rect, _) = ui.allocate_exact_size(TOOLTIP_WAVE, Sense::hover());
@@ -1000,11 +1013,7 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
                     crate::kit::waveform::steady_columns(rect.left(), count, 0.0, seconds / count.max(1) as f64, 1.0);
                 let shape =
                     crate::kit::waveform::geometry(peaks, rect, &columns, crate::kit::waveform::scale(ui.ctx()));
-                crate::kit::waveform::paint(
-                    ui.painter(),
-                    &shape,
-                    crate::kit::waveform::Colors::from(theme::text_secondary()),
-                );
+                crate::kit::waveform::paint(ui.painter(), &shape, crate::kit::waveform::Colors::from(tier.secondary));
             }
         });
     }
@@ -1054,6 +1063,12 @@ fn draw_points(
     transform: Transform,
     under: Option<usize>,
 ) {
+    // A selected point's ring is `sample-point[selected]`'s `color`; the rings of similar and
+    // previewed points its `accent-color`.
+    let rings = {
+        let look = crate::kit::element::SAMPLE_POINT.attr(crate::kit::element::Selected, true).look();
+        (look.own_color_or(theme::text_primary()), look.accent_or(theme::accent()))
+    };
     let area = painter.clip_rect();
     let visible = area.expand(8.0);
     let cell = cell_size(view, grid, transform);
@@ -1086,7 +1101,8 @@ fn draw_points(
         match density_plan(drawn, &key, area, view.resized.1, now) {
             DensityPlan::Build => {
                 let colour = |i: usize| points.get(i).filter(|p| !dimmed(i, p)).map(|p| kind_colour(p.kind));
-                let image = crowd::density(screen, colour, area, key.spread);
+                // The dimmed points' grey is `label[kind="hint"]`'s.
+                let image = crowd::density(screen, colour, area, key.spread, crate::browser::browser_view::inks().hint);
                 let texture = painter.ctx().load_texture("sample-map-density", image, egui::TextureOptions::LINEAR);
                 view.cache.density = Some(Density { key, area, transform, texture });
             }
@@ -1150,13 +1166,13 @@ fn draw_points(
                 painter.circle_stroke(*at, size + 3.0, Stroke::new(1.5, colour));
             }
             if point.selected {
-                painter.circle_stroke(*at, size + 1.5, Stroke::new(1.0, theme::text_primary()));
+                painter.circle_stroke(*at, size + 1.5, Stroke::new(1.0, rings.0));
             }
             if similar.contains(&i) {
-                painter.circle_stroke(*at, size + 4.5, Stroke::new(1.0, theme::accent()));
+                painter.circle_stroke(*at, size + 4.5, Stroke::new(1.0, rings.1));
             }
             if view.previewed == Some(i) || under == Some(i) {
-                painter.circle_stroke(*at, size + 2.5, Stroke::new(1.5, theme::accent()));
+                painter.circle_stroke(*at, size + 2.5, Stroke::new(1.5, rings.1));
             }
         }
     }
@@ -1171,6 +1187,7 @@ fn label_font_size(label_size: f32, count_scale: f32) -> f32 {
 /// One label per cluster, sized by its count, placed largest first so none overlap
 /// (docs/spec/sample-map.md › Many items › Labels).
 fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
+    let tier = crate::browser::browser_view::inks();
     let fade = ((LABEL_FADE_ZOOM - view.zoom) / 2.0).clamp(0.0, 1.0);
     if fade <= 0.0 || view.label_size <= 0.0 {
         return;
@@ -1183,12 +1200,15 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
         .map(|c| {
             let font = theme::ui_font(label_font_size(view.label_size, crowd::label_scale(c.count, smallest)));
             // Light text: a label sits on its own kind's colour, so that colour would not read.
-            painter.layout_no_wrap(c.kind.label().to_string(), font, theme::text_primary().gamma_multiply(fade))
+            painter.layout_no_wrap(c.kind.label().to_string(), font, tier.primary.gamma_multiply(fade))
         })
         .collect();
     let sizes: Vec<(Pos2, Vec2)> =
         clusters.iter().zip(&galleys).map(|(c, g)| (transform.to_screen(c.spot), g.size())).collect();
-    let shadow = crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(fade);
+    let shadow = crate::kit::element::SAMPLE_MAP
+        .look()
+        .background_or(crate::kit::style_class::surface_or(theme::window_background()))
+        .gamma_multiply(fade);
     for (spot, galley) in crowd::place_labels(&sizes, painter.clip_rect()).into_iter().zip(galleys) {
         let Some(spot) = spot else { continue };
         // A shadow keeps the label readable over the points.
@@ -1198,15 +1218,14 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
 }
 
 fn similar_strip(ui: &mut Ui, rect: Rect, view: &mut MapView, points: &[MapPoint], events: &mut Vec<MapEvent>) {
+    let tier = crate::browser::browser_view::inks();
     let Some((of, items)) = view.similar.clone() else { return };
     ui.painter().rect_filled(rect, CornerRadius::ZERO, crate::kit::style_class::surface_or(theme::panel_background()));
     let mut child = ui.new_child(
         egui::UiBuilder::new().max_rect(rect.shrink(theme::PAD)).layout(egui::Layout::top_down(egui::Align::Min)),
     );
     let name = points.get(of).map_or("", |p| p.name.as_str());
-    child.label(
-        egui::RichText::new(format!("Similar to {name}")).color(theme::text_secondary()).size(theme::TEXT_SMALL),
-    );
+    child.label(egui::RichText::new(format!("Similar to {name}")).color(tier.secondary).size(theme::TEXT_SMALL));
     egui::ScrollArea::vertical().show(&mut child, |ui| {
         for i in items {
             let Some(point) = points.get(i) else { continue };
