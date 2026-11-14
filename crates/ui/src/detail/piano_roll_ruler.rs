@@ -373,12 +373,14 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
         Pos2::new(right.max(left + 1.0), row.center().y + LOOP_BAR / 2.0),
     );
     // `loop-region`, `[checked]` while the clip loops, as the Arrangement's loop bar.
-    let (el, plain) = crate::kit::element::LOOP_REGION.enter_against_plain(crate::kit::element::Checked, looping);
+    // The native colours, read before the bar is entered: inside it the palette's text colours
+    // are the bar's own `color`, which would put a rule for the plain bar on the looping one.
     let (fill, edge, handle) = if looping {
         (theme::control_active(), theme::text_secondary(), theme::text_primary())
     } else {
         (theme::control_background(), theme::text_hint(), theme::text_hint())
     };
+    let (el, plain) = crate::kit::element::LOOP_REGION.enter_against_plain(crate::kit::element::Checked, looping);
     // A rule for the plain bar must not hide that the clip loops: only a `[checked]` rule does.
     let (fill, edge, handle_color) = match &plain {
         Some(plain) => {

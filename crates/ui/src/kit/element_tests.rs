@@ -720,3 +720,34 @@ fn the_plain_look_keeps_the_pointer_state() {
     });
     assert_eq!(off, (true, rgb(0x10, 0x20, 0x30)));
 }
+
+/// A muted slot clip with CSS motion on: its plain probe shares its key with the drawn clip (no id
+/// or response, the same place once the probe is taken out), and is still its own chain's style,
+/// so the `[muted]` rule's background and border come back rather than the fallback token
+/// (#1428 review).
+#[test]
+fn a_muted_clip_s_colours_come_back_through_a_probe_with_motion_on() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let css = "clip { background-color: #102030; border-color: #203040; \
+                      transition: background-color 1s linear, border-color 1s linear; } \
+               clip[muted] { background-color: #405060; border-color: #506070; }";
+    super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut seen = (token, token);
+    for frame in 0..5 {
+        ctx.run_ui(egui::RawInput { time: Some(f64::from(frame) * 0.1), ..Default::default() }, |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, true);
+            let _view = SESSION.enter();
+            let colour = rgb(0x80, 0x20, 0x20);
+            let plain = CLIP.color(colour).probe();
+            let drawn = CLIP.color(colour).attr(Muted, true).enter();
+            let state = drawn.look();
+            seen = (state.background_unlike(&plain, token), state.border_unlike(&plain, token));
+        })
+        .textures_delta
+        .clear();
+    }
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    assert_eq!(seen, (rgb(0x40, 0x50, 0x60), rgb(0x50, 0x60, 0x70)));
+}

@@ -1338,7 +1338,8 @@ of bars, and a slider id per parameter.
 - **Low tracks:** `compact-below` on `arrangement` (at most 200 points): a header
   lower than it resolves every placement natively (`control_layout::native_only`).
 - **Ruler:** `ruler-number` (`color`, `font-size`, `display`) and `ruler-tick` (`color`, `width`
-  0–4), inside `ruler` in the Arrangement and the piano roll alike.
+  0–4) inside the Arrangement's `ruler`. The piano roll's bar numbers and ticks are inside its
+  `ruler` too, and take only their `color`.
 - **Browser:** `browser-play` (`[checked]` while playing), `browser-tag-dot` (`opacity`,
   border), `browser-preview-wave` (`color` played, `border-color` ahead), the search field
   `#browser-search`.

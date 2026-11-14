@@ -200,3 +200,38 @@ fn the_lit_focus_switch_keeps_its_label_ink() {
     let lit = format!("{css} button#control-focus-first[checked] {{ color: {}; }}", hex(odd(64)));
     assert!(text_colours(&shapes_with(&mut h, &lit), "Focus").contains(&odd(64)), "a `[checked]` rule recolours it");
 }
+
+/// Every colour a shape uses: fill, stroke, line, text.
+fn colours_of(shape: &egui::Shape) -> Vec<egui::Color32> {
+    match shape {
+        egui::Shape::Rect(rect) => vec![rect.fill, rect.stroke.color],
+        egui::Shape::LineSegment { stroke, .. } => vec![stroke.color],
+        egui::Shape::Circle(circle) => vec![circle.fill, circle.stroke.color],
+        egui::Shape::Path(path) => {
+            let mut found = vec![path.fill];
+            if let egui::epaint::PathStroke { color: egui::epaint::ColorMode::Solid(color), .. } = &path.stroke {
+                found.push(*color);
+            }
+            found
+        }
+        egui::Shape::Text(text) => std::iter::once(text.fallback_color)
+            .chain(text.galley.job.sections.iter().map(|section| section.format.color))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The looping clip's loop bar keeps its native edge and handles under a `color` rule for every
+/// loop bar: they are read before the bar is entered (#1428 review).
+#[test]
+fn a_colour_rule_for_every_loop_bar_keeps_the_looping_one_s_inks() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let ruler = h.get_by_label("Piano roll ruler").rect();
+    let css = format!("loop-region {{ color: {}; }}", hex(odd(65)));
+    let inked = shapes_with(&mut h, &css)
+        .iter()
+        .filter(|shape| ruler.contains_rect(shape.visual_bounding_rect()) && colours_of(shape).contains(&odd(65)))
+        .count();
+    assert_eq!(inked, 0, "the looping bar takes a colour only from a `[checked]` rule");
+}

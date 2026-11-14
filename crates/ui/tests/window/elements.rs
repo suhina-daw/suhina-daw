@@ -197,3 +197,173 @@ fn a_hover_rule_does_not_light_the_chosen_tool() {
     let lit = format!("{hover} arrangement-tool[checked]:hover {{ background-color: {}; }}", hex(odd(46)));
     assert_eq!(count_with(&mut h, &lit, odd(46)), 1, "a rule for the hovered `[checked]` tool recolours it");
 }
+
+/// How many rectangles the window stroked with `color`, with the user's sheet `css`.
+fn strokes_with(h: &mut Harness<'static, App>, css: &str, color: egui::Color32) -> usize {
+    fn walk(shape: &egui::Shape, color: egui::Color32, found: &mut usize) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, color, found)),
+            egui::Shape::Rect(rect) if rect.stroke.color == color && rect.stroke.width > 0.0 => *found += 1,
+            _ => {}
+        }
+    }
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let mut found = 0;
+    h.output().shapes.iter().for_each(|shape| walk(&shape.shape, color, &mut found));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    found
+}
+
+/// The outline of a clip picked in its body is looked up without taking a place in the style
+/// tree: the body, drawn under the same key without `[selected]`, keeps its own background with a
+/// transition on (#1428 review).
+#[test]
+fn a_clip_picked_in_its_body_keeps_its_own_background_with_a_transition() {
+    let mut h = arrangement_app();
+    let body = h.get_by_label("Clip Beat B on Drums at bar 17").rect().left_center() + egui::vec2(64.0, 0.0);
+    h.hover_at(body);
+    h.run();
+    h.drag_at(body);
+    h.drop_at(body);
+    h.run_steps(2);
+    assert!(h.state().arrangement().selected_clip().is_some(), "the clip is picked");
+    let css = format!(
+        "clip {{ transition: background-color 10s linear; }} clip[selected] {{ background-color: {}; }}",
+        hex(odd(51))
+    );
+    assert_eq!(count_with(&mut h, &css, odd(51)), 0, "the body is not drawn as selected");
+}
+
+/// A hovered selected slot clip is compared with the same clip hovered: a `clip:hover` rule is not
+/// taken for its selection's outline (#1428 review).
+#[test]
+fn a_hover_rule_is_not_a_slot_clip_s_selected_outline() {
+    let mut h = window(demo_app());
+    h.get_by_label("Select Walk on Bass (scene 2)").click();
+    h.run();
+    let at = h.get_by_label("Select Walk on Bass (scene 2)").rect().center();
+    h.hover_at(at);
+    h.run();
+    let hover = format!("clip:hover {{ border-color: {}; }}", hex(odd(52)));
+    assert_eq!(strokes_with(&mut h, &hover, odd(52)), 0, "the outline keeps its native colour");
+    let selected = format!("{hover} clip[selected]:hover {{ border-color: {}; }}", hex(odd(53)));
+    assert_eq!(strokes_with(&mut h, &selected, odd(53)), 1, "a `[selected]` rule recolours it");
+}
+
+/// A slot clip's native state colours are read before the clip is entered: a rule for every clip's
+/// `color` is not a selected clip's outline, and its `background-color` not a deactivated clip's
+/// grey (#1428 review).
+#[test]
+fn a_rule_for_every_slot_clip_keeps_the_native_state_colours() {
+    let mut project = demo_project();
+    if let Some(clip) = project.launcher.columns[1].slots[1].clip.as_mut() {
+        clip.enabled = false;
+    }
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut h = window(app);
+    h.get_by_label("Select Walk on Bass (scene 2)").click();
+    h.run();
+    h.hover_at(egui::pos2(1.0, 1.0));
+    h.run();
+    let ink = format!("clip {{ color: {}; }}", hex(odd(54)));
+    assert_eq!(strokes_with(&mut h, &ink, odd(54)), 0, "the outline is not the clips' colour");
+    let fill = format!("clip {{ background-color: {}; }}", hex(odd(55)));
+    assert_eq!(count_with(&mut h, &fill, odd(55)), 0, "the deactivated clip is not the clips' fill");
+}
+
+/// The chosen tool's icon keeps its native ink under a `color` rule for every tool (#1428 review).
+#[test]
+fn a_colour_rule_for_every_tool_keeps_the_chosen_one_s_ink() {
+    let mut h = arrangement_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.arrangement_toolbar = true;
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    let tools = 6;
+    let css = format!("arrangement-tool {{ color: {}; }}", hex(odd(56)));
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let range = h.get_by_label("Arrangement tool Select").rect();
+    // The icons painted in the rule's colour, by the tool button they are in.
+    let mut inked = std::collections::BTreeSet::new();
+    let left = range.left();
+    let pitch = h.get_by_label("Arrangement tool Range").rect().left() - left;
+    fn walk(shape: &egui::Shape, color: egui::Color32, found: &mut Vec<egui::Rect>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, color, found)),
+            other => {
+                let colours = {
+                    let mut c = Vec::new();
+                    match other {
+                        egui::Shape::LineSegment { stroke, .. } => c.push(stroke.color),
+                        egui::Shape::Path(path) => {
+                            c.push(path.fill);
+                            if let egui::epaint::PathStroke { color: egui::epaint::ColorMode::Solid(s), .. } =
+                                &path.stroke
+                            {
+                                c.push(*s);
+                            }
+                        }
+                        egui::Shape::Rect(rect) => c.extend([rect.fill, rect.stroke.color]),
+                        egui::Shape::Circle(circle) => c.extend([circle.fill, circle.stroke.color]),
+                        _ => {}
+                    }
+                    c
+                };
+                if colours.contains(&color) {
+                    found.push(other.visual_bounding_rect());
+                }
+            }
+        }
+    }
+    let mut found = Vec::new();
+    h.output().shapes.iter().for_each(|shape| walk(&shape.shape, odd(56), &mut found));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    for rect in found.iter().filter(|r| r.center().y >= range.top() && r.center().y <= range.bottom()) {
+        inked.insert(((rect.center().x - left) / pitch).floor() as i32);
+    }
+    assert_eq!(inked.len(), tools - 1, "every tool but the chosen one takes the colour: {inked:?}");
+    assert!(!inked.contains(&0), "the chosen tool (Select) keeps its native ink");
+}
+
+/// The lit monitor button's label keeps its native ink under a `color` rule for the plain button
+/// (#1428 review).
+#[test]
+fn the_lit_monitor_button_keeps_its_label_ink() {
+    let mut project = demo_project();
+    project.tracks[0].content = suhina_engine::model::ContentKinds { notes: false, audio: true };
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.mixer_height = 320;
+    app.set_settings(&egui::Context::default(), settings);
+    let mut h = window(app);
+    let css: String = ["in", "auto", "off"]
+        .iter()
+        .map(|value| format!("button#control-mixer-monitor-{value} {{ color: {}; }}\n", hex(odd(57))))
+        .collect();
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let mut inked = Vec::new();
+    for shape in h.output().shapes.iter() {
+        if let egui::Shape::Text(text) = &shape.shape
+            && ["In", "Auto", "Off"].contains(&text.galley.text())
+            && (text.fallback_color == odd(57) || text.galley.job.sections.iter().any(|s| s.format.color == odd(57)))
+        {
+            inked.push(text.galley.text().to_owned());
+        }
+    }
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_eq!(inked.len(), 2, "the two off buttons take the colour, the lit one does not: {inked:?}");
+}

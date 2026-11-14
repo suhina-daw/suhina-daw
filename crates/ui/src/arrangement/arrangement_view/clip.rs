@@ -1161,7 +1161,10 @@ pub(super) fn clip_box<'a>(
         let body = motion::mix(crate::kit::style_class::surface_or(theme::panel_background()), rgb(clip.color), 0.82);
         painter.with_clip_rect(row.clip).rect_filled(edge, 0.0, motion::mix(body, ink_on(body), 0.5));
         let id = clip_element_id(clip);
-        let outline = clip_element(&id, lane, clip, timeline, true).look();
+        // A comparison lookup, taken out of the tree again: the clip's body is drawn under the
+        // same key without `[selected]`, and a second element there would leave its selected
+        // style as the body's painted one (held for a transition) in the next frame.
+        let outline = clip_element(&id, lane, clip, timeline, true).probe();
         painter.with_clip_rect(row.clip).rect_stroke(
             rect,
             0.0,

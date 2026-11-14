@@ -1030,6 +1030,9 @@ fn column_body(
             continue;
         }
         let number = scene + 1;
+        // The clip's native colours, read before the slot and its clip are entered: inside them the
+        // palette's colours are their own, which would put a rule for every clip on a stated one.
+        let native = SlotNative::read();
         let slot_style = crate::kit::element::SLOT
             .id(&format!("slot-{}-{number}", column.track.0))
             .attr(Selected, state.selected_slot == Some((column.track, scene)))
@@ -1049,11 +1052,11 @@ fn column_body(
             if response.clicked() {
                 state.launch_keys.pick(target);
             }
-            let plain = plain_clip(has_clip, clip_colour, slot, false);
+            let plain = plain_clip(has_clip, clip_colour, slot, false, false);
             let clip_style = has_clip.then(|| slot_clip(clip_colour, slot, false).enter());
             let el = clip_style.as_ref().unwrap_or(&slot_style);
             let looks = (el, plain.as_ref());
-            slot_cell(painter, rect, looks, column, slot, (0.0, None), 1.0, progress, false);
+            slot_cell(painter, rect, looks, native, column, slot, (0.0, None), 1.0, progress, false);
             crate::session::launch_keys::overlay(
                 painter,
                 rect,
@@ -1123,7 +1126,7 @@ fn column_body(
         // `clip:hover` matches it (#1241).
         let hovered = [&launch, &select].into_iter().flatten().any(egui::Response::hovered);
         let selected = state.selected_slot == Some(key);
-        let plain = plain_clip(has_clip, clip_colour, slot, selectable && selected);
+        let plain = plain_clip(has_clip, clip_colour, slot, selectable && selected, hovered);
         let clip_style = has_clip
             .then(|| slot_clip(clip_colour, slot, selectable && selected).pointer(hovered, false, false).enter());
         let hover_fill = clip_style.as_ref().and_then(|clip| {
@@ -1240,7 +1243,18 @@ fn column_body(
         });
         let el = clip_style.as_ref().unwrap_or(&slot_style);
         let looks = (el, plain.as_ref());
-        slot_cell(painter, rect, looks, column, slot, (hover, hover_fill), pulse, progress, selectable && selected);
+        slot_cell(
+            painter,
+            rect,
+            looks,
+            native,
+            column,
+            slot,
+            (hover, hover_fill),
+            pulse,
+            progress,
+            selectable && selected,
+        );
         if column.armed && !has_clip && column.kind == ColumnKind::Track {
             let recording = column.recording == Some(scene);
             let (track, name) = (column.track.0, column.name.as_str());
@@ -1379,16 +1393,41 @@ fn slot_clip(
         .attr(Muted, !slot.enabled)
 }
 
-/// A slot's clip with no state, for what a state's rule changes (`clip[queued]`, `clip[muted]`):
-/// looked up only when the clip has one, beside the clip itself.
+/// A slot's clip without the states a rule is compared for (`clip[queued]`, `[muted]`,
+/// `[selected]`), for what such a rule changes: looked up only when the clip has one of them,
+/// beside the clip itself, and with what the drawn clip has besides them (its colour, `[playing]`,
+/// the pointer over it) so that a `clip:hover` rule is not taken for a state's.
 fn plain_clip(
     has_clip: bool,
     colour: Color32,
     slot: &crate::interaction::grid::Slot,
     selected: bool,
+    hovered: bool,
 ) -> Option<crate::kit::element::Look> {
     let stated = !slot.enabled || slot.state == SlotState::Queued || selected;
-    (has_clip && stated).then(|| crate::kit::element::CLIP.color(colour).probe())
+    (has_clip && stated).then(|| {
+        crate::kit::element::CLIP
+            .color(colour)
+            .attr(Playing, slot.state == SlotState::Playing)
+            .pointer(hovered, false, false)
+            .probe()
+    })
+}
+
+/// The colours a slot's clip falls back on where no rule for its state gives one, read before
+/// the slot and the clip are entered.
+#[derive(Clone, Copy)]
+struct SlotNative {
+    /// A deactivated clip's grey, and what a muted track's clips are mixed toward.
+    muted: Color32,
+    /// A selected clip's outline.
+    outline: Color32,
+}
+
+impl SlotNative {
+    fn read() -> Self {
+        Self { muted: theme::control_background(), outline: theme::text_primary() }
+    }
 }
 
 /// `hover` is how far the pointer's hover has come (0 to 1), with the theme's hovered background
@@ -1398,6 +1437,7 @@ fn slot_cell(
     painter: &egui::Painter,
     rect: Rect,
     (el, plain): (&crate::kit::element::Entered, Option<&crate::kit::element::Look>),
+    native: SlotNative,
     column: &Column,
     slot: &crate::interaction::grid::Slot,
     (hover, hover_fill): (f32, Option<Color32>),
@@ -1428,7 +1468,7 @@ fn slot_cell(
     let state = el.look();
     let plain = plain.cloned().unwrap_or_default();
     // What a muted track's clips are mixed toward: the grey of a deactivated clip.
-    let muted = theme::control_background();
+    let muted = native.muted;
     // A clip under the pointer: `base` toward the theme's hovered background, or lighter.
     let lit = |base: Color32, light: f32| match hover_fill {
         Some(fill) => motion::mix(motion::mix(base, Color32::WHITE, light), fill, hover),
@@ -1463,7 +1503,7 @@ fn slot_cell(
             // The clip in its colour, lighter under the pointer; a deactivated clip is grey
             // (`clip[muted]`).
             let base = if !slot.enabled {
-                state.background_unlike(&plain, theme::control_background())
+                state.background_unlike(&plain, native.muted)
             } else if slot.state == SlotState::Queued {
                 state.background_unlike(&plain, clip_color)
             } else {
@@ -1522,7 +1562,7 @@ fn slot_cell(
     // A selected clip is outlined as a selected arrangement clip is; a queued one keeps its
     // breathing outline.
     if selected && slot.state != SlotState::Queued {
-        let outline = state.border_unlike(&plain, theme::text_primary());
+        let outline = state.border_unlike(&plain, native.outline);
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, outline), StrokeKind::Inside);
     }
 }

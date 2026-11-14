@@ -51,6 +51,9 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
             widgets::button_area(ui, area, Id::unique(("arrangement-tool", name)), &label).on_hover_text(&hint);
         let chosen = state.tool == tool;
         response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, &label));
+        // The native inks, read before the tool is entered: inside it the palette's text colours
+        // are the tool's own `color`, which would put a rule for every tool on the chosen one.
+        let inks = (theme::text_primary(), theme::text_secondary());
         // `arrangement-tool`, `[checked]` on the chosen one.
         let (el, plain) = crate::kit::element::ARRANGEMENT_TOOL
             .response(&response)
@@ -62,7 +65,7 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
             &el,
             plain.as_ref(),
             (mix(theme::control_active()), mix(theme::control_background())),
-            (theme::text_primary(), theme::text_secondary()),
+            inks,
         );
         painter.rect_filled(area, 0.0, fill);
         match tool {

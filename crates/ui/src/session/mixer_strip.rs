@@ -866,13 +866,16 @@ fn audio_block(
             id.with(("strip-monitor", value)),
             format!("{} monitor {word}", column.name),
         );
+        // The lit label's native ink, read before the button is entered: inside it the palette's
+        // text colours are the button's own `color`.
+        let lit_ink = theme::text_primary();
         let (el, plain) = crate::kit::element::BUTTON.id(&name).response(&response).enter_against_plain(Checked, on);
         let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         let (fill, ink) = widgets::toggle_inks(
             &el,
             plain.as_ref(),
             (theme::control_active(), off),
-            (theme::text_primary(), el.color_or(theme::text_secondary())),
+            (lit_ink, el.color_or(theme::text_secondary())),
         );
         painter.rect_filled(area, 0.0, fill);
         widgets::text_in(
