@@ -27,6 +27,7 @@ mod piano_roll_fixes;
 mod piano_roll_gestures;
 mod piano_roll_ghosts;
 mod piano_roll_grid;
+mod piano_roll_menu;
 mod piano_roll_quantize;
 mod piano_roll_ruler;
 mod piano_roll_scale;
