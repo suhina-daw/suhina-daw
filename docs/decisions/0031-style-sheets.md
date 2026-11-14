@@ -1086,3 +1086,44 @@ switch is lit only by a rule for its lit state.
   over it: the user-agent sheet gives `settings`, `dialog`, `popup`, `start-page`, `plugin-manager`
   and `export` `overflow: hidden`, which clips what they paint to their boxes. Their shapes are the
   same.
+
+## Amendment: egui's own widgets take their look from the style sheet (2026-11-15)
+
+Accepted, from [issue #1442](https://github.com/suhina-daw/suhina-daw/issues/1442), the fifth
+slice of #1023 after #1433, #1435, #1438 and #1440: `egui::Visuals`, which `kit::theme::visuals`
+built from the palette's tokens, are built at the root from the sheet, the palette's value
+remaining each field's fallback, so a theme that has no rule for these elements looks as before
+and the palette no longer reaches egui's widgets except as that fallback.
+- **One mapping.** `style_class::WidgetRules` reads the registry's elements and writes them over a
+  `Visuals`: `button` (plain, `:hover`, `:active`, `:disabled`) for the widget states
+  (`inactive`, `hovered`, `active`, `noninteractive`; `open` takes `:active`, the engine has no
+  `:open` state), `button[checked]` for the selection, `text-input` for the text fields' fill and
+  colour. A style scope (`ui_for`) applies the same rules, entered inside it as before; the root
+  applies them to the palette-built `Visuals`. The root's lookups are `Builder::probe`s, which
+  leave no node in the style tree, so the budget does not grow.
+- **Root only.** `text-input:focus` (its border: egui outlines a focused field with the selection's
+  stroke, which `button[checked]`'s colour also sets), `menu` (egui frames every menu and pop-up
+  with the window's fill, stroke, `menu_corner_radius` and `popup_shadow`, so `menu`'s
+  `background-color`, border, `border-radius` and first outer `box-shadow` write those, and
+  egui's windows share them) and `scroll-bar` (plain, `:hover`, `:active`: egui draws a scroll
+  handle in a widget's `bg_fill`, which also fills its sliders and check marks but not its buttons).
+  egui has no value of its own for a tooltip, which it frames as a pop-up: `tooltip` keeps styling
+  the frame the floating-surface pass paints over it (#1234).
+- **When they are built.** In the style engine's frame setup (`native_css::frame`), only when the
+  palette's revision or the engine's reset count changed since the context last built them: a
+  sheet, a variant, `user.css`, the window's width (`@media`), contrast, a palette change (a
+  drag, the window's opacity) or the engine starting or stopping. They are written to the
+  context's styles only when they differ, and show from the next frame. `set_palette` no longer
+  writes them; `install` still writes the palette's, for a context that never runs a frame. A
+  view's own `visuals_mut` applies after them.
+- **Suhina Studio and the no-rule path.** The default theme runs without the style engine; the
+  lookups answer nothing and the `Visuals` are the palette's, as is every built-in theme's that
+  has no rule for these elements (`with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme`).
+- **A theme that styles them.** A theme's rule for `button`, `button:hover` or `text-input` now
+  reaches egui's widgets outside a style scope as well: Suhina Sheet, Meadow and Blocks, which
+  have such rules, show them on the widgets the views draw with egui at the root (their menus'
+  rows, labels and separators, text fields and tooltips' words: 19 of the painted record's
+  drawings, in the scenes context-menu, empty-space-menu, grid-menu, missing-files, quick-add,
+  settings-menu and tooltip); every other theme's digests are unchanged. A rule that sets a
+  border colour and no width gives a button's `:disabled` state, which egui also draws its
+  separators with, a zero-width outline, so those themes' menu separators are not drawn.

@@ -839,6 +839,15 @@ different widths (`border-width: 0 0 2px`) give these widgets only the `border-c
 browser's search field and Settings' theme swatches draw each side. Settings' choices of several parts (Ask, Panel,
 On) are `button` parts too, the chosen one `[checked]`.
 
+A rule that is not scoped reaches egui's own widgets everywhere, wherever a view draws one
+outside a style scope: `button` (`:hover`, `:active`, `:disabled`) their states, `button[checked]`
+the selection, `text-input` their fill and text colour (`text-input:focus`'s `border-color` a
+focused field's outline), `menu` the fill, border, `border-radius` and outer `box-shadow` of every
+menu and pop-up egui frames (egui's own windows share them), and `scroll-bar` (`:hover`,
+`:active`) a scroll handle's fill, which egui's sliders and check marks use too. egui has no
+value of its own for tooltips: `tooltip` styles the frame painted over them. A theme with no such
+rule keeps the colours of its tokens.
+
 ```css
 button { background-color: #24272B; border-width: 0; border-radius: 4px; }
 button:hover { background-color: #2E3238; }

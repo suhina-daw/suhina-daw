@@ -569,6 +569,20 @@ control's popup, the project switcher), `tooltip` and `dialog`.
 Settings, dialogs and the browser, styled by the generic `button` rules) draw one outline all round: a rule whose sides differ gives them its
 `border-color` and leaves their outline's width as it was, rather than a box of its widest side.
 
+**egui's own widgets at the root (#1442).** egui draws its buttons, check boxes, drop-downs, text
+fields, scroll bars, menus and pop-ups from `egui::Visuals`. The window builds them from the
+sheet, each value falling back to the palette's: `button` (plain, `:hover`, `:active`,
+`:disabled`; an open button is a pressed one) for the widget states, `button[checked]` for the
+selection, `text-input` for text fields (`text-input:focus`'s border for a focused field's
+outline), `menu` for every menu and pop-up that egui frames (`background-color`, border,
+`border-radius`, outer `box-shadow`; egui's own windows share these), and `scroll-bar` (plain,
+`:hover`, `:active`) for a scroll handle's fill, which egui also uses for its sliders' and check
+marks' fills. egui has no separate value for a tooltip: `tooltip` styles the frame painted over
+it. A rule with no ancestor reaches them everywhere; one scoped to a view (`settings button`)
+reaches them in that view only, over the root's values. The values are rebuilt when the styles
+reset (theme, variant, `user.css`, a width `@media`, contrast, the window's opacity), not every
+frame, and show from the next frame.
+
 **One paint model (#1233).** Every background blends with what is under it. The window clears
 once (to nothing in a see-through window), `window` paints its background once over the whole
 window (its `background-color`, else `--window-background`), and each view, bar, panel and
