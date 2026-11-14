@@ -4,14 +4,15 @@
 //! order, row-major, gate order **i, f, g, o** (PyTorch). The exporter pre-sums
 //! `bias_ih + bias_hh`, so there is a single bias vector of length `4H`.
 
-use crate::fast_math::{fast_sigmoid, fast_tanh};
+use crate::fast_math::{sigmoid_in_place, tanh_in_place};
 
 #[derive(Debug)]
 pub(crate) struct LstmCell {
     hidden_size: usize,
     input_size: usize,
-    /// (4H) × (input_size + H), row-major.
-    w: Vec<f32>,
+    /// The exported `(4H) × (input_size + H)` row-major matrix, transposed, `(input_size + H) × (4H)`: one column per input, so the gate sums
+    /// run vectorised over the gates (Suhina's change, `VENDORED.md`).
+    wt: Vec<f32>,
     /// 4H.
     b: Vec<f32>,
     /// Exported initial hidden/cell (length H each); `reset()` restores to these.
@@ -37,10 +38,17 @@ impl LstmCell {
         debug_assert_eq!(b.len(), 4 * hidden_size);
         debug_assert_eq!(h0.len(), hidden_size);
         debug_assert_eq!(c0.len(), hidden_size);
+        let (gates, row) = (4 * hidden_size, input_size + hidden_size);
+        let mut wt = vec![0.0; w.len()];
+        for g in 0..gates {
+            for k in 0..row {
+                wt[k * gates + g] = w[g * row + k];
+            }
+        }
         Self {
             hidden_size,
             input_size,
-            w,
+            wt,
             b,
             h: h0.clone(),
             c: c0.clone(),
@@ -61,25 +69,23 @@ impl LstmCell {
         self.xh[..self.input_size].copy_from_slice(x);
         self.xh[self.input_size..].copy_from_slice(&self.h);
 
-        // gates = W · xh + b
-        for g in 0..4 * h {
-            let base = g * row;
-            let mut acc = self.b[g];
-            for k in 0..row {
-                acc += self.w[base + k] * self.xh[k];
-            }
-            self.gates[g] = acc;
-        }
+        // gates = W · xh + b, each gate summed in the order the row-major loop did (bias, then
+        // the inputs in turn), so the sums are the same bits, but over the gates at once.
+        gates_matvec(&self.wt, &self.b, &self.xh[..row], &mut self.gates);
 
         // cell update, gate order i,f,g,o
+        let (ifg, o) = self.gates.split_at_mut(3 * h);
+        sigmoid_in_place(&mut ifg[..2 * h]);
+        tanh_in_place(&mut ifg[2 * h..]);
+        sigmoid_in_place(o);
         for j in 0..h {
-            let i = fast_sigmoid(self.gates[j]);
-            let f = fast_sigmoid(self.gates[h + j]);
-            let g_ = fast_tanh(self.gates[2 * h + j]);
-            let o = fast_sigmoid(self.gates[3 * h + j]);
-            let c = f * self.c[j] + i * g_;
-            self.c[j] = c;
-            self.h[j] = o * fast_tanh(c);
+            let (i, f, g_) = (ifg[j], ifg[h + j], ifg[2 * h + j]);
+            self.c[j] = f * self.c[j] + i * g_;
+        }
+        self.h.copy_from_slice(&self.c);
+        tanh_in_place(&mut self.h);
+        for (hj, oj) in self.h.iter_mut().zip(o.iter()) {
+            *hj *= oj;
         }
         &self.h
     }
@@ -100,6 +106,45 @@ impl LstmCell {
 
     pub(crate) fn hidden_size(&self) -> usize {
         self.hidden_size
+    }
+}
+
+/// `gates = W·xh + b` from the transposed `wt`: gates in tiles of 32 held in registers,
+/// each summed as `b`, then `xh[0]`, `xh[1]`, … in turn, the row-major loop's order (AVX2
+/// picked at run time; both give the same bits).
+#[multiversion::multiversion(targets("x86_64+avx+avx2+fma"))]
+fn gates_matvec(wt: &[f32], b: &[f32], xh: &[f32], gates: &mut [f32]) {
+    const TILE: usize = 32;
+    let n = b.len();
+    let mut g0 = 0;
+    while g0 + TILE <= n {
+        let mut acc: [f32; TILE] = b[g0..g0 + TILE].try_into().unwrap_or([0.0; TILE]);
+        for (k, &x) in xh.iter().enumerate() {
+            let col: &[f32; TILE] = wt[k * n + g0..k * n + g0 + TILE].try_into().unwrap_or(&[0.0; TILE]);
+            for (a, w) in acc.iter_mut().zip(col) {
+                *a += w * x;
+            }
+        }
+        gates[g0..g0 + TILE].copy_from_slice(&acc);
+        g0 += TILE;
+    }
+    while g0 + 8 <= n {
+        let mut acc: [f32; 8] = b[g0..g0 + 8].try_into().unwrap_or([0.0; 8]);
+        for (k, &x) in xh.iter().enumerate() {
+            let col: &[f32; 8] = wt[k * n + g0..k * n + g0 + 8].try_into().unwrap_or(&[0.0; 8]);
+            for (a, w) in acc.iter_mut().zip(col) {
+                *a += w * x;
+            }
+        }
+        gates[g0..g0 + 8].copy_from_slice(&acc);
+        g0 += 8;
+    }
+    for g in g0..n {
+        let mut acc = b[g];
+        for (k, &x) in xh.iter().enumerate() {
+            acc += wt[k * n + g] * x;
+        }
+        gates[g] = acc;
     }
 }
 

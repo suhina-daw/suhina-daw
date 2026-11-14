@@ -424,8 +424,10 @@ impl NamAmp {
             return [self.model_stage(0, at, len), self.model_stage(1, at, len)];
         }
         let fed = [self.model_input(0, at, len), self.model_input(1, at, len)];
-        // Compared bit for bit: -0.0 and 0.0 count as different frames.
-        let same = fed[0] == fed[1]
+        // Compared bit for bit (-0.0 and 0.0 count as different frames), and only while the
+        // sides are still joined: once parted they stay apart until a rebuild.
+        let same = self.joined
+            && fed[0] == fed[1]
             && self.model_io[0][..fed[0]]
                 .iter()
                 .zip(&self.model_io[1][..fed[1]])
