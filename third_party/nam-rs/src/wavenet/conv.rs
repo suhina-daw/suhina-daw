@@ -303,8 +303,14 @@ fn kernel_block(g: &Geometry, n: usize, block_out: &mut [f32]) {
         if let Some(b) = g.bias {
             bias.copy_from_slice(&b[o..o + OUTS]);
         }
-        let mut t0 = 0;
-        while t0 + LANES <= n {
+        // Full chunks, then one more ending at `n` when `n` is not a multiple of `LANES`: it
+        // overlaps the previous one and writes the samples they share again with the same
+        // values, so an uneven span (the resampler legs feed 69, 70, … frames) needs no
+        // sample-at-a-time remainder.
+        let full = n / LANES;
+        let chunks = full + usize::from(n % LANES != 0 && n >= LANES);
+        for c in 0..chunks {
+            let t0 = if c < full { c * LANES } else { n - LANES };
             let mut acc = [[0.0f32; LANES]; OUTS];
             for (r, row) in acc.iter_mut().enumerate() {
                 *row = [bias[r]; LANES];
@@ -328,10 +334,12 @@ fn kernel_block(g: &Geometry, n: usize, block_out: &mut [f32]) {
                 let at = (o + r) * n + t0;
                 block_out[at..at + LANES].copy_from_slice(row);
             }
-            t0 += LANES;
         }
-        for r in 0..OUTS {
-            output_tail(g, o + r, in_base, t0, n, block_out);
+        // Only a span shorter than `LANES` is left to the sample-at-a-time path.
+        if n < LANES {
+            for r in 0..OUTS {
+                output_tail(g, o + r, in_base, 0, n, block_out);
+            }
         }
         o += OUTS;
     }
