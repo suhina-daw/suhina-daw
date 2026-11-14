@@ -57,6 +57,26 @@ notes are left out. Each pair has the track, the shared span (`start`, `end`, in
 there were more. ARA's first version refuses such overlaps for the clips it edits
 ([ADR 0033](../decisions/0033-ara-hosting.md)); ordinary stacking is unaffected.
 
+## One drag at a time
+
+The view runs one drag at a time (#1158): a clip moved, a clip's edge, a fade or its curve, a clip's
+gain, a header's volume, pan or send, the main volume, a track header moved, a marker, the loop
+brace, time painted on the lanes or the ruler, a selection rectangle, a clip drawn with the Draw
+tool, and on take lanes a comp, an area, pieces moved, a piece's edge and a crossfade or its bend.
+None starts while another is under way. The automation lanes keep their own drags.
+
+**Escape** lets go of the drag under way. What its release would have done is not done: the clip
+stays where it was, the edge, fade, marker, loop and track keep their places, no clip is drawn and
+no comp is made. What the drag already did as it went stays: time painted so far stays selected,
+and a single track's volume, pan or send stays at the value heard last (a selection of tracks
+moves only on release, so it does not move). That Escape is the drag's alone: it does not count
+toward Escape twice (`docs/spec/ui-clip-editor.md` › Pulled to the top). The rest of the press
+does nothing; the next press starts a new drag.
+
+A drag whose release the view never saw (the button let go while the view was not drawn, after Tab
+to the Launcher view, or with its handle scrolled out of sight) ends without doing anything once
+every button is up.
+
 ## Tools
 
 With Settings › Arrangement › **Toolbar** on (off by default, #991), a row of tools runs along the
