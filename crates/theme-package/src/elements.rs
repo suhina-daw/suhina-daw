@@ -372,7 +372,7 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["kind"]),
     element("time-selection", Drawn, "Selected time: its `background-color` over the lanes and its `color` at its edges; along the ruler (`kind=\"ruler\"`); the clip the Draw tool's drag makes (`kind=\"draw\"`); the piano roll's selection lit on its clip (`kind=\"editor\"`); what is picked or painted on take lanes (`kind=\"take\"`) and on automation lanes (`kind=\"automation\"`).")
         .attributes(&["kind"]),
-    element("marquee", Drawn, "The rectangle a drag draws to pick whole clips."),
+    element("marquee", Drawn, "The rectangle a drag draws to pick whole clips, the piano roll's notes and the sample map's points."),
     element("start-marker", Drawn, "The play start marker under the ruler, and its line in the lane clicked (`kind=\"insert\"`); a clip's start and end markers in the piano roll (`kind=\"clip\"`).")
         .attributes(&["kind"]),
     element("loop-region", Control, "The loop bar.").attributes(&["checked"]).artwork(&[own("loop-region")]),
@@ -389,7 +389,7 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["checked"]),
     element("arrangement-tool", Control, "A tool button of the Arrangement's own toolbar, `[checked]` on the chosen tool.")
         .attributes(&["checked"]),
-    element("playhead", Drawn, "The play position line; where a jump waits for its beat is `playhead[kind=\"pending\"]`.")
+    element("playhead", Drawn, "The play position line, in the arrangement, the piano roll and the browser's preview strip; where a jump waits for its beat is `playhead[kind=\"pending\"]`.")
         .attributes(&["kind"]),
     element("mixer", Region, "The mixer, and a mixer strip in any view.")
         .parts(&["fader", "pan", "send", "meter", "device-list"])
@@ -531,8 +531,8 @@ pub const ELEMENTS: &[Element] = &[
         .settings(VALUE_SETTINGS)
         .artwork(&[default_svg!("fader.cap", "fader-cap"), default_svg!("fader.rail", "fader-rail")]),
     element("fader-cap", Part, "A fader's cap; its artwork takes its `color`."),
-    element("fader-rail", Part, "A fader's rail; its artwork takes its `color`."),
-    element("fader-scale", Part, "The scale beside a fader."),
+    element("fader-rail", Part, "A fader's rail, the mixer's and the clip gain fader's; its artwork takes its `color`."),
+    element("fader-scale", Part, "The scale beside a fader, the mixer's and the clip gain fader's."),
     element("send", Control, "A send, in a mixer strip and in a track header.")
         .ids(Ids::Prefixed("mixer-send-"))
         .settings(VALUE_SETTINGS)
@@ -556,9 +556,10 @@ pub const ELEMENTS: &[Element] = &[
     element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists. A routing field in a track header, which takes the colours of what it is on, is `dropdown[kind=\"subtle\"]`: only a rule for that kind reaches it.")
         .attributes(&["kind"])
         .artwork(&[default_svg!("folder", "icon[kind=\"folder\"]")]),
-    element("text-input", Control, "A text field; a number typed into a value control is `text-input[kind=\"typed\"]`.")
-        .attributes(&["kind"]),
-    element("scroll-bar", Drawn, "The mark of how far a row is scrolled, such as a mixer strip's sends."),
+    element("text-input", Control, "A text field; a number typed into a value control is `text-input[kind=\"typed\"]`; the browser's fields are `#browser-search` and `#browser-new-folder`.")
+        .attributes(&["kind"])
+        .ids(Ids::Listed { prefix: "", names: &["browser-search", "browser-new-folder"] }),
+    element("scroll-bar", Drawn, "The mark of how far a row is scrolled, such as a mixer strip's sends or the device chain."),
     element("label", Drawn, "A label, its `color` inherited; a scene's number is `label[kind=\"scene-number\"]`. The browser's and the detail panels' words by how much they stand out: dim words `hint`, a control's or a figure's name `caption` (these two take only a colour a rule gives them, not one around them), a panel's title `title`, a value shown as words `value`, a fault `error`, a plug-in's state `plugin-state`, and the head of the MIDI tools' figures `head` (`[selected]` while a selection is what they act on, in its `accent-color`).")
         .attributes(&["kind", "selected"]),
     element("separator", Drawn, "A rule between parts, by its `kind`: the window's lines over and under the views; a divider between a bar's items (`bar`); the Launcher's lines between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's and the piano roll's under their rows (`row`), between their bands (`band`) and under each lane (`lane`); a line in a clip panel's list (`menu`); the lines over a device inside a device group (`group`); an expanded panel's lines between its columns (`column`); the browser's lines between its parts (`row`).")
@@ -568,8 +569,8 @@ pub const ELEMENTS: &[Element] = &[
         .ids(Ids::Listed { prefix: "", names: &["metronome-level"] })
         .settings(FLOATING),
     element("tooltip", Region, "A tooltip.").settings(FLOATING),
-    element("progress", Drawn, "A progress bar.").parts(&["progress-fill"]),
-    element("progress-fill", Part, "A progress bar's done part."),
+    element("progress", Drawn, "A progress bar: a dialog's, the sample map's busy card and the MIDI panel's range bar.").parts(&["progress-fill"]),
+    element("progress-fill", Part, "A progress bar's done part, in each of those."),
     // Pages and dialogs.
     element("settings", Region, "The Settings page.").parts(&["settings-nav"]),
     element("settings-nav", Control, "An entry of the Settings page's list."),

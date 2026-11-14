@@ -281,7 +281,10 @@ fn chain_row(
             .map_or_else(|| slots.last().map_or(area.left(), |(_, r)| r.right() + 0.5), |(_, r)| r.left() - 0.5);
         painter.with_clip_rect(area).line_segment(
             [Pos2::new(x, area.top()), Pos2::new(x, (area.top() + tallest).min(area.bottom()))],
-            egui::Stroke::new(2.0, crate::kit::element::DROP_TARGET.look().own_color_or(theme::accent())),
+            egui::Stroke::new(
+                2.0,
+                crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent()),
+            ),
         );
     }
     let pass = ui.ctx().cumulative_pass_nr();

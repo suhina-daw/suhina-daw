@@ -298,7 +298,7 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
     let tabs = [(ToolsTab::Notes, "Notes"), (ToolsTab::Transform, "Transform")];
     let element = crate::kit::element::TAB_ROW.enter();
     element.paint(painter, row);
-    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+    let line = crate::kit::element::row_line();
     painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(line));
     let font = theme::ui_font(theme::TEXT_SMALL);
     let ids = tabs.map(|(_, text)| format!("tab-{}", text.to_ascii_lowercase()));
@@ -624,7 +624,7 @@ fn chip(ui: &Ui, painter: &egui::Painter, rect: Rect, tools: &Tools<'_>) {
     widgets::text_in(painter, head_rect, Align2::LEFT_CENTER, head, tiny, head_ink);
     widgets::text_in(painter, count_rect, Align2::RIGHT_CENTER, &count, mono, count_ink);
     let line = rect.bottom() - 0.5;
-    let ink = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+    let ink = crate::kit::element::row_line();
     painter.line_segment([Pos2::new(rect.left(), line), Pos2::new(rect.right(), line)], theme::hairline(ink));
     // The head and the count are named for a reader and a test, as the piano roll's parts are.
     ui.interact(head_rect, Id::unique("piano-roll-tools-head"), Sense::hover())

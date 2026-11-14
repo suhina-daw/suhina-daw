@@ -213,6 +213,10 @@ struct DensityKey {
     legend: Vec<Kind>,
     similar: Option<(usize, Vec<usize>)>,
     spread: usize,
+    /// The grey of the dimmed points, baked into the raster, so a theme change redraws it.
+    hint: Color32,
+    /// Each kind's colour, baked into the raster likewise.
+    kind_colours: [Color32; Kind::ALL.len()],
 }
 
 /// What to do with the density raster this frame.
@@ -1092,6 +1096,8 @@ fn draw_points(
             legend: kinds,
             similar: view.similar.clone(),
             spread: density_spread(view.dot_size),
+            hint: crate::browser::browser_view::inks().hint,
+            kind_colours: Kind::ALL.map(kind_colour),
         };
         let now = painter.ctx().input(|i| i.time);
         if view.resized.0 != area {
@@ -1102,7 +1108,7 @@ fn draw_points(
             DensityPlan::Build => {
                 let colour = |i: usize| points.get(i).filter(|p| !dimmed(i, p)).map(|p| kind_colour(p.kind));
                 // The dimmed points' grey is `label[kind="hint"]`'s.
-                let image = crowd::density(screen, colour, area, key.spread, crate::browser::browser_view::inks().hint);
+                let image = crowd::density(screen, colour, area, key.spread, key.hint);
                 let texture = painter.ctx().load_texture("sample-map-density", image, egui::TextureOptions::LINEAR);
                 view.cache.density = Some(Density { key, area, transform, texture });
             }

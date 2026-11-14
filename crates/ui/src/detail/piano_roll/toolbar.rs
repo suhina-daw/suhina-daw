@@ -42,7 +42,7 @@ pub(super) fn toolbar(
     let fill = crate::kit::style_class::surface_or(theme::panel_background());
     bar_el.paint_with(&painter, rect, crate::kit::element::Native { radius: 0.0, fill });
     // The line under it: `separator[kind="row"]`, as under the ruler's loop row.
-    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+    let line = crate::kit::element::row_line();
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(line));
     // The bar as the sheet lays it out, with its Toolbar size. Its padding is its style's; where no
     // theme's sheet runs it has none to read, and the user-agent sheet's padding, which the layout
@@ -342,7 +342,7 @@ pub(crate) fn menu_face(
         (Color32::TRANSPARENT, ink)
     };
     let (fill, ink) = (own.background_unlike(&plain, fill), own.own_color_unlike(&plain, ink));
-    let caption_ink = crate::kit::element::LABEL.attribute("kind", "hint").look().own_color_or(theme::text_hint());
+    let caption_ink = crate::detail::detail_view::hint_ink();
     let painter = ui.painter();
     painter.rect_filled(rect, 3.0, fill);
     let font = theme::ui_font(theme::TEXT_SMALL);
@@ -579,7 +579,7 @@ pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Ke
     let current = keymap.workflow();
     let font = theme::ui_font(theme::TEXT_SMALL);
     // Each setting's value, dim at the right: `label[kind="hint"]`.
-    let hint = crate::kit::element::LABEL.attribute("kind", "hint").look().own_color_or(theme::text_hint());
+    let hint = crate::detail::detail_view::hint_ink();
     let mut picked = None;
     for choice in Preset::MODES {
         let response = ui.selectable_label(choice == mode, egui::RichText::new(choice.name()).font(font.clone()));

@@ -82,8 +82,8 @@ fn shine(r: u8, g: u8, b: u8, alpha: f32) -> Color32 {
 /// from the plain key's), its name on that light.
 fn key_lights() -> (Color32, Color32) {
     use crate::kit::element::{PIANO_KEY, Playing};
-    let plain = PIANO_KEY.look();
-    let playing = PIANO_KEY.attr(Playing, true).look();
+    let plain = PIANO_KEY.probe();
+    let playing = PIANO_KEY.attr(Playing, true).probe();
     (plain.accent_or(theme::accent()), playing.own_color_unlike(&plain, theme::text_inverse()))
 }
 
@@ -417,8 +417,8 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
         let chip = Rect::from_center_size(centre, POINTER_NAME);
         // `piano-scale-strip[kind="pointer"]`: its `background-color` and `color` where they
         // differ from the strip's own, so the chip stands out on a strip a theme colours.
-        let plain = crate::kit::element::PIANO_SCALE_STRIP.look();
-        let own = crate::kit::element::PIANO_SCALE_STRIP.attribute("kind", "pointer").look();
+        let plain = crate::kit::element::PIANO_SCALE_STRIP.probe();
+        let own = crate::kit::element::PIANO_SCALE_STRIP.attribute("kind", "pointer").probe();
         painter.rect_filled(chip, 1.0, own.background_unlike(&plain, theme::text_primary()));
         let name = key_name(key);
         let ink = own.own_color_unlike(&plain, theme::text_inverse());
@@ -545,7 +545,7 @@ pub(super) fn corner(
     IconButton::More.draw(&painter, more, ink, scale);
     drop(el);
     let font = theme::ui_font(theme::TEXT_SMALL);
-    let hint = crate::kit::element::LABEL.attribute("kind", "hint").look().own_color_or(theme::text_hint());
+    let hint = crate::detail::detail_view::hint_ink();
     let theme_keys = theme_sets_keys();
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {

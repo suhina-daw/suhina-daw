@@ -788,6 +788,12 @@ fn shrink(rect: Rect, [top, right, bottom, left]: [f32; 4]) -> Rect {
     if inner.is_positive() { inner } else { Rect::from_center_size(inner.center(), egui::Vec2::ZERO) }
 }
 
+/// A line between a view's rows or parts: `separator[kind="row"]`'s own `color`, else the
+/// palette's border.
+pub(crate) fn row_line() -> Color32 {
+    SEPARATOR.attribute("kind", "row").look().own_color_or(crate::kit::theme::border())
+}
+
 /// The registry's element named `name`, for code that has a name at run time.
 pub fn named(name: &str) -> Option<Name> {
     static BY_NAME: std::sync::OnceLock<std::collections::HashMap<&'static str, Name>> = std::sync::OnceLock::new();

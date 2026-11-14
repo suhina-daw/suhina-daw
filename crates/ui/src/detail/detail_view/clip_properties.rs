@@ -206,7 +206,7 @@ pub(super) fn clip_properties(
     if let Some((at, panel)) = &panel {
         let title = Rect::from_min_size(column.min, Vec2::new(column.width(), 26.0));
         let picked = super::clip_panel::title_row(ui, painter, title, info, *at, panel, actions);
-        let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+        let line = crate::kit::element::row_line();
         painter.hline(title.x_range(), title.bottom() - 0.5, theme::hairline(line));
         let body = Rect::from_min_max(Pos2::new(column.left(), title.bottom()), column.max);
         if info.audio {

@@ -171,7 +171,7 @@ pub(crate) struct Inks {
 
 /// A line between the browser's parts: `separator[kind="row"]`'s own `color`, else the border.
 pub(crate) fn rule() -> Color32 {
-    crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border())
+    crate::kit::element::row_line()
 }
 
 pub(crate) fn inks() -> Inks {
@@ -187,13 +187,12 @@ pub(crate) fn inks() -> Inks {
 /// A row's icon colour: its `browser-icon[kind="…"]` element's `color`, which the user-agent
 /// sheet gives the kinds of item that have one and a theme may change; folders, headings and
 /// projects take the row's secondary text colour unless a sheet gives them one.
-fn icon_color(kind: ItemKind) -> Color32 {
-    let tier = inks();
+fn icon_color(kind: ItemKind, secondary: Color32) -> Color32 {
     let id = icon_kind(kind);
     let el = crate::kit::element::BROWSER_ICON.attribute("kind", id).enter();
     match icon_default(id) {
         Some(default) => el.computed_color_or(default),
-        None => el.color_or(tier.secondary),
+        None => el.color_or(secondary),
     }
 }
 
@@ -314,8 +313,9 @@ fn reveal_added_tag(state: &mut BrowserState, projects: &mut Projects, name: &st
 
 /// Draws the browser in `area`.
 pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) -> BrowserOut {
-    let tier = inks();
     let style = BROWSER.enter();
+    // Read inside the entered browser, so a rule scoped to it reaches the inks.
+    let tier = inks();
     let mut styled_ui = style.ui(ui);
     let ui = &mut *styled_ui;
 
@@ -955,11 +955,6 @@ fn sidebar_view(
         }
         Some(text) => {
             let id = Id::unique("browser-new-folder");
-            let edit = egui::TextEdit::singleline(text)
-                .id(id)
-                .hint_text("A folder's path")
-                .font(item_font.clone())
-                .text_color(crate::kit::element::TEXT_INPUT.look().color_or(tier.primary));
             let field = rect.shrink2(Vec2::new(4.0, 1.0));
             let browse =
                 Rect::from_min_size(Pos2::new(field.right() - 56.0, field.top()), Vec2::new(56.0, field.height()));
@@ -970,6 +965,11 @@ fn sidebar_view(
             }
             // A `text-input`: egui's field takes its colours through its style.
             let input = crate::kit::element::TEXT_INPUT.id("browser-new-folder").enter();
+            let edit = egui::TextEdit::singleline(text)
+                .id(id)
+                .hint_text("A folder's path")
+                .font(item_font.clone())
+                .text_color(input.color_or(tier.primary));
             let response = crate::kit::widgets::text_input_at(
                 &mut input.ui(ui),
                 Rect::from_min_max(field.min, Pos2::new(browse.left() - 4.0, field.bottom())).intersect(area),
@@ -1169,7 +1169,7 @@ fn results_view(
         }
         x = lead.right() + 2.0;
         let icon_rect = Rect::from_min_size(Pos2::new(x, rect.top() + 2.5), Vec2::splat(12.0));
-        icon(&painter, icon_rect, row.item.kind, icon_color(row.item.kind));
+        icon(&painter, icon_rect, row.item.kind, icon_color(row.item.kind, tier.secondary));
         x = icon_rect.right() + 5.0;
         // The plug-ins' list's columns, those there is room for.
         if let Some(columns) = &row.columns {

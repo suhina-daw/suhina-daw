@@ -2199,9 +2199,7 @@ pub(crate) fn show(
             continue;
         }
         // The line under each automation lane, `separator[kind="row"]`, read once.
-        let row_line = *row_line.get_or_insert_with(|| {
-            crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border())
-        });
+        let row_line = *row_line.get_or_insert_with(crate::kit::element::row_line);
         match row {
             LaneRow::Group(index) => {
                 group_heading(ui, painter, geometry, lanes, index, header, time, state, gesture, params, actions);

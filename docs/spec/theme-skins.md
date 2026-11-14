@@ -163,7 +163,7 @@ Arrangement, read from the pan's own computed style. `field` forces a value fiel
 `native` or no override retains the existing global preference. The compact example
 includes the knob override; themes do not need to change the user's preference.
 The fader's dB labels/ticks expose `mixer-volume-scale` separately from the rail/cap
-and readout, with `fader-scale` paint styling. Moving/hiding this scale does not
+and readout, with `fader-scale` paint styling (the clip gain fader's scale too). Moving/hiding this scale does not
 change the parameter or gesture. Horizontal faders retain a horizontal scale.
 
 Meter material scopes include `meter-vertical` and `meter-horizontal`, containing
@@ -1216,7 +1216,7 @@ These native parts take the sheet (the theme package README lists every selector
   `#add-return-track`, artwork `add-track`.
 - **Ruler, loop region, play position:** `ruler` (background, `color`, `border-color`;
   artwork `ruler`), `loop-region` (`[checked]` while looping; `height`; artwork `loop-region`,
-  `.on`), `playhead` (`color`, `width`; `width: 0` hides it).
+  `.on`), `playhead` (`color`, `width`; `width: 0` hides it; the piano roll and the browser's preview strip draw it too).
 - **Clips:** `[color]`; `[selected]`, `[muted]`, `[playing]` (the play position inside the
   clip while the transport runs), `[recording]` (a recording span over it on its track);
   `clip-gain`, `clip-fade-handle` (artwork `clip.fade-handle`).
@@ -1355,8 +1355,8 @@ of bars, and a slider id per parameter.
   `ruler` too, and take only their `color`.
 - **Browser:** `browser-play` (`[checked]` while playing), `browser-tag-dot` (`opacity`,
   border), `browser-preview-wave` (`color` played, `border-color` ahead), the search field
-  `#browser-search`.
-- **Dialogs:** `settings-nav` (`[checked]` for the page shown), `progress`, `progress-fill`.
+  `#browser-search` and the new-folder field `#browser-new-folder`.
+- **Dialogs:** `settings-nav` (`[checked]` for the page shown), `progress`, `progress-fill` (also the sample map's busy card and the MIDI panel's range bar).
 - **The views' parts (#1417):** every colour the Launcher, its mixer strips and meters, the
   Arrangement and the piano roll's grid, notes, ruler and loop row paint comes from the element
   that draws it, with the palette token as its fallback, so a theme with no rule for an element

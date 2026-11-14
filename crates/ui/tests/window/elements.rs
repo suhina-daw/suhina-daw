@@ -825,3 +825,89 @@ fn the_header_edge_is_a_divider_that_still_resizes_the_headers() {
     let after = h.get_by_label("Track header width").rect().center().x;
     assert!((after - before - 40.0).abs() < 1.0, "the edge moved with the drag: {before} to {after}");
 }
+
+/// The text colours painted with their galley's top-left inside `rect` in the last frame.
+fn text_colours_at(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Color32> {
+    fn walk(shape: &egui::Shape, rect: egui::Rect, found: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, rect, found)),
+            egui::Shape::Text(text) if rect.contains(text.galley.rect.translate(text.pos.to_vec2()).center()) => {
+                found.push(text.fallback_color);
+                found.extend(text.galley.job.sections.iter().map(|section| section.format.color));
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    h.output().shapes.iter().for_each(|shape| walk(&shape.shape, rect, &mut found));
+    found
+}
+
+/// The browser's new-folder field is `text-input#browser-new-folder`: a rule for that id colours
+/// the text typed in it (#1438).
+#[test]
+fn the_browser_s_new_folder_field_takes_its_own_id_s_text_colour() {
+    let mut app = demo_app();
+    app.set_browser_open(true);
+    let mut h = window(app);
+    h.get_by_label("Add folder").click();
+    h.run();
+    h.event(egui::Event::Text("some/path".into()));
+    h.run();
+    let rules = [("text-input#browser-new-folder", "color", odd(110))];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// The browser's filter chips are drawn inside the browser: a rule scoped to it reaches their
+/// words (#1438).
+#[test]
+fn a_rule_scoped_to_the_browser_reaches_the_filter_chips_words() {
+    let mut app = demo_app();
+    app.set_browser_open(true);
+    let mut h = window(app);
+    let ctx = h.ctx.clone();
+    let mut chips = h.state().settings().clone();
+    chips.view.recent_chips = true;
+    h.state_mut().set_settings(&ctx, chips);
+    h.get_by_label("Place Recent").click();
+    h.run();
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        format!("browser label[kind=\"caption\"] {{ color: {}; }}", hex(odd(111))).into(),
+    ));
+    for _ in 0..4 {
+        h.step();
+    }
+    let words = text_colours_at(&h, h.get_by_label("Recent Samples").rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(words.contains(&odd(111)), "an unlit chip's words take the browser's rule: {words:?}");
+}
+
+/// The device chain's insert line, drawn while a device is carried to a place, is
+/// `drop-target[kind="insert"]`, as the other views' insert lines are (#1438).
+#[test]
+fn the_device_chain_s_insert_line_is_a_drop_target_of_kind_insert() {
+    let mut session = suhina_session::Session::new(demo_project());
+    for id in ["utility", "utility"] {
+        session.execute("device.add", &serde_json::json!({ "track": "Keys", "id": id })).unwrap();
+    }
+    let track = session.project().tracks.iter().find(|t| t.name == "Keys").map(|t| t.id).unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    let mut h = window(app);
+    h.get_by_label("Track Keys").click();
+    h.run();
+    // The first device is carried, with the pointer far right of the chain: the end of it.
+    let pointer = egui::pos2(h.ctx.content_rect().right() - 300.0, h.ctx.content_rect().bottom() - 100.0);
+    h.ctx.data_mut(|d| d.insert_temp(egui::Id::unique(suhina_ui::interaction::drop::DEVICE_CARRYING), (track, 0usize)));
+    h.event(egui::Event::PointerMoved(pointer));
+    h.step();
+    let rules = [("drop-target[kind=\"insert\"]", "color", odd(112))];
+    let missing = missing(&mut h, &rules);
+    h.ctx.data_mut(|d| {
+        d.remove::<(suhina_engine::model::TrackId, usize)>(egui::Id::unique(
+            suhina_ui::interaction::drop::DEVICE_CARRYING,
+        ))
+    });
+    assert_eq!(missing, Vec::<String>::new());
+}

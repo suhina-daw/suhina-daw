@@ -1820,7 +1820,7 @@ pub(super) fn take_lanes(
     // What is picked or painted on take lanes, read once for every lane.
     let take_sel = take_selection();
     // The line under each take lane, `separator[kind="row"]`.
-    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+    let line = crate::kit::element::row_line();
     // Which part of a piece moves it, as for a clip (`docs/spec/arrangement-editing.md`): the name
     // bar, or the lower half; only the name bar when Ctrl selects time, so a drag can still comp;
     // the whole piece when it is too low for either.
