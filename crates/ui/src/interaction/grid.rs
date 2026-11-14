@@ -69,6 +69,8 @@ pub struct Slot {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Column {
+    /// Presentation-only parent, without an audio mixer strip.
+    pub folder: bool,
     pub track: TrackId,
     pub name: String,
     pub color: Rgb,
@@ -106,6 +108,8 @@ pub struct Column {
     pub parent: Option<TrackId>,
     /// The group track this track plays into; `None` is the main output (`track.setOutput`).
     pub output: Option<TrackId>,
+    /// The actual non-main output, even when it has no group track in the routing menu.
+    pub output_name: Option<String>,
     /// -1 is full left, 1 full right.
     pub pan: f64,
     /// One per return track, in their order, for a track or group column; empty for a return.
@@ -253,7 +257,14 @@ impl TrackGrid {
             .iter()
             .filter(|t| {
                 let channel = t.channel.and_then(|id| project.channel(id));
-                channel.is_some_and(|c| c.role == ChannelRole::Effect)
+                channel.is_some_and(|c| {
+                    c.role == ChannelRole::Effect
+                        || (c.role == ChannelRole::Submix
+                            && project
+                                .channels
+                                .iter()
+                                .any(|source| source.sends.iter().any(|send| send.target == c.id)))
+                })
             })
             .collect();
         let mut number = 0;
@@ -263,6 +274,7 @@ impl TrackGrid {
             let kind = match role {
                 ChannelRole::Effect => ColumnKind::Return,
                 ChannelRole::Submix => ColumnKind::Group,
+                _ if track.is_folder() => ColumnKind::Group,
                 ChannelRole::Regular | ChannelRole::Master => ColumnKind::Track,
             };
             if role == ChannelRole::Master {
@@ -316,6 +328,7 @@ impl TrackGrid {
                     .collect(),
             };
             let column = Column {
+                folder: track.is_folder(),
                 track: track.id,
                 // Its `#` read as its number (#946).
                 name: if kind == ColumnKind::Return {
@@ -347,6 +360,7 @@ impl TrackGrid {
                     .and_then(|c| c.output)
                     .and_then(|id| project.tracks.iter().find(|t| t.channel == Some(id)))
                     .map(|t| t.id),
+                output_name: output_name(project, channel),
                 pan: channel.map_or(0.0, |c| c.pan),
                 sends: match (kind, channel) {
                     (ColumnKind::Return, _) | (_, None) => Vec::new(),
@@ -484,6 +498,19 @@ impl TrackGrid {
     }
 }
 
+/// Label the actual output rather than treating destinations outside the group picker as Main.
+pub(crate) fn output_name(project: &Project, channel: Option<&suhina_engine::model::Channel>) -> Option<String> {
+    let id = channel?.output?;
+    let Some(target) = project.channel(id) else { return Some("Missing output".into()) };
+    if target.role == ChannelRole::Master {
+        None
+    } else if target.mute {
+        Some(format!("{} (muted)", target.name))
+    } else {
+        Some(target.name.clone())
+    }
+}
+
 /// A gain factor in dB; silence is negative infinity.
 pub fn gain_to_db(gain: f64) -> f64 {
     if gain > 0.0 { 20.0 * gain.log10() } else { f64::NEG_INFINITY }
@@ -493,6 +520,58 @@ pub fn gain_to_db(gain: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::demo::demo_project;
+
+    #[test]
+    fn routed_outputs_keep_their_names_and_mutes_outside_the_group_picker() {
+        let mut project = demo_project();
+        let source = project.tracks[0].id;
+        let source_channel = project.tracks[0].channel.unwrap();
+        let target = project.tracks[1].channel.unwrap();
+        project.channel_mut(source_channel).unwrap().output = Some(target);
+        for role in [ChannelRole::Regular, ChannelRole::Effect, ChannelRole::Submix] {
+            let bus = project.channel_mut(target).unwrap();
+            bus.role = role;
+            bus.name = "Shared bus".into();
+            bus.mute = true;
+            let grid = TrackGrid::build(&project, None);
+            let column = grid.columns.iter().find(|c| c.track == source).unwrap();
+            assert_eq!(column.output_name.as_deref(), Some("Shared bus (muted)"));
+            let timeline = crate::arrangement::timeline::Timeline::build(&project, None);
+            let lane = timeline.lanes.iter().find(|l| l.track == source).unwrap();
+            assert_eq!(lane.output_name, column.output_name);
+        }
+        project.tracks.retain(|t| t.channel != Some(target));
+        let channel = project.channel(source_channel);
+        assert_eq!(output_name(&project, channel).as_deref(), Some("Shared bus (muted)"));
+        project.channel_mut(target).unwrap().mute = false;
+        assert_eq!(output_name(&project, project.channel(source_channel)).as_deref(), Some("Shared bus"));
+        project.channel_mut(target).unwrap().role = ChannelRole::Master;
+        assert_eq!(output_name(&project, project.channel(source_channel)), None);
+    }
+
+    #[test]
+    fn shared_groups_have_send_controls_without_a_duplicate_return_column() {
+        let mut p = demo_project();
+        let source = p.tracks[0].id;
+        let target_track = p.tracks[1].id;
+        let target = p.tracks[1].channel.unwrap();
+        p.channel_mut(target).unwrap().role = ChannelRole::Submix;
+        p.channel_of_track_mut(source).unwrap().sends.push(suhina_engine::model::Send {
+            target,
+            level: 0.5,
+            pre_fader: false,
+        });
+        let grid = TrackGrid::build(&p, None);
+        assert_eq!(grid.columns.iter().filter(|c| c.track == target_track).count(), 1);
+        assert_eq!(grid.columns.iter().find(|c| c.track == target_track).unwrap().kind, ColumnKind::Group);
+        assert!(
+            grid.columns.iter().find(|c| c.track == source).unwrap().sends.iter().any(|s| s.target == target_track)
+        );
+        let timeline = crate::arrangement::timeline::Timeline::build(&p, None);
+        assert!(
+            timeline.lanes.iter().find(|l| l.track == source).unwrap().sends.iter().any(|s| s.target == target_track)
+        );
+    }
 
     #[test]
     fn tracks_come_first_then_returns() {

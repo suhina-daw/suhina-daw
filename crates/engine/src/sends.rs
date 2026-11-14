@@ -98,7 +98,7 @@ pub(crate) fn plan(project: &Project) -> Vec<Planned> {
                 continue;
             }
             let Some(target_channel) = project.channel(send.target) else { continue };
-            if target_channel.role != ChannelRole::Effect {
+            if !matches!(target_channel.role, ChannelRole::Effect | ChannelRole::Submix) {
                 continue;
             }
             let Some(target) = track_of(send.target) else { continue };
@@ -114,12 +114,7 @@ pub(crate) fn plan(project: &Project) -> Vec<Planned> {
                 target,
                 gains: gains(channel, send.level, send.pre_fader),
                 level: send.level,
-                // A group's pan does not apply to its own output yet (see `buses`), so not to its sends.
-                pan: if channel.pan.is_finite() && channel.role != ChannelRole::Submix {
-                    channel.pan.clamp(-1.0, 1.0)
-                } else {
-                    0.0
-                },
+                pan: if channel.pan.is_finite() { channel.pan.clamp(-1.0, 1.0) } else { 0.0 },
                 post_fader: !send.pre_fader,
             });
         }

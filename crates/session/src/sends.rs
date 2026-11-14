@@ -17,6 +17,15 @@ const MAX_SEND_DB: f64 = 0.0;
 
 /// The return track in `params[key]` and its channel; an error for any other track.
 fn return_at(p: &Project, params: &Value, key: &str) -> Result<(TrackId, ChannelId), CommandError> {
+    destination_at(p, params, key, false)
+}
+
+fn destination_at(
+    p: &Project,
+    params: &Value,
+    key: &str,
+    allow_group: bool,
+) -> Result<(TrackId, ChannelId), CommandError> {
     let track = track_at(p, params, key)?;
     let channel = p
         .tracks
@@ -24,7 +33,7 @@ fn return_at(p: &Project, params: &Value, key: &str) -> Result<(TrackId, Channel
         .find(|t| t.id == track)
         .and_then(|t| t.channel)
         .and_then(|id| p.channel(id))
-        .filter(|c| c.role == ChannelRole::Effect)
+        .filter(|c| c.role == ChannelRole::Effect || (allow_group && c.role == ChannelRole::Submix))
         .ok_or_else(|| format!("{key} must be a return track; project.tracks lists them"))?;
     Ok((track, channel.id))
 }
@@ -53,7 +62,7 @@ fn plays_into(p: &Project, from: ChannelId, to: ChannelId) -> bool {
 /// fader) when there is none. Refused when it would feed the track back into itself.
 fn send_param<'a>(session: &'a mut Session, params: &Value) -> Result<(&'a mut Send, String), CommandError> {
     let p = &session.project;
-    let (ret, target) = return_at(p, params, "return")?;
+    let (ret, target) = destination_at(p, params, "return", true)?;
     let from = channel_param(session, params)?.id;
     let p = &session.project;
     let name = p.track(ret).map(|t| t.name.clone()).unwrap_or_default();
@@ -82,22 +91,26 @@ pub(crate) fn set_send(session: &mut Session, params: &Value) -> Result<Value, C
         return Err(format!("level must be at most {MAX_SEND_DB} dB, got {db}").into());
     }
     let gain = if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) };
-    let (ret, _) = return_at(&session.project, params, "return")?;
+    let (ret, _) = destination_at(&session.project, params, "return", true)?;
     let from = channel_param(session, params)?.id;
     let track = session.project.tracks.iter().find(|t| t.channel == Some(from)).map(|t| t.id);
     let heard_before = track.is_some_and(|t| suhina_engine::send_heard(&session.project, t, ret));
     let (send, name) = send_param(session, params)?;
     let was = send.level;
     send.level = gain;
+    // Crossing silence changes solo reachability, including the source's direct output.
+    let solo_changed =
+        (was > 0.0) != (gain > 0.0) && session.project.channels.iter().any(|c| c.solo && c.role != ChannelRole::Master);
     // A send that plays neither before nor after (a muted track's, one at silence): nothing the
     // engine plays changes, so no new graph (each step of a muted track's knob built one).
-    if !heard_before && !track.is_some_and(|t| suhina_engine::send_heard(&session.project, t, ret)) {
+    if !solo_changed && !heard_before && !track.is_some_and(|t| suhina_engine::send_heard(&session.project, t, ret)) {
         session.sync.unheard = true;
     }
     // A turn of a send that plays: a playing engine takes it as a message, smoothed, instead of
     // a new graph (one a step held the window up 60 to 80 ms in a large project). One that
     // starts from silence is not in the graph yet and takes a new one.
-    if was > 0.0
+    if !solo_changed
+        && was > 0.0
         && let Some(track) = track
     {
         session.sync.mixer_edits =

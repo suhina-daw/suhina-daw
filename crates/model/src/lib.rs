@@ -361,6 +361,44 @@ pub struct Device {
 pub const MAX_SAMPLE_SLICES: usize = 4096;
 
 impl Device {
+    /// Whether an imported hosted device is known to generate notes' audio, even before
+    /// an installed plugin is available. Used to keep missing instruments silent.
+    pub fn is_external_instrument(&self) -> bool {
+        matches!(self.kind, DeviceKind::Clap { .. } | DeviceKind::Vst2 { .. } | DeviceKind::Vst3 { .. })
+            && self.extensions.0.iter().any(|e| e.format == "suhina" && e.key == "instrument" && e.data.is_empty())
+    }
+
+    /// Retain the source's instrument role independently of the installed plugin catalog.
+    pub fn mark_external_instrument(&mut self) {
+        if matches!(self.kind, DeviceKind::Clap { .. } | DeviceKind::Vst2 { .. } | DeviceKind::Vst3 { .. })
+            && !self.is_external_instrument()
+        {
+            self.extensions.0.push(Extension { format: "suhina".into(), key: "instrument".into(), data: Vec::new() });
+        }
+    }
+
+    /// An explicitly unavailable instrument consumes notes silently until replaced or removed.
+    /// The neutral extension is preserved by project files; it does not apply to runnable devices.
+    pub fn is_missing_instrument(&self) -> bool {
+        matches!(self.kind, DeviceKind::Foreign { .. })
+            && self
+                .extensions
+                .0
+                .iter()
+                .any(|e| e.format == "suhina" && e.key == "missing-instrument" && e.data.is_empty())
+    }
+
+    /// Preserve an imported instrument as a silent placeholder, including when soloed or bypassed.
+    pub fn mark_missing_instrument(&mut self) {
+        if matches!(self.kind, DeviceKind::Foreign { .. }) && !self.is_missing_instrument() {
+            self.extensions.0.push(Extension {
+                format: "suhina".into(),
+                key: "missing-instrument".into(),
+                data: Vec::new(),
+            });
+        }
+    }
+
     /// Versioned source corrections; interpreted by the device API, not the project model.
     pub fn sample_edit_data(&self) -> Option<&[u8]> {
         let bytes = &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_edits")?.data;
@@ -700,10 +738,13 @@ pub enum FadeShape {
     Slow,
     /// `t² (3 − 2t)`: flat at both ends.
     SCurve,
+    /// Raised cosine with an exponential tension bend.
+    Cosine,
 }
 
 impl FadeShape {
-    pub const ALL: [FadeShape; 5] = [Self::Linear, Self::EqualPower, Self::Fast, Self::Slow, Self::SCurve];
+    pub const ALL: [FadeShape; 6] =
+        [Self::Linear, Self::EqualPower, Self::Fast, Self::Slow, Self::SCurve, Self::Cosine];
 
     /// The name used in project files and commands.
     pub fn name(self) -> &'static str {
@@ -713,6 +754,7 @@ impl FadeShape {
             Self::Fast => "fast",
             Self::Slow => "slow",
             Self::SCurve => "s_curve",
+            Self::Cosine => "cosine",
         }
     }
 
@@ -725,6 +767,24 @@ impl FadeShape {
     /// out beforehand.
     pub fn gain_bent(self, t: f64, exponent: f64) -> f64 {
         let shaped = self.gain(t);
+        // Cosine tension law adapted from the GPL-3.0-or-later source listed in
+        // ATTRIBUTION.md: Copyright (C) 2026 ItsAlphaNeon. Native normalized curve
+        // mapping and bounded-input handling are Suhina's changes.
+        if self == Self::Cosine && exponent != 1.0 {
+            let base = if exponent < 1.0 { 1.0 / exponent } else { exponent };
+            let squared = base * base;
+            let fourth = squared * squared;
+            let eighth = fourth * fourth;
+            let q = eighth * eighth;
+            if q - 1.0 < 1e-6 {
+                return shaped;
+            }
+            return if exponent < 1.0 {
+                (q - q.powf(1.0 - shaped)) / (q - 1.0)
+            } else {
+                (q.powf(shaped) - 1.0) / (q - 1.0)
+            };
+        }
         if exponent == 1.0 { shaped } else { shaped.powf(exponent) }
     }
 
@@ -737,12 +797,13 @@ impl FadeShape {
             Self::Fast => 1.0 - (1.0 - t) * (1.0 - t),
             Self::Slow => t * t,
             Self::SCurve => t * t * (3.0 - 2.0 * t),
+            Self::Cosine => (1.0 - (t * std::f64::consts::PI).cos()) * 0.5,
         }
     }
 }
 
 /// How one fade rises: a shape, bent by `curve` (−1 … +1, 0 the shape exactly). The gain is
-/// `shape(t)^(4^(−curve))`: + starts faster, − slower.
+/// `shape(t)^(4^(−curve))`, except cosine's exponential tension: + starts faster, − slower.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct FadeCurve {
     pub shape: FadeShape,
@@ -778,6 +839,22 @@ impl FadeCurve {
         }
         if gain >= 1.0 {
             return 1.0;
+        }
+        if (gain - half).abs() < 1e-12 {
+            return 0.0;
+        }
+        if shape == FadeShape::Cosine {
+            let mut low = -1.0;
+            let mut high = 1.0;
+            for _ in 0..48 {
+                let mid = (low + high) * 0.5;
+                if (Self { shape, curve: mid }).gain(0.5) < gain {
+                    low = mid;
+                } else {
+                    high = mid;
+                }
+            }
+            return (low + high) * 0.5;
         }
         // gain = half^(4^(−curve)), so 4^(−curve) = ln gain / ln half.
         let curve = -((gain.ln() / half.ln()).ln() / 4f64.ln());

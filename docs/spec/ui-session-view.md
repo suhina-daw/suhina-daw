@@ -364,7 +364,9 @@ vertical channel strip under its slots, and the strip shows more the taller the 
 - **The fader** is dragged up or down (Shift for finer), and the wheel over it moves it a dB at
   a time; every frame of a drag is heard, and the drag is one undo step (`track.setVolume` with
   `tracks` and a `gesture`). A double-click sets it back to 0 dB, as the Arrangement headers do.
-- **The output** reads "→ Main" or "→" and the group the track plays into. A click opens a menu
+- **The output** reads "→ Main" only for the main output; otherwise it names the actual
+  destination channel, including imported routes into regular or return tracks and channels
+  without a visible track. A muted destination is marked "(muted)". A click opens a menu
   of Main and the project's group tracks (a group does not list itself); picking one routes the
   track there (`track.setOutput`, one undo step). A route that would make a loop is refused with a
   message and changes nothing. The Arrangement view's track headers have the same dropdown.

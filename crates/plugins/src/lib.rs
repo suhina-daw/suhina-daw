@@ -308,16 +308,21 @@ impl PluginAudio {
     /// The block it was late with, which [`PluginAudio::ready`] waits for, to wait for together
     /// with other plug-ins'. Real-time safe.
     pub fn watch_ready(&self) -> Option<suhina_ipc::Watch<'_>> {
+        if self.unanswered.load(Ordering::Relaxed) > 1 {
+            return None;
+        }
         self.link.watch_ready()
     }
 
-    /// Whether a block can go now ([`Link::ready`]), waiting at most until `until` (a time
+    /// Whether the chain should attempt its next block, waiting at most until `until` (a time
     /// already past only looks) for the host to finish the block it was late with, so the next
     /// one goes as soon as it can rather than being refused (#506). Only a host late with the
     /// last block alone is waited for: one that has not answered several (hung, or far behind)
-    /// is not, and its blocks are refused at once as before. Counts nothing. Real-time safe.
+    /// is not: return `true` so `send` can refuse immediately and the chain advances. Returning
+    /// `false` would ask the engine scheduler to wait again, starving downstream devices.
+    /// Acceptance is still decided by the link in `send`. Counts nothing. Real-time safe.
     pub fn ready(&self, until: Instant) -> bool {
-        self.link.ready() || (self.unanswered.load(Ordering::Relaxed) <= 1 && self.link.wait_ready(until))
+        self.unanswered.load(Ordering::Relaxed) > 1 || self.link.ready() || self.link.wait_ready(until)
     }
 
     /// The second half: waits at most `timeout` for the block sent with [`PluginAudio::send`]
@@ -1731,6 +1736,36 @@ pub fn connect(address: &str) -> Result<Stream, PluginError> {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::panic, clippy::unwrap_used)] // test helpers outside #[test] functions
+    #[test]
+    fn repeated_misses_skip_recovery_wait_but_a_late_answer_can_recover() {
+        let link = Link::create(2, 16).unwrap();
+        let mut host = suhina_ipc::Served::open(&link.address()).unwrap();
+        let mut audio = PluginAudio {
+            link,
+            unanswered: Arc::new(AtomicU32::new(0)),
+            group: std::sync::Weak::new(),
+            sample_rate: Arc::new(AtomicU64::new(44100.0f64.to_bits())),
+            instance: 1,
+            process: 1,
+        };
+        let input = [0.5; 32];
+        let mut output = [0.0; 32];
+        assert!(audio.send(&input, &[], output.len(), Duration::ZERO));
+        assert_eq!(audio.finish(&mut output, Duration::ZERO), Outcome::Missed);
+        assert!(!audio.ready(Instant::now()), "one late block may still catch up");
+        assert!(!audio.send(&input, &[], output.len(), Duration::ZERO));
+        assert!(audio.ready(Instant::now()), "let the chain advance to immediate refusal");
+        assert!(audio.watch_ready().is_none(), "do not enlist the hung host in the scheduler wait");
+        assert!(!audio.send(&input, &[], output.len(), Duration::ZERO));
+        assert!(host.serve(Duration::ZERO, |input, output| output.copy_from_slice(input)));
+        assert!(audio.ready(Instant::now()));
+        assert!(audio.send(&input, &[], output.len(), Duration::ZERO));
+        assert_eq!(audio.unanswered.load(Ordering::Relaxed), 0);
+        assert!(host.serve(Duration::ZERO, |input, output| output.copy_from_slice(input)));
+        assert_eq!(audio.finish(&mut output, Duration::ZERO), Outcome::Done);
+        assert_eq!(output, input);
+    }
+
     use super::*;
     use std::sync::mpsc::Sender;
 

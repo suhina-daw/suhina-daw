@@ -360,6 +360,11 @@ const CLIP: Param = optional(
 const CLIP_TRACK: Param =
     optional("track", ParamType::Track, "with index or scene: the clip's track, id or name (not needed with clip)");
 /// A note command's clip: an arrangement clip by index, or a launcher clip by scene.
+const NOTE_TARGET: Param = optional(
+    "targetTrack",
+    ParamType::Integer,
+    "the instrument track of a shared pattern; defaults to the placement track",
+);
 const CLIP_INDEX: Param = optional(
     "index",
     ParamType::Integer,

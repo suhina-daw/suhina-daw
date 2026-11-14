@@ -73,6 +73,7 @@ mod meters_tests;
 mod metronome;
 #[cfg(test)]
 mod midi_effect_tests;
+mod missing_instrument;
 #[cfg(test)]
 mod node_tests;
 mod plugin;
@@ -1849,19 +1850,24 @@ fn heard_with_solo(project: &Project, channel: &suhina_model::Channel, chain: &[
         return true;
     }
     let on_chain = project.channels.iter().any(|c| soloed(c) && chain.contains(&c.id));
-    // A group sounds when something soloed plays into it.
-    let feeds_it = project.channels.iter().filter(|c| soloed(c)).any(|c| {
-        let mut next = c.output;
-        for _ in 0..64 {
-            match next {
-                Some(id) if id == channel.id => return true,
-                Some(id) => next = project.channel(id).and_then(|o| o.output),
-                None => return false,
-            }
-        }
-        false
-    });
-    on_chain || feeds_it
+    // Solo follows primary outputs and audible sends in either direction, keeping a
+    // shared destination alive without soloing unrelated sources feeding that destination.
+    let edges: Vec<_> = project
+        .channels
+        .iter()
+        .flat_map(|c| {
+            c.output
+                .into_iter()
+                .chain(c.sends.iter().filter(|s| s.level.is_finite() && s.level > 0.0).map(|s| s.target))
+                .map(move |target| (c.id, target))
+        })
+        .collect();
+    on_chain
+        || project
+            .channels
+            .iter()
+            .filter(|c| soloed(c))
+            .any(|c| sends::reaches(&edges, c.id, channel.id) || sends::reaches(&edges, channel.id, c.id))
 }
 
 /// Adds the notes of one content lane, as placed by `clip`, to `events`. Notes outside the clip's

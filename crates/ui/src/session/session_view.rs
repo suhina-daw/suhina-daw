@@ -352,6 +352,12 @@ pub fn show(
     let groups =
         grid.columns.iter().filter(|c| c.kind == ColumnKind::Group).map(|c| (c.track, c.name.clone())).collect();
     let bands = Bands {
+        outputs: grid
+            .columns
+            .iter()
+            .filter(|c| c.kind == ColumnKind::Group && !c.folder)
+            .map(|c| (c.track, c.name.clone()))
+            .collect(),
         midi_ports: &grid.midi_ports,
         input_channels: grid.input_channels,
         tracks_copied: state.tracks_copied,
@@ -672,6 +678,7 @@ struct Bands<'a> {
     /// Every track but the returns, in track order, and the group tracks with their names.
     places: Vec<Place>,
     groups: Vec<(TrackId, String)>,
+    outputs: Vec<(TrackId, String)>,
     mapped: &'a [(MappingTarget, String)],
 }
 
@@ -717,7 +724,7 @@ fn draw_column(
         &mixer_painter,
         mixer_rect,
         column,
-        &bands.groups,
+        &bands.outputs,
         track_number,
         bands.input_channels,
         state,

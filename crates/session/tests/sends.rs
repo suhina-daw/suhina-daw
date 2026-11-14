@@ -117,7 +117,7 @@ fn bad_send_parameters_change_nothing() {
         ("track.setSend", json!({ "track": "Bass", "return": -1, "level": 0 })),
         ("track.setSendMode", json!({ "track": "Bass", "return": "A Return", "mode": "middle" })),
         ("track.setSendMode", json!({ "track": "Bass", "return": "A Return", "mode": 1 })),
-        ("track.setSendMode", json!({ "track": "Bass", "return": "Group", "mode": "pre" })),
+        ("track.setSendMode", json!({ "track": "Bass", "return": "Lead", "mode": "pre" })),
         ("return.add", json!({ "name": "  " })),
         ("return.add", json!({ "name": 3 })),
         ("return.remove", json!({ "return": "Bass" })),
@@ -276,4 +276,47 @@ fn a_send_turned_up_from_silence_takes_one_graph_then_messages() {
     }
     let mut out = vec![0.0f32; 960];
     renderer.process(&mut out);
+}
+
+#[test]
+fn a_shared_group_accepts_sends_but_is_not_removed_as_a_return() {
+    let mut session = Session::new(project());
+    run(&mut session, "track.setSend", json!({"track": "Bass", "return": "Group", "level": -6})).unwrap();
+    assert_eq!(sends(&session, 1)[0].target, ChannelId(5));
+    run(&mut session, "track.setSendMode", json!({"track": "Bass", "return": "Group", "mode": "pre"})).unwrap();
+    assert!(sends(&session, 1)[0].pre_fader);
+    assert!(run(&mut session, "return.remove", json!({"return": "Group"})).is_err());
+    assert!(session.project().track(TrackId(5)).is_some());
+    assert!(run(&mut session, "track.setSend", json!({"track": "Group", "return": "Group", "level": 0})).is_err());
+}
+
+#[test]
+fn turning_a_send_off_and_on_updates_the_soloed_groups_source_audibility() {
+    let mut p = project();
+    p.channel_mut(ChannelId(5)).unwrap().solo = true;
+    p.channel_mut(ChannelId(1)).unwrap().sends.push(Send { target: ChannelId(5), level: 1.0, pre_fader: false });
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&p, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
+    let mut session = Session::new(p);
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    run(&mut session, "transport.play", json!({})).unwrap();
+    let mut out = vec![0.0f32; 960];
+    for _ in 0..4 {
+        renderer.process(&mut out);
+    }
+    assert!(out.iter().any(|s| s.abs() > 0.01));
+    run(&mut session, "track.setSend", json!({"track": "Bass", "return": "Group", "level": "-inf"})).unwrap();
+    for _ in 0..4 {
+        renderer.process(&mut out);
+    }
+    assert!(out.iter().all(|s| s.abs() < 1e-6), "direct output must also leave the solo graph");
+    run(&mut session, "track.setSend", json!({"track": "Bass", "return": "Group", "level": 0})).unwrap();
+    run(&mut session, "transport.stop", json!({})).unwrap();
+    renderer.process(&mut out);
+    run(&mut session, "transport.play", json!({})).unwrap();
+    for _ in 0..4 {
+        renderer.process(&mut out);
+    }
+    assert!(out.iter().any(|s| s.abs() > 0.01));
 }

@@ -129,6 +129,8 @@ pub struct ClipBox {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lane {
+    /// Presentation-only parent: no audio controls or routing of its own.
+    pub folder: bool,
     pub track: TrackId,
     pub name: String,
     pub color: Rgb,
@@ -161,6 +163,8 @@ pub struct Lane {
     pub sends: Vec<crate::interaction::grid::SendKnob>,
     /// The group track this track plays into; `None` is the main output.
     pub output: Option<TrackId>,
+    /// The actual non-main output, including routes outside the group picker.
+    pub output_name: Option<String>,
     /// The track's column in the launcher, for the engine's per-track state.
     pub column: Option<usize>,
     /// The track plays launched clips instead of its arrangement clips.
@@ -377,7 +381,14 @@ impl Timeline {
             .iter()
             .filter(|t| {
                 let channel = t.channel.and_then(|id| project.channel(id));
-                channel.is_some_and(|c| c.role == ChannelRole::Effect)
+                channel.is_some_and(|c| {
+                    c.role == ChannelRole::Effect
+                        || (c.role == ChannelRole::Submix
+                            && project
+                                .channels
+                                .iter()
+                                .any(|source| source.sends.iter().any(|send| send.target == c.id)))
+                })
             })
             .collect();
         let mut number = 0;
@@ -387,6 +398,7 @@ impl Timeline {
                 Some(ChannelRole::Master) => continue,
                 Some(ChannelRole::Effect) => ColumnKind::Return,
                 Some(ChannelRole::Submix) => ColumnKind::Group,
+                None if track.is_folder() => ColumnKind::Group,
                 _ => ColumnKind::Track,
             };
             if kind != ColumnKind::Return {
@@ -419,6 +431,7 @@ impl Timeline {
                 .unwrap_or_default();
             let clips = sub_rows(clips, track.id, rows_before, &mut stack_rows);
             let lane = Lane {
+                folder: track.is_folder(),
                 track: track.id,
                 // Its `#` read as its number (#946).
                 name: if kind == ColumnKind::Return {
@@ -462,6 +475,7 @@ impl Timeline {
                     .and_then(|c| c.output)
                     .and_then(|id| project.tracks.iter().find(|t| t.channel == Some(id)))
                     .map(|t| t.id),
+                output_name: crate::interaction::grid::output_name(project, channel),
                 column: project.launcher.columns.iter().position(|c| c.track == track.id),
                 overrides: false,
                 clips,

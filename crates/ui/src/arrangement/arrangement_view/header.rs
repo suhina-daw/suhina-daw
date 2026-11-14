@@ -15,7 +15,7 @@ pub(super) fn routing(
     background: Color32,
     actions: &mut Vec<Action>,
 ) {
-    let current = lane.output.and_then(|t| groups.iter().find(|(g, _)| *g == t)).map_or("Main", |(_, name)| name);
+    let current = lane.output_name.as_deref().unwrap_or("Main");
     let label = Rect::from_min_size(rect.min, Vec2::new(18.0, rect.height()));
     widgets::text_in(
         painter,
@@ -36,7 +36,7 @@ pub(super) fn routing(
     widgets::subtle_dropdown(ui, painter, field, &response, current, background);
     egui::Popup::menu(&response).show(|ui| {
         let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
-        if ui.selectable_label(lane.output.is_none(), text("Main")).clicked() && lane.output.is_some() {
+        if ui.selectable_label(lane.output_name.is_none(), text("Main")).clicked() && lane.output_name.is_some() {
             picked = Some(serde_json::Value::from("main"));
         }
         for (group, name) in groups.iter().filter(|(g, _)| *g != lane.track) {
@@ -355,7 +355,7 @@ pub(super) fn track_header(
     );
     let level = state.meters.track(lane.track);
     let at = crate::kit::control_layout::place("arrangement-meter", at, rect);
-    if !crate::kit::control_layout::placement("arrangement-meter").hidden {
+    if !lane.folder && !crate::kit::control_layout::placement("arrangement-meter").hidden {
         meter::show(
             ui,
             &painter.with_clip_rect(painter.clip_rect().intersect(clip)),
@@ -640,13 +640,15 @@ pub(super) fn track_header(
         };
         d.insert_temp(Id::unique((crate::app::NAME_RECT_TRACK, u64::from(lane.track.0))), spot);
     });
-    if solo.intersects(clip)
+    if !lane.folder
+        && solo.intersects(clip)
         && let Some(action) =
             widgets::solo_button(ui, painter, solo, id.with("solo"), &controlled, &lane.name, lane.solo)
     {
         actions.push(action);
     }
-    if cue.intersects(clip)
+    if !lane.folder
+        && cue.intersects(clip)
         && let Some(action) = widgets::cue_button(ui, painter, cue, id.with("cue"), lane.track.0, &lane.name, lane.cue)
     {
         actions.push(action);
@@ -662,7 +664,7 @@ pub(super) fn track_header(
     } else {
         track_number.to_string()
     };
-    if toggle.intersects(clip) && !crate::kit::control_layout::placement("arrangement-enable").hidden {
+    if !lane.folder && toggle.intersects(clip) && !crate::kit::control_layout::placement("arrangement-enable").hidden {
         let toggle = crate::kit::control_layout::place("arrangement-enable", toggle, clip);
         let label = if lane.mute { format!("Turn {} on", lane.name) } else { format!("Turn {} off", lane.name) };
         let response = widgets::button_area(ui, toggle.intersect(clip), id.with("on"), label);
@@ -736,11 +738,11 @@ pub(super) fn track_header(
         egui::Popup::menu(&response).show(|ui| menus::midi_monitor_choices(ui, lane.track, mode, actions));
     }
 
-    if let Some(volume) = compact_volume {
+    if let Some(volume) = compact_volume.filter(|_| !lane.folder) {
         value_control(ui, painter, volume, clip, lane, Control::Volume, false, id, state, actions);
     }
 
-    if narrow {
+    if narrow && !lane.folder {
         // Name and automation are above; the second row keeps the four track controls
         // and a draggable volume field. Pan and sends return when the column is widened.
         let volume = Rect::from_min_max(Pos2::new(controls_end + PAD, row.top()), row.right_bottom());
@@ -749,7 +751,7 @@ pub(super) fn track_header(
 
     // Two rows: volume and pan beside the buttons, the sends after the name below; or, narrow,
     // the volume, the sends and the pan across the second row.
-    if tall && !narrow {
+    if tall && !narrow && !lane.folder {
         let (volume, pan) = if side {
             let left = controls_end + PAD;
             let pan =
@@ -840,7 +842,7 @@ pub(super) fn track_header(
     }
 
     // Row 3, taller still: where the track's audio goes.
-    if rect.height() >= SHOWS_ROUTING {
+    if rect.height() >= SHOWS_ROUTING && !lane.folder {
         let top = row.bottom().max(below.bottom()) + PAD + 4.0;
         let line = Rect::from_min_max(Pos2::new(inner.left(), top), Pos2::new(inner.right(), top + DROPDOWN));
         if line.bottom() <= inner.bottom()
@@ -848,7 +850,13 @@ pub(super) fn track_header(
             && !crate::kit::control_layout::placement("arrangement-output").hidden
         {
             let line = crate::kit::control_layout::place("arrangement-output", line, clip);
-            routing(ui, painter, line, lane, nest.groups, header_fill, actions);
+            let outputs: Vec<_> = nest
+                .groups
+                .iter()
+                .filter(|(id, _)| timeline.lanes.iter().any(|l| l.track == *id && !l.folder))
+                .cloned()
+                .collect();
+            routing(ui, painter, line, lane, &outputs, header_fill, actions);
         }
         // Taller still, on a track that plays notes: which controllers it hears when armed.
         let input = line.translate(Vec2::new(0.0, DROPDOWN + PAD));

@@ -91,3 +91,67 @@ mod group_tests {
         assert_eq!(plugin_group(&plugin(&[])), None);
     }
 }
+
+/// Imported parameter indices cannot be sent to a replacement in another plug-in format.
+/// A saved state being compatible does not establish a parameter-id mapping.
+pub(super) fn parameter_identity_matches(device: &Device, installed: &PluginInfo) -> bool {
+    if !device.extensions.0.iter().any(|e| e.format == "flp" && e.key == "wrapper") {
+        return true;
+    }
+    match &device.kind {
+        DeviceKind::Vst2 { id } => {
+            installed.format() == "vst2" && u32::from_str_radix(&installed.id, 16).ok() == Some(*id)
+        }
+        DeviceKind::Vst3 { id } => installed.format() == "vst3" && installed.id.eq_ignore_ascii_case(id),
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    #[test]
+    fn imported_indices_require_the_same_identity_and_format() {
+        let mut d = Device::new("Synth", DeviceKind::Vst2 { id: 0x12345678 });
+        d.extensions.0.push(suhina_model::Extension { format: "flp".into(), key: "wrapper".into(), data: vec![] });
+        let mut p = PluginInfo {
+            path: PathBuf::from("/Synth.dll"),
+            id: "12345678".into(),
+            name: "Synth".into(),
+            vendor: String::new(),
+            version: String::new(),
+            features: vec![],
+            replaces: vec![],
+            ara: false,
+        };
+        assert!(parameter_identity_matches(&d, &p));
+        p.path = PathBuf::from("/Synth.vst3");
+        assert!(!parameter_identity_matches(&d, &p));
+        d.extensions.0.clear();
+        assert!(parameter_identity_matches(&d, &p));
+    }
+}
+
+#[cfg(test)]
+mod replacement_host_tests {
+    use super::*;
+    #[test]
+    fn a_guessed_newer_version_cannot_join_the_originals_host_group() {
+        use suhina_plugins::matching::{How, Match};
+        let env = PluginEnv::new(Catalog::default(), PathBuf::from("host"));
+        let plugin = PluginInfo {
+            path: PathBuf::from("/Synth.vst3"),
+            id: "0123456789ABCDEF0123456789ABCDEF".into(),
+            name: "Synth 2".into(),
+            vendor: "Suhina".into(),
+            version: "2".into(),
+            features: vec![],
+            replaces: vec![],
+            ara: false,
+        };
+        for how in [How::Same, How::Declared, How::Vst2Id, How::Itself, How::SameName] {
+            assert_eq!(env.launch_group(&Match { plugin: &plugin, how }), (env.group)(&plugin));
+        }
+        assert!(env.launch_group(&Match { plugin: &plugin, how: How::NewerVersion }).is_none());
+    }
+}

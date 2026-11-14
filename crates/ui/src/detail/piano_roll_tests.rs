@@ -9,6 +9,18 @@ fn note(time: f64, duration: f64, key: u8) -> Note {
 }
 
 #[test]
+fn pattern_keys_preview_the_selected_instrument() {
+    let mut clip = clip(Vec::new());
+    clip.address["targetTrack"] = json!(8);
+    let mut state = PianoRollState::default();
+    let on = state.key_press(&clip, 60).unwrap();
+    let off = state.key_release(&clip).unwrap();
+    assert_eq!(on.params["track"], 8);
+    assert_eq!(off.params["track"], 8);
+    assert_eq!(placement_address(&clip.address), json!({ "track": 1, "index": 0 }));
+}
+
+#[test]
 fn the_editor_spans_the_loop_or_the_clips_part_of_its_content() {
     assert_eq!(content_end(Some(4.0), 0.0, 48.0, 4.0), 4.0);
     assert_eq!(content_end(None, 2.0, 8.0, 16.0), 10.0);

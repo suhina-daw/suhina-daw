@@ -364,6 +364,28 @@ fn an_instrument_plays_the_tracks_notes() {
 }
 
 #[test]
+fn disabled_instruments_and_instrument_groups_stay_silent_until_enabled() {
+    let synth = device("fm-synth", &[]);
+    let group = Device::group(
+        "Instrument group",
+        DeviceGroup::with_branches(vec![Branch { devices: vec![synth.clone()], ..Branch::new("Voice") }]),
+    );
+    for mut instrument in [synth, group, device("sampler", &[])] {
+        let sampler = instrument.kind == DeviceKind::Builtin("sampler".into());
+        instrument.enabled = false;
+        let mut p = project(vec![note(0., 1., 60)], 1., vec![instrument, device("utility", &[])]);
+        let silent = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
+        assert_eq!(peak(&silent), 0., "disabled instruments never become fallback tones");
+        p.channels[0].devices[0].enabled = true;
+        let enabled = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
+        if !sampler {
+            assert!(peak(&enabled) > 0.01, "enabling the retained synth restores sound");
+        }
+        assert!(!p.channels[0].mute);
+    }
+}
+
+#[test]
 fn a_chain_sounds_the_same_in_any_block_size() {
     let notes = vec![note(0.0, 0.5, 60), note(0.31, 0.7, 64), note(1.13, 0.2, 67), note(1.5, 1.0, 60)];
     for devices in [

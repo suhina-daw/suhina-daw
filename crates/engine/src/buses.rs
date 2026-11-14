@@ -53,7 +53,10 @@ pub(crate) fn build(
     // A track whose mixer follows lanes applies its gains after a chain, one without devices
     // when it has none (#395); a group's chain makes it a bus.
     for track in &project.tracks {
-        if chains.iter().all(|c| c.track != track.id) && automation::mixer_automated(project, track.id) {
+        if chains.iter().all(|c| c.track != track.id)
+            && (automation::mixer_automated(project, track.id)
+                || project.channel_of_track(track.id).is_some_and(|c| c.pan != 0.0))
+        {
             chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
         }
     }
@@ -164,20 +167,20 @@ pub(crate) fn build(
         let is_bus = buses.iter().any(|(t, _)| *t == chain.track);
         let frames_per_beat = crate::tempo::frames_per_beat(project.transport.tempo_bpm, f64::from(sample_rate));
         chain.mix = automation::channel_of(project, chain.track)
-            .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus, f64::from(sample_rate)));
+            .and_then(|channel| MixLanes::new(channel, frames_per_beat, true, f64::from(sample_rate)));
         // A track's pan applies live (its gains centred, the pan as factors a knob's turn moves),
-        // unless a lane carries it, also beside a volume or mute lane (#763 › 4); a group's pan
-        // does not apply (as for a group without devices).
+        // unless a lane carries it, also beside a volume or mute lane (#763 › 4).
+        // A bus applies its own pan once, after summing its inputs.
         let live_pan = automation::channel_of(project, chain.track)
-            .filter(|_| !is_bus && !chain.mix.as_ref().is_some_and(MixLanes::has_pan))
+            .filter(|_| !chain.mix.as_ref().is_some_and(MixLanes::has_pan))
             .map(|c| if c.pan.is_finite() { c.pan.clamp(-1.0, 1.0) } else { 0.0 });
-        let post = gains_until(project, chain.track, target.map(|(_, ch)| ch), !is_bus && live_pan.is_none())
-            .unwrap_or((0.0, 0.0));
+        let post =
+            gains_until(project, chain.track, target.map(|(_, ch)| ch), live_pan.is_none()).unwrap_or((0.0, 0.0));
         chain.set_post(post);
         chain.target = target.map(|(index, _)| index);
         // A live pan reaches the cue as it does the main output: its gains are centred too.
         chain.set_cue(if cued(project, chain.track) {
-            cue_gains(project, chain.track, !is_bus && live_pan.is_none())
+            cue_gains(project, chain.track, live_pan.is_none())
         } else {
             None
         });

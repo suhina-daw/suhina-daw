@@ -232,6 +232,7 @@ impl App {
         self.fitted_editors = embedded.into_iter().map(|(key, _)| key).collect();
         // A MIDI clip shows its notes in the piano roll beside its properties; under the
         // Arrangement view it can be pulled to the top.
+        let pattern_channels = self.pattern_channels(clip);
         let mut piano = self.piano_clip(clip);
         // The notes of other clips the piano roll draws behind this one's (› Ghost notes).
         if let (Some(piano), Some(clip), Some(session)) = (piano.as_mut(), clip, self.session()) {
@@ -779,6 +780,7 @@ impl App {
         detail_view::set_list_vertical(ui.ctx(), self.settings.view.device_list_vertical);
         detail_view::set_list_project(ui.ctx(), self.projects.active().map_or(0, |project| project.0));
         let picks = self.device_picks();
+        let pattern_track = &mut self.pattern_track;
         let piano_roll = &mut self.piano_roll;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
             if let (Some(piano), detail_view::Detail::Clip(info, _)) = (&piano, &shown) {
@@ -809,6 +811,33 @@ impl App {
                 let picked = detail_view::Picked { showing: picked.showing, ..detail_view::Picked::default() };
                 let seeks = matches!(piano.address.get("clip"), Some(serde_json::Value::Number(_)));
                 let cx = piano_roll::Context { options, keymap: &keymap, copied, playhead, start_marker, seeks };
+                let mut rest = rest;
+                if !pattern_channels.is_empty() {
+                    let selected = piano.address.get("targetTrack").and_then(|v| v.as_u64()).map(|v| TrackId(v as u32));
+                    let label = pattern_channels
+                        .iter()
+                        .find(|(id, _)| Some(*id) == selected)
+                        .map(|(_, name)| name.as_str())
+                        .unwrap_or("Pattern channel");
+                    let selector = egui::Rect::from_min_size(rest.min, egui::vec2(rest.width(), 24.));
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(selector), |ui| {
+                        egui::ComboBox::from_id_salt("pattern-channel")
+                            .selected_text(label)
+                            .show_ui(ui, |ui| {
+                                for (id, name) in &pattern_channels {
+                                    if ui.selectable_label(Some(*id) == selected, name).clicked() {
+                                        actions.extend(piano_roll.key_release(piano));
+                                        actions.extend(piano_roll.stop_audition());
+                                        *pattern_track = Some(*id);
+                                        ui.ctx().request_repaint();
+                                    }
+                                }
+                            })
+                            .response
+                            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, "Pattern channel"));
+                    });
+                    rest.min.y = (rest.min.y + 24.).min(rest.max.y);
+                }
                 piano_roll::show(ui, rest, piano, piano_roll, cx, actions);
                 // A press anywhere in a MIDI clip's detail area, its panel and note tools too,
                 // keeps the keys with the piano roll: Ctrl+X, Ctrl+D and the others go on acting
@@ -1047,9 +1076,49 @@ impl App {
                 piano_roll::launcher_clip(self.session()?.project(), track, scene)?
             }
         };
+        if let Some(content) = self.pattern_content(clip) {
+            let targets = content.lanes.iter().filter_map(|l| l.target).collect::<Vec<_>>();
+            let selected = self.pattern_track.filter(|id| targets.contains(id)).or_else(|| targets.first().copied());
+            if let Some(target) = selected
+                && let Some(notes) = content.lanes.iter().find_map(|l| match &l.data {
+                    suhina_engine::model::LaneData::Notes(n) if l.target == Some(target) => Some(n),
+                    _ => None,
+                })
+            {
+                piano.notes = notes.clone();
+                piano.address["targetTrack"] = serde_json::json!(target.0);
+            }
+        }
         piano.grid_menu = self.piano_grid;
         piano.grid = self.piano_grid.fixed_step(piano.bar_beats);
         Some(piano)
+    }
+
+    fn pattern_content(&self, clip: Option<ClipRef>) -> Option<&suhina_engine::model::ClipContent> {
+        let project = self.session()?.project();
+        let placed = match clip? {
+            ClipRef::Arrangement(track, id) => {
+                project.arrangement.lanes.iter().find(|l| l.track == Some(track))?.clips.iter().find(|c| c.id == id)?
+            }
+            ClipRef::Slot(track, scene) => {
+                project.launcher.columns.iter().find(|c| c.track == track)?.slots.get(scene)?.clip.as_ref()?
+            }
+        };
+        project.content(placed.content).filter(|c| c.lanes.iter().any(|l| l.target.is_some()))
+    }
+
+    fn pattern_channels(&self, clip: Option<ClipRef>) -> Vec<(TrackId, String)> {
+        let Some(content) = self.pattern_content(clip) else { return Vec::new() };
+        let Some(session) = self.session() else { return Vec::new() };
+        content
+            .lanes
+            .iter()
+            .filter_map(|lane| {
+                let target = lane.target?;
+                let track = session.project().tracks.iter().find(|t| t.id == target)?;
+                Some((target, track.name.clone()))
+            })
+            .collect()
     }
 
     /// Whether a MIDI clip's piano roll is on show: with the switch on Clip, or with the devices

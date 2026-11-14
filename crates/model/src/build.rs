@@ -32,6 +32,12 @@ impl Note {
 }
 
 impl Track {
+    /// A presentation folder groups tracks without an audio mixer channel.
+    pub fn is_folder(&self) -> bool {
+        self.channel.is_none()
+            && self.extensions.0.iter().any(|e| e.format == "suhina" && e.key == "folder" && e.data == [1])
+    }
+
     /// A track that plays nothing yet, on no channel, outside every group, hearing no input.
     pub fn new(id: TrackId, name: impl Into<String>) -> Self {
         Self {

@@ -23,6 +23,12 @@ design; how other hosts do it is in the ADR's Context.
 
 ## Processes and instances
 
+An audio processor with no input buses receives a null `ProcessData.inputs` pointer,
+including zero-frame parameter flushes. An empty Rust vector's non-null sentinel is
+not passed across this boundary. A local installed-instrument check demonstrated that
+the sentinel crashes processing, while null permits processing and state round-trips;
+the built-in test processor covers the same inputless case without external software.
+
 a host process runs any number of instances, each loaded and unloaded on its own
 under a number the engine gives it, with its own link (shared memory and doorbells) and its
 own audio thread; the host's main thread serves every instance's callbacks and editors, and
@@ -250,7 +256,11 @@ stop's all-notes-off) is waited for like an answer: its chain hands it the next 
 soon as it is done (`PluginProcessor::ready`, `PluginAudio::ready`, `Link::wait_ready`),
 while the other chains go on, and only until that block's deadline (#506). Only a plug-in
 late with the block before alone is waited for; one that has not answered several in a row
-(hung, or far behind) is not. Measured with `measure_quick_play_and_stop` (see
+(hung, or far behind) is not. After repeated misses, readiness lets the chain attempt a
+send immediately, and no recovery watch is offered to the scheduler. The link refuses
+the send until the old answer arrives; downstream devices and buses keep their block
+budget. A later answer still permits the next send and resets the miss count.
+Measured with `measure_quick_play_and_stop` (see
 *Measurements*): an instrument that took longer than a whole block over each press of play or
 stop lost two blocks a press, the late one and the next, refused, with the notes it
 brought; it now loses the late one only. A host still busy when the deadline comes refuses
@@ -362,7 +372,8 @@ replaces the plug-in (`Compatibility` in `moduleinfo.json`, or the module's
 whose class id is derived from the VST2 id by the SDK's convention (`VST`, the 4-byte id, the
 first nine bytes of the name in lower case; the name part is not compared, as a project keeps
 the name its host showed); the scanned VST2 plug-in itself, by its id, when exactly one has
-it; the same name once build words (`x64`, `64bit`, `.64`) and a
+it (installation copies with identical name, vendor, version and features count as one,
+chosen by stable path order); the same name once build words (`x64`, `64bit`, `.64`) and a
 leading vendor name are set aside, or the name without its number when the installed
 plug-in's version starts with that number (`Synth 5` finds a VST3 named `Synth` whose
 version is 5.x and whose class id follows no convention); and last the nearest newer version
@@ -380,16 +391,26 @@ state goes with the component's (`set_state` carries both) and is
 restored after a restart. A plug-in that refuses the state runs with its defaults and the
 caller is told (`offline::render_with_state`, `suhina-cli plugin run-device`). Measured on
 a real project: two effects read their VST2 chunk banks (the output changes with the saved
-settings); a third takes a parameter bank (`FxBk`) in `setState` without applying it. So the host also sets a parameter bank's current program as
-parameters, value `i` to parameter id `i`, the numbering a VST3 version keeps from its VST2
-one, but only when the plug-in has every id from 0 to the last value's: on the controller
-(`setParamNormalized`) and on the processor through the next block's parameter changes
-(`crates/plugin-host/src/vst3/params.rs`). With that the third plays with the project's settings.
+settings). A component's successful state conversion is authoritative: the host never
+queues raw parameter values over it. When the component refuses a parameter bank (`FxBk`),
+the host can set the current program's value `i` to parameter id `i` only when the VST3
+class id is derived from that bank's VST2 id and every required parameter id exists.
+The values go to the controller (`setParamNormalized`) and to the processor through the
+next block's parameter changes (`crates/plugin-host/src/vst3/params.rs`). A compatibility
+declaration promises state conversion, not identical parameter numbering, so it does not
+authorize this fallback.
 A single program of values (`FxCk`, an `.fxp` file, from the CLI's `--state`) is set as
 parameters the same way; a program chunk (`FPCh`) is refused, since the plug-in may answer
 `setState` without reading it, and the caller is told (#1167;
 [the VST2 interface](plugin-vst2.md) › State: chunks and banks).
-A newer version of an EQ refuses its predecessor's state and runs with its defaults. An
+A newer-version match gets a private host process, regardless of the installed plugin's
+normal sharing setting. Both playback and offline rendering still try the saved state,
+but a crash during that trial cannot terminate genuine instances of the replacement.
+
+A name or newer-version match alone never authorizes copying numbered parameters. The
+component may translate that state itself; if it refuses, the caller is told and the original
+state remains in the project. A newer version of an EQ refuses its predecessor's state and
+runs with its defaults. An
 instrument found by the id convention plays a project's notes with its saved settings. A
 synth's second version refuses the first version's state in every form tried: the bank, a
 single program (`FPCh`, an `.fxp` file's contents) and the bare chunk; it opens the first

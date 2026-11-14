@@ -40,6 +40,11 @@ project opens and helps find the files again.
 3. The browser's index is searched at once for candidates (instant: it is a list of names in
    memory), so the panel usually opens with most files found.
 
+During a format import, unresolved sample paths may be matched automatically against the
+browser index before audio is loaded. A unique best trailing-path match is accepted;
+equal-best matches, saturated candidate lists and missing files stay unresolved for the
+panel. The search does not add roots, scan the disk or move audio; media trust rules apply.
+
 ## The panel
 
 A dialog over the window, 600 px wide, as high as it needs (at most the window), titled

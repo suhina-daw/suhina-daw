@@ -41,7 +41,7 @@ pub struct StartState {
 }
 
 /// What a drop on the window opens, said on the start panel and in the status bar.
-pub const DROP_HINT: &str = "Drop a project (.suhina) or an .als file here to open it";
+pub const DROP_HINT: &str = "Drop a project (.suhina, .als or .flp) here to open it";
 
 /// The audio output as the panel shows it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

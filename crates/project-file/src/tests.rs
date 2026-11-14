@@ -310,6 +310,24 @@ fn every_part_of_a_project_survives_a_round_trip() {
     assert_eq!(from_json(&to_json(&project)), Ok(project));
 }
 
+#[test]
+fn presentation_folders_colors_and_cosine_fades_survive_save_and_load() {
+    let mut project = everything();
+    let mut folder = Track::new(TrackId(900), "Folder");
+    folder.color = Some(Rgb(96, 34, 32));
+    folder.extensions.0.push(Extension { format: "suhina".into(), key: "folder".into(), data: vec![1] });
+    for track in project.tracks.iter_mut().filter(|t| t.parent.is_none()) {
+        track.parent = Some(folder.id);
+    }
+    project.tracks.insert(0, folder);
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.fade_in_curve = FadeCurve { shape: FadeShape::Cosine, curve: 0.2 };
+        clip.color = Some(Rgb(73, 130, 185));
+    }
+    project.validate().unwrap();
+    assert_eq!(from_json(&to_json(&project)), Ok(project));
+}
+
 /// Markers, automation points and tempo changes have ids only while the project is open
 /// (#763 › 1): the file holds none, a reader gives new ones, and saving a project again after
 /// reading it leaves `next_id` where it was.

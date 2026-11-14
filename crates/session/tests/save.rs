@@ -116,13 +116,13 @@ fn what_cannot_be_saved_or_opened_is_an_error() {
     let bad = dir.join("bad.suhina");
     std::fs::write(&bad, "{ \"format\": \"suhina\", \"version\": 99, \"project\": {} }").unwrap_or_default();
     assert!(Session::open(&bad).is_err());
-    // A file that is neither a Suhina project nor a Live Set is refused by its extension, also
+    // A file that is neither a Suhina project nor a supported import is refused by its extension, also
     // a good project saved under the extension from before the rename (ADR 0010 decision 12).
     session.save(&dir.join("good.suhina"), true).unwrap_or_else(|e| panic!("{e}"));
     let old = dir.join("good.locr");
     std::fs::copy(dir.join("good.suhina"), &old).unwrap_or_default();
     let error = Session::open(&old).err().map(String::from).unwrap_or_default();
-    assert!(error.contains("Suhina opens a Suhina project (.suhina) or a Live Set (.als)"), "{error}");
+    assert!(error.contains("Suhina opens a project (.suhina) or imports .als and .flp files"), "{error}");
     assert!(Session::from_template(&old, None).is_err());
     let _clean = std::fs::remove_dir_all(&dir);
 }

@@ -393,3 +393,51 @@ fn a_pan_turned_while_playing_moves_the_track_on_the_cue_too() {
     assert!(peak(&built[last..]) > 0.05, "the cue hears the track");
     assert!(max_diff(&live[last..], &built[last..]) < 1e-3, "{}", max_diff(&live[last..], &built[last..]));
 }
+
+#[test]
+fn shared_group_receives_primary_and_send_inputs_once_and_solo_keeps_the_route() {
+    let plain = dry();
+    let mut p = sending(1.0, false, vec![device("utility", &[("gain", -6.0206)])]);
+    p.channels[1].role = ChannelRole::Submix;
+    p.channels[0].output = Some(ChannelId(2));
+    // Both paths intentionally carry the same source: half gain on their sum equals dry.
+    let out = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
+    assert_sounds_like(&out, &plain);
+    for solo in [0, 1] {
+        let mut soloed = p.clone();
+        soloed.channels[solo].solo = true;
+        assert_sounds_like(&render_offline(&soloed, SR, 512, suhina_device_registry::factory()).unwrap(), &plain);
+    }
+    p.channels[1].mute = true;
+    assert!(peak(&render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap()) < 1e-6);
+}
+
+#[test]
+fn solo_follows_a_send_into_a_group_without_a_primary_route() {
+    let mut p = sending(1.0, true, vec![]);
+    p.channels[0].volume = 0.0;
+    p.channels[1].role = ChannelRole::Submix;
+    for solo in [0, 1] {
+        let mut soloed = p.clone();
+        soloed.channels[solo].solo = true;
+        assert_sounds_like(&render_offline(&soloed, SR, 512, suhina_device_registry::factory()).unwrap(), &dry());
+    }
+}
+
+#[test]
+fn a_groups_post_fader_send_uses_its_pan_but_a_pre_fader_send_does_not() {
+    for devices in [vec![], vec![device("utility", &[])]] {
+        let mut p = crate::buses_tests::grouped(devices, false);
+        p.channels[2].role = ChannelRole::Submix;
+        p.channels[2].pan = -1.0;
+        p.channels[2].sends.push(Send { target: ChannelId(4), level: 1.0, pre_fader: false });
+        p.channels.push(channel(4, ChannelRole::Effect, vec![]));
+        p.tracks.push(track(4, false));
+        let post = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
+        assert!(peak(&left(&post)) > 0.1);
+        assert!(post.as_chunks::<2>().0.iter().all(|frame| frame[1].abs() < 1e-6));
+        p.channels[2].sends[0].pre_fader = true;
+        let pre = render_offline(&p, SR, 512, suhina_device_registry::factory()).unwrap();
+        assert!(pre.as_chunks::<2>().0.iter().any(|frame| frame[1].abs() > 0.1));
+    }
+}

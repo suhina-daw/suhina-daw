@@ -5,6 +5,21 @@ use super::*;
 use crate::demo::demo_project;
 
 #[test]
+fn a_presentation_folder_is_foldable_without_audio_controls() {
+    use suhina_engine::model::{Extension, Track};
+    let mut p = demo_project();
+    let mut folder = Track::new(TrackId(900), "Folder");
+    folder.extensions.0.push(Extension { format: "suhina".into(), key: "folder".into(), data: vec![1] });
+    p.tracks[0].parent = Some(folder.id);
+    p.tracks.insert(0, folder);
+    let view = Timeline::build(&p, None);
+    assert!(view.lanes[0].folder);
+    assert_eq!(view.lanes[0].kind, ColumnKind::Group);
+    assert_eq!(view.lanes[1].parent, Some(TrackId(900)));
+    assert!(!view.lanes[1].folder);
+}
+
+#[test]
 fn the_ruler_marks_tempo_and_time_signature_changes() {
     use suhina_engine::model::{TempoPoint, TimeSignature, TimeSignatureChange};
     let mut project = demo_project();

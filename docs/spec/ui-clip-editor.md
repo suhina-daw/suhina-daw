@@ -41,6 +41,11 @@ lane, the grid and zoom, and the `note.*` commands.
 
 ## Where it opens
 
+Active notes and velocity stems retain a minimum 3:1 contrast against the editor surface,
+including clips with very dark imported colours. This is a display adjustment only; the
+saved clip colour is unchanged. Note labels choose contrasting ink from the actual fill,
+not from velocity or opacity. Muted, erased and out-of-window notes remain dimmed.
+
 - **Built:** selecting a MIDI clip in the Arrangement view shows the clip's properties column on the
   left of the detail area and the piano roll in the rest of it, in place of the track's devices.
   Selecting a track, or an audio clip, shows what it showed before (devices; an audio clip's
@@ -134,6 +139,13 @@ lane, the grid and zoom, and the `note.*` commands.
   as before.
 
 ## Coordinates
+
+A shared pattern can hold targeted note lanes for several instrument tracks independently
+of the track on which its clip is placed. The editor's **Pattern channel** menu selects the
+instrument lane to display, edit and audition. Changing it releases any preview notes.
+Note commands accept optional `targetTrack` (the instrument track id) alongside the usual
+clip address. Without it, the placement track is used. A target outside the pattern is an
+error; editing one target keeps the other lanes and the shared content intact.
 
 - **Time** is in beats from the start of the clip's content (its first beat is 0), the same beats
   the model stores (`Note::time`, `Note::duration`). The ruler shows bars and beats of the content

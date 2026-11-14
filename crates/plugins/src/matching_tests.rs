@@ -102,13 +102,18 @@ fn the_exact_vst2_plug_in_comes_before_a_vst3_found_by_name() {
         let catalog = Catalog::from_json(&text.to_string());
         assert_eq!(found(catalog.match_vst2(id, name)).map(|(_, how)| how), Some(How::Itself));
     }
-    // Two plug-ins with the same id are no answer: the name decides.
+    // Duplicate installation paths for the same product must not force a guessed replacement.
     let text = json!({ "version": 2, "entries": [
         file(format!("/vst2/{shape}").as_str(), vst2(id)),
         file(format!("/other/{shape}").as_str(), vst2(id)),
         same,
     ]});
     let catalog = Catalog::from_json(&text.to_string());
+    assert_eq!(found(catalog.match_vst2(id, name)).map(|(_, how)| how), Some(How::Itself));
+    // A genuine id collision stays ambiguous; do not pick either product by path order.
+    let mut collision = text.clone();
+    collision["entries"][1]["plugins"][0]["name"] = json!("Unrelated Synth");
+    let catalog = Catalog::from_json(&collision.to_string());
     assert_eq!(found(catalog.match_vst2(id, name)).map(|(_, how)| how), Some(How::SameName));
 }
 

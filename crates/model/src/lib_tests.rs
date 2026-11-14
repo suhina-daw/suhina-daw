@@ -213,6 +213,26 @@ fn fade_shapes_and_curves_follow_the_spec() {
 }
 
 #[test]
+fn cosine_fades_keep_endpoints_tension_and_mirror_symmetry() {
+    for tension in [-255f64, -4.83, 0., 3.36, 255.] {
+        let curve = tension.signum() * tension.abs().ln_1p() / (32. * std::f64::consts::LN_2);
+        let fade = FadeCurve { shape: FadeShape::Cosine, curve };
+        assert_eq!((fade.gain(0.), fade.gain(1.)), (0., 1.));
+        let mirror = FadeCurve { curve: -curve, ..fade };
+        let mut previous = 0.;
+        for i in 0..=100 {
+            let t = f64::from(i) / 100.;
+            let actual = fade.gain(t);
+            assert!(actual >= previous && actual <= 1.);
+            assert!((actual + mirror.gain(1. - t) - 1.).abs() < 1e-12);
+            previous = actual;
+        }
+    }
+    let fade = FadeCurve { shape: FadeShape::Cosine, curve: 4.36f64.ln() / (32. * std::f64::consts::LN_2) };
+    assert!((fade.gain(0.5) - 0.676).abs() < 0.0005);
+}
+
+#[test]
 fn fades_must_be_non_negative_and_fit_the_clip() {
     let with = |fade_in: f64, fade_out: f64| Clip { fade_in, fade_out, ..clip(1, 0.0) };
     assert!(with(0.0, 0.0).fades_valid());

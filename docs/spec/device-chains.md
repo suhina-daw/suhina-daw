@@ -6,6 +6,8 @@ status: current
 last_verified: 2026-11-03
 covers:
   - crates/engine/src/chain.rs
+  - crates/engine/src/slot_factory.rs
+  - crates/engine/src/missing_instrument.rs
   - crates/engine/src/buses.rs
   - crates/engine/src/sends.rs
   - crates/engine/src/group.rs
@@ -67,6 +69,19 @@ applies an event at its next internal block boundary on a grid counted from `res
 keeps the output independent of the host's block sizes at the cost of up to one internal
 block of timing.
 
+An importer can explicitly identify an unavailable instrument using the device extension
+`format="suhina", key="missing-instrument"`, with empty data, on a Foreign device. This
+placeholder consumes note events and produces silence through a native instrument slot,
+also when solo overrides the channel mute or the placeholder is bypassed. Removing or
+replacing it removes this behaviour. Its original identity and state remain unchanged;
+an unknown effect without this marker still passes audio through.
+
+A switched-off instrument retains its identity as an instrument and produces silence;
+it must not expose the empty track's default voices or pass incoming audio through.
+This applies to native, file-backed and hosted instruments and instrument groups.
+The stored device, parameters, state and notes remain available for re-enabling.
+Switched-off effects still pass audio through.
+
 ## Automation inside a chain
 
 A built-in device's lanes (`Device::automation`, ADR 0001) set its parameters at their points and at
@@ -83,14 +98,14 @@ When a group track's channel holds devices, the tracks routed into it (at any de
 each gets a chain, one without devices when it has none, whose output goes into the group's
 chain buffer at the track's pan and the volumes from its channel up to the group; the
 group's devices run over the sum, and the volumes from the group to the master apply after
-them (a group's pan does not apply, as before). Chains are ordered so a bus comes after
+them, with the group's own pan applied once to the sum. Chains are ordered so a bus comes after
 every chain that feeds it, and a block runs them in that order. Latency compensation follows
 every path: a bus's input waits for the slowest chain feeding it, and the output for the
 slowest path, so a track with a lookahead device inside a group with another still starts
 with the rest (`crates/engine/src/buses.rs`). A device reports its delay with `latency()`
 (the overdrive and vinyl distortion, 31 frames; the limiter, its 1.5 ms lookahead), and every
-other track is delayed to match ([ADR 0006](../decisions/0006-plug-in-hosting.md) › Consequences). A group without devices stays a gain on the
-tracks routed through it, with no buffer of its own. Groups nest (up to 16 levels, ADR
+other track is delayed to match ([ADR 0006](../decisions/0006-plug-in-hosting.md) › Consequences). A group without devices or pan stays a gain on the
+tracks routed through it. A panned group gets a passthrough chain so its pan applies to the sum. Groups nest (up to 16 levels, ADR
 0001): a bus inside a bus runs before it, and a level without devices between two buses is
 a gain on the way; offline renders through three nested buses check the sum at every level,
 solo and mute through the levels and the latency of every path (`crates/engine/src/buses_tests.rs`).
@@ -193,3 +208,8 @@ value, which the project stores like any other (stock presets for the other devi
 The native sampler reuses the SDK's sample runtime and theme-aware UI widgets.
 `Device::load_sample` installs immutable decoded audio off the callback; graph
 replacement owns its disposal. This is a native instrument, not an `.sd` node.
+
+Hosted devices marked with the empty `suhina/instrument` extension retain their instrument
+role without an installed plugin. A successfully resolved host slot takes precedence;
+otherwise they consume notes silently, including while bypassed or soloed. Changing the
+device to a built-in or foreign kind makes this hosted-role marker inapplicable.

@@ -148,6 +148,59 @@ fn plugins(project: &Project, stands: Vec<(Stand, PluginSlotInfo)>) -> Plugins {
 const EFFECT: PluginSlotInfo = PluginSlotInfo { instrument: false, latency: 0 };
 const INSTRUMENT: PluginSlotInfo = PluginSlotInfo { instrument: true, latency: 0 };
 
+#[test]
+fn disabled_hosted_instrument_silences_upstream_sound_and_retains_state() {
+    let mut instrument = plug(vst3());
+    instrument.state = Some(b"saved preset".to_vec().into());
+    instrument.enabled = false;
+    let mut p = project(vec![note(0., 1., 60)], 1., vec![device("fm-synth", &[]), instrument]);
+    for enabled in [false, true] {
+        p.channels[0].devices[1].enabled = enabled;
+        let stand = Stand::new(Behaviour::Instrument);
+        let seen = Arc::clone(&stand.seen);
+        let out = render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+                .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+            SR,
+            512,
+            None,
+        )
+        .unwrap();
+        if enabled {
+            assert!(peak(&out) > 0.4);
+        } else {
+            assert_eq!(peak(&out), 0.);
+            assert!(!seen.lock().unwrap().iter().any(|(_, e)| matches!(e, NoteEvent::On { .. })));
+        }
+        assert_eq!(p.channels[0].devices[1].state.as_deref(), Some(b"saved preset".as_slice()));
+    }
+}
+
+#[test]
+fn a_hosted_instrument_enabled_during_playback_receives_later_notes() {
+    let mut instrument = plug(vst3());
+    instrument.enabled = false;
+    let mut p = project(vec![note(0., 0.25, 60), note(1., 0.25, 64), note(2., 0.25, 67)], 4., vec![instrument]);
+    p.assign_ids().unwrap();
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    assert_eq!(peak(&blocks(&mut renderer, 25, 480)), 0.);
+    p.channels[0].devices[0].enabled = true;
+    controller.update(&p).unwrap();
+    assert!(peak(&blocks(&mut renderer, 100, 480)) > 0.4);
+    assert!(seen.lock().unwrap().iter().any(|(_, e)| matches!(e, NoteEvent::On { key: 64, .. })));
+}
+
 /// An EQ after a VST3 instrument rings what the EQ output: its defaults are flat, so its
 /// output is the plug-in's (docs/spec/eq.md › The panel › The analyser).
 #[test]

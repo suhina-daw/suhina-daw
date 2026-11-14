@@ -23,6 +23,27 @@ fn project_built() -> Project {
 }
 
 #[test]
+fn presentation_folder_moves_and_ungrouping_never_change_audio_routes() {
+    let mut p = project();
+    let mut folder = Track::new(TrackId(100), "Folder");
+    folder.extensions.0.push(Extension { format: "suhina".into(), key: "folder".into(), data: vec![1] });
+    p.tracks.push(folder);
+    let channels = p.channels.clone();
+    let mut session = Session::new(p);
+    run(&mut session, "track.setGroup", json!({"track":"Bass", "group":"Folder"})).unwrap();
+    run(&mut session, "track.setMute", json!({"tracks":["Folder", "Bass"], "mute":true})).unwrap();
+    assert!(session.project().channel_of_track(TrackId(1)).unwrap().mute);
+    run(&mut session, "track.setMute", json!({"tracks":["Folder", "Bass"], "mute":false})).unwrap();
+    assert_eq!(session.project().channels, channels);
+    run(&mut session, "track.setGroup", json!({"track":"Bass", "group":"none"})).unwrap();
+    assert_eq!(session.project().channels, channels);
+    run(&mut session, "track.setGroup", json!({"track":"Bass", "group":"Folder"})).unwrap();
+    run(&mut session, "track.ungroup", json!({"track":"Folder"})).unwrap();
+    assert_eq!(session.project().channels, channels);
+    session.project().validate().unwrap();
+}
+
+#[test]
 fn every_command_is_listed_with_a_unique_id() {
     let mut session = Session::new(project());
     let listed = run(&mut session, "command.list", json!({})).unwrap();

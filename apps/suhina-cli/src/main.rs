@@ -91,7 +91,7 @@ commands:
             device.closeEditor commands
 
 options:
-  <project.als>      a Live Set to import, or a Suhina project (.suhina) to open
+  <project.als>      a project to import (.als or .flp), or a Suhina project (.suhina) to open
   --demo             use the built-in demo project instead
   -o, --output       output WAV path (render only)
   --cue <cue.wav>    render only: also write the cue (the tracks whose cue is on, after their
@@ -338,7 +338,7 @@ fn parse_args(args: &[String], command: Command) -> Result<Args, String> {
         return Err(format!("--launcher works with play, without --scene\n\n{USAGE}"));
     }
     Ok(Args {
-        source: source.ok_or(format!("missing project: give a .suhina or .als file, or --demo\n\n{USAGE}"))?,
+        source: source.ok_or(format!("missing project: give a .suhina, .als or .flp file, or --demo\n\n{USAGE}"))?,
         output,
         cue,
         node,

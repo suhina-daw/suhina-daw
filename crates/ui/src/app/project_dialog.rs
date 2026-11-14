@@ -153,7 +153,9 @@ fn draw(
     let edit = crate::kit::widgets::text_input_at(
         ui,
         field,
-        egui::TextEdit::singleline(&mut state.path).hint_text("Path to a .suhina or .als file").font(small.clone()),
+        egui::TextEdit::singleline(&mut state.path)
+            .hint_text("Path to a .suhina, .als or .flp file")
+            .font(small.clone()),
     );
     edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Project path"));
     if std::mem::take(&mut state.focus_path) {
@@ -902,6 +904,7 @@ pub(crate) fn stem(path: &Path) -> String {
 pub(crate) fn kind(path: &Path) -> String {
     match path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref() {
         Some("als") => "Live Set".into(),
+        Some("flp") => "FLP project".into(),
         _ => "Suhina project".into(),
     }
 }

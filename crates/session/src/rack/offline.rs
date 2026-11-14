@@ -45,6 +45,8 @@ pub struct OfflineDevice {
     pub audio: PluginAudio,
     /// Whether the plug-in is an instrument.
     pub instrument: bool,
+    /// Whether imported parameter ids match the installed plug-in.
+    pub parameter_identity_matches: bool,
     /// Why the plug-in did not take the state the project saved, if it did not; it runs with
     /// its own defaults then.
     pub refused: Option<String>,
@@ -67,12 +69,17 @@ pub fn start_offline(project: &Project, audio: &AudioPool, env: &PluginEnv, samp
                 if let Some(why) = started.refused.take() {
                     offline.notices.push(format!("{} did not take its saved settings ({why})", device.name));
                 }
+                if !started.parameter_identity_matches && !device.automation.is_empty() {
+                    offline.notices.push(format!("{}: imported automation is not played because the replacement has a different parameter identity.", device.name));
+                }
                 let info = PluginSlotInfo { instrument: started.instrument, latency: started.control.latency() };
                 // Its stepped parameters' lanes hold their values, as they do while playing.
                 if let Ok(list) = started.control.params() {
                     offline.plugins.set_steps(found.key, super::steps(&list));
                 }
-                let hosted = Hosted::new(started.audio).with_instrument_transport(started.instrument, sample_rate);
+                let hosted = Hosted::new(started.audio)
+                    .with_parameter_identity(started.parameter_identity_matches)
+                    .with_instrument_transport(started.instrument, sample_rate);
                 offline.plugins.insert(found.key, info, Box::new(hosted));
                 offline.controls.push(started.control);
                 offline._ara_sources.extend(started._ara_sources);
@@ -142,9 +149,16 @@ fn start_one(
         max_frames: MAX_BLOCK_FRAMES as u32,
         sample_rate: f64::from(sample_rate),
         timeout: START_TIMEOUT,
-        group: (env.group)(matched.plugin),
+        group: env.launch_group(&matched),
         ara,
     };
     let (control, audio, refused) = start(launch, state.or_else(|| saved_state(device)))?;
-    Ok(Some(OfflineDevice { control, audio, instrument, refused, _ara_sources: ara_sources }))
+    Ok(Some(OfflineDevice {
+        control,
+        audio,
+        instrument,
+        parameter_identity_matches: parameter_identity_matches(device, matched.plugin),
+        refused,
+        _ara_sources: ara_sources,
+    }))
 }

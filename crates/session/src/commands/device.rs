@@ -203,7 +203,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "device.setEnabled",
-        label: "Switch a device on or off; a device that is off passes the sound through",
+        label: "Switch a device on or off; an effect that is off passes sound through, an instrument is silent",
         params: &[DEVICE_TRACK, DEVICE, param("enabled", ParamType::Bool, "false switches the device off")],
         kind: CommandKind::EDIT,
         run: devices::set_enabled,

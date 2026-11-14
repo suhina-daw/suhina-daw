@@ -222,7 +222,7 @@ pub fn command(address: &Value, before: &ClipShape, after: &ClipShape, part: Par
     if before == after {
         return None;
     }
-    let mut params = address.clone();
+    let mut params = super::piano_roll::placement_address(address);
     let id = match part {
         Part::LoopStart | Part::LoopEnd | Part::Loop => {
             let (start, end) = after.loop_range?;
@@ -335,7 +335,7 @@ pub fn interact(
     {
         match part_at(&shape, &axis(state), ruler, pos) {
             Some(Part::Loop) => {
-                let mut params = clip.address.clone();
+                let mut params = super::piano_roll::placement_address(&clip.address);
                 params["loop"] = json!(shape.loop_range.is_none());
                 actions.push(Action::new("clip.setLoop", params));
             }

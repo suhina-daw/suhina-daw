@@ -436,10 +436,13 @@ impl PluginSlot {
     }
 
     /// Runs `span` through the plug-in with `events` (frames counted from the start of the
-    /// span) until `deadline`, or [`OFFLINE_TIMEOUT`] without one. A disabled slot passes the
-    /// sound through; one that misses passes it through too, or is silent for an instrument.
+    /// span) until `deadline`, or [`OFFLINE_TIMEOUT`] without one. A disabled effect passes the
+    /// sound through; a disabled instrument is silent, as when it misses a block.
     pub(crate) fn run(&mut self, span: &mut [f32], events: &[(usize, NoteEvent)], deadline: Option<Instant>) {
         if !self.enabled || span.is_empty() {
+            if !self.enabled && self.instrument {
+                span.fill(0.0);
+            }
             return;
         }
         let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(crate::clock::now()));

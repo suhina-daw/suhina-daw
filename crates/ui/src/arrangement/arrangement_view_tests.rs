@@ -119,6 +119,7 @@ fn a_folded_group_hides_its_tracks_and_shows_the_one_it_stands_in_for() {
 #[test]
 fn a_fold_inside_a_fold_hides_exactly_what_it_covers() {
     let lane = |track: u32, kind: ColumnKind, depth: usize| Lane {
+        folder: false,
         track: TrackId(track),
         name: format!("T{track}"),
         color: suhina_engine::model::Rgb(0, 0, 0),
@@ -140,6 +141,7 @@ fn a_fold_inside_a_fold_hides_exactly_what_it_covers() {
         pan: 0.0,
         sends: Vec::new(),
         output: None,
+        output_name: None,
         column: None,
         overrides: false,
         clips: Vec::new(),

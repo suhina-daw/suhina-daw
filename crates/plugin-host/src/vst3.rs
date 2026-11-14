@@ -707,6 +707,8 @@ pub(crate) struct Vst3Plugin {
     midi_watch: Option<Arc<MidiWatch>>,
     /// The plug-in's name, for its editor's window.
     name: String,
+    /// Canonical class id; name guesses cannot authorize indexed state.
+    class_id: String,
     editor: Option<crate::vst3::editor::Editor>,
     /// The ARA document it is bound to, when it was loaded with one (ADR 0033); let go of
     /// before the component is terminated.
@@ -724,6 +726,17 @@ pub(crate) struct Vst3Plugin {
 /// Channels in a speaker arrangement (one bit each).
 fn channel_count(arrangement: SpeakerArrangement) -> usize {
     arrangement.count_ones() as usize
+}
+
+/// Only the class id derived from the original format id permits the legacy index fallback.
+/// A similarly named newer version may reuse ids for entirely different controls.
+fn indexed_state_matches(data: &[u8], class_id: &str) -> bool {
+    if data.get(..4) != Some(b"CcnK".as_slice()) {
+        return false;
+    }
+    let Some(bytes) = data.get(16..20).and_then(|b| <[u8; 4]>::try_from(b).ok()) else { return false };
+    let id = u32::from_be_bytes(bytes);
+    suhina_plugins::matching::derived_from(class_id, id)
 }
 
 impl Vst3Plugin {
@@ -792,6 +805,7 @@ impl Vst3Plugin {
             shown: None,
             midi_watch: None,
             name,
+            class_id: cid_hex(&cid),
             editor: None,
             ara: None,
             supports_ara: false,
@@ -1088,7 +1102,11 @@ impl Vst3Plugin {
         let raw = stream.to_com_ptr::<IBStream>().ok_or("stream")?;
         // SAFETY: a live component reading from a live stream.
         let taken = ok(unsafe { self.component.setState(raw.as_ptr()) });
-        let parameters = suhina_plugins::vst2::program_values(data).map_or(0, |values| self.set_parameters(&values));
+        let parameters = if !taken && indexed_state_matches(data, &self.class_id) {
+            suhina_plugins::vst2::program_values(data).map_or(0, |values| self.set_parameters(&values))
+        } else {
+            0
+        };
         if !taken && parameters == 0 {
             return Err("the plug-in did not take the state".into());
         }
@@ -1677,7 +1695,7 @@ impl Vst3Block {
             numSamples: 0,
             numInputs: self.inputs.len() as int32,
             numOutputs: self.outputs.len() as int32,
-            inputs: self.inputs.as_mut_ptr(),
+            inputs: if self.inputs.is_empty() { std::ptr::null_mut() } else { self.inputs.as_mut_ptr() },
             outputs: self.outputs.as_mut_ptr(),
             inputParameterChanges: self.changes.take(std::iter::empty()),
             outputParameterChanges: std::ptr::null_mut(),
@@ -1803,7 +1821,7 @@ impl crate::audio::Block for Vst3Block {
             numSamples: frames as int32,
             numInputs: self.inputs.len() as int32,
             numOutputs: self.outputs.len() as int32,
-            inputs: self.inputs.as_mut_ptr(),
+            inputs: if self.inputs.is_empty() { std::ptr::null_mut() } else { self.inputs.as_mut_ptr() },
             outputs: self.outputs.as_mut_ptr(),
             inputParameterChanges: self.changes.take(events.iter().filter_map(|e| mapping.change(e))),
             outputParameterChanges: std::ptr::null_mut(),

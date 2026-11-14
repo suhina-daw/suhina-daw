@@ -845,6 +845,25 @@ opens). It is window state, not a command.
 
 ### Groups inside groups
 
+A presentation folder is a channel-less track marked by the `suhina/folder`
+extension with bytes `[1]`. It folds, names, colours and orders its children as
+a group does, but has no mixer controls. Moving into or out of a folder and
+ungrouping it leaves channel outputs and sends unchanged. Moving into an audio
+group still changes the output to that group. Folders count toward the same
+nesting limit as audio groups and survive project save/load in their extension.
+
+### Cosine fade shape
+
+The additional native `cosine` shape uses `s=(1-cos(pi*t))/2` and an exponential
+tension bend. With `q=2^(32*abs(curve))`, positive curve gives
+`(q-q^(1-s))/(q-1)` and negative curve gives `(q^s-1)/(q-1)`. At zero it is `s`.
+This shape is the exception to the power bend described in the fades section.
+The same editable curve handle and `clip.setFades` command apply; the handle
+inverts the monotonic midpoint law. Realtime playback and offline rendering use
+the same evaluator. Cosine is not included in the earlier performance figures.
+
+### Audio group nesting
+
 Groups nest: a group track can hold tracks and other groups, at most 16 levels deep
 (`MAX_GROUP_DEPTH` in the model, which also refuses a group that is inside itself). A track's
 sound goes through its own channel, its group's, that group's group's and so on to the main

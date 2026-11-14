@@ -38,6 +38,7 @@ impl BlockCounts {
 
 /// The audio half of a hosted plug-in, as the engine runs it: real-time safe.
 pub struct Hosted {
+    parameter_identity_matches: bool,
     gate: Option<super::transport_gate::TransportGate>,
     continuation: suhina_engine::SongPosition,
     rate: u32,
@@ -72,6 +73,7 @@ pub struct Hosted {
 impl Hosted {
     pub fn new(audio: PluginAudio) -> Self {
         Self {
+            parameter_identity_matches: true,
             gate: None,
             continuation: suhina_engine::SongPosition::default(),
             rate: 1,
@@ -89,6 +91,12 @@ impl Hosted {
             sent_at: None,
             song: suhina_engine::SongPosition::default(),
         }
+    }
+
+    /// Keep notes and audio running when an imported parameter identity cannot be mapped.
+    pub fn with_parameter_identity(mut self, matches: bool) -> Self {
+        self.parameter_identity_matches = matches;
+        self
     }
 
     /// The counts this keeps while the engine runs it.
@@ -444,6 +452,9 @@ impl PluginProcessor for Hosted {
 
     fn automate(&mut self, params: &[ParamEvent]) {
         self.automated.clear();
+        if !self.parameter_identity_matches {
+            return;
+        }
         let room = self.automated.capacity();
         for param in params.iter().take(room) {
             let frame = u32::try_from(param.frame).unwrap_or(u32::MAX);
