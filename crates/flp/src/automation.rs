@@ -5,7 +5,7 @@
 
 //! Automation record layouts adapted from Lemon Studio os-flp/src/project.rs and
 //! os-model/src/{lib,curve,clip_lfo}.rs, revision 011a03f23d9db7f10f07cd7d165cc978a9dda263.
-//! https://github.com/ItsAlphaNeon/Lemon-Studio. Changes: bounded conversion into clip gain
+//! <https://github.com/ItsAlphaNeon/Lemon-Studio>. Changes: bounded conversion into clip gain
 //! envelopes and device/channel automation lanes.
 
 use crate::{

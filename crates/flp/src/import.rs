@@ -4,7 +4,7 @@
 // Copyright (C) 2026 The Suhina contributors
 
 //! Channel interpretation adapted from Lemon Studio os-flp src/project.rs at
-//! 011a03f23d9db7f10f07cd7d165cc978a9dda263 (https://github.com/ItsAlphaNeon/Lemon-Studio).
+//! 011a03f23d9db7f10f07cd7d165cc978a9dda263 (<https://github.com/ItsAlphaNeon/Lemon-Studio>).
 //! Changes: Suhina mapping, bounded inputs, retained source and explicit partial-import warnings.
 //! Gain and mixer-EQ parameter laws also adapt os-dsp/src/{level,mixer}.rs at that revision.
 //! See docs/spec/flp-model-mapping.md.

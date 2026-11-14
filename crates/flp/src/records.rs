@@ -4,7 +4,7 @@
 // Copyright (C) 2026 The Suhina contributors
 
 //! Adapted from Lemon Studio os-flp src/project.rs and project/legacy.rs at
-//! 011a03f23d9db7f10f07cd7d165cc978a9dda263 (https://github.com/ItsAlphaNeon/Lemon-Studio).
+//! 011a03f23d9db7f10f07cd7d165cc978a9dda263 (<https://github.com/ItsAlphaNeon/Lemon-Studio>).
 //! Changes: checked reads, explicit errors and Suhina model values; no writer.
 //! Layouts and scope: docs/spec/flp-model-mapping.md.
 

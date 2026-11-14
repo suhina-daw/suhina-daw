@@ -4,7 +4,7 @@
 
 //! Stretch laws adapted from Lemon Studio os-model ChannelSound and os-engine,
 //! revision 011a03f23d9db7f10f07cd7d165cc978a9dda263.
-//! https://github.com/ItsAlphaNeon/Lemon-Studio. Changes: native warp markers and bounds.
+//! <https://github.com/ItsAlphaNeon/Lemon-Studio>. Changes: native warp markers and bounds.
 
 use crate::{
     Flp, FlpError, Import,

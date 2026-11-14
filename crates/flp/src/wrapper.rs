@@ -4,7 +4,7 @@
 
 //! Adapted from Lemon Studio os-flp/src/wrapper.rs, os-vst2/src/state.rs and
 //! os-vst3/src/{fl_state,lib}.rs at 011a03f23d9db7f10f07cd7d165cc978a9dda263,
-//! https://github.com/ItsAlphaNeon/Lemon-Studio. Changes: bounded borrowed records,
+//! <https://github.com/ItsAlphaNeon/Lemon-Studio>. Changes: bounded borrowed records,
 //! canonical class ids, conversion to existing host state, preserved source bytes.
 
 use suhina_model::{Device, DeviceKind, Extension};

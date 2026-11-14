@@ -7,14 +7,13 @@
   for the existing plugin host. Unavailable instruments remain silent, including when soloed. Supported audio
   volume automation becomes gain envelopes; unsupported automation stays in retained source data. Import warnings
   explain the limits and the source is retained.
-
-Supported automation links appear on their target devices or mixer channels. Neutral layered
-notes fan out to existing source instruments. Supported parallel instrument patches become
-device groups, with each plug-in state and output connection level retained. Single-output
-mixer routing preserves shared buses and their Solo behaviour. Unsupported cases are reported.
-Source instrument mute switches the retained instrument device off; mixer mute stays on its
-track or bus. Disabled instruments stay silent and can be switched back on independently.
-
-Dedicated mixer inserts fold into their source track; shared primary routes form groups,
-and parallel routes remain sends. Unused mixer strips are omitted. Output labels show the
-actual destination and its mute state.
+- In an imported `.flp` project, supported automation links appear on their target devices or mixer
+  channels. Neutral layered notes fan out to existing source instruments. Supported parallel
+  instrument patches become device groups, with each plug-in state and output connection level
+  retained. Single-output mixer routing preserves shared buses and their Solo behaviour.
+  Unsupported cases are reported. Source instrument mute switches the retained instrument device
+  off; mixer mute stays on its track or bus. Disabled instruments stay silent and can be switched
+  back on independently.
+- In an imported `.flp` project, dedicated mixer inserts fold into their source track; shared
+  primary routes form groups, and parallel routes remain sends. Unused mixer strips are omitted.
+  Output labels show the actual destination and its mute state.

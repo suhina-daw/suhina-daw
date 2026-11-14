@@ -3,7 +3,7 @@
 // Copyright (C) 2026 The Suhina contributors
 
 //! State layouts adapted from Lemon Studio os-engine/src/effects/{balance,eq,reverb,delay}.rs
-//! at 011a03f23d9db7f10f07cd7d165cc978a9dda263, https://github.com/ItsAlphaNeon/Lemon-Studio.
+//! at 011a03f23d9db7f10f07cd7d165cc978a9dda263, <https://github.com/ItsAlphaNeon/Lemon-Studio>.
 //! Changes: map only known states to approximate Suhina substitutes; retain the source bytes.
 
 use suhina_model::{Device, DeviceKind, DeviceParam, Extension};

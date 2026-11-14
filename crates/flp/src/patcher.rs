@@ -3,7 +3,7 @@
 // Copyright (C) 2026 The Suhina contributors
 
 //! Chunk/node layouts adapted from Lemon Studio os-flp/src/patcher.rs at
-//! 011a03f23d9db7f10f07cd7d165cc978a9dda263, https://github.com/ItsAlphaNeon/Lemon-Studio.
+//! 011a03f23d9db7f10f07cd7d165cc978a9dda263, <https://github.com/ItsAlphaNeon/Lemon-Studio>.
 //! Changes: bounded borrowed parsing and conversion into existing device groups.
 //! MIDI port classes confirmed from the user's authored project; see the mapping spec.
 use std::collections::{BTreeMap, BTreeSet};
