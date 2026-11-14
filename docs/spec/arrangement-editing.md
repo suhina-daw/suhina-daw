@@ -282,8 +282,8 @@ Let go, it is
   name when the clip has none, and neither notes nor a waveform: the strip is too thin for them to
   read. On a taller lane the name stays in its bar, and a MIDI clip's notes, a row per pitch the clip
   uses (the keys between take no room), give way once the strip under the name leaves a row under
-  3 points, or once they
-  crowd into a smear, their starts in view under 3 points apart (notes that start together, a
+  a point (rows under 2 points let the 2-point notes overlap a little), or once they crowd into a
+  smear, their starts in view under a point apart (sixteenths at the opening zoom stay) (notes that start together, a
   chord, count once); an audio clip keeps its waveform. One or the other is drawn, never the name
   over faint notes.
 - The right edge is one handle over the clip's full height; there is no separate loop handle

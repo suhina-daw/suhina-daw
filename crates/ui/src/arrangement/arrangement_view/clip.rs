@@ -1695,8 +1695,10 @@ pub(super) fn clip_grab_area(rect: Rect) -> Option<Rect> {
 /// Narrowest clip, in points, that has the Edit gain envelope button by its name.
 const ENVELOPE_BUTTON_LEAST: f32 = 48.0;
 
-/// Points between note starts under which a clip's notes are not drawn.
-const CROWDED_GAP: f32 = 3.0;
+/// Points between note starts under which a clip's notes are not drawn: only where they merge
+/// into a smear. Sixteenths at an ordinary zoom (a beat about 5 points) lie over a point apart
+/// and stay drawn; at 3 points they were gone at the opening zoom.
+const CROWDED_GAP: f32 = 1.0;
 
 /// Whether a MIDI clip's notes crowd too close to be drawn: their starts (`starts`, in beats,
 /// those in view) fall under [`CROWDED_GAP`] points apart across the `width` points of the clip
@@ -1707,9 +1709,9 @@ pub(super) fn notes_crowded(mut starts: Vec<f64>, width: f32) -> bool {
     !starts.is_empty() && width / (starts.len() as f32) < CROWDED_GAP
 }
 
-/// Points a pitch row needs for a clip's notes to be drawn: a note is 2 points high, so a row
-/// under 3 runs into the next one.
-const LEAST_PITCH_ROW: f32 = 3.0;
+/// Points a pitch row needs for a clip's notes to be drawn. A note is 2 points high, so rows under
+/// 2 overlap a little, and still read as the part's shape; only under a point do they merge.
+const LEAST_PITCH_ROW: f32 = 1.0;
 
 /// The pitches a clip's notes use, lowest first, each once: a row each in the clip.
 pub(super) fn used_keys(keys: impl Iterator<Item = u8>) -> Vec<u8> {
