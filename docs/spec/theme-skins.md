@@ -1143,6 +1143,16 @@ a project with more tracks and scenes than fit, so whatever shows through a head
 shows there. A scene wider than the GPU's textures allow is drawn at a smaller `--scale`, with a warning. A built-in theme's id works in place of a folder. It warns when the window would keep
 repainting every frame in a scene. `--budget` prints the style engine's counts instead.
 
+**Every built-in theme keeps its look unless a change means to change it.** A test of
+`suhina-theme-render` draws each scene in every built-in theme and variant without a GPU, and Suhina
+Studio once more with the style engine on, and lists what the last frame paints: each shape's
+place and size to a quarter point, its colours, its text and its texture by name. Each listing's
+digest is held in `apps/theme-render/tests/painted/<system>.txt` (macOS and Linux; some text, such
+as shortcuts, differs between them). A change that differs fails the test, naming the scenes and
+themes; one that means to change a look records the new digests with `SUHINA_BLESS=1` and says why,
+and `SUHINA_PAINTED_DUMP=<folder>` writes the listings to compare before and after. The About
+dialog, which shows the build's commit, is left out.
+
 Reading refuses a package, before anything is written, when:
 
 - it is not a zip, has no manifest, or its manifest is not a Suhina theme or names no id;
