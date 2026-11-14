@@ -153,9 +153,19 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
                 .map(|(scene, theme)| format!("{scene} in {theme}: recorded, not drawn")),
         )
         .collect();
+    // The smallest drawing that differs, listed whole: what a machine drew where it differs from
+    // the one that recorded it, to compare with a listing written there (`SUHINA_PAINTED_DUMP`).
+    let shown = now
+        .iter()
+        .filter(|(key, digest)| recorded.get(*key) != Some(digest))
+        .filter_map(|(key, _)| Some((key, listings.get(key)?.as_ref().ok()?)))
+        .min_by_key(|(_, listing)| listing.len())
+        .map_or_else(String::new, |((scene, theme), listing)| {
+            format!("\n\n{scene} in {theme} as this run draws it, between the lines:\n----- listing -----\n{listing}----- end -----")
+        });
     assert!(
         differ.is_empty(),
-        "{} of {} drawings differ from {} (see tests/painted.rs for how to compare or record):\n{}\n\n\
+        "{} of {} drawings differ from {} (see tests/painted.rs for how to compare or record):\n{}{shown}\n\n\
          The file as this run draws it, between the lines:\n----- {} -----\n{text}----- end -----",
         differ.len(),
         now.len(),
