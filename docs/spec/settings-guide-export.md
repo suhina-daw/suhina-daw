@@ -25,6 +25,10 @@ migrated from the Suhina website guide and covers the current native settings re
 including Arrangement colour and track-size controls, experimental liquid strengths and
 the theme editor. References name Suhina's own code and specs, not proprietary material.
 
+A description longer than a few sentences is split into paragraphs by topic, separated by a blank
+line, and a long one gets headings: a paragraph that starts with `## ` is a heading over the
+paragraphs after it. The website sets each paragraph and heading on its own.
+
 When adding or changing a setting, read its control in
 `crates/ui/src/settings/settings_rows.rs`, its implementation and the relevant spec, and
 update its authored help in the same pull request. Explain individual controls of grouped
