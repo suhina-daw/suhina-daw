@@ -218,7 +218,7 @@ fn swing_row(
         Align2::RIGHT_BOTTOM,
         &format!("{percent} %"),
         theme::mono_font(theme::TEXT_TINY),
-        theme::text_value(),
+        super::value_ink(),
     );
     let switch = Rect::from_min_size(Pos2::new(part.left(), top + NAME), Vec2::new(52.0, field));
     if toggle(ui, painter, switch, "Use global swing", "Global", global) {
@@ -298,7 +298,8 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
     let tabs = [(ToolsTab::Notes, "Notes"), (ToolsTab::Transform, "Transform")];
     let element = crate::kit::element::TAB_ROW.enter();
     element.paint(painter, row);
-    painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(theme::border()));
+    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+    painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(line));
     let font = theme::ui_font(theme::TEXT_SMALL);
     let ids = tabs.map(|(_, text)| format!("tab-{}", text.to_ascii_lowercase()));
     let items: Vec<_> = tabs
@@ -340,7 +341,7 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
                 Pos2::new(cell.left() + 4.0, cell.bottom() - 2.0),
                 Pos2::new(cell.right() - 4.0, cell.bottom()),
             );
-            painter.rect_filled(line, 0.0, theme::accent());
+            painter.rect_filled(line, 0.0, el.accent_or(theme::accent()));
         }
         if response.clicked() && !on {
             state.tools_tab = tab;
@@ -358,7 +359,7 @@ fn tool_button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: 
             .unwrap_or_else(theme::text_primary)
     } else {
         disabled_face(painter, rect);
-        theme::text_hint()
+        super::hint_ink()
     };
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
     response
@@ -412,7 +413,12 @@ fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, short: &st
         painter.line_segment([at(0.42, 0.7), at(0.76, 0.3)], line);
     }
     let text = Rect::from_min_max(Pos2::new(mark.right() + 6.0, row.top()), row.max);
-    let colour = motion::mix(theme::text_secondary(), theme::text_primary(), widgets::hover(ui, &response));
+    // Its words: `label`'s own `color` where a rule gives one, else brightening under the pointer.
+    let colour = crate::kit::element::LABEL.response(&response).look().own_color_or(motion::mix(
+        theme::text_secondary(),
+        theme::text_primary(),
+        widgets::hover(ui, &response),
+    ));
     let font = theme::ui_font(theme::TEXT_SMALL);
     let shown = check_text(name, short, text.width(), |t| widgets::text_width(ui, t, font.clone()));
     widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, font, colour);
@@ -583,13 +589,14 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
     figure(ui, painter, row, "Velocity", &velocity);
     y += INFO_ROW;
     let bar = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), RANGE_BAR));
-    painter.rect_filled(bar, 3.0, theme::control_background());
+    // `progress`, its span `progress-fill`: their `background-color`.
+    painter.rect_filled(bar, 3.0, crate::kit::element::PROGRESS.look().background_or(theme::control_background()));
     let x_of = |v: u8| bar.left() + 2.0 + (f32::from(v.saturating_sub(1)) / 126.0) * (bar.width() - 4.0);
     let span = Rect::from_min_max(
         Pos2::new(x_of(low), bar.top() + 3.0),
         Pos2::new(x_of(high).max(x_of(low) + 3.0), bar.bottom() - 3.0),
     );
-    painter.rect_filled(span, 2.0, theme::accent());
+    painter.rect_filled(span, 2.0, crate::kit::element::PROGRESS_FILL.look().background_or(theme::accent()));
     bar.bottom()
 }
 
@@ -600,8 +607,15 @@ fn chip(ui: &Ui, painter: &egui::Painter, rect: Rect, tools: &Tools<'_>) {
     let head = tools.head();
     let count = tools.count_text();
     let selected = !tools.selected.is_empty();
-    let (head_ink, count_ink) =
-        if selected { (theme::accent(), theme::text_primary()) } else { (theme::text_hint(), theme::text_secondary()) };
+    // `label[kind="head"]`, `[selected]` while a selection is what the tools act on: its
+    // `accent-color` then, else its own `color`.
+    let look =
+        crate::kit::element::LABEL.attribute("kind", "head").attr(crate::kit::element::Selected, selected).look();
+    let (head_ink, count_ink) = if selected {
+        (look.accent_or(theme::accent()), super::title_ink())
+    } else {
+        (look.own_color_or(theme::text_hint()), super::caption_ink())
+    };
     let tiny = theme::ui_font(theme::TEXT_TINY);
     let mono = theme::mono_font(theme::TEXT_TINY);
     let count_width = widgets::text_width(ui, &count, mono.clone());
@@ -610,8 +624,8 @@ fn chip(ui: &Ui, painter: &egui::Painter, rect: Rect, tools: &Tools<'_>) {
     widgets::text_in(painter, head_rect, Align2::LEFT_CENTER, head, tiny, head_ink);
     widgets::text_in(painter, count_rect, Align2::RIGHT_CENTER, &count, mono, count_ink);
     let line = rect.bottom() - 0.5;
-    painter
-        .line_segment([Pos2::new(rect.left(), line), Pos2::new(rect.right(), line)], theme::hairline(theme::border()));
+    let ink = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+    painter.line_segment([Pos2::new(rect.left(), line), Pos2::new(rect.right(), line)], theme::hairline(ink));
     // The head and the count are named for a reader and a test, as the piano roll's parts are.
     ui.interact(head_rect, Id::unique("piano-roll-tools-head"), Sense::hover())
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, head));
@@ -624,21 +638,14 @@ fn figure(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, value: &str) 
     let response = ui.interact(row, Id::unique(("midi-tools-figure", name)), Sense::hover());
     let label = format!("{name}: {value}");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
-    widgets::text_in(
-        painter,
-        row,
-        Align2::LEFT_CENTER,
-        name,
-        theme::ui_font(theme::TEXT_TINY),
-        theme::text_secondary(),
-    );
+    widgets::text_in(painter, row, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT_TINY), super::caption_ink());
     widgets::text_in(
         painter,
         row,
         Align2::RIGHT_CENTER,
         value,
         theme::mono_font(theme::TEXT_SMALL),
-        theme::text_value(),
+        super::value_ink(),
     );
 }
 
@@ -685,7 +692,7 @@ fn transform_tab(
             Align2::LEFT_CENTER,
             chosen.hint(),
             theme::ui_font(theme::TEXT_TINY),
-            theme::text_hint(),
+            super::hint_ink(),
         );
         y = hint.bottom() + s.gap;
     }
@@ -820,7 +827,7 @@ fn transform_tab(
         button_face(crate::kit::element::BUTTON, painter, apply, &response, false, fill, false).unwrap_or(ink)
     } else {
         disabled_face(painter, apply);
-        theme::text_hint()
+        super::hint_ink()
     };
     widgets::text_in(painter, apply, Align2::CENTER_CENTER, &apply_text, theme::ui_font(theme::TEXT_SMALL), ink);
     if enabled && response.clicked() {
@@ -859,10 +866,10 @@ fn amount_knob(ui: &Ui, painter: &egui::Painter, rect: Rect, amount: f64) -> f64
         rect,
         &slider,
         (amount / 100.0) as f32,
-        theme::text_primary(),
+        slider.accent_or(theme::text_primary()),
         Some(&response),
         &text,
-        theme::text_secondary(),
+        slider.own_color_or(theme::text_secondary()),
         widgets::ValuePosition::Right,
         10.0,
     );

@@ -585,7 +585,8 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
         let title = egui::RichText::new("Clip\u{2026}").font(font.clone());
         let clip_menu = ui.menu_button(title, |ui| {
             if ghosts.choices.is_empty() {
-                ui.label(egui::RichText::new("No other MIDI clip").font(font.clone()).color(theme::text_hint()));
+                let hint = crate::kit::element::LABEL.attribute("kind", "hint").look().own_color_or(theme::text_hint());
+                ui.label(egui::RichText::new("No other MIDI clip").font(font.clone()).color(hint));
             }
             egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                 for choice in &ghosts.choices {

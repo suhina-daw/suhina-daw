@@ -125,7 +125,7 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
         Align2::LEFT_CENTER,
         "Follow action",
         theme::ui_font(theme::TEXT),
-        theme::text_primary(),
+        crate::detail::detail_view::title_ink(),
     );
     let switch_rect = Rect::from_center_size(
         Pos2::new(title.right() - SWITCH_WIDTH / 2.0, title.center().y),
@@ -143,7 +143,8 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
         r
     };
     // Off, the settings are still there to change; they read as inactive.
-    let label_color = if f.enabled { theme::text_secondary() } else { theme::text_hint() };
+    let label_color =
+        if f.enabled { crate::detail::detail_view::caption_ink() } else { crate::detail::detail_view::hint_ink() };
     let label_of = |painter: &egui::Painter, r: Rect, text: &str| {
         let rect = Rect::from_min_size(r.min, Vec2::new(LABEL_WIDTH, r.height()));
         widgets::text_in(painter, rect, Align2::LEFT_CENTER, text, theme::ui_font(theme::TEXT_SMALL), label_color);
@@ -186,12 +187,20 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
 /// Returns whether it was clicked.
 fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, id: Id, label: &str, on: bool, accent: bool) -> bool {
     let response = widgets::button_area(ui, rect, id, label);
+    // A `button`, `[checked]` while on: only a rule for the lit state lights it.
+    let (el, plain) =
+        crate::kit::element::BUTTON.response(&response).enter_against_plain(crate::kit::element::Checked, on);
     let (fill, text) = if accent {
         let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
         let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        (motion::mix(off, theme::accent(), lit), motion::mix(theme::text_secondary(), theme::text_inverse(), lit))
+        let toggle = widgets::Toggle::of(&el, plain.as_ref(), (off, theme::text_secondary()), theme::accent(), |_| {
+            theme::text_inverse()
+        });
+        toggle.at(lit)
     } else {
-        widgets::toggle_colors(ui, &response, on)
+        let (fill, ink) = widgets::toggle_colors(ui, &response, on);
+        let toggle = widgets::Toggle::of(&el, plain.as_ref(), (fill, ink), fill, |_| ink);
+        toggle.at(if on { 1.0 } else { 0.0 })
     };
     painter.rect_filled(rect, 0.0, fill);
     let word = if on { "On" } else { "Off" };
@@ -214,16 +223,15 @@ fn value_look(
     } else {
         motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response))
     };
-    painter.rect_filled(rect, 0.0, fill);
+    // A `value` to the theme, its share `value-fill`.
+    let el = crate::kit::element::VALUE.response(response).enter();
+    let rect = el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill }).content;
     if let Some(share) = share {
         let width = rect.width() * share.clamp(0.0, 1.0) as f32;
-        painter.rect_filled(
-            Rect::from_min_size(rect.min, Vec2::new(width, rect.height())),
-            0.0,
-            theme::control_playing(),
-        );
+        let lit = crate::kit::element::VALUE_FILL.look().background_or(theme::control_playing());
+        painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(width, rect.height())), 0.0, lit);
     }
-    let color = if dim { theme::text_hint() } else { theme::text_value() };
+    let color = if dim { crate::detail::detail_view::hint_ink() } else { el.color_or(theme::text_value()) };
     widgets::text_in(
         painter,
         rect.shrink2(Vec2::new(4.0, 0.0)),

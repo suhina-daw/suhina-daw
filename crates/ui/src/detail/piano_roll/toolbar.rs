@@ -41,7 +41,9 @@ pub(super) fn toolbar(
     let painter = ui.painter_at(rect);
     let fill = crate::kit::style_class::surface_or(theme::panel_background());
     bar_el.paint_with(&painter, rect, crate::kit::element::Native { radius: 0.0, fill });
-    painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(theme::border()));
+    // The line under it: `separator[kind="row"]`, as under the ruler's loop row.
+    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+    painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(line));
     // The bar as the sheet lays it out, with its Toolbar size. Its padding is its style's; where no
     // theme's sheet runs it has none to read, and the user-agent sheet's padding, which the layout
     // gives it, is read from the layout, so its items are measured for the room they get.
@@ -316,6 +318,10 @@ pub(crate) fn menu_width(ui: &Ui, (caption, word): (Option<&str>, &str)) -> f32 
 /// the toolbar has one look (› Layout): no fill until hovered or while its menu is open, rounded,
 /// a dim `caption` when given, its `word` in `ink` and a chevron right after. Its accessible label
 /// is `label`. Returns its response, for the menu to open from.
+///
+/// It is `dropdown[kind="subtle"]`, quiet on the bar as a track header's routing fields are: only
+/// a rule for that kind reaches it (its `background-color` while hovered or open, its `color`),
+/// not one for every `dropdown`. Its caption is `label[kind="hint"]`.
 pub(crate) fn menu_face(
     ui: &Ui,
     rect: Rect,
@@ -328,17 +334,21 @@ pub(crate) fn menu_face(
         Rect::from_min_max(Pos2::new(rect.left(), rect.top() + 1.0), Pos2::new(rect.right(), rect.bottom() - 1.0));
     let response = widgets::button_area(ui, rect, id, label);
     let lit = response.hovered() || egui::Popup::menu(&response).is_open();
+    let plain = crate::kit::element::DROPDOWN.response(&response).probe();
+    let own = crate::kit::element::DROPDOWN.response(&response).attribute("kind", "subtle").look();
     let (fill, ink) = if lit {
         (ui.visuals().widgets.hovered.weak_bg_fill, theme::text_primary())
     } else {
         (Color32::TRANSPARENT, ink)
     };
+    let (fill, ink) = (own.background_unlike(&plain, fill), own.own_color_unlike(&plain, ink));
+    let caption_ink = crate::kit::element::LABEL.attribute("kind", "hint").look().own_color_or(theme::text_hint());
     let painter = ui.painter();
     painter.rect_filled(rect, 3.0, fill);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut x = rect.left() + MENU_PAD;
     for (text, color, after) in
-        [(caption, theme::text_hint(), MENU_SPACE), ((!word.is_empty()).then_some(word), ink, CHEVRON_GAP)]
+        [(caption, caption_ink, MENU_SPACE), ((!word.is_empty()).then_some(word), ink, CHEVRON_GAP)]
     {
         let Some(text) = text else { continue };
         let area = Rect::from_min_max(Pos2::new(x, rect.top()), rect.max);
@@ -388,7 +398,7 @@ fn rows_toggles(
     let clip = cx.clip;
     let element = crate::kit::element::GROUP.id("piano-roll-rows").attribute("kind", "piano-roll-rows").enter();
     element.paint(painter, group);
-    painter.rect_stroke(group, 4.0, theme::hairline(theme::border_strong()), StrokeKind::Inside);
+    painter.rect_stroke(group, 4.0, theme::hairline(element.border_or(theme::border_strong())), StrokeKind::Inside);
     // Fold folds to the notes, Scale to the clip's scale: each lit while the rows are folded its way.
     let folded = state.fold == Fold::Notes;
     let scaled = state.fold == Fold::Scale && clip.scale.is_some();
@@ -450,15 +460,23 @@ fn row_toggle(
 ) -> bool {
     let response = widgets::button_area(ui, input, Id::unique(("piano-roll-rows", button.name())), button.name());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, button.name()));
-    // Lit as a selected word is (the selection's fill and ink), as the toolbar's words were.
+    // Lit as a selected word is (the selection's fill and ink), as the toolbar's words were. It is
+    // `piano-tool#piano-fold` (and the others), `[checked]` while on: only a rule for the lit
+    // state lights it, so one for every `piano-tool` does not hide which is on.
     let visuals = ui.visuals();
-    let (fill, ink) = if on {
-        (visuals.selection.bg_fill, visuals.selection.stroke.color)
-    } else if response.hovered() {
+    let off = if response.hovered() {
         (visuals.widgets.hovered.weak_bg_fill, theme::text_primary())
     } else {
         (Color32::TRANSPARENT, theme::text_secondary())
     };
+    let (lit_fill, lit_ink) = (visuals.selection.bg_fill, visuals.selection.stroke.color);
+    let (el, plain) = crate::kit::element::PIANO_TOOL
+        .id(button.id())
+        .attribute("kind", button.id())
+        .response(&response)
+        .enter_against_plain(crate::kit::element::Checked, on);
+    let toggle = widgets::Toggle::of(&el, plain.as_ref(), off, lit_fill, |_| lit_ink);
+    let (fill, ink) = toggle.at(if on { 1.0 } else { 0.0 });
     painter.rect_filled(rect, 3.0, fill);
     let icon = Rect::from_min_size(rect.min + Vec2::new(3.0, 0.0), Vec2::new(rect.height(), rect.height()));
     button.draw(painter, icon, ink, scale * ICON_IN_BUTTON);
@@ -478,11 +496,11 @@ fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<Icon
     let ui = paint.ui;
     let response = widgets::button_area(ui, area, Id::unique("piano-roll-edit-menu"), "Edit");
     let fill = crate::kit::motion::mix(Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response));
-    let ink = theme::text_secondary();
     // The item's box is painted, and its icon and chevron lie in the content box, inside its
     // border and padding.
     let item =
         crate::kit::element::PIANO_TOOL.id("piano-edit").attribute("kind", "piano-edit").response(&response).enter();
+    let ink = item.color_or(theme::text_secondary());
     let content = item.paint_with(paint.painter, area, crate::kit::element::Native { radius: 3.0, fill }).content;
     let icon = Rect::from_min_size(content.min, Vec2::splat(content.height()));
     IconButton::Copy.draw(paint.painter, icon, ink, paint.scale * ICON_IN_BUTTON);
@@ -560,6 +578,8 @@ pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Ke
     let mode = keymap.preset();
     let current = keymap.workflow();
     let font = theme::ui_font(theme::TEXT_SMALL);
+    // Each setting's value, dim at the right: `label[kind="hint"]`.
+    let hint = crate::kit::element::LABEL.attribute("kind", "hint").look().own_color_or(theme::text_hint());
     let mut picked = None;
     for choice in Preset::MODES {
         let response = ui.selectable_label(choice == mode, egui::RichText::new(choice.name()).font(font.clone()));
@@ -578,7 +598,7 @@ pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Ke
         let shown = setting.choices().get(chosen).copied().unwrap_or("");
         let value = setting.short_choices().get(chosen).copied().unwrap_or(shown);
         let button = egui::Button::new(egui::RichText::new(setting.short_name()).font(font.clone())).right_text((
-            egui::RichText::new(value).font(font.clone()).color(theme::text_hint()),
+            egui::RichText::new(value).font(font.clone()).color(hint),
             egui::containers::menu::SubMenuButton::arrow_atom(None),
         ));
         let label = format!("{}: {shown}", setting.name());
@@ -616,7 +636,7 @@ pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Ke
     ui.add_enabled_ui(!stacked, |ui| {
         let value = if whole { "Delete" } else { "Keep rest" };
         let button = egui::Button::new(egui::RichText::new("Covered notes").font(font.clone())).right_text((
-            egui::RichText::new(value).font(font.clone()).color(theme::text_hint()),
+            egui::RichText::new(value).font(font.clone()).color(hint),
             egui::containers::menu::SubMenuButton::arrow_atom(None),
         ));
         let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {

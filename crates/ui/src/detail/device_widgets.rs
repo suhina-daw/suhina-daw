@@ -407,7 +407,7 @@ fn dropdown(
                 icon_rect,
                 role,
                 crate::kit::skin::State::Normal,
-                theme::text_secondary(),
+                crate::kit::element::ICON.attribute("kind", "folder").look().own_color_or(theme::text_secondary()),
                 0.0,
             );
             ui.new_child(egui::UiBuilder::new().max_rect(rect.with_min_x(rect.left() + 24.0)))
@@ -465,7 +465,10 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
     let painter = ui.painter();
     let (fill, _) = widgets::toggle_colors(ui, &ui.interact(rect, egui::Id::unique(id_salt), Sense::click()), false);
     let response = ui.interact(rect, egui::Id::unique(id_salt), Sense::click());
-    painter.rect_filled(rect, 2.0, if response.hovered() { theme::control_hover() } else { fill });
+    // A `button`: its background where the sheet gives one, its `color` for the triangle.
+    let look = crate::kit::element::BUTTON.response(&response).look();
+    let fill = look.background_or(if response.hovered() { theme::control_hover() } else { fill });
+    painter.rect_filled(rect, 2.0, fill);
     let inner = rect.shrink(5.0);
     let center = inner.center();
     let dir = if up { -1.0 } else { 1.0 };
@@ -475,7 +478,7 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
             egui::pos2(center.x - 3.5, center.y - 1.5 * dir),
             egui::pos2(center.x + 3.5, center.y - 1.5 * dir),
         ],
-        theme::text_hint(),
+        look.own_color_or(crate::detail::detail_view::hint_ink()),
         egui::Stroke::NONE,
     ));
     response.widget_info(move || egui::WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
@@ -492,7 +495,7 @@ pub(crate) fn note(painter: &egui::Painter, rect: Rect, state: &PanelState<'_>) 
             Align2::LEFT_CENTER,
             &text,
             theme::ui_font(theme::TEXT_TINY),
-            theme::text_hint(),
+            crate::detail::detail_view::hint_ink(),
         );
     }
 }

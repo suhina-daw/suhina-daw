@@ -222,7 +222,7 @@ pub(super) fn button_face(
     let Some(style) = style else {
         painter.rect_filled(rect, 3.0, fill);
         if outline {
-            painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+            painter.rect_stroke(rect, 3.0, theme::hairline(el.border_or(theme::border())), egui::StrokeKind::Inside);
         }
         return None;
     };
@@ -342,7 +342,7 @@ pub(super) fn number_field(
     let sheet_ink = field_surface(ui, painter, rect, &response);
     let text_area = rect.shrink2(Vec2::new(PAD / 2.0, 0.0));
     let mono = theme::mono_font(theme::TEXT_SMALL);
-    let ink = if field.dim { theme::text_hint() } else { sheet_ink.unwrap_or_else(theme::text_value) };
+    let ink = if field.dim { super::hint_ink() } else { sheet_ink.unwrap_or_else(theme::text_value) };
     widgets::text_in(painter, text_area, field.align, &shown, mono.clone(), ink);
     // One click opens the text field (a drag moves the value instead): a double-click was
     // needed before, and a click that only took the keys was easy to miss.
@@ -382,7 +382,10 @@ pub(super) fn number_field(
     if let Some((from, to, _)) = underlined {
         let right = text_area.right();
         let span = egui::Rangef::new(right - (len - from) as f32 * char_width, right - (len - to) as f32 * char_width);
-        let ink = if held.is_some() { theme::accent() } else { theme::text_secondary() };
+        // The `value`'s `accent-color` while held, else its own `color`.
+        let look = crate::kit::element::VALUE.response(&response).look();
+        let ink =
+            if held.is_some() { look.accent_or(theme::accent()) } else { look.own_color_or(theme::text_secondary()) };
         painter.hline(span, rect.bottom() - 2.0, egui::Stroke::new(1.0, ink));
     }
     // Four points of drag a step of the place grabbed; the arrow keys the hovered place's step.
@@ -463,7 +466,7 @@ pub(super) fn clip_name(
     let response = ui.interact(rect, id, Sense::click()).on_hover_text("Double-click to rename");
     let label = format!("Clip name: {name}");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-    widgets::text_in(painter, rect, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), theme::text_primary());
+    widgets::text_in(painter, rect, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), super::title_ink());
     if response.double_clicked() {
         ui.data_mut(|d| d.insert_temp(editing, name.to_string()));
     }
@@ -485,7 +488,7 @@ pub(super) fn small_button(
             .unwrap_or_else(theme::text_primary)
     } else {
         disabled_face(painter, rect);
-        theme::text_hint()
+        super::hint_ink()
     };
     let size = if rect.height() < 15.0 { theme::TEXT_TINY } else { theme::TEXT_SMALL };
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(size), ink);
@@ -525,7 +528,7 @@ fn scale_switch(ui: &Ui, painter: &egui::Painter, rect: Rect, on: bool) -> bool 
 
 /// A name over a control: the name at the left of `rect`, small.
 pub(super) fn name_over(painter: &egui::Painter, rect: Rect, text: &str, align: Align2) {
-    widgets::text_in(painter, rect, align, text, theme::ui_font(theme::TEXT_TINY), theme::text_secondary());
+    widgets::text_in(painter, rect, align, text, theme::ui_font(theme::TEXT_TINY), super::caption_ink());
 }
 
 /// A drop-down field: its value and a chevron; a click opens its list right under it, as wide as
@@ -589,17 +592,25 @@ pub(super) fn drop_down(
         for (index, entry) in entries.iter().enumerate() {
             let Some((label, selected)) = entry else {
                 let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 5.0), Sense::hover());
-                ui.painter().hline(line.x_range(), line.center().y, theme::hairline(theme::border()));
+                let ink = crate::kit::element::SEPARATOR.attribute("kind", "menu").look().own_color_or(theme::border());
+                ui.painter().hline(line.x_range(), line.center().y, theme::hairline(ink));
                 continue;
             };
             let (row, item) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::click());
             item.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, *selected, *label));
             let lit = *selected || item.hovered() || lit_entry == Some(index);
+            // A row is a `button`, `[checked]` while chosen: as egui's own lists in a menu are.
+            let look = crate::kit::element::BUTTON.response(&item).attr(crate::kit::element::Checked, *selected).look();
+            let chosen = look.background_or(theme::control_selected());
             if lit {
-                let fill = if *selected { theme::control_selected() } else { theme::control_hover() };
+                let fill = if *selected { chosen } else { look.background_or(theme::control_hover()) };
                 ui.painter().rect_filled(row, 2.0, fill);
             }
-            let ink = if *selected { theme::text_on(theme::control_selected()) } else { theme::text_primary() };
+            let ink = if *selected {
+                look.own_color_or(theme::text_on(chosen))
+            } else {
+                look.color_or(theme::text_primary())
+            };
             let inset = row.shrink2(Vec2::new(6.0, 0.0));
             widgets::text_in(ui.painter(), inset, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), ink);
             if item.clicked() {
@@ -647,9 +658,11 @@ pub(super) fn title_row(
     actions: &mut Vec<Action>,
 ) -> Option<Showing> {
     let swatch = Rect::from_center_size(Pos2::new(rect.left() + 8.0 + 6.0, rect.center().y), Vec2::splat(12.0));
-    let colour = panel.color.map_or(theme::text_hint(), colour_picker::color32);
+    // `icon[kind="swatch"]`: its `color` where the clip has none, its `border-color` round it.
+    let look = crate::kit::element::ICON.attribute("kind", "swatch").look();
+    let colour = panel.color.map_or_else(|| look.own_color_or(theme::text_hint()), colour_picker::color32);
     painter.rect_filled(swatch, 2.0, colour);
-    painter.rect_stroke(swatch, 2.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    painter.rect_stroke(swatch, 2.0, theme::hairline(look.border_or(theme::border_strong())), egui::StrokeKind::Inside);
     // `clip.setColor` names arrangement clips: a slot's clip shows its colour without the palette.
     if matches!(at, ClipRef::Arrangement(..)) {
         let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-colour", panel.clip.0)), "Clip colour");
@@ -696,7 +709,7 @@ fn title_rest(
     let length_width = widgets::text_width(ui, &length, mono.clone());
     let right =
         Rect::from_min_max(Pos2::new(right_edge - length_width, rect.top()), Pos2::new(right_edge, rect.bottom()));
-    widgets::text_in(painter, right, Align2::RIGHT_CENTER, &length, mono, theme::text_hint());
+    widgets::text_in(painter, right, Align2::RIGHT_CENTER, &length, mono, super::hint_ink());
     let name =
         Rect::from_min_max(Pos2::new(swatch.right() + 8.0, rect.top()), Pos2::new(right.left() - 8.0, rect.bottom()));
     if info.picked.len() > 1 {
@@ -716,7 +729,7 @@ fn title_rest(
         clip_name(ui, painter, name, &info.name, at, actions);
     } else {
         let text = format!("{} selected", info.others.len() + 1);
-        widgets::text_in(painter, name, Align2::LEFT_CENTER, &text, theme::ui_font(theme::TEXT), theme::text_primary());
+        widgets::text_in(painter, name, Align2::LEFT_CENTER, &text, theme::ui_font(theme::TEXT), super::title_ink());
     }
     picked
 }
@@ -1023,16 +1036,10 @@ fn audio_part(
     let find = set_button(name);
     let response = widgets::button_area(ui, find, Id::unique(("clip-panel-find", panel.clip.0)), "Find tempo");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.rect_filled(find, 3.0, fill);
-    painter.rect_stroke(find, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
-    widgets::text_in(
-        painter,
-        find,
-        Align2::CENTER_CENTER,
-        "Find",
-        theme::ui_font(theme::TEXT_TINY),
-        theme::text_primary(),
-    );
+    // A `button`, as the panel's other buttons.
+    let ink = button_face(crate::kit::element::BUTTON, painter, find, &response, false, fill, true)
+        .unwrap_or_else(theme::text_primary);
+    widgets::text_in(painter, find, Align2::CENTER_CENTER, "Find", theme::ui_font(theme::TEXT_TINY), ink);
     let mut set: Option<(f64, TempoSource, bool)> = None;
     let open = egui::Popup::menu(&response).show(|ui| {
         // Wide enough for "File name: 120.00" on one line: the menu took the button's narrow
@@ -1113,7 +1120,7 @@ fn audio_part(
         Align2::RIGHT_CENTER,
         source,
         theme::ui_font(theme::TEXT_TINY),
-        theme::text_hint(),
+        super::hint_ink(),
     );
     y += 12.0 + GAP;
     if let Some((bpm, source, more)) = set {
@@ -1232,17 +1239,16 @@ fn gain_part(
     }
     let y_of = |db: f64| track.bottom() - fader_position(db) as f32 * track.height();
     let scale = theme::ui_font(theme::TEXT_TINY);
+    // The marks and the 0 dB line are `fader-scale`'s `color`, the slot `fader-rail`'s background.
+    let marks = crate::kit::element::FADER_SCALE.look().color_or(theme::text_hint());
     for (text, at) in [("24", track.top()), ("0", y_of(0.0)), ("-inf", track.bottom())] {
         let mark = Rect::from_min_max(Pos2::new(area.left(), at - 6.0), Pos2::new(track.left() - 2.0, at + 6.0));
-        widgets::text_in(painter, mark, Align2::LEFT_CENTER, text, scale.clone(), theme::text_hint());
+        widgets::text_in(painter, mark, Align2::LEFT_CENTER, text, scale.clone(), marks);
     }
     let slot = Rect::from_center_size(track.center(), Vec2::new(4.0, track.height()));
-    painter.rect_filled(slot, 2.0, theme::control_background());
-    painter.hline(
-        egui::Rangef::new(track.left() - 1.0, track.right() + 1.0),
-        y_of(0.0),
-        theme::hairline(theme::text_hint()),
-    );
+    let rail = crate::kit::element::FADER_RAIL.look().background_or(theme::control_background());
+    painter.rect_filled(slot, 2.0, rail);
+    painter.hline(egui::Rangef::new(track.left() - 1.0, track.right() + 1.0), y_of(0.0), theme::hairline(marks));
     let cap = Rect::from_center_size(Pos2::new(track.center().x, y_of(shown_db)), Vec2::new(FADER_WIDTH, 8.0));
     let hover = widgets::hover(ui, &response);
     crate::kit::mixer_controls::fader_cap(painter, cap, hover, &response);
@@ -1345,14 +1351,7 @@ fn pitch_part(
     let ct = Rect::from_min_size(Pos2::new(st.right() + 4.0, top), Vec2::new(half, FIELD));
     for (rect, unit) in [(st, "st"), (ct, "ct")] {
         let under = Rect::from_min_size(Pos2::new(rect.left(), rect.bottom() + 1.0), Vec2::new(rect.width(), 11.0));
-        widgets::text_in(
-            painter,
-            under,
-            Align2::CENTER_TOP,
-            unit,
-            theme::ui_font(theme::TEXT_TINY),
-            theme::text_hint(),
-        );
+        widgets::text_in(painter, under, Align2::CENTER_TOP, unit, theme::ui_font(theme::TEXT_TINY), super::hint_ink());
     }
     let centred = |range, per_point| Field {
         range,

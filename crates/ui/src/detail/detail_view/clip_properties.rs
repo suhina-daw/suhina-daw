@@ -206,7 +206,8 @@ pub(super) fn clip_properties(
     if let Some((at, panel)) = &panel {
         let title = Rect::from_min_size(column.min, Vec2::new(column.width(), 26.0));
         let picked = super::clip_panel::title_row(ui, painter, title, info, *at, panel, actions);
-        painter.hline(title.x_range(), title.bottom() - 0.5, theme::hairline(theme::border()));
+        let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+        painter.hline(title.x_range(), title.bottom() - 0.5, theme::hairline(line));
         let body = Rect::from_min_max(Pos2::new(column.left(), title.bottom()), column.max);
         if info.audio {
             super::clip_panel::audio_panel(ui, painter, body, info, *at, panel, stacked, actions);
@@ -236,9 +237,11 @@ pub(super) fn clip_properties(
         Align2::LEFT_CENTER,
         &title_text,
         theme::ui_font(theme::TEXT),
-        theme::text_primary(),
+        super::title_ink(),
     );
     let mut y = title.bottom() + PAD;
+    // Each row's name and value, read once for them all.
+    let (name_ink, value_ink) = (super::caption_ink(), super::value_ink());
     for (label, value, edit) in rows {
         let row = Rect::from_min_max(Pos2::new(column.left() + PAD, y), Pos2::new(column.right() - PAD, y + PARAM_ROW));
         y += PARAM_ROW;
@@ -256,21 +259,14 @@ pub(super) fn clip_properties(
         let response = ui.interact(row, egui::Id::unique(("clip-property", label)), Sense::hover());
         let named = format!("{label}: {value}");
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &named));
-        widgets::text_in(
-            painter,
-            row,
-            Align2::LEFT_CENTER,
-            label,
-            theme::ui_font(theme::TEXT_SMALL),
-            theme::text_secondary(),
-        );
+        widgets::text_in(painter, row, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), name_ink);
         widgets::text_in(
             painter,
             value_rect,
             Align2::RIGHT_CENTER,
             &value,
             theme::mono_font(theme::TEXT_SMALL),
-            theme::text_value(),
+            value_ink,
         );
     }
     (boxed, picked)
@@ -297,25 +293,20 @@ pub(super) fn clip_edit_row(
     info: &ClipInfo,
     actions: &mut Vec<Action>,
 ) {
-    widgets::text_in(
-        painter,
-        row,
-        Align2::LEFT_CENTER,
-        label,
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_secondary(),
-    );
+    widgets::text_in(painter, row, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), super::caption_ink());
     let id = Id::unique(("clip-edit", label));
+    // The value is a `value` field to the theme: its background, border and `color`.
     let draw_value = |response: &egui::Response, text: &str| {
         let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response));
-        painter.rect_filled(value_rect, 2.0, fill);
+        let el = crate::kit::element::VALUE.response(response).enter();
+        el.paint_with(painter, value_rect, crate::kit::element::Native { radius: 2.0, fill });
         widgets::text_in(
             painter,
             value_rect.shrink2(Vec2::new(PAD / 2.0, 0.0)),
             Align2::RIGHT_CENTER,
             text,
             theme::mono_font(theme::TEXT_SMALL),
-            theme::text_value(),
+            el.color_or(theme::text_value()),
         );
     };
     if let ClipEdit::Focus(index) = edit {

@@ -264,10 +264,12 @@ impl PianoRollState {
 /// copies it went on with) say for themselves what is selected.
 pub(super) fn draw_time_span(painter: &egui::Painter, layout: &Layout, state: &PianoRollState) {
     let style = part_style("piano-time-selection", &[]);
-    let edge = style.border.unwrap_or_else(theme::accent);
+    // Drawn in its `accent-color` where the sheet gives one, else the theme's accent.
+    let accent = crate::kit::element::PIANO_TIME_SELECTION.look().accent_or(theme::accent());
+    let edge = style.border.unwrap_or(accent);
     if let Some(span) = state.span.as_ref().filter(|_| state.selected.is_empty() && state.gesture.is_none()) {
         let rect = Rect::from_x_y_ranges(layout.x_of(span.start)..=layout.x_of(span.end), layout.grid.y_range());
-        painter.rect_filled(rect, 0.0, style.background.unwrap_or_else(|| theme::accent().gamma_multiply(SPAN_TINT)));
+        painter.rect_filled(rect, 0.0, style.background.unwrap_or_else(|| accent.gamma_multiply(SPAN_TINT)));
         painter.vline(rect.left(), rect.y_range(), Stroke::new(SPAN_EDGE, edge));
         painter.vline(rect.right(), rect.y_range(), Stroke::new(SPAN_EDGE, edge));
     }

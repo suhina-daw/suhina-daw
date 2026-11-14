@@ -239,16 +239,21 @@ pub(super) fn tool_pointer_rect(pos: Pos2, hotspot: Vec2, size: f32) -> Rect {
 
 /// A tool's icon in place of the pointer, in `rect`: in the text colour, ringed with a point of
 /// the window's colour so it reads over a note as well as over the empty grid.
+///
+/// It is `icon[kind="pointer"]`: its `color`, and its `background-color` for the ring.
 pub(super) fn draw_tool_pointer(painter: &egui::Painter, icon: IconButton, rect: Rect) {
+    let look = crate::kit::element::ICON.attribute("kind", "pointer").look();
+    let ink = look.own_color_or(theme::text_primary());
     if let Some(svg) = icon.svg() {
+        let ring = look.background_or(theme::window_background());
         for (x, y) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
-            crate::kit::skin::paint_icon(painter, rect.translate(Vec2::new(x, y)), svg, theme::window_background());
+            crate::kit::skin::paint_icon(painter, rect.translate(Vec2::new(x, y)), svg, ring);
         }
-        if crate::kit::skin::paint_icon(painter, rect, svg, theme::text_primary()) {
+        if crate::kit::skin::paint_icon(painter, rect, svg, ink) {
             return;
         }
     }
-    icon.draw(painter, rect, theme::text_primary(), rect.width() / TOOL_ICON);
+    icon.draw(painter, rect, ink, rect.width() / TOOL_ICON);
 }
 
 /// Beats rounded to a millionth, so a value made of steps such as thirds sends no float noise.

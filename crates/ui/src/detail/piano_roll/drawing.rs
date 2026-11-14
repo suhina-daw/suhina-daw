@@ -268,6 +268,8 @@ pub(super) fn draw(
     let note_style = part_style("piano-note", &[]);
     let selected_style = part_style("piano-note", &[Attr::Selected]);
     let muted_style = part_style("piano-note", &[Attr::Muted]);
+    // What a selected note is lit with where the sheet gives it no background: its `accent-color`.
+    let selected_accent = crate::kit::element::PIANO_NOTE.attr(Attr::Selected, true).look().accent_or(theme::accent());
     // The velocity stems: a line takes only the colour its own rule declares, not the text
     // colour of the `piano-roll` around it, so muted and selected stems keep their distinction.
     let velocity_look = crate::kit::element::VELOCITY.look();
@@ -480,7 +482,7 @@ pub(super) fn draw(
         };
         let radius = style.radius.unwrap_or(0.0);
         let own =
-            if selected { selected_note_color(clip.color, theme::accent(), theme::text_primary()) } else { clip.color };
+            if selected { selected_note_color(clip.color, selected_accent, theme::text_primary()) } else { clip.color };
         grid_painter.rect_filled(rect, radius, style.background.unwrap_or(own).gamma_multiply(alpha));
         // A muted note's edge is its dashes alone: a solid edge under them in the same colour would
         // hide them. A selected one keeps its selection's edge.

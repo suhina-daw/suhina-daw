@@ -119,13 +119,18 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             // In the device's own scope, as its compact panel is: a rule on `#device-<id>` (its
             // `--device-*` tokens) reaches the expanded canvas too.
             let device_id = format!("device-{}", device.theme_id);
-            let _device_style = crate::kit::element::DEVICE.id(&device_id).enter();
+            let device_style = crate::kit::element::DEVICE.id(&device_id).enter();
             // The panel takes the pointer, so the views under it get no clicks.
             let (rect, _) = ui.allocate_exact_size(slice.size(), Sense::click());
             let painter = ui.painter_at(rect);
-            painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+            let fill = device_style.background_or(crate::kit::style_class::surface_or(theme::panel_background()));
+            painter.rect_filled(rect, 0.0, fill);
             let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW + PAD));
-            painter.rect_filled(header, 0.0, theme::control_background());
+            // `device-header`: its background, and its `color` for the name and the ×.
+            let header_el = crate::kit::element::DEVICE_HEADER.enter();
+            painter.rect_filled(header, 0.0, header_el.background_or(theme::control_background()));
+            let ink = header_el.color_or(theme::text_primary());
+            drop(header_el);
             if canvas.strip {
                 // The header is the strip's handle: dragged up it grows, down it shrinks; a double
                 // click fits it to its canvas again.
@@ -147,21 +152,22 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                 Align2::LEFT_CENTER,
                 &device.name,
                 theme::ui_font(theme::TEXT),
-                theme::text_primary(),
+                ink,
             );
             let close =
                 Rect::from_min_size(Pos2::new(header.right() - 28.0, header.top() + 3.0), Vec2::new(24.0, 20.0));
             let response = widgets::button_area(ui, close, Id::unique("device-expanded-close"), "Close expanded panel")
                 .on_hover_text("Close the expanded panel (Esc)");
             let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-            painter.rect_filled(close, 0.0, fill);
+            // `button[kind="close"]`: only a rule for that kind reaches it, not one for every `button`.
+            let plain = crate::kit::element::BUTTON.response(&response).probe();
+            let own = crate::kit::element::BUTTON.attribute("kind", "close").response(&response).look();
+            painter.rect_filled(close, 0.0, own.background_unlike(&plain, fill));
+            let cross = own.own_color_unlike(&plain, ink);
             for (from, to) in
                 [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
             {
-                painter.line_segment(
-                    [close.center() + from, close.center() + to],
-                    egui::Stroke::new(1.3, theme::text_primary()),
-                );
+                painter.line_segment([close.center() + from, close.center() + to], egui::Stroke::new(1.3, cross));
             }
             let escape = !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Escape));
             if response.clicked() || escape {
@@ -253,8 +259,10 @@ pub(super) fn graph_controls(
                 crate::detail::device_canvas::show(ui, rect, canvas, state, &graph.parameters, track, at, actions);
             }
             let origin = Vec2::new(body.left(), body.top() + nodes_height);
+            let line =
+                crate::kit::element::SEPARATOR.attribute("kind", "column").look().own_color_or(theme::border_strong());
             for x in &separators {
-                painter.vline(origin.x + x, body.y_range(), theme::hairline(theme::border_strong()));
+                painter.vline(origin.x + x, body.y_range(), theme::hairline(line));
             }
             for (parameter, cell) in
                 graph.parameters.iter().filter(|p| !hidden.contains(&p.id) && !p.is_readout()).zip(&cells)
@@ -269,20 +277,24 @@ pub(super) fn graph_controls(
 /// when they form a single chain.
 pub(super) fn node_rows(painter: &egui::Painter, body: Rect, graph: &GraphBox) {
     let mut row_top = body.top();
+    // A node is a `device-section`: its background and `color`; the arrows `label[kind="hint"]`.
+    let look = crate::kit::element::DEVICE_SECTION.look();
+    let (fill, ink, arrow) =
+        (look.background_or(theme::control_background()), look.color_or(theme::text_secondary()), super::hint_ink());
     for (index, node) in graph.nodes.iter().enumerate() {
         let row = Rect::from_min_size(Pos2::new(body.left(), row_top), Vec2::new(body.width(), NODE_ROW));
         if row.bottom() > body.bottom() + 0.5 {
             break;
         }
         let node_rect = Rect::from_min_size(row.min, Vec2::new((row.width() - PAD) * 0.78, NODE_ROW - PAD));
-        painter.rect_filled(node_rect, 1.0, theme::control_background());
+        painter.rect_filled(node_rect, 1.0, fill);
         widgets::text_in(
             painter,
             node_rect.shrink(PAD / 2.0),
             Align2::CENTER_CENTER,
             node,
             theme::ui_font(theme::TEXT_TINY),
-            theme::text_secondary(),
+            ink,
         );
         if graph.linear && index + 1 < graph.nodes.len() {
             widgets::text_in(
@@ -291,7 +303,7 @@ pub(super) fn node_rows(painter: &egui::Painter, body: Rect, graph: &GraphBox) {
                 Align2::CENTER_CENTER,
                 "›",
                 theme::ui_font(theme::TEXT),
-                theme::text_hint(),
+                arrow,
             );
         }
         row_top += NODE_ROW;

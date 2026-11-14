@@ -77,11 +77,19 @@ fn shine(r: u8, g: u8, b: u8, alpha: f32) -> Color32 {
     Color32::from_rgba_unmultiplied(r, g, b, (alpha * 255.0).round() as u8)
 }
 
-/// The values of a built-in key style.
-fn style_colours(style: PianoKeyStyle) -> KeyColours {
-    let accent = theme::accent();
+/// What lights a key, from the sheet where it says: the `accent-color` of `piano-key`, what a
+/// playing or selected key is lit with, and the `color` of `piano-key[playing]` (where it differs
+/// from the plain key's), its name on that light.
+fn key_lights() -> (Color32, Color32) {
+    use crate::kit::element::{PIANO_KEY, Playing};
+    let plain = PIANO_KEY.look();
+    let playing = PIANO_KEY.attr(Playing, true).look();
+    (plain.accent_or(theme::accent()), playing.own_color_unlike(&plain, theme::text_inverse()))
+}
+
+/// The values of a built-in key style, lit with `accent` and its names on it in `dark`.
+fn style_colours(style: PianoKeyStyle, (accent, dark): (Color32, Color32)) -> KeyColours {
     let rgb = Color32::from_rgb;
-    let dark = theme::text_inverse();
     let colours = |white,
                    white_c,
                    white_hover,
@@ -172,7 +180,9 @@ fn state_colour(class: &str, state: Attr, base: Option<Color32>) -> Option<Color
 
 /// The colours this frame: the key style's, with whatever the sheet sets over them.
 pub(super) fn key_colours(style: PianoKeyStyle) -> KeyColours {
-    let mut c = style_colours(style);
+    let lights = key_lights();
+    let accent = lights.0;
+    let mut c = style_colours(style, lights);
     let key = part_style("piano-key", &[]);
     let black = part_style("piano-key-black", &[]);
     let set = |target: &mut Color32, value: Option<Color32>| {
@@ -183,11 +193,11 @@ pub(super) fn key_colours(style: PianoKeyStyle) -> KeyColours {
     if let Some(white) = key.background {
         c.white = white;
         c.white_c = white;
-        c.white_selected = mix(white, theme::accent(), 0.5);
+        c.white_selected = mix(white, accent, 0.5);
     }
     if let Some(dark) = black.background {
         c.black = dark;
-        c.black_selected = mix(dark, theme::accent(), 0.4);
+        c.black_selected = mix(dark, accent, 0.4);
     }
     set(&mut c.text, key.color);
     set(&mut c.text_black, black.color);
@@ -405,9 +415,14 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
     if let Some(key) = pointer.filter(|k| layout.rows.shows(*k)) {
         let centre = Pos2::new(strip.center().x, layout.y_of(key) + layout.key_height / 2.0);
         let chip = Rect::from_center_size(centre, POINTER_NAME);
-        painter.rect_filled(chip, 1.0, theme::text_primary());
+        // `piano-scale-strip[kind="pointer"]`: its `background-color` and `color` where they
+        // differ from the strip's own, so the chip stands out on a strip a theme colours.
+        let plain = crate::kit::element::PIANO_SCALE_STRIP.look();
+        let own = crate::kit::element::PIANO_SCALE_STRIP.attribute("kind", "pointer").look();
+        painter.rect_filled(chip, 1.0, own.background_unlike(&plain, theme::text_primary()));
         let name = key_name(key);
-        painter.text(centre, Align2::CENTER_CENTER, &name, font, theme::text_inverse());
+        let ink = own.own_color_unlike(&plain, theme::text_inverse());
+        painter.text(centre, Align2::CENTER_CENTER, &name, font, ink);
         let response = ui.interact(chip.intersect(strip), Id::unique("piano-roll-pointer-key"), Sense::hover());
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Row under the pointer: {name}"))
@@ -459,7 +474,9 @@ pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRoll
 pub(super) fn draw_magnifier(ui: &Ui, pos: Pos2) {
     ui.ctx().set_cursor_icon(CursorIcon::None);
     let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("piano-roll-magnifier")));
-    let (halo, line) = (crate::kit::style_class::surface_or(theme::window_background()), theme::text_primary());
+    // `icon[kind="magnifier"]`: its `color`.
+    let line = crate::kit::element::ICON.attribute("kind", "magnifier").look().own_color_or(theme::text_primary());
+    let halo = crate::kit::style_class::surface_or(theme::window_background());
     let handle = [pos + Vec2::splat(MAGNIFIER_RADIUS * 0.7), pos + Vec2::splat(MAGNIFIER_RADIUS * 1.7)];
     painter.line_segment(handle, Stroke::new(4.0, halo));
     painter.circle_stroke(pos, MAGNIFIER_RADIUS, Stroke::new(3.5, halo));
@@ -475,8 +492,10 @@ pub(super) fn draw_magnifier(ui: &Ui, pos: Pos2) {
 pub(super) fn draw_ranges(painter: &egui::Painter, layout: &Layout, state: &PianoRollState) {
     let Some((low, high)) = state.key_live else { return };
     let style = part_style("piano-range", &[]);
-    let edge = style.border.unwrap_or_else(theme::accent);
-    let tint = style.background.unwrap_or_else(|| theme::accent().gamma_multiply(RANGE_TINT));
+    // Its `accent-color` where it gives one, else the theme's, is what it is drawn in.
+    let accent = crate::kit::element::PIANO_RANGE.look().accent_or(theme::accent());
+    let edge = style.border.unwrap_or(accent);
+    let tint = style.background.unwrap_or_else(|| accent.gamma_multiply(RANGE_TINT));
     let tops = (low..=high).filter(|k| layout.rows.shows(*k)).map(|k| layout.y_of(k));
     let (top, bottom) = tops.fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), y| (a.min(y), b.max(y)));
     if !top.is_finite() {
@@ -518,16 +537,21 @@ pub(super) fn corner(
     }
     let response = widgets::button_area(ui, more, Id::unique("piano-roll-settings"), IconButton::More.name());
     let fill = crate::kit::motion::mix(Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response));
-    let ink = theme::text_secondary();
-    painter.rect_filled(more, 3.0, fill);
+    // `piano-tool#piano-more`, as the toolbar's buttons.
+    let el =
+        crate::kit::element::PIANO_TOOL.id("piano-more").attribute("kind", "piano-more").response(&response).enter();
+    let ink = el.color_or(theme::text_secondary());
+    painter.rect_filled(more, el.radius_or(3.0), el.background_or(fill));
     IconButton::More.draw(&painter, more, ink, scale);
+    drop(el);
     let font = theme::ui_font(theme::TEXT_SMALL);
+    let hint = crate::kit::element::LABEL.attribute("kind", "hint").look().own_color_or(theme::text_hint());
     let theme_keys = theme_sets_keys();
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
         let submenu = |ui: &mut Ui, name: &str, value: &str, label: String, entries: &mut dyn FnMut(&mut Ui)| {
             let button = egui::Button::new(egui::RichText::new(name).font(font.clone())).right_text((
-                egui::RichText::new(value).font(font.clone()).color(theme::text_hint()),
+                egui::RichText::new(value).font(font.clone()).color(hint),
                 egui::containers::menu::SubMenuButton::arrow_atom(None),
             ));
             let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| entries(ui));
