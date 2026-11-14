@@ -279,12 +279,12 @@ pub struct Look(Option<Computed>);
 impl Look {
     /// The item's own `color`, where a rule on the item sets one; else `token`. A line or a mark
     /// does not take the text colour a view's rule gives everything in it.
-    pub fn color_or(&self, token: Color32) -> Color32 {
+    pub fn own_color_or(&self, token: Color32) -> Color32 {
         self.0.as_ref().filter(|own| own.declared(Property::Color)).map_or(token, |own| own.color)
     }
 
     /// The item's text colour, inherited from a sheet's rule around it too; else `token`.
-    pub fn text_or(&self, token: Color32) -> Color32 {
+    pub fn color_or(&self, token: Color32) -> Color32 {
         self.0.as_ref().filter(|s| s.authored.color).map_or(token, |s| s.color)
     }
 
@@ -301,6 +301,28 @@ impl Look {
     /// The item's computed style, when a sheet styles the window.
     pub fn style(&self) -> Option<&Computed> {
         self.0.as_ref()
+    }
+
+    /// The item's `background-color` in a state (`[checked]`, `[queued]`) where it differs from
+    /// `plain`, the same item without the state; else `token`, the state's own colour. A rule for
+    /// every `button` then does not hide which one is on: only a rule for the state does.
+    pub fn background_unlike(&self, plain: &Look, token: Color32) -> Color32 {
+        let own = self.0.as_ref().filter(|s| s.authored.background).map(|s| s.background);
+        own.filter(|own| Some(*own) != plain.0.as_ref().filter(|s| s.authored.background).map(|s| s.background))
+            .unwrap_or(token)
+    }
+
+    /// [`Look::background_unlike`] for the `border-color`.
+    pub fn border_unlike(&self, plain: &Look, token: Color32) -> Color32 {
+        let own = self.0.as_ref().filter(|s| s.authored.border).map(|s| s.border);
+        own.filter(|own| Some(*own) != plain.0.as_ref().filter(|s| s.authored.border).map(|s| s.border))
+            .unwrap_or(token)
+    }
+
+    /// [`Look::background_unlike`] for the item's own `color`.
+    pub fn own_color_unlike(&self, plain: &Look, token: Color32) -> Color32 {
+        let own = |look: &Look| look.0.as_ref().filter(|s| s.declared(Property::Color)).map(|s| s.color);
+        own(self).filter(|color| Some(*color) != own(plain)).unwrap_or(token)
     }
 }
 
@@ -683,6 +705,7 @@ names! {
     SCENE = "scene";
     SLOT = "slot";
     MAPPING_OVERLAY = "mapping-overlay";
+    SLOT_RECORD = "slot-record";
     SLOT_MARK = "slot-mark";
     DROP_TARGET = "drop-target";
     ARRANGEMENT = "arrangement";

@@ -2204,7 +2204,7 @@ pub fn show(
         }
         // The line under each automation lane, `separator[kind="row"]`, read once.
         let row_line = *row_line.get_or_insert_with(|| {
-            crate::kit::element::SEPARATOR.attribute("kind", "row").look().color_or(theme::border())
+            crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border())
         });
         match row {
             LaneRow::Group(index) => {
@@ -2248,7 +2248,7 @@ fn empty_lane(
             Align2::CENTER_CENTER,
             "Choose a parameter, or move a control, to show it here",
             theme::ui_font(theme::TEXT_SMALL),
-            crate::kit::element::LABEL.look().text_or(theme::text_hint()),
+            crate::kit::element::LABEL.look().color_or(theme::text_hint()),
         );
     }
     let clip = header.intersect(geometry.visible);
@@ -2320,7 +2320,7 @@ fn drop_headers(
             let area = Rect::from_x_y_ranges(across, egui::Rangef::new(top, bottom));
             let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look();
             painter.rect_filled(area, 0.0, target.background_or(theme::accent().gamma_multiply(0.2)));
-            painter.rect_stroke(area, 0.0, Stroke::new(2.0, target.color_or(theme::accent())), StrokeKind::Inside);
+            painter.rect_stroke(area, 0.0, Stroke::new(2.0, target.own_color_or(theme::accent())), StrokeKind::Inside);
         }
         None => {
             let line_y = match landing {
@@ -2331,7 +2331,7 @@ fn drop_headers(
             // the lanes go (in the group or out of it) shows before they are let go of.
             let joins = !drag.group && matches!(place, Place::Before { join: true, .. });
             let line = if joins { egui::Rangef::new(across.min + GROUP_INDENT, across.max) } else { across };
-            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color_or(theme::accent());
+            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent());
             painter.hline(line, line_y, Stroke::new(2.0, ink));
         }
     }
@@ -3127,7 +3127,7 @@ fn lane(
     let ink = crate::kit::element::AUTOMATION_LINE
         .attr(crate::kit::element::Muted, !param.enabled)
         .look()
-        .color_or(if param.enabled { color(lanes.color) } else { theme::text_hint() });
+        .own_color_or(if param.enabled { color(lanes.color) } else { theme::text_hint() });
     let line = envelope(&points, &param.scale, plot, geometry);
     // A finished bend asks for its command only now, after the envelope above drew it: the
     // project has the new curve only once the command has run, after this frame, so dropping
@@ -3205,7 +3205,7 @@ fn lane(
         let area = Rect::from_two_pos(drag.from, drag.to);
         let look = crate::kit::element::TIME_SELECTION.attribute("kind", "automation").look();
         lane_painter.rect_filled(area, 0.0, look.background_or(theme::accent().gamma_multiply(0.15)));
-        lane_painter.rect_stroke(area, 0.0, theme::hairline(look.color_or(theme::accent())), StrokeKind::Inside);
+        lane_painter.rect_stroke(area, 0.0, theme::hairline(look.own_color_or(theme::accent())), StrokeKind::Inside);
     }
     // A range painted from another lane over this one is on this one too (#1322).
     let painting = state
@@ -3235,7 +3235,7 @@ fn lane(
         }
         let look = crate::kit::element::TIME_SELECTION.attribute("kind", "automation").look();
         lane_painter.rect_filled(area, 0.0, look.background_or(theme::accent().gamma_multiply(0.15)));
-        let stroke = theme::hairline(look.color_or(theme::accent()));
+        let stroke = theme::hairline(look.own_color_or(theme::accent()));
         let inner = area.shrink(0.5);
         lane_painter.line_segment([inner.left_top(), Pos2::new(inner.left(), area.bottom())], stroke);
         lane_painter.line_segment([inner.right_top(), Pos2::new(inner.right(), area.bottom())], stroke);
@@ -3323,7 +3323,7 @@ fn lane(
         let picked = crate::kit::element::AUTOMATION_POINT.attr(crate::kit::element::Selected, true).look();
         let plain =
             plain.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
-        (plain, picked.color_or(theme::text_primary()))
+        (plain, picked.own_color_or(theme::text_primary()))
     };
     for (index, point) in param.points.iter().enumerate() {
         // Drawn where a drag puts it.
@@ -4424,7 +4424,7 @@ fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::R
         painter.rect_filled(rect, 3.0, theme::control_hover().gamma_multiply(hover));
     }
     let ink = match glyph {
-        Glyph::Pinned => crate::kit::element::AUTOMATION_PIN.look().color_or(theme::automation_pin()),
+        Glyph::Pinned => crate::kit::element::AUTOMATION_PIN.look().own_color_or(theme::automation_pin()),
         _ => crate::kit::motion::mix(theme::text_hint(), theme::text_primary(), hover),
     };
     let stroke = Stroke::new(1.25, ink);

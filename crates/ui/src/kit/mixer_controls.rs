@@ -21,7 +21,7 @@ pub fn pan_field(painter: &egui::Painter, rect: Rect, el: &Entered, pan: f64, ho
     el.paint_with(painter, rect, Native { radius: 0.0, fill });
     let centre = rect.center().x.round() - 0.5;
     // The centre's ticks are `pan-centre`, the bar from the centre the pan's `value-fill`.
-    let tick = theme::hairline(super::element::PAN_CENTRE.look().color_or(theme::pan_centre()));
+    let tick = theme::hairline(super::element::PAN_CENTRE.look().own_color_or(theme::pan_centre()));
     painter.vline(centre, egui::Rangef::new(rect.top(), rect.top() + 2.0), tick);
     painter.vline(centre, egui::Rangef::new(rect.bottom() - 2.0, rect.bottom()), tick);
     let to = rect.center().x + rect.width() / 2.0 * pan.clamp(-1.0, 1.0) as f32;
@@ -220,7 +220,7 @@ pub fn send_field(
             Align2::LEFT_CENTER,
             letter,
             theme::mono_font(theme::TEXT_SMALL),
-            super::element::LABEL.look().text_or(theme::text_hint()),
+            super::element::LABEL.look().color_or(theme::text_hint()),
         );
         widgets::text_in(
             painter,

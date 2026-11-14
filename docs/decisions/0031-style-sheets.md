@@ -803,7 +803,9 @@ forgot its own scope painted as its parent.
   `[armed]` and `[muted]`, without a value. They are no longer pseudo-classes: a selector with
   `:checked` does not parse, and its rule is skipped with a notice. Pointer and focus states
   stay pseudo-classes (`:hover`, `:active`, `:focus`, `:focus-visible`, `:disabled`), and so do
-  `:open`, `:queued`, `:dragged` and `:drop-target`, which nothing sets yet.
+  `:open`, `:dragged` and `:drop-target`, which nothing sets yet (`:queued`, listed here at first,
+  became the attribute `[queued]`: *Amendment: the Launcher, the mixer, the Arrangement and the
+  piano roll draw from their elements*).
 - **Settings stay as they are for now.** The registry lists the settings each element would
   carry (`meter-style` on `meter`, `track-height` on `arrangement`), as names only, and nothing
   reads them yet. Making them registered properties on their elements, in place of the
@@ -991,13 +993,18 @@ slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 
 - **A drawn item's style is read once per kind** (`Look`, from `Name::look` or
   `Builder::look`), outside the loop that draws its items: a grid line drawn a hundred times is
   one element of the style tree, so the tree grows with kinds, not with items.
-- **A line or a mark takes only a colour given to it** (`Look::color_or`, `Entered::own_color_or`):
+- **A line or a mark takes only a colour given to it** (`Look::own_color_or`, `Entered::own_color_or`):
   the text colour a rule gives a view (`session { color }`) does not reach its lines. Text takes
-  the inherited colour (`Look::text_or`, `Entered::color_or`), as the scoped palette gave it.
+  the inherited colour (`Look::color_or`, `Entered::color_or`), as the scoped palette gave it.
+- **A toggle keeps its lit state.** While a button is on, its fill and ink come from the sheet
+  only where a rule for the state (`button[checked]`) makes them differ from the button's own:
+  a rule for every `button` does not hide which one is on (`widgets::toggle_inks`,
+  `Look::background_unlike`). The same holds for a clip's `[queued]`, `[selected]` and `[muted]`
+  outlines and fill in a Launcher slot, and a lane's `[checked]` light.
 - **`[queued]` is an attribute** the app gives, as `[playing]` is: a clip or a track's
   stop button waiting for its launch. `:queued` is no longer a pseudo-class.
 - **New elements and kinds:** `separator[kind]` for the views' lines, `grid-line`, `tempo-mark`,
-  `start-marker`, `marker`, `time-selection`, `marquee`, `drop-target`, `slot-mark`,
+  `start-marker`, `marker`, `time-selection`, `marquee`, `drop-target`, `slot-mark`, `slot-record`,
   `mapping-overlay`, `clip-fade`, `clip-envelope`, `take-header`, `automation-header`,
   `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `device-list`,
   `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool`, `piano-slice`,

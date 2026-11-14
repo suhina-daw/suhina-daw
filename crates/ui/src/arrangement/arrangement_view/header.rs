@@ -688,7 +688,7 @@ pub(super) fn track_header(
             let ink = crate::kit::element::TRACK_NUMBER
                 .attr(crate::kit::element::Muted, lane.mute)
                 .look()
-                .text_or(theme::text_secondary());
+                .color_or(theme::text_secondary());
             widgets::track_number_text(painter, at, &number, ink, lane.mute);
         }
     }

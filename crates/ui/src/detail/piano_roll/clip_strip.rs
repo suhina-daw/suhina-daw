@@ -36,21 +36,22 @@ pub(super) fn show(
     let on = state.focus_first;
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, "Focus on the first clip"));
     // `button#control-focus-first`, `[checked]` while on.
+    let plain = on.then(|| crate::kit::element::BUTTON.id("focus-first").look());
     let el = crate::kit::element::BUTTON
         .id("focus-first")
         .response(&response)
         .attr(crate::kit::element::Checked, on)
         .enter();
-    if on {
-        painter.rect_filled(switch, 0.0, el.background_or(theme::accent()));
-    }
-    painter.text(
-        switch.center(),
-        Align2::CENTER_CENTER,
-        "Focus",
-        theme::mono_font(theme::TEXT_TINY),
-        el.own_color_or(if on { theme::text_inverse() } else { theme::text_secondary() }),
+    let (fill, ink) = crate::kit::widgets::toggle_inks(
+        &el,
+        plain.as_ref(),
+        (theme::accent(), Color32::TRANSPARENT),
+        (theme::text_inverse(), theme::text_secondary()),
     );
+    if on {
+        painter.rect_filled(switch, 0.0, fill);
+    }
+    painter.text(switch.center(), Align2::CENTER_CENTER, "Focus", theme::mono_font(theme::TEXT_TINY), ink);
     drop(el);
 
     // The clips, over the grid.

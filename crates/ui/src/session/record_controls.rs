@@ -244,9 +244,9 @@ pub fn slot_record(
         actions.push(Action::new(id, json!({ "track": track, "scene": number.saturating_sub(1) })));
     }
     let pulse = if recording { motion::pulse(ui.ctx()) } else { 1.0 };
-    // `button#control-slot-record`, `[recording]` while its slot records; the slot it is in
-    // takes its background.
-    let el = BUTTON.id("slot-record").response(&response).attr(Recording, recording).enter();
+    // `slot-record`, `[recording]` while its slot records: its `color` for the dot and the word,
+    // its `background-color` over the slot while it records.
+    let el = crate::kit::element::SLOT_RECORD.response(&response).attr(Recording, recording).enter();
     if recording {
         painter.rect_filled(rect, 0.0, el.background_or(theme::recording_background()));
         widgets::text_in(

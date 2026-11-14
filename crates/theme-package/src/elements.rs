@@ -140,7 +140,6 @@ const CONTROL_IDS: &[&str] = &[
     "cue",
     "arm",
     "main-metronome",
-    "slot-record",
     "mixer-monitor-in",
     "mixer-monitor-auto",
     "mixer-monitor-off",
@@ -283,11 +282,13 @@ pub const ELEMENTS: &[Element] = &[
         .parts(&["label"])
         .attributes(&["playing", "kind"]),
     element("slot", Control, "A clip slot in the Launcher view; a track's stop button under the last scene is `slot[kind=\"stop\"]`, `[queued]` while its stop waits.")
-        .parts(&["clip", "slot-mark"])
+        .parts(&["clip", "slot-mark", "slot-record"])
         .attributes(&["selected", "queued", "kind"])
         .settings(&["track-artwork"]),
     element("mapping-overlay", Drawn, "The tint over a control while keys are mapped to the Launcher, `[selected]` on the one picked; its `color` is the keys' text.")
         .attributes(&["selected"]),
+    element("slot-record", Control, "The record button in an armed track's empty slot, `[recording]` while that slot records: its `color` for the dot and the word, its `background-color` over the slot while it records.")
+        .attributes(&["recording"]),
     element("slot-mark", Drawn, "The mark in an empty slot that holds a stop button."),
     element("drop-target", Drawn, "Where a drop lands: the outline of the area (`kind=\"area\"`) or the line a moved track goes to (`kind=\"insert\"`).")
         .attributes(&["kind"]),
@@ -331,10 +332,10 @@ pub const ELEMENTS: &[Element] = &[
     element(
         "track-lane",
         Container,
-        "A track's row of clips in the Arrangement view, its clips inside it. Its background is painted over the grid lines, so give it a translucent one.",
+        "A track's row of clips in the Arrangement view, its clips inside it, `[checked]` while the piano roll edits it alone. Its background is painted over the grid lines, so give it a translucent one.",
     )
     .parts(&["clip"])
-    .attributes(&["color", "selected", "muted"]),
+    .attributes(&["color", "selected", "muted", "checked"]),
     element("clip", Control, "A clip, in the Arrangement or in a Launcher slot.")
         .parts(&["clip-name", "clip-waveform", "clip-notes", "clip-gain", "clip-fade-handle", "clip-fade"])
         .attributes(&["color", "selected", "muted", "playing", "queued", "recording"])
@@ -359,7 +360,7 @@ pub const ELEMENTS: &[Element] = &[
     element("tempo-mark", Drawn, "A tempo or time-signature change on the ruler: its line and what changes, in its `color`."),
     element("grid-line", Drawn, "A line of the Arrangement's grid, on a bar (`kind=\"bar\"`) or between bars (`kind=\"beat\"`), in its `color`.")
         .attributes(&["kind"]),
-    element("time-selection", Drawn, "Selected time: its `background-color` over the lanes and its `color` at its edges; along the ruler (`kind=\"ruler\"`); the clip the Draw tool's drag makes (`kind=\"draw\"`).")
+    element("time-selection", Drawn, "Selected time: its `background-color` over the lanes and its `color` at its edges; along the ruler (`kind=\"ruler\"`); the clip the Draw tool's drag makes (`kind=\"draw\"`); the piano roll's selection lit on its clip (`kind=\"editor\"`); what is picked or painted on take lanes (`kind=\"take\"`) and on automation lanes (`kind=\"automation\"`).")
         .attributes(&["kind"]),
     element("marquee", Drawn, "The rectangle a drag draws to pick whole clips."),
     element("start-marker", Drawn, "The play start marker under the ruler, and its line in the lane clicked (`kind=\"insert\"`); a clip's start and end markers in the piano roll (`kind=\"clip\"`).")
@@ -544,7 +545,7 @@ pub const ELEMENTS: &[Element] = &[
     element("text-input", Control, "A text field."),
     element("scroll-bar", Drawn, "The mark of how far a row is scrolled, such as a mixer strip's sends."),
     element("label", Drawn, "A label; a scene's number is `label[kind=\"scene-number\"]`.").attributes(&["kind"]),
-    element("separator", Drawn, "A rule between parts, by its `kind`: the window's lines over and under the views; a divider between a bar's items (`bar`); the Launcher's lines between its bands (`band`), its columns (`column`) and its slots (`slot`).")
+    element("separator", Drawn, "A rule between parts, by its `kind`: the window's lines over and under the views; a divider between a bar's items (`bar`); the Launcher's lines between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's and the piano roll's under their rows (`row`), between their bands (`band`) and under each lane (`lane`).")
         .ids(Ids::Listed { prefix: "", names: &["views-top", "views-bottom"] })
         .attributes(&["kind"]),
     element("popup", Region, "A menu, right-click menu, dropdown list or control's popup.")

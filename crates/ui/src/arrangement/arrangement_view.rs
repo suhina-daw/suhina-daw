@@ -136,7 +136,7 @@ const LOOP_GRAB: f32 = 4.0;
 /// so the lines stay under the clips. Read once a frame, for every line of its kind.
 fn grid_color(major: bool) -> Color32 {
     let look = crate::kit::element::GRID_LINE.attribute("kind", if major { "bar" } else { "beat" }).look();
-    look.color_or(motion::mix(
+    look.own_color_or(motion::mix(
         crate::kit::style_class::surface_or(theme::window_background()),
         if major { theme::grid_major() } else { theme::grid_minor() },
         if major { 0.55 } else { 0.35 },
@@ -145,7 +145,7 @@ fn grid_color(major: bool) -> Color32 {
 
 /// The colour of a line of `kind` between the view's rows and bands, `separator[kind]`.
 fn line_color(kind: &str, token: Color32) -> Color32 {
-    crate::kit::element::SEPARATOR.attribute("kind", kind).look().color_or(token)
+    crate::kit::element::SEPARATOR.attribute("kind", kind).look().own_color_or(token)
 }
 
 /// The height of a clip's name bar, and the least a clip's height must be to have a body under
@@ -613,7 +613,7 @@ fn show_lanes(
         let band = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(top + 2.0, (top + 42.0).min(bottom)));
         let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look();
         painter.rect_filled(band, 2.0, target.background_or(theme::accent().gamma_multiply(0.12)));
-        let outline = target.color_or(theme::accent());
+        let outline = target.own_color_or(theme::accent());
         painter.rect_stroke(band, 2.0, theme::hairline(outline), egui::StrokeKind::Inside);
         widgets::text_in(
             &painter,
@@ -621,7 +621,7 @@ fn show_lanes(
             Align2::LEFT_CENTER,
             "New track",
             theme::ui_font(theme::TEXT_SMALL),
-            target.text_or(theme::text_secondary()),
+            target.color_or(theme::text_secondary()),
         );
     }
     let grid_bands =
@@ -699,7 +699,7 @@ fn show_lanes(
     // Tempo and time-signature changes: a line in the accent colour and what changes, after
     // room for the bar number.
     // `tempo-mark`: its `color`, line and text.
-    let tempo_ink = crate::kit::element::TEMPO_MARK.look().color_or(theme::accent());
+    let tempo_ink = crate::kit::element::TEMPO_MARK.look().own_color_or(theme::accent());
     for mark in timeline.marks.iter().filter(|m| m.beat >= first_beat - 64.0 && m.beat <= last_beat) {
         let x = x_of(mark.beat).round() + 0.5;
         ruler_painter.vline(x, ruler.y_range(), theme::hairline(tempo_ink));
@@ -731,7 +731,7 @@ fn show_lanes(
             // `time-selection[kind="ruler"]`: its band's `color` and its `background-color`.
             let look = crate::kit::element::TIME_SELECTION.attribute("kind", "ruler").look();
             let band = Rect::from_x_y_ranges(span, egui::Rangef::new(ruler.bottom() - 6.0, ruler.bottom()));
-            painter.rect_filled(band, 0.0, look.color_or(theme::accent()));
+            painter.rect_filled(band, 0.0, look.own_color_or(theme::accent()));
             painter.rect_filled(
                 Rect::from_x_y_ranges(span, ruler.y_range()),
                 0.0,
@@ -755,7 +755,7 @@ fn show_lanes(
         if time.x_range().contains(x) {
             // Blinking while it waits, as the Play button does.
             let on = (ui.input(|i| i.time) * 4.0).floor() as i64 % 2 == 0;
-            let ink = crate::kit::element::PLAYHEAD.attribute("kind", "pending").look().color_or(theme::accent());
+            let ink = crate::kit::element::PLAYHEAD.attribute("kind", "pending").look().own_color_or(theme::accent());
             let colour = if on { ink } else { ink.gamma_multiply(0.4) };
             painter.vline(x, ruler.y_range(), egui::Stroke::new(2.0, colour));
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(125));
@@ -859,7 +859,7 @@ fn show_lanes(
         let (top, half) = (ruler.bottom() - MARKER.y, MARKER.x / 2.0);
         ruler_painter.add(egui::Shape::convex_polygon(
             vec![Pos2::new(marker_x - half, top), Pos2::new(marker_x + half, top), Pos2::new(marker_x, ruler.bottom())],
-            crate::kit::element::START_MARKER.look().color_or(theme::text_primary()),
+            crate::kit::element::START_MARKER.look().own_color_or(theme::text_primary()),
             egui::Stroke::NONE,
         ));
     }
@@ -1012,7 +1012,7 @@ fn show_lanes(
                 Align2::LEFT_CENTER,
                 "Swing",
                 font,
-                label.text_or(theme::text_secondary()),
+                label.color_or(theme::text_secondary()),
             );
             let percent = (timeline.swing * 100.0).round();
             let id = Id::unique("arrangement-swing");
@@ -1026,7 +1026,7 @@ fn show_lanes(
                 }
                 actions.push(Action::new("transport.setSwing", params));
             }
-            let ink = label.text_or(theme::text_value());
+            let ink = label.color_or(theme::text_value());
             widgets::text_in(&painter, value, Align2::RIGHT_CENTER, &format!("{percent} %"), mono, ink);
         }
     }
@@ -1158,6 +1158,16 @@ fn show_lanes(
         // the clips of the track it stands in for, each with its own `[color]`): its clips are
         // entered inside it, and a theme may give it a background, painted here over the grid
         // lines.
+        let lane_id = format!("track-{}", lane.track.0);
+        let lane_of = || {
+            crate::kit::element::TRACK_LANE
+                .id(&lane_id)
+                .color(rgb(lane.color))
+                .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track))
+                .attr(crate::kit::element::Muted, lane.mute)
+        };
+        // The lane as it is when the piano roll does not edit it, for what `[checked]` changes.
+        let plain_lane = (focus == Some(lane.track)).then(|| lane_of().look());
         let lane_el = crate::kit::element::TRACK_LANE
             .id(&format!("track-{}", lane.track.0))
             .color(rgb(lane.color))
@@ -1224,7 +1234,7 @@ fn show_lanes(
             // `time-selection[kind="draw"]`: the clip the Draw tool's drag will make.
             let look = crate::kit::element::TIME_SELECTION.attribute("kind", "draw").look();
             lanes_painter.rect_filled(shown, 0.0, look.background_or(theme::selection().gamma_multiply(0.25)));
-            let edge = look.color_or(theme::selection());
+            let edge = look.own_color_or(theme::selection());
             lanes_painter.rect_stroke(shown, 0.0, Stroke::new(1.0, edge), StrokeKind::Inside);
             if body.drag_stopped() || !ui.input(|i| i.pointer.primary_down()) {
                 state.draw_drag = None;
@@ -1292,14 +1302,16 @@ fn show_lanes(
             actions.push(Action::new("clip.create", params));
         }
         // The track the piano roll edits, alone in the view: lit, so it is clear which it is.
-        // It is `track-lane[checked]`: a background the sheet gives it there replaces the light.
-        if focus == Some(lane.track) {
+        // It is `track-lane[checked]`: a background or border colour the sheet gives that state
+        // replaces the light or the edge; one it gives every lane does not.
+        if let Some(plain) = &plain_lane {
+            let lit = lane_el.look();
             // It lights the lane over what is painted there, so it blends and never makes it see-through.
-            if !lane_el.style().is_some_and(|style| style.authored.background) {
+            if lit.background_unlike(plain, Color32::TRANSPARENT) == Color32::TRANSPARENT {
                 lanes_painter.rect_filled(row.time, 0.0, theme::panel_hover());
             }
             let edge = Rect::from_min_size(row.time.min, Vec2::new(2.0, row.time.height()));
-            lanes_painter.rect_filled(edge, 0.0, lane_el.border_or(theme::accent()));
+            lanes_painter.rect_filled(edge, 0.0, lit.border_unlike(plain, theme::accent()));
         }
         // A folded group's lane: every track inside it, a thin row each with its clips in their
         // colours, so it shows how much is in there and where.
@@ -1369,7 +1381,7 @@ fn show_lanes(
                         Align2::LEFT_TOP,
                         "Recording…",
                         theme::ui_font(theme::TEXT_SMALL),
-                        look.color_or(theme::text_primary()),
+                        look.own_color_or(theme::text_primary()),
                     );
                 }
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
@@ -1386,7 +1398,7 @@ fn show_lanes(
                 let ink = crate::kit::element::START_MARKER
                     .attribute("kind", "insert")
                     .look()
-                    .color_or(theme::text_primary());
+                    .own_color_or(theme::text_primary());
                 lanes_painter.vline(x, row.time.y_range(), egui::Stroke::new(1.0, ink));
             }
         }
@@ -1447,7 +1459,7 @@ fn show_lanes(
         // `time-selection`: its `background-color` over the lanes, its `color` at its edges.
         let look = crate::kit::element::TIME_SELECTION.look();
         let (lit_fill, edge_ink) =
-            (look.background_or(theme::accent().gamma_multiply(0.38)), look.color_or(theme::accent()));
+            (look.background_or(theme::accent().gamma_multiply(0.38)), look.own_color_or(theme::accent()));
         // Within the timeline: the track headers beside it are not lit.
         let span = egui::Rangef::new(x_of(selection.start), x_of(selection.end)).intersection(time.x_range());
         for (at, (track, row)) in rows_seen.iter().enumerate().filter(|(_, (t, _))| selection.tracks.contains(t)) {
@@ -1529,7 +1541,7 @@ fn show_lanes(
             // `marquee`: the rectangle that picks clips.
             let look = crate::kit::element::MARQUEE.look();
             lanes_painter.rect_filled(rect, 0.0, look.background_or(theme::accent().gamma_multiply(0.12)));
-            let edge = theme::hairline(look.color_or(theme::accent()));
+            let edge = theme::hairline(look.own_color_or(theme::accent()));
             lanes_painter.rect_stroke(rect, 0.0, edge, egui::StrokeKind::Inside);
             if done {
                 state.marquee = None;
@@ -1597,7 +1609,7 @@ fn show_lanes(
     {
         let y = if below { row.time.bottom() + 0.5 } else { row.time.top() - 0.5 };
         if lane.track != dragged {
-            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color_or(theme::accent());
+            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent());
             painter.with_clip_rect(lanes_area).hline(area.x_range(), y, egui::Stroke::new(2.0, ink));
         }
     }
@@ -1675,12 +1687,14 @@ fn show_lanes(
             .attribute("kind", "main")
             .attr(crate::kit::element::Selected, selected)
             .enter();
-        let fill = main_header.background_or(if selected {
+        // Its box, as a track's header paints it: the sheet's background and gradients, or the
+        // native fill.
+        let fill = if selected {
             theme::control_active()
         } else {
             crate::kit::style_class::surface_or(theme::panel_background())
-        });
-        fixed_painter.rect_filled(header, 0.0, fill);
+        };
+        main_header.paint_with(&fixed_painter, header, crate::kit::element::Native { radius: 0.0, fill });
         if let Some(probe) = state.drop.as_mut()
             && probe.devices
             && !probe.files
@@ -1714,6 +1728,9 @@ fn show_lanes(
             font,
             main_header.color_or(theme::text_primary()),
         );
+        // The header holds its name only: Main's volume, meter and lanes are not inside it, as a
+        // track's are not.
+        drop(main_header);
         // The main volume as a track's: a bar that a drag sets (heard while dragging, one undo
         // step), a double-click back to 0 dB.
         let field = Rect::from_min_max(Pos2::new(inner.left() + inner.width() * 0.45, inner.top()), inner.max);
@@ -1952,8 +1969,10 @@ fn show_lanes(
                 if row.clip.contains(probe.pointer) && probe.target.is_none() {
                     probe.target = Some(DropTarget::Lane { track: row.track, beat });
                     probe.area = Some(row.clip);
-                    let ink =
-                        crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color_or(theme::accent());
+                    let ink = crate::kit::element::DROP_TARGET
+                        .attribute("kind", "insert")
+                        .look()
+                        .own_color_or(theme::accent());
                     painter.rect_filled(mark, 0.0, ink);
                 }
             } else {
@@ -1966,7 +1985,7 @@ fn show_lanes(
         }
         if let Some(target_area) = probe.area {
             let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look();
-            let outline = target.color_or(theme::accent());
+            let outline = target.own_color_or(theme::accent());
             painter.rect_stroke(
                 target_area.shrink(0.5),
                 0.0,

@@ -224,7 +224,7 @@ pub(super) fn value_control(
         None => value,
     };
     match control {
-        Control::Volume if plain => volume_text(painter, rect, shown, hover),
+        Control::Volume if plain => volume_text(painter, rect, el, shown, hover),
         Control::Volume if state.knobs => volume_knob(painter, rect, el, shown, hover, control_response.as_ref()),
         Control::Volume => volume_field(painter, rect, el, shown, hover),
         Control::Pan if crate::kit::style_class::knob_preference(el, state.knobs) => {
@@ -342,10 +342,10 @@ pub(super) fn volume_field(
     );
 }
 
-/// A volume as a plain value, for the compact return and main rows.
-pub(super) fn volume_text(painter: &egui::Painter, rect: Rect, db: f64, hover: f32) {
-    let color =
-        crate::kit::element::VALUE.look().text_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
+/// A volume as a plain value, for the compact return and main rows, drawn as `el`, the value its
+/// caller entered.
+pub(super) fn volume_text(painter: &egui::Painter, rect: Rect, el: &crate::kit::element::Entered, db: f64, hover: f32) {
+    let color = el.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
     widgets::text_in(
         painter,
         rect,

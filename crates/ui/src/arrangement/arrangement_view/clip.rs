@@ -1613,7 +1613,8 @@ pub(super) fn paint_clip(
     // A fade is a line over the waveform, from the clip's bottom corner to where it ends at
     // the top, following its shape and curve.
     if clip.audio {
-        let fade_stroke = theme::hairline(crate::kit::element::CLIP_FADE.look().color_or(dim(theme::text_secondary())));
+        let fade_stroke =
+            theme::hairline(crate::kit::element::CLIP_FADE.look().own_color_or(dim(theme::text_secondary())));
         if shown.fade_in > 0.0 {
             let end = (rect.left() + shown.fade_in as f32 * beat_width).min(rect.right());
             painter.line(fade_line(rect, FadeEdge::In, rect.left(), end, shown.fade_in_curve), fade_stroke);
@@ -1772,8 +1773,10 @@ pub(super) fn take_lanes(
     let beat_of = |x: f32| ruler_beat(f64::from((x - at.time.min + scroll_x) / beat_width), grid, free);
     let raw_beat = |x: f32| f64::from((x - at.time.min + scroll_x) / beat_width);
     let ctrl = ui.input(|i| i.modifiers.command);
+    // What is picked or painted on take lanes, read once for every lane.
+    let take_sel = take_selection();
     // The line under each take lane, `separator[kind="row"]`.
-    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().color_or(theme::border());
+    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
     // Which part of a piece moves it, as for a clip (`docs/spec/arrangement-editing.md`): the name
     // bar, or the lower half; only the name bar when Ctrl selects time, so a drag can still comp;
     // the whole piece when it is too low for either.
@@ -1851,7 +1854,7 @@ pub(super) fn take_lanes(
         painter.rect_filled(strip, 0.0, swatch);
         state.take_headers.push(header.intersect(at.visible));
         if picked {
-            let outline = take_header.border_or(take_selection().color_or(theme::selection()));
+            let outline = take_header.border_or(take_sel.own_color_or(theme::selection()));
             painter.rect_stroke(header, 0.0, Stroke::new(1.5, outline), StrokeKind::Inside);
         }
         // The lane's clips and buttons are not inside the header.
@@ -1924,25 +1927,17 @@ pub(super) fn take_lanes(
                 actions.push(Action::new("take.delete", json!({ "track": params["track"], "take": params["take"] })));
             }
             let r = clicked(solo, "Solo take", format!("Solo {}", take.name));
+            let plain = soloed.then(|| crate::kit::element::BUTTON.id("take-solo").look());
             let el = crate::kit::element::BUTTON
                 .id("take-solo")
                 .response(&r)
                 .attr(crate::kit::element::Checked, soloed)
                 .enter();
-            let fill = el.background_or(if soloed {
-                theme::accent()
-            } else {
-                motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r))
-            });
+            let off = motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r));
+            let (fill, _) = widgets::toggle_inks(&el, plain.as_ref(), (theme::accent(), off), (ink, ink));
+            let (_, text) = widgets::toggle_inks(&el, plain.as_ref(), (fill, fill), (ink_on(fill), ink));
             painter.rect_filled(solo, 2.0, fill);
-            widgets::text_in(
-                painter,
-                solo,
-                Align2::CENTER_CENTER,
-                "S",
-                small.clone(),
-                el.own_color_or(if soloed { ink_on(fill) } else { ink }),
-            );
+            widgets::text_in(painter, solo, Align2::CENTER_CENTER, "S", small.clone(), text);
             drop(el);
             if r.clicked() {
                 let number = if soloed { 0 } else { take.number };
@@ -2051,7 +2046,7 @@ pub(super) fn take_lanes(
                 painter.rect_stroke(
                     rect,
                     0.0,
-                    Stroke::new(1.5, take_selection().color_or(theme::selection())),
+                    Stroke::new(1.5, take_sel.own_color_or(theme::selection())),
                     StrokeKind::Inside,
                 );
             }
@@ -2091,7 +2086,7 @@ pub(super) fn take_lanes(
                 painter.rect_stroke(
                     rect,
                     0.0,
-                    Stroke::new(1.0, take_selection().color_or(theme::selection())),
+                    Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
                     StrokeKind::Inside,
                 );
             }
@@ -2140,15 +2135,11 @@ pub(super) fn take_lanes(
                 if let Some(edge) = held {
                     let (from, to) = if end { (clip.start, edge.at) } else { (edge.at, clip.start + clip.length) };
                     let shown = clip_rect(row, from, (to - from).max(0.0), x_of);
-                    painter.rect_filled(
-                        shown,
-                        0.0,
-                        take_selection().background_or(theme::selection().gamma_multiply(0.25)),
-                    );
+                    painter.rect_filled(shown, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
                     painter.rect_stroke(
                         shown,
                         0.0,
-                        Stroke::new(1.0, take_selection().color_or(theme::selection())),
+                        Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
                         StrokeKind::Inside,
                     );
                 }
@@ -2216,11 +2207,11 @@ pub(super) fn take_lanes(
             let to = beat_of(pointer.x);
             let (start, end) = (from.min(to), from.max(to));
             let picked = Rect::from_min_max(Pos2::new(x_of(start), row.top()), Pos2::new(x_of(end), row.bottom()));
-            painter.rect_filled(picked, 0.0, take_selection().background_or(theme::selection().gamma_multiply(0.25)));
+            painter.rect_filled(picked, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
             painter.rect_stroke(
                 picked,
                 0.0,
-                Stroke::new(1.0, take_selection().color_or(theme::selection())),
+                Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
                 StrokeKind::Inside,
             );
             if body.drag_stopped() {
@@ -2261,11 +2252,11 @@ pub(super) fn take_lanes(
         let (start, end) = (from.min(to), from.max(to));
         for (_, row) in covered {
             let lit = Rect::from_x_y_ranges(egui::Rangef::new(x_of(start), x_of(end)), row.y_range());
-            painter.rect_filled(lit, 0.0, take_selection().background_or(theme::selection().gamma_multiply(0.25)));
+            painter.rect_filled(lit, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
             painter.rect_stroke(
                 lit,
                 0.0,
-                Stroke::new(1.0, take_selection().color_or(theme::selection())),
+                Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
                 StrokeKind::Inside,
             );
         }
@@ -2292,11 +2283,11 @@ pub(super) fn take_lanes(
     if let Some(area) = state.take_area.as_ref().filter(|a| a.track == lane.track) {
         for (_, row) in rows.iter().filter(|(n, _)| area.takes.contains(n)) {
             let lit = Rect::from_x_y_ranges(egui::Rangef::new(x_of(area.start), x_of(area.end)), row.y_range());
-            painter.rect_filled(lit, 0.0, take_selection().background_or(theme::selection().gamma_multiply(0.25)));
+            painter.rect_filled(lit, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
             painter.rect_stroke(
                 lit,
                 0.0,
-                Stroke::new(1.0, take_selection().color_or(theme::selection())),
+                Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
                 StrokeKind::Inside,
             );
         }
@@ -2325,15 +2316,11 @@ pub(super) fn take_lanes(
                 lane_of(number).and_then(|at| usize::try_from(at + lanes_by).ok()).and_then(|at| rows.get(at));
             if let Some((_, row)) = landing_row {
                 let landing = clip_rect(*row, clip.start + by, clip.length, x_of);
-                painter.rect_filled(
-                    landing,
-                    0.0,
-                    take_selection().background_or(theme::selection().gamma_multiply(0.25)),
-                );
+                painter.rect_filled(landing, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
                 painter.rect_stroke(
                     landing,
                     0.0,
-                    Stroke::new(1.5, take_selection().color_or(theme::selection())),
+                    Stroke::new(1.5, take_sel.own_color_or(theme::selection())),
                     StrokeKind::Inside,
                 );
             }
@@ -2484,7 +2471,7 @@ pub(super) fn comp_crossfade(
         state.comp_curve_drag = state.comp_curve_drag.filter(|(clip, ..)| *clip != cut.left);
     }
     // A comp's crossfade between two pieces, `clip-fade[kind="crossfade"]`.
-    let ink = crate::kit::element::CLIP_FADE.attribute("kind", "crossfade").look().color_or(theme::text_primary());
+    let ink = crate::kit::element::CLIP_FADE.attribute("kind", "crossfade").look().own_color_or(theme::text_primary());
     let active = if dragging { 1.0 } else { hover };
     painter.rect_filled(span, 0.0, ink.gamma_multiply(0.08 + 0.10 * active));
     let line = Stroke::new(1.0, ink.gamma_multiply(0.85));
@@ -2609,7 +2596,7 @@ pub(super) fn paint_live_take(
     if take.audio && !take.peaks.is_empty() && take.peaks_end > take.start {
         let body = Rect::from_min_max(Pos2::new(rect.left(), rect.top() + 14.0), rect.max);
         let step = (take.peaks_end - take.start) / take.peaks.len() as f64;
-        let ink = crate::kit::element::CLIP_WAVEFORM.look().color_or(theme::text_primary()).gamma_multiply(0.8);
+        let ink = crate::kit::element::CLIP_WAVEFORM.look().own_color_or(theme::text_primary()).gamma_multiply(0.8);
         let mut last = f32::NEG_INFINITY;
         for (i, peak) in take.peaks.iter().enumerate() {
             let x = x_of(take.start + i as f64 * step).round() + 0.5;

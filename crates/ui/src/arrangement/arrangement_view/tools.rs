@@ -36,7 +36,7 @@ const GRID_MENU: f32 = 96.0;
 pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState) {
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
-    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().color_or(theme::border());
+    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(line));
     let mut x = rect.left() + 6.0;
     for (index, (tool, name)) in ArrangementTool::ALL.into_iter().enumerate() {

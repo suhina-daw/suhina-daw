@@ -173,13 +173,6 @@ pub fn show(
     let lit =
         if level.clipped { super::element::METER_CLIP.look().background_or(theme::recording()) } else { background };
     painter.rect_filled(light, 0.0, lit);
-    // The level's colours: `meter-level { color }` up to the top's last stretch, and
-    // `meter-level[kind="hot"]` in it.
-    let (normal, hot) = {
-        let level = super::element::METER_LEVEL.look();
-        let hot = super::element::METER_LEVEL.attribute("kind", "hot").look();
-        (level.color_or(theme::meter_normal()), hot.color_or(theme::meter_hot()))
-    };
     // Intensity changes only measured ink, never rails or the safety indicator.
     let mut ink = painter.clone();
     ink.multiply_opacity(f32::from(skin.meter_intensity.min(100)) / 100.0);
@@ -196,6 +189,13 @@ pub fn show(
             return;
         }
     }
+    // The level's colours: `meter-level { color }` up to the top's last stretch, and
+    // `meter-level[kind="hot"]` in it.
+    let (normal, hot) = {
+        let level = super::element::METER_LEVEL.look();
+        let hot = super::element::METER_LEVEL.attribute("kind", "hot").look();
+        (level.own_color_or(theme::meter_normal()), hot.own_color_or(theme::meter_hot()))
+    };
     let hot_from = ((HOT_DB - RANGE.0) / (RANGE.1 - RANGE.0)) as f32;
     let thickness = if upright { bars.width() } else { bars.height() };
     let bar_width = ((thickness - GAP) / 2.0).max(0.0);

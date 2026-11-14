@@ -361,7 +361,7 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
     let painter = ui.painter_at(ruler);
     let row = Rect::from_min_max(ruler.min, Pos2::new(ruler.right(), ruler.top() + LOOP_ROW));
     painter.rect_filled(row, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
-    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().color_or(theme::border());
+    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
     painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(line));
 
     // The loop bar: bright while the clip loops, dim where turning the loop on would put it.
@@ -394,7 +394,7 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
     // The markers, under the loop row: a flag pointing into the part the clip plays.
     let numbers = Rect::from_min_max(Pos2::new(ruler.left(), row.bottom()), ruler.max);
     // The clip's start and end markers: `start-marker[kind="clip"]`.
-    let ink = crate::kit::element::START_MARKER.attribute("kind", "clip").look().color_or(theme::text_primary());
+    let ink = crate::kit::element::START_MARKER.attribute("kind", "clip").look().own_color_or(theme::text_primary());
     marker(&painter, numbers, axis.x_of(shape.offset), 1.0, ink);
     if let Some(end) = shape.end_marker() {
         marker(&painter, numbers, axis.x_of(end), -1.0, ink);

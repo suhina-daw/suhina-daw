@@ -576,18 +576,18 @@ fn a_look_takes_its_own_rules_and_the_token_elsewhere() {
         let slot = SEPARATOR.attribute("kind", "slot").look();
         let column = SEPARATOR.attribute("kind", "column").look();
         let mark = SLOT_MARK.look();
-        (slot.color_or(token), column.color_or(token), column.text_or(token), mark)
+        (slot.own_color_or(token), column.own_color_or(token), column.color_or(token), mark)
     });
     assert_eq!(slot_line, rgb(0, 0xff, 0), "a rule on the line gives its colour");
     assert_eq!(column_line, token, "the view's text colour does not reach a line");
     assert_eq!(column_text, rgb(0xff, 0, 0), "but it is the text colour inside it");
     assert_eq!(mark.background_or(token), rgb(0, 0, 0xff));
     assert_eq!(mark.border_or(token), rgb(0xff, 0xff, 0));
-    assert_eq!(mark.color_or(token), token);
+    assert_eq!(mark.own_color_or(token), token);
     // Without a sheet, every colour is the token's.
     let unstyled = Look::default();
     assert_eq!(
-        (unstyled.color_or(token), unstyled.background_or(token), unstyled.border_or(token)),
+        (unstyled.own_color_or(token), unstyled.background_or(token), unstyled.border_or(token)),
         (token, token, token)
     );
 }
@@ -605,4 +605,24 @@ fn queued_is_an_attribute() {
     });
     assert_eq!(queued, egui::Color32::from_rgb(0x10, 0x20, 0x30));
     assert_eq!(waiting, egui::Color32::BLACK);
+}
+
+/// A rule for every `button` does not hide which toggle is on: while lit, only a rule for the
+/// state (`button[checked]`) gives it a colour (#1417 review).
+#[test]
+fn a_rule_for_every_button_does_not_hide_a_lit_one() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let lit_fill = |css: &str| {
+        frames(css, || {
+            let _view = SESSION.enter();
+            let plain = BUTTON.id("main-metronome").look();
+            BUTTON.id("main-metronome").attr(Checked, true).look().background_unlike(&plain, token)
+        })
+    };
+    assert_eq!(lit_fill("button { background-color: #102030; }"), token);
+    assert_eq!(
+        lit_fill("button { background-color: #102030; } button[checked] { background-color: #405060; }"),
+        rgb(0x40, 0x50, 0x60)
+    );
 }

@@ -462,7 +462,7 @@ pub fn show(
             probe.offer(empty, DropTarget::NewTracks { beat: None, scene: Some(scene) });
         }
         if let Some(target_area) = probe.area {
-            let color = DROP_TARGET.attribute("kind", "area").look().color_or(theme::accent());
+            let color = DROP_TARGET.attribute("kind", "area").look().own_color_or(theme::accent());
             painter.with_clip_rect(area).rect_stroke(
                 target_area.shrink(0.5),
                 0.0,
@@ -482,7 +482,7 @@ pub fn show(
         && let Some((_, span)) = spans.iter().find(|(c, _)| c.track == column.track)
     {
         let x = if after { span.max + 0.5 } else { span.min - 0.5 };
-        let color = DROP_TARGET.attribute("kind", "insert").look().color_or(theme::accent());
+        let color = DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent());
         painter.with_clip_rect(tracks_clip).vline(x, area.y_range(), egui::Stroke::new(2.0, color));
     }
     if let Some((dragged, x)) = state.track_drop.take()
@@ -505,7 +505,8 @@ pub fn show(
         // Main's header over the scene column: `track-header[kind="main"]`.
         let main_header =
             crate::kit::element::TRACK_HEADER.attribute("kind", "main").attr(Selected, main_selected).enter();
-        painter.rect_filled(header_rect, 0.0, main_header.background_or(theme::control_background()));
+        let native = crate::kit::element::Native { radius: 0.0, fill: theme::control_background() };
+        main_header.paint_with(&painter, header_rect, native);
         widgets::text_in(
             &painter,
             header_rect.shrink2(Vec2::new(PAD, 0.0)),
@@ -596,7 +597,8 @@ pub fn show(
     if !crate::kit::control_layout::placement("mixer-metronome").hidden {
         main_metronome(ui, &painter.with_clip_rect(main_mixer), click, grid.metronome, actions);
     }
-    mixer_edge(ui, &painter, area, mixer, mixer_height, state);
+    let bounds = mixer_bounds(area.height(), grid.scenes.len(), rows_top + rows_bottom);
+    mixer_edge(ui, &painter, (area, mixer), mixer_height, bounds, state);
 }
 
 /// The main strip's metronome button: a click turns the click on or off; held, a slider shows
@@ -615,11 +617,18 @@ fn main_metronome(
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
+    let plain = on.then(|| crate::kit::element::BUTTON.id("main-metronome").look());
     let el = crate::kit::element::BUTTON.id("main-metronome").response(&response).attr(Checked, on).enter();
-    let fill = el.background_or(if on { theme::control_active() } else { theme::control_background() });
+    let (fill, glyph) = crate::kit::widgets::toggle_inks(
+        &el,
+        plain.as_ref(),
+        (theme::control_active(), theme::control_background()),
+        (theme::accent(), theme::text_primary()),
+    );
     painter.rect_filled(rect, 0.0, fill);
-    let glyph = el.own_color_or(if on { theme::accent() } else { theme::text_primary() });
     crate::session::record_controls::metronome_glyph(painter, rect, glyph);
+    // The level's slider is a popup of its own, not a part of the button.
+    drop(el);
     // Held: the level's slider beside the button, where there is room.
     crate::session::record_controls::metronome_level(ui, &response, rect, (on, db), actions);
 }
@@ -628,23 +637,34 @@ fn main_metronome(
 /// least height and the most this view allows (`docs/design/components.md` › Mixer strip). The
 /// slots' rows are `rows_insets` taller than their pitch (a track column's border and padding).
 fn mixer_height(state: &SessionViewState, view_height: f32, scenes: usize, rows_insets: f32) -> f32 {
+    let default = crate::settings::view_settings::MIXER_HEIGHTS.1 as f32;
+    let saved = if state.mixer_height > 0.0 { state.mixer_height } else { default };
+    let (least, most) = mixer_bounds(view_height, scenes, rows_insets);
+    state.mixer_dragged.unwrap_or(saved).clamp(least, most)
+}
+
+/// The least and the most height the mixer may have: up to just under the stop row under the
+/// last scene, and always up to the default height; never over the header.
+fn mixer_bounds(view_height: f32, scenes: usize, rows_insets: f32) -> (f32, f32) {
     let (least, default, _) = crate::settings::view_settings::MIXER_HEIGHTS;
     let (least, default) = (least as f32, default as f32);
-    let saved = if state.mixer_height > 0.0 { state.mixer_height } else { default };
-    let wanted = state.mixer_dragged.unwrap_or(saved);
-    // Up to just under the stop row under the last scene, and always up to the default height;
-    // never over the header.
     let under_slots = view_height - header_height() - 1.0 - (scenes as f32 + 1.0) * slot_pitch() - rows_insets - 1.0;
-    let most = under_slots.max(default).min(view_height - header_height() - 1.0).max(least);
-    wanted.clamp(least, most)
+    (least, under_slots.max(default).min(view_height - header_height() - 1.0).max(least))
 }
 
 /// The mixer's top line, `divider#mixer-splitter`: dragged up or down to resize it,
 /// double-clicked for its default height.
-fn mixer_edge(ui: &Ui, painter: &egui::Painter, area: Rect, mixer: Rect, height: f32, state: &mut SessionViewState) {
+/// `bounds` are the heights it keeps between, so a drag past either end turns back at once.
+fn mixer_edge(
+    ui: &Ui,
+    painter: &egui::Painter,
+    (area, mixer): (Rect, Rect),
+    height: f32,
+    bounds: (f32, f32),
+    state: &mut SessionViewState,
+) {
     let line = mixer.top() - 0.5;
     let rect = Rect::from_x_y_ranges(area.x_range(), egui::Rangef::new(line - MIXER_EDGE, line + MIXER_EDGE));
-    let least = crate::settings::view_settings::MIXER_HEIGHTS.0 as f32;
     let divider = crate::kit::divider::show(
         ui,
         crate::kit::divider::Divider {
@@ -656,7 +676,7 @@ fn mixer_edge(ui: &Ui, painter: &egui::Painter, area: Rect, mixer: Rect, height:
             size: height,
             // Up makes the mixer taller; `mixer_height` keeps it under the header.
             grows_forward: false,
-            bounds: (least, area.height().max(least)),
+            bounds,
         },
     );
     let response = &divider.response;
@@ -669,7 +689,7 @@ fn mixer_edge(ui: &Ui, painter: &egui::Painter, area: Rect, mixer: Rect, height:
         state.mixer_height = height.round();
     }
     if response.hovered() || response.dragged() {
-        painter.hline(area.x_range(), line, egui::Stroke::new(2.0, divider.style.color_or(theme::accent())));
+        painter.hline(area.x_range(), line, egui::Stroke::new(2.0, divider.style.own_color_or(theme::accent())));
     }
 }
 
@@ -686,9 +706,9 @@ impl Lines {
     fn read() -> Self {
         let line = |kind| crate::kit::element::SEPARATOR.attribute("kind", kind).look();
         Self {
-            band: line("band").color_or(theme::border_strong()),
-            column: line("column").color_or(theme::border_strong()),
-            slot: line("slot").color_or(theme::border()),
+            band: line("band").own_color_or(theme::border_strong()),
+            column: line("column").own_color_or(theme::border_strong()),
+            slot: line("slot").own_color_or(theme::border()),
         }
     }
 }
@@ -1029,9 +1049,11 @@ fn column_body(
             if response.clicked() {
                 state.launch_keys.pick(target);
             }
+            let plain = plain_clip(has_clip, clip_colour, slot, false);
             let clip_style = has_clip.then(|| slot_clip(clip_colour, slot, false).enter());
             let el = clip_style.as_ref().unwrap_or(&slot_style);
-            slot_cell(painter, rect, el, column, slot, (0.0, None), 1.0, progress, false);
+            let looks = (el, plain.as_ref());
+            slot_cell(painter, rect, looks, column, slot, (0.0, None), 1.0, progress, false);
             crate::session::launch_keys::overlay(
                 painter,
                 rect,
@@ -1101,6 +1123,7 @@ fn column_body(
         // `clip:hover` matches it (#1241).
         let hovered = [&launch, &select].into_iter().flatten().any(egui::Response::hovered);
         let selected = state.selected_slot == Some(key);
+        let plain = plain_clip(has_clip, clip_colour, slot, selectable && selected);
         let clip_style = has_clip
             .then(|| slot_clip(clip_colour, slot, selectable && selected).pointer(hovered, false, false).enter());
         let hover_fill = clip_style.as_ref().and_then(|clip| {
@@ -1216,7 +1239,8 @@ fn column_body(
             );
         });
         let el = clip_style.as_ref().unwrap_or(&slot_style);
-        slot_cell(painter, rect, el, column, slot, (hover, hover_fill), pulse, progress, selectable && selected);
+        let looks = (el, plain.as_ref());
+        slot_cell(painter, rect, looks, column, slot, (hover, hover_fill), pulse, progress, selectable && selected);
         if column.armed && !has_clip && column.kind == ColumnKind::Track {
             let recording = column.recording == Some(scene);
             let (track, name) = (column.track.0, column.name.as_str());
@@ -1349,13 +1373,25 @@ fn slot_clip(
         .attr(Muted, !slot.enabled)
 }
 
+/// A slot's clip with no state, for what a state's rule changes (`clip[queued]`, `clip[muted]`):
+/// looked up only when the clip has one, beside the clip itself.
+fn plain_clip(
+    has_clip: bool,
+    colour: Color32,
+    slot: &crate::interaction::grid::Slot,
+    selected: bool,
+) -> Option<crate::kit::element::Look> {
+    let stated = !slot.enabled || slot.state == SlotState::Queued || selected;
+    (has_clip && stated).then(|| crate::kit::element::CLIP.color(colour).look())
+}
+
 /// `hover` is how far the pointer's hover has come (0 to 1), with the theme's hovered background
 /// if it gives one. `el` is the slot's clip, or the slot where it has none.
 #[allow(clippy::too_many_arguments)]
 fn slot_cell(
     painter: &egui::Painter,
     rect: Rect,
-    el: &crate::kit::element::Entered,
+    (el, plain): (&crate::kit::element::Entered, Option<&crate::kit::element::Look>),
     column: &Column,
     slot: &crate::interaction::grid::Slot,
     (hover, hover_fill): (f32, Option<Color32>),
@@ -1381,12 +1417,12 @@ fn slot_cell(
         Pos2::new(rect.right() - PAD, rect.bottom()),
     );
     let font = theme::ui_font(theme::TEXT);
-    // What a muted track's clips are mixed toward: a deactivated clip's grey.
-    let muted = if column.mute {
-        crate::kit::element::CLIP.attr(Muted, true).look().background_or(theme::control_background())
-    } else {
-        theme::control_background()
-    };
+    // A state's colours: the sheet's for the state (`clip[muted]`, `[queued]`, `[selected]`)
+    // where they differ from the plain clip's, else the native ones.
+    let state = el.look();
+    let plain = plain.cloned().unwrap_or_default();
+    // What a muted track's clips are mixed toward: the grey of a deactivated clip.
+    let muted = theme::control_background();
     // A clip under the pointer: `base` toward the theme's hovered background, or lighter.
     let lit = |base: Color32, light: f32| match hover_fill {
         Some(fill) => motion::mix(motion::mix(base, Color32::WHITE, light), fill, hover),
@@ -1414,13 +1450,14 @@ fn slot_cell(
                     motion::mix(empty, crate::kit::style_class::surface_or(theme::panel_background()), hover),
                 );
             }
-            let mark = crate::kit::element::SLOT_MARK.look().color_or(theme::slot_empty());
+            let mark = crate::kit::element::SLOT_MARK.look().own_color_or(theme::slot_empty());
             painter.rect_filled(mark_rect(EMPTY_MARK), 0.0, mark);
         }
         SlotState::Stopped | SlotState::Queued => {
             // The clip in its colour, lighter under the pointer; a deactivated clip is grey
             // (`clip[muted]`).
-            let base = if slot.enabled { clip_color } else { el.background_or(theme::control_background()) };
+            let base =
+                if slot.enabled { clip_color } else { state.background_unlike(&plain, theme::control_background()) };
             let fill = lit(base, 0.0);
             let fill = if column.mute { motion::mix(muted, fill, 0.45) } else { fill };
             painter.rect_filled(rect, 0.0, fill);
@@ -1432,7 +1469,7 @@ fn slot_cell(
                 painter.rect_filled(mark_rect(CLIP_MARK), 0.0, mark.gamma_multiply(0.5));
                 // The outline breathes while the clip waits for its launch (`clip[queued]`'s
                 // border colour).
-                let accent = el.border_or(theme::accent()).gamma_multiply(0.45 + 0.55 * pulse);
+                let accent = state.border_unlike(&plain, theme::accent()).gamma_multiply(0.45 + 0.55 * pulse);
                 painter.rect_stroke(mark_rect(CLIP_MARK), 0.0, theme::hairline(accent), StrokeKind::Outside);
                 painter.rect_stroke(rect, 0.0, theme::hairline(accent), StrokeKind::Inside);
             } else {
@@ -1474,7 +1511,8 @@ fn slot_cell(
     // A selected clip is outlined as a selected arrangement clip is; a queued one keeps its
     // breathing outline.
     if selected && slot.state != SlotState::Queued {
-        painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, el.border_or(theme::text_primary())), StrokeKind::Inside);
+        let outline = state.border_unlike(&plain, theme::text_primary());
+        painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, outline), StrokeKind::Inside);
     }
 }
 
@@ -1560,7 +1598,7 @@ fn scene_column(
             Align2::RIGHT_CENTER,
             &number,
             theme::mono_font(theme::TEXT_SMALL),
-            crate::kit::element::LABEL.attribute("kind", "scene-number").look().text_or(theme::text_hint()),
+            crate::kit::element::LABEL.attribute("kind", "scene-number").look().color_or(theme::text_hint()),
         );
         let name_rect = Rect::from_min_max(
             Pos2::new(glyph.right() + PAD, inner.top()),

@@ -175,7 +175,7 @@ pub fn overlay(painter: &Painter, rect: Rect, label: Option<&str>, picked: bool,
         let width = (rect.width() * 0.6).max(0.0);
         let right = rect.right() - PAD - inset;
         let area = Rect::from_min_max(egui::pos2(right - width, rect.top()), egui::pos2(right, rect.bottom()));
-        widgets::text_in(painter, area, Align2::RIGHT_CENTER, label, font, look.text_or(theme::text_primary()));
+        widgets::text_in(painter, area, Align2::RIGHT_CENTER, label, font, look.color_or(theme::text_primary()));
     }
 }
 

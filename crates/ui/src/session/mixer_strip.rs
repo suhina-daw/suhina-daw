@@ -602,7 +602,7 @@ fn output_row(
 ) {
     let current = column.output.and_then(|t| groups.iter().find(|(g, _)| *g == t)).map_or("Main", |(_, name)| name);
     let arrow = Rect::from_min_size(rect.min, Vec2::new(ARROW, rect.height()));
-    let hint = crate::kit::element::LABEL.look().text_or(theme::text_hint());
+    let hint = crate::kit::element::LABEL.look().color_or(theme::text_hint());
     widgets::text_in(painter, arrow, Align2::LEFT_CENTER, "→", theme::ui_font(theme::TEXT_SMALL), hint);
     let field = Rect::from_min_max(Pos2::new(arrow.right(), rect.top()), rect.max);
     let response = widgets::button_area(
@@ -666,7 +666,7 @@ fn device_list(
     // The strip's `device-list`, a `device-row` for each device in it.
     let list = crate::kit::element::DEVICE_LIST.enter();
     painter.rect_filled(rect, 0.0, list.background_or(crate::kit::style_class::surface_or(theme::window_background())));
-    let hint = crate::kit::element::LABEL.look().text_or(theme::text_hint());
+    let hint = crate::kit::element::LABEL.look().color_or(theme::text_hint());
     if devices.is_empty() {
         widgets::text_in(
             painter,
@@ -774,7 +774,7 @@ fn device_list(
             .iter()
             .find(|(i, _)| *i == to)
             .map_or_else(|| slots.last().map_or(rect.top(), |(_, r)| r.bottom()), |(_, r)| r.top());
-        let color = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color_or(theme::accent());
+        let color = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent());
         list_painter.hline(rect.x_range(), y, egui::Stroke::new(2.0, color));
     }
     let pass = ui.ctx().cumulative_pass_nr();
@@ -805,7 +805,7 @@ fn audio_block(
         Align2::LEFT_CENTER,
         "Audio From",
         theme::ui_font(theme::TEXT_SMALL),
-        crate::kit::element::LABEL.look().text_or(theme::text_hint()),
+        crate::kit::element::LABEL.look().color_or(theme::text_hint()),
     );
     let pick = source;
     let current = match column.audio_input.channels {
@@ -866,12 +866,15 @@ fn audio_block(
             id.with(("strip-monitor", value)),
             format!("{} monitor {word}", column.name),
         );
+        let plain = on.then(|| crate::kit::element::BUTTON.id(&name).look());
         let el = crate::kit::element::BUTTON.id(&name).response(&response).attr(Checked, on).enter();
-        let fill = el.background_or(if on {
-            theme::control_active()
-        } else {
-            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response))
-        });
+        let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+        let (fill, ink) = widgets::toggle_inks(
+            &el,
+            plain.as_ref(),
+            (theme::control_active(), off),
+            (theme::text_primary(), el.color_or(theme::text_secondary())),
+        );
         painter.rect_filled(area, 0.0, fill);
         widgets::text_in(
             painter,
@@ -879,7 +882,7 @@ fn audio_block(
             Align2::CENTER_CENTER,
             word,
             theme::ui_font(theme::TEXT_SMALL),
-            el.color_or(if on { theme::text_primary() } else { theme::text_secondary() }),
+            ink,
         );
         if response.clicked() && !on {
             actions.push(Action::new("track.setAudioInput", json!({ "track": track.0, "monitor": value })));
