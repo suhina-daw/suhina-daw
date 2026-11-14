@@ -50,7 +50,7 @@ fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     let (theme, warnings) = from_sheet(text);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(theme.vars.declared.len(), 1);
-    assert_eq!(theme.colors.accent, parse_hex("#5E81AC").unwrap());
+    assert_eq!(theme.palette().accent, parse_hex("#5E81AC").unwrap());
     let (frost, warnings) = Variant::from_json(
         "frost",
         r##"{ "name": "Frost",
@@ -59,7 +59,7 @@ fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     .unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
     let (chosen, warnings) = with_variant(&theme, Some(&frost));
-    assert_eq!(chosen.colors.accent, parse_hex("#88C0D0").unwrap());
+    assert_eq!(chosen.palette().accent, parse_hex("#88C0D0").unwrap());
     assert_eq!(chosen.vars.variant.as_deref(), Some("frost"));
     // A value outside its property's range is left out, with a warning.
     assert!(warnings.iter().any(|w| w.contains("meter-segments")), "{warnings:?}");
@@ -68,7 +68,7 @@ fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     assert!(sheet.contains("--glow: 0.2") && !sheet.contains("meter-segments"), "{sheet}");
     // Without a variant, the theme's own values.
     let (own, _) = with_variant(&chosen, None);
-    assert_eq!(own.colors.accent, theme.colors.accent);
+    assert_eq!(own.palette().accent, theme.palette().accent);
     assert!(own.skin.variant.is_none());
 }
 
@@ -80,7 +80,7 @@ fn a_variant_value_for_an_undeclared_property_is_refused() {
             .unwrap();
     let (chosen, warnings) = with_variant(&theme, Some(&variant));
     assert!(warnings.iter().any(|w| w.contains("--nobody")), "{warnings:?}");
-    assert_eq!(chosen.colors.accent, parse_hex("#ABCDEF").unwrap());
+    assert_eq!(chosen.palette().accent, parse_hex("#ABCDEF").unwrap());
     assert!(!chosen.vars.values.contains_key("--nobody"));
 }
 
@@ -89,12 +89,12 @@ fn editing_the_model_writes_only_the_values_that_differ_from_the_theme() {
     let (mut theme, _) = from_sheet(":root { --accent: #123456; } meter { meter-style: needle; }");
     sync(&mut theme);
     assert!(theme.vars.values.is_empty(), "{:?}", theme.vars.values);
-    theme.colors.accent = parse_hex("#ABCDEF").unwrap();
+    theme.colors.insert("accent".into(), parse_hex("#ABCDEF").unwrap());
     theme.skin.segments = 32;
     sync(&mut theme);
     assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--accent", "meter-segments"]);
     // Back to the theme's own value: the variant no longer sets it.
-    theme.colors.accent = parse_hex("#123456").unwrap();
+    theme.colors.insert("accent".into(), parse_hex("#123456").unwrap());
     sync(&mut theme);
     assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["meter-segments"]);
 }
@@ -110,7 +110,7 @@ fn a_colour_derived_from_a_setting_follows_every_change_of_the_setting() {
         resolve(&mut theme);
         sync(&mut theme);
         assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--tint"]);
-        (theme.colors.accent, theme.colors.selection)
+        (theme.palette().accent, theme.palette().selection)
     };
     let first = edit("#FF0000");
     assert_eq!(first.0, parse_hex("#FF0000").unwrap());
@@ -119,7 +119,7 @@ fn a_colour_derived_from_a_setting_follows_every_change_of_the_setting() {
     assert_ne!(first.1, second.1);
 
     // A colour edited by hand is still the variant's, over what the setting gives.
-    theme.colors.accent = parse_hex("#ABCDEF").unwrap();
+    theme.colors.insert("accent".into(), parse_hex("#ABCDEF").unwrap());
     sync(&mut theme);
     assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--accent", "--tint"]);
 }
@@ -170,7 +170,7 @@ fn a_variant_holds_values_for_declared_controls_only() {
     let (chosen, warnings) = with_variant(&theme, Some(&variant));
     // `--well` is a variable of the theme's own, not a control it declares: the variant cannot set it.
     assert!(warnings.iter().any(|w| w.contains("--well") && w.contains("declares no such control")), "{warnings:?}");
-    assert_eq!(chosen.colors.accent, parse_hex("#ABCDEF").unwrap());
+    assert_eq!(chosen.palette().accent, parse_hex("#ABCDEF").unwrap());
     assert!(!chosen.skin.variant.as_deref().unwrap().contains("--well"));
     let (_, warnings) = Variant::from_json("x", r##"{ "name": "X", "appearance": "light", "values": {} }"##).unwrap();
     assert!(warnings.iter().any(|w| w.contains("appearance")), "{warnings:?}");

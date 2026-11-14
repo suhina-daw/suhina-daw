@@ -30,7 +30,7 @@ fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_pan
     let before = h.state().session().unwrap().project().clone();
     let ctx = h.ctx.clone();
     let mut paper = theme::Theme { name: "Private paper".into(), ..Default::default() };
-    paper.colors.window_background = egui::Color32::TRANSPARENT;
+    paper.colors.insert("window-background".into(), egui::Color32::TRANSPARENT);
     paper.skin.background = Some("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQ6nD5DwADrAHuJHH6EQAAAABJRU5ErkJggg==".into());
     paper.skin.background_opacity = 100;
     h.state_mut().put_theme(&ctx, ThemeEntry { id: "private-paper".into(), theme: paper });
@@ -204,7 +204,7 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
     let mut h = view();
     let (_, mut blocks) = theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-blocks").unwrap();
     skin::configure(&blocks.skin);
-    theme::set_palette(&h.ctx, blocks.colors);
+    theme::set_palette(&h.ctx, blocks.palette());
     h.run_steps(3);
     let slot = h.get_by_label("Launch Root on Bass (scene 1)").rect();
     // The artwork is a rectangle or a nine-slice (at most 16 corners), not the fan of a CSS

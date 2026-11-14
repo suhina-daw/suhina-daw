@@ -1000,7 +1000,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
                 if filename.contains("zero") { 0. } else { normal };
         }
         let light =
-            crate::kit::theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-light").unwrap().1.colors;
+            crate::kit::theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-light").unwrap().1.palette();
         let preview_canvas = canvas.clone();
         let preview_parameters = parameters.clone();
         let mut harness = egui_kittest::Harness::builder()
@@ -1119,7 +1119,7 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     snapshot(&mut harness, "delay-panel.png");
     let nord =
         crate::kit::theme::built_in_themes().into_iter().find(|(id, _)| *id == "nord").map(|(_, theme)| theme).unwrap();
-    crate::kit::theme::set_palette(&harness.ctx, nord.colors);
+    crate::kit::theme::set_palette(&harness.ctx, nord.palette());
     harness.run();
     snapshot(&mut harness, "delay-panel-nord.png");
     crate::kit::theme::set_palette(&harness.ctx, crate::kit::theme::Palette::DARK);

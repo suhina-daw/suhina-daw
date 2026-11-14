@@ -19,7 +19,7 @@ pub(super) fn hand_written(dir: &Path, name: &str, css: &str) {
 
 fn night() -> Theme {
     let mut theme = Theme { name: "Night".into(), ..Theme::default() };
-    theme.colors.accent = suhina_ui::kit::theme::parse_hex("#123456").unwrap_or_default();
+    theme.colors.insert("accent".into(), suhina_ui::kit::theme::parse_hex("#123456").unwrap_or_default());
     theme
 }
 
@@ -262,7 +262,7 @@ fn a_theme_folder_linked_from_elsewhere_is_read_and_written() {
     assert!(themes.iter().any(|e| e.id == "night"), "{warnings:?}");
     // A variant is written into the linked folder; a link inside it is still refused.
     let mut edited = night();
-    edited.colors.accent = eframe::egui::Color32::from_rgb(1, 2, 3);
+    edited.colors.insert("accent".into(), eframe::egui::Color32::from_rgb(1, 2, 3));
     assert_eq!(files.write("night@custom", &edited), Ok(()));
     assert!(dir.join("work/night/variants/custom.json").is_file());
     let _clean = std::fs::remove_dir_all(&dir);

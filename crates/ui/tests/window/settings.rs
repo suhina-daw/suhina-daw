@@ -74,13 +74,13 @@ fn settings_change_right_away_and_are_handed_out_to_be_saved() {
 #[test]
 fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     let mut harness = window(demo_app());
-    let mut colors = theme::Palette::DARK;
-    colors.accent = egui::Color32::from_rgb(0x12, 0xAB, 0x9F);
+    let mut colors = theme::Colors::new();
+    colors.insert("accent".into(), egui::Color32::from_rgb(0x12, 0xAB, 0x9F));
     let night = suhina_ui::settings::themes::ThemeEntry {
         id: "night".into(),
         theme: theme::Theme {
             name: "Night".into(),
-            colors,
+            colors: colors.clone(),
             liquid: None,
             gradients: Default::default(),
             transparent_rgb: Default::default(),
@@ -98,7 +98,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     assert!(harness.query_by_label("Theme: Suhina Studio").is_some());
     harness.get_by_label("Theme: Night").click();
     harness.run();
-    assert_eq!(theme::accent(), colors.accent);
+    assert_eq!(theme::accent(), colors["accent"]);
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.theme), Some("night".into()));
 
     // A copy to change becomes the theme in use, and is handed out to be written.
@@ -139,12 +139,12 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     assert_eq!(harness.state_mut().take_theme_actions(), [FileAction::Import("dark blue.json".into())]);
 
     // A file saved elsewhere redraws the window.
-    colors.accent = egui::Color32::from_rgb(1, 2, 3);
+    colors.insert("accent".into(), egui::Color32::from_rgb(1, 2, 3));
     let edited = suhina_ui::settings::themes::ThemeEntry {
         id: "night-copy".into(),
         theme: theme::Theme {
             name: "Night copy".into(),
-            colors,
+            colors: colors.clone(),
             liquid: None,
             gradients: Default::default(),
             transparent_rgb: Default::default(),
@@ -154,7 +154,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
         },
     };
     harness.state_mut().put_theme(&ctx, edited);
-    assert_eq!(theme::accent(), colors.accent);
+    assert_eq!(theme::accent(), colors["accent"]);
 
     // New theme, with the default artwork: every built-in image goes to the theme's assets.
     harness.get_by_label("More").click();

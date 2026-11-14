@@ -42,11 +42,11 @@ fn reset_changes_restores_a_themes_own_settings_and_what_follows_them() {
     themes.put(ThemeEntry { id: "ink".into(), theme: ink });
     let edit = |tint: &str| ThemeRequest::EditValue { name: "--tint".into(), value: tint.into() };
     let id = themes.request("ink", edit("#FF0000")).unwrap();
-    assert_eq!(themes.get(&id).unwrap().colors.accent, egui::Color32::from_rgb(255, 0, 0));
+    assert_eq!(themes.get(&id).unwrap().palette().accent, egui::Color32::from_rgb(255, 0, 0));
     themes.request(
         &id,
         ThemeRequest::ResetEdits {
-            colors: original.colors,
+            colors: original.colors.clone(),
             liquid: original.liquid,
             gradients: original.gradients.clone(),
             transparent_rgb: original.transparent_rgb.clone(),
@@ -55,16 +55,16 @@ fn reset_changes_restores_a_themes_own_settings_and_what_follows_them() {
         },
     );
     let reset = themes.get(&id).unwrap();
-    assert_eq!(reset.colors.accent, original.colors.accent);
+    assert_eq!(reset.palette().accent, original.palette().accent);
     assert!(reset.vars.values.is_empty(), "{:?}", reset.vars.values);
     // The setting still works afterwards.
     themes.request(&id, edit("#00FF00"));
-    assert_eq!(themes.get(&id).unwrap().colors.accent, egui::Color32::from_rgb(0, 255, 0));
+    assert_eq!(themes.get(&id).unwrap().palette().accent, egui::Color32::from_rgb(0, 255, 0));
 }
 
 fn night() -> ThemeEntry {
-    let mut colors = Palette::DARK;
-    colors.accent = egui::Color32::from_rgb(1, 2, 3);
+    let mut colors = theme::Colors::new();
+    colors.insert("accent".into(), egui::Color32::from_rgb(1, 2, 3));
     ThemeEntry {
         id: "night".into(),
         theme: Theme {
@@ -149,19 +149,21 @@ fn a_missing_theme_draws_with_suhina_studio() {
 #[test]
 fn editing_a_built_in_themes_colours_makes_a_variant_and_its_layout_a_copy() {
     let mut themes = Themes::default();
-    let mut colors = themes.palette("nord");
-    colors.border = egui::Color32::from_rgb(9, 9, 9);
-    assert_eq!(themes.request("nord", ThemeRequest::Edit(colors)), Some("nord@custom".into()));
-    assert_ne!(themes.palette("nord"), colors);
-    assert_eq!(themes.palette("nord@custom"), colors);
+    let mut colors = themes.get("nord").unwrap().colors.clone();
+    colors.insert("border".into(), egui::Color32::from_rgb(9, 9, 9));
+    assert_eq!(themes.request("nord", ThemeRequest::Edit(colors.clone())), Some("nord@custom".into()));
+    assert_ne!(themes.palette("nord"), Palette::from_colors(&colors));
+    assert_eq!(themes.palette("nord@custom"), Palette::from_colors(&colors));
+    // The edit lands in the theme's map, by the variable's name.
+    assert_eq!(themes.get("nord@custom").unwrap().colors.get("border"), Some(&egui::Color32::from_rgb(9, 9, 9)));
     let custom = themes.get("nord@custom").unwrap();
     assert_eq!(custom.vars.variant_name.as_deref(), Some("Custom"));
     assert_eq!(custom.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--border"]);
     // A second edit changes the variant, not another one.
-    colors.border = egui::Color32::from_rgb(8, 8, 8);
-    assert_eq!(themes.request("nord@custom", ThemeRequest::Edit(colors)), None);
+    colors.insert("border".into(), egui::Color32::from_rgb(8, 8, 8));
+    assert_eq!(themes.request("nord@custom", ThemeRequest::Edit(colors.clone())), None);
     assert_eq!(saved(&mut themes), [("nord@custom".into(), "Nord".into())]);
-    assert_eq!(themes.palette("nord@custom"), colors);
+    assert_eq!(themes.palette("nord@custom"), Palette::from_colors(&colors));
     assert!(themes.take_actions().is_empty());
     // The variant is by Nord's card, not a theme of its own.
     let view = themes.view("nord@custom");
@@ -176,7 +178,7 @@ fn editing_a_built_in_themes_colours_makes_a_variant_and_its_layout_a_copy() {
     let mut skin = themes.get("nord@custom").unwrap().skin.clone();
     skin.toolbar_offsets.insert("transport".into(), 40);
     assert_eq!(themes.request("nord@custom", ThemeRequest::EditSkin(skin)), Some("nord-custom".into()));
-    assert_eq!(themes.palette("nord-custom"), colors, "the copy keeps the variant's colours");
+    assert_eq!(themes.palette("nord-custom"), Palette::from_colors(&colors), "the copy keeps the variant's colours");
 }
 
 #[test]
@@ -204,7 +206,7 @@ fn duplicates_get_their_own_ids() {
     themes.set(vec![night()], None);
     assert_eq!(themes.request("night", ThemeRequest::Duplicate { artwork: false }), Some("night-copy".into()));
     assert_eq!(themes.request("night", ThemeRequest::Duplicate { artwork: false }), Some("night-copy-2".into()));
-    assert_eq!(themes.get("night-copy-2").map(|t| t.colors), Some(night().theme.colors));
+    assert_eq!(themes.get("night-copy-2").map(|t| t.colors.clone()), Some(night().theme.colors));
     assert_eq!(saved(&mut themes).len(), 2);
 }
 
@@ -279,9 +281,9 @@ fn editing_a_palette_colour_refreshes_the_swatch_and_thumbnail_of_its_card() {
 fn a_palette_edit_shows_on_the_card(from: &str) {
     let mut themes = Themes::default();
     let before = themes.get(from).unwrap().clone();
-    let mut colors = themes.palette(from);
-    colors.accent = egui::Color32::from_rgb(250, 10, 120);
-    colors.window_background = egui::Color32::from_rgb(10, 250, 120);
+    let mut colors = themes.get(from).unwrap().colors.clone();
+    colors.insert("accent".into(), egui::Color32::from_rgb(250, 10, 120));
+    colors.insert("window-background".into(), egui::Color32::from_rgb(10, 250, 120));
     let id = themes
         .request(from, ThemeRequest::EditRgba { colors, transparent_rgb: before.transparent_rgb })
         .expect("a built-in theme's edit makes a variant");
@@ -300,9 +302,9 @@ fn a_saved_edit_of_a_built_in_variant_wins_and_goes_when_its_file_goes() {
     let mut themes = Themes::default();
     let original = themes.palette("nord@snow-storm");
     let mut edited = themes.get("nord@snow-storm").unwrap().clone();
-    edited.colors.accent = egui::Color32::from_rgb(1, 2, 3);
+    edited.colors.insert("accent".into(), egui::Color32::from_rgb(1, 2, 3));
     themes.set(vec![ThemeEntry { id: "nord@snow-storm".into(), theme: edited.clone() }], None);
-    assert_eq!(themes.palette("nord@snow-storm"), edited.colors);
+    assert_eq!(themes.palette("nord@snow-storm"), edited.palette());
     assert_eq!(themes.view("nord").variants.iter().filter(|(id, _)| id == "nord@snow-storm").count(), 1);
     themes.set(Vec::new(), None);
     assert_eq!(themes.palette("nord@snow-storm"), original);

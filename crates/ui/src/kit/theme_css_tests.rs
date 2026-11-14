@@ -141,7 +141,7 @@ fn css_changes_native_model_and_reports_unsupported_rules() {
         &mut theme,
         "/* own style */ :root { --accent: #123456; } meter {style: segmented; segments: 16;} toolbar {order: transport, tempo; hidden: performance;} fader.cap:hover {image: url('assets/cap.svg');} body {display: grid;}",
     );
-    assert_eq!(theme.colors.accent, egui::Color32::from_rgb(0x12, 0x34, 0x56));
+    assert_eq!(theme.palette().accent, egui::Color32::from_rgb(0x12, 0x34, 0x56));
     assert_eq!(theme.skin.meter, skin::MeterStyle::Segmented);
     assert_eq!(theme.skin.toolbar.as_ref().unwrap().order[0], "transport");
     assert_eq!(theme.skin.assets["fader.cap.hover"], "assets/cap.svg");
@@ -284,4 +284,31 @@ fn a_theme_is_told_a_painted_element_takes_no_padding_in_percent() {
     assert!(warnings.iter().any(|w| w.contains("percentage is read only on a CSS layout container")), "{warnings:?}");
     let (_, warnings) = crate::kit::theme::from_folder(meta(), "window { padding: 1%; }");
     assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn a_saved_theme_writes_only_the_colours_it_sets_and_reads_back_the_same() {
+    let meta = || super::super::theme::ThemeMeta::new("Two", super::super::theme::DEFAULT_SWATCH);
+    let (theme, warnings) =
+        super::super::theme::from_folder(meta(), ":root { --accent: #123456; --recording: #ABCDEF; }");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(theme.colors.keys().map(String::as_str).collect::<Vec<_>>(), ["accent", "recording"]);
+    for written in [sheet(&theme, None), export(&theme)] {
+        let colours: Vec<&str> = written.lines().filter(|line| line.trim_start().starts_with("--")).collect();
+        assert_eq!(colours.len(), 2, "{written}");
+        assert!(written.contains("--accent: #123456") && written.contains("--recording: #ABCDEF"), "{written}");
+    }
+    let (again, warnings) = super::super::theme::from_folder(meta(), &sheet(&theme, None));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(again.colors, theme.colors);
+    let mut restored = Theme::default();
+    assert!(apply(&mut restored, &export(&theme)).is_empty());
+    assert_eq!(restored.colors, theme.colors);
+}
+
+#[test]
+fn a_theme_that_sets_no_colour_writes_no_colour_block() {
+    let theme = Theme::default();
+    assert!(!sheet(&theme, None).contains(":root"), "{}", sheet(&theme, None));
+    assert!(!export(&theme).contains(":root"), "{}", export(&theme));
 }

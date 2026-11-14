@@ -293,8 +293,8 @@ fn with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme() {
     themes.extend(theme::built_in_variants());
     for (id, theme) in &themes {
         let ctx = egui::Context::default();
-        theme::set_palette(&ctx, theme.colors);
-        let expected = theme::palette_visuals_for(&theme.colors);
+        theme::set_palette(&ctx, theme.palette());
+        let expected = theme::palette_visuals_for(&theme.palette());
         skin::configure(&theme.skin);
         let built = frames_in(&ctx, 800.0);
         let base = id.split('@').next().unwrap_or(id);
@@ -305,7 +305,7 @@ fn with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme() {
         }
         // Without a sheet: the fallback alone.
         let ctx = egui::Context::default();
-        theme::set_palette(&ctx, theme.colors);
+        theme::set_palette(&ctx, theme.palette());
         skin::configure(&skin::Skin::default());
         assert_eq!(frames_in(&ctx, 800.0), expected, "{id}: no sheet");
     }
