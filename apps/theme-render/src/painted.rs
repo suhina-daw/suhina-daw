@@ -223,6 +223,9 @@ pub fn scene(subject: &crate::Subject, scene: &crate::scenes::Scene, engine: boo
                 suhina_ui::kit::native_css::set_user_sheet(engine.then(|| "".into()));
                 let mut h = crate::headless((scene.app)()?, subject, scene.width);
                 (scene.drive)(&mut h)?;
+                // A background picture is read on another thread: wait for it before the scene
+                // settles, or whether its mesh is in the listing depends on which thread is first.
+                h.state_mut().wait_for_background();
                 let settled = h.try_run().is_ok();
                 h.step();
                 let listing = last_frame(&h);
