@@ -5,7 +5,7 @@
     "background": [12, 12, 12, 255],
     "accent_on": true,
     "hidden_parameters": [
-      "inputGain", "eqBass", "eqMid", "eqTreble", "eqMidFreq", "eqOn", "delay", "hq", "outputVolume"
+      "inputGain", "eqBass", "eqMid", "eqTreble", "eqMidFreq", "eqOn", "delay", "hq", "outputVolume", "mono"
     ],
     "controls": [
       { "id": "artwork-dark", "name": "Amp Modeler: artwork", "bounds": [0, 0, 428, 168],
@@ -59,6 +59,17 @@
             "position": [{ "op": "add", "a": 14.375, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "hq", "normalized": true }, "b": 4096 } }, 1.9] },
           { "kind": "text", "align": "center", "text": "HQ", "color": [3, 1, 2, 255], "size": 9,
             "position": [{ "op": "add", "a": 4110.375, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "hq", "normalized": true }, "b": -4096 } }, 1.9] }
+        ] },
+      { "id": "mono", "name": "Amp Modeler: mono", "bounds": [118.75, 53.25, 30, 15],
+        "tooltip": "Click to feed the model one signal, the mean of both sides, or each side its own", "x": { "parameter": "mono" }, "gesture": "toggle",
+        "drawing": [
+          { "kind": "rect", "rect": [0, 0, 30, 15], "color": [3, 1, 4, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 28, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
+          { "kind": "rect", "rect": [1, 1, { "op": "multiply", "a": { "op": "parameter", "parameter": "mono", "normalized": true }, "b": 28 }, 13], "color": [3, 1, 5, 255], "radius": 2.5 },
+          { "kind": "text", "align": "center", "text": "Mono", "color": [3, 1, 1, 255], "size": 9,
+            "position": [{ "op": "add", "a": 15.0, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "mono", "normalized": true }, "b": 4096 } }, 1.9] },
+          { "kind": "text", "align": "center", "text": "Mono", "color": [3, 1, 2, 255], "size": 9,
+            "position": [{ "op": "add", "a": 4111.0, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "mono", "normalized": true }, "b": -4096 } }, 1.9] }
         ] },
       { "id": "mid-freq-name", "name": "Amp Modeler: mid freq caption", "bounds": [164.5, 53.25, 45, 15],
         "widget": { "kind": "graphic", "drawing": [

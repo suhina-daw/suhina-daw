@@ -342,7 +342,7 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     // The device is switched off from its header, as other devices are: the panel's body has no
     // power button of its own.
     assert!(harness.query_by_label("Amp Modeler: device on").is_none(), "no power button in the body");
-    for label in ["Amp Modeler: eq", "Amp Modeler: hq"] {
+    for label in ["Amp Modeler: eq", "Amp Modeler: hq", "Amp Modeler: mono"] {
         assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
     }
     // At the width the panel gets, no control is drawn over another (PR #727, a tester's
@@ -361,6 +361,7 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
         "Amp Modeler: delay",
         "Amp Modeler: eq",
         "Amp Modeler: hq",
+        "Amp Modeler: mono",
     ]
     .into_iter()
     .map(|label| (label, harness.get_by_label(label).rect()))

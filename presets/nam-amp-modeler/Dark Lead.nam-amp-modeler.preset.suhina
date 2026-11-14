@@ -19,7 +19,8 @@
     "eqOn": 1.0,
     "delay": 0.004,
     "hq": 1.0,
-    "outputVolume": 0.0
+    "outputVolume": 0.0,
+    "mono": 1.0
   },
   "file": "builtin:nam-amp-modeler/Tudor N Driftwood Low Gain.nam"
 }
