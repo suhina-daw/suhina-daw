@@ -483,7 +483,7 @@ fn empty_space_menu(h: &mut Window) -> Result<(), String> {
 
 /// The app with no project open: the start panel.
 fn empty_app() -> Result<App, String> {
-    let mut app = App::new();
+    let mut app = crate::fixed_app();
     app.set_browser_open(false);
     Ok(app)
 }
