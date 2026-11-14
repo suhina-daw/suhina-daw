@@ -196,12 +196,12 @@ devices high-contrast c55f2e590991a952
 devices high-contrast@light 18815de5eb18f686
 devices nord 130f4fbc14868c59
 devices nord@snow-storm b34f30ded2880a86
-devices suhina-blocks bb6173636142dcc7
+devices suhina-blocks 1a26319048980673
 devices suhina-glass da3bdd479cc9b59c
 devices suhina-glass@frost fad6c9f5ea76c63c
 devices suhina-glass@midnight 9057e26e1acfcd41
 devices suhina-light 87dacd2c5c566e3e
-devices suhina-meadow 9e2d6637396e9e29
+devices suhina-meadow ed0654ee2ff95de9
 devices suhina-sheet c614062acdfc28e5
 devices suhina-studio 77e1e01556bfb844
 devices suhina-studio+engine 9f2ae6458d56620f
