@@ -1338,7 +1338,7 @@ of bars, and a slider id per parameter.
 - **Low tracks:** `compact-below` on `arrangement` (at most 200 points): a header
   lower than it resolves every placement natively (`control_layout::native_only`).
 - **Ruler:** `ruler-number` (`color`, `font-size`, `display`) and `ruler-tick` (`color`, `width`
-  0–4).
+  0–4), inside `ruler` in the Arrangement and the piano roll alike.
 - **Browser:** `browser-play` (`[checked]` while playing), `browser-tag-dot` (`opacity`,
   border), `browser-preview-wave` (`color` played, `border-color` ahead), the search field
   `#browser-search`.
@@ -1350,8 +1350,8 @@ of bars, and a slider id per parameter.
   ADR 0031 › *Amendment: the Launcher, the mixer, the Arrangement and the piano roll draw from
   their elements*. A line or a mark (`separator[kind]`, `grid-line`, `start-marker`) takes only a
   `color` given to it; text inherits. While a toggle is on (`[checked]`), and for a slot clip's
-  `[queued]`, `[selected]` and `[muted]`, only a rule for that state colours it. `[queued]` is an
-  attribute.
+  `[queued]`, `[selected]` and `[muted]` and a picked automation point, only a rule for that state
+  colours it, not one for the pointer's state (`:hover`). `[queued]` is an attribute.
 - **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
 - **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
   `theme.css`.

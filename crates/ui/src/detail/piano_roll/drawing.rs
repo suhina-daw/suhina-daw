@@ -317,13 +317,6 @@ pub(super) fn draw(
     let first_beat = layout.beat_at(layout.grid.left()).max(0.0);
     let last_beat = layout.beat_at(layout.grid.right());
     let bar = clip.bar_beats.max(EPSILON);
-    painter.rect_filled(
-        layout.ruler,
-        0.0,
-        part_style("ruler", &[])
-            .background
-            .unwrap_or_else(|| crate::kit::style_class::surface_or(theme::panel_background())),
-    );
     let lane_painter = painter.with_clip_rect(layout.lane);
     for (beat, on_bar) in grid.lines(first_beat, last_beat, MAX_LINES) {
         let x = layout.x_of(beat).round() + 0.5;
@@ -331,10 +324,19 @@ pub(super) fn draw(
         grid_painter.vline(x, layout.grid.y_range(), theme::hairline(color));
         lane_painter.vline(x, layout.lane.y_range(), theme::hairline(color));
     }
+    // The ruler, `ruler`, entered after the grid's lines (it does not hold them) and kept while its
+    // lines and numbers are drawn: `ruler-tick` and `ruler-number` inside it, as in the
+    // Arrangement, so `ruler > ruler-number` reaches them and they inherit its text colour.
+    let ruler = crate::kit::element::RULER.enter();
+    painter.rect_filled(
+        layout.ruler,
+        0.0,
+        ruler.background_or(crate::kit::style_class::surface_or(theme::panel_background())),
+    );
     let ruler_painter = painter.with_clip_rect(layout.ruler);
-    // The ruler's lines and numbers: `ruler-tick` and `ruler-number`, as in the Arrangement.
     let (tick, number) = (crate::kit::element::RULER_TICK.look(), crate::kit::element::RULER_NUMBER.look());
-    let (tick, number) = (tick.own_color_or(theme::border_strong()), number.color_or(theme::text_value()));
+    let (tick, number) =
+        (tick.own_color_or(ruler.border_or(theme::border_strong())), number.color_or(theme::text_value()));
     let bar_points = (clip.bar_beats as f32 * layout.beat_width).max(1.0);
     let label_every = (36.0 / bar_points).ceil().max(1.0) as u64;
     let first_bar = (first_beat / bar).floor() as u64;
@@ -354,6 +356,7 @@ pub(super) fn draw(
             number,
         );
     }
+    drop(ruler);
 
     // Outside the part the clip plays (before its start marker or its loop, past its loop's end
     // or its end marker): shaded, and the notes there with it.
@@ -479,7 +482,9 @@ pub(super) fn draw(
         let own =
             if selected { selected_note_color(clip.color, theme::accent(), theme::text_primary()) } else { clip.color };
         grid_painter.rect_filled(rect, radius, style.background.unwrap_or(own).gamma_multiply(alpha));
-        if let Some(border) = style.border {
+        // A muted note's edge is its dashes alone: a solid edge under them in the same colour would
+        // hide them. A selected one keeps its selection's edge.
+        if let Some(border) = style.border.filter(|_| selected || !muted) {
             grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);
         }
         if muted {

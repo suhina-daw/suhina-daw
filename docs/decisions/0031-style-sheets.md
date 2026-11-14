@@ -997,10 +997,13 @@ slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 
   the text colour a rule gives a view (`session { color }`) does not reach its lines. Text takes
   the inherited colour (`Look::color_or`, `Entered::color_or`), as the scoped palette gave it.
 - **A toggle keeps its lit state.** While a button is on, its fill and ink come from the sheet
-  only where a rule for the state (`button[checked]`) makes them differ from the button's own:
-  a rule for every `button` does not hide which one is on (`widgets::toggle_inks`,
-  `Look::background_unlike`). The same holds for a clip's `[queued]`, `[selected]` and `[muted]`
-  outlines and fill in a Launcher slot, and a lane's `[checked]` light.
+  only where a rule for the state (`button[checked]`) makes them differ from the same button with
+  only that state off, its pointer states kept (`Builder::enter_against_plain`): neither a rule
+  for every `button` nor a `button:hover` rule hides which one is on (`widgets::toggle_inks`,
+  `Look::background_unlike`). The comparison is its own chain's style, never the values a drawn
+  element held for a transition. The same holds for a clip's `[queued]`, `[selected]` and
+  `[muted]` outlines and fill in a Launcher slot, a picked automation point's `[selected]` colour,
+  and a lane's `[checked]` light.
 - **`[queued]` is an attribute** the app gives, as `[playing]` is: a clip or a track's
   stop button waiting for its launch. `:queued` is no longer a pseudo-class.
 - **New elements and kinds:** `separator[kind]` for the views' lines, `grid-line`, `tempo-mark`,

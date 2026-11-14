@@ -1164,22 +1164,13 @@ fn show_lanes(
         // entered inside it, and a theme may give it a background, painted here over the grid
         // lines.
         let lane_id = format!("track-{}", lane.track.0);
-        let lane_of = || {
-            crate::kit::element::TRACK_LANE
-                .id(&lane_id)
-                .color(rgb(lane.color))
-                .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track))
-                .attr(crate::kit::element::Muted, lane.mute)
-        };
-        // The lane as it is when the piano roll does not edit it, for what `[checked]` changes.
-        let plain_lane = (focus == Some(lane.track)).then(|| lane_of().probe());
-        let lane_el = crate::kit::element::TRACK_LANE
-            .id(&format!("track-{}", lane.track.0))
+        // With the lane as it is when the piano roll does not edit it, for what `[checked]` changes.
+        let (lane_el, plain_lane) = crate::kit::element::TRACK_LANE
+            .id(&lane_id)
             .color(rgb(lane.color))
             .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track))
             .attr(crate::kit::element::Muted, lane.mute)
-            .attr(crate::kit::element::Checked, focus == Some(lane.track))
-            .enter();
+            .enter_against_plain(crate::kit::element::Checked, focus == Some(lane.track));
         lane_el.paint(&lanes_painter, row.clip.intersect(lanes_area));
         // A click on an empty spot of a lane clears the clip selection (arrangement-editing ›
         // Selecting clips). A double-click on an empty spot of a lane that holds clips makes a

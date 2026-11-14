@@ -866,8 +866,7 @@ fn audio_block(
             id.with(("strip-monitor", value)),
             format!("{} monitor {word}", column.name),
         );
-        let plain = on.then(|| crate::kit::element::BUTTON.id(&name).probe());
-        let el = crate::kit::element::BUTTON.id(&name).response(&response).attr(Checked, on).enter();
+        let (el, plain) = crate::kit::element::BUTTON.id(&name).response(&response).enter_against_plain(Checked, on);
         let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         let (fill, ink) = widgets::toggle_inks(
             &el,

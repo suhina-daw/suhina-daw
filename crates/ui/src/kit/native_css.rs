@@ -1086,6 +1086,40 @@ pub(super) fn style_of(node: Option<usize>) -> Option<Computed> {
     })
 }
 
+/// The style of a comparison lookup at `node` (`Builder::probe`): the one its own chain gives,
+/// never the values the tree last painted under its key. A probe shares its key with the drawn
+/// element it describes whenever they have the same id or response (or the same place, the probe
+/// being taken out again), and with CSS motion on that element's painted values, held for a
+/// transition, would otherwise come back as the probe's: the comparison would see a state's rule
+/// on both sides and hide it. `None` where [`style_of`] gives none.
+pub(super) fn probe_style(node: Option<usize>) -> Option<Computed> {
+    ENGINE.with(|engine| {
+        let mut engine = engine.borrow_mut();
+        engine.source.as_ref()?;
+        if !same_source(engine.source.as_ref()) {
+            return None;
+        }
+        let at = node?;
+        let chain = chain_of(&mut engine, at)?;
+        // Under a parent held for a transition the probe inherits what the parent paints, which is
+        // not its chain's: worked out each time, as `style_at` does.
+        let parent_held = engine
+            .nodes
+            .get(at)
+            .and_then(|node| node.parent)
+            .is_some_and(|parent| engine.held.get(parent).copied().unwrap_or(false));
+        if let Some(styled) = engine.identities.get(&chain).filter(|_| !parent_held) {
+            return Some(styled.computed.clone());
+        }
+        let styled = native::fresh(&mut engine, at)?;
+        engine.fresh += 1;
+        if !parent_held && engine.identities.len() < MAX_IDENTITIES {
+            engine.identities.insert(chain, styled.clone());
+        }
+        Some(styled.computed)
+    })
+}
+
 /// The identity of `node` and of every element it is in: what its style depends on, apart from
 /// its siblings. Its parent's style is looked up first, if it was not yet.
 fn chain_of(engine: &mut Engine, at: usize) -> Option<u64> {

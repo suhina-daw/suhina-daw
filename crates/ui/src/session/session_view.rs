@@ -617,8 +617,8 @@ fn main_metronome(
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
-    let plain = on.then(|| crate::kit::element::BUTTON.id("main-metronome").probe());
-    let el = crate::kit::element::BUTTON.id("main-metronome").response(&response).attr(Checked, on).enter();
+    let (el, plain) =
+        crate::kit::element::BUTTON.id("main-metronome").response(&response).enter_against_plain(Checked, on);
     let (fill, glyph) = crate::kit::widgets::toggle_inks(
         &el,
         plain.as_ref(),
@@ -1292,12 +1292,10 @@ fn column_body(
     }
     // The stop button is `slot[kind="stop"]`, `[queued]` while its stop waits for the beat.
     // A rule for every stop button must not hide which one is queued: only a `[queued]` rule does.
-    let plain = column.stop_queued.then(|| crate::kit::element::SLOT.attribute("kind", "stop").probe());
-    let el = crate::kit::element::SLOT
+    let (el, plain) = crate::kit::element::SLOT
         .attribute("kind", "stop")
         .response(&response)
-        .attr(Queued, column.stop_queued)
-        .enter();
+        .enter_against_plain(Queued, column.stop_queued);
     let native_fill = motion::mix(
         crate::kit::style_class::surface_or(theme::panel_background()),
         theme::panel_hover(),

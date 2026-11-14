@@ -665,3 +665,58 @@ fn a_rule_for_every_slot_does_not_hide_a_queued_one() {
         rgb(0x40, 0x50, 0x60)
     );
 }
+
+/// With CSS motion on, a probe that shares its key with the drawn element it describes (here the
+/// same place, no id or response) is its own chain's style, not that element's painted values
+/// held for a transition: a `[selected]` rule is not on both sides of the comparison (#1428
+/// review).
+#[test]
+fn a_probe_is_its_own_style_with_motion_on() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let css = "automation-point { color: #102030; transition: color 1s linear; } \
+               automation-point[selected] { color: #405060; }";
+    super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut picked = token;
+    for frame in 0..5 {
+        ctx.run_ui(egui::RawInput { time: Some(f64::from(frame) * 0.1), ..Default::default() }, |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, true);
+            let _view = ARRANGEMENT.enter();
+            let plain = AUTOMATION_POINT.probe();
+            picked = AUTOMATION_POINT.attr(Selected, true).look().own_color_unlike(&plain, token);
+        })
+        .textures_delta
+        .clear();
+    }
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    assert_eq!(picked, rgb(0x40, 0x50, 0x60));
+}
+
+/// The plain look `enter_against_plain` compares with is the same element with only the state
+/// off: its pointer state too, so a `:hover` rule is not taken for the lit state's (#1428 review).
+#[test]
+fn the_plain_look_keeps_the_pointer_state() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let lit_fill = |css: &str| {
+        frames(css, || {
+            let _view = SESSION.enter();
+            let (el, plain) =
+                BUTTON.id("main-metronome").pointer(true, false, false).enter_against_plain(Checked, true);
+            super::super::widgets::toggle_inks(&el, plain.as_ref(), (token, token), (token, token)).0
+        })
+    };
+    assert_eq!(lit_fill("button:hover { background-color: #102030; }"), token);
+    assert_eq!(
+        lit_fill("button:hover { background-color: #102030; } button[checked]:hover { background-color: #405060; }"),
+        rgb(0x40, 0x50, 0x60)
+    );
+    // Off, nothing is compared: the element's own rules apply as they are.
+    let off = frames("button:hover { background-color: #102030; }", || {
+        let _view = SESSION.enter();
+        let (el, plain) = BUTTON.id("main-metronome").pointer(true, false, false).enter_against_plain(Checked, false);
+        (plain.is_none(), el.background_or(token))
+    });
+    assert_eq!(off, (true, rgb(0x10, 0x20, 0x30)));
+}

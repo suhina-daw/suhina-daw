@@ -162,6 +162,10 @@ impl Name {
     pub fn probe(self) -> Look {
         self.builder().probe()
     }
+    /// [`Builder::enter_against_plain`] of this element.
+    pub fn enter_against_plain(self, attr: Attr, on: bool) -> (Entered, Option<Look>) {
+        self.builder().enter_against_plain(attr, on)
+    }
     pub fn enter(self) -> Entered {
         self.builder().enter()
     }
@@ -169,6 +173,7 @@ impl Name {
 
 /// An element being described before it is entered.
 #[must_use]
+#[derive(Clone)]
 pub struct Builder<'a> {
     name: Name,
     id: Option<&'a str>,
@@ -272,12 +277,32 @@ impl<'a> Builder<'a> {
     /// the elements drawn after it sees it as a sibling. Like any element styled in the frame it is
     /// first drawn in, it is worked out without its siblings, so a rule that reaches a toggle only
     /// through a sibling combinator (`tool + tool`) is not in the comparison.
+    ///
+    /// It is its own chain's style, never the values the tree last painted for a drawn element
+    /// with the same key (held for a CSS transition), so a state's rule is not on both sides of
+    /// the comparison.
     pub fn probe(self) -> Look {
         let entered = self.enter();
-        let (style, node) = (entered.style(), entered.scope.node);
+        let node = entered.scope.node;
+        let style = match node {
+            Some(_) => super::native_css::probe_style(node),
+            None => entered.style(),
+        };
         drop(entered);
         super::native_css::discard(node);
         Look(style)
+    }
+
+    /// The element entered with `attr` `on`, and while it is on, the [`Look`] of the very same
+    /// element with only `attr` off: its id, response (so its `:hover`, `:active` and focus),
+    /// pointer states, colour, attributes and other states kept. That is what
+    /// [`Look::background_unlike`] and the others compare a state's rule with, so only a rule for
+    /// the state itself (`button[checked]`) counts as the state's colour, not one for the
+    /// pointer's state (`button:hover`) or for every such element.
+    pub fn enter_against_plain(self, attr: Attr, on: bool) -> (Entered, Option<Look>) {
+        // Looked up first, so it is the last node when it is taken out again.
+        let plain = on.then(|| self.clone().attr(attr, false).probe());
+        (self.attr(attr, on).enter(), plain)
     }
 
     /// The [`Look`] of every drawn item of this kind: looked up once, outside the loop that draws

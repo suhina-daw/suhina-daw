@@ -35,19 +35,17 @@ pub(super) fn show(
     }
     let on = state.focus_first;
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, "Focus on the first clip"));
+    // The label's native inks, read before the button is entered: inside it the palette's text
+    // colours are the button's own `color`, which would put a rule for the plain button on the lit
+    // one's label after all.
+    let inks = (theme::text_inverse(), theme::text_secondary());
     // `button#control-focus-first`, `[checked]` while on.
-    let plain = on.then(|| crate::kit::element::BUTTON.id("focus-first").probe());
-    let el = crate::kit::element::BUTTON
+    let (el, plain) = crate::kit::element::BUTTON
         .id("focus-first")
         .response(&response)
-        .attr(crate::kit::element::Checked, on)
-        .enter();
-    let (fill, ink) = crate::kit::widgets::toggle_inks(
-        &el,
-        plain.as_ref(),
-        (theme::accent(), Color32::TRANSPARENT),
-        (theme::text_inverse(), theme::text_secondary()),
-    );
+        .enter_against_plain(crate::kit::element::Checked, on);
+    let (fill, ink) =
+        crate::kit::widgets::toggle_inks(&el, plain.as_ref(), (theme::accent(), Color32::TRANSPARENT), inks);
     painter.rect_filled(switch, 0.0, fill);
     painter.text(switch.center(), Align2::CENTER_CENTER, "Focus", theme::mono_font(theme::TEXT_TINY), ink);
     drop(el);

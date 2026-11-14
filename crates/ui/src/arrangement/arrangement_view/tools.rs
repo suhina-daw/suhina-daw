@@ -52,11 +52,9 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
         let chosen = state.tool == tool;
         response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, &label));
         // `arrangement-tool`, `[checked]` on the chosen one.
-        let plain = chosen.then(|| crate::kit::element::ARRANGEMENT_TOOL.probe());
-        let el = crate::kit::element::ARRANGEMENT_TOOL
+        let (el, plain) = crate::kit::element::ARRANGEMENT_TOOL
             .response(&response)
-            .attr(crate::kit::element::Checked, chosen)
-            .enter();
+            .enter_against_plain(crate::kit::element::Checked, chosen);
         let hover = widgets::hover(ui, &response);
         let mix = |fill| crate::kit::motion::mix(fill, theme::control_hover(), hover);
         // A rule for every tool must not hide the chosen one: only a `[checked]` rule does.

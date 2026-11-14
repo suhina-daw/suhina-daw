@@ -953,17 +953,16 @@ pub fn edit_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, n
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, format!("Edit gain envelope of {name}"))
     });
-    let plain = on.then(|| crate::kit::element::BUTTON.id("clip-envelope-edit").probe());
-    let el = crate::kit::element::BUTTON
+    let (el, plain) = crate::kit::element::BUTTON
         .id("clip-envelope-edit")
         .response(&response)
-        .attr(crate::kit::element::Checked, on)
-        .enter();
+        .enter_against_plain(crate::kit::element::Checked, on);
     let off = theme::text_secondary();
     let (_, ink) = crate::kit::widgets::toggle_inks(&el, plain.as_ref(), (off, off), (theme::accent(), off));
-    if on || response.hovered() {
-        painter.rect_filled(rect, 2.0, ink.gamma_multiply(0.18));
-    }
+    // A tint of its ink while lit or hovered, where the sheet gives the button no fill.
+    let tint = if on || response.hovered() { ink.gamma_multiply(0.18) } else { egui::Color32::TRANSPARENT };
+    let (fill, _) = crate::kit::widgets::toggle_inks(&el, plain.as_ref(), (tint, tint), (ink, ink));
+    painter.rect_filled(rect, 2.0, fill);
     // A line with a peak: an envelope.
     let r = rect.shrink(3.0);
     let line = vec![
@@ -985,18 +984,17 @@ pub fn free_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, f
         .on_hover_text(if free { "Free move: points move freely" } else { "Free move: points snap to the dB grid" })
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, free, "Free move"));
-    let plain = free.then(|| crate::kit::element::BUTTON.id("clip-envelope-free").probe());
-    let el = crate::kit::element::BUTTON
+    let (el, plain) = crate::kit::element::BUTTON
         .id("clip-envelope-free")
         .response(&response)
-        .attr(crate::kit::element::Checked, free)
-        .enter();
+        .enter_against_plain(crate::kit::element::Checked, free);
     let off = theme::text_secondary();
     let (_, ink) = crate::kit::widgets::toggle_inks(&el, plain.as_ref(), (off, off), (theme::accent(), off));
     painter.rect_filled(rect, 2.0, crate::kit::style_class::surface_or(theme::panel_background()).gamma_multiply(0.85));
-    if free || response.hovered() {
-        painter.rect_filled(rect, 2.0, ink.gamma_multiply(0.18));
-    }
+    // A tint of its ink while lit or hovered, where the sheet gives the button no fill.
+    let tint = if free || response.hovered() { ink.gamma_multiply(0.18) } else { egui::Color32::TRANSPARENT };
+    let (fill, _) = crate::kit::widgets::toggle_inks(&el, plain.as_ref(), (tint, tint), (ink, ink));
+    painter.rect_filled(rect, 2.0, fill);
     let r = rect.shrink(3.0);
     if free {
         // Arrows up and down: moves anywhere.

@@ -373,8 +373,7 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
         Pos2::new(right.max(left + 1.0), row.center().y + LOOP_BAR / 2.0),
     );
     // `loop-region`, `[checked]` while the clip loops, as the Arrangement's loop bar.
-    let plain = looping.then(|| crate::kit::element::LOOP_REGION.probe());
-    let el = crate::kit::element::LOOP_REGION.attr(crate::kit::element::Checked, looping).enter();
+    let (el, plain) = crate::kit::element::LOOP_REGION.enter_against_plain(crate::kit::element::Checked, looping);
     let (fill, edge, handle) = if looping {
         (theme::control_active(), theme::text_secondary(), theme::text_primary())
     } else {

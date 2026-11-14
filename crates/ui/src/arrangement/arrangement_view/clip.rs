@@ -1160,7 +1160,8 @@ pub(super) fn clip_box<'a>(
         let edge = Rect::from_min_size(rect.min, Vec2::new(4.0, rect.height()));
         let body = motion::mix(crate::kit::style_class::surface_or(theme::panel_background()), rgb(clip.color), 0.82);
         painter.with_clip_rect(row.clip).rect_filled(edge, 0.0, motion::mix(body, ink_on(body), 0.5));
-        let outline = crate::kit::element::CLIP.attr(crate::kit::element::Selected, true).look();
+        let id = clip_element_id(clip);
+        let outline = clip_element(&id, lane, clip, timeline, true).look();
         painter.with_clip_rect(row.clip).rect_stroke(
             rect,
             0.0,
@@ -1353,6 +1354,40 @@ pub(crate) struct ClipSpot {
     pub(super) end: f64,
 }
 
+/// The id an Arrangement clip's `clip` element is entered with: its identity in the style tree,
+/// so its transitions follow it however the clips around it change.
+pub(super) fn clip_element_id(clip: &ClipBox) -> String {
+    format!("clip-{}", clip.id.0)
+}
+
+/// The `clip` element of an Arrangement clip, with its id, its `[color]` and its states:
+/// `[selected]`, `[muted]`, `[playing]` while the play position is inside it, `[recording]` while a
+/// take records over it. Everything drawn of one clip (its body, the outline of a clip picked by a
+/// click in its body) is looked up from this one description, so a rule for its colour or one of
+/// its states reaches each part.
+pub(super) fn clip_element<'a>(
+    id: &'a str,
+    lane: &Lane,
+    clip: &ClipBox,
+    timeline: &Timeline,
+    selected: bool,
+) -> crate::kit::element::Builder<'a> {
+    let off = lane.mute || !clip.enabled;
+    let end = clip.start + clip.length;
+    let playing = timeline.running && !off && (clip.start..end).contains(&timeline.beat);
+    let recording = timeline
+        .recording_spans
+        .iter()
+        .any(|(track, from, to)| *track == lane.track && *from < end && *to > clip.start);
+    crate::kit::element::CLIP
+        .id(id)
+        .color(rgb(clip.color))
+        .attr(crate::kit::element::Selected, selected)
+        .attr(crate::kit::element::Muted, off)
+        .attr(crate::kit::element::Playing, playing)
+        .attr(crate::kit::element::Recording, recording)
+}
+
 /// Draws a clip's body, colour strip, name and the marks of its notes (only those in view).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_clip(
@@ -1370,22 +1405,8 @@ pub(super) fn paint_clip(
 ) {
     let _work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement clip");
     let off = lane.mute || !clip.enabled;
-    // `[playing]` while the play position is inside it, `[recording]` while a take records over it.
-    let end = clip.start + clip.length;
-    let playing = timeline.running && !off && (clip.start..end).contains(&timeline.beat);
-    let recording = timeline
-        .recording_spans
-        .iter()
-        .any(|(track, from, to)| *track == lane.track && *from < end && *to > clip.start);
-    let id = format!("clip-{}", clip.id.0);
-    let own = crate::kit::element::CLIP
-        .id(&id)
-        .color(rgb(clip.color))
-        .attr(crate::kit::element::Selected, selected)
-        .attr(crate::kit::element::Muted, off)
-        .attr(crate::kit::element::Playing, playing)
-        .attr(crate::kit::element::Recording, recording)
-        .enter();
+    let id = clip_element_id(clip);
+    let own = clip_element(&id, lane, clip, timeline, selected).enter();
     let view = painter.clip_rect();
     if !rect.intersects(view) {
         return;
@@ -1877,6 +1898,9 @@ pub(super) fn take_lanes(
             let outline = take_header.border_or(take_sel.own_color_or(theme::selection()));
             painter.rect_stroke(header, 0.0, Stroke::new(1.5, outline), StrokeKind::Inside);
         }
+        // The name's ink, and its buttons' where no rule of theirs sets one: the header's text
+        // colour, read while it is in scope.
+        let ink = take_header.color_or(ink_on(shade));
         // The lane's clips and buttons are not inside the header.
         drop(take_header);
         let name = ui.interact(
@@ -1925,7 +1949,6 @@ pub(super) fn take_lanes(
         let solo = place(delete.right() + 3.0);
         let colour_button = place(solo.right() + 3.0);
         let promote = place(header.right() - 4.0 - button.x);
-        let ink = ink_on(shade);
         let small = theme::ui_font(theme::TEXT_SMALL);
         let soloed = state.take_solo == Some((lane.track, take.number));
         if header.height() >= button.y + 4.0 {
@@ -1948,12 +1971,10 @@ pub(super) fn take_lanes(
                 actions.push(Action::new("take.delete", json!({ "track": params["track"], "take": params["take"] })));
             }
             let r = clicked(solo, "Solo take", format!("Solo {}", take.name));
-            let plain = soloed.then(|| crate::kit::element::BUTTON.id("take-solo").probe());
-            let el = crate::kit::element::BUTTON
+            let (el, plain) = crate::kit::element::BUTTON
                 .id("take-solo")
                 .response(&r)
-                .attr(crate::kit::element::Checked, soloed)
-                .enter();
+                .enter_against_plain(crate::kit::element::Checked, soloed);
             let off = motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r));
             let (fill, _) = widgets::toggle_inks(&el, plain.as_ref(), (theme::accent(), off), (ink, ink));
             let (_, text) = widgets::toggle_inks(&el, plain.as_ref(), (fill, fill), (ink_on(fill), ink));

@@ -3338,9 +3338,12 @@ fn lane(
     let (point_ink, selected_point) = {
         let plain = crate::kit::element::AUTOMATION_POINT.probe();
         let picked = crate::kit::element::AUTOMATION_POINT.attr(crate::kit::element::Selected, true).look();
+        // A rule for every point does not hide which are picked: only a `[selected]` rule
+        // recolours them.
+        let selected = picked.own_color_unlike(&plain, theme::text_primary());
         let plain =
             plain.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
-        (plain, picked.own_color_or(theme::text_primary()))
+        (plain, selected)
     };
     for (index, point) in param.points.iter().enumerate() {
         // Drawn where a drag puts it.

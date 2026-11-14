@@ -124,3 +124,76 @@ fn a_rule_for_every_arrangement_tool_keeps_the_chosen_one_lit() {
     let chosen = format!("{general} arrangement-tool[checked] {{ background-color: {}; }}", hex(odd(32)));
     assert_eq!(fills(&mut h, &chosen), (tools - 1, 1), "a rule for `[checked]` recolours it");
 }
+
+/// Shows `h` with `css` as the user's sheet for a few frames, and how many painted fills, strokes,
+/// lines and texts are `color`.
+fn count_with(h: &mut Harness<'static, App>, css: &str, color: egui::Color32) -> usize {
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let shown = count(h, color);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    shown
+}
+
+/// A clip picked by a click in its body is outlined from the same `clip` element its body is
+/// drawn as, with its `[color]` and its states: a rule for `clip[color][selected]` reaches the
+/// outline (#1428 review).
+#[test]
+fn a_clip_picked_in_its_body_takes_its_own_selected_rule() {
+    let mut h = arrangement_app();
+    let body = h.get_by_label("Clip Beat B on Drums at bar 17").rect().left_center() + egui::vec2(64.0, 0.0);
+    h.hover_at(body);
+    h.run();
+    h.drag_at(body);
+    h.drop_at(body);
+    h.run_steps(2);
+    assert!(h.state().arrangement().selected_clip().is_some(), "the clip is picked");
+    assert_eq!(missing(&mut h, &[("clip[color][selected]", "border-color", odd(41))]), Vec::<String>::new());
+}
+
+/// A take's name is drawn in its header's text colour: `take-header { color }` reaches it
+/// (#1428 review).
+#[test]
+fn a_take_s_name_takes_its_header_s_colour() {
+    let mut h = super::arrangement::window_with_drums_takes(16.0);
+    assert!(h.query_by_label("Solo Drums Take 1").is_some(), "the take lanes are shown");
+    assert_eq!(missing(&mut h, &[("take-header", "color", odd(42))]), Vec::<String>::new());
+}
+
+/// The lit Edit gain envelope button paints the fill a `[checked]` rule gives it (#1428 review).
+#[test]
+fn the_lit_envelope_button_takes_its_checked_fill() {
+    let mut h = window_with_step(audio_app(), 1.0 / 60.0);
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    h.get_by_label("Edit gain envelope of Loop").click();
+    h.run();
+    h.get_by_label("Free move").click();
+    h.run();
+    let rules = [
+        ("button#control-clip-envelope-edit[checked]", "background-color", odd(43)),
+        ("button#control-clip-envelope-free[checked]", "background-color", odd(44)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// A hover rule is not the chosen tool's colour: hovered, the chosen tool keeps its native fill
+/// unless a `[checked]` rule gives it one (#1428 review).
+#[test]
+fn a_hover_rule_does_not_light_the_chosen_tool() {
+    let mut h = arrangement_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.arrangement_toolbar = true;
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    let chosen = h.get_by_label("Arrangement tool Select").rect().center();
+    h.hover_at(chosen);
+    h.run();
+    let hover = format!("arrangement-tool:hover {{ background-color: {}; }}", hex(odd(45)));
+    assert_eq!(count_with(&mut h, &hover, odd(45)), 0, "the hovered chosen tool keeps its native fill");
+    let lit = format!("{hover} arrangement-tool[checked]:hover {{ background-color: {}; }}", hex(odd(46)));
+    assert_eq!(count_with(&mut h, &lit, odd(46)), 1, "a rule for the hovered `[checked]` tool recolours it");
+}
