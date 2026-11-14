@@ -433,7 +433,8 @@ fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId) {
         ui.add_space(14.0);
         ui.label(egui::RichText::new("→").color(theme::text_hint()).font(small.clone()));
         let shown = row.chosen.as_ref().map_or_else(|| "not found".to_string(), |p| p.display().to_string());
-        crate::kit::widgets::combo_box(
+        let label = format!("Where {} is: {shown}", row.file);
+        let response = crate::kit::widgets::combo_box(
             ui,
             egui::ComboBox::from_id_salt(("missing-candidate", index))
                 .selected_text(egui::RichText::new(shown).font(small.clone()))
@@ -452,6 +453,7 @@ fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId) {
                 }
             },
         );
+        response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &label));
     });
     ui.add_space(4.0);
 }
