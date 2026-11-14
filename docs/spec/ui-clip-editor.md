@@ -778,7 +778,8 @@ at the pointer, with what the toolbar, the clip panel and the keys can do.
     selection, and no others;
   - Quantize (Ctrl+U) and Quantize settings… (the Transform tab's Quantise); Mute or Unmute the
     selection (`note.setMuted`; Unmute when every note it acts on is muted); Split here
-    (`note.split` of the notes it acts on at the clicked point, on the grid);
+    (`note.split` of the notes it acts on at the clicked point, on the grid); Reverse (`note.reverse`
+    of the notes it acts on, the Notes tab's Reverse: turned round in time inside their own span);
   - Loop selection (`clip.setLoop` over the time selection, or the selected notes' span); Set start
     here and Set loop start here, at the clicked point on the grid, as a drag of that marker on the
     ruler to there would leave it (`clip.setStart`, `clip.setLoop`);

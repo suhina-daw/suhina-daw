@@ -96,6 +96,7 @@ pub(super) enum Pick {
     QuantizeSettings,
     Mute(bool),
     Split,
+    Reverse,
     LoopSelection,
     Marker(RulerPart),
     Grid(PianoGrid),
@@ -191,6 +192,9 @@ impl MenuCx<'_> {
         let (word, mute) = if acting && muted { ("Unmute", false) } else { ("Mute", true) };
         item(ui, word, None, acting, Pick::Mute(mute));
         item(ui, "Split here", None, !self.split_notes(state, at).is_empty(), Pick::Split);
+        // Reverse turns the notes round in time (the Notes tab's Reverse); Invert selection above
+        // changes what is selected, not the notes.
+        item(ui, "Reverse", None, acting, Pick::Reverse);
         ui.add(egui::Separator::default().spacing(4.0));
         item(ui, "Loop selection", None, self.selection_span(state).is_some(), Pick::LoopSelection);
         // The start marker and the loop's start only: their ends are dragged on the ruler, and
@@ -318,6 +322,11 @@ impl MenuCx<'_> {
                 params["notes"] = json!(notes);
                 params["at"] = json!(round_beat(self.beat(at)));
                 Some(Action::new("note.split", params))
+            }
+            Pick::Reverse => {
+                params["notes"] = json!(state.acting().iter().collect::<Vec<_>>());
+                state.replacing(&mut params);
+                Some(Action::new("note.reverse", params))
             }
             Pick::LoopSelection => {
                 let (start, end) = self.selection_span(state)?;
