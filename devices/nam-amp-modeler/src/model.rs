@@ -54,19 +54,7 @@ pub const MAX_BYTES: usize = 256 << 20;
 /// is not a `.nam` JSON comes back as the message the panel shows.
 pub fn read(path: impl AsRef<Path>) -> Result<NamModel, String> {
     let path = path.as_ref();
-    let bytes = match std::fs::metadata(path) {
-        Ok(info) => info.len(),
-        Err(e) => return Err(format!("{} ({e})", path.display())),
-    };
-    if bytes > MAX_BYTES as u64 {
-        let megabytes = (bytes as f64 / f64::from(1u32 << 20) * 10.0).round() / 10.0;
-        return Err(format!(
-            "{} is {megabytes} MiB, larger than Suhina reads ({} MiB)",
-            path.display(),
-            MAX_BYTES >> 20
-        ));
-    }
-    let bytes = std::fs::read(path).map_err(|e| format!("{} ({e})", path.display()))?;
+    let bytes = suhina_fs::read_plain(path, MAX_BYTES).map_err(|e| e.message(path, MAX_BYTES))?;
     let text = String::from_utf8(bytes).map_err(|_| format!("{} is not a UTF-8 file", path.display()))?;
     NamModel::from_json_str(&text).map_err(|e| format!("{} is not a NAM model ({e})", path.display()))
 }
