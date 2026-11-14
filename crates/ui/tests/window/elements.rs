@@ -1216,3 +1216,70 @@ fn a_rule_for_every_theme_card_keeps_the_theme_in_use_marked() {
     assert!(!found.is_empty(), "the theme in use has its edge");
     assert!(!found.contains(&odd(152)), "the edge stays its own: {found:?}");
 }
+
+/// Frames of a window holding one bare egui widget, outside any style scope, under the user sheet
+/// `css`; `show` draws it.
+fn bare_widgets(css: &str, mut show: impl FnMut(&mut egui::Ui) + 'static) -> Harness<'static> {
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+    let mut h = Harness::builder().allow_missing_glyphs().with_size((400.0, 300.0)).build_ui(move |ui| {
+        let _frame = suhina_ui::kit::native_css::frame(ui);
+        show(ui);
+    });
+    theme::install(&h.ctx);
+    h.run_steps(4);
+    h
+}
+
+/// How many fills of shapes painted in `h`'s last frame are `color`.
+fn filled_with<S>(h: &Harness<'_, S>, color: egui::Color32) -> usize {
+    fn walk(shape: &egui::Shape, color: egui::Color32) -> usize {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().map(|shape| walk(shape, color)).sum(),
+            egui::Shape::Rect(rect) => usize::from(rect.fill == color),
+            _ => 0,
+        }
+    }
+    h.output().shapes.iter().map(|shape| walk(&shape.shape, color)).sum()
+}
+
+/// egui's own text field, outside any scope an element opens, takes the sheet's `text-input` rule:
+/// the `Visuals` at the root are built from it (#1442).
+#[test]
+fn a_text_field_outside_any_scope_takes_the_text_input_rule() {
+    let mut text = String::new();
+    let css = format!("text-input {{ background-color: {}; }}", hex(odd(51)));
+    let h = bare_widgets(&css, move |ui| {
+        let field = ui.text_edit_singleline(&mut text);
+        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "A field"));
+    });
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_eq!(h.ctx.global_style().visuals.text_edit_bg_color, Some(odd(51)));
+    assert!(filled_with(&h, odd(51)) > 0, "the field is filled with the rule's colour");
+}
+
+/// An open egui menu, which egui frames with the root's window fill, takes the sheet's `menu` rule
+/// (#1442): a menu button's menu, and the File menu of the application bar.
+#[test]
+fn an_open_egui_menu_takes_the_menu_rule_at_the_root() {
+    let css = format!("menu {{ background-color: {}; }}", hex(odd(52)));
+    let mut h = bare_widgets(&css, |ui| {
+        ui.menu_button("Open", |ui| {
+            ui.label("An entry");
+        });
+    });
+    h.get_by_label("Open").click();
+    h.run_steps(3);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_eq!(h.ctx.global_style().visuals.window_fill, odd(52));
+    assert!(h.query_by_label("An entry").is_some(), "the menu is open");
+    assert!(filled_with(&h, odd(52)) > 0, "its frame is filled with the rule's colour");
+
+    let mut window = window(demo_app());
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    window.run_steps(4);
+    window.get_by_label("File").click();
+    window.run_steps(3);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_eq!(window.ctx.global_style().visuals.window_fill, odd(52));
+    assert!(filled_with(&window, odd(52)) > 0, "the File menu is filled with the rule's colour");
+}

@@ -38,19 +38,24 @@ use suhina_theme_render::{Subject, scenes};
 /// #1023 (the control bar, tabs, menus, Settings and the dialogs draw from their elements) raised
 /// them by 11 nodes and 17 identities in each scene: the control bar's words, meters and lit
 /// switches, each read once a frame (`label[kind]`, `meter`, `button`, `drop-target`).
+///
+/// #1442 (egui's own widgets take their look from the style sheet) raised the identities, and the
+/// styles worked out after a theme change, by 11 in each scene: the lookups the root's `Visuals`
+/// are built from (`button` in its four states and `[checked]`, `text-input` and its `:focus`,
+/// `menu`, `scroll-bar` in three states), once when the styles reset, with no node in the tree.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
             nodes: 399,
-            identities: 375,
+            identities: 386,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 375,
+            theme_change_fresh: 386,
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 0,
@@ -60,13 +65,13 @@ const RECORDED: [(&str, Counts); 2] = [
         "expanded-fm-synth",
         Counts {
             nodes: 631,
-            identities: 607,
+            identities: 618,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 607,
+            theme_change_fresh: 618,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 0,
@@ -82,13 +87,13 @@ const RECORDED: [(&str, Counts); 2] = [
         "launcher",
         Counts {
             nodes: 411,
-            identities: 387,
+            identities: 398,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 387,
+            theme_change_fresh: 398,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 0,
@@ -98,13 +103,13 @@ const RECORDED: [(&str, Counts); 2] = [
         "expanded-fm-synth",
         Counts {
             nodes: 643,
-            identities: 619,
+            identities: 630,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 619,
+            theme_change_fresh: 630,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 0,

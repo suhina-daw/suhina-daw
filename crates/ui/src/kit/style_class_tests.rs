@@ -174,3 +174,159 @@ fn descendant_styles_are_scoped_and_restore_palette() {
     assert_eq!(seen.2, seen.0);
     assert_eq!(seen.3, original);
 }
+
+// The root's `Visuals` come from the sheet (#1442).
+
+/// egui's `Visuals` at the root after frames of a window `width` wide in `ctx`, with `css` as the
+/// theme's sheet.
+fn root_after(ctx: &egui::Context, css: &str, width: f32) -> egui::Visuals {
+    skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
+    frames_in(ctx, width)
+}
+
+fn frames_in(ctx: &egui::Context, width: f32) -> egui::Visuals {
+    for _ in 0..3 {
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, 600.0))),
+                ..Default::default()
+            },
+            |ui| {
+                let _frame = super::super::native_css::frame_with_motion(ui, false);
+            },
+        )
+        .textures_delta
+        .clear();
+    }
+    ctx.global_style().visuals.clone()
+}
+
+fn rgb(r: u8, g: u8, b: u8) -> egui::Color32 {
+    egui::Color32::from_rgb(r, g, b)
+}
+
+#[test]
+fn a_rule_for_each_element_reaches_the_root_visuals() {
+    let css = "button { background-color: #101010; color: #111111; border-color: #121212; border-width: 2px; border-radius: 3px; } \
+               button:hover { background-color: #202020; } \
+               button:active { background-color: #303030; } \
+               button:disabled { background-color: #404040; } \
+               button[checked] { background-color: #505050; } \
+               text-input { background-color: #060606; } \
+               text-input:focus { border-color: #070707; border-width: 2px; } \
+               menu { background-color: #080808; border-color: #090909; border-width: 3px; border-radius: 5px; box-shadow: 2px 3px 8px #0a0a0a; } \
+               scroll-bar { background-color: #0b0b0b; } \
+               scroll-bar:hover { background-color: #0c0c0c; }";
+    let ctx = egui::Context::default();
+    let v = root_after(&ctx, css, 800.0);
+    assert_eq!(v.widgets.inactive.bg_fill, rgb(0x0b, 0x0b, 0x0b), "a scroll handle's fill is the later rule's");
+    assert_eq!(v.widgets.inactive.weak_bg_fill, rgb(0x10, 0x10, 0x10));
+    assert_eq!(v.widgets.inactive.fg_stroke.color, rgb(0x11, 0x11, 0x11));
+    assert_eq!(v.widgets.inactive.bg_stroke, egui::Stroke::new(2.0, rgb(0x12, 0x12, 0x12)));
+    assert_eq!(v.widgets.inactive.corner_radius, egui::CornerRadius::same(3));
+    assert_eq!(v.widgets.hovered.weak_bg_fill, rgb(0x20, 0x20, 0x20));
+    assert_eq!(v.widgets.hovered.bg_fill, rgb(0x0c, 0x0c, 0x0c));
+    assert_eq!(v.widgets.active.weak_bg_fill, rgb(0x30, 0x30, 0x30));
+    assert_eq!(v.widgets.open.weak_bg_fill, rgb(0x30, 0x30, 0x30), "an open button is a pressed one");
+    assert_eq!(v.widgets.noninteractive.weak_bg_fill, rgb(0x40, 0x40, 0x40));
+    assert_eq!(v.selection.bg_fill, rgb(0x50, 0x50, 0x50));
+    assert_eq!(v.extreme_bg_color, rgb(6, 6, 6));
+    assert_eq!(v.text_edit_bg_color, Some(rgb(6, 6, 6)));
+    assert_eq!(v.selection.stroke, egui::Stroke::new(2.0, rgb(7, 7, 7)), "a focused field's outline");
+    assert_eq!(v.window_fill, rgb(8, 8, 8));
+    assert_eq!(v.window_stroke, egui::Stroke::new(3.0, rgb(9, 9, 9)));
+    assert_eq!(v.menu_corner_radius, egui::CornerRadius::same(5));
+    assert_eq!(
+        v.popup_shadow,
+        egui::epaint::Shadow { offset: [2, 3], blur: 8, spread: 0, color: egui::Color32::from_rgb(10, 10, 10) }
+    );
+    // What no rule says stays the palette's.
+    let fallback = theme::palette_visuals_for(&theme::palette());
+    assert_eq!(v.panel_fill, fallback.panel_fill);
+    assert_eq!(v.faint_bg_color, fallback.faint_bg_color);
+    assert_eq!(v.widgets.hovered.fg_stroke.width, fallback.widgets.hovered.fg_stroke.width);
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
+fn a_rule_that_matches_only_below_a_width_reaches_the_root_visuals_after_the_reset() {
+    let css = "@media (max-width: 700px) { button { background-color: #112233; } }";
+    let ctx = egui::Context::default();
+    let wide = root_after(&ctx, css, 800.0);
+    assert_eq!(wide, theme::palette_visuals_for(&theme::palette()), "wide, nothing is said");
+    let narrow = frames_in(&ctx, 500.0);
+    assert_eq!(narrow.widgets.inactive.weak_bg_fill, rgb(0x11, 0x22, 0x33));
+    assert_eq!(frames_in(&ctx, 800.0), wide, "the rule goes with the width");
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
+fn a_palette_change_such_as_the_window_s_opacity_reaches_the_root_visuals() {
+    let saved = theme::palette();
+    let ctx = egui::Context::default();
+    for css in ["", "menu { border-radius: 4px; }"] {
+        let before = root_after(&ctx, css, 800.0);
+        let mut see_through = saved;
+        see_through.panel_background = see_through.panel_background.gamma_multiply(0.5);
+        see_through.border = see_through.border.gamma_multiply(0.5);
+        theme::set_palette(&ctx, see_through);
+        let after = frames_in(&ctx, 800.0);
+        assert_eq!(after.panel_fill, see_through.panel_background, "{css:?}");
+        assert_eq!(after.window_fill, see_through.panel_background, "{css:?}");
+        assert_eq!(after.window_stroke.color, see_through.border, "{css:?}");
+        assert_ne!(before.panel_fill, after.panel_fill);
+        theme::set_palette(&ctx, saved);
+        assert_eq!(frames_in(&ctx, 800.0).panel_fill, before.panel_fill, "{css:?}");
+    }
+    skin::configure(&skin::Skin::default());
+}
+
+/// With no rule for egui's widgets, the root's `Visuals` are the palette's, for every built-in
+/// theme and variant; a theme that has rules for them (the three with their own artwork) shows
+/// them, and with its sheet taken away is the palette's too.
+#[test]
+fn with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme() {
+    let saved = theme::palette();
+    let with_rules = ["suhina-sheet", "suhina-meadow", "suhina-blocks"];
+    let mut themes: Vec<(String, theme::Theme)> =
+        theme::built_in_themes().into_iter().map(|(id, theme)| (id.to_owned(), theme)).collect();
+    themes.extend(theme::built_in_variants());
+    for (id, theme) in &themes {
+        let ctx = egui::Context::default();
+        theme::set_palette(&ctx, theme.colors);
+        let expected = theme::palette_visuals_for(&theme.colors);
+        skin::configure(&theme.skin);
+        let built = frames_in(&ctx, 800.0);
+        let base = id.split('@').next().unwrap_or(id);
+        if with_rules.contains(&base) {
+            assert_ne!(built, expected, "{id}: its rules for egui's widgets reach the root");
+        } else {
+            assert_eq!(built, expected, "{id}");
+        }
+        // Without a sheet: the fallback alone.
+        let ctx = egui::Context::default();
+        theme::set_palette(&ctx, theme.colors);
+        skin::configure(&skin::Skin::default());
+        assert_eq!(frames_in(&ctx, 800.0), expected, "{id}: no sheet");
+    }
+    theme::set_palette(&egui::Context::default(), saved);
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
+fn looking_up_the_root_visuals_adds_nothing_to_the_style_tree() {
+    let css = "button { background-color: #101010; } menu { background-color: #080808; } text-input { color: red; }";
+    skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
+    // A new context builds them in this frame.
+    let ctx = egui::Context::default();
+    let mut looked_up = false;
+    ctx.run_ui(egui::RawInput::default(), |ui| {
+        let _frame = super::super::native_css::frame_with_motion(ui, false);
+        looked_up = ui.ctx().global_style().visuals.window_fill == rgb(8, 8, 8);
+        assert_eq!(super::super::native_css::budget().nodes, 0);
+    })
+    .textures_delta
+    .clear();
+    assert!(looked_up, "the frame did look them up");
+    skin::configure(&skin::Skin::default());
+}
