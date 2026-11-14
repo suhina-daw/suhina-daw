@@ -111,6 +111,9 @@ pub struct Row {
     pub inside: Vec<bool>,
     /// Whether every item is [`Row::inside`].
     pub fits: bool,
+    /// The room the bar's border and padding take (top, right, bottom, left), as the layout gave
+    /// it: the user-agent sheet's where no theme's runs.
+    pub insets: [f32; 4],
 }
 
 impl Row {
@@ -201,13 +204,20 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
             })
             .collect();
         let fits = inside.iter().all(|inside| *inside);
-        let row = Row { items: rects, inside, fits };
+        let row = Row { items: rects, inside, fits, insets: [top, right, bottom, left] };
         if engine.rows.len() >= MAX_ROWS {
             engine.rows.clear();
         }
         engine.rows.insert(key, row.clone());
         Some(row)
     })
+}
+
+/// The room inside `bar`'s border and padding (top, right, bottom, left), as the sheet lays it
+/// out: the user-agent sheet's where no theme's runs, which [`super::super::element::Entered::insets`]
+/// has no style to read then. `None` where the bar has no room.
+pub fn insets(bar: &Bar) -> Option<[f32; 4]> {
+    Some(row(bar, &[])?.insets)
 }
 
 /// Lays out the first of `candidates` that fits `bar` ([`Row::fits`]): the app lists them from

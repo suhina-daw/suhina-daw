@@ -140,7 +140,7 @@ clip-midi suhina-glass@midnight 29bda67a32e46a89
 clip-midi suhina-light 71c835c828a6ebc1
 clip-midi suhina-meadow d7d321bbcaaee2ca
 clip-midi suhina-sheet 15a8893c706ded37
-clip-midi suhina-studio 34461bdf1fd03513
+clip-midi suhina-studio 13b009ae16167807
 clip-midi suhina-studio+engine 64d4804604bbe7e3
 clip-midi suhina-studio@blue d032f125bf7ac83b
 clip-midi suhina-studio@darker 2fd54264ba41544f
@@ -497,7 +497,7 @@ piano-roll suhina-glass@midnight bbf2dc64b8992061
 piano-roll suhina-light c8aa1e4fa77ec809
 piano-roll suhina-meadow b12fae1b7f027de6
 piano-roll suhina-sheet 8e7b66a84155dbaf
-piano-roll suhina-studio e32f06b0c5cb9cda
+piano-roll suhina-studio 82d609f1e89930f2
 piano-roll suhina-studio+engine a2915d79a7b5c44e
 piano-roll suhina-studio@blue ba4ae62d5beb3a69
 piano-roll suhina-studio@darker 1d40c6b1eb7016bd

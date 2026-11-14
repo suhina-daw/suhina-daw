@@ -116,3 +116,20 @@ fn css_order_does_not_reorder_a_bar_s_items() {
     let ordered = laid("#a { order: 1; } #c { order: -1; }", "status-bar", 400.0, &three());
     assert_eq!(ordered.items, plain.items, "the app's order is the bar's");
 }
+
+#[test]
+fn a_bar_gives_the_room_its_padding_takes_and_its_attributes_choose_the_rules() {
+    // Where no theme's sheet runs, the user-agent sheet's padding (#1023): the room a bar's items
+    // are measured for is the room the layout gives them.
+    skin::configure(&skin::Skin::default());
+    let bar = Bar::new("piano-roll-toolbar", Vec2::new(400.0, 28.0));
+    assert_eq!(insets(&bar), Some([3.0, 4.0, 3.0, 8.0]));
+    // A bar given its Toolbar size lays out with that size's gap.
+    let items = three();
+    let normal = row(&bar, &items).unwrap_or_default();
+    let large = row(&bar.clone().attribute("size", "large"), &items).unwrap_or_default();
+    let step = |row: &Row| row.items[1].zip(row.items[0]).map(|(b, a)| b.left() - a.left());
+    assert_eq!(step(&normal), Some(43.0));
+    assert_eq!(step(&large), Some(43.75));
+    assert_eq!(insets(&Bar::new("piano-roll-toolbar", Vec2::ZERO)), None, "no room, no layout");
+}

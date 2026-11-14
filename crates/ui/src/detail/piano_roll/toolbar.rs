@@ -42,7 +42,12 @@ pub(super) fn toolbar(
     let fill = crate::kit::style_class::surface_or(theme::panel_background());
     bar_el.paint_with(&painter, rect, crate::kit::element::Native { radius: 0.0, fill });
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(theme::border()));
-    let [top, _, bottom, _] = bar_el.insets();
+    // The bar as the sheet lays it out, with its Toolbar size. Its padding is its style's; where no
+    // theme's sheet runs it has none to read, and the user-agent sheet's padding, which the layout
+    // gives it, is read from the layout, so its items are measured for the room they get.
+    let bar = Bar::of(&bar_el, rect.size()).attribute("size", size_word);
+    let [top, _, bottom, _] =
+        if bar_el.style().is_some() { bar_el.insets() } else { row::insets(&bar).unwrap_or_default() };
     let inner = (rect.height() - top - bottom).max(1.0);
     // The icon box, the gap and the strokes scale with Toolbar size; the box never outgrows the
     // band, so a small detail area shows the icons and not a clipped toolbar.
@@ -82,7 +87,6 @@ pub(super) fn toolbar(
         }
     };
     let candidates: Vec<_> = Step::ALL.iter().map(|step| items(*step, &widths, &lit)).collect();
-    let bar = Bar::of(&bar_el, rect.size());
     let Some((chosen, laid)) = row::fitting(&bar, &candidates) else { return };
     let (Some(step), Some(items)) = (Step::ALL.get(chosen).copied(), candidates.get(chosen)) else { return };
     let selected = !state.acting().is_empty();
