@@ -437,6 +437,31 @@ fn a_fader_storm_lands_at_its_last_value() {
     assert_eq!(tracks[0]["volume_db"], json!(2.5), "{tracks}");
 }
 
+/// The device replugged: a port that vanished and came back re-enumerates, and its
+/// connection is reopened fresh — the stale one died with the device, and the claim by token
+/// would otherwise keep holding it.
+#[test]
+fn a_returned_port_is_reopened_fresh() {
+    let mut fixture = Fixture::claiming("replug", SCRIPT_ECHO);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
+    assert_eq!(fixture.midi.raw_opens("APC in"), 1);
+    // The device vanishes: the port leaves the system's list.
+    fixture.midi.inputs.lock().unwrap().retain(|p| p != "APC in");
+    fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
+    assert!(fixture.midi.was_closed("APC in"), "the port closed with the device");
+    // The device comes back: the same name re-enumerates.
+    fixture.midi.inputs.lock().unwrap().push("APC in".to_string());
+    fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
+    assert_eq!(fixture.midi.raw_opens("APC in"), 2, "reopened fresh");
+    // And it still plays into the program.
+    fixture.midi.play("APC in", 1, &[0x90, 60, 100]);
+    fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
+    fixture.projects.poll_plugins();
+    assert_eq!(fixture.midi.written_for("APC out").len(), 1);
+}
+
 /// Stand-in MIDI ports: a claimed input port plays into the sink it was opened raw for, and
 /// what a program writes to an output port is recorded with the port's name.
 #[derive(Default)]

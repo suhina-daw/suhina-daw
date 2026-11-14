@@ -163,6 +163,9 @@ pub(crate) struct MidiInputs {
     /// The claims epoch the last look synced at, so a changed claim set is seen at once
     /// ([`crate::extensions::Extensions::claims_epoch`]).
     pub(crate) synced_epoch: u64,
+    /// The output ports there were at the last look, so a port that vanished and came back is
+    /// told from one that stayed.
+    last_outputs: Vec<String>,
 }
 
 /// How often the ports are looked at again for controllers plugged in or taken out.
@@ -189,8 +192,15 @@ impl MidiInputs {
                 return self.fail("", e);
             }
         };
-        self.ports.clone_from(&ports);
         let outputs = system.outputs().unwrap_or_default();
+        // A port that vanished and came back between looks re-enumerated: its old connection
+        // died with the device, so every entry it held is dropped here and reopened fresh
+        // below — the claim by token would otherwise keep a connection to nothing.
+        let returned: BTreeSet<String> = ports.iter().filter(|p| !self.ports.contains(*p)).cloned().collect();
+        let returned_outs: BTreeSet<String> =
+            outputs.iter().filter(|p| !self.last_outputs.contains(*p)).cloned().collect();
+        self.ports.clone_from(&ports);
+        self.last_outputs.clone_from(&outputs);
         // What each running program claims: the ports its patterns match, the first program
         // whose patterns match a port taking it (two manifests may both name one port).
         let mut taken: BTreeSet<String> = BTreeSet::new();
@@ -205,6 +215,10 @@ impl MidiInputs {
             matched.push((claim.id, inputs, outs));
         }
         let mut notices = Vec::new();
+        // A returned port's stale entries go first: its old connection died with the device.
+        self.raw.retain(|(name, ..)| !returned.contains(name));
+        self.outs.retain(|(name, ..)| !returned_outs.contains(name) && !returned.contains(name));
+        self.open.retain(|(name, _)| !returned.contains(name));
         // Programs that stopped: their ports close first, so a port another program claims
         // now can be opened for it.
         self.raw.retain(|(_, id, _, _)| matched.iter().any(|(id2, _, _)| id2 == id));
