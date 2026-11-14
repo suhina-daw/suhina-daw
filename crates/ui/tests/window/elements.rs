@@ -153,13 +153,52 @@ fn a_clip_picked_in_its_body_takes_its_own_selected_rule() {
     assert_eq!(missing(&mut h, &[("clip[color][selected]", "border-color", odd(41))]), Vec::<String>::new());
 }
 
-/// A take's name is drawn in its header's text colour: `take-header { color }` reaches it
-/// (#1428 review).
+/// A take's name is drawn in its header's text colour: `take-header { color }` reaches the name
+/// itself, and the header's buttons, which sit on its background, inherit it as their glyphs'
+/// colour where no rule of theirs sets one (#1428 review).
 #[test]
 fn a_take_s_name_takes_its_header_s_colour() {
     let mut h = super::arrangement::window_with_drums_takes(16.0);
     assert!(h.query_by_label("Solo Drums Take 1").is_some(), "the take lanes are shown");
-    assert_eq!(missing(&mut h, &[("take-header", "color", odd(42))]), Vec::<String>::new());
+    let css = format!("take-header {{ color: {}; }}", hex(odd(42)));
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    // The colours of the texts that read `text` inside a take's header (its clips carry names
+    // of their own), each text once.
+    let headers: Vec<egui::Rect> = [("Drums Take 1", "Solo Drums Take 1"), ("Drums Take 2", "Solo Drums Take 2")]
+        .iter()
+        .filter_map(|(name, solo)| {
+            let solo = h.get_by_label(solo).rect();
+            h.get_all_by_label(name).map(|node| node.rect()).find(|rect| rect.intersects(solo))
+        })
+        .collect();
+    assert_eq!(headers.len(), 2, "each take's header is found by its name");
+    let texts = |h: &Harness<'static, App>, text: &str| -> Vec<egui::Color32> {
+        h.output()
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(shown)
+                    if shown.galley.text() == text
+                        && headers
+                            .iter()
+                            .any(|header| header.contains(shape.shape.visual_bounding_rect().center())) =>
+                {
+                    Some(shown.galley.job.sections.first().map_or(shown.fallback_color, |section| section.format.color))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    let names = [texts(&h, "Drums Take 1"), texts(&h, "Drums Take 2")];
+    let solo = texts(&h, "S");
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    for (n, name) in names.iter().enumerate() {
+        assert_eq!(name, &[odd(42)], "take {}'s name is drawn once, in the header's colour", n + 1);
+    }
+    assert_eq!(solo.iter().filter(|ink| **ink == odd(42)).count(), 2, "each take's Solo inherits it");
 }
 
 /// The lit Edit gain envelope button paints the fill a `[checked]` rule gives it (#1428 review).
