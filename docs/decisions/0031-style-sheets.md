@@ -1163,3 +1163,76 @@ struct fields. It now holds them the way the style sheet does, as custom propert
 - **Old token names are dropped.** `RENAMED` is gone: `--surface-0`, `"line"` and the rest are
   reported like any name that is not a token. The former track colours and `kind.*` colours keep
   their own notices.
+
+## Amendment: a base sheet under every theme holds Suhina's design (2026-11-15)
+
+Accepted, from [issue #1448](https://github.com/suhina-daw/suhina-daw/issues/1448), the first of
+the pull requests that remove the palette (#1023): Suhina's defaults move out of Rust into
+ordinary CSS, in a cascade tier of their own under the theme.
+
+1. **The user-agent sheet stays bare** (`crates/theme-package/src/user-agent.css`): no variables
+   and no colours, only what keeps every element usable (layout, the regions' `overflow`, the
+   default artwork, the floating surfaces' blur, the bars' border widths, the theme swatch's
+   square). It is the floor a theme stands on when it opts out of the base sheet.
+2. **A base sheet holds Suhina's design** (`crates/theme-package/src/base.css`, `BASE_SHEET`) as
+   ordinary rules written with the colour variables (`progress { background-color:
+   var(--control-background); }`), in a tier of its own between the user-agent sheet and the
+   theme: `Layer::Base`, so the cascade's tiers are user agent, base, theme, variant, device
+   panel sheets, user sheet. **Every theme rule beats every base rule**, whatever its
+   specificity or `@layer`, as a page's rules beat a browser's own sheet: a theme, its variant, a
+   device panel's sheet and `user.css` all override it, and nothing about the base sheet's
+   selectors matters to a theme author. A theme that restyles an element states the states it
+   wants for it as well (`button { … }` hides the base sheet's `button[checked]`, so the theme
+   adds its own `button[checked] { … }`); a theme that sets only colour variables keeps every
+   state. Base declarations are not "authored" (`ComputedStyle::authored`, `declared`), as the
+   user agent's are not, so the code that asks whether a theme styled something sees only the
+   theme's rules, and a base rule on an element replaces what it inherited from a theme's rule
+   around it, as a user-agent rule does. The colour variables' defaults (Suhina Studio's) are the
+   core `@property` registrations (`core.css`, `theme_vars::core_sheet`), in the base tier of
+   every cascade, so `var(--accent)` always resolves. The base sheet moves in what was the host's
+   beside the user-agent sheet (the text colour and size of `html, body`, the colours of
+   `knob-body`, `fader-cap` and `fader-rail`, the bars' border colour) and the user-agent sheet's
+   colours (the browser's icons and the sample map's kinds), each of those now a core variable
+   of its own (`--browser-icon-midi`, `--sample-kick` …) with its earlier value.
+3. **A theme can opt out** of the base sheet with `"base": "none"` in its `theme.json`
+   (`ThemeMeta::base`): it then gets the user-agent sheet's bare look under its own rules. The
+   theme's colour map and the core registrations still apply.
+4. **Colouring a region goes through its variables**, as ordinary CSS does: `mixer {
+   --text-value: gold; }` reaches every part inside the mixer the base sheet colours with
+   `--text-value`. A plain `mixer { color: gold }` reaches only what has no rule of its own, so
+   it no longer recolours parts the base sheet styles. The built-in themes' region rules
+   (Meadow's `window, session, arrangement` and `toolbar, status-bar`, Sheet's those and
+   `detail, device-panel`, Blocks' `detail, device-panel`) set the text variables as well as
+   `color`.
+5. **No colour in the base sheet is fixed:** every colour declaration reads a variable, so a
+   theme's variables reach everything, and an element added later matches a theme that never
+   heard of it (a test in `suhina-theme-package` checks it; mixing a variable with `black` to
+   shade it is allowed).
+
+With it:
+
+- **The colours come from the variables.** The host's `:root { --… }` block that
+  `native_css::begin_frame` built from the palette is gone. A theme's colour map
+  (`Theme.colors`) is written as a `:root` rule in the base tier, after the base sheet
+  (`native_css::set_colors`), so any `:root` in the theme's own sheet beats it. The palette's
+  colour functions (`theme::accent()` …) read a snapshot of the cascade's resolved root
+  variables, taken once each time the styles reset, not a table `set_palette` fills; a
+  `user.css` that sets `--accent` reaches everything, Suhina Studio included. What is left of
+  `set_palette` is egui's light or dark scheme, which #1452 removes with the palette.
+- **Suhina Studio runs the style engine** like every other theme: its sheet is no longer set
+  aside, and the engine never stops for want of a sheet.
+- **Window opacity is a value on `window`.** A backdrop image under a translucent window used to
+  rewrite the palette's window, panel and border colours each frame. The host now writes those
+  three variables, faded (`Color32::gamma_multiply`), in a base-tier rule for `window`
+  (`native_css::set_window_opacity`), and the root snapshot carries the same faded colours, so
+  the palette's readers and the sheet's agree. `color-mix()` with `transparent` cannot give
+  `gamma_multiply`'s bytes for every colour, which the palette's readers keep until #1452.
+- **A transitional scope rule** (removed in #1452 with the palette): entering an element with
+  its own style, the palette scope also takes that element's colour variables that differ from
+  its parent's, so `mixer { --text-value: gold }` reaches the palette's readers inside the mixer
+  as well as the base sheet's rules, until each reader moves onto an element.
+- **Readers without a fallback**, `color()`, `background()`, `border()` and `accent()` on
+  `Computed`, `Look` and `Entered`, give the element's computed colour, transparent where the
+  window has no style. The progress bar (`progress`, `progress-fill`) and the drop targets' lines
+  (`drop-target[kind="insert"]`, `[kind="area"]`) read their colours with them from base rules,
+  the first parts that have no palette fallback.
