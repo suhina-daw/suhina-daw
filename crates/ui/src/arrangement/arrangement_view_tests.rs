@@ -234,6 +234,10 @@ fn losing_the_window_focus_ends_the_drag_and_holds_no_press_back() {
     assert!(!slot.is_some());
     assert!(!slot.cancelled());
     assert!(slot.begin(Gesture::Marker((1, 3.0))), "the first press after the focus returns starts a drag");
+    // Escape, then the focus lost with the button still reported down: the press is over too.
+    assert!(slot.cancel());
+    slot.lose_focus();
+    assert!(slot.begin(Gesture::Marker((2, 4.0))));
 }
 
 #[test]

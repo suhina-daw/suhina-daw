@@ -236,10 +236,11 @@ impl GestureSlot {
 
     /// The window lost the focus: a release in another window never reaches the app, so the drag
     /// under way ends without committing, as one that lost its release does. Unlike
-    /// [`Self::cancel`] it holds no press back: the pointer may be reported down until the next
-    /// click.
+    /// [`Self::cancel`] it holds no press back, and a press Escape let go of is over too: the
+    /// pointer may be reported down until the next click.
     pub(crate) fn lose_focus(&mut self) {
         self.now = None;
+        self.cancelled = false;
     }
 
     /// Whether the press held now is one Escape let go of: it starts and finishes nothing.

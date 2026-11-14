@@ -831,6 +831,34 @@ fn dragging_an_audio_clips_gain_sets_it() {
     assert!(gain.is_some_and(|g| (g - 1.4125).abs() < 1e-3), "{gain:?}");
 }
 
+/// A value set by a key in the middle of a gain drag stands: the drag lets go, and its release does
+/// not bring the dragged value back (#1158).
+#[test]
+fn a_key_step_during_a_gain_drag_is_not_undone_by_its_release() {
+    let mut harness = window(audio_app());
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let field = harness.get_by_label("Gain of Loop on Loop").rect().center();
+    harness.hover_at(field);
+    harness.run();
+    harness.drag_at(field);
+    harness.run();
+    harness.hover_at(field - egui::vec2(0.0, 15.0));
+    harness.run();
+    harness.hover_at(field - egui::vec2(0.0, 30.0));
+    harness.run();
+    harness.key_press(Key::ArrowUp);
+    harness.run();
+    harness.drop_at(field - egui::vec2(0.0, 30.0));
+    harness.run();
+    let gain = harness.state().session().and_then(|s| {
+        let clips = s.project().arrangement.lanes.iter().flat_map(|l| &l.clips);
+        clips.into_iter().find(|c| c.content == suhina_engine::model::ContentId(300)).map(|c| c.audio.gain)
+    });
+    // The step is +1 dB from the clip's gain; the 3 dB the drag held is not committed after it.
+    assert!(gain.is_some_and(|g| (g - 1.1220).abs() < 1e-3), "{gain:?}");
+}
+
 /// The Loop clip's fade-in and fade-out in the project.
 fn loop_fades(harness: &Harness<'static, App>) -> Option<(f64, f64)> {
     let session = harness.state().session()?;
