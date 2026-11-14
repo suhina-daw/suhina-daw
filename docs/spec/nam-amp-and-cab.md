@@ -407,9 +407,10 @@ fills, the dropdowns and the steppers take the palette's colours, and a theme's
      names; "Choose a model file…" when none is set. Label: "Amp Modeler: model file".
    - **Previous model** and **next model** steppers (◀ ▶), stepping through the pack's files and
      wrapping. Labels: "Amp Modeler: previous file", "Amp Modeler: next file".
-2. **The buttons' row** — **EQ** and **HQ**, lit when on (the theme's accent), then **Mid Freq**:
-   its name, and its value in the slot beside it, which a vertical drag sets (logarithmic, Shift
-   for precision, a double click resets), whole Hz (kHz from 1000).
+2. **The buttons' row** — **EQ** and **HQ**, lit when on (the theme's accent), then a free place
+   kept for a third button, then **Mid Freq**: its name in a box of its own, and its value in the
+   box beside it, which a vertical drag sets (logarithmic, Shift for precision, a double click
+   resets), whole Hz (kHz from 1000).
 3. **The knobs** — on the plate, one row, left to right: **Gain**; **Bass / Mid / Treble**;
    **Delay**; **Volume**; each with its name over it and its value under it. A knob's face is the
    device's own knob (`Dial { image }`, a dark body with a grey rim), its value's arc around it and its pointer over it;

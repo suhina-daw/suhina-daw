@@ -39,20 +39,41 @@
         "widget": { "kind": "device_files", "part": "next_file", "what": "model" } },
 
       { "id": "eq", "name": "Amp Modeler: eq", "bounds": [33.5, 53.25, 30, 15],
-        "tooltip": "Click to switch the EQ on or off", "x": { "parameter": "eqOn" },
-        "gesture": "toggle", "widget": { "kind": "button", "label": "EQ" } },
-      { "id": "hq", "name": "Amp Modeler: hq", "bounds": [77.5, 53.25, 28.5, 15],
-        "tooltip": "Click to switch the HQ on or off", "x": { "parameter": "hq" },
-        "gesture": "toggle", "widget": { "kind": "button", "label": "HQ" } },
-      { "id": "mid-freq", "name": "Amp Modeler: mid freq", "bounds": [164.5, 53.25, 69.5, 15],
+        "tooltip": "Click to switch the EQ on or off", "x": { "parameter": "eqOn" }, "gesture": "toggle",
+        "drawing": [
+          { "kind": "rect", "rect": [0, 0, 30, 15], "color": [3, 1, 4, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 28, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
+          { "kind": "rect", "rect": [1, 1, { "op": "multiply", "a": { "op": "parameter", "parameter": "eqOn", "normalized": true }, "b": 28 }, 13], "color": [3, 1, 5, 255], "radius": 2.5 },
+          { "kind": "text", "align": "center", "text": "EQ", "color": [3, 1, 1, 255], "size": 9,
+            "position": [{ "op": "add", "a": 15.0, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "eqOn", "normalized": true }, "b": 4096 } }, 1.9] },
+          { "kind": "text", "align": "center", "text": "EQ", "color": [3, 1, 2, 255], "size": 9,
+            "position": [{ "op": "add", "a": 4111.0, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "eqOn", "normalized": true }, "b": -4096 } }, 1.9] }
+        ] },
+      { "id": "hq", "name": "Amp Modeler: hq", "bounds": [77.25, 53.25, 28.75, 15],
+        "tooltip": "Click to switch the HQ on or off", "x": { "parameter": "hq" }, "gesture": "toggle",
+        "drawing": [
+          { "kind": "rect", "rect": [0, 0, 28.75, 15], "color": [3, 1, 4, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 26.75, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
+          { "kind": "rect", "rect": [1, 1, { "op": "multiply", "a": { "op": "parameter", "parameter": "hq", "normalized": true }, "b": 26.75 }, 13], "color": [3, 1, 5, 255], "radius": 2.5 },
+          { "kind": "text", "align": "center", "text": "HQ", "color": [3, 1, 1, 255], "size": 9,
+            "position": [{ "op": "add", "a": 14.375, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "hq", "normalized": true }, "b": 4096 } }, 1.9] },
+          { "kind": "text", "align": "center", "text": "HQ", "color": [3, 1, 2, 255], "size": 9,
+            "position": [{ "op": "add", "a": 4110.375, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "hq", "normalized": true }, "b": -4096 } }, 1.9] }
+        ] },
+      { "id": "mid-freq-name", "name": "Amp Modeler: mid freq caption", "bounds": [164.5, 53.25, 45, 15],
+        "widget": { "kind": "graphic", "drawing": [
+          { "kind": "rect", "rect": [0, 0, 45, 15], "color": [3, 1, 4, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 43, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
+          { "kind": "text", "position": [22.5, 2], "text": "Mid Freq", "align": "center", "color": [3, 1, 1, 200], "size": 8 }
+        ] } },
+      { "id": "mid-freq", "name": "Amp Modeler: mid freq", "bounds": [217.5, 53.25, 71, 15],
         "tooltip": "Drag vertically; Shift for precision; double click resets",
         "y": { "parameter": "eqMidFreq", "logarithmic": true }, "gesture": "drag",
         "drawing": [
-          { "kind": "rect", "rect": [0, 0, 69.5, 15], "color": [3, 1, 4, 255], "radius": 3 },
-          { "kind": "rect", "rect": [1, 1, 67.5, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
-          { "kind": "text", "position": [4, 2.5], "text": "Mid Freq", "color": [3, 1, 1, 160], "size": 8 },
-          { "kind": "text", "position": [52, 2.5], "text": "", "parameter": "eqMidFreq",
-            "decimals": 0, "align": "center", "format": "frequency", "color": [3, 1, 1, 255], "size": 8 }
+          { "kind": "rect", "rect": [0, 0, 71, 15], "color": [3, 1, 4, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 69, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
+          { "kind": "text", "position": [35.5, 1.9], "text": "", "parameter": "eqMidFreq",
+            "decimals": 0, "align": "center", "format": "frequency", "color": [3, 1, 1, 255], "size": 9 }
         ] },
 
       { "id": "gain-caption", "name": "Amp Modeler: gain caption", "bounds": [31.0, 88, 60, 12],
