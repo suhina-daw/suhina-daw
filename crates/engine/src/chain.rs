@@ -205,13 +205,16 @@ fn after_host(ara: &Option<AraHost>, buffer: &mut [f32], from: usize, to: usize)
 
 /// The identity of built-in device `id` for graph swaps: a device that holds a file changes with
 /// the file, so its identity carries the state's hash, the `.sd` devices' trick, and a model swap
-/// rebuilds one device alone; a Sampler's carries its sample (#600). A chain and the groups in it
-/// give the same device the same identity.
+/// rebuilds one device alone; a Sampler's carries its sample (#600). It carries the read of the
+/// file too (`asset`'s address), so a file read again (at another rate, or after a rewrite) is a
+/// new device and a swap does not keep the running one with the earlier read. A chain and the
+/// groups in it give the same device the same identity.
 pub(crate) fn device_identity(
     id: &str,
     stored: &suhina_model::Device,
     audio: &crate::AudioPool,
     devices: &dyn suhina_device_sdk::DeviceFactory,
+    asset: Option<&suhina_device_sdk::DeviceAsset>,
 ) -> String {
     if devices.runs_a_file(id) {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -223,7 +226,8 @@ pub(crate) fn device_identity(
             }
             Err(_) => hasher.finish(),
         };
-        format!("{id}:{hashed:016x}")
+        let read = asset.map(|asset| std::ptr::from_ref(asset.data()).cast::<()>());
+        format!("{id}:{hashed:016x}:{read:?}")
     } else {
         stored.sample_file().map_or_else(
             || id.to_owned(),

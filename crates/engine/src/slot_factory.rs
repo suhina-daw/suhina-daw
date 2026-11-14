@@ -134,7 +134,7 @@ impl SlotFactory<'_> {
             if info.role == Role::MidiEffect { DeviceSlot::MidiDevice(device) } else { DeviceSlot::Device(device) };
         Some(Built {
             slot: kind,
-            id: crate::chain::device_identity(id, stored, self.audio, self.devices),
+            id: crate::chain::device_identity(id, stored, self.audio, self.devices, asset),
             values,
             latency,
             slices,
