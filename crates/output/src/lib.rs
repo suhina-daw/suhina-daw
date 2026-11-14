@@ -1003,6 +1003,8 @@ fn render_ahead(
     joined: &mpsc::SyncSender<(Priority, Option<String>)>,
 ) -> Renderer {
     let mut realtime = RealTime::join(frames, renderer.sample_rate());
+    // The render workers, when there are any (`SUHINA_RENDER_THREADS`), join it too.
+    renderer.join_real_time(frames);
     let _unheard = joined.try_send((realtime.priority(), realtime.notice()));
     let mut block = vec![0.0f32; frames * 2];
     let mut cue = vec![0.0f32; frames * 2];
