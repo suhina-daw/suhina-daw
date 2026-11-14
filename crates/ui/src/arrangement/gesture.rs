@@ -2,40 +2,48 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The one drag under way in the Arrangement (#1158): a clip, an edge, a fade, a header's
-//! control, a marker, the loop, time being painted, a take. Only one runs at a time: a drag starts
+//! control, a marker, the loop, time being painted, a take, or on an automation lane a point, a
+//! curve, a box or range, or lane headers. The view and its automation lanes share it. Only one runs at a time: a drag starts
 //! through [`GestureSlot::begin`], which refuses while another is under way, and ends through one
 //! of the `end_*` functions, which hand back what it carried for its command. Escape and a
 //! release that the drag's widget never saw end it through [`GestureSlot::cancel`], which commits
 //! nothing.
 
-use super::*;
+use egui::{Pos2, Vec2};
+use suhina_engine::model::{ClipId, TrackId};
+
+use crate::arrangement::arrangement_view::{
+    ClipDrag, CurveDrag, EdgeDrag, FadeDrag, LoopGrab, TakeEdge, TakeMove, TimeSelection, ValueDrag,
+};
+use crate::arrangement::automation_lanes::{self as lanes, BoxDrag, HeaderDrag, NewPoint, PointDrag};
+use crate::kit::widgets::Drag;
 
 /// A selection rectangle or a time selection being painted from where the drag began.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct Marquee {
+pub(crate) struct Marquee {
     /// Where the drag began, on the screen as the lanes are scrolled now.
-    pub(super) origin: Pos2,
+    pub(crate) origin: Pos2,
     /// The scroll when `origin` was last placed: the view scrolls under a drag past its edge,
     /// and the start moves with the lanes (#691).
-    pub(super) scroll: Vec2,
+    pub(crate) scroll: Vec2,
     /// It paints time (a lane's or a clip's upper half) rather than drawing a rectangle that
     /// picks whole clips (the lower half).
-    pub(super) time: bool,
+    pub(crate) time: bool,
     /// The stacked row a time-painting drag started in: its track, the row and how many.
-    pub(super) row: Option<(TrackId, usize, usize)>,
+    pub(crate) row: Option<(TrackId, usize, usize)>,
     /// What a drag with Shift goes on from, known once it has begun.
-    pub(super) kept: Option<Option<TimeSelection>>,
+    pub(crate) kept: Option<Option<TimeSelection>>,
 }
 
 impl Marquee {
-    pub(super) fn new(origin: Pos2, scroll: Vec2, time: bool, row: Option<(TrackId, usize, usize)>) -> Self {
+    pub(crate) fn new(origin: Pos2, scroll: Vec2, time: bool, row: Option<(TrackId, usize, usize)>) -> Self {
         Self { origin, scroll, time, row, kept: None }
     }
 }
 
 /// What the drag under way is doing, and what it carries so far.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum Gesture {
+pub(crate) enum Gesture {
     /// A drag over empty lanes or a clip's time-selecting part.
     Marquee(Marquee),
     /// A drag on the ruler selecting time over every track: the beat it began at, and what a drag
@@ -80,31 +88,42 @@ pub(super) enum Gesture {
     /// The bend of the crossfade after this part, and how far from its handle's middle the
     /// pointer went down (#1078).
     CompCurve((ClipId, f64, f32)),
+    /// An automation point (with the rest of its selection), or a segment's two points with Shift.
+    LanePoint(PointDrag),
+    /// A press on an automation lane's line, which added a point there at once; once the point is
+    /// on the lane, the drag holds it.
+    NewPoint(NewPoint, Option<PointDrag>),
+    /// An automation segment's curve being bent.
+    LaneCurve(lanes::CurveDrag),
+    /// A box selecting automation points, or a time range painted on a lane.
+    LaneBox(BoxDrag),
+    /// Automation lane headers being moved among their track's lanes (#1322).
+    LaneHeaders(HeaderDrag),
 }
 
 /// The drag under way, if any (#1158).
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(super) struct GestureSlot(Option<Gesture>);
+pub(crate) struct GestureSlot(Option<Gesture>);
 
 impl GestureSlot {
     /// Whether a drag is under way.
-    pub(super) fn is_some(&self) -> bool {
+    pub(crate) fn is_some(&self) -> bool {
         self.0.is_some()
     }
 
     /// The drag under way.
-    pub(super) fn get(&self) -> Option<&Gesture> {
+    pub(crate) fn get(&self) -> Option<&Gesture> {
         self.0.as_ref()
     }
 
     /// The drag under way, to change as the pointer moves.
-    pub(super) fn get_mut(&mut self) -> Option<&mut Gesture> {
+    pub(crate) fn get_mut(&mut self) -> Option<&mut Gesture> {
         self.0.as_mut()
     }
 
     /// Starts `gesture`, when no drag is under way: the one place a drag starts. Returns whether
     /// it started; the drag under way is kept otherwise.
-    pub(super) fn begin(&mut self, gesture: Gesture) -> bool {
+    pub(crate) fn begin(&mut self, gesture: Gesture) -> bool {
         if self.0.is_some() {
             return false;
         }
@@ -114,7 +133,7 @@ impl GestureSlot {
 
     /// Ends the drag under way when `mine` says it is the caller's, handing it back to commit:
     /// the one place a drag ends.
-    pub(super) fn end_if(&mut self, mine: impl FnOnce(&Gesture) -> bool) -> Option<Gesture> {
+    pub(crate) fn end_if(&mut self, mine: impl FnOnce(&Gesture) -> bool) -> Option<Gesture> {
         self.0.take_if(|g| mine(g))
     }
 
@@ -124,7 +143,7 @@ impl GestureSlot {
     /// under way, as `mine` says; after Escape, or while another drag runs, they are `None`. A
     /// release ends the gesture. A value set by the wheel, a key, typing or a reset is no drag
     /// and passes as it is.
-    pub(super) fn value_frame(
+    pub(crate) fn value_frame(
         &mut self,
         response: &egui::Response,
         drag: Drag,
@@ -142,9 +161,61 @@ impl GestureSlot {
         }
     }
 
+    /// The automation point held: dragged by itself, or made by a press on the line and held since.
+    pub(crate) fn lane_point(&self) -> Option<&PointDrag> {
+        match &self.0 {
+            Some(Gesture::LanePoint(drag) | Gesture::NewPoint(_, Some(drag))) => Some(drag),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn lane_point_mut(&mut self) -> Option<&mut PointDrag> {
+        match &mut self.0 {
+            Some(Gesture::LanePoint(drag) | Gesture::NewPoint(_, Some(drag))) => Some(drag),
+            _ => None,
+        }
+    }
+
+    /// Lets go of the automation point held when `mine` says it is the caller's, handing it back to
+    /// commit. A point made by a press stays made: the press goes on until the button comes up.
+    pub(crate) fn end_lane_point(&mut self, mine: impl FnOnce(&PointDrag) -> bool) -> Option<PointDrag> {
+        match &mut self.0 {
+            Some(Gesture::NewPoint(_, held)) => held.take_if(|d| mine(d)),
+            Some(Gesture::LanePoint(drag)) if mine(drag) => match self.0.take() {
+                Some(Gesture::LanePoint(drag)) => Some(drag),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The point a press on an automation line made, while that press goes on.
+    pub(crate) fn new_point(&self) -> Option<&NewPoint> {
+        match &self.0 {
+            Some(Gesture::NewPoint(made, _)) => Some(made),
+            _ => None,
+        }
+    }
+
+    /// The point a press made is on the lane now: `drag` holds it until the button comes up.
+    pub(crate) fn hold_new_point(&mut self, drag: PointDrag) {
+        if let Some(Gesture::NewPoint(_, held @ None)) = &mut self.0 {
+            *held = Some(drag);
+        }
+    }
+
+    /// Ends a press on an automation line when `mine` says it is the caller's, with the point it
+    /// held.
+    pub(crate) fn end_new_point(&mut self, mine: impl FnOnce(&NewPoint) -> bool) -> Option<NewPoint> {
+        match self.end_if(|g| matches!(g, Gesture::NewPoint(made, _) if mine(made))) {
+            Some(Gesture::NewPoint(made, _)) => Some(made),
+            _ => None,
+        }
+    }
+
     /// Ends whatever drag is under way without committing it: Escape, a release its widget never
     /// saw, a switch to another project. Returns whether one was.
-    pub(super) fn cancel(&mut self) -> bool {
+    pub(crate) fn cancel(&mut self) -> bool {
         self.0.take().is_some()
     }
 }
@@ -156,21 +227,21 @@ macro_rules! kinds {
         // Each kind gets all three, whether or not its drag needs them yet.
         #[allow(dead_code)]
         impl GestureSlot {$(
-            pub(super) fn $get(&self) -> Option<&$ty> {
+            pub(crate) fn $get(&self) -> Option<&$ty> {
                 match &self.0 {
                     Some(Gesture::$variant(drag)) => Some(drag),
                     _ => None,
                 }
             }
 
-            pub(super) fn $get_mut(&mut self) -> Option<&mut $ty> {
+            pub(crate) fn $get_mut(&mut self) -> Option<&mut $ty> {
                 match &mut self.0 {
                     Some(Gesture::$variant(drag)) => Some(drag),
                     _ => None,
                 }
             }
 
-            pub(super) fn $end(&mut self, mine: impl FnOnce(&$ty) -> bool) -> Option<$ty> {
+            pub(crate) fn $end(&mut self, mine: impl FnOnce(&$ty) -> bool) -> Option<$ty> {
                 match self.end_if(|g| matches!(g, Gesture::$variant(drag) if mine(drag))) {
                     Some(Gesture::$variant(drag)) => Some(drag),
                     _ => None,
@@ -200,4 +271,7 @@ kinds! {
     TakeEdge(TakeEdge) => take_edge, take_edge_mut, end_take_edge;
     CompFade((ClipId, f64)) => comp_fade, comp_fade_mut, end_comp_fade;
     CompCurve((ClipId, f64, f32)) => comp_curve, comp_curve_mut, end_comp_curve;
+    LaneCurve(lanes::CurveDrag) => lane_curve, lane_curve_mut, end_lane_curve;
+    LaneBox(BoxDrag) => lane_box, lane_box_mut, end_lane_box;
+    LaneHeaders(HeaderDrag) => lane_headers, lane_headers_mut, end_lane_headers;
 }

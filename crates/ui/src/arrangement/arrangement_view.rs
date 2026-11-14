@@ -30,7 +30,6 @@ use crate::kit::waveform;
 use crate::kit::widgets::{self, Action, Drag, VOLUME_RANGE, volume_position};
 
 mod clip;
-mod gesture;
 mod header;
 mod lane_menu;
 mod markers_loop;
@@ -39,7 +38,7 @@ mod tools;
 mod value_controls;
 
 use self::clip::*;
-use self::gesture::*;
+use crate::arrangement::gesture::*;
 
 /// The colour Main's automation lanes are drawn in: it has no track colour of its own.
 const MAIN_COLOUR: Rgb = Rgb(150, 150, 150);
@@ -1398,7 +1397,16 @@ fn show_lanes(
             color: lane.color,
             top: lane_rect.bottom() + 1.0 + state.takes_height(lane.track, timeline),
         };
-        automation::show(ui, &lanes_painter, &geometry, &lanes, &timeline.automation, &mut state.automation, actions);
+        automation::show(
+            ui,
+            &lanes_painter,
+            &geometry,
+            &lanes,
+            &timeline.automation,
+            &mut state.automation,
+            &mut state.gesture,
+            actions,
+        );
     }
     if state.automation.selected_points().is_some() {
         state.clear_selected_clip();
@@ -1604,6 +1612,7 @@ fn show_lanes(
             &lanes,
             &timeline.automation,
             &mut state.automation,
+            &mut state.gesture,
             actions,
         );
         fixed_painter.hline(area.x_range(), row.time.bottom() + 0.5, theme::hairline(theme::border()));
@@ -1740,6 +1749,7 @@ fn show_lanes(
             &lanes,
             &timeline.automation,
             &mut state.automation,
+            &mut state.gesture,
             actions,
         );
     }

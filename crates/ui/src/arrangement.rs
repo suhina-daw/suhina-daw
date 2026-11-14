@@ -6,6 +6,7 @@
 pub mod arrangement_view;
 pub mod automation_lanes;
 pub mod envelope;
+pub(crate) mod gesture;
 pub mod timeline;
 
 /// A clip's tempo, or an unwarped clip's pitch, being dragged in the clip panel: the value it is

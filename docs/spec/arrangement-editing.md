@@ -62,12 +62,16 @@ there were more. ARA's first version refuses such overlaps for the clips it edit
 The view runs one drag at a time (#1158): a clip moved, a clip's edge, a fade or its curve, a clip's
 gain, a header's volume, pan or send, the main volume, a track header moved, a marker, the loop
 brace, time painted on the lanes or the ruler, a selection rectangle, a clip drawn with the Draw
-tool, and on take lanes a comp, an area, pieces moved, a piece's edge and a crossfade or its bend.
-None starts while another is under way. The automation lanes keep their own drags.
+tool, on take lanes a comp, an area, pieces moved, a piece's edge and a crossfade or its bend,
+and on automation lanes a point (or a segment's two points), a point made by a press on the line,
+a curve bent, a box or a range painted, and lane headers moved. None starts while another is under
+way. A range painted on a lane and dragged off it onto the clips goes on as a time selection: the
+one drag hands over to the other.
 
 **Escape** lets go of the drag under way. What its release would have done is not done: the clip
 stays where it was, the edge, fade, marker, loop and track keep their places, no clip is drawn and
-no comp is made. What the drag already did as it went stays: time painted so far stays selected,
+no comp is made; an automation point, curve or lane header stays where it was, and a box or range
+selects nothing new. A point a press on an automation line made stays, where the press put it. What the drag already did as it went stays: time painted so far stays selected,
 and a single track's volume, pan or send stays at the value heard last (a selection of tracks
 moves only on release, so it does not move). That Escape is the drag's alone: it does not count
 toward Escape twice (`docs/spec/ui-clip-editor.md` › Pulled to the top). The rest of the press

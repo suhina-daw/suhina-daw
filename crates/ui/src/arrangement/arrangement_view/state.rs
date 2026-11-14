@@ -7,7 +7,7 @@ use super::*;
 
 /// What a drag in the loop brace row changes.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) enum LoopGrab {
+pub(crate) enum LoopGrab {
     /// Draws a new region from this beat (on the grid) to the pointer.
     New(f64),
     Start,
@@ -24,7 +24,7 @@ pub(super) enum Control {
 
 /// A clip being dragged: where it came from, its unsnapped start and the lane under the pointer.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct ClipDrag {
+pub(crate) struct ClipDrag {
     pub(super) track: TrackId,
     pub(super) clip: ClipId,
     pub(super) start: f64,
@@ -61,7 +61,7 @@ pub(super) struct Settling {
 /// A clip's edge being dragged: the clip, which grip, and the beat the edge is at so far;
 /// the beat it was at and where the button went down, which the edge follows the pointer from.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct EdgeDrag {
+pub(crate) struct EdgeDrag {
     pub(super) key: (TrackId, ClipId),
     pub(super) grab: EdgeGrab,
     pub(super) raw: f64,
@@ -79,7 +79,7 @@ pub(super) enum FadeEdge {
 /// A fade handle being dragged: the clip, which fade, and its length so far in beats before
 /// snapping.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct FadeDrag {
+pub(crate) struct FadeDrag {
     pub(super) key: (TrackId, ClipId),
     pub(super) edge: FadeEdge,
     pub(super) raw: f64,
@@ -91,7 +91,7 @@ pub(super) struct FadeDrag {
 /// A fade's curve handle being dragged: the clip, which fade, the curve so far, and how far
 /// below the handle's centre the pointer took hold of it.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct CurveDrag {
+pub(crate) struct CurveDrag {
     pub(super) key: (TrackId, ClipId),
     pub(super) edge: FadeEdge,
     pub(super) curve: f64,
@@ -102,7 +102,7 @@ pub(super) struct CurveDrag {
 /// control, the value it had when the drag started and the value it has now, and the tracks the
 /// drag moves — the whole selection while the track is part of one, so they move in proportion.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct ValueDrag {
+pub(crate) struct ValueDrag {
     pub(super) track: TrackId,
     pub(super) control: Control,
     pub(super) start: f64,
@@ -453,7 +453,7 @@ pub struct TakeArea {
 
 /// Pieces of takes being dragged along the timeline.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct TakeMove {
+pub(crate) struct TakeMove {
     /// The number of the take the drag began on, whose lane the pointer's lane is counted from.
     pub(super) take: usize,
     pub(super) track: TrackId,
@@ -467,7 +467,7 @@ pub(super) struct TakeMove {
 
 /// A piece of a take whose edge is being dragged.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct TakeEdge {
+pub(crate) struct TakeEdge {
     pub(super) track: TrackId,
     pub(super) take: usize,
     /// Its place in the take, from 0.
