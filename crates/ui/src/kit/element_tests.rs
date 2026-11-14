@@ -764,7 +764,8 @@ fn the_muted_grey_reaches_the_arrangement_not_the_launcher() {
             CLIP.attr(Muted, true).look().background_or(token)
         };
         let _view = ARRANGEMENT.enter();
-        (CLIP.attr(Muted, true).look().background_or(token), TRACK_HEADER.attr(Muted, true).look().background_or(token))
+        let clip = CLIP.attr(Muted, true).look().background_or(token);
+        (launcher, clip, TRACK_HEADER.attr(Muted, true).look().background_or(token))
     });
     assert_eq!(launcher, token, "a deactivated Launcher clip is not the Arrangement's grey");
     assert_eq!(clip, rgb(0xA9, 0xA6, 0xA0), "arrangement clip[muted]");
