@@ -426,7 +426,8 @@ Both panels, top to bottom:
 4. **A note row** under the controls when the device's file does not run, one line, plain
    text: "Model missing: <path>" (the name row falls back to the file's name), or what a file
    faulted with, from the command's error; nothing while it runs and nothing when no file is
-   set — the pack row and the file row say that in their own texts. An A2 model without
+   set — the pack row and the file row say that in their own texts. A device inside a group's
+   branch reads its name and note as one on the chain does. An A2 model without
    quality levels notes "This model has no quality levels" when **HQ** is on.
 
 ## States
