@@ -429,13 +429,21 @@ A mono IR is heard on both sides; a mono model captures both sides' moves throug
 
 ## Cost
 
-A model is the device's whole cost; the EQ, the resampler legs and the DC blocker are about
-1 % of one core together. On an AMD Ryzen 5 5600X, one standard WaveNet (Tim R JCM2000 Crunch)
-at 48 kHz in 512-frame calls takes 9.8 % of one core with the vendored `nam-rs`
-(`third_party/nam-rs/VENDORED.md`: NeuralAmpModelerCore's fast tanh), 16.8 % before; the
-device runs one instance for a mono source and two for stereo. Calls shorter than 128 frames
-cost more per frame (64 frames: about 1.4×), and a moving automation lane splits a call into
-64-frame steps.
+A model is nearly the device's whole cost; the EQ, the resampler legs and the DC blocker take
+under 1 % of one core. The vendored `nam-rs` (`third_party/nam-rs/VENDORED.md`) runs the
+WaveNet's convs register-blocked with AVX2 picked at run time and NeuralAmpModelerCore's fast
+tanh, and the LSTM's gates vectorised with near-exact activations. On an AMD Ryzen 5 5600X, the
+share of one core for the Amp Modeler on a mono source (one instance), in 1024-frame calls:
+
+| Model | 48 kHz project | 44.1 kHz project (resampler legs) |
+|---|---|---|
+| Tim R JCM2000 Crunch (standard WaveNet) | 3.9 % | 4.7 % |
+| Suhina Clean (LSTM 40 × 2) | 6.2 % | 6.9 % |
+
+A stereo source runs two instances, about twice that. Calls of 64 frames cost a little more per
+frame (the WaveNet at 44.1 kHz: 5.7 %), and a moving automation lane splits a call into 64-frame
+steps. Before the vendored changes the WaveNet took about 38 % per stereo device and Suhina
+Clean 57.6 % per instance.
 
 ## What the project stores
 
