@@ -460,7 +460,8 @@ fn dropdown(
     choice
 }
 
-/// A stepper button drawn in `rect`: a triangle pointing up or down, answering by its label.
+/// A stepper button drawn in `rect`: a triangle pointing left (`up`, the previous one) or right
+/// (the next one), as the two sit side by side in their row; answering by its label.
 fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) -> egui::Response {
     let painter = ui.painter();
     let (fill, _) = widgets::toggle_colors(ui, &ui.interact(rect, egui::Id::unique(id_salt), Sense::click()), false);
@@ -471,9 +472,9 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
     let dir = if up { -1.0 } else { 1.0 };
     painter.add(egui::Shape::convex_polygon(
         vec![
-            egui::pos2(center.x, center.y + 2.5 * dir),
-            egui::pos2(center.x - 3.5, center.y - 1.5 * dir),
-            egui::pos2(center.x + 3.5, center.y - 1.5 * dir),
+            egui::pos2(center.x + 2.5 * dir, center.y),
+            egui::pos2(center.x - 1.5 * dir, center.y + 3.5),
+            egui::pos2(center.x - 1.5 * dir, center.y - 3.5),
         ],
         theme::text_hint(),
         egui::Stroke::NONE,

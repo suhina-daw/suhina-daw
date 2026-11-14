@@ -339,14 +339,19 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     ] {
         assert!(harness.query_by_label(label).is_some(), "missing {label}");
     }
-    assert!(harness.query_by_label("Amp Modeler: device on").is_some(), "the power button, not a bypass");
+    // The device is switched off from its header, as other devices are: the panel's body has no
+    // power button of its own.
+    assert!(harness.query_by_label("Amp Modeler: device on").is_none(), "no power button in the body");
     for label in ["Amp Modeler: eq", "Amp Modeler: hq"] {
         assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
     }
     // At the width the panel gets, no control is drawn over another (PR #727, a tester's
     // screenshot: Delay over Mid, HQ beside Treble).
     let controls: Vec<(&str, egui::Rect)> = [
-        "Amp Modeler: device on",
+        "Amp Modeler: pack",
+        "Amp Modeler: model file",
+        "Amp Modeler: previous file",
+        "Amp Modeler: next file",
         "Amp Modeler: gain",
         "Amp Modeler: bass",
         "Amp Modeler: mid",
@@ -365,20 +370,18 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
             assert!(!ra.shrink(1.0).intersects(rb.shrink(1.0)), "{a} {ra:?} is drawn over {b} {rb:?}");
         }
     }
-    // The file row's name is cut short beside its steppers, never under them.
+    // One row on top: the pack, the model file cut short beside its steppers (never under
+    // them), and the steppers, which step through the pack's models; the pack is chosen from
+    // its dropdown alone.
     let file = harness.get_by_label("Amp Modeler: model file").rect();
     let stepper = harness.get_by_label("Amp Modeler: previous file").rect();
     assert!(file.right() <= stepper.left() + 1.0, "the file row {file:?} runs under its stepper {stepper:?}");
-    // The pack row with its steppers and the file row with its own; the pack is listed.
-    for label in [
-        "Amp Modeler: pack",
-        "Amp Modeler: previous pack",
-        "Amp Modeler: next pack",
-        "Amp Modeler: model file",
-        "Amp Modeler: previous file",
-        "Amp Modeler: next file",
-    ] {
-        assert!(harness.query_by_label(label).is_some(), "missing {label}");
+    let top = |label: &str| harness.get_by_label(label).rect().top();
+    for label in ["Amp Modeler: model file", "Amp Modeler: previous file", "Amp Modeler: next file"] {
+        assert_eq!(top(label), top("Amp Modeler: pack"), "{label} is not on the pack's row");
+    }
+    for label in ["Amp Modeler: previous pack", "Amp Modeler: next pack"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}: the pack has no steppers");
     }
 
     assert!(shows_device(&harness, "NAM Cab Loader"), "the cab's panel header is there");
@@ -417,31 +420,32 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     }
     // A knob is a control one can see and turn: its cell is a dial's movements wide — the ring
     // 42, its label and its value bands clear of it — and high, not the squeezed ring the
-    // first panels drew (a tester's screenshot). The amp's Mid Freq is a line of its own
-    // shape, and the buttons and the Volume slider their own — they get no floor.
-    let knobs: Vec<(&str, egui::Rect)> = [
+    // first panels drew (a tester's screenshot). The buttons and the Volume slider are their
+    // own shapes — they get no floor. The amp's knobs sit on its artwork's plate, their
+    // captions over them: a face of 28 and the value under it, the cell 60 wide and 52 high.
+    for label in [
         "Amp Modeler: gain",
         "Amp Modeler: bass",
         "Amp Modeler: mid",
         "Amp Modeler: treble",
         "Amp Modeler: delay",
         "Amp Modeler: volume",
-        "Cab Loader: bass",
-        "Cab Loader: mid",
-        "Cab Loader: treble",
-        "Cab Loader: mid freq",
-        "Cab Loader: delay",
-    ]
-    .into_iter()
-    .map(|label| (label, harness.get_by_label(label).rect()))
-    .collect();
+    ] {
+        let rect = harness.get_by_label(label).rect();
+        assert!(rect.width() >= 60.0 && rect.height() >= 52.0, "{label} {rect:?} is too small to read");
+        assert_eq!(rect.top(), top("Amp Modeler: gain"), "{label} is not on the amp's knob row");
+    }
+    let knobs: Vec<(&str, egui::Rect)> =
+        ["Cab Loader: bass", "Cab Loader: mid", "Cab Loader: treble", "Cab Loader: mid freq", "Cab Loader: delay"]
+            .into_iter()
+            .map(|label| (label, harness.get_by_label(label).rect()))
+            .collect();
     for (label, rect) in knobs {
         // 84 high: the label (24), the ring (42) and the value band (16) one under another;
         // the note's fault line stays out of the cells under the row.
         assert!(rect.width() >= 60.0 && rect.height() >= 80.0, "{label} {rect:?} is too small to read");
     }
     // The rows they sit on: Mid Freq shares the buttons' row, and each panel's knobs one row.
-    let top = |label: &str| harness.get_by_label(label).rect().top();
     assert_eq!(top("Amp Modeler: mid freq"), top("Amp Modeler: eq"), "Mid Freq is not on the buttons' row");
     let row = top("Cab Loader: bass");
     for label in ["Cab Loader: mid", "Cab Loader: treble", "Cab Loader: mid freq", "Cab Loader: delay"] {
@@ -458,13 +462,6 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
         assert!(harness.query_by_label(label).is_some(), "missing {label}");
     }
 
-    // One click on the power button switches the device off (device.setEnabled), and another on.
-    harness.get_by_label("Amp Modeler: device on").click();
-    harness.run();
-    assert!(!project_now(&harness).channels[0].devices[0].enabled, "the power click switched it off");
-    harness.get_by_label("Amp Modeler: device off").click();
-    harness.run();
-    assert!(project_now(&harness).channels[0].devices[0].enabled, "and on again from the same button");
     // One click on the EQ's button turns it on through device.setParam.
     harness.get_by_label("Amp Modeler: eq").click();
     harness.run();
@@ -481,10 +478,12 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     harness.get_by_label("Amp Modeler: pack: Test amp").click();
     harness.run();
     assert_eq!(channel_device_state(&harness, 0), model_path.display().to_string());
-    // The pack steppers step through the packs: from the folder's pack into the executable's,
-    // whose file is a shipped one (`builtin:<device id>/<file name>`; the pack rides the
-    // executable, the state holds its key, [ADR 0036]).
-    harness.get_by_label("Amp Modeler: next pack").click();
+    // Choosing the executable's pack moves from the folder's pack into it: its first file is a
+    // shipped one (`builtin:<device id>/<file name>`; the pack rides the executable, the state
+    // holds its key, [ADR 0036]).
+    harness.get_by_label("Amp Modeler: pack").click();
+    harness.run();
+    harness.get_by_label("Amp Modeler: pack: Suhina").click();
     harness.run();
     let stepped = channel_device_state(&harness, 0);
     assert!(stepped.starts_with("builtin:nam-amp-modeler/"), "{stepped}");

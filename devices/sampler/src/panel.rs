@@ -47,7 +47,7 @@ fn dial(ui: &mut DeviceUi, id: &str, caption: &str, x: f32, width: f32, when: Ui
     control(
         ui,
         id,
-        Widget::Dial { label: String::new(), decimals: usize::from(id == "resonance"), format },
+        Widget::Dial { label: String::new(), decimals: usize::from(id == "resonance"), format, image: None },
         // Tall enough for a ring over its readout, clear of the caption above it.
         [x, SOUND_ROW + 14., width, 34.],
         UiGesture::Drag,

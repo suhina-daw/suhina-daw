@@ -447,10 +447,15 @@ pub const ELEMENTS: &[Element] = &[
         .ids(Ids::Prefixed("mixer-send-"))
         .settings(VALUE_SETTINGS)
         .artwork(&[own("send"), own("send.fill"), own("send.knob.body"), own("send.knob.pointer")]),
-    element("knob", Control, "A knob.")
+    element("knob", Control, "A knob; `device.knob.*` replaces the face a device panel draws for its own knobs.")
         .parts(&["knob-body", "knob-pointer"])
         .settings(VALUE_SETTINGS)
-        .artwork(&[default_svg!("knob.body", "knob-body"), default_svg!("knob.pointer", "knob-pointer")]),
+        .artwork(&[
+            default_svg!("knob.body", "knob-body"),
+            default_svg!("knob.pointer", "knob-pointer"),
+            own("device.knob.body"),
+            own("device.knob.pointer"),
+        ]),
     element("knob-body", Part, "A knob's body; its artwork takes its `color`."),
     element("knob-pointer", Part, "A knob's pointer, turned to its value; its artwork takes its `color`."),
     element("icon", Part, "The symbol on a button or a track header, by its `kind` attribute (`play`, `midi`)."),

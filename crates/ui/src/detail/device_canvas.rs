@@ -1265,8 +1265,12 @@ fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
                     ctx.load_texture(
                         &a.id,
                         egui::ColorImage::from_rgba_unmultiplied(size, &pixels),
+                        // Mipmapped, so an image larger than it is drawn (a panel's artwork at
+                        // three times its points, for a high-DPI screen) stays smooth when drawn
+                        // smaller.
                         egui::TextureOptions {
                             wrap_mode: egui::TextureWrapMode::Repeat,
+                            mipmap_mode: Some(egui::TextureFilter::Linear),
                             ..egui::TextureOptions::LINEAR
                         },
                     )
@@ -1913,7 +1917,44 @@ fn paint_control(
     let ink = scope.color_or(crate::kit::theme::text_value());
     let mut body = None;
     let mut knob_effects = false;
+    // A dial with the device's own face (`Dial { image }`): a theme's `device.knob.body` and
+    // `device.knob.pointer` artwork replace the device's image and its pointer line.
+    let device_face = matches!(control.widget, Some(Widget::Dial { image: Some(_), .. }));
+    let mut face: Option<Rect> = None;
     for draw in drawings.iter() {
+        if device_face {
+            if let Draw::Image { rect: r, .. } = draw {
+                let min = point(&[r[0].clone(), r[1].clone()]);
+                let rect = Rect::from_min_size(min, Vec2::new(value(&r[2]), value(&r[3])) * scale);
+                face = Some(rect);
+                if crate::kit::skin::has_own("device.knob.body") {
+                    let body_ink = crate::kit::element::KNOB_BODY
+                        .response_if(response)
+                        .enter()
+                        .computed_color_or(crate::kit::theme::control_background());
+                    if crate::kit::skin::paint_as(&scope, painter, rect, "device.knob.body", state, body_ink) {
+                        continue;
+                    }
+                }
+            } else if let (Draw::Line { from, to, .. }, Some(rect)) = (draw, face)
+                && crate::kit::skin::has_own("device.knob.pointer")
+            {
+                let direction = point(to) - point(from);
+                let angle = direction.x.atan2(-direction.y);
+                let pointer_ink = crate::kit::element::KNOB_POINTER.response_if(response).enter().color_or(ink);
+                if crate::kit::skin::paint_turned_as(
+                    &scope,
+                    painter,
+                    rect,
+                    "device.knob.pointer",
+                    state,
+                    pointer_ink,
+                    angle,
+                ) {
+                    continue;
+                }
+            }
+        }
         if let Some((center, radius)) = circle {
             let rect = Rect::from_center_size(center, Vec2::splat(radius * 2.0));
             if matches!(draw, Draw::Circle { .. }) {

@@ -519,3 +519,23 @@ fn every_pack_file_is_named_for_its_device_and_reads() {
     // download window is its valve.
     assert!(pack_bytes() <= 16 << 20, "the pack is {} bytes, more than the ADR's ceiling", pack_bytes());
 }
+
+#[test]
+fn the_amp_modelers_artwork_is_embedded_from_its_files() {
+    // The panel's images ride beside its panel.json as files and land in its compact canvas's
+    // assets as the layout loads; its knobs name the knob image as their face.
+    let panel = panel("nam-amp-modeler").unwrap();
+    let canvas = panel.ui.as_ref().expect("the amp has a canvas");
+    let ids: Vec<&str> = canvas.assets.iter().map(|asset| asset.id.as_str()).collect();
+    assert_eq!(ids, ["background", "knob"]);
+    assert_eq!(canvas.assets[0].dimensions().unwrap(), [1284, 504], "three times the canvas");
+    let faces = canvas
+        .controls
+        .iter()
+        .filter(
+            |c| matches!(&c.widget, Some(suhina_device_sdk::ui::Widget::Dial { image: Some(id), .. }) if id == "knob"),
+        )
+        .count();
+    assert_eq!(faces, 6, "every knob draws the device's face");
+    assert!(layout_errors().is_empty(), "{:?}", layout_errors());
+}

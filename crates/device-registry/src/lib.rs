@@ -60,6 +60,10 @@ enum LayoutSource {
     Generated,
     /// `devices/<name>/panel.json`.
     Json(&'static str),
+    /// `devices/<name>/panel.json` with the image files its compact canvas draws, by asset id:
+    /// kept as files beside it (with their provenance) rather than as base64 in the JSON, and
+    /// embedded into the canvas's assets as the layout loads.
+    JsonWithImages(&'static str, &'static [(&'static str, &'static [u8])]),
     /// Built in Rust by the device crate.
     Rust(fn() -> Layout),
 }
@@ -141,7 +145,13 @@ pub const ENTRIES: [Entry; 17] = [
     Entry {
         info: &suhina_device_nam_amp_modeler::INFO,
         make: |rate| boxed(suhina_device_nam_amp_modeler::NamAmp::with_rate(rate)),
-        layout: LayoutSource::Json(include_str!("../../../devices/nam-amp-modeler/panel.json")),
+        layout: LayoutSource::JsonWithImages(
+            include_str!("../../../devices/nam-amp-modeler/panel.json"),
+            &[
+                ("background", include_bytes!("../../../devices/nam-amp-modeler/panel/background.jpg")),
+                ("knob", include_bytes!("../../../devices/nam-amp-modeler/panel/knob.png")),
+            ],
+        ),
         file: Some(FileKind {
             extension: "nam",
             read: read_nam,
@@ -213,14 +223,27 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
     match entry(id)?.layout {
         LayoutSource::Generated => None,
         LayoutSource::Json(text) => Some(Layout::from_json(text)),
+        LayoutSource::JsonWithImages(text, images) => Some(with_images(text, images)),
         LayoutSource::Rust(make) => Some(Ok(make())),
     }
+}
+
+/// The layout in `text` with `images` added to its compact canvas's assets.
+fn with_images(text: &str, images: &[(&str, &[u8])]) -> Result<Layout, DeviceSdkError> {
+    let mut layout = Layout::from_json(text)?;
+    let Some(ui) = layout.ui.as_mut() else {
+        return Err(DeviceSdkError("a layout's images need its compact canvas".into()));
+    };
+    for (id, bytes) in images {
+        ui.assets.push(suhina_device_sdk::ui::ImageAsset::from_bytes(*id, bytes)?);
+    }
+    Ok(layout)
 }
 
 /// The ids of the devices whose layout is a `panel.json`, with its text.
 pub fn layout_files() -> impl Iterator<Item = (&'static str, &'static str)> {
     ENTRIES.iter().filter_map(|entry| match entry.layout {
-        LayoutSource::Json(text) => Some((&*entry.info.id, text)),
+        LayoutSource::Json(text) | LayoutSource::JsonWithImages(text, _) => Some((&*entry.info.id, text)),
         LayoutSource::Generated | LayoutSource::Rust(_) => None,
     })
 }

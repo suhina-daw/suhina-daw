@@ -137,7 +137,7 @@ impl CustomControl {
         let label = label.into();
         let mut control = Self::number(&parameter, bounds);
         control.name = if label.is_empty() { parameter.replace('_', " ") } else { label.replace('\n', " ") };
-        control.widget = Some(Widget::Dial { label, decimals: 0, format: TextFormat::Number });
+        control.widget = Some(Widget::Dial { label, decimals: 0, format: TextFormat::Number, image: None });
         control
     }
 

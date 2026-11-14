@@ -888,6 +888,8 @@ fn paint_variant(
                     | "pan.knob.pointer"
                     | "send.knob.body"
                     | "send.knob.pointer"
+                    | "device.knob.body"
+                    | "device.knob.pointer"
             ) || role.starts_with("piano."),
         )
         .map(|image| painter.ctx().load_texture(format!("skin-{key}"), image, egui::TextureOptions::LINEAR));
