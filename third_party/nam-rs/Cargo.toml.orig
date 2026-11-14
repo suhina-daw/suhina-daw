@@ -1,0 +1,33 @@
+[package]
+name = "nam-rs"
+version = "0.4.0"
+edition = "2021"
+rust-version = "1.74"
+license = "MIT"
+description = "Pure-Rust, real-time-safe inference for Neural Amp Modeler (NAM) .nam models"
+repository = "https://github.com/OpenSauce/nam-rs"
+readme = "README.md"
+keywords = ["audio", "dsp", "neural-amp-modeler", "nam", "wavenet"]
+categories = ["multimedia::audio"]
+# Keep the published crate lean: tests/ carries multi-MB parity fixtures and the
+# vendored NeuralAmpModelerCore oracle (~29 MB), which downstream users never build.
+exclude = ["tests/", ".github/", ".gitmodules"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Derives Display/Error/From on the Error enum (build-time proc-macro; no runtime cost).
+thiserror = "2"
+
+[dev-dependencies]
+# Used by tests/rt_safety.rs to prove the hot path performs no heap allocations.
+assert_no_alloc = "1.1"
+# Used by benches/process_buffer.rs for CPU-per-sample measurement.
+criterion = "0.5"
+
+[[bench]]
+name = "process_buffer"
+harness = false
+
+[profile.release]
+lto = true
