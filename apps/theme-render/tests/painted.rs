@@ -17,15 +17,20 @@
 //! (the application bar): its scenes differ in that bar alone, and the other systems check the rest.
 
 use std::collections::BTreeMap;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use suhina_theme_render::scenes::Scene;
 use suhina_theme_render::{Subject, painted, scenes};
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 /// The scenes left out: the About dialog shows the build's commit.
 const LEFT_OUT: [&str; 1] = ["about-dialog"];
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 /// A theme to draw, and whether the style engine runs for it when it has no sheet of its own.
 struct Drawn {
     name: String,
@@ -33,6 +38,7 @@ struct Drawn {
     engine: bool,
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn drawn() -> Vec<Drawn> {
     let mut drawn: Vec<Drawn> = Subject::built_ins()
         .into_iter()
@@ -49,6 +55,7 @@ fn drawn() -> Vec<Drawn> {
     drawn
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn file() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/painted/{}.txt", std::env::consts::OS))
 }
@@ -64,6 +71,7 @@ fn recorded(text: &str) -> BTreeMap<(String, String), String> {
         .collect()
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 /// Every (scene, theme) listing, drawn by as many workers as the machine has cores; each drawing
 /// is on a thread of its own ([`painted::scene`]).
 fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Result<String, String>> {
