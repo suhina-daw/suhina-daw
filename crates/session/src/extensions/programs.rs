@@ -180,6 +180,21 @@ impl Handle {
         self.port_message(port, 0, bytes);
     }
 
+    /// A command the tests put straight into the program's event queue — the event the
+    /// supervisor would report — so the session's gesture-stream coalescing and its answers
+    /// are what they exercise, with no pipeline timing in the way.
+    pub fn test_command(&self, token: u64, id: &str, params: &Value, gesture: Option<&str>) {
+        let (queue, signal) = &*self.events;
+        let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        queue.push_back(Event::Command {
+            token,
+            id: id.to_string(),
+            params: params.clone(),
+            gesture: gesture.map(str::to_string),
+        });
+        signal.notify_one();
+    }
+
     /// Ends the runner process, as a crash does; the tests make one on cue. Succeeds only when
     /// `pid` is the process this supervisor is running. The kill happens on the supervisor's
     /// thread, which owns the process; the test then waits for the `Crashed` event.
@@ -518,60 +533,65 @@ fn watch(
     let mut ping = 0u64;
     let mut dropped = 0usize;
     loop {
-        // What the session asked for, or the end of it.
-        match from.try_recv() {
-            Ok(ToProgram::Stop) => {
-                suhina_plugins::trace!("surface stop received (running loop)");
-                let _ = link.send(&Message::Quit);
-                child.stop();
-                return Ok(());
+        // Everything the session asked for, or the end of it — drained, so a burst of orders
+        // (the answers of a fader's commands among them) is not paid one loop breath each.
+        loop {
+            match from.try_recv() {
+                Ok(ToProgram::Stop) => {
+                    suhina_plugins::trace!("surface stop received (running loop)");
+                    let _ = link.send(&Message::Quit);
+                    child.stop();
+                    return Ok(());
+                }
+                Err(TryRecvError::Disconnected) => {
+                    suhina_plugins::trace!("surface order channel disconnected (running loop)");
+                    let _ = link.send(&Message::Quit);
+                    child.stop();
+                    return Ok(());
+                }
+                Ok(order) => apply(order, &mut link, &mut child, ports),
+                Err(TryRecvError::Empty) => break,
             }
-            Err(TryRecvError::Disconnected) => {
-                suhina_plugins::trace!("surface order channel disconnected (running loop)");
-                let _ = link.send(&Message::Quit);
-                child.stop();
-                return Ok(());
-            }
-            Ok(order) => apply(order, &mut link, &mut child, ports),
-            Err(TryRecvError::Empty) => {}
         }
-        // The script's lines, without waiting.
-        match link.read() {
-            Ok(Some(line)) => match Message::decode(&line) {
-                Some(Message::Pong { .. }) => last_pong = Instant::now(),
-                Some(Message::Send { port, bytes }) => {
-                    let (queue, signal) = &**events;
-                    let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                    if queue.iter().filter(|e| matches!(e, Event::SendBack { .. })).count() < SEND_BACKS_MAX {
-                        queue.push_back(Event::SendBack { port, bytes });
-                        dropped = 0;
-                    } else {
-                        dropped += 1;
-                        if dropped == 1 || dropped.is_multiple_of(64) {
-                            queue.push_back(Event::Dropped(dropped));
+        // Everything the script has sent, drained the same way.
+        loop {
+            match link.read() {
+                Ok(Some(line)) => match Message::decode(&line) {
+                    Some(Message::Pong { .. }) => last_pong = Instant::now(),
+                    Some(Message::Send { port, bytes }) => {
+                        let (queue, signal) = &**events;
+                        let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        if queue.iter().filter(|e| matches!(e, Event::SendBack { .. })).count() < SEND_BACKS_MAX {
+                            queue.push_back(Event::SendBack { port, bytes });
+                            dropped = 0;
+                        } else {
+                            dropped += 1;
+                            if dropped == 1 || dropped.is_multiple_of(64) {
+                                queue.push_back(Event::Dropped(dropped));
+                            }
                         }
+                        // A waiter of the store's blocking drain sleeps on this signal; a push
+                        // without the notify would leave it there however many send-backs come.
+                        signal.notify_one();
                     }
-                    // A waiter of the store's blocking drain sleeps on this signal; a push
-                    // without the notify would leave it there however many send-backs come.
-                    signal.notify_one();
-                }
-                Some(Message::ScriptError { handler, message }) => {
-                    report(events, Event::ScriptError(format!("{handler}: {message}")));
-                }
-                Some(Message::Hello { .. }) | Some(Message::Ready) => {}
-                Some(message) if is_request(&message, events) => {}
-                Some(Message::Error { message }) => {
-                    return Err(child.end(format!("the runner sent an error: {message}")));
-                }
-                Some(_) => {
-                    let _ = link.send(&Message::Error { message: "not a message for the host".into() });
-                }
-                None => {
-                    let _ = link.send(&Message::Error { message: "not a message the host knows".into() });
-                }
-            },
-            Ok(None) => {}
-            Err(reason) => return Err(child.end(reason)),
+                    Some(Message::ScriptError { handler, message }) => {
+                        report(events, Event::ScriptError(format!("{handler}: {message}")));
+                    }
+                    Some(Message::Hello { .. }) | Some(Message::Ready) => {}
+                    Some(message) if is_request(&message, events) => {}
+                    Some(Message::Error { message }) => {
+                        return Err(child.end(format!("the runner sent an error: {message}")));
+                    }
+                    Some(_) => {
+                        let _ = link.send(&Message::Error { message: "not a message for the host".into() });
+                    }
+                    None => {
+                        let _ = link.send(&Message::Error { message: "not a message the host knows".into() });
+                    }
+                },
+                Ok(None) => break,
+                Err(reason) => return Err(child.end(reason)),
+            }
         }
         if child.try_wait().is_some() {
             let reason = child.wait().map(|s| s.to_string()).unwrap_or_else(|_| "it exited".into());

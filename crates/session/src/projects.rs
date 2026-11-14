@@ -293,7 +293,44 @@ impl Projects {
     /// changed. The `extensions.*` commands call it too, so a pending request is serviced
     /// wherever the next look comes from, never dropped.
     pub(crate) fn poll_programs(&mut self) {
-        for (program, event) in self.extensions.drain_events() {
+        let drained = self.extensions.drain_events();
+        // The commands of one gesture stream: the newest stands for the run — the earlier
+        // values of a fader's move are history the moment the next one lands, and the undo
+        // step they shared is unchanged — while each of them is answered either way, so the
+        // runner's handler completes and the storm drains in one look instead of one round
+        // trip each.
+        let mut dropped: Vec<(String, u64)> = Vec::new();
+        let mut kept: Vec<(String, programs::Event)> = Vec::new();
+        for (program, event) in drained {
+            match &event {
+                programs::Event::Command { token: _, id, gesture, .. } => {
+                    let same_stream = |(kept_program, kept_event): &(String, programs::Event)| match kept_event {
+                        programs::Event::Command { id: kept_id, gesture: kept_gesture, .. } => {
+                            kept_program == &program && kept_id == id && kept_gesture.as_deref() == gesture.as_deref()
+                        }
+                        _ => false,
+                    };
+                    match kept.iter().position(same_stream) {
+                        Some(at) => {
+                            // This value supersedes the one waiting: the older token is
+                            // answered at once, and the newest dispatches in its place.
+                            if let (_, programs::Event::Command { token: old_token, .. }) = kept.remove(at) {
+                                dropped.push((program.clone(), old_token));
+                            }
+                            kept.push((program, event));
+                        }
+                        None => kept.push((program, event)),
+                    }
+                }
+                _ => kept.push((program, event)),
+            }
+        }
+        for (program, token) in dropped {
+            if let Some(handle) = self.extensions.program(&program) {
+                handle.command_answer(token, true, None);
+            }
+        }
+        for (program, event) in kept {
             match event {
                 programs::Event::SendBack { port, bytes } => self.devices.midi.send_back(&program, &port, &bytes),
                 programs::Event::Command { token, id, params, gesture } => {

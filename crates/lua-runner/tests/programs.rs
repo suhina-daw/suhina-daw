@@ -400,6 +400,43 @@ fn a_subscription_pushes_its_first_state_and_the_next_change() {
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 0x01], vec![0xB1, 0x02, 0x01]]);
 }
 
+/// A fader storm: one gesture, twelve values queued back to back. The volume lands at the
+/// last value's dB, the earlier commands are answered (the runner carries on — a dropped
+/// command's handler would wedge it otherwise), and the program is alive after.
+#[test]
+fn a_fader_storm_lands_at_its_last_value() {
+    let mut fixture = Fixture::claiming("fader", SCRIPT_ECHO);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    let grid = fixture.projects.execute("project.launcher", &json!({})).expect("read");
+    let id = grid["tracks"][0]["track"].as_u64().expect("the track's id");
+    for value in 0..12 {
+        let db = -60.0 + (value as f64) * 5.5;
+        fixture.projects.test_extensions_program().expect("running").test_command(
+            value + 1,
+            "track.setVolume",
+            &json!({ "tracks": [id], "db": db }),
+            Some("apc40-mkii volume"),
+        );
+    }
+    // One look drains the whole storm: the last command dispatches, the others are answered.
+    fixture.projects.poll_plugins();
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
+    assert_eq!(tracks[0]["volume_db"], json!(0.5), "{tracks}");
+    // The program is alive after the storm, and its handlers all completed: a later press
+    // still dispatches (a wedged runner would hang here instead).
+    fixture.projects.test_extensions_program().expect("running").test_command(
+        99,
+        "track.setVolume",
+        &json!({ "tracks": [id], "db": 2.5 }),
+        Some("apc40-mkii volume"),
+    );
+    fixture.projects.poll_plugins();
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
+    assert_eq!(tracks[0]["volume_db"], json!(2.5), "{tracks}");
+}
+
 /// Stand-in MIDI ports: a claimed input port plays into the sink it was opened raw for, and
 /// what a program writes to an output port is recorded with the port's name.
 #[derive(Default)]
