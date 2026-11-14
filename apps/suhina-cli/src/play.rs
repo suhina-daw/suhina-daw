@@ -152,6 +152,13 @@ pub fn launcher(
             Ok(Line::Command(id, params)) => match session.execute(&id, &params) {
                 Ok(result) if id == "launcher.state" => print_state(&result),
                 Ok(result) if id == "project.launcher" => print_grid_json(&result),
+                Ok(result) if id == "project.save" => {
+                    // As the window keeps it: the files the saved project plays, a model chosen
+                    // here among them, are the person's choice, so it opens with them again.
+                    let mut library = suhina_library::Library::new(suhina_plugins::library::settings_folder());
+                    suhina_session::keep_saved_trust(&mut library, &session);
+                    println!("{id}: {result}");
+                }
                 Ok(result) => println!("{id}: {result}"),
                 Err(e) => println!("error: {e}"),
             },

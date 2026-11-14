@@ -182,10 +182,14 @@ which run hostile parameter values, hostile buffers, every block size and 8…38
   choose the file again; a file chosen with `device.setNamFile` or added with `device.add`'s
   `file` is read wherever it is, also when the device named that path already,
   and runs at once. Saving the project trusts the files its devices name, not one a removed
-  device or an earlier choice left; a trust that reads a file the old one did not lets a playing
-  engine run it without waiting for an edit. A device copied from one open project and pasted
-  into another runs the file the person chose there. Only a plain file is read, so a named pipe
-  cannot block the session.
+  device or an earlier choice left, also a save in `suhina-cli play --launcher`; a trust that
+  reads a file the old one did not lets a playing engine run it without waiting for an edit. A
+  device or a track copied from one open project and pasted into another runs the file the
+  person chose there: the copy carries only the chosen files its devices name, and only the
+  paste makes them chosen in the other project, so a copy alone lets no other project read
+  them. Only a plain file is read: the file is opened without waiting for a pipe's writer and
+  the opened file is checked, so a file swapped for a named pipe after it was looked at cannot
+  block the session.
 
 ## Sample rates
 

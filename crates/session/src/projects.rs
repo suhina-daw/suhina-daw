@@ -209,6 +209,36 @@ pub fn project_commands() -> &'static [CommandSpec<Projects>] {
     PROJECT_COMMANDS
 }
 
+/// What saving `session`'s project keeps in the person's `library`: the audio and the devices'
+/// files (NAM models and IRs) it plays are trusted from then on, so the project opens with them
+/// again even from outside its folder, and the folders its audio came from outside its own are
+/// kept for it. Returns the project's file, absolute. The window and the MCP server keep it
+/// through `project.save`; `suhina-cli play --launcher`, which runs a session of its own, calls
+/// this after a save there.
+pub fn keep_saved_trust(library: &mut suhina_library::Library, session: &Session) -> Option<PathBuf> {
+    let files = session.loaded_audio_paths();
+    let source = session.source().and_then(|s| std::path::absolute(s).ok());
+    // The folders the audio came from outside the project's own, kept for this project.
+    let own = source.as_deref().and_then(Path::parent).map(Path::to_path_buf);
+    let mut folders: Vec<PathBuf> = Vec::new();
+    for folder in files.iter().filter_map(|f| f.parent()) {
+        if own.as_deref().is_none_or(|own| !folder.starts_with(own)) && !folders.iter().any(|f| f == folder) {
+            folders.push(folder.to_path_buf());
+        }
+    }
+    // The devices' files are the person's choice as well.
+    let files: Vec<PathBuf> = files.into_iter().chain(session.loaded_device_files()).collect();
+    if let Err(e) = library.trust_audio(files) {
+        suhina_plugins::trace!("trusted audio not kept: {e}");
+    }
+    if let Some(source) = &source
+        && let Err(e) = library.add_project_folders(source, folders)
+    {
+        suhina_plugins::trace!("project folders not kept: {e}");
+    }
+    source
+}
+
 impl Projects {
     /// Sets permissions from the person's settings, not from an agent command.
     pub fn set_mcp_write_folders(&mut self, include_project: bool, folders: &[PathBuf]) {
@@ -589,12 +619,15 @@ impl Projects {
         let Some(copied) = from.and_then(|t| self.tabs.open.iter().find(|o| o.id == t)) else { return };
         let mut clipboards = copied.session.clipboards.clone();
         clipboards.tracks.clear();
-        // A device's file the person chose in one project is their choice in the others too, so
-        // a copied Amp Modeler runs its model where it is pasted (`Session::resolve_device_file`).
-        let chosen = copied.session.device_files.chosen.clone();
+        // A file the person chose for a copied device goes with the copy, so the Amp Modeler
+        // pasted in another project runs its model there (`Session::resolve_device_file`). Only
+        // the files the copied devices name, and only for a paste: another project naming the
+        // same path reads it from where its own audio may be.
+        let named = clipboards.file_states();
+        clipboards.chosen_files =
+            copied.session.device_files.chosen.iter().filter(|path| named.contains(*path)).cloned().collect();
         for open in self.tabs.open.iter_mut().filter(|o| Some(o.id) != from) {
             open.session.clipboards = clipboards.clone();
-            open.session.device_files.chosen.extend(chosen.iter().cloned());
         }
     }
 
@@ -986,27 +1019,9 @@ impl Projects {
         }
         // The audio a saved project plays is the person's own choice: it opens with it again,
         // even from outside the project's folder.
-        if let Some(session) = target.and_then(|t| self.get(t)) {
-            let files = session.loaded_audio_paths();
-            let source = session.source().and_then(|s| std::path::absolute(s).ok());
-            // The folders the audio came from outside the project's own, kept for this project.
-            let own = source.as_deref().and_then(Path::parent).map(Path::to_path_buf);
-            let mut folders: Vec<PathBuf> = Vec::new();
-            for folder in files.iter().filter_map(|f| f.parent()) {
-                if own.as_deref().is_none_or(|own| !folder.starts_with(own)) && !folders.iter().any(|f| f == folder) {
-                    folders.push(folder.to_path_buf());
-                }
-            }
-            // The devices' files (NAM models and IRs) are the person's choice as well.
-            let files: Vec<PathBuf> = files.into_iter().chain(session.loaded_device_files()).collect();
-            if let Err(e) = self.browser.files.trust_audio(files) {
-                suhina_plugins::trace!("trusted audio not kept: {e}");
-            }
-            if let Some(source) = &source
-                && let Err(e) = self.browser.files.add_project_folders(source, folders)
-            {
-                suhina_plugins::trace!("project folders not kept: {e}");
-            }
+        let saved_session = target.and_then(|t| self.tabs.open.iter().find(|o| o.id == t)).map(|o| &o.session);
+        if let Some(session) = saved_session {
+            let source = keep_saved_trust(&mut self.browser.files, session);
             let trusted = self.trusted_audio_for(source.as_deref());
             if let Some(session) = target.and_then(|t| self.get_mut(t)) {
                 session.set_trusted(trusted);

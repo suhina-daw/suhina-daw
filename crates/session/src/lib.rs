@@ -113,8 +113,8 @@ pub use player::{OutputHandle, Player};
 pub use plugins::{device_plugin, plugin_commands};
 pub use projects::{DeviceInputs, MAX_DEVICE_INPUTS};
 pub use projects::{
-    MAX_OPEN_PROJECTS, OpenOptions, ProjectId, Projects, all_commands, commands_markdown, params_of, policy,
-    project_commands,
+    MAX_OPEN_PROJECTS, OpenOptions, ProjectId, Projects, all_commands, commands_markdown, keep_saved_trust, params_of,
+    policy, project_commands,
 };
 pub use rack::{
     BlockCounts, Hosted, OfflineDevice, OfflinePlugins, ParamTexts, PluginEnv, PluginProgress, PluginReport,
@@ -1562,17 +1562,8 @@ impl Session {
             // Inside a group too: a file-backed device in a group runs its file the same
             // ([ADR 0036] › it), and the sync reads it the same way it reads a top-level one.
             for (_, device) in suhina_model::walk_devices(&channel.devices) {
-                let suhina_model::DeviceKind::Builtin(id) = &device.kind else { continue };
-                if !suhina_device_registry::is_file_device(id) {
-                    continue;
-                }
-                if let Some(path) = device
-                    .state
-                    .as_deref()
-                    .and_then(|state| std::str::from_utf8(state).ok())
-                    .filter(|path| !path.is_empty())
-                {
-                    need.insert(path.to_string(), id.clone());
+                if let Some((path, id)) = crate::device_files::named_file(device) {
+                    need.insert(path.to_string(), id.to_string());
                 }
             }
         }

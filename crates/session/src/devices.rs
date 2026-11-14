@@ -1093,7 +1093,7 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
     }
     let copied = session.clipboards.devices.clone();
     let count = copied.len();
-    crate::device_groups::edit_chain(session, params, |devices| {
+    let pasted = crate::device_groups::edit_chain(session, params, |devices| {
         let (parent, position) = crate::device_groups::position_path(devices, params, "position")?
             .unwrap_or_else(|| (Vec::new(), devices.len()));
         let list = crate::device_groups::container_mut(devices, &parent).ok_or("the position is missing")?;
@@ -1109,7 +1109,12 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
             })
             .collect();
         Ok(json!({ "devices": pasted }))
-    })
+    })?;
+    // The files the person chose for these devices where they were copied from run here too,
+    // from the sync after this edit.
+    let chosen = session.clipboards.chosen_files.clone();
+    session.device_files.chosen.extend(chosen);
+    Ok(pasted)
 }
 
 pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

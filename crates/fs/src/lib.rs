@@ -5,10 +5,12 @@
 //! renames over it, so a crash, a full disk or a failed write never leaves a project, a device,
 //! a backup journal or the settings half written; [`write_atomic_with`] does the same for a file
 //! written piece by piece. Every crate that saves a file it reads again does it through here, at
-//! any layer, so this crate depends on nothing. [`keep_newest`] is the one way a folder of
-//! backups, crash files or caches keeps only its newest files.
+//! any layer, so this crate depends on nothing but, on Unix, `libc` for the one open flag the
+//! standard library does not name. [`keep_newest`] is the one way a folder of backups, crash
+//! files or caches keeps only its newest files. [`read_plain`] reads a file a project names
+//! (a NAM model, an IR) only when it is a plain file, never waiting on a pipe.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -80,10 +82,100 @@ pub fn keep_newest(folder: &Path, keep: usize, matches: impl Fn(&str) -> bool) {
     }
 }
 
+/// Why [`read_plain`] read nothing.
+#[derive(Debug)]
+pub enum ReadError {
+    /// The file could not be opened or read.
+    Io(std::io::Error),
+    /// The path is there but is not a plain file: a folder, a named pipe, a device.
+    NotAFile,
+    /// The file holds more than the bytes asked for at most: its size.
+    TooLarge(u64),
+}
+
+impl ReadError {
+    /// The message a panel shows for `path`, read with at most `max` bytes.
+    pub fn message(&self, path: &Path, max: usize) -> String {
+        match self {
+            ReadError::Io(e) => format!("{} ({e})", path.display()),
+            ReadError::NotAFile => format!("{} is not a file", path.display()),
+            ReadError::TooLarge(bytes) => {
+                let megabytes = (*bytes as f64 / f64::from(1u32 << 20) * 10.0).round() / 10.0;
+                format!("{} is {megabytes} MiB, larger than Suhina reads ({} MiB)", path.display(), max >> 20)
+            }
+        }
+    }
+}
+
+/// The bytes of the plain file at `path`, at most `max` of them. The file is opened first and
+/// the opened file is what is checked and read, so a file swapped for a named pipe or a folder
+/// after a caller looked at the path is refused, not waited on: on Unix the open does not wait
+/// for a pipe's writer (`O_NONBLOCK`, which a plain file reads the same with). A file that grows
+/// past `max` while it is read is refused as well.
+pub fn read_plain(path: &Path, max: usize) -> Result<Vec<u8>, ReadError> {
+    let file = open_without_waiting(path).map_err(ReadError::Io)?;
+    let info = file.metadata().map_err(ReadError::Io)?;
+    if !info.is_file() {
+        return Err(ReadError::NotAFile);
+    }
+    let limit = u64::try_from(max).unwrap_or(u64::MAX);
+    if info.len() > limit {
+        return Err(ReadError::TooLarge(info.len()));
+    }
+    let mut bytes = Vec::with_capacity(usize::try_from(info.len()).unwrap_or(max).min(max));
+    file.take(limit.saturating_add(1)).read_to_end(&mut bytes).map_err(ReadError::Io)?;
+    if bytes.len() > max {
+        return Err(ReadError::TooLarge(u64::try_from(bytes.len()).unwrap_or(u64::MAX)));
+    }
+    Ok(bytes)
+}
+
+#[cfg(unix)]
+fn open_without_waiting(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(path)
+}
+
+#[cfg(not(unix))]
+fn open_without_waiting(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::File::open(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn reads_a_plain_file_and_refuses_a_folder_and_a_large_one() {
+        let dir = folder("read-plain");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("model.nam");
+        std::fs::write(&file, b"twelve bytes").unwrap();
+        assert_eq!(read_plain(&file, 12).unwrap(), b"twelve bytes");
+        assert!(matches!(read_plain(&file, 11), Err(ReadError::TooLarge(12))));
+        assert!(matches!(read_plain(&dir, 1 << 20), Err(ReadError::NotAFile)));
+        assert!(matches!(read_plain(&dir.join("missing.nam"), 12), Err(ReadError::Io(_))));
+        assert_eq!(
+            ReadError::TooLarge(3 << 20).message(Path::new("big.nam"), 1 << 20),
+            "big.nam is 3 MiB, larger than Suhina reads (1 MiB)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A named pipe with no writer is refused at once: without `O_NONBLOCK` the open would wait
+    /// for a writer forever, and this test would never end.
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_named_pipe_without_waiting_for_a_writer() {
+        let dir = folder("read-pipe");
+        std::fs::create_dir_all(&dir).unwrap();
+        let pipe = dir.join("model.nam");
+        let made = std::process::Command::new("mkfifo").arg(&pipe).status().unwrap();
+        assert!(made.success());
+        assert!(matches!(read_plain(&pipe, 1 << 20), Err(ReadError::NotAFile)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn folder(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("suhina-fs-{name}-{}", std::process::id()));

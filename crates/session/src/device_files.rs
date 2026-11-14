@@ -7,6 +7,18 @@ use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 
 use suhina_engine::DeviceAssets;
+use suhina_model::{Device, DeviceKind};
+
+/// The file a file-backed device's state names (a NAM model or IR), with the device's id; `None`
+/// for any other device or an empty state.
+pub(crate) fn named_file(device: &Device) -> Option<(&str, &str)> {
+    let DeviceKind::Builtin(id) = &device.kind else { return None };
+    if !suhina_device_registry::is_file_device(id) {
+        return None;
+    }
+    let path = device.state.as_deref().and_then(|state| std::str::from_utf8(state).ok())?;
+    (!path.is_empty()).then_some((path, id.as_str()))
+}
 
 /// The parsed models and impulse responses the project's NAM devices run
 /// (`docs/spec/nam-amp-and-cab.md`), by the path each device's state holds.

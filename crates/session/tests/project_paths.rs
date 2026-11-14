@@ -16,11 +16,28 @@ use suhina_model::*;
 use suhina_session::{OpenOptions, Player, Projects, Session};
 use suhina_test_support::{WavFormat, write_wav};
 
-fn temp(name: &str) -> PathBuf {
+/// A test's own folder in the temp directory, removed when the test ends, also when an
+/// assertion fails.
+struct Temp(PathBuf);
+
+impl std::ops::Deref for Temp {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for Temp {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn temp(name: &str) -> Temp {
     let dir = std::env::temp_dir().join(format!("suhina-paths-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    std::path::absolute(dir).unwrap()
+    Temp(std::path::absolute(dir).unwrap())
 }
 
 fn wav(path: &Path) {
@@ -322,6 +339,64 @@ fn a_nam_file_chosen_in_one_project_runs_where_its_device_is_pasted() {
     projects.switch(two).unwrap();
     assert!(projects.get(two).unwrap().device_asset(&path).is_none());
     run(&mut projects, "device.paste", json!({ "track": 1 }));
+    assert!(projects.get(two).unwrap().device_asset(&path).is_some());
+}
+
+/// A session run on its own (`suhina-cli play --launcher`) keeps what a save trusts as the window
+/// does: a model chosen there opens with the project again.
+#[test]
+fn a_save_outside_the_window_keeps_the_chosen_model_trusted() {
+    let root = temp("own-save");
+    let path = model(&root.join("models").join("amp.nam"));
+    let song = nam_song(&root.join("project"), &share("other.nam"));
+    let (mut session, _) = Session::open(&song).unwrap();
+    session.execute("device.setNamFile", &json!({ "track": 1, "device": 0, "path": &path })).unwrap();
+    let saved = root.join("saved").join("amp.suhina");
+    std::fs::create_dir_all(saved.parent().unwrap()).unwrap();
+    session.execute("project.save", &json!({ "path": &saved })).unwrap();
+    let mut library = Library::new(Some(root.join("settings")));
+    suhina_session::keep_saved_trust(&mut library, &session);
+    assert!(library.trusted_audio().contains(&PathBuf::from(&path)));
+}
+
+/// Copying a device does not make the file chosen for it readable in another open project: a
+/// project there naming the same path reads it only from where its own audio may be, and only a
+/// paste brings the choice over.
+#[test]
+fn a_copy_alone_does_not_share_a_chosen_nam_file() {
+    let root = temp("copy-only");
+    let path = model(&root.join("models").join("amp.nam"));
+    let mut projects = projects(&root.join("settings"));
+    let (one, _) = projects.open_path(&nam_song(&root.join("one"), &path), OpenOptions { audio: true }).unwrap();
+    let one = projects.add(one, None).unwrap();
+    let (two, _) = projects.open_path(&nam_song(&root.join("two"), &path), OpenOptions { audio: true }).unwrap();
+    let two = projects.add(two, None).unwrap();
+    projects.switch(one).unwrap();
+    run(&mut projects, "device.setNamFile", json!({ "track": 1, "device": 0, "path": &path }));
+    run(&mut projects, "device.copy", json!({ "track": 1, "devices": [0] }));
+    projects.switch(two).unwrap();
+    run(&mut projects, "track.rename", json!({ "track": 1, "name": "Edited" }));
+    assert!(projects.get(two).unwrap().device_asset(&path).is_none(), "read without a paste");
+}
+
+/// A whole track copied with its Amp Modeler runs the model chosen for it where the track is
+/// pasted in another project.
+#[test]
+fn a_nam_file_chosen_in_one_project_runs_where_its_track_is_pasted() {
+    let root = temp("track-pasted");
+    let path = model(&root.join("models").join("amp.nam"));
+    let mut projects = projects(&root.join("settings"));
+    let (one, _) = projects.open_path(&nam_song(&root.join("one"), &path), OpenOptions { audio: true }).unwrap();
+    let one = projects.add(one, None).unwrap();
+    let (two, _) =
+        projects.open_path(&nam_song(&root.join("two"), &share("other.nam")), OpenOptions { audio: true }).unwrap();
+    let two = projects.add(two, None).unwrap();
+    projects.switch(one).unwrap();
+    run(&mut projects, "device.setNamFile", json!({ "track": 1, "device": 0, "path": &path }));
+    run(&mut projects, "track.copy", json!({ "tracks": [1] }));
+    projects.switch(two).unwrap();
+    assert!(projects.get(two).unwrap().device_asset(&path).is_none());
+    run(&mut projects, "track.paste", json!({}));
     assert!(projects.get(two).unwrap().device_asset(&path).is_some());
 }
 
