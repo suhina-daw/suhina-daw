@@ -114,8 +114,9 @@ mod identity_tests {
     fn imported_indices_require_the_same_identity_and_format() {
         let mut d = Device::new("Synth", DeviceKind::Vst2 { id: 0x12345678 });
         d.extensions.0.push(suhina_model::Extension { format: "flp".into(), key: "wrapper".into(), data: vec![] });
+        // `test:vst2` is a VST2 on every platform; a `.dll` is one only on Windows.
         let mut p = PluginInfo {
-            path: PathBuf::from("/Synth.dll"),
+            path: PathBuf::from("test:vst2"),
             id: "12345678".into(),
             name: "Synth".into(),
             vendor: String::new(),
