@@ -259,7 +259,15 @@ fn reverse_turns_the_selected_notes_round_in_time() {
     pause(&mut h);
     let on = note_rect(&h, &before[1]).center();
     right_click(&mut h, on);
-    item(&mut h, "Reverse");
+    // The Notes tab has a Reverse button too: the menu's is the one in the menu's column, under
+    // Invert selection.
+    let column = h.get_by_label("Invert selection").rect().left();
+    let reverse = h
+        .query_all_by_label("Reverse")
+        .min_by(|a, b| (a.rect().left() - column).abs().total_cmp(&(b.rect().left() - column).abs()))
+        .expect("the menu's Reverse");
+    reverse.click();
+    h.run();
     let rest = &before[1..];
     let start = rest.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
     let end = rest.iter().map(|n| n.time + n.duration).fold(f64::NEG_INFINITY, f64::max);
