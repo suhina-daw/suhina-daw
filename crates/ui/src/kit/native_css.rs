@@ -80,6 +80,10 @@ pub struct Computed {
     pub visible: bool,
     /// `accent-color`: a control's accent, such as a knob's arc.
     pub accent: Color32,
+    /// How much of the background image (its gradients) shows, 0 to 1: all of it, but under a
+    /// toggle's lit fill, which the plain button's image does not cover
+    /// ([`super::element::Entered::paint_over`]).
+    pub(in crate::kit) image: f32,
     pub authored: Authored,
     /// Every custom property the element sees, resolved (`--device-series-1`).
     variables: Arc<std::collections::BTreeMap<String, String>>,
@@ -216,6 +220,11 @@ impl Computed {
 
     pub fn has_gradient(&self) -> bool {
         !self.gradients.is_empty()
+    }
+
+    /// Whether the element's background image is `other`'s, gradient for gradient.
+    pub(in crate::kit) fn same_image(&self, other: &Computed) -> bool {
+        self.gradients.iter().map(paint::Gradient::key).eq(other.gradients.iter().map(paint::Gradient::key))
     }
 
     /// The value a transition or keyframe animation interpolates for `property`.

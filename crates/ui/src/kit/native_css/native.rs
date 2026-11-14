@@ -474,6 +474,7 @@ fn computed_from(resolved: Arc<ComputedStyle>) -> Computed {
         visible: style.get(Property::Visibility) == Value::Keyword("visible")
             && style.get(Property::Visible) != Value::Bool(false),
         accent: ink(Property::AccentColor),
+        image: 1.0,
         authored: Authored {
             color: style.authored(Property::Color),
             background: style.authored(Property::BackgroundColor),

@@ -162,6 +162,17 @@ impl Name {
     pub fn probe(self) -> Look {
         self.builder().probe()
     }
+    /// The [`Look`] of this element inside `parent`, neither of them left in the style tree: a
+    /// part as it is in its control with a state off (`slider-fill` in a `slider` without
+    /// `[checked]`), to compare the part in the lit control with.
+    pub fn probe_in(self, parent: Builder<'_>) -> Look {
+        let outer = parent.enter();
+        let look = self.probe();
+        let node = outer.scope.node;
+        drop(outer);
+        super::native_css::discard(node);
+        look
+    }
     /// [`Builder::enter_against_plain`] of this element.
     pub fn enter_against_plain(self, attr: Attr, on: bool) -> (Entered, Option<Look>) {
         self.builder().enter_against_plain(attr, on)
@@ -305,11 +316,44 @@ impl<'a> Builder<'a> {
         (self.attr(attr, on).enter(), plain)
     }
 
+    /// A toggle's element, entered with `attrs` while it is `on`, and while it is lit at all (`on`,
+    /// or `fading` out), the two [`Sides`] its fade runs between: the same element with `attrs`
+    /// on and with them off, everything else kept (its id, its response and so its `:hover`). The
+    /// one not entered is looked up first and taken out again ([`Builder::probe`]), so it takes
+    /// no place in the style tree. [`super::widgets::Toggle::of`] compares them.
+    pub fn enter_toggle(self, attrs: &[Attr], on: bool, fading: bool) -> (Entered, Option<Sides>) {
+        let with = |builder: Self, on: bool| attrs.iter().fold(builder, |builder, attr| builder.attr(*attr, on));
+        if on {
+            let plain = with(self.clone(), false).probe();
+            let el = with(self, true).enter();
+            let lit = el.look();
+            (el, Some(Sides { lit, plain, entered_lit: true }))
+        } else if fading {
+            let lit = with(self.clone(), true).probe();
+            let el = with(self, false).enter();
+            let plain = el.look();
+            (el, Some(Sides { lit, plain, entered_lit: false }))
+        } else {
+            (with(self, false).enter(), None)
+        }
+    }
+
     /// The [`Look`] of every drawn item of this kind: looked up once, outside the loop that draws
     /// them, so a line drawn a hundred times is one element of the style tree.
     pub fn look(self) -> Look {
         Look(self.style())
     }
+}
+
+/// A toggle's two looks, lit and plain ([`Builder::enter_toggle`]).
+#[derive(Clone, Debug)]
+pub struct Sides {
+    /// The element with its state on.
+    pub lit: Look,
+    /// The same element with its state off.
+    pub plain: Look,
+    /// Whether the element entered is the lit one: it is on, not fading out.
+    pub entered_lit: bool,
 }
 
 /// What a sheet says about a kind of drawn item (a grid line, a slot's mark), each colour with the
@@ -364,6 +408,22 @@ impl Look {
         let own = self.0.as_ref().filter(|s| s.authored.border).map(|s| s.border);
         own.filter(|own| Some(*own) != plain.0.as_ref().filter(|s| s.authored.border).map(|s| s.border))
             .unwrap_or(token)
+    }
+
+    /// [`Look::background_unlike`] for the `accent-color`.
+    pub fn accent_unlike(&self, plain: &Look, token: Color32) -> Color32 {
+        let own = |look: &Look| look.0.as_ref().filter(|s| s.authored.accent).map(|s| s.accent);
+        own(self).filter(|accent| Some(*accent) != own(plain)).unwrap_or(token)
+    }
+
+    /// Whether the item has a background image (`background-image`) that `plain` does not have:
+    /// a state's own image, not the one a rule for every such item gives.
+    pub fn image_unlike(&self, plain: &Look) -> bool {
+        match (&self.0, &plain.0) {
+            (Some(own), Some(plain)) => own.has_gradient() && !own.same_image(plain),
+            (Some(own), None) => own.has_gradient(),
+            _ => false,
+        }
     }
 
     /// [`Look::background_unlike`] for the item's own `color`.
@@ -487,15 +547,17 @@ impl Entered {
         Boxed { content, radius }
     }
 
-    /// [`Entered::paint_with`] with `native.fill` in place of the sheet's `background-color`: for a
-    /// toggle whose caller worked out its fill from the element already ([`super::widgets::Toggle`]),
-    /// so the lit state's fill is not covered again by a rule for every such control.
-    pub fn paint_over(&self, painter: &Painter, rect: Rect, native: Native) -> Boxed {
+    /// [`Entered::paint_with`] with `native.fill` in place of the sheet's `background-color`, and
+    /// `image` (0 to 1) of its background image: for a toggle whose caller worked out its fill
+    /// from the element already ([`super::widgets::Toggle`]), so neither the colour nor the image
+    /// of a rule for every such control covers the lit state's fill.
+    pub fn paint_over(&self, painter: &Painter, rect: Rect, native: Native, image: f32) -> Boxed {
         self.finish();
         let style = self.style();
         let mut own = style.clone();
         if let Some(own) = own.as_mut() {
             own.authored.background = false;
+            own.image = image.clamp(0.0, 1.0);
         }
         let outer = super::native_css::outer_clip(self.scope.node);
         let radius = super::native_css::box_begin(painter, rect, native.radius, native.fill, own.as_ref(), outer);
@@ -661,7 +723,15 @@ impl Entered {
     /// The element's gradients and inset shadows without its outer shadows: for a surface whose
     /// artwork casts them itself ([`Entered::artwork_shadows`]).
     pub fn paint_gradients(&self, painter: &Painter, rect: Rect, radius: f32) -> bool {
-        self.style().is_some_and(|style| super::native_css::gradients_rounded(painter, rect, radius, style))
+        self.paint_gradients_with(painter, rect, radius, 1.0)
+    }
+
+    /// [`Entered::paint_gradients`] with `image` (0 to 1) of its gradients ([`Entered::paint_over`]).
+    pub fn paint_gradients_with(&self, painter: &Painter, rect: Rect, radius: f32, image: f32) -> bool {
+        self.style().is_some_and(|mut style| {
+            style.image = image.clamp(0.0, 1.0);
+            super::native_css::gradients_rounded(painter, rect, radius, style)
+        })
     }
 
     /// The element's shadows cast by artwork: drawn into `slot`, a place reserved under the

@@ -554,3 +554,125 @@ fn a_routing_field_takes_only_its_own_kind_s_rule() {
     let own = underline(&mut h, format!("dropdown[kind=\"subtle\"] {{ border-color: {}; }}", hex(odd(84))));
     assert!(own.contains(&odd(84)), "its own kind's rule reaches it: {own:?}");
 }
+
+/// Turned off, a solo button fades from its lit rule's fill to its plain one, never by way of the
+/// palette's: the lit side is looked up while the fade runs, not only while it is on (#1435
+/// review). Frames of a fixed step, a few into the fade.
+#[test]
+fn a_solo_turned_off_fades_from_its_lit_rule_s_fill() {
+    let mut h = window_with_step(demo_app(), 1.0 / 60.0);
+    h.get_by_label("Solo Drums").click();
+    h.run();
+    let css = "button#control-solo { background-color: #101010; } \
+               button#control-solo[checked] { background-color: #f0f0f0; }";
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    h.run_steps(30);
+    h.get_by_label("End solo on Drums").click();
+    h.run_steps(3);
+    let fills = fills_at(&h, h.get_by_label("Solo Drums").rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    let grey = |c: &egui::Color32| {
+        let [r, g, b, _] = c.to_srgba_unmultiplied();
+        r.abs_diff(g) <= 2 && g.abs_diff(b) <= 2 && r > 0x10 && r < 0xf0
+    };
+    assert!(fills.iter().any(grey), "half way between the two rules' greys: {fills:?}");
+}
+
+/// A rule's `background-image` for every `button` does not cover a lit solo, cue or arm, which
+/// shows its lit fill; the unlit ones keep the image; a `[checked]` rule's own image paints over
+/// the lit one (#1435 review).
+#[test]
+fn a_rule_s_background_image_does_not_cover_a_lit_track_button() {
+    let mut h = lit_drums();
+    // The gradients painted exactly over `rect`.
+    let meshes_at = |h: &Harness<'static, App>, label: &str| {
+        let rect = h.get_by_label(label).rect();
+        h.output()
+            .shapes
+            .iter()
+            .filter(|shape| match &shape.shape {
+                egui::Shape::Mesh(mesh) if mesh.texture_id != egui::TextureId::default() => {
+                    let bounds = mesh.calc_bounds();
+                    (bounds.min - rect.min).length() < 0.5 && (bounds.max - rect.max).length() < 0.5
+                }
+                _ => false,
+            })
+            .count()
+    };
+    let show = |h: &mut Harness<'static, App>, css: &str| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+    };
+    let pairs = [
+        ("End solo on Drums", "Solo Keys"),
+        ("Stop cueing Drums", "Cue Keys on the headphones"),
+        ("Disarm Drums", "Arm Keys for recording"),
+    ];
+    // Without a rule: the buttons' artwork alone.
+    show(&mut h, "");
+    let artwork: Vec<_> = pairs.iter().map(|(lit, unlit)| (meshes_at(&h, lit), meshes_at(&h, unlit))).collect();
+    let general = "button { background-image: linear-gradient(#202020, #404040); }";
+    show(&mut h, general);
+    for ((lit, unlit), (lit_art, unlit_art)) in pairs.iter().zip(&artwork) {
+        assert_eq!(meshes_at(&h, lit), *lit_art, "{lit} shows its lit fill, no image over it");
+        assert!(meshes_at(&h, unlit) > *unlit_art, "{unlit} keeps the image");
+    }
+    show(&mut h, &format!("{general} button[checked] {{ background-image: linear-gradient(#f0f0f0, #d0d0d0); }}"));
+    assert!(meshes_at(&h, "End solo on Drums") > artwork[0].0, "a lit state's own image paints");
+    suhina_ui::kit::native_css::set_user_sheet(None);
+}
+
+/// A rule for every `text-input` does not reach a typed number, which is drawn over a value
+/// control: only one for `text-input[kind="typed"]` does (#1435 review).
+#[test]
+fn a_rule_for_every_text_field_leaves_a_typed_number_alone() {
+    let mut h = window_with_step(audio_app(), 1.0 / 60.0);
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    h.get_by_label("Clip Loop on Loop at bar 1").click();
+    h.run();
+    h.get_by_label_contains("Pitch: ").click();
+    h.run();
+    h.event(egui::Event::Text("3".into()));
+    h.run();
+    let dial = h.get_by_label_contains("Pitch: ").rect();
+    // The typed number's fill, and every text colour over the dial.
+    let typed = |h: &mut Harness<'static, App>, css: String| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        let fills = fills_at(h, dial.shrink(1.0));
+        let mut inks = Vec::new();
+        for shape in &h.output().shapes {
+            if let egui::Shape::Text(text) = &shape.shape
+                && dial.contains(text.visual_bounding_rect().center())
+            {
+                inks.push(text.fallback_color);
+            }
+        }
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        (fills, inks)
+    };
+    let (fills, inks) =
+        typed(&mut h, format!("text-input {{ background-color: {}; color: {}; }}", hex(odd(91)), hex(odd(92))));
+    assert!(!fills.is_empty() && !inks.is_empty(), "the typed number is drawn");
+    assert!(!fills.contains(&odd(91)), "the typed fill keeps its own: {fills:?}");
+    assert!(!inks.contains(&odd(92)), "the typed text keeps its own: {inks:?}");
+    let own = format!("text-input[kind=\"typed\"] {{ background-color: {}; color: {}; }}", hex(odd(93)), hex(odd(94)));
+    let (fills, inks) = typed(&mut h, own);
+    assert!(fills.contains(&odd(93)) && inks.contains(&odd(94)), "the kind's rule reaches it");
+}
+
+/// A rule for every `slider-fill` does not hide that the swing is lit: only one for the lit
+/// slider's fill changes it (#1435 review).
+#[test]
+fn a_rule_for_every_slider_fill_keeps_the_swing_lit() {
+    let mut h = arrangement_app();
+    let general = format!("slider-fill {{ background-color: {}; }}", hex(odd(95)));
+    assert_eq!(count_with(&mut h, &general, odd(95)), 0, "the lit swing keeps its fill");
+    let lit = format!("{general} slider[checked] slider-fill {{ background-color: {}; }}", hex(odd(96)));
+    assert_eq!(count_with(&mut h, &lit, odd(96)), 1, "a rule for the lit slider's fill reaches it");
+}

@@ -757,31 +757,45 @@ fn a_muted_clip_s_colours_come_back_through_a_probe_with_motion_on() {
 /// where that rule gives no ink of its own (#1023).
 #[test]
 fn a_toggle_is_lit_only_by_a_rule_for_its_lit_state() {
-    use super::super::widgets::Toggle;
+    use super::super::widgets::{Toggle, UnlitInk};
     let rgb = egui::Color32::from_rgb;
     let (off, on) = ((rgb(1, 1, 1), rgb(2, 2, 2)), rgb(3, 3, 3));
     // The ink on a fill: its red channel turned to blue, so a test can tell which fill it is for.
     let ink_on = |fill: egui::Color32| rgb(0, 0, fill.to_srgba_unmultiplied()[0]);
-    let toggle = |css: &str, lit: bool| {
+    // `on`, or fading out (off but still lit a little).
+    let toggle = |css: &str, on_now: bool, fading: bool| {
         frames(css, || {
             let _view = SESSION.enter();
-            let (el, plain) = BUTTON.id("solo").enter_against_plain(Checked, lit);
-            Toggle::of(&el, plain.as_ref(), off, on, ink_on)
+            let (el, sides) = BUTTON.id("solo").enter_toggle(&[Checked], on_now, fading);
+            Toggle::of(&el, sides.as_ref(), UnlitInk::Inherited, off, on, ink_on)
         })
     };
     let general = "button { background-color: #102030; color: #405060; }";
     assert_eq!(
-        toggle(general, true),
-        Toggle { off: (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60)), on: (on, ink_on(on)) },
+        toggle(general, true, false),
+        Toggle { off: (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60)), on: (on, ink_on(on)), own_image: false },
         "a rule for every button colours the unlit side only"
     );
-    assert_eq!(toggle(general, false).off, (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60)));
+    assert_eq!(toggle(general, false, false).off, (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60)));
     let lit = format!("{general} button[checked] {{ background-color: #708090; }}");
-    assert_eq!(toggle(&lit, true).on, (rgb(0x70, 0x80, 0x90), rgb(0, 0, 0x70)), "the ink follows the lit fill");
+    assert_eq!(toggle(&lit, true, false).on, (rgb(0x70, 0x80, 0x90), rgb(0, 0, 0x70)), "the ink follows the lit fill");
+    // Fading out, the lit side is still the lit rule's, so the fade does not jump to the token.
+    assert_eq!(toggle(&lit, false, true), toggle(&lit, true, false), "the same two sides fading out");
+    assert_eq!(toggle(&lit, false, false).on, (on, ink_on(on)), "settled off, nothing is looked up");
     let inked = format!("{lit} button[checked] {{ color: #A0B0C0; }}");
-    assert_eq!(toggle(&inked, true).on, (rgb(0x70, 0x80, 0x90), rgb(0xA0, 0xB0, 0xC0)));
+    assert_eq!(toggle(&inked, true, false).on, (rgb(0x70, 0x80, 0x90), rgb(0xA0, 0xB0, 0xC0)));
+    // The unlit ink: inherited from a view's rule, or only the button's own.
+    let own_ink = frames("session { color: #405060; }", || {
+        let _view = SESSION.enter();
+        let (el, sides) = BUTTON.id("solo").enter_toggle(&[Checked], false, false);
+        let ink = |unlit| Toggle::of(&el, sides.as_ref(), unlit, off, on, ink_on).off.1;
+        (ink(UnlitInk::Inherited), ink(UnlitInk::Own))
+    });
+    assert_eq!(own_ink, (rgb(0x40, 0x50, 0x60), off.1));
     // Faded half way, half of each.
-    let half = Toggle { off: (rgb(0, 0, 0), rgb(0, 0, 0)), on: (rgb(200, 200, 200), rgb(100, 100, 100)) }.at(0.5);
+    let half =
+        Toggle { off: (rgb(0, 0, 0), rgb(0, 0, 0)), on: (rgb(200, 200, 200), rgb(100, 100, 100)), own_image: false }
+            .at(0.5);
     assert_eq!(
         half,
         (
@@ -809,7 +823,7 @@ fn paint_over_keeps_the_fill_it_is_given() {
             let el = BUTTON.enter();
             let rect = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(20.0, 10.0));
             el.paint_with(ui.painter(), rect, Native { radius: 0.0, fill });
-            el.paint_over(ui.painter(), rect.translate(egui::vec2(40.0, 0.0)), Native { radius: 0.0, fill });
+            el.paint_over(ui.painter(), rect.translate(egui::vec2(40.0, 0.0)), Native { radius: 0.0, fill }, 1.0);
         });
         output.textures_delta.clear();
         let rects: Vec<_> = output
@@ -840,4 +854,65 @@ fn accent_or_reads_the_accent_colour() {
         (el.accent_or(token), KNOB.look().accent_or(token), unstyled)
     });
     assert_eq!((entered, look, unstyled), (rgb(0x10, 0x20, 0x30), rgb(0x10, 0x20, 0x30), token));
+}
+
+/// A toggle's background image: the plain button's fades out under the lit fill, a lit state's own
+/// stays; [`Entered::paint_over`] paints none of it at 0 (#1435 review).
+#[test]
+fn a_rule_s_background_image_does_not_cover_a_lit_toggle() {
+    use super::super::widgets::{Toggle, UnlitInk};
+    let rgb = egui::Color32::from_rgb;
+    let image = |css: &str| {
+        frames(css, || {
+            let (el, sides) = BUTTON.id("solo").enter_toggle(&[Checked], true, false);
+            let toggle =
+                Toggle::of(&el, sides.as_ref(), UnlitInk::Own, (rgb(1, 1, 1), rgb(1, 1, 1)), rgb(2, 2, 2), |c| c);
+            (toggle.image(0.0), toggle.image(0.5), toggle.image(1.0))
+        })
+    };
+    let general = "button { background-image: linear-gradient(#102030, #405060); }";
+    assert_eq!(image(general), (1.0, 0.5, 0.0), "the plain button's image fades out");
+    let own = format!("{general} button[checked] {{ background-image: linear-gradient(#708090, #a0b0c0); }}");
+    assert_eq!(image(&own), (1.0, 1.0, 1.0), "the lit state's own image stays");
+
+    // Painted with none of the image, the box is the fill alone.
+    super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(general)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut meshes = (0, 0);
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, false);
+            let el = BUTTON.enter();
+            let rect = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(20.0, 10.0));
+            let native = Native { radius: 0.0, fill: rgb(0x70, 0x80, 0x90) };
+            el.paint_over(ui.painter(), rect, native, 1.0);
+            el.paint_over(ui.painter(), rect.translate(egui::vec2(40.0, 0.0)), native, 0.0);
+        });
+        output.textures_delta.clear();
+        let at = |x: f32| {
+            output
+                .shapes
+                .iter()
+                .filter(|shape| matches!(&shape.shape, egui::Shape::Mesh(mesh) if (mesh.calc_bounds().left() - x).abs() < 0.5))
+                .count()
+        };
+        meshes = (at(10.0), at(50.0));
+    }
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    assert!(meshes.0 > 0, "the whole image paints");
+    assert_eq!(meshes.1, 0, "none of it paints");
+}
+
+/// `accent_unlike` and `image_unlike` count only what differs from the plain look.
+#[test]
+fn a_look_s_accent_and_image_are_compared_with_the_plain_one() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let css = "dropdown { accent-color: #102030; } dropdown[kind=\"subtle\"] { background-image: linear-gradient(red, blue); }";
+    let (general, own, image) = frames(css, || {
+        let plain = DROPDOWN.probe();
+        let subtle = DROPDOWN.attribute("kind", "subtle").look();
+        (subtle.accent_unlike(&plain, token), subtle.accent_or(token), subtle.image_unlike(&plain))
+    });
+    assert_eq!((general, own, image), (token, rgb(0x10, 0x20, 0x30), true));
 }
