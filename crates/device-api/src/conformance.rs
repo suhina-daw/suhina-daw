@@ -272,7 +272,12 @@ fn render(make: &dyn Fn() -> Box<dyn Device>, sizes: &[usize]) -> Vec<f32> {
     signal
 }
 
+/// The largest sample difference; infinite when either buffer holds a non-finite sample, so an
+/// output of NaNs never compares equal (`f32::max` would drop a NaN difference).
 fn largest_difference(a: &[f32], b: &[f32]) -> f32 {
+    if a.iter().chain(b).any(|x| !x.is_finite()) {
+        return f32::INFINITY;
+    }
     a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max)
 }
 

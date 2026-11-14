@@ -336,3 +336,44 @@ fn a_device_made_at_a_rate_must_sound_as_one_prepared_at_it() {
     let failures = check(&any_rate);
     assert!(failures.iter().any(|f| f == "a device was made at 0 Hz"), "{failures:#?}");
 }
+
+static NAN_AT_RATE: DeviceInfo = DeviceInfo::new("nan-at-rate", "Nan at rate", Role::Effect, &[]);
+
+/// Sounds NaN when it was made at a rate other than 48 kHz, and fine when it was made at 48 kHz
+/// and prepared: a fault only the constructor has.
+struct NanAtRate {
+    broken: bool,
+}
+
+impl Device for NanAtRate {
+    fn info(&self) -> &DeviceInfo {
+        &NAN_AT_RATE
+    }
+    fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
+        crate::check_sample_rate(sample_rate).map(|_| ())
+    }
+    fn reset(&mut self) {}
+    fn set_param(&mut self, _: usize, _: f64) {}
+    fn param(&self, _: usize) -> Option<f64> {
+        None
+    }
+    fn process(&mut self, _: &ProcessContext, buffer: &mut [f32]) {
+        if self.broken {
+            buffer.fill(f32::NAN);
+        }
+    }
+}
+
+/// A device made at a rate that only produces NaN is caught, not read as "no difference".
+#[test]
+fn a_device_made_at_a_rate_that_sounds_nan_is_caught() {
+    let nan_when_made = |rate: f64| -> Result<Box<dyn Device>, DeviceError> {
+        crate::check_sample_rate(rate)?;
+        Ok(Box::new(NanAtRate { broken: rate != 48_000.0 }))
+    };
+    let failures = check(&nan_when_made);
+    assert!(
+        failures.iter().any(|f| f.starts_with("made at 44100 Hz, the output differs from one made at 48 kHz")),
+        "{failures:#?}"
+    );
+}

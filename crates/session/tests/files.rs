@@ -589,6 +589,23 @@ fn an_output_at_another_rate_reads_the_device_files_again() {
     }
 }
 
+/// A device removed before the output opens at another rate, then brought back by an undo, runs
+/// a read made at the new rate, not the retained one.
+#[test]
+fn an_undone_removal_after_a_rate_change_reads_its_file_again() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-cab-loader" })).unwrap();
+    let path = "builtin:nam-cab-loader/Synthetic Cabinet Plain.wav";
+    run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": path })).unwrap();
+    run(&mut session, "device.remove", json!({ "track": 1, "device": 0 })).unwrap();
+    let project = session.project().clone();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 44_100, suhina_session::devices()).unwrap();
+    session.attach_player(Player::new(renderer.controller(), None));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.device_file_loads(), 2, "the file came back with a read at 44.1 kHz");
+}
+
 #[test]
 fn a_sample_added_while_playing_reaches_the_engine() {
     let dir = temp_dir("playing");

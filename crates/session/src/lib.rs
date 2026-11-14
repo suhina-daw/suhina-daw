@@ -683,11 +683,11 @@ impl Session {
         // The files were read before this output opened, at the rate known then: an output at
         // another rate has them read again, and the engine gets the new reads.
         self.sync_device_files();
-        if self.device_files.changed
-            && let Some(player) = self.sync.player.as_mut()
-        {
-            player.set_device_assets(std::sync::Arc::new(self.device_files.assets.clone()));
-            self.device_files.changed = false;
+        if self.device_files.changed {
+            // The engine's first graph holds the earlier reads: build and send it again, and
+            // retry like any edit the engine could not take.
+            let sent = self.follow_player(None);
+            self.sync.behind = sent.as_ref().is_err_and(|lag| lag.transient);
         }
         // A new engine hears the tracks armed before it.
         self.send_armed();
@@ -1421,21 +1421,31 @@ impl Session {
                 }
             }
         }
+        // Every read was made at the rate before; a file read at another rate is read again
+        // whenever a device next needs it, also one that is not in the project now (an undo
+        // brings it back), so nothing retained keeps an IR of the wrong rate.
+        let rate = self.device_file_rate();
+        let mut changed = false;
+        if self.device_files.rate != rate {
+            self.device_files.rate = rate;
+            if !self.device_files.assets.entries.is_empty() {
+                self.device_files.assets.entries.clear();
+                changed = true;
+            }
+            self.device_files.notes.clear();
+            self.device_files.modified.clear();
+        }
         if need.is_empty() {
+            self.device_files.changed |= changed;
             return;
         }
-        let rate = self.device_file_rate();
-        let same_rate = self.device_files.rate == rate;
-        self.device_files.rate = rate;
-        let mut changed = false;
         for (path, kind) in need.iter() {
             // A library-relative state's file is at the library's base, not the working
             // folder: the timestamp check sees the same resolved path the load reads.
             let mtime =
                 self.resolve_device_file(path).and_then(|p| std::fs::metadata(p).ok()).and_then(|m| m.modified().ok());
-            if same_rate
-                && (self.device_files.assets.entries.contains_key(path.as_str())
-                    || self.device_files.notes.contains_key(path.as_str()))
+            if (self.device_files.assets.entries.contains_key(path.as_str())
+                || self.device_files.notes.contains_key(path.as_str()))
                 && self.device_files.modified.get(path).and_then(|seen| *seen) == mtime
             {
                 continue;
